@@ -417,7 +417,11 @@ def test_timeout_times_out_child_without_dispatch_event(tmp_path: Path):
     )
 
 
-def test_retry_keeps_fanout_and_child_id_but_changes_run_id(tmp_path: Path):
+def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
     _state_dir, log, transport, orch = _state(
         tmp_path,
         timeout_seconds=1,
@@ -441,6 +445,7 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(tmp_path: Path):
     assert retry.payload["retry_of_run_id"] == first_dispatch.payload["run_id"]
     retry_briefing = transport.sent[-1][1].read_text(encoding="utf-8")
     assert "Aggregate contract:" in retry_briefing
+    assert "uv --project /repo run zf emit workflow.child.completed" in retry_briefing
     assert "zf emit workflow.child.completed" in retry_briefing
     assert "Do not emit the aggregate success/failure event directly" in retry_briefing
     assert not any(event.type == "fanout.timed_out" for event in log.read_all())

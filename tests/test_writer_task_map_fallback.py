@@ -68,6 +68,45 @@ def test_event_task_map_ref_still_wins_when_present(tmp_path):
     assert [t["task_id"] for t in loaded.task_items] == ["T1"]
 
 
+def test_state_dir_relative_artifacts_ref_resolves_from_runtime_state(tmp_path):
+    state_dir = tmp_path / ".zf-prod-new"
+    task_map = (
+        state_dir
+        / "artifacts"
+        / "fanouts"
+        / "fanout-issue-map-evt-1"
+        / "issue-plan"
+        / "artifacts"
+        / "issue-map"
+        / "task_map.json"
+    )
+    task_map.parent.mkdir(parents=True)
+    task_map.write_text(
+        json.dumps({
+            "feature_id": "ISSUE-1",
+            "tasks": [{"task_id": "ISSUE-CORE-001", "allowed_paths": ["scripts/hello.py"]}],
+        }),
+        encoding="utf-8",
+    )
+    ref = "artifacts/fanouts/fanout-issue-map-evt-1/issue-plan/artifacts/issue-map/task_map.json"
+    event = ZfEvent(
+        type="task_map.ready",
+        payload={"pdd_id": "ISSUE-1", "task_map_ref": ref},
+    )
+
+    loaded = load_writer_task_map(
+        stage=SimpleNamespace(task_map="${task_map_ref}"),
+        event=event,
+        pdd_id="ISSUE-1",
+        state_dir=state_dir,
+        project_root=tmp_path,
+    )
+
+    assert loaded.task_map_path == task_map
+    assert loaded.task_map_ref == ref
+    assert [t["task_id"] for t in loaded.task_items] == ["ISSUE-CORE-001"]
+
+
 def test_gap_only_resume_validates_lane_pipeline_against_full_task_map(tmp_path):
     state_dir = tmp_path / ".zf"
     path = state_dir / "artifacts" / "CANGJIE" / "task_map.json"

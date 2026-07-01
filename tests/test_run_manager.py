@@ -1200,6 +1200,71 @@ def test_run_manager_tick_requests_autoresearch_once_for_attention_diagnosis(
     assert "replay_worker_briefing" in requests[0].payload["recommended_actions"]
 
 
+def test_attention_diagnosis_with_resident_does_not_fake_recovery(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    briefing = state_dir / "briefings" / "run-manager-resident.md"
+    briefing.parent.mkdir(parents=True)
+    briefing.write_text("observe this run", encoding="utf-8")
+    _write_supervisor_attention(state_dir)
+    log.append(ZfEvent(
+        type="run.manager.resident.spawned",
+        id="evt-resident-spawned",
+        actor="zf-cli",
+        payload={
+            "ready": True,
+            "session_mode": "dedicated",
+            "tmux_session": "zf-rm",
+        },
+    ))
+    log.append(ZfEvent(
+        type="run.manager.resident.prompted",
+        id="evt-resident-prompted",
+        actor="zf-cli",
+        payload={"prompted": True, "briefing_path": str(briefing)},
+    ))
+    log.append(ZfEvent(
+        type="run.manager.agent.observation",
+        id="evt-resident-observed",
+        actor="run-manager",
+        payload={"status": "watching"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        project_root=tmp_path,
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    requests = [
+        event for event in events
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+    ]
+    reprompts = [
+        event for event in events
+        if event.type == "run.manager.resident.prompted"
+        and event.payload.get("reprompt") is True
+    ]
+    applied = [
+        event for event in events
+        if event.type == RUN_MANAGER_ACTION_APPLIED
+        and event.payload.get("safe_resume_action") == "resident_agent_reprompt"
+    ]
+
+    assert result.actions_applied == 0
+    assert result.autoresearch_requested == 1
+    assert len(requests) == 1
+    assert requests[0].payload["failure_class"] == "worker_noop_or_terminal_missing"
+    assert requests[0].payload["fingerprint"] == "runtime:dispatch.silent_stall:T1"
+    assert not reprompts
+    assert not applied
+
+
 def test_run_manager_invokes_reflect_before_autoresearch_for_diagnosis(
     tmp_path: Path,
 ) -> None:
@@ -2020,6 +2085,54 @@ def test_completion_profile_ignores_repair_blockers_superseded_by_verify_success
     assert projection["monitor"]["state"] != "repair_closeout_required"
 
 
+def test_complete_monitor_marks_residual_projection_reconciliation_needed(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="TASK-RESIDUAL",
+        title="residual",
+        status="in_progress",
+        assigned_to="dev-lane-0",
+    ))
+    log.append(ZfEvent(
+        type="judge.passed",
+        payload={"run_id": "R-DONE", "candidate_ref": "cand/done"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    monitor = projection["monitor"]
+    assert monitor["state"] == "complete"
+    assert monitor["closeout_projection_status"] == "needs_reconciliation"
+    assert monitor["in_flight_tasks"] == []
+    assert monitor["residual_in_flight_tasks"][0]["task_id"] == "TASK-RESIDUAL"
+
+
+def test_complete_monitor_marks_projection_clear_without_residuals(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="judge.passed",
+        payload={"run_id": "R-DONE", "candidate_ref": "cand/done"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    assert projection["monitor"]["state"] == "complete"
+    assert projection["monitor"]["closeout_projection_status"] == "clear"
+
+
 def test_run_level_human_escalation_is_superseded_by_later_parity_closure(
     tmp_path: Path,
 ) -> None:
@@ -2321,6 +2434,114 @@ def test_run_manager_repair_closeout_validation_rejects_untrusted_command(tmp_pa
     queue = build_repair_merge_queue(events)
     assert queue["items"][0]["validation"]["status"] == "failed"
     assert queue["items"][0]["next_allowed_action"] == "repair_validation_failed"
+
+
+def test_repair_merge_with_continuation_checkpoint_creates_resume_action(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    continuation = {
+        "resume_original_workflow": True,
+        "checkpoint_id": "wfres-rm-continuation",
+        "safe_resume_action": "repair_failed_children",
+    }
+    log.append(ZfEvent(
+        type="autoresearch.repair.closeout.required",
+        payload={
+            "fingerprint": "stall:continuation",
+            "candidate_id": "C-CONT",
+            "continuation": continuation,
+        },
+    ))
+    log.append(ZfEvent(
+        type=RUN_MANAGER_REPAIR_MERGE_QUEUED,
+        payload={"fingerprint": "stall:continuation", "candidate_id": "C-CONT"},
+    ))
+    log.append(ZfEvent(
+        type=RUN_MANAGER_REPAIR_MERGE_MERGED,
+        payload={"fingerprint": "stall:continuation", "candidate_id": "C-CONT"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    pending = projection["pending_actions"][0]
+
+    assert pending["action"] == "workflow-batch-resume"
+    assert pending["checkpoint_id"] == "wfres-rm-continuation"
+    assert pending["safe_resume_action"] == "repair_failed_children"
+    assert pending["policy_decision"]["decision"] == "auto_decide"
+
+
+def test_repair_merge_continuation_without_checkpoint_requires_diagnosis(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="autoresearch.repair.closeout.required",
+        payload={
+            "fingerprint": "stall:missing-continuation",
+            "candidate_id": "C-MISSING",
+            "continuation": {"resume_original_workflow": True},
+        },
+    ))
+    log.append(ZfEvent(
+        type=RUN_MANAGER_REPAIR_MERGE_MERGED,
+        payload={"fingerprint": "stall:missing-continuation", "candidate_id": "C-MISSING"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    pending = projection["pending_actions"][0]
+
+    assert pending["action"] == "diagnose-attention"
+    assert pending["failure_class"] == (
+        "self_repair_post_merge_continuation_missing_checkpoint"
+    )
+    assert pending["policy_decision"]["decision"] == "needs_diagnosis"
+
+
+def test_repair_merge_continuation_does_not_repeat_after_resume_applied(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    continuation = {
+        "resume_original_workflow": True,
+        "checkpoint_id": "wfres-rm-done",
+        "safe_resume_action": "repair_failed_children",
+    }
+    log.append(ZfEvent(
+        type="autoresearch.repair.closeout.required",
+        payload={
+            "fingerprint": "stall:done-continuation",
+            "candidate_id": "C-DONE",
+            "continuation": continuation,
+        },
+    ))
+    log.append(ZfEvent(
+        type=RUN_MANAGER_REPAIR_MERGE_MERGED,
+        payload={"fingerprint": "stall:done-continuation", "candidate_id": "C-DONE"},
+    ))
+    log.append(ZfEvent(
+        type="workflow.resume.applied",
+        payload={
+            "checkpoint_id": "wfres-rm-done",
+            "resume_checkpoint_ref": "wfres-rm-done",
+        },
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    assert projection["pending_actions"] == []
 
 
 def test_human_decision_reject_event_type_is_known() -> None:

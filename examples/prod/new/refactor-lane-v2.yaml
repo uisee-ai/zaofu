@@ -1,0 +1,281 @@
+# Production refactor workflow.
+#
+# Shape:
+#   refactor.scan.requested -> refactor.scan.ready -> task_map.ready
+#   -> candidate.ready -> review.approved -> test.passed -> judge.passed
+#
+# Review policy: independent_review. Refactor keeps a dedicated review stage
+# because source parity, scope ownership, and regression risk are higher than
+# issue-sized changes.
+version: "1.0"
+preset: prod-new-refactor-lane-v2
+
+project:
+  name: ${ZF_PROJECT_NAME:-prod-new-refactor}
+  state_dir: ${ZF_STATE_DIR:-.zf-prod-new-refactor}
+
+session:
+  tmux_session: ${ZF_TMUX_SESSION:-zf-prod-new-refactor}
+  tmux_layout: pane_grid
+
+global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-900.0}
+budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+
+runtime:
+  skills:
+    strict: false
+    pool: ${ZF_STATE_DIR:-.zf-prod-new-refactor}/skills
+    materialize: copy
+    lock_file: ${ZF_STATE_DIR:-.zf-prod-new-refactor}/skills.lock.json
+  run_manager:
+    backend: ${ZF_RUN_MANAGER_BACKEND:-codex}
+    reflect:
+      enabled: ${ZF_RUN_MANAGER_REFLECT_ENABLED:-true}
+      backend: ${ZF_RUN_MANAGER_REFLECT_BACKEND:-codex}
+      timeout_seconds: ${ZF_RUN_MANAGER_REFLECT_TIMEOUT_SECONDS:-180}
+    resident_agent:
+      enabled: ${ZF_RUN_MANAGER_RESIDENT_ENABLED:-true}
+      transport: tmux
+      instance_id: run-manager
+      prompt_on_start: true
+      session_mode: dedicated
+      tmux_session: ${ZF_RUN_MANAGER_TMUX_SESSION:-zf-prod-new-refactor-run-manager}
+    source_repair:
+      enabled: ${ZF_RUN_MANAGER_SOURCE_REPAIR_ENABLED:-false}
+      backend: ${ZF_RUN_MANAGER_SOURCE_REPAIR_BACKEND:-codex}
+      mode: isolated_worktree
+      branch_prefix: ${ZF_RUN_MANAGER_SOURCE_REPAIR_BRANCH_PREFIX:-self-repair/run-manager}
+      apply_policy: proposal_only
+      restart_policy: never_during_active_run
+      restart_boundary: terminal_or_operator_approved_checkpoint
+      replay_before_restart: true
+      allow_paths: [src/zf/**, tests/**, docs/**]
+      deny_paths: [.env, "**/events.jsonl", "**/kanban.json", "**/session.yaml"]
+  feishu_inbound:
+    enabled: ${ZF_FEISHU_INBOUND_ENABLED:-false}
+    mode: bridge
+  workdirs:
+    enabled: true
+    root: ${ZF_STATE_DIR:-.zf-prod-new-refactor}/workdirs
+    mode: worktree
+    provision_paths: [.venv, node_modules]
+  git:
+    candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+    writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-refactor}/worker
+    task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-refactor}/task
+    candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-refactor}/candidate
+    candidate_strategy: cherry-pick
+    remote_policy: local
+    auto_ship_on_candidate_complete: false
+
+constraints:
+  blocked_paths:
+  - .git/**
+  - ${ZF_STATE_DIR:-.zf-prod-new-refactor}/**
+  - .venv/**
+  - node_modules/**
+  - .env
+  - .env.*
+  - "**/*.pem"
+  - "**/*.ppk"
+
+workflow:
+  harness_profile: strict
+  plan_approval: false
+  affinity_lanes:
+    refactor-3-lane:
+      affinity_key: affinity_tag
+      queue:
+        order: priority_fifo
+      lanes:
+      - id: core
+        impl: dev-core
+        review: review-core
+        verify: verify-core
+      - id: runtime
+        impl: dev-runtime
+        review: review-runtime
+        verify: verify-runtime
+      - id: tests
+        impl: dev-tests
+        review: review-tests
+        verify: verify-tests
+  work_units:
+    enabled: true
+    split_quality:
+      mode: blocking
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1800
+    generate_on: [dispatch, retry, context_recovery, worker.context.warning, worker.context.critical, worker.stuck]
+  dag:
+    enabled: true
+    schema_profile: canonical-dag/v1
+    default_gate_level: strict
+    external_triggers: [refactor.scan.requested]
+    stage_order: [refactor.scan.requested, refactor.scan.ready, task_map.ready, candidate.ready, review.approved, test.passed, judge.passed]
+    event_schemas:
+      refactor.scan.requested:
+        required: [pdd_id, target_ref, objective]
+      refactor.scan.ready:
+        required: [fanout_id, stage_id, status, artifact_refs, review_artifact_ref]
+      task_map.ready:
+        required: [pdd_id, trace_id, task_map_ref, source_commit, candidate_base_commit]
+      candidate.ready:
+        required: [fanout_id, pdd_id, candidate_ref, candidate_base_commit, candidate_head_commit, diff_ref, completed_task_ids]
+      review.approved:
+        required: [fanout_id, stage_id, status, target_ref]
+      test.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+      judge.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+  rework_routing:
+    refactor.scan.failed: scan-contract
+    zaofu.refactor.plan.blocked: refactor-plan-synth
+    task.contract.invalid: refactor-plan-synth
+    integration.failed: refactor-plan-synth
+    review.rejected: dev-core
+    gate.failed: refactor-plan-synth
+    discriminator.failed: dev-core
+    test.failed: dev-core
+    judge.failed: dev-core
+    fanout.serialize: orchestrator
+    fanout.cancelled: orchestrator
+    dev.blocked: refactor-plan-synth
+    dev.failed: refactor-plan-synth
+    dispatch.silent_stall: orchestrator
+  strict_triggers:
+    rework_attempts_gte: 1
+    context_usage_gte: 0.80
+    file_globs: [src/**, tests/**, web/**, docs/**]
+  stages:
+  - id: refactor-scan
+    trigger: refactor.scan.requested
+    topology: fanout_reader
+    roles: [scan-contract, scan-runtime, scan-verification]
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      synth_role: refactor-plan-synth
+      child_success_event: refactor.scan.completed
+      child_failure_event: refactor.scan.failed
+      success_event: refactor.scan.ready
+      failure_event: zaofu.refactor.plan.blocked
+    timeout_seconds: 2400
+  - id: refactor-plan
+    trigger: refactor.scan.ready
+    topology: fanout_reader
+    roles: [refactor-plan-synth]
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      child_success_event: refactor.plan.child.completed
+      child_failure_event: refactor.plan.child.failed
+      success_event: task_map.ready
+      failure_event: zaofu.refactor.plan.blocked
+    timeout_seconds: 2400
+    criteria:
+      output:
+        required_keys: [plan_artifact_ref, task_map_ref, artifact_refs, evidence_refs]
+  - id: refactor-impl
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    synthesize_canonical_tasks: true
+    source:
+      task_map: ${task_map_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: refactor-3-lane
+        stage_slot: impl
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+      max_retries: 1
+    timeout_seconds: 7200
+  - id: refactor-review
+    trigger: candidate.ready
+    topology: fanout_reader
+    target_ref: ${candidate_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: refactor-3-lane
+        stage_slot: review
+    aggregate:
+      mode: wait_for_all
+      review_strategy: all_approve_or_one_rejects
+      child_success_event: review.child.completed
+      child_failure_event: review.child.failed
+      success_event: review.approved
+      failure_event: review.rejected
+      max_retries: 1
+    timeout_seconds: 3000
+  - id: refactor-verify
+    trigger: review.approved
+    topology: fanout_reader
+    target_ref: ${target_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: refactor-3-lane
+        stage_slot: verify
+    aggregate:
+      mode: any_failed_fail
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: test.passed
+      failure_event: test.failed
+      max_retries: 1
+    timeout_seconds: 3600
+  - id: refactor-judge
+    trigger: test.passed
+    topology: fanout_reader
+    roles: [judge-refactor]
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      child_success_event: judge.child.completed
+      child_failure_event: judge.child.failed
+      success_event: judge.passed
+      failure_event: judge.failed
+    timeout_seconds: 1800
+
+roles:
+- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall, fanout.serialize, fanout.cancelled], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
+- {name: scan-contract, instance_id: scan-contract, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [source-driven-development, zf-harness-evidence-collection]}
+- {name: scan-runtime, instance_id: scan-runtime, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [context-engineering, zf-cr]}
+- {name: scan-verification, instance_id: scan-verification, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [test-driven-development, zf-harness-verification-checklist]}
+- {name: refactor-plan-synth, instance_id: refactor-plan-synth, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-refactor-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]}
+- {name: dev-core, instance_id: dev-core, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [incremental-implementation, test-driven-development, git-workflow-and-versioning, zf-harness-done-contract]}
+- {name: dev-runtime, instance_id: dev-runtime, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [incremental-implementation, test-driven-development, git-workflow-and-versioning, zf-harness-done-contract]}
+- {name: dev-tests, instance_id: dev-tests, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [incremental-implementation, test-driven-development, git-workflow-and-versioning, zf-harness-done-contract]}
+- {name: review-core, instance_id: review-core, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [code-review-and-quality, security-and-hardening, zf-yoke-review-role-context]}
+- {name: review-runtime, instance_id: review-runtime, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [code-review-and-quality, performance-optimization, zf-yoke-review-role-context]}
+- {name: review-tests, instance_id: review-tests, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [code-review-and-quality, test-driven-development, zf-yoke-review-role-context]}
+- {name: verify-core, instance_id: verify-core, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [test-driven-development, zf-harness-verification-checklist]}
+- {name: verify-runtime, instance_id: verify-runtime, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [performance-optimization, test-driven-development, zf-harness-verification-checklist]}
+- {name: verify-tests, instance_id: verify-tests, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [test-driven-development, debugging-and-error-recovery, zf-harness-verification-checklist]}
+- {name: judge-refactor, instance_id: judge-refactor, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-harness-gate-evaluator, shipping-and-launch]}
+
+stage_labels:
+  scan: source and parity scan
+  plan: refactor plan and task-map synthesis
+  impl: scoped implementation by affinity lane
+  review: independent code and architecture review
+  verify: test and regression verification
+  judge: final go/no-go

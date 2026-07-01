@@ -1,0 +1,222 @@
+# Production issue / bug-fix workflow.
+#
+# Shape:
+#   user.message -> task_map.ready -> candidate.ready -> test.passed
+#   -> judge.passed
+#
+# Review policy: merged_into_verify. The verify roles own code review,
+# regression, and evidence checks for issue-sized fixes.
+version: "1.0"
+preset: prod-new-issue-fanout-v2
+
+project:
+  name: ${ZF_PROJECT_NAME:-prod-new-issue}
+  state_dir: ${ZF_STATE_DIR:-.zf-prod-new-issue}
+
+session:
+  tmux_session: ${ZF_TMUX_SESSION:-zf-prod-new-issue}
+  tmux_layout: pane_grid
+
+global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-300.0}
+budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+
+runtime:
+  skills:
+    strict: false
+    pool: ${ZF_STATE_DIR:-.zf-prod-new-issue}/skills
+    materialize: copy
+    lock_file: ${ZF_STATE_DIR:-.zf-prod-new-issue}/skills.lock.json
+  run_manager:
+    backend: ${ZF_RUN_MANAGER_BACKEND:-codex}
+    reflect:
+      enabled: ${ZF_RUN_MANAGER_REFLECT_ENABLED:-true}
+      backend: ${ZF_RUN_MANAGER_REFLECT_BACKEND:-codex}
+      timeout_seconds: ${ZF_RUN_MANAGER_REFLECT_TIMEOUT_SECONDS:-180}
+    resident_agent:
+      enabled: ${ZF_RUN_MANAGER_RESIDENT_ENABLED:-true}
+      transport: tmux
+      instance_id: run-manager
+      prompt_on_start: true
+      session_mode: dedicated
+      tmux_session: ${ZF_RUN_MANAGER_TMUX_SESSION:-zf-prod-new-issue-run-manager}
+    source_repair:
+      enabled: ${ZF_RUN_MANAGER_SOURCE_REPAIR_ENABLED:-false}
+      backend: ${ZF_RUN_MANAGER_SOURCE_REPAIR_BACKEND:-codex}
+      mode: isolated_worktree
+      branch_prefix: ${ZF_RUN_MANAGER_SOURCE_REPAIR_BRANCH_PREFIX:-self-repair/run-manager}
+      apply_policy: proposal_only
+      restart_policy: never_during_active_run
+      restart_boundary: terminal_or_operator_approved_checkpoint
+      replay_before_restart: true
+      allow_paths: [src/zf/**, tests/**, docs/**]
+      deny_paths: [.env, "**/events.jsonl", "**/kanban.json", "**/session.yaml"]
+  feishu_inbound:
+    enabled: ${ZF_FEISHU_INBOUND_ENABLED:-false}
+    mode: bridge
+  workdirs:
+    enabled: true
+    root: ${ZF_STATE_DIR:-.zf-prod-new-issue}/workdirs
+    mode: worktree
+    provision_paths: [.venv, node_modules]
+  git:
+    candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+    writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-issue}/worker
+    task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-issue}/task
+    candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-new-issue}/candidate
+    candidate_strategy: cherry-pick
+    remote_policy: local
+    auto_ship_on_candidate_complete: false
+
+constraints:
+  blocked_paths:
+  - .git/**
+  - ${ZF_STATE_DIR:-.zf-prod-new-issue}/**
+  - .venv/**
+  - node_modules/**
+  - .env
+  - .env.*
+  - "**/*.pem"
+  - "**/*.ppk"
+
+workflow:
+  harness_profile: strict
+  plan_approval: false
+  affinity_lanes:
+    issue-2-lane:
+      affinity_key: affinity_tag
+      queue:
+        order: priority_fifo
+      lanes:
+      - id: core
+        impl: dev-core
+        verify: verify-core
+      - id: web
+        impl: dev-web
+        verify: verify-web
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 8
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1400
+    generate_on: [dispatch, retry, context_recovery, worker.context.warning, worker.context.critical, worker.stuck]
+  dag:
+    enabled: true
+    schema_profile: canonical-dag/v1
+    default_gate_level: strict
+    external_triggers: [user.message]
+    stage_order: [user.message, task_map.ready, candidate.ready, test.passed, judge.passed]
+    event_schemas:
+      task_map.ready:
+        required: [pdd_id, trace_id, task_map_ref, source_commit, candidate_base_commit]
+      candidate.ready:
+        required: [fanout_id, pdd_id, candidate_ref, candidate_base_commit, candidate_head_commit, diff_ref, completed_task_ids]
+      test.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+      judge.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+  rework_routing:
+    issue.plan.failed: issue-plan
+    task.contract.invalid: issue-plan
+    integration.failed: issue-plan
+    gate.failed: issue-plan
+    discriminator.failed: dev-core
+    test.failed: dev-core
+    judge.failed: dev-core
+    dev.blocked: issue-plan
+    dev.failed: issue-plan
+    dispatch.silent_stall: orchestrator
+  strict_triggers:
+    rework_attempts_gte: 1
+    context_usage_gte: 0.80
+    file_globs: [src/**, tests/**, web/**, docs/**]
+  stages:
+  - id: issue-map
+    trigger: user.message
+    topology: fanout_reader
+    roles: [issue-plan]
+    aggregate:
+      mode: wait_for_all
+      child_success_event: task_map.child.completed
+      child_failure_event: task_map.child.failed
+      success_event: task_map.ready
+      failure_event: issue.plan.failed
+    timeout_seconds: 1800
+    criteria:
+      output:
+        required_keys: [task_map_ref, artifact_refs, evidence_refs]
+  - id: issue-impl
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    synthesize_canonical_tasks: true
+    source:
+      task_map: ${task_map_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: issue-2-lane
+        stage_slot: impl
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+      max_retries: 1
+    timeout_seconds: 7200
+  - id: issue-verify
+    trigger: candidate.ready
+    topology: fanout_reader
+    target_ref: ${candidate_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: issue-2-lane
+        stage_slot: verify
+    aggregate:
+      mode: any_failed_fail
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: test.passed
+      failure_event: test.failed
+      max_retries: 1
+    timeout_seconds: 3600
+  - id: issue-judge
+    trigger: test.passed
+    topology: fanout_reader
+    roles: [judge-issue]
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      child_success_event: judge.child.completed
+      child_failure_event: judge.child.failed
+      success_event: judge.passed
+      failure_event: judge.failed
+    timeout_seconds: 1800
+
+roles:
+- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
+- {name: issue-plan, instance_id: issue-plan, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-issue-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]}
+- {name: dev-core, instance_id: dev-core, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [incremental-implementation, test-driven-development, git-workflow-and-versioning, zf-harness-done-contract]}
+- {name: dev-web, instance_id: dev-web, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [frontend-ui-engineering, incremental-implementation, git-workflow-and-versioning, zf-harness-done-contract]}
+- {name: verify-core, instance_id: verify-core, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [code-review-and-quality, test-driven-development, zf-harness-verification-checklist]}
+- {name: verify-web, instance_id: verify-web, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [frontend-ui-engineering, browser-testing-with-devtools, zf-harness-verification-checklist]}
+- {name: judge-issue, instance_id: judge-issue, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-harness-gate-evaluator, shipping-and-launch]}
+
+stage_labels:
+  plan: issue triage and task-map synthesis
+  impl: scoped implementation
+  verify: review and regression verification
+  judge: final go/no-go

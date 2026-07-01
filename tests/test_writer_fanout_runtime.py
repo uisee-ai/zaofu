@@ -1893,6 +1893,37 @@ def test_affinity_stage_slots_queue_and_dispatch_next_on_lane_release(tmp_path: 
     assert store.get("TASK-3").assigned_to == "dev-2"
 
 
+def test_affinity_stage_slots_honors_task_affinity_tag_for_initial_dispatch(tmp_path: Path):
+    state_dir, log, transport, orch = _state(
+        tmp_path,
+        affinity_stage_slots=True,
+        affinity_lane_count=3,
+    )
+    task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"
+    task_map.write_text(json.dumps({
+        "tasks": [
+            {
+                "task_id": "TASK-1",
+                "scope": "runtime",
+                "owner_role": "dev-3",
+                "affinity_tag": "lane2",
+                "allowed_paths": ["runtime.txt"],
+            },
+        ],
+    }), encoding="utf-8")
+    _seed_tasks(state_dir, task_ids=("TASK-1",))
+
+    _start(orch)
+
+    fanout_id = _fanout_id(log)
+    manifest = _manifest(state_dir, fanout_id)
+    child = _child(manifest, "TASK-1")
+    assert [sent[0] for sent in transport.sent] == ["dev-3"]
+    assert child["lane_id"] == "lane2"
+    assert child["role_instance"] == "dev-3"
+    assert TaskStore(state_dir / "kanban.json").get("TASK-1").assigned_to == "dev-3"
+
+
 def test_affinity_stage_slots_missing_affinity_tag_fails_closed(tmp_path: Path):
     state_dir, log, transport, orch = _state(
         tmp_path,

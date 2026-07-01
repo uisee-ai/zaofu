@@ -529,6 +529,10 @@ def build_run_manager_projection(
     resident_agent = build_resident_agent_projection(events, config=config)
     resident_actions = _pending_resident_agent_actions(resident_agent, events)
     repair_validation_actions = _pending_repair_validation_actions(merge_queue, events)
+    post_repair_continuation_actions = _pending_post_repair_continuation_actions(
+        merge_queue,
+        events,
+    )
     candidate_actions = [
         action for action in _pending_candidate_rework_actions(
             state_dir,
@@ -551,6 +555,7 @@ def build_run_manager_projection(
     attention_actions = []
     if (
         not workflow_actions
+        and not post_repair_continuation_actions
         and not candidate_actions
         and not human_gate_actions
         and completion_profile.get("status") != "complete"
@@ -570,6 +575,7 @@ def build_run_manager_projection(
         *worker_actions,
         *resident_actions,
         *repair_validation_actions,
+        *post_repair_continuation_actions,
         *candidate_actions,
         *human_gate_actions,
         *attention_actions,
@@ -1040,6 +1046,8 @@ def _resident_diagnosis_reprompt_action(
     action: dict[str, Any],
     resident_agent: dict[str, Any] | None,
 ) -> dict[str, Any] | None:
+    if not _diagnosis_action_may_reprompt_resident(action):
+        return None
     if not _resident_agent_can_reprompt(resident_agent):
         return None
     resident_agent = resident_agent if isinstance(resident_agent, dict) else {}
@@ -1073,6 +1081,20 @@ def _resident_diagnosis_reprompt_action(
         payload=reprompt,
     )
     return reprompt
+
+
+def _diagnosis_action_may_reprompt_resident(action: dict[str, Any]) -> bool:
+    """Only reprompt resident agent for resident-agent health diagnosis.
+
+    Generic workflow/fanout attention still needs a concrete resume proposal;
+    merely proving the resident pane was prompted is not evidence that the
+    target worker or fanout child recovered.
+    """
+
+    failure_class = str(action.get("failure_class") or "")
+    if failure_class == "run_manager_resident_agent_stalled":
+        return True
+    return str(action.get("suggested_route") or "") == "run_manager_resident_agent"
 
 
 def build_run_monitor_projection(
@@ -1136,9 +1158,16 @@ def build_run_monitor_projection(
         state = "repair_in_flight"
     elif open_attention and not pending_actions:
         state = "silent_stall"
+    closeout_projection_status = "not_applicable"
+    if completion_status == "complete":
+        closeout_projection_status = (
+            "needs_reconciliation"
+            if residual_in_flight or residual_open_attention else "clear"
+        )
     return {
         "schema_version": "run-manager.monitor.v1",
         "state": state,
+        "closeout_projection_status": closeout_projection_status,
         "current_phase": _derive_phase(events),
         "lane_occupancy": dict(sorted(lane_counts.items())),
         "in_flight_tasks": display_in_flight,
@@ -3707,6 +3736,162 @@ def _pending_repair_validation_actions(
         )
         out.append(action)
     return out
+
+
+def _pending_post_repair_continuation_actions(
+    repair_merge_queue: dict[str, Any],
+    events: list[ZfEvent],
+) -> list[dict[str, Any]]:
+    items = repair_merge_queue.get("items") if isinstance(repair_merge_queue, dict) else []
+    out: list[dict[str, Any]] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("status") or "") != "merged":
+            continue
+        continuation = item.get("continuation")
+        continuation = continuation if isinstance(continuation, dict) else {}
+        if not continuation.get("resume_original_workflow"):
+            continue
+        checkpoint_id = str(
+            continuation.get("checkpoint_id")
+            or continuation.get("resume_checkpoint_ref")
+            or continuation.get("idempotency_key")
+            or item.get("checkpoint_id")
+            or ""
+        ).strip()
+        safe_action = str(
+            continuation.get("safe_resume_action")
+            or item.get("safe_resume_action")
+            or ""
+        ).strip()
+        fingerprint = str(item.get("fingerprint") or item.get("queue_id") or "post-repair")
+        checkpoint = checkpoint_id or (
+            "post-repair-continuation-"
+            + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
+        )
+        source_event_ids = _repair_queue_event_ids(item)
+        if _post_repair_continuation_seen(
+            events,
+            checkpoint_id=checkpoint,
+            fingerprint=fingerprint,
+        ):
+            continue
+        if checkpoint_id and safe_action:
+            action = {
+                "schema_version": "run-manager.pending-action.v1",
+                "action": "workflow-batch-resume",
+                "checkpoint_id": checkpoint_id,
+                "safe_resume_action": safe_action,
+                "fingerprint": fingerprint,
+                "queue_id": str(item.get("queue_id") or ""),
+                "candidate_id": str(item.get("candidate_id") or ""),
+                "source_commit": str(item.get("source_commit") or ""),
+                "source_title": str(item.get("source_title") or ""),
+                "continuation": continuation,
+                "source_event_ids": source_event_ids,
+                "reason": "self-repair merged; resume original workflow continuation",
+            }
+            action.update(classify_recovery_context(action))
+            action["preflight"] = preflight_action(
+                action="workflow-batch-resume",
+                payload=action,
+                mutating_resume_supported=bool(action.get("mutating_resume_supported")),
+            )
+            action["policy_decision"] = decide_action_policy(
+                action="workflow-batch-resume",
+                payload=action,
+                mutating_resume_supported=bool(action.get("mutating_resume_supported")),
+            )
+        else:
+            action = {
+                "schema_version": "run-manager.pending-action.v1",
+                "action": "diagnose-attention",
+                "checkpoint_id": checkpoint,
+                "safe_resume_action": "diagnose_attention",
+                "fingerprint": fingerprint,
+                "failure_class": (
+                    "self_repair_post_merge_continuation_missing_checkpoint"
+                ),
+                "owner_route": "run_manager",
+                "action_policy": "needs_diagnosis",
+                "intervention_class": "diagnose",
+                "queue_id": str(item.get("queue_id") or ""),
+                "candidate_id": str(item.get("candidate_id") or ""),
+                "continuation": continuation,
+                "source_event_ids": source_event_ids,
+                "title": "Self-repair merged but continuation checkpoint is missing",
+                "summary": (
+                    "repair merge completed and requested original workflow resume, "
+                    "but no checkpoint_id/safe_resume_action was recorded"
+                ),
+                "recommended_actions": [
+                    "inspect_repair_closeout_continuation",
+                    "find_latest_workflow_resume_checkpoint",
+                    "return_resume_or_wait_proposal_to_run_manager",
+                ],
+                "expected_output": [
+                    "continuation_checkpoint",
+                    "safe_resume_action",
+                    "resume_or_wait_decision",
+                ],
+                "expected_downstream_events": ["run.manager.autoresearch.requested"],
+                "verify_condition": (
+                    "expected_downstream_event:run.manager.autoresearch.requested"
+                ),
+                "route_registry": "run-manager-router.v1",
+            }
+            action["preflight"] = preflight_action(
+                action="diagnose-attention",
+                payload=action,
+            )
+            action["policy_decision"] = decide_action_policy(
+                action="diagnose-attention",
+                payload=action,
+            )
+        if _action_seen(events, action):
+            continue
+        out.append(action)
+    return out
+
+
+def _repair_queue_event_ids(item: dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    for event in item.get("events") or []:
+        if not isinstance(event, dict):
+            continue
+        event_id = str(event.get("event_id") or "").strip()
+        if event_id and event_id not in ids:
+            ids.append(event_id)
+    return ids
+
+
+def _post_repair_continuation_seen(
+    events: list[ZfEvent],
+    *,
+    checkpoint_id: str,
+    fingerprint: str,
+) -> bool:
+    if not checkpoint_id and not fingerprint:
+        return False
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type in {RUN_MANAGER_AUTORESEARCH_REQUESTED, RUN_MANAGER_ACTION_APPLIED}:
+            if checkpoint_id and str(payload.get("checkpoint_id") or "") == checkpoint_id:
+                return True
+            if fingerprint and str(payload.get("fingerprint") or "") == fingerprint:
+                return True
+        if event.type == "workflow.resume.applied" and checkpoint_id:
+            if str(
+                payload.get("checkpoint_id")
+                or payload.get("resume_checkpoint_ref")
+                or payload.get("idempotency_key")
+                or ""
+            ) == checkpoint_id:
+                return True
+        if event.type == RUN_COMPLETED:
+            return True
+    return False
 
 
 def _repair_validation_checkpoint_id(item: dict[str, Any]) -> str:

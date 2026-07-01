@@ -13,6 +13,7 @@ from typing import Any
 from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.runtime.channel_workflow_bridge import emit_fanout_channel_state_update
+from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.fanout_stage_criteria import evaluate_fanout_stage_success_criteria_for_orchestrator
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
@@ -83,6 +84,23 @@ def assign_nonaffinity_writer_roles(task_items: list, roles: list) -> list:
             assigned[idx] = remaining[fill]
             fill += 1
     return assigned
+
+
+def _writer_task_value(task_item: dict, key: str) -> str:
+    value = task_item.get(key)
+    if value not in (None, ""):
+        return str(value).strip()
+    payload = task_item.get("payload")
+    if isinstance(payload, dict):
+        value = payload.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    raw_task = task_item.get("raw_task")
+    if isinstance(raw_task, dict):
+        value = raw_task.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    return ""
 
 
 def _contract_handoff_ref_fields(config, success_event: str) -> list[str]:
@@ -548,6 +566,42 @@ class FanoutCoordinationMixin:
             if str(getattr(stage, "id", "") or "") == stage_id:
                 return stage
         return None
+
+    def _select_writer_affinity_lane_role(
+        self,
+        stage,
+        task_item: dict,
+        *,
+        lane_roles: list[tuple[str, RoleConfig]],
+        used_lane_ids: set[str],
+    ) -> tuple[str, RoleConfig] | None:
+        affinity_key = self._fanout_affinity_key(stage)
+        affinity_tag = _writer_task_value(task_item, affinity_key)
+        desired_roles = [
+            value for value in (
+                _writer_task_value(task_item, "owner_instance"),
+                _writer_task_value(task_item, "owner_role"),
+                _writer_task_value(task_item, "preferred_impl_role"),
+            )
+            if value
+        ]
+
+        def _available() -> list[tuple[str, RoleConfig]]:
+            return [
+                (lane_id, role) for lane_id, role in lane_roles
+                if lane_id not in used_lane_ids
+            ]
+
+        if affinity_tag:
+            for lane_id, role in _available():
+                if lane_id == affinity_tag:
+                    return lane_id, role
+        for desired in desired_roles:
+            for lane_id, role in _available():
+                if desired in {role.instance_id, role.name}:
+                    return lane_id, role
+        available = _available()
+        return available[0] if available else None
 
     def _fanout_dispatch_deferred_recently(
         self,
@@ -2520,10 +2574,18 @@ class FanoutCoordinationMixin:
                     if use_affinity
                     else assign_nonaffinity_writer_roles(task_items, roles)
                 )
+                used_affinity_lanes: set[str] = set()
                 for index, raw_task_item in enumerate(task_items):
                     if use_affinity:
-                        if index < len(lane_roles):
-                            lane_id, role = lane_roles[index]
+                        selected = self._select_writer_affinity_lane_role(
+                            stage,
+                            raw_task_item,
+                            lane_roles=lane_roles,
+                            used_lane_ids=used_affinity_lanes,
+                        )
+                        if selected is not None:
+                            lane_id, role = selected
+                            used_affinity_lanes.add(lane_id)
                             task_item = self._writer_affinity_task_item(
                                 stage,
                                 raw_task_item,
@@ -5481,8 +5543,9 @@ class FanoutCoordinationMixin:
         def _emit_command(event_type: str, payload: dict) -> str:
             if not event_type:
                 return "# no event configured"
+            cli_parts = shlex.split(zf_cli_cmd()) or ["zf"]
             return " ".join([
-                "zf",
+                *[shlex.quote(part) for part in cli_parts],
                 "emit",
                 shlex.quote(event_type),
                 "--actor",
@@ -5933,8 +5996,9 @@ class FanoutCoordinationMixin:
         def _emit_command(event_type: str, payload: dict) -> str:
             if not event_type:
                 return "# no event configured"
+            cli_parts = shlex.split(zf_cli_cmd()) or ["zf"]
             return " ".join([
-                "zf",
+                *[shlex.quote(part) for part in cli_parts],
                 "emit",
                 shlex.quote(event_type),
                 "--actor",

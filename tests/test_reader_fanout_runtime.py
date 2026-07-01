@@ -147,7 +147,11 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
-def test_trigger_creates_one_fanout_and_dispatches_children(tmp_path: Path):
+def test_trigger_creates_one_fanout_and_dispatches_children(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
     state_dir, log, transport, orch = _state(tmp_path)
     trigger = _start_fanout(orch)
     orch.run_once(events=[trigger])
@@ -167,6 +171,7 @@ def test_trigger_creates_one_fanout_and_dispatches_children(tmp_path: Path):
     assert started[0].payload["feature_id"] == "F-11111111"
     assert started[0].payload["aggregate"]["child_success_event"] == "workflow.child.completed"
     briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "uv --project /repo run zf emit workflow.child.completed" in briefing
     assert "zf emit workflow.child.completed" in briefing
     assert "Do not emit the aggregate success/failure event directly" in briefing
     assert f"--state-dir {state_dir}" in briefing

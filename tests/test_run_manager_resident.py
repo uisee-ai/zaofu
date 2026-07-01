@@ -607,7 +607,7 @@ def test_run_manager_tick_reprompts_live_resident_pane(
     assert any(event.type == "run.manager.action.verify.passed" for event in log.read_all())
 
 
-def test_supervisor_attention_reprompts_resident_before_autoresearch(
+def test_supervisor_attention_requests_diagnosis_without_resident_reprompt(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -662,15 +662,6 @@ def test_supervisor_attention_reprompts_resident_before_autoresearch(
 
     def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         calls.append(args)
-        if args[:3] == ["tmux", "display-message", "-p"]:
-            return subprocess.CompletedProcess(
-                args,
-                0,
-                stdout=f"%9\tclaude\t{tmp_path}\t0\n",
-                stderr="",
-            )
-        if args[:2] == ["tmux", "send-keys"]:
-            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(args, 1, stdout="", stderr="unexpected")
 
     monkeypatch.setattr("zf.runtime.run_manager.subprocess.run", fake_run)
@@ -687,7 +678,7 @@ def test_supervisor_attention_reprompts_resident_before_autoresearch(
     )
 
     events = log.read_all()
-    assert result.actions_applied == 1
+    assert result.actions_applied == 0
     assert result.autoresearch_requested == 1
     assert [event for event in events if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED]
     reprompts = [
@@ -695,17 +686,9 @@ def test_supervisor_attention_reprompts_resident_before_autoresearch(
         if event.type == "run.manager.resident.prompted"
         and event.payload.get("reprompt") is True
     ]
-    assert len(reprompts) == 1
-    assert reprompts[0].payload["source_action_checkpoint_id"].startswith(
-        "attention-diagnosis-"
-    )
-    assert reprompts[0].payload["briefing_refreshed"] is True
-    assert "recommended_route=repair" in briefing.read_text(encoding="utf-8")
-    assert any(
-        call[:2] == ["tmux", "send-keys"]
-        and "Current Focus" in " ".join(str(part) for part in call)
-        for call in calls
-    )
+    assert not reprompts
+    assert "recommended_route=repair" not in briefing.read_text(encoding="utf-8")
+    assert not any(call[:2] == ["tmux", "send-keys"] for call in calls)
 
 
 def test_run_manager_tick_blocks_reprompt_into_shell_only_pane(

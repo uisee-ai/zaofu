@@ -452,6 +452,8 @@ def _resolve_artifact_ref(ref: str, *, state_dir: Path, project_root: Path) -> P
         return path
     if path.parts and path.parts[0] == ".zf":
         return state_dir.joinpath(*path.parts[1:])
+    if path.parts and path.parts[0] == "artifacts":
+        return state_dir / path
     return project_root / path
 
 
