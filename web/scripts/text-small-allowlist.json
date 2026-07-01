@@ -1,0 +1,382 @@
+[
+  {
+    "selector": ".fanout-tag",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".ctx-mini",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".badge",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rail-nav-title",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".channel-switch-section-title",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".channel-attention-badge",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".channel-avatar.small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".channel-avatar.tiny",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".channel-role-chip span, .channel-role-chip small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".channel-control-field > span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".mention-target-chip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rail-section summary",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".project-health-card span",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".spine-review-status-grid span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".task-edit-grid label > span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".route-actor-chip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".route-swimlane-item",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".projection-summary-label",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".agent-state-pill",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".agent-thread-count",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".agent-ref-chip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".agent-part-title",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".agent-card-kind",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".headless-status",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".agent-model-capability",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".terminal-fallback summary::after",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".runtime-summary-card span, .runtime-summary-card small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".runtime-health-strip span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".runtime-connection-strip span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".automation-report-stat span, .automation-report-stat small",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".automation-report-stat small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".automation-detail-card dt",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".automation-detail-card dd small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".automation-trigger-chip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".automation-output-metrics span, .automation-day-metrics span",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".event-saved-view small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".event-saved-view em",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".event-filter-panel label",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".event-audit-mini-grid span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".observability-filter-grid label",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".diagnostics-summary-strip strong",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".diagnostics-log-level",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".event-audit-summary-meta",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".event-audit-metric span, .event-audit-metric small",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".delivery-empty-stage span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".delivery-empty-loop-card span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".delivery-cockpit-metric span",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".delivery-stage-run-chip",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".delivery-cycle-kind",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".delivery-inspector-grid dt",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".workflow-chip-list code",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".autoresearch-cycle-kpis span",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".autoresearch-cycle-foot span, .autoresearch-cycle-evidence code",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".metrics-strip-group > .muted",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".pulse-band-item > .muted",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".task-flow-node-age",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".task-flow-edge",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".task-flow-rework",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".task-flow-pocket",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".task-flow-whynot",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-legend",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-num",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-conv",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-tree-caret",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".dt-lifeline-tag",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".wf-leaf-seq",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".wf-axis-clock",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".wf-axis-tick i",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".dt-attempt-caret",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".dt-attempt-children-count",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-anchor",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-attempt-agg-tag",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".rg-legend",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".rg-node-sub",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".rg-task",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-backedge-label",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".rg-edge-label",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-ghost",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-ghost-col code",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-search-miss",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-pool-strip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".rg-causal",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".ld-dispatch",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".ld-copy-icon",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".ld-chip",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".ld-seq",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".ld-gate-detail",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".ld-arrow",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".ld-try-mark",
+    "tier": "text-10"
+  },
+  {
+    "selector": ".ld-gate",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".ld-evidence-row code",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-mix",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-dispatch",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-why",
+    "tier": "text-11"
+  },
+  {
+    "selector": ".dt-flow-footer",
+    "tier": "text-11"
+  }
+]

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zaofu"
+version = "0.1.0"
+description = "ZaoFu multi-agent harness scaffold"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=9.0", "pytest-cov>=6.0", "pytest-asyncio>=0.24", "httpx>=0.25"]
+stream-json = ["claude-code-sdk>=0.0.25"]
+# F-WEB-MVP-01: thin local Web dashboard (zf web). Optional install:
+#   pip install -e ".[web]"
+# Adds FastAPI + uvicorn + WebSocket transport. Not part of base zaofu install.
+web = ["fastapi>=0.115", "uvicorn[standard]>=0.32", "websockets>=13"]
+# doc 99 §4.1: in-process Feishu WS bridge (`zf feishu bridge --watch`). Optional:
+#   pip install -e ".[feishu]"
+# Adds the official lark-oapi SDK for the WS long-connection. Not part of base.
+feishu = ["lark-oapi>=1.4"]
+
+[project.scripts]
+zf = "zf.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=zf --cov-report=term-missing"
+asyncio_mode = "auto"

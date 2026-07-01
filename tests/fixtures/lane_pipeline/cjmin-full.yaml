@@ -1,0 +1,390 @@
+version: '1.0'
+project:
+  name: cjmin-parity
+roles:
+- name: judge-refactor
+  backend: codex
+  instance_id: judge-refactor
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+- name: dev-lane-0
+  instance_id: dev-lane-0
+  backend: codex
+  role_kind: writer
+  stuck_threshold_seconds: 900.0
+  skills: &id001
+  - code-refactoring
+  - python-to-typescript-migration
+  stages:
+  - impl
+  publishes:
+  - dev.build.done
+  - dev.failed
+- name: dev-lane-1
+  instance_id: dev-lane-1
+  backend: codex
+  role_kind: writer
+  stuck_threshold_seconds: 900.0
+  skills: *id001
+  stages:
+  - impl
+  publishes:
+  - dev.build.done
+  - dev.failed
+- name: dev-lane-2
+  instance_id: dev-lane-2
+  backend: codex
+  role_kind: writer
+  stuck_threshold_seconds: 900.0
+  skills: *id001
+  stages:
+  - impl
+  publishes:
+  - dev.build.done
+  - dev.failed
+- name: dev-lane-3
+  instance_id: dev-lane-3
+  backend: codex
+  role_kind: writer
+  stuck_threshold_seconds: 900.0
+  skills: *id001
+  stages:
+  - impl
+  publishes:
+  - dev.build.done
+  - dev.failed
+- name: dev-lane-4
+  instance_id: dev-lane-4
+  backend: codex
+  role_kind: writer
+  stuck_threshold_seconds: 900.0
+  skills: *id001
+  stages:
+  - impl
+  publishes:
+  - dev.build.done
+  - dev.failed
+- name: review-lane-0
+  instance_id: review-lane-0
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: &id002
+  - requesting-code-review
+  stages:
+  - review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+- name: review-lane-1
+  instance_id: review-lane-1
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id002
+  stages:
+  - review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+- name: review-lane-2
+  instance_id: review-lane-2
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id002
+  stages:
+  - review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+- name: review-lane-3
+  instance_id: review-lane-3
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id002
+  stages:
+  - review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+- name: review-lane-4
+  instance_id: review-lane-4
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id002
+  stages:
+  - review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+- name: verify-lane-0
+  instance_id: verify-lane-0
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: &id003
+  - test-driven-development
+  stages:
+  - verify
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+- name: verify-lane-1
+  instance_id: verify-lane-1
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id003
+  stages:
+  - verify
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+- name: verify-lane-2
+  instance_id: verify-lane-2
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id003
+  stages:
+  - verify
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+- name: verify-lane-3
+  instance_id: verify-lane-3
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id003
+  stages:
+  - verify
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+- name: verify-lane-4
+  instance_id: verify-lane-4
+  backend: codex
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+  skills: *id003
+  stages:
+  - verify
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+workflow:
+  dag:
+    event_schemas:
+      refactor.scan.requested:
+        required:
+        - pdd_id
+        - target_ref
+        - source_branch
+        - source_commit
+        - source_tree_status
+        - objective
+        - prompt_ref
+      refactor.scan.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - findings
+        - coverage_matrix
+        - evidence_refs
+        - git_refs
+      refactor.scan.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      zaofu.refactor.review.ready:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - artifact_refs
+        - artifact_digests
+        - review_artifact_ref
+        - coverage_matrix_ref
+        - findings_ref
+        - uncovered_ref
+        field_sources:
+          review_artifact_ref: synth
+          coverage_matrix_ref: synth
+          findings_ref: synth
+          uncovered_ref: synth
+      refactor.plan.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+      refactor.plan.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      zaofu.refactor.plan.blocked:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+      zaofu.refactor.plan.ready:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - artifact_gate
+        - artifact_refs
+        - artifact_digests
+        - plan_artifact_ref
+        - scan_quality_audit_ref
+        - task_map_ref
+        field_sources:
+          plan_artifact_ref: synth
+          scan_quality_audit_ref: synth
+          task_map_ref: synth
+      task_map.ready:
+        required:
+        - pdd_id
+        - trace_id
+        - task_map_ref
+        - source_commit
+        - candidate_base_commit
+      candidate.ready:
+        required:
+        - fanout_id
+        - pdd_id
+        - candidate_ref
+        - candidate_base_commit
+        - candidate_head_commit
+        - diff_ref
+        - completed_task_ids
+      review.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      review.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      review.approved:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      review.rejected:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      verify.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      verify.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      test.passed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      test.failed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      judge.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      judge.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      judge.passed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      judge.failed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+  pipelines:
+  - id: cj-min-refactor
+    kind: lane_pipeline
+    trigger: task_map.ready
+    task_source:
+      task_map_ref: .zf/artifacts/F-1/task_map.json
+    affinity_key: affinity_tag
+    lane_count: 5
+    overflow: none
+    max_rework_attempts: 2
+    trace_budget: 6
+    require_artifact_digests: true
+    assembly:
+      task: CJMIN-ASSEMBLY-001
+    stages:
+    - id: impl
+      role_pattern: dev-lane-{lane}
+      terminal:
+        success: dev.build.done
+        failure: dev.failed
+    - id: review
+      role_pattern: review-lane-{lane}
+      terminal:
+        success: review.child.completed
+        failure: review.child.failed
+      on_failure:
+        rework_to: impl
+        feedback_artifact: required
+    - id: verify
+      role_pattern: verify-lane-{lane}
+      terminal:
+        success: verify.child.completed
+        failure: verify.child.failed
+      on_failure:
+        rework_to: impl
+        feedback_artifact: required
+    final:
+      when: all_tasks_verified
+      role: judge-refactor
+      success: judge.passed
+      failure: judge.failed

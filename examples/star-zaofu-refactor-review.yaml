@@ -1,0 +1,376 @@
+# Star ZaoFu refactor review + plan workflow with Codex and role-scoped skills.
+#
+# Shape:
+#   Stage 1:
+#     zaofu.refactor.review.requested
+#         -> review-kernel-state
+#         -> review-runtime-orchestration
+#         -> review-web-api-integrations
+#         -> review-tests-docs-backlog
+#         -> review-autoresearch-eval
+#         -> review-synth
+#         -> zaofu.refactor.review.ready / zaofu.refactor.review.blocked
+#
+#   Stage 2:
+#     zaofu.refactor.plan.requested
+#         -> refactor-plan-author
+#         -> zaofu.refactor.plan.ready / zaofu.refactor.plan.blocked
+#
+# Purpose:
+#   Keep fact discovery and decision making separate in one zf.yaml. The review
+#   stage produces evidence-backed review output and coverage information. The
+#   plan stage consumes a review artifact reference plus user plan intent, then
+#   proposes refactor slices, task_map, gates, and backlog candidates.
+#
+# Skill strategy:
+#   Review roles use the minimal review baseline:
+#     - zf-cr
+#     - zf-harness-design-impl-game-review
+#     - zf-harness-evidence-collection
+#     - zf-harness-instruction-hygiene
+#   Domain skills are added only to the roles that need them.
+#
+#   planning-with-files is intentionally NOT loaded for review roles. It is
+#   only enabled for the plan author, where file-backed planning notes are
+#   useful and expected.
+#
+# Runtime artifact contract:
+#   The runtime projects successful review/plan fanouts into stable artifacts
+#   under `${project.state_dir}/artifacts/<fanout_id>/`. Review ready requires
+#   every review child to provide `coverage_matrix` and `evidence_refs`; plan
+#   ready requires `review_artifact_ref`, `refactor_plan_md`, `task_map`, and
+#   `gates`.
+#
+# Review semantics:
+#   `zaofu.refactor.review.ready` means the evidence-backed review artifact is
+#   complete. High/critical findings are planning input, not a reason to emit
+#   `zaofu.refactor.review.blocked`. Use blocked only when the reviewer cannot
+#   inspect the assigned scope or cannot provide required coverage/evidence.
+#   Complete reports should keep `report.status=passed` and
+#   `report.recommendation=approve`; caveats belong in findings/risks/slices.
+#   Fanout routing fields (`fanout_id`, `child_id`, `run_id`, `status`, etc.)
+#   must stay at the top level of the emitted payload.
+#
+# Example review trigger from a temporary copied zf.yaml at repo root:
+#   zf emit zaofu.refactor.review.requested --actor human \
+#     --payload '{"pdd_id":"PDD-ZAOFU-REFACTOR-001","target_ref":"dev"}'
+#
+# Example plan trigger after review is ready:
+#   zf emit zaofu.refactor.plan.requested --actor human \
+#     --payload '{"pdd_id":"PDD-ZAOFU-REFACTOR-001","target_ref":"dev","review_artifact_ref":"${project.state_dir}/artifacts/<fanout_id>/review.md","plan_intent":"Generate a conservative P0/P1 refactor plan with isolated work slices."}'
+#
+# Note:
+#   Use a branch/ref name for `target_ref` (for example `dev`). Current reader
+#   checkout treats bare commit hashes as branch names and fails them.
+version: '1.0'
+preset: star-zaofu-refactor-review-plan
+project:
+  name: zaofu-refactor-review-plan
+  state_dir: /tmp/zf-zaofu-refactor-review/.zf
+session:
+  tmux_session: zf-zaofu-refactor-review
+  tmux_layout: pane_grid
+skill_sources:
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: planning-with-files
+  path: ${ZF_PLANNING_SKILLS_DIR:-./skills/planning-with-files}
+  mode: readonly
+runtime:
+  skills:
+    strict: true
+    pool: /tmp/zf-zaofu-refactor-review/.zf/skills
+    materialize: copy
+    lock_file: /tmp/zf-zaofu-refactor-review/.zf/skills.lock.json
+  workdirs:
+    enabled: true
+    root: /tmp/zf-zaofu-refactor-review/.zf/workdirs
+    mode: worktree
+  git:
+    reader_ref_prefix: reader
+    writer_branch_prefix: worker
+    task_ref_prefix: task
+    candidate_branch_prefix: candidate
+    candidate_base_ref: dev
+workflow:
+  stages:
+  - id: zaofu-refactor-review-scan
+    trigger: zaofu.refactor.review.requested
+    topology: fanout_reader
+    roles:
+    - review-kernel-state
+    - review-runtime-orchestration
+    - review-web-api-integrations
+    - review-tests-docs-backlog
+    - review-autoresearch-eval
+    fanout:
+      children:
+      - role_instance: review-kernel-state
+        payload:
+          child_id: review-kernel-state
+          instruction: >-
+            Read-only review of ZaoFu deterministic kernel, config loader,
+            event log, stores, state ownership, task contract, schema
+            invariants, and hard-coded state-dir assumptions. Use zf-cr as the
+            common review baseline. Do not modify source or runtime truth
+            files.
+          output_contract:
+            summary: one paragraph kernel/state diagnosis
+            git_history_map: relevant history or high-churn evidence
+            coverage_matrix: inspected paths, evidence refs, uncovered paths
+            evidence_refs: file paths, lines, commands, event ids, or reports
+            invariants: state/config/event invariants that must not break
+            findings: severity/path/line/message findings
+            refactor_slices: candidate work units with allowed_paths
+            guardrails: rules downstream writers must follow
+            confidence: confirmed, inferred, or uncovered
+            followup_prompt: targeted prompt for uncovered kernel/state gaps
+      - role_instance: review-runtime-orchestration
+        payload:
+          child_id: review-runtime-orchestration
+          instruction: >-
+            Read-only review of orchestration, Star fanout, worker protocol,
+            dispatch, lifecycle, recovery, heartbeat/stuck handling, context
+            resume, completion gates, concurrency, and long-horizon failure
+            bounds. Include full git-history drift and recent regression
+            hotspots. Do not modify source or runtime truth files.
+          output_contract:
+            summary: one paragraph runtime/orchestration diagnosis
+            coverage_matrix: inspected paths, evidence refs, uncovered paths
+            evidence_refs: file paths, lines, commands, event ids, or reports
+            risks: long-horizon, recovery, dispatch, or completion risks
+            findings: severity/path/line/message findings
+            refactor_slices: candidate work units with allowed_paths
+            verification: focused tests or E2E smoke needed per slice
+            confidence: confirmed, inferred, or uncovered
+            followup_prompt: targeted prompt for uncovered runtime gaps
+      - role_instance: review-web-api-integrations
+        payload:
+          child_id: review-web-api-integrations
+          instruction: >-
+            Read-only review of Web/API projections, control actions,
+            operator session, Kanban agent/headless agent, channel runtime,
+            integrations, token-gated mutation paths, streaming, and runtime
+            telemetry. Separate read-only projections from deterministic kernel
+            actions. Do not modify source or runtime truth files.
+          output_contract:
+            summary: one paragraph Web/API/integration diagnosis
+            coverage_matrix: inspected paths, evidence refs, uncovered paths
+            evidence_refs: file paths, lines, commands, event ids, or reports
+            boundaries: projection/action boundaries to preserve
+            findings: severity/path/line/message findings
+            refactor_slices: candidate work units with allowed_paths
+            verification: browser/API tests required per slice
+            confidence: confirmed, inferred, or uncovered
+            followup_prompt: targeted prompt for uncovered Web/API gaps
+      - role_instance: review-tests-docs-backlog
+        payload:
+          child_id: review-tests-docs-backlog
+          instruction: >-
+            Read-only review of tests, examples, docs/design index,
+            docs/runbook alignment, tasks/backlog hygiene, and full git drift.
+            De-duplicate known defer debt and focus on refactor readiness gaps.
+            Do not modify source, docs, backlog, tasks, or runtime truth files.
+          output_contract:
+            summary: one paragraph tests/docs/backlog diagnosis
+            coverage_matrix: inspected paths, evidence refs, uncovered paths
+            evidence_refs: file paths, lines, commands, event ids, or reports
+            gaps: missing tests or stale docs that block refactor confidence
+            findings: severity/path/line/message findings
+            refactor_slices: documentation/test work units with allowed_paths
+            verification: exact commands or checks to prove each slice
+            confidence: confirmed, inferred, or uncovered
+            followup_prompt: targeted prompt for uncovered docs/test gaps
+      - role_instance: review-autoresearch-eval
+        payload:
+          child_id: review-autoresearch-eval
+          instruction: >-
+            Read-only review of autoresearch, eval loop, metrics, self-eval,
+            campaign artifacts, validity, holdout, screenshots, and loop
+            drivers. Identify whether these subsystems are ready for refactor
+            or need isolation first. Do not modify source or runtime truth
+            files.
+          output_contract:
+            summary: one paragraph autoresearch/eval diagnosis
+            coverage_matrix: inspected paths, evidence refs, uncovered paths
+            evidence_refs: file paths, lines, commands, event ids, or reports
+            metrics: eval/autoresearch metrics or signals that matter
+            findings: severity/path/line/message findings
+            refactor_slices: candidate work units with allowed_paths
+            verification: deterministic tests or fixture runs needed
+            confidence: confirmed, inferred, or uncovered
+            followup_prompt: targeted prompt for uncovered eval gaps
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      synth_role: review-synth
+      success_event: zaofu.refactor.review.ready
+      failure_event: zaofu.refactor.review.blocked
+      max_retries: 0
+    timeout_seconds: 3600
+  - id: zaofu-refactor-plan-synthesis
+    trigger: zaofu.refactor.plan.requested
+    topology: fanout_reader
+    roles:
+    - refactor-plan-author
+    fanout:
+      children:
+      - role_instance: refactor-plan-author
+        payload:
+          child_id: refactor-plan-author
+          instruction: >-
+            Generate a refactor plan from the prior review artifact and the
+            user-supplied plan_intent. Treat review_artifact_ref as the source
+            of truth. Do not invent facts for uncovered areas; create
+            investigation tasks when plan decisions depend on uncovered areas.
+            Do not modify project source files.
+          required_inputs:
+            review_artifact_ref: from zaofu.refactor.review.ready or user payload
+            plan_intent: user goal, constraints, priority, or risk appetite
+          output_contract:
+            summary: one paragraph plan summary
+            review_artifact_ref: source review artifact used
+            plan_intent: user intent used for plan decisions
+            refactor_plan_md: markdown content or artifact path for plan
+            task_map: ordered tasks with ids, scope, allowed_paths, dependencies
+            backlog_candidates: proposed backlog/task files to create later
+            gates: verification command per task/slice
+            risk_register: risks, assumptions, uncovered dependencies
+            evidence_refs: review sections or file/line refs supporting choices
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      success_event: zaofu.refactor.plan.ready
+      failure_event: zaofu.refactor.plan.blocked
+      max_retries: 0
+    criteria:
+      output:
+        required_keys:
+        - plan_artifact_ref
+        - task_map_ref
+        - artifact_refs
+    timeout_seconds: 1800
+roles:
+- name: review-kernel-state
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-state-sync
+  - zf-harness-clean-state-checklist
+  stages:
+  - refactor_review
+  publishes:
+  - zaofu.refactor.review.ready
+  - zaofu.refactor.review.blocked
+- name: review-runtime-orchestration
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-state-sync
+  - zf-harness-gate-evaluator
+  - zf-harness-verification-checklist
+  stages:
+  - refactor_review
+  publishes:
+  - zaofu.refactor.review.ready
+  - zaofu.refactor.review.blocked
+- name: review-web-api-integrations
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-state-sync
+  - zf-harness-gate-evaluator
+  stages:
+  - refactor_review
+  publishes:
+  - zaofu.refactor.review.ready
+  - zaofu.refactor.review.blocked
+- name: review-tests-docs-backlog
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-verification-checklist
+  - zf-harness-spec-bridge
+  stages:
+  - refactor_review
+  publishes:
+  - zaofu.refactor.review.ready
+  - zaofu.refactor.review.blocked
+- name: review-autoresearch-eval
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  stages:
+  - refactor_review
+  publishes:
+  - zaofu.refactor.review.ready
+  - zaofu.refactor.review.blocked
+- name: review-synth
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - zf-cr
+  - zf-harness-design-impl-game-review
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-design-handoff
+  stages:
+  - refactor_review_synthesis
+  publishes:
+  - fanout.synth.completed
+- name: refactor-plan-author
+  backend: codex
+  permission_mode: bypass
+  role_kind: reader
+  stuck_threshold_seconds: 300
+  skills:
+  - planning-with-files
+  - zf-harness-evidence-collection
+  - zf-harness-instruction-hygiene
+  - zf-harness-backlog-synthesis
+  - zf-harness-spec-bridge
+  - zf-harness-design-handoff
+  stages:
+  - refactor_plan_synthesis
+  publishes:
+  - zaofu.refactor.plan.ready
+  - zaofu.refactor.plan.blocked
+stage_labels:
+  refactor_review: read-only ZaoFu refactor review
+  refactor_review_synthesis: synthesize ZaoFu review report
+  refactor_plan_synthesis: synthesize ZaoFu refactor plan from review artifact

@@ -1,0 +1,212 @@
+"""Admission guards for writer fanout task_map (doc 78 W1)."""
+
+from __future__ import annotations
+
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from zf.core.events.model import ZfEvent
+from zf.runtime.writer_fanout_admission import (
+    load_writer_task_map,
+    validate_writer_task_items,
+    writer_task_items,
+)
+
+
+def _item(task_id: str, allowed: list[str], scope: str | None = None) -> dict:
+    return {
+        "task_id": task_id,
+        "scope": scope if scope is not None else task_id,
+        "allowed_paths": allowed,
+    }
+
+
+def test_sibling_paths_disjoint_ok():
+    # Two slices owning distinct sub-trees — no overlap, must pass.
+    validate_writer_task_items([
+        _item("state", ["cj-min/packages/state/**"]),
+        _item("provider", ["cj-min/packages/provider/**"]),
+    ])
+
+
+def test_distinct_top_dirs_ok():
+    validate_writer_task_items([
+        _item("impl", ["packages/**"]),
+        _item("tests", ["tests/**"]),
+    ])
+
+
+def test_parent_child_prefix_overlap_rejected():
+    # T1 root cause: pi-core owns the whole packages/ tree while a child owns a
+    # sub-path of it. Parent/child prefix overlap must be rejected at admission.
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("pi-core", ["cj-min/packages/**"]),
+            _item("state", ["cj-min/packages/state/**"]),
+        ])
+
+
+def test_exact_path_reuse_rejected():
+    # Pre-existing behavior preserved: identical allowed path across slices.
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("a", ["packages/state/**"]),
+            _item("b", ["packages/state/**"]),
+        ])
+
+
+def test_whole_repo_glob_conflicts_with_any_slice():
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("scaffold", ["**"]),
+            _item("state", ["packages/state/**"]),
+        ])
+
+
+def test_sibling_prefix_not_component_confused():
+    # packages/state vs packages/stateful are siblings, NOT ancestor/descendant.
+    validate_writer_task_items([
+        _item("state", ["packages/state/**"]),
+        _item("stateful", ["packages/stateful/**"]),
+    ])
+
+
+def test_root_file_glob_disjoint_from_dir_glob_ok():
+    # Regression: a root-level file glob like *.md must NOT normalize to the
+    # empty tuple (whole-repo), which would falsely reject a slice owning a
+    # disjoint subtree.
+    validate_writer_task_items([
+        _item("docs", ["*.md"]),
+        _item("impl", ["src/**"]),
+    ])
+
+
+def test_leading_dot_slash_overlap_still_detected():
+    # ./src/** and src/state/** overlap; a leading ./ must not defeat the check.
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("a", ["./src/**"]),
+            _item("b", ["src/state/**"]),
+        ])
+
+
+def test_within_slice_parent_child_allowed():
+    # Same owner may declare both a dir and its sub-path; only CROSS-slice
+    # overlap is a conflict.
+    validate_writer_task_items([
+        _item("state", ["packages/state/**", "packages/state/db/**"]),
+        _item("provider", ["packages/provider/**"]),
+    ])
+
+
+def test_midpath_recursion_glob_overlap_rejected():
+    # 2026-06-10 review P1-5: `src/foo/**/*.py` previously kept the literal
+    # `**` component (only TRAILING globs were stripped), so it compared as
+    # disjoint from `src/foo/bar.py` and both slices were admitted into
+    # concurrent worktrees writing the same file.
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("a", ["src/foo/**/*.py"]),
+            _item("b", ["src/foo/bar.py"]),
+        ])
+
+
+def test_midpath_recursion_glob_overlap_rejected_ts_shape():
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("core", ["packages/core/**/*.ts"]),
+            _item("entry", ["packages/core/index.ts"]),
+        ])
+
+
+def test_midpath_glob_disjoint_subtrees_still_admitted():
+    # The concrete prefix before the glob is what matters; disjoint
+    # prefixes stay admitted.
+    validate_writer_task_items([
+        _item("a", ["src/foo/**/*.py"]),
+        _item("b", ["src/bar/baz.py"]),
+    ])
+
+
+def test_directory_position_glob_truncates_prefix():
+    # `src/foo*/bar` matches arbitrary sibling dirs of foo*; its concrete
+    # prefix is `src`, which overlaps `src/anything`.
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items([
+            _item("a", ["src/foo*/bar/**"]),
+            _item("b", ["src/foonew/other.py"]),
+        ])
+
+
+def test_writer_task_items_preserves_lane_pipeline_contract_fields():
+    items = writer_task_items({
+        "tasks": [{
+            "task_id": "web-tui",
+            "root_owner_class": "assembly",
+            "affinity_tag": "web-tui",
+            "context_group": "cj-min-node-web-tui",
+            "pipeline_declared_task_id": "CJMIN-ASSEMBLY-001",
+            "preferred_impl_role": "dev-web-tui-assembly",
+            "preferred_review_role": "review-web-tui",
+            "preferred_verify_role": "verify-web-tui",
+            "depends_on": ["pi-core"],
+            "exclusive_files": ["package.json"],
+            "git_fact_anchors": ["main@abc", "web/src/pages/ChatPage.tsx:1"],
+            "verification_tiers": ["static", "judge"],
+            "acceptance_criteria": ["root build passes"],
+            "allowed_paths": ["package.json"],
+        }],
+    })
+
+    item = items[0]
+    assert item["root_owner_class"] == "assembly"
+    assert item["affinity_tag"] == "web-tui"
+    assert item["context_group"] == "cj-min-node-web-tui"
+    assert item["pipeline_declared_task_id"] == "CJMIN-ASSEMBLY-001"
+    assert item["preferred_impl_role"] == "dev-web-tui-assembly"
+    assert item["preferred_review_role"] == "review-web-tui"
+    assert item["preferred_verify_role"] == "verify-web-tui"
+    assert item["depends_on"] == ["pi-core"]
+    assert item["exclusive_files"] == ["package.json"]
+    assert "web/src/pages/ChatPage.tsx:1" in item["git_fact_anchors"]
+    assert item["owner_instance"] == "dev-web-tui-assembly"
+    assert item["verification_tiers"] == ["static", "manual_evidence"]
+    assert item["raw_verification_tiers"] == ["static", "judge"]
+    assert item["acceptance_criteria"] == ["root build passes"]
+
+
+def test_load_writer_task_map_rejects_bad_verification_before_dispatch(tmp_path):
+    task_map = tmp_path / "task_map.json"
+    task_map.write_text(
+        json.dumps({
+            "schema_version": "task-map.v1",
+            "tasks": [{
+                "task_id": "CJMIN-ASSEMBLY-001",
+                "title": "assembly",
+                "allowed_paths": ["package.json"],
+                "verification": (
+                    "bash -lc 'set -euo pipefail; "
+                    "pnpm --filter @cj-min/contracts exec node -e "
+                    "\"const fs=require('node:fs');"
+                    "JSON.parse(fs.readFileSync('package.json','utf8'))\"'"
+                ),
+            }],
+        }),
+        encoding="utf-8",
+    )
+    event = ZfEvent(
+        type="task_map.ready",
+        actor="kernel",
+        payload={"task_map_ref": str(task_map), "pdd_id": "CJMIN-R37"},
+    )
+
+    with pytest.raises(ValueError, match="writer fanout task_map validation failed"):
+        load_writer_task_map(
+            stage=SimpleNamespace(task_map=""),
+            event=event,
+            pdd_id="CJMIN-R37",
+            state_dir=tmp_path / ".zf",
+            project_root=tmp_path,
+        )

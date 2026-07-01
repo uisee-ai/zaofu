@@ -1,0 +1,822 @@
+
+.board-column .column-header {
+  min-height: 28px;
+}
+
+.board-column .column-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.board-column .column-title h3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.board-column .column-accent-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--column-accent) 88%, var(--line));
+}
+
+.board-column .count {
+  min-height: 22px;
+  padding: 2px 7px;
+  border-color: var(--line-soft);
+  background: color-mix(in oklab, var(--panel) 82%, transparent);
+  color: var(--muted-foreground);
+}
+
+.task-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 1px 1px;
+  overflow-y: auto;
+}
+
+.task-list-layout {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.task-list-panel {
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.task-list-view {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.task-list-row {
+  min-width: 0;
+  max-width: 100%;
+  display: grid;
+  grid-template-columns: minmax(88px, 0.16fr) minmax(160px, 1fr) minmax(72px, 0.22fr) max-content max-content max-content minmax(0, 0.55fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* 三刀③ — 交互行 hover 统一走 surface-2 底色,不动边框;active 保持选中态。 */
+.task-list-row:hover {
+  background: var(--surface-2);
+}
+
+.task-list-row.active {
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 8%, var(--surface));
+}
+
+.task-list-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  overflow-wrap: break-word;
+  white-space: nowrap;
+}
+
+.task-route-list-cell {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-inspector {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+}
+
+.task-inspector-title {
+  display: grid;
+  gap: 4px;
+}
+
+.task-inspector-title strong {
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+.key-value-grid {
+  display: grid;
+  grid-template-columns: minmax(112px, 136px) minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: var(--text-12);
+}
+
+.key-value-grid dt {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.key-value-grid dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: break-word;
+  line-height: 1.45;
+  /* KV 规范①改造 B:值升 13/500/tabular,与 .kv .kv-value 对齐。 */
+  color: var(--text);
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.table-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.task-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border: 0.5px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  box-shadow:
+    0 3px 6px -2px rgba(0, 0, 0, 0.02),
+    0 1px 1px rgba(0, 0, 0, 0.04);
+}
+
+.task-card.dragging {
+  opacity: 0.62;
+}
+
+.task-card.dragging,
+.task-card:active {
+  cursor: grabbing;
+}
+
+/* 视觉减法(2026-06-02):卡片本身不喊叫,内容自己说话。
+   原 3px priority 左色条 + fanout 顶色条都拆掉:
+   - priority 仅由 footer 的 P# pill 承载(.priority-pill 自带 priority-N 配色)
+   - fanout 同源信号改由 chip-row 里的 .fanout-tag 单一 hue 小标签携带
+   卡片轮廓只保留外层 0.5px hairline,选中/hover 才出 brand ring。 */
+
+.task-open {
+  width: 100%;
+  display: grid;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 12px 10px;
+  text-align: left;
+  cursor: grab;
+}
+
+.task-card.dragging .task-open {
+  cursor: grabbing;
+}
+
+.task-card:hover {
+  background: var(--surface-2); /* 三刀③ hover 底色化 */
+}
+
+.task-card.selected {
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 8%, var(--panel));
+}
+
+.task-id {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  line-height: 16px;
+}
+
+.task-title {
+  margin-top: 4px;
+  line-height: 18px;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--text-14);
+  font-weight: 560;
+}
+
+.task-chip-row,
+.task-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-footer {
+  margin-top: 12px;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  line-height: 16px;
+}
+
+.task-chip-row {
+  margin-top: 6px;
+}
+
+.route-summary-strip {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  line-height: 16px;
+}
+
+.route-summary-strip.compact {
+  margin-top: 7px;
+  gap: 6px;
+}
+
+.route-summary-flow {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.route-summary-step {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.route-summary-strip.compact .route-summary-flow {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.route-summary-strip.compact .route-summary-step {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/* P0 #1 fix: each step's mono path span had white-space:nowrap + ~412px
+   content in a 198px card, so it overflowed and visually looked like a
+   vertical column strip. Cap to a reasonable label width with ellipsis;
+   full path stays in the title tooltip. */
+.route-step-label {
+  display: inline-block;
+  max-width: 11ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+/* Status badge inside the strip ("Done", "Dispatched", ...) must not break
+   between chars when the card column is narrow — base .badge has
+   `overflow-wrap: anywhere` which would split "Done" into "Don/e". */
+.route-summary-strip > .badge {
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* fanout sibling indicator — single tinted chip in chip-row, hue from
+   --fanout-hue inline style. Lower visual weight than the old 3px top
+   stripe; siblings still recognizable by shared color. dot+label on
+   one pill keeps it compact. */
+.fanout-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid hsl(var(--fanout-hue, 0) 60% 60% / 0.55);
+  background: hsl(var(--fanout-hue, 0) 70% 60% / 0.12);
+  color: hsl(var(--fanout-hue, 0) 60% 35%);
+  border-radius: 6px;
+  padding: 1px 6px 1px 5px;
+  font-size: var(--text-11);
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.fanout-tag::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: hsl(var(--fanout-hue, 0) 70% 50%);
+}
+@media (prefers-color-scheme: dark) {
+  .fanout-tag {
+    color: hsl(var(--fanout-hue, 0) 65% 78%);
+    background: hsl(var(--fanout-hue, 0) 65% 55% / 0.18);
+  }
+}
+
+/* P2 ctx mini progress bar — replaces the `ctx 44%` badge. Inline-block
+   wrapper with a colored fill (width = ratio %) overlaid by the label.
+   The label still reads "44%" so the number remains scannable; the bar
+   gives the operator a fast at-a-glance fullness signal. tone variants
+   (ok/info/warn/err) tint the fill color. tok count is hidden on the
+   card but still surfaced in the title tooltip. */
+.ctx-mini {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 16px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.ctx-mini-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: color-mix(in oklab, var(--muted-foreground) 30%, transparent);
+  pointer-events: none;
+}
+.ctx-mini-label {
+  position: relative;  /* sit on top of fill */
+}
+.ctx-mini-ok .ctx-mini-fill   { background: color-mix(in oklab, var(--ok) 30%, transparent); }
+.ctx-mini-ok                  { border-color: color-mix(in oklab, var(--ok) 50%, var(--line)); color: var(--ok); }
+.ctx-mini-info .ctx-mini-fill { background: color-mix(in oklab, var(--brand) 30%, transparent); }
+.ctx-mini-info                { border-color: color-mix(in oklab, var(--brand) 50%, var(--line)); color: var(--brand); }
+.ctx-mini-warn .ctx-mini-fill { background: color-mix(in oklab, var(--warn) 38%, transparent); }
+.ctx-mini-warn                { border-color: color-mix(in oklab, var(--warn) 55%, var(--line)); color: var(--warn); }
+.ctx-mini-err .ctx-mini-fill  { background: color-mix(in oklab, var(--err) 38%, transparent); }
+.ctx-mini-err                 { border-color: color-mix(in oklab, var(--err) 55%, var(--line)); color: var(--err); }
+
+/* P2 actor dot — small colored circle prepending @actor label in the
+   card footer. Colour comes from inline `background` (one per role). */
+.actor-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: middle;
+  flex: 0 0 auto;
+}
+.task-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+
+.route-arrow {
+  color: var(--muted-foreground);
+}
+
+.route-empty {
+  margin: 0;
+  padding: 8px 0;
+}
+
+.task-assignee {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.priority-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--brand) 16%, transparent);
+  color: var(--brand-strong);
+  padding: 1px 6px;
+  font-size: var(--text-12);
+  font-weight: 560;
+  line-height: 16px;
+}
+
+.priority-pill.priority-0,
+.priority-pill.priority-1 {
+  background: color-mix(in oklab, var(--err) 17%, transparent);
+  color: var(--err);
+}
+
+.priority-pill.priority-2 {
+  background: color-mix(in oklab, var(--warn) 17%, transparent);
+  color: var(--warn);
+}
+
+.task-age {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.badge-row,
+.task-chip-row,
+.action-row,
+.tab-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tab-row {
+  min-height: 42px;
+  align-items: stretch;
+  gap: 2px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tab-row .tab-button {
+  position: relative;
+  min-height: 42px;
+  border-color: transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 0 9px;
+}
+
+.tab-row .tab-button:hover {
+  border-color: transparent;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.tab-row .tab-button:focus-visible {
+  border-color: transparent;
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px var(--focus);
+  outline: none;
+}
+
+.tab-row .tab-button.active {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.tab-row .tab-button.active::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: -1px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--brand);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 18px;
+  padding: 1px 5px;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.badge-ok {
+  border-color: rgba(121, 201, 132, 0.45);
+  color: var(--ok);
+}
+
+.badge-warn {
+  border-color: rgba(221, 177, 93, 0.45);
+  color: var(--warn);
+}
+
+.badge-info {
+  border-color: color-mix(in oklab, var(--brand) 58%, transparent);
+  color: var(--brand);
+}
+
+.badge-err {
+  border-color: rgba(232, 120, 120, 0.45);
+  color: var(--err);
+}
+
+.blocked-note {
+  color: var(--err);
+  font-size: var(--text-12);
+  line-height: 1.35;
+  overflow-wrap: break-word;
+}
+
+.fanout-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.side-panel {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.project-rail {
+  min-height: 0;
+  max-height: calc(100vh - 68px);
+  display: flex;
+  flex-direction: column;
+  border-color: transparent;
+  border-right-color: var(--line);
+  border-radius: 0;
+  background: var(--bg);
+  box-shadow: none;
+}
+
+.project-rail-body {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.wide-button {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.rail-nav {
+  display: grid;
+  gap: 3px;
+}
+
+.project-switcher {
+  display: grid;
+  gap: 5px;
+}
+
+.project-switcher-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px 32px;
+  gap: 6px;
+  align-items: center;
+}
+
+.project-switcher select {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--panel) 92%, var(--surface));
+  color: var(--text);
+  padding: 5px 8px;
+  text-overflow: ellipsis;
+}
+
+.project-switcher-add {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.project-switcher-add:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.project-switcher-add.danger:hover {
+  border-color: color-mix(in oklab, var(--err) 45%, var(--line));
+  color: var(--err);
+}
+
+.rail-group {
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 7px;
+}
+
+.rail-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.rail-primary {
+  padding-top: 2px;
+}
+
+.workspace-context-group {
+  gap: 7px;
+}
+
+.rail-nav-title {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  padding: 0 6px 2px;
+  text-transform: uppercase;
+}
+
+.rail-nav-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  min-height: 30px;
+  padding: 6px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.rail-nav-badge {
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--brand-foreground);
+  font-size: var(--text-11);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.rail-nav-label {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rail-nav-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-nav-icon {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.rail-nav-button.active {
+  border-color: transparent;
+  border-left: 2px solid var(--brand);
+  background: var(--brand-subtle);
+  color: var(--text);
+}
+
+.rail-nav-button.active .rail-nav-icon {
+  color: var(--brand);
+}
+
+.rail-nav-button:hover {
+  background: var(--surface-2);
+}
+
+.rail-nav-button.primary-action {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.rail-nav-button.primary-action:hover {
+  background: color-mix(in oklab, var(--brand) 10%, var(--surface-2));
+}
+
+.rail-nav-button.muted-action {
+  color: var(--muted-foreground);
+}
+
+.compact-tabs {
+  min-height: 36px;
+}
+
+.compact-tabs .tab-button {
+  min-height: 36px;
+}
+
+.channel-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.channel-page-chat {
+  overflow: hidden;
+}
+
+.channel-shell-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.channel-heading-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.channel-title-row,
+.channel-header-actions,
+.channel-tabs,
+.channel-composer-tools,
+.channel-composer-toolbar,
+.channel-attention-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.channel-title-row h2 {
+  margin: 0;
+  font-size: var(--text-18);
+  text-transform: none;
+}
+.artifact-preview-inline summary {
+  cursor: pointer;
+}
+
+.artifact-preview-inline dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 8px;
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-12);
+}
+
+.artifact-preview-inline dt {
+  color: var(--muted-foreground);
+}
+
+.artifact-preview-inline dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}

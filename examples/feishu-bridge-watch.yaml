@@ -1,0 +1,37 @@
+# Feishu always-on bridge (doc 99 §4.1) — `zf feishu bridge --watch`.
+#
+# Binds one Feishu chat directly to an agent backend (target=agent direct-bind,
+# doc 98 P0-2). Each inbound message in the chat is debounced per-chat (W2) and
+# drives a REAL agent reply that streams back as a Feishu card. Session continuity
+# across turns is automatic (channel HeadlessThreadStore, doc 99 §4.3).
+#
+# Launch in a detached tmux session with scripts/feishu-bridge-watch.sh (needs
+# FEISHU_APP_ID / FEISHU_APP_SECRET in the environment or a sourced .env).
+version: "1.0"
+
+project:
+  name: feishu-bridge-watch
+  state_dir: .zf
+
+roles:
+  - name: dev
+    backend: codex
+
+integrations:
+  feishu_routing:
+    # Group chat: replace with your group's chat_id (oc_...). In a group the bot
+    # only sees @-mentioned messages. target=agent auto-provisions an ephemeral
+    # channel + a single agent member from backend/cwd below.
+    oc_REPLACE_WITH_CHAT_ID:
+      target: agent
+      backend: codex          # or claude-code
+      cwd: .                  # repo the agent answers about (resume is pinned to it)
+      default_member: zf-coder
+    # Wildcard default — serves single/p2p chat (DM the bot) and any unmapped chat.
+    # A p2p conversation has its own chat_id, so it falls here; each chat gets its
+    # own isolated session (channel agent-<chat_id>). Remove to fail-closed.
+    "*":
+      target: agent
+      backend: codex
+      cwd: .
+      default_member: zf-coder

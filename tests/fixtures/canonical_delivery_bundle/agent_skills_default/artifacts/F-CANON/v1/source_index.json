@@ -1,0 +1,27 @@
+{
+  "schema_version": "source-index.v1",
+  "feature_id": "F-CANON",
+  "source_refs": {
+    "plan_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/tasks/plan.md"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-CANON-1",
+      "source_key": "tasks.plan.task-1",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/tasks/plan.md#task-1-parse-checklist-rows",
+      "source_task_id": "Task 1",
+      "source_title": "Task 1: Parse checklist rows",
+      "source_mode": "canonical",
+      "source_excerpt": "Implement `parse_checklist(text)` in `checklist_analyzer.py`. It must treat `- [x] item` and `- [X] item` as done, treat `- [ ] item` as open, and ignore non-checklist lines. Add focused pytest coverage for done, open, and ignored lines."
+    },
+    {
+      "task_id": "TASK-CANON-2",
+      "source_key": "tasks.plan.task-2",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/tasks/plan.md#task-2-summarize-checklist-progress",
+      "source_task_id": "Task 2",
+      "source_title": "Task 2: Summarize checklist progress",
+      "source_mode": "canonical",
+      "source_excerpt": "Implement `summarize_checklist(text)` on top of the parser. It must return `total`, `done`, `open`, and `completion_ratio`. The ratio is `0.0` when there are no checklist rows."
+    }
+  ]
+}

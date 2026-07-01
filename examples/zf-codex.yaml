@@ -1,0 +1,469 @@
+version: '1.0'
+preset: cangjie-dev-codex-backends
+project:
+  name: cangjie-mono
+  state_dir: .zf
+global_budget_usd: 500.0
+budget_enforcement_enabled: false
+session:
+  tmux_session: zf-cangjie
+  tmux_layout: pane_grid
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: yoke-critic
+  path: ${ZF_YOKE_CRITIC_DIR:-./skills/critic}
+  mode: readonly
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+  git:
+    candidate_base_ref: main
+    writer_branch_prefix: worker
+    task_ref_prefix: task
+    candidate_branch_prefix: candidate
+    auto_ship_on_candidate_complete: true
+  skills:
+    pool: .zf/skills
+    materialize: copy
+    lock_file: .zf/skills.lock.json
+    strict: false
+autopilot:
+  enabled: true
+  mode: proposal_only
+  stale_after_hours: 24
+  failed_event_window_hours: 72
+  schedules:
+  - id: daily-triage
+    interval: 24h
+    action: triage
+workflow:
+  harness_profile: strict
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1200
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+  dag:
+    enabled: true
+    default_gate_level: strict
+    dev_requires_orchestrator_backlog: true
+    design_to_backlog_owner: orchestrator
+    design_events:
+      arch_done: arch.proposal.done
+      critic_done: design.critique.done
+    required_backlog_refs:
+    # Round 3 restore (2026-05-22): zaofu commit `db838cf` (#I fix
+    # TR-SPEC-INGEST-FILL-DESIGN-FIELDS-001) 让 zf spec ingest 自动 fill
+    # critic_event_id / critic_gate_ref / evidence_contract placeholder(或
+    # --inherit-design <event_id> 指定 round 1 真 design.critique.done evt),
+    # 6 字段约束恢复 default。F1 yaml 削减 workaround 撤回。
+    - spec_ref
+    - plan_ref
+    - tdd_ref
+    - critic_event_id
+    - critic_gate_ref
+    - evidence_contract
+    stage_order:
+    - intake
+    - plan
+    - impl
+    - verify
+    - judge
+    - done
+    event_schemas:
+      worker.context.warning:
+        required:
+        - task_id
+        - dispatch_id
+        - role
+        - instance_id
+        - backend
+        - context_usage_ratio
+        - session_ref
+        - source
+        - reason
+      worker.context.critical:
+        required:
+        - task_id
+        - dispatch_id
+        - role
+        - instance_id
+        - backend
+        - context_usage_ratio
+        - session_ref
+        - source
+        - reason
+      worker.progress:
+        required:
+        - task_id
+        - dispatch_id
+        - role
+        - instance_id
+        - phase
+        - message
+        - source
+      phase.progressed:
+        required:
+        - task_id
+        - dispatch_id
+        - role
+        - instance_id
+        - phase
+        - source
+      task.fanout.requested:
+        required:
+        - task_id
+        - dispatch_id
+        - requested_by
+        - reason
+        - scope
+        - requested_specialists
+        - expected_output
+        - risk
+  rework_routing:
+    # gate.failed = critic 拒 plan,真 design issue → arch own
+    gate.failed: arch
+    static_gate.failed: dev
+    review.rejected: dev
+    test.failed: dev
+    judge.failed: dev
+    # P4 optimization (docs/impl/22-zaofu-canonical-dag.md §6.1) +
+    # cangjie 2026-05-21 round 2 observation:
+    # discriminator.failed 历史 cangjie 数据看,绝大多数 fail 都是
+    # implementation-level(FunctionalD runtime fail / ContractD
+    # syntax in agent-emitted contract.update / TestD test bug),
+    # 实施是 dev,arch 修不了。一刀切 arch 让 single arch instance
+    # 严重 overload(230k+ tokens stall),违反 fanout intent。改 dev
+    # 让 implementation rework 回 dev pool(4 replicas),arch 仅在
+    # critic.gate.failed 真 design 阶段介入。
+    # 未来 zaofu 增强 #O: rework_routing 按 D 细分 (ContractD→arch,
+    # Functional/TestD→dev, etc) 时再回归此处。
+    discriminator.failed: dev
+    # TR-DISPATCH-SILENT-STALL-001 (zaofu commit e42a6c5): when kernel
+    # sweep detects task.assigned without matching task.dispatched
+    # within 30s, route to orchestrator agent to decide
+    # retry/respawn/escalate (Q2 (a)+(c) emit + rework_routing).
+    dispatch.silent_stall: orchestrator
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+orchestrator:
+  backend: codex
+quality_gates:
+  # spec-only baseline (commit 9ae5926): repo root has no package.json yet —
+  # P0V01 (cangjie-master-plan TASK-P0V01) is the proper task that will
+  # introduce package.json + tsconfig + biome + vitest config. Until then,
+  # static + test gates are disabled so spec/plan-only deliverables (this
+  # master plan, future ADRs, etc.) can flow through verify lanes + judge.
+  # Re-enable both after P0V01 ships. PATH literal uses v24.14.1 to match
+  # the actually-installed nvm version on this host.
+  static:
+    enabled: false
+    required_checks:
+    - PATH=/path/to/node/bin:$PATH pnpm install --frozen-lockfile
+    - PATH=/path/to/node/bin:$PATH pnpm tsc -b --noEmit
+    - PATH=/path/to/node/bin:$PATH pnpm biome ci .
+  test:
+    enabled: false
+    required_checks:
+    - PATH=/path/to/node/bin:$PATH pnpm vitest run
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+roles:
+- backend: codex
+  name: orchestrator
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - context-engineering
+  - idea-refine
+  - spec-driven-development
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  - zf-harness-instruction-hygiene
+  - zf-harness-spec-bridge
+  # P0/S1 (docs/impl/22-zaofu-canonical-dag.md): stage ④ backlog
+  # synthesis. Teaches orchestrator the full 6 required_backlog_refs
+  # procedure after design.critique.done verdict=approve.
+  - zf-harness-backlog-synthesis
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - design.critique.done
+  - clarification.needed
+  - dev.blocked
+  - task.contract.invalid
+  - static_gate.failed
+  - review.rejected
+  - test.failed
+  - judge.failed
+  # TR-DISPATCH-SILENT-STALL-001 (zaofu commit e42a6c5): kernel dispatch
+  # sweep emits dispatch.silent_stall when task.assigned > 30s with no
+  # matching task.dispatched. Wake orchestrator agent to reason about
+  # retry / respawn / escalate (Q2 (a)+(c) — emit + rework_routing).
+  - dispatch.silent_stall
+  - worker.stuck
+- backend: codex
+  name: arch
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - source-driven-development
+  - spec-driven-development
+  - planning-and-task-breakdown
+  - test-driven-development
+  - api-and-interface-design
+  - documentation-and-adrs
+  - doubt-driven-development
+  - zf-harness-instruction-hygiene
+  - zf-harness-spec-bridge
+  # P3/S2 (docs/impl/22): arch ↔ critic ↔ orchestrator shared payload
+  # schema for arch.proposal.done / design.critique.done — keeps the 3
+  # roles' outputs deterministically composable at stage ④ backlog.
+  - zf-harness-design-handoff
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - plan
+  triggers:
+  - task.assigned
+- backend: codex
+  name: critic
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - spec-driven-development
+  - doubt-driven-development
+  - zf-yoke-critic-role-context
+  - document-review
+  - plan-option-scoring
+  - skeptic-observation
+  - security-review
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-spec-bridge
+  # P3/S2 (docs/impl/22): same shared schema arch uses; tells critic
+  # when to emit design.critique.done verdict=reject vs gate.failed.
+  - zf-harness-design-handoff
+  publishes:
+  - design.critique.done
+  - gate.failed
+  stages:
+  - plan
+  triggers:
+  - arch.proposal.done
+- backend: codex
+  name: dev
+  role_kind: writer
+  permission_mode: bypass
+  replicas: 4
+  autoscale:
+    enabled: true
+    min_replicas: 2
+    max_replicas: 6
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 120
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - incremental-implementation
+  - test-driven-development
+  - debugging-and-error-recovery
+  - source-driven-development
+  - git-workflow-and-versioning
+  - api-and-interface-design
+  - context-engineering
+  - documentation-and-adrs
+  - doubt-driven-development
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - impl
+  triggers:
+  - task.assigned
+- backend: codex
+  name: review
+  role_kind: reader
+  permission_mode: bypass
+  autoscale:
+    enabled: true
+    min_replicas: 1
+    max_replicas: 2
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 180
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - code-review-and-quality
+  - code-simplification
+  - security-and-hardening
+  - performance-optimization
+  - ci-cd-and-automation
+  - deprecation-and-migration
+  - zf-yoke-review-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-spec-bridge
+  publishes:
+  - review.approved
+  - review.rejected
+  stages:
+  - verify
+  triggers:
+  # P3 optimization (docs/impl/22 §6.2 unreasonable point 4): wait for
+  # static_gate.passed before review fires. Previously triggered on
+  # dev.build.done which races with the static_gate stage — if
+  # static_gate fails, review wasted a cycle. Static gate now gates.
+  - static_gate.passed
+  # Round 3 restore (2026-05-22): zaofu commit `9383290` (#J fix
+  # TR-STATIC-GATE-DISABLED-EMIT-SKIPPED-001) 让 disabled gate 自动 emit
+  # static_gate.skipped event,review.triggers `static_gate.passed` 配合
+  # build_static_gate_event 的 skipped→passed 等效 wake 机制后正常触发。
+  # F3a fallback dev.build.done 撤回。
+  # 注:quality_gates.static.enabled 仍为 false(P0V01 monorepo init 前真没
+  # package.json),但 #J fix 现在让 disabled gate 自动 emit skipped event。
+- backend: codex
+  name: test
+  role_kind: reader
+  permission_mode: bypass
+  replicas: 2
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - test-driven-development
+  - debugging-and-error-recovery
+  - browser-testing-with-devtools
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - verify
+  triggers:
+  - review.approved
+- backend: codex
+  name: judge
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - shipping-and-launch
+  - final-meta-review
+  - pre-release-review
+  - council
+  - documentation-and-adrs
+  - zf-yoke-critic-role-context
+  - zf-yoke-quality-gate-role-context
+  - zf-harness-archive-contract
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  done: "kernel done"
+  impl: "impl: implementation + exit gate"
+  intake: "intake & backlog synthesis"
+  judge: "terminal judge"
+  meta: meta / orchestration
+  plan: "plan: spec / task graph / design critique"
+  verify: "verify lanes: review / test / security / contract"

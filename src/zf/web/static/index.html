@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>zaofu</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>zaofu</h1>
+  <span id="state-dir" class="muted"></span>
+  <span id="status-pill" class="pill pill-warn">connecting…</span>
+</header>
+
+<main>
+  <section id="kanban-section">
+    <h2>Kanban</h2>
+    <div id="kanban" class="kanban-grid">
+      <div class="col" data-col="backlog"><h3>backlog</h3><div class="cards"></div></div>
+      <div class="col" data-col="in_progress"><h3>in_progress</h3><div class="cards"></div></div>
+      <div class="col" data-col="review"><h3>review</h3><div class="cards"></div></div>
+      <div class="col" data-col="testing"><h3>testing</h3><div class="cards"></div></div>
+      <div class="col" data-col="blocked"><h3>blocked</h3><div class="cards"></div></div>
+      <div class="col" data-col="done"><h3>done</h3><div class="cards"></div></div>
+    </div>
+  </section>
+
+  <aside id="sidebar">
+    <section>
+      <h2>Workers</h2>
+      <table id="workers"><thead>
+        <tr><th>instance</th><th>backend</th><th>state</th></tr>
+      </thead><tbody></tbody></table>
+    </section>
+
+    <section>
+      <h2>Cost</h2>
+      <div id="cost-total" class="cost-total">$0.0000</div>
+      <table id="cost-table"><thead>
+        <tr><th>role</th><th class="num">$</th><th class="num">in</th><th class="num">out</th></tr>
+      </thead><tbody></tbody></table>
+    </section>
+
+    <section>
+      <h2>Features</h2>
+      <ul id="features"></ul>
+    </section>
+  </aside>
+
+  <section id="events-section">
+    <h2>Event tail</h2>
+    <pre id="events"></pre>
+  </section>
+</main>
+
+<script>
+const KEEP_EVENTS = 60;
+const $ = id => document.getElementById(id);
+const fmtTs = ts => (ts || "").slice(11, 19);
+
+const TYPE_COLOR = {
+  "task.dispatched": "ok",
+  "dev.build.done": "ok",
+  "review.approved": "ok",
+  "test.passed": "ok",
+  "judge.passed": "ok",
+  "review.rejected": "warn",
+  "test.failed": "warn",
+  "judge.failed": "warn",
+  "dispatch_failed": "err",
+  "task.rework.capped": "err",
+  "discriminator.failed": "err",
+  "cost.budget.exceeded": "err",
+};
+
+function renderKanban(tasks) {
+  const cols = {};
+  for (const c of document.querySelectorAll("#kanban .col")) {
+    const k = c.dataset.col;
+    cols[k] = c.querySelector(".cards");
+    cols[k].innerHTML = "";
+  }
+  for (const t of tasks) {
+    const displayCol = t.kanban_column || t.status;
+    const col = cols[displayCol] || (displayCol === "ready" ? cols["backlog"] : null) || cols[t.status] || cols["backlog"];
+    if (!col) continue;
+    const card = document.createElement("div");
+    card.className = "card";
+    const phase = t.phase ? `<span class="phase">${t.phase}</span>` : "";
+    const assignee = t.assigned_to ? `<span class="assignee">@${t.assigned_to}</span>` : "";
+    const retry = t.retry_count > 0 ? `<span class="pill pill-warn">rework ${t.retry_count}</span>` : "";
+    const workflowBadges = (t.workflow_badges || t.workflow_projection?.badges || [])
+      .map((b) => `<span class="pill ${b.tone === "err" ? "pill-err" : b.tone === "ok" ? "pill-ok" : "pill-warn"}">${escapeHtml(b.label || b.kind || "")}</span>`)
+      .join("");
+    const blocked = t.blocked_reason
+      ? `<div class="blocked">${escapeHtml(t.blocked_reason)}</div>`
+      : t.kanban_column_reason && String(t.kanban_column_reason).startsWith("workflow_failure:")
+        ? `<div class="blocked">${escapeHtml(t.kanban_column_reason.replace("workflow_failure:", ""))}</div>`
+        : "";
+    card.innerHTML = `
+      <div class="card-id">${t.id}</div>
+      <div class="card-title">${escapeHtml(t.title || "")}</div>
+      <div class="card-meta">${assignee}${phase}${retry}${workflowBadges}</div>
+      ${blocked}`;
+    col.appendChild(card);
+  }
+}
+
+function renderWorkers(workers) {
+  const tbody = $("workers").querySelector("tbody");
+  tbody.innerHTML = "";
+  for (const w of workers) {
+    const tr = document.createElement("tr");
+    const stateCls = w.state === "busy" ? "ok" : w.state === "stuck" ? "err" : "muted";
+    tr.innerHTML = `
+      <td>${escapeHtml(w.instance_id)}</td>
+      <td>${escapeHtml(w.backend || "-")}</td>
+      <td class="${stateCls}">${escapeHtml(w.state)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderCost(c) {
+  $("cost-total").textContent = "$" + (c.total_usd || 0).toFixed(4);
+  const tbody = $("cost-table").querySelector("tbody");
+  tbody.innerHTML = "";
+  const roles = Object.entries(c.per_role || {}).sort();
+  for (const [role, s] of roles) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${escapeHtml(role)}</td>
+      <td class="num">$${s.usd.toFixed(4)}</td>
+      <td class="num">${s.input_tokens}</td>
+      <td class="num">${s.output_tokens}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function renderFeatures(features) {
+  const ul = $("features");
+  ul.innerHTML = "";
+  for (const f of features) {
+    const li = document.createElement("li");
+    li.innerHTML = `<code>${f.id}</code> [${f.status}] ${escapeHtml(f.title || "")}`;
+    ul.appendChild(li);
+  }
+}
+
+function appendEvent(e) {
+  const pre = $("events");
+  const cls = TYPE_COLOR[e.type] || "muted";
+  const line = document.createElement("div");
+  line.className = `evt evt-${cls}`;
+  line.textContent = `${fmtTs(e.ts)}  ${e.type.padEnd(28)} ${e.actor}`;
+  pre.insertBefore(line, pre.firstChild);
+  while (pre.children.length > KEEP_EVENTS) pre.removeChild(pre.lastChild);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[<>&"']/g, c => ({
+    "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function loadState() {
+  try {
+    const r = await fetch("/api/state");
+    if (!r.ok) throw new Error(r.status);
+    const s = await r.json();
+    $("state-dir").textContent = s.state_dir || "";
+    renderKanban(s.tasks);
+    renderWorkers(s.workers);
+    renderCost(s.cost);
+    renderFeatures(s.features);
+  } catch (err) {
+    $("status-pill").textContent = "state error";
+    $("status-pill").className = "pill pill-err";
+  }
+}
+
+async function loadRecent() {
+  try {
+    const r = await fetch("/api/views/recent?limit=30");
+    const events = await r.json();
+    const pre = $("events");
+    pre.innerHTML = "";
+    for (const e of events) appendEvent(e);
+  } catch {}
+}
+
+function connectStream() {
+  const es = new EventSource("/api/stream");
+  es.onopen = () => {
+    $("status-pill").textContent = "live";
+    $("status-pill").className = "pill pill-ok";
+  };
+  es.onmessage = (msg) => {
+    try {
+      const e = JSON.parse(msg.data);
+      appendEvent(e);
+      // Reload state on decision events so the kanban stays fresh
+      if ([
+        "task.created", "task.assigned", "task.dispatched",
+        "task.status_changed", "dev.build.done", "review.approved",
+        "review.rejected", "test.passed", "test.failed",
+        "judge.passed", "judge.failed", "worker.state.changed",
+      ].includes(e.type)) {
+        loadState();
+      }
+    } catch {}
+  };
+  es.onerror = () => {
+    $("status-pill").textContent = "reconnecting…";
+    $("status-pill").className = "pill pill-warn";
+  };
+}
+
+(async function main() {
+  await loadState();
+  await loadRecent();
+  connectStream();
+  // 30s safety re-poll in case SSE drops a status_changed silently
+  setInterval(loadState, 30000);
+})();
+</script>
+</body>
+</html>

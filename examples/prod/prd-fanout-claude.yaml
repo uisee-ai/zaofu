@@ -1,0 +1,344 @@
+# Production-oriented PRD delivery workflow using the reduced kind envelope.
+# Claude Code backend variant of prd-fanout-codex.yaml — identical topology,
+# every role runs backend=claude-code instead of codex.
+#
+# Shape:
+#   user.message -> prd.ready -> prd.approved -> task_map.ready
+#   -> candidate.ready -> test.passed -> judge.passed
+#
+# Review gate policy: merged_into_verify for implementation. The PRD critique
+# stage validates product intent before task mapping.
+#
+# Prerequisites:
+#   - Claude Code CLI installed (`claude --version`)
+#   - `claude login` completed (or ANTHROPIC_API_KEY set)
+#   - ~/.claude/projects/* writable for session logs
+#
+# Permission note:
+#   permission_mode=bypass turns on `--dangerously-skip-permissions` for every
+#   worker (no interactive approval prompts; full Read/Bash/Edit/Write). Swap to
+#   permission_mode=allowlist + allowed_tools if you need tool scoping.
+#
+# Default state_dir / tmux_session / branch prefixes carry a `-claude` suffix so
+# this preset never shares runtime truth with its codex sibling. Override via
+# ZF_STATE_DIR / ZF_TMUX_SESSION / ZF_BRANCH_PREFIX for real deployments.
+#
+# Run Manager note:
+#   This preset enables a Claude Code resident Run Manager in a dedicated tmux
+#   session so workflow stop/restart can preserve the monitor lane. Harness
+#   source repair remains opt-in via ZF_RUN_MANAGER_SOURCE_REPAIR_ENABLED=true.
+apiVersion: zaofu.dev/v1
+kind: Workflow
+metadata:
+  name: prod-prd-fanout
+  zaofu:
+    catalog:
+      id: prd-fanout-claude
+      label: prd-fanout-claude
+      description: PRD→feature 全交付 fanout(8 角色)— 多数功能开发
+      roles: 8
+      intent: build
+      backend: claude
+      recommended_for: [build]
+      order: 10
+spec:
+  tasks:
+  - name: prd-refine
+    trigger: user.message
+    role: prd-author
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: prd.child.completed
+      childFailureEvent: prd.child.failed
+      successEvent: prd.ready
+      failureEvent: prd.blocked
+    deadlineSeconds: 2400
+  - name: prd-review
+    trigger: prd.ready
+    role: prd-critic
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: prd.critic.completed
+      childFailureEvent: prd.critic.failed
+      successEvent: prd.approved
+      failureEvent: prd.blocked
+    deadlineSeconds: 1800
+  - name: prd-task-map
+    trigger: prd.approved
+    role: task-map-synth
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: task_map.child.completed
+      childFailureEvent: task_map.child.failed
+      successEvent: task_map.ready
+      failureEvent: task_map.blocked
+    deadlineSeconds: 1800
+  - name: prd-impl
+    trigger: task_map.ready
+    fanout:
+      fromTaskMap: ${task_map_ref}
+      roles: [dev-api, dev-web, dev-runtime]
+    aggregate:
+      mode: candidate_integration
+      successEvent: candidate.ready
+      failureEvent: integration.failed
+      maxRetries: 1
+    synthesizeCanonicalTasks: true
+    deadlineSeconds: 7200
+  - name: prd-verify
+    trigger: candidate.ready
+    fanout:
+      roles: [verify-product, verify-api, verify-web]
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: verify.child.completed
+      childFailureEvent: verify.child.failed
+      successEvent: test.passed
+      failureEvent: test.failed
+    target: ${ZF_CANDIDATE_REF:-HEAD}
+    deadlineSeconds: 3600
+  - name: prd-judge
+    trigger: test.passed
+    role: judge-prd
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: judge.child.completed
+      childFailureEvent: judge.child.failed
+      successEvent: judge.passed
+      failureEvent: judge.failed
+    target: ${ZF_CANDIDATE_REF:-HEAD}
+    deadlineSeconds: 1800
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: prod-prd-fanout-claude}
+spec:
+  version: "1.0"
+  preset: prod-prd-fanout-claude
+
+  project:
+    name: ${ZF_PROJECT_NAME:-prod-prd-fanout}
+    state_dir: ${ZF_STATE_DIR:-.zf-prod-prd-claude}
+
+  session:
+    tmux_session: ${ZF_TMUX_SESSION:-zf-prod-prd-claude}
+    tmux_layout: pane_grid
+
+  global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-700.0}
+  budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+  skill_sources:
+  - name: agent-skills
+    path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+    mode: readonly
+  - name: zaofu-local
+    path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+    mode: readonly
+
+  runtime:
+    skills:
+      strict: false
+      pool: ${ZF_STATE_DIR:-.zf-prod-prd-claude}/skills
+      materialize: copy
+      lock_file: ${ZF_STATE_DIR:-.zf-prod-prd-claude}/skills.lock.json
+    run_manager:
+      backend: claude-code
+      reflect:
+        enabled: ${ZF_RUN_MANAGER_REFLECT_ENABLED:-true}
+        backend: claude-code
+        timeout_seconds: ${ZF_RUN_MANAGER_REFLECT_TIMEOUT_SECONDS:-180}
+      resident_agent:
+        enabled: ${ZF_RUN_MANAGER_RESIDENT_ENABLED:-true}
+        transport: tmux
+        instance_id: run-manager
+        prompt_on_start: true
+        session_mode: dedicated
+        tmux_session: ${ZF_RUN_MANAGER_TMUX_SESSION:-zf-prod-prd-claude-run-manager}
+      source_repair:
+        enabled: ${ZF_RUN_MANAGER_SOURCE_REPAIR_ENABLED:-false}
+        backend: claude-code
+        mode: isolated_worktree
+        branch_prefix: ${ZF_RUN_MANAGER_SOURCE_REPAIR_BRANCH_PREFIX:-self-repair/run-manager}
+        apply_policy: proposal_only
+        restart_policy: never_during_active_run
+        restart_boundary: terminal_or_operator_approved_checkpoint
+        replay_before_restart: true
+        allow_paths:
+        - src/zf/**
+        - tests/**
+        - docs/**
+        deny_paths:
+        - .env
+        - "**/events.jsonl"
+        - "**/kanban.json"
+        - "**/session.yaml"
+    workdirs:
+      enabled: true
+      root: ${ZF_STATE_DIR:-.zf-prod-prd-claude}/workdirs
+      mode: worktree
+      provision_paths: [.venv, node_modules]
+    git:
+      candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+      writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-prd-claude}/worker
+      task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-prd-claude}/task
+      candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-prd-claude}/candidate
+      candidate_strategy: cherry-pick
+      remote_policy: local
+      auto_ship_on_candidate_complete: false
+
+  constraints:
+    blocked_paths:
+    - .git/**
+    - ${ZF_STATE_DIR:-.zf-prod-prd-claude}/**
+    - .venv/**
+    - node_modules/**
+    - .env
+    - .env.*
+    - "**/*.pem"
+    - "**/*.ppk"
+
+  workflow:
+    harness_profile: strict
+    plan_approval: false
+    work_units:
+      enabled: true
+      split_quality:
+        mode: blocking
+        max_scope_files: 12
+        require_validation_surface: true
+    completion_audit:
+      enabled: true
+      provider_completed_state: completed_unverified
+    resume_packet:
+      enabled: true
+      max_tokens: 1600
+      generate_on:
+      - dispatch
+      - retry
+      - context_recovery
+      - worker.context.warning
+      - worker.context.critical
+      - worker.stuck
+    dag:
+      enabled: true
+      schema_profile: canonical-dag/v1
+      default_gate_level: strict
+      external_triggers: [user.message]
+      stage_order:
+      - user.message
+      - prd.ready
+      - prd.approved
+      - task_map.ready
+      - candidate.ready
+      - test.passed
+      - judge.passed
+      event_schemas:
+        prd.child.completed:
+          required: [fanout_id, child_id, status, summary, prd_ref, artifact_refs, evidence_refs]
+        prd.child.failed:
+          required: [fanout_id, child_id, status, reason]
+        prd.ready:
+          required: [fanout_id, stage_id, status, prd_ref, artifact_refs, evidence_refs]
+        prd.critic.completed:
+          required: [fanout_id, child_id, status, summary, prd_ref, artifact_refs, evidence_refs]
+        prd.critic.failed:
+          required: [fanout_id, child_id, status, reason]
+        prd.approved:
+          required: [fanout_id, stage_id, status, prd_ref, artifact_refs, evidence_refs]
+        prd.blocked:
+          required: [fanout_id, stage_id, status, reason]
+        task_map.child.completed:
+          required: [fanout_id, child_id, status, task_map_ref, evidence_refs]
+        task_map.child.failed:
+          required: [fanout_id, child_id, status, reason]
+        task_map.blocked:
+          required: [fanout_id, stage_id, status, reason]
+    rework_routing:
+      prd.blocked: prd-author
+      task_map.blocked: task-map-synth
+      integration.failed: task-map-synth
+      test.failed: dev-api
+      judge.failed: dev-api
+      gate.failed: prd-critic
+      discriminator.failed: dev-api
+      dev.blocked: task-map-synth
+      dev.failed: task-map-synth
+      dispatch.silent_stall: orchestrator
+    strict_triggers:
+      rework_attempts_gte: 1
+      context_usage_gte: 0.80
+      file_globs: [src/**, tests/**, web/**, docs/**]
+
+  _role_defaults: &claude_common
+    backend: claude-code
+    permission_mode: bypass
+    transport: tmux
+    stuck_threshold_seconds: 900
+    spawn_ready_timeout_seconds: 240
+    context_window_tokens: 200000
+
+  roles:
+  - <<: *claude_common
+    name: orchestrator
+    instance_id: orchestrator
+    role_kind: reader
+    # Layer-2 escalation only. Without an explicit triggers list the orchestrator
+    # pane subscribes to ALL non-noise events (orchestrator.py:3965 legacy "empty
+    # = subscribe-all"), waking ~once per kernel round and burning ~68% of run
+    # cost re-reading a growing context to do nothing. Its sole responsibility is
+    # the dispatch.silent_stall rework route, so scope Layer-2 to that.
+    triggers: [dispatch.silent_stall]
+    skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  - <<: *claude_common
+    name: prd-author
+    instance_id: prd-author
+    role_kind: reader
+    skills: [zf-prd-plan-synth, spec-driven-development, documentation-and-adrs]
+  - <<: *claude_common
+    name: prd-critic
+    instance_id: prd-critic
+    role_kind: reader
+    skills: [zf-prd-plan-synth, doubt-driven-development, zf-yoke-critic-role-context]
+  - <<: *claude_common
+    name: task-map-synth
+    instance_id: task-map-synth
+    role_kind: reader
+    skills: [zf-prd-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]
+  - <<: *claude_common
+    name: dev-api
+    instance_id: dev-api
+    role_kind: writer
+    stuck_threshold_seconds: 1800  # B-STUCK-3: long coding turns
+    skills: [api-and-interface-design, incremental-implementation]
+  - <<: *claude_common
+    name: dev-web
+    instance_id: dev-web
+    role_kind: writer
+    stuck_threshold_seconds: 1800  # B-STUCK-3: long coding turns
+    skills: [frontend-ui-engineering, incremental-implementation]
+  - <<: *claude_common
+    name: dev-runtime
+    instance_id: dev-runtime
+    role_kind: writer
+    stuck_threshold_seconds: 1800  # B-STUCK-3: long coding turns
+    skills: [source-driven-development, incremental-implementation]
+  - <<: *claude_common
+    name: verify-product
+    instance_id: verify-product
+    role_kind: reader
+    skills: [code-review-and-quality, zf-yoke-review-role-context]
+  - <<: *claude_common
+    name: verify-api
+    instance_id: verify-api
+    role_kind: reader
+    skills: [api-and-interface-design, test-driven-development]
+  - <<: *claude_common
+    name: verify-web
+    instance_id: verify-web
+    role_kind: reader
+    skills: [frontend-ui-engineering, browser-testing-with-devtools]
+  - <<: *claude_common
+    name: judge-prd
+    instance_id: judge-prd
+    role_kind: reader
+    skills: [zf-harness-gate-evaluator, shipping-and-launch]

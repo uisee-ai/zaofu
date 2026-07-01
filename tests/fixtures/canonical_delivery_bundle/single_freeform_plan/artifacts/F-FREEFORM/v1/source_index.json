@@ -1,0 +1,24 @@
+{
+  "schema_version": "source-index.v1",
+  "feature_id": "F-FREEFORM",
+  "tasks": [
+    {
+      "task_id": "TASK-FREE-A",
+      "source_key": "freeform.task-a",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/single_freeform_plan/freeform-plan.md#task-a-count-valid-json-lines",
+      "source_task_id": "Task A",
+      "source_title": "Task A: Count valid JSON lines",
+      "source_mode": "canonical",
+      "source_excerpt": "Read newline-delimited text, parse valid JSON rows, count valid and invalid rows, and keep invalid row numbers for diagnostics."
+    },
+    {
+      "task_id": "TASK-FREE-B",
+      "source_key": "freeform.task-b",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/single_freeform_plan/freeform-plan.md#task-b-return-compact-report",
+      "source_task_id": "Task B",
+      "source_title": "Task B: Return compact report",
+      "source_mode": "canonical",
+      "source_excerpt": "Return a dictionary with `valid`, `invalid`, and `invalid_lines`. This task depends on Task A."
+    }
+  ]
+}

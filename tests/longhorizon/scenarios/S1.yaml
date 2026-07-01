@@ -1,0 +1,20 @@
+# LH-6.T3 Scenario S1 — Greenfield small task.
+#
+# Acts as the smoke/baseline scenario for the autoresearch loop.
+# Keeping the backlog tiny (one simple function + tests) means each
+# iteration runs in ~3-5 min of real Claude API time, cheap enough to
+# iterate.
+name: S1
+description: Greenfield small task — fibonacci(n) with 3 pytest cases.
+primary_metric: vcr
+secondary_metrics: [mtts, cost_per_task, rework_ratio]
+expected_duration_minutes: [2, 8]
+
+initial_backlog:
+  - title: Implement fibonacci(n) in fib.py with pytest cases (n=0, 1, 5)
+    scope: [fib.py, tests/test_fib.py]
+    acceptance: "pytest tests/test_fib.py passes"
+
+guards:
+  - tests/longhorizon/guards/invariant_single_truth.sh
+  - tests/longhorizon/guards/invariant_cost_equality.sh

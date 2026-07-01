@@ -1,0 +1,25 @@
+{
+  "schema_version": "task-map.v1",
+  "feature_id": "F-REPLAN",
+  "source_refs": {
+    "plan_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v1.md",
+    "source_index_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/artifacts/F-REPLAN/v1/source_index.json",
+    "coverage_report_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/artifacts/F-REPLAN/v1/coverage_report.json"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-REPLAN-OLD",
+      "title": "Add string sorter",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "blocked_by": [],
+      "wave": 1,
+      "scope": ["sorter.py"],
+      "exclusive_files": ["sorter.py"],
+      "behavior": "Add string-only sorter.",
+      "acceptance": ["strings are sorted"],
+      "verification": "pytest tests/test_sorter.py",
+      "verification_tiers": ["runtime"]
+    }
+  ]
+}

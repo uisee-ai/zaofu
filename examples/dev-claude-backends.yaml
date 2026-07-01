@@ -1,0 +1,271 @@
+# dev-claude-backends preset — all-Claude variant of dev-codex-backends
+#
+# Same operational topology as dev-codex-backends, but every role uses
+# backend=claude-code instead of codex:
+#   orchestrator + arch + critic + dev×4 + review + test×4 + judge
+#
+# Prerequisites:
+#   - Claude Code CLI installed (`claude --version`)
+#   - `claude login` completed (or ANTHROPIC_API_KEY set)
+#   - ~/.claude/projects/* writable for session logs
+#
+# Permission note:
+#   permission_mode=bypass turns on `--dangerously-skip-permissions` for
+#   the worker. That avoids interactive approval prompts during the
+#   pipeline (arch→dev→review→test→judge) but does mean every worker has
+#   full Read/Bash/Edit/Write access. Use the safe-team preset if you
+#   want tool allowlists; this preset prioritizes throughput parity with
+#   dev-codex-backends.
+version: '1.0'
+preset: dev-claude-backends
+project:
+  name: zaofu-devclaude
+  state_dir: .zf
+global_budget_usd: 200.0
+session:
+  tmux_session: zf-devclaude
+  # pane_grid keeps the whole all-Claude team visible in one tmux window.
+  tmux_layout: pane_grid
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: yoke-critic
+  path: ${ZF_YOKE_CRITIC_DIR:-./skills/critic}
+  mode: readonly
+runtime:
+  skills:
+    pool: .zf/skills
+    materialize: copy
+    lock_file: .zf/skills.lock.json
+    # Local/manual harness E2E should use `zf validate --strict-skills`.
+    # Keep the preset itself warning-tolerant so source checkout validation
+    # remains usable before external skill repos are mounted.
+    strict: false
+autopilot:
+  enabled: true
+  mode: proposal_only
+  stale_after_hours: 24
+  failed_event_window_hours: 72
+  schedules:
+  - id: daily-triage
+    interval: 24h
+    action: triage
+workflow:
+  # Critic rejection is a design gate failure, so it routes back to arch.
+  # Code review rejection still uses review.rejected and falls back to dev.
+  rework_routing:
+    gate.failed: arch
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+orchestrator:
+  backend: claude-code
+  permission_mode: bypass
+quality_gates:
+  static:
+    enabled: true
+    required_checks:
+    - python3 -m compileall -q src tests
+    - npm --prefix web run typecheck
+  test:
+    enabled: true
+    required_checks:
+    - PYTHONPATH=src pytest -q
+    - npm --prefix web test
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+roles:
+- backend: claude-code
+  name: orchestrator
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - context-engineering
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  - zf-harness-instruction-hygiene
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - arch.proposal.done
+  - design.critique.done
+  - dev.build.done
+  - dev.blocked
+  - task.contract.invalid
+  - review.approved
+  - review.rejected
+  - gate.failed
+  - test.passed
+  - test.failed
+  - judge.passed
+  - judge.failed
+- backend: claude-code
+  name: arch
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - spec-driven-development
+  - api-and-interface-design
+  - documentation-and-adrs
+  - source-driven-development
+  - zf-harness-instruction-hygiene
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - design
+  triggers:
+  - task.assigned
+- backend: claude-code
+  name: critic
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - zf-yoke-critic-role-context
+  - document-review
+  - plan-option-scoring
+  - skeptic-observation
+  - security-review
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  publishes:
+  - design.critique.done
+  - gate.failed
+  stages:
+  - design_critique
+  triggers:
+  - arch.proposal.done
+- backend: claude-code
+  name: dev
+  permission_mode: bypass
+  replicas: 4
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - incremental-implementation
+  - frontend-ui-engineering
+  - test-driven-development
+  - debugging-and-error-recovery
+  - source-driven-development
+  - git-workflow-and-versioning
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+  - design.critique.done
+- backend: claude-code
+  name: review
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - code-review-and-quality
+  - code-simplification
+  - security-and-hardening
+  - performance-optimization
+  - zf-yoke-review-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  publishes:
+  - review.approved
+  - review.rejected
+  stages:
+  - code_review
+  triggers:
+  - dev.build.done
+- backend: claude-code
+  name: test
+  permission_mode: bypass
+  replicas: 4
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - test-driven-development
+  - debugging-and-error-recovery
+  - browser-testing-with-devtools
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - independent_test
+  triggers:
+  - review.approved
+- backend: claude-code
+  name: judge
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - code-review-and-quality
+  - shipping-and-launch
+  - security-and-hardening
+  - performance-optimization
+  - final-meta-review
+  - pre-release-review
+  - council
+  - zf-yoke-critic-role-context
+  - zf-yoke-quality-gate-role-context
+  - zf-harness-archive-contract
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  code_review: "verify lane: code review"
+  design: PRD / design
+  design_critique: design critique
+  implement: implementation
+  independent_test: "verify lane: independent test"
+  intake: intake & breakdown
+  judge: "terminal judge"
+  meta: meta / orchestration

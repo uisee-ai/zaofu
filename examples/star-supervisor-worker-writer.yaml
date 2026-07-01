@@ -1,0 +1,125 @@
+# Star supervisor/worker writer example.
+#
+# Shape:
+#   supervisor produces an approved task_map
+#       -> task_map.ready
+#       -> dev-auth / dev-gateway / dev-web in isolated worktrees
+#       -> candidate_integration
+#       -> candidate.ready / integration.failed
+#
+# Current runtime contract:
+#   - fanout_writer_scoped reads source.task_map at trigger time.
+#   - each task in task_map must have a unique task_id and non-overlapping
+#     allowed_paths.
+#   - workers complete via dev.build.done and a task/<task_id> handoff ref.
+#   - kernel performs candidate integration; workers must not update main,
+#     candidate refs, or runtime truth files directly.
+#
+# Example task map path after rendering:
+#   .zf/artifacts/PDD-123/task_map.json
+#
+# Minimal task_map.json:
+#   {
+#     "tasks": [
+#       {
+#         "task_id": "TASK-AUTH",
+#         "scope": "auth module",
+#         "allowed_paths": ["src/auth/**", "tests/auth/**"],
+#         "protected_paths": [".zf/**", "docs/design/**"]
+#       },
+#       {
+#         "task_id": "TASK-GATEWAY",
+#         "scope": "web gateway",
+#         "allowed_paths": ["src/gateway/**", "tests/gateway/**"],
+#         "protected_paths": [".zf/**", "docs/design/**"]
+#       }
+#     ]
+#   }
+#
+# Example trigger:
+#   zf emit task_map.ready --actor supervisor \
+#     --payload '{"pdd_id":"PDD-123","trace_id":"trace-PDD-123"}'
+version: '1.0'
+preset: star-supervisor-worker-writer
+project:
+  name: zaofu-star-supervisor-worker
+  state_dir: .zf
+session:
+  tmux_session: zf-star-writer
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+  git:
+    writer_branch_prefix: worker
+    task_ref_prefix: task
+    candidate_branch_prefix: candidate
+    candidate_base_ref: main
+workflow:
+  dag:
+    external_triggers:
+    - task_map.ready
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: supervisor
+    dev.failed: supervisor
+  stages:
+  - id: supervisor-worker-dev-fanout
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    source:
+      task_map: .zf/artifacts/${pdd_id}/task_map.json
+    fanout:
+      assignment:
+        role_pool:
+        - dev-auth
+        - dev-gateway
+        - dev-web
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+    timeout_seconds: 3600
+roles:
+- name: supervisor
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - planning
+  publishes:
+  - task_map.ready
+- name: dev-auth
+  backend: mock
+  role_kind: writer
+  permission_mode: restricted
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+- name: dev-gateway
+  backend: mock
+  role_kind: writer
+  permission_mode: restricted
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+- name: dev-web
+  backend: mock
+  role_kind: writer
+  permission_mode: restricted
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+stage_labels:
+  planning: supervisor planning
+  implement: scoped worker implementation

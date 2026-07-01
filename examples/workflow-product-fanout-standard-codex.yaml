@@ -1,0 +1,419 @@
+# workflow-product-fanout-standard-codex.yaml — stage fanout product workflow.
+#
+# Standard product delivery workflow with fanout inside each logical product
+# phase. Top-level phases stay aligned with zf.yaml:
+#
+#   plan -> impl -> verify -> judge
+#
+# Use workflow-product-standard-codex.yaml for the zf.yaml-aligned non-fanout
+# role-trigger workflow.
+#
+version: '1.0'
+preset: workflow-product-fanout-standard-codex
+#
+# Shape:
+#   user.message
+#     -> product-plan-authoring fanout
+#     -> product-design-critique fanout
+#     -> product-task-map fanout
+#     -> product-implementation writer fanout
+#     -> product-verification fanout
+#     -> product-judge fanout
+#
+# Copy to <project>/zf.yaml and override env defaults as needed.
+
+project:
+  name: ${ZF_PROJECT_NAME:-product-fanout-standard}
+  state_dir: ${ZF_STATE_DIR:-.zf}
+
+session:
+  tmux_session: ${ZF_TMUX_SESSION:-zf-product-fanout-standard}
+  tmux_layout: pane_grid
+
+global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-500.0}
+budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+
+runtime:
+  workdirs:
+    enabled: true
+    root: ${ZF_STATE_DIR:-.zf}/workdirs
+    mode: worktree
+    provision_paths: [.venv, node_modules]
+  git:
+    candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+    writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf-product-fanout}/worker
+    task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf-product-fanout}/task
+    candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf-product-fanout}/candidate
+    candidate_strategy: cherry-pick
+    remote_policy: local
+    auto_ship_on_candidate_complete: false
+  skills:
+    pool: ${ZF_STATE_DIR:-.zf}/skills
+    materialize: copy
+    lock_file: ${ZF_STATE_DIR:-.zf}/skills.lock.json
+    strict: false
+
+autopilot:
+  enabled: true
+  mode: proposal_only
+  stale_after_hours: 24
+  failed_event_window_hours: 72
+  schedules:
+  - id: daily-triage
+    interval: 24h
+    action: triage
+
+workflow:
+  harness_profile: strict
+  affinity_lanes:
+    product-3-lane:
+      affinity_key: affinity_tag
+      queue:
+        order: priority_fifo
+      lanes:
+      - id: core
+        impl: dev-core
+        verify: verify-core
+      - id: runtime
+        impl: dev-runtime
+        verify: verify-runtime
+      - id: product
+        impl: dev-product
+        verify: verify-product
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1400
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+    - worker.context.warning
+    - worker.context.critical
+    - worker.stuck
+  dag:
+    enabled: true
+    default_gate_level: strict
+    dev_requires_orchestrator_backlog: false
+    design_to_backlog_owner: task-map-synth
+    stage_order:
+    - user.message
+    - product.plan.ready
+    - product.design.ready
+    - task_map.ready
+    - candidate.ready
+    - test.passed
+    - judge.passed
+    event_schemas:
+      product.plan.ready:
+        required: [fanout_id, stage_id, status, artifact_refs]
+      product.plan.blocked:
+        required: [fanout_id, stage_id, status, reason]
+      product.design.ready:
+        required: [fanout_id, stage_id, status, critic_event_id, artifact_refs]
+      product.design.blocked:
+        required: [fanout_id, stage_id, status, reason]
+      product.task_map.child.completed:
+        required: [fanout_id, child_id, status, summary, task_map_ref, evidence_refs]
+      product.task_map.child.failed:
+        required: [fanout_id, child_id, status, reason]
+      task_map.ready:
+        required: [pdd_id, task_map_ref, source_commit, candidate_base_commit]
+      candidate.ready:
+        required: [fanout_id, pdd_id, candidate_ref, candidate_base_commit, candidate_head_commit, diff_ref, completed_task_ids]
+      test.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+      test.failed:
+        required: [fanout_id, stage_id, status, target_ref]
+      judge.passed:
+        required: [fanout_id, stage_id, status, target_ref]
+      judge.failed:
+        required: [fanout_id, stage_id, status, target_ref]
+  rework_routing:
+    product.plan.blocked: product-arch
+    product.design.blocked: product-critic
+    task.contract.invalid: task-map-synth
+    static_gate.failed: dev-core
+    test.failed: dev-core
+    judge.failed: dev-core
+    discriminator.failed: dev-core
+    dispatch.silent_stall: orchestrator
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+  strict_triggers:
+    rework_attempts_gte: 1
+    context_usage_gte: 0.80
+    file_globs: [src/**, tests/**, web/**, docs/**]
+  fast_path:
+    enabled: true
+    max_scope_files: 2
+    skip_stages: [design, design_critique, judge]
+    allow_docs_only: true
+    verification_required: true
+  stages:
+  - id: product-plan-authoring
+    trigger: user.message
+    topology: fanout_reader
+    roles: [product-arch]
+    target_ref: ${ZF_TARGET_REF:-}
+    fanout:
+      children:
+      - role_instance: product-arch
+        payload:
+          child_id: product-arch
+          instruction: >-
+            Turn the user idea into a product/spec plan with scope,
+            non-goals, task-map assumptions, verification surface, and
+            evidence refs. Do not modify implementation files.
+          output_contract:
+            plan_artifact_ref: durable markdown plan path under docs/plans/
+            plan_md: markdown plan content if the artifact still needs projection
+            artifact_refs: include plan_artifact_ref and any spec/design refs
+            evidence_refs: source files, user request refs, or research refs
+            source_index_ref: optional source coverage artifact for task mapping
+    aggregate:
+      mode: wait_for_all
+      child_success_event: arch.proposal.done
+      child_failure_event: clarification.needed
+      success_event: product.plan.ready
+      failure_event: product.plan.blocked
+    timeout_seconds: 2400
+    criteria:
+      output:
+        required_keys:
+        - plan_artifact_ref
+        - artifact_refs
+        - evidence_refs
+  - id: product-design-critique
+    trigger: product.plan.ready
+    topology: fanout_reader
+    roles: [product-critic]
+    target_ref: ${ZF_TARGET_REF:-}
+    fanout:
+      children:
+      - role_instance: product-critic
+        payload:
+          child_id: product-critic
+          instruction: >-
+            Review the product plan for feasibility, missing constraints,
+            risk, validation, and release readiness. Emit design.critique.done
+            only when the plan is actionable.
+    aggregate:
+      mode: wait_for_all
+      child_success_event: design.critique.done
+      child_failure_event: gate.failed
+      success_event: product.design.ready
+      failure_event: product.design.blocked
+    timeout_seconds: 1800
+  - id: product-task-map
+    trigger: product.design.ready
+    topology: fanout_reader
+    roles: [task-map-synth]
+    target_ref: ${ZF_TARGET_REF:-}
+    fanout:
+      children:
+      - role_instance: task-map-synth
+        payload:
+          child_id: task-map-synth
+          instruction: >-
+            Convert the approved plan and critique into a canonical task_map.
+            Each task must include affinity_tag, dependencies, allowed paths,
+            acceptance criteria, and verification command.
+          output_contract:
+            task_map_ref: canonical task_map artifact path
+            plan_artifact_ref: approved product plan artifact consumed
+            source_index_ref: source coverage / no-invention artifact
+            artifact_refs: include task_map_ref and plan_artifact_ref
+            evidence_refs: critique and source refs used for each task
+    aggregate:
+      mode: wait_for_all
+      child_success_event: product.task_map.child.completed
+      child_failure_event: product.task_map.child.failed
+      success_event: task_map.ready
+      failure_event: product.design.blocked
+    timeout_seconds: 1800
+    criteria:
+      output:
+        required_keys:
+        - task_map_ref
+        - plan_artifact_ref
+        - artifact_refs
+  - id: product-implementation
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    synthesize_canonical_tasks: true
+    source:
+      task_map: ${ZF_TASK_MAP_REF:-.zf/task-map.json}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: product-3-lane
+        stage_slot: impl
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+      max_retries: 1
+    timeout_seconds: 7200
+  - id: product-verification
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles: [verify-core, verify-runtime, verify-product]
+    target_ref: ${candidate_ref}
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: product-3-lane
+        stage_slot: verify
+    aggregate:
+      mode: any_failed_fail
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: test.passed
+      failure_event: test.failed
+      max_retries: 1
+    timeout_seconds: 3600
+  - id: product-judge
+    trigger: test.passed
+    topology: fanout_reader
+    roles: [judge-product]
+    target_ref: ${candidate_ref}
+    aggregate:
+      mode: wait_for_all
+      child_success_event: judge.child.completed
+      child_failure_event: judge.child.failed
+      success_event: judge.passed
+      failure_event: judge.failed
+    timeout_seconds: 1800
+
+orchestrator:
+  backend: codex
+
+quality_gates:
+  static:
+    enabled: true
+    required_checks: [git diff --check]
+  test:
+    enabled: false
+    required_checks: []
+
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  semantic:
+    enabled: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+  event_schema:
+    mode: warning
+
+roles:
+- name: orchestrator
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, planning-and-task-breakdown, context-engineering, zf-yoke-orchestrator-role-context, zf-harness-state-sync, zf-harness-spec-bridge]
+  stages: [meta]
+  triggers: [task.contract.invalid, static_gate.failed, fanout.serialize, fanout.cancelled, dispatch.silent_stall, worker.stuck]
+  publishes: [task.created, task.dispatched, task.contract.update]
+- name: product-arch
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, source-driven-development, spec-driven-development, planning-and-task-breakdown, api-and-interface-design, documentation-and-adrs, zf-harness-spec-bridge, zf-harness-design-handoff]
+  stages: [plan]
+  publishes: [arch.proposal.done, clarification.needed]
+- name: product-critic
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, doubt-driven-development, code-review-and-quality, security-and-hardening, zf-harness-gate-evaluator, zf-harness-evidence-collection, zf-harness-design-handoff]
+  stages: [plan]
+  publishes: [design.critique.done, gate.failed]
+- name: task-map-synth
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, planning-and-task-breakdown, spec-driven-development, documentation-and-adrs, zf-harness-spec-bridge, zf-harness-backlog-synthesis]
+  stages: [plan]
+  publishes: [product.task_map.child.completed, product.task_map.child.failed, task_map.ready]
+- name: dev-core
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills: [using-agent-skills, incremental-implementation, test-driven-development, debugging-and-error-recovery, git-workflow-and-versioning, zf-yoke-dev-worker-role-context, zf-harness-lane-goal-continuation, zf-harness-done-contract]
+  stages: [impl]
+  publishes: [dev.build.done, dev.blocked, dev.failed]
+- name: dev-runtime
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills: [using-agent-skills, incremental-implementation, test-driven-development, debugging-and-error-recovery, git-workflow-and-versioning, zf-yoke-dev-worker-role-context, zf-harness-lane-goal-continuation, zf-harness-done-contract]
+  stages: [impl]
+  publishes: [dev.build.done, dev.blocked, dev.failed]
+- name: dev-product
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills: [using-agent-skills, incremental-implementation, test-driven-development, frontend-ui-engineering, git-workflow-and-versioning, zf-yoke-dev-worker-role-context, zf-harness-lane-goal-continuation, zf-harness-done-contract]
+  stages: [impl]
+  publishes: [dev.build.done, dev.blocked, dev.failed]
+- name: verify-core
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, code-review-and-quality, security-and-hardening, test-driven-development, zf-yoke-test-evaluator-role-context, zf-harness-verification-checklist, zf-harness-eval-harness, zf-harness-evaluator-scoring]
+  stages: [verify]
+  publishes: [verify.child.completed, verify.child.failed]
+- name: verify-runtime
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, code-review-and-quality, performance-optimization, test-driven-development, debugging-and-error-recovery, zf-yoke-test-evaluator-role-context, zf-harness-verification-checklist, zf-harness-eval-harness, zf-harness-evaluator-scoring]
+  stages: [verify]
+  publishes: [verify.child.completed, verify.child.failed]
+- name: verify-product
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, code-review-and-quality, frontend-ui-engineering, test-driven-development, browser-testing-with-devtools, zf-yoke-test-evaluator-role-context, zf-harness-verification-checklist, zf-harness-eval-harness, zf-harness-evaluator-scoring]
+  stages: [verify]
+  publishes: [verify.child.completed, verify.child.failed]
+- name: judge-product
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, shipping-and-launch, documentation-and-adrs, zf-yoke-quality-gate-role-context, zf-harness-verification-checklist, zf-harness-evaluator-scoring]
+  stages: [judge]
+  publishes: [judge.child.completed, judge.child.failed, judge.passed, judge.failed]
+
+stage_labels:
+  meta: orchestration and recovery
+  plan: fanout product planning and critique
+  impl: writer fanout implementation
+  verify: fanout candidate review, tests, and eval checks
+  judge: final fanout go/no-go

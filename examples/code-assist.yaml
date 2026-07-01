@@ -1,0 +1,52 @@
+# zf.yaml — TDD 流水线（dev + review + test）
+# 生成方式：zf init --preset code-assist
+
+version: "1.0"
+preset: code-assist
+
+project:
+  name: my-project
+  state_dir: .zf
+
+session:
+  tmux_session: zf
+
+orchestrator:
+  backend: claude-code
+
+quality_gates:
+  static:
+    enabled: true
+    # required_checks 是 shell 命令字符串列表; 留空 = vacuously pass.
+    # 例: required_checks: ["PYTHONPATH=src python3 -m pytest --no-cov -q"]
+    required_checks: []
+  test:
+    enabled: true
+
+roles:
+  - name: dev
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [implement]
+    triggers: [task.assigned]
+    publishes: [dev.build.done]
+    execution:
+      command: "npm test"
+
+  - name: review
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [code_review]
+    triggers: [dev.build.done]
+    publishes: [review.approved, review.rejected]
+
+  - name: test
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [independent_test]
+    triggers: [dev.build.done]
+    publishes: [test.passed, test.failed]
+
+# 事件流：
+#   task.assigned → dev → dev.build.done → review + test
+#   review.approved + test.passed → done

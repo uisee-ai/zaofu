@@ -1,0 +1,782 @@
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+  --font-sans: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-serif: "Source Serif 4 Variable", "Source Serif 4", "Iowan Old Style",
+    "Apple Garamond", Baskerville, "Times New Roman", serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* ── Typography tokens(px 命名, rem 值, 16px root). 见 docs/design/67. ── */
+  --text-9: 0.5625rem;  --text-10: 0.625rem;  --text-11: 0.6875rem;
+  --text-12: 0.75rem;   --text-13: 0.8125rem; --text-14: 0.875rem;
+  --text-16: 1rem;      --text-18: 1.125rem;  --text-20: 1.25rem;
+  --text-24: 1.5rem;    --text-28: 1.75rem;   --text-32: 2rem;     --text-40: 2.5rem;
+  --font-weight-light: 300;    --font-weight-regular: 400; --font-weight-medium: 500;
+  --font-weight-semibold: 600; --font-weight-bold: 700;    --font-weight-heavy: 800;
+  --tracking-extra-tight: -0.025rem; --tracking-tight: -0.05rem;
+  --tracking-default: 0;             --tracking-wide: 0.05rem;
+  --leading-heading: 1.2; --leading-body: 1.45; --leading-relaxed: 1.7;
+  --type-micro: var(--text-10);  /* 计数 / dense badge */
+  --type-meta:  var(--text-11);  /* meta / 次要 */
+  --type-body:  var(--text-12);  /* body 默认(主力) */
+  --type-label: var(--text-13);  /* label / 强调 */
+  --type-h3:    var(--text-14);  /* 小标题 */
+  --type-h2:    var(--text-18);  /* 区块标题 */
+  --type-h1:    var(--text-24);  /* 页面标题 */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.141 0.005 285.823);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.141 0.005 285.823);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.141 0.005 285.823);
+  --primary: oklch(0.21 0.006 285.885);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.967 0.001 286.375);
+  --secondary-foreground: oklch(0.21 0.006 285.885);
+  --muted: oklch(0.967 0.001 286.375);
+  --muted-foreground: oklch(0.552 0.016 285.938);
+  --accent: oklch(0.967 0.001 286.375);
+  --accent-foreground: oklch(0.21 0.006 285.885);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.92 0.004 286.32);
+  --input: oklch(0.92 0.004 286.32);
+  --ring: oklch(0.705 0.015 286.067);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.141 0.005 285.823);
+  --sidebar-primary: oklch(0.21 0.006 285.885);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.95 0.002 286.375);
+  --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
+  --sidebar-border: oklch(0.92 0.004 286.32);
+  --sidebar-ring: oklch(0.705 0.015 286.067);
+  --brand: oklch(0.55 0.16 255);
+  --brand-strong: oklch(0.45 0.16 255);
+  --brand-foreground: oklch(0.985 0 0);
+  --brand-subtle: oklch(0.95 0.04 255);
+  --info: oklch(0.55 0.18 250);
+  --info-subtle: oklch(0.95 0.04 250);
+  --success: oklch(0.55 0.16 145);
+  --success-subtle: oklch(0.95 0.04 145);
+  --warning: oklch(0.75 0.16 85);
+  --warning-subtle: oklch(0.96 0.04 85);
+  --error-subtle: oklch(0.95 0.04 25);
+  --priority: oklch(0.65 0.18 50);
+  --scrollbar-thumb: oklch(0 0 0 / 10%);
+  --scrollbar-thumb-hover: oklch(0 0 0 / 18%);
+  --scrollbar-track: transparent;
+  --bg: var(--background);
+  --chrome: var(--card);
+  --panel: var(--card);
+  --panel-2: var(--secondary);
+  --surface: var(--secondary);
+  --surface-2: var(--sidebar-accent);
+  --line: var(--border);
+  --line-soft: oklch(0.92 0.004 286.32 / 70%);
+  --text: var(--foreground);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --err: var(--destructive);
+  /* ── 三刀② — 语义补族:文本阶 / 表面三阶 / 状态 strong-subtle 成对。
+     text-secondary/tertiary 由现有 oklch 灰阶推(tertiary 取 muted-foreground 当前值,
+     secondary 加深一档);surface 三阶以 panel 链别名起步,新代码引用新名,旧引用不动。 ── */
+  --text-primary: var(--foreground);
+  --text-secondary: oklch(0.44 0.014 285.9);
+  --text-tertiary: oklch(0.552 0.016 285.938);
+  --text-placeholder: oklch(0.705 0.015 286.067);
+  --canvas: var(--bg);
+  --surface-1: var(--panel);
+  --ok-strong: oklch(0.45 0.16 145);
+  --ok-subtle: var(--success-subtle);
+  --warn-strong: oklch(0.6 0.15 85);
+  --warn-subtle: var(--warning-subtle);
+  --err-strong: oklch(0.48 0.22 27);
+  --err-subtle: var(--error-subtle);
+  --shadow: rgba(0, 0, 0, 0.08);
+  --focus: oklch(0.55 0.16 255 / 20%);
+  --topbar-height: 48px;
+  --workspace-rail-width: 238px;
+  --workspace-gap: 10px;
+  --workspace-padding: 10px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --background: oklch(0.18 0.005 285.823);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.21 0.006 285.885);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.21 0.006 285.885);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.92 0.004 286.32);
+  --primary-foreground: oklch(0.21 0.006 285.885);
+  --secondary: oklch(0.274 0.006 286.033);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.274 0.006 286.033);
+  --muted-foreground: oklch(0.705 0.015 286.067);
+  --accent: oklch(0.274 0.006 286.033);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.552 0.016 285.938);
+  --sidebar: oklch(0.21 0.006 285.885);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.274 0.006 286.033);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.552 0.016 285.938);
+  --brand: oklch(0.65 0.16 255);
+  --brand-strong: oklch(0.72 0.15 255);
+  --brand-foreground: oklch(0.985 0 0);
+  --brand-subtle: oklch(0.30 0.04 255);
+  --info: oklch(0.65 0.18 250);
+  --info-subtle: oklch(0.30 0.04 250);
+  --success: oklch(0.65 0.15 145);
+  --success-subtle: oklch(0.30 0.04 145);
+  --warning: oklch(0.70 0.16 85);
+  --warning-subtle: oklch(0.30 0.05 85);
+  --error-subtle: oklch(0.30 0.04 25);
+  --priority: oklch(0.70 0.18 50);
+  --scrollbar-thumb: oklch(1 0 0 / 8%);
+  --scrollbar-thumb-hover: oklch(1 0 0 / 18%);
+  --scrollbar-track: transparent;
+  --bg: var(--background);
+  --chrome: var(--card);
+  --panel: var(--card);
+  --panel-2: var(--secondary);
+  --surface: var(--secondary);
+  --surface-2: var(--sidebar-accent);
+  --line: var(--border);
+  --line-soft: oklch(1 0 0 / 7%);
+  --text: var(--foreground);
+  --ok: var(--success);
+  --warn: var(--warning);
+  --err: var(--destructive);
+  /* 三刀② 语义补族(dark)— 与 light 同名同步。 */
+  --text-primary: var(--foreground);
+  --text-secondary: oklch(0.81 0.012 286);
+  --text-tertiary: oklch(0.705 0.015 286.067);
+  --text-placeholder: oklch(0.552 0.016 285.938);
+  --canvas: var(--bg);
+  --surface-1: var(--panel);
+  --ok-strong: oklch(0.72 0.15 145);
+  --ok-subtle: var(--success-subtle);
+  --warn-strong: oklch(0.78 0.15 85);
+  --warn-subtle: var(--warning-subtle);
+  --err-strong: oklch(0.76 0.17 22);
+  --err-subtle: var(--error-subtle);
+  --shadow: rgba(0, 0, 0, 0.18);
+  --focus: oklch(0.65 0.16 255 / 24%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --background: oklch(0.18 0.005 285.823);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.21 0.006 285.885);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.92 0.004 286.32);
+    --primary-foreground: oklch(0.21 0.006 285.885);
+    --secondary: oklch(0.274 0.006 286.033);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067);
+    --accent: oklch(0.274 0.006 286.033);
+    --accent-foreground: oklch(0.985 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.552 0.016 285.938);
+    --sidebar: oklch(0.21 0.006 285.885);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.274 0.006 286.033);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.552 0.016 285.938);
+    --brand: oklch(0.65 0.16 255);
+    --brand-strong: oklch(0.72 0.15 255);
+    --brand-foreground: oklch(0.985 0 0);
+    --brand-subtle: oklch(0.30 0.04 255);
+    --info: oklch(0.65 0.18 250);
+    --info-subtle: oklch(0.30 0.04 250);
+    --success: oklch(0.65 0.15 145);
+    --success-subtle: oklch(0.30 0.04 145);
+    --warning: oklch(0.70 0.16 85);
+    --warning-subtle: oklch(0.30 0.05 85);
+    --error-subtle: oklch(0.30 0.04 25);
+    --priority: oklch(0.70 0.18 50);
+    --scrollbar-thumb: oklch(1 0 0 / 8%);
+    --scrollbar-thumb-hover: oklch(1 0 0 / 18%);
+    --scrollbar-track: transparent;
+    --bg: var(--background);
+    --chrome: var(--card);
+    --panel: var(--card);
+    --panel-2: var(--secondary);
+    --surface: var(--secondary);
+    --surface-2: var(--sidebar-accent);
+    --line: var(--border);
+    --line-soft: oklch(1 0 0 / 7%);
+    --text: var(--foreground);
+    --ok: var(--success);
+    --warn: var(--warning);
+    --err: var(--destructive);
+    /* 三刀② 语义补族(system=dark)— 与 dark 块同步。 */
+    --text-primary: var(--foreground);
+    --text-secondary: oklch(0.81 0.012 286);
+    --text-tertiary: oklch(0.705 0.015 286.067);
+    --text-placeholder: oklch(0.552 0.016 285.938);
+    --canvas: var(--bg);
+    --surface-1: var(--panel);
+    --ok-strong: oklch(0.72 0.15 145);
+    --ok-subtle: var(--success-subtle);
+    --warn-strong: oklch(0.78 0.15 85);
+    --warn-subtle: var(--warning-subtle);
+    --err-strong: oklch(0.76 0.17 22);
+    --err-subtle: var(--error-subtle);
+    --shadow: rgba(0, 0, 0, 0.18);
+    --focus: oklch(0.65 0.16 255 / 24%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+html {
+  font-family: var(--font-sans);
+  text-autospace: ideograph-alpha ideograph-numeric;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: var(--text-14);
+  line-height: 20px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  height: 100vh;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.topbar {
+  min-height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--chrome);
+}
+
+.brand-block {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.breadcrumb-separator,
+.breadcrumb-current {
+  color: var(--muted-foreground);
+  font-size: var(--text-13);
+  line-height: 1;
+}
+
+.breadcrumb-current {
+  color: var(--text);
+  font-weight: 560;
+}
+
+.nav-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.nav-tab,
+.segmented,
+.tab-button {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--muted-foreground);
+  border-radius: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.nav-tab.active,
+.segmented.active,
+.tab-button.active {
+  color: var(--text);
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 18%, transparent);
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: var(--text-18);
+  font-weight: 650;
+}
+
+h2 {
+  font-size: var(--text-12);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+h3 {
+  font-size: var(--text-12);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+/* 三刀② — 节标题副文(heading 行内的 muted 计数/说明)走二级文本阶;
+   .muted 本体保留 muted-foreground 兼容。 */
+.section-heading .muted,
+.inline-heading .muted {
+  color: var(--text-secondary);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* ── KV 对统一规范(2026-06-12 ①)──────────────────────────────────────────
+   key = --text-12 · 400 · text-tertiary;value = --text-13 · 500(medium,
+   非 600)· text · tabular-nums。值默认 sans,仅 id/hash 场景另加 .mono。
+   大数卡(project-health-card / summary-card)与 Σ 头条等 stat 物种不适用。
+   守护:.kv 族块内出现 font-weight 600/700 → lint:tokens fail(守护 3)。 */
+.kv .kv-key {
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-regular);
+}
+
+.kv .kv-value {
+  color: var(--text);
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status-pill,
+.metric-chip,
+.icon-button,
+.count {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  white-space: nowrap;
+}
+
+.status-live {
+  border-color: rgba(121, 201, 132, 0.45);
+  color: var(--ok);
+}
+
+.status-idle {
+  border-color: var(--line);
+  color: var(--muted-foreground);
+}
+
+.status-loading {
+  border-color: color-mix(in oklab, var(--brand) 32%, var(--line));
+  color: var(--brand);
+}
+
+.status-connecting,
+.status-reconnecting {
+  border-color: rgba(221, 177, 93, 0.45);
+  color: var(--warn);
+}
+
+.status-degraded {
+  border-color: rgba(232, 120, 120, 0.45);
+  color: var(--err);
+}
+
+.chip-warn {
+  border-color: color-mix(in oklab, var(--warn) 45%, var(--line));
+  color: var(--warn);
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  font-weight: 560;
+  line-height: 1;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.icon-button.primary {
+  border-color: transparent;
+  background: var(--brand);
+  color: var(--brand-foreground);
+}
+
+.icon-button:hover {
+  border-color: var(--brand);
+  background: var(--surface-2);
+}
+
+.icon-button.primary:hover {
+  border-color: transparent;
+  background: var(--brand-strong);
+}
+
+.icon-button.danger {
+  border-color: color-mix(in oklab, var(--err) 45%, var(--line));
+  color: var(--err);
+}
+
+.icon-button.danger:hover {
+  border-color: var(--err);
+  background: color-mix(in oklab, var(--err) 10%, var(--panel-2));
+}
+
+.icon-button:active {
+  transform: translateY(1px);
+}
+
+.icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--brand);
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: break-word;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.error-strip {
+  border-bottom: 1px solid rgba(232, 120, 120, 0.35);
+  background: rgba(232, 120, 120, 0.12);
+  color: var(--err);
+  padding: 8px 16px;
+}
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--workspace-rail-width) minmax(760px, 1fr);
+  gap: var(--workspace-gap);
+  padding: var(--workspace-padding);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.agent-page-shell {
+  position: fixed;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.agent-page-shell.docked {
+  right: 18px;
+  bottom: 18px;
+  width: min(500px, calc(100vw - 32px));
+  height: min(720px, calc(100vh - 36px));
+}
+
+.agent-page-shell.fullscreen {
+  top: calc(var(--topbar-height) + var(--workspace-padding));
+  right: var(--workspace-padding);
+  bottom: var(--workspace-padding);
+  left: calc(var(--workspace-padding) + var(--workspace-rail-width) + var(--workspace-gap));
+  width: auto;
+  height: auto;
+}
+
+.agent-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 30;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted-foreground);
+  box-shadow: 0 10px 28px var(--shadow);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 80ms ease;
+}
+
+.agent-fab:hover {
+  border-color: color-mix(in oklab, var(--brand) 44%, var(--line));
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.agent-fab:active {
+  transform: translateY(1px);
+}
+
+.board-panel,
+.panel {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02), 0 12px 30px var(--shadow);
+}
+
+.board-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 68px);
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.projection-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.section-heading,
+.column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Page-level H2 (Archives / Workdirs / Skills / Runtime / Settings / ...) —
+   sentence-case + medium weight instead of inherited h2 { uppercase + 650 }.
+   Sidebar section <h2> (Control / Workspace) keep uppercase since they act
+   as SectionLabel (R3-compliant) — overridden below. */
+.section-heading h2 {
+  text-transform: none;
+  font-size: var(--text-16);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+/* Sidebar section H2 stays uppercase SectionLabel. */
+.project-rail .section-heading h2 {
+  text-transform: uppercase;
+  font-size: var(--text-12);
+  font-weight: 650;
+  letter-spacing: normal;
+}
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.filter-row select,
+.filter-input,
+.search-input {
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 4px 8px;
+}
+
+.search-input {
+  width: min(260px, 34vw);
+}
+
+.task-primary-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.task-toolbar {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+.task-toolbar-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.task-filter-row {
+  opacity: 0.92;
+}
+
+.task-search-input {
+  min-width: min(260px, 100%);
+  margin-left: auto;
+}
+
+.skills-heading {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.skills-search {
+  width: min(320px, 34vw);
+}
+
+.board-grid {
+  --board-column-count: 5;
+  --board-column-min: 240px;
+  flex: 1;
+  min-height: 360px;
+  display: grid;
+  grid-template-columns: repeat(var(--board-column-count), minmax(var(--board-column-min), 1fr));
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px;
+  overflow-x: auto;
+}
+
+.board-column {
+  --column-accent: var(--muted-foreground);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface) 68%, var(--bg));
+  padding: 8px;
+  overflow: hidden;
+}
+
+.board-column.tone-muted {
+  --column-accent: var(--muted-foreground);
+}
+
+.board-column.tone-brand {
+  --column-accent: var(--brand);
+}
+
+.board-column.tone-warn {
+  --column-accent: var(--warn);
+}
+
+.board-column.tone-ok,
+.board-column.tone-done {
+  --column-accent: var(--ok);
+}
+
+.board-column.tone-info {
+  --column-accent: var(--info);
+}
+
+.board-column.tone-err {
+  --column-accent: var(--err);
+}
+
+.board-column.drop-ready {
+  border-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+
+.board-column.status-blocked.has-tasks {
+  border-color: color-mix(in oklab, var(--err) 30%, var(--line));
+  background: color-mix(in oklab, var(--err) 4%, color-mix(in oklab, var(--surface) 68%, var(--bg)));
+}
+
+.column-header {
+  padding: 0 4px 8px;
+  border-bottom: 0;
+}

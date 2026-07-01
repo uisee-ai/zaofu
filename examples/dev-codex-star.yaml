@@ -1,0 +1,102 @@
+# dev-codex-star preset — real-provider star topology smoke
+#
+# Purpose:
+#   Exercise YAML-declared fan-out / fan-in with real Codex provider roles.
+#
+# Shape:
+#   candidate.ready
+#       -> review-security
+#       -> review-architecture
+#       -> review-testing
+#       -> kernel wait_for_all aggregate
+#       -> review.approved / review.rejected
+#
+# This preset intentionally has no Layer 2 orchestrator role. The star
+# topology is kernel-owned: `workflow.stages` declares the trigger, child
+# roles, target ref, and aggregate policy.
+#
+# Prerequisites:
+#   - codex CLI installed (`codex --version`)
+#   - `codex login` completed
+#   - run inside a git repository when runtime.workdirs.mode=worktree
+#   - create the candidate branch/ref before emitting candidate.ready
+#
+# Example trigger:
+#   zf emit candidate.ready --actor human \
+#     --payload '{"pdd_id":"STAR-SMOKE","candidate_ref":"candidate/star-smoke"}'
+version: '1.0'
+preset: dev-codex-star
+project:
+  name: zaofu-devcodex-star
+  state_dir: .zf
+global_budget_usd: 100.0
+session:
+  tmux_session: zf-devcodex-star
+  tmux_layout: pane_grid
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+  git:
+    candidate_base_ref: main
+    candidate_branch_prefix: candidate
+  skills:
+    pool: .zf/skills
+    materialize: copy
+    lock_file: .zf/skills.lock.json
+workflow:
+  stages:
+  - id: star-review-wave
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles:
+    - review-security
+    - review-architecture
+    - review-testing
+    target:
+      ref: ${candidate_ref}
+    aggregate:
+      mode: wait_for_all
+      timeout_seconds: 900
+      success_event: review.approved
+      failure_event: review.rejected
+roles:
+- name: review-security
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+- name: review-architecture
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+- name: review-testing
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+stage_labels:
+  code_review: star review wave

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Harness Commit Push"
+  short_description: "Safely inspect, commit, and push ZaoFu changes"
+  default_prompt: "Use $zf-harness-commit-push to safely inspect, commit, and push approved ZaoFu changes."

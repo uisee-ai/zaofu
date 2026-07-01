@@ -1,0 +1,157 @@
+# dev-mixed-backends preset — B-MIXEDBACKEND-01 demo (2026-04-23)
+#
+# A single `dev` role with 2 replicas where dev-1 is Claude and dev-2 is
+# Codex. Same shape for `test`. Layer 1's WIP-aware fallback will pick
+# whichever replica is idle — over many tasks both backends see work.
+#
+# Use cases:
+#   - A/B compare claude vs codex on the same task contract
+#   - Redundant diversity: if one backend degrades, the other keeps the
+#     pool alive
+#   - Gradual codex adoption: start with 1:1 mix, shift toward codex as
+#     quality data accumulates
+#
+# Prerequisites (same as mixed-team.yaml):
+#   - codex CLI installed (`codex --version`)
+#   - `codex login` completed
+#   - ~/.codex/sessions writable
+#
+# Why this is different from mixed-team.yaml:
+#   mixed-team defines two separate roles (`dev` = 2 claude, `dev_codex`
+#   = 2 codex). Layer 2 has to choose between `dev` and `dev_codex` when
+#   dispatching, and in practice biases 100% toward `dev` (prior yaml
+#   example hint + "dev" being the dominant vocabulary). Result: codex
+#   replicas spawn but never take a task → 64% of spend is keep-alive
+#   idle tax.
+#
+#   This preset eliminates the role-level choice: there's only one
+#   `dev` (and one `test`), and Layer 1 — not Layer 2 — decides which
+#   backend's replica runs each task. Layer 2 just passes `role.name`.
+version: '1.0'
+preset: dev-mixed-backends
+project:
+  name: zaofu-devmixed
+  state_dir: .zf
+session:
+  tmux_session: zf-devmixed
+  # pane_grid: all 8 pane (orch + arch + dev×2 + review + test×2 + judge)
+  # share one window. Single `tmux attach -t zf-devmixed` shows the
+  # whole team — especially useful here because claude and codex side
+  # by side is the point of the exercise.
+  tmux_layout: pane_grid
+orchestrator:
+  backend: claude-code
+  permission_mode: bypass
+quality_gates:
+  static:
+    enabled: true
+    required_checks: []
+  test:
+    enabled: true
+workflow:
+  # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+
+roles:
+- allowed_tools:
+  - Bash(zf feature *)
+  - Bash(zf kanban *)
+  - Bash(zf emit *)
+  - Bash(zf events *)
+  - Bash(zf status)
+  - Read
+  backend: claude-code
+  name: orchestrator
+  permission_mode: allowlist
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - arch.proposal.done
+  - design.critique.done
+  - dev.build.done
+  - dev.blocked
+  - review.approved
+  - review.rejected
+  - test.passed
+  - test.failed
+  - judge.passed
+  - judge.failed
+- backend: claude-code
+  name: arch
+  permission_mode: bypass
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - design
+  triggers:
+  - task.assigned
+- name: dev
+  # B-MIXEDBACKEND-01: per-replica backend list. dev-1 gets claude-code,
+  # dev-2 gets codex. Layer 1 WIP fallback picks whichever is idle.
+  backends:
+  - claude-code
+  - codex
+  # `backend:` must NOT be set when `backends:` is present (loader rejects).
+  permission_mode: bypass
+  replicas: 2
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+- backend: claude-code
+  name: review
+  permission_mode: bypass
+  publishes:
+  - review.approved
+  - review.rejected
+  - design.critique.done
+  stages:
+  - code_review
+  - design_critique
+  triggers:
+  - dev.build.done
+  - arch.proposal.done
+- name: test
+  # Same mix: test-1 claude, test-2 codex.
+  backends:
+  - claude-code
+  - codex
+  permission_mode: bypass
+  replicas: 2
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - independent_test
+  triggers:
+  - review.approved
+- backend: claude-code
+  name: judge
+  permission_mode: bypass
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  code_review: "verify lane: code review"
+  design: PRD / design
+  design_critique: design critique
+  implement: implementation
+  independent_test: "verify lane: independent test"
+  intake: intake & breakdown
+  judge: "terminal judge"
+  meta: meta / orchestration

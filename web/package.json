@@ -1,0 +1,45 @@
+{
+  "name": "@zaofu/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "lint:tokens": "node scripts/check-no-raw-font-size.mjs",
+    "test": "tsc --noEmit && node scripts/check-no-raw-font-size.mjs",
+    "test:event-bus": "rm -rf /tmp/zf-web-event-bus-test && tsc --module ES2022 --moduleResolution Bundler --target ES2022 --lib DOM,DOM.Iterable,ES2022 --skipLibCheck --strict --outDir /tmp/zf-web-event-bus-test --rootDir . tests/projectEventBus.test.ts tests/queryClient.test.ts tests/pageLoadPolicy.test.ts tests/kanbanAgentHistoryPolicy.test.ts && printf '{\"type\":\"module\"}\\n' > /tmp/zf-web-event-bus-test/package.json && node /tmp/zf-web-event-bus-test/tests/projectEventBus.test.js && node /tmp/zf-web-event-bus-test/tests/queryClient.test.js && node /tmp/zf-web-event-bus-test/tests/pageLoadPolicy.test.js && node /tmp/zf-web-event-bus-test/tests/kanbanAgentHistoryPolicy.test.js",
+    "api-smoke": "node scripts/smoke.mjs",
+    "qa:visual": "node scripts/visual-product-qa.mjs",
+    "test:observability-model": "rm -rf /tmp/zf-web-observability-model-test && tsc --module ES2022 --moduleResolution Bundler --target ES2022 --lib DOM,DOM.Iterable,ES2022 --skipLibCheck --strict --outDir /tmp/zf-web-observability-model-test --rootDir . tests/observabilityModel.test.ts && node /tmp/zf-web-observability-model-test/tests/observabilityModel.test.js",
+    "test:behavior-loop-model": "rm -rf /tmp/zf-web-behavior-loop-model-test && tsc --module ES2022 --moduleResolution Bundler --target ES2022 --lib DOM,DOM.Iterable,ES2022 --skipLibCheck --strict --outDir /tmp/zf-web-behavior-loop-model-test --rootDir . tests/behaviorLoopModel.test.ts && printf '{\"type\":\"module\"}\\n' > /tmp/zf-web-behavior-loop-model-test/package.json && node /tmp/zf-web-behavior-loop-model-test/tests/behaviorLoopModel.test.js",
+    "test:agent-session": "rm -rf /tmp/zf-web-agent-session-test && tsc --module ES2022 --moduleResolution Bundler --target ES2022 --lib DOM,DOM.Iterable,ES2022 --skipLibCheck --strict --outDir /tmp/zf-web-agent-session-test --rootDir . tests/agentToolOutput.test.ts tests/agentWorkState.test.ts tests/agentToolGrouping.test.ts tests/markdownGuard.test.ts tests/channelProjection.test.ts tests/kanbanSessionEvents.test.ts && printf '{\"type\":\"module\"}\\n' > /tmp/zf-web-agent-session-test/package.json && node /tmp/zf-web-agent-session-test/tests/agentToolOutput.test.js && node /tmp/zf-web-agent-session-test/tests/agentWorkState.test.js && node /tmp/zf-web-agent-session-test/tests/agentToolGrouping.test.js && node /tmp/zf-web-agent-session-test/tests/markdownGuard.test.js && node /tmp/zf-web-agent-session-test/tests/channelProjection.test.js && node /tmp/zf-web-agent-session-test/tests/kanbanSessionEvents.test.js",
+    "smoke": "playwright test",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "@emoji-mart/data": "^1.2.1",
+    "@emoji-mart/react": "^1.1.1",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/source-serif-4": "^5.2.9",
+    "@fontsource/geist-mono": "^5.2.7",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^1.16.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "streamdown": "^2.0.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@types/react": "^18.3.24",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^5.0.2",
+    "typescript": "^5.9.2",
+    "vite": "^6.4.2"
+  }
+}

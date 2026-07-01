@@ -1,0 +1,792 @@
+
+.seg-bar.seg-bar-mini {
+  width: 76px;
+  height: 6px;
+}
+
+.seg-bar > span {
+  display: block;
+  flex: none;
+  height: 100%;
+}
+
+.seg-bar .seg-wait,
+.seg-chip-wait {
+  background: color-mix(in oklab, var(--muted-foreground) 42%, transparent);
+}
+
+.seg-bar .seg-active,
+.seg-chip-active {
+  background: var(--brand);
+}
+
+.seg-bar .seg-rework,
+.seg-chip-rework {
+  background: var(--warn);
+}
+
+.seg-chip {
+  display: inline-block;
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.dt-flow-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-flow-cols {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  margin-left: 10px;
+}
+
+/* Rows now carry right-side flow columns — cap long task ids with ellipsis
+   (hover title carries the full id). */
+.delivery-trace-node .dt-node-id {
+  max-width: 220px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-flow-num {
+  min-width: 42px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-11);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-flow-num.is-null,
+.dt-flow-conv.is-null {
+  color: var(--muted-foreground);
+}
+
+.dt-flow-conv {
+  min-width: 52px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-11);
+  letter-spacing: 1px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.dt-flow-conv .conv-stall {
+  color: var(--warn);
+  margin-left: 2px;
+}
+
+.dt-archetype-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dt-archetype-row h3 {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-archetype-badge {
+  flex: none;
+  font-family: var(--font-mono);
+  text-transform: none;
+}
+
+.tab-button .dt-archetype-badge {
+  margin-left: 6px;
+}
+
+.dt-span-tree-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.dt-tree-caret {
+  flex: none;
+  width: 12px;
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+}
+
+.dt-tree-label {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: var(--font-weight-medium);
+}
+
+.dt-tree-empty {
+  margin: 2px 0;
+  font-size: var(--text-12);
+}
+
+.dt-tree-empty-indent {
+  margin-left: 26px;
+}
+
+.dt-lifeline-tag {
+  flex: none;
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+
+/* ── T-刀④ 树×瀑布 (FlowSpanTree) — 左列层级树 / 右列共享时间轴瀑布条。
+   纯 div 定位,无图表库;颜色全 token(SegBar 语义色 / tone-*)。 ── */
+.wf-row {
+  min-width: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-13);
+  text-align: left;
+}
+
+button.wf-row {
+  cursor: pointer;
+}
+
+button.wf-row:hover {
+  background: var(--surface-2);
+}
+
+.wf-row.active {
+  background: color-mix(in oklab, var(--brand-subtle) 45%, var(--panel));
+}
+
+.wf-row.is-focus {
+  background: color-mix(in oklab, var(--brand-subtle) 32%, transparent);
+  box-shadow: inset 2px 0 0 var(--brand);
+}
+
+.wf-row.is-causal {
+  background: var(--warn-subtle); /* 三刀② 收编临时 color-mix 状态底色 */
+  box-shadow: inset 2px 0 0 var(--warn);
+}
+
+.wf-row-label {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.wf-feature .dt-tree-label {
+  font-weight: var(--font-weight-semibold);
+}
+
+.wf-task .wf-row-label {
+  padding-left: 14px;
+}
+
+.wf-task .dt-tree-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-regular);
+}
+
+.wf-try .wf-row-label {
+  padding-left: 28px;
+}
+
+.wf-try .dt-tree-label {
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-leaf .wf-row-label {
+  padding-left: 42px;
+}
+
+.wf-unassigned .wf-row-label {
+  padding-left: 0;
+}
+
+.wf-sigma {
+  margin-left: auto;
+  flex: none;
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-times {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-12);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.wf-leaf-seq {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-11);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-leaf-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+}
+
+.wf-track {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: 14px;
+  border-radius: 4px;
+  background: color-mix(in oklab, var(--surface-2) 70%, transparent);
+  overflow: hidden;
+}
+
+.wf-track-empty {
+  background: transparent;
+}
+
+.wf-bar {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: flex;
+  align-items: stretch;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.wf-bar-feature {
+  background: color-mix(in oklab, var(--muted-foreground) 25%, transparent);
+}
+
+.wf-bar-phase {
+  background: color-mix(in oklab, var(--brand) 30%, transparent);
+}
+
+.wf-bar-seg {
+  background: color-mix(in oklab, var(--muted-foreground) 14%, transparent);
+}
+
+.wf-bar-seg .seg-bar {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.wf-bar-leaf {
+  top: 5px;
+  bottom: 5px;
+  background: var(--muted-foreground);
+}
+
+.wf-bar-leaf.tone-ok { background: var(--ok); }
+.wf-bar-leaf.tone-err { background: var(--err); }
+.wf-bar-leaf.tone-warn { background: var(--warn); }
+.wf-bar-leaf.tone-info { background: var(--info); }
+.wf-bar-leaf.tone-muted { background: var(--muted-foreground); }
+
+/* LIFELINE 升级为轴 — 刻度行吸在瀑布顶部,时间定位对齐同一 domain。 */
+.wf-axis-row {
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--line);
+  border-radius: 0;
+}
+
+.wf-axis-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-axis-clock {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-10);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.wf-axis-track {
+  height: 26px;
+  background: transparent;
+  overflow: visible;
+}
+
+.wf-axis-tick {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  color: var(--muted-foreground);
+  font-size: var(--text-9);
+  white-space: nowrap;
+}
+
+.wf-axis-tick i {
+  font-style: normal;
+  color: var(--brand);
+  font-size: var(--text-10);
+  line-height: 1;
+}
+
+.wf-axis-tick.is-bad i {
+  color: var(--err);
+}
+
+.wf-axis-tick small {
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-9);
+}
+
+/* ── R-刀 Runs tab — GitHub Actions job 风格 attempt 列表(每行一次尝试)。 ── */
+.dt-runs-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.dt-runs-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.dt-runs-sigma {
+  min-width: 0;
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-runs-stage-filter {
+  max-width: 240px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: var(--text-13);
+}
+
+.dt-attempt-list {
+  display: grid;
+  gap: 6px;
+}
+
+.dt-attempt {
+  min-width: 0;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.dt-attempt.is-failed {
+  border-color: color-mix(in oklab, var(--err) 38%, var(--line));
+}
+
+.dt-attempt.is-superseded {
+  opacity: 0.78;
+}
+
+.dt-attempt-head {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.dt-attempt-head > .badge {
+  margin-left: auto;
+}
+
+.dt-attempt-head:hover {
+  background: var(--surface-2);
+}
+
+.dt-attempt-caret {
+  flex: none;
+  width: 12px;
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+}
+
+.dt-attempt-glyph {
+  flex: none;
+  font-size: var(--text-12);
+  line-height: 1;
+}
+
+.dt-attempt-glyph.kind-completed { color: var(--ok); }
+.dt-attempt-glyph.kind-failed { color: var(--err); }
+.dt-attempt-glyph.kind-timed_out { color: var(--warn); }
+.dt-attempt-glyph.kind-running { color: var(--info); }
+.dt-attempt-glyph.kind-superseded,
+.dt-attempt-glyph.kind-pending { color: var(--muted-foreground); }
+
+.dt-attempt-name {
+  flex: none;
+  max-width: 280px;
+  font-family: var(--font-mono);
+  font-size: var(--text-13);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-attempt-sunk {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-attempt-times {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-12);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.dt-attempt-times + .badge,
+.dt-attempt-times + .dt-attempt-children-count,
+.dt-attempt-children-count + .badge {
+  margin-left: 0;
+}
+
+.dt-attempt-children-count {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-11);
+  color: var(--muted-foreground);
+}
+
+.dt-attempt-body {
+  display: grid;
+  gap: 8px;
+  padding: 6px 10px 10px 30px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+.dt-attempt-anchors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.dt-anchor {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--brand);
+  cursor: pointer;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.dt-anchor:hover {
+  background: var(--surface-2); /* 三刀③ hover 底色化 */
+}
+
+.dt-anchor.is-null {
+  border-style: dashed;
+  color: var(--muted-foreground);
+  cursor: default;
+}
+
+.dt-attempt-children {
+  display: grid;
+  gap: 4px;
+}
+
+.dt-attempt-child {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--surface-2) 60%, transparent);
+  font-size: var(--text-12);
+}
+
+.dt-child-task {
+  min-width: 0;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-child-lane {
+  flex: none;
+  max-width: 140px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-child-try,
+.dt-child-dur {
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.dt-child-dispatch {
+  flex: none;
+}
+
+.dt-child-dispatch.is-null {
+  color: var(--muted-foreground);
+}
+
+.dt-child-gates {
+  flex: none;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.dt-gate-pass { color: var(--ok); }
+.dt-gate-fail { color: var(--err); }
+
+.dt-child-note {
+  min-width: 0;
+  color: var(--err);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dt-attempt-aggregate {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.dt-attempt-agg-tag {
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dt-attempt-artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dt-attempt-artifacts code {
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Delivery S-E/S-B/S-C (2026-06-11) — Run Graph / Lifecycle drawer / Tasks try-grid.
+   颜色全走既有 token(与看板列 tone 同源: brand/info/warn/err/ok/muted)。 ── */
+.rg-state-none { --rg-accent: var(--muted-foreground); }
+.rg-state-ready { --rg-accent: var(--brand); }
+.rg-state-queued { --rg-accent: var(--warn); }
+.rg-state-running { --rg-accent: var(--info); }
+.rg-state-done { --rg-accent: var(--ok); }
+.rg-state-failed { --rg-accent: var(--err); }
+.rg-state-blocked { --rg-accent: var(--err); }
+.rg-state-retry { --rg-accent: var(--warn); }
+.rg-state-superseded { --rg-accent: var(--muted-foreground); }
+
+.rg-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.rg-head {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  font-size: var(--text-12);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-legend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--text-10);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.rg-legend-item {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rg-legend-item > i {
+  font-style: normal;
+  color: var(--rg-accent, var(--muted-foreground));
+}
+
+.rg-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0 18px 4px 0;
+  scrollbar-gutter: stable;
+}
+
+.rg-grid {
+  display: inline-grid;
+  align-items: start;
+  row-gap: 8px;
+  padding-right: 18px;
+}
+
+.rg-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+/* Rx1 (2026-06-12) — 节点统一定宽 200px(含组节点;grid 节点列同步 200px 定值),
+   主链节奏不再随 stage 名长短抖动。 */
+.rg-node {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 200px;
+  padding: 7px 9px;
+  border: 1.5px solid color-mix(in oklab, var(--rg-accent, var(--line)) 65%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--rg-accent, var(--line)) 7%, var(--panel));
+  font-size: var(--text-12);
+}
+
+/* Rx3 — active 强调收敛:去 box-shadow 环;is-active 原本无自有边框/底色,
+   按规则补 2px brand 边框(底色 tint 仍由基类 rg-accent 染)。 */
+.rg-node.is-active {
+  border-width: 2px;
+  border-color: var(--brand);
+}
+
+/* Rx1 — 标题人类化配套:sans(去 mono)、--text-13 medium,单行 ellipsis;
+   原始事件类型在 title 属性。 */
+.rg-node-name {
+  min-width: 0;
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-node-sub {
+  min-width: 0;
+  font-size: var(--text-10);
+  line-height: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

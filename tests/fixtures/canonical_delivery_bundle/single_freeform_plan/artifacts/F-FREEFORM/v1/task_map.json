@@ -1,0 +1,39 @@
+{
+  "schema_version": "task-map.v1",
+  "feature_id": "F-FREEFORM",
+  "source_refs": {
+    "plan_ref": "tests/fixtures/canonical_delivery_bundle/single_freeform_plan/freeform-plan.md",
+    "source_index_ref": "tests/fixtures/canonical_delivery_bundle/single_freeform_plan/artifacts/F-FREEFORM/v1/source_index.json",
+    "coverage_report_ref": "tests/fixtures/canonical_delivery_bundle/single_freeform_plan/artifacts/F-FREEFORM/v1/coverage_report.json"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-FREE-A",
+      "title": "Count valid JSON lines",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "blocked_by": [],
+      "wave": 1,
+      "scope": ["jsonl_counter.py"],
+      "exclusive_files": ["jsonl_counter.py"],
+      "behavior": "Count valid and invalid JSONL rows.",
+      "acceptance": ["valid and invalid row counts are returned", "invalid row numbers are retained"],
+      "verification": "pytest tests/test_jsonl_counter.py",
+      "verification_tiers": ["runtime"]
+    },
+    {
+      "task_id": "TASK-FREE-B",
+      "title": "Return compact JSONL report",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "blocked_by": ["TASK-FREE-A"],
+      "wave": 2,
+      "scope": ["jsonl_counter.py"],
+      "shared_files": ["jsonl_counter.py"],
+      "behavior": "Return valid/invalid/invalid_lines report.",
+      "acceptance": ["report has valid, invalid, invalid_lines keys"],
+      "verification": "pytest tests/test_jsonl_counter.py",
+      "verification_tiers": ["runtime"]
+    }
+  ]
+}

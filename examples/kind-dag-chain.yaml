@@ -1,0 +1,21 @@
+# kind envelope 新语法示例(doc 90 B3)— DAG 链家族
+# 依名依赖(dependencies)是语法面;事件边 plan.completed → build 由
+# compiler 铸造(doc 90 §2.2:ZaoFu 事件类型边承重,不可删除)。
+apiVersion: zaofu.dev/v1
+kind: Workflow
+metadata: {name: plan-build}
+spec:
+  entry: plan
+  tasks:
+  - {name: plan, trigger: work.requested, role: planner}
+  - {name: build, dependencies: [plan], role: builder}
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: kind-dag-chain-demo}
+spec:
+  version: "1.0"
+  project: {name: kind-dag-chain-demo, state_dir: .zf}
+  roles:
+  - {name: planner, backend: mock, instance_id: planner, role_kind: reader}
+  - {name: builder, backend: mock, instance_id: builder, role_kind: reader}

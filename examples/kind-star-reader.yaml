@@ -1,0 +1,28 @@
+# kind envelope 新语法示例(doc 90 B3)— star reader 家族
+# 等价旧语法形:examples/star-verifier-reader.yaml 的 stage 拓扑
+# (单 trigger → N reader children → synth 聚合)。
+# 事件边由约定铸造:scan.completed/failed + scan.child.* 。
+apiVersion: zaofu.dev/v1
+kind: Workflow
+metadata: {name: star-scan}
+spec:
+  tasks:
+  - name: scan
+    trigger: scan.requested
+    fanout:
+      roles: [scan-contract, scan-runtime, scan-verification]
+    aggregate: {mode: wait_for_all, synthRole: scan-synth}
+    target: ${target_ref}
+    deadlineSeconds: 1800
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: kind-star-reader-demo}
+spec:
+  version: "1.0"
+  project: {name: kind-star-reader-demo, state_dir: .zf}
+  roles:
+  - {name: scan-contract, backend: mock, instance_id: scan-contract, role_kind: reader}
+  - {name: scan-runtime, backend: mock, instance_id: scan-runtime, role_kind: reader}
+  - {name: scan-verification, backend: mock, instance_id: scan-verification, role_kind: reader}
+  - {name: scan-synth, backend: mock, instance_id: scan-synth, role_kind: reader}

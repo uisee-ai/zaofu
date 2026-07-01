@@ -1,0 +1,127 @@
+# Star critic/review reader example with a synth role.
+#
+# Shape:
+#   candidate.ready
+#       -> review-security
+#       -> review-architecture
+#       -> review-testing
+#       -> review-synth
+#       -> review.approved / review.rejected
+#
+# Current runtime semantics:
+#   - child readers finish by emitting the stage success/failure event with
+#     fanout_id + child_id in the payload.
+#   - synth_role is dispatched only after all children are terminal.
+#   - synth completes by emitting fanout.synth.completed; the kernel owns the
+#     final review.approved / review.rejected publication.
+#
+# Example trigger:
+#   zf emit candidate.ready --actor human \
+#     --payload '{"pdd_id":"PDD-123","candidate_ref":"candidate/PDD-123"}'
+version: '1.0'
+preset: star-critic-review-reader
+project:
+  name: zaofu-star-review
+  state_dir: .zf
+session:
+  tmux_session: zf-star-review
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+workflow:
+  dag:
+    external_triggers:
+    - candidate.ready
+  stages:
+  - id: review-wave
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles:
+    - review-security
+    - review-architecture
+    - review-testing
+    fanout:
+      children:
+      - role_instance: review-security
+        payload:
+          child_id: review-security
+          instruction: >-
+            Review only the candidate diff between candidate_ref and dev or
+            origin/dev. This smoke candidate should only add
+            docs/star-smoke-candidate.md. Check for secrets, active content,
+            external links, and whitespace issues in that file only. Do not
+            inspect HEAD~N history or unrelated repository changes.
+          expected_output: review.approved when the docs-only diff has no security findings.
+      - role_instance: review-architecture
+        payload:
+          child_id: review-architecture
+          instruction: >-
+            Review only the candidate diff between candidate_ref and dev or
+            origin/dev. Treat pre-existing repository architecture debt,
+            large-file history, and current zf.yaml baseline issues as out of
+            scope unless this candidate changed them. This smoke candidate
+            should only add docs/star-smoke-candidate.md; approve when no
+            source, runtime, config, API, task, or indexed design doc changed.
+            Do not inspect HEAD~N history or unrelated mainline batches.
+          expected_output: review.approved when the candidate is docs-only and architecture-neutral.
+      - role_instance: review-testing
+        payload:
+          child_id: review-testing
+          instruction: >-
+            Review only the candidate diff between candidate_ref and dev or
+            origin/dev. Confirm the diff is docs-only and run focused
+            fanout/payload smoke tests if useful: PYTHONDONTWRITEBYTECODE=1
+            PYTHONPATH=src python3 -m pytest -q -p no:cacheprovider -o
+            addopts='' tests/test_fanout_manifest.py tests/test_payload_contract.py
+            tests/test_workflow_invoke_pattern_bridge.py. Do not run full
+            pytest or nested real-provider E2E from this child.
+          expected_output: review.approved when focused checks pass or are unnecessary for docs-only diff.
+    target_ref: ${candidate_ref}
+    aggregate:
+      mode: wait_for_all
+      synth_role: review-synth
+      success_event: review.approved
+      failure_event: review.rejected
+      max_retries: 1
+    timeout_seconds: 1800
+roles:
+- name: review-security
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+- name: review-architecture
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+- name: review-testing
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - code_review
+  publishes:
+  - review.approved
+  - review.rejected
+- name: review-synth
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - review_synthesis
+  publishes:
+  - fanout.synth.completed
+stage_labels:
+  code_review: critic review star
+  review_synthesis: review synthesis

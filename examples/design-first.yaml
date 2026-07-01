@@ -1,0 +1,135 @@
+# zf.yaml — 完整 SDD+TDD（arch + critic + dev + review + test + judge）
+# 生成方式：zf init --preset design-first
+
+version: "1.0"
+preset: design-first
+
+project:
+  name: my-project
+  state_dir: .zf
+
+session:
+  tmux_session: zf
+
+orchestrator:
+  backend: claude-code
+  loop:
+    max_iterations: 50
+    idle_exit_after: 3
+
+constraints:
+  allowed_paths: [src, tests, docs, zf.yaml, pyproject.toml]
+  blocked_paths: [.git, .zf]
+  max_steps: 200
+
+workflow:
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: arch
+    dev.failed: arch
+  gan_rounds: 2                     # 架构↔critic 对抗轮数 (G-GAN-2)
+
+stage_labels:
+  intake: "① Intake"
+  prd_design: "② Architecture"
+  challenge_design: "③ Design critique"
+  implement: "④ Implementation"
+  quality_gate: "⑤ Quality gate"
+  code_review: "⑥ Code review"
+  independent_test: "⑦ Testing"
+  final_review: "⑧ Final judge"
+  accept_done: "⑨ Accept"
+
+quality_gates:
+  static:
+    enabled: true
+    # required_checks 是 shell 命令字符串列表; 留空 = vacuously pass.
+    # 例: required_checks: ["PYTHONPATH=src python3 -m pytest --no-cov -q"]
+    required_checks: []
+  review:
+    enabled: true
+  test:
+    enabled: true
+  final_critic:
+    enabled: true
+
+roles:
+  # ---- 架构师：设计方案 ----
+  - name: arch
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [prd_design]
+    triggers: [session.started, task.assigned]
+    publishes: [arch.proposal.done]
+    constraints:
+      allowed_paths: [docs, zf.yaml]
+      blocked_paths: [src, tests, .zf]
+
+  # ---- 评论家：挑战设计 ----
+  - name: critic
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [challenge_design, final_review]
+    triggers: [arch.proposal.done, review.approved]
+    publishes: [design.critique.done, judge.passed, judge.failed]
+    constraints:
+      allowed_paths: [docs, src, tests]
+      blocked_paths: [.zf]
+
+  # ---- 开发者：实现代码 ----
+  - name: dev
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [implement]
+    triggers: [design.critique.done, task.assigned]
+    publishes: [dev.build.done, dev.blocked]
+    constraints:
+      allowed_paths: [src, tests, pyproject.toml]
+      blocked_paths: [.zf, docs]
+    execution:
+      command: "python3 -m pytest -q"
+
+  # ---- 审查者：代码审查 ----
+  - name: review
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [code_review]
+    triggers: [dev.build.done]
+    publishes: [review.approved, review.rejected]
+    constraints:
+      allowed_paths: [src, tests]
+      blocked_paths: [.zf]
+
+  # ---- 测试者：独立验证 ----
+  - name: test
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [independent_test]
+    triggers: [dev.build.done]
+    publishes: [test.passed, test.failed]
+    execution:
+      command: "python3 -m pytest -q"
+
+# 事件流拓扑：
+#
+#   session.started
+#        │
+#        ▼
+#   ┌────────┐  arch.proposal.done   ┌────────┐  design.critique.done
+#   │  arch  │ ───────────────────── │ critic │ ─────────────────────┐
+#   └────────┘                       └────────┘                     │
+#                                                                   ▼
+#   task.assigned ─────────────────────────────────────────────► ┌─────┐
+#                                                                │ dev │
+#                                                                └──┬──┘
+#                                                    dev.build.done │
+#                                                 ┌─────────────────┼─────────────┐
+#                                                 ▼                 ▼             ▼
+#                                            ┌────────┐       ┌────────┐    ┌────────┐
+#                                            │ review │       │  test  │    │ critic │
+#                                            └───┬────┘       └────────┘    │(judge) │
+#                                                │                          └────────┘
+#                                     review.approved
+#                                                │
+#                                                ▼
+#                                             (done)

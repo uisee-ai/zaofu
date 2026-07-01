@@ -1,0 +1,12 @@
+version: "1.0"
+project:
+  name: test-project
+  workspace: .
+  state_dir: .zf
+session:
+  tmux_session: zf
+orchestrator:
+  backend: python
+roles:
+  - name: dev
+    backend: python

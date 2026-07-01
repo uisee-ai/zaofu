@@ -1,0 +1,226 @@
+# workflow-task-flow-dynamic-codex.yaml — task-centric dynamic workflow reference.
+#
+# Purpose:
+#   Reference scenario for Delivery UI/projection design. The task flow is:
+#
+#     plan -> impl -> verify -> done
+#
+#   This is only the default template. A project may replace the flow with
+#   research -> design -> build -> qa -> release, or add/remove stages. ZaoFu
+#   Delivery must derive the visible flow from `workflow.dag.stage_order` and
+#   `workflow.stages`; it must not hard-code plan/impl/verify/done.
+#
+# Shape:
+#   user.message
+#     -> planner creates/accepts task map                 (plan)
+#     -> writer fanout executes scoped task-map lanes     (impl)
+#     -> reader fanout verifies candidate/task evidence   (verify)
+#     -> kernel terminal gate marks task/feature done     (done)
+
+version: '1.0'
+preset: workflow-task-flow-dynamic-codex
+
+project:
+  name: ${ZF_PROJECT_NAME:-task-flow-dynamic}
+  state_dir: ${ZF_STATE_DIR:-.zf-task-flow}
+
+session:
+  tmux_session: ${ZF_TMUX_SESSION:-zf-task-flow}
+  tmux_layout: pane_grid
+
+global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-500.0}
+budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+
+runtime:
+  workdirs:
+    enabled: true
+    root: ${ZF_STATE_DIR:-.zf-task-flow}/workdirs
+    mode: worktree
+  git:
+    candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+    writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf-task-flow}/worker
+    task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf-task-flow}/task
+    candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf-task-flow}/candidate
+    candidate_strategy: cherry-pick
+    remote_policy: local
+    auto_ship_on_candidate_complete: false
+  skills:
+    pool: ${ZF_STATE_DIR:-.zf-task-flow}/skills
+    materialize: copy
+    lock_file: ${ZF_STATE_DIR:-.zf-task-flow}/skills.lock.json
+    strict: false
+
+workflow:
+  harness_profile: strict
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1400
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+    - worker.context.warning
+    - worker.context.critical
+    - worker.stuck
+  dag:
+    enabled: true
+    default_gate_level: strict
+    dev_requires_orchestrator_backlog: false
+    design_to_backlog_owner: planner
+    # Delivery should render this dynamic order as the left-side task-flow
+    # rail. Users can customize the labels and order per project.
+    stage_order:
+    - plan
+    - impl
+    - verify
+    - done
+    event_schemas:
+      worker.context.warning:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.context.critical:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.progress:
+        required: [task_id, dispatch_id, role, instance_id, phase, message, source]
+      task_map.ready:
+        required: [task_map_ref, source_commit, candidate_base_commit]
+      verify.passed:
+        required: [target_ref, summary, evidence_refs]
+      verify.failed:
+        required: [target_ref, reason, evidence_refs]
+  # Runtime-owned fanout stages are optional concrete execution contexts under
+  # the task-flow rail. Delivery should show them as where tasks ran, not as the
+  # primary product axis.
+  stages:
+  - id: impl
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    roles: [dev-core, dev-web]
+    source:
+      task_map: ${ZF_TASK_MAP_REF:-.zf-task-flow/task-map.json}
+      synthesize_canonical_tasks: true
+    fanout:
+      children: []
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+      max_retries: 1
+    timeout_seconds: 7200
+  - id: verify
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles: [verify-code, verify-test]
+    target:
+      ref: ${candidate_ref}
+    aggregate:
+      mode: any_failed_fail
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: verify.passed
+      failure_event: verify.failed
+      max_retries: 1
+    timeout_seconds: 3600
+  rework_routing:
+    integration.failed: dev-core
+    verify.failed: dev-core
+    static_gate.failed: dev-core
+    discriminator.failed: dev-core
+    dispatch.silent_stall: planner
+
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: planner
+    dev.failed: planner
+orchestrator:
+  backend: codex
+
+quality_gates:
+  static:
+    enabled: true
+    required_checks: [git diff --check]
+  test:
+    enabled: false
+    required_checks: []
+
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+  event_schema:
+    mode: warning
+
+roles:
+- name: planner
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, planning-and-task-breakdown, context-engineering]
+  stages: [plan]
+  triggers: [user.message, clarification.needed, dispatch.silent_stall]
+  publishes: [task_map.ready, task.contract.invalid, clarification.needed]
+
+- name: dev-core
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills: [using-agent-skills, incremental-implementation, test-driven-development]
+  stages: [impl]
+  triggers: [task.assigned, verify.failed, integration.failed]
+  publishes: [dev.build.done, dev.blocked, workflow.child.completed, workflow.child.failed]
+
+- name: dev-web
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills: [using-agent-skills, incremental-implementation, browser-testing-with-devtools]
+  stages: [impl]
+  triggers: [task.assigned]
+  publishes: [dev.build.done, dev.blocked, workflow.child.completed, workflow.child.failed]
+
+- name: verify-code
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, code-review-and-quality, zf-harness-gate-evaluator]
+  stages: [verify]
+  triggers: [candidate.ready]
+  publishes: [verify.child.completed, verify.child.failed, verify.passed, verify.failed]
+
+- name: verify-test
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills: [using-agent-skills, test-driven-development, debugging-and-error-recovery]
+  stages: [verify]
+  triggers: [candidate.ready]
+  publishes: [verify.child.completed, verify.child.failed, verify.passed, verify.failed]
+
+stage_labels:
+  plan: "Plan: idea/spec/task-map"
+  impl: "Impl: scoped writer fanout"
+  verify: "Verify: reader fanout / gates"
+  done: "Done: kernel terminal state"

@@ -1,0 +1,659 @@
+"""Owner-visible message delivery receipts.
+
+Supervisor emits ``owner.visible_message.requested`` when a human should be
+notified.  This module is the deterministic delivery sidecar that turns those
+requests into Feishu delivery attempts and receipt events.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from zf.core.events import EventWriter, ZfEvent
+from zf.core.events.log import EventLog
+from zf.core.security.redaction import redact_obj
+from zf.integrations.feishu.projection import RoutingConfig
+from zf.integrations.feishu.transport import FeishuMessage, FeishuTransport
+
+
+OWNER_MESSAGE_REQUESTED = "owner.visible_message.requested"
+OWNER_MESSAGE_ATTEMPTED = "owner.visible_message.delivery_attempted"
+OWNER_MESSAGE_DELIVERED = "owner.visible_message.delivered"
+OWNER_MESSAGE_FAILED = "owner.visible_message.failed"
+OWNER_MESSAGE_ROUTE_UNHEALTHY = "owner.visible_message.route_unhealthy"
+OWNER_MESSAGE_SUPPRESSED = "owner.visible_message.suppressed"
+OWNER_MESSAGE_TERMINAL = {
+    OWNER_MESSAGE_DELIVERED,
+    "owner.visible_message.expired",
+    "owner.visible_message.superseded",
+    OWNER_MESSAGE_SUPPRESSED,
+}
+
+
+@dataclass(frozen=True)
+class OwnerVisibleDeliveryResult:
+    ok: bool
+    status: str
+    considered: int = 0
+    attempted: int = 0
+    delivered: int = 0
+    failed: int = 0
+    skipped: int = 0
+    attempted_event_ids: list[str] | None = None
+    delivered_event_ids: list[str] | None = None
+    failed_event_ids: list[str] | None = None
+
+
+def deliver_owner_visible_messages_once(
+    *,
+    event_log: EventLog,
+    writer: EventWriter,
+    transport: FeishuTransport,
+    routing: RoutingConfig,
+    target: str = "feishu",
+    max_attempts: int = 1,
+) -> OwnerVisibleDeliveryResult:
+    """Deliver pending owner-visible messages for one target.
+
+    The function is idempotent over ``message_id`` + ``target``. Delivered,
+    expired, and superseded messages are not retried. Failed messages can be
+    retried only when ``max_attempts`` is raised by the caller.
+    """
+
+    target = str(target or "feishu").strip() or "feishu"
+    max_attempts = max(int(max_attempts or 1), 1)
+    events = event_log.read_all()
+    lifecycle = _delivery_lifecycle(events, target=target)
+    unhealthy_routes = _unhealthy_owner_visible_routes(events, target=target)
+    requested = [event for event in events if event.type == OWNER_MESSAGE_REQUESTED]
+    attempted_event_ids: list[str] = []
+    delivered_event_ids: list[str] = []
+    failed_event_ids: list[str] = []
+    skipped = 0
+    for event in requested:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if not _wants_target(payload, target):
+            skipped += 1
+            continue
+        message_id = _message_id(payload, fallback=event.id)
+        state = lifecycle.get(message_id, {"attempts": 0, "terminal": False})
+        if bool(state.get("terminal")) or int(state.get("attempts") or 0) >= max_attempts:
+            skipped += 1
+            continue
+        if _should_suppress_delivery(payload, target=target):
+            route = _routing_role(payload, routing)
+            receive_id = routing.channels.get(route, "")
+            receive_id_type = routing.receive_id_type_for(route)
+            suppressed = writer.emit(
+                OWNER_MESSAGE_SUPPRESSED,
+                actor="zf-owner-visible-delivery",
+                task_id=event.task_id or _text(payload, "task_id") or None,
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+                payload=redact_obj({
+                    **_receipt_payload(
+                        event=event,
+                        payload=payload,
+                        target=target,
+                        route=route,
+                        receive_id=receive_id,
+                        receive_id_type=receive_id_type,
+                        delivery_id=_delivery_id(message_id, target, 0),
+                        attempt=0,
+                    ),
+                    "status": "suppressed",
+                    "reason": "non_human_supervisor_message",
+                    "human_action_required": False,
+                }),
+            )
+            skipped += 1
+            continue
+        attempt_no = int(state.get("attempts") or 0) + 1
+        route = _routing_role(payload, routing)
+        receive_id = routing.channels.get(route, "")
+        receive_id_type = routing.receive_id_type_for(route)
+        route_key = _delivery_route_key(
+            target=target,
+            route=route,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+        )
+        if route_key in unhealthy_routes:
+            skipped += 1
+            continue
+        delivery_id = _delivery_id(message_id, target, attempt_no)
+        base = _receipt_payload(
+            event=event,
+            payload=payload,
+            target=target,
+            route=route,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+            delivery_id=delivery_id,
+            attempt=attempt_no,
+        )
+        attempted = writer.emit(
+            OWNER_MESSAGE_ATTEMPTED,
+            actor="zf-supervisor",
+            task_id=event.task_id or _text(payload, "task_id") or None,
+            causation_id=event.id,
+            correlation_id=event.correlation_id,
+            payload=redact_obj({**base, "status": "delivery_attempted"}),
+        )
+        attempted_event_ids.append(attempted.id)
+        if not receive_id:
+            failed = _emit_failed(
+                writer,
+                attempted=attempted,
+                event=event,
+                payload=payload,
+                base=base,
+                reason=f"{target} delivery route {route!r} is not configured",
+            )
+            failed_event_ids.append(failed.id)
+            continue
+        preflight_failure = _receive_id_preflight_failure(
+            target=target,
+            receive_id=receive_id,
+            receive_id_type=receive_id_type,
+        )
+        if preflight_failure:
+            failed = _emit_failed(
+                writer,
+                attempted=attempted,
+                event=event,
+                payload=payload,
+                base=base,
+                reason=preflight_failure,
+            )
+            failed_event_ids.append(failed.id)
+            continue
+        try:
+            transport.send_message(FeishuMessage(
+                chat_id=receive_id,
+                receive_id_type=receive_id_type,
+                content=_format_owner_message(event, payload),
+            ))
+        except Exception as exc:
+            failed = _emit_failed(
+                writer,
+                attempted=attempted,
+                event=event,
+                payload=payload,
+                base=base,
+                reason=str(exc),
+            )
+            _emit_route_unhealthy_if_needed(
+                writer,
+                failed=failed,
+                attempted=attempted,
+                event=event,
+                base=base,
+            )
+            failed_event_ids.append(failed.id)
+            continue
+        delivered = writer.emit(
+            OWNER_MESSAGE_DELIVERED,
+            actor="zf-supervisor",
+            task_id=event.task_id or _text(payload, "task_id") or None,
+            causation_id=attempted.id,
+            correlation_id=event.correlation_id,
+            payload=redact_obj({**base, "status": "delivered"}),
+        )
+        delivered_event_ids.append(delivered.id)
+
+    failed_count = len(failed_event_ids)
+    delivered_count = len(delivered_event_ids)
+    return OwnerVisibleDeliveryResult(
+        ok=failed_count == 0,
+        status="completed" if failed_count == 0 else "failed",
+        considered=len(requested),
+        attempted=len(attempted_event_ids),
+        delivered=delivered_count,
+        failed=failed_count,
+        skipped=skipped,
+        attempted_event_ids=attempted_event_ids,
+        delivered_event_ids=delivered_event_ids,
+        failed_event_ids=failed_event_ids,
+    )
+
+
+def project_owner_visible_inbox(
+    state_dir: Path | None = None,
+    *,
+    events: list[ZfEvent] | None = None,
+) -> dict[str, Any]:
+    """Build a read-only inbox projection for owner-visible messages."""
+    if events is None:
+        if state_dir is None:
+            events = []
+        else:
+            try:
+                events = EventLog(Path(state_dir) / "events.jsonl").read_all()
+            except Exception:
+                events = []
+    messages: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.type not in {
+            OWNER_MESSAGE_REQUESTED,
+            OWNER_MESSAGE_ATTEMPTED,
+            OWNER_MESSAGE_DELIVERED,
+            OWNER_MESSAGE_FAILED,
+            OWNER_MESSAGE_ROUTE_UNHEALTHY,
+            OWNER_MESSAGE_SUPPRESSED,
+            "owner.visible_message.expired",
+            "owner.visible_message.superseded",
+        }:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        message_id = _message_id(payload, fallback=event.id)
+        row = messages.setdefault(message_id, {
+            "message_id": message_id,
+            "status": "unknown",
+            "task_id": event.task_id or _text(payload, "task_id"),
+            "decision_id": _text(payload, "decision_id"),
+            "attention_id": _text(payload, "attention_id"),
+            "fingerprint": _text(payload, "fingerprint"),
+            "severity": _text(payload, "severity"),
+            "title": _text(payload, "title"),
+            "summary": _text(payload, "summary"),
+            "targets": [],
+            "attempts": 0,
+            "failures": 0,
+            "last_error": "",
+            "last_event_id": "",
+            "last_event_at": "",
+        })
+        row["last_event_id"] = event.id
+        row["last_event_at"] = event.ts
+        for target in _delivery_targets(payload):
+            if target not in row["targets"]:
+                row["targets"].append(target)
+        if event.type == OWNER_MESSAGE_REQUESTED:
+            row["status"] = "requested"
+            for key in ("decision_id", "attention_id", "fingerprint", "severity", "title", "summary"):
+                value = _text(payload, key)
+                if value:
+                    row[key] = value
+        elif event.type == OWNER_MESSAGE_ATTEMPTED:
+            row["status"] = "delivery_attempted"
+            row["attempts"] = int(row.get("attempts") or 0) + 1
+        elif event.type == OWNER_MESSAGE_DELIVERED:
+            row["status"] = "delivered"
+        elif event.type == OWNER_MESSAGE_FAILED:
+            row["status"] = "failed"
+            row["failures"] = int(row.get("failures") or 0) + 1
+            row["last_error"] = _text(payload, "reason") or _text(payload, "error")
+        elif event.type == OWNER_MESSAGE_ROUTE_UNHEALTHY:
+            row["last_error"] = _text(payload, "reason") or _text(payload, "error_class")
+        elif event.type == OWNER_MESSAGE_SUPPRESSED:
+            row["status"] = "suppressed"
+            row["last_error"] = _text(payload, "reason")
+        elif event.type == "owner.visible_message.expired":
+            row["status"] = "expired"
+        elif event.type == "owner.visible_message.superseded":
+            row["status"] = "superseded"
+    rows = sorted(
+        messages.values(),
+        key=lambda row: str(row.get("last_event_at") or ""),
+    )
+    pending_statuses = {"requested", "delivery_attempted"}
+    failed_statuses = {"failed"}
+    delivered_statuses = {"delivered"}
+    return {
+        "schema_version": "owner.visible_message.inbox.v0",
+        "is_derived_projection": True,
+        "summary": {
+            "total": len(rows),
+            "pending": sum(1 for row in rows if row.get("status") in pending_statuses),
+            "failed": sum(1 for row in rows if row.get("status") in failed_statuses),
+            "delivered": sum(1 for row in rows if row.get("status") in delivered_statuses),
+        },
+        "pending": [row for row in rows if row.get("status") in pending_statuses][-50:],
+        "failed": [row for row in rows if row.get("status") in failed_statuses][-50:],
+        "recent": rows[-50:],
+    }
+
+
+def _delivery_lifecycle(events: list[ZfEvent], *, target: str) -> dict[str, dict[str, Any]]:
+    state: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.type not in {
+            OWNER_MESSAGE_ATTEMPTED,
+            OWNER_MESSAGE_DELIVERED,
+            OWNER_MESSAGE_FAILED,
+            OWNER_MESSAGE_SUPPRESSED,
+            "owner.visible_message.expired",
+            "owner.visible_message.superseded",
+        }:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if _text(payload, "target") != target:
+            continue
+        message_id = _message_id(payload, fallback="")
+        if not message_id:
+            continue
+        row = state.setdefault(message_id, {"attempts": 0, "terminal": False})
+        if event.type == OWNER_MESSAGE_ATTEMPTED:
+            row["attempts"] = max(int(row.get("attempts") or 0), _int(payload.get("attempt")))
+        if event.type in OWNER_MESSAGE_TERMINAL:
+            row["terminal"] = True
+        if event.type == OWNER_MESSAGE_FAILED:
+            row["attempts"] = max(int(row.get("attempts") or 0), _int(payload.get("attempt")))
+    return state
+
+
+def _unhealthy_owner_visible_routes(
+    events: list[ZfEvent],
+    *,
+    target: str,
+) -> set[str]:
+    routes: set[str] = set()
+    for event in events:
+        if event.type not in {OWNER_MESSAGE_ROUTE_UNHEALTHY, OWNER_MESSAGE_FAILED}:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if _text(payload, "target") != target:
+            continue
+        error_class = _text(payload, "error_class")
+        if error_class != "feishu_open_id_cross_app":
+            continue
+        key = _delivery_route_key(
+            target=target,
+            route=_text(payload, "route"),
+            receive_id=_text(payload, "receive_id"),
+            receive_id_type=_text(payload, "receive_id_type"),
+        )
+        if key:
+            routes.add(key)
+    return routes
+
+
+def _emit_failed(
+    writer: EventWriter,
+    *,
+    attempted: ZfEvent,
+    event: ZfEvent,
+    payload: dict[str, Any],
+    base: dict[str, Any],
+    reason: str,
+) -> ZfEvent:
+    error_class = _delivery_error_class(reason)
+    return writer.emit(
+        OWNER_MESSAGE_FAILED,
+        actor="zf-supervisor",
+        task_id=event.task_id or _text(payload, "task_id") or None,
+        causation_id=attempted.id,
+        correlation_id=event.correlation_id,
+        payload=redact_obj({
+            **base,
+            "status": "failed",
+            "reason": reason,
+            "error_class": error_class,
+            "action_hint": _delivery_action_hint(error_class),
+        }),
+    )
+
+
+def _emit_route_unhealthy_if_needed(
+    writer: EventWriter,
+    *,
+    failed: ZfEvent,
+    attempted: ZfEvent,
+    event: ZfEvent,
+    base: dict[str, Any],
+) -> ZfEvent | None:
+    payload = failed.payload if isinstance(failed.payload, dict) else {}
+    error_class = _text(payload, "error_class")
+    if error_class != "feishu_open_id_cross_app":
+        return None
+    return writer.emit(
+        OWNER_MESSAGE_ROUTE_UNHEALTHY,
+        actor="zf-supervisor",
+        task_id=failed.task_id,
+        causation_id=failed.id,
+        correlation_id=event.correlation_id,
+        payload=redact_obj({
+            **base,
+            "status": "route_unhealthy",
+            "reason": _text(payload, "reason"),
+            "error_class": error_class,
+            "action_hint": _text(payload, "action_hint")
+            or _delivery_action_hint(error_class),
+            "failed_event_id": failed.id,
+            "attempted_event_id": attempted.id,
+            "route_health": "unhealthy",
+        }),
+    )
+
+
+def _receipt_payload(
+    *,
+    event: ZfEvent,
+    payload: dict[str, Any],
+    target: str,
+    route: str,
+    receive_id: str,
+    receive_id_type: str,
+    delivery_id: str,
+    attempt: int,
+) -> dict[str, Any]:
+    message_id = _message_id(payload, fallback=event.id)
+    return {
+        "schema_version": "owner.visible_message.delivery.v0",
+        "message_id": message_id,
+        "delivery_id": delivery_id,
+        "target": target,
+        "surface": target,
+        "route": route,
+        "receive_id": receive_id,
+        "receive_id_type": receive_id_type,
+        "attempt": attempt,
+        "idempotency_key": f"owner-visible:{message_id}:{target}:{attempt}",
+        "source_event_id": event.id,
+        "decision_id": _text(payload, "decision_id"),
+        "attention_id": _text(payload, "attention_id"),
+        "fingerprint": _text(payload, "fingerprint"),
+        "task_id": event.task_id or _text(payload, "task_id"),
+        "severity": _text(payload, "severity"),
+        "title": _text(payload, "title"),
+    }
+
+
+def _format_owner_message(event: ZfEvent, payload: dict[str, Any]) -> str:
+    lines = [
+        _owner_message_header(payload),
+    ]
+    # G2 (I41 operator 推论): 先陈述 events 推导的真相,pane 观感只是附注。
+    derived = payload.get("events_derived_state")
+    if isinstance(derived, dict):
+        verdict = str(derived.get("verdict") or "unknown")
+        missing = derived.get("missing") or []
+        terminal = str(derived.get("task_terminal_seen") or "")
+        state_line = f"events-state: {verdict}"
+        if terminal:
+            state_line += f" ({terminal})"
+        elif missing:
+            heads = ", ".join(
+                f"{m.get('stage_id')}@{m.get('age_s')}s"
+                for m in missing[:3]
+                if isinstance(m, dict)
+            )
+            state_line += f" [{heads}]"
+        lines.append(state_line)
+    lines += [
+        f"severity: {_text(payload, 'severity') or 'unknown'}",
+        f"title: {_text(payload, 'title') or 'Owner attention requested'}",
+    ]
+    summary = _text(payload, "summary")
+    if summary:
+        lines.append(f"summary: {summary}")
+    task_id = event.task_id or _text(payload, "task_id")
+    if task_id:
+        lines.append(f"task: {task_id}")
+    attention_id = _text(payload, "attention_id")
+    if attention_id:
+        lines.append(f"attention: {attention_id}")
+    route = _text(payload, "route")
+    if route:
+        lines.append(f"route: {route}")
+    if _text(payload, "handled_by"):
+        lines.append(f"handled_by: {_text(payload, 'handled_by')}")
+    if "human_action_required" in payload:
+        lines.append(
+            "human_action_required: "
+            + ("true" if bool(payload.get("human_action_required")) else "false")
+        )
+    restart_strategy = _text(payload, "restart_strategy")
+    if restart_strategy:
+        lines.append(f"restart_strategy: {restart_strategy}")
+    lines.append("reply with /zf attention ack|resolve|snooze <attention_id>")
+    return "\n".join(lines)
+
+
+def _owner_message_header(payload: dict[str, Any]) -> str:
+    source = _text(payload, "source").lower()
+    handled_by = _text(payload, "handled_by").lower()
+    if source in {"watchdog", "run_manager_watchdog"}:
+        return "[ZaoFu Watchdog]"
+    if source in {"run-manager", "run_manager"} or handled_by in {"run-manager", "run_manager"}:
+        return "[ZaoFu Run Manager]"
+    if source in {"alert", "system"}:
+        return "[ZaoFu Alert]"
+    return "[ZaoFu Supervisor]"
+
+
+def _should_suppress_delivery(payload: dict[str, Any], *, target: str) -> bool:
+    if target != "feishu":
+        return False
+    source = _text(payload, "source").lower()
+    if source != "supervisor":
+        return False
+    if bool(payload.get("human_action_required")):
+        return False
+    return True
+
+
+def _wants_target(payload: dict[str, Any], target: str) -> bool:
+    targets = payload.get("delivery_targets")
+    if not isinstance(targets, list):
+        return target == "feishu"
+    return target in {str(item) for item in targets}
+
+
+def _delivery_targets(payload: dict[str, Any]) -> list[str]:
+    targets = payload.get("delivery_targets")
+    if isinstance(targets, list):
+        return [str(item) for item in targets if str(item).strip()]
+    target = _text(payload, "target") or _text(payload, "surface")
+    return [target] if target else []
+
+
+def _routing_role(payload: dict[str, Any], routing: RoutingConfig) -> str:
+    severity = _text(payload, "severity").lower()
+    if severity in {"critical", "high", "warn"} and "approval" in routing.channels:
+        return "approval"
+    for key in ("owner", "alert", "progress", "approval"):
+        if key in routing.channels:
+            return key
+    if severity in {"critical", "high", "warn"}:
+        return "approval"
+    return "alert"
+
+
+def _receive_id_preflight_failure(
+    *,
+    target: str,
+    receive_id: str,
+    receive_id_type: str,
+) -> str:
+    if target != "feishu":
+        return ""
+    if receive_id.startswith("ou_") and receive_id_type != "open_id":
+        return "Feishu receive_id starts with ou_ but receive_id_type is not open_id"
+    if receive_id.startswith("oc_") and receive_id_type == "open_id":
+        return "Feishu receive_id starts with oc_ but receive_id_type is open_id"
+    return ""
+
+
+def _delivery_error_class(reason: str) -> str:
+    text = reason.lower()
+    if "route" in text and "not configured" in text:
+        return "feishu_route_unconfigured"
+    if "receive_id" in text and "receive_id_type" in text:
+        return "feishu_receive_id_type_mismatch"
+    if "cross app" in text:
+        return "feishu_open_id_cross_app"
+    if "token" in text or "app_id" in text or "app_secret" in text:
+        return "feishu_auth"
+    if "feishu http" in text or "feishu api error" in text:
+        return "feishu_api_error"
+    return "delivery_failed"
+
+
+def _delivery_action_hint(error_class: str) -> str:
+    if error_class == "feishu_route_unconfigured":
+        return "configure ZF_OWNER_VISIBLE_CHAT or route-specific owner-visible Feishu target env"
+    if error_class == "feishu_receive_id_type_mismatch":
+        return "match receive_id_type to the Feishu id prefix: oc_ uses chat_id, ou_ uses open_id"
+    if error_class == "feishu_open_id_cross_app":
+        return "use an open_id/chat_id visible to the configured Feishu app; prefer chat_id for group alerts"
+    if error_class == "feishu_auth":
+        return "check FEISHU_APP_ID/FEISHU_APP_SECRET or FEISHU_TENANT_ACCESS_TOKEN"
+    if error_class == "feishu_api_error":
+        return "inspect the Feishu API error and verify target id, receive_id_type, and bot permissions"
+    return "inspect owner.visible_message.failed reason and delivery route"
+
+
+def _message_id(payload: dict[str, Any], *, fallback: str) -> str:
+    return _text(payload, "message_id") or _text(payload, "owner_message_id") or fallback
+
+
+def _delivery_id(message_id: str, target: str, attempt: int) -> str:
+    digest = hashlib.sha1(f"{message_id}|{target}|{attempt}".encode("utf-8")).hexdigest()
+    return "odel-" + digest[:12]
+
+
+def _delivery_route_key(
+    *,
+    target: str,
+    route: str,
+    receive_id: str,
+    receive_id_type: str,
+) -> str:
+    if not target or not route:
+        return ""
+    return "|".join([
+        str(target or "").strip(),
+        str(route or "").strip(),
+        str(receive_id or "").strip(),
+        str(receive_id_type or "").strip(),
+    ])
+
+
+def _text(payload: dict[str, Any], key: str) -> str:
+    value = payload.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _int(value: object) -> int:
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+__all__ = [
+    "OWNER_MESSAGE_ATTEMPTED",
+    "OWNER_MESSAGE_DELIVERED",
+    "OWNER_MESSAGE_FAILED",
+    "OWNER_MESSAGE_REQUESTED",
+    "OWNER_MESSAGE_ROUTE_UNHEALTHY",
+    "OWNER_MESSAGE_SUPPRESSED",
+    "OwnerVisibleDeliveryResult",
+    "deliver_owner_visible_messages_once",
+    "project_owner_visible_inbox",
+]

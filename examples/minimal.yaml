@@ -1,0 +1,24 @@
+# zf.yaml — 最小配置（1 个 dev 角色）
+# 生成方式：zf init --preset minimal
+
+version: "1.0"
+preset: minimal
+
+project:
+  name: my-project
+  state_dir: .zf
+
+session:
+  tmux_session: zf
+
+orchestrator:
+  backend: claude-code
+  permission_mode: bypass  # acknowledge full-access mode
+
+roles:
+  - name: dev
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    stages: [implement]
+    triggers: [task.assigned]
+    publishes: [dev.build.done]

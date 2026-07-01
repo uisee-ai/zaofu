@@ -1,0 +1,308 @@
+# dev-codex-backends preset — all-Codex variant of dev-mixed-backends
+#
+# Same operational topology as dev-mixed-backends, with the design critic
+# split into its own role:
+#   orchestrator + arch + critic + dev×4 + review + test×4 + judge
+#
+# Difference:
+#   every role uses backend=codex. dev/test are four-replica pools, but
+#   they are homogeneous Codex pools rather than mixed claude/codex pools.
+#
+# Prerequisites:
+#   - codex CLI installed (`codex --version`)
+#   - `codex login` completed
+#   - ~/.codex/sessions writable
+#
+# Permission note:
+#   Codex does not support Claude-style allowed_tools. For headless
+#   automation this preset uses permission_mode=bypass for every role.
+#   `restricted` / `allowlist` map to untrusted sandbox mode and can hang
+#   waiting for interactive approval prompts during tests.
+version: '1.0'
+preset: dev-codex-backends
+project:
+  name: zaofu-devcodex
+  state_dir: .zf
+global_budget_usd: 200.0
+session:
+  tmux_session: zf-devcodex
+  # pane_grid keeps the whole all-Codex team visible in one tmux window.
+  tmux_layout: pane_grid
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: yoke-critic
+  path: ${ZF_YOKE_CRITIC_DIR:-./skills/critic}
+  mode: readonly
+runtime:
+  skills:
+    pool: .zf/skills
+    materialize: copy
+    lock_file: .zf/skills.lock.json
+    # Local/manual harness E2E should use `zf validate --strict-skills`.
+    # Keep the preset itself warning-tolerant so source checkout validation
+    # remains usable before external skill repos are mounted.
+    strict: false
+autopilot:
+  enabled: true
+  mode: proposal_only
+  stale_after_hours: 24
+  failed_event_window_hours: 72
+  schedules:
+  - id: daily-triage
+    interval: 24h
+    action: triage
+workflow:
+  dag:
+    enabled: true
+    default_gate_level: permissive
+    design_to_backlog_owner: orchestrator
+    stage_order:
+    - task.assigned
+    - arch.proposal.done
+    - design.critique.done
+    - dev.build.done
+    - static_gate.passed
+    - review.approved
+    - test.passed
+    - judge.passed
+  # Critic rejection is a design gate failure, so it routes back to arch.
+  # Code review rejection still uses review.rejected and falls back to dev.
+  rework_routing:
+    gate.failed: arch
+    static_gate.failed: dev
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+orchestrator:
+  backend: codex
+  permission_mode: bypass
+quality_gates:
+  static:
+    enabled: true
+    required_checks:
+    - python3 -m compileall -q src tests
+    - npm --prefix web run typecheck
+  test:
+    enabled: true
+    required_checks:
+    - PYTHONPATH=src pytest -q
+    - npm --prefix web test
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+roles:
+- backend: codex
+  name: orchestrator
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - context-engineering
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  - zf-harness-instruction-hygiene
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - design.critique.done
+  - clarification.needed
+  - dev.blocked
+  - task.contract.invalid
+  - review.rejected
+  - test.failed
+  - judge.failed
+  - dispatch.silent_stall
+  - worker.stuck
+- backend: codex
+  name: arch
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - spec-driven-development
+  - api-and-interface-design
+  - documentation-and-adrs
+  - source-driven-development
+  - zf-harness-instruction-hygiene
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - design
+  triggers:
+  - task.assigned
+- backend: codex
+  name: critic
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - zf-yoke-critic-role-context
+  - document-review
+  - plan-option-scoring
+  - skeptic-observation
+  - security-review
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  publishes:
+  - design.critique.done
+  - gate.failed
+  stages:
+  - design_critique
+  triggers:
+  - arch.proposal.done
+- backend: codex
+  name: dev
+  role_kind: writer
+  permission_mode: bypass
+  replicas: 4
+  autoscale:
+    enabled: true
+    min_replicas: 2
+    max_replicas: 6
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 120
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - incremental-implementation
+  - frontend-ui-engineering
+  - test-driven-development
+  - debugging-and-error-recovery
+  - source-driven-development
+  - git-workflow-and-versioning
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+- backend: codex
+  name: review
+  role_kind: reader
+  permission_mode: bypass
+  autoscale:
+    enabled: true
+    min_replicas: 1
+    max_replicas: 2
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 180
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - code-review-and-quality
+  - code-simplification
+  - security-and-hardening
+  - performance-optimization
+  - zf-yoke-review-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  publishes:
+  - review.approved
+  - review.rejected
+  stages:
+  - code_review
+  triggers:
+  - static_gate.passed
+- backend: codex
+  name: test
+  role_kind: reader
+  permission_mode: bypass
+  replicas: 2
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - test-driven-development
+  - debugging-and-error-recovery
+  - browser-testing-with-devtools
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - independent_test
+  triggers:
+  - review.approved
+- backend: codex
+  name: judge
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 180
+  orphan_warning_seconds: 300
+  orphan_escalate_seconds: 600
+  skills:
+  - code-review-and-quality
+  - shipping-and-launch
+  - security-and-hardening
+  - performance-optimization
+  - final-meta-review
+  - pre-release-review
+  - council
+  - zf-yoke-critic-role-context
+  - zf-yoke-quality-gate-role-context
+  - zf-harness-archive-contract
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  code_review: "verify lane: code review"
+  design: PRD / design
+  design_critique: design critique
+  implement: implementation
+  independent_test: "verify lane: independent test"
+  intake: intake & breakdown
+  judge: "terminal judge"
+  meta: meta / orchestration

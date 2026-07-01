@@ -1,0 +1,40 @@
+# kind envelope 新语法示例(doc 90 B3)— lane pipeline(三件套)
+# laneRoleTemplate 生成 6 个 lane role;schemaProfile 引用 22 事件契约;
+# terminal/affinity/rework 由约定铸造。等价手写形 ≈300+ 行。
+apiVersion: zaofu.dev/v1
+kind: LanePipeline
+metadata: {name: demo-refactor}
+spec:
+  trigger: task_map.ready
+  taskSource: {taskMapRef: ".zf/artifacts/DEMO/task_map.json"}
+  affinityKey: affinity_tag
+  lanes: 2
+  assembly: {task: DEMO-ASSEMBLY-001}
+  reworkDefaults: {maxAttempts: 2, traceBudget: 4}
+  stages:
+  - id: impl
+  - id: review
+    rework: {to: impl, feedbackArtifact: required}
+  - id: verify
+    rework: {to: impl, feedbackArtifact: required}
+  final:
+    when: all_tasks_verified
+    role: judge-demo
+    success: judge.passed
+    failure: judge.failed
+  laneRoleTemplate:
+    backend: mock
+    skillsByStage:
+      impl: [code-refactoring]
+      review: [requesting-code-review]
+      verify: [test-driven-development]
+  schemaProfile: refactor-flow/v1
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: kind-lane-pipeline-demo}
+spec:
+  version: "1.0"
+  project: {name: kind-lane-pipeline-demo, state_dir: .zf}
+  roles:
+  - {name: judge-demo, backend: mock, instance_id: judge-demo, role_kind: reader}

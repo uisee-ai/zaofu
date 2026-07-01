@@ -1,0 +1,9 @@
+{
+  "schema_version": "coverage-report.v1",
+  "feature_id": "F-FREEFORM",
+  "tasks": {
+    "TASK-FREE-A": {"source_status": "covered"},
+    "TASK-FREE-B": {"source_status": "covered"}
+  },
+  "unresolved_unknowns": []
+}

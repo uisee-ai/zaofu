@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Project Suggest"
+  short_description: "Turn external signals into ZaoFu proposals"
+  default_prompt: "Use $zf-project-suggest to turn external context into prioritized ZaoFu-grounded suggestions."

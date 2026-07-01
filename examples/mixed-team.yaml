@@ -1,0 +1,155 @@
+# mixed-team preset — Claude + Codex coexistence (1202-T4)
+#
+# Five roles split across two backends so the orchestrator truly exercises
+# multi-backend pipelines. Aligned with safe-team for triggers / stages
+# so existing topology invariants still hold.
+#
+#   Claude (design + critic lanes) : orchestrator, arch, review, judge
+#   Codex  (implementation + test) : dev, test
+#
+# Enabling this preset requires codex CLI installed and `codex login`
+# completed. Codex's hook system (`--enable hooks`)
+# is turned on automatically by CodexAdapter.build_command; zaofu
+# writes <project>/.codex/hooks.json at `zf start` so codex.hook.*
+# events bridge through `zf hook-recv`.
+#
+# See:
+#   backlogs/2026-04-20-1202-P0-codex-hook-closure.md   (hook bridge)
+#   backlogs/2026-04-20-1203-P0-mixed-backend-e2e.md    (E2E run)
+#   backlogs/2026-04-20-1231-P1-codex-permission-mode-v2.md (permission)
+version: '1.0'
+preset: mixed-team
+project:
+  name: zaofu-mixed
+  state_dir: .zf
+session:
+  tmux_session: zf-mixed
+  # 1206 Phase C: pane_grid — all 7 roles (orchestrator + arch + dev×2 +
+  # dev_codex×2 + review + test + judge) share one window, split into
+  # panes. Single `tmux attach -t zf-mixed` shows the whole team at once.
+  tmux_layout: pane_grid
+orchestrator:
+  backend: claude-code
+  permission_mode: bypass
+quality_gates:
+  static:
+    enabled: true
+    required_checks: []
+  test:
+    enabled: true
+workflow:
+  # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+
+roles:
+- allowed_tools:
+  - Bash(zf feature *)
+  - Bash(zf kanban *)
+  - Bash(zf emit *)
+  - Bash(zf events *)
+  - Bash(zf status)
+  - Read
+  backend: claude-code
+  name: orchestrator
+  permission_mode: allowlist
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - arch.proposal.done
+  - design.critique.done
+  - dev.build.done
+  - dev.blocked
+  - review.approved
+  - review.rejected
+  - test.passed
+  - test.failed
+  - judge.passed
+  - judge.failed
+- backend: claude-code
+  name: arch
+  permission_mode: bypass
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - design
+  triggers:
+  - task.assigned
+- backend: claude-code      # mixed dev pool — 2 Claude replicas
+  name: dev
+  permission_mode: bypass
+  replicas: 2               # dev-1, dev-2 (both claude-code)
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+- backend: codex            # mixed dev pool — 2 Codex replicas
+  name: dev_codex
+  # B-1203-05: bypass mode only; codex `-a untrusted` hangs headless.
+  permission_mode: bypass
+  replicas: 2               # dev_codex-1, dev_codex-2
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+- backend: claude-code
+  name: review
+  permission_mode: bypass
+  publishes:
+  - review.approved
+  - review.rejected
+  - design.critique.done
+  stages:
+  - code_review
+  - design_critique
+  triggers:
+  - dev.build.done
+  - arch.proposal.done
+- backend: codex            # mixed point 2
+  name: test
+  # B-1203-05 extended (2026-04-21 run 8): `restricted` maps to
+  # `-a untrusted` which prompts on any non-safelisted command
+  # (sed, cat, git …). Even reading .zf/instructions/test.md hangs
+  # headless on the y/a/esc prompt. Same escape hatch as dev: use
+  # `bypass` for automation. Revisit when codex adds a headless-safe
+  # untrusted mode (or we emit a zaofu escalation on sandbox deny).
+  permission_mode: bypass
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - independent_test
+  triggers:
+  - review.approved
+- backend: claude-code
+  name: judge
+  permission_mode: bypass
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  code_review: "verify lane: code review"
+  design: PRD / design
+  design_critique: design critique
+  implement: implementation
+  independent_test: "verify lane: independent test"
+  intake: intake & breakdown
+  judge: "terminal judge"
+  meta: meta / orchestration

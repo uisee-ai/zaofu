@@ -1,0 +1,113 @@
+# Star verifier reader example — current workflow.stages schema.
+#
+# Shape:
+#   candidate.ready
+#       -> verify-unit
+#       -> verify-e2e
+#       -> verify-type
+#       -> aggregate(any_failed_fail)
+#       -> verify.passed / verify.failed
+#
+# Reader fanout dispatches role instances and renders per-child payload into
+# each child briefing so real providers get deterministic smoke scope.
+#
+# Example trigger:
+#   zf emit candidate.ready --actor human \
+#     --payload '{"pdd_id":"PDD-123","candidate_ref":"candidate/PDD-123"}'
+version: '1.0'
+preset: star-verifier-reader
+project:
+  name: zaofu-star-verifier
+  state_dir: .zf
+session:
+  tmux_session: zf-star-verifier
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+workflow:
+  dag:
+    external_triggers:
+    - candidate.ready
+  stages:
+  - id: verify-candidate
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles:
+    - verify-unit
+    - verify-e2e
+    - verify-type
+    fanout:
+      children:
+      - role_instance: verify-unit
+        payload:
+          child_id: verify-unit
+          instruction: >-
+            This is a real-provider Star smoke over a controlled docs-only
+            candidate. Verify the target ref is clean, inspect
+            docs/star-smoke-candidate.md, and run only focused Star/fanout/ref
+            tests: PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest
+            -q -p no:cacheprovider -o addopts='' tests/test_star_topology.py
+            tests/test_reader_fanout_runtime.py tests/test_fanout_manifest.py
+            tests/test_fanout_hardening.py tests/test_ref_verify.py.
+            Do not run full pytest or repository-wide mypy for this smoke.
+          expected_output: verify.passed when focused tests pass and the diff is docs-only.
+      - role_instance: verify-e2e
+        payload:
+          child_id: verify-e2e
+          instruction: >-
+            This is a real-provider Star smoke over a controlled docs-only
+            candidate. Confirm candidate/zf-star-smoke is checked out, compare
+            against dev or origin/dev, and run the same focused Star/fanout/ref
+            regression set with python3. Do not invoke tests/e2e/run_star.py
+            from inside this child and do not run full pytest.
+          expected_output: verify.passed when the focused Star regression set passes.
+      - role_instance: verify-type
+        payload:
+          child_id: verify-type
+          instruction: >-
+            This smoke candidate should only add docs/star-smoke-candidate.md.
+            Run git diff --name-only dev...HEAD or origin/dev...HEAD and
+            git diff --check dev...HEAD or origin/dev...HEAD. If the diff is
+            docs-only and whitespace checks pass, emit verify.passed. Do not
+            run repository-wide mypy; current baseline type debt is outside
+            this docs-only candidate.
+          expected_output: verify.passed when no source/type-bearing files changed.
+    target_ref: ${candidate_ref}
+    aggregate:
+      mode: any_failed_fail
+      success_event: verify.passed
+      failure_event: verify.failed
+      max_retries: 1
+    timeout_seconds: 1800
+roles:
+- name: verify-unit
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - independent_test
+  publishes:
+  - verify.passed
+  - verify.failed
+- name: verify-e2e
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - independent_test
+  publishes:
+  - verify.passed
+  - verify.failed
+- name: verify-type
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  stages:
+  - independent_test
+  publishes:
+  - verify.passed
+  - verify.failed
+stage_labels:
+  independent_test: verifier star

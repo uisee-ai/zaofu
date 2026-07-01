@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# Node / frontend
+node_modules/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+.vite/
+*.tsbuildinfo
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime state
+.zf/
+**/.zf*/
+
+# Local/private planning and release notes
+docs/*
+!docs/manual/
+!docs/manual/**
+backlogs/
+tasks/
+prompt/
+prompts/
+ideas/
+reports/
+slides/
+record/
+records/
+strategy/
+gm-test/
+ww/
+
+# Provider/editor/session state
+.claude/
+.codex/
+.omc/
+
+# Misc
+*.tmp
+*.bak
+*.swp
+.DS_Store
+.zf-playwright-*.png

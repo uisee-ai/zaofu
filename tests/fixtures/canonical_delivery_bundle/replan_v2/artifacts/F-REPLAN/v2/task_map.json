@@ -1,0 +1,40 @@
+{
+  "schema_version": "task-map.v1",
+  "feature_id": "F-REPLAN",
+  "source_refs": {
+    "plan_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v2.md",
+    "source_index_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/artifacts/F-REPLAN/v2/source_index.json",
+    "coverage_report_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/artifacts/F-REPLAN/v2/coverage_report.json",
+    "supersedes_task_map_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/artifacts/F-REPLAN/v1/task_map.json"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-REPLAN-A",
+      "title": "Replace sorter behavior",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "blocked_by": [],
+      "wave": 1,
+      "scope": ["sorter.py"],
+      "exclusive_files": ["sorter.py"],
+      "behavior": "Handle strings and numbers.",
+      "acceptance": ["strings and numbers are sorted"],
+      "verification": "pytest tests/test_sorter.py",
+      "verification_tiers": ["runtime"]
+    },
+    {
+      "task_id": "TASK-REPLAN-B",
+      "title": "Add mixed input tests",
+      "owner_role": "test",
+      "phase": "verification",
+      "blocked_by": ["TASK-REPLAN-A"],
+      "wave": 2,
+      "scope": ["tests/test_sorter.py"],
+      "exclusive_files": ["tests/test_sorter.py"],
+      "behavior": "Add mixed input tests.",
+      "acceptance": ["mixed input coverage exists"],
+      "verification": "pytest tests/test_sorter.py",
+      "verification_tiers": ["runtime"]
+    }
+  ]
+}

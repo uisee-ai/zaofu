@@ -1,0 +1,17 @@
+{
+  "schema_version": "coverage-report.v1",
+  "feature_id": "F-CANON",
+  "tasks": [
+    {
+      "task_id": "TASK-CANON-1",
+      "source_status": "covered",
+      "contract_fields": ["owner_role", "scope", "acceptance", "verification", "verification_tiers"]
+    },
+    {
+      "task_id": "TASK-CANON-2",
+      "source_status": "covered",
+      "contract_fields": ["owner_role", "scope", "acceptance", "verification", "verification_tiers"]
+    }
+  ],
+  "unresolved_unknowns": []
+}

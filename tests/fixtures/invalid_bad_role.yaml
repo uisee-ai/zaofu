@@ -1,0 +1,5 @@
+version: "1.0"
+project:
+  name: bad-role
+roles:
+  - backend: python

@@ -1,0 +1,232 @@
+# zf-mini-codex.yaml — smallest product loop with orchestrator + dev + qa.
+#
+# Shape:
+#   orchestrator -> dev -> static_gate -> qa -> done
+#
+# `qa` intentionally reuses `test.passed` / `test.failed` so this topology
+# works with today's terminal evidence and rework handlers. Put review-style
+# failures in the `test.failed` payload, e.g. `failure_category: code_review`.
+
+version: '1.0'
+preset: zaofu-mini-codex
+
+project:
+  name: mini-codex-demo
+  state_dir: .zf-mini-codex
+
+global_budget_usd: 500.0
+budget_enforcement_enabled: false
+
+session:
+  tmux_session: zf-mini-codex
+  tmux_layout: pane_grid
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: yoke-critic
+  path: ${ZF_YOKE_CRITIC_DIR:-./skills/critic}
+  mode: readonly
+
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf-mini-codex/workdirs
+    mode: worktree
+  git:
+    candidate_base_ref: main
+    writer_branch_prefix: worker-mini
+    task_ref_prefix: task-mini
+    candidate_branch_prefix: candidate-mini
+    auto_ship_on_candidate_complete: false
+  skills:
+    pool: .zf-mini-codex/skills
+    materialize: copy
+    lock_file: .zf-mini-codex/skills.lock.json
+    strict: false
+
+workflow:
+  harness_profile: baseline
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 8
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1000
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+  dag:
+    enabled: true
+    default_gate_level: permissive
+    dev_requires_orchestrator_backlog: false
+    stage_order:
+    - intake
+    - implement
+    - static_gate
+    - qa_verify
+    - done
+    event_schemas:
+      worker.context.warning:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.context.critical:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.progress:
+        required: [task_id, dispatch_id, role, instance_id, phase, message, source]
+  rework_routing:
+    static_gate.failed: dev
+    test.failed: dev
+    discriminator.failed: dev
+    dispatch.silent_stall: orchestrator
+
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+orchestrator:
+  backend: codex
+
+quality_gates:
+  static:
+    enabled: true
+    # Fill project-specific checks, for example:
+    # - uv run pytest
+    # - pnpm tsc -b --noEmit
+    required_checks: []
+  test:
+    enabled: true
+    required_checks: []
+
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: false
+  promoted:
+    enabled: false
+
+roles:
+- backend: codex
+  name: orchestrator
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - context-engineering
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  - zf-harness-instruction-hygiene
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - clarification.needed
+  - dev.blocked
+  - task.contract.invalid
+  - static_gate.failed
+  - test.failed
+  - dispatch.silent_stall
+  - worker.stuck
+
+- backend: codex
+  name: dev
+  role_kind: writer
+  permission_mode: bypass
+  replicas: 2
+  autoscale:
+    enabled: true
+    min_replicas: 1
+    max_replicas: 4
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 120
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - incremental-implementation
+  - test-driven-development
+  - debugging-and-error-recovery
+  - source-driven-development
+  - git-workflow-and-versioning
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+
+- backend: codex
+  name: qa
+  role_kind: reader
+  permission_mode: bypass
+  replicas: 1
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - code-review-and-quality
+  - security-and-hardening
+  - test-driven-development
+  - debugging-and-error-recovery
+  - browser-testing-with-devtools
+  - zf-yoke-review-role-context
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  publishes:
+  - test.passed
+  - test.failed
+  - test.suspended
+  stages:
+  - qa_verify
+  triggers:
+  - static_gate.passed
+
+stage_labels:
+  intake: intake & breakdown
+  implement: implementation
+  static_gate: static gate
+  qa_verify: QA verify
+  meta: meta / orchestration

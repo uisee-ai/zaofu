@@ -1,0 +1,77 @@
+# Hermes-style refactor delivery fixture.
+#
+# Reader fanout scans/plans without creating Kanban tasks. Writer fanout starts
+# only after product_delivery has accepted the task_map and emitted
+# product_delivery.wave.ready.
+
+project:
+  name: hermes-refactor-fixture
+  state_dir: .zf-hermes-refactor
+
+runtime:
+  workdirs:
+    enabled: true
+    mode: worktree
+  git:
+    candidate_base_ref: main
+
+workflow:
+  stages:
+  - id: hermes-refactor-scan
+    trigger: refactor.scan.requested
+    topology: fanout_reader
+    target_ref: ${target_ref}
+    fanout:
+      children:
+      - role: scan-contract
+        payload:
+          child_id: scan-contract
+          instruction: Inspect public contracts.
+      - role: scan-runtime
+        payload:
+          child_id: scan-runtime
+          instruction: Inspect runtime flow.
+      - role: scan-verification
+        payload:
+          child_id: scan-verification
+          instruction: Inspect tests and gates.
+    aggregate:
+      mode: wait_for_all
+      success_event: refactor.scan.completed
+      failure_event: refactor.scan.failed
+
+  - id: hermes-refactor-write
+    trigger: product_delivery.wave.ready
+    topology: fanout_writer_scoped
+    source:
+      task_map: ${task_map_ref}
+    fanout:
+      assignment:
+        role_pool:
+        - dev-contract
+        - dev-runtime
+        - dev-verification
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+
+roles:
+- name: scan-contract
+  backend: mock
+  role_kind: reader
+- name: scan-runtime
+  backend: mock
+  role_kind: reader
+- name: scan-verification
+  backend: mock
+  role_kind: reader
+- name: dev-contract
+  backend: mock
+  role_kind: writer
+- name: dev-runtime
+  backend: mock
+  role_kind: writer
+- name: dev-verification
+  backend: mock
+  role_kind: writer

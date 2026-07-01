@@ -1,0 +1,119 @@
+# pane-grid-team preset — 1206 Phase C demo of `tmux_layout: pane_grid`.
+#
+# Same role topology as safe-team (Claude-only 5 roles + orchestrator), but
+# all roles share a single tmux window split into 6 panes. Attach with
+# `tmux attach -t zf-pane-grid` and you see every role at once — no more
+# tabbing between windows to follow arch ↔ dev ↔ review progress.
+#
+# For mixed backend + panes, just change role backends to match mixed-team.
+version: '1.0'
+preset: pane-grid-team
+project:
+  name: zaofu-pane-grid
+  state_dir: .zf
+session:
+  tmux_session: zf-pane-grid
+  # 1206 Phase B default was `window_per_role` (legacy). `pane_grid`
+  # keeps every role in panes of the shared `roles` window — great for
+  # single-screen observation.
+  tmux_layout: pane_grid
+orchestrator:
+  backend: claude-code
+  permission_mode: bypass
+quality_gates:
+  static:
+    enabled: true
+    required_checks: []
+  test:
+    enabled: true
+workflow:
+  # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+
+roles:
+- allowed_tools:
+  - Bash(zf feature *)
+  - Bash(zf kanban *)
+  - Bash(zf emit *)
+  - Bash(zf events *)
+  - Bash(zf status)
+  - Read
+  backend: claude-code
+  name: orchestrator
+  permission_mode: allowlist
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - arch.proposal.done
+  - dev.build.done
+  - dev.blocked
+  - review.approved
+  - review.rejected
+  - test.passed
+  - test.failed
+  - judge.passed
+  - judge.failed
+- backend: claude-code
+  name: arch
+  permission_mode: bypass
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages:
+  - design
+  triggers:
+  - task.assigned
+- backend: claude-code
+  name: dev
+  permission_mode: bypass
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages:
+  - implement
+  triggers:
+  - task.assigned
+- backend: claude-code
+  name: review
+  permission_mode: bypass
+  publishes:
+  - review.approved
+  - review.rejected
+  stages:
+  - code_review
+  triggers:
+  - dev.build.done
+- backend: claude-code
+  name: test
+  permission_mode: bypass
+  publishes:
+  - test.passed
+  - test.failed
+  stages:
+  - independent_test
+  triggers:
+  - review.approved
+- backend: claude-code
+  name: judge
+  permission_mode: bypass
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages:
+  - judge
+  triggers:
+  - test.passed
+stage_labels:
+  code_review: "verify lane: code review"
+  design: PRD / design
+  implement: implementation
+  independent_test: "verify lane: independent test"
+  judge: "terminal judge"
+  meta: meta / orchestration

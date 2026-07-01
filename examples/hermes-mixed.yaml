@@ -1,0 +1,849 @@
+version: "1.0"
+preset: cj-min-pi-node-refactor
+
+project:
+  name: cj-min
+  state_dir: .zf-cj-min-refactor
+
+session:
+  tmux_session: zf-cj-min-refactor
+  tmux_layout: pane_grid
+
+global_budget_usd: 5000.0
+budget_enforcement_enabled: true
+
+skill_sources:
+- name: hermes-local
+  path: ${ZF_HERMES_SKILLS_DIR:-skills/software-development}
+  mode: readonly
+
+runtime:
+  skills:
+    strict: true
+    pool: .zf-cj-min-refactor/skills
+    materialize: copy
+    lock_file: .zf-cj-min-refactor/skills.lock.json
+  workdirs:
+    enabled: true
+    root: .zf-cj-min-refactor/workdirs
+    mode: worktree
+    # Symlink the main checkout's gitignored env into every worktree so
+    # gate/verify commands (run_tests.sh, tsc, npm) run natively. Missing
+    # sources (e.g. node_modules before `npm install`) are skipped.
+    provision_paths:
+    - .venv
+    - node_modules
+    - ui-tui/node_modules
+    - web/node_modules
+  git:
+    writer_branch_prefix: cj-min-refactor-20260601
+    task_ref_prefix: task
+    candidate_branch_prefix: cj-min-candidate-20260601
+    candidate_base_ref: main
+    candidate_strategy: cherry-pick
+    remote_policy: local
+
+constraints:
+  blocked_paths:
+  - .git/**
+  - .zf/**
+  - .venv/**
+  - venv/**
+  - node_modules/**
+  - .zf-cj-min-refactor/**
+  - .zf-hermes-refactor/**
+  - .hermes/**
+  - .env
+  - .env.*
+  - cli-config.yaml
+  - "**/*.pem"
+  - "**/*.ppk"
+
+workflow:
+  affinity_lanes:
+    cj-min-refactor-4-slot:
+      affinity_key: affinity_tag
+      queue:
+        order: priority_fifo
+      lanes:
+      - id: lane0
+        impl: dev-lane-0
+        review: review-lane-0
+        verify: verify-lane-0
+      - id: lane1
+        impl: dev-lane-1
+        review: review-lane-1
+        verify: verify-lane-1
+      - id: lane2
+        impl: dev-lane-2
+        review: review-lane-2
+        verify: verify-lane-2
+      - id: lane3
+        impl: dev-lane-3
+        review: review-lane-3
+        verify: verify-lane-3
+  harness_profile: strict
+  work_units:
+    enabled: true
+    split_quality:
+      mode: blocking
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1600
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+    - worker.context.warning
+    - worker.context.critical
+    - worker.stuck
+  strict_triggers:
+    rework_attempts_gte: 1
+    context_usage_gte: 0.80
+    file_globs:
+    - run_agent.py
+    - cli.py
+    - model_tools.py
+    - hermes_state.py
+    - hermes_constants.py
+    - hermes_logging.py
+    - agent/**
+    - gateway/**
+    - hermes_cli/**
+    - providers/**
+    - plugins/**
+    - tui_gateway/**
+    - ui-tui/**
+    - web/**
+    - tests/**
+    labels:
+    - pi-core
+    - python-to-typescript
+    - provider-adapter
+    - gateway-adapter
+    - public-api
+  rework_routing:
+    zaofu.refactor.plan.blocked: arch
+    task.contract.invalid: arch
+    gate.failed: arch
+    fanout.serialize: arch
+    fanout.cancelled: arch
+    integration.failed: dev-lane-0
+    static_gate.failed: dev-lane-0
+    review.rejected: dev-lane-0
+    test.failed: dev-lane-0
+    judge.failed: arch
+    discriminator.failed: arch
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+  dag:
+    enabled: true
+    default_gate_level: strict
+    design_to_backlog_owner: orchestrator
+    stage_order:
+    - refactor.scan.requested
+    - zaofu.refactor.plan.ready
+    - task_map.ready
+    - candidate.ready
+    - review.approved
+    - test.passed
+    - judge.passed
+    event_schemas:
+      refactor.scan.requested:
+        required:
+        - pdd_id
+        - target_ref
+        - source_branch
+        - source_commit
+        - source_tree_status
+        - objective
+        - prompt_ref
+      refactor.scan.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - findings
+        - evidence_refs
+        - git_refs
+      refactor.scan.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      zaofu.refactor.plan.ready:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - artifact_gate
+        - artifact_refs
+        - artifact_digests
+        - plan_artifact_ref
+        - task_map_ref
+      task_map.ready:
+        required:
+        - pdd_id
+        - trace_id
+        - source_commit
+        - candidate_base_commit
+      candidate.ready:
+        required:
+        - fanout_id
+        - pdd_id
+        - candidate_ref
+        - candidate_base_commit
+        - candidate_head_commit
+        - diff_ref
+        - completed_task_ids
+      review.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      review.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      review.approved:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      review.rejected:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      verify.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      verify.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      test.passed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      test.failed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      judge.child.completed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - summary
+        - evidence_refs
+        - git_refs
+      judge.child.failed:
+        required:
+        - fanout_id
+        - child_id
+        - status
+        - reason
+      judge.passed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+      judge.failed:
+        required:
+        - fanout_id
+        - stage_id
+        - status
+        - target_ref
+  stages:
+  - id: cj-min-refactor-scan
+    trigger: refactor.scan.requested
+    topology: fanout_reader
+    roles:
+    - scan-contract
+    - scan-runtime
+    - scan-verification
+    fanout:
+      children:
+      - role_instance: scan-contract
+        payload:
+          child_id: scan-contract
+          instruction: >-
+            Freeze Hermes Python behavior as the reference contract for the
+            new cj-min project. The target implementation is Node.js /
+            TypeScript with PI as the agent core boundary. Identify public
+            contracts across CLI, AIAgent, tools, provider adapters, sessions,
+            skills, gateway, and TUI. Output golden cases, non-goals, and
+            contract risks. Include git_refs with source_branch,
+            source_commit, and source_tree_status from the scan request. Do
+            not modify files.
+          expected_output: refactor.scan.completed with contract inventory, golden-test targets, and git_refs.
+      - role_instance: scan-runtime
+        payload:
+          child_id: scan-runtime
+          instruction: >-
+            Review runtime state, config, secrets, logging, session DB, plugin
+            loading, and provider boundary ownership. Identify what must move
+            behind the cj-min PI core versus Node.js adapter packages. Include
+            git_refs with source_branch, source_commit, and source_tree_status
+            from the scan request. Do not modify files.
+          expected_output: refactor.scan.completed with state/config migration slices and git_refs.
+      - role_instance: scan-verification
+        payload:
+          child_id: scan-verification
+          instruction: >-
+            Build the smallest useful verification matrix for Hermes Python
+            behavior to cj-min Node.js parity, including pytest golden tests,
+            provider fakes, LLM function-call parity checks, gateway adapter
+            tests, Ink/TUI type checks, and web dashboard checks. Use
+            ${ZF_LLM_ENV_FILE:-./llm_env} only as a local secret reference
+            for optional live smoke comparison; never echo, copy, or commit
+            credentials. Include git_refs with source_branch, source_commit,
+            and source_tree_status from the scan request. Do not modify files.
+          expected_output: refactor.scan.completed with verification commands per slice and git_refs.
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      synth_role: refactor-plan-synth
+      child_success_event: refactor.scan.completed
+      child_failure_event: refactor.scan.failed
+      success_event: zaofu.refactor.plan.ready
+      failure_event: zaofu.refactor.plan.blocked
+      max_retries: 1
+    timeout_seconds: 1800
+    criteria:
+      output:
+        required_keys:
+        - artifact_refs
+        - plan_artifact_ref
+        - task_map_ref
+        - risk_register_ref
+        - backlog_candidates_ref
+        - contract_refs
+        - git_refs
+      retry:
+        max_attempts: 1
+        on_failure: rework
+
+  - id: cj-min-slice-implementation
+    trigger: task_map.ready
+    topology: fanout_writer_scoped
+    source:
+      task_map: .zf-cj-min-refactor/artifacts/${pdd_id}/task_map.json
+    fanout:
+      assignment:
+        # Four live implementation slots handle five cj-min module affinities.
+        # task_map.tasks must carry affinity_tag so the kernel can queue
+        # overflow children and keep review/verify lineage by lane.
+        strategy: affinity_stage_slots
+        lane_profile: cj-min-refactor-4-slot
+        stage_slot: impl
+    aggregate:
+      mode: candidate_integration
+      success_event: candidate.ready
+      failure_event: integration.failed
+      max_retries: 1
+    timeout_seconds: 7200
+
+  - id: cj-min-candidate-review
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles:
+    - review-lane-0
+    - review-lane-1
+    - review-lane-2
+    - review-lane-3
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: cj-min-refactor-4-slot
+        stage_slot: review
+    target_ref: ${candidate_ref}
+    aggregate:
+      mode: wait_for_all
+      review_strategy: all_approve_or_one_rejects
+      synth_role: review-synth
+      child_success_event: review.child.completed
+      child_failure_event: review.child.failed
+      success_event: review.approved
+      failure_event: review.rejected
+      max_retries: 1
+    timeout_seconds: 2400
+
+  - id: cj-min-candidate-verification
+    trigger: review.approved
+    topology: fanout_reader
+    roles:
+    - verify-lane-0
+    - verify-lane-1
+    - verify-lane-2
+    - verify-lane-3
+    fanout:
+      assignment:
+        strategy: affinity_stage_slots
+        lane_profile: cj-min-refactor-4-slot
+        stage_slot: verify
+    target_ref: ${target_ref}
+    aggregate:
+      mode: any_failed_fail
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: test.passed
+      failure_event: test.failed
+      max_retries: 1
+    timeout_seconds: 3600
+
+  - id: cj-min-final-judge
+    trigger: test.passed
+    topology: fanout_reader
+    roles:
+    - judge-refactor
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      child_success_event: judge.child.completed
+      child_failure_event: judge.child.failed
+      success_event: judge.passed
+      failure_event: judge.failed
+      max_retries: 0
+    timeout_seconds: 1800
+
+quality_gates:
+  static:
+    enabled: true
+    required_checks:
+    - git diff --check
+    - python3 -m compileall -q run_agent.py cli.py model_tools.py hermes_state.py hermes_constants.py hermes_logging.py agent gateway hermes_cli providers tui_gateway tests
+  test:
+    # Disabled for the cj-min Node refactor: this ran the full legacy Python
+    # suite (scripts/run_tests.sh) inside the ephemeral candidate-integration
+    # worktree, which has no .venv -> every gateway/agent test mass-fails on
+    # import errors. The cj-min slices add only cj-min/** and touch zero Python
+    # files, so this gate can never pass here and is not testing the refactor's
+    # deliverable. Candidate merge keeps the lightweight `static` gate (git diff
+    # --check + stdlib compileall, no venv needed). Real test verification is
+    # owned downstream by the cj-min-candidate-verification affinity fanout,
+    # where verify-lane-* workers run in provisioned role workdirs with the
+    # proper environments.
+    enabled: false
+    required_checks:
+    - scripts/run_tests.sh tests/agent tests/providers tests/gateway tests/hermes_cli
+
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  semantic:
+    enabled: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+  event_schema:
+    mode: warning
+
+roles:
+- name: orchestrator
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - writing-plans
+  - hermes-contract-freeze
+  - python-to-typescript-migration
+  stages:
+  - meta
+  triggers:
+  - user.message
+  - zaofu.refactor.plan.ready
+  - zaofu.refactor.plan.blocked
+  - integration.failed
+  - review.rejected
+  - test.failed
+  - judge.failed
+  - task.contract.invalid
+  - static_gate.failed
+  - fanout.serialize
+  - fanout.cancelled
+  publishes:
+  - refactor.scan.requested
+  - task_map.ready
+  - task.created
+  - task.dispatched
+  - task.contract.update
+
+- name: arch
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - python-to-typescript-migration
+  - writing-plans
+  stages:
+  - design
+  triggers:
+  - task.assigned
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+
+- name: critic
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-agent-harness-audit
+  - requesting-code-review
+  stages:
+  - design_critique
+  triggers:
+  - arch.proposal.done
+  publishes:
+  - design.critique.done
+  - gate.failed
+
+- name: scan-contract
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - python-to-typescript-migration
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.scan.completed
+  - refactor.scan.failed
+
+- name: scan-runtime
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-agent-harness-audit
+  - hermes-state-config-migration
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.scan.completed
+  - refactor.scan.failed
+
+- name: scan-verification
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-web-tui-verification
+  - test-driven-development
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.scan.completed
+  - refactor.scan.failed
+
+- name: refactor-plan-synth
+  backend: claude-code
+  role_kind: reader
+  permission_mode: allowlist
+  allowed_tools:
+  - Bash(zf emit *)
+  - Bash(zf events *)
+  - Bash(zf trace show *)
+  - Bash(cat .zf/artifacts/*)
+  skills:
+  - writing-plans
+  - hermes-contract-freeze
+  - python-to-typescript-migration
+  stages:
+  - refactor_plan_synthesis
+  publishes:
+  - fanout.synth.completed
+
+- name: dev-lane-0
+  backend: claude-code
+  role_kind: writer
+  permission_mode: bypass
+  skills:
+  - code-refactoring
+  - python-to-typescript-migration
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+
+- name: dev-lane-1
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills:
+  - code-refactoring
+  - python-to-typescript-migration
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+
+- name: dev-lane-2
+  backend: claude-code
+  role_kind: writer
+  permission_mode: bypass
+  skills:
+  - code-refactoring
+  - python-to-typescript-migration
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+
+- name: dev-lane-3
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  skills:
+  - code-refactoring
+  - python-to-typescript-migration
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  stages:
+  - implement
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  - dev.failed
+
+- name: review-lane-0
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - requesting-code-review
+  stages:
+  - code_review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+
+- name: review-lane-1
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - requesting-code-review
+  stages:
+  - code_review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+
+- name: review-lane-2
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - requesting-code-review
+  stages:
+  - code_review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+
+- name: review-lane-3
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - requesting-code-review
+  stages:
+  - code_review
+  publishes:
+  - review.child.completed
+  - review.child.failed
+
+- name: verify-lane-0
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - python-to-typescript-migration
+  - test-driven-development
+  stages:
+  - independent_test
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+
+- name: verify-lane-1
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - python-to-typescript-migration
+  - test-driven-development
+  stages:
+  - independent_test
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+
+- name: verify-lane-2
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - python-to-typescript-migration
+  - test-driven-development
+  stages:
+  - independent_test
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+
+- name: verify-lane-3
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-state-config-migration
+  - hermes-provider-adapter-porting
+  - hermes-gateway-adapter-porting
+  - hermes-web-tui-verification
+  - python-to-typescript-migration
+  - test-driven-development
+  stages:
+  - independent_test
+  publishes:
+  - verify.child.completed
+  - verify.child.failed
+
+- name: review-synth
+  backend: codex
+  role_kind: reader
+  permission_mode: restricted
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  stages:
+  - review_synthesis
+  publishes:
+  - fanout.synth.completed
+
+- name: judge-refactor
+  backend: claude-code
+  role_kind: reader
+  permission_mode: bypass
+  skills:
+  - hermes-contract-freeze
+  - hermes-agent-harness-audit
+  stages:
+  - judge
+  publishes:
+  - judge.child.completed
+  - judge.child.failed
+
+stage_labels:
+  meta: orchestration
+  design: contract freeze and migration plan
+  design_critique: design critique
+  refactor_scan: read-only Hermes to cj-min refactor scan
+  refactor_plan_synthesis: synthesize scoped task map
+  implement: scoped cj-min PI/Node implementation
+  code_review: candidate review
+  review_synthesis: review synthesis
+  independent_test: parallel verification
+  judge: final refactor gate

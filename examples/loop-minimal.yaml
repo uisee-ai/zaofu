@@ -1,0 +1,165 @@
+project:
+  name: loop-minimal
+  state_dir: .zf
+session:
+  tmux_session: zf-loop-minimal
+runtime:
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+  git:
+    candidate_base_ref: master
+    writer_branch_prefix: worker
+    task_ref_prefix: task
+    candidate_branch_prefix: candidate
+  skills:
+    pool: .zf/skills
+    sources:
+    - name: zaofu-local
+      path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+      mode: readonly
+quality_gates:
+  static:
+    enabled: true
+    required_checks:
+    - python3 -c "import py_compile, glob, sys; [py_compile.compile(f, doraise=True) for f in glob.glob('src/**/*.py', recursive=True)]; print('py_compile ok')"
+verification:
+  contract:
+    required: false
+    quality_required: false
+    rework_delta_required: false
+    dispatch_token_required: true
+  scope:
+    fail_closed: false
+orchestrator:
+  backend: claude-code
+roles:
+- backend: claude-code
+  name: orchestrator
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  orphan_escalate_seconds: 2400
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  triggers:
+  - user.message
+  - dev.build.done
+  - review.approved
+  - test.passed
+  - judge.passed
+  publishes:
+  - task.created
+  - task.dispatched
+- backend: claude-code
+  name: arch
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - test-driven-development
+  - zf-harness-design-handoff
+  triggers:
+  - task.assigned
+  publishes:
+  - arch.proposal.done
+- backend: claude-code
+  name: critic
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  skills:
+  - using-agent-skills
+  - doubt-driven-development
+  - zf-yoke-critic-role-context
+  - zf-harness-gate-evaluator
+  triggers:
+  - arch.proposal.done
+  publishes:
+  - design.critique.done
+  - gate.failed
+- backend: claude-code
+  name: dev
+  role_kind: writer
+  permission_mode: bypass
+  stuck_threshold_seconds: 900
+  orphan_warning_seconds: 1800
+  skills:
+  - using-agent-skills
+  - incremental-implementation
+  - test-driven-development
+  - debugging-and-error-recovery
+  - git-workflow-and-versioning
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  triggers:
+  - design.critique.done
+  publishes:
+  - dev.build.done
+  - dev.blocked
+- backend: claude-code
+  name: review
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  skills:
+  - using-agent-skills
+  - code-review-and-quality
+  - zf-yoke-review-role-context
+  - zf-harness-gate-evaluator
+  triggers:
+  - dev.build.done
+  - static_gate.passed
+  publishes:
+  - review.approved
+  - review.rejected
+- backend: claude-code
+  name: test
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  skills:
+  - using-agent-skills
+  - test-driven-development
+  - debugging-and-error-recovery
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-verification-checklist
+  triggers:
+  - review.approved
+  publishes:
+  - test.passed
+  - test.failed
+- backend: claude-code
+  name: judge
+  role_kind: reader
+  permission_mode: bypass
+  stuck_threshold_seconds: 600
+  orphan_warning_seconds: 1200
+  skills:
+  - using-agent-skills
+  - final-meta-review
+  - zf-yoke-quality-gate-role-context
+  - zf-harness-archive-contract
+  triggers:
+  - test.passed
+  publishes:
+  - judge.passed
+  - judge.failed
+workflow:
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+  gan_rounds: 1

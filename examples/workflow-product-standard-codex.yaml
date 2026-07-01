@@ -1,0 +1,391 @@
+# workflow-product-standard-codex.yaml — zf.yaml-aligned product delivery loop.
+#
+# Standard non-fanout product workflow for Codex.
+#
+# Shape:
+#   user.message
+#     -> orchestrator intake/backlog
+#     -> arch plan
+#     -> critic plan gate
+#     -> orchestrator backlog synthesis
+#     -> dev implementation
+#     -> static_gate
+#     -> test verification
+#     -> judge terminal decision
+#
+# This intentionally follows the canonical zf.yaml phases:
+#   intake -> plan -> impl -> verify -> judge -> done
+#
+# Difference from zf.yaml:
+#   - no dedicated review role
+#   - verification is handled by the `test` reader lane after static_gate
+#   - no `workflow.stages` fanout topology; scheduling is role trigger based
+#
+# For explicit stage fanout, use workflow-product-fanout-standard-codex.yaml.
+
+version: '1.0'
+preset: workflow-product-standard-codex
+
+project:
+  name: ${ZF_PROJECT_NAME:-product-standard}
+  state_dir: ${ZF_STATE_DIR:-.zf}
+
+session:
+  tmux_session: ${ZF_TMUX_SESSION:-zf-product-standard}
+  tmux_layout: pane_grid
+
+global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-500.0}
+budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+skill_sources:
+- name: agent-skills
+  path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+  mode: readonly
+- name: zaofu-local
+  path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+  mode: readonly
+- name: yoke-critic
+  path: ${ZF_YOKE_CRITIC_DIR:-./skills/critic}
+  mode: readonly
+
+runtime:
+  workdirs:
+    enabled: true
+    root: ${ZF_STATE_DIR:-.zf}/workdirs
+    mode: worktree
+    provision_paths: [.venv, node_modules]
+  git:
+    candidate_base_ref: ${ZF_BASE_REF:-main}
+    writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf}/worker
+    task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf}/task
+    candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf}/candidate
+    candidate_strategy: cherry-pick
+    remote_policy: local
+    auto_ship_on_candidate_complete: false
+  skills:
+    pool: ${ZF_STATE_DIR:-.zf}/skills
+    materialize: copy
+    lock_file: ${ZF_STATE_DIR:-.zf}/skills.lock.json
+    strict: false
+
+autopilot:
+  enabled: true
+  mode: proposal_only
+  stale_after_hours: 24
+  failed_event_window_hours: 72
+  schedules:
+  - id: daily-triage
+    interval: 24h
+    action: triage
+
+workflow:
+  harness_profile: strict
+  work_units:
+    enabled: true
+    split_quality:
+      mode: warning
+      max_scope_files: 12
+      require_validation_surface: true
+  completion_audit:
+    enabled: true
+    provider_completed_state: completed_unverified
+  resume_packet:
+    enabled: true
+    max_tokens: 1400
+    generate_on:
+    - dispatch
+    - retry
+    - context_recovery
+    - worker.context.warning
+    - worker.context.critical
+    - worker.stuck
+  dag:
+    enabled: true
+    default_gate_level: strict
+    dev_requires_orchestrator_backlog: true
+    design_to_backlog_owner: orchestrator
+    design_events:
+      arch_done: arch.proposal.done
+      critic_done: design.critique.done
+    required_backlog_refs:
+    - spec_ref
+    - plan_ref
+    - tdd_ref
+    - critic_event_id
+    - critic_gate_ref
+    - evidence_contract
+    stage_order:
+    - intake
+    - plan
+    - impl
+    - verify
+    - judge
+    - done
+    event_schemas:
+      worker.context.warning:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.context.critical:
+        required: [task_id, dispatch_id, role, instance_id, backend, context_usage_ratio, session_ref, source, reason]
+      worker.progress:
+        required: [task_id, dispatch_id, role, instance_id, phase, message, source]
+      phase.progressed:
+        required: [task_id, dispatch_id, role, instance_id, phase, source]
+      task.fanout.requested:
+        required: [task_id, dispatch_id, requested_by, reason, scope, requested_specialists, expected_output, risk]
+  rework_routing:
+    gate.failed: arch
+    static_gate.failed: dev
+    test.failed: dev
+    judge.failed: dev
+    discriminator.failed: dev
+    dispatch.silent_stall: orchestrator
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    dev.blocked: orchestrator
+    dev.failed: orchestrator
+  strict_triggers:
+    rework_attempts_gte: 1
+    context_usage_gte: 0.80
+    file_globs: [src/**, tests/**, web/**, docs/**]
+  fast_path:
+    enabled: true
+    max_scope_files: 2
+    skip_stages: [design, design_critique, judge]
+    allow_docs_only: true
+    verification_required: true
+
+orchestrator:
+  backend: codex
+
+quality_gates:
+  static:
+    enabled: true
+    required_checks: [git diff --check]
+  test:
+    enabled: true
+    required_checks: []
+
+verification:
+  contract:
+    required: true
+    quality_required: true
+    rework_delta_required: true
+    dispatch_token_required: true
+  scope:
+    fail_closed: true
+  architecture:
+    enabled: true
+  promoted:
+    enabled: true
+  event_schema:
+    mode: warning
+
+roles:
+- name: orchestrator
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - planning-and-task-breakdown
+  - context-engineering
+  - idea-refine
+  - spec-driven-development
+  - zf-yoke-orchestrator-role-context
+  - zf-harness-state-sync
+  - zf-harness-instruction-hygiene
+  - zf-harness-spec-bridge
+  - zf-harness-backlog-synthesis
+  publishes:
+  - task.dispatched
+  - task.created
+  - feature.created
+  stages: [meta]
+  triggers:
+  - user.message
+  - design.critique.done
+  - clarification.needed
+  - dev.blocked
+  - task.contract.invalid
+  - static_gate.failed
+  - test.failed
+  - judge.failed
+  - dispatch.silent_stall
+  - worker.stuck
+
+- name: arch
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - source-driven-development
+  - spec-driven-development
+  - planning-and-task-breakdown
+  - test-driven-development
+  - api-and-interface-design
+  - documentation-and-adrs
+  - doubt-driven-development
+  - zf-harness-instruction-hygiene
+  - zf-harness-spec-bridge
+  - zf-harness-design-handoff
+  publishes:
+  - arch.proposal.done
+  - clarification.needed
+  stages: [plan]
+  triggers: [task.assigned]
+
+- name: critic
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - spec-driven-development
+  - doubt-driven-development
+  - zf-yoke-critic-role-context
+  - document-review
+  - plan-option-scoring
+  - skeptic-observation
+  - security-review
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-spec-bridge
+  - zf-harness-design-handoff
+  publishes:
+  - design.critique.done
+  - gate.failed
+  stages: [plan]
+  triggers: [arch.proposal.done]
+
+- name: dev
+  backend: codex
+  role_kind: writer
+  permission_mode: bypass
+  replicas: 4
+  autoscale:
+    enabled: true
+    min_replicas: 2
+    max_replicas: 6
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 120
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - incremental-implementation
+  - test-driven-development
+  - debugging-and-error-recovery
+  - source-driven-development
+  - git-workflow-and-versioning
+  - api-and-interface-design
+  - context-engineering
+  - documentation-and-adrs
+  - doubt-driven-development
+  - zf-yoke-dev-worker-role-context
+  - zf-harness-done-contract
+  - zf-harness-state-sync
+  publishes:
+  - dev.build.done
+  - dev.blocked
+  stages: [impl]
+  triggers: [task.assigned]
+
+- name: test
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  replicas: 2
+  autoscale:
+    enabled: true
+    min_replicas: 1
+    max_replicas: 3
+    target_ready_tasks_per_worker: 1
+    scale_up_pending_seconds: 180
+    scale_down_idle_seconds: 900
+    cooldown_seconds: 180
+    drain_before_stop: true
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - test-driven-development
+  - debugging-and-error-recovery
+  - browser-testing-with-devtools
+  - zf-yoke-test-evaluator-role-context
+  - zf-harness-gate-evaluator
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - test.passed
+  - test.failed
+  stages: [verify]
+  triggers: [static_gate.passed]
+
+- name: judge
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  context_warning_threshold: ${ZF_CONTEXT_WARNING_THRESHOLD:-0.6}
+  context_compact_threshold: ${ZF_CONTEXT_COMPACT_THRESHOLD:-0.7}
+  context_hard_cap: ${ZF_CONTEXT_HARD_CAP:-0.9}
+  stuck_threshold_seconds: 300
+  orphan_warning_seconds: 600
+  orphan_escalate_seconds: 1200
+  skills:
+  - using-agent-skills
+  - shipping-and-launch
+  - final-meta-review
+  - pre-release-review
+  - council
+  - documentation-and-adrs
+  - zf-yoke-quality-gate-role-context
+  - zf-harness-archive-contract
+  - zf-harness-evidence-collection
+  - zf-harness-verification-checklist
+  - zf-harness-eval-harness
+  - zf-harness-evaluator-scoring
+  publishes:
+  - judge.passed
+  - judge.failed
+  stages: [judge]
+  triggers: [test.passed]
+
+stage_labels:
+  meta: meta / orchestration
+  intake: "intake: task assignment / routing"
+  plan: "plan: spec / design critique / backlog contract"
+  impl: "impl: implementation + static gate"
+  verify: "verify: independent verification without review role"
+  judge: "terminal judge"
+  done: "kernel done"

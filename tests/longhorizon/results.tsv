@@ -1,0 +1,13 @@
+iteration	commit	vcr	mtts	cost_per_task	rework_ratio	guard_status	note
+0	dry-run	0.0000	0.00	0.0447	0.00	pass	baseline: context_window_tokens=100000
+1	live-live	0.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260531t2258 timeout (missing: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+2	live-live	0.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260531t2331 timeout (missing: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+3	live-live	0.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260601t0007 timeout (missing: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+4	live-live	0.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260601t0027 timeout (missing: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+5	live-live	1.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260601t0047 pass
+6	live-live	1.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260601t0107 pass
+7	live-live	1.0000	0.00	-	0.00	pass	l4-channel-real: ch-l4-pair-20260601t0108 pass
+8	live-live	0.0000	251.90	-	0.00	pass	l4-pair-channel-real: ch-l4-pair-20260601t0226 round1=pass round2=timeout rounds=1/2 (round2 timeout: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+9	live-live	0.0000	494.57	-	0.00	pass	l5-roundtable-channel-real: ch-l5-rt-20260601t0234 round1=pass round2=timeout round3=skip round4=skip rounds=1/4 (round2 timeout: channel.agent.reply.started, channel.message.posted_reply, channel.agent.reply.completed)
+10	live-live	1.0000	24.09	-	0.00	pass	l4-pair-channel-real: ch-l4-pair-20260601t0248 round1=pass round2=pass rounds=2/2
+11	live-live	1.0000	51.88	-	0.00	pass	l5-roundtable-channel-real: ch-l5-rt-20260601t0249 round1=pass round2=pass round3=pass round4=pass rounds=4/4

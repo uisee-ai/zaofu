@@ -1,0 +1,236 @@
+# Production-oriented issue repair workflow using the reduced kind envelope.
+#
+# Shape:
+#   user.message -> task_map.ready -> candidate.ready -> test.passed -> judge.passed
+#
+# Review gate policy: merged_into_verify. The verification fanout owns both
+# code review and regression evidence for issue-sized fixes.
+apiVersion: zaofu.dev/v1
+kind: Workflow
+metadata:
+  name: prod-issue-fanout
+  zaofu:
+    catalog:
+      id: issue-fanout-codex
+      label: issue-fanout-codex
+      description: issue/bug 修复 fanout(6 角色)— 维护 / 修复
+      roles: 6
+      intent: maintain
+      backend: codex
+      recommended_for: [maintain, review]
+      order: 20
+spec:
+  tasks:
+  - name: issue-map
+    trigger: user.message
+    # Simple single-synth stage (mirrors prd-task-map). A fanout: stage gives
+    # the synth a fanout-child briefing emitting a relative docs/plans/ ref that
+    # the downstream writer fanout can't resolve ("task_map not found").
+    role: issue-plan
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: task_map.child.completed
+      childFailureEvent: task_map.child.failed
+      successEvent: task_map.ready
+      failureEvent: issue.plan.failed
+    deadlineSeconds: 1800
+  - name: issue-impl
+    trigger: task_map.ready
+    fanout:
+      fromTaskMap: ${task_map_ref}
+      roles: [dev-core, dev-web]
+    aggregate:
+      mode: candidate_integration
+      successEvent: candidate.ready
+      failureEvent: integration.failed
+      maxRetries: 1
+    synthesizeCanonicalTasks: true
+    deadlineSeconds: 7200
+  - name: issue-verify
+    trigger: candidate.ready
+    fanout:
+      roles: [verify-code, verify-regression]
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: verify.child.completed
+      childFailureEvent: verify.child.failed
+      successEvent: test.passed
+      failureEvent: test.failed
+    target: ${ZF_CANDIDATE_REF:-HEAD}
+    deadlineSeconds: 3600
+  - name: issue-judge
+    trigger: test.passed
+    role: judge-issue
+    aggregate:
+      mode: wait_for_all
+      childSuccessEvent: judge.child.completed
+      childFailureEvent: judge.child.failed
+      successEvent: judge.passed
+      failureEvent: judge.failed
+    target: ${ZF_CANDIDATE_REF:-HEAD}
+    deadlineSeconds: 1800
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: prod-issue-fanout-codex}
+spec:
+  version: "1.0"
+  preset: prod-issue-fanout-codex
+
+  project:
+    name: ${ZF_PROJECT_NAME:-prod-issue-fanout}
+    state_dir: ${ZF_STATE_DIR:-.zf-prod-issue}
+
+  session:
+    tmux_session: ${ZF_TMUX_SESSION:-zf-prod-issue}
+    tmux_layout: pane_grid
+
+  global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-500.0}
+  budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+  skill_sources:
+  - name: agent-skills
+    path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+    mode: readonly
+  - name: zaofu-local
+    path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+    mode: readonly
+
+  runtime:
+    skills:
+      strict: false
+      pool: ${ZF_STATE_DIR:-.zf-prod-issue}/skills
+      materialize: copy
+      lock_file: ${ZF_STATE_DIR:-.zf-prod-issue}/skills.lock.json
+    workdirs:
+      enabled: true
+      root: ${ZF_STATE_DIR:-.zf-prod-issue}/workdirs
+      mode: worktree
+      provision_paths: [.venv, node_modules]
+    git:
+      candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+      writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-issue}/worker
+      task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-issue}/task
+      candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-issue}/candidate
+      candidate_strategy: cherry-pick
+      remote_policy: local
+      auto_ship_on_candidate_complete: false
+
+  constraints:
+    blocked_paths:
+    - .git/**
+    - ${ZF_STATE_DIR:-.zf-prod-issue}/**
+    - .venv/**
+    - node_modules/**
+    - .env
+    - .env.*
+    - "**/*.pem"
+    - "**/*.ppk"
+
+  workflow:
+    harness_profile: strict
+    work_units:
+      enabled: true
+      split_quality:
+        mode: warning
+        max_scope_files: 8
+        require_validation_surface: true
+    completion_audit:
+      enabled: true
+      provider_completed_state: completed_unverified
+    resume_packet:
+      enabled: true
+      max_tokens: 1400
+      generate_on:
+      - dispatch
+      - retry
+      - context_recovery
+      - worker.context.warning
+      - worker.context.critical
+      - worker.stuck
+    dag:
+      enabled: true
+      schema_profile: canonical-dag/v1
+      default_gate_level: strict
+      external_triggers: [user.message]
+      stage_order:
+      - user.message
+      - task_map.ready
+      - candidate.ready
+      - test.passed
+      - judge.passed
+      event_schemas:
+        issue.plan.child.completed:
+          required: [fanout_id, child_id, status, summary, task_map_ref, evidence_refs]
+        issue.plan.child.failed:
+          required: [fanout_id, child_id, status, reason]
+        issue.plan.failed:
+          required: [fanout_id, stage_id, status, reason]
+    rework_routing:
+      issue.plan.failed: issue-plan
+      integration.failed: issue-triage
+      test.failed: dev-core
+      judge.failed: dev-core
+      gate.failed: issue-plan
+      discriminator.failed: dev-core
+      dev.blocked: issue-triage
+      dev.failed: issue-triage
+      dispatch.silent_stall: orchestrator
+    strict_triggers:
+      rework_attempts_gte: 1
+      context_usage_gte: 0.80
+      file_globs: [src/**, tests/**, web/**, docs/**]
+
+  _role_defaults: &codex_common
+    backend: codex
+    permission_mode: bypass
+    transport: tmux
+    stuck_threshold_seconds: 900
+    spawn_ready_timeout_seconds: 240
+    context_window_tokens: 200000
+
+  roles:
+  - <<: *codex_common
+    name: orchestrator
+    instance_id: orchestrator
+    role_kind: reader
+    # Layer-2 escalation only — scope to dispatch.silent_stall (its sole rework
+    # route). Empty triggers = subscribe-to-all-non-noise = ~per-round wakes =
+    # majority of run cost for ~0 productive output.
+    triggers: [dispatch.silent_stall]
+    skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  - <<: *codex_common
+    name: issue-triage
+    instance_id: issue-triage
+    role_kind: reader
+    skills: [debugging-and-error-recovery, zf-harness-evidence-collection]
+  - <<: *codex_common
+    name: issue-plan
+    instance_id: issue-plan
+    role_kind: reader
+    skills: [zf-issue-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]
+  - <<: *codex_common
+    name: dev-core
+    instance_id: dev-core
+    role_kind: writer
+    skills: [incremental-implementation, test-driven-development]
+  - <<: *codex_common
+    name: dev-web
+    instance_id: dev-web
+    role_kind: writer
+    skills: [frontend-ui-engineering, incremental-implementation]
+  - <<: *codex_common
+    name: verify-code
+    instance_id: verify-code
+    role_kind: reader
+    skills: [code-review-and-quality, zf-yoke-review-role-context]
+  - <<: *codex_common
+    name: verify-regression
+    instance_id: verify-regression
+    role_kind: reader
+    skills: [test-driven-development, zf-harness-verification-checklist]
+  - <<: *codex_common
+    name: judge-issue
+    instance_id: judge-issue
+    role_kind: reader
+    skills: [zf-harness-gate-evaluator, shipping-and-launch]

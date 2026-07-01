@@ -1,0 +1,24 @@
+{
+  "schema_version": "source-index.v1",
+  "feature_id": "F-REPLAN",
+  "tasks": [
+    {
+      "task_id": "TASK-REPLAN-A",
+      "source_key": "replan.v2.task-1",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v2.md#task-1",
+      "source_task_id": "Task 1",
+      "source_title": "Task 1",
+      "source_mode": "canonical",
+      "source_excerpt": "Replace the string-only sorter with a sorter that handles strings and numbers."
+    },
+    {
+      "task_id": "TASK-REPLAN-B",
+      "source_key": "replan.v2.task-2",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v2.md#task-2",
+      "source_task_id": "Task 2",
+      "source_title": "Task 2",
+      "source_mode": "canonical",
+      "source_excerpt": "Add mixed input tests that prove strings and numbers are both sorted."
+    }
+  ]
+}

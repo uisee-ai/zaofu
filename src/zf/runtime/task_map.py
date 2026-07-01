@@ -1,0 +1,669 @@
+"""Task-map validation and projection helpers.
+
+``task-map.json`` bridges human planning artifacts and executable kanban
+contracts. The orchestrator owns semantic decomposition; helpers here only
+perform deterministic schema/topology checks and lightweight summaries.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shlex
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+
+@dataclass(frozen=True)
+class TaskMapValidationResult:
+    passed: bool
+    errors: list[str] = field(default_factory=list)
+    summary: dict[str, Any] = field(default_factory=dict)
+
+    def to_check(self) -> dict[str, Any]:
+        return {
+            "name": "task_map_validate",
+            "passed": self.passed,
+            "errors": list(self.errors),
+            "summary": dict(self.summary),
+        }
+
+
+def load_task_map(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("task-map must be a JSON object")
+    return data
+
+
+def load_source_index(path: Path) -> dict[str, Any]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("source-index must be a JSON object")
+    return data
+
+
+def build_task_map_from_ingest_plan(
+    plan: dict[str, Any],
+    *,
+    source_refs: dict[str, str],
+) -> dict[str, Any]:
+    tasks: list[dict[str, Any]] = []
+    for item in plan.get("tasks", []):
+        if not isinstance(item, dict):
+            continue
+        tasks.append({
+            "task_id": str(item.get("id") or "").strip(),
+            "title": str(item.get("title") or "").strip(),
+            "owner_role": str(item.get("owner_role") or "").strip(),
+            "phase": str(item.get("phase") or item.get("plan_section") or "").strip(),  # doc 69 S-b
+            "plan_section": str(item.get("plan_section") or item.get("key") or "").strip(),
+            "blocked_by": _string_list(item.get("blocked_by")),
+            "wave": _int_value(item.get("wave")),
+            "scope": _string_list(item.get("scope")),
+            "shared_files": _string_list(item.get("shared_files")),
+            "exclusive_files": _string_list(item.get("exclusive_files")),
+            "acceptance": _string_list(item.get("acceptance")),
+            "verification": normalize_verification_command(item.get("verification")),
+            "verification_tiers": _string_list(item.get("verification_tiers")),
+        })
+    return {
+        "schema_version": "task-map.v1",
+        "feature_id": str(plan.get("feature_id") or "").strip(),
+        "source_refs": dict(source_refs),
+        "tasks": tasks,
+    }
+
+
+def validate_task_map_payload(
+    payload: dict[str, Any],
+    *,
+    require_task_verification: bool = True,
+) -> TaskMapValidationResult:
+    errors: list[str] = []
+    schema_version = str(payload.get("schema_version") or "").strip()
+    if schema_version and schema_version != "task-map.v1":
+        errors.append(f"unsupported schema_version {schema_version!r}")
+    tasks_raw = payload.get("tasks")
+    if not isinstance(tasks_raw, list) or not tasks_raw:
+        errors.append("tasks must be a non-empty list")
+        tasks_raw = []
+
+    ids: list[str] = []
+    exclusive_claims: dict[str, str] = {}
+    waves: dict[str, int] = {}
+    task_count_by_wave: dict[str, int] = {}
+    missing_allowed_path_reason: list[str] = []
+    # A task's verification COMMAND runs tests (read-only) and may legitimately
+    # reference files owned by sibling tasks in the same plan — e.g. the refactor
+    # flow's characterization-test pattern, where the refactor task verifies
+    # against a test file written by a separate characterization task. Scope the
+    # verification check against the whole plan's paths so cross-task test runs
+    # are allowed while truly out-of-plan references are still caught.
+    plan_scope_paths: list[str] = []
+    for raw in tasks_raw:
+        if isinstance(raw, dict):
+            plan_scope_paths.extend(_string_list(raw.get("allowed_paths")))
+            plan_scope_paths.extend(_string_list(raw.get("exclusive_files")))
+    for idx, raw in enumerate(tasks_raw):
+        if not isinstance(raw, dict):
+            errors.append(f"tasks[{idx}] must be an object")
+            continue
+        task_id = _task_id(raw)
+        if not task_id:
+            errors.append(f"tasks[{idx}].task_id is required")
+            continue
+        if task_id in ids:
+            errors.append(f"duplicate task_id {task_id!r}")
+        ids.append(task_id)
+        wave = _int_value(raw.get("wave"))
+        waves[task_id] = wave
+        task_count_by_wave[str(wave)] = task_count_by_wave.get(str(wave), 0) + 1
+        if (
+            require_task_verification
+            and not normalize_verification_command(raw.get("verification"))
+            and not _string_list(raw.get("acceptance"))
+            and not _validation_command(raw)
+        ):
+            errors.append(f"{task_id} requires verification or acceptance")
+        for field, command in _verification_command_fields(raw):
+            for error in _verification_command_errors(command):
+                errors.append(f"{task_id}.{field} {error}")
+            for error in _verification_scope_errors(raw, command, plan_scope_paths):
+                errors.append(f"{task_id}.{field} {error}")
+        if _string_list(raw.get("allowed_paths")) and not str(
+            raw.get("allowed_paths_reason") or raw.get("scope_reason") or ""
+        ).strip():
+            missing_allowed_path_reason.append(task_id)
+        for path in _string_list(raw.get("exclusive_files")):
+            owner = exclusive_claims.get(path)
+            if owner and owner != task_id:
+                errors.append(f"exclusive_files overlap {path!r}: {owner} and {task_id}")
+            exclusive_claims[path] = task_id
+
+    ids_set = set(ids)
+    for idx, raw in enumerate(tasks_raw):
+        if not isinstance(raw, dict):
+            continue
+        task_id = _task_id(raw) or f"tasks[{idx}]"
+        for dep in _string_list(raw.get("blocked_by")):
+            if dep not in ids_set:
+                errors.append(f"{task_id}.blocked_by references unknown task {dep!r}")
+                continue
+            if waves.get(dep, 0) > waves.get(task_id, 0):
+                errors.append(f"{task_id}.blocked_by {dep!r} is in a later wave")
+
+    source_refs = payload.get("source_refs")
+    if source_refs is not None and not isinstance(source_refs, dict):
+        errors.append("source_refs must be an object when present")
+
+    summary = {
+        "task_count": len(ids),
+        "wave_count": len(task_count_by_wave),
+        "tasks_by_wave": task_count_by_wave,
+        "exclusive_file_count": len(exclusive_claims),
+        "tasks_missing_allowed_paths_reason": missing_allowed_path_reason,
+    }
+    return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
+
+
+def validate_source_index_payload(
+    payload: dict[str, Any],
+    *,
+    task_map: dict[str, Any] | None = None,
+    require_canonical: bool = True,
+) -> TaskMapValidationResult:
+    """Validate task_id -> source provenance coverage for a task-map.
+
+    The validator is intentionally structural. Layer 2 owns semantic synthesis;
+    Layer 1 only proves every executable task has a durable source pointer and
+    a captured excerpt or an explicit degraded reason.
+    """
+    errors: list[str] = []
+    schema_version = str(payload.get("schema_version") or "").strip()
+    if schema_version and schema_version != "source-index.v1":
+        errors.append(f"unsupported schema_version {schema_version!r}")
+
+    tasks_raw = payload.get("tasks")
+    if isinstance(tasks_raw, dict):
+        task_entries = [
+            {"task_id": key, **value}
+            if isinstance(value, dict)
+            else {"task_id": key, "source_excerpt": str(value)}
+            for key, value in tasks_raw.items()
+        ]
+    elif isinstance(tasks_raw, list):
+        task_entries = tasks_raw
+    else:
+        errors.append("tasks must be a non-empty list or object")
+        task_entries = []
+    if not task_entries:
+        errors.append("tasks must be a non-empty list or object")
+
+    seen: set[str] = set()
+    modes: dict[str, int] = {}
+    for idx, raw in enumerate(task_entries):
+        if not isinstance(raw, dict):
+            errors.append(f"tasks[{idx}] must be an object")
+            continue
+        task_id = str(raw.get("task_id") or raw.get("id") or "").strip()
+        if not task_id:
+            errors.append(f"tasks[{idx}].task_id is required")
+            continue
+        if task_id in seen:
+            errors.append(f"duplicate task_id {task_id!r}")
+        seen.add(task_id)
+
+        mode = str(raw.get("source_mode") or raw.get("mode") or "canonical").strip()
+        modes[mode or "canonical"] = modes.get(mode or "canonical", 0) + 1
+        source_key = str(raw.get("source_key") or "").strip()
+        source_ref = str(raw.get("source_ref") or raw.get("ref") or "").strip()
+        source_excerpt = str(
+            raw.get("source_excerpt")
+            or raw.get("excerpt")
+            or raw.get("text")
+            or ""
+        ).strip()
+        degraded_reason = str(raw.get("degraded_reason") or "").strip()
+        if not source_key:
+            errors.append(f"{task_id}.source_key is required")
+        if not source_ref:
+            errors.append(f"{task_id}.source_ref is required")
+        if not source_excerpt:
+            errors.append(f"{task_id}.source_excerpt is required")
+        if require_canonical and mode == "degraded":
+            errors.append(f"{task_id}.source_mode=degraded is not accepted on the main path")
+        if mode == "degraded" and not degraded_reason:
+            errors.append(f"{task_id}.degraded_reason is required")
+
+    missing: list[str] = []
+    if task_map is not None:
+        validation = validate_task_map_payload(
+            task_map,
+            require_task_verification=False,
+        )
+        if not validation.passed:
+            errors.extend(f"task_map: {item}" for item in validation.errors)
+        for raw in task_map.get("tasks") or []:
+            if not isinstance(raw, dict):
+                continue
+            task_id = _task_id(raw)
+            if task_id and task_id not in seen:
+                missing.append(task_id)
+        for task_id in missing:
+            errors.append(f"source_index missing task_id {task_id!r}")
+
+    summary = {
+        "source_task_count": len(seen),
+        "source_modes": modes,
+        "missing_task_count": len(missing),
+        "missing_task_ids": missing,
+    }
+    return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
+
+
+def validate_coverage_report_payload(
+    payload: dict[str, Any],
+    *,
+    task_map: dict[str, Any] | None = None,
+) -> TaskMapValidationResult:
+    errors: list[str] = []
+    schema_version = str(payload.get("schema_version") or "").strip()
+    if schema_version and schema_version != "coverage-report.v1":
+        errors.append(f"unsupported schema_version {schema_version!r}")
+    tasks = payload.get("tasks")
+    coverage_task_ids: list[str] = []
+    if not isinstance(tasks, (list, dict)) or not tasks:
+        errors.append("tasks must be a non-empty list or object")
+    else:
+        coverage_task_ids = _coverage_task_ids(tasks)
+        if not coverage_task_ids:
+            errors.append("tasks must identify at least one task_id")
+    unresolved = payload.get("unresolved_unknowns", [])
+    if unresolved not in (None, "") and not isinstance(unresolved, list):
+        errors.append("unresolved_unknowns must be a list when present")
+    expected_task_ids: list[str] = []
+    if task_map is not None:
+        task_items = task_map.get("tasks") if isinstance(task_map, dict) else None
+        if isinstance(task_items, list):
+            for raw in task_items:
+                if isinstance(raw, dict):
+                    task_id = _task_id(raw)
+                    if task_id:
+                        expected_task_ids.append(task_id)
+        missing = [
+            task_id for task_id in expected_task_ids
+            if task_id not in set(coverage_task_ids)
+        ]
+        if missing:
+            errors.append(
+                "coverage_report missing task_id "
+                + ", ".join(repr(task_id) for task_id in missing)
+            )
+    summary = {
+        "coverage_task_count": len(coverage_task_ids),
+        "expected_task_count": len(expected_task_ids),
+        "missing_task_ids": [
+            task_id for task_id in expected_task_ids
+            if task_id not in set(coverage_task_ids)
+        ],
+        "unresolved_unknown_count": len(unresolved) if isinstance(unresolved, list) else 0,
+    }
+    return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
+
+
+def _coverage_task_ids(tasks: list[Any] | dict[str, Any]) -> list[str]:
+    ids: list[str] = []
+    if isinstance(tasks, dict):
+        iterable = tasks.items()
+        for key, value in iterable:
+            task_id = str(key or "").strip()
+            if not task_id and isinstance(value, dict):
+                task_id = _task_id(value)
+            if task_id and task_id not in ids:
+                ids.append(task_id)
+        return ids
+    for raw in tasks:
+        task_id = ""
+        if isinstance(raw, dict):
+            task_id = _task_id(raw)
+        elif isinstance(raw, str):
+            task_id = raw.strip()
+        if task_id and task_id not in ids:
+            ids.append(task_id)
+    return ids
+
+
+def summarize_task_map_file(path: Path) -> dict[str, Any]:
+    payload = load_task_map(path)
+    result = validate_task_map_payload(payload)
+    return {
+        "path": str(path),
+        "passed": result.passed,
+        "errors": list(result.errors),
+        **result.summary,
+    }
+
+
+def resolve_artifact_file(raw_path: str, *, project_root: Path, state_dir: Path) -> Path:
+    candidate = Path(raw_path)
+    candidates = [candidate] if candidate.is_absolute() else [
+        project_root / candidate,
+        state_dir / candidate,
+    ]
+    for item in candidates:
+        if item.exists():
+            return item
+    return candidates[0]
+
+
+def _task_id(raw: dict[str, Any]) -> str:
+    return str(raw.get("task_id") or raw.get("id") or "").strip()
+
+
+def _validation_command(raw: dict[str, Any]) -> str:
+    validation = raw.get("validation")
+    if not isinstance(validation, dict):
+        return ""
+    return str(validation.get("command") or "").strip()
+
+
+def normalize_verification_command(value: Any) -> str:
+    if isinstance(value, list):
+        return " && ".join(
+            str(item).strip() for item in value if str(item or "").strip()
+        )
+    return str(value or "").strip()
+
+
+def _verification_command_fields(raw: dict[str, Any]) -> list[tuple[str, str]]:
+    fields: list[tuple[str, str]] = []
+    verification = normalize_verification_command(raw.get("verification"))
+    if verification:
+        fields.append(("verification", verification))
+    validation_command = _validation_command(raw)
+    if validation_command:
+        fields.append(("validation.command", validation_command))
+    return fields
+
+
+def _verification_command_errors(command: str) -> list[str]:
+    text = str(command or "").strip()
+    if not text:
+        return []
+    if _verification_contains_prose(text):
+        return [
+            "must be an executable command only; put expected-red/prose in "
+            "validation or evidence_contract"
+        ]
+    early_errors = [
+        *_single_quoted_bash_c_errors(text),
+        *_unquoted_glob_filter_errors(text),
+        *_unquoted_path_glob_errors(text),
+    ]
+    if early_errors:
+        return early_errors
+    try:
+        parsed = subprocess.run(
+            ["sh", "-n", "-c", text],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return [f"could not be parsed by sh -n: {exc}"]
+    if parsed.returncode != 0:
+        detail = (parsed.stderr or parsed.stdout or "").strip()
+        if detail:
+            return [f"must be valid shell syntax: {detail}"]
+        return ["must be valid shell syntax"]
+    return []
+
+
+_UNQUOTED_FILTER_GLOB_RE = re.compile(
+    r"(?<!\S)--filter(?:\s+|=)(\./[^\s'\";|&]*[*?\[][^\s'\";|&]*)"
+)
+_BASH_C_SINGLE_QUOTED_RE = re.compile(
+    r"\bbash\s+-[A-Za-z]*c[A-Za-z]*\s+'"
+)
+
+
+def _single_quoted_bash_c_errors(command: str) -> list[str]:
+    """Reject lossy `bash -lc '...'` wrappers with raw inner single quotes.
+
+    `sh -n` cannot catch this class: the outer shell treats the inner quote as
+    closing/reopening the command argument, so syntax still parses while code
+    literals such as `require('node:fs')` are stripped before the inner bash
+    sees them. R37 hit this as an assembly verification false runtime failure.
+    """
+    if not _BASH_C_SINGLE_QUOTED_RE.search(command):
+        return []
+    try:
+        argv = shlex.split(command)
+    except ValueError:
+        return []
+    if len(argv) != 3:
+        return []
+    if Path(argv[0]).name != "bash":
+        return []
+    option = argv[1]
+    if not option.startswith("-") or "c" not in option:
+        return []
+    match = _BASH_C_SINGLE_QUOTED_RE.search(command)
+    if match is None:
+        return []
+    tail = command[match.end():]
+    if tail.count("'") <= 1:
+        return []
+    if "'\\''" in tail or "'\"'\"'" in tail:
+        return []
+    return [
+        "must not wrap bash -c payload in single quotes when the payload "
+        "contains inner single quotes; use a script file or a double-quoted "
+        "wrapper with proper escaping"
+    ]
+
+
+def _unquoted_glob_filter_errors(command: str) -> list[str]:
+    matches = [
+        match.group(1)
+        for match in _UNQUOTED_FILTER_GLOB_RE.finditer(command)
+    ]
+    if not matches:
+        return []
+    unique = sorted(set(matches))
+    return [
+        "must quote shell glob filter arguments before the shell expands them: "
+        + ", ".join(unique)
+    ]
+
+
+def _unquoted_path_glob_errors(command: str) -> list[str]:
+    tokens = _shell_tokens_with_quote_state(command)
+    matches = sorted({
+        token
+        for token, quoted in tokens
+        if not quoted
+        and any(ch in token for ch in "*?[")
+        and "/" in token
+        and "--filter" not in token
+    })
+    if not matches:
+        return []
+    return [
+        "must quote shell glob path arguments before the shell expands them: "
+        + ", ".join(matches)
+    ]
+
+
+def _shell_tokens_with_quote_state(command: str) -> list[tuple[str, bool]]:
+    tokens: list[tuple[str, bool]] = []
+    current: list[str] = []
+    quote = ""
+    quoted = False
+    escaped = False
+    for ch in command:
+        if escaped:
+            current.append(ch)
+            escaped = False
+            continue
+        if ch == "\\":
+            current.append(ch)
+            escaped = True
+            continue
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = ""
+            continue
+        if ch in {"'", '"'}:
+            quoted = True
+            current.append(ch)
+            quote = ch
+            continue
+        if ch.isspace() or ch in {";", "|", "&"}:
+            if current:
+                token = "".join(current).strip()
+                if token:
+                    tokens.append((token.strip("'\""), quoted))
+                current = []
+                quoted = False
+            continue
+        current.append(ch)
+    if current:
+        token = "".join(current).strip()
+        if token:
+            tokens.append((token.strip("'\""), quoted))
+    return tokens
+
+
+def _verification_scope_errors(
+    raw: dict[str, Any],
+    command: str,
+    plan_scope_paths: list[str] | None = None,
+) -> list[str]:
+    allowed_paths = _string_list(raw.get("allowed_paths"))
+    if not allowed_paths:
+        return []
+    scope_paths = [
+        *_string_list(raw.get("allowed_paths")),
+        *_string_list(raw.get("exclusive_files")),
+        # verification commands run tests read-only; allow any test/file owned by
+        # a sibling task in the same plan (cross-task verification).
+        *(plan_scope_paths or []),
+    ]
+    if not scope_paths:
+        return []
+    out: list[str] = []
+    for path_ref in _command_path_refs(command):
+        if not _path_ref_covered(path_ref, scope_paths):
+            out.append(
+                "references path outside allowed_paths/exclusive_files: "
+                f"{path_ref!r}"
+            )
+    return out
+
+
+def _command_path_refs(command: str) -> list[str]:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return []
+    refs: list[str] = []
+    for token in tokens:
+        cleaned = token.strip().strip(",")
+        if not cleaned or cleaned.startswith("-") or "://" in cleaned:
+            continue
+        if "=" in cleaned and not cleaned.startswith(("./", "../", "/")):
+            cleaned = cleaned.rsplit("=", 1)[-1]
+        cleaned = cleaned.strip("'\"")
+        # A pytest node-id (path::test_name, optionally path::Class::test) is a
+        # test target, not a separate file. Validate only the file part so an
+        # in-scope test file is not rejected for naming a specific node — e.g.
+        # `pytest tests/test_x.py::test_case` must match allowed path
+        # `tests/test_x.py`, not the literal `tests/test_x.py::test_case`.
+        if "::" in cleaned:
+            cleaned = cleaned.split("::", 1)[0]
+        if not _looks_like_path_ref(cleaned):
+            continue
+        refs.append(cleaned)
+    return list(dict.fromkeys(refs))
+
+
+def _looks_like_path_ref(token: str) -> bool:
+    if token in {".", ".."}:
+        return False
+    if token.startswith(("./", "../", "/")):
+        return True
+    return "/" in token and not token.startswith("-")
+
+
+def _path_ref_covered(path_ref: str, scope_paths: list[str]) -> bool:
+    ref = _normalize_scope_path(path_ref)
+    if not ref:
+        return True
+    for scope in scope_paths:
+        normalized_scope = _normalize_scope_path(scope)
+        if not normalized_scope:
+            return True
+        if ref == normalized_scope:
+            return True
+        if ref.startswith(f"{normalized_scope}/"):
+            return True
+        if normalized_scope.startswith(f"{ref}/"):
+            return True
+    return False
+
+
+def _normalize_scope_path(path: str) -> str:
+    text = str(path or "").strip().strip("'\"")
+    while text.startswith("./"):
+        text = text[2:]
+    text = text.strip("/")
+    parts: list[str] = []
+    for part in text.split("/"):
+        if not part or part == ".":
+            continue
+        if any(ch in part for ch in "*?["):
+            break
+        parts.append(part)
+    return "/".join(parts)
+
+
+def _verification_contains_prose(command: str) -> bool:
+    text = str(command or "").strip()
+    if not text:
+        return False
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        return True
+    if any(ch in text for ch in ("（", "）", "；")):
+        return True
+    lowered = text.lower()
+    prose_markers = (
+        "expected red",
+        "red expected",
+        "expected failure",
+        "should fail",
+        "evidence:",
+    )
+    return any(marker in lowered for marker in prose_markers)
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _int_value(value: Any) -> int:
+    if value in (None, ""):
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0

@@ -1,0 +1,6 @@
+{
+  "schema_version": "coverage-report.v1",
+  "feature_id": "F-REPLAN",
+  "tasks": [{"task_id": "TASK-REPLAN-OLD", "source_status": "covered"}],
+  "unresolved_unknowns": []
+}

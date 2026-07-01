@@ -1,0 +1,261 @@
+# ============================================================================
+# zf.yaml — ZaoFu Multi-Agent Harness Configuration
+# ============================================================================
+#
+# 唯一控制平面。所有角色、流程、验证、约束均在此声明式定义。
+#
+# 快速开始：
+#   zf init --preset minimal        # 最小配置（1 个 dev 角色）
+#   zf init --preset code-assist    # TDD 流水线（dev + review + test）
+#   zf init --preset design-first   # 完整 SDD+TDD（arch + dev + review + test + judge）
+#
+# 查看可用预设：
+#   zf presets
+#   zf presets show <name>
+#
+# 验证配置：
+#   zf validate                     # 基本语法检查
+#   zf validate --cold-start        # 5 项就绪检查
+#   zf validate --architecture      # 架构规则检查
+#   zf validate --instructions      # 指令文件 lint
+# ============================================================================
+
+version: "1.0"
+
+# 预设模板（可选）。设置后自动填充 roles/workflow 默认值。
+# 可选值：minimal | code-assist | design-first
+# preset: code-assist
+
+# ============================================================================
+# 项目元信息
+# ============================================================================
+project:
+  name: my-project                  # 项目名，用于 tmux session 命名
+  workspace: .                      # 工作目录（相对或绝对路径）
+  state_dir: .zf                    # 运行时状态目录（自动 gitignore）
+
+# ============================================================================
+# tmux 会话配置
+# ============================================================================
+session:
+  tmux_session: zf                  # tmux session 名称
+
+# ============================================================================
+# 编排器配置
+# ============================================================================
+orchestrator:
+  backend: claude-code              # claude-code | codex | mock
+  loop:
+    max_iterations: 20              # 最大迭代次数（达到后自动停止）
+    idle_exit_after: 3              # 连续 N 次无事件后退出
+
+# ============================================================================
+# 全局约束（所有角色继承）
+# ============================================================================
+constraints:
+  allowed_paths:                    # 允许修改的路径（glob 模式）
+    - src
+    - tests
+    - docs
+    - zf.yaml
+    - pyproject.toml
+  blocked_paths:                    # 禁止修改的路径
+    - .git
+    - .zf
+    - node_modules
+  max_steps: 120                    # 全局最大步数
+
+# ============================================================================
+# 工作流配置
+# ============================================================================
+workflow:
+    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+  rework_routing:
+    dev.blocked: arch
+    dev.failed: arch
+  gan_rounds: 2                     # GAN 对抗轮数(design↔critic) — B/C sprint 后只保留此字段
+                                    # (mode/gate_level/strategy/stages 已删除, runtime 不消费)
+
+# 阶段显示标签（用于 UI 和日志）
+stage_labels:
+  intake: "① Orchestrator intake"
+  prd_design: "② Architect design"
+  review_prd: "③ Critic review"
+  implement: "④ Dev implement"
+  quality_gate: "⑤ Quality Gate"
+  code_review: "⑥ Review code"
+  independent_test: "⑦ Test evaluation"
+  accept_done: "⑧ Accept and close"
+
+# ============================================================================
+# 质量门配置
+# ============================================================================
+quality_gates:
+  # required_checks 是 shell 命令字符串列表; 每条必须 exit 0 才算通过.
+  # 留空 = 不跑外部 check (FunctionalD vacuously passes), 仅 ContractD 起作用.
+  # 项目按需填具体命令, 例如:
+  #   required_checks:
+  #     - "PYTHONPATH=src python3 -m pytest --no-cov -q"
+  #     - "python3 -m mypy src/"
+
+  # 静态检查（L1 — 成本最低，最先执行）
+  static:
+    enabled: true
+    required_checks: []
+
+  # 代码审查门
+  review:
+    enabled: true
+    required_checks: []
+
+  # 测试门
+  test:
+    enabled: true
+    required_checks: []
+
+  # 最终评审（可选，design-first 模式开启）
+  final_critic:
+    enabled: false
+
+# ============================================================================
+# 角色定义
+# ============================================================================
+#
+# 每个角色是一个独立的 agent 进程，运行在独立的 tmux pane 中。
+# 核心字段：
+#   name        — 角色标识（唯一）
+#   backend     — agent CLI 后端（claude-code | codex | mock）
+#   model       — 使用的模型
+#   triggers    — 监听哪些事件触发工作
+#   publishes   — 完成后发布哪些事件
+#   stages      — 参与哪些工作流阶段
+#   constraints — 角色级路径约束（覆盖全局）
+#
+# 拓扑自动推导：
+#   dev.publishes = [dev.build.done]
+#   review.triggers = [dev.build.done]
+#   → 自动建立边：dev --[dev.build.done]--> review
+#
+# 查看拓扑：zf rules（显示所有角色间的事件流向）
+
+roles:
+  # ---------- 架构师 ----------
+  - name: arch
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    allowed_tools:
+      - python3
+      - rg
+    stages:
+      - prd_design
+      - review_prd
+    triggers:
+      - session.started             # session 启动时触发
+      - task.assigned
+    publishes:
+      - arch.proposal.done
+    constraints:
+      allowed_paths:
+        - docs
+        - zf.yaml
+      blocked_paths:
+        - .zf
+        - src                       # 架构师不写代码
+        - tests
+
+  # ---------- 开发者 ----------
+  - name: dev
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    allowed_tools:
+      - python3
+      - rg
+      - tmux
+    stages:
+      - implement
+    triggers:
+      - arch.proposal.done          # 架构方案确定后触发
+      - task.assigned               # 简单任务可跳过 arch 直接分配
+    publishes:
+      - dev.build.done
+      - dev.blocked
+    constraints:
+      allowed_paths:
+        - src
+        - tests
+        - pyproject.toml
+      blocked_paths:
+        - .zf
+        - docs
+    execution:
+      command: "python3 -m pytest -q"   # 验证命令（gate 使用）
+
+  # ---------- 代码审查 ----------
+  - name: review
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    allowed_tools:
+      - python3
+      - rg
+    stages:
+      - code_review
+    triggers:
+      - dev.build.done
+    publishes:
+      - review.approved
+      - review.rejected
+    constraints:
+      allowed_paths:
+        - src
+        - tests
+      blocked_paths:
+        - .zf
+
+  # ---------- 独立测试 ----------
+  - name: test
+    backend: claude-code
+    permission_mode: bypass  # acknowledge full-access mode
+    allowed_tools:
+      - python3
+      - rg
+    stages:
+      - independent_test
+    triggers:
+      - dev.build.done
+    publishes:
+      - test.passed
+      - test.failed
+    constraints:
+      allowed_paths:
+        - src
+        - tests
+      blocked_paths:
+        - .zf
+    execution:
+      command: "python3 -m pytest -q"
+
+  # ---------- 最终评审（可选） ----------
+  # - name: judge
+  #   backend: claude-code
+  #   model: claude-opus-4-6        # Judge 必须强，弱模型会放水
+  #   stages: [accept_done]
+  #   triggers: [review.approved]
+  #   publishes: [judge.passed, judge.failed]
+
+
+# ============================================================================
+# 完整事件流拓扑（由 triggers/publishes 自动推导）
+# ============================================================================
+#
+#   ┌─────────┐  arch.proposal.done   ┌─────┐  dev.build.done   ┌────────┐
+#   │  arch   │ ───────────────────── │ dev │ ─────────┬──────── │ review │
+#   └─────────┘                       └─────┘          │         └────────┘
+#                                                      │            │
+#                                                      │   review.approved
+#                                                      ▼            │
+#                                                   ┌──────┐        ▼
+#                                                   │ test │     (done)
+#                                                   └──────┘
+#
+# 查看实时拓扑：zf rules
+# ============================================================================

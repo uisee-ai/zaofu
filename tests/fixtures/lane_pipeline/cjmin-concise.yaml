@@ -1,0 +1,55 @@
+version: '1.0'
+project:
+  name: cjmin-parity
+roles:
+- name: judge-refactor
+  backend: codex
+  instance_id: judge-refactor
+  role_kind: reader
+  stuck_threshold_seconds: 900.0
+workflow:
+  pipelines:
+  - id: cj-min-refactor
+    kind: lane_pipeline
+    trigger: task_map.ready
+    task_source:
+      task_map_ref: .zf/artifacts/F-1/task_map.json
+    affinity_key: affinity_tag
+    lane_count: 5
+    overflow: none
+    max_rework_attempts: 2
+    trace_budget: 6
+    require_artifact_digests: true
+    assembly:
+      task: CJMIN-ASSEMBLY-001
+    schema_profile: refactor-flow/v1
+    lane_role_template:
+      backend: codex
+      stuck_threshold_seconds: 900
+      skills_by_stage:
+        impl:
+        - code-refactoring
+        - python-to-typescript-migration
+        review:
+        - requesting-code-review
+        verify:
+        - test-driven-development
+    stages:
+    - id: impl
+      terminal:
+        success: dev.build.done
+        failure: dev.failed
+      role_pattern: dev-lane-{lane}
+    - id: review
+      on_failure:
+        rework_to: impl
+        feedback_artifact: required
+    - id: verify
+      on_failure:
+        rework_to: impl
+        feedback_artifact: required
+    final:
+      when: all_tasks_verified
+      role: judge-refactor
+      success: judge.passed
+      failure: judge.failed

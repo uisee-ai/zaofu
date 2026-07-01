@@ -1,0 +1,15 @@
+{
+  "schema_version": "source-index.v1",
+  "feature_id": "F-REPLAN",
+  "tasks": [
+    {
+      "task_id": "TASK-REPLAN-OLD",
+      "source_key": "replan.v1.task-1",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v1.md#task-1",
+      "source_task_id": "Task 1",
+      "source_title": "Task 1",
+      "source_mode": "canonical",
+      "source_excerpt": "Add a sorter that handles strings only."
+    }
+  ]
+}

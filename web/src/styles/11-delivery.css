@@ -1,0 +1,1210 @@
+
+
+/* ── Delivery Trace page (doc 68) —— 卡片/badge 统一走 design token ── */
+.delivery-trace-page { padding: 14px 16px; max-width: none; }
+.delivery-trace-page { padding: 14px 16px; max-width: 1220px; }
+.delivery-empty-state { margin: 12px 0 0; }
+.delivery-empty-cockpit {
+  display: grid;
+  gap: 14px;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 18px;
+}
+
+.delivery-empty-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line-soft);
+  padding-bottom: 14px;
+}
+
+.delivery-empty-hero h3 {
+  margin: 3px 0 5px;
+  font-size: var(--text-20);
+  line-height: 1.2;
+}
+
+.delivery-empty-hero p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.delivery-empty-stage-map {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+}
+
+.delivery-empty-stage {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  position: relative;
+}
+
+.delivery-empty-stage strong,
+.delivery-empty-stage span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-empty-stage span {
+  grid-column: 2;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.delivery-empty-stage.tone-info { border-color: color-mix(in oklab, var(--brand) 36%, var(--line)); }
+.delivery-empty-stage.tone-warn { border-color: color-mix(in oklab, var(--warn) 40%, var(--line)); }
+.delivery-empty-stage.tone-ok { border-color: color-mix(in oklab, var(--ok) 38%, var(--line)); }
+
+.delivery-empty-stage-edge {
+  display: none;
+}
+
+.delivery-empty-loop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.delivery-empty-loop-card {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 9px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 74%, var(--bg));
+  padding: 12px;
+}
+
+.delivery-empty-loop-card div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.delivery-empty-loop-card strong,
+.delivery-empty-loop-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-empty-loop-card span {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.delivery-empty-cockpit {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.delivery-empty-cockpit-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.delivery-empty-cockpit-head h3,
+.delivery-empty-cockpit-head p {
+  margin: 0;
+}
+.delivery-empty-cockpit-head h3 {
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-empty-tabs .delivery-main-tab {
+  cursor: default;
+}
+.delivery-flow-layout-empty {
+  opacity: 0.86;
+}
+.delivery-trace-body { display: flex; flex-direction: column; gap: 14px; margin-top: 12px; }
+.delivery-cockpit-hero {
+  /* 2026-06-12 用户反馈:KPI 八枚单行 — hero 由左右两栏改纵向堆叠,
+     metrics 独占整行宽(1440 下 8 pill 单行放下,窄屏自然 wrap)。 */
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.delivery-cockpit-title {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+.delivery-cockpit-title h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-14);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-cockpit-metrics {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 6px;
+}
+.delivery-cockpit-metric {
+  /* 2026-06-12 R3:去外盒 —— .kv 规范应用于 cockpit meta 行,16 道嵌套
+     边框降为 0-2 个语义 badge;轻盈感来自不画框 + 大间距。 */
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
+}
+.delivery-cockpit-metric span {
+  color: var(--text-tertiary);
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.delivery-cockpit-metric > strong:not(.badge) {
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.dt-trace-chip {
+  border: none;
+  background: var(--surface-2);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.dt-trace-chip:hover { color: var(--text); }
+.delivery-cockpit-metric strong {
+  min-width: 0;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-12);
+  /* KV 规范①:cockpit 指标值(badge/裸值)700(UA)→ 500。 */
+  font-weight: var(--font-weight-medium);
+}
+.delivery-trace-summary {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel);
+}
+.delivery-trace-summary .dt-counts { display: inline-flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.delivery-tabbed-workbench {
+  display: grid;
+  gap: 10px;
+}
+.delivery-main-tabs {
+  display: flex;
+  min-width: 0;
+  gap: 18px;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+.delivery-main-tab {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 9px 0 10px;
+  text-align: left;
+}
+.delivery-main-tab span,
+.delivery-main-tab small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 字号对齐 Observability tabs(.tab-row .tab-button 继承 body --text-14;
+   其计数 span 同字号仅 muted)— label/meta 用同一 token,布局不动。 */
+.delivery-main-tab span {
+  color: var(--text);
+  font-size: var(--text-14);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-main-tab small {
+  color: var(--muted-foreground);
+  font-size: var(--text-14);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-main-tab.active,
+.delivery-main-tab:hover {
+  border-bottom-color: var(--brand);
+  background: transparent;
+  color: var(--text);
+}
+.delivery-tab-empty {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted-foreground);
+}
+.delivery-flow-workbench {
+  min-width: 0;
+  display: grid;
+  gap: 12px;
+}
+.delivery-stage-line-panel {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.delivery-stage-line {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  padding: 2px 0 0;
+}
+.delivery-stage-line::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: 48px;
+  right: 48px;
+  height: 1px;
+  background: var(--line);
+}
+.delivery-stage-node {
+  position: relative;
+  z-index: 1;
+  flex: 1 0 104px;
+  min-width: 0;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 0 8px 2px;
+  text-align: center;
+}
+.delivery-stage-node strong,
+.delivery-stage-node small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-stage-node strong {
+  color: var(--text);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-stage-node small {
+  color: var(--muted-foreground);
+  font-size: var(--text-9);
+}
+.delivery-stage-node.active strong {
+  color: var(--brand);
+}
+.delivery-stage-point {
+  width: 15px;
+  height: 15px;
+  border: 2px solid var(--panel);
+  border-radius: 999px;
+  background: var(--muted-foreground);
+  box-shadow: 0 0 0 1px var(--line);
+}
+.delivery-stage-node.active .delivery-stage-point {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 18%, transparent), 0 0 0 1px var(--brand);
+}
+.delivery-stage-point.status-ok { background: var(--ok); }
+.delivery-stage-point.status-warn { background: var(--warn); }
+.delivery-stage-point.status-err { background: var(--err); }
+.delivery-stage-point.status-info { background: var(--info); }
+.delivery-stage-detail-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.7fr);
+  gap: 12px;
+  align-items: start;
+}
+.delivery-flow-layout,
+.delivery-flow-rail,
+.delivery-flow-stage-panel,
+.delivery-flow-inspector,
+.delivery-span-inspector,
+.delivery-autoresearch-graphs {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.delivery-flow-stage-list,
+.delivery-flow-task-list,
+.delivery-autoresearch-graph-grid {
+  display: grid;
+  gap: 7px;
+}
+.delivery-stage-panel-head,
+.delivery-fanout-dag-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.delivery-stage-panel-head h3 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-medium);
+}
+.delivery-stage-panel-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.delivery-stage-run-groups {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+.delivery-stage-run-selector {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.delivery-stage-run-chip {
+  min-width: 0;
+  display: inline-grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 6px;
+  max-width: 260px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: var(--text-10);
+}
+.delivery-stage-run-chip:hover {
+  background: var(--surface-2); /* 三刀③ hover 底色化,选中态见下 */
+}
+
+.delivery-stage-run-chip.active {
+  border-color: color-mix(in oklab, var(--brand) 42%, var(--line));
+  background: color-mix(in oklab, var(--brand-subtle) 30%, var(--surface));
+}
+.delivery-stage-run-chip span,
+.delivery-stage-run-chip small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-stage-run-chip small {
+  color: var(--muted-foreground);
+}
+.delivery-fanout-dag {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 82%, transparent);
+}
+.delivery-fanout-dag-head > div,
+.delivery-fanout-aggregate > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.delivery-fanout-dag-head strong,
+.delivery-fanout-aggregate strong,
+.delivery-fanout-lane strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-fanout-dag-head small,
+.delivery-fanout-aggregate small,
+.delivery-fanout-lane small {
+  color: var(--muted-foreground);
+  font-size: var(--text-9);
+}
+.delivery-fanout-lanes {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  gap: 7px;
+}
+.delivery-fanout-lanes::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 8px;
+  bottom: -17px;
+  width: 1px;
+  background: var(--line);
+}
+.delivery-fanout-lane,
+.delivery-fanout-aggregate {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.delivery-fanout-lane .workflow-status-dot,
+.delivery-fanout-aggregate .workflow-status-dot {
+  z-index: 1;
+  outline: 3px solid var(--panel);
+}
+.delivery-fanout-aggregate {
+  border-color: color-mix(in oklab, var(--brand) 26%, var(--line));
+  background: color-mix(in oklab, var(--brand-subtle) 18%, var(--panel));
+}
+.delivery-flow-stage-list {
+  position: relative;
+}
+.delivery-flow-stage-list::before {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: var(--line);
+}
+.delivery-flow-rail .inline-heading {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: start;
+}
+.delivery-flow-rail .inline-heading .muted {
+  min-width: 0;
+  white-space: normal;
+}
+.delivery-flow-stage {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px;
+  text-align: left;
+}
+.delivery-flow-stage {
+  position: relative;
+  border-color: transparent;
+  background: transparent;
+}
+.delivery-flow-stage .workflow-status-dot {
+  z-index: 1;
+  outline: 3px solid var(--panel);
+}
+.delivery-flow-stage:hover {
+  background: var(--surface-2); /* 三刀③ hover 底色化,选中态见下 */
+}
+
+.delivery-flow-stage.active {
+  border-color: color-mix(in oklab, var(--brand) 36%, var(--line));
+  background: color-mix(in oklab, var(--brand-subtle) 24%, var(--surface));
+}
+.delivery-flow-stage-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.delivery-flow-stage-main strong,
+.delivery-flow-stage-main small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-flow-stage-main small {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+.delivery-flow-task-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) max-content minmax(80px, 0.55fr) minmax(90px, 0.7fr);
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: var(--text-13);
+}
+.delivery-stage-empty-lane {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  gap: 9px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 7px;
+  background: color-mix(in oklab, var(--surface) 72%, transparent);
+}
+.delivery-stage-empty-lane div {
+  min-width: 0;
+}
+.delivery-stage-empty-lane strong,
+.delivery-stage-empty-lane p {
+  margin: 0;
+}
+.delivery-flow-task-row div,
+.delivery-flow-task-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-flow-task-row div {
+  display: grid;
+  gap: 2px;
+}
+.delivery-flow-task-row small {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+.delivery-raw-block {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* T-刀④ — Trace tab: 树×瀑布主面板 + Span Inspector 两列。 */
+.dt-trace-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, 1.6fr) minmax(260px, 0.7fr);
+  gap: 12px;
+  align-items: start;
+}
+.delivery-autoresearch-graph {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.delivery-autoresearch-graph > div:first-child,
+.delivery-autoresearch-node-row {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.delivery-autoresearch-graph strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-autoresearch-node-row code {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-raw-block {
+  margin: 0;
+  max-height: 520px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: var(--text-12);
+}
+.delivery-raw-tab { min-height: 360px; }
+.plan-approval-panel {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+}
+.operator-inbox-panel {
+  min-height: 0;
+  align-content: start;
+  outline: none;
+}
+.plan-approval-head,
+.plan-approval-card-main,
+.plan-approval-actions,
+.plan-preview-toolbar,
+.plan-preview-toolbar-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.plan-approval-head,
+.plan-approval-card-main,
+.plan-preview-toolbar {
+  justify-content: space-between;
+}
+.plan-approval-head h3 {
+  margin: 0;
+  font-size: var(--text-16);
+  font-weight: 600;
+}
+.operator-inbox-head {
+  align-items: flex-start;
+}
+.operator-inbox-tools {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.operator-inbox-search,
+.operator-inbox-filter,
+.operator-inbox-mode {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+.operator-inbox-search,
+.operator-inbox-filter {
+  padding: 0 8px;
+}
+.operator-inbox-search input,
+.operator-inbox-filter select {
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--text-13);
+}
+.operator-inbox-search input {
+  width: min(24vw, 220px);
+}
+.operator-inbox-filter select {
+  width: 150px;
+}
+.operator-inbox-mode {
+  padding: 2px;
+}
+.operator-inbox-mode button {
+  min-height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 3px 8px;
+  font-size: var(--text-12);
+  cursor: pointer;
+}
+.operator-inbox-mode button.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+}
+.plan-approval-list {
+  display: grid;
+  gap: 8px;
+}
+.operator-inbox-list {
+  min-height: 0;
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.operator-inbox-row {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel);
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 96px;
+}
+.operator-inbox-row:last-child {
+  border-bottom: 0;
+}
+.operator-inbox-row:hover,
+.operator-inbox-row.selected {
+  background: color-mix(in oklab, var(--brand) 7%, var(--panel));
+}
+.operator-inbox-row.resolved {
+  opacity: 0.72;
+}
+.operator-inbox-row-grid {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.operator-inbox-avatar {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+}
+.operator-inbox-unread-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--panel);
+  border-radius: 999px;
+  background: var(--brand);
+}
+.operator-inbox-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+.operator-inbox-title-line,
+.operator-inbox-meta-line,
+.operator-inbox-inline-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.operator-inbox-title-line {
+  justify-content: flex-start;
+}
+.operator-inbox-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--text-14);
+  font-weight: 600;
+}
+.operator-inbox-kind {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+.operator-inbox-title-line time {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: var(--text-12);
+}
+.operator-inbox-row-main p {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-13);
+}
+.operator-inbox-meta-line {
+  flex-wrap: wrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+.operator-inbox-meta-line span {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.operator-inbox-inline-actions {
+  flex-wrap: wrap;
+  padding-left: 44px;
+}
+.operator-inbox-reject-input {
+  min-width: 180px;
+  flex: 1 1 220px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  padding: 5px 8px;
+}
+.operator-inbox-empty {
+  padding: 18px 4px;
+}
+.operator-inbox-health {
+  margin-top: 2px;
+}
+.plan-approval-card {
+  min-width: 0;
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.plan-approval-card-main > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.plan-approval-card-main strong,
+.plan-approval-card-main .mono,
+.plan-approval-meta dd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.plan-approval-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.plan-approval-meta div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.plan-approval-meta dt {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+.plan-approval-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+}
+.plan-approval-actions,
+.plan-preview-toolbar-actions {
+  flex-wrap: wrap;
+}
+.plan-approval-actions input,
+.plan-preview-toolbar-actions input {
+  min-width: 180px;
+  flex: 1 1 220px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--text);
+  padding: 5px 8px;
+}
+.plan-approval-empty,
+.plan-approval-error {
+  margin: 0;
+}
+.plan-contract-health {
+  min-width: 0;
+}
+.plan-contract-health table {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 8px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.plan-contract-health th,
+.plan-contract-health td {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  vertical-align: top;
+}
+.plan-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text);
+}
+.plan-preview-toolbar {
+  min-height: 48px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.plan-preview-toolbar > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.plan-preview-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+}
+.plan-preview-markdown-pane,
+.plan-preview-context {
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+.plan-preview-markdown-pane {
+  border-right: 1px solid var(--line);
+}
+.plan-preview-markdown {
+  max-width: 980px;
+}
+.plan-preview-context {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  background: var(--panel);
+}
+.delivery-cycle-strip {
+  display: grid;
+  gap: 8px;
+}
+.delivery-cycle-items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.delivery-cycle-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  border-left: 3px solid transparent;
+}
+.delivery-cycle-item.active {
+  border-left-color: var(--brand);
+  background: color-mix(in oklab, var(--brand) 7%, var(--surface));
+}
+.delivery-cycle-id {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-cycle-kind {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-cycle-meta {
+  grid-column: 1 / -1;
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+}
+.delivery-trace-section { display: flex; flex-direction: column; gap: 8px; }
+/* 三刀③ — 原 .delivery-trace-section h3 小号大写样式删除,节头统一走 .section-title。 */
+.delivery-trace-waves { display: flex; flex-direction: column; gap: 8px; }
+.delivery-trace-wave {
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 8px 10px;
+}
+.delivery-trace-wave-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.delivery-trace-wave-head .wave-label {
+  font-size: var(--text-12); font-weight: var(--font-weight-medium); color: var(--text);
+}
+.delivery-trace-nodes { display: flex; flex-direction: column; gap: 4px; }
+.delivery-trace-node {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 8px; border-radius: 6px;
+  background: color-mix(in oklab, var(--surface) 55%, transparent);
+  font-size: var(--text-13);
+}
+.delivery-trace-node:hover { background: color-mix(in oklab, var(--surface) 90%, transparent); }
+.delivery-trace-node .dt-node-id { font-family: var(--font-mono); font-size: var(--text-12); color: var(--text); }
+.delivery-trace-node .dt-node-meta { margin-left: auto; color: var(--muted); font-size: var(--text-12); }
+.delivery-trace-node .dt-arrow { opacity: 0.55; padding: 0 2px; }
+.delivery-trace-drift { display: flex; flex-direction: column; gap: 6px; list-style: none; padding: 0; margin: 0; }
+.delivery-trace-drift li {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  font-size: var(--text-13);
+}
+.delivery-trace-drift .dt-node-id { font-family: var(--font-mono); font-size: var(--text-12); }
+.delivery-trace-drift .dt-drift-kind { color: var(--muted); }
+.delivery-trace-drift .dt-drift-msg { flex: 1 1 100%; color: var(--text); font-size: var(--text-12); }
+.delivery-trace-diagnostics { list-style: none; padding: 0; margin: 6px 0 0; font-size: var(--text-12); }
+
+.delivery-workbench {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.65fr) minmax(420px, 1.6fr) minmax(280px, 0.85fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.delivery-pane {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 12px;
+}
+
+.delivery-cycle-list,
+.delivery-gap-list,
+.delivery-closed-loop-nodes,
+.delivery-closed-loop-edges,
+.delivery-loop-evidence,
+.workflow-stage-list,
+.workflow-stage-cards,
+.workflow-edge-list,
+.workflow-chip-list,
+.workflow-child-table {
+  display: grid;
+  gap: 7px;
+}
+
+@media (max-width: 760px) {
+  .operator-inbox-head,
+  .operator-inbox-tools {
+    display: grid;
+    justify-content: stretch;
+  }
+  .operator-inbox-search input,
+  .operator-inbox-filter select {
+    width: 100%;
+  }
+  .operator-inbox-title-line {
+    flex-wrap: wrap;
+  }
+  .operator-inbox-title-line time {
+    margin-left: 0;
+  }
+  .operator-inbox-row-main p {
+    white-space: normal;
+  }
+  .operator-inbox-inline-actions {
+    padding-left: 0;
+  }
+  .operator-inbox-reject-input {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .plan-preview-body {
+    grid-template-columns: 1fr;
+  }
+  .plan-preview-markdown-pane {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .plan-preview-context {
+    max-height: 34vh;
+  }
+  .plan-preview-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .plan-preview-toolbar-actions {
+    width: 100%;
+  }
+  .plan-preview-toolbar-actions input,
+  .plan-approval-actions input {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .plan-contract-health table {
+    font-size: var(--text-11);
+  }
+  .plan-contract-health th,
+  .plan-contract-health td {
+    padding-inline: 4px;
+  }
+}

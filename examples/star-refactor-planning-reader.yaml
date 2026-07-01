@@ -1,0 +1,155 @@
+# Star refactor planning reader example with role skill loading.
+#
+# Shape:
+#   refactor.scan.requested
+#       -> scan-architecture
+#       -> scan-tests
+#       -> scan-runtime
+#       -> refactor-plan-synth
+#       -> refactor.plan.ready / refactor.plan.blocked
+#
+# This preset is for "scan an existing project, then synthesize a refactor
+# plan" before any writer task is dispatched. The custom review and output
+# rules are enabled through zf.yaml, not prompt-only ad hoc text:
+#
+#   skill_sources: where skills are resolved from
+#   roles[].skills: skills enabled for each Star child role
+#   runtime.skills.strict: fail validation when an enabled skill is missing
+#
+# Example trigger:
+#   zf emit refactor.scan.requested --actor human \
+#     --payload '{"pdd_id":"PDD-REFACTOR-001","target_ref":"main"}'
+version: '1.0'
+preset: star-refactor-planning-reader
+project:
+  name: zaofu-star-refactor-planning
+  state_dir: .zf
+session:
+  tmux_session: zf-star-refactor
+skill_sources:
+- name: zaofu-local
+  path: ../skills
+  mode: readonly
+runtime:
+  skills:
+    strict: true
+    pool: .zf/skills
+    materialize: copy
+    lock_file: .zf/skills.lock.json
+  workdirs:
+    enabled: true
+    root: .zf/workdirs
+    mode: worktree
+workflow:
+  stages:
+  - id: refactor-planning-scan
+    trigger: refactor.scan.requested
+    topology: fanout_reader
+    roles:
+    - scan-architecture
+    - scan-tests
+    - scan-runtime
+    fanout:
+      children:
+      - role_instance: scan-architecture
+        payload:
+          child_id: scan-architecture
+          instruction: >-
+            Scan the target ref as a read-only architecture reviewer. Build a
+            concise system map, identify high-coupling areas, and propose
+            refactor slices that can later become non-overlapping writer tasks.
+          output_contract:
+            summary: one paragraph architecture diagnosis
+            findings: list of blocking design risks with paths
+            slices: list of candidate refactor work units with allowed_paths
+            unknowns: list of questions that must be resolved before writers run
+      - role_instance: scan-tests
+        payload:
+          child_id: scan-tests
+          instruction: >-
+            Scan the test and verification surface. Identify the smallest
+            useful regression suite for each proposed slice and call out gaps
+            that make writer fanout unsafe.
+          output_contract:
+            summary: one paragraph verification diagnosis
+            checks: commands or files that prove current behavior
+            gaps: missing tests or flaky gates
+            slice_gates: mapping of slice name to required verification
+      - role_instance: scan-runtime
+        payload:
+          child_id: scan-runtime
+          instruction: >-
+            Scan runtime state, task contracts, event usage, and control-plane
+            boundaries. Flag any state mutation, event schema, or resume
+            behavior that could drift during a long-horizon refactor.
+          output_contract:
+            summary: one paragraph runtime/control-plane diagnosis
+            invariants: state/event invariants to preserve
+            risks: resume, context, workdir, or task-contract risks
+            guardrails: rules writers must follow
+    target_ref: ${target_ref}
+    aggregate:
+      mode: wait_for_all
+      synth_role: refactor-plan-synth
+      success_event: refactor.plan.ready
+      failure_event: refactor.plan.blocked
+      max_retries: 1
+    timeout_seconds: 1800
+    criteria:
+      output:
+        required_keys:
+        - plan_artifact_ref
+        - task_map_ref
+        - artifact_refs
+roles:
+- name: scan-architecture
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  skills:
+  - zf-harness-design-handoff
+  - zf-harness-evidence-collection
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.plan.ready
+  - refactor.plan.blocked
+- name: scan-tests
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  skills:
+  - zf-harness-verification-checklist
+  - zf-harness-gate-evaluator
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.plan.ready
+  - refactor.plan.blocked
+- name: scan-runtime
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  skills:
+  - zf-harness-state-sync
+  - zf-harness-clean-state-checklist
+  stages:
+  - refactor_scan
+  publishes:
+  - refactor.plan.ready
+  - refactor.plan.blocked
+- name: refactor-plan-synth
+  backend: mock
+  role_kind: reader
+  permission_mode: restricted
+  skills:
+  - zf-harness-design-handoff
+  - zf-harness-backlog-synthesis
+  - zf-harness-spec-bridge
+  stages:
+  - refactor_plan_synthesis
+  publishes:
+  - fanout.synth.completed
+stage_labels:
+  refactor_scan: read-only refactor discovery
+  refactor_plan_synthesis: synthesize refactor plan

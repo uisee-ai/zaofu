@@ -1,0 +1,46 @@
+{
+  "schema_version": "task-map.v1",
+  "feature_id": "F-CANON",
+  "source_refs": {
+    "spec_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/SPEC.md",
+    "plan_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/tasks/plan.md",
+    "tdd_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/tasks/todo.md",
+    "source_index_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/artifacts/F-CANON/v1/source_index.json",
+    "coverage_report_ref": "tests/fixtures/canonical_delivery_bundle/agent_skills_default/artifacts/F-CANON/v1/coverage_report.json"
+  },
+  "tasks": [
+    {
+      "task_id": "TASK-CANON-1",
+      "title": "Parse checklist rows",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "plan_section": "Task 1",
+      "blocked_by": [],
+      "wave": 1,
+      "scope": ["checklist_analyzer.py", "tests/e2e/test_checklist_analyzer.py"],
+      "exclusive_files": ["checklist_analyzer.py"],
+      "handoff_artifacts": ["checklist_analyzer.py", "tests/e2e/test_checklist_analyzer.py"],
+      "behavior": "Implement parse_checklist(text) for Markdown checklist rows.",
+      "acceptance": ["done/open rows parsed", "non-checklist lines ignored"],
+      "verification": "pytest tests/e2e/test_checklist_analyzer.py",
+      "verification_tiers": ["runtime"]
+    },
+    {
+      "task_id": "TASK-CANON-2",
+      "title": "Summarize checklist progress",
+      "owner_role": "dev",
+      "phase": "implementation",
+      "plan_section": "Task 2",
+      "blocked_by": ["TASK-CANON-1"],
+      "wave": 2,
+      "scope": ["checklist_analyzer.py", "tests/e2e/test_checklist_analyzer.py"],
+      "exclusive_files": [],
+      "shared_files": ["checklist_analyzer.py"],
+      "handoff_artifacts": ["checklist_analyzer.py", "tests/e2e/test_checklist_analyzer.py"],
+      "behavior": "Implement summarize_checklist(text) using the parser.",
+      "acceptance": ["summary returns total/done/open/completion_ratio", "empty input ratio is 0.0"],
+      "verification": "pytest tests/e2e/test_checklist_analyzer.py",
+      "verification_tiers": ["runtime"]
+    }
+  ]
+}

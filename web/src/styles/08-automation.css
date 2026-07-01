@@ -1,0 +1,783 @@
+
+.agent-model-status {
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.headless-proposal {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  padding-top: 7px;
+}
+
+.headless-proposal > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.headless-proposal-json {
+  max-height: 120px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  padding: 7px;
+  font-size: var(--text-12);
+}
+
+.terminal-fallback {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  padding: 0;
+}
+
+.terminal-fallback summary {
+  cursor: pointer;
+  color: var(--muted-foreground);
+  list-style: none;
+  padding: 8px 9px;
+}
+
+.terminal-fallback summary::-webkit-details-marker {
+  display: none;
+}
+
+.terminal-fallback summary::after {
+  content: "Open";
+  float: right;
+  color: var(--text);
+  font-size: var(--text-11);
+}
+
+.terminal-fallback[open] summary {
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+
+.terminal-fallback[open] summary::after {
+  content: "Close";
+}
+
+.terminal-fallback-body {
+  display: grid;
+  gap: 7px;
+  padding: 8px;
+}
+
+.operator-toolbar.compact {
+  gap: 6px;
+}
+
+.compact-error {
+  padding: 0;
+}
+
+.triage-page {
+  min-height: 0;
+  overflow: auto;
+}
+
+.triage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.triage-list {
+  align-content: start;
+}
+
+.triage-item {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 9px 0;
+}
+
+.triage-item > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.compact-execution-grid {
+  gap: 8px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.58);
+  padding: 20px;
+}
+
+.modal-panel {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px var(--shadow);
+}
+
+.modal-body {
+  display: grid;
+  gap: 9px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.command-palette {
+  width: min(920px, 100%);
+}
+
+.command-input {
+  width: 100%;
+  min-height: 34px;
+}
+
+.command-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.command-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 8px;
+}
+
+.command-section {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.command-item {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line);
+  padding: 9px 0;
+}
+
+.terminal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted-foreground);
+}
+
+.terminal-output {
+  min-height: 132px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-radius: 4px;
+  background: oklch(0.15 0.005 285.823);
+  color: #d6dde7;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  line-height: 1.35;
+}
+
+.field-row .filter-input {
+  min-width: 0;
+  flex: 1 1 128px;
+}
+
+.compact-subsection {
+  margin: 0 -12px -12px;
+}
+
+.compact-subsection .empty-text {
+  padding: 4px 0 0;
+}
+
+.text-block {
+  margin: 0;
+  padding: 12px;
+  max-height: 480px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.diff-block {
+  background: #111419;
+  color: #d6dde7;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th,
+.data-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 28ch;
+}
+
+/* Multi-line escape hatch: descriptions / message bodies opt back in. */
+.data-table td[data-multiline],
+.data-table td.col-multiline {
+  white-space: normal;
+  overflow-wrap: break-word;
+  max-width: none;
+  text-overflow: clip;
+}
+
+.data-table th {
+  color: var(--text-secondary); /* 三刀② 表格表头走二级文本阶 */
+  font-weight: 600;
+}
+
+.data-table tbody tr {
+  cursor: default;
+}
+
+.data-table tbody tr:hover,
+.selected-row {
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+
+/* Narrow channel drawer (~320px): an 8-column data-table squeezes long ids
+   into per-character wrapping. Collapse it into stacked, labeled cards so each
+   value gets the full drawer width instead. Scoped to the drawer only — the
+   wide-page TablePage usages keep the normal table layout. */
+.channel-drawer-content .data-table thead {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.channel-drawer-content .data-table,
+.channel-drawer-content .data-table tbody,
+.channel-drawer-content .data-table tr,
+.channel-drawer-content .data-table td {
+  display: block;
+}
+
+.channel-drawer-content .data-table tr {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.channel-drawer-content .data-table td {
+  padding: 2px 0 6px;
+  border-bottom: 0;
+  overflow-wrap: break-word;
+}
+
+.channel-drawer-content .data-table td:last-child {
+  padding-bottom: 0;
+}
+
+.channel-drawer-content .data-table td::before {
+  content: attr(data-label);
+  display: block;
+  margin-bottom: 1px;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+  font-weight: 600;
+}
+
+.subsection {
+  padding: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.subsection h3 {
+  margin-bottom: 8px;
+}
+
+.runtime-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-summary-card {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 74%, var(--bg));
+  padding: 10px;
+}
+
+.runtime-summary-card span,
+.runtime-summary-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+/* 三刀① — 卡片 meta 行升 12(label span 保留 11);色阶走 text-tertiary。 */
+.runtime-summary-card small {
+  color: var(--text-tertiary);
+  font-size: var(--text-12);
+}
+
+.runtime-summary-card strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--text-16);
+  font-weight: 700;
+}
+
+.runtime-summary-card.tone-ok {
+  border-color: color-mix(in oklab, var(--ok) 34%, var(--line));
+}
+
+.runtime-summary-card.tone-warn {
+  border-color: color-mix(in oklab, var(--warn) 38%, var(--line));
+}
+
+.runtime-summary-card.tone-info {
+  border-color: color-mix(in oklab, var(--brand) 30%, var(--line));
+}
+
+.runtime-summary-card.tone-err {
+  border-color: color-mix(in oklab, var(--err) 34%, var(--line));
+}
+
+.runtime-health-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklab, var(--surface) 58%, transparent);
+  padding: 8px 10px;
+}
+
+.runtime-health-strip span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel);
+  padding: 3px 8px;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.runtime-health-strip strong,
+.runtime-health-strip em {
+  font-style: normal;
+}
+
+.runtime-health-strip strong {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.runtime-health-strip em {
+  color: var(--text);
+}
+
+.runtime-connection-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.runtime-connection-strip span {
+  min-width: 0;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px 8px;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.runtime-connection-strip strong,
+.runtime-connection-strip em {
+  min-width: 0;
+  font-style: normal;
+}
+
+.runtime-connection-strip strong {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.runtime-connection-strip em {
+  max-width: min(42vw, 360px);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.runtime-primary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-primary-grid > .subsection {
+  border-top: 0;
+}
+
+.runtime-primary-grid > .subsection + .subsection {
+  border-left: 1px solid var(--line);
+}
+
+.runtime-detail-section {
+  border-bottom: 1px solid var(--line);
+}
+
+.runtime-detail-section summary {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 12px;
+  color: var(--text);
+}
+
+.runtime-detail-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.runtime-detail-section summary:hover {
+  background: var(--surface);
+}
+
+.runtime-detail-section summary span {
+  font-size: var(--text-12);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.runtime-detail-section summary small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+
+.runtime-detail-body {
+  display: grid;
+}
+
+.compact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.automation-dashboard {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.automation-glance-section {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 86%, var(--bg));
+  padding: 14px;
+  color: var(--text);
+}
+
+/* Tone hint: neutral surface background + 3px colored left bar.
+   Replaces the 8–10% color-mix linear-gradient that produced yellow/amber/red
+   wash that clashed with the overall grey-white theme. */
+.automation-glance-section.tone-ok,
+.automation-glance-section.tone-warn,
+.automation-glance-section.tone-err,
+.automation-glance-section.tone-info {
+  background: var(--surface);
+}
+
+.automation-glance-section.tone-ok    { border-left: 3px solid var(--ok); }
+.automation-glance-section.tone-warn  { border-left: 3px solid var(--warn); }
+.automation-glance-section.tone-err   { border-left: 3px solid var(--err); }
+.automation-glance-section.tone-info  { border-left: 3px solid var(--brand); }
+
+.automation-glance-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.automation-glance-section p {
+  margin: 0;
+  max-width: 920px;
+  color: var(--muted-foreground);
+  font-size: var(--text-13);
+  line-height: 1.55;
+  overflow-wrap: break-word;
+}
+
+.automation-glance-section strong {
+  color: var(--text);
+}
+
+.automation-report-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 8px 0 0;
+}
+
+.automation-report-nav a {
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  padding: 4px 10px;
+  font-size: var(--text-13);
+  text-decoration: none;
+}
+
+.automation-report-nav a:hover {
+  border-color: color-mix(in oklab, var(--brand) 45%, var(--line));
+  color: var(--text);
+}
+
+.automation-report-stats {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+}
+
+.automation-report-stat {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 78%, var(--bg));
+  padding: 10px;
+}
+
+.automation-report-stat strong {
+  color: var(--text);
+  font-size: var(--text-17);
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-report-stat span,
+.automation-report-stat small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.automation-report-stat small {
+  font-size: var(--text-11);
+  text-transform: none;
+}
+
+.automation-report-stat.tone-ok {
+  border-color: color-mix(in oklab, var(--ok) 28%, var(--line));
+}
+
+.automation-report-stat.tone-warn {
+  border-color: color-mix(in oklab, var(--warn) 34%, var(--line));
+}
+
+.automation-report-stat.tone-info {
+  border-color: color-mix(in oklab, var(--brand) 26%, var(--line));
+}
+
+.automation-report-stat.tone-err {
+  border-color: color-mix(in oklab, var(--err) 32%, var(--line));
+}
+
+.automation-control-section {
+  grid-column: 1 / -1;
+}
+
+.automation-empty-section {
+  min-height: 260px;
+}
+
+.automation-control-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.automation-control-title {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.automation-control-title h3 {
+  margin: 0;
+}
+
+.automation-control-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.automation-detail-card {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 82%, var(--bg));
+  padding: 10px;
+}
+
+.automation-detail-card dl {
+  display: grid;
+  grid-template-columns: minmax(84px, max-content) minmax(0, 1fr);
+  gap: 7px 12px;
+  margin: 0;
+}
+
+.automation-detail-card dt {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.automation-detail-card dd {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  overflow-wrap: break-word;
+}
+
+.automation-detail-card dd small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.automation-trigger-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.automation-trigger-chip {
+  min-height: 20px;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted-foreground);
+  padding: 2px 8px;
+  font-size: var(--text-11);
+}
+
+.automation-run-notice {
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.automation-anchor-target {
+  min-width: 0;
+  grid-column: 1 / -1;
+}
+
+.automation-output-section,
+.automation-runs-grid {
+  grid-column: 1 / -1;
+}
+
+.automation-output-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 8px;
+}

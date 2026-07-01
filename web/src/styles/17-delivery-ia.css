@@ -1,0 +1,201 @@
+.delivery-overview {
+  display: grid;
+  gap: 14px;
+}
+
+.delivery-overview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.delivery-overview-action {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.delivery-overview-action:hover {
+  border-color: color-mix(in oklab, var(--brand) 45%, var(--line));
+  background: color-mix(in oklab, var(--brand) 9%, var(--surface));
+}
+
+.delivery-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.delivery-overview-card {
+  display: grid;
+  min-height: 154px;
+  align-content: start;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.delivery-overview-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.delivery-overview-card-head h3 {
+  margin: 0;
+  font-size: var(--text-14);
+  letter-spacing: 0;
+}
+
+.delivery-overview-card-head span {
+  color: var(--muted);
+  font-size: var(--text-11);
+  text-transform: uppercase;
+}
+
+.delivery-attention-list {
+  display: grid;
+  gap: 8px;
+}
+
+.delivery-attention-row {
+  display: grid;
+  gap: 3px;
+  padding: 8px 9px;
+  border-left: 3px solid var(--line);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--surface-2) 70%, transparent);
+}
+
+.delivery-attention-row strong {
+  overflow: hidden;
+  font-size: var(--text-13);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-attention-row span {
+  overflow: hidden;
+  color: color-mix(in oklab, var(--text) 72%, var(--muted));
+  font-size: var(--text-12);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-attention-row.tone-err { border-left-color: var(--err); }
+.delivery-attention-row.tone-warn { border-left-color: var(--warn); }
+.delivery-attention-row.tone-ok { border-left-color: var(--ok); }
+.delivery-attention-row.tone-info { border-left-color: var(--info); }
+
+.delivery-progress-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.delivery-progress-bar span {
+  min-width: 0;
+}
+
+.delivery-progress-bar .done { background: var(--ok); }
+.delivery-progress-bar .active { background: var(--info); }
+.delivery-progress-bar .blocked { background: var(--err); }
+
+.delivery-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.delivery-overview-metric {
+  display: grid;
+  gap: 4px;
+  min-height: 52px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface-2) 62%, transparent);
+}
+
+.delivery-overview-metric strong {
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.delivery-overview-metric span {
+  color: color-mix(in oklab, var(--text) 72%, var(--muted));
+  font-size: var(--text-11);
+  font-weight: 650;
+  text-transform: uppercase;
+}
+
+.delivery-overview-metric.tone-ok { border-color: color-mix(in oklab, var(--ok) 34%, var(--line)); }
+.delivery-overview-metric.tone-warn { border-color: color-mix(in oklab, var(--warn) 38%, var(--line)); }
+.delivery-overview-metric.tone-err { border-color: color-mix(in oklab, var(--err) 42%, var(--line)); }
+.delivery-overview-metric.tone-info { border-color: color-mix(in oklab, var(--info) 35%, var(--line)); }
+
+.delivery-overview-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-12);
+}
+
+.mode-graph .dt-thick {
+  margin-top: 0;
+}
+
+.mode-overview .delivery-cockpit-hero,
+.mode-trace .delivery-cockpit-hero,
+.mode-graph .delivery-cockpit-hero {
+  margin-bottom: 14px;
+}
+
+.loop-metric {
+  min-width: 94px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.loop-metric strong {
+  font-size: 18px;
+}
+
+.loop-metric span {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  .delivery-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-overview-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .delivery-overview-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-overview-action {
+    justify-content: center;
+  }
+}

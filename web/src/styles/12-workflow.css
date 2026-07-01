@@ -1,0 +1,796 @@
+
+.delivery-cycle-card,
+.delivery-closed-loop-node,
+.workflow-stage-card {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  padding: 9px;
+  text-align: left;
+}
+
+.delivery-cycle-card:hover,
+.delivery-closed-loop-node:hover,
+.workflow-stage-card:hover {
+  background: var(--surface-2); /* 三刀③ hover 底色化,选中态见下 */
+}
+
+.delivery-cycle-card.active,
+.delivery-closed-loop-node.active,
+.workflow-stage-card.active {
+  border-color: color-mix(in oklab, var(--brand) 42%, var(--line));
+  background: color-mix(in oklab, var(--brand-subtle) 36%, var(--surface));
+}
+
+.delivery-cycle-card strong,
+.delivery-cycle-card small,
+.delivery-closed-loop-node strong,
+.delivery-closed-loop-node small,
+.workflow-stage-main strong,
+.workflow-stage-main small,
+.workflow-stage-card strong,
+.workflow-stage-card small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-cycle-card small,
+.delivery-closed-loop-node small,
+.workflow-stage-main small,
+.workflow-stage-card small,
+.workflow-card-metrics {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+
+.delivery-graph-pane .delivery-graph {
+  min-height: 260px;
+}
+
+.delivery-inspector-section,
+.workflow-inspector-block {
+  display: grid;
+  gap: 7px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 9px;
+}
+
+.delivery-inspector-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.delivery-inspector-section h4,
+.workflow-inspector-block h4 {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+
+.delivery-inspector-grid {
+  display: grid;
+  grid-template-columns: minmax(86px, 0.65fr) minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+}
+
+.delivery-inspector-grid dt {
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-inspector-grid dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-gap-list span,
+.workflow-stage-row,
+.workflow-edge-row,
+.workflow-child-row {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  align-items: center;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 7px 8px;
+  font-size: var(--text-13);
+}
+
+.delivery-gap-list span,
+.workflow-stage-row {
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+}
+
+.workflow-edge-row {
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+}
+
+.workflow-child-row {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr) max-content minmax(0, 1fr);
+}
+
+.delivery-closed-loop-grid,
+.workflow-trace-workbench {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(420px, 1.45fr) minmax(300px, 0.9fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.delivery-closed-loop-node small {
+  grid-column: 1 / -1;
+}
+
+.delivery-closed-loop-edge {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.delivery-closed-loop-edge code,
+.delivery-loop-evidence code,
+.workflow-edge-row code,
+.workflow-child-row code,
+.workflow-child-row span,
+.workflow-child-row small,
+.workflow-chip-list code,
+.delivery-gap-list code,
+.delivery-gap-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.delivery-closed-loop-edge span,
+.workflow-edge-row span {
+  color: var(--muted-foreground);
+}
+
+.delivery-inspector-actions,
+.workflow-card-metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.delivery-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-muted);
+  color: var(--muted-foreground);
+  font-size: var(--text-13);
+  font-weight: var(--font-weight-semibold);
+  padding: 5px 8px;
+}
+
+.delivery-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.delivery-action-note {
+  color: var(--muted-foreground);
+  font-size: var(--text-12);
+}
+
+.workflow-status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+}
+
+.workflow-status-dot.status-ok { background: var(--ok); }
+.workflow-status-dot.status-warn { background: var(--warn); }
+.workflow-status-dot.status-err { background: var(--err); }
+.workflow-status-dot.status-info { background: var(--info); }
+
+.workflow-stage-main {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.workflow-stage-cards {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.workflow-chip-list {
+  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+}
+
+.workflow-chip-list code {
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface);
+  padding: 5px 6px;
+  font-size: var(--text-11);
+}
+
+.flip-x {
+  transform: scaleX(-1);
+}
+.autoresearch-cycle-section .inline-heading h3 { margin-top: 0; }
+.autoresearch-cycle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.autoresearch-cycle-card {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.autoresearch-cycle-head {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.autoresearch-cycle-head h4 {
+  min-width: 0;
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  font-weight: var(--font-weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.autoresearch-cycle-kpis {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.autoresearch-cycle-kpis > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+}
+.autoresearch-cycle-kpis span {
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-medium);
+  text-transform: uppercase;
+}
+.autoresearch-cycle-kpis strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-12);
+  /* KV 规范①:KPI 行值 600 → 500。 */
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.autoresearch-cycle-foot,
+.autoresearch-cycle-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.autoresearch-cycle-foot span,
+.autoresearch-cycle-evidence code {
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  background: var(--panel);
+  font-size: var(--text-10);
+}
+.autoresearch-cycle-evidence code {
+  max-width: 100%;
+  color: var(--text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .diagnostics-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .diagnostics-log-row {
+    grid-template-columns: 86px 58px minmax(0, 1fr);
+  }
+
+  .diagnostics-log-actor,
+  .diagnostics-log-target {
+    display: none;
+  }
+
+  .delivery-cockpit-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-cockpit-metrics {
+    justify-content: flex-start;
+  }
+
+  .delivery-empty-cockpit-head {
+    display: grid;
+  }
+
+  .delivery-main-tabs {
+    overflow-x: auto;
+    padding-bottom: 0;
+  }
+
+  .delivery-main-tab {
+    flex: 0 0 auto;
+    min-width: max-content;
+  }
+
+  .delivery-main-tab small {
+    display: none;
+  }
+
+  .delivery-stage-line {
+    padding-bottom: 4px;
+  }
+
+  .delivery-stage-node {
+    flex-basis: 96px;
+  }
+
+  .delivery-stage-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-stage-panel-head {
+    display: grid;
+  }
+
+  .delivery-flow-layout,
+  .dt-trace-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .delivery-flow-task-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+  }
+
+  .delivery-flow-task-row > span:nth-child(3),
+  .delivery-flow-task-row > span:nth-child(4) {
+    grid-column: 1 / -1;
+  }
+
+  .workflow-trace-workbench {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Overview metrics strip (kernel 12-metric) + boundary details fold */
+.metrics-strip-groups {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.metrics-strip-group > .muted {
+  display: block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: var(--text-11);
+}
+
+.metrics-strip-item {
+  display: grid;
+  grid-template-columns: max-content max-content;
+  justify-content: start;
+  gap: 16px;
+  padding: 2px 0;
+  font-size: var(--text-13);
+}
+
+/* KV 规范①改造 A:键/值版式走 .kv 基类(键 tertiary、值 500+tabular+sans),
+   这里只留对齐布局。 */
+.metrics-strip-item > strong {
+  min-width: 56px;
+  text-align: right;
+}
+
+.project-boundary-details > summary {
+  cursor: pointer;
+  padding: 6px 0;
+  font-size: var(--text-13);
+}
+
+@media (max-width: 900px) {
+  .metrics-strip-groups {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Overview B-form: zero-value discipline, runs tabs, focus row body */
+.project-health-card.is-zero strong {
+  color: var(--muted-foreground);
+}
+
+.project-health-card.is-zero .project-health-meter span {
+  width: 0 !important;
+}
+
+.tab-strip {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.tab-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted-foreground);
+  padding: 2px 10px;
+  font-size: var(--text-13);
+  cursor: pointer;
+}
+
+.tab-chip.active {
+  color: var(--foreground);
+  border-color: color-mix(in oklab, var(--brand) 36%, var(--line));
+  background: color-mix(in oklab, var(--brand) 7%, var(--panel));
+}
+
+.project-focus-section .inline-row strong {
+  white-space: nowrap;
+}
+
+.project-focus-section .inline-row {
+  grid-template-columns: max-content minmax(110px, max-content) minmax(0, 1fr) max-content;
+}
+
+.project-focus-more {
+  border-style: dashed;
+  color: var(--muted-foreground);
+}
+
+.project-focus-body {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .project-focus-section .inline-row {
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .project-focus-section .inline-row .project-focus-body,
+  .project-focus-section .inline-row > .muted {
+    grid-column: 2 / -1;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .project-focus-section .inline-row strong {
+    white-space: normal;
+  }
+}
+
+/* Overview pulse bands (overview-pulse.v1): RUN PULSE + TASK FLOW.
+   Existing tokens only — warn/err/line/panel; no new color literals. */
+.pulse-band-section {
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pulse-band,
+.task-flow-band {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 8px 12px;
+  font-size: var(--text-12);
+}
+
+.pulse-band {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.pulse-band.is-empty {
+  color: var(--muted-foreground);
+}
+
+.pulse-band-label {
+  /* 三刀③ — 字号/字重/颜色由 .section-title 提供,这里只留带状标签的版式特征。 */
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pulse-band-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pulse-band-item > .muted {
+  font-size: var(--text-11);
+  white-space: nowrap;
+}
+
+.pulse-band-item strong.mono {
+  font-size: var(--text-12);
+}
+
+/* KV 规范①:KPI 行值 700(UA bold)→ 500;数值对齐靠 mono,保留。
+   :not 排除 no-data 占位符(其 regular 400 由 .pulse-no-data 维持)。 */
+.pulse-band-item strong.mono:not(.pulse-no-data) {
+  font-weight: var(--font-weight-medium);
+}
+
+.pulse-band .is-warn,
+.task-flow-band .is-warn {
+  color: var(--warn);
+}
+
+.pulse-band .is-crit {
+  color: var(--err);
+}
+
+.pulse-no-data {
+  color: var(--muted-foreground);
+  font-weight: var(--font-weight-regular);
+}
+
+.pulse-sparkline {
+  color: var(--muted-foreground);
+  letter-spacing: 0.05em;
+}
+
+.task-flow-band {
+  display: grid;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.task-flow-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+
+.task-flow-chain .pulse-band-label {
+  flex: 0 0 100%;
+}
+
+/* ③ 等宽框:节点轨道单行,窄屏整带横滚,禁换行挤压。 */
+.task-flow-chain-rail {
+  flex: 0 0 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+/* ③ 节点统一定宽(最长态 "In Progress 3 · WIP 3/5" 实测取 152px),
+   内文 ellipsis+title;框规格(border/圆角/内距)对表 .rg-node 同源:
+   1.5px var(--line) / 10px / 7px 9px。 */
+.task-flow-node {
+  display: grid;
+  gap: 4px;
+  flex: 0 0 152px;
+  width: 152px;
+  border: 1.5px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 7px 9px;
+  text-align: left;
+  font-size: var(--text-13);
+  cursor: pointer;
+}
+
+.task-flow-node:hover {
+  background: var(--surface-2); /* 三刀③ hover 不再改边框 */
+}
+
+.task-flow-node.is-empty {
+  color: var(--muted-foreground);
+}
+
+.task-flow-node-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.task-flow-node-line strong {
+  /* KV 规范①:节点计数值 700(UA bold)→ 500。 */
+  font-weight: var(--font-weight-medium);
+}
+
+/* ③ 定宽下溢出文本(WIP 附注)收 ellipsis,完整值走按钮 title。 */
+.task-flow-node-line .muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-flow-node-age {
+  min-height: 14px;
+  font-size: var(--text-10);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-flow-edge {
+  position: relative;
+  flex: 1 1 64px;
+  min-width: 58px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.task-flow-edge-line {
+  position: absolute;
+  right: 0;
+  left: 0;
+  top: 50%;
+  height: 1px;
+  background: var(--line);
+}
+
+.task-flow-edge-line::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  border-top: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+
+.task-flow-edge-label {
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted-foreground);
+  padding: 1px 6px;
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.task-flow-edge.is-gate .task-flow-edge-label {
+  color: var(--brand);
+}
+
+.task-flow-rework {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  padding: 4px 8px;
+  font-size: var(--text-12);
+  white-space: nowrap;
+}
+
+.task-flow-rework strong {
+  /* KV 规范①:Rework 速率值 600 → 500。 */
+  font-weight: var(--font-weight-medium);
+}
+
+.task-flow-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.task-flow-pocket {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted-foreground);
+  padding: 2px 8px;
+  font-size: var(--text-11);
+  text-align: left;
+  cursor: pointer;
+}
+
+.task-flow-pocket:hover {
+  background: var(--surface-2);
+}
+
+.task-flow-pocket.is-warn {
+  border-color: color-mix(in oklab, var(--warn) 42%, var(--line));
+}
+
+.task-flow-whynot {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .task-flow-chain {
+    align-items: stretch;
+  }
+
+  /* ③ 节点定宽后窄屏不再弹性换行,整轨横滚;边收窄保持等距。 */
+  .task-flow-edge {
+    flex: 0 0 42px;
+  }
+}
+
+/* ── Delivery flow metrics (slice 1) — SegBar / task flow columns / span tree / lifeline.
+   Token-only colors: wait=muted-foreground mix, active=brand, rework=warn. ── */
+.seg-bar {
+  display: inline-flex;
+  flex: none;
+  width: 132px;
+  height: 8px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-2);
+  overflow: hidden;
+  vertical-align: middle;
+}

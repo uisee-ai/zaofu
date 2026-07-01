@@ -1,0 +1,143 @@
+# Opt-in Autoresearch review fanout council.
+#
+# This example is intended for a temporary copied zf.yaml. The review-gate
+# prepare CLI writes context/evidence artifacts; an operator or wrapper then
+# creates a canonical review task and invokes this pattern through
+# workflow.invoke.requested. Channel messages may reference the result, but
+# they are not the execution mechanism.
+version: '1.0'
+preset: autoresearch-review-fanout-codex
+project:
+  name: zaofu-autoresearch-review
+  state_dir: /tmp/zf-autoresearch-review/.zf
+session:
+  tmux_session: zf-autoresearch-review
+  tmux_layout: pane_grid
+runtime:
+  skills:
+    strict: false
+    pool: /tmp/zf-autoresearch-review/.zf/skills
+    materialize: copy
+    lock_file: /tmp/zf-autoresearch-review/.zf/skills.lock.json
+  workdirs:
+    enabled: true
+    root: /tmp/zf-autoresearch-review/.zf/workdirs
+    mode: worktree
+  git:
+    reader_ref_prefix: reader
+    task_ref_prefix: task
+workflow:
+  stages:
+  - id: autoresearch-review-council
+    trigger: workflow.invoke.requested
+    topology: fanout_reader
+    roles:
+    - ar-diagnoser
+    - ar-kernel-reviewer
+    - ar-repair-planner
+    - ar-critic-verifier
+    aggregate:
+      mode: wait_for_all
+      synth_role: ar-synth
+      success_event: fanout.synth.completed
+      failure_event: fanout.aggregate.failed
+    fanout:
+      children:
+      - role_instance: ar-diagnoser
+        payload:
+          child_id: ar-diagnoser
+          instruction: >-
+            Reproduce and explain the Autoresearch failure. Use the supplied
+            codebase_context_pack and failure_evidence_pack refs. Do not modify
+            source files or runtime truth.
+          output_contract:
+            root_cause_hypotheses: evidence-backed ordered list
+            reproduction: exact command or artifact refs
+            evidence_refs: source, event, log, run, or test refs
+            confidence: confirmed, inferred, or blocked
+      - role_instance: ar-kernel-reviewer
+        payload:
+          child_id: ar-kernel-reviewer
+          instruction: >-
+            Review EventWriter/EventLog, stores, workflow.invoke, fanout,
+            replan, remediation, and repair invariants touched by the failure.
+            Report only evidence-backed risks. Do not mutate runtime truth.
+          output_contract:
+            invariant_findings: severity/path/line/message
+            boundary_risks: control-plane or truth-source risks
+            evidence_refs: source, event, log, run, or test refs
+            confidence: confirmed, inferred, or blocked
+      - role_instance: ar-repair-planner
+        payload:
+          child_id: ar-repair-planner
+          instruction: >-
+            Propose the smallest repair scope and regression commands. The
+            output is a plan only; do not edit code or dispatch repair.
+          output_contract:
+            minimal_patch_scope: file list
+            regression_commands: exact commands
+            fallback: rollback or block condition
+            evidence_refs: source, event, log, run, or test refs
+      - role_instance: ar-critic-verifier
+        payload:
+          child_id: ar-critic-verifier
+          instruction: >-
+            Try to falsify the diagnosis and repair plan. Look for false fixes,
+            duplicate schemas, projection-as-truth, and missing regression
+            evidence. Do not approve without refs.
+          output_contract:
+            critic_findings: severity/status/message/evidence_refs
+            verdict: approve, revise, or block
+            missing_evidence: refs or commands still required
+            evidence_refs: source, event, log, run, or test refs
+roles:
+- name: ar-diagnoser
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stages:
+  - review
+  triggers:
+  - task.fanout.requested
+  publishes:
+  - fanout.child.completed
+- name: ar-kernel-reviewer
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stages:
+  - review
+  triggers:
+  - task.fanout.requested
+  publishes:
+  - fanout.child.completed
+- name: ar-repair-planner
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stages:
+  - review
+  triggers:
+  - task.fanout.requested
+  publishes:
+  - fanout.child.completed
+- name: ar-critic-verifier
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stages:
+  - review
+  triggers:
+  - task.fanout.requested
+  publishes:
+  - fanout.child.completed
+- name: ar-synth
+  backend: codex
+  role_kind: reader
+  permission_mode: bypass
+  stages:
+  - review
+  triggers:
+  - fanout.aggregate.completed
+  publishes:
+  - fanout.synth.completed

@@ -1,0 +1,223 @@
+# Production-oriented refactor workflow using RefactorFlow.
+# Claude Code backend variant of refactor-flow-codex.yaml — identical topology,
+# laneRoleTemplate + every role run backend=claude-code instead of codex.
+#
+# Shape after expansion:
+#   refactor.scan.requested -> zaofu.refactor.review.ready
+#   -> zaofu.refactor.plan.ready -> task_map.ready
+#   -> lane_pipeline: impl -> review -> verify -> judge
+#
+# Current runtime treats plan.ready -> task_map.ready as an orchestrator/driver
+# hop after task-map artifact projection; it is intentionally not another
+# hand-written workflow stage in this reduced config.
+#
+# Review gate policy: independent_review. Refactor keeps a dedicated review
+# stage before verification.
+#
+# Prerequisites:
+#   - Claude Code CLI installed (`claude --version`)
+#   - `claude login` completed (or ANTHROPIC_API_KEY set)
+#   - ~/.claude/projects/* writable for session logs
+#
+# Permission note:
+#   permission_mode=bypass turns on `--dangerously-skip-permissions` for every
+#   worker (no interactive approval prompts; full Read/Bash/Edit/Write). Swap to
+#   permission_mode=allowlist + allowed_tools if you need tool scoping.
+#
+# Default state_dir / tmux_session / branch prefixes carry a `-claude` suffix so
+# this preset never shares runtime truth with its codex sibling. Override via
+# ZF_STATE_DIR / ZF_TMUX_SESSION / ZF_BRANCH_PREFIX for real deployments.
+apiVersion: zaofu.dev/v1
+kind: RefactorFlow
+metadata:
+  name: prod-refactor-flow
+  zaofu:
+    catalog:
+      id: refactor-flow-claude
+      label: refactor-flow-claude
+      description: 重构流 RefactorFlow(2 角色)— 重构
+      roles: 2
+      intent: refactor
+      backend: claude
+      recommended_for: [refactor]
+      order: 30
+spec:
+  flowProfile: refactor-flow/v1
+  entryTrigger: refactor.scan.requested
+  lanes: 3
+  assembly: {task: PROD-REFACTOR-ASSEMBLY-001}
+  budgets:
+    maxReworkAttempts: 2
+    traceBudget: 6
+  scan:
+    children:
+    - id: scan-contract
+      instructionRef: docs/refactor/scan-contract.md
+    - id: scan-runtime
+      instructionRef: docs/refactor/scan-runtime.md
+    - id: scan-verification
+      instructionRef: docs/refactor/scan-verification.md
+    synthRole: refactor-plan-synth
+  judgeRole: judge-refactor
+  laneRoleTemplate:
+    backend: claude-code
+    permission_mode: bypass
+    stuck_threshold_seconds: 1200
+    spawn_ready_timeout_seconds: 240
+    skills_by_stage:
+      impl: [incremental-implementation, test-driven-development]
+      review: [code-review-and-quality, zf-yoke-review-role-context]
+      verify: [test-driven-development, zf-harness-verification-checklist]
+  schemaProfile: refactor-flow/v1
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: prod-refactor-flow-claude}
+spec:
+  version: "1.0"
+  preset: prod-refactor-flow-claude
+
+  project:
+    name: ${ZF_PROJECT_NAME:-prod-refactor-flow}
+    state_dir: ${ZF_STATE_DIR:-.zf-prod-refactor-claude}
+
+  session:
+    tmux_session: ${ZF_TMUX_SESSION:-zf-prod-refactor-claude}
+    tmux_layout: pane_grid
+
+  global_budget_usd: ${ZF_GLOBAL_BUDGET_USD:-1000.0}
+  budget_enforcement_enabled: ${ZF_BUDGET_ENFORCEMENT:-false}
+
+  skill_sources:
+  - name: agent-skills
+    path: ${ZF_AGENT_SKILLS_DIR:-./skills/external}
+    mode: readonly
+  - name: zaofu-local
+    path: ${ZF_ZAOFU_SKILLS_DIR:-skills}
+    mode: readonly
+
+  runtime:
+    skills:
+      strict: false
+      pool: ${ZF_STATE_DIR:-.zf-prod-refactor-claude}/skills
+      materialize: copy
+      lock_file: ${ZF_STATE_DIR:-.zf-prod-refactor-claude}/skills.lock.json
+    workdirs:
+      enabled: true
+      root: ${ZF_STATE_DIR:-.zf-prod-refactor-claude}/workdirs
+      mode: worktree
+      provision_paths: [.venv, node_modules]
+    git:
+      candidate_base_ref: ${ZF_BASE_REF:-HEAD}
+      writer_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-refactor-claude}/worker
+      task_ref_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-refactor-claude}/task
+      candidate_branch_prefix: ${ZF_BRANCH_PREFIX:-zf/prod-refactor-claude}/candidate
+      candidate_strategy: cherry-pick
+      remote_policy: local
+      auto_ship_on_candidate_complete: false
+
+  constraints:
+    blocked_paths:
+    - .git/**
+    - ${ZF_STATE_DIR:-.zf-prod-refactor-claude}/**
+    - .venv/**
+    - node_modules/**
+    - .env
+    - .env.*
+    - "**/*.pem"
+    - "**/*.ppk"
+
+  workflow:
+    harness_profile: strict
+    work_units:
+      enabled: true
+      split_quality:
+        mode: blocking
+        max_scope_files: 12
+        require_validation_surface: true
+    completion_audit:
+      enabled: true
+      provider_completed_state: completed_unverified
+    resume_packet:
+      enabled: true
+      max_tokens: 1800
+      generate_on:
+      - dispatch
+      - retry
+      - context_recovery
+      - worker.context.warning
+      - worker.context.critical
+      - worker.stuck
+    dag:
+      enabled: true
+      schema_profile: refactor-flow/v1
+      default_gate_level: strict
+      external_triggers: [refactor.scan.requested, task_map.ready]
+      stage_order:
+      - refactor.scan.requested
+      - zaofu.refactor.review.ready
+      - zaofu.refactor.plan.ready
+      - task_map.ready
+      - candidate.ready
+      - review.approved
+      - test.passed
+      - judge.passed
+    rework_routing:
+      zaofu.refactor.plan.blocked: refactor-plan-synth
+      task.contract.invalid: refactor-plan-synth
+      integration.failed: refactor-plan-synth
+      gate.failed: refactor-plan-synth
+      fanout.serialize: orchestrator
+      fanout.cancelled: orchestrator
+      discriminator.failed: refactor-plan-synth
+      dev.blocked: orchestrator
+      dev.failed: orchestrator
+      dispatch.silent_stall: orchestrator
+    strict_triggers:
+      rework_attempts_gte: 1
+      context_usage_gte: 0.80
+      file_globs: [src/**, tests/**, web/**, docs/**]
+
+  _role_defaults: &claude_common
+    backend: claude-code
+    permission_mode: bypass
+    transport: tmux
+    stuck_threshold_seconds: 1200
+    spawn_ready_timeout_seconds: 240
+    context_window_tokens: 200000
+
+  roles:
+  - <<: *claude_common
+    name: orchestrator
+    instance_id: orchestrator
+    role_kind: reader
+    # Layer-2 escalation only — scope to dispatch.silent_stall (its sole rework
+    # route). Empty triggers = subscribe-to-all-non-noise = ~per-round wakes =
+    # majority of run cost for ~0 productive output.
+    triggers: [dispatch.silent_stall]
+    skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  - <<: *claude_common
+    name: scan-contract
+    instance_id: scan-contract
+    role_kind: reader
+    skills: [source-driven-development, zf-harness-evidence-collection]
+  - <<: *claude_common
+    name: scan-runtime
+    instance_id: scan-runtime
+    role_kind: reader
+    skills: [context-engineering, zf-cr]
+  - <<: *claude_common
+    name: scan-verification
+    instance_id: scan-verification
+    role_kind: reader
+    skills: [test-driven-development, zf-harness-verification-checklist]
+  - <<: *claude_common
+    name: refactor-plan-synth
+    instance_id: refactor-plan-synth
+    role_kind: reader
+    skills: [zf-refactor-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]
+  - <<: *claude_common
+    name: judge-refactor
+    instance_id: judge-refactor
+    role_kind: reader
+    skills: [zf-harness-gate-evaluator, shipping-and-launch]

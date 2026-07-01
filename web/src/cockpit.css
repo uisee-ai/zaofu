@@ -1,0 +1,36 @@
+.project-health-card:is(button) {
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.project-health-card:is(button):hover {
+  background: color-mix(in oklab, var(--brand-subtle) 24%, var(--panel));
+}
+
+.project-health-card.tone-err {
+  border-color: color-mix(in oklab, var(--err) 38%, var(--line));
+}
+
+.agent-fleet-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-attention-cockpit .inline-row {
+  grid-template-columns: max-content minmax(120px, 0.6fr) minmax(0, 1.1fr) minmax(160px, 0.9fr) minmax(110px, 0.7fr);
+}
+
+@media (max-width: 980px) {
+  .agent-fleet-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .agent-attention-cockpit .inline-row {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+}

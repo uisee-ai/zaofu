@@ -1,0 +1,21 @@
+/* styles.css — split into ordered chunks (P2 phase 1, byte-order preserving).
+   Cascade order = @import order = original byte order. Do not reorder. */
+
+@import "./styles/00-tokens-base.css";
+@import "./styles/01-task.css";
+@import "./styles/02-channel.css";
+@import "./styles/03-channel.css";
+@import "./styles/04-project.css";
+@import "./styles/05-route.css";
+@import "./styles/06-agent.css";
+@import "./styles/07-agent.css";
+@import "./styles/08-automation.css";
+@import "./styles/09-automation.css";
+@import "./styles/10-event.css";
+@import "./styles/11-delivery.css";
+@import "./styles/12-workflow.css";
+@import "./styles/13-dt.css";
+@import "./styles/14-rg.css";
+@import "./styles/15-dt.css";
+@import "./styles/16-loop.css";
+@import "./styles/17-delivery-ia.css";

@@ -1,0 +1,871 @@
+"""zf start — start the harness loop."""
+
+from __future__ import annotations
+
+import argparse
+import fcntl
+import os
+import shlex
+import sys
+from dataclasses import asdict
+from pathlib import Path
+
+from zf.core.config.loader import load_config, ConfigError
+from zf.core.config.lkg import (
+    infer_state_dir,
+    lkg_hint,
+    promote_last_known_good,
+    write_validation_report,
+)
+from zf.core.config.tool_closure import validate_tool_closure
+from zf.core.events import ZfEvent
+from zf.core.events.factory import (
+    EventSigningConfigError,
+    build_event_signer,
+    event_log_from_project,
+)
+from zf.core.state.role_sessions import RoleSessionRegistry
+from zf.core.state.session import SessionStore
+from zf.core.skills import validate_skill_sources
+from zf.core.workflow.inspection import (
+    build_workflow_inspection_report,
+    inspection_failed,
+)
+from zf.core.workflow.inspection_render import (
+    write_workflow_inspection_artifacts,
+)
+from zf.runtime.transport import make_transport, TmuxTransport
+from zf.runtime.backend import get_adapter
+from zf.runtime.codex_hooks import write_codex_hook_settings
+from zf.runtime.injection import generate_role_instructions
+from zf.runtime.cli_command import set_default_zf_cli_cmd, zf_cli_cmd
+from zf.runtime.process_guard import SingleOwnerProcessGuard
+from zf.runtime.spawn_coordinator import SpawnCoordinator
+
+
+def _run_autoresearch_trigger_scan(
+    state_dir: Path,
+    config: object,
+    *,
+    event_writer=None,
+) -> int:
+    from zf.runtime.tick_services import run_autoresearch_trigger_scan
+
+    return run_autoresearch_trigger_scan(
+        state_dir,
+        config,
+        event_writer=event_writer,
+    )
+
+
+def register(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser("start", help="Start the harness loop")
+    parser.add_argument("--dry-run", action="store_true", help="Record commands without executing tmux")
+    parser.add_argument(
+        "--foreground", action="store_true",
+        help="DEPRECATED no-op alias (watcher now runs in foreground by default)",
+    )
+    parser.add_argument(
+        "--no-watch", action="store_true",
+        help="Spawn workers and exit without running the event watcher",
+    )
+    parser.add_argument(
+        "--skip-workflow-inspect",
+        action="store_true",
+        help="Skip workflow graph/skill preflight inspection",
+    )
+    parser.set_defaults(func=run)
+
+
+def _preserved_run_manager_start_context(
+    config,
+    state_dir: Path,
+) -> tuple[dict[str, object] | None, set[str]]:
+    try:
+        from zf.runtime.run_manager_resident import (
+            clear_resident_preserve_marker,
+            dedicated_resident_run_manager_role,
+            read_resident_preserve_marker,
+            resident_run_manager_tmux_session,
+        )
+
+        marker = read_resident_preserve_marker(state_dir)
+        role = dedicated_resident_run_manager_role(config)
+        if marker is None or role is None:
+            if marker is not None:
+                clear_resident_preserve_marker(state_dir)
+            return None, set()
+        marker_instance = str(marker.get("instance_id") or "").strip()
+        marker_session = str(marker.get("tmux_session") or "").strip()
+        if marker_instance != role.instance_id:
+            clear_resident_preserve_marker(state_dir)
+            return None, set()
+        if marker_session and marker_session != resident_run_manager_tmux_session(config):
+            clear_resident_preserve_marker(state_dir)
+            return None, set()
+        return marker, {role.instance_id}
+    except Exception:
+        return None, set()
+
+
+def _write_claude_hook_settings(state_dir: Path) -> None:
+    """Phase 1: render .zf/hooks/settings.json consumed by
+    `claude --settings`. Currently configures the Stop hook so every
+    Claude turn end automatically emits orchestrator.round.complete
+    (or, for non-orchestrator roles, the same event — zaofu's reactor
+    filters by actor).
+
+    All hook invocations pipe the hook JSON through stdin to
+    `zf hook-recv`, which resolves session_id → instance_id via
+    RoleSessionRegistry and appends a ZfEvent with the correct actor.
+    """
+    import json as _json
+    hooks_dir = state_dir / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    state_dir_arg = shlex.quote(str(state_dir))
+    settings = {
+        "hooks": {
+            # ZF-PWF-STOP-GUARD-001 integration (2026-05-18):
+            # provider.stop.check runs BEFORE the existing
+            # orchestrator.round.complete emit so a worker stopping
+            # without satisfied gates gets exit-code-2 + advice via
+            # _evaluate_stop_guard. The second Stop hook entry emits
+            # the existing round-complete signal.
+            "Stop": [{
+                "matcher": "",
+                "hooks": [{
+                    "type": "command",
+                    "command": (
+                        f"{zf_cli_cmd()} hook-recv --event provider.stop.check "
+                        f"--state-dir {state_dir_arg}"
+                    ),
+                }, {
+                    "type": "command",
+                    "command": (
+                        f"{zf_cli_cmd()} hook-recv --event orchestrator.round.complete "
+                        f"--state-dir {state_dir_arg}"
+                    ),
+                }],
+            }],
+            # ZF-PWF-PRECOMPACT-001 (doc 41 §4.4): Claude Code 2026-05
+            # added a PreCompact hook fired just before context
+            # compaction (manual /compact or autoCompact). Hooking it
+            # lets the kernel emit worker.context.precompact and rebuild
+            # State Packet / projections before chat history is lost.
+            # Hook must exit 0 — never block compaction.
+            "PreCompact": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": (
+                        f"{zf_cli_cmd()} hook-recv --event worker.context.precompact "
+                        f"--state-dir {state_dir_arg}"
+                    ),
+                }],
+            }],
+        },
+    }
+    settings_path = hooks_dir / "settings.json"
+    settings_path.write_text(_json.dumps(settings, indent=2))
+
+
+def _write_codex_hook_settings(
+    state_dir: Path,
+    *,
+    project_root: Path | None = None,
+) -> None:
+    """1202-T1: render <project>/.codex/hooks.json for Codex's hook engine.
+
+    Codex's hook engine discovers
+    hooks.json under the codex config dir. We write to the project-local
+    .codex/ directory so the config is scoped to this project and does
+    not leak into unrelated codex invocations.
+
+    Parallels `_write_claude_hook_settings`: five events (SessionStart /
+    UserPromptSubmit / PreToolUse / PostToolUse / Stop) each fire
+    `zf hook-recv --event codex.hook.<kind> --backend codex` so the
+    payload routes through the same bridge as Claude hooks but under a
+    distinct event namespace the reactor can dispatch separately.
+    """
+    write_codex_hook_settings(state_dir, project_root=project_root)
+
+
+def _build_event_signer(config) -> object | None:
+    """Compatibility wrapper; signer construction lives in core/events."""
+    return build_event_signer(config)
+
+
+def _acquire_lock(lock_path: Path) -> object | None:
+    """Acquire advisory file lock. Returns file handle or None."""
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = lock_path.open("w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fh.write(str(os.getpid()))
+        fh.flush()
+        return fh
+    except OSError:
+        fh.close()
+        return None
+
+
+def _record_ready_worker_state(
+    *,
+    event_log,
+    registry: RoleSessionRegistry,
+    instance_id: str,
+) -> None:
+    """Clear stale non-dispatchable projections after a pane is ready."""
+    if not instance_id:
+        return
+    _last_at, last_payload = registry.get_last_heartbeat(instance_id)
+    previous = ""
+    if isinstance(last_payload, dict):
+        previous = str(last_payload.get("state") or "")
+    if previous and previous not in {
+        "respawning",
+        "blocked_human",
+        "pending_recycle",
+        "recycling",
+        "stuck",
+    }:
+        return
+    reason = "worker pane ready on zf start"
+    event = ZfEvent(
+        type="worker.state.changed",
+        actor=instance_id,
+        payload={
+            "instance_id": instance_id,
+            "from": previous,
+            "to": "idle",
+            "reason": reason,
+        },
+    )
+    event_log.append(event)
+    registry.record_heartbeat(instance_id, {
+        "instance_id": instance_id,
+        "state": "idle",
+        "current_task_id": "",
+        "last_action_ts": event.ts,
+        "source": "worker.state.changed",
+        "reason": reason,
+    })
+
+
+def _run_workflow_start_preflight(
+    *,
+    config,
+    project_root: Path,
+    state_dir: Path,
+    config_path: Path,
+) -> bool:
+    report = build_workflow_inspection_report(
+        config,
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+    artifact_refs = write_workflow_inspection_artifacts(
+        report,
+        state_dir=state_dir,
+    )
+    diagnostics = list(report.get("diagnostics", []) or [])
+    if inspection_failed(report):
+        messages = [
+            f"{item.get('severity', 'INFO')} {item.get('kind', '')}: "
+            f"{item.get('message', '')}"
+            for item in diagnostics
+            if item.get("severity") in {"STOP", "WARN"}
+        ]
+        write_validation_report(
+            state_dir=state_dir,
+            config_path=config_path,
+            status="invalid",
+            errors=messages[:20],
+        )
+        print("Error: workflow preflight failed:", file=sys.stderr)
+        for message in messages[:8]:
+            print(f"  - {message}", file=sys.stderr)
+        if len(messages) > 8:
+            print(f"  - ... {len(messages) - 8} more", file=sys.stderr)
+        print(
+            f"Workflow inspect artifacts: {artifact_refs.get('json', '')}",
+            file=sys.stderr,
+        )
+        print("Run `zf workflow inspect` for the full report.", file=sys.stderr)
+        hint = lkg_hint(config_path)
+        if hint:
+            print(hint, file=sys.stderr)
+        return False
+    warnings = [
+        item for item in diagnostics
+        if item.get("severity") == "WARN"
+    ]
+    if warnings:
+        print("Workflow preflight warnings:", file=sys.stderr)
+        for item in warnings[:8]:
+            print(
+                f"  - {item.get('kind', '')}: {item.get('message', '')}",
+                file=sys.stderr,
+            )
+        if len(warnings) > 8:
+            print(f"  - ... {len(warnings) - 8} more", file=sys.stderr)
+    return True
+
+
+def _run_orchestrator_idle_tick(orchestrator) -> None:
+    """Run a periodic orchestrator tick and catch up persisted events.
+
+    Passing ``events=[]`` would force pushed-event mode and advance
+    ``session.latest_event_offset`` to the end of ``events.jsonl`` without
+    processing events written before the watcher started. The idle tick must
+    instead let the orchestrator read from its durable offset.
+    """
+    orchestrator.run_once()
+
+
+def _release_lock(fh: object, lock_path: Path) -> None:
+    """Release advisory file lock."""
+    try:
+        fcntl.flock(fh, fcntl.LOCK_UN)  # type: ignore[arg-type]
+        fh.close()  # type: ignore[union-attr]
+    except Exception:
+        pass
+    try:
+        lock_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def run(args: argparse.Namespace) -> int:
+    project_root = Path.cwd()
+    # doc 78 O-7 fix: load the project .env so the watcher (and the O-7
+    # owner.visible_message auto-delivery in the tick) get FEISHU creds +
+    # ZF_OWNER_VISIBLE_CHAT regardless of the launch shell. `zf web` / `zf feishu`
+    # already do this; `zf start` did not, so supervisor alerts never delivered
+    # (R8 stall: 29 requested, 0 delivered). Non-overriding.
+    from zf.core.config.project_context import load_project_env
+    load_project_env(project_root)
+    config_path = project_root / "zf.yaml"
+    dry_run = getattr(args, "dry_run", False)
+    if not dry_run:
+        set_default_zf_cli_cmd()
+    no_watch = getattr(args, "no_watch", False)
+    skip_workflow_inspect = getattr(args, "skip_workflow_inspect", False)
+    legacy_foreground = getattr(args, "foreground", False)
+    if legacy_foreground:
+        print(
+            "warning: --foreground is deprecated (watcher now runs in foreground by default); "
+            "use --no-watch to opt out",
+            file=sys.stderr,
+        )
+    # Watcher runs in foreground unless explicitly opted out via --no-watch.
+    foreground = not no_watch
+
+    # 1. Preflight: check zf.yaml exists
+    if not config_path.exists():
+        print("Error: zf.yaml not found. To fix: run 'zf init'", file=sys.stderr)
+        return 1
+
+    # 2. Load config
+    try:
+        config = load_config(config_path)
+    except ConfigError as e:
+        write_validation_report(
+            state_dir=infer_state_dir(config_path),
+            config_path=config_path,
+            status="invalid",
+            errors=[str(e)],
+        )
+        print(f"Error: {e}", file=sys.stderr)
+        hint = lkg_hint(config_path)
+        if hint:
+            print(hint, file=sys.stderr)
+        return 1
+    if config.safety.tool_closure_enabled:
+        closure_errors = validate_tool_closure(config)
+        if closure_errors:
+            write_validation_report(
+                state_dir=project_root / config.project.state_dir,
+                config_path=config_path,
+                status="invalid",
+                errors=closure_errors,
+            )
+            print("Error: tool closure validation failed:", file=sys.stderr)
+            for error in closure_errors:
+                print(f"  - {error}", file=sys.stderr)
+            hint = lkg_hint(config_path)
+            if hint:
+                print(hint, file=sys.stderr)
+            return 1
+
+    # 3. Check .zf/ initialized
+    state_dir = project_root / config.project.state_dir
+    if not state_dir.exists():
+        print(f"Error: {state_dir} not found. To fix: run 'zf init'", file=sys.stderr)
+        return 1
+    session_path = state_dir / "session.yaml"
+    if not session_path.exists():
+        print(
+            (
+                f"Error: {session_path} not found. "
+                f"To fix: run 'zf init --state-dir {config.project.state_dir}' "
+                "before 'zf start'"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    skill_warnings = validate_skill_sources(
+        config=config,
+        project_root=project_root,
+    )
+    if skill_warnings:
+        if config.runtime.skills.strict:
+            write_validation_report(
+                state_dir=state_dir,
+                config_path=config_path,
+                status="invalid",
+                errors=skill_warnings,
+            )
+            print("Error: skill validation failed:", file=sys.stderr)
+            for warning in skill_warnings:
+                print(f"  - {warning}", file=sys.stderr)
+            hint = lkg_hint(config_path)
+            if hint:
+                print(hint, file=sys.stderr)
+            return 1
+        print("Skill validation warnings:", file=sys.stderr)
+        for warning in skill_warnings:
+            print(f"  - {warning}", file=sys.stderr)
+    if not skip_workflow_inspect:
+        if not _run_workflow_start_preflight(
+            config=config,
+            project_root=project_root,
+            state_dir=state_dir,
+            config_path=config_path,
+        ):
+            return 1
+    promote_last_known_good(
+        config_path=config_path,
+        state_dir=state_dir,
+        warnings=skill_warnings,
+    )
+
+    # 4. Acquire lock
+    lock_path = state_dir / "loop.lock"
+    lock_fh = _acquire_lock(lock_path)
+    if lock_fh is None:
+        print("Error: Another harness is running (lock held). To fix: run 'zf stop' first", file=sys.stderr)
+        return 1
+    watcher_guard = SingleOwnerProcessGuard(state_dir / "processes" / "watcher.pid.json")
+    watcher_guard_result = watcher_guard.acquire()
+    if not watcher_guard_result.acquired:
+        _release_lock(lock_fh, lock_path)
+        print(
+            (
+                "Error: Another watcher owner is alive "
+                f"(pid {watcher_guard_result.owner_pid}). "
+                "To fix: run 'zf stop' first"
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+    event_log = None
+    feishu_inbound_sidecar = None
+    try:
+        # 5. Set up event log and session
+        try:
+            event_log = event_log_from_project(state_dir, config=config)
+        except EventSigningConfigError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 2
+        session_store = SessionStore(state_dir / "session.yaml")
+        session_name = config.session.tmux_session
+
+        # Phase 1: generate Claude hook settings (Stop → orchestrator.round.complete).
+        _write_claude_hook_settings(state_dir)
+
+        # 1202-T1: if any role uses backend=codex, render the Codex-side
+        # hooks.json so its ClaudeHooksEngine bridges into hook_recv too.
+        if any(r.backend == "codex" for r in config.roles):
+            _write_codex_hook_settings(state_dir, project_root=project_root)
+
+        preserved_run_manager_marker, preserved_run_manager_roles = (
+            _preserved_run_manager_start_context(config, state_dir)
+        )
+
+        # 6. Initialize transport (creates tmux session today)
+        transport = make_transport(config, dry_run=dry_run)
+        transport.init(exclude_roles=preserved_run_manager_roles)
+
+        # 7. Spawn workers via SpawnCoordinator: allocate pane/process,
+        #    launch agent CLI with --session-id / exec resume as needed,
+        #    write instructions.
+        registry = RoleSessionRegistry(
+            state_dir / "role_sessions.yaml",
+            project_root=str(project_root),
+        )
+        coordinator = SpawnCoordinator(
+            state_dir=state_dir,
+            registry=registry,
+            transport=transport,
+            project_root=str(project_root),
+            event_log=event_log,
+            config=config,
+        )
+        # Phase 2/3: session-jsonl tailers for claude and codex roles.
+        # Both backends write their message stream to a local jsonl
+        # file; the tailer reads it and re-emits each line as an
+        # agent.* event to zaofu's events.jsonl, giving kernel-side
+        # telemetry without any SDK call.
+        from zf.runtime.session_tailer import (
+            ClaudeSessionTailer,
+            CodexSessionTailer,
+            claude_session_path,
+            codex_session_path,
+        )
+        claude_tailer = ClaudeSessionTailer(event_log)
+        codex_tailer = CodexSessionTailer(event_log)
+        workdir_manager = None
+        if config.runtime.workdirs.enabled:
+            from zf.runtime.workdirs import WorkdirManager
+            workdir_manager = WorkdirManager(
+                state_dir=state_dir,
+                project_root=project_root,
+                config=config,
+            )
+        instructions_dir = state_dir / "instructions"
+        for role in config.roles:
+            skip_spawn = role.name == "orchestrator" and role.transport == "stream-json"
+            spawn_cwd: Path | None = None
+            if workdir_manager is not None and not skip_spawn:
+                plan = workdir_manager.prepare(role)
+                event_log.append(ZfEvent(
+                    type="workdir.prepared",
+                    actor="zf-cli",
+                    payload=asdict(plan),
+                ))
+                project_path = Path(plan.project_path)
+                if (
+                    plan.enabled
+                    and plan.mode == "worktree"
+                    and plan.role_kind in {"writer", "reader"}
+                    and project_path.exists()
+                ):
+                    spawn_cwd = project_path
+
+            skill_entries = []
+            if role.skills:
+                from zf.core.skills import (
+                    build_skill_lock_entries,
+                    materialize_role_skills,
+                    upsert_skills_lockfile,
+                )
+
+                materialized = materialize_role_skills(
+                    config=config,
+                    project_root=project_root,
+                    state_dir=state_dir,
+                    role=role,
+                )
+                materialized_paths = (
+                    materialized.materialized_paths_under(project_root)
+                    if materialized is not None else {}
+                )
+                skill_entries = build_skill_lock_entries(
+                    project_root=project_root,
+                    state_dir=state_dir,
+                    role=role,
+                    config=config,
+                    materialized_paths=materialized_paths,
+                )
+                upsert_skills_lockfile(state_dir=state_dir, entries=skill_entries)
+                if materialized is not None:
+                    event_log.append(ZfEvent(
+                        type="skills.materialized",
+                        actor="zf-cli",
+                        payload=materialized.to_payload(),
+                    ))
+
+            # stream-json orchestrator spawns lazily (SDK invoked per
+            # dispatch); tmux orchestrator needs an upfront pane like
+            # the workers so send-keys has somewhere to land.
+            if skip_spawn:
+                continue
+            coordinator.spawn(role, cwd=spawn_cwd)
+
+            if not dry_run:
+                adapter = get_adapter(role.backend)
+                ready = transport.wait_ready(
+                    role.instance_id, adapter.ready_pattern, timeout=30.0,
+                )
+                if ready:
+                    # B-1203-06 R-1: stabilization wait for TUIs (codex)
+                    # whose ready_pattern fires before stdin is actually
+                    # live. Zero for claude / mock.
+                    delay = adapter.post_ready_delay_s
+                    if delay > 0:
+                        import time as _time
+                        _time.sleep(delay)
+                    _record_ready_worker_state(
+                        event_log=event_log,
+                        registry=registry,
+                        instance_id=role.instance_id,
+                    )
+                    print(f"    {role.instance_id}: ready")
+                else:
+                    print(f"    {role.instance_id}: timeout waiting for ready (continuing)")
+
+            # Write role instructions to .zf/instructions/ for reference
+            instructions = generate_role_instructions(
+                config,
+                role,
+                skill_entries=skill_entries,
+            )
+            instructions_dir.mkdir(parents=True, exist_ok=True)
+            (instructions_dir / f"{role.instance_id}.md").write_text(instructions)
+
+            # Phase 2: start tailing claude session jsonl.
+            # Phase 3: same for codex rollout jsonl.
+            if role.backend == "claude-code":
+                uuid = registry.get(role.instance_id)
+                if uuid is not None:
+                    path = claude_session_path(str(project_root), str(uuid))
+                    claude_tailer.tail(role.instance_id, path)
+            elif role.backend == "codex":
+                uuid = registry.get(role.instance_id)
+                if uuid is not None:
+                    cpath = codex_session_path(str(uuid))
+                    if cpath is not None:
+                        codex_tailer.tail(role.instance_id, cpath)
+                    # If path not yet discovered (codex creates file on
+                    # first turn), rely on SpawnCoordinator.notify_
+                    # first_dispatch → observe_codex_session to resolve
+                    # it; tailer can be re-attached lazily if needed.
+
+        from zf.runtime.run_manager_resident import (
+            clear_resident_preserve_marker,
+            dedicated_resident_run_manager_role,
+            rebind_preserved_resident_run_manager,
+            spawn_resident_run_manager,
+        )
+
+        resident_role = None
+        if preserved_run_manager_marker:
+            resident_role = rebind_preserved_resident_run_manager(
+                config=config,
+                state_dir=state_dir,
+                project_root=project_root,
+                transport=transport,
+                event_log=event_log,
+                instructions_dir=instructions_dir,
+                marker_payload=preserved_run_manager_marker,
+                dry_run=dry_run,
+            )
+            if resident_role is not None:
+                clear_resident_preserve_marker(state_dir)
+            else:
+                fallback_role = dedicated_resident_run_manager_role(config)
+                if fallback_role is not None:
+                    try:
+                        transport.for_role(fallback_role.instance_id).init()
+                    except Exception:
+                        pass
+                clear_resident_preserve_marker(state_dir)
+
+        if resident_role is None:
+            resident_role = spawn_resident_run_manager(
+                config=config,
+                state_dir=state_dir,
+                project_root=project_root,
+                coordinator=coordinator,
+                transport=transport,
+                event_log=event_log,
+                instructions_dir=instructions_dir,
+                dry_run=dry_run,
+            )
+        if resident_role is not None and resident_role.backend == "claude-code":
+            uuid = registry.get(resident_role.instance_id)
+            if uuid is not None:
+                path = claude_session_path(str(project_root), str(uuid))
+                claude_tailer.tail(resident_role.instance_id, path)
+        elif resident_role is not None and resident_role.backend == "codex":
+            uuid = registry.get(resident_role.instance_id)
+            if uuid is not None:
+                cpath = codex_session_path(str(uuid))
+                if cpath is not None:
+                    codex_tailer.tail(resident_role.instance_id, cpath)
+
+        # 8. Emit session.started here; loop.started is emitted only when
+        # the watcher actually starts running (foreground mode).
+        #
+        # B-1203-03: session.started was declared in known_types but
+        # never emitted, so every phase report showed P0=not-reached.
+        # Semantics: session.started = "tmux session / transport up";
+        # loop.started = "reactor reading events". Splitting the two so
+        # `--no-watch` does not falsely claim the reactor is running.
+        event_log.append(ZfEvent(type="session.started", actor="zf-cli"))
+
+        # 9. Update session state
+        session_store.update(runtime_state="active")
+
+        if foreground or dry_run:
+            from zf.runtime.feishu_inbound_sidecar import (
+                start_feishu_inbound_sidecar,
+            )
+
+            feishu_inbound_sidecar = start_feishu_inbound_sidecar(
+                config=config,
+                state_dir=state_dir,
+                project_root=project_root,
+                event_log=event_log,
+                dry_run=dry_run,
+            )
+
+        # 10. Set up watcher + orchestrator
+        from zf.runtime.watcher import EventWatcher
+        from zf.runtime.orchestrator import Orchestrator
+        from zf.runtime.wake_patterns import (
+            WakeRateLimiter,
+            compute_effective_wake_patterns,
+            rate_limits_for_config,
+        )
+
+        # Wake patterns = base set + YAML-enabled extensions (P3).
+        # `workflow.wake_extensions.{hooks,agent}.enabled` opt-in.
+        wake_patterns = sorted(compute_effective_wake_patterns(config))
+        rate_limiter = WakeRateLimiter(rate_limits_for_config(config))
+        orchestrator = Orchestrator(
+            state_dir, config, transport, project_root=project_root,
+        )
+
+        def _on_event(line: str) -> None:
+            # Parse the line and push the event object into run_once so the
+            # orchestrator does not re-read events.jsonl from disk.
+            try:
+                from zf.core.events.model import ZfEvent
+                event = ZfEvent.from_json(line)
+            except Exception:
+                return
+            if not any(p == event.type for p in wake_patterns):
+                return
+            # P3: rate-limited extension events may be dropped (event
+            # still persisted in events.jsonl — only wake is suppressed).
+            if not rate_limiter.allow(event.type):
+                return
+            orchestrator.run_once(events=[event])
+
+        # α-3 + β-1 periodic-sweep throttles: the EventWatcher tick fires
+        # every ~5s but heartbeat/supervisor/autoresearch services have
+        # separate intervals. The service runner is shared with diagnostic
+        # watchers so patched monitors do not accidentally omit supervisor /
+        # autoresearch / self-repair.
+        import time as _periodic_time
+        from zf.runtime.tick_services import (
+            TickServiceIntervals,
+            TickServiceState,
+            run_standard_tick_services,
+        )
+
+        _tick_service_state = TickServiceState()
+        _tick_service_intervals = TickServiceIntervals()
+
+        def _on_tick() -> None:
+            # A fully silent worker produces no events, so an event-only
+            # watcher cannot observe stale pane output. This lightweight
+            # maintenance tick drives stuck/orphan/recycle sweeps even when
+            # events.jsonl is quiet.
+            #
+            # 2026-05-15 r-next backlog B-2: previous `except Exception: pass`
+            # silently swallowed crashes in tick, making the watcher look
+            # alive while no work was happening. Surface failures as
+            # `orchestrator.tick.failed` events so operators can see them
+            # in events.jsonl and the web dashboard.
+            try:
+                _run_orchestrator_idle_tick(orchestrator)
+            except Exception as exc:
+                try:
+                    event_log.append(ZfEvent(
+                        type="orchestrator.tick.failed",
+                        actor="zf-cli",
+                        payload={
+                            "error_type": type(exc).__name__,
+                            "error": str(exc)[:400],
+                        },
+                    ))
+                except Exception:
+                    # If even emitting the failure event fails, fall back to
+                    # the silent behavior — keep the watcher alive.
+                    pass
+
+            now = _periodic_time.monotonic()
+            run_standard_tick_services(
+                orchestrator,
+                state=_tick_service_state,
+                now=now,
+                intervals=_tick_service_intervals,
+            )
+
+        watcher = EventWatcher(
+            state_dir / "events.jsonl",
+            on_event=_on_event,
+            on_tick=_on_tick,
+            wake_patterns=wake_patterns,
+            event_log=event_log,
+        )
+
+        if dry_run:
+            event_log.append(ZfEvent(type="loop.started", actor="zf-cli"))
+            watcher.poll_once()
+            print(f"Started harness (dry-run). Session: {session_name}")
+            print(f"  Roles: {[r.name for r in config.roles]}")
+            if isinstance(transport, TmuxTransport):
+                print(f"  Commands recorded: {len(transport.tmux.command_log)}")
+            print(f"  Watcher: configured with {len(wake_patterns)} wake patterns")
+            transport.shutdown()
+            return 0
+
+        # Real mode
+        print(f"Started harness. Session: {session_name}")
+        print(f"  Roles: {[r.name for r in config.roles]}")
+        for role in config.roles:
+            print(f"    {role.name}: {get_adapter(role.backend).build_command(role)}")
+        print(f"  Instructions: {state_dir / 'instructions'}/")
+        print(f"  Attach: tmux attach -t {session_name}")
+        print("  Stop:   zf stop")
+
+        if foreground:
+            print("  Watcher: running in foreground (Ctrl+C to stop)")
+            event_log.append(ZfEvent(type="loop.started", actor="zf-cli"))
+            try:
+                watcher.run(poll_interval=1.0, tick_interval=5.0)
+            except KeyboardInterrupt:
+                print("\nStopping watcher...")
+            finally:
+                # Phase 2/3: stop tailer threads so we don't leak pollers.
+                claude_tailer.stop()
+                codex_tailer.stop()
+        else:
+            print("  Watcher: skipped (--no-watch). Re-run without --no-watch to drive the loop.")
+            # --no-watch mode — tailer runs as daemon, dies with process.
+            # Don't call stop() or it'll immediately cancel the threads
+            # we just started.
+
+    finally:
+        if feishu_inbound_sidecar is not None:
+            from zf.runtime.feishu_inbound_sidecar import (
+                stop_feishu_inbound_sidecar,
+            )
+
+            stop_feishu_inbound_sidecar(
+                feishu_inbound_sidecar,
+                event_log=event_log,
+            )
+        if dry_run or not foreground:
+            # Release lock when not blocking
+            watcher_guard.release()
+            _release_lock(lock_fh, lock_path)
+        # If foreground, lock released on exit/Ctrl+C via finally
+
+    return 0

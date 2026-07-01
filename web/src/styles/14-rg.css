@@ -1,0 +1,838 @@
+
+.rg-node-sub:first-of-type {
+  color: var(--rg-accent, var(--muted-foreground));
+}
+
+/* ── Rx4 (2026-06-12) header 等高:标题+副行包进 .rg-node-header,统一
+   min-height 47px → 折叠态节点 ≈64px(7px padding ×2 + 1.5px border ×2);
+   组展开任务区在 header 之外向下生长,不抬 header。.rg-edge 的 margin-top
+   与此中线(8.5px 内缩 + 47/2 ≈ 32px)匹配。 ── */
+.rg-node-header {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 47px;
+}
+
+/* ── Rx2 waiting 退隐:none 态节点整体降透明,hover 还原(.15s);
+   "□ waiting" 状态副行由 TSX 跳过渲染,状态并入 title。 ── */
+.rg-node.rg-state-none {
+  opacity: 0.55;
+  transition: opacity 0.15s ease;
+}
+
+.rg-node.rg-state-none:hover {
+  opacity: 1;
+}
+
+/* ── Rx4 横滚渐隐:右缘 28px 恒定 mask(只动 alpha,非色彩字面量)。
+   .rg-scroll/.rg-grid 自带 18px+18px 尾部 padding,滚到尽头时末节点
+   仍在渐隐区之外;内容不满宽时无视觉影响。 ── */
+.rg-scroll {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+}
+
+/* 2026-06-11 用户反馈:组节点不加粗边框 — "是组"已由 [n] 计数章 + 聚合态
+   字符承载,框线与单任务节点对齐保持主链节奏;展开态仅以底色微染示包含。 */
+.rg-group {
+  background: color-mix(in oklab, var(--panel) 93%, var(--muted-foreground) 7%);
+}
+
+.rg-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rg-group-head .rg-node-name {
+  flex: 1;
+}
+
+.rg-toggle {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: var(--text-12);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.rg-toggle:hover {
+  color: var(--text);
+}
+
+.rg-group-tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+
+.rg-task {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden; /* Rx1 定宽 200px 内,chip 行靠 id ellipsis + 裁切兜底 */
+  padding: 2px 6px;
+  border: 1px solid color-mix(in oklab, var(--rg-accent, var(--line)) 45%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--rg-accent, var(--line)) 8%, var(--panel));
+  font-size: var(--text-11);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.rg-task:hover {
+  background: color-mix(in oklab, var(--rg-accent, var(--line)) 16%, var(--panel));
+}
+
+.rg-task-glyph {
+  flex: none;
+  color: var(--rg-accent, var(--muted-foreground));
+}
+
+.rg-task-id {
+  min-width: 0;
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-task-try {
+  flex: none;
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+
+.rg-task-lane {
+  flex: none;
+  max-width: 72px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Run Graph 边(2026-06-12 ②):去 30px 定宽 → 在 grid 边列内自适应填满
+   间隙的连续线;右端 CSS 三角箭头(颜色同线,禁字符箭头)。Rx4:垂直定位
+   对齐 .rg-node-header 中线 —— 1.5px border + 7px padding + 47px/2 = 32px,
+   2px 线取 margin-top 31px 使线心落在 32px。 ── */
+.rg-edge {
+  position: relative;
+  align-self: start;
+  margin-top: 31px;
+  width: 100%;
+  min-width: 22px;
+  border-top: 2px solid var(--line);
+}
+
+/* 右端三角箭头(~5px),垂直中心压在 2px 线的中线上(padding box 顶 = 线底)。 */
+.rg-edge::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -5px;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid var(--line);
+}
+
+/* gate 边:5px double → 3px 单线加重(color-mix 维持),箭头同色;
+   留出居中 gate chip 的最小列宽。 */
+.rg-edge-gate {
+  min-width: 40px;
+  border-top: 3px solid color-mix(in oklab, var(--text) 55%, var(--line));
+}
+
+.rg-edge-gate::after {
+  top: -5.5px;
+  border-left-color: color-mix(in oklab, var(--text) 55%, var(--line));
+}
+
+/* "gate" label 改居中小 chip,绝对定位在线中点上方。 */
+.rg-edge-label {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font-size: var(--text-11);
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.rg-backedge {
+  position: relative;
+  height: 16px;
+  margin: 0 14px;
+  border: 1px dashed var(--warn);
+  border-top: none;
+  border-radius: 0 0 10px 10px;
+}
+
+/* ② 回边箭头端:左端上指三角(同线色),与去程边箭头语言统一;虚线样式不变。 */
+.rg-backedge::before {
+  content: "";
+  position: absolute;
+  left: -4.5px;
+  top: -3px;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid var(--warn);
+}
+
+.rg-backedge-label {
+  position: absolute;
+  left: 50%;
+  top: 5px;
+  transform: translateX(-50%);
+  padding: 0 6px;
+  background: var(--panel);
+  font-size: var(--text-10);
+  font-variant-numeric: tabular-nums;
+  color: var(--warn);
+  white-space: nowrap;
+}
+
+.rg-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--muted-foreground) 8%, var(--panel));
+  font-size: var(--text-11);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 232px;
+}
+
+.rg-ghost:hover {
+  color: var(--text);
+}
+
+.rg-ghost-diff {
+  display: flex;
+  gap: 14px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: var(--text-12);
+}
+
+.rg-ghost-col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.rg-ghost-col code {
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-ghost-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.rg-ghost-ids code {
+  max-width: 160px;
+}
+
+/* ── T-刀① rg 检索框 / seq 锚 / 双时长 ── */
+.rg-search-wrap {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rg-search {
+  width: 200px;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-family: var(--font-mono);
+  font-size: var(--text-12);
+  color: var(--text);
+}
+
+.rg-search:focus {
+  outline: none;
+  border-color: color-mix(in oklab, var(--brand) 55%, var(--line));
+}
+
+.rg-search-miss {
+  flex: none;
+  font-size: var(--text-11);
+  color: var(--warn);
+}
+
+.rg-search-hit {
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 60%, transparent);
+}
+
+.rg-node-seq {
+  font-family: var(--font-mono);
+}
+
+.rg-task-durs {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-9);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+/* ── T-刀①.5 lane/pool strip ── */
+.rg-pool-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-11);
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.rg-lane {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in oklab, var(--rg-lane-accent, var(--line)) 45%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--rg-lane-accent, var(--line)) 8%, var(--panel));
+}
+
+.rg-lane-busy { --rg-lane-accent: var(--info); }
+.rg-lane-queued { --rg-lane-accent: var(--warn); }
+.rg-lane-idle { --rg-lane-accent: var(--muted-foreground); }
+
+.rg-lane-name {
+  font-family: var(--font-mono);
+  color: var(--text);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-lane-state {
+  font-family: var(--font-mono);
+  color: var(--rg-lane-accent, var(--muted-foreground));
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rg-pool-stuck {
+  flex: none;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.rg-pool-stuck.is-bad {
+  color: var(--err);
+}
+
+/* ── T-刀② ⛓ causation 回放 ── */
+.rg-causal {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: var(--text-10);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.rg-causal:hover {
+  color: var(--text);
+}
+
+.rg-causal.is-on {
+  color: var(--brand);
+}
+
+.rg-causal-mode .rg-node {
+  opacity: 0.35;
+}
+
+.rg-causal-mode .rg-node.rg-causal-path {
+  opacity: 1;
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--brand) 45%, transparent);
+}
+
+/* ── S-B Lifecycle drawer (T-刀② 六 tab: 单列 flex,evidence aside 迁入 Artifacts tab) ── */
+.lifecycle-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.ld-head {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ld-dispatch-wrap {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.ld-dispatch {
+  flex: none;
+  max-width: 180px;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in oklab, var(--brand) 45%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--brand) 8%, var(--panel));
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ld-dispatch:hover {
+  background: color-mix(in oklab, var(--brand) 16%, var(--panel));
+}
+
+.ld-copy-icon {
+  flex: none;
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: var(--text-10);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ld-copy-icon:hover {
+  color: var(--text);
+}
+
+.ld-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ld-tab {
+  flex: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  padding: 2px 8px 3px;
+  font-size: var(--text-13);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ld-tab:hover {
+  color: var(--text);
+}
+
+.ld-tab.active {
+  border-bottom-color: var(--brand);
+  color: var(--text);
+  font-weight: var(--font-weight-medium);
+}
+
+.ld-tab-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--text-12);
+}
+
+.ld-tab-empty {
+  margin: 0;
+  font-size: var(--text-12);
+  color: var(--muted-foreground);
+}
+
+.ld-try-chips {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ld-chip {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: var(--text-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ld-chip.active {
+  border-color: color-mix(in oklab, var(--brand) 55%, var(--line));
+  background: color-mix(in oklab, var(--brand) 10%, var(--panel));
+  color: var(--text);
+}
+
+.ld-seq {
+  font-family: var(--font-mono);
+  font-size: var(--text-10);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.ld-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ld-usage-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-usage-total {
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+}
+
+.ld-gate-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  font-size: var(--text-11);
+}
+
+.ld-gate-detail-head {
+  font-family: var(--font-mono);
+  color: var(--muted-foreground);
+}
+
+.ld-gate-detail-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 10px;
+}
+
+.ld-gate-detail-grid dt {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.ld-gate-detail-grid dd {
+  margin: 0;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ld-gate-btn {
+  cursor: pointer;
+  background: none;
+}
+
+.ld-gate-btn.is-open {
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+
+.ld-task-id {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--text-13);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ld-close {
+  margin-left: auto;
+  flex: none;
+  border: none;
+  background: none;
+  font-size: var(--text-13);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.ld-close:hover {
+  color: var(--text);
+}
+
+.ld-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ld-traj {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  white-space: nowrap;
+  padding-bottom: 2px;
+  font-size: var(--text-12);
+}
+
+.ld-state {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid color-mix(in oklab, var(--rg-accent, var(--line)) 50%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--rg-accent, var(--line)) 8%, transparent);
+  color: var(--text);
+}
+
+.ld-arrow {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-10);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.ld-try-mark {
+  flex: none;
+  font-size: var(--text-10);
+  font-weight: var(--font-weight-semibold);
+  color: var(--brand);
+}
+
+.ld-tries {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-try {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ld-gate {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: var(--text-11);
+}
+
+.ld-gate.is-pass {
+  color: var(--ok);
+  border-color: color-mix(in oklab, var(--ok) 45%, var(--line));
+}
+
+.ld-gate.is-fail {
+  color: var(--err);
+  border-color: color-mix(in oklab, var(--err) 45%, var(--line));
+}
+
+.ld-evidence-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ld-evidence-row code {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ld-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.ld-copy {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: var(--text-12);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ld-copy:hover {
+  background: var(--surface-2);
+}
+
+.ld-empty {
+  margin: 0;
+  font-size: var(--text-12);
+  color: var(--muted-foreground);
+}
+
+/* ── S-C Tasks tab toolbar / list 列头 / try-grid ── */
+.dt-tasks-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.dt-view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.dt-view-toggle button {
+  border: none;
+  background: var(--surface);
+  padding: 3px 10px;
+  font-size: var(--text-13);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.dt-view-toggle button.active {
+  background: var(--panel);
+  color: var(--text);
+  font-weight: var(--font-weight-medium);
+}
+
+.dt-flow-header {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+}
+
+.dt-flow-header .dt-flow-cols {
+  margin-left: auto;
+}
+
+.dt-flow-header .dt-flow-num,
+.dt-flow-header .dt-flow-conv,
+.dt-flow-header .dt-flow-mix {
+  color: var(--muted-foreground);
+}
+
+.dt-flow-mix {
+  flex: none;
+  width: 76px;
+  text-align: center;
+  font-size: var(--text-11);
+  white-space: nowrap;
+}
+
+/* ── T-刀 Tasks 表 dispatch / seq / why 列 + footer 聚合行 ── */
+.dt-flow-dispatch {
+  flex: none;
+  min-width: 78px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-11);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.dt-flow-dispatch.is-null,
+.dt-flow-why.is-null {
+  color: var(--muted-foreground);
+}
+
+.dt-flow-dispatch-id {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.dt-flow-dispatch-id:hover {
+  text-decoration: underline;
+}
+
+/* 2026-06-12 用户采纳"Airflow 半步"评估:细状态条 —— 取 Airflow "扫非常色"
+   能力但不做整框填充(与 Cockpit R4 "健康态安静"一致)。所有节点统一 3px
+   左缘(transparent 占位防状态切换抖动),非 waiting 态显低饱和 accent;
+   状态字符(■◐✖)仍是第二通道(色盲安全)。 */
+/* 2026-06-12 再修正:transparent 左边占位把健康节点左框挖空(用户实看指出)。
+   改为不动边框的内嵌色丸 —— 框永远四边完整,异常态(failed/blocked/retry)
+   在框内左侧浮 3px 圆角条。 */
+.rg-node {
+  position: relative;
+}
+.rg-node.rg-state-failed::before,
+.rg-node.rg-state-blocked::before,
+.rg-node.rg-state-retry::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: color-mix(in oklab, var(--rg-accent, var(--line)) 80%, var(--line));
+}
