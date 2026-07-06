@@ -8,6 +8,8 @@ import json
 import yaml
 
 from zf.cli.profile import run_bootstrap, run_detect, run_recommend
+from zf.core.config.loader import load_config
+from zf.core.config.render import build_config_inspection_report
 
 
 def _ns(**kw):
@@ -73,3 +75,32 @@ def test_cli_bootstrap_unknown_stack_errors(tmp_path):
     with pytest.raises(ValueError):
         run_bootstrap(_ns(path=str(tmp_path), intent="build", stack="cobol",
                           apply=False, scaffold=False))
+
+
+def test_cli_bootstrap_refactor_flow_copies_profile_sources_and_skills(tmp_path):
+    rc = run_bootstrap(_ns(
+        path=str(tmp_path),
+        intent="refactor",
+        stack="node",
+        backend="codex",
+        scale="internal",
+        apply=True,
+        scaffold=False,
+    ))
+
+    assert rc == 0
+    assert (tmp_path / "common" / "profiles.yaml").is_file()
+    assert (tmp_path / "skills" / "zf-provider-contract-parity" / "SKILL.md").is_file()
+    config = load_config(tmp_path / "zf.yaml")
+    assert len(config.roles) == 11
+    assert any(role.skills for role in config.roles)
+    assert [(source.name, source.path) for source in config.skill_sources] == [
+        ("zaofu-skills", "skills")
+    ]
+    report = build_config_inspection_report(
+        config,
+        config_path=tmp_path / "zf.yaml",
+        project_root=tmp_path,
+        state_dir=tmp_path / config.project.state_dir,
+    )
+    assert report["status"] != "STOP"

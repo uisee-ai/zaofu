@@ -85,6 +85,18 @@ class FanoutEvidenceQueriesMixin:
             status.superseded_by,
         )
 
+    def _fanout_identity_current_sibling(self, fanout_id: str) -> dict | None:
+        """BF-1:同 logical_key 的当前代实例(跨代收编目标)。"""
+        try:
+            from zf.runtime.fanout_identity import current_sibling_instance
+
+            return current_sibling_instance(
+                self.event_log.read_all(),
+                fanout_id,
+            )
+        except Exception:
+            return None
+
     def _fanout_child_idle_threshold(self, child: dict) -> float:
         """Idle (no-progress) deadline for a fanout child, reusing the child
         role's ``stuck_threshold_seconds`` — the same "no output for N seconds =
@@ -234,6 +246,82 @@ class FanoutEvidenceQueriesMixin:
             if trigger_id == trigger_event.id:
                 continue
             if task_map_keys.get(trigger_id) == key:
+                return True
+        return False
+
+    def _equivalent_task_map_writer_fanout_started(
+        self,
+        stage_id: str,
+        trigger_event: ZfEvent,
+    ) -> bool:
+        payload = trigger_event.payload if isinstance(trigger_event.payload, dict) else {}
+        if any(
+            payload.get(key)
+            for key in (
+                "rework_of",
+                "rework_attempt",
+                "operator_authorized",
+                "amend_of",
+                "gap_plan_ref",
+                "resume_scope",
+            )
+        ):
+            return False
+        task_map_ref = str(payload.get("task_map_ref") or "").strip()
+        if not task_map_ref:
+            return False
+        key = (
+            str(payload.get("pdd_id") or payload.get("feature_id") or "").strip(),
+            task_map_ref,
+            str(payload.get("target_ref") or "").strip(),
+        )
+        try:
+            events = self.event_log.read_all()
+        except Exception:
+            return False
+        task_map_keys: dict[str, tuple[str, str, str]] = {}
+        for event in events:
+            if event.id == trigger_event.id:
+                continue
+            if event.type != "task_map.ready" or not isinstance(event.payload, dict):
+                continue
+            event_payload = event.payload
+            if any(
+                event_payload.get(field)
+                for field in (
+                    "rework_of",
+                    "rework_attempt",
+                    "operator_authorized",
+                    "amend_of",
+                    "gap_plan_ref",
+                    "resume_scope",
+                )
+            ):
+                continue
+            event_task_map_ref = str(event_payload.get("task_map_ref") or "").strip()
+            if not event_task_map_ref:
+                continue
+            task_map_keys[event.id] = (
+                str(
+                    event_payload.get("pdd_id")
+                    or event_payload.get("feature_id")
+                    or ""
+                ).strip(),
+                event_task_map_ref,
+                str(event_payload.get("target_ref") or "").strip(),
+            )
+        for event in events:
+            if event.type != "fanout.started" or not isinstance(event.payload, dict):
+                continue
+            if event.payload.get("stage_id") != stage_id:
+                continue
+            trigger_id = str(event.payload.get("trigger_event_id") or "")
+            if trigger_id == trigger_event.id:
+                continue
+            existing_key = task_map_keys.get(trigger_id)
+            if existing_key is None:
+                continue
+            if existing_key == key or existing_key[:2] == key[:2]:
                 return True
         return False
 
@@ -416,3 +504,35 @@ class FanoutEvidenceQueriesMixin:
             })
         return reports
 
+    def _fanout_child_idle_grace_active(
+        self,
+        child: dict,
+        *,
+        dispatch_epoch: float,
+        idle_threshold: float,
+        now: float,
+    ) -> bool:
+        """E5/F15: thinking backend 的闲置宽限(与 worker 侧
+        _provider_stuck_grace_active 同语义)。
+
+        codex xhigh 深读大文件的单回合可安静 5-15 分钟且零事件输出;
+        avbs-r5 实测 reader 默认 300s 阈值在派发后 429s 即被误杀(pane
+        实际存活)。宽限 = 自派发起 max(idle_threshold, 配置宽限);
+        宽限外仍按事件沉默判闲置(真死的 child 最终会被收割)。
+        131-P2-3:宽限值走 workflow.attempt_lease_grace_s(出厂 900s)。
+        """
+        role_instance = str(child.get("role_instance") or "")
+        role = next(iter(self._fanout_roles([role_instance])), None)
+        if role is None or getattr(role, "backend", "") != "codex":
+            return False
+        lease_grace = 900.0
+        try:
+            lease_grace = float(getattr(
+                getattr(self.config, "workflow", None),
+                "attempt_lease_grace_s",
+                900.0,
+            ) or 900.0)
+        except (TypeError, ValueError):
+            pass
+        grace = max(float(idle_threshold), lease_grace)
+        return (now - dispatch_epoch) < grace

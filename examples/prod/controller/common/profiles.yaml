@@ -1,0 +1,80 @@
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata:
+  name: prod-runtime/v1
+spec:
+  runtime:
+    run_manager:
+      backend: codex
+      resident_agent:
+        enabled: true
+        session_mode: dedicated
+  workflow:
+    work_units:
+      enabled: true
+      split_quality:
+        mode: blocking
+---
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata:
+  name: refactor-controller-runtime/v3
+spec:
+  runtime:
+    run_manager:
+      backend: codex
+      resident_agent:
+        enabled: true
+        session_mode: dedicated
+  workflow:
+    plan_approval: false
+    admission_replan:
+      enabled: true
+      resynth_trigger: zaofu.refactor.review.ready
+    work_units:
+      enabled: true
+      split_quality:
+        mode: blocking
+        max_scope_files: 12
+        require_validation_surface: true
+---
+apiVersion: zaofu.dev/v1
+kind: RoleSet
+metadata:
+  name: codex-two-lanes/v1
+spec:
+  backend: codex
+  lanes: 2
+  stages:
+    impl:
+      role_pattern: dev-lane-{lane}
+      skills: [implementation]
+    verify:
+      role_pattern: verify-lane-{lane}
+      skills: [verification]
+---
+apiVersion: zaofu.dev/v1
+kind: RoleSet
+metadata:
+  name: issue-codex-lanes/v1
+spec:
+  backend: codex
+  lanes: 2
+  stages:
+    fix:
+      role_pattern: fix-lane-{lane}
+    verify:
+      role_pattern: verify-lane-{lane}
+---
+apiVersion: zaofu.dev/v1
+kind: RoleSet
+metadata:
+  name: prd-codex-lanes/v1
+spec:
+  backend: codex
+  lanes: 2
+  stages:
+    impl:
+      role_pattern: dev-lane-{lane}
+    verify:
+      role_pattern: verify-lane-{lane}

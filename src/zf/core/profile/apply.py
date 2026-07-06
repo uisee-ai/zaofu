@@ -10,10 +10,13 @@ no-clobber path only ever *adds* when the list is empty.
 from __future__ import annotations
 
 import copy
+import glob
+import shutil
 from pathlib import Path
 
 import yaml
 
+from zf.core.config.loader import load_config
 from zf.core.config.presets import get_preset
 from zf.core.profile.schema import ProjectProfile, Recommendation
 
@@ -72,6 +75,153 @@ def materialize_zf_yaml(
         preset.setdefault("workflow", {})["harness_profile"] = recommendation.harness_profile
     text = yaml.dump(preset, default_flow_style=False, allow_unicode=True, sort_keys=False)
     return text.replace("{project_name}", project_name)
+
+
+def materialize_flow_assets(
+    archetype: str,
+    target_root: str | Path,
+    *,
+    config_path: str | Path | None = None,
+) -> dict:
+    """Copy source assets required by a materialized prod flow.
+
+    Short controller YAML may reference sibling profile files and repo-local
+    skills.  A bootstrap target must not be left with dangling
+    ``profile_sources`` or skill source paths, so this copies the referenced
+    profile files and the enabled skill directories into the project.
+    """
+    from zf.core.profile.flows import flow_path
+
+    source_path = flow_path(archetype)
+    if source_path is None:
+        return {"profile_sources": [], "skills": [], "rewrote_skill_sources": False}
+    root = Path(target_root).resolve()
+    cfg_path = Path(config_path or root / "zf.yaml").resolve()
+    copied_profiles = _copy_flow_profile_sources(source_path, cfg_path, root)
+    rewrote = _rewrite_flow_skill_sources_to_local(cfg_path)
+    copied_skills = _copy_flow_skills(source_path, cfg_path, root)
+    return {
+        "profile_sources": copied_profiles,
+        "skills": copied_skills,
+        "rewrote_skill_sources": rewrote,
+    }
+
+
+def _copy_flow_profile_sources(
+    source_path: Path,
+    config_path: Path,
+    target_root: Path,
+) -> list[str]:
+    refs = _profile_source_refs_from_config(config_path)
+    copied: list[str] = []
+    for ref in refs:
+        pattern = ref if Path(ref).is_absolute() else str(source_path.parent / ref)
+        for match in sorted(Path(p).resolve() for p in glob.glob(pattern)):
+            if not match.is_file():
+                continue
+            rel = _relative_profile_target(ref, match, source_path.parent)
+            dest = target_root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(match, dest)
+            copied.append(str(dest.relative_to(target_root)))
+    return sorted(dict.fromkeys(copied))
+
+
+def _profile_source_refs_from_config(config_path: Path) -> list[str]:
+    refs: list[str] = []
+    try:
+        docs = list(yaml.safe_load_all(config_path.read_text(encoding="utf-8")))
+    except yaml.YAMLError:
+        return refs
+    for doc in docs:
+        if not isinstance(doc, dict) or str(doc.get("kind") or "") != "ZfConfig":
+            continue
+        spec = doc.get("spec") or {}
+        if not isinstance(spec, dict):
+            continue
+        raw = spec.get("profile_sources") or []
+        raw_items = raw if isinstance(raw, list) else [raw]
+        for item in raw_items:
+            if isinstance(item, str) and item.strip():
+                refs.append(item.strip())
+            elif isinstance(item, dict) and str(item.get("path") or "").strip():
+                refs.append(str(item["path"]).strip())
+    return refs
+
+
+def _relative_profile_target(ref: str, match: Path, source_base: Path) -> Path:
+    if any(ch in ref for ch in "*?["):
+        try:
+            return match.relative_to(source_base)
+        except ValueError:
+            return Path(match.name)
+    return Path(ref)
+
+
+def _rewrite_flow_skill_sources_to_local(config_path: Path) -> bool:
+    try:
+        docs = list(yaml.safe_load_all(config_path.read_text(encoding="utf-8")))
+    except yaml.YAMLError:
+        return False
+    changed = False
+    for doc in docs:
+        if not isinstance(doc, dict) or str(doc.get("kind") or "") != "ZfConfig":
+            continue
+        spec = doc.get("spec") or {}
+        if not isinstance(spec, dict):
+            continue
+        sources = spec.get("skill_sources") or []
+        if not isinstance(sources, list):
+            continue
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            raw_path = str(source.get("path") or "")
+            if raw_path in {"../../../skills", "../../skills"}:
+                source["path"] = "skills"
+                changed = True
+    if changed:
+        config_path.write_text(
+            yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    return changed
+
+
+def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -> list[str]:
+    try:
+        config = load_config(config_path)
+    except Exception:
+        return []
+    skill_names = sorted({
+        str(skill)
+        for role in config.roles
+        for skill in list(getattr(role, "skills", []) or [])
+        if str(skill).strip()
+    })
+    if not skill_names:
+        return []
+    source_roots = _source_skill_roots(source_path)
+    copied: list[str] = []
+    target_skills = target_root / "skills"
+    for skill in skill_names:
+        source_dir = next(
+            (root / skill for root in source_roots if (root / skill / "SKILL.md").is_file()),
+            None,
+        )
+        if source_dir is None:
+            continue
+        dest = target_skills / skill
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(source_dir, dest)
+        copied.append(str(dest.relative_to(target_root)))
+    return copied
+
+
+def _source_skill_roots(source_path: Path) -> list[Path]:
+    roots = [source_path.parent / "../../../skills", source_path.parent / "../../skills"]
+    return [root.resolve() for root in roots if root.exists()]
 
 
 def fill_required_checks(config_path: str | Path, checks, *, write: bool = False) -> dict:

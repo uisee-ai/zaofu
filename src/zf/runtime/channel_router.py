@@ -12,6 +12,14 @@ from zf.core.config.schema import ZfConfig
 from zf.core.events import EventWriter
 from zf.core.events.model import ZfEvent
 from zf.runtime.channel_adapter import dispatch_reply_request
+from zf.runtime.channel_contracts import default_debate_max_rounds
+from zf.runtime.channel_discussion import (
+    advance_discussion,
+    discussion_state,
+    relay_route_decision,
+    should_start_discussion,
+    start_discussion,
+)
 from zf.runtime.openclaw_provider import OpenClawGatewayClient
 from zf.runtime.channel_context import (
     build_channel_context_pack,
@@ -19,6 +27,11 @@ from zf.runtime.channel_context import (
 )
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_run_owner import provider_run_fields, provider_run_fields_for_request
+from zf.runtime.channel_sidecar import (
+    channel_context_pack_event_payload,
+    hydrate_channel_message_text,
+)
+from zf.runtime.sidecar_refs import SidecarRefError
 
 
 MENTION_RE = re.compile(
@@ -95,7 +108,20 @@ def route_channel_message(
     thread_id = str(message_payload.get("thread_id") or "main").strip() or "main"
     message_id = str(message_payload.get("message_id") or message_event.id).strip()
     sender = str(message_payload.get("member_id") or "").strip()
-    text = str(message_payload.get("text") or message_payload.get("message") or "")
+    try:
+        text = hydrate_channel_message_text(Path(state_dir), message_payload, strict=True)
+    except SidecarRefError:
+        _emit_route_blocked(
+            writer=writer,
+            actor=actor,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            message_id=message_id,
+            reason="message_body_missing",
+            source=source,
+            message_event=message_event,
+        )
+        return ChannelRouteResult(skipped=[{"reason": "message_body_missing"}])
     role = str(message_payload.get("role") or "").strip().lower()
     if not channel_id:
         _emit_route_blocked(
@@ -112,29 +138,92 @@ def route_channel_message(
 
     channel = project_channel(Path(state_dir), channel_id) or {}
     agent_member_ids = _agent_member_ids(channel)
+    relay_decision = None
     if not _auto_route_allowed(
         role=role, source=source, sender=sender, agent_member_ids=agent_member_ids,
     ):
-        _emit_route_blocked(
-            writer=writer,
-            actor=actor,
-            channel_id=channel_id,
+        # doc 122 §4: agent-authored posts may relay to their mentions through
+        # the guarded discussion path; everything else stays hard-blocked.
+        relay_decision = relay_route_decision(
+            channel,
             thread_id=thread_id,
             message_id=message_id,
-            reason="auto_route_not_allowed",
-            source=source,
-            message_event=message_event,
+            sender=sender,
+            mention_tokens=detect_channel_mention_tokens(
+                text, explicit_mentions=_string_list(message_payload.get("mentions")),
+            ),
+            resolved_targets=resolve_channel_mentions(
+                channel,
+                text=text,
+                explicit_mentions=_string_list(message_payload.get("mentions")),
+                sender_member_id=sender,
+                max_targets=max_parallel_replies,
+            ),
         )
-        return ChannelRouteResult(skipped=[{"reason": "auto_route_not_allowed"}])
-    targets = resolve_channel_mentions(
-        channel,
-        text=text,
-        explicit_mentions=_string_list(message_payload.get("mentions")),
-        sender_member_id=sender,
-        max_targets=max_parallel_replies,
-    )
-    routing_reason = "mention"
-    if not targets:
+        if relay_decision is None:
+            _emit_route_blocked(
+                writer=writer,
+                actor=actor,
+                channel_id=channel_id,
+                thread_id=thread_id,
+                message_id=message_id,
+                reason="auto_route_not_allowed",
+                source=source,
+                message_event=message_event,
+            )
+            return ChannelRouteResult(skipped=[{"reason": "auto_route_not_allowed"}])
+        writer.emit(
+            "channel.relay.suppressed" if not relay_decision.allowed else "channel.relay.routed",
+            actor=actor,
+            task_id=message_event.task_id,
+            causation_id=message_event.id,
+            correlation_id=channel_id,
+            payload={
+                "channel_id": channel_id,
+                "thread_id": thread_id,
+                "message_id": message_id,
+                "member_id": sender,
+                "targets": relay_decision.targets,
+                "relay_depth": relay_decision.relay_depth,
+                "reason": relay_decision.reason,
+                "source": source,
+            },
+        )
+        if not relay_decision.allowed:
+            return ChannelRouteResult(skipped=[{"reason": relay_decision.reason}])
+    if relay_decision is not None:
+        targets = list(relay_decision.targets)
+        routing_reason = "relay"
+    else:
+        targets = resolve_channel_mentions(
+            channel,
+            text=text,
+            explicit_mentions=_string_list(message_payload.get("mentions")),
+            sender_member_id=sender,
+            max_targets=max_parallel_replies,
+        )
+        routing_reason = "mention"
+        mention_tokens_for_start = detect_channel_mention_tokens(
+            text, explicit_mentions=_string_list(message_payload.get("mentions")),
+        )
+        if should_start_discussion(
+            channel, thread_id=thread_id, mention_tokens=mention_tokens_for_start,
+        ):
+            blind_roster = start_discussion(
+                writer,
+                channel,
+                actor=actor,
+                channel_id=channel_id,
+                thread_id=thread_id,
+                trigger_message_id=message_id,
+                trigger="mention_all",
+                source=source,
+                causation_id=message_event.id,
+            )
+            if blind_roster:
+                targets = blind_roster
+                routing_reason = "discussion_blind_fanout"
+    if not targets and relay_decision is None:
         tokens = detect_channel_mention_tokens(
             text,
             explicit_mentions=_string_list(message_payload.get("mentions")),
@@ -183,7 +272,13 @@ def route_channel_message(
             message_event=message_event,
         )
         return ChannelRouteResult(skipped=[{"reason": reason}])
-    round_guard_reason = _debate_round_guard_reason(channel, thread_id=thread_id)
+    round_guard_reason = _debate_round_guard_reason(
+        channel,
+        thread_id=thread_id,
+        # relay_decision is only ever set for agent-authored posts; a human
+        # post reaches here through the _auto_route_allowed fast path.
+        human_author=relay_decision is None,
+    )
     if round_guard_reason:
         _emit_route_blocked(
             writer=writer,
@@ -267,7 +362,12 @@ def route_channel_message(
             task_id=message_event.task_id,
             causation_id=detected.id,
             correlation_id=channel_id,
-            payload={**context_pack, "routing_reason": routing_reason, "source": source},
+            payload=channel_context_pack_event_payload(
+                Path(state_dir),
+                {**context_pack, "routing_reason": routing_reason, "source": source},
+                created_by=f"channel-router:{source}",
+                source_event_id=detected.id,
+            ),
         )
         if _is_spine_reviewer(member):
             intent = writer.emit(
@@ -369,6 +469,20 @@ def route_channel_message(
                 config=config,
                 openclaw_client=openclaw_client,
             )
+    if (
+        relay_decision is not None
+        or routing_reason == "discussion_blind_fanout"
+        or str(discussion_state(channel, thread_id).get("state") or "idle") != "idle"
+    ):
+        # doc 122 §5: inline dispatch is synchronous, so the state-machine tick
+        # runs right after routing; the reactor covers async transports.
+        advance_discussion(
+            Path(state_dir),
+            writer,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            source=source,
+        )
     return ChannelRouteResult(
         targets=targets,
         reply_requests=reply_requests,
@@ -473,7 +587,19 @@ def _default_responder_block_reason(channel: dict[str, Any] | None) -> str:
     return "no_target"
 
 
-def _debate_round_guard_reason(channel: dict[str, Any] | None, *, thread_id: str) -> str:
+def _debate_round_guard_reason(
+    channel: dict[str, Any] | None,
+    *,
+    thread_id: str,
+    human_author: bool = False,
+) -> str:
+    # G4 is agent-loop circuit breaking — a human post IS the circuit
+    # breaker. Gating operators bricked a live channel permanently
+    # (r3 2026-07-03: every human @mention blocked with
+    # debate_round_limit_reached once the thread's lifetime count crossed
+    # the budget).
+    if human_author:
+        return ""
     discussion = (channel or {}).get("discussion")
     if not isinstance(discussion, dict):
         return ""
@@ -488,10 +614,30 @@ def _debate_round_guard_reason(channel: dict[str, Any] | None, *, thread_id: str
     }
     if not structured and not bool(speaker_policy.get("enforce_max_rounds")):
         return ""
+    # 2026-07-03 (operator ruling): no budget unless the operator explicitly
+    # set max_rounds (or enforce_max_rounds). Agent relay chains are still
+    # bounded by the G1 hop-depth guard, so removing the default budget does
+    # not open an infinite loop.
+    if not bool(discussion.get("max_rounds_explicit")) and not bool(
+        speaker_policy.get("enforce_max_rounds")
+    ):
+        return ""
+    # doc 122 §5.1: the round budget is scoped to the ACTIVE discussion
+    # session, not the thread's lifetime — counting all-time replies bricked
+    # long-lived channels for agents too. No active session → no debate to
+    # meter.
+    sessions = (channel or {}).get("discussions")
+    session = sessions.get(thread_id) if isinstance(sessions, dict) else None
+    if not isinstance(session, dict):
+        return ""
+    if str(session.get("state") or "idle") in {"", "idle"}:
+        return ""
+    session_start = str(session.get("started_at") or "")
+    default_max_rounds = default_debate_max_rounds(len((channel or {}).get("members") or []))
     try:
-        max_rounds = int(discussion.get("max_rounds") or 6)
+        max_rounds = int(discussion.get("max_rounds") or default_max_rounds)
     except Exception:
-        max_rounds = 6
+        max_rounds = default_max_rounds
     if max_rounds <= 0:
         return "debate_round_limit_reached"
     replies = [
@@ -499,6 +645,7 @@ def _debate_round_guard_reason(channel: dict[str, Any] | None, *, thread_id: str
         if isinstance(item, dict)
         and str(item.get("thread_id") or "main") == thread_id
         and str(item.get("status") or "") not in {"failed", "cancelled", "superseded"}
+        and (not session_start or str(item.get("created_at") or "") >= session_start)
     ]
     if len(replies) >= max_rounds:
         return "debate_round_limit_reached"

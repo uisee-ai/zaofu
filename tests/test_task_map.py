@@ -52,6 +52,60 @@ def test_task_map_validation_accepts_simple_issue_serial_task() -> None:
     assert result.summary["task_count"] == 1
 
 
+def test_task_map_quality_contract_requires_inventory_binding_for_blocking_tasks() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "quality_contract": {
+            "require_inventory_binding": True,
+            "blocking_priorities": ["P0", "P1"],
+            "require_non_smoke_for_blocking_inventory": True,
+        },
+        "tasks": [
+            {
+                "task_id": "CANGJIE-WEB-001",
+                "title": "Implement WebChat",
+                "priority": "P0",
+                "wave": 1,
+                "allowed_paths": ["packages/web/**", "packages/web-server/**"],
+                "allowed_paths_reason": "Owns WebChat product surface.",
+                "verification": "pnpm test",
+                "source_refs": ["docs/plans/hermes-web-dashboard-inventory.json#WEBCHAT"],
+            },
+        ],
+    })
+
+    assert result.passed is False
+    assert any("inventory_ids" in error for error in result.errors)
+    assert any("non_smoke_test_required" in error for error in result.errors)
+
+
+def test_task_map_quality_contract_accepts_inventory_bound_blocking_task() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "quality_contract": {
+            "require_inventory_binding": True,
+            "blocking_priorities": ["P0", "P1"],
+            "require_non_smoke_for_blocking_inventory": True,
+        },
+        "tasks": [
+            {
+                "task_id": "CANGJIE-WEB-001",
+                "title": "Implement WebChat",
+                "priority": "P0",
+                "wave": 1,
+                "allowed_paths": ["packages/web/**", "packages/web-server/**"],
+                "allowed_paths_reason": "Owns WebChat product surface.",
+                "verification": "pnpm test",
+                "source_refs": ["docs/plans/hermes-web-dashboard-inventory.json#WEBCHAT"],
+                "inventory_ids": ["WEBCHAT"],
+                "non_smoke_test_required": True,
+            },
+        ],
+    })
+
+    assert result.passed is True, result.errors
+
+
 def test_task_map_validation_accepts_pytest_node_id_verification() -> None:
     # A pytest node-id (path::test_name) targets a node in an in-scope file;
     # it must not be rejected as a path outside allowed_paths.
@@ -283,6 +337,33 @@ def test_task_map_validation_accepts_verification_path_inside_allowed_paths() ->
     assert result.summary["tasks_missing_allowed_paths_reason"] == []
 
 
+def test_task_map_validation_ignores_sentence_punctuation_on_path_refs() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            {
+                "task_id": "PPULSE-CORE-001",
+                "title": "Build Product Pulse HTTP vertical slice",
+                "wave": 1,
+                "allowed_paths": [
+                    "src/server.mjs",
+                    "tests/server.test.mjs",
+                    "package.json",
+                ],
+                "allowed_paths_reason": "single runtime slice owns service and tests",
+                "acceptance": [
+                    "Update src/server.mjs and tests/server.test.mjs.",
+                    "Keep package.json dependency-free.",
+                ],
+                "verification": "npm test",
+            },
+        ],
+    })
+
+    assert result.passed is True, result.errors
+    assert not any("references path outside" in error for error in result.errors)
+
+
 def test_task_map_validation_rejects_prose_in_structured_validation_command() -> None:
     result = validate_task_map_payload({
         "schema_version": "task-map.v1",
@@ -364,3 +445,83 @@ def test_source_index_validation_allows_explicit_degraded_source_off_main_path()
 
     assert result.passed is True
     assert result.summary["source_modes"]["degraded"] == 1
+
+
+def _task(task_id, owner_role, *, root_owner_class="", wave=1, blocked_by=None):
+    return {
+        "task_id": task_id,
+        "title": task_id,
+        "owner_role": owner_role,
+        "root_owner_class": root_owner_class,
+        "wave": wave,
+        "blocked_by": blocked_by or [],
+        "verification": f"pytest tests/{task_id.lower()}.py",
+        "exclusive_files": [f"src/{task_id.lower()}.py"],
+    }
+
+
+def test_task_map_validation_requires_assembly_task_for_parallel_bundles() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            _task("AVBS-SCENE-001", "dev-scene"),
+            _task("AVBS-FLOW-001", "dev-flow"),
+            _task("AVBS-METRICS-001", "dev-metrics"),
+        ],
+    })
+
+    assert result.passed is False
+    assert any("缺 assembly 任务" in error for error in result.errors)
+
+
+def test_task_map_validation_rejects_assembly_owner_colliding_with_bundle() -> None:
+    # Reproduces the avbs-r1 self-deadlock: assembly task glued onto the same
+    # owner_role as one of the parallel bundles it depends on.
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            _task("AVBS-SCENE-001", "dev-scene"),
+            _task("AVBS-FLOW-001", "dev-flow"),
+            _task("AVBS-METRICS-001", "dev-metrics"),
+            _task(
+                "AVBS-ASSEMBLY-001", "dev-flow",
+                root_owner_class="assembly", wave=2,
+                blocked_by=["AVBS-SCENE-001", "AVBS-FLOW-001", "AVBS-METRICS-001"],
+            ),
+        ],
+    })
+
+    assert result.passed is False
+    assert any("自锁" in error for error in result.errors)
+
+
+def test_task_map_validation_accepts_assembly_task_with_independent_owner() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            _task("AVBS-SCENE-001", "dev-scene"),
+            _task("AVBS-FLOW-001", "dev-flow"),
+            _task("AVBS-METRICS-001", "dev-metrics"),
+            _task(
+                "AVBS-ASSEMBLY-001", "dev-assembly",
+                root_owner_class="assembly", wave=2,
+                blocked_by=["AVBS-SCENE-001", "AVBS-FLOW-001", "AVBS-METRICS-001"],
+            ),
+        ],
+    })
+
+    assert result.passed is True
+    assert result.summary["bundle_owner_count"] == 3
+    assert result.summary["assembly_task_count"] == 1
+
+
+def test_task_map_validation_allows_single_owner_serial_plan_without_assembly() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            _task("TASK-A", "dev-core", wave=1),
+            _task("TASK-B", "dev-core", wave=2, blocked_by=["TASK-A"]),
+        ],
+    })
+
+    assert result.passed is True

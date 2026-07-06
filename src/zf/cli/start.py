@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import fcntl
+import json
 import os
 import shlex
 import sys
@@ -27,6 +28,7 @@ from zf.core.events.factory import (
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.core.state.session import SessionStore
 from zf.core.skills import validate_skill_sources
+from zf.core.security.hash import sha256_file
 from zf.core.workflow.inspection import (
     build_workflow_inspection_report,
     inspection_failed,
@@ -264,6 +266,29 @@ def _run_workflow_start_preflight(
         project_root=project_root,
         state_dir=state_dir,
     )
+    try:
+        from zf.core.config.render import _classify_expected_event_sinks
+        from zf.core.workflow.inspection import (
+            _diagnostic_counts,
+            _status_from_diagnostics,
+        )
+
+        report = dict(report)
+        classified = _classify_expected_event_sinks(
+            config,
+            list(report.get("diagnostics", []) or []),
+        )
+        report["diagnostics"] = classified
+        # 分诊会把 expected-source 项降级为 INFO;status/summary 必须随
+        # 之重算,否则门按分诊前的 STOP 拦且报错列表为空(prod-e2e 实弹
+        # 发现:controller v3 的 post-verify discovery 桥接触发器全被
+        # 误拦)。
+        report["status"] = _status_from_diagnostics(classified)
+        summary = dict(report.get("summary") or {})
+        summary["diagnostics"] = _diagnostic_counts(classified)
+        report["summary"] = summary
+    except Exception:
+        pass
     artifact_refs = write_workflow_inspection_artifacts(
         report,
         state_dir=state_dir,
@@ -312,6 +337,116 @@ def _run_workflow_start_preflight(
     return True
 
 
+def _emit_render_lock_drift_warning(
+    *,
+    state_dir: Path,
+    config_path: Path,
+    event_log,
+) -> None:
+    lock_path = state_dir / "config" / "render-lock.json"
+    if not lock_path.exists():
+        return
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        event_log.append(ZfEvent(
+            type="config.render_lock.drift_detected",
+            actor="zf-cli",
+            payload={
+                "severity": "WARN",
+                "reason": "render lock is unreadable",
+                "render_lock_ref": str(lock_path),
+            },
+        ))
+        return
+    source = lock.get("input") if isinstance(lock, dict) else {}
+    if not isinstance(source, dict):
+        source = {}
+    locked_path = str(source.get("path") or "")
+    locked_sha = str(source.get("sha256") or "")
+    current_sha = sha256_file(config_path)
+    current_path = str(config_path)
+    drift_reasons: list[str] = []
+    if locked_path and Path(locked_path).expanduser().resolve(strict=False) != config_path.resolve(strict=False):
+        drift_reasons.append("config path changed")
+    if locked_sha and locked_sha != current_sha:
+        drift_reasons.append("config sha256 changed")
+    if not drift_reasons:
+        return
+    event_log.append(ZfEvent(
+        type="config.render_lock.drift_detected",
+        actor="zf-cli",
+        payload={
+            "severity": "WARN",
+            "reason": "; ".join(drift_reasons),
+            "render_lock_ref": str(lock_path),
+            "locked_config_ref": locked_path,
+            "locked_sha256": locked_sha,
+            "current_config_ref": current_path,
+            "current_sha256": current_sha,
+            "next_action": "run `zf config render --config zf.yaml` to refresh render-lock",
+        },
+    ))
+
+
+def _write_run_contract_snapshot(
+    *,
+    config,
+    project_root: Path,
+    state_dir: Path,
+    config_path: Path,
+    event_log,
+) -> bool:
+    from zf.runtime.run_contract import (
+        build_run_contract,
+        load_run_contract,
+        run_contract_drift_diagnostics,
+        strict_run_contract_drift,
+        write_run_contract,
+    )
+
+    metadata = dict(getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {})
+    strict = str(metadata.get("strictness") or "").strip().lower() in {
+        "strict",
+        "full-parity",
+        "full_parity",
+        "release",
+        "release_candidate",
+    }
+    contract = build_run_contract(
+        config,
+        config_path=config_path,
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+    previous = load_run_contract(state_dir)
+    strict = strict_run_contract_drift(previous, contract, strict=strict)
+    diagnostics = run_contract_drift_diagnostics(previous, contract, strict=strict)
+    if diagnostics:
+        event_log.append(ZfEvent(
+            type="config.run_contract.drift_detected",
+            actor="zf-cli",
+            payload={
+                "severity": "STOP" if strict else "WARN",
+                "diagnostics": diagnostics,
+                "run_contract_ref": str(state_dir / "config" / "run-contract.json"),
+                "next_action": "review config/input drift before resuming this run",
+            },
+        ))
+        if strict:
+            return False
+    path = write_run_contract(state_dir, contract)
+    event_log.append(ZfEvent(
+        type="config.run_contract.written",
+        actor="zf-cli",
+        payload={
+            "run_contract_ref": str(path),
+            "contract_digest": str(contract.get("contract_digest") or ""),
+        },
+    ))
+    return True
+
+
 def _run_orchestrator_idle_tick(orchestrator) -> None:
     """Run a periodic orchestrator tick and catch up persisted events.
 
@@ -321,6 +456,52 @@ def _run_orchestrator_idle_tick(orchestrator) -> None:
     instead let the orchestrator read from its durable offset.
     """
     orchestrator.run_once()
+
+
+def _run_startup_orchestrator_catchup(orchestrator, event_log) -> None:
+    """Catch up durable events before the watcher starts at EOF.
+
+    ``EventWatcher`` intentionally initializes from the current file end to
+    avoid replaying the whole event log. That makes the periodic idle tick
+    responsible for reading from ``session.latest_event_offset``. Run the same
+    durable-offset path once during startup so events written while a prior
+    watcher was down are consumed immediately instead of waiting for a later
+    tick or a manual recovery.
+    """
+    try:
+        _run_orchestrator_idle_tick(orchestrator)
+    except Exception as exc:
+        try:
+            event_log.append(ZfEvent(
+                type="orchestrator.tick.failed",
+                actor="zf-cli",
+                payload={
+                    "phase": "startup_catchup",
+                    "error_type": type(exc).__name__,
+                    "error": str(exc)[:400],
+                },
+            ))
+        except Exception:
+            pass
+
+
+def _maybe_run_startup_orchestrator_catchup(
+    orchestrator,
+    event_log,
+    *,
+    dry_run: bool,
+    foreground: bool,
+) -> bool:
+    """Run startup catch-up only when a real watcher is about to own the loop.
+
+    Dry-run and ``--no-watch`` are diagnostic/spawn-only modes. They must not
+    advance durable orchestration state or emit recovery events, otherwise a
+    validation command can unexpectedly mutate an active run.
+    """
+    if dry_run or not foreground:
+        return False
+    _run_startup_orchestrator_catchup(orchestrator, event_log)
+    return True
 
 
 def _release_lock(fh: object, lock_path: Path) -> None:
@@ -445,6 +626,60 @@ def run(args: argparse.Namespace) -> int:
             config_path=config_path,
         ):
             return 1
+    # P0-5(审计 D1/D2):static dispatch preflight 此前只有手动
+    # `zf preflight`,signature drift 带病启动直至真实派发才炸。挂进
+    # start 门链,FAIL 拒启(--skip-workflow-inspect 同旗跳过)。
+    if not skip_workflow_inspect:
+        from zf.runtime.preflight import preflight_ok, run_preflight_checks
+
+        preflight_results = run_preflight_checks(config)
+        if not preflight_ok(preflight_results):
+            print("Static dispatch preflight FAILED:", file=sys.stderr)
+            for result in preflight_results:
+                if not result.ok:
+                    print(f"  - {result.name}: {result.detail}", file=sys.stderr)
+            print(
+                "  To fix: run `zf preflight` for details, or start with "
+                "--skip-workflow-inspect to bypass (not recommended).",
+                file=sys.stderr,
+            )
+            return 1
+    # P0-6(审计 D12,裁决 B):环境层 preflight。硬项(hook 命令/tmux)
+    # 拒启;软项(workdir 属主/浏览器依赖)WARN + emit env.preflight.failed
+    # ——环境故障从此有事件身份,不再伪装成调度故障。
+    if not skip_workflow_inspect:
+        from zf.runtime.env_preflight import run_env_preflight
+
+        env_checks = run_env_preflight(
+            zf_cmd=zf_cli_cmd(),
+            state_dir=state_dir,
+            project_root=project_root,
+        )
+        hard_failures = [c for c in env_checks if not c.ok and c.hard]
+        soft_failures = [c for c in env_checks if not c.ok and not c.hard]
+        if hard_failures:
+            print("Environment preflight FAILED:", file=sys.stderr)
+            for check in hard_failures:
+                print(f"  - {check.name}: {check.detail}", file=sys.stderr)
+            return 1
+        for check in soft_failures:
+            print(
+                f"Environment preflight WARN - {check.name}: {check.detail}",
+                file=sys.stderr,
+            )
+            try:
+                event_log_from_project(state_dir, config=config).append(ZfEvent(
+                    type="env.preflight.failed",
+                    actor="zf-cli",
+                    payload={
+                        "check": check.name,
+                        "detail": check.detail,
+                        "hard": False,
+                        "problem_class": "environment",
+                    },
+                ))
+            except Exception:
+                pass
     promote_last_known_good(
         config_path=config_path,
         state_dir=state_dir,
@@ -480,6 +715,24 @@ def run(args: argparse.Namespace) -> int:
         except EventSigningConfigError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             return 2
+        _emit_render_lock_drift_warning(
+            state_dir=state_dir,
+            config_path=config_path,
+            event_log=event_log,
+        )
+        if not _write_run_contract_snapshot(
+            config=config,
+            project_root=project_root,
+            state_dir=state_dir,
+            config_path=config_path,
+            event_log=event_log,
+        ):
+            print(
+                "Error: run contract drift detected for a strict run. "
+                "Review config/input drift before restart or resume.",
+                file=sys.stderr,
+            )
+            return 1
         session_store = SessionStore(state_dir / "session.yaml")
         session_name = config.session.tmux_session
 
@@ -622,6 +875,8 @@ def run(args: argparse.Namespace) -> int:
                 config,
                 role,
                 skill_entries=skill_entries,
+                state_dir_ref=state_dir,
+                project_root=project_root,
             )
             instructions_dir.mkdir(parents=True, exist_ok=True)
             (instructions_dir / f"{role.instance_id}.md").write_text(instructions)
@@ -697,6 +952,41 @@ def run(args: argparse.Namespace) -> int:
                 if cpath is not None:
                     codex_tailer.tail(resident_role.instance_id, cpath)
 
+        try:
+            from zf.runtime.briefing_hydration import (
+                build_briefing_hydration_report,
+                write_briefing_hydration_report,
+            )
+
+            hydration_report = build_briefing_hydration_report(
+                state_dir,
+                instructions_dir=instructions_dir,
+            )
+            hydration_ref = write_briefing_hydration_report(
+                state_dir,
+                hydration_report,
+            )
+            event_log.append(ZfEvent(
+                type="briefing.hydration.checked",
+                actor="zf-cli",
+                payload={
+                    "schema_version": "briefing-hydration.checked.v1",
+                    "status": str(hydration_report.get("status") or ""),
+                    "report_ref": str(hydration_ref),
+                    "diagnostic_count": len(hydration_report.get("diagnostics") or []),
+                },
+            ))
+        except Exception as exc:
+            event_log.append(ZfEvent(
+                type="briefing.hydration.failed",
+                actor="zf-cli",
+                payload={
+                    "schema_version": "briefing-hydration.failed.v1",
+                    "reason": "briefing_hydration_projection_failed",
+                    "error": str(exc)[:400],
+                },
+            ))
+
         # 8. Emit session.started here; loop.started is emitted only when
         # the watcher actually starts running (foreground mode).
         #
@@ -730,6 +1020,7 @@ def run(args: argparse.Namespace) -> int:
             WakeRateLimiter,
             compute_effective_wake_patterns,
             rate_limits_for_config,
+            wake_worthy,
         )
 
         # Wake patterns = base set + YAML-enabled extensions (P3).
@@ -749,6 +1040,10 @@ def run(args: argparse.Namespace) -> int:
             except Exception:
                 return
             if not any(p == event.type for p in wake_patterns):
+                return
+            # avbs-r4 F3: 高频观察型 hook 不逐条唤醒(no-op handler /
+            # 仅 deny 有意义)。事件照常在 events.jsonl,唤醒是纯成本。
+            if not wake_worthy(event):
                 return
             # P3: rate-limited extension events may be dropped (event
             # still persisted in events.jsonl — only wake is suppressed).
@@ -813,6 +1108,12 @@ def run(args: argparse.Namespace) -> int:
             on_tick=_on_tick,
             wake_patterns=wake_patterns,
             event_log=event_log,
+        )
+        _maybe_run_startup_orchestrator_catchup(
+            orchestrator,
+            event_log,
+            dry_run=dry_run,
+            foreground=foreground,
         )
 
         if dry_run:

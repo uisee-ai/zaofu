@@ -22,6 +22,7 @@ DIAGNOSIS_ACTIONS = frozenset({"diagnose-attention"})
 WORKER_LIFECYCLE_ACTIONS = frozenset({"worker-lifecycle-recover"})
 REPAIR_CLOSEOUT_ACTIONS = frozenset({"repair-closeout-validate"})
 RESIDENT_AGENT_ACTIONS = frozenset({"resident-agent-reprompt"})
+OWNER_APPROVAL_ACTIONS = frozenset({"failure-closeout-activate"})
 INTERVENTION_CLASSES = frozenset({
     "none",
     "wait",
@@ -41,6 +42,9 @@ ACTION_POLICIES = frozenset({
     "needs_approval",
     "human_escalate",
     "safe_halt",
+    # 纯观测事件的合法策略:不产生补救动作,只进投影/attention 计数
+    # (registry 有 11 个 projection_only 事件在用;2026-07-04 D 批收编)。
+    "informational",
 })
 SUPPORTED_BATCH_ACTIONS = SAFE_BATCH_ACTIONS | {"trigger_rework"}
 SUPPORTED_TASK_ACTIONS = SAFE_TASK_ACTIONS
@@ -204,6 +208,23 @@ def decide_action_policy(
             payload=payload,
             preflight=preflight,
             reason="resident agent reprompt resends an existing observe briefing to its own pane",
+        )
+    if action in OWNER_APPROVAL_ACTIONS:
+        preflight = preflight_action(action=action, payload=payload)
+        if preflight["status"] == "blocked":
+            return _decision(
+                "needs_diagnosis",
+                executable=True,
+                payload=payload,
+                preflight=preflight,
+                reason="owner-approved action is missing required evidence",
+            )
+        return _decision(
+            "needs_approval",
+            executable=False,
+            payload=payload,
+            preflight=preflight,
+            reason=f"{action} requires explicit owner approval",
         )
     if action == "candidate-rework-apply":
         preflight = preflight_action(action=action, payload=payload)
@@ -434,6 +455,23 @@ def preflight_action(
             "verify_condition": str(payload.get("verify_condition") or "")
             or "expected_downstream_event:" + ",".join(expected),
         }
+    if action in OWNER_APPROVAL_ACTIONS:
+        if not checkpoint_id:
+            failures.append("missing_checkpoint_id")
+        if not str(payload.get("manifest_ref") or ""):
+            failures.append("missing_manifest_ref")
+        expected = sorted(expected_downstream_events(safe_action or "failure_closeout_activate"))
+        return {
+            "schema_version": "run-manager.action-preflight.v1",
+            "status": "blocked" if failures else "passed",
+            "failures": failures,
+            "warnings": warnings,
+            "checkpoint_id": checkpoint_id,
+            "safe_resume_action": safe_action or "failure_closeout_activate",
+            "expected_downstream_events": expected,
+            "verify_condition": str(payload.get("verify_condition") or "")
+            or "expected_downstream_event:" + ",".join(expected),
+        }
     if action == "candidate-rework-apply":
         rework_action = str(payload.get("candidate_rework_action") or "")
         if rework_action not in CANDIDATE_REWORK_ACTIONS:
@@ -566,6 +604,11 @@ def build_no_progress_projection(
             "event_id": str(getattr(event, "id", "") or ""),
             "event_type": etype,
             "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+            "safe_resume_action": str(payload.get("safe_resume_action") or ""),
+            "action_policy": str(payload.get("action_policy") or ""),
+            "owner_route": str(payload.get("owner_route") or ""),
+            "failure_class": str(payload.get("failure_class") or ""),
+            "verify_condition": str(payload.get("verify_condition") or ""),
             "reason": str(payload.get("reason") or payload.get("decision") or status),
         }
     tripped = [
@@ -584,6 +627,138 @@ def build_no_progress_projection(
         },
         "items": tripped,
     }
+
+
+def recovery_closeout_contract_report(
+    *,
+    event_types: set[str] | None = None,
+) -> dict[str, Any]:
+    """Audit recoverable event/problem specs for closeout routing metadata."""
+
+    from zf.runtime.event_problem_registry import EVENT_PROBLEM_SPECS
+
+    errors: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    entries: list[dict[str, Any]] = []
+    specs = [
+        spec for event_type, spec in sorted(EVENT_PROBLEM_SPECS.items())
+        if event_types is None or event_type in event_types
+    ]
+    for spec in specs:
+        if not _spec_needs_recovery_closeout(spec):
+            continue
+        action = _safe_action_for_spec(spec)
+        route = route_for_safe_action(action)
+        entry = {
+            "event_type": spec.event_type,
+            "problem_class": spec.problem_class,
+            "failure_class": spec.failure_class,
+            "owner_route": spec.owner_route,
+            "action_policy": spec.action_policy,
+            "intervention_class": spec.intervention_class,
+            "suggested_action_kind": spec.suggested_action_kind,
+            "safe_resume_action": action,
+            "attempt_cap": route.attempt_cap,
+            "expected_downstream_events": list(route.expected_downstream_events),
+            "verify_condition": route.verify_condition,
+            "human_escalation": spec.supervisor_attention,
+        }
+        entries.append(entry)
+        for field in (
+            "owner_route",
+            "action_policy",
+            "intervention_class",
+            "suggested_action_kind",
+        ):
+            if not str(getattr(spec, field) or "").strip():
+                errors.append({
+                    "event_type": spec.event_type,
+                    "kind": "recovery_closeout_field_missing",
+                    "field": field,
+                    "message": f"{spec.event_type} missing {field}",
+                })
+        if spec.action_policy not in ACTION_POLICIES and spec.action_policy != "kernel_consumed":
+            errors.append({
+                "event_type": spec.event_type,
+                "kind": "recovery_closeout_action_policy_unknown",
+                "field": "action_policy",
+                "message": f"{spec.event_type} action_policy {spec.action_policy!r} is not registered",
+            })
+        if spec.intervention_class not in INTERVENTION_CLASSES and spec.intervention_class != "aggregate_result":
+            errors.append({
+                "event_type": spec.event_type,
+                "kind": "recovery_closeout_intervention_class_unknown",
+                "field": "intervention_class",
+                "message": (
+                    f"{spec.event_type} intervention_class "
+                    f"{spec.intervention_class!r} is not registered"
+                ),
+            })
+        if not route.expected_downstream_events:
+            errors.append({
+                "event_type": spec.event_type,
+                "kind": "recovery_closeout_expected_downstream_missing",
+                "field": "expected_downstream_events",
+                "message": f"{spec.event_type} has no expected downstream event",
+            })
+        if action == "diagnose_attention" and spec.suggested_action_kind not in {
+            "diagnose_attention",
+            "diagnose_flow_stage_failure",
+            "diagnose_flow_discovery_failure",
+            "request_goal_gap_plan",
+            "follow_workflow_rework",
+            "investigate_runtime_bug",
+            "repair_harness_bug",
+            "repair_project_bug",
+        }:
+            warnings.append({
+                "event_type": spec.event_type,
+                "kind": "recovery_closeout_routes_to_generic_diagnosis",
+                "message": (
+                    f"{spec.event_type} suggested_action_kind "
+                    f"{spec.suggested_action_kind!r} falls back to diagnose_attention"
+                ),
+            })
+    return {
+        "schema_version": "run-manager.recovery-closeout-contract.v1",
+        "ok": not errors,
+        "summary": {
+            "checked": len(entries),
+            "errors": len(errors),
+            "warnings": len(warnings),
+        },
+        "entries": entries,
+        "errors": errors,
+        "warnings": warnings,
+    }
+
+
+def _spec_needs_recovery_closeout(spec: Any) -> bool:
+    if getattr(spec, "owner_route", "") == "kernel_aggregate":
+        return False
+    semantics = tuple(getattr(spec, "run_manager_semantics", ()) or ())
+    return (
+        "pending_action" in semantics
+        or "post_terminal_work" in semantics
+        or bool(getattr(spec, "autoresearch_eligible", False))
+        or str(getattr(spec, "supervisor_attention", "none") or "none") != "none"
+    )
+
+
+def _safe_action_for_spec(spec: Any) -> str:
+    suggested = str(getattr(spec, "suggested_action_kind", "") or "")
+    if suggested in SAFE_BATCH_ACTIONS | SAFE_TASK_ACTIONS | {"trigger_rework"}:
+        return suggested
+    if suggested in {
+        "needs_stage_dispatch",
+        "needs_rework_dispatch",
+        "needs_task_ref_repair",
+        "needs_gate_dispatch",
+        "blocked_external_gate",
+        "needs_terminal_closeout",
+    }:
+        return suggested
+    return "diagnose_attention"
 
 
 def _no_progress_fingerprint(
@@ -638,6 +813,8 @@ def expected_downstream_events(safe_action: str) -> set[str]:
         return {"run.manager.action.applied"}
     if safe_action == "resident_agent_reprompt":
         return {"run.manager.resident.prompted"}
+    if safe_action == "failure_closeout_activate":
+        return {"failure.closeout.activated", "run.manager.action.applied"}
     if safe_action == "needs_stage_dispatch":
         return {"task.dispatched", "workflow.resume.applied"}
     if safe_action == "needs_rework_dispatch":
@@ -706,6 +883,7 @@ __all__ = [
     "CANDIDATE_REWORK_ACTIONS",
     "DIAGNOSIS_ACTIONS",
     "INTERVENTION_CLASSES",
+    "OWNER_APPROVAL_ACTIONS",
     "REPAIR_CLOSEOUT_ACTIONS",
     "RESIDENT_AGENT_ACTIONS",
     "SAFE_BATCH_ACTIONS",
@@ -721,6 +899,7 @@ __all__ = [
     "fingerprint",
     "intervention_class_for_decision",
     "preflight_action",
+    "recovery_closeout_contract_report",
     "route_for_safe_action",
     "stable_hash",
 ]

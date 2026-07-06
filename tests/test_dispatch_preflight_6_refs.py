@@ -276,6 +276,44 @@ def test_validate_task_contract_passes_full_contract(tmp_path: Path):
     assert ref_errors == []
 
 
+def test_validate_task_contract_allows_refactor_semantic_owner_with_lane_assignee(
+    tmp_path: Path,
+):
+    cfg = ZfConfig(
+        project=ProjectConfig(name="p"),
+        session=SessionConfig(tmux_session="t"),
+        roles=[
+            RoleConfig(
+                name="dev",
+                instance_id="dev-lane-0",
+                backend="mock",
+                role_kind="writer",
+            ),
+        ],
+    )
+    task = Task(
+        id="T-SEMANTIC",
+        title="semantic owner",
+        assigned_to="dev-lane-0",
+        contract=TaskContract(
+            behavior="impl",
+            verification="pytest",
+            verification_tiers=["runtime"],
+            scope=["src/x.py"],
+            owner_role="dev-core",
+            product_contract_ref=".zf/artifacts/F/task_map.json",
+            evidence_contract={
+                "source": "refactor_task_map",
+                "source_refs": {"task_map_ref": ".zf/artifacts/F/task_map.json"},
+            },
+        ),
+    )
+
+    errors = validate_task_contract(task, config=cfg, project_root=tmp_path)
+
+    assert not [error for error in errors if "owner_role" in error]
+
+
 def test_arch_design_intake_skips_final_contract_preflight(tmp_path: Path):
     """Arch intake may start before the final implementation contract exists."""
     state_dir = tmp_path / ".zf"

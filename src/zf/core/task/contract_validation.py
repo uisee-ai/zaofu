@@ -35,7 +35,11 @@ def validate_task_contract(
         errors.append(
             f"{prefix}.owner_instance {contract.owner_instance!r} does not match a role instance"
         )
-    if contract.owner_role and contract.owner_role not in role_names:
+    if (
+        contract.owner_role
+        and contract.owner_role not in role_names
+        and not _allows_semantic_owner_role(task, config)
+    ):
         errors.append(
             f"{prefix}.owner_role {contract.owner_role!r} does not match a role"
         )
@@ -133,10 +137,10 @@ def _task_targets_writer_role(task: Task, config: ZfConfig) -> bool:
     actually changes the codebase). Readers (arch/critic/review/test/judge)
     don't need 6-ref backlog synthesis upstream of them."""
     target_role_name = (
-        task.contract.owner_role
+        _role_name_from_role_or_instance(task.contract.owner_role, config)
         or _role_name_from_instance(task.contract.owner_instance, config)
         or _role_name_from_instance(task.assigned_to, config)
-        or task.assigned_to  # last-resort fallback (raw role name)
+        or (task.assigned_to if _is_role_name(task.assigned_to, config) else "")
     )
     if not target_role_name:
         return False
@@ -153,6 +157,43 @@ def _role_name_from_instance(instance_id: str, config: ZfConfig) -> str:
         if role.instance_id == instance_id:
             return role.name
     return ""
+
+
+def _role_name_from_role_or_instance(value: str, config: ZfConfig) -> str:
+    if not value:
+        return ""
+    for role in config.roles:
+        if role.name == value:
+            return role.name
+    return _role_name_from_instance(value, config)
+
+
+def _is_role_name(value: str | None, config: ZfConfig) -> bool:
+    if not value:
+        return False
+    return any(role.name == value for role in config.roles)
+
+
+def _allows_semantic_owner_role(task: Task, config: ZfConfig) -> bool:
+    """Compatibility for refactor task_map semantic owner labels.
+
+    Older refactor task maps used values such as ``dev-core`` in
+    ``owner_role`` to describe the module owner, not the runtime role.name.
+    When task lineage proves the source is a refactor task_map and dispatch has
+    a concrete runtime assignee/instance, keep the task admissible while newer
+    imports preserve that semantic value under ``evidence_contract``.
+    """
+    contract = task.contract
+    evidence = contract.evidence_contract or {}
+    if not isinstance(evidence, dict):
+        return False
+    if str(evidence.get("source") or "").strip() != "refactor_task_map":
+        return False
+    return bool(
+        _role_name_from_instance(contract.owner_instance, config)
+        or _role_name_from_instance(task.assigned_to or "", config)
+        or any(getattr(role, "role_kind", "") == "writer" for role in config.roles)
+    )
 
 
 def _is_ref_present(value: object) -> bool:

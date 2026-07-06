@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from zf.runtime.run_manager_router import (
+    SAFE_BATCH_ACTIONS,
+    SAFE_TASK_ACTIONS,
+    classify_recovery_context,
+)
+
 
 FORBIDDEN_ADVISOR_EVENTS = [
     "task_map.ready",
@@ -23,18 +29,43 @@ def build_replan_advisor_projection(
     for item in no_progress.get("items") or []:
         if not isinstance(item, dict):
             continue
-        recommendations.append(_recommendation(
-            kind="no_progress_replan_advice",
-            reason="same fingerprint crossed no-progress threshold",
-            fingerprint=str(item.get("fingerprint") or ""),
-            source_event_id=str(item.get("event_id") or ""),
-            recommended_route="reflection_replan_advisor",
-            verification_plan=[
-                "read source events from run_context_bundle",
-                "produce replan.proposal.md/json",
-                "operator or Run Manager must approve any active workflow mutation",
-            ],
-        ))
+        safe_resume_action = str(item.get("safe_resume_action") or "")
+        if safe_resume_action in SAFE_BATCH_ACTIONS or safe_resume_action in SAFE_TASK_ACTIONS:
+            route = classify_recovery_context({"safe_resume_action": safe_resume_action})
+            recommendations.append(_recommendation(
+                kind="no_progress_controlled_action",
+                reason="same deterministic recovery fingerprint crossed no-progress threshold",
+                fingerprint=str(item.get("fingerprint") or ""),
+                source_event_id=str(item.get("event_id") or ""),
+                recommended_route="controlled_action",
+                verification_plan=[
+                    f"apply bounded {safe_resume_action}",
+                    f"observe {route['verify_condition']}",
+                    "mark duplicate fingerprints superseded after downstream progress",
+                ],
+                authority="controlled_action",
+                action_policy=str(route.get("action_policy") or "auto_decide"),
+                safe_resume_action=safe_resume_action,
+                verify_condition=str(route.get("verify_condition") or ""),
+                forbidden_direct_events=[],
+            ))
+        else:
+            recommendations.append(_recommendation(
+                kind="no_progress_replan_advice",
+                reason="same fingerprint crossed no-progress threshold",
+                fingerprint=str(item.get("fingerprint") or ""),
+                source_event_id=str(item.get("event_id") or ""),
+                recommended_route="reflection_replan_advisor",
+                verification_plan=[
+                    "read source events from run_context_bundle",
+                    "produce replan.proposal.md/json",
+                    "operator or Run Manager must approve any active workflow mutation",
+                ],
+            ))
+    authority = "mixed" if any(
+        str(item.get("authority") or "") == "controlled_action"
+        for item in recommendations
+    ) else "proposal_only"
     blockers = completion_profile.get("blockers") or []
     if "action_verify_failed" in blockers:
         recommendations.append(_recommendation(
@@ -63,7 +94,7 @@ def build_replan_advisor_projection(
     return {
         "schema_version": "run-manager.replan-advisor.v1",
         "is_derived_projection": True,
-        "authority": "proposal_only",
+        "authority": authority,
         "forbidden_events": FORBIDDEN_ADVISOR_EVENTS,
         "summary": {
             "recommendations": len(recommendations),
@@ -81,17 +112,29 @@ def _recommendation(
     source_event_id: str,
     recommended_route: str,
     verification_plan: list[str],
+    authority: str = "proposal_only",
+    action_policy: str = "",
+    safe_resume_action: str = "",
+    verify_condition: str = "",
+    forbidden_direct_events: list[str] | None = None,
 ) -> dict[str, Any]:
     return {
         "kind": kind,
         "status": "proposed",
-        "authority": "proposal_only",
+        "authority": authority,
         "fingerprint": fingerprint,
         "source_event_id": source_event_id,
         "recommended_route": recommended_route,
         "reason": reason,
         "verification_plan": verification_plan,
-        "forbidden_direct_events": FORBIDDEN_ADVISOR_EVENTS,
+        "action_policy": action_policy,
+        "safe_resume_action": safe_resume_action,
+        "verify_condition": verify_condition,
+        "forbidden_direct_events": (
+            forbidden_direct_events
+            if forbidden_direct_events is not None
+            else FORBIDDEN_ADVISOR_EVENTS
+        ),
     }
 
 

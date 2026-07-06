@@ -58,6 +58,12 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "(bool or {enabled: bool}) through _parse_plan_approval_enabled — "
         "loader.py:354 wires it into the WorkflowConfig ctor"
     ),
+    ("WorkflowConfig", "flow_metadata"): (
+        "doc-125 flow intake: read via renamed yaml key workflow._flow_metadata "
+        "(underscore-prefixed reserved key) — loader.py:1862 does "
+        "flow_metadata=workflow_data.get('_flow_metadata', {}), so the field "
+        "name doesn't appear as a literal string"
+    ),
 }
 
 

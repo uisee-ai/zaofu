@@ -117,6 +117,59 @@ class ProductActionsMixin:
             "task_id": created.id,
             "result": {"task": redact_obj(asdict(created))},
         }
+    def _kanban_proposal_dismiss(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        """chat-e2e F2: operator dismisses a pending kanban-agent proposal —
+        the resolved event collapses it out of the durable pending list."""
+        proposal_event_id = str(payload.get("proposal_event_id") or "").strip()
+        if not proposal_event_id:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=None,
+                reason="proposal_event_id is required",
+                status_code=422,
+                status="invalid_payload",
+            )
+        event = self.writer.emit(
+            "kanban.agent.proposal.resolved",
+            actor=self.actor,
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload={
+                "proposal_event_id": proposal_event_id,
+                "resolution": "dismissed",
+                "reason": str(payload.get("reason") or ""),
+                "source": self.source,
+            },
+        )
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status="completed",
+            task_id=None,
+            extra={"proposal_event_id": proposal_event_id},
+        )
+        return {
+            "_status_code": 200,
+            "ok": True,
+            "status": "completed",
+            "action": action,
+            "requested_action": requested_action,
+            "reason": f"proposal {proposal_event_id} dismissed",
+            "event_id": event.id,
+            "proposal_event_id": proposal_event_id,
+        }
+
     def _capture_regression_case(
         self,
         *,
@@ -671,6 +724,17 @@ class ProductActionsMixin:
                 "request": payload,
             }),
         )
+        executed: dict | None = None
+        if approved and bool(payload.get("execute_proposals")):
+            # doc 122 §9 last mile: "approve" alone only records a decision and
+            # left the owner hand-running create-task/workflow-invoke. With the
+            # explicit flag the same call executes the proposal chain inline,
+            # so one click takes a clarified requirement into the workflow.
+            executed = self._execute_intent_proposals(
+                requested=requested,
+                intent_id=intent_id,
+                approved_event=event,
+            )
         self._completed(
             requested=requested,
             event=event,
@@ -688,6 +752,80 @@ class ProductActionsMixin:
             "requested_action": requested_action,
             "intent_id": intent_id,
             "event_id": event.id,
+            **({"executed": executed} if executed is not None else {}),
+        }
+
+    def _execute_intent_proposals(
+        self,
+        *,
+        requested: ZfEvent,
+        intent_id: str,
+        approved_event: ZfEvent,
+    ) -> dict:
+        from zf.core.events.log import EventLog
+
+        events = EventLog(self.state_dir / "events.jsonl").read_all()
+        proposal = None
+        for event in events:
+            if event.type != "operator.action.proposed":
+                continue
+            if str((event.payload or {}).get("intent_id") or "") == intent_id:
+                proposal = event
+        if proposal is None:
+            return {"ok": False, "reason": "proposal_not_found", "intent_id": intent_id}
+        proposal_id = str((proposal.payload or {}).get("proposal_id") or "")
+        for event in events:
+            if event.type == "operator.action.executed" and (
+                str((event.payload or {}).get("proposal_id") or "") == proposal_id
+            ):
+                return {"ok": True, "reason": "already_executed", "proposal_id": proposal_id}
+        results: list[dict] = []
+        created_task_id = ""
+        for item in (proposal.payload or {}).get("proposals") or []:
+            if not isinstance(item, dict):
+                continue
+            step_action = str(item.get("action") or "")
+            step_payload = dict(item.get("payload") or {})
+            if step_action == "workflow-invoke":
+                placeholder = str(step_payload.get("task_id") or "")
+                if created_task_id and placeholder in {"", "<created-task-id>"}:
+                    step_payload["task_id"] = created_task_id
+            result = self._execute_action(
+                action=step_action,
+                requested_action=step_action,
+                payload=step_payload,
+                requested=approved_event,
+            )
+            if step_action == "create-task" and result.get("ok"):
+                created_task_id = str(result.get("task_id") or result.get("id") or "")
+            results.append({
+                "action": step_action,
+                "ok": bool(result.get("ok")),
+                "status": str(result.get("status") or ""),
+                "task_id": str(result.get("task_id") or ""),
+            })
+            if not result.get("ok"):
+                break
+        self.writer.emit(
+            "operator.action.executed",
+            actor=self.actor,
+            causation_id=approved_event.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": "operator.action.executed.v0",
+                "proposal_id": proposal_id,
+                "intent_id": intent_id,
+                "results": results,
+                "created_task_id": created_task_id,
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        return {
+            "ok": all(r["ok"] for r in results) if results else False,
+            "proposal_id": proposal_id,
+            "created_task_id": created_task_id,
+            "results": results,
         }
     def _replan_owner_decision(
         self,
@@ -828,6 +966,11 @@ class ProductActionsMixin:
                     "task_id": str(payload.get("task_id") or "<created-task-id>"),
                     "pattern_id": str(payload.get("pattern_id") or "dag"),
                     "expected_output": str(payload.get("expected_output") or "plan-to-ship delivery"),
+                    # a clarified-requirement artifact (doc 122 §9) must reach
+                    # the first workflow stage: artifact_refs flow into the
+                    # workflow prompt package + input manifest for the child.
+                    **({"artifact_refs": [str(payload.get("artifact_ref"))]}
+                       if payload.get("artifact_ref") else {}),
                 },
             },
         ]

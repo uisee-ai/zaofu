@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 import json
+import os
 
 from zf.cli.main import main
 
@@ -41,17 +43,25 @@ def test_validate_owner_visible_warning_uses_config_path_env(
 ):
     project = tmp_path / "project"
     project.mkdir()
-    monkeypatch.delenv("ZF_OWNER_VISIBLE_CHAT", raising=False)
     (project / "zf.yaml").write_text(
         'version: "1.0"\nproject:\n  name: test\nroles:\n  - name: dev\n    backend: python\n'
     )
     (project / ".env").write_text("ZF_OWNER_VISIBLE_CHAT=oc_owner\n")
 
-    result = main(["validate", "--path", str(project / "zf.yaml")])
+    # validate loads project/.env via _load_env_file, which writes os.environ
+    # directly. monkeypatch.delenv on a missing key registers NO undo, so the
+    # loaded ZF_OWNER_VISIBLE_CHAT=oc_owner leaked process-wide and flipped
+    # owner-visible delivery to "configured" in later tests (test_tick_services /
+    # test_web_headless owner-visible no-target assertions — 2026-07-03 triage,
+    # same trap test_cli_web.py already documents). Snapshot os.environ so the
+    # .env load is undone at test exit.
+    with mock.patch.dict(os.environ):
+        os.environ.pop("ZF_OWNER_VISIBLE_CHAT", None)
+        result = main(["validate", "--path", str(project / "zf.yaml")])
 
-    assert result == 0
-    captured = capsys.readouterr()
-    assert "owner-visible delivery warnings" not in captured.err.lower()
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "owner-visible delivery warnings" not in captured.err.lower()
 
 
 def test_validate_invalid_config(tmp_path: Path, monkeypatch, capsys):

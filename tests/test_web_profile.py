@@ -5,9 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 from fastapi.testclient import TestClient
 
 from zf.web.server import create_app
+
+
+@pytest.fixture(autouse=True)
+def _isolated_workspace_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The init/scaffold endpoints register projects into the workspace registry.
+    # Without this isolation they write to the REAL ~/.zaofu registry (leaked 9
+    # ghost projects across 3 pytest runs; the web project picker showed
+    # green/newproj/noted three times each).
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace-home"))
 
 
 @pytest.fixture
@@ -40,6 +50,38 @@ def test_web_detect(client, py_repo):
 def test_web_detect_missing_path(client):
     r = client.get("/api/profile/detect", params={"path": "/no/such/dir/xyz"})
     assert r.status_code == 404
+
+
+def test_web_validate_path_reports_state_dir_outside_root(client, tmp_path):
+    root = tmp_path / "project"
+    r = client.post(
+        "/api/workspace/projects/validate-path",
+        json={"root": str(root), "state_dir": "../outside"},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    assert body["status"] == "invalid"
+    assert any(item["kind"] == "state_dir_outside_root" for item in body["diagnostics"])
+
+
+def test_web_validate_path_reports_non_empty_state_dir(client, tmp_path):
+    root = tmp_path / "project"
+    state = root / ".zf"
+    state.mkdir(parents=True)
+    (state / "events.jsonl").write_text("", encoding="utf-8")
+
+    r = client.post(
+        "/api/workspace/projects/validate-path",
+        json={"root": str(root), "state_dir": ".zf"},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["state_dir_non_empty"] is True
+    assert any(item["kind"] == "state_dir_non_empty" for item in body["diagnostics"])
 
 
 def test_web_recommend(client, py_repo):
@@ -83,10 +125,48 @@ def test_web_init_writes_catalog_flow_yaml(client, tmp_path, monkeypatch):
     assert "preset: prod-prd-fanout-claude" in text
 
 
+def test_web_init_with_kind_writes_typed_flow_yaml(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "secret-token")
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    r = client.post(
+        "/api/workspace/projects/init",
+        headers={"X-Zf-Web-Token": "secret-token"},
+        json={
+            "root": str(target),
+            "kind": "refactor",
+            "name": "cangjie-web-init",
+            "source_root": str(source),
+            "target_root": str(target),
+            "backend": "mock",
+            "lanes": 3,
+            "state_dir": ".zf-cangjie",
+            "skip_instruction_docs": True,
+        },
+    )
+
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["kind"] == "refactor"
+    assert body["config_generated"] == "typed_flow_spec"
+    docs = list(yaml.safe_load_all((target / "zf.yaml").read_text(encoding="utf-8")))
+    assert docs[0]["kind"] == "RefactorFlow"
+    assert docs[0]["spec"]["sourceRoot"] == str(source)
+    assert docs[0]["spec"]["targetRoot"] == str(target)
+    assert docs[0]["spec"]["lanes"] == 3
+    assert docs[1]["spec"]["project"]["state_dir"] == ".zf-cangjie"
+
+
 def test_web_recommend_backend_codex_flow(client, py_repo):
     r = client.get("/api/profile/recommend",
                    params={"path": str(py_repo), "intent": "build", "backend": "codex"})
-    assert r.json()["recommendation"]["archetype"] == "prd-fanout-codex"
+    # doc-125 controller flows: codex "build" intent now resolves to the v3
+    # controller flow (flow_id_for_intent prefers controller/*.yaml). Matches
+    # test_profile_catalog::test_codex_prefers_controller_v3_flows, which is the
+    # authority on this mapping. The bare prd-fanout-codex expectation predated
+    # the v3 controller catalog.
+    assert r.json()["recommendation"]["archetype"] == "prd-fanout-v3-codex"
 
 
 def test_web_init_writes_operator_notes(client, tmp_path, monkeypatch):

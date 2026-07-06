@@ -24,10 +24,12 @@ _SCALAR_REF_KEYS = (
     "scan_quality_audit_ref",
     "inventory_ref",
     "source_inventory_ref",
-    "hermes_source_inventory_ref",
     "inventory_coverage_matrix_ref",
     "expected_module_parity_report_paths_ref",
 )
+_LEGACY_SCALAR_REF_ALIASES = {
+    "hermes_source_inventory_ref": "source_inventory_ref",
+}
 _LIST_REF_KEYS = ("artifact_refs", "evidence_refs", "report_refs", "inventory_refs")
 _REF_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
@@ -50,7 +52,7 @@ def relocate_fanout_artifact_refs(
     must become kernel-readable before publishing aggregate handoff events.
     """
 
-    rewritten = dict(payload)
+    rewritten = _canonicalize_legacy_scalar_refs(dict(payload))
     ref_sources = _build_ref_sources(payload_sources)
     replacements: dict[str, str] = {}
     fanout_id = str(manifest.get("fanout_id") or "fanout")
@@ -102,6 +104,10 @@ def _payload_refs(payload: dict[str, Any]) -> list[str]:
         value = payload.get(key)
         if value not in (None, ""):
             refs.append(str(value))
+    for key in _LEGACY_SCALAR_REF_ALIASES:
+        value = payload.get(key)
+        if value not in (None, ""):
+            refs.append(str(value))
     for key in _LIST_REF_KEYS:
         raw = payload.get(key)
         if isinstance(raw, list):
@@ -110,6 +116,14 @@ def _payload_refs(payload: dict[str, Any]) -> list[str]:
     if isinstance(report, dict):
         refs.extend(_payload_refs(report))
     return _dedupe(refs)
+
+
+def _canonicalize_legacy_scalar_refs(payload: dict[str, Any]) -> dict[str, Any]:
+    for legacy_key, canonical_key in _LEGACY_SCALAR_REF_ALIASES.items():
+        legacy_value = payload.pop(legacy_key, None)
+        if payload.get(canonical_key) in (None, "") and legacy_value not in (None, ""):
+            payload[canonical_key] = legacy_value
+    return payload
 
 
 def _relocate_ref(

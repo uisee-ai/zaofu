@@ -230,6 +230,9 @@ def build_supervisor_control_loop_events(
         if status not in _OPEN_ATTENTION_STATUSES:
             continue
         decision = _decision_payload(item, snapshot=snapshot, projection_ref=projection_ref)
+        triage_suppressed = _suppress_owner_message_for_triage(item, decision)
+        if triage_suppressed:
+            decision["outcome"] = "run_manager_triage_first"
         decision_id = str(decision["decision_id"])
         message = _owner_message_payload(
             item,
@@ -253,7 +256,7 @@ def build_supervisor_control_loop_events(
                 causation_id=source_event_ids[0] if source_event_ids else None,
             ))
             existing_decisions.add(decision_id)
-        if message_id not in existing_messages:
+        if message_id not in existing_messages and not triage_suppressed:
             out.append(ZfEvent(
                 type="owner.visible_message.requested",
                 actor="zf-supervisor",
@@ -467,6 +470,10 @@ def _owner_message_delivery_targets(
     human_action_required: bool,
 ) -> list[str]:
     targets = ["web", "channel"]
+    if _run_manager_human_decision(item, decision):
+        if human_action_required:
+            targets.append("feishu")
+        return targets
     if human_action_required or _critical_immediate_attention(item, decision):
         targets.append("feishu")
     return targets
@@ -511,17 +518,40 @@ def _critical_immediate_attention(item: dict[str, Any], decision: dict[str, Any]
     return not _run_manager_triage_first(item, decision)
 
 
+def _suppress_owner_message_for_triage(item: dict[str, Any], decision: dict[str, Any]) -> bool:
+    """131 §16.3-4 triage-first 机械闸:RM 可先诊断的项不立即打扰 owner。
+
+    人类必需(route/registry 判定)与 critical 永不压制;被压制项仍记
+    supervisor.decision.recorded,RM 处置失败升级为 human.escalate 后
+    自然走 owner 通道(escape hatch)。avbs-r5 实证:silent_stall 活锁
+    期间每轮 resume 都发 owner 消息,全是 RM 已在自动处置的重复噪音。
+    """
+    if _human_action_required(item, decision):
+        return False
+    if str(item.get("severity") or "").lower() == "critical":
+        return False
+    return _run_manager_triage_first(item, decision)
+
+
 def _run_manager_triage_first(item: dict[str, Any], decision: dict[str, Any]) -> bool:
     route = str(decision.get("route") or item.get("suggested_route") or "")
     source = str(item.get("source") or "")
-    if route in {"run_manager_recovery", "supervisor_autoresearch"}:
+    if route in {"run_manager_recovery", "run_manager_human_decision", "supervisor_autoresearch"}:
         return True
-    return source in {"workflow_resume", "autoresearch", "plan_integrity"}
+    return source in {"workflow_resume", "autoresearch", "plan_integrity", "run_manager_decision"}
+
+
+def _run_manager_human_decision(item: dict[str, Any], decision: dict[str, Any]) -> bool:
+    route = str(decision.get("route") or item.get("suggested_route") or "")
+    source = str(item.get("source") or "")
+    return route == "run_manager_human_decision" or source == "run_manager_decision"
 
 
 def _route_for_attention(item: dict[str, Any]) -> str:
     source = str(item.get("source") or "")
     suggested = str(item.get("suggested_route") or "")
+    if source == "run_manager_decision" or suggested == "run_manager_human_decision":
+        return "run_manager_human_decision"
     if source == "workflow_resume" or suggested == "run_manager_recovery":
         return "run_manager_recovery"
     if source == "autoresearch" or suggested == "autoresearch_trigger":

@@ -418,7 +418,9 @@ def test_supervisor_routes_workflow_batch_resume_to_run_manager(
     ]
     assert snapshot["workflow_resume"]["summary"]["batch_pending"] == 1
     assert result["attention_events_emitted"] == 1
-    assert result["control_loop_events_emitted"] == 2
+    # 131 §16.3-4 triage-first 闸:workflow_resume 非人类必需项只记
+    # decision,不发 owner.visible_message.requested → 1(原为 2)。
+    assert result["control_loop_events_emitted"] == 1
     assert second["control_loop_events_emitted"] == 0
     assert workflow_items
     assert workflow_items[0]["suggested_route"] == "run_manager_recovery"
@@ -740,7 +742,7 @@ def test_parity_scan_request_without_fanout_routes_to_attention() -> None:
     assert items[0]["suggested_route"] == "run_manager_recovery"
     assert items[0]["suggested_action"] == {
         "kind": "request_fanout",
-        "stage_id": "cangjie-module-parity-scan",
+        "stage_id": "flow-module-parity-scan",
         "trigger_event_id": "evt-parity-scan-1",
         "event_type": "verify.parity_scan.requested",
         "pdd_id": "CANGJIE",

@@ -21,7 +21,7 @@ from zf.core.task.store import TaskStore
 from zf.runtime.run_archive import RunArchiveError
 from zf.runtime.run_archive import validate_run_id
 import json
-from zf.web.projections.common import _payload_collect, _payload_ref, _read_json_file, _resolve_project_root_for_state, _sha256_file
+from zf.web.projections.common import _REF_EVENT_KEYS, _payload_collect, _payload_ref, _read_json_file, _resolve_project_root_for_state, _sha256_file
 
 
 def _safe_snapshot_projection(name: str, default: Any, factory: Any) -> Any:
@@ -181,7 +181,7 @@ def _metrics_snapshot_projection(state_dir: Path) -> dict:
     ).to_dict()
 
 
-def _features(state_dir: Path) -> list[dict]:
+def _features(state_dir: Path, delivery_features: list[dict] | None = None) -> list[dict]:
     rows: list[dict] = []
     seen: set[str] = set()
     path = state_dir / "feature_list.json"
@@ -195,7 +195,9 @@ def _features(state_dir: Path) -> list[dict]:
                 "priority": getattr(f, "priority", 3),
             })
             seen.add(f.id)
-    for feature in _delivery_features(state_dir):
+    if delivery_features is None:
+        delivery_features = _delivery_features(state_dir)
+    for feature in delivery_features:
         fid = str(feature.get("id") or "")
         if fid and fid not in seen:
             rows.append(feature)
@@ -279,7 +281,9 @@ def _delivery_feature_fallbacks(
     except Exception:
         tasks = []
     try:
-        events = list(enumerate(EventLog(state_dir / "events.jsonl").read_all()))
+        from zf.web.projections.events import _events_with_seq
+
+        events = list(_events_with_seq(state_dir))
     except Exception:
         events = []
     candidates: dict[str, dict[str, Any]] = {}
@@ -334,7 +338,7 @@ def _delivery_feature_fallbacks(
         if task_id:
             grouped_events.setdefault(task_id, []).append((seq, event))
     for task_id, grouped in grouped_events.items():
-        refs = _refs_from_events(grouped, task=task_by_id.get(task_id))
+        refs = _refs_from_events(grouped, task=task_by_id.get(task_id), state_dir=state_dir)
         title = getattr(task_by_id.get(task_id), "title", "") or task_id
         if refs.get("feature_id"):
             add(str(refs["feature_id"]), title=title, source="event-feature-ref", confidence=0.9, task_id=task_id)
@@ -617,6 +621,8 @@ def _refs_from_events(
     events: list[tuple[int, object]],
     *,
     task: object | None = None,
+    state_dir: Path | None = None,
+    config: ZfConfig | None = None,
 ) -> dict:
     refs: dict[str, Any] = {}
     if task is not None:
@@ -633,36 +639,22 @@ def _refs_from_events(
             if files:
                 refs["files_touched"] = list(files)
 
-    keys = {
-        "base_commit",
-        "base_ref",
-        "source_commit",
-        "commit",
-        "task_ref",
-        "task_branch",
-        "worker_branch",
-        "branch",
-        "candidate_ref",
-        "candidate_branch",
-        "candidate_id",
-        "pdd_id",
-        "feature_id",
-        "fanout_id",
-        "child_id",
-        "run_id",
-        "workdir",
-        "source_branch",
-        "task_map_ref",
-        "source_index_ref",
-        "lane_id",
-        "affinity_tag",
-        "assignment_strategy",
-        "role_instance",
-        "instance_id",
-    }
-    for _, event in events:
+    kv = None
+    if state_dir is not None:
+        try:
+            from zf.web.projections.events import event_ref_kv
+
+            kv = event_ref_kv(state_dir, config=config)
+        except Exception:
+            kv = None
+    for seq, event in events:
+        if kv is not None:
+            hit = kv.get(seq)
+            if hit is not None and hit[0] is event:
+                refs.update(hit[1])
+                continue
         payload = getattr(event, "payload", {}) or {}
-        for key, value in _payload_collect(payload, keys).items():
+        for key, value in _payload_collect(payload, _REF_EVENT_KEYS).items():
             if value not in (None, ""):
                 refs[key] = value
     if "worker_branch" not in refs and "branch" in refs:

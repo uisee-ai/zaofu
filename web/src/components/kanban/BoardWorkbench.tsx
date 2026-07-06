@@ -2,6 +2,7 @@
 import { search } from "../../api/client";
 import type { ActionResponse, AgentSummary, FanoutSummary, Task } from "../../api/types";
 import { BoardColumn } from "../../components/kanban/BoardColumn";
+import { SpineHealthStrip } from "../../components/kanban/SpineHealthStrip";
 import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../../components/kanban/TaskCard";
 import { BOARD_COLUMNS, isBoardColumnId, taskColumn } from "../../components/kanban/board";
 import type { BoardColumnId } from "../../components/kanban/board";
@@ -78,6 +79,7 @@ export function BoardWorkbench({
   onOpenTask,
   onSaveToken,
   priorityFilter,
+  projectId,
   quickFilter,
   selectedTaskId,
   setAssigneeFilter,
@@ -100,6 +102,7 @@ export function BoardWorkbench({
   actionResult: ActionResponse | null;
   actionState: string;
   activeFanouts: FanoutSummary[];
+  projectId?: string;
   agents: AgentSummary[];
   assignees: string[];
   assigneeFilter: string;
@@ -230,6 +233,7 @@ export function BoardWorkbench({
 
   return (
     <>
+      <SpineHealthStrip projectId={projectId} />
       <div className="section-heading">
         <div>
           <h2>Tasks</h2>

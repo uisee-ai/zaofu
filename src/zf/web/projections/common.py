@@ -81,6 +81,13 @@ def _active_workspace_project_id(
     *,
     default_project_id: str,
 ) -> str:
+    # chat-e2e F1: last_opened_at is GLOBAL registry state shared by every
+    # server on this host — another server opening its project must not steer
+    # this server's fresh sessions away from the project it was started for.
+    # A server with a default project always reports itself as active;
+    # global recency only decides in workspace-only mode.
+    if default_project_id:
+        return default_project_id
     opened = [
         item for item in items
         if str(item.get("last_opened_at") or "").strip()
@@ -90,8 +97,6 @@ def _active_workspace_project_id(
             opened,
             key=lambda item: str(item.get("last_opened_at") or ""),
         ).get("project_id") or "")
-    if default_project_id:
-        return default_project_id
     return str(items[0].get("project_id") or "") if items else ""
 
 
@@ -464,6 +469,114 @@ def _message_allows_create_task_proposal(message: str) -> bool:
     return any(phrase in text for phrase in explicit_phrases)
 
 
+def _scope_entry_is_path_like(entry: object) -> bool:
+    """A writer-fanout scope entry is a path or glob, never a prose sentence.
+
+    Path scopes are consumed as globs downstream; whitespace or the absence of
+    any path marker (``/``, ``*``, or a short file extension) means the entry
+    is prose, not a path.
+    """
+    text = str(entry or "").strip()
+    if not text or any(ch.isspace() for ch in text):
+        return False
+    has_extension = _has_short_file_extension(text)
+    if any("一" <= ch <= "鿿" for ch in text):
+        # CJK prose carries no whitespace, so "修改src/core下的文件" would
+        # otherwise pass on its "/" alone. Require a stronger path signal.
+        return "*" in text or has_extension
+    if "/" in text or "*" in text:
+        return True
+    return has_extension
+
+
+def _has_short_file_extension(text: str) -> bool:
+    dot = text.rfind(".")
+    return 0 < dot < len(text) - 1 and text[dot + 1:].isalnum() and len(text) - dot - 1 <= 5
+
+
+# LLMs drift on the verification field name (chat-e2e F3: an `acceptance`
+# list was silently dropped and the task landed with no acceptance criteria).
+_CONTRACT_VERIFICATION_SYNONYMS = (
+    "acceptance",
+    "acceptance_criteria",
+    "verification_steps",
+    "criteria",
+)
+
+
+def _task_contract_field_names() -> frozenset[str]:
+    import dataclasses
+
+    from zf.core.task.schema import TaskContract
+
+    return frozenset(f.name for f in dataclasses.fields(TaskContract))
+
+
+def _contract_text(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return "\n".join(str(item).strip() for item in value if str(item or "").strip())
+    return str(value or "").strip()
+
+
+def normalize_proposed_task_contract(payload: dict[str, Any]) -> dict[str, Any]:
+    """Coerce an LLM-authored task contract into the shapes the kernel stores.
+
+    The kanban agent (a headless LLM) tends to emit ``verification`` as a list
+    of prose steps — the contract field is a single string, so ``str([...])``
+    would persist an ugly Python-list repr — and ``scope`` as a prose sentence,
+    which writer fanout would then silently gate on as an unmatchable path glob
+    (the class of downstream break behind the racing-e2e task_map finding).
+    Join list verifications into readable lines and keep only path-like scope
+    entries, preserving any prose scope in ``notes`` rather than dropping it.
+    Field-name drift (``acceptance`` et al) maps into ``verification``, and any
+    remaining unknown contract keys are preserved in ``notes`` instead of being
+    silently dropped by the schema (chat-e2e F3).
+    """
+    if not isinstance(payload, dict):
+        return payload
+    contract = payload.get("contract")
+    if not isinstance(contract, dict):
+        return payload
+    payload = dict(payload)
+    contract = dict(contract)
+    verification = contract.get("verification")
+    if isinstance(verification, (list, tuple)):
+        contract["verification"] = "\n".join(
+            str(item).strip() for item in verification if str(item or "").strip()
+        )
+    if not str(contract.get("verification") or "").strip():
+        for synonym in _CONTRACT_VERIFICATION_SYNONYMS:
+            text = _contract_text(contract.pop(synonym, None))
+            if text:
+                contract["verification"] = text
+                break
+    scope = contract.get("scope")
+    if scope is not None:
+        entries = list(scope) if isinstance(scope, (list, tuple)) else [scope]
+        paths: list[str] = []
+        prose: list[str] = []
+        for entry in entries:
+            text = str(entry or "").strip()
+            if not text:
+                continue
+            (paths if _scope_entry_is_path_like(text) else prose).append(text)
+        contract["scope"] = paths
+        if prose:
+            _append_note(payload, "scope(non-path): " + "; ".join(prose))
+    known = _task_contract_field_names()
+    for key in [k for k in contract if k not in known]:
+        text = _contract_text(contract.pop(key))
+        if text:
+            _append_note(payload, f"contract.{key}(unmapped): {text}")
+    payload["contract"] = contract
+    return payload
+
+
+def _append_note(payload: dict[str, Any], note: str) -> None:
+    existing = str(payload.get("notes") or "").strip()
+    payload["notes"] = f"{existing}\n{note}" if existing else note
+
+
 def _message_allows_idea_to_product_proposal(message: str) -> bool:
     text = str(message or "").strip().lower()
     if not text:
@@ -726,6 +839,57 @@ def _payload_ref(payload: Any, key: str) -> Any:
     return None
 
 
+# RF-8: fanout/candidate 投影的 per-event 键集(与 _REF_EVENT_KEYS 分开 —
+# 那个喂 _refs_from_events/git_refs 输出,扩键会改其语义)。两视图各自
+# fingerprint 缓存+折叠,DFS 只在 build/fold 时发生。
+_TOPOLOGY_EVENT_KEYS = frozenset({
+    "fanout_id",
+    "fanout",
+    "parent_run",
+    "topology",
+    "stage_id",
+    "target_ref",
+    "trace_id",
+    "pdd_id",
+    "status",
+    "child_id",
+    "child_run",
+    "child",
+    "candidate_id",
+    "candidate_ref",
+    "candidate_branch",
+    "branch",
+})
+
+_REF_EVENT_KEYS = frozenset({
+    "base_commit",
+    "base_ref",
+    "source_commit",
+    "commit",
+    "task_ref",
+    "task_branch",
+    "worker_branch",
+    "branch",
+    "candidate_ref",
+    "candidate_branch",
+    "candidate_id",
+    "pdd_id",
+    "feature_id",
+    "fanout_id",
+    "child_id",
+    "run_id",
+    "workdir",
+    "source_branch",
+    "task_map_ref",
+    "source_index_ref",
+    "lane_id",
+    "affinity_tag",
+    "assignment_strategy",
+    "role_instance",
+    "instance_id",
+})
+
+
 def _payload_collect(node: Any, keys) -> dict:
     # One DFS resolving many keys at once, equivalent to calling _payload_ref
     # per key but walking the payload a single time. Refs extraction over a
@@ -762,11 +926,18 @@ def _payload_collect(node: Any, keys) -> dict:
 def _payload_mentions(payload: Any, needle: str) -> bool:
     if not needle:
         return False
+    return needle.lower() in _payload_search_text(payload)
+
+
+def _payload_search_text(payload: Any) -> str:
+    """Lowered dump used by _payload_mentions — compute once per event when
+    matching many needles against the same payload (O(events x tasks) dumps
+    otherwise; 57k dumps per _kanban on the r2 archive)."""
     try:
         text = json.dumps(payload, ensure_ascii=False, default=str)
     except Exception:
         text = str(payload)
-    return needle.lower() in text.lower()
+    return text.lower()
 
 
 def _first_nonempty(values: list[Any]) -> Any:

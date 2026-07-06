@@ -720,9 +720,13 @@ def _apply_child_metadata(child: dict, payload: dict) -> None:
         "lane_id",
         "stage_slot",
         "affinity_tag",
+        "pipeline_id",
+        "root_fanout_id",
+        "upstream_root_fanout_id",
         "upstream_fanout_id",
         "upstream_child_id",
         "upstream_task_id",
+        "upstream_stage_slot",
         "queue_order",
         "briefing_path",
     ):

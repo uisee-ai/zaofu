@@ -8,6 +8,7 @@ coupling the dashboard to the orchestrator internals.
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 from collections import defaultdict
@@ -77,8 +78,29 @@ def record_timing(
     path_obj.parent.mkdir(parents=True, exist_ok=True)
     lock = _lock_for(path_obj)
     with lock:
+        _rotate_if_oversized(path_obj)
         with path_obj.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+# R12-3a: the timing log had NO rotation — the observability we added to hunt
+# the 38MB/day event-log problem would itself become the next unbounded file
+# on a long-lived server. One rolled generation is kept (.1) so summarize
+# windows spanning the rotation lose at most the older half.
+_TIMING_LOG_MAX_BYTES = int(os.environ.get("ZF_WEB_TIMING_LOG_MAX_MB", "16")) * 1024 * 1024
+
+
+def _rotate_if_oversized(path_obj: Path) -> None:
+    try:
+        if path_obj.stat().st_size < _TIMING_LOG_MAX_BYTES:
+            return
+    except OSError:
+        return
+    rolled = path_obj.with_suffix(path_obj.suffix + ".1")
+    try:
+        path_obj.replace(rolled)
+    except OSError:
+        pass
 
 
 def summarize_timings(

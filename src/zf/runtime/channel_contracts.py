@@ -98,6 +98,7 @@ CHANNEL_SAFE_PERMISSIONS = {
 }
 CHANNEL_DISCUSSION_MODES = {
     "manual_mention",
+    "mention_relay",
     "round_robin",
     "priority",
     "leader_delegation",
@@ -175,6 +176,21 @@ def normalize_permission_profile(value: object) -> str:
     if raw in CHANNEL_PERMISSION_PROFILES:
         return raw
     return CHANNEL_PERMISSION_PROFILE_DEFAULT
+
+
+def default_debate_max_rounds(member_count: int) -> int:
+    """G4's round budget (channel_router._debate_round_guard_reason) is
+    consumed by dispatched reply_requests, not agent-to-agent relay hops —
+    a single @all fanout to N roster members alone consumes N "rounds". A
+    fixed default of 6 exhausts before a 3-member discussion's blind fanout
+    + phase2-relay-kickoff + synthesis-kickoff (3+3+1=7 dispatches) even
+    completes, permanently blocking synthesis dispatch (2026-07-03
+    racing-codex e2e rounds 1-3, 100% reproduction with the 3-member/6-round
+    combination). Scale with roster size so the documented discussion
+    protocol's own structured dispatches always fit, leaving headroom for
+    real relay chatter.
+    """
+    return max(6, max(member_count, 1) * 4)
 
 
 def permission_profile_write_policy(value: object) -> dict[str, Any]:

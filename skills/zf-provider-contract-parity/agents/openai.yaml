@@ -1,0 +1,4 @@
+interface:
+  display_name: "Provider Contract Parity"
+  short_description: "Check provider, model, and function-call parity."
+  default_prompt: "Use this skill to verify provider and function-call parity against the source agent."

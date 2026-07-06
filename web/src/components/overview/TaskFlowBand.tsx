@@ -79,6 +79,15 @@ export function TaskFlowBand({
 }: TaskFlowBandProps) {
   if (!flow) {
     const countFor = (id: BoardColumnId) => fallbackCounts.find((item) => item.id === id)?.count ?? 0;
+    const allZero = fallbackCounts.every((item) => !item.count) && tasks.length === 0;
+    if (allZero) {
+      // An all-zero flow rail is pure chrome; keep one quiet line instead of a band.
+      return (
+        <section className="pulse-band-section" data-testid="overview-task-flow-band">
+          <span className="muted">No task flow yet.</span>
+        </section>
+      );
+    }
     const openColumn = (id: BoardColumnId) => {
       const firstTask = tasks.find((task) => taskColumn(task) === id);
       if (firstTask) onOpenTask(firstTask.id);

@@ -22,6 +22,20 @@ def _req(*fields: str) -> dict[str, Any]:
     return {"required": list(fields)}
 
 
+_LANE_STAGE_HANDOFF_EVENTS: dict[str, dict[str, Any]] = {
+    "lane.stage.completed": _req(
+        "pipeline_id", "trace_id", "task_id", "lane_id", "stage_slot",
+        "next_stage_slot", "attempt_id", "fanout_id", "child_id", "run_id",
+        "role_instance", "task_map_ref", "handoff_ref", "source_commit",
+        "evidence_refs",
+    ),
+    "lane.stage.failed": _req(
+        "pipeline_id", "task_id", "lane_id", "stage_slot", "attempt_id",
+        "failure_target", "status", "reason",
+    ),
+}
+
+
 # refactor-flow/v1 — 提炼自 cj-min zf-lane-pipeline.yaml(2026-06-11)
 # 手抄的 22 事件 required 集。/v1 不可变。
 _REFACTOR_FLOW_V1: dict[str, dict[str, Any]] = {
@@ -101,6 +115,13 @@ _REFACTOR_FLOW_V1: dict[str, dict[str, Any]] = {
     "judge.failed": _req("fanout_id", "stage_id", "status", "target_ref"),
 }
 
+# refactor-flow/v2 — v1 + kernel-owned lane stage handoff 事件。v1 保持
+# 不变,需要 per-lane stage transition 的项目显式升级到 v2。
+_REFACTOR_FLOW_V2: dict[str, dict[str, Any]] = {
+    **_REFACTOR_FLOW_V1,
+    **_LANE_STAGE_HANDOFF_EVENTS,
+}
+
 # canonical-dag/v1 — 通用 stage 语法事件契约(G1,2026-06-11)。
 # 面向任何走 canonical-dag 词汇(review/test/judge/candidate 家族)的项目:
 # 引用即得 schema 强制,不需要项目自带 160 行手抄。required 取通用基线
@@ -127,9 +148,16 @@ _CANONICAL_DAG_V1: dict[str, dict[str, Any]] = {
     "judge.child.failed": _req("fanout_id", "child_id", "status"),
 }
 
+_CANONICAL_DAG_V2: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V1,
+    **_LANE_STAGE_HANDOFF_EVENTS,
+}
+
 SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "refactor-flow/v1": _REFACTOR_FLOW_V1,
+    "refactor-flow/v2": _REFACTOR_FLOW_V2,
     "canonical-dag/v1": _CANONICAL_DAG_V1,
+    "canonical-dag/v2": _CANONICAL_DAG_V2,
 }
 
 

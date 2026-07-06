@@ -40,13 +40,20 @@ def test_kept_events_still_wake():
 def test_wake_list_changes_are_explicit():
     # 快照锁:数量带 ±0 容差——增删唤醒源必须改本测试(显式决策)。
     assert len(WAKE_PATTERNS) == len(set(WAKE_PATTERNS))  # 无重复
-    assert len(WAKE_PATTERNS) == 101, (
+    assert len(WAKE_PATTERNS) == 118, (
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
         f"[plan.rejected∈CANDIDATE_FAIL_EVENTS、plan.approved 触发 fanout 重入]"
         f" → 96+3=99; merge 2026-06-22 fanout.child.completed/failed +2"
-        f" → 101)"
+        f" → 101; repair/autoresearch runtime bridge +1 → 102; doc 119 "
+        f"goal-convergence bridge +5:module.parity.scan.completed / "
+        f"legacy cangjie.module.parity.scan.completed / "
+        f"gap_plan.ready / task.ref.updated / cost.usage.capture_miss → 107; "
+        f"goal/flow scoped gap-plan success +2:goal.gap_plan.ready / "
+        f"flow.gap_plan.ready plus later runtime control events → 117; "
+        f"avbs-r4 F3 补 doc 121 discovery bridge 唤醒缺口 +1:"
+        f"flow.discovery.completed(coverage 测试抓到的 dev 红)→ 118)"
     )
 
 

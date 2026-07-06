@@ -135,6 +135,19 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # (tests/longhorizon/run_zaofu_channel_real.py).
     "channel.message.posted",
     "channel.agent.reply.requested",
+    # Doc-122 discussion driver events are also reactor-handled:
+    # _on_channel_discussion_event ticks the discussion state machine when
+    # async transports emit reply / question / consensus ledger events. Keep
+    # them wakeable; otherwise strict cold-start sees registered handlers that
+    # the live watcher will never deliver.
+    "channel.agent.reply.completed",
+    "channel.question.opened",
+    "channel.question.resolved",
+    "channel.question.merged",
+    "channel.questions.frozen",
+    "channel.consensus.proposed",
+    "channel.consensus.signed",
+    "channel.consensus.blocked",
     # α-3 (2026-05-17): worker.probe.silent wakes run_once so
     # downstream consumers (web UI badges, follow-up reaction) see the
     # signal in real time.
@@ -165,6 +178,23 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "candidate.integration.started",
     "candidate.conflict",
     "candidate.ready",
+    # Refactor goal-convergence bridge events. They are emitted by workers or
+    # deterministic bridges and must wake run_once so module parity and gap-plan
+    # loops do not wait for an unrelated tick.
+    "module.parity.scan.completed",
+    # Legacy alias for historical Cangjie/Hermes refactor runs.
+    "cangjie.module.parity.scan.completed",
+    # Flow-neutral discovery bridge (doc 121 P0) — same family as the
+    # parity-scan bridges above; without a wake the bridge only fires on
+    # the 5s tick catch-up (test_wake_pattern_coverage flagged the gap).
+    "flow.discovery.completed",
+    "gap_plan.ready",
+    "goal.gap_plan.ready",
+    "flow.gap_plan.ready",
+    "task.ref.updated",
+    # Cost capture misses can prove a reader child dispatch was lost after a
+    # provider session replacement; wake the fanout recovery sweep promptly.
+    "cost.usage.capture_miss",
     # LH-3.T4 hotfix (2026-04-20): Tri-State SUSPEND must wake Layer 1
     # so _on_suspended can move task to blocked + emit human.escalate
     # + route to EscalationManager. Without this, suspended tasks
@@ -391,6 +421,7 @@ BATCH_PROCESSED_EVENTS: frozenset[str] = frozenset({
     # task.status_changed, which already wake the loop.
     "integration.failed",
     "workflow.resume.applied",
+    "fanout.child.dispatch_lost",
 })
 
 
@@ -457,3 +488,28 @@ def wake_contract_diagnostics(
         },
         "categories": categories,
     }
+
+
+def wake_worthy(event) -> bool:
+    """avbs-r4 F3: 高频观察型 hook 事件不值一次 run_once 唤醒。
+
+    3 个 codex writer 并行时 tool-use hook 流速远超单线程 watcher 消化
+    速度(r4 实测 3.6s/事件 × 13k 事件,lag 峰值 4864s,三次 flush 重启)。
+    而这两类唤醒是纯成本:
+
+    - ``codex.hook.post_tool_use`` 的 reactor handler 是 no-op;
+    - ``codex.hook.pre_tool_use`` 仅 permissionDecision=deny 时有意义
+      (转发 agent.api_blocked 进熔断),正常放行占绝对多数。
+
+    事件本体照常落 events.jsonl(hook-recv 侧效应在写入时已完成),
+    只是不再逐条唤醒 run_once。session_start / user_prompt_submit /
+    stop 是低频生命周期信号,保持唤醒(stop 还挂着 provider 恢复)。
+    """
+    event_type = str(getattr(event, "type", "") or "")
+    if event_type == "codex.hook.post_tool_use":
+        return False
+    if event_type == "codex.hook.pre_tool_use":
+        payload = getattr(event, "payload", None)
+        payload = payload if isinstance(payload, dict) else {}
+        return payload.get("permissionDecision") == "deny"
+    return True

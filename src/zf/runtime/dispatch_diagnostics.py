@@ -44,8 +44,10 @@ def build_dispatch_diagnostics(
     project_root: Path | None = None,
     now: datetime | None = None,
     stale_after_seconds: float = 180.0,
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any]:
-    events = _read_recent_events(state_dir, config=config)
+    if events is None:
+        events = _read_recent_events(state_dir, config=config)
     ready_tasks = _ready_tasks(state_dir)
     workers = build_worker_availability(
         state_dir,

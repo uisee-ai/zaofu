@@ -1,0 +1,42 @@
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: prd-fanout/v3
+spec:
+  lanes: 2
+  backend: codex
+  prdRef: docs/prd/TODO.md
+  targetRoot: app
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_and_demo
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: prd-fanout-v3
+  zaofu:
+    catalog:
+      id: prd-fanout-v3-codex
+      label: PRD Fanout v3
+      description: Short controller PRD workflow with scan, plan, impl, verify.
+      intent: build
+      backend: codex
+      roles: 9
+      recommended_for: [build]
+      preferred: true
+      order: 31
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [prod-runtime/v1]
+  version: "1.0"
+  project:
+    name: prd-fanout-v3
+  workflow:
+    dag:
+      external_triggers: [prd.requested]
+    rework_routing:
+      prd.scan.failed: planner
+      prd.plan.failed: planner
+      integration.failed: planner
+      test.failed: dev-lane-0

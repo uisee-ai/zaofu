@@ -119,6 +119,90 @@ class TestLatestDispatchedHelper:
         orch = Orchestrator(state_dir, cfg, transport)
         assert orch._latest_dispatched_per_task()["TASK-A"] == "review"
 
+    @pytest.mark.parametrize("terminal_type", [
+        "fanout.child.completed",
+        "fanout.child.failed",
+    ])
+    def test_fanout_terminal_clears_active_dispatch(
+        self, state_dir, cfg, transport, terminal_type,
+    ):
+        ts = TaskStore(state_dir / "kanban.json")
+        ts.add(Task(id="TASK-A", title="TASK-A", status="in_progress", assigned_to="dev-1"))
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="fanout.child.dispatched",
+            actor="zf-cli",
+            task_id="TASK-A",
+            payload={
+                "fanout_id": "fanout-dev",
+                "child_id": "TASK-A",
+                "run_id": "run-1",
+                "role_instance": "dev-1",
+                "task_id": "TASK-A",
+            },
+        ))
+        log.append(ZfEvent(
+            type=terminal_type,
+            actor="zf-cli",
+            task_id="TASK-A",
+            payload={
+                "fanout_id": "fanout-dev",
+                "child_id": "TASK-A",
+                "run_id": "run-1",
+                "role_instance": "dev-1",
+                "task_id": "TASK-A",
+                "status": "completed"
+                if terminal_type.endswith(".completed")
+                else "failed",
+            },
+        ))
+
+        orch = Orchestrator(state_dir, cfg, transport)
+
+        assert "TASK-A" not in orch._latest_dispatched_per_task()
+
+    def test_fanout_terminal_clears_reassigned_pending_dispatch(
+        self, state_dir, cfg, transport,
+    ):
+        ts = TaskStore(state_dir / "kanban.json")
+        ts.add(Task(id="TASK-A", title="TASK-A", status="in_progress", assigned_to="dev-1"))
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="task.assigned",
+            actor="zf-cli",
+            task_id="TASK-A",
+            payload={"assignee": "dev-1", "role": "dev"},
+        ))
+        log.append(ZfEvent(
+            type="fanout.child.dispatched",
+            actor="zf-cli",
+            task_id="TASK-A",
+            payload={
+                "fanout_id": "fanout-dev",
+                "child_id": "TASK-A",
+                "run_id": "run-1",
+                "role_instance": "dev-1",
+                "task_id": "TASK-A",
+            },
+        ))
+        log.append(ZfEvent(
+            type="fanout.child.completed",
+            actor="zf-cli",
+            task_id="TASK-A",
+            payload={
+                "fanout_id": "fanout-dev",
+                "child_id": "TASK-A",
+                "run_id": "run-1",
+                "role_instance": "dev-1",
+                "task_id": "TASK-A",
+                "status": "completed",
+            },
+        ))
+
+        orch = Orchestrator(state_dir, cfg, transport)
+
+        assert orch._reassigned_pending_dispatch() == set()
+
 
 class TestReassignGridlockResolved:
     """Before the fix: 2 reassigned tasks gridlocked and neither

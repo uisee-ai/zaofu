@@ -58,10 +58,34 @@ def run(args: argparse.Namespace) -> int:
     event_log = EventLog(state_dir / "events.jsonl") if state_dir.exists() else None
 
     if args.role:
+        if not _run_contract_restart_allowed(
+            config,
+            event_log,
+            state_dir,
+            context.project_root,
+            context.config_path,
+        ):
+            print("Error: run contract drift detected; restart blocked for strict run.", file=sys.stderr)
+            return 1
         return _restart_role(
-            args.role, config, transport, event_log, state_dir, dry_run,
+            args.role,
+            config,
+            transport,
+            event_log,
+            state_dir,
+            context.project_root,
+            dry_run,
         )
     else:
+        if not _run_contract_restart_allowed(
+            config,
+            event_log,
+            state_dir,
+            context.project_root,
+            context.config_path,
+        ):
+            print("Error: run contract drift detected; full restart blocked for strict run.", file=sys.stderr)
+            return 1
         return _restart_full(
             config,
             transport,
@@ -73,12 +97,40 @@ def run(args: argparse.Namespace) -> int:
         )
 
 
+def _run_contract_restart_allowed(
+    config,
+    event_log,
+    state_dir: Path,
+    project_root: Path,
+    config_path: Path,
+) -> bool:
+    try:
+        from zf.runtime.run_contract import evaluate_run_contract_resume_policy
+
+        policy = evaluate_run_contract_resume_policy(
+            config,
+            config_path=config_path,
+            project_root=project_root,
+            state_dir=state_dir,
+        )
+    except Exception:
+        return True
+    if policy.get("status") in {"STOP", "WARN"} and event_log is not None:
+        event_log.append(ZfEvent(
+            type="config.run_contract.resume_checked",
+            actor="zf-cli",
+            payload=policy,
+        ))
+    return policy.get("status") != "STOP"
+
+
 def _restart_role(
     role_name: str,
     config,
     transport,
     event_log,
     state_dir: Path,
+    project_root: Path,
     dry_run: bool,
 ) -> int:
     """Restart a single role's pane."""
@@ -92,7 +144,12 @@ def _restart_role(
     adapter = get_adapter(role.backend)
     transport.spawn(role, adapter.build_command(role))
 
-    instructions = generate_role_instructions(config, role)
+    instructions = generate_role_instructions(
+        config,
+        role,
+        state_dir_ref=state_dir,
+        project_root=project_root,
+    )
     instructions_dir = state_dir / "instructions"
     instructions_dir.mkdir(parents=True, exist_ok=True)
     (instructions_dir / f"{role_name}.md").write_text(instructions)

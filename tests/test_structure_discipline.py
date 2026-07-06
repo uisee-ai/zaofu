@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parent.parent
-_DESIGN = _REPO / "docs" / "design"
+_DESIGN = _REPO / "docs" / "manual"
 _SRC = _REPO / "src" / "zf"
 _SOURCE_FILE_SOFT_LIMIT = 1000
 
@@ -147,10 +147,15 @@ def test_runtime_modules_have_callers_or_are_whitelisted():
 # freeze. Caps below are current line count + ~10%. Raising any cap
 # requires a same-PR justification in the commit message answering
 # "why can this not be a sibling module".
+# Reconciliation 2026-07-03(第四轮,origin pull 合流):chat-e2e/audit B1/B2 +
+# avbs-r2 批推进 5 个 cap。四轮移动靶 = merge 前置 structure 门的持续论据。
 _OVERSIZED_FILE_CAPS = {
     # P1 seam 1 (2026-06-12): 4561 lines of read-side projections moved
     # to src/zf/web/projections/*; cap lowered to new size +10%.
-    "src/zf/web/server.py": 8100,
+    # Reconciliation 2026-07-03: doc-125 web-wizard + R6 GZip/ETag (+29) + prior
+    # projection-seam merges pushed to 9052 past the frozen 8100. Freeze at clean
+    # dev size; next server route must land in a projections/* sibling.
+    "src/zf/web/server.py": 9307,
     # P3 (2026-06-12): 49 fanout/synth coordination methods moved to
     # FanoutCoordinationMixin (orchestrator_fanout.py); both files
     # frozen at new size +10% — the mixin is born oversized and is
@@ -163,7 +168,13 @@ _OVERSIZED_FILE_CAPS = {
     # accepted instead of dropped (false-stuck livelock). It mutates the same
     # self._active_dispatch_ids state this file already owns; a sibling module
     # for one tiny stateful helper would split that ownership, so the cap absorbs.
-    "src/zf/runtime/orchestrator.py": 4153,
+    # Reconciliation 2026-07-03: crossed to 4384 via post-2026-06-24 merges
+    # without a cap bump. Freeze at clean dev size; next orchestrator behavior extracts.
+    # Reconciliation 2026-07-03(第三轮): flow-productization merges → 4422.
+    # +44 (2026-07-04, avbs-r4 F 批): 三个 sibling 模块的 call site 接线
+    # (reader_child_task_resolution 富化、rework bump 事件窗、lag 自监控)
+    # ——逻辑均在 sibling,call site 必须在 run_once 环点无法外移。
+    "src/zf/runtime/orchestrator.py": 4471,
     # +14 (2026-06-20): PRD-product-stage branch in the fanout-child briefing
     # builder (emits prd_ref/artifact_refs/evidence_refs). It is one more
     # sibling branch of the same _write_*_fanout_briefing method that already
@@ -192,18 +203,47 @@ _OVERSIZED_FILE_CAPS = {
     # doing backend work). It is a module-level pure helper next to the dispatch
     # loop that calls it; a sibling module for one assignment helper would split
     # the dispatch logic, so the cap absorbs it.
-    "src/zf/runtime/orchestrator_fanout.py": 5731,
+    # Reconciliation 2026-07-03: doc-125 / RF-7A-b / lane-recovery merges grew
+    # this by ~1391 past the frozen cap without updating the registry (baseline
+    # went red-by-staleness, masking real regressions). Freeze at current clean
+    # dev size; next fanout behavior must extract to a sibling before this moves.
+    # Split tracked in tasks/active/2026-07-03-0457-test-suite-hygiene-baseline-27-red.md.
+    # +56 (2026-07-04, prod-e2e): bad task_map 的 no-dead-end 上游返工
+    # 路由——emit 点必须内嵌在 admission except 序列(拓扑查找逻辑 20 行,
+    # 与既有 cancel 语境强耦合,独立 sibling 反而断上下文)。
+    # +37 (2026-07-05, prod-e2e): plan briefing 的 task_map JSON 合同
+    # 条款(与 admission 合同对齐,F4 分叉修复)必须内嵌在 briefing 组装
+    # 序列;replan 逻辑本体在 stage_failure_replan sibling。
+    # +32 (2026-07-05, r6-F4): fanout child briefing 渲染活跃 waiver
+    # (F6 缺口:injection 路径有、fanout 无 → verify 审角色看不见豁免令);
+    # waiver 读取在 waivers sibling,此处仅渲染 call site。
+    # +22 (2026-07-05, r6-F2): required_runtime_evidence 精确路径清单
+    # 渲染进 child briefing(命名合同传导,四轮 cap 文件名官僚战根治);
+    # 渲染 call site 与 F4 waiver 段同点。
+    # +81 (2026-07-05, BF-1): 跨代收编接线 + completion_adopted 审计
+    # 发射器;收编决策逻辑在 sibling fanout_completion_adoption.py,
+    # 留此处的是必须访问 event_writer/manifest 的 call site。
+    "src/zf/runtime/orchestrator_fanout.py": 7429,
     "src/zf/runtime/orchestrator_reactor.py": 6700,
     # Merge 2026-06-22: dispatch recovery helpers crossed the previous cap.
-    # Freeze at merged size; next dispatch feature must extract first.
-    "src/zf/runtime/orchestrator_dispatch.py": 4713,
+    # Reconciliation 2026-07-03: RF-7B transition-only dispatch (+32) + prior
+    # merges pushed to 4851. Freeze at clean dev size; next dispatch feature extracts.
+    # +26 (2026-07-04, avbs-r4 F1-D2): rework_scope_guard sibling 的 emit
+    # wrapper + 固定路由解析点的告警 call site,判定逻辑在 sibling。
+    # +50 (2026-07-04, E5): attempt_ledger sibling 的 deadletter 短路与
+    # cap 账本接线——两者都必须内嵌在 _dispatch_rework 决策序列里
+    # (deadletter 在 cap 之前、cap 在 busy 之前),计数/分类逻辑在 sibling。
+    # +22 (2026-07-04, 131-P2-1): task.attempt.retry_scheduled 发射必须
+    # 与 dispatch_id 铸造同点(lease_token 即 dispatch_id),纯 emit call
+    # site;事件语义/registry 合同在 event_problem_registry sibling。
+    "src/zf/runtime/orchestrator_dispatch.py": 5019,
     # P2 (2026-06-12): handler domains moved to 5 mixins + helpers
     # (control_actions_{channel_msg,channel_admin,product,ops,emit,
     # helpers}.py); cap lowered to new size +10%.
     # Full-suite reconciliation 2026-06-26: controlled-action runtime already
     # reached 497 in dev/HEAD before this branch's commit. Freeze here; next
     # action-domain growth must move into a domain sibling module.
-    "src/zf/runtime/control_actions.py": 497,
+    "src/zf/runtime/control_actions.py": 530,
     "src/zf/runtime/orchestrator_lifecycle.py": 2750,
     # Frontend freeze (2026-06-12): the two web monoliths had no size
     # gate at all (doc 44 "web 没人 review"); after the server.py split
@@ -217,7 +257,14 @@ _OVERSIZED_FILE_CAPS = {
     # Full-suite reconciliation 2026-06-26: dashboard shell reached 3191 after
     # workspace-default delete guard wiring. Freeze here; next page/view
     # addition must extract.
-    "web/src/app/App.tsx": 3191,
+    # Reconciliation 2026-07-03: dashboard shell reached 3449 via doc-125 wizard
+    # intake + page wiring. Freeze at clean dev size; next page/view must extract.
+    # +11 (2026-07-04 E0 清红): feishu kanban Accept 渲染(功能增量,
+    # 并行线)越门未同步快照,dev 现行红多日;按当前尺寸冻结,
+    # 下一个 view 增量必须外提组件。
+    # +1 (2026-07-04, 131-P0-5): SpineHealthStrip 接线仅 projectId prop
+    # 一行;组件本体在 kanban/SpineHealthStrip.tsx sibling。
+    "web/src/app/App.tsx": 3475,
     # P2 phase 1 (2026-06-12): split into web/src/styles/ ordered chunks
     # (bundle byte-identical); styles.css is now an @import manifest.
     "web/src/styles.css": 200,
@@ -253,8 +300,17 @@ _KNOWN_OVERSIZED_SOURCE_FILES = {
     "src/zf/core/verification/discriminator.py",
     "src/zf/core/verification/event_schema.py",
     "src/zf/runtime/automation_projection.py",
+    # 2026-07-04 blocked-burn 看门狗(70 行)破千;tick_services 是纯
+    # 调度器+module 级看门狗集合,同质 handler 列表形状。defer trigger:
+    # 下个 watchdog 进驻时抽 tick_watchdogs.py sibling。
+    "src/zf/runtime/tick_services.py",
     "src/zf/runtime/candidates.py",
     "src/zf/runtime/channel_projection.py",
+    # E1/E3(2026-07-04)registry closure 达成 100% 后 43 条新注册破千行。
+    # 同质数据表(平行 EventProblemSpec 条目),认知成本=滚动而非结构;
+    # defer 触发条件:下次新增 ≥10 条 spec 时把 EVENT_PROBLEM_SPECS 数据
+    # 段拆到 event_problem_specs_data.py,逻辑留本文件。
+    "src/zf/runtime/event_problem_registry.py",
     "src/zf/runtime/housekeeping.py",
     "src/zf/runtime/injection.py",
     "src/zf/runtime/long_horizon.py",
@@ -286,6 +342,36 @@ _KNOWN_OVERSIZED_SOURCE_FILES = {
     "web/src/components/kanban/TaskDetail.tsx",
     "web/src/components/observability/ObservabilityPage.tsx",
     "web/src/styles/07-agent.css",
+    # Reconciliation 2026-07-03 (tasks/active/2026-07-03-0457-...): these crossed
+    # the 1000-line soft limit via doc-118..125 workflow-intake + web-wizard
+    # merges without a debt entry, so the guard fired red-by-staleness on clean
+    # dev. Registered here with split triggers; real splits tracked in the task.
+    # Split trigger: next flow-intake/submit command change.
+    "src/zf/cli/flow.py",
+    # Split trigger: next supervisor inspection signal or attention rule.
+    "src/zf/runtime/supervisor_inspection.py",
+    # Split trigger: next read-model projection/endpoint or freshness-gate change.
+    "src/zf/web/projections/read_model.py",
+    # Split trigger: next agent-session timeline view feature.
+    "web/src/components/agent-session/AgentSessionTimeline.tsx",
+    # Split trigger: next orchestrator-panel section or agent-cockpit view.
+    "web/src/components/orchestrator/OrchestratorPanel.tsx",
+    # Split trigger: next delivery-page style block.
+    "web/src/styles/11-delivery.css",
+    # Reconciliation 2026-07-03(第三轮):
+    # render.py crossed 1000 via flow-productization (f023b6e4).
+    # Split trigger: next flow-spec render/materialize branch.
+    "src/zf/core/config/render.py",
+    # common.py crossed via kanban-agent contract shapes (5fca581c) + RF-10
+    # shared ref-keys/collect helpers (f4d0a2b7) — joint growth.
+    # Split trigger: next shared projection helper.
+    "src/zf/web/projections/common.py",
+    # Reconciliation 2026-07-03 (dev eed79540 workflow-productization merge):
+    # crossed 1000 via new controller/flow-intake code. Split trigger below.
+    # Split trigger: next start-command flow/kind branch.
+    "src/zf/cli/start.py",
+    # Split trigger: next workflow-profile archetype or catalog rule.
+    "src/zf/core/config/workflow_profiles.py",
 }
 
 

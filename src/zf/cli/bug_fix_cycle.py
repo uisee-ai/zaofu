@@ -2,9 +2,9 @@
 
 Wraps the markdown playbook (`skills/zaofu-bug-fix-cycle/SKILL.md`)
 into a deterministic CLI flow. Reads the most-recent `zaofu.bug.detected`
-event from a cangjie-style `.zf/events.jsonl`, surfaces the evidence
-and suggested fix area, and (in `--auto-stash` mode) actually runs the
-stash / restart / resume steps.
+event from a project state `events.jsonl`, surfaces the evidence and suggested
+fix area, and (in `--auto-stash` mode) actually runs the stash / restart /
+resume steps.
 
 Default mode is **interactive**: print the diagnosis + step-by-step
 prompt, exit. Operator copy-pastes commands. This matches the
@@ -34,7 +34,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--state-dir",
         type=Path,
         default=None,
-        help="Cangjie .zf/ directory (default: ./.zf relative to cwd)",
+        help="Project .zf/ directory (default: ./.zf relative to cwd)",
     )
     parser.add_argument(
         "--signature",
@@ -49,6 +49,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Emit the diagnosis as JSON instead of human prose.",
     )
     parser.set_defaults(func=_run)
+
+
+def _zaofu_checkout_hint() -> str:
+    """Best-effort path to the zaofu checkout for the operator playbook.
+
+    An editable install resolves to the repo (pyproject.toml present); a
+    site-packages install has no repo to patch, so fall back to a placeholder.
+    """
+    candidate = Path(__file__).resolve().parents[3]
+    if (candidate / "pyproject.toml").exists():
+        return str(candidate)
+    return "<zaofu-checkout>"
 
 
 def _resolve_state_dir(args) -> Path:
@@ -86,7 +98,11 @@ def _render_human(bug_event) -> str:
     conf = payload.get("confidence", "?")
     area = payload.get("suggested_fix_area", "?")
     evidence = payload.get("evidence_event_ids", []) or []
-    snap = payload.get("cangjie_state_snapshot", {}) or {}
+    snap = (
+        payload.get("run_state_snapshot")
+        or payload.get("cangjie_state_snapshot")
+        or {}
+    )
 
     lines = [
         f"zaofu.bug.detected: {sig} (confidence: {conf})",
@@ -94,7 +110,7 @@ def _render_human(bug_event) -> str:
         f"  emitted_at:     {bug_event.ts}",
         f"  suggested_fix:  {area}",
         "",
-        "Cangjie state snapshot:",
+        "Run state snapshot:",
     ]
     if not snap:
         lines.append("  (none)")
@@ -110,30 +126,27 @@ def _render_human(bug_event) -> str:
         "Operator playbook (see skills/zaofu-bug-fix-cycle/SKILL.md):"
     )
     lines.append("")
-    lines.append("1. stash cangjie state:")
-    lines.append("     cd /path/to/example-project")
+    lines.append("1. stash target project state:")
+    lines.append("     cd <target-project-root>")
     lines.append(f"     git stash push -u -m 'zaofu-fix-pause-{sig}'")
     lines.append("")
-    lines.append("2. fix zaofu in /path/to/zaofu:")
+    zaofu_root = _zaofu_checkout_hint()
+    lines.append(f"2. fix zaofu in {zaofu_root}:")
     lines.append(f"     read the {len(evidence)} evidence events above")
     lines.append(f"     patch {area}")
     lines.append("     add a regression test that replays the evidence")
     lines.append("     pytest --no-cov -q")
     lines.append("     git commit + git push origin dev")
     lines.append("")
-    lines.append("3. restart cangjie watcher:")
-    lines.append("     cd /path/to/example-project")
-    lines.append(
-        "     /path/to/zaofu/.venv/bin/python -m zf.cli.main stop"
-    )
-    lines.append(
-        "     /path/to/zaofu/.venv/bin/python -m zf.cli.main start &"
-    )
+    lines.append("3. restart target project watcher:")
+    lines.append("     cd <target-project-root>")
+    lines.append(f"     {sys.executable} -m zf.cli.main stop")
+    lines.append(f"     {sys.executable} -m zf.cli.main start &")
     lines.append("")
-    lines.append("4. resume cangjie task:")
+    lines.append("4. resume target task:")
     lines.append("     git stash pop")
     lines.append(
-        "     zf emit cangjie.bug.zaofu_fix_applied --payload '{...}'"
+        "     zf emit zaofu.bug.fix_applied --payload '{...}'"
     )
     return "\n".join(lines)
 

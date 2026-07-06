@@ -85,6 +85,21 @@ class TestRoundTrip:
         spec = parse_lane_pipeline(out)
         assert spec.lane_count == 2
 
+    def test_barriers_stage_transition_camelcase_normalizes(self):
+        canonical = normalize_lane_pipeline_external(_external_spec(
+            barriers={
+                "stageTransition": "per_lane",
+                "final": "all_lanes_verified",
+            },
+        ))
+        assert canonical["barriers"] == {
+            "stage_transition": "per_lane",
+            "final": "all_lanes_verified",
+        }
+        spec = parse_lane_pipeline(canonical)
+        assert spec.stage_transition == "per_lane"
+        assert spec.final_barrier == "all_lanes_verified"
+
 
 class TestFailClosed:
     def test_unknown_camelcase_key_rejected_not_dropped(self):
@@ -95,6 +110,13 @@ class TestFailClosed:
         spec = _external_spec()
         spec["laneRoleTemplate"]["stuckThresholdSecond"] = 1  # 拼错
         with pytest.raises(KindEnvelopeError, match="stuckThresholdSecond"):
+            normalize_lane_pipeline_external(spec)
+
+    def test_unknown_barrier_camelcase_rejected(self):
+        spec = _external_spec(
+            barriers={"stageTransitions": "per_lane"},  # 拼错
+        )
+        with pytest.raises(KindEnvelopeError, match="stageTransitions"):
             normalize_lane_pipeline_external(spec)
 
     def test_canonical_discipline_not_relaxed(self):

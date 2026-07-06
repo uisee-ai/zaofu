@@ -97,7 +97,7 @@ def test_ship_block_loop_different_blockers_dont_match():
     assert match is None
 
 
-def test_ship_block_loop_extracts_cangjie_state_snapshot():
+def test_ship_block_loop_extracts_run_state_snapshot():
     """The match must include the pdd_id so the operator playbook knows
     which feature to stash + retry."""
     from zf.runtime.zaofu_bug_signatures import ship_block_loop_signature
@@ -109,8 +109,9 @@ def test_ship_block_loop_extracts_cangjie_state_snapshot():
     match = ship_block_loop_signature(events)
 
     assert match is not None
-    snap = match.cangjie_state_snapshot
+    snap = match.run_state_snapshot
     assert snap.get("pdd_id") == "F-abcdef00"
+    assert match.cangjie_state_snapshot == snap
 
 
 # ─── respawn_failure_cascade signature ───────────────────────────────────
@@ -184,7 +185,7 @@ def test_judge_failure_loop_matches_on_three_failures_same_task():
 
     assert match is not None
     assert match.signature == "judge_failure_loop"
-    snap = match.cangjie_state_snapshot
+    snap = match.run_state_snapshot
     assert snap.get("task_id") == "TASK-A"
 
 

@@ -35,11 +35,19 @@ _KNOWN_STAGE_KEYS = frozenset({
 _KNOWN_TERMINAL_KEYS = frozenset({"success", "failure"})
 _KNOWN_ON_FAILURE_KEYS = frozenset({"rework_to", "feedback_artifact"})
 _KNOWN_FINAL_KEYS = frozenset({"when", "role", "success", "failure"})
+_KNOWN_BARRIER_KEYS = frozenset({"stage_transition", "final"})
 
 _VALID_OVERFLOW = frozenset({"first_released_lane", "none"})
 _VALID_FINAL_WHEN = frozenset({"all_tasks_verified"})
+_VALID_STAGE_TRANSITION = frozenset({"stage_barrier", "per_lane"})
+_VALID_FINAL_BARRIER = frozenset({"all_lanes_verified"})
 # doc 88 rev1 §4.2: lane 在任意终态释放,blocked 不钉死车道。
 LANE_RELEASE_TERMINALS = ("verified", "blocked", "superseded")
+LANE_STAGE_HANDOFF_SUCCESS_EVENT = "lane.stage.completed"
+LANE_STAGE_HANDOFF_FAILURE_EVENT = "lane.stage.failed"
+LANE_STAGE_HANDOFF_IDENTITY_FIELDS = (
+    "pipeline_id", "task_id", "attempt_id", "stage_slot", "lane_id",
+)
 
 
 def _reject_unknown(raw: dict, known: frozenset[str], context: str) -> None:
@@ -78,6 +86,8 @@ class LanePipelineSpec:
     final_role: str
     final_success: str
     final_failure: str
+    stage_transition: str = "stage_barrier"
+    final_barrier: str = ""
     lane_role_template: Any | None = None  # LaneRoleTemplateSpec(A1)
     schema_profile: str = ""                       # A2
     schema_overrides: dict = field(default_factory=dict)  # A2
@@ -180,6 +190,17 @@ def parse_lane_pipeline(raw: dict) -> LanePipelineSpec:
         raise LanePipelineSpecError(f"{pipeline_id}: final must be a mapping")
     _reject_unknown(final, _KNOWN_FINAL_KEYS, f"{pipeline_id}.final")
 
+    barriers = raw.get("barriers") or {}
+    if not isinstance(barriers, dict):
+        raise LanePipelineSpecError(f"{pipeline_id}: barriers must be a mapping")
+    _reject_unknown(barriers, _KNOWN_BARRIER_KEYS, f"{pipeline_id}.barriers")
+    stage_transition = str(
+        barriers.get("stage_transition") or "stage_barrier",
+    ).strip()
+    final_barrier = str(barriers.get("final") or "").strip()
+    if stage_transition == "per_lane" and not final_barrier:
+        final_barrier = "all_lanes_verified"
+
     from zf.core.workflow.lane_role_template import (
         LaneRoleTemplateError,
         parse_lane_role_template,
@@ -206,6 +227,8 @@ def parse_lane_pipeline(raw: dict) -> LanePipelineSpec:
         final_role=str(final.get("role") or "").strip(),
         final_success=str(final.get("success") or "").strip(),
         final_failure=str(final.get("failure") or "").strip(),
+        stage_transition=stage_transition,
+        final_barrier=final_barrier,
         lane_role_template=template,
         schema_profile=str(raw.get("schema_profile") or "").strip(),
         schema_overrides=(
@@ -285,6 +308,19 @@ def compile_lane_pipeline(
             "lane_pipeline_unclear_overflow",
             f"{spec.pipeline_id}: overflow {spec.overflow!r} not in "
             f"{sorted(_VALID_OVERFLOW)}",
+        ))
+    if spec.stage_transition not in _VALID_STAGE_TRANSITION:
+        diagnostics.append(_stop(
+            "lane_pipeline_invalid_stage_transition",
+            f"{spec.pipeline_id}: barriers.stage_transition "
+            f"{spec.stage_transition!r} not in "
+            f"{sorted(_VALID_STAGE_TRANSITION)}",
+        ))
+    if spec.final_barrier and spec.final_barrier not in _VALID_FINAL_BARRIER:
+        diagnostics.append(_stop(
+            "lane_pipeline_invalid_final_barrier",
+            f"{spec.pipeline_id}: barriers.final {spec.final_barrier!r} "
+            f"not in {sorted(_VALID_FINAL_BARRIER)}",
         ))
     if spec.require_artifact_digests and not spec.task_map_ref:
         diagnostics.append(_stop(
@@ -375,7 +411,7 @@ def compile_lane_pipeline(
                 f"entry); declare the rework target explicitly",
             ))
         next_stage = stage_ids[idx + 1] if idx + 1 < len(stage_ids) else ""
-        compiled_stages.append({
+        compiled_stage = {
             "stage_id": stage.stage_id,
             "role_selector": {
                 "pattern": stage.role_pattern,
@@ -391,7 +427,16 @@ def compile_lane_pipeline(
             "next_stage": next_stage,
             "failure_target": stage.rework_to,
             "feedback_artifact": stage.feedback_artifact,
-        })
+            "transition_scope": spec.stage_transition,
+        }
+        if spec.stage_transition == "per_lane":
+            compiled_stage["handoff_success_event"] = (
+                LANE_STAGE_HANDOFF_SUCCESS_EVENT
+            )
+            compiled_stage["handoff_failure_event"] = (
+                LANE_STAGE_HANDOFF_FAILURE_EVENT
+            )
+        compiled_stages.append(compiled_stage)
 
     effective_budget = spec.trace_budget or max(
         1, spec.max_rework_attempts * max(len(spec.stages), 1),
@@ -404,16 +449,19 @@ def compile_lane_pipeline(
         "affinity_key": spec.affinity_key,
         "lane_count": spec.lane_count,
         "overflow_policy": spec.overflow,
+        "stage_transition": spec.stage_transition,
         "stages": compiled_stages,
         "final_gate": {
             "when": spec.final_when,
             "role": spec.final_role,
             "success": spec.final_success,
             "failure": spec.final_failure,
+            "barrier": spec.final_barrier,
             # doc 88 rev1 M7: blocked task 存在时 final 永不满足;
             # partial-delivery 是 owner 显式语义。
             "blocked_tasks_block_final": True,
         },
+        "handoff_contract": _derive_handoff_contract(spec),
         # rev1 语义,reconciler(doc 87)与 runtime(P1+)的共同输入:
         "lane_release_on": list(LANE_RELEASE_TERMINALS),
         "attempt_binding": "unique_derivation_or_stale",
@@ -437,6 +485,43 @@ def compile_lane_pipeline(
         "rework_routing": _derive_rework_routing(spec),
     }
     return contract, diagnostics
+
+
+def _derive_handoff_contract(spec: LanePipelineSpec) -> dict[str, Any]:
+    """Stage transition 合同。
+
+    `stage_barrier` 保持现状:stage 级 aggregate gate 触发下一 stage。
+    `per_lane` 声明 kernel-owned lane stage 事件,供 reconciler/runtime 后续
+    接线;worker 仍只发布自身 terminal event,不能自报 lane handoff。
+    """
+    if spec.stage_transition != "per_lane":
+        return {
+            "mode": "stage_barrier",
+            "emitter": "stage_aggregate",
+        }
+    return {
+        "mode": "per_lane",
+        "emitter": "kernel",
+        "events": {
+            "success": LANE_STAGE_HANDOFF_SUCCESS_EVENT,
+            "failure": LANE_STAGE_HANDOFF_FAILURE_EVENT,
+        },
+        "identity_fields": list(LANE_STAGE_HANDOFF_IDENTITY_FIELDS),
+        "currentness_gate": {
+            "attempt_binding": "unique_derivation_or_stale",
+            "requires_task_map_ref": True,
+            "requires_source_commit": True,
+            "requires_handoff_ref": True,
+        },
+        "dispatch": {
+            "scope": "same_lane",
+            "next_stage_from": "stage.next_stage",
+            "release_entry_lane_on_terminal": (
+                spec.overflow == "first_released_lane"
+            ),
+        },
+        "final_barrier": spec.final_barrier or "all_lanes_verified",
+    }
 
 
 def _derive_affinity_lanes(
@@ -588,13 +673,19 @@ def validate_lane_pipeline_admission(
         str(item.get("task_id") or "")
         for item in task_items if _has_root_path(item)
     ]
+    single_assembly_slice = (
+        len(task_items) == 1
+        and str(task_items[0].get("root_owner_class") or "").strip() == "assembly"
+        and bool(str(task_items[0].get("task_id") or "").strip())
+    )
     if not root_owners:
-        problems.append(
-            f"no task in the task_map owns workspace-root paths "
-            f"(scaffolding such as package.json/tsconfig has no owner — "
-            f"the R21 failure shape); give the assembly/scaffold task a "
-            f"root-level allowed_path or split one out"
-        )
+        if not single_assembly_slice:
+            problems.append(
+                f"no task in the task_map owns workspace-root paths "
+                f"(scaffolding such as package.json/tsconfig has no owner — "
+                f"the R21 failure shape); give the assembly/scaffold task a "
+                f"root-level allowed_path or split one out"
+            )
     return problems
 
 

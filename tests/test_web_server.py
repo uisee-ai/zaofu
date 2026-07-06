@@ -17,9 +17,11 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
+from zf.core.config.loader import load_config
 from zf.core.config.project_context import ProjectContext
 from zf.core.config.schema import (
     FanoutAssignmentConfig,
+    ProjectConfig,
     RoleConfig,
     WorkflowAffinityLaneConfig,
     WorkflowAffinityLaneProfileConfig,
@@ -121,6 +123,121 @@ class TestApiState:
         assert timing_log.exists()
         assert "/api/state" in timing_log.read_text(encoding="utf-8")
 
+    def test_delivery_contract_projection_endpoints(self, state_dir: Path, tmp_path: Path):
+        project_root = state_dir.parent
+        matrix_ref = "docs/real-e2e-matrix.json"
+        (project_root / "docs").mkdir()
+        (project_root / matrix_ref).write_text(
+            json.dumps({
+                "schema_version": "real-e2e-matrix.v1",
+                "status": "ready",
+                "rows": [{"id": "web-chat", "status": "required"}],
+            }),
+            encoding="utf-8",
+        )
+        (state_dir / "config").mkdir()
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-web",
+                "refs": {"real_e2e_matrix": [matrix_ref]},
+            }),
+            encoding="utf-8",
+        )
+        (state_dir / "failure-candidates").mkdir()
+        (state_dir / "failure-candidates" / "fail-web.json").write_text(
+            json.dumps({
+                "schema_version": "failure-candidate.v1",
+                "failure_id": "fail-web",
+                "event": {"type": "run.manager.action.failed"},
+            }),
+            encoding="utf-8",
+        )
+        local_client = TestClient(create_app(state_dir, project_root=project_root))
+
+        run_contract = local_client.get("/api/run-contract").json()
+        candidates = local_client.get("/api/failure-candidates").json()
+        matrix = local_client.get("/api/real-e2e-matrix").json()
+
+        assert run_contract["status"] == "present"
+        assert run_contract["contract"]["contract_digest"] == "digest-web"
+        assert candidates["count"] == 1
+        assert candidates["items"][0]["failure_id"] == "fail-web"
+        assert matrix["status"] == "present"
+        assert matrix["summary"]["loaded"] == 1
+        assert matrix["matrices"][0]["summary"]["case_count"] == 1
+
+
+class TestWorkflowIntakeSubmitApi:
+    def test_project_workflow_api_intake_classify_submit_apply(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        project_root = tmp_path
+        config_path = project_root / "zf.yaml"
+        config_path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata: {name: issue-demo}
+spec:
+  lanes: 1
+  backend: mock
+  issueRef: docs/intake/bug.md
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo, state_dir: .zf}
+""")
+        state = project_root / ".zf"
+        state.mkdir()
+        (state / "kanban.json").write_text("[]\n", encoding="utf-8")
+        EventLog(state / "events.jsonl").append(ZfEvent(type="loop.started", actor="test"))
+        app = create_app(state, config=load_config(config_path), project_root=project_root)
+        client = TestClient(app)
+
+        intake_response = client.post(
+            "/api/projects/default/workflow-intake",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "kind": "issue",
+                "request_id": "wf-web",
+                "objective": "fix checkout regression",
+                "backend": "mock",
+            },
+        )
+
+        assert intake_response.status_code == 200
+        intake = intake_response.json()["result"]["intake_ref"]
+        classify_response = client.post(
+            "/api/projects/default/workflow-classify",
+            headers={"x-zf-web-token": "test-token"},
+            json={"intake_ref": intake},
+        )
+        assert classify_response.status_code == 200
+        submit_response = client.post(
+            "/api/projects/default/workflow-submit",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "intake_ref": intake,
+                "apply": True,
+                "task_id": "TASK-WEB",
+                "pattern_id": "issue-triage",
+                "allow_missing_env": True,
+            },
+        )
+
+        assert submit_response.status_code == 202
+        events = EventLog(state / "events.jsonl").read_all()
+        types = [event.type for event in events]
+        assert "workflow.submit.requested" in types
+        assert "workflow.submit.accepted" in types
+        assert "workflow.invoke.requested" in types
+
     def test_with_tasks(self, state_dir, client):
         TaskStore(state_dir / "kanban.json").add(
             Task(id="T1", title="hello", status="backlog"),
@@ -151,6 +268,51 @@ class TestApiState:
         inbox = data["owner_visible_inbox"]
         assert inbox["summary"]["pending"] == 1
         assert inbox["pending"][0]["message_id"] == "omsg-owner"
+
+    def test_project_config_render_endpoint_is_readonly(self, state_dir, tmp_path):
+        config_path = tmp_path / "zf.yaml"
+        config_path.write_text("""\
+version: "1.0"
+project:
+  name: render-api-demo
+  state_dir: .zf
+roles:
+- name: scan
+  instance_id: scan
+  backend: mock
+  role_kind: reader
+workflow:
+  dag:
+    external_triggers: [scan.requested]
+  stages:
+  - id: scan
+    trigger: scan.requested
+    topology: fanout_reader
+    roles: [scan]
+    aggregate:
+      mode: wait_for_all
+      success_event: scan.completed
+      failure_event: scan.failed
+""")
+        cfg = ZfConfig(
+            project=ProjectConfig(name="render-api-demo", state_dir=".zf"),
+            roles=[RoleConfig(name="scan", instance_id="scan", backend="mock", role_kind="reader")],
+            workflow=WorkflowConfig(stages=[
+                WorkflowStageConfig(
+                    id="scan",
+                    trigger="scan.requested",
+                    topology="fanout_reader",
+                    roles=["scan"],
+                )
+            ]),
+        )
+        local_client = TestClient(create_app(state_dir, config=cfg, project_root=tmp_path))
+
+        data = local_client.get("/api/projects/default/config/render").json()
+
+        assert data["schema_version"] == "config-inspection.v1"
+        assert data["project"]["name"] == "render-api-demo"
+        assert data["summary"]["roles"] == 1
 
     def test_phase_derivation_in_state(self, state_dir, client):
         TaskStore(state_dir / "kanban.json").add(
@@ -338,7 +500,7 @@ class TestApiSnapshot:
 
         assert data["snapshot_slice"] == "light"
         assert data["runtime"]["mode"] == "snapshot-light"
-        assert data["event_projection"]["schema_version"] == "event-read-model.v1"
+        assert data["event_projection"]["schema_version"] == "event-read-model.v3"
 
     def test_snapshot_includes_runtime_snapshot_projection(
         self,
@@ -1968,6 +2130,156 @@ class TestApiWebActions:
         assert "dispatch.paused" in types
         assert "web.action.completed" in types
 
+    def test_failure_closeout_action_materializes_candidates(self, state_dir, monkeypatch):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        (state_dir / "failure-candidates").mkdir()
+        (state_dir / "failure-candidates" / "fail-web-action.json").write_text(
+            json.dumps({
+                "schema_version": "failure-candidate.v1",
+                "failure_id": "fail-web-action",
+                "summary": "run.manager.action.failed: resume failed",
+                "classification": {"problem_class": "runtime_recovery"},
+                "event": {"type": "run.manager.action.failed"},
+                "evidence_refs": [],
+            }),
+            encoding="utf-8",
+        )
+        local_client = TestClient(create_app(state_dir))
+
+        r = local_client.post(
+            "/api/actions/failure.closeout",
+            headers={"x-zf-web-token": "test-token"},
+            json={"kinds": ["backlog", "eval"], "output_root": "artifacts/failure-closeout"},
+        )
+
+        assert r.status_code == 202
+        data = r.json()
+        assert data["status"] == "materialized"
+        assert data["materialized_count"] == 1
+        assert Path(data["manifest_ref"]).exists()
+        types = [event.type for event in EventLog(state_dir / "events.jsonl").read_all()]
+        assert "failure.closeout.materialized" in types
+        assert "web.action.completed" in types
+
+    def test_failure_closeout_activate_action_requires_approval_and_promotes_tasks(self, state_dir, monkeypatch):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        project_root = state_dir.parent
+        (state_dir / "failure-candidates").mkdir()
+        (state_dir / "failure-candidates" / "fail-web-activate.json").write_text(
+            json.dumps({
+                "schema_version": "failure-candidate.v1",
+                "failure_id": "fail-web-activate",
+                "summary": "run.manager.action.failed: resume failed",
+                "classification": {"problem_class": "runtime_recovery"},
+                "event": {"type": "run.manager.action.failed"},
+                "evidence_refs": [],
+            }),
+            encoding="utf-8",
+        )
+        local_client = TestClient(create_app(state_dir, project_root=project_root))
+        materialized = local_client.post(
+            "/api/actions/failure.closeout",
+            headers={"x-zf-web-token": "test-token"},
+            json={"kinds": ["backlog"], "output_root": "artifacts/failure-closeout"},
+        ).json()
+
+        blocked = local_client.post(
+            "/api/actions/failure.closeout.activate",
+            headers={"x-zf-web-token": "test-token"},
+            json={"manifest_ref": materialized["manifest_ref"]},
+        )
+        assert blocked.status_code == 403
+        assert blocked.json()["status"] == "approval_required"
+
+        r = local_client.post(
+            "/api/actions/failure.closeout.activate",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "manifest_ref": materialized["manifest_ref"],
+                "approval_ref": "owner-approved-web",
+            },
+        )
+
+        assert r.status_code == 202
+        data = r.json()
+        assert data["status"] == "activated"
+        assert data["promoted_count"] == 1
+        assert (project_root / "tasks" / "active").exists()
+        assert Path(data["report_ref"]).exists()
+        types = [event.type for event in EventLog(state_dir / "events.jsonl").read_all()]
+        assert "failure.closeout.activated" in types
+        assert "web.action.completed" in types
+
+    def test_real_e2e_run_action_uses_declared_run_contract_matrix(self, state_dir, monkeypatch):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        project_root = state_dir.parent
+        matrix_ref = "docs/real-e2e-matrix.json"
+        (project_root / "docs").mkdir()
+        (project_root / matrix_ref).write_text(
+            json.dumps({
+                "schema_version": "real-e2e-matrix.v1",
+                "rows": [{
+                    "id": "cli-smoke",
+                    "surface": "cli",
+                    "command": "printf ok",
+                }],
+            }),
+            encoding="utf-8",
+        )
+        (state_dir / "config").mkdir()
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-e2e",
+                "run_tag": "test-e2e",
+                "refs": {"real_e2e_matrix": [matrix_ref]},
+            }),
+            encoding="utf-8",
+        )
+        local_client = TestClient(create_app(state_dir, project_root=project_root))
+
+        r = local_client.post(
+            "/api/actions/real.e2e.run",
+            headers={"x-zf-web-token": "test-token"},
+            json={"timeout_seconds": 5},
+        )
+
+        assert r.status_code == 202
+        data = r.json()
+        assert data["status"] == "passed"
+        assert data["passed"] is True
+        assert Path(data["result_matrix_ref"]).exists()
+        types = [event.type for event in EventLog(state_dir / "events.jsonl").read_all()]
+        assert "real_e2e.run.completed" in types
+        assert "web.action.completed" in types
+
+    def test_run_contract_review_action_records_operator_review(self, state_dir, monkeypatch):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        (state_dir / "config").mkdir()
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-review",
+                "run_tag": "review-test",
+            }),
+            encoding="utf-8",
+        )
+        local_client = TestClient(create_app(state_dir, project_root=state_dir.parent))
+
+        r = local_client.post(
+            "/api/actions/run.contract.review",
+            headers={"x-zf-web-token": "test-token"},
+            json={"decision": "reviewed", "reason": "operator checked"},
+        )
+
+        assert r.status_code == 202
+        data = r.json()
+        assert data["status"] == "reviewed"
+        assert data["contract_digest"] == "digest-review"
+        types = [event.type for event in EventLog(state_dir / "events.jsonl").read_all()]
+        assert "run_contract.review.recorded" in types
+        assert "web.action.completed" in types
+
     def test_attention_ack_action_records_lifecycle_event(self, state_dir, monkeypatch):
         monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
         local_client = TestClient(create_app(state_dir))
@@ -2867,3 +3179,27 @@ class TestPlanApprovalWebAction:
             json={"plan_id": "evt-plan-2"},
         )
         assert r.status_code == 200 and r.json()["action"] == "plan-approve"
+
+
+class TestWorkflowSpineEndpoint:
+    """131-P0-5:shadow spine 四投影的只读 Web 解释端点。"""
+
+    def test_workflow_spine_serves_projections(self, state_dir: Path, tmp_path: Path):
+        from zf.core.workspace import stable_project_id as _spid
+        from zf.runtime.workflow_spine_projection import refresh_spine_projections
+
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(type="refactor.scan.ready", payload={"pdd_id": "PDD-W"}))
+        log.append(ZfEvent(type="verify.failed", payload={"pdd_id": "PDD-W"}))
+        log.append(ZfEvent(type="task.dispatched", task_id="T-W",
+                           payload={"role": "dev-1"}))
+        refresh_spine_projections(state_dir, log)
+
+        local_client = TestClient(create_app(state_dir, project_root=tmp_path))
+        project_id = _spid(name=tmp_path.name, root=tmp_path)
+        data = local_client.get(f"/api/projects/{project_id}/workflow-spine").json()
+
+        assert data["runs"]["PDD-W"]["milestones"] == 2
+        assert data["runs"]["PDD-W"]["attention"] is True
+        assert data["tasks"]["T-W"]["attempt_count"] == 1
+        assert "counters" in data["health"]

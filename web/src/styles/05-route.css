@@ -380,6 +380,45 @@
   padding: 10px;
 }
 
+.control-room-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+  gap: 12px;
+  padding: 12px;
+  min-width: 0;
+}
+
+.control-room-grid .subsection:last-child {
+  grid-column: 1 / -1;
+}
+
+.compact-list-row {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--surface) 78%, var(--bg));
+  padding: 8px 10px;
+}
+
+.compact-list-row strong,
+.compact-list-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 960px) {
+  .control-room-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .control-room-grid .subsection:last-child {
+    grid-column: auto;
+  }
+}
+
 .projection-summary-label {
   min-width: 0;
   display: inline-flex;

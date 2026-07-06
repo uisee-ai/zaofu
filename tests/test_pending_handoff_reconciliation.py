@@ -11,6 +11,8 @@ from zf.core.config.schema import (
     SessionConfig,
     VerificationConfig,
     WorkdirConfig,
+    WorkflowAffinityLaneConfig,
+    WorkflowAffinityLaneProfileConfig,
     WorkflowConfig,
     ZfConfig,
 )
@@ -1712,6 +1714,94 @@ def test_reconcile_snapshots_arch_artifacts_before_critic_handoff(
     assert ref_event.payload["source"] == "pending_handoff_reconcile"
     commit = _git(tmp_path, "rev-parse", "refs/heads/task/T1")
     assert _git(tmp_path, "show", f"{commit}:docs/plans/plan.md") == "arch plan"
+
+
+def test_reconcile_ignores_stale_design_handoff_for_lane_task(
+    tmp_path: Path,
+) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    orch.config.workflow = WorkflowConfig(affinity_lanes={
+        "refactor-slot": WorkflowAffinityLaneProfileConfig(
+            affinity_key="affinity_tag",
+            lanes=[
+                WorkflowAffinityLaneConfig(
+                    id="lane0",
+                    impl="dev-lane-0",
+                    verify="verify-lane-0",
+                ),
+            ],
+        ),
+    })
+    orch.config.roles.extend([
+        RoleConfig(
+            name="arch",
+            backend="mock",
+            publishes=["arch.proposal.done"],
+            triggers=["task.assigned"],
+            role_kind="reader",
+        ),
+        RoleConfig(
+            name="critic",
+            backend="mock",
+            publishes=["design.critique.done"],
+            triggers=["arch.proposal.done"],
+            role_kind="reader",
+        ),
+        RoleConfig(
+            name="dev-lane-0",
+            backend="mock",
+            publishes=["dev.build.done"],
+            triggers=["task.assigned"],
+            role_kind="writer",
+        ),
+    ])
+    store.add(Task(
+        id="CANGJIE-CORE-001",
+        title="core",
+        status="in_progress",
+        assigned_to="arch",
+        contract=TaskContract(
+            owner_role="dev-core",
+            evidence_contract={
+                "source": "refactor_task_map",
+                "affinity_tag": "core-foundation",
+            },
+        ),
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="CANGJIE-CORE-001",
+        payload={
+            "assignee": "arch",
+            "role": "arch",
+            "dispatch_id": "disp-arch",
+        },
+    ))
+    progress = ZfEvent(
+        type="arch.proposal.done",
+        actor="arch",
+        task_id="CANGJIE-CORE-001",
+        payload={
+            "dispatch_id": "disp-arch",
+            "artifact_refs": ["docs/plans/plan.md"],
+            "file_plan": ["docs/plans/plan.md"],
+        },
+    )
+    log.append(progress)
+
+    decisions = orch._reconcile_pending_handoffs()  # type: ignore[attr-defined]
+
+    assert len(decisions) == 1
+    assert decisions[0].action == "wait"
+    assert "ignored for lane task" in decisions[0].reason
+    assert store.get("CANGJIE-CORE-001").assigned_to == "arch"  # type: ignore[union-attr]
+    assert not [
+        event for event in _events(log)
+        if event.type == "task.assigned"
+        and event.payload.get("source") == "pending_handoff_reconcile"
+        and event.payload.get("assignee") == "critic"
+    ]
 
 
 def test_dispatch_allows_design_critic_before_contract_synthesis(

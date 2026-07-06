@@ -145,7 +145,7 @@ def test_recommend_build_maps_to_prd_flow(tmp_path):
 
 def test_recommend_backend_codex_flow(tmp_path):
     _py_repo(tmp_path)
-    assert recommend(detect(tmp_path), "build", backend="codex").archetype == "prd-fanout-codex"
+    assert recommend(detect(tmp_path), "build", backend="codex").archetype == "prd-fanout-v3-codex"
 
 
 def test_recommend_empty_minimal(tmp_path):
@@ -171,6 +171,20 @@ def test_recommend_intent_refactor_flow_strict(tmp_path):
     assert r.archetype == "refactor-flow-claude"
     assert r.catalog == "flow"
     assert r.harness_profile == "strict"
+
+
+def test_recommend_declared_refactor_codex_uses_controller_flow():
+    from zf.core.profile.detector import declared_profile
+    r = recommend(
+        declared_profile("node"),
+        "refactor",
+        declared=True,
+        backend="codex",
+        scale="internal",
+    )
+    assert r.archetype == "refactor-lane-v3-codex"
+    assert r.catalog == "flow"
+    assert r.backend == "codex"
 
 
 def test_recommend_misroute_on_build_existing(tmp_path):

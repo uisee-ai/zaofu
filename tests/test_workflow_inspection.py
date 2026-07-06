@@ -13,7 +13,10 @@ from zf.core.config.schema import (
     ZfConfig,
 )
 from zf.core.workflow.lane_pipeline import parse_lane_pipeline
-from zf.core.workflow.inspection import build_workflow_inspection_report
+from zf.core.workflow.inspection import (
+    build_workflow_inspection_report,
+    _graph_diagnostics,
+)
 
 
 def _healthy_config() -> ZfConfig:
@@ -355,3 +358,35 @@ class TestKernelSweptFailureExemption:
             and d.get("event") == "review.rejected"
             for d in diags
         )
+
+
+class TestKernelProducedTriggerExemption:
+    """Runtime bridge events are producers even when no stage emits them directly."""
+
+    def test_goal_loop_kernel_bridge_triggers_are_not_false_stop(self):
+        items = [
+            {
+                "kind": "trigger_without_producer",
+                "stage_id": "flow-verify-bridge",
+                "event": "test.passed",
+            },
+            {
+                "kind": "trigger_without_producer",
+                "stage_id": "flow-module-parity-scan",
+                "event": "verify.parity_scan.requested",
+            },
+            {
+                "kind": "trigger_without_producer",
+                "stage_id": "flow-final-judge",
+                "event": "module.parity.closed",
+            },
+            {
+                "kind": "trigger_without_producer",
+                "stage_id": "broken",
+                "event": "unknown.ready",
+            },
+        ]
+        diags = _graph_diagnostics(items, event_consumers={})
+
+        assert [diag["event"] for diag in diags] == ["unknown.ready"]
+        assert diags[0]["severity"] == "STOP"

@@ -109,6 +109,34 @@ def fanout_current_status(
     return FanoutCurrentStatus(fanout_id=fanout_id, known=False, current=True)
 
 
+def current_sibling_instance(
+    events: Iterable[ZfEvent],
+    fanout_id: str,
+) -> dict[str, Any] | None:
+    """同 logical_key 的当前代实例(BF-1 跨代收编的目标查找)。
+
+    r6.1 实测换代链可达 13+ 代,逐跳走 superseded_by 既慢又易断;
+    投影本身已维护 current-by-key,一跳直达。
+    """
+    if not fanout_id:
+        return None
+    projection = build_fanout_identity_projection(events)
+    logical_key = ""
+    for item in projection.get("instances", []) or []:
+        if str(item.get("fanout_id") or "") == fanout_id:
+            logical_key = str(item.get("logical_key") or "")
+            break
+    if not logical_key:
+        return None
+    for item in projection.get("current", []) or []:
+        if (
+            str(item.get("logical_key") or "") == logical_key
+            and str(item.get("fanout_id") or "") != fanout_id
+        ):
+            return item
+    return None
+
+
 def build_fanout_identity_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
     identities: dict[str, FanoutIdentity] = {}
     current_by_key: dict[str, str] = {}
@@ -326,6 +354,7 @@ __all__ = [
     "FANOUT_IDENTITY_SCHEMA_VERSION",
     "FanoutCurrentStatus",
     "build_fanout_identity_projection",
+    "current_sibling_instance",
     "fanout_current_status",
     "read_fanout_identities",
 ]

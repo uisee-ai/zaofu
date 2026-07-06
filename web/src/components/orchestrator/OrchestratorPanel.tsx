@@ -1,7 +1,8 @@
 // OrchestratorPanel + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
 import type { ActionResponse, RecentEvent, Snapshot } from "../../api/types";
-import { getAgentSessionHistory } from "../../api/client";
+import { getAgentSessionHistory, getKanbanPendingProposals } from "../../api/client";
+import type { PendingKanbanProposal } from "../../api/client";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
 import { deriveComposerStatus } from "../../components/agent-session/workState";
@@ -324,6 +325,12 @@ export function OrchestratorPanel({
   const [headlessMessage, setHeadlessMessage] = useState("");
   const [headlessSubmitting, setHeadlessSubmitting] = useState(false);
   const [headlessProposalRunning, setHeadlessProposalRunning] = useState("");
+  const [pendingProposals, setPendingProposals] = useState<PendingKanbanProposal[]>([]);
+  const [pendingProposalsRefresh, setPendingProposalsRefresh] = useState(0);
+  const [pendingProposalBusy, setPendingProposalBusy] = useState("");
+  const [pendingProposalExpanded, setPendingProposalExpanded] = useState<Record<string, boolean>>({});
+  const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
+  const [pendingProposalNotice, setPendingProposalNotice] = useState("");
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => {
     if (typeof window === "undefined") return newHeadlessThreadKey();
     const stored = window.localStorage.getItem("zf.kanbanAgentThreadKey");
@@ -434,6 +441,19 @@ export function OrchestratorPanel({
     if (operatorBackendTouched) return;
     setOperatorBackend(preferredHeadlessBackend(headlessBackendOptions));
   }, [headlessBackendOptions, operatorBackendTouched]);
+
+  // chat-e2e F2: pending proposals are ledger truth, not session state — a
+  // fresh session must resurface them for approval/dismissal.
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void getKanbanPendingProposals(headlessProjectId).then((page) => {
+      if (!cancelled) setPendingProposals(page.items ?? []);
+    }).catch(() => {
+      if (!cancelled) setPendingProposals([]);
+    });
+    return () => { cancelled = true; };
+  }, [headlessProjectId, visible, pendingProposalsRefresh]);
 
   useEffect(() => {
     if (!visible) return;
@@ -577,6 +597,26 @@ export function OrchestratorPanel({
       headlessInputRef.current?.focus();
       return;
     }
+    // 2026-07-03 racing-codex e2e round 2 finding (T3 refinement): guarding
+    // on `!agentSurface` alone was not precise enough — agentSurface can
+    // already be populated while the *separate* effect that corrects
+    // operatorBackend from its hardcoded "claude-headless" initial value
+    // (preferredHeadlessBackend, below) hasn't re-rendered yet. Compare the
+    // current selection directly against the project's configured backend
+    // instead of just checking "has any data arrived".
+    const configuredChatBackend = agentSurface?.configured_backend
+      ? kanbanChatBackend(asOperatorBackend(agentSurface.configured_backend) ?? "claude-headless")
+      : null;
+    const stillOnUncorrectedDefault = (
+      !operatorBackendTouched
+      && operatorBackend === "claude-headless"
+      && !!configuredChatBackend
+      && configuredChatBackend !== "claude-headless"
+    );
+    if (!agentSurface || stillOnUncorrectedDefault) {
+      setOperatorError("Agent backend list is still loading; try again in a moment.");
+      return;
+    }
     setHeadlessSubmitting(true);
     setHeadlessMessage("");
     let pendingTurnId = "";
@@ -664,6 +704,79 @@ export function OrchestratorPanel({
     } finally {
       setHeadlessProposalRunning("");
     }
+  }
+
+  async function runPendingProposal(item: PendingKanbanProposal) {
+    if (!item.valid || !canUseAction(item.action)) return;
+    setPendingProposalBusy(item.proposal_event_id);
+    setPendingProposalErrors((current) => ({ ...current, [item.proposal_event_id]: "" }));
+    try {
+      const result = await Promise.resolve(onAction(item.action, {
+        ...item.payload,
+        project_id: textValue(item.payload.project_id) || headlessProjectId,
+        proposal_event_id: item.proposal_event_id,
+        source: textValue(item.payload.source) || "kanban-agent-pending-proposal",
+      }));
+      if (actionFailed(result)) {
+        setPendingProposalErrors((current) => ({
+          ...current,
+          [item.proposal_event_id]: actionFailureReason(result) || "action failed",
+        }));
+      } else {
+        const taskId = textValue((result as Record<string, unknown> | undefined)?.task_id);
+        setPendingProposalNotice(taskId
+          ? `✓ ${taskId} created from “${item.title || item.action}”`
+          : `✓ executed “${item.title || item.action}”`);
+      }
+    } catch (err) {
+      setPendingProposalErrors((current) => ({
+        ...current,
+        [item.proposal_event_id]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setPendingProposalBusy("");
+      setPendingProposalsRefresh((n) => n + 1);
+    }
+  }
+
+  async function dismissPendingProposal(item: PendingKanbanProposal) {
+    setPendingProposalBusy(item.proposal_event_id);
+    setPendingProposalErrors((current) => ({ ...current, [item.proposal_event_id]: "" }));
+    try {
+      const result = await Promise.resolve(onAction("kanban-proposal-dismiss", {
+        project_id: headlessProjectId,
+        proposal_event_id: item.proposal_event_id,
+        reason: "dismissed from Kanban Agent panel",
+      }));
+      if (actionFailed(result)) {
+        setPendingProposalErrors((current) => ({
+          ...current,
+          [item.proposal_event_id]: actionFailureReason(result) || "dismiss failed",
+        }));
+      }
+    } catch (err) {
+      setPendingProposalErrors((current) => ({
+        ...current,
+        [item.proposal_event_id]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setPendingProposalBusy("");
+      setPendingProposalsRefresh((n) => n + 1);
+    }
+  }
+
+  function pendingProposalContract(item: PendingKanbanProposal): Array<[string, string]> {
+    const contract = item.payload.contract;
+    if (!contract || typeof contract !== "object") return [];
+    const record = contract as Record<string, unknown>;
+    const rows: Array<[string, string]> = [];
+    for (const key of ["behavior", "verification"]) {
+      const value = textValue(record[key]);
+      if (value) rows.push([key, value]);
+    }
+    const scope = Array.isArray(record.scope) ? record.scope.map((v) => String(v)).filter(Boolean) : [];
+    rows.push(["scope", scope.length ? scope.join(", ") : "(empty — no path restriction)"]);
+    return rows;
   }
 
   async function cancelHeadlessRun(runId: string) {
@@ -1036,6 +1149,88 @@ export function OrchestratorPanel({
               <ChevronDown size={15} />
               New messages
             </button>
+          ) : null}
+          {pendingProposals.length || pendingProposalNotice ? (
+            <div aria-label="Pending proposals" className="headless-pending-proposals">
+              <div className="headless-pending-title">
+                Pending proposals · {pendingProposals.length}
+              </div>
+              {pendingProposalNotice ? (
+                <div className="headless-pending-notice">
+                  {pendingProposalNotice}
+                  <button
+                    aria-label="Clear notice"
+                    className="headless-pending-dismiss"
+                    type="button"
+                    onClick={() => setPendingProposalNotice("")}
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              {pendingProposals.map((item) => {
+                const expanded = Boolean(pendingProposalExpanded[item.proposal_event_id]);
+                const error = pendingProposalErrors[item.proposal_event_id] || "";
+                return (
+                  <div className="headless-pending-entry" key={item.proposal_event_id}>
+                    <div className="headless-pending-item">
+                      <div className="headless-pending-main">
+                        <strong>{item.title || item.action}</strong>
+                        <small>
+                          {item.action}
+                          {item.ts ? ` · ${item.ts.slice(11, 16)} UTC` : ""}
+                          {!item.valid && item.validation_error ? ` · invalid: ${item.validation_error}` : ""}
+                        </small>
+                      </div>
+                      <button
+                        aria-expanded={expanded}
+                        className="headless-pending-expand"
+                        type="button"
+                        onClick={() => setPendingProposalExpanded((current) => ({
+                          ...current, [item.proposal_event_id]: !expanded,
+                        }))}
+                      >
+                        {expanded ? "Hide" : "Details"}
+                      </button>
+                      <button
+                        className="headless-pending-run"
+                        disabled={!item.valid || pendingProposalBusy === item.proposal_event_id}
+                        type="button"
+                        onClick={() => void runPendingProposal(item)}
+                      >
+                        {item.action === "create-task" ? "Create Task" : "Run"}
+                      </button>
+                      <button
+                        className="headless-pending-dismiss"
+                        disabled={pendingProposalBusy === item.proposal_event_id}
+                        type="button"
+                        onClick={() => void dismissPendingProposal(item)}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                    {expanded ? (
+                      <div className="headless-pending-details">
+                        {item.reason ? (
+                          <div><span className="headless-pending-key">reason</span>{item.reason}</div>
+                        ) : null}
+                        {pendingProposalContract(item).map(([key, value]) => (
+                          <div key={key}>
+                            <span className="headless-pending-key">{key}</span>
+                            {value}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {error ? (
+                      <div className="headless-pending-error" role="alert">
+                        {error} — the proposal stays pending; retry or dismiss.
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
           ) : null}
           <div className="headless-composer">
             {operatorError ? (

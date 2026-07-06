@@ -7,12 +7,14 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from zf.core.events.module_parity import MODULE_PARITY_SCAN_REQUESTED
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.problem_taxonomy import (
     EXPECTED_NEGATIVE_EVENT_TYPES,
     abnormal_event_projection,
     problem_envelope_from_attention,
+    problem_envelope_from_event,
 )
 
 
@@ -243,6 +245,27 @@ def _attention_from_human_escalate(event: ZfEvent) -> dict[str, Any]:
         or payload.get("rework_source")
         or "runtime escalated to human"
     )
+    if _is_run_manager_owned_human_escalation(event, payload):
+        token = str(payload.get("decision_token") or payload.get("approval_ref") or "").strip()
+        return _attention_item(
+            source="run_manager_decision",
+            fingerprint=f"run_manager_human_decision:{token or scope}",
+            severity=str(payload.get("severity") or "high"),
+            title="Runtime escalated to human",
+            summary=reason,
+            task_id=event.task_id or str(payload.get("task_id") or ""),
+            source_event_ids=[event.id],
+            suggested_route="run_manager_human_decision",
+            human_action_required=True,
+            decision_token=token,
+            suggested_action={
+                "kind": "run_manager_human_decision",
+                "decision_token": token,
+                "owner_route": str(payload.get("owner_route") or "run_manager"),
+                "event_type": event.type,
+                "scope": scope,
+            },
+        )
     return _attention_item(
         source="runtime_failure",
         fingerprint=f"human_escalate:{scope}",
@@ -258,6 +281,19 @@ def _attention_from_human_escalate(event: ZfEvent) -> dict[str, Any]:
             "scope": scope,
         },
     )
+
+
+def _is_run_manager_owned_human_escalation(
+    event: ZfEvent,
+    payload: dict[str, Any],
+) -> bool:
+    if str(getattr(event, "actor", "") or "") == "run-manager":
+        return True
+    if str(payload.get("owner_route") or "") == "run_manager":
+        return True
+    if str(payload.get("decision_token") or "").strip():
+        return True
+    return str(payload.get("schema_version") or "") == "human-escalation-package.v1"
 
 
 def _attention_from_stale_supervisor_projection(event: ZfEvent) -> dict[str, Any]:
@@ -308,6 +344,18 @@ def _attention_from_repeated_runtime_failures(
             or payload.get("summary")
             or f"{event_type} repeated {len(refs)} times"
         )
+        envelope = problem_envelope_from_event(latest) or {}
+        owner_route = str(envelope.get("owner_route") or "")
+        suggested_route = (
+            "run_manager_recovery"
+            if owner_route == "run_manager"
+            else "autoresearch_trigger"
+        )
+        suggested_kind = (
+            "diagnose_semantic_repeated_failure"
+            if owner_route == "run_manager"
+            else "diagnose_repeated_runtime_failure"
+        )
         rows.append(_attention_item(
             source="runtime_failure",
             fingerprint=f"repeated:{event_type}:{scope}",
@@ -316,13 +364,18 @@ def _attention_from_repeated_runtime_failures(
             summary=f"{len(refs)} event(s): {reason}",
             task_id=latest.task_id or str(payload.get("task_id") or ""),
             source_event_ids=[event.id for event in refs[-10:]],
-            suggested_route="autoresearch_trigger",
+            suggested_route=suggested_route,
             suggested_action={
-                "kind": "diagnose_repeated_runtime_failure",
+                "kind": suggested_kind,
                 "event_type": event_type,
                 "scope": scope,
                 "count": len(refs),
             },
+            failure_class=str(envelope.get("failure_class") or ""),
+            owner_route=owner_route,
+            action_policy=str(envelope.get("action_policy") or ""),
+            intervention_class=str(envelope.get("intervention_class") or ""),
+            problem_envelope=envelope if envelope else None,
         ))
     return rows
 
@@ -376,13 +429,18 @@ def _attention_from_missing_parity_scan_fanout(
     }
     rows: list[dict[str, Any]] = []
     for event in events:
-        if event.type != "verify.parity_scan.requested":
+        if event.type != MODULE_PARITY_SCAN_REQUESTED:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         if event.id and event.id in started_trigger_ids:
             continue
         pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "")
         task_map_ref = str(payload.get("task_map_ref") or payload.get("target_ref") or "")
+        stage_id = str(
+            payload.get("stage_id")
+            or payload.get("target_stage_id")
+            or "flow-module-parity-scan"
+        )
         rows.append(_attention_item(
             source="workflow_runtime",
             fingerprint=f"parity_scan:no_fanout:{event.id or pdd_id or task_map_ref}",
@@ -397,7 +455,7 @@ def _attention_from_missing_parity_scan_fanout(
             suggested_route="run_manager_recovery",
             suggested_action={
                 "kind": "request_fanout",
-                "stage_id": "cangjie-module-parity-scan",
+                "stage_id": stage_id,
                 "trigger_event_id": event.id,
                 "event_type": event.type,
                 "pdd_id": pdd_id,
@@ -531,6 +589,8 @@ def _attention_item(
     action_policy: str = "",
     intervention_class: str = "",
     problem_envelope: dict[str, Any] | None = None,
+    human_action_required: bool | None = None,
+    decision_token: str = "",
 ) -> dict[str, Any]:
     attention_id = "attn-" + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12]
     item = {
@@ -556,6 +616,10 @@ def _attention_item(
         item["action_policy"] = action_policy
     if intervention_class:
         item["intervention_class"] = intervention_class
+    if human_action_required is not None:
+        item["human_action_required"] = bool(human_action_required)
+    if decision_token:
+        item["decision_token"] = decision_token
     if isinstance(problem_envelope, dict) and problem_envelope.get("schema_version"):
         item["problem_envelope"] = problem_envelope
     else:

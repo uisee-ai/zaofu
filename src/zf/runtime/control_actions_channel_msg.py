@@ -7,6 +7,7 @@ from zf.core.events import EventWriter, ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.security.redaction import redact_obj
 from zf.runtime.channel_adapter import dispatch_pending_replies
+from zf.runtime.channel_contracts import default_debate_max_rounds
 from zf.runtime.channel_handoff import request_channel_handoff
 from zf.runtime.channel_owner_report import build_owner_report_payload
 from zf.runtime.channel_projection import project_channel
@@ -14,6 +15,7 @@ from zf.runtime.channel_router import detect_channel_mention_tokens
 from zf.runtime.channel_router import resolve_channel_mentions
 from zf.runtime.channel_router import routable_backing_worker_member
 from zf.runtime.channel_router import route_channel_message
+from zf.runtime.channel_sidecar import channel_message_event_payload
 from zf.runtime.control_actions_helpers import _optional_str
 from zf.runtime.control_actions_helpers import _required_text
 from zf.runtime.control_actions_helpers import _safe_int
@@ -96,7 +98,7 @@ class ChannelMessageActionsMixin:
             explicit_mentions=explicit_mentions,
         )
         mentions = resolved_mentions or explicit_mentions
-        posted_payload = {
+        posted_payload = channel_message_event_payload(self.state_dir, {
             "channel_id": channel_id,
             "thread_id": thread_id,
             "message_id": message_id,
@@ -107,7 +109,7 @@ class ChannelMessageActionsMixin:
             "mentions": mentions,
             "mention_tokens": mention_tokens,
             "refs": payload.get("refs") if isinstance(payload.get("refs"), dict) else {},
-        }
+        }, created_by=f"channel-message:{self.surface}")
         event = self.writer.emit(
             "channel.message.posted",
             actor=self.actor,
@@ -588,23 +590,24 @@ class ChannelMessageActionsMixin:
             },
         )
         message_id = f"msg-{request_id}"
+        message_payload = channel_message_event_payload(self.state_dir, {
+            "channel_id": channel_id,
+            "thread_id": thread_id,
+            "message_id": message_id,
+            "member_id": str(payload.get("member_id") or "operator"),
+            "role": "user",
+            "source": self.surface,
+            "text": f"@{target_member_id} {prompt}",
+            "mentions": [target_member_id],
+            "refs": {"synthesis_request_id": request_id},
+        }, created_by=f"channel-synthesis:{self.surface}")
         message = self.writer.emit(
             "channel.message.posted",
             actor=self.actor,
             task_id=_task_id_from_payload(payload),
             causation_id=request_event.id,
             correlation_id=channel_id,
-            payload={
-                "channel_id": channel_id,
-                "thread_id": thread_id,
-                "message_id": message_id,
-                "member_id": str(payload.get("member_id") or "operator"),
-                "role": "user",
-                "source": self.surface,
-                "text": f"@{target_member_id} {prompt}",
-                "mentions": [target_member_id],
-                "refs": {"synthesis_request_id": request_id},
-            },
+            payload=message_payload,
         )
         route_result = route_channel_message(
             state_dir=self.state_dir,
@@ -761,6 +764,8 @@ class ChannelMessageActionsMixin:
     ) -> dict:
         channel_id = _required_text(payload, "channel_id")
         mode = _required_text(payload, "mode")
+        channel = project_channel(self.state_dir, channel_id) or {}
+        default_max_rounds = default_debate_max_rounds(len(channel.get("members") or []))
         event = self.writer.emit(
             "channel.discussion.mode.set",
             actor=self.actor,
@@ -770,7 +775,7 @@ class ChannelMessageActionsMixin:
                 "channel_id": channel_id,
                 "thread_id": str(payload.get("thread_id") or "main"),
                 "mode": mode,
-                "max_rounds": int(payload.get("max_rounds") or 6),
+                "max_rounds": int(payload.get("max_rounds") or default_max_rounds),
                 "default_responder_id": str(payload.get("default_responder_id") or ""),
                 "speaker_policy": payload.get("speaker_policy") if isinstance(payload.get("speaker_policy"), dict) else {},
                 "provider_capabilities": (

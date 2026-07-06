@@ -64,6 +64,33 @@ def test_single_expected_negative_event_does_not_create_attention() -> None:
     assert items == []
 
 
+def test_run_manager_human_escalate_becomes_run_manager_decision_attention() -> None:
+    items = build_attention_items(
+        events=[
+            ZfEvent(
+                type="human.escalate",
+                id="evt-human-rm",
+                actor="run-manager",
+                payload={
+                    "schema_version": "human-escalation-package.v1",
+                    "owner_route": "run_manager",
+                    "decision_token": "hdec-r5",
+                    "reason": "approve bounded resume",
+                },
+            ),
+        ],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    assert len(items) == 1
+    assert items[0]["source"] == "run_manager_decision"
+    assert items[0]["suggested_route"] == "run_manager_human_decision"
+    assert items[0]["human_action_required"] is True
+    assert items[0]["decision_token"] == "[REDACTED_SECRET]"
+
+
 def test_repeated_expected_negative_event_creates_diagnostic_attention() -> None:
     items = build_attention_items(
         events=[
@@ -89,3 +116,49 @@ def test_repeated_expected_negative_event_creates_diagnostic_attention() -> None
     assert items[0]["suggested_route"] == "autoresearch_trigger"
     assert items[0]["problem_envelope"]["problem_class"] == "candidate_quality"
     assert items[0]["source_event_ids"] == ["evt-test-failed-1", "evt-test-failed-2"]
+
+
+def test_repeated_flow_goal_blocked_routes_to_run_manager() -> None:
+    items = build_attention_items(
+        events=[
+            ZfEvent(
+                type="flow.goal.blocked",
+                id="evt-flow-blocked-1",
+                payload={"pdd_id": "PDD-1", "reason": "dashboard gap"},
+            ),
+            ZfEvent(
+                type="flow.goal.blocked",
+                id="evt-flow-blocked-2",
+                payload={"pdd_id": "PDD-1", "reason": "dashboard gap"},
+            ),
+        ],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    assert len(items) == 1
+    assert items[0]["suggested_route"] == "run_manager_recovery"
+    assert items[0]["failure_class"] == "flow_goal_blocked"
+    assert items[0]["problem_envelope"]["problem_class"] == "product_gap"
+
+
+def test_every_attention_item_carries_problem_envelope() -> None:
+    """131-P1-2 forcing:Supervisor attention 必带 problem_envelope,缺失即红。"""
+    events = [
+        ZfEvent(type="human.escalate", payload={"reason": "cap exceeded", "task_id": "T-1"}),
+        ZfEvent(type="orchestrator.tick.failed", payload={"error": "boom"}),
+        ZfEvent(type="zaofu.bug.detected", payload={"summary": "bug"}),
+    ]
+    items = build_attention_items(
+        events=events,
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+    assert items, "事件应产生 attention items"
+    for item in items:
+        envelope = item.get("problem_envelope")
+        assert isinstance(envelope, dict), f"item {item.get('fingerprint')} 缺 envelope"
+        assert envelope.get("schema_version"), f"item {item.get('fingerprint')} envelope 无 schema"
+        assert envelope.get("problem_class"), f"item {item.get('fingerprint')} envelope 无 problem_class"

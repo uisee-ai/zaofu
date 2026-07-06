@@ -24,9 +24,14 @@ DONE_EVENTS = {
 }
 
 
-def project_agent_live(state_dir: Path) -> dict[str, Any]:
+def project_agent_live(
+    state_dir: Path,
+    *,
+    events: list | None = None,
+) -> dict[str, Any]:
     state_dir = Path(state_dir)
-    events = EventLog(state_dir / "events.jsonl").read_days(7)
+    if events is None:
+        events = EventLog(state_dir / "events.jsonl").read_days(7)
     by_task: dict[str, dict[str, Any]] = defaultdict(lambda: {
         "task_id": "",
         "workers": {},

@@ -30,6 +30,8 @@ def build_parser() -> argparse.ArgumentParser:
                         feishu, autopilot, skills, state, self_eval, panes,
                         autoresearch, update, guard, artifact, bridge, preflight,
                         self_repair, recover, projection)
+    from zf.cli import config as config_cli
+    from zf.cli import failure as failure_cli
     from zf.cli import report as report_cli
     from zf.cli import metrics as metrics_cli
     from zf.cli import task_trace
@@ -44,8 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
     from zf.cli import ctx as ctx_cli
     from zf.cli import channel as channel_cli
     from zf.cli import profile as profile_cli
+    from zf.cli import flow as flow_cli
     init.register(subparsers)
     profile_cli.register(subparsers)
+    flow_cli.register(subparsers)
+    config_cli.register(subparsers)
     ctx_cli.register(subparsers)
     channel_cli.register(subparsers)
     validate.register(subparsers)
@@ -104,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     workspace_cli.register(subparsers)
     project_cli.register(subparsers)
     eval_preset_cli.register(subparsers)
+    failure_cli.register(subparsers)
 
     return parser
 

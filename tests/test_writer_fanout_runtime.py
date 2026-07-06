@@ -338,9 +338,10 @@ def test_generic_fanout_success_payload_preserves_inventory_refs() -> None:
     assert payload["inventory_refs"] == [
         "docs/plans/hermes-tool-inventory.json",
     ]
-    assert payload["hermes_source_inventory_ref"] == (
+    assert payload["source_inventory_ref"] == (
         "docs/plans/hermes-source-inventory.json"
     )
+    assert "hermes_source_inventory_ref" not in payload
     assert payload["inventory_coverage_matrix_ref"] == (
         "docs/plans/hermes-inventory-coverage-matrix.json"
     )
@@ -413,11 +414,41 @@ def test_writer_fanout_synthesize_canonical_tasks_admits_unseeded(tmp_path: Path
         assert validate_task_contract(task, config=orch.config, project_root=tmp_path) == []
     # behavior comes from the task_map payload instruction when present.
     assert store.get("TASK-1").contract.behavior == "Create a.txt with TASK-1 smoke content."
+    assert store.get("TASK-1").contract.acceptance_criteria == [
+        "a.txt exists",
+        "no behavior change",
+    ]
     # contract.scope must carry the allowed_paths globs, not the prose scope
     # label — task_refs fnmatches changed files against contract.scope, and a
     # prose entry rejects every writer handoff (HIC-E8311AE35F).
     assert store.get("TASK-1").contract.scope == ["a.txt"]
     assert store.get("TASK-2").contract.scope == ["b.txt"]
+
+
+def test_writer_fanout_canonicalizes_semantic_task_map_owner_role(tmp_path: Path):
+    state_dir, log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"
+    data = json.loads(task_map.read_text(encoding="utf-8"))
+    data["tasks"][0]["owner_role"] = "dev-core"
+    data["tasks"][0]["acceptance"] = ["core module parity is implemented"]
+    task_map.write_text(json.dumps(data), encoding="utf-8")
+
+    _start(orch)
+    task_map_manifests = [
+        event for event in log.read_all()
+        if event.type == "artifact.manifest.published"
+        and event.payload.get("handoff_contract", {}).get("source") == "refactor_task_map"
+    ]
+    orch.run_once(events=task_map_manifests)
+
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get("TASK-1")
+    assert task is not None
+    assert task.contract.owner_role == "dev"
+    assert task.contract.evidence_contract["semantic_owner_role"] == "dev-core"
+    assert task.contract.acceptance_criteria == ["core module parity is implemented"]
+    assert validate_task_contract(task, config=orch.config, project_root=tmp_path) == []
+    assert [sent[0] for sent in transport.sent if sent[0].startswith("dev-")]
 
 
 def test_refactor_replan_refreshes_existing_canonical_task_map_refs(tmp_path: Path):
@@ -948,6 +979,21 @@ def test_writer_briefing_includes_task_scope_and_payload_instruction(tmp_path: P
     assert "frozen lockfile install plus root typecheck/test" in briefing
     assert "exact golden fixtures" in briefing
     assert "Shape-only fixture checks are not enough" in briefing
+
+
+def test_writer_briefing_uses_configured_zf_cli_cmd(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
+    state_dir, _log, transport, orch = _state(tmp_path)
+    _seed_tasks(state_dir)
+
+    _start(orch)
+
+    briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "uv --project /repo run zf emit dev.build.done" in briefing
+    assert f"--state-dir {state_dir}" in briefing
 
 
 def test_writer_briefing_inlines_acceptance_verification_and_scope_guard(tmp_path: Path):
@@ -1924,7 +1970,10 @@ def test_affinity_stage_slots_honors_task_affinity_tag_for_initial_dispatch(tmp_
     assert TaskStore(state_dir / "kanban.json").get("TASK-1").assigned_to == "dev-3"
 
 
-def test_affinity_stage_slots_missing_affinity_tag_fails_closed(tmp_path: Path):
+def test_affinity_stage_slots_missing_affinity_tag_falls_back_to_task_id(tmp_path: Path):
+    # 语义变更(2026-07-04 prod-e2e):affinity_tag 缺失回退 task_id
+    # (每任务独占 lane),不再整盘取消——合同从未要求该字段,fail-closed
+    # 曾把合法 task_map 打成死端。task_id 也缺才 fail-closed。
     state_dir, log, transport, orch = _state(
         tmp_path,
         affinity_stage_slots=True,
@@ -1944,15 +1993,14 @@ def test_affinity_stage_slots_missing_affinity_tag_fails_closed(tmp_path: Path):
     _start(orch)
 
     events = log.read_all()
-    cancelled = [event for event in events if event.type == "fanout.cancelled"]
-    assert cancelled[-1].payload["reason"] == (
-        "writer fanout affinity key 'affinity_tag' missing for task 'TASK-1'"
+    started = [event for event in events if event.type == "fanout.started"]
+    assert started, "affinity_tag 缺失应回退 task_id 并照常开扇"
+    dispatched = [
+        event for event in events if event.type == "fanout.child.dispatched"
+    ]
+    assert dispatched and dispatched[0].payload.get("affinity_tag") == "TASK-1" or (
+        dispatched and "TASK-1" in json.dumps(dispatched[0].payload)
     )
-    assert not [event for event in events if event.type == "fanout.started"]
-    assert transport.sent == []
-    task = TaskStore(state_dir / "kanban.json").get("TASK-1")
-    assert task.status == "blocked"
-    assert task.blocked_reason.startswith("fanout_affinity_cancelled:")
 
 
 def test_product_delivery_wave_ready_triggers_writer_fanout_for_current_wave(tmp_path: Path):
@@ -2758,9 +2806,11 @@ def test_late_completed_child_repair_refreshes_completed_writer_candidate(
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["source_commit"] == repair_commit
 
 
-def test_stale_writer_completion_from_superseded_fanout_is_audited(
+def test_stale_writer_completion_from_superseded_fanout_is_adopted(
     tmp_path: Path,
 ):
+    """BF-1(r6.1 16:42 实弹):fanout 换代期间到达的真交付跨代收编,
+    不再作为 stale_completion 丢弃——当前代同 task 的 child 仍在等待。"""
     state_dir, log, _transport, orch = _state(tmp_path)
     _seed_tasks(state_dir)
     _start(orch)
@@ -2795,19 +2845,27 @@ def test_stale_writer_completion_from_superseded_fanout_is_audited(
     orch._maybe_update_writer_fanout(progress)  # type: ignore[attr-defined]
 
     events = log.read_all()
-    stale = [
+    adopted = [
+        event for event in events
+        if event.type == "fanout.child.completion_adopted"
+        and event.payload.get("result_event_id") == progress.id
+    ]
+    assert len(adopted) == 1
+    assert adopted[0].payload["fanout_id"] == new_fanout_id
+    assert adopted[0].payload["adopted_from"] == fanout_id
+    assert adopted[0].payload["reason"] == "superseded_by_latest_fanout"
+    assert not [
         event for event in events
         if event.type == "fanout.child.stale_completion"
         and event.payload.get("result_event_id") == progress.id
     ]
-    assert len(stale) == 1
-    assert stale[0].payload["reason"] == "superseded_by_latest_fanout"
-    assert stale[0].payload["superseded_by"] == new_fanout_id
-    assert not [
+    # 收编后以新代身份继续处理:新代 child 得到终局结果
+    assert [
         event for event in events
         if event.type in {"fanout.child.completed", "fanout.child.failed"}
-        and event.payload.get("result_event_id") == progress.id
+        and event.payload.get("fanout_id") == new_fanout_id
     ]
+    # 旧代 manifest 不被回写
     final_child = _child(_manifest(state_dir, fanout_id), "TASK-1")
     assert final_child["status"] == "dispatched"
 
@@ -2912,9 +2970,58 @@ def test_orphan_writer_fanout_manifest_is_cancelled_not_rebound(
     assert _manifest(state_dir, fanout_id)["status"] == "cancelled"
 
 
-def test_stale_writer_completion_is_audited_without_closing_active_run(
+def test_heartbeat_with_stale_identity_is_not_adopted(
     tmp_path: Path,
 ):
+    """BF-1 修补(断点续跑实弹):heartbeat 等观察型事件携带旧 fanout
+    身份不得触发收编审计(假审计+无去重刷屏);走原 stale 路径。"""
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _seed_tasks(state_dir)
+    _start(orch)
+    started = next(event for event in log.read_all() if event.type == "fanout.started")
+    fanout_id = started.payload["fanout_id"]
+    task1 = _child(_manifest(state_dir, fanout_id), "TASK-1")
+    new_payload = dict(started.payload)
+    new_payload["fanout_id"] = "fanout-dev-fanout-new"
+    new_payload["trigger_event_id"] = "task-map-new"
+    EventWriter(log).append(ZfEvent(
+        type="fanout.started",
+        actor="zf-cli",
+        correlation_id="trace-2",
+        payload=new_payload,
+    ))
+    heartbeat = ZfEvent(
+        type="worker.heartbeat",
+        actor=task1["role_instance"],
+        task_id="TASK-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": task1["child_id"],
+            "run_id": task1["run_id"],
+            "status": "completed",
+        },
+    )
+
+    orch._maybe_update_writer_fanout(heartbeat)  # type: ignore[attr-defined]
+
+    events = log.read_all()
+    assert not [
+        event for event in events
+        if event.type == "fanout.child.completion_adopted"
+    ]
+    stale = [
+        event for event in events
+        if event.type == "fanout.child.stale_completion"
+        and event.payload.get("result_event_id") == heartbeat.id
+    ]
+    assert len(stale) == 1
+
+
+def test_rotated_run_completion_is_adopted_while_child_awaits(
+    tmp_path: Path,
+):
+    """BF-1(r6.1 16:44 实弹):child 被重派换 run_id 后,携带旧 run_id
+    的真交付被收编为当前 run 的完成,不再丢弃(丢弃曾致 6h 死锁)。"""
     state_dir, log, _transport, orch = _state(tmp_path)
     _seed_tasks(state_dir)
     _start(orch)
@@ -2956,20 +3063,26 @@ def test_stale_writer_completion_is_audited_without_closing_active_run(
     orch.run_once(events=[progress])
 
     events = log.read_all()
-    stale = [
+    adopted = [
+        event for event in events
+        if event.type == "fanout.child.completion_adopted"
+        and event.payload.get("result_event_id") == progress.id
+    ]
+    assert len(adopted) == 1
+    assert adopted[0].payload["reason"] == "run_id_rotated"
+    assert not [
         event for event in events
         if event.type == "fanout.child.stale_completion"
     ]
-    assert len(stale) == 1
-    assert stale[0].payload["expected_run_id"] == f"{task1['run_id']}-retry"
-    assert stale[0].payload["actual_run_id"] == task1["run_id"]
-    assert not [
+    completed = [
         event for event in events
         if event.type == "fanout.child.completed"
         and event.payload.get("result_event_id") == progress.id
     ]
+    assert len(completed) == 1
+    assert completed[0].payload["run_id"] == f"{task1['run_id']}-retry"
     final_child = _child(_manifest(state_dir, fanout_id), "TASK-1")
-    assert final_child["status"] == "dispatched"
+    assert final_child["status"] == "completed"
     assert final_child["run_id"] == f"{task1['run_id']}-retry"
 
 

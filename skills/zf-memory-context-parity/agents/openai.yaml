@@ -1,0 +1,4 @@
+interface:
+  display_name: "Memory Context Parity"
+  short_description: "Check memory and context parity."
+  default_prompt: "Use this skill to verify memory, context, prompt builder, and compression parity."

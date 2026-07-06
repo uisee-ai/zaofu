@@ -51,6 +51,7 @@ def ingest_task_map_to_kanban(
     coverage_report: dict[str, Any] | None = None,
     coverage_report_ref: str = "",
     require_source_index: bool = False,
+    require_coverage_report: bool = False,
     replan_eval: dict[str, Any] | None = None,
     require_replan_eval: bool = False,
     task_map_ref: str = "",
@@ -81,6 +82,13 @@ def ingest_task_map_to_kanban(
             task_map=task_map,
         )
     gate_errors = _contract_completeness_errors(task_map)
+    # E3-1(审计 D2):presence-gated → 可强制。strict profile 下 plan
+    # 不交 coverage_report 不再"kernel 视角完全合法"。
+    if require_coverage_report and coverage_report is None:
+        gate_errors.append(
+            "coverage_report required (strict profile) but missing; "
+            "plan must submit coverage_report_ref"
+        )
     if coverage_report is not None and isinstance(
         coverage_report.get("unresolved_unknowns"), list
     ):
@@ -865,7 +873,14 @@ def _contract_from_task_map_item(
         verification=verification,
         verification_tiers=verification_tiers,
         validation=validation,
-        scope=_string_list(raw.get("scope")),
+        # r6-F3:验收声明的 runtime evidence 路径自动并入 scope——
+        # 合同曾自相矛盾(要求写 docs/validation/** 却只给 src/**),
+        # scope guard 忠实拦截,verify 死循环真根因。声明驱动,零声明
+        # 零扩权。
+        scope=_merge_evidence_paths_into_scope(
+            _string_list(raw.get("scope")),
+            raw,
+        ),
         acceptance="\n".join(acceptance) or verification or "exit_code=0",
         acceptance_criteria=acceptance,
         source_key=source_key,
@@ -1154,6 +1169,25 @@ def _priority(value: Any) -> int:
         return 3
     return max(1, min(5, number))
 
+
+
+def _merge_evidence_paths_into_scope(
+    scope: list[str],
+    raw: dict[str, Any],
+) -> list[str]:
+    """r6-F3:required_runtime_evidence 声明的路径并入 scope。"""
+    if not scope:
+        return scope  # 无 scope 约束的任务不引入新约束语义
+    merged = list(scope)
+    evidence = raw.get("required_runtime_evidence")
+    if not isinstance(evidence, list):
+        return merged
+    for item in evidence:
+        path = str(item or "").strip()
+        if not path or path in merged:
+            continue
+        merged.append(path)
+    return merged
 
 def _first_nonempty(*values: Any) -> str:
     for value in values:

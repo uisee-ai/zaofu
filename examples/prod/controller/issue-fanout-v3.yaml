@@ -1,0 +1,40 @@
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata:
+  name: issue-fanout/v3
+spec:
+  lanes: 2
+  backend: codex
+  issueRef: docs/issues/TODO.md
+  qualityFloor: issue-regression
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_only
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: issue-fanout-v3
+  zaofu:
+    catalog:
+      id: issue-fanout-v3-codex
+      label: Issue Fanout v3
+      description: Short controller issue workflow with codex lanes.
+      intent: maintain
+      backend: codex
+      roles: 7
+      recommended_for: [maintain, review, issue]
+      preferred: true
+      order: 30
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [prod-runtime/v1]
+  version: "1.0"
+  project:
+    name: issue-fanout-v3
+  workflow:
+    dag:
+      external_triggers: [issue.requested]
+    rework_routing:
+      issue.triage.failed: issue-triage
+      integration.failed: issue-triage
+      test.failed: fix-lane-0

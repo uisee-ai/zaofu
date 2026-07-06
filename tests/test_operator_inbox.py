@@ -277,6 +277,54 @@ def test_operator_inbox_suppresses_attention_acknowledgements(tmp_path: Path) ->
     assert acknowledged["items"] == []
 
 
+def test_operator_inbox_classifies_and_dedupes_runtime_noise(tmp_path: Path) -> None:
+    state_dir, log = _state(tmp_path)
+    for index in range(30):
+        log.append(ZfEvent(
+            id=f"evt-attn-{index}",
+            type="runtime.attention.needed",
+            actor="supervisor",
+            payload={
+                "attention_id": f"attn-{index}",
+                "fingerprint": "fanout:child:pending",
+                "title": "Fanout child dispatched without a terminal child event",
+                "summary": "Fanout child dispatched without a terminal child event",
+            },
+        ))
+    log.append(ZfEvent(
+        id="evt-human-1",
+        type="human.escalate",
+        actor="run-manager",
+        payload={
+            "decision_token": "hdec-runtime-1",
+            "checkpoint_id": "ck-runtime-1",
+            "fingerprint": "trigger-rework:broad-scope",
+            "reason": "trigger_rework mutates broad candidate scope and requires owner approval",
+        },
+    ))
+
+    inbox = build_operator_inbox(state_dir, log.read_all())
+
+    assert inbox["summary"]["pending"] == 2
+    assert inbox["summary"]["action_required_pending"] == 1
+    assert inbox["summary"]["noise_pending"] == 1
+    assert inbox["views"]["action_required"]["count"] == 1
+    assert inbox["views"]["automation"]["count"] == 1
+
+    human_item = next(item for item in inbox["items"] if item["kind"] == "human_decision")
+    assert human_item["category"] == "action_required"
+    assert human_item["actionability"] == "human_required"
+    assert human_item["owner_route"] == "human"
+
+    attention_item = next(item for item in inbox["items"] if item["kind"] == "runtime_attention")
+    assert attention_item["category"] == "automation_diagnostic"
+    assert attention_item["actionability"] == "automation_owned"
+    assert attention_item["source_role"] == "supervisor"
+    assert attention_item["group_key"] == "fingerprint:fanout:child:pending"
+    assert attention_item["dedupe_count"] == 30
+    assert attention_item["latest_event_id"] == "evt-attn-29"
+
+
 def test_operator_inbox_does_not_create_ack_only_items(tmp_path: Path) -> None:
     state_dir, log = _state(tmp_path)
     log.append(ZfEvent(

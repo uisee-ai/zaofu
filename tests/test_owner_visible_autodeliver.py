@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import patch
 
 from zf.runtime.owner_visible_autodeliver import (
     deliver_owner_visible_to_feishu,
@@ -21,6 +22,70 @@ def test_enabled_with_env():
     assert owner_visible_autodeliver_enabled({
         "ZF_OWNER_VISIBLE_APPROVAL_CHAT": "oc_approval",
     }) is True
+
+
+def test_pytest_env_blocks_real_feishu_transport_construction(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text(json.dumps({
+        "id": "evt-1",
+        "type": "owner.visible_message.requested",
+        "actor": "supervisor",
+        "payload": {
+            "message_id": "m1",
+            "text": "test fixture must not leave the process",
+            "severity": "high",
+            "delivery_targets": ["feishu"],
+        },
+    }) + "\n", encoding="utf-8")
+
+    with patch("zf.integrations.feishu.transport.FeishuHttpTransport") as transport:
+        result = deliver_owner_visible_to_feishu(
+            state_dir=tmp_path,
+            env={
+                "PYTEST_CURRENT_TEST": "tests/test_x.py::test_x (call)",
+                "ZF_OWNER_VISIBLE_CHAT": "oc_real",
+                "FEISHU_APP_ID": "cli_real",
+                "FEISHU_APP_SECRET": "secret",
+            },
+        )
+
+    assert result is None
+    transport.assert_not_called()
+    event_types = [
+        json.loads(line)["type"]
+        for line in events.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert event_types == ["owner.visible_message.requested"]
+
+
+def test_fake_transport_is_allowed_even_when_live_feishu_is_disabled(tmp_path):
+    events = tmp_path / "events.jsonl"
+    events.write_text(json.dumps({
+        "id": "evt-1",
+        "type": "owner.visible_message.requested",
+        "actor": "supervisor",
+        "payload": {
+            "message_id": "m1",
+            "text": "fake delivery",
+            "severity": "high",
+            "delivery_targets": ["feishu"],
+        },
+    }) + "\n", encoding="utf-8")
+
+    transport = _FakeTransport()
+    result = deliver_owner_visible_to_feishu(
+        state_dir=tmp_path,
+        env={
+            "ZF_DISABLE_LIVE_FEISHU": "1",
+            "ZF_OWNER_VISIBLE_CHAT": "oc_fake",
+        },
+        transport=transport,
+    )
+
+    assert result is not None
+    assert result.delivered == 1
+    assert len(transport.sent) == 1
 
 
 def test_deliver_noop_when_unconfigured(tmp_path):
@@ -323,7 +388,10 @@ def test_deliver_constructs_concrete_transport_when_none_injected(tmp_path, monk
     # No transport injected → exercises the default-construction branch.
     result = deliver_owner_visible_to_feishu(
         state_dir=tmp_path,
-        env={"ZF_OWNER_VISIBLE_CHAT": "oc_owner_chat"},
+        env={
+            "ZF_ALLOW_LIVE_FEISHU_IN_TESTS": "1",
+            "ZF_OWNER_VISIBLE_CHAT": "oc_owner_chat",
+        },
     )
     assert result is not None            # not None from a construction TypeError
     assert len(constructed) == 1         # concrete transport constructed

@@ -1257,8 +1257,16 @@ def _stream_claude_process(
 
     if process.stdin is None:
         raise OSError("claude stdin pipe is unavailable")
-    process.stdin.write(_build_claude_input(prompt))
-    process.stdin.close()
+    try:
+        process.stdin.write(_build_claude_input(prompt))
+        process.stdin.close()
+    except BrokenPipeError:
+        # The backend closed stdin before we finished writing the prompt
+        # (e.g. it produced its full result and exited first). The stdout
+        # reader thread still captures the result, so a broken *input* pipe
+        # is not a turn failure. Surfaced under full-suite load where a
+        # print-and-exit backend races the prompt write.
+        pass
 
     deadline = time.monotonic() + timeout_s
     stdout_done = False

@@ -1,6 +1,6 @@
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, Boxes, CalendarClock, ChevronRight, GitFork, Gauge, Home, Inbox, ListTodo, Map as MapIcon, MessageSquare, Plus, Route, Settings, Trash2 } from "lucide-react";
+import { Bot, Boxes, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Map as MapIcon, MessageSquare, Plus, Radio, Route, Settings, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
@@ -65,11 +65,24 @@ export function WorkspaceRail({
     state_dir_resolved: snapshot?.project.state_dir || "",
   } : null;
   const activeProjectListed = Boolean(activeProjectId && projects.some((project) => project.project_id === activeProjectId));
-  const projectOptions = inferredProject && !activeProjectListed
+  const rawProjectOptions = inferredProject && !activeProjectListed
     ? [inferredProject, ...projects]
     : projects;
+  // The server-default project and its registry entry can both appear with the
+  // same name+root ("zaofu" twice in the picker). Keep the first occurrence.
+  const seenProjectKeys = new Set<string>();
+  const projectOptions = rawProjectOptions.filter((project) => {
+    const key = `${project.name || project.project_id}::${project.root || ""}`;
+    if (seenProjectKeys.has(key)) return false;
+    seenProjectKeys.add(key);
+    return true;
+  });
   const selectedProjectValue = activeProjectId || projectOptions[0]?.project_id || "";
   const selectedProject = projectOptions.find((project) => project.project_id === selectedProjectValue) ?? projectOptions[0] ?? null;
+  // doc116 §6, operator-amended: the Measure group keeps its four entries
+  // (tabs-in-Delivery was reverted on looks); the Runtime page stays retired.
+  // Act vs watch: Workspace = what I do (decide/assign/intervene);
+  // Monitoring = what the system is doing (delivery + deep-dive).
   const workspaceNav: RailNavItem[] = [
     { id: "project", icon: Home, label: "Overview" },
     { id: "inbox", icon: Inbox, label: "Inbox", badge: inboxPendingCount },
@@ -77,27 +90,29 @@ export function WorkspaceRail({
     { id: "agents", icon: Bot, label: "Agents" },
     { id: "automations", icon: CalendarClock, label: "Automations" },
   ];
-  const measureNav: RailNavItem[] = [
+  const monitoringNav: RailNavItem[] = [
     { id: "delivery", icon: Route, label: "Delivery" },
+    { id: "control-room", icon: Gauge, label: "Control" },
     { id: "delivery-trace", icon: MapIcon, label: "Trace" },
     { id: "delivery-graph", icon: Boxes, label: "Graph" },
     { id: "behavior-loop", icon: GitFork, label: "Loop" },
-  ];
-  const runtimeNav: RailNavItem[] = [
-    { id: "runtime", icon: Gauge, label: "Runtime" },
-    { id: "observability", icon: MapIcon, label: "Observability" },
+    { id: "observability", icon: Radio, label: "Observability" },
   ];
   const systemNav: RailNavItem[] = [
     { id: "settings", icon: Settings, label: "Settings" },
   ];
-  const railActivePage = isObservabilityPage(activePage) ? "observability" : activePage;
+  const railActivePage = isObservabilityPage(activePage)
+    ? "observability"
+    : activePage === "runtime"
+      ? "observability"
+      : activePage;
 
   return (
     <section className="panel project-rail" aria-label="Navigation rail">
       <div className="section-heading">
         <div>
           <h2>Control</h2>
-          <span className="muted">{activeTasks.length} active tasks</span>
+          {/* count removed: the unified header is the single count source (doc116 §11.2) */}
         </div>
         <span className={`status-dot ${liveState === "live" ? "ok" : "warn"}`} />
       </div>
@@ -146,8 +161,8 @@ export function WorkspaceRail({
           <RailNav title="" items={workspaceNav} activePage={railActivePage} onOpenPage={onOpenPage} />
         </div>
         <div className="rail-group">
-          <span className="rail-nav-title">Measure</span>
-          <RailNav title="" items={measureNav} activePage={railActivePage} onOpenPage={onOpenPage} />
+          <span className="rail-nav-title">Monitoring</span>
+          <RailNav title="" items={monitoringNav} activePage={railActivePage} onOpenPage={onOpenPage} />
         </div>
         <div className="rail-group">
           <span className="rail-nav-title">Channels</span>
@@ -176,13 +191,6 @@ export function WorkspaceRail({
           </button>
         </div>
         </div>
-        <details className="rail-section" open>
-          <summary>
-            <span>Operator</span>
-            <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
-          </summary>
-          <RailNav title="" items={runtimeNav} activePage={railActivePage} onOpenPage={onOpenPage} />
-        </details>
         <details className="rail-section" open>
           <summary>
             <span>System</span>

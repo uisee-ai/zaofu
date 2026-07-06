@@ -85,10 +85,17 @@ HUMAN_DECISION_COMMANDS = {
     "human-decision-halt",
     "human-decision-reject",
 }
+CHANNEL_QUESTION_COMMANDS = {
+    "channel-question-adopt",
+    "channel-question-oos",
+}
 # feishu-A2: commands whose buttons carry a signed action token. These are the
 # mutation buttons rendered into pushed cards (plan approve/reject, interrupt).
 SIGNED_ACTION_COMMANDS = (
-    PLAN_APPROVAL_COMMANDS | AGENT_CANCEL_COMMANDS | HUMAN_DECISION_COMMANDS
+    PLAN_APPROVAL_COMMANDS
+    | AGENT_CANCEL_COMMANDS
+    | HUMAN_DECISION_COMMANDS
+    | CHANNEL_QUESTION_COMMANDS
 )
 ATTENTION_COMMANDS = {"attention"}
 
@@ -662,6 +669,33 @@ def run_push(args: argparse.Namespace) -> int:
                     f"run-manager push failed (run unaffected): {exc}",
                     file=sys.stderr,
                 )
+        # Channel discussion open-question cards (doc 122 §8): the owner-as-
+        # oracle pager. Projection-only; button callbacks emit
+        # channel.question.resolved through this CLI.
+        question_sent = question_updated = 0
+        if plan_target:
+            try:
+                from zf.integrations.feishu.channel_question_card import (
+                    push_channel_question_cards_once,
+                )
+
+                question_result = push_channel_question_cards_once(
+                    context.state_dir,
+                    transport,
+                    receive_id=plan_target,
+                    receive_id_type=str(
+                        getattr(args, "receive_id_type", "chat_id") or "chat_id"
+                    ),
+                    action_secret=_action_secret,
+                    action_ttl_seconds=_action_ttl,
+                )
+                question_sent = len(question_result.get("sent", []))
+                question_updated = len(question_result.get("updated", []))
+            except Exception as exc:  # feishu unreachable → discussion unaffected
+                print(
+                    f"question-card push failed (discussion unaffected): {exc}",
+                    file=sys.stderr,
+                )
         offset_store.write(new_offset)
         print(
             f"Pushed {pushed} Feishu message(s); "
@@ -1147,6 +1181,13 @@ def _handle_event_data(
 
     if envelope.command in HUMAN_DECISION_COMMANDS:
         return _handle_human_decision_result(
+            envelope,
+            context.state_dir,
+            config=context.config,
+        )
+
+    if envelope.command in CHANNEL_QUESTION_COMMANDS:
+        return _handle_channel_question_result(
             envelope,
             context.state_dir,
             config=context.config,
@@ -1955,6 +1996,34 @@ def _handle_agent_cancel_result(
         "event_id": cancelled.id,
         "message": f"Interrupted channel reply {request_id}",
     }
+
+
+def _handle_channel_question_result(
+    envelope: FeishuCommandEnvelope,
+    state_dir: Path,
+    *,
+    config: object | None,
+) -> dict:
+    """Channel question card button → channel.question.resolved (doc 122 §8).
+
+    The clicking Feishu user is the owner surface; the projection's owner-only
+    `answered` gate passes because a feishu user id is not a channel agent
+    member. The discussion state machine consumes the resolution on its next
+    tick — this handler records, never mutates discussion state directly.
+    """
+    from zf.integrations.feishu.channel_question_card import handle_question_decision
+
+    question_id = envelope.args[0] if envelope.args else ""
+    if not question_id:
+        return {"ok": False, "reason": "missing_question_id"}
+    writer = EventWriter(event_log_from_project(state_dir, config=config))
+    return handle_question_decision(
+        command=envelope.command,
+        question_id=question_id,
+        state_dir=state_dir,
+        writer=writer,
+        user_id=envelope.user_id,
+    )
 
 
 def _handle_human_decision_result(

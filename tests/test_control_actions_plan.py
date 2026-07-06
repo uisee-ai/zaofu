@@ -94,3 +94,74 @@ def test_review_advice_is_suggestion_not_decision(tmp_path: Path):
          "verification": "pnpm -r build && node boot.js"},
     ]}), encoding="utf-8")
     assert review_advice(good)["advice"] == "approve"
+
+
+def test_intent_approve_with_execute_runs_proposals(tmp_path: Path):
+    service, log = _service(tmp_path)
+    (tmp_path / ".zf" / "kanban.json").write_text("[]\n", encoding="utf-8")
+    r = _exec(service, log, "idea-to-product", {
+        "objective": "three.js 赛车 MVP(已澄清)",
+        "artifact_ref": ".zf/channel-artifacts/c.md",
+        "contract": {"spec_ref": ".zf/channel-artifacts/c.md", "handoff_artifacts": [".zf/channel-artifacts/c.md"]},
+    })
+    assert r.get("ok")
+    proposal = [e for e in log.read_all() if e.type == "operator.action.proposed"][-1]
+    intent_id = proposal.payload["intent_id"]
+
+    r = _exec(service, log, "operator-intent-approve", {
+        "intent_id": intent_id, "approved_by": "operator",
+        "reason": "ship it", "execute_proposals": True,
+    })
+    assert r.get("ok") and r.get("status") == "approved"
+    executed = r.get("executed") or {}
+    assert executed.get("ok"), str(executed)
+    task_id = executed.get("created_task_id")
+    assert task_id
+    invokes = [e for e in log.read_all() if e.type == "workflow.invoke.requested"]
+    assert invokes and invokes[-1].payload.get("task_id") == task_id, \
+        "workflow-invoke must target the freshly created task, not the placeholder"
+    assert [e.type for e in log.read_all()].count("operator.action.executed") == 1
+
+    # idempotent: approving again with the flag must not run the chain twice
+    r2 = _exec(service, log, "operator-intent-approve", {
+        "intent_id": intent_id, "approved_by": "operator",
+        "reason": "double click", "execute_proposals": True,
+    })
+    assert (r2.get("executed") or {}).get("reason") == "already_executed"
+    assert len([e for e in log.read_all() if e.type == "workflow.invoke.requested"]) == 1
+
+
+def test_intent_approve_without_flag_unchanged(tmp_path: Path):
+    service, log = _service(tmp_path)
+    r = _exec(service, log, "operator-intent-approve", {
+        "intent_id": "opint-x", "approved_by": "operator", "reason": "record only",
+    })
+    assert r.get("ok") and "executed" not in r
+    types = [e.type for e in log.read_all()]
+    assert "operator.action.executed" not in types
+
+
+def test_clarified_artifact_reaches_workflow_prompt(tmp_path: Path):
+    """doc 122 §9 last mile: the clarified artifact must land in the child's
+    workflow prompt package, or prd-author starts blind."""
+    service, log = _service(tmp_path)
+    (tmp_path / ".zf" / "kanban.json").write_text("[]\n", encoding="utf-8")
+    ref = ".zf/channel-artifacts/clarified-racing.md"
+    _exec(service, log, "idea-to-product", {
+        "objective": "three.js 赛车 MVP", "artifact_ref": ref,
+        "contract": {"spec_ref": ref, "handoff_artifacts": [ref]},
+        "pattern_id": "prd-refine",
+    })
+    proposal = [e for e in log.read_all() if e.type == "operator.action.proposed"][-1]
+    _exec(service, log, "operator-intent-approve", {
+        "intent_id": proposal.payload["intent_id"], "approved_by": "op",
+        "reason": "go", "execute_proposals": True,
+    })
+    invoke = [e for e in log.read_all() if e.type == "workflow.invoke.requested"][-1]
+    refs = [a if isinstance(a, str) else a.get("ref")
+            for a in invoke.payload.get("artifact_refs") or []]
+    assert ref in refs
+    prompt_ref = invoke.payload.get("workflow_prompt_ref")
+    assert prompt_ref
+    prompt_text = (tmp_path / ".zf" / prompt_ref).read_text(encoding="utf-8")
+    assert "clarified-racing.md" in prompt_text

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -161,7 +162,12 @@ def apply_workflow_resume(
             ))
             continue
         result = _apply_checkpoint(
-            store, writer, checkpoint, gate_dispatcher=gate_dispatcher,
+            store,
+            writer,
+            checkpoint,
+            config=config,
+            state_dir=state_dir,
+            gate_dispatcher=gate_dispatcher,
             events=events,
         )
         results.append(result)
@@ -170,6 +176,13 @@ def apply_workflow_resume(
             if event.id in set(result.emitted_event_ids)
         )
     batch_results: list[WorkflowResumeApplyResult] = []
+    batch_checkpoints, collapsed = _collapse_batch_checkpoints(batch_checkpoints)
+    for checkpoint in collapsed:
+        batch_results.append(WorkflowResumeApplyResult(
+            checkpoint=checkpoint,
+            applied=False,
+            reason="collapsed into newer checkpoint for same pdd/action",
+        ))
     for checkpoint in batch_checkpoints:
         if checkpoint.safe_resume_action == "no_action":
             batch_results.append(WorkflowResumeApplyResult(
@@ -246,6 +259,8 @@ def _apply_checkpoint(
     writer: EventWriter,
     checkpoint: WorkflowResumeCheckpoint,
     *,
+    config=None,
+    state_dir: Path | None = None,
     gate_dispatcher=None,
     events=None,
 ) -> WorkflowResumeApplyResult:
@@ -269,8 +284,25 @@ def _apply_checkpoint(
     if checkpoint.safe_resume_action == "needs_task_ref_repair":
         return _apply_task_ref_repair(writer, checkpoint, emitted)
 
+    if checkpoint.safe_resume_action == "needs_assignment_correction":
+        return _apply_assignment_correction(
+            store,
+            writer,
+            checkpoint,
+            emitted,
+            config=config,
+            state_dir=state_dir,
+        )
+
     if checkpoint.safe_resume_action == "needs_rework_dispatch":
-        return _apply_rework_dispatch(store, writer, checkpoint, emitted)
+        return _apply_rework_dispatch(
+            store,
+            writer,
+            checkpoint,
+            emitted,
+            config=config,
+            state_dir=state_dir,
+        )
 
     if checkpoint.safe_resume_action == "needs_terminal_closeout":
         return _apply_terminal_closeout(store, writer, checkpoint, emitted)
@@ -290,6 +322,8 @@ def _apply_checkpoint(
                 blocking = event
                 break
         if blocking is None:
+            _emit_gate_unroutable(writer, checkpoint, emitted,
+                                  reason="blocking event missing from log")
             return _apply_stalled(writer, checkpoint, emitted)
         try:
             gate_dispatcher(blocking)
@@ -322,6 +356,12 @@ def _apply_checkpoint(
         "blocked_external_gate",
         "needs_gate_dispatch",
     }:
+        if checkpoint.safe_resume_action == "needs_gate_dispatch":
+            # 131 后续(r5 SCENE-001):completion 被认账、计划 aggregate,
+            # 但无 gate dispatcher 可执行 → 以前静默 stalled,监工只能
+            # 事后考古"为什么没动"。显式可见。
+            _emit_gate_unroutable(writer, checkpoint, emitted,
+                                  reason="no gate dispatcher available in this context")
         return _apply_stalled(writer, checkpoint, emitted)
 
     return WorkflowResumeApplyResult(
@@ -430,6 +470,29 @@ def _apply_batch_checkpoint(
     )
 
 
+def _collapse_batch_checkpoints(
+    batch_checkpoints: list[WorkflowBatchResumeCheckpoint],
+) -> tuple[list[WorkflowBatchResumeCheckpoint], list[WorkflowBatchResumeCheckpoint]]:
+    """avbs-r4 F12: rescan 把账本里每条未处理拒绝各自展开成 checkpoint,
+    重启后同 pdd 4 连发 resume batch,全靠 fanout supersede 兜底(浪费
+    记账并诱发 cap 污染)。同 (pdd, action) 只保留最后一个——投影按事件
+    序构建,最后即最新。
+    """
+    latest: dict[tuple[str, str], int] = {}
+    for idx, checkpoint in enumerate(batch_checkpoints):
+        key = (
+            str(checkpoint.pdd_id or checkpoint.fanout_id or checkpoint.checkpoint_id),
+            str(checkpoint.safe_resume_action),
+        )
+        latest[key] = idx
+    kept_indexes = set(latest.values())
+    kept: list[WorkflowBatchResumeCheckpoint] = []
+    collapsed: list[WorkflowBatchResumeCheckpoint] = []
+    for idx, checkpoint in enumerate(batch_checkpoints):
+        (kept if idx in kept_indexes else collapsed).append(checkpoint)
+    return kept, collapsed
+
+
 def _apply_batch_task_map_ready(
     writer: EventWriter,
     checkpoint: WorkflowBatchResumeCheckpoint,
@@ -503,6 +566,10 @@ def _apply_batch_task_map_ready(
         payload["task_map_repair"] = task_map_repair
     if task_ids:
         payload["task_ids"] = list(task_ids)
+    # avbs-r4 F2: findings 随 rework 走(orchestrator_fanout 已有
+    # rework_feedback → child briefing 管线,此前 batch 不填该键 = 盲 rework)
+    if getattr(checkpoint, "rework_feedback", None):
+        payload["rework_feedback"] = list(checkpoint.rework_feedback)
     event = writer.append(ZfEvent(
         type="task_map.ready",
         actor="zf-cli",
@@ -716,14 +783,85 @@ def _apply_task_ref_repair(
     )
 
 
+def _apply_assignment_correction(
+    store: TaskStore,
+    writer: EventWriter,
+    checkpoint: WorkflowResumeCheckpoint,
+    emitted: list[str],
+    *,
+    config=None,
+    state_dir: Path | None = None,
+) -> WorkflowResumeApplyResult:
+    task = store.get(checkpoint.task_id)
+    target_role, target_reason = _resolve_rework_target_role(
+        checkpoint,
+        task,
+        config=config,
+        state_dir=state_dir,
+    )
+    if not target_role:
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            False,
+            f"rejected: {target_reason}",
+            _append_rejected(writer, checkpoint, emitted, target_reason),
+        )
+    if task is not None:
+        store.update(
+            checkpoint.task_id,
+            status="in_progress" if task.status != "done" else task.status,
+            assigned_to=target_role,
+        )
+    assigned = writer.append(ZfEvent(
+        type="task.assigned",
+        actor="zf-cli",
+        task_id=checkpoint.task_id,
+        payload={
+            "role": target_role,
+            "assignee": target_role,
+            "source": "workflow_resume_assignment_correction",
+            "target_resolution": target_reason,
+            "reason": checkpoint.reason,
+            "trigger_event": checkpoint.source_event_type,
+            "trigger_event_id": checkpoint.last_trusted_event_id,
+            "idempotency_key": checkpoint.idempotency_key,
+        },
+        causation_id=checkpoint.last_trusted_event_id or None,
+    ))
+    emitted.append(assigned.id)
+    applied = writer.append(_applied_event(checkpoint, "assignment corrected"))
+    emitted.append(applied.id)
+    return WorkflowResumeApplyResult(
+        checkpoint,
+        True,
+        "assignment corrected",
+        emitted,
+    )
+
+
 def _apply_rework_dispatch(
     store: TaskStore,
     writer: EventWriter,
     checkpoint: WorkflowResumeCheckpoint,
     emitted: list[str],
+    *,
+    config=None,
+    state_dir: Path | None = None,
 ) -> WorkflowResumeApplyResult:
     task = store.get(checkpoint.task_id)
-    target_role = checkpoint.expected_next_role or "dev"
+    target_role, target_reason = _resolve_rework_target_role(
+        checkpoint,
+        task,
+        config=config,
+        state_dir=state_dir,
+    )
+    if not target_role:
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            False,
+            f"rejected: {target_reason}",
+            _append_rejected(writer, checkpoint, emitted, target_reason),
+        )
     if task is not None:
         store.update(
             checkpoint.task_id,
@@ -739,6 +877,7 @@ def _apply_rework_dispatch(
             "role": target_role,
             "assignee": target_role,
             "source": "workflow_resume",
+            "target_resolution": target_reason,
             "reason": checkpoint.reason or "workflow resume rework",
             "trigger_event_type": checkpoint.source_event_type,
             "trigger_event_id": checkpoint.last_trusted_event_id,
@@ -756,6 +895,7 @@ def _apply_rework_dispatch(
             "role": target_role,
             "assignee": target_role,
             "source": "workflow_resume_rework",
+            "target_resolution": target_reason,
             "trigger_event": checkpoint.source_event_type,
             "trigger_event_id": checkpoint.last_trusted_event_id,
             "rework_request_event_id": rework.id,
@@ -767,6 +907,200 @@ def _apply_rework_dispatch(
     applied = writer.append(_applied_event(checkpoint, "rework requested"))
     emitted.append(applied.id)
     return WorkflowResumeApplyResult(checkpoint, True, "rework requested", emitted)
+
+
+_CONTROL_REWORK_ROLES = {"", "orchestrator"}
+_DESIGN_REWORK_ROLES = {"arch", "critic"}
+_GENERIC_IMPL_ROLES = {"dev", "impl", "writer", "coding", "coding-agent"}
+
+
+def _resolve_rework_target_role(
+    checkpoint: WorkflowResumeCheckpoint,
+    task,
+    *,
+    config=None,
+    state_dir: Path | None = None,
+) -> tuple[str, str]:
+    requested = str(checkpoint.expected_next_role or "").strip()
+    if not requested:
+        requested = "dev"
+    lane_task = _is_lane_task(task, config=config)
+    if _role_allowed_for_resume_rework(requested, config=config, lane_task=lane_task):
+        return requested, "checkpoint.expected_next_role"
+
+    if lane_task or requested in _CONTROL_REWORK_ROLES:
+        lane_role = _lane_impl_role_for_task(
+            task,
+            config=config,
+            state_dir=state_dir,
+        )
+        if lane_role and _role_allowed_for_resume_rework(
+            lane_role,
+            config=config,
+            lane_task=True,
+        ):
+            return lane_role, "lane_affinity.impl"
+
+    contract = getattr(task, "contract", None)
+    for source, candidate in (
+        ("task.contract.owner_instance", getattr(contract, "owner_instance", "")),
+        ("task.contract.owner_role", getattr(contract, "owner_role", "")),
+        ("task.contract.rework_to", getattr(contract, "rework_to", "")),
+    ):
+        role = str(candidate or "").strip()
+        if _role_allowed_for_resume_rework(role, config=config, lane_task=lane_task):
+            return role, source
+
+    if requested == "dev" and _role_allowed_for_resume_rework(
+        "dev",
+        config=config,
+        lane_task=False,
+    ):
+        return "dev", "legacy.default_dev"
+
+    return "", (
+        "workflow resume rework target is not a runnable implementation role: "
+        f"{requested or '<empty>'}"
+    )
+
+
+def _role_allowed_for_resume_rework(
+    role: str,
+    *,
+    config=None,
+    lane_task: bool,
+) -> bool:
+    name = str(role or "").strip()
+    if not name or name in _CONTROL_REWORK_ROLES:
+        return False
+    if lane_task and name in _DESIGN_REWORK_ROLES:
+        return False
+    role_config = _role_config(config, name)
+    if role_config is None:
+        return config is None and name not in _DESIGN_REWORK_ROLES
+    if lane_task and str(getattr(role_config, "role_kind", "") or "") == "reader":
+        return False
+    return True
+
+
+def _role_config(config, name: str):
+    for role in list(getattr(config, "roles", []) or []):
+        if name in {
+            str(getattr(role, "instance_id", "") or ""),
+            str(getattr(role, "name", "") or ""),
+        }:
+            return role
+    return None
+
+
+def _is_lane_task(task, *, config=None) -> bool:
+    if task is None:
+        return False
+    workflow = getattr(config, "workflow", None)
+    if not getattr(workflow, "affinity_lanes", None):
+        return False
+    contract = getattr(task, "contract", None)
+    evidence = getattr(contract, "evidence_contract", {}) or {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    source = str(evidence.get("source") or "").strip()
+    affinity_tag = str(evidence.get("affinity_tag") or "").strip()
+    owner_role = str(getattr(contract, "owner_role", "") or "").strip()
+    return bool(
+        affinity_tag
+        or source == "refactor_task_map"
+        or owner_role.startswith("dev-")
+        or owner_role in _GENERIC_IMPL_ROLES
+    )
+
+
+def _lane_impl_role_for_task(
+    task,
+    *,
+    config=None,
+    state_dir: Path | None = None,
+) -> str:
+    if task is None or config is None:
+        return ""
+    contract = getattr(task, "contract", None)
+    evidence = getattr(contract, "evidence_contract", {}) or {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    task_map_ref = _evidence_task_map_ref(evidence)
+    task_map = _read_task_map(task_map_ref, state_dir=state_dir)
+    affinity_key = str(task_map.get("affinity_key") or "affinity_tag").strip()
+    affinity_tag = str(evidence.get(affinity_key) or evidence.get("affinity_tag") or "").strip()
+    task_item = _task_map_item(task_map, str(getattr(task, "id", "") or ""))
+    if not affinity_tag and task_item:
+        affinity_tag = str(task_item.get(affinity_key) or task_item.get("affinity_tag") or "").strip()
+    lane_id = ""
+    if task_item:
+        lane_id = str(task_item.get("lane_id") or task_item.get("lane") or "").strip()
+    lane_map = task_map.get("lane_affinity_map")
+    if not lane_id and isinstance(lane_map, dict) and affinity_tag:
+        lane_id = str(lane_map.get(affinity_tag) or "").strip()
+    if not lane_id and affinity_tag.startswith("lane"):
+        lane_id = affinity_tag
+    profile_name = str(task_map.get("lane_profile") or "").strip()
+    profiles = getattr(getattr(config, "workflow", None), "affinity_lanes", {}) or {}
+    profile = profiles.get(profile_name) if profile_name else None
+    if profile is None and len(profiles) == 1:
+        profile = next(iter(profiles.values()))
+    if profile is None:
+        return ""
+    for lane in list(getattr(profile, "lanes", []) or []):
+        if str(getattr(lane, "id", "") or "") == lane_id:
+            return str(getattr(lane, "impl", "") or "").strip()
+    dispatch_role = _impl_role_from_active_dispatch(task, profile)
+    if dispatch_role:
+        return dispatch_role
+    return ""
+
+
+def _impl_role_from_active_dispatch(task, profile) -> str:
+    dispatch_id = str(getattr(task, "active_dispatch_id", "") or "").strip()
+    if not dispatch_id:
+        return ""
+    for lane in list(getattr(profile, "lanes", []) or []):
+        impl_role = str(getattr(lane, "impl", "") or "").strip()
+        if impl_role and impl_role in dispatch_id:
+            return impl_role
+    return ""
+
+
+def _evidence_task_map_ref(evidence: dict) -> str:
+    refs = evidence.get("source_refs")
+    if isinstance(refs, dict):
+        return str(refs.get("task_map_ref") or "").strip()
+    return ""
+
+
+def _read_task_map(ref: str, *, state_dir: Path | None = None) -> dict:
+    text = str(ref or "").strip()
+    if not text:
+        return {}
+    path = Path(text)
+    if not path.is_absolute() and state_dir is not None:
+        path = Path(state_dir) / path
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _task_map_item(task_map: dict, task_id: str) -> dict:
+    tasks = task_map.get("tasks")
+    if not isinstance(tasks, list):
+        return {}
+    for item in tasks:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("task_id") or item.get("id") or "") == task_id:
+            return item
+    return {}
 
 
 def _apply_terminal_closeout(
@@ -836,6 +1170,32 @@ def _apply_terminal_closeout(
         "task terminal closeout",
         emitted,
     )
+
+
+def _emit_gate_unroutable(
+    writer: EventWriter,
+    checkpoint: WorkflowResumeCheckpoint,
+    emitted: list[str],
+    *,
+    reason: str,
+) -> None:
+    try:
+        event = writer.append(ZfEvent(
+            type="workflow.resume.gate_unroutable",
+            actor="zf-cli",
+            task_id=checkpoint.task_id,
+            payload={
+                "task_id": checkpoint.task_id,
+                "expected_next_stage": checkpoint.expected_next_stage,
+                "expected_next_role": checkpoint.expected_next_role,
+                "checkpoint_idempotency_key": checkpoint.idempotency_key,
+                "reason": reason,
+            },
+            causation_id=checkpoint.last_trusted_event_id or None,
+        ))
+        emitted.append(event.id)
+    except Exception:
+        pass
 
 
 def _apply_stalled(
@@ -1362,24 +1722,8 @@ def _resume_context_rejections(
     root = Path(project_root).resolve()
     actual_state_dir = Path(state_dir).resolve()
     rejections: list[dict[str, str]] = []
-
-    configured_state_dir = str(
-        getattr(getattr(config, "project", None), "state_dir", "") or ""
-    )
-    if configured_state_dir:
-        expected = Path(configured_state_dir)
-        if not expected.is_absolute():
-            expected = root / expected
-        expected = expected.resolve()
-        if expected != actual_state_dir:
-            rejections.append({
-                "code": "state_dir_mismatch",
-                "reason": "state dir does not match zf.yaml project.state_dir",
-                "expected_state_dir": str(expected),
-                "actual_state_dir": str(actual_state_dir),
-            })
-
     session_path = actual_state_dir / "session.yaml"
+    session_root: Path | None = None
     if session_path.exists():
         try:
             from zf.core.state.session import SessionStore
@@ -1395,17 +1739,50 @@ def _resume_context_rejections(
                 "reason": str(exc),
                 "session_path": str(session_path),
             })
-        else:
-            if session_root is not None and session_root != root:
-                rejections.append({
-                    "code": "session_project_root_mismatch",
-                    "reason": "session.yaml project_root does not match current project root",
-                    "expected_project_root": str(root),
-                    "actual_project_root": str(session_root),
-                    "session_path": str(session_path),
-                })
+
+    configured_state_dir = str(
+        getattr(getattr(config, "project", None), "state_dir", "") or ""
+    )
+    if configured_state_dir:
+        expected = Path(configured_state_dir)
+        if not expected.is_absolute():
+            expected = root / expected
+        expected = expected.resolve()
+        runtime_override_allowed = (
+            _state_dir_matches_env_override(actual_state_dir, root)
+            or (session_root is not None and session_root == root)
+        )
+        if expected != actual_state_dir and not runtime_override_allowed:
+            rejections.append({
+                "code": "state_dir_mismatch",
+                "reason": "state dir does not match zf.yaml project.state_dir",
+                "expected_state_dir": str(expected),
+                "actual_state_dir": str(actual_state_dir),
+            })
+
+    if session_root is not None and session_root != root:
+        rejections.append({
+            "code": "session_project_root_mismatch",
+            "reason": "session.yaml project_root does not match current project root",
+            "expected_project_root": str(root),
+            "actual_project_root": str(session_root),
+            "session_path": str(session_path),
+        })
 
     return rejections
+
+
+def _state_dir_matches_env_override(actual_state_dir: Path, project_root: Path) -> bool:
+    raw = os.environ.get("ZF_STATE_DIR", "").strip()
+    if not raw:
+        return False
+    env_state_dir = Path(raw).expanduser()
+    if not env_state_dir.is_absolute():
+        env_state_dir = project_root / env_state_dir
+    try:
+        return env_state_dir.resolve() == actual_state_dir
+    except Exception:
+        return False
 
 
 __all__ = [

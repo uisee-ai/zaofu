@@ -16,6 +16,7 @@ from zf.core.profile.apply import (
     apply_agents_md_stack,
     fill_required_checks,
     materialize_zf_yaml,
+    materialize_flow_assets,
     scaffold_from_zero,
 )
 from zf.core.profile.detector import declared_profile, detect
@@ -100,6 +101,15 @@ def run_bootstrap(args: argparse.Namespace) -> int:
     if not zf_yaml.exists():
         zf_yaml.write_text(materialize_zf_yaml(rec.archetype, root.name, rec), encoding="utf-8")
         print(f"\n  + 生成 zf.yaml(archetype={rec.archetype}, profile={rec.harness_profile})")
+        if rec.catalog == "flow":
+            assets = materialize_flow_assets(rec.archetype, root, config_path=zf_yaml)
+            copied = [
+                *assets.get("profile_sources", []),
+                *assets.get("skills", []),
+            ]
+            if copied:
+                print(f"  + flow assets: {', '.join(copied[:12])}"
+                      f"{' ...' if len(copied) > 12 else ''}")
     else:
         res = fill_required_checks(zf_yaml, rec.required_checks, write=True)
         print(f"\n  + zf.yaml 已存在 → required_checks {res['action']}")

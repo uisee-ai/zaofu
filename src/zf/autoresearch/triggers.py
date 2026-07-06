@@ -18,9 +18,10 @@ from zf.autoresearch.failure_signals import (
     collect_failure_signals,
 )
 from zf.core.events import EventLog, EventWriter, ZfEvent
+from zf.runtime.event_problem_registry import autoresearch_eligible_failure_classes
 
 
-DEFAULT_ELIGIBLE_FAILURE_CLASSES = (
+DEFAULT_ELIGIBLE_FAILURE_CLASSES = tuple(sorted(set((
     "codex_realism_gap",
     "completion_without_gate",
     "control_plane_violation",
@@ -46,7 +47,8 @@ DEFAULT_ELIGIBLE_FAILURE_CLASSES = (
     "verification_environment_missing_tool",
     "web_bind_failure",
     "worker_stuck",
-)
+    *autoresearch_eligible_failure_classes(),
+))))
 
 
 @dataclass(frozen=True)

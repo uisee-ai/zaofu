@@ -20,6 +20,7 @@ from typing import Callable, TYPE_CHECKING
 from zf.core.config.schema import ZfConfig, RoleConfig
 from zf.core.events.dedupe import BoundedIdSet
 from zf.core.events.factory import event_log_from_project
+from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.role_sessions import RoleSessionRegistry
@@ -38,6 +39,7 @@ from zf.core.verification.discriminator import (
 from zf.core.verification.scope_ratchet import ScopeRatchet, ScopeSnapshot
 from zf.runtime.drift import DriftDetector
 from zf.runtime.escalation import EscalationManager
+from zf.runtime.reader_child_task_resolution import resolve_reader_child_task_id
 from zf.runtime.refresh import RefreshPolicy
 from zf.runtime.transport import (
     DispatchContext,
@@ -121,6 +123,25 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     # channel_router.route_channel_message.
     "channel.message.posted",
     "channel.agent.reply.requested",
+    # 2026-07-03: channel discussion progression (blind-fanout ->
+    # phase2_relay -> phase3_synthesis, doc 122) is likewise mechanical and
+    # taskless — channel_discussion.py emits these with correlation_id=
+    # channel_id, never task_id, so both the Layer-1 (task_id-gated) and
+    # Layer-2-active (terminal-ownership-gated) dispatch paths skip the
+    # builtin _on_channel_discussion_event handler, and every phase
+    # transition ends up waiting for the periodic sweep_discussion_deadlines
+    # tick fallback instead of firing immediately when the triggering event
+    # lands (racing-codex e2e rounds 1-3: every `phase.changed` showed
+    # source="deadline-sweep", even when all roster members had already
+    # replied). Same bug class and same fix as judge.passed above.
+    "channel.agent.reply.completed",
+    "channel.question.opened",
+    "channel.question.resolved",
+    "channel.question.merged",
+    "channel.questions.frozen",
+    "channel.consensus.proposed",
+    "channel.consensus.signed",
+    "channel.consensus.blocked",
 })
 
 _KERNEL_TERMINAL_EVENTS = frozenset({
@@ -858,6 +879,11 @@ class Orchestrator(
             "unclaimed_new_tasks", self._check_unclaimed_new_tasks,
         )
         self._safe_housekeeping("fanout_timeouts", self._check_fanout_timeouts)
+        # 2026-07-03 audit B1: channel replies must not dead-end — bounded
+        # redispatch for failed/stuck replies, exhausted event at the cap.
+        self._safe_housekeeping(
+            "channel_reply_remediation", self._check_channel_reply_remediation,
+        )
         # G-WIRE-2: drift detection observation
         self._safe_housekeeping("drift", self._check_drift)
         # G-WIRE-3: refresh policy observation
@@ -941,6 +967,30 @@ class Orchestrator(
                 )
             except (ValueError, TypeError):
                 trigger_lag_s = None
+        # avbs-r4 F3: 积压自监控。r4 三次死亡螺旋(峰值 lag 4864s)当时
+        # 只能靠 operator 手算时间戳发现;超阈值主动发告警事件,自身
+        # 10 分钟节流防止告警反哺积压。
+        if trigger_lag_s is not None and trigger_lag_s > 300:
+            now_monotonic = time.monotonic()
+            last_warned = getattr(self, "_last_lag_warning_monotonic", 0.0)
+            if now_monotonic - last_warned > 600:
+                self._last_lag_warning_monotonic = now_monotonic
+                try:
+                    self.event_writer.append(ZfEvent(
+                        type="runtime.watcher.lag_warning",
+                        actor="zf-cli",
+                        payload={
+                            "trigger_lag_s": trigger_lag_s,
+                            "threshold_s": 300,
+                            "trigger_event_type": trigger_event_type,
+                            "recommendation": (
+                                "event backlog growing; consider zf stop/start "
+                                "flush at the next safe window"
+                            ),
+                        },
+                    ))
+                except Exception:
+                    pass
         # Classify the overall decision from collected actions.
         actions = [d.action for d in decisions if d and d.action]
         if any(a in {"dispatch", "move", "route", "spawn"} for a in actions):
@@ -1262,7 +1312,7 @@ class Orchestrator(
                         "confidence": match.confidence,
                         "evidence_event_ids": list(match.evidence_event_ids),
                         "suggested_fix_area": match.suggested_fix_area,
-                        "cangjie_state_snapshot": match.cangjie_state_snapshot,
+                        "run_state_snapshot": match.run_state_snapshot,
                     },
                 ))
             except Exception:
@@ -2123,6 +2173,16 @@ class Orchestrator(
                 self._processed_event_ids.add(event.id)
                 continue
 
+            # avbs-r4 F8: reader child failures arrive agent-emitted without
+            # task_id; resolve from the fanout manifest so rework triage and
+            # same_lane backedges can fire (in-memory only, log untouched).
+            if not event.task_id:
+                resolved_task_id = resolve_reader_child_task_id(
+                    event, manifest_loader=self._fanout_manifest,
+                )
+                if resolved_task_id:
+                    event.task_id = resolved_task_id
+
             # Layer 1 housekeeping: mechanical state writes from emitted events
             self._apply_housekeeping(event)
 
@@ -2151,6 +2211,11 @@ class Orchestrator(
             # unless the event is candidate-level (no task_id + pdd_id +
             # feature_id), so per-task judge.passed is unaffected.
             if not event.task_id and event.type == "judge.passed":
+                evidence_gap = self._reject_flow_judge_evidence_gap(event)
+                if evidence_gap is not None:
+                    decisions.append(evidence_gap)
+                    self._processed_event_ids.add(event.id)
+                    continue
                 settle = self._settle_candidate_tasks_done(event)
                 if settle is not None:
                     decisions.append(settle)
@@ -2159,15 +2224,32 @@ class Orchestrator(
                 decision = self._bridge_verify_passed_to_parity_scan(event)
                 if decision:
                     decisions.append(decision)
+                decision = self._bridge_verify_passed_to_flow_discovery(event)
+                if decision:
+                    decisions.append(decision)
 
-            if not event.task_id and event.type == "cangjie.module.parity.scan.completed":
+            if (
+                not event.task_id
+                and is_module_parity_scan_completed_event(event.type)
+            ):
                 decision = self._bridge_module_parity_scan_completed(event)
                 if decision:
                     decisions.append(decision)
                 self._processed_event_ids.add(event.id)
                 continue
 
-            if not event.task_id and event.type == "gap_plan.ready":
+            if not event.task_id and event.type == "flow.discovery.completed":
+                decision = self._bridge_flow_discovery_completed(event)
+                if decision:
+                    decisions.append(decision)
+                self._processed_event_ids.add(event.id)
+                continue
+
+            if not event.task_id and event.type in {
+                "gap_plan.ready",
+                "goal.gap_plan.ready",
+                "flow.gap_plan.ready",
+            }:
                 decision = self._bridge_gap_plan_ready_to_task_map(event)
                 if decision:
                     decisions.append(decision)
@@ -2897,7 +2979,16 @@ class Orchestrator(
                     # LH-0.T1: product/design rework counter bump (runs in
                     # both Layer 1 legacy and Layer 2 modes; cap enforced
                     # separately in _dispatch_rework / _dispatch_ready).
-                    apply_rework_failure_event(self.task_store, event)
+                    # avbs-r4 F12: 带事件窗做同 fanout 去重,echo 重放不计账。
+                    try:
+                        from zf.runtime.event_window import read_runtime_events
+
+                        window = read_runtime_events(self.event_log, self.state_dir)
+                    except Exception:
+                        window = None
+                    apply_rework_failure_event(
+                        self.task_store, event, events=window,
+                    )
                     # LH-4.T3: circuit breaker failure counter. Evidence,
                     # harness, and environment classifications do not count as
                     # product failures.
@@ -3171,6 +3262,26 @@ class Orchestrator(
                 raw.get("affinity_tag"),
                 item.get("affinity_tag"),
             )
+            raw_evidence_contract = (
+                raw.get("evidence_contract")
+                if isinstance(raw.get("evidence_contract"), dict)
+                else {}
+            )
+            goal_id = self._first_nonempty(
+                raw.get("goal_id"),
+                payload.get("goal_id"),
+                raw_evidence_contract.get("goal_id"),
+            )
+            goal_kind = self._first_nonempty(
+                raw.get("goal_kind"),
+                payload.get("goal_kind"),
+                raw_evidence_contract.get("goal_kind"),
+            )
+            gap_category = self._first_nonempty(
+                raw.get("gap_category"),
+                payload.get("gap_category"),
+                raw_evidence_contract.get("gap_category"),
+            )
             product_contract_ref = self._first_nonempty(
                 raw.get("product_contract_ref"),
                 raw.get("spec_ref"),
@@ -3186,6 +3297,56 @@ class Orchestrator(
                 or "; ".join(verification_tiers)
                 or f"Verify {scope} against the task_map acceptance criteria."
             )
+            acceptance_criteria = (
+                self._writer_task_contract_list(raw.get("acceptance_criteria"))
+                or self._writer_task_contract_list(raw.get("acceptance"))
+                or self._writer_task_contract_list(item.get("acceptance_criteria"))
+                or self._writer_task_contract_list(item.get("acceptance"))
+            )
+            raw_owner_role = self._first_nonempty(
+                raw.get("owner_role"),
+                item.get("owner_role"),
+                default_owner_role,
+            )
+            raw_owner_instance = self._first_nonempty(
+                raw.get("owner_instance"),
+                item.get("owner_instance"),
+            )
+            owner_role = self._task_map_runtime_owner_role(
+                raw_owner_role,
+                default_owner_role,
+            )
+            owner_instance = self._task_map_runtime_owner_instance(
+                raw_owner_instance,
+                raw_owner_role,
+            )
+            evidence_contract = dict(raw_evidence_contract)
+            evidence_contract.update({
+                "source": "refactor_task_map",
+                "source_refs": source_refs,
+                "module_id": module_id,
+                "gap_kind": gap_kind,
+                "affinity_tag": affinity_tag,
+                "parent_task_id": parent_task_id,
+            })
+            if goal_id:
+                evidence_contract["goal_id"] = goal_id
+            if goal_kind:
+                evidence_contract["goal_kind"] = goal_kind
+            if gap_category:
+                evidence_contract["gap_category"] = gap_category
+            for key in (
+                "affected_tasks",
+                "gate_changes",
+                "replan_history_ref",
+                "acceptance_id",
+                "repro_ref",
+            ):
+                value = raw.get(key, raw_evidence_contract.get(key))
+                if value not in (None, "", []):
+                    evidence_contract[key] = value
+            if raw_owner_role and raw_owner_role not in {owner_role, owner_instance}:
+                evidence_contract["semantic_owner_role"] = raw_owner_role
             contract = TaskContract(
                 feature_id=feature_id,
                 parent_task_id=parent_task_id,
@@ -3210,20 +3371,15 @@ class Orchestrator(
                 source_task_id=self._first_nonempty(raw.get("source_task_id"), task_id),
                 source_index_ref=loaded.source_index_ref,
                 source_mode=str(raw.get("source_mode") or "canonical").strip(),
-                owner_role=str(
-                    raw.get("owner_role")
-                    or item.get("owner_role")
-                    or default_owner_role
-                ).strip(),
-                owner_instance=str(raw.get("owner_instance") or "").strip(),
-                evidence_contract={
-                    "source": "refactor_task_map",
-                    "source_refs": source_refs,
-                    "module_id": module_id,
-                    "gap_kind": gap_kind,
-                    "affinity_tag": affinity_tag,
-                    "parent_task_id": parent_task_id,
-                },
+                owner_role=owner_role,
+                owner_instance=owner_instance,
+                acceptance=(
+                    "; ".join(acceptance_criteria)
+                    if acceptance_criteria
+                    else "exit_code=0"
+                ),
+                acceptance_criteria=acceptance_criteria,
+                evidence_contract=evidence_contract,
             )
             refreshed_task = Task(
                 id=task_id,
@@ -3256,6 +3412,37 @@ class Orchestrator(
                         "reopened_from_terminal": reopened,
                     },
                 ))
+
+    def _task_map_runtime_owner_role(
+        self,
+        raw_owner_role: str,
+        default_owner_role: str,
+    ) -> str:
+        raw = str(raw_owner_role or "").strip()
+        if not raw:
+            return default_owner_role
+        for role in self.config.roles:
+            if role.name == raw:
+                return role.name
+        for role in self.config.roles:
+            if role.instance_id == raw:
+                return role.name
+        return default_owner_role
+
+    def _task_map_runtime_owner_instance(
+        self,
+        raw_owner_instance: str,
+        raw_owner_role: str,
+    ) -> str:
+        for value in (raw_owner_instance, raw_owner_role):
+            raw = str(value or "").strip()
+            if not raw:
+                continue
+            for role in self.config.roles:
+                if role.instance_id == raw:
+                    return role.instance_id
+        return ""
+
     @staticmethod
     def _task_contract_task_map_ref(contract) -> str:
         evidence = getattr(contract, "evidence_contract", {}) or {}
@@ -3560,10 +3747,11 @@ class Orchestrator(
             write_gap_task_map_amend_artifact,
         )
 
+        gap_event_type = event.type or "gap_plan.ready"
         if self._has_bridge_output(event.id, {"task_map.amended"}):
             return OrchestratorDecision(
                 action="noop",
-                reason="gap_plan.ready already amended task_map",
+                reason=f"{gap_event_type} already amended task_map",
             )
 
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -3586,13 +3774,14 @@ class Orchestrator(
                     "pdd_id": pdd_id,
                     "feature_id": feature_id,
                     "trace_id": trace_id,
-                    "reason": "gap_plan.ready requires pdd_id and task_map_ref",
+                    "reason": f"{gap_event_type} requires pdd_id and task_map_ref",
+                    "gap_event_type": gap_event_type,
                     "source_event_id": event.id,
                 },
             ))
             return OrchestratorDecision(
                 action="block",
-                reason="gap_plan.ready missing pdd_id or task_map_ref",
+                reason=f"{gap_event_type} missing pdd_id or task_map_ref",
             )
         gap_plan_ref = str(payload.get("gap_plan_ref") or "").strip()
         gap_plan_payload = dict(payload)
@@ -3615,12 +3804,13 @@ class Orchestrator(
                         "task_map_ref": base_task_map_ref,
                         "gap_plan_ref": gap_plan_ref,
                         "reason": f"gap_plan_ref unreadable: {exc}",
+                        "gap_event_type": gap_event_type,
                         "source_event_id": event.id,
                     },
                 ))
                 return OrchestratorDecision(
                     action="block",
-                    reason="gap_plan.ready gap_plan_ref unreadable",
+                    reason=f"{gap_event_type} gap_plan_ref unreadable",
                 )
         gap_tasks = gap_tasks_from_gap_plan_payload(gap_plan_payload)
         if not gap_tasks:
@@ -3635,13 +3825,14 @@ class Orchestrator(
                     "trace_id": trace_id,
                     "task_map_ref": base_task_map_ref,
                     "gap_plan_ref": gap_plan_ref,
-                    "reason": "gap_plan.ready contains no gap_tasks",
+                    "reason": f"{gap_event_type} contains no gap_tasks",
+                    "gap_event_type": gap_event_type,
                     "source_event_id": event.id,
                 },
             ))
             return OrchestratorDecision(
                 action="block",
-                reason="gap_plan.ready contains no gap_tasks",
+                reason=f"{gap_event_type} contains no gap_tasks",
             )
         requested = self.event_writer.append(ZfEvent(
             type="task_map.amend.requested",
@@ -3656,6 +3847,7 @@ class Orchestrator(
                 "task_map_ref": base_task_map_ref,
                 "gap_plan_ref": gap_plan_ref,
                 "gap_task_count": len(gap_tasks),
+                "gap_event_type": gap_event_type,
                 "source_event_id": event.id,
                 "source": "gap_plan_bridge",
             },
@@ -3683,6 +3875,7 @@ class Orchestrator(
                     "task_map_ref": base_task_map_ref,
                     "gap_plan_ref": gap_plan_ref,
                     "reason": str(exc),
+                    "gap_event_type": gap_event_type,
                     "source_event_id": event.id,
                     "request_event_id": requested.id,
                 },
@@ -3707,6 +3900,7 @@ class Orchestrator(
                 "gap_plan_ref": gap_plan_ref,
                 "gap_task_ids": gap_task_ids,
                 "gap_task_count": len(gap_task_ids),
+                "gap_event_type": gap_event_type,
                 "source_event_id": event.id,
                 "request_event_id": requested.id,
                 "source": "gap_plan_bridge",
@@ -3735,6 +3929,7 @@ class Orchestrator(
                 "gap_task_ids": gap_task_ids,
                 "task_ids": gap_task_ids,
                 "resume_scope": "gap_tasks_only",
+                "gap_event_type": gap_event_type,
                 "source_event_id": event.id,
                 "source": "gap_plan_bridge",
             },
@@ -3742,7 +3937,7 @@ class Orchestrator(
         self._maybe_start_writer_fanout(ready)
         return OrchestratorDecision(
             action="bridge",
-            reason=f"gap_plan.ready amended task_map for {len(gap_task_ids)} gap task(s)",
+            reason=f"{gap_event_type} amended task_map for {len(gap_task_ids)} gap task(s)",
         )
 
     def _resolve_runtime_artifact_ref(self, ref: str) -> Path:

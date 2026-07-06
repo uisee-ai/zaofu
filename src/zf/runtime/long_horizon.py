@@ -113,6 +113,80 @@ def _events_for_task(events: Iterable[ZfEvent], task_id: str) -> list[ZfEvent]:
     return [event for event in events if _event_task_match(event, task_id)]
 
 
+def _collect_leaf_strings(payload: Any, out: set[str]) -> None:
+    """Collect every leaf as str(), keys included — mirrors _payload_mentions.
+
+    _payload_mentions leaf semantics is EXACT equality (str(leaf) == needle),
+    recursing into dict keys and values and sequence items. Collecting the leaf
+    strings once per event turns each (event, needle) recursion into an O(1)
+    set lookup with identical results.
+    """
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            _collect_leaf_strings(key, out)
+            _collect_leaf_strings(value, out)
+    elif isinstance(payload, list | tuple | set):
+        for item in payload:
+            _collect_leaf_strings(item, out)
+    else:
+        out.add(str(payload))
+
+
+class TaskEventIndex:
+    """Per-request task↔event index with exact _payload_mentions parity.
+
+    The projection hot path called _payload_mentions once per (event, task)
+    pair — O(events × payload depth) recursion, millions of calls per request
+    (agents/task_detail). This walks each payload once (lazily) and answers
+    matches by set membership. Build one per request and pass it down; do not
+    cache globally (memory is bounded by request lifetime).
+    """
+
+    __slots__ = ("events", "_leaves")
+
+    def __init__(self, events: Iterable[ZfEvent]):
+        self.events = list(events)
+        self._leaves: list[set[str] | None] = [None] * len(self.events)
+
+    def _leaf_set(self, i: int) -> set[str]:
+        leaves = self._leaves[i]
+        if leaves is None:
+            leaves = set()
+            _collect_leaf_strings(self.events[i].payload, leaves)
+            self._leaves[i] = leaves
+        return leaves
+
+    def extended(self, new_events: list[ZfEvent]) -> "TaskEventIndex":
+        """A new index sharing this one's events prefix and memoized leaf sets.
+
+        Incremental-fold support (R6-1): appending N events costs O(N), not a
+        re-walk of every payload. Lists are copied so later lazy memoization
+        on either index never mutates the other's view.
+        """
+        idx = TaskEventIndex.__new__(TaskEventIndex)
+        idx.events = self.events + list(new_events)
+        idx._leaves = self._leaves + [None] * (len(idx.events) - len(self.events))
+        return idx
+
+    def event_matches_task(self, i: int, task_id: str) -> bool:
+        event = self.events[i]
+        return event.task_id == task_id or task_id in self._leaf_set(i)
+
+    def events_for_task(self, task_id: str) -> list[ZfEvent]:
+        return [
+            event for i, event in enumerate(self.events)
+            if self.event_matches_task(i, task_id)
+        ]
+
+    def relevant(self, *, task_id: str = "", actor: str = "") -> list[ZfEvent]:
+        """Same filter as project_state_freshness's relevant-events scan."""
+        return [
+            event for i, event in enumerate(self.events)
+            if (task_id and self.event_matches_task(i, task_id))
+            or (actor and event.actor == actor)
+        ]
+
+
 def _event_text(event: ZfEvent) -> str:
     parts = [event.type, event.actor or ""]
     payload = event.payload if isinstance(event.payload, dict) else {}
@@ -548,6 +622,7 @@ def work_unit_from_task(
         config=config,
         context_usage_ratio=context_usage_ratio,
     )
+    acceptance_criteria = _acceptance_criteria_from_contract(contract)
     return WorkUnitContract(
         id=f"WU-{task.id}",
         task_id=task.id,
@@ -566,7 +641,7 @@ def work_unit_from_task(
             "events": list(dict.fromkeys(validation_events)),
             "files": list(dict.fromkeys(validation_files)),
         },
-        acceptance_criteria=list(contract.acceptance_criteria),
+        acceptance_criteria=acceptance_criteria,
         boundary=boundary,
         complexity=complexity,
         effective_profile=effective_profile_for_task(
@@ -586,6 +661,21 @@ def _role_from_assignee(assignee: str) -> str:
     if "-" in assignee:
         return assignee.split("-", 1)[0]
     return assignee
+
+
+def _acceptance_criteria_from_contract(contract: Any) -> list[str]:
+    explicit = list(getattr(contract, "acceptance_criteria", []) or [])
+    if explicit:
+        return [str(item).strip() for item in explicit if str(item).strip()]
+    evidence = getattr(contract, "evidence_contract", {}) or {}
+    if not isinstance(evidence, dict):
+        return []
+    if str(evidence.get("source") or "").strip() != "refactor_task_map":
+        return []
+    acceptance = str(getattr(contract, "acceptance", "") or "").strip()
+    if not acceptance or acceptance == "exit_code=0":
+        return []
+    return [acceptance]
 
 
 def evaluate_success_criteria(
@@ -646,11 +736,46 @@ def evaluate_success_criteria(
             result = evaluate_artifact_matrix_gate(project_root, config)
             passed = result.passed
             refs = result.checked_artifacts + result.checked_matrices
+            waived_msgs: list[str] = []
+            if not passed:
+                # r6-F5c:机械门此前完全不吃 operator waiver——r6 里
+                # verification.waived 对 agent 层生效,机械门照拒,形成
+                # waive 不动的死结。命中活跃 waiver signature 的 finding
+                # 视为豁免(全部命中 → gate 过),豁免记录进 reason 留审计。
+                try:
+                    from zf.runtime.waivers import load_active_waivers
+
+                    waivers = load_active_waivers(state_dir, "*")
+                    signatures = [str(w.get("signature") or "") for w in waivers]
+                    remaining = []
+                    for finding in result.findings:
+                        message = finding.message
+                        hit = next(
+                            (
+                                sig for sig in signatures
+                                if sig and any(
+                                    token and token in sig
+                                    for token in message.replace("'", " ").split()
+                                    if "/" in token or "." in token
+                                )
+                            ),
+                            "",
+                        )
+                        if hit:
+                            waived_msgs.append(f"waived({hit[:60]}): {message[:80]}")
+                        else:
+                            remaining.append(finding)
+                    if not remaining:
+                        passed = True
+                except Exception:
+                    pass
             if passed:
                 reason = (
                     "artifact matrix gate passed "
                     f"({result.blocking_rows} blocking rows, {result.checked_rows} rows checked)"
                 )
+                if waived_msgs:
+                    reason += "; " + "; ".join(waived_msgs[:3])
             else:
                 messages = [finding.message for finding in result.findings[:3]]
                 reason = "artifact matrix gate failed: " + "; ".join(messages)
@@ -685,8 +810,15 @@ def project_why_not_done(
     *,
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    index: "TaskEventIndex | None" = None,
 ) -> WhyNotDoneProjection:
-    task_store, _, events = load_runtime_inputs(state_dir)
+    if index is not None:
+        task_store = TaskStore(state_dir / "kanban.json")
+        events = index.events
+    else:
+        task_store, _, events = load_runtime_inputs(state_dir)
+        index = TaskEventIndex(events)
+        events = index.events
     task = task_store.get(task_id)
     if task is None:
         return WhyNotDoneProjection(
@@ -703,9 +835,10 @@ def project_why_not_done(
                 reason="task is missing from active/archive stores",
             ),
         )
-    task_events = _events_for_task(events, task.id)
+    task_events = index.events_for_task(task.id)
     freshness = project_state_freshness(
         state_dir,
+        index=index,
         task_id=task.id,
         actor=task.assigned_to or "",
         events=events,
@@ -1126,20 +1259,28 @@ def build_resume_packet(
     dispatch_id: str = "",
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    index: "TaskEventIndex | None" = None,
 ) -> dict[str, Any]:
-    task_store, _, events = load_runtime_inputs(state_dir)
+    if index is not None:
+        task_store = TaskStore(state_dir / "kanban.json")
+    else:
+        task_store, _, events = load_runtime_inputs(state_dir)
+        index = TaskEventIndex(events)
+        events = index.events
     task = task_store.get(task_id)
     projection = project_why_not_done(
         state_dir,
         task_id,
         config=config,
         project_root=project_root,
+        index=index,
     )
     project_root = project_root or state_dir.parent
-    changed_files = _changed_files(task, _events_for_task(events, task_id)) if task else []
+    task_events_for_id = index.events_for_task(task_id)
+    changed_files = _changed_files(task, task_events_for_id) if task else []
     completed = [
         {"event_id": event.id, "type": event.type, "summary": _event_text(event)[:240]}
-        for event in _events_for_task(events, task_id)
+        for event in task_events_for_id
         if event.type in SUCCESS_EVENT_TYPES
     ]
     packet = {
@@ -1310,13 +1451,18 @@ def project_state_freshness(
     actor: str = "",
     events: list[ZfEvent] | None = None,
     now: datetime | None = None,
+    index: "TaskEventIndex | None" = None,
 ) -> dict[str, Any]:
-    events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
+    if events is None:
+        events = index.events if index is not None else EventLog(state_dir / "events.jsonl").read_all()
     now = now or datetime.now(timezone.utc)
-    relevant = [
-        event for event in events
-        if (task_id and _event_task_match(event, task_id)) or (actor and event.actor == actor)
-    ]
+    if index is not None and events is index.events:
+        relevant = index.relevant(task_id=task_id, actor=actor)
+    else:
+        relevant = [
+            event for event in events
+            if (task_id and _event_task_match(event, task_id)) or (actor and event.actor == actor)
+        ]
     last_event = relevant[-1] if relevant else None
     heartbeat = next((event for event in reversed(events) if event.type == "worker.heartbeat" and (not actor or event.actor == actor)), None)
     last_progress = next((event for event in reversed(relevant) if event.type in {"worker.progress", "phase.progressed"}), None)

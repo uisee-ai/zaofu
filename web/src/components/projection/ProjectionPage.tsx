@@ -12,6 +12,7 @@ import { AutomationsPage } from "../automations/AutomationsPage";
 import { getProjectAutomations, getProjectTraces } from "../../api/client";
 import { SkillsPage } from "../skills/SkillsPage";
 import { RuntimePanel } from "../runtime/RuntimePanel";
+import { ControlRoomPage } from "../control-room/ControlRoomPage";
 
 export function ProjectionPage({
   actionReady,
@@ -122,11 +123,20 @@ export function ProjectionPage({
   if (page === "delivery" || page === "delivery-trace" || page === "delivery-graph") {
     return (
       <DeliveryTracePage
-        onOpenPage={onOpenPage}
+          onOpenPage={onOpenPage}
+          projectId={activeProjectId}
+          featureIds={deliveryFeatureIds}
+          liveEvents={recentEvents}
+          mode={page === "delivery-trace" ? "trace" : page === "delivery-graph" ? "graph" : "overview"}
+        />
+    );
+  }
+
+  if (page === "control-room") {
+    return (
+      <ControlRoomPage
+        actionReady={actionReady}
         projectId={activeProjectId}
-        featureIds={deliveryFeatureIds}
-        liveEvents={recentEvents}
-        mode={page === "delivery-trace" ? "trace" : page === "delivery-graph" ? "graph" : "overview"}
       />
     );
   }
@@ -134,11 +144,11 @@ export function ProjectionPage({
   if (page === "behavior-loop") {
     return (
       <BehaviorLoopPage
-        projectId={activeProjectId}
-        featureIds={deliveryFeatureIds}
-        onOpenTrace={(traceId) => onOpenProjection("trace", traceId)}
-        onSelectTask={onSelectTask}
-      />
+          projectId={activeProjectId}
+          featureIds={deliveryFeatureIds}
+          onOpenTrace={(traceId) => onOpenProjection("trace", traceId)}
+          onSelectTask={onSelectTask}
+        />
     );
   }
 

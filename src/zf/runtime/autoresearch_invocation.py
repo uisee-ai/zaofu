@@ -151,6 +151,8 @@ def build_invocation_request_from_run_manager_event(
     if event.type != "run.manager.autoresearch.requested":
         return None
     payload = event.payload if isinstance(event.payload, dict) else {}
+    if _is_observability_only_run_manager_request(payload):
+        return None
     request_id = str(
         payload.get("request_id")
         or payload.get("loop_request_id")
@@ -228,6 +230,40 @@ def build_invocation_request_from_run_manager_event(
                 "run_manager": str(payload.get("context_ref") or "projections/run_manager.json#run_context_bundle"),
             },
         }),
+    )
+
+
+def _is_observability_only_run_manager_request(payload: dict[str, Any]) -> bool:
+    """Suppress low-confidence active-run observations before L2 escalation.
+
+    Run Manager may diagnose active workflow state on every tick. A dispatched
+    fanout child without a terminal event is only actionable after timeout or a
+    deterministic recovery checkpoint; otherwise it is normal in-flight work.
+    """
+    fingerprint = str(payload.get("fingerprint") or "").lower()
+    text = " ".join([
+        fingerprint,
+        str(payload.get("summary") or ""),
+        str(payload.get("title") or ""),
+        str(payload.get("failure_class") or ""),
+        str(payload.get("safe_resume_action") or ""),
+    ]).lower()
+    if "fanout_child_pending" not in text and (
+        "fanout child dispatched without a terminal child event" not in text
+    ):
+        return False
+    return not any(
+        marker in text
+        for marker in (
+            "fanout_timed_out",
+            "fanout.timed_out",
+            "timed out",
+            "silent_stall",
+            "resume",
+            "rework",
+            "fanout.child.failed",
+            "child failed",
+        )
     )
 
 

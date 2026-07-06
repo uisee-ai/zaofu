@@ -148,6 +148,44 @@ def test_standard_tick_services_runs_supervisor_and_autoresearch(tmp_path: Path)
     assert "candidate_rework" not in orch.housekeeping
 
 
+def test_standard_tick_services_materializes_failure_candidates(tmp_path: Path) -> None:
+    state_dir = _state(tmp_path)
+    config = ZfConfig()
+    orch = _FakeOrchestrator(state_dir, config)
+    orch.event_log.append(ZfEvent(
+        type="run.manager.action.failed",
+        actor="run-manager",
+        task_id="TASK-RM",
+        payload={"reason": "resume command failed"},
+    ))
+
+    result = run_standard_tick_services(
+        orch,
+        state=TickServiceState(),
+        now=100.0,
+        intervals=TickServiceIntervals(
+            heartbeat_sweep_s=999,
+            bug_scan_s=999,
+            supervisor_inspection_s=0,
+        ),
+    )
+
+    candidates = sorted((state_dir / "failure-candidates").glob("*.json"))
+    assert result.failure_candidates_materialized == 1
+    assert result.failure_closeout_materialized == 1
+    assert len(candidates) == 1
+    data = json.loads(candidates[0].read_text(encoding="utf-8"))
+    assert data["event"]["type"] == "run.manager.action.failed"
+    assert data["event"]["task_id"] == "TASK-RM"
+    closeout = state_dir / "failure-closeout" / "failure-closeout-manifest.json"
+    assert closeout.exists()
+    closeout_data = json.loads(closeout.read_text(encoding="utf-8"))
+    assert closeout_data["materialized_count"] == 1
+    types = [event.type for event in orch.event_log.read_all()]
+    assert "failure.candidates.materialized" in types
+    assert "failure.closeout.materialized" in types
+
+
 def test_run_manager_backend_prefers_runtime_run_manager_config() -> None:
     cfg = ZfConfig(
         autoresearch=AutoresearchConfig(
@@ -190,6 +228,38 @@ def test_stale_supervisor_projection_emits_attention_source(tmp_path: Path) -> N
     assert emitted is True
     assert events[-1].type == "supervisor.projection.stale"
     assert events[-1].payload["latest_event_id"] == "evt-late"
+
+
+def test_stale_supervisor_projection_ignores_run_manager_tick_only(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    supervisor_dir = state_dir / "projections" / "supervisor"
+    supervisor_dir.mkdir(parents=True)
+    (supervisor_dir / "snapshot.json").write_text(json.dumps({
+        "generated_at": "2026-06-21T10:00:00+00:00",
+    }), encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    log.append(ZfEvent(
+        id="evt-rm-tick",
+        type="run.manager.tick.completed",
+        actor="run-manager",
+        ts="2026-06-21T10:20:00+00:00",
+    ))
+
+    emitted = emit_stale_supervisor_projection_if_needed(
+        state_dir=state_dir,
+        writer=writer,
+        event_log=log,
+        max_stale_seconds=60,
+    )
+
+    assert emitted is False
+    assert not [
+        event for event in log.read_all()
+        if event.type == "supervisor.projection.stale"
+    ]
 
 
 def test_standard_tick_services_consumes_self_repair_dispatch(tmp_path: Path) -> None:

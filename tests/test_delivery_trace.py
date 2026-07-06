@@ -212,7 +212,7 @@ def test_delivery_trace_projects_module_parity_gap_amend_loop():
             },
         ),
         ZfEvent(
-            type="cangjie.module.parity.scan.completed",
+            type="module.parity.scan.completed",
             id="psc1",
             payload={
                 "pdd_id": "F-1",
@@ -284,6 +284,53 @@ def test_delivery_trace_projects_module_parity_gap_amend_loop():
     assert goal_loop["compatibility_projection"] == "module_parity_loop"
     assert goal_loop["status"] == "gap_tasks_dispatched"
     assert goal_loop["gap_task_ids"] == ["T3-GAP"]
+
+
+def test_delivery_trace_projects_control_room_contract():
+    tasks = {
+        "T1": _task("T1", status="done", wave=1),
+        "T2": _task("T2", status="blocked", wave=2),
+    }
+    tasks["T2"].blocked_reason = "waiting for product demo evidence"
+    tasks["T2"].contract.owner_role = "dev"
+    events = list(enumerate([
+        ZfEvent(
+            type="flow.gap_plan.ready",
+            id="gap1",
+            payload={
+                "feature_id": "F-1",
+                "gap_plan_ref": "reports/F-1/gap-plan.json",
+                "gap_tasks": [{"task_id": "T2"}],
+            },
+        ),
+        ZfEvent(
+            type="flow.goal.blocked",
+            id="blocked1",
+            payload={
+                "feature_id": "F-1",
+                "reason": "demo gap remains",
+                "open_p0_p1_gap_count": 1,
+                "artifact_refs": ["reports/F-1/discovery.md"],
+            },
+        ),
+    ]))
+
+    trace = build_delivery_trace(
+        feature_id="F-1",
+        generated_at=_NOW,
+        tasks=tasks,
+        task_map=_task_map(),
+        events=events,
+    )
+
+    control = trace["control_room"]
+    assert control["schema_version"] == "control-room.v1"
+    assert control["current_stage"] == "flow.goal.blocked"
+    assert control["blocked_reason"] == "demo gap remains"
+    assert control["next_owner"] == "dev"
+    assert control["pending_action"] == "run_manager_diagnose_gap"
+    assert control["latest_evidence"] == ["reports/F-1/discovery.md"]
+    assert control["gap_count"] == 1
 
 
 def test_delivery_trace_projects_generic_goal_closure_gap_loop():
@@ -374,6 +421,96 @@ def test_delivery_trace_projects_generic_goal_closure_gap_loop():
     assert loop["gap_task_ids"] == ["ISSUE-123-GAP-001"]
     assert loop["latest_gap_plan_ref"] == gap_plan_ref
     assert loop["latest_replan_history_ref"] == "docs/plans/ISSUE-123/replan-history.jsonl"
+    assert loop["latest_task_map_ref"] == amended_task_map_ref
+
+
+def test_delivery_trace_projects_flow_neutral_goal_closure_gap_loop():
+    tasks = {
+        "PRD-1-PLAN-001": _task("PRD-1-PLAN-001", status="done", wave=1),
+        "PRD-1-GAP-001": _task("PRD-1-GAP-001", status="todo", wave=2),
+    }
+    base_task_map_ref = ".zf/artifacts/PRD-1/task-map.json"
+    amended_task_map_ref = ".zf/artifacts/PRD-1/gap-amends/evt-gap/task_map.json"
+    gap_plan_ref = "reports/PRD-1/flow-gap-plan.json"
+    events = list(enumerate([
+        ZfEvent(
+            type="flow.discovery.requested",
+            id="fdr1",
+            payload={
+                "pdd_id": "PRD-1",
+                "flow_kind": "prd",
+                "fanout_id": "flow-discovery-1",
+                "task_map_ref": base_task_map_ref,
+            },
+        ),
+        ZfEvent(
+            type="flow.discovery.completed",
+            id="fdc1",
+            payload={
+                "pdd_id": "PRD-1",
+                "flow_kind": "prd",
+                "fanout_id": "flow-discovery-1",
+                "task_map_ref": base_task_map_ref,
+            },
+        ),
+        ZfEvent(
+            type="flow.gap_plan.ready",
+            id="fgp1",
+            payload={
+                "pdd_id": "PRD-1",
+                "flow_kind": "prd",
+                "goal_kind": "prd",
+                "gap_category": "acceptance_gap",
+                "task_map_ref": base_task_map_ref,
+                "gap_plan_ref": gap_plan_ref,
+                "gap_tasks": [{
+                    "task_id": "PRD-1-GAP-001",
+                    "title": "fill product completeness gap",
+                }],
+            },
+        ),
+        ZfEvent(
+            type="task_map.amended",
+            id="tma1",
+            payload={
+                "pdd_id": "PRD-1",
+                "task_map_ref": base_task_map_ref,
+                "new_task_map_ref": amended_task_map_ref,
+                "gap_plan_ref": gap_plan_ref,
+                "gap_task_ids": ["PRD-1-GAP-001"],
+            },
+        ),
+        ZfEvent(
+            type="task_map.ready",
+            id="tmr1",
+            payload={
+                "pdd_id": "PRD-1",
+                "task_map_ref": amended_task_map_ref,
+                "gap_plan_ref": gap_plan_ref,
+                "resume_scope": "gap_tasks_only",
+                "task_ids": ["PRD-1-GAP-001"],
+            },
+        ),
+    ]))
+
+    trace = build_delivery_trace(
+        feature_id="PRD-1",
+        generated_at=_NOW,
+        tasks=tasks,
+        task_map=_task_map(),
+        events=events,
+        task_map_ref=base_task_map_ref,
+    )
+
+    loop = trace["goal_closure_loop"]
+    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["status"] == "gap_tasks_dispatched"
+    assert loop["scan_request_count"] == 1
+    assert loop["scan_result_count"] == 1
+    assert loop["gap_plan_count"] == 1
+    assert loop["amend_count"] == 2
+    assert loop["gap_task_ids"] == ["PRD-1-GAP-001"]
+    assert loop["latest_gap_plan_ref"] == gap_plan_ref
     assert loop["latest_task_map_ref"] == amended_task_map_ref
 
 

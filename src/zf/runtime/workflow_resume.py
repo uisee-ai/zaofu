@@ -17,6 +17,7 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.workflow.graph import compile_workflow_graph
+from zf.runtime.candidate_rework import _feedback_lines_from_payload
 from zf.runtime.workflow_reconciler import WorkflowGraphReconciler
 
 
@@ -27,6 +28,9 @@ WORKFLOW_RESUME_APPLIED_EVENT = "workflow.resume.applied"
 WORKFLOW_RESUME_REJECTED_EVENT = "workflow.resume.rejected"
 STAGE_TRANSITION_STALLED_EVENT = "stage.transition.stalled"
 TASK_REF_REPAIR_REQUESTED_EVENT = "task.ref.repair.requested"
+_CONTROL_REWORK_ROLES = {"", "orchestrator"}
+_DESIGN_REWORK_ROLES = {"arch", "critic"}
+_GENERIC_IMPL_ROLES = {"dev", "impl", "writer", "coding", "coding-agent"}
 
 @dataclass(frozen=True)
 class WorkflowResumeCheckpoint:
@@ -71,6 +75,8 @@ class WorkflowBatchResumeCheckpoint:
     failed_children: list[str] = field(default_factory=list)
     pending_children: list[str] = field(default_factory=list)
     evidence_event_ids: list[str] = field(default_factory=list)
+    # avbs-r4 F2: reviewer findings 必须随 rework 走,否则盲 rework
+    rework_feedback: list[str] = field(default_factory=list)
     reason: str = ""
     escalated: bool = False
     mutating_resume_supported: bool = False
@@ -166,6 +172,10 @@ def build_workflow_resume_checkpoints(
         progress = _latest_progress_event(task_events, progress_events)
         if progress is None:
             continue
+        assignment_correction = _assignment_correction_checkpoint(task, progress, config)
+        if assignment_correction is not None:
+            checkpoints.append(assignment_correction)
+            continue
         if _progress_waiting_for_task_ref_repair(task_events, progress):
             continue
         decisions = reconciler.plan(
@@ -209,7 +219,22 @@ def build_workflow_resume_checkpoints(
             action=action,
             target_role=target_role,
         )
+        invalid_existing_action = False
+        if already_done and action == "needs_rework_dispatch":
+            invalid_existing_action = _existing_rework_action_targets_non_lane_role(
+                task=task,
+                events=task_events,
+                source_event=progress,
+                config=config,
+            )
         if already_done:
+            action = "needs_rework_dispatch" if invalid_existing_action else "no_action"
+        # 131-P2-4:RM 只对 attempt-ready failure 派 rework。avbs-r5 活锁:
+        # 旧 task.assigned 触发 silent_stall → 重派 rework,把 assignment
+        # 之后已到达的 completion 应答直接丢弃(task.rework.requested 251 次)。
+        if action == "needs_rework_dispatch" and not _rework_attempt_ready(
+            task_events, task.id,
+        ):
             action = "no_action"
         checkpoints.append(WorkflowResumeCheckpoint(
             task_id=task.id,
@@ -217,16 +242,22 @@ def build_workflow_resume_checkpoints(
             last_completed_stage=_stage_from_event(progress.type),
             expected_next_stage=decision.stage_id,
             expected_next_role=target_role,
-            blocking_event_id="" if already_done else progress.id,
+            blocking_event_id="" if already_done and not invalid_existing_action else progress.id,
             safe_resume_action=action,
             idempotency_key=_idempotency_key(
                 task.id,
                 progress.id,
                 action,
-                target_role or decision.stage_id,
+                (
+                    f"{target_role or decision.stage_id}:invalid-existing-action"
+                    if invalid_existing_action
+                    else target_role or decision.stage_id
+                ),
             ),
             evidence_event_ids=[progress.id],
             reason=(
+                "existing next action targets non-runnable lane role"
+                if invalid_existing_action else
                 "next action already exists after checkpoint"
                 if already_done else decision.reason
             ),
@@ -512,6 +543,10 @@ def _batch_checkpoint_from_event(
         failed_children=failed_children,
         pending_children=pending_children,
         evidence_event_ids=_unique_strings(evidence_event_ids),
+        rework_feedback=_unique_strings([
+            *(aggregate.rework_feedback if aggregate else []),
+            *_feedback_lines_from_payload(payload),
+        ])[:40],
         reason=_first_nonempty(
             payload.get("reason"),
             payload.get("status"),
@@ -559,6 +594,10 @@ def _escalated_batch_checkpoint(
         failed_children=list(base.failed_children),
         pending_children=list(base.pending_children),
         evidence_event_ids=evidence,
+        rework_feedback=_unique_strings([
+            *base.rework_feedback,
+            *_feedback_lines_from_payload(payload),
+        ])[:40],
         reason=_first_nonempty(payload.get("reason"), base.reason),
         escalated=True,
     )
@@ -672,6 +711,8 @@ def _batch_checkpoint_superseded_reason(
     events: list[ZfEvent],
     checkpoint: WorkflowBatchResumeCheckpoint,
 ) -> str:
+    if checkpoint.safe_resume_action in {"repair_failed_children", "trigger_rework"}:
+        return _repair_checkpoint_superseded_reason(events, checkpoint)
     if checkpoint.safe_resume_action != "reemit_candidate_ready":
         return ""
     if not checkpoint.candidate_head_commit:
@@ -710,6 +751,46 @@ def _batch_checkpoint_superseded_reason(
                 "stale batch checkpoint superseded by newer candidate.ready "
                 f"{event.id}"
             )
+    return ""
+
+
+def _repair_checkpoint_superseded_reason(
+    events: list[ZfEvent],
+    checkpoint: WorkflowBatchResumeCheckpoint,
+) -> str:
+    """BF-2(r6.1 断点复盘):同一失败周期的重复 repair 去重。
+
+    human.escalate 与 integration.failed 会对同一个失败 fanout 各生成
+    一个 repair 批检查点,6 分钟内起两个 fanout(后者立即 supersede
+    前者)。source 事件之后同 stage 同 pdd 域已有新 fanout.started,
+    说明这次失败的修复已经在跑——第二个检查点判 superseded。
+    """
+    if not checkpoint.stage_id:
+        return ""
+    source_idx = next(
+        (idx for idx, event in enumerate(events) if event.id == checkpoint.source_event_id),
+        -1,
+    )
+    if source_idx < 0:
+        return ""
+    known_fanouts = {checkpoint.fanout_id, checkpoint.upstream_fanout_id} - {""}
+    for event in events[source_idx + 1:]:
+        if event.type != "fanout.started":
+            continue
+        payload = _payload(event)
+        if str(payload.get("stage_id") or "") != checkpoint.stage_id:
+            continue
+        fanout_id = str(payload.get("fanout_id") or "")
+        if not fanout_id or fanout_id in known_fanouts:
+            continue
+        pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "")
+        checkpoint_scope = {checkpoint.pdd_id, checkpoint.feature_id} - {""}
+        if checkpoint_scope and pdd_id and pdd_id not in checkpoint_scope:
+            continue
+        return (
+            f"repair for stage {checkpoint.stage_id} already started by "
+            f"{fanout_id} ({event.id})"
+        )
     return ""
 
 
@@ -912,6 +993,38 @@ def _no_action_checkpoint(
     )
 
 
+def _assignment_correction_checkpoint(
+    task: Task,
+    event: ZfEvent,
+    config: object,
+) -> WorkflowResumeCheckpoint | None:
+    current = str(task.assigned_to or "").strip()
+    if (
+        not current
+        or not _is_lane_task(task, config)
+        or _role_allowed_for_lane_rework(current, config)
+    ):
+        return None
+    return WorkflowResumeCheckpoint(
+        task_id=task.id,
+        last_trusted_event_id=event.id,
+        last_completed_stage=_stage_from_event(event.type),
+        expected_next_stage="assignment_correction",
+        expected_next_role="",
+        blocking_event_id=event.id,
+        safe_resume_action="needs_assignment_correction",
+        idempotency_key=_idempotency_key(
+            task.id,
+            event.id,
+            "needs_assignment_correction",
+            current,
+        ),
+        evidence_event_ids=[event.id],
+        reason=f"current assignment targets non-runnable lane role: {current}",
+        source_event_type=event.type,
+    )
+
+
 def _action_already_done(
     *,
     task: Task,
@@ -967,6 +1080,73 @@ def _action_already_done(
                 return True
         return False
     return False
+
+
+def _existing_rework_action_targets_non_lane_role(
+    *,
+    task: Task,
+    events: list[ZfEvent],
+    source_event: ZfEvent,
+    config: object,
+) -> bool:
+    if not _is_lane_task(task, config):
+        return False
+    current = str(task.assigned_to or "").strip()
+    if current and not _role_allowed_for_lane_rework(current, config):
+        return True
+    source_idx = next(
+        (idx for idx, event in enumerate(events) if event.id == source_event.id),
+        -1,
+    )
+    tail = events[source_idx + 1:] if source_idx >= 0 else events
+    for event in reversed(tail):
+        if event.type not in {"task.rework.requested", "task.assigned"}:
+            continue
+        payload = _payload(event)
+        role = str(payload.get("assignee") or payload.get("role") or "").strip()
+        if not role:
+            continue
+        return not _role_allowed_for_lane_rework(role, config)
+    return False
+
+
+def _is_lane_task(task: Task, config: object) -> bool:
+    workflow = getattr(config, "workflow", None)
+    if not getattr(workflow, "affinity_lanes", None):
+        return False
+    contract = getattr(task, "contract", None)
+    evidence = getattr(contract, "evidence_contract", {}) or {}
+    if not isinstance(evidence, dict):
+        evidence = {}
+    source = str(evidence.get("source") or "").strip()
+    affinity_tag = str(evidence.get("affinity_tag") or "").strip()
+    owner_role = str(getattr(contract, "owner_role", "") or "").strip()
+    return bool(
+        affinity_tag
+        or source == "refactor_task_map"
+        or owner_role.startswith("dev-")
+        or owner_role in _GENERIC_IMPL_ROLES
+    )
+
+
+def _role_allowed_for_lane_rework(role: str, config: object) -> bool:
+    name = str(role or "").strip()
+    if not name or name in _CONTROL_REWORK_ROLES or name in _DESIGN_REWORK_ROLES:
+        return False
+    role_config = _role_config(config, name)
+    if role_config is None:
+        return False
+    return str(getattr(role_config, "role_kind", "") or "") != "reader"
+
+
+def _role_config(config: object, name: str):
+    for role in list(getattr(config, "roles", []) or []):
+        if name in {
+            str(getattr(role, "instance_id", "") or ""),
+            str(getattr(role, "name", "") or ""),
+        }:
+            return role
+    return None
 
 
 def _linked_event_ids(event: ZfEvent) -> set[str]:
@@ -1123,6 +1303,49 @@ def _pid_alive(pid: int) -> bool:
         return True
     except OSError:
         return False
+    return True
+
+
+_COMPLETION_ANSWER_EVENTS = frozenset({
+    "workflow.child.completed",
+    "dev.build.done",
+    "fanout.child.completed",
+})
+
+
+def _rework_attempt_ready(task_events: list[ZfEvent], task_id: str) -> bool:
+    """attempt 账本锚定(131-P2-4):两种情形不许派 rework。
+
+    (a) 最后一次 assignment 之后已有 completion 族应答,且该应答之后
+        没有新的 rework 触发族失败——此时 rework 会把有效完成丢弃
+        (avbs-r5 SCENE-001 实案:silent_stall 是旧 assignment 的过期
+        信号,不是质量失败);
+    (b) attempt_ledger 最后一条 attempt 未终结——worker 仍持有 lease,
+        重派即双写(false-stuck 家族)。
+    """
+    from zf.runtime.housekeeping import _REWORK_FAILURE_TYPES
+
+    last_assign_idx = -1
+    for idx, event in enumerate(task_events):
+        if event.type in {"task.assigned", "task.rework.requested"}:
+            last_assign_idx = idx
+    if last_assign_idx >= 0:
+        completion_idx = -1
+        for idx in range(last_assign_idx + 1, len(task_events)):
+            if task_events[idx].type in _COMPLETION_ANSWER_EVENTS:
+                completion_idx = idx
+        if completion_idx >= 0 and not any(
+            event.type in _REWORK_FAILURE_TYPES
+            for event in task_events[completion_idx + 1:]
+        ):
+            return False
+    try:
+        from zf.runtime.attempt_ledger import derive_task_ledger
+        ledger = derive_task_ledger(task_events, task_id)
+        if ledger.attempts and not ledger.attempts[-1].terminal_type:
+            return False
+    except Exception:
+        pass
     return True
 
 

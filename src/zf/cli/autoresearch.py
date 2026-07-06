@@ -378,7 +378,7 @@ def register(subparsers) -> None:
     loop.add_argument(
         "--yaml-template", type=Path, default=None,
         help="(bypass mode) path to a zf.yaml that will be copied into "
-             "<worktree>/zf.yaml each iter (e.g. ~/workspace/cangjie-mono/zf.yaml).",
+             "<worktree>/zf.yaml each iter (e.g. ~/workspace/<project>/zf.yaml).",
     )
     loop.add_argument(
         "--seed-text", default="",

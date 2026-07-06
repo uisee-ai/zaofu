@@ -71,6 +71,7 @@ import {
   getRecentEvents,
   getRecentEventsPage,
   getRepairActions,
+  getProjectHealth,
   getRunDetail,
   getSnapshot,
   getSnapshotLight,
@@ -78,6 +79,7 @@ import {
   getTaskDiff,
   getTaskTimeline,
   getTraceDetail,
+  createWorkflowIntake,
   getWorkspaceProjects,
   initWorkspaceProject,
   lockWebSession,
@@ -232,6 +234,8 @@ interface ProjectWizardDraft {
   root: string;
   workspace: string;
   preset: string;
+  kind: string;
+  sourceRoot: string;
   stateDir: string;
   force: boolean;
   intent: string;
@@ -314,7 +318,18 @@ function prependEvent(events: RecentEvent[], event: RecentEvent): RecentEvent[] 
   return [event, ...events].slice(0, 120);
 }
 
+// Control-loop churn events fire ~1/second on live projects (observed:
+// task.requeue.skipped at 1 Hz on r10). Each one matches a refresh prefix and
+// used to trigger a slice reload per event — a request storm that resonated
+// with the server-side rebuild storm. These carry no operator-visible state.
+const REFRESH_NOISE_EVENT_TYPES = new Set([
+  "task.requeue.skipped",
+  "worker.heartbeat",
+  "run.manager.tick.completed",
+]);
+
 function shouldRefreshForEvent(eventType: string): boolean {
+  if (REFRESH_NOISE_EVENT_TYPES.has(eventType)) return false;
   if (LOCAL_AGENT_STREAM_EVENTS.has(eventType)) return false;
   return (
     REFRESH_EVENT_TYPES.has(eventType)
@@ -356,6 +371,9 @@ function connectionStatusView({
     }
     return { className: "status-loading", label: "snapshot pending", title: "Project shell is rendered; waiting for the snapshot projection." };
   }
+  if ((snapshot.runtime as { runtime_state?: string }).runtime_state === "archived") {
+    return { className: "status-idle", label: "archived", title: "Archived project: data is a historical record, no live runtime." };
+  }
   if (snapshot.runtime.live === false) {
     return { className: "status-idle", label: "runtime stopped", title: "Project snapshot loaded; runtime is not live." };
   }
@@ -384,6 +402,8 @@ function emptyProjectWizardDraft(): ProjectWizardDraft {
     root: "",
     workspace: "default",
     preset: "minimal",
+    kind: "",
+    sourceRoot: "",
     stateDir: "",
     force: false,
     intent: "build",
@@ -471,7 +491,9 @@ function projectLifecycleReason(project: WorkspaceProject | null | undefined): s
 }
 
 function headlessActionProposal(payload: Record<string, unknown>): HeadlessActionProposal | null {
-  const proposal = recordValue(payload.action_proposal);
+  // Web panel replies carry `action_proposal`; kanban.agent.action.proposed
+  // events (e.g. the Feishu-surface loop) carry the same object as `proposal`.
+  const proposal = recordValue(payload.action_proposal) ?? recordValue(payload.proposal);
   if (!proposal) return null;
   const action = textValue(proposal.action).trim();
   const nestedPayload = recordValue(proposal.payload);
@@ -601,6 +623,7 @@ function pageTitle(page: PageId): string {
     skills: "Skills",
     traces: "Event Traces",
     delivery: "Delivery",
+    "control-room": "Control",
     "delivery-trace": "Trace",
     "delivery-graph": "Graph",
     "behavior-loop": "Loop",
@@ -623,7 +646,12 @@ export function App() {
   // /api/workspace/projects response, so deleting it from the registry is a
   // silent no-op — disable its delete affordance instead of faking success.
   const [serverDefaultProjectId, setServerDefaultProjectId] = useState("");
-  const [activeProjectId, setActiveProjectId] = useState(initial.project);
+  // chat-e2e F1: remember the operator's project choice per origin (port =
+  // server), so a reload keeps their switch without consulting the global
+  // workspace active pointer that other servers mutate.
+  const [activeProjectId, setActiveProjectId] = useState(
+    initial.project || window.localStorage.getItem("zf.activeProjectId") || "",
+  );
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [deliveryFeaturesPage, setDeliveryFeaturesPage] = useState<DeliveryFeaturesPage | null>(null);
   const [events, setEvents] = useState<RecentEvent[]>([]);
@@ -642,6 +670,10 @@ export function App() {
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("Timeline");
   const [page, setPage] = useState<PageId>(initial.page);
+  // Retired page: deep links keep working via redirect (doc116 §7.5 / P0-C2).
+  useEffect(() => {
+    if (page === "runtime") setPage("observability");
+  }, [page]);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -677,14 +709,22 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const eventBusRef = useRef<ProjectEventBus | null>(null);
   const refreshRef = useRef<(() => void | Promise<void>) | null>(null);
+  const sliceRefreshTimersRef = useRef<Map<string, number>>(new Map());
   const liveRefreshRef = useRef<((event: RecentEvent, reason: "event" | "gap" | "error") => void) | null>(null);
   const lastSeqRef = useRef(0);
   const selectedChannelIdRef = useRef(selectedChannelId);
 
   const selectedTask = useMemo(() => {
-    if (!snapshot || !selectedTaskId) return null;
-    return allBoardTasks(snapshot).find((task) => task.id === selectedTaskId) ?? null;
-  }, [selectedTaskId, snapshot]);
+    if (!selectedTaskId) return null;
+    if (snapshot) {
+      const fromBoard = allBoardTasks(snapshot).find((task) => task.id === selectedTaskId);
+      if (fromBoard) return fromBoard;
+    }
+    // Fall back to the independently-fetched task detail so the task page renders
+    // its header without waiting for the (shell) light snapshot to load/resolve.
+    if (taskDetail?.task && taskDetail.task.id === selectedTaskId) return taskDetail.task;
+    return null;
+  }, [selectedTaskId, snapshot, taskDetail]);
   const actionGate = useMemo(
     () => runtimeActionState(snapshot, webActionTokenPresent),
     [snapshot, webActionTokenPresent],
@@ -698,6 +738,12 @@ export function App() {
   useEffect(() => {
     selectedChannelIdRef.current = selectedChannelId;
   }, [selectedChannelId]);
+
+  useEffect(() => {
+    if (activeProjectId) {
+      window.localStorage.setItem("zf.activeProjectId", activeProjectId);
+    }
+  }, [activeProjectId]);
 
   const loadWorkspaceProjects = useCallback(async () => {
     const page = await getWorkspaceProjects();
@@ -774,6 +820,17 @@ export function App() {
 
   useEffect(() => {
     liveRefreshRef.current = (event, reason) => {
+      // Trailing debounce: coalesce event bursts into one slice reload.
+      // A single real event still refreshes within ~1.5s.
+      const scheduleSlice = (key: string, fn: () => void) => {
+        const timers = sliceRefreshTimersRef.current;
+        const existing = timers.get(key);
+        if (existing !== undefined) window.clearTimeout(existing);
+        timers.set(key, window.setTimeout(() => {
+          timers.delete(key);
+          fn();
+        }, 1500));
+      };
       if (reason !== "event") {
         void refreshRef.current?.();
         return;
@@ -781,7 +838,7 @@ export function App() {
       const eventType = event.type || "";
       const payload = asRecord(event.payload);
       if (eventType.startsWith("channel.")) {
-        void loadChannels();
+        scheduleSlice("channels", () => void loadChannels());
         if (page === "channels") {
           const channelId = textValue(payload.channel_id) || selectedChannelIdRef.current;
           if (!channelId || channelId === selectedChannelIdRef.current) {
@@ -802,8 +859,8 @@ export function App() {
         || eventType.startsWith("test.")
         || eventType.startsWith("judge.")
       ) {
-        if (BOARD_REFRESH_PAGES.has(page)) void loadSnapshot();
-        if (MEASURE_REFRESH_PAGES.has(page)) void loadDeliveryFeatures();
+        if (BOARD_REFRESH_PAGES.has(page)) scheduleSlice("snapshot", () => void loadSnapshot());
+        if (MEASURE_REFRESH_PAGES.has(page)) scheduleSlice("delivery", () => void loadDeliveryFeatures());
         return;
       }
       if (
@@ -813,8 +870,8 @@ export function App() {
         || eventType.startsWith("run.")
         || eventType.startsWith("ship.")
       ) {
-        if (MEASURE_REFRESH_PAGES.has(page)) void loadDeliveryFeatures();
-        if (isObservabilityPage(page)) void loadSnapshot();
+        if (MEASURE_REFRESH_PAGES.has(page)) scheduleSlice("delivery", () => void loadDeliveryFeatures());
+        if (isObservabilityPage(page)) scheduleSlice("snapshot", () => void loadSnapshot());
         return;
       }
       if (
@@ -823,14 +880,40 @@ export function App() {
         || eventType.startsWith("runtime.action.")
         || eventType.startsWith("workdir.")
       ) {
-        if (page === "runtime") void loadSnapshot();
+        if (page === "runtime") scheduleSlice("snapshot", () => void loadSnapshot());
         return;
       }
       if (eventType.startsWith("operator.") && page === "inbox") {
-        void loadSnapshot();
+        scheduleSlice("snapshot", () => void loadSnapshot());
       }
     };
   }, [activeProjectId, loadChannels, loadDeliveryFeatures, loadSnapshot, page]);
+
+  // Unified header source (doc116 §5/§11.1): cheap canonical health, never
+  // the snapshot bundle — pages that skip the snapshot still get a truthful
+  // pill and counts.
+  const [projectHealth, setProjectHealth] = useState<import("../api/client").ProjectHealthSummary | null>(null);
+  useEffect(() => {
+    if (!activeProjectId) {
+      setProjectHealth(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const health = await getProjectHealth(activeProjectId || undefined);
+        if (!cancelled) setProjectHealth(health);
+      } catch {
+        if (!cancelled) setProjectHealth(null);
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeProjectId]);
 
   // Operator Inbox pending count → nav badge. Polled; read-only projection.
   useEffect(() => {
@@ -1331,10 +1414,18 @@ export function App() {
   async function submitProjectWizard() {
     const root = projectWizardDraft.root.trim();
     if (!root) return;
+    const rawKind = projectWizardDraft.kind.trim();
+    const kind: "issue" | "prd" | "refactor" | "" =
+      rawKind === "issue" || rawKind === "prd" || rawKind === "refactor" ? rawKind : "";
     const payload = {
       root,
       workspace: projectWizardDraft.workspace.trim() || "default",
-      preset: projectWizardDraft.preset,
+      preset: kind ? undefined : projectWizardDraft.preset,
+      kind: kind || undefined,
+      source_root: kind === "refactor" ? projectWizardDraft.sourceRoot.trim() || undefined : undefined,
+      backend: kind
+        ? (projectWizardDraft.backend === "claude" ? "claude-code" : projectWizardDraft.backend)
+        : undefined,
       state_dir: projectWizardDraft.stateDir.trim() || undefined,
       force: projectWizardDraft.force,
       apply_profile: projectWizardDraft.applyProfile,
@@ -1357,9 +1448,20 @@ export function App() {
     setProjectWizardResult(result);
     const project = recordValue(result.project);
     const projectId = textValue(project?.project_id).trim();
+    if (result.ok !== false && kind && projectId) {
+      // doc 125 §7.3: kind init flows straight into intake so the new project
+      // has a next step instead of ending at "yaml written".
+      const intake = await createWorkflowIntake(projectId, {
+        kind,
+        objective: projectWizardDraft.description.trim() || undefined,
+        source_root: kind === "refactor" ? projectWizardDraft.sourceRoot.trim() || undefined : undefined,
+        request_id: `wfint-web-${Date.now()}`,
+      });
+      setProjectWizardResult({ ...result, intake });
+    }
     await loadWorkspaceProjects();
     if (result.ok !== false && projectId) switchProject(projectId);
-    if (result.ok !== false) setProjectWizardOpen(false);
+    if (result.ok !== false && !kind) setProjectWizardOpen(false);
   }
 
   async function initializeActiveProject() {
@@ -1734,6 +1836,15 @@ export function App() {
     snapshot,
     snapshotRequired: pageLoadsSnapshot(page),
   });
+  if (projectHealth?.runtime_state === "archived") {
+    topbarStatus.className = "status-idle";
+    topbarStatus.label = "archived";
+    topbarStatus.title = "Archived project: historical record, no live runtime.";
+  } else if (projectHealth && !projectHealth.live && projectHealth.runtime_state === "stopped") {
+    topbarStatus.className = "status-idle";
+    topbarStatus.label = "runtime stopped";
+    topbarStatus.title = `Runtime stopped · stream ${liveState}.`;
+  }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
   const sliceContextLabel = page === "channels" && channelsPage
     ? "channels slice"
@@ -1775,6 +1886,11 @@ export function App() {
             Search
           </button>
           <span className={`status-pill ${topbarStatus.className}`} title={topbarStatus.title}>{topbarStatus.label}</span>
+          {projectHealth ? (
+            <span className="muted mono" title={`snap #${projectHealth.seq} · projection ${projectHealth.projection?.state ?? "-"}`}>
+              {projectHealth.active} active{projectHealth.queued > 0 ? ` · ${projectHealth.queued} queued` : ""} · {projectHealth.blocked} blocked
+            </span>
+          ) : null}
           <button className="icon-button" type="button" onClick={() => void refresh()}>
             Refresh
           </button>
@@ -1789,7 +1905,7 @@ export function App() {
           activePage={page}
           activeProjectId={activeProjectId}
           channels={channelsPage?.channels ?? []}
-          inboxPendingCount={inboxPendingCount}
+          inboxPendingCount={projectHealth?.runtime_state === "archived" ? 0 : inboxPendingCount}
           liveState={liveState}
           onAddProject={() => setProjectWizardOpen(true)}
           onOpenChannel={openChannel}
@@ -1855,8 +1971,15 @@ export function App() {
               onOpenTask={openTask}
               tasks={snapshot ? allBoardTasks(snapshot) : []}
             />
+          ) : page === "board" && !snapshot ? (
+            /* P0-B: loading must not impersonate an empty board ("0 tasks" for
+               2s then 9 blocked appears — the trust-killer zero). */
+            <section className="subsection">
+              <p className="muted">Loading board…</p>
+            </section>
           ) : page === "board" ? (
             <BoardWorkbench
+              projectId={activeProjectId || undefined}
               actionReady={actionGate.actionReady}
               actionResult={actionResult}
               actionState={actionGate.actionState}
@@ -2294,7 +2417,7 @@ function ProjectHomePage({
       }`,
       tone: actionableAttention.length ? attentionTone(actionableAttention) : "info",
       zero: actionableAttention.length === 0,
-      onClick: () => onOpenPage(topAttention?.domain === "runtime" ? "runtime" : topAttention?.domain === "delivery" ? "delivery" : "agents"),
+      onClick: () => onOpenPage(topAttention?.domain === "runtime" ? "observability" : topAttention?.domain === "delivery" ? "delivery" : "agents"),
     },
   ];
   const blockedTask = tasks.find((task) => taskColumn(task) === "blocked");
@@ -2308,7 +2431,7 @@ function ProjectHomePage({
     focusItems.push({
       action: row.recommended_action,
       body: `${row.target}: ${row.reason}. Evidence ${row.evidence}.`,
-      onClick: () => onOpenPage(row.domain === "runtime" ? "runtime" : row.domain === "delivery" ? "delivery" : "agents"),
+      onClick: () => onOpenPage(row.domain === "runtime" ? "observability" : row.domain === "delivery" ? "delivery" : "agents"),
       tone: row.severity,
       title: `${row.domain} attention`,
     });
@@ -2434,7 +2557,6 @@ function ProjectHomePage({
         })}
       </div>
       <PulseBand pulse={pulse?.run_pulse ?? null} />
-      <MetricsStrip metrics={kernelMetrics} taskFlow={taskFlowStats} />
       <ProjectFocusPanel items={focusItems} />
       <TaskFlowBand
         fallbackCounts={taskCounts}
@@ -2445,25 +2567,12 @@ function ProjectHomePage({
         tasks={tasks}
         whyNot={pulse?.why_not ?? null}
       />
-      <details className="project-boundary-details">
-        <summary className="muted">Control Plane / Runtime State / Project Boundary</summary>
-        <div className="project-grid project-key-grid">
-          <KeyValuePanel title="Control Plane" rows={projectRows} />
-          <KeyValuePanel title="Runtime State" rows={runtimeRows} />
-          <KeyValuePanel title="Project Boundary" rows={boundaryRows} />
-        </div>
-      </details>
-      <details className="project-boundary-details" open={Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue")}>
-        <summary className="muted">
-          Spine Review{spineVerdict ? ` · ${spineVerdict}` : spineStatus ? ` · ${spineStatus}` : " · not reviewed"}
-        </summary>
+      {/* doc116 §7.1 deletions (operator-approved 2026-07-02): VQE metrics ->
+          Loop/Graph pages; Control Plane trio -> Settings; Runs -> Observability.
+          Spine Review is event-driven: it only appears with a real verdict. */}
+      {Boolean(spineStatus === "ready" && spineVerdict && spineVerdict !== "continue") && (
         <SpineReviewInsightCard insight={spineReview} />
-      </details>
-      <ProjectRunsOverview
-        activeRuns={snapshot?.active_runs ?? []}
-        onOpenProjection={onOpenProjection}
-        recentRuns={(snapshot?.runs ?? []).slice(0, 8)}
-      />
+      )}
     </section>
   );
 }
@@ -2703,7 +2812,13 @@ function TriagePage({
     || event.type === "runtime.action.failed"
   )).slice(0, 12);
   const autopilotEvents = events
-    .filter((event) => event.type === "autopilot.proposal.created")
+    .filter((event) => (
+      event.type === "autopilot.proposal.created"
+      // Feishu-surface kanban agent proposals have no Web chat panel to
+      // render their Accept in; the proposal-only triage queue is their
+      // approval entry point.
+      || event.type === "kanban.agent.action.proposed"
+    ))
     .slice(0, 12);
   const blocked = tasks.filter((task) => task.status === "blocked" || Boolean(task.blocked_reason));
   const stale = tasks
@@ -2755,10 +2870,13 @@ function TriagePage({
             }
             if (taskId) actions.push({ label: "Edit", run: () => onOpenTask(taskId) });
             actions.push({ label: "Dismiss", run: () => dismiss(dismissId) });
+            const proposalTitle = proposal
+              ? textValue(proposal.payload.title || proposal.action)
+              : "";
             return {
               id: dismissId,
-              title: textValue(payload.title || event.type),
-              meta: `${textValue(payload.kind || "proposal")} · ${textValue(payload.severity || "medium")}`,
+              title: textValue(payload.title) || proposalTitle || event.type,
+              meta: `${textValue(payload.kind || payload.source || "proposal")} · ${textValue(payload.severity || "medium")}`,
               hidden: !isVisible(dismissId),
               actions,
             };
@@ -3161,6 +3279,19 @@ function ProjectWizardModal({
             {draft.mode === "create" ? (
               <select
                 className="filter-input"
+                data-testid="wizard-kind"
+                value={draft.kind}
+                onChange={(event) => update({ kind: event.target.value })}
+              >
+                <option value="">shape: preset / archetype</option>
+                <option value="issue">kind: issue — 修 bug / 小变更</option>
+                <option value="prd">kind: prd — 新产品 / 新功能</option>
+                <option value="refactor">kind: refactor — 迁移 / 复刻</option>
+              </select>
+            ) : null}
+            {draft.mode === "create" && !draft.kind ? (
+              <select
+                className="filter-input"
                 data-testid="wizard-preset"
                 value={draft.preset}
                 onChange={(event) => update({ preset: event.target.value })}
@@ -3173,7 +3304,16 @@ function ProjectWizardModal({
               </select>
             ) : null}
           </div>
-          {draft.mode === "create" && selectedPreset?.description ? (
+          {draft.mode === "create" && draft.kind === "refactor" ? (
+            <input
+              className="filter-input"
+              data-testid="wizard-source-root"
+              placeholder="source root — 被复刻的旧项目路径 (只读保护)"
+              value={draft.sourceRoot}
+              onChange={(event) => update({ sourceRoot: event.target.value })}
+            />
+          ) : null}
+          {draft.mode === "create" && !draft.kind && selectedPreset?.description ? (
             <div className="muted" data-testid="archetype-desc">
               [{selectedPreset.kind}] {selectedPreset.name}: {selectedPreset.description}
               {selectedPreset.roleCount ? ` · ${selectedPreset.roleCount} roles` : ""}

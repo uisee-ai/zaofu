@@ -47,14 +47,13 @@ def test_control_loop_routes_low_severity_actionable_attention() -> None:
         if event.type == "owner.visible_message.requested"
     ]
     assert len(decisions) == 1
-    assert len(messages) == 1
+    # 131 §16.3-4 triage-first 机械闸:RM 可先处置且非人类必需 → 只记
+    # decision(outcome=run_manager_triage_first),不发 owner 消息。
+    assert len(messages) == 0
     assert decisions[0].payload["route"] == "run_manager_recovery"
     assert decisions[0].payload["fingerprint"] == "workflow_resume_batch:ck-low"
     assert decisions[0].payload["problem_envelope"]["problem_class"] == "workflow_progress"
-    assert messages[0].payload["handled_by"] == "run-manager"
-    assert messages[0].payload["human_action_required"] is False
-    assert messages[0].payload["problem_envelope"]["owner_route"] == "run_manager"
-    assert messages[0].payload["delivery_targets"] == ["web", "channel"]
+    assert decisions[0].payload["outcome"] == "run_manager_triage_first"
 
 
 def test_control_loop_routes_human_gate_to_feishu() -> None:
@@ -87,3 +86,78 @@ def test_control_loop_routes_human_gate_to_feishu() -> None:
     assert messages[0].payload["handled_by"] == "supervisor"
     assert messages[0].payload["human_action_required"] is True
     assert messages[0].payload["delivery_targets"] == ["web", "channel", "feishu"]
+
+
+def test_control_loop_sends_run_manager_human_decision_to_feishu() -> None:
+    events = build_supervisor_control_loop_events(
+        {
+            "attention_items": [
+                {
+                    "attention_id": "attn-rm-human",
+                    "fingerprint": "run_manager_human_decision:hdec-r5",
+                    "source": "run_manager_decision",
+                    "severity": "high",
+                    "status": "open",
+                    "title": "Run Manager human decision",
+                    "summary": "approve bounded resume",
+                    "suggested_route": "run_manager_human_decision",
+                    "human_action_required": True,
+                    "decision_token": "hdec-r5",
+                },
+            ],
+        },
+        events=[],
+        projection_ref={},
+    )
+
+    decisions = [
+        event for event in events
+        if event.type == "supervisor.decision.recorded"
+    ]
+    messages = [
+        event for event in events
+        if event.type == "owner.visible_message.requested"
+    ]
+    invocations = [
+        event for event in events
+        if event.type == "autoresearch.invocation.requested"
+    ]
+
+    assert len(decisions) == 1
+    assert decisions[0].payload["route"] == "run_manager_human_decision"
+    assert len(messages) == 1
+    assert messages[0].payload["handled_by"] == "run-manager"
+    assert messages[0].payload["delivery_targets"] == ["web", "channel", "feishu"]
+    assert invocations == []
+
+
+def test_triage_first_gate_never_suppresses_human_or_critical() -> None:
+    """131 §16.3-4 forcing:human_action_required 与 critical 永不被 triage 闸压制。"""
+    def _events_for(item):
+        return build_supervisor_control_loop_events(
+            {"attention_items": [item]}, events=[], projection_ref={},
+        )
+
+    base = {
+        "source": "workflow_resume",
+        "status": "open",
+        "title": "t",
+        "summary": "s",
+        "suggested_route": "run_manager_recovery",
+        "suggested_action": {"kind": "workflow-batch-resume", "checkpoint_id": "ck"},
+    }
+    human = _events_for({**base, "attention_id": "a-h", "fingerprint": "f:h",
+                         "severity": "low", "human_action_required": True})
+    critical = _events_for({**base, "attention_id": "a-c", "fingerprint": "f:c",
+                            "severity": "critical"})
+    triage = _events_for({**base, "attention_id": "a-t", "fingerprint": "f:t",
+                          "severity": "medium"})
+
+    def _messages(events):
+        return [e for e in events if e.type == "owner.visible_message.requested"]
+
+    assert len(_messages(human)) == 1
+    assert len(_messages(critical)) == 1
+    assert len(_messages(triage)) == 0
+    triage_decisions = [e for e in triage if e.type == "supervisor.decision.recorded"]
+    assert triage_decisions[0].payload["outcome"] == "run_manager_triage_first"

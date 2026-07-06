@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
 from zf.runtime.rework_triage import classify_rework_trigger
 
@@ -67,6 +68,9 @@ STALE_TASK_MAP_SUGGESTED_ACTION = "use_latest_product_delivery_wave_ready"
 _ADMISSION_REPLAN_REASON_MARKERS = (
     "admission rejected task_map",  # pipeline 契约门:缺 assembly / 无 root owner
     "overlapping allowed paths",    # W1 跨切片路径重叠
+    # avbs-r4 F5:task_map 结构级校验拒(schema_version 错写/verification
+    # scope 越界)同属"synth 必须重拆",此前不在名单 → 静默停摆只能人工回炉
+    "task_map validation failed",
 )
 
 _INFRA_FAILURE_MARKERS = (
@@ -441,7 +445,7 @@ def _candidate_success_closures(
 
 
 def _is_candidate_success_closure(etype: str, payload: dict[str, Any]) -> bool:
-    if etype == "cangjie.module.parity.scan.completed":
+    if is_module_parity_scan_completed_event(etype):
         return (
             "open_p0_p1_gap_count" in payload
             and _safe_int(payload.get("open_p0_p1_gap_count")) == 0

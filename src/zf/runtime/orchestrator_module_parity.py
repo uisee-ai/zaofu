@@ -9,6 +9,169 @@ from zf.runtime.orchestrator_types import OrchestratorDecision
 class ModuleParityBridgeMixin:
     """Deterministic verify -> parity scan -> gap amend bridge."""
 
+    def _reject_flow_judge_evidence_gap(
+        self,
+        event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        """Block taskless final judge success when declared flow evidence is absent."""
+
+        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
+        quality_floor = str(metadata.get("quality_floor") or "").strip()
+        if not quality_floor:
+            return None
+        required_groups = _quality_floor_required_ref_groups(quality_floor, metadata)
+        if not required_groups:
+            return None
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        missing = [
+            list(group) for group in required_groups
+            if not _payload_has_any_ref(payload, group)
+        ]
+        if not missing:
+            return None
+        context = self._latest_refactor_context(payload)
+        pdd_id = (
+            self._first_payload_text(payload, context, "pdd_id", "feature_id")
+            or str(event.task_id or "")
+        )
+        feature_id = self._first_payload_text(
+            payload,
+            context,
+            "feature_id",
+            "pdd_id",
+        ) or pdd_id
+        trace_id = (
+            self._first_payload_text(payload, context, "trace_id")
+            or str(event.correlation_id or event.id)
+        )
+        if not self._has_bridge_output(event.id, {"flow.goal.blocked"}):
+            self.event_writer.append(ZfEvent(
+                type="flow.goal.blocked",
+                actor="zf-cli",
+                causation_id=event.id,
+                correlation_id=trace_id,
+                payload={
+                    "schema_version": "flow-goal-blocked.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "trace_id": trace_id,
+                    "flow_kind": str(metadata.get("flow_kind") or ""),
+                    "quality_floor": quality_floor,
+                    "evidence_policy": str(metadata.get("evidence_policy") or ""),
+                    "reason": "judge.passed missing required flow evidence refs",
+                    "missing_ref_groups": missing,
+                    "expected_downstream_events": [
+                        "flow.gap_plan.ready",
+                        "goal.gap_plan.ready",
+                        "flow.goal.closed",
+                    ],
+                    "task_map_ref": self._first_payload_text(
+                        payload,
+                        context,
+                        "task_map_ref",
+                        "base_task_map_ref",
+                        "supersedes_task_map_ref",
+                    ),
+                    "source_event_id": event.id,
+                    "source": "flow_judge_evidence_gate",
+                },
+            ))
+        return OrchestratorDecision(
+            action="block",
+            reason=(
+                f"judge.passed missing {quality_floor} evidence refs: "
+                f"{missing}"
+            ),
+        )
+
+    def _bridge_verify_passed_to_flow_discovery(
+        self,
+        event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        """Emit flow-neutral post-verify discovery for Issue/PRD controllers.
+
+        Refactor keeps the stronger module-parity bridge below. Issue/PRD
+        discovery remains semantic work owned by skills/agents; the deterministic
+        bridge only records the requested profile and starts a reader fanout when
+        the YAML declares one.
+        """
+
+        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
+        flow_kind = str(metadata.get("flow_kind") or "").strip()
+        discovery_profile = str(metadata.get("post_verify_discovery") or "").strip()
+        if not flow_kind or not discovery_profile:
+            return None
+        if flow_kind == "refactor" or discovery_profile == "module_parity":
+            return None
+        if self._has_bridge_output(event.id, {"flow.discovery.requested"}):
+            return None
+
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        context = self._latest_refactor_context(payload)
+        pdd_id = (
+            self._first_payload_text(payload, context, "pdd_id", "feature_id")
+            or str(event.task_id or "")
+        )
+        feature_id = self._first_payload_text(
+            payload,
+            context,
+            "feature_id",
+            "pdd_id",
+        ) or pdd_id
+        trace_id = (
+            self._first_payload_text(payload, context, "trace_id")
+            or str(event.correlation_id or event.id)
+        )
+        candidate_ref = self._first_payload_text(
+            payload,
+            context,
+            "candidate_ref",
+            "target_ref",
+            "branch",
+        )
+        artifact_refs = payload.get("artifact_refs")
+        if not isinstance(artifact_refs, list):
+            artifact_refs = []
+        request_payload = {
+            "schema_version": "flow-discovery-request.v1",
+            "pdd_id": pdd_id,
+            "feature_id": feature_id,
+            "trace_id": trace_id,
+            "flow_kind": flow_kind,
+            "discovery_profile": discovery_profile,
+            "quality_floor": str(metadata.get("quality_floor") or ""),
+            "evidence_policy": str(metadata.get("evidence_policy") or ""),
+            "environment_policy": str(metadata.get("environment_policy") or ""),
+            "projection_policy": str(metadata.get("projection_policy") or ""),
+            "task_map_ref": self._first_payload_text(
+                payload,
+                context,
+                "task_map_ref",
+                "base_task_map_ref",
+                "supersedes_task_map_ref",
+            ),
+            "candidate_ref": candidate_ref,
+            "target_ref": candidate_ref,
+            "artifact_refs": [str(item) for item in artifact_refs if str(item).strip()],
+            "source_event_id": event.id,
+            "source": "verify_passed_flow_discovery_bridge",
+        }
+        requested = self.event_writer.append(ZfEvent(
+            type="flow.discovery.requested",
+            actor="zf-cli",
+            causation_id=event.id,
+            correlation_id=trace_id,
+            payload=request_payload,
+        ))
+        self._maybe_start_reader_fanout(requested)
+        return OrchestratorDecision(
+            action="bridge",
+            reason=(
+                f"verify.passed requested {flow_kind} "
+                f"{discovery_profile} discovery"
+            ),
+        )
+
     def _bridge_verify_passed_to_parity_scan(
         self,
         event: ZfEvent,
@@ -92,6 +255,143 @@ class ModuleParityBridgeMixin:
         return OrchestratorDecision(
             action="bridge",
             reason="verify.passed requested module parity scan",
+        )
+
+    def _bridge_flow_discovery_completed(
+        self,
+        event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        """Close a flow goal or convert discovery gaps into canonical gap work."""
+
+        if self._has_bridge_output(
+            event.id,
+            {"flow.gap_plan.ready", "flow.goal.closed", "flow.goal.blocked"},
+        ):
+            return None
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "").strip()
+        feature_id = str(payload.get("feature_id") or pdd_id).strip()
+        trace_id = str(payload.get("trace_id") or event.correlation_id or event.id).strip()
+        flow_kind = str(payload.get("flow_kind") or payload.get("goal_kind") or "").strip()
+        task_map_ref = str(
+            payload.get("task_map_ref")
+            or payload.get("base_task_map_ref")
+            or payload.get("supersedes_task_map_ref")
+            or ""
+        ).strip()
+        gap_tasks = self._parity_gap_tasks(payload)
+        open_gap_count = self._payload_int(
+            payload,
+            "open_p0_p1_gap_count",
+            "open_gap_count",
+            "gap_task_count",
+        )
+        if gap_tasks:
+            gap_event = self.event_writer.append(ZfEvent(
+                type="flow.gap_plan.ready",
+                actor="zf-cli",
+                causation_id=event.id,
+                correlation_id=trace_id,
+                payload={
+                    "schema_version": "goal-gap-plan.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "goal_id": str(payload.get("goal_id") or feature_id or pdd_id),
+                    "goal_kind": flow_kind or "flow",
+                    "flow_kind": flow_kind,
+                    "gap_category": str(
+                        payload.get("gap_category")
+                        or payload.get("discovery_profile")
+                        or "flow_gap"
+                    ),
+                    "trace_id": trace_id,
+                    "task_map_ref": task_map_ref,
+                    "gap_plan_ref": str(payload.get("gap_plan_ref") or ""),
+                    "gap_tasks": gap_tasks,
+                    "gap_task_count": len(gap_tasks),
+                    "source_event_id": event.id,
+                    "source": "flow_discovery_bridge",
+                },
+            ))
+            decision = self._bridge_gap_plan_ready_to_task_map(gap_event)
+            if decision:
+                return decision
+            return OrchestratorDecision(
+                action="bridge",
+                reason=f"flow discovery produced {len(gap_tasks)} gap task(s)",
+            )
+
+        if open_gap_count and open_gap_count > 0:
+            self.event_writer.append(ZfEvent(
+                type="flow.goal.blocked",
+                actor="zf-cli",
+                causation_id=event.id,
+                correlation_id=trace_id,
+                payload={
+                    "schema_version": "flow-goal-blocked.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "trace_id": trace_id,
+                    "flow_kind": flow_kind,
+                    "task_map_ref": task_map_ref,
+                    "open_p0_p1_gap_count": open_gap_count,
+                    "reason": "flow discovery reported open gaps without gap_tasks",
+                    "source_event_id": event.id,
+                    "source": "flow_discovery_bridge",
+                },
+            ))
+            return OrchestratorDecision(
+                action="block",
+                reason="flow discovery missing gap_tasks for open gaps",
+            )
+
+        if open_gap_count == 0 or self._payload_declares_parity_closed(payload):
+            closed = self.event_writer.append(ZfEvent(
+                type="flow.goal.closed",
+                actor="zf-cli",
+                causation_id=event.id,
+                correlation_id=trace_id,
+                payload={
+                    "schema_version": "flow-goal-closed.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "trace_id": trace_id,
+                    "flow_kind": flow_kind,
+                    "task_map_ref": task_map_ref,
+                    "open_p0_p1_gap_count": 0,
+                    "source_event_id": event.id,
+                    "source": "flow_discovery_bridge",
+                },
+            ))
+            self._maybe_start_reader_fanout(closed)
+            return OrchestratorDecision(
+                action="bridge",
+                reason="flow discovery closed without open P0/P1 gaps",
+            )
+
+        self.event_writer.append(ZfEvent(
+            type="flow.goal.blocked",
+            actor="zf-cli",
+            causation_id=event.id,
+            correlation_id=trace_id,
+            payload={
+                "schema_version": "flow-goal-blocked.v1",
+                "pdd_id": pdd_id,
+                "feature_id": feature_id,
+                "trace_id": trace_id,
+                "flow_kind": flow_kind,
+                "task_map_ref": task_map_ref,
+                "reason": (
+                    "flow discovery completed without explicit closure "
+                    "or dispatchable gap_tasks"
+                ),
+                "source_event_id": event.id,
+                "source": "flow_discovery_bridge",
+            },
+        ))
+        return OrchestratorDecision(
+            action="block",
+            reason="flow discovery lacks closure/gap evidence",
         )
 
     def _bridge_module_parity_scan_completed(
@@ -361,3 +661,57 @@ class ModuleParityBridgeMixin:
             "no_open_p0_p1_gaps",
             "no-open-p0-p1-gaps",
         })
+
+
+# Builtin floors require floor-specific evidence keys. `artifact_refs` is NOT
+# an accepted alternative: aggregated judge.passed payloads almost always carry
+# artifact_refs, so accepting it would let any payload with any artifact pass
+# every floor.
+_QUALITY_FLOOR_REF_GROUPS = {
+    "issue-regression": (
+        ("repro_ref", "regression_refs", "test_refs"),
+    ),
+    "product-demo": (
+        ("demo_refs", "e2e_refs", "test_refs"),
+    ),
+    "refactor-parity-real-env": (
+        ("parity_refs", "provider_refs", "e2e_refs"),
+    ),
+}
+
+
+def _quality_floor_required_ref_groups(
+    quality_floor: str,
+    metadata: dict,
+) -> tuple[tuple[str, ...], ...]:
+    """Flow-declared ref groups win over the builtin floor vocabulary.
+
+    ``flow_metadata.quality_floor_ref_groups`` is a list of groups; each group
+    is a list of alternative payload keys (any one non-empty satisfies the
+    group) or a single key string. "What counts as evidence" stays a
+    config/skill decision; the kernel only checks presence.
+    """
+    declared = metadata.get("quality_floor_ref_groups")
+    if isinstance(declared, (list, tuple)):
+        groups: list[tuple[str, ...]] = []
+        for group in declared:
+            if isinstance(group, (list, tuple)):
+                keys = tuple(str(key).strip() for key in group if str(key).strip())
+                if keys:
+                    groups.append(keys)
+            elif isinstance(group, str) and group.strip():
+                groups.append((group.strip(),))
+        return tuple(groups)
+    return _QUALITY_FLOOR_REF_GROUPS.get(quality_floor, ())
+
+
+def _payload_has_any_ref(payload: dict, keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+        if isinstance(value, list) and any(str(item).strip() for item in value):
+            return True
+        if isinstance(value, dict) and any(str(item).strip() for item in value.values()):
+            return True
+    return False

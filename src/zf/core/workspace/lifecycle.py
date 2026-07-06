@@ -114,7 +114,10 @@ def project_lifecycle(project: WorkspaceProject) -> ProjectLifecycle:
     return lifecycle
 
 
-_CACHE_TTL_SECONDS = 3.0
+# 30s: lifecycle truths (config on disk, tmux session) change on human
+# timescales; 3s meant the picker's 24-project probe ran cold almost every
+# poll (timing log: /api/workspace/projects median 3.0s x100 calls).
+_CACHE_TTL_SECONDS = 30.0
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict[tuple[Any, ...], tuple[float, ProjectLifecycle]] = {}
 

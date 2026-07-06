@@ -51,7 +51,9 @@ def _workers(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
     events_path = state_dir / "events.jsonl"
     if events_path.exists():
         try:
-            for e in event_log_from_project(state_dir, config=config).read_days(1):
+            from zf.web.projections.events import events_read_days
+
+            for e in events_read_days(state_dir, 1, config=config):
                 if e.type == "worker.state.changed" and isinstance(
                     e.payload, dict,
                 ):

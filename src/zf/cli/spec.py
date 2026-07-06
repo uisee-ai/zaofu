@@ -27,7 +27,7 @@ tasks:
       - test -f packages/ai/src/provider-registry.ts
     verification: <single shell verification command>
     spec_ref: docs/specs/phase-1/runtime-foundation.md
-    plan_ref: docs/plans/cangjie-master-plan.md
+    plan_ref: docs/plans/<project>-master-plan.md
     tdd_ref: test/unit/ai/provider-registry.test.ts
     behavior: |
       Multi-line prose behavior description...

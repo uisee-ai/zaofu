@@ -58,6 +58,12 @@ export function MetricsStrip({ metrics: rawMetrics, taskFlow }: MetricsStripProp
       ],
     },
   ];
+  const hasAnyData = groups.some((group) => group.items.some((item) => item.value !== "-"));
+  if (!hasAnyData) {
+    // Vanity strip: 12 dashes taught operators to ignore this block entirely.
+    // Render nothing until the kernel metrics window actually has data.
+    return null;
+  }
   return (
     <section className="subsection metrics-strip" data-testid="overview-metrics-strip">
       <div className="inline-heading">

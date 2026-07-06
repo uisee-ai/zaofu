@@ -570,12 +570,10 @@ function ReportPreviewRefs({ refs }: { refs: Record<string, unknown> }) {
 
 
 function AutomationRunCounts({ rows }: { rows: Record<string, unknown>[] }) {
+  if (rows.length === 0) return null;  // zero-state noise (doc116 §12.2)
   return (
-    <section className="subsection automation-run-counts-section">
-      <div className="inline-heading">
-        <h3>Run Counts By Day</h3>
-        <span className="muted">{rows.length} days</span>
-      </div>
+    <details className="subsection automation-run-counts-section">
+      <summary className="muted">Run Counts By Day · {rows.length} days</summary>
       {rows.length === 0 ? (
         <ProjectionEmptyState
           state={{
@@ -612,7 +610,7 @@ function AutomationRunCounts({ rows }: { rows: Record<string, unknown>[] }) {
           })}
         </div>
       )}
-    </section>
+    </details>
   );
 }
 

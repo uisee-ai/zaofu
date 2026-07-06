@@ -38,6 +38,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sidecar.add_argument("--no-orphans", action="store_true", help="Skip orphan sidecar scan")
     sidecar.set_defaults(func=_run_sidecar)
 
+    event_contract = sub.add_parser(
+        "event-contract",
+        help="Check workflow event producer/consumer contracts",
+    )
+    event_contract.add_argument("--path", type=str, default=None, help="Path to zf.yaml")
+    event_contract.add_argument("--json", action="store_true", dest="as_json")
+    event_contract.add_argument(
+        "--runtime-events",
+        action="store_true",
+        help="Also inspect runtime events for actionable scope gaps",
+    )
+    event_contract.set_defaults(func=_run_event_contract)
+
     parser.set_defaults(func=_run)
 
 
@@ -160,9 +173,37 @@ def _run_sidecar(args: argparse.Namespace) -> int:
     return 0 if report["ok"] else 1
 
 
+def _run_event_contract(args: argparse.Namespace) -> int:
+    try:
+        project_root, state_dir, config = _load_runtime_from_path(
+            Path(args.path) if getattr(args, "path", None) else None
+        )
+        events = None
+        if getattr(args, "runtime_events", False) and state_dir.exists():
+            events = event_log_from_project(state_dir, config=config).read_all()
+        from zf.runtime.event_contracts import build_event_contract_report
+
+        report = build_event_contract_report(config, events=events)
+    except (ConfigError, RuntimeError, OSError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    report["project_root"] = str(project_root)
+    report["state_dir"] = str(state_dir)
+    if args.as_json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        _print_event_contract_report(report)
+    return 0 if report["ok"] else 1
+
+
 def _load_runtime():
-    project_root = Path.cwd()
-    config = load_config(project_root / "zf.yaml")
+    return _load_runtime_from_path(None)
+
+
+def _load_runtime_from_path(config_path: Path | None):
+    path = config_path or (Path.cwd() / "zf.yaml")
+    project_root = path.parent
+    config = load_config(path)
     raw_state = Path(config.project.state_dir)
     state_dir = raw_state if raw_state.is_absolute() else project_root / raw_state
     return project_root, state_dir, config
@@ -296,6 +337,40 @@ def _print_sidecar_report(report: dict[str, Any]) -> None:
             print(f"  ... {len(report['orphans']) - 20} more")
     if report.get("ok"):
         print("OK: sidecar refs")
+
+
+def _print_event_contract_report(report: dict[str, Any]) -> None:
+    summary = report.get("summary", {})
+    print("ZF Event Contract Doctor")
+    print(f"project_root: {report.get('project_root', '')}")
+    print(f"state_dir: {report.get('state_dir', '')}")
+    print(
+        "summary: "
+        f"producers={summary.get('producers', 0)} "
+        f"event_types={summary.get('producer_event_types', 0)} "
+        f"errors={summary.get('errors', 0)} "
+        f"warnings={summary.get('warnings', 0)}"
+    )
+    errors = report.get("errors") or []
+    warnings = report.get("warnings") or []
+    if errors:
+        print("Errors:")
+        for item in errors:
+            print(
+                "  - "
+                f"{item.get('kind')}: {item.get('event_type')} — "
+                f"{item.get('message')}"
+            )
+    if warnings:
+        print("Warnings:")
+        for item in warnings:
+            print(
+                "  - "
+                f"{item.get('kind')}: {item.get('event_type')} — "
+                f"{item.get('message')}"
+            )
+    if not errors and not warnings:
+        print("OK: event contracts clean")
 
 
 def _run_probe(argv: list[str], *, timeout_s: float) -> dict[str, Any]:

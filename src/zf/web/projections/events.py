@@ -1,6 +1,9 @@
 """Projections layer: events (moved verbatim from web/server.py)."""
 from __future__ import annotations
 
+import itertools
+import os
+
 from fastapi import Request
 from pathlib import Path
 from typing import Any
@@ -58,7 +61,7 @@ def _trace_detail(
             event.actor for _, event in events
             if getattr(event, "actor", None)
         }),
-        "git_refs": _refs_from_events(events),
+        "git_refs": _refs_from_events(events, state_dir=state_dir, config=config),
         "diagnostics": _diagnostics(state_dir, trace_id),
         "execution_route": redact_obj(execution_route),
         "empty": not events,
@@ -344,28 +347,396 @@ def _search(
 # _events_with_seq is called ~20x per snapshot (each projection re-decodes the
 # whole log). The log is append-only, so memoize by (size, mtime_ns): any append
 # changes the fingerprint and misses. Same replay, decoded once — byte-identical.
-_EVENTS_WITH_SEQ_CACHE: dict[str, tuple[tuple[int, int], list[tuple[int, object]]]] = {}
+_EVENTS_WITH_SEQ_CACHE: dict[str, dict] = {}  # {fp, epoch, events, archives, consumed}
 _EVENTS_WITH_SEQ_CACHE_LOCK = threading.Lock()
 _EVENTS_WITH_SEQ_CACHE_MAX = 6
+
+# Heavy per-event derivations (lowered payload dumps; task-event leaf index)
+# are pure functions of the memoized events list but were rebuilt per request —
+# on a 30k-event log that is seconds of GIL-bound work per page load. Memoize
+# by the same (size, mtime_ns) fingerprint; smaller cap (memory-heavy).
+_DERIVED_CACHE: dict[str, tuple[tuple[int, int], object]] = {}
+_DERIVED_CACHE_LOCK = threading.Lock()
+# One snapshot touches ~5 derived kinds per project (read_days:1/:14,
+# search_texts, task_index, ...); 6 slots thrashed across kinds and forced
+# a full re-decode every snapshot. Size for ~6 projects x ~5 kinds.
+_DERIVED_CACHE_MAX = 32
+
+# R6-5: byte-budget eviction. Slot counts don't bound memory — a decoded
+# 40MB log holds ~580-700MB RSS (measured 2026-07-02 on r2/r10, ≈14x raw
+# bytes; event lists + payload dicts). Each entry carries an estimated cost;
+# oldest entries are evicted across BOTH caches until under budget.
+_CACHE_BUDGET_BYTES = int(
+    os.environ.get("ZF_WEB_EVENT_CACHE_BUDGET_MB", "2048")
+) * 1024 * 1024
+_DECODED_COST_FACTOR = 14   # events / read_days entries: own decoded objects
+_DERIVED_COST_FACTOR = 2    # index/texts entries: share event objects
+_CACHE_STAMP = itertools.count()
+
+
+def _log_bytes_basis(state_dir: Path, fingerprint: tuple[int, int]) -> int:
+    """Raw bytes backing a cache entry: active log + archive segments."""
+    entry = _EVENTS_WITH_SEQ_CACHE.get(str(state_dir))
+    archives = entry["archives"] if entry is not None else _archive_inventory(state_dir)
+    return fingerprint[0] + sum(size for _rel, size in archives)
+
+
+def _enforce_cache_budget() -> None:
+    """Evict oldest entries (either cache) until estimated cost fits budget.
+
+    Called after inserts, outside the insert locks (locks are not reentrant);
+    acquires both locks in a fixed order to stay deadlock-free. Always leaves
+    the newest entry per cache."""
+    with _EVENTS_WITH_SEQ_CACHE_LOCK:
+        with _DERIVED_CACHE_LOCK:
+            while True:
+                total = sum(e["cost"] for e in _EVENTS_WITH_SEQ_CACHE.values()) + sum(
+                    e["cost"] for e in _DERIVED_CACHE.values()
+                )
+                if total <= _CACHE_BUDGET_BYTES:
+                    return
+                candidates = []
+                if len(_EVENTS_WITH_SEQ_CACHE) > 1:
+                    key = next(iter(_EVENTS_WITH_SEQ_CACHE))
+                    candidates.append((_EVENTS_WITH_SEQ_CACHE[key]["stamp"], _EVENTS_WITH_SEQ_CACHE, key))
+                if len(_DERIVED_CACHE) > 1:
+                    key = next(iter(_DERIVED_CACHE))
+                    candidates.append((_DERIVED_CACHE[key]["stamp"], _DERIVED_CACHE, key))
+                if not candidates:
+                    return
+                _stamp, cache, key = min(candidates)
+                cache.pop(key)
+
+
+def _derived_cached(state_dir, kind: str, config, build, fold=None):
+    """Entries are (fingerprint, epoch, n_events, value).
+
+    ``fold(old_value, tail_rows)`` — optional incremental path (R6-1): when the
+    events cache folded (same epoch → shared prefix, same objects), the derived
+    view extends its cached value with just the new (seq, event) rows instead
+    of rebuilding from the whole log. fold must return a NEW value (cached one
+    may be concurrently read).
+    """
+    key = f"{state_dir}::{kind}"
+    fingerprint = _event_log_fingerprint(state_dir)
+    cached = _DERIVED_CACHE.get(key)
+    if cached is not None and cached["fp"] == fingerprint:
+        return cached["value"]
+    events, epoch, fp = _events_state(state_dir, config=config)
+    if (
+        fold is not None
+        and cached is not None
+        and cached["epoch"] == epoch
+        and len(events) >= cached["n"]
+    ):
+        value = fold(cached["value"], events[cached["n"]:])
+    else:
+        value = build()
+    basis = _log_bytes_basis(state_dir, fp)
+    factor = _DECODED_COST_FACTOR if kind.startswith("read_days:") else _DERIVED_COST_FACTOR
+    with _DERIVED_CACHE_LOCK:
+        _DERIVED_CACHE[key] = {
+            "fp": fp,
+            "epoch": epoch,
+            "n": len(events),
+            "value": value,
+            "cost": basis * factor,
+            "stamp": next(_CACHE_STAMP),
+        }
+        while len(_DERIVED_CACHE) > _DERIVED_CACHE_MAX:
+            _DERIVED_CACHE.pop(next(iter(_DERIVED_CACHE)))
+    _enforce_cache_budget()
+    return value
+
+
+def event_ref_kv(state_dir: Path, config: ZfConfig | None = None) -> dict:
+    """Per-event collected ref keys (seq -> (event, refs)), fingerprint-memoized.
+
+    _refs_from_events re-walked every payload with a 26-key collect for every
+    caller (kanban per-task, task detail, delivery fallbacks) — the same events
+    each time. Entries keep the event object so consumers can identity-check
+    (`hit[0] is event`) and fall back to a direct collect on mismatch.
+    """
+    from zf.web.projections.common import _REF_EVENT_KEYS, _payload_collect
+
+    def _collect(event) -> dict:
+        payload = getattr(event, "payload", {}) or {}
+        return {
+            key: value
+            for key, value in _payload_collect(payload, _REF_EVENT_KEYS).items()
+            if value not in (None, "")
+        }
+
+    def build() -> dict:
+        return {
+            seq: (event, _collect(event))
+            for seq, event in _events_with_seq(state_dir, config=config)
+        }
+
+    def fold(old: dict, tail) -> dict:
+        out = dict(old)
+        for seq, event in tail:
+            out[seq] = (event, _collect(event))
+        return out
+
+    return _derived_cached(state_dir, "event_ref_kv", config, build, fold=fold)
+
+
+def event_topology_kv(state_dir: Path, config: ZfConfig | None = None) -> dict:
+    """Per-event topology refs (seq -> (event, refs)), fingerprint-memoized.
+
+    _fanouts/_candidates each re-ran a full-log _payload_collect per request
+    (700k+ recursive calls each on r2). Same fold/identity-check contract as
+    event_ref_kv; consumers fall back to a direct collect on object mismatch.
+    Empty values are dropped — all consumers use `or ""`/_first_nonempty."""
+    from zf.web.projections.common import _TOPOLOGY_EVENT_KEYS, _payload_collect
+
+    def _collect(event) -> dict:
+        payload = getattr(event, "payload", {}) or {}
+        return {
+            key: value
+            for key, value in _payload_collect(payload, _TOPOLOGY_EVENT_KEYS).items()
+            if value not in (None, "")
+        }
+
+    def build() -> dict:
+        return {
+            seq: (event, _collect(event))
+            for seq, event in _events_with_seq(state_dir, config=config)
+        }
+
+    def fold(old: dict, tail) -> dict:
+        out = dict(old)
+        for seq, event in tail:
+            out[seq] = (event, _collect(event))
+        return out
+
+    return _derived_cached(state_dir, "event_topology_kv", config, build, fold=fold)
+
+
+def fanout_seq_maps(
+    state_dir: Path, config: ZfConfig | None = None,
+) -> tuple[dict, dict]:
+    """(last_seq_by_fanout, started_seq_by_fanout) — task-independent maps.
+
+    _latest_task_fanout_runtime rebuilt these identical maps with a full-log
+    scan PER TASK (kanban loop + task detail). Top-level payload.get only —
+    exact parity with the original scan, no deep _payload_ref semantics."""
+
+    def _apply(last: dict, started: dict, rows) -> None:
+        for seq, event in rows:
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            fanout_id = str(payload.get("fanout_id") or "").strip()
+            if not fanout_id:
+                continue
+            last[fanout_id] = max(seq, last.get(fanout_id, 0))
+            if event.type == "fanout.started":
+                started[fanout_id] = seq
+
+    def build() -> tuple[dict, dict]:
+        last: dict[str, int] = {}
+        started: dict[str, int] = {}
+        _apply(last, started, _events_with_seq(state_dir, config=config))
+        return (last, started)
+
+    def fold(old: tuple[dict, dict], tail) -> tuple[dict, dict]:
+        last, started = dict(old[0]), dict(old[1])
+        _apply(last, started, tail)
+        return (last, started)
+
+    return _derived_cached(state_dir, "fanout_seq_maps", config, build, fold=fold)
+
+
+def events_read_days(state_dir, days: int = 1, config=None) -> list:
+    """Fingerprint-memoized EventLog.read_days — six projections each decoded
+    the log independently per snapshot (119k events decoded for a 10.6k log).
+    Key includes the UTC date so the calendar window rolls at midnight."""
+    from datetime import datetime, timezone
+
+    from zf.core.events.factory import event_log_from_project
+
+    day_key = datetime.now(timezone.utc).date().isoformat()
+
+    def build():
+        return list(event_log_from_project(state_dir, config=config).read_days(days))
+
+    def fold(old: list, tail) -> list:
+        # New rows are active-file appends = inside every read_days window.
+        # _parse_file silently skips non-JSON lines; the events cache injects
+        # an event.malformed placeholder (actor=segments) for them — drop
+        # those to keep exact parity. Schema-invalid JSON (actor=zf-cli) stays.
+        fresh = [
+            event
+            for _seq, event in tail
+            if not (
+                getattr(event, "type", "") == "event.malformed"
+                and getattr(event, "actor", "") == "segments"
+            )
+        ]
+        return old + fresh if fresh else old
+
+    return _derived_cached(state_dir, f"read_days:{days}:{day_key}", config, build, fold=fold)
+
+
+def payload_search_texts(state_dir, config=None) -> list[str]:
+    """Lowered payload dumps aligned with _events_with_seq(state_dir)."""
+    from zf.web.projections.common import _payload_search_text
+
+    def build():
+        return [
+            _payload_search_text(getattr(event, "payload", {}) or {})
+            for _, event in _events_with_seq(state_dir, config=config)
+        ]
+
+    def fold(old: list, tail) -> list:
+        return old + [
+            _payload_search_text(getattr(event, "payload", {}) or {})
+            for _, event in tail
+        ]
+
+    return _derived_cached(state_dir, "search_texts", config, build, fold=fold)
+
+
+def task_event_index(state_dir, config=None):
+    """Fingerprint-memoized TaskEventIndex over the memoized events list."""
+    from zf.runtime.long_horizon import TaskEventIndex
+
+    def build():
+        return TaskEventIndex([event for _, event in _events_with_seq(state_dir, config=config)])
+
+    def fold(old, tail):
+        return old.extended([event for _, event in tail])
+
+    return _derived_cached(state_dir, "task_event_index", config, build, fold=fold)
+
+
+def _archive_inventory(state_dir: Path) -> tuple:
+    from zf.core.events.segments import list_event_segments
+
+    return tuple(
+        (seg.rel_path, seg.size)
+        for seg in list_event_segments(state_dir)
+        if seg.kind == "archive"
+    )
+
+
+def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int], config) -> dict | None:
+    """Fold new active-log tail onto the cached events (R6-1).
+
+    events.jsonl is append-only and archive segments are immutable, so when
+    the archive inventory is unchanged and the active file only grew, the
+    cached prefix is still valid — decode just the new bytes instead of the
+    whole log (a full rebuild on every append made "warm" a fiction for
+    active projects). Any other shape change falls back to a full rebuild.
+    """
+    if fingerprint == (0, 0):
+        return None
+    if entry["archives"] != _archive_inventory(state_dir):
+        return None
+    consumed = entry["consumed"]
+    size = fingerprint[0]
+    if size < consumed:
+        return None
+    try:
+        with (state_dir / "events.jsonl").open("rb") as fh:
+            fh.seek(consumed)
+            data = fh.read(size - consumed)
+    except OSError:
+        return None
+    last_newline = data.rfind(b"\n")
+    tail_bytes = data[: last_newline + 1] if last_newline >= 0 else b""
+    events = entry["events"]
+    tail: list[tuple[int, object]] = []
+    if tail_bytes:
+        from zf.core.events.factory import event_log_from_project
+        from zf.core.events.model import ZfEvent
+
+        event_log = event_log_from_project(state_dir, config=config)
+        seq = events[-1][0] if events else 0
+        for raw in tail_bytes.splitlines():
+            line = raw.decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            seq += 1
+            event = event_log.decode_line(line)
+            if event is None:
+                # Same placeholder iter_event_records injects for non-JSON rows.
+                event = ZfEvent(
+                    type="event.malformed",
+                    actor="segments",
+                    payload={
+                        "line": line[:200],
+                        "error": "unable to decode event line",
+                    },
+                )
+            tail.append((seq, event))
+    return {
+        "fp": fingerprint,
+        "epoch": entry["epoch"],
+        "events": events + tail if tail else events,
+        "archives": entry["archives"],
+        "consumed": consumed + len(tail_bytes),
+        "cost": (fingerprint[0] + sum(size for _rel, size in entry["archives"])) * _DECODED_COST_FACTOR,
+        "stamp": next(_CACHE_STAMP),
+    }
+
+
+def _events_state(
+    state_dir: Path,
+    config: ZfConfig | None = None,
+) -> tuple[list[tuple[int, object]], int, tuple[int, int]]:
+    """(events, epoch, fingerprint). epoch increments on full rebuild only —
+    derived views may fold onto their cached value iff the epoch matched
+    (guaranteeing the shared prefix is the same list objects)."""
+    key = str(state_dir)
+    fingerprint = _event_log_fingerprint(state_dir)
+    entry = _EVENTS_WITH_SEQ_CACHE.get(key)
+    if entry is not None and entry["fp"] == fingerprint:
+        return entry["events"], entry["epoch"], fingerprint
+    result = None
+    with _EVENTS_WITH_SEQ_CACHE_LOCK:
+        entry = _EVENTS_WITH_SEQ_CACHE.get(key)
+        if entry is not None and entry["fp"] == fingerprint:
+            return entry["events"], entry["epoch"], fingerprint
+        if entry is not None:
+            folded = _try_append_fold(state_dir, entry, fingerprint, config)
+            if folded is not None:
+                _EVENTS_WITH_SEQ_CACHE[key] = folded
+                result = (folded["events"], folded["epoch"], fingerprint)
+        if result is None:
+            try:
+                records = list(iter_event_records(state_dir, config=config))
+            except Exception:
+                return [], (entry["epoch"] + 1 if entry else 0), fingerprint
+            events = [(record.seq, record.event) for record in records]
+            consumed = 0
+            for record in reversed(records):
+                if record.raw_segment == "events.jsonl":
+                    consumed = record.raw_offset + record.raw_length
+                    break
+            epoch = (entry["epoch"] + 1) if entry else 0
+            archives = _archive_inventory(state_dir)
+            _EVENTS_WITH_SEQ_CACHE[key] = {
+                "fp": fingerprint,
+                "epoch": epoch,
+                "events": events,
+                "archives": archives,
+                "consumed": consumed,
+                "cost": (fingerprint[0] + sum(size for _rel, size in archives)) * _DECODED_COST_FACTOR,
+                "stamp": next(_CACHE_STAMP),
+            }
+            while len(_EVENTS_WITH_SEQ_CACHE) > _EVENTS_WITH_SEQ_CACHE_MAX:
+                _EVENTS_WITH_SEQ_CACHE.pop(next(iter(_EVENTS_WITH_SEQ_CACHE)))
+            result = (events, epoch, fingerprint)
+    _enforce_cache_budget()
+    return result
 
 
 def _events_with_seq(
     state_dir: Path,
     config: ZfConfig | None = None,
 ) -> list[tuple[int, object]]:
-    key = str(state_dir)
-    fingerprint = _event_log_fingerprint(state_dir)
-    cached = _EVENTS_WITH_SEQ_CACHE.get(key)
-    if cached is not None and cached[0] == fingerprint:
-        return cached[1]
-    try:
-        events = [(record.seq, record.event) for record in iter_event_records(state_dir, config=config)]
-    except Exception:
-        return []
-    with _EVENTS_WITH_SEQ_CACHE_LOCK:
-        _EVENTS_WITH_SEQ_CACHE[key] = (fingerprint, events)
-        while len(_EVENTS_WITH_SEQ_CACHE) > _EVENTS_WITH_SEQ_CACHE_MAX:
-            _EVENTS_WITH_SEQ_CACHE.pop(next(iter(_EVENTS_WITH_SEQ_CACHE)))
+    events, _epoch, _fp = _events_state(state_dir, config=config)
     return events
 
 
@@ -495,9 +866,18 @@ async def _tail_events(
     event_log: EventLog | None = None,
     cursor: int | None = None,
 ) -> AsyncIterator[bytes]:
-    """SSE generator: replay by cursor, then tail events.jsonl."""
+    """SSE generator: replay by cursor, then tail events.jsonl merged with
+    the ephemeral LiveDeltaBus (doc 106 B axis — token deltas never touch
+    the ledger; they ride the same SSE wire with the current committed seq,
+    so client reconnect cursors stay anchored to committed events only)."""
+    from zf.runtime.live_delta_bus import LiveDeltaBus
+
     path = state_dir / "events.jsonl"
     event_log = event_log or EventLog(path)
+    live_bus = LiveDeltaBus(state_dir)
+    live_cursors: dict[str, int] = {}
+    live_sweep_countdown = 0
+    live_bus.sweep()
     # Send initial heartbeat so EventSource onopen fires deterministically
     yield b": connected\n\n"
     last_size = 0
@@ -554,4 +934,17 @@ async def _tail_events(
                 yield _sse_event(last_seq, event)
         else:
             yield b": ping\n\n"  # comment heartbeat keeps connection warm
+        try:
+            live_rows, live_cursors = live_bus.read_since(live_cursors)
+        except Exception:
+            live_rows = []
+        for row in live_rows:
+            yield _sse_event(last_seq, row)
+        live_sweep_countdown -= 1
+        if live_sweep_countdown <= 0:
+            live_sweep_countdown = 120
+            try:
+                live_bus.sweep()
+            except Exception:
+                pass
         await asyncio.sleep(0.5)

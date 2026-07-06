@@ -438,6 +438,65 @@ export function ChannelPage({
     () => buildChannelConversation(conversationDetail, selectedChannelId, activeChannelThreadId),
     [activeChannelThreadId, conversationDetail, selectedChannelId],
   );
+  // visibility batch #10 (doc 122): the discussion state machine and the
+  // open-questions ledger are projection truth — surface them so the
+  // operator can supervise a debate without reading events.jsonl.
+  const discussionBand = useMemo(() => {
+    const sessions = Object.values(detail?.discussions ?? {});
+    const active = sessions.find((session) => {
+      const state = String((session as Record<string, unknown>).state || "");
+      return state && state !== "idle";
+    }) as Record<string, unknown> | undefined;
+    const questions = Object.values(detail?.open_questions ?? {})
+      .map((item) => item as Record<string, unknown>);
+    const openQuestions = questions
+      .filter((item) => String(item.status || "") === "open")
+      .map((item) => ({
+        id: String(item.question_id || ""),
+        text: String(item.question || ""),
+        category: String(item.category || ""),
+        askedBy: String(item.asked_by || ""),
+      }))
+      .filter((item) => item.text);
+    if (!active && !openQuestions.length) return null;
+    const phase = String(active?.state || "");
+    const phaseNum = phase === "phase1_blind" ? 1
+      : phase === "phase2_relay" ? 2
+      : phase === "phase3_synthesis" ? 3
+      : 0;
+    const phaseLabel = phase === "phase1_blind" ? "Blind answers"
+      : phase === "phase2_relay" ? "Open debate"
+      : phase === "phase3_synthesis" ? "Synthesis"
+      : "Open questions";
+    // A phase with no recent movement and no open ledger is a STALLED
+    // debate, not a live one — showing it as a proud full status card is
+    // misinformation (user feedback: zombie phase2 squatting on top of the
+    // channel). Downgrade to a thin warning chip after 10 quiet minutes.
+    const sessionStart = String(active?.started_at || "");
+    const lastSignals = [
+      String(active?.phase_changed_at || ""),
+      ...((detail?.reply_requests ?? [])
+        .filter((item): item is Record<string, unknown> => Boolean(recordValue(item)))
+        .filter((item) => !sessionStart || String(item.updated_at || item.created_at || "") >= sessionStart)
+        .map((item) => String(item.updated_at || item.created_at || ""))),
+    ].filter(Boolean).sort();
+    const lastActivity = lastSignals[lastSignals.length - 1] || "";
+    const quietMs = lastActivity ? Date.now() - new Date(lastActivity).getTime() : 0;
+    const stalled = Boolean(active) && !openQuestions.length && quietMs > 10 * 60 * 1000;
+    return {
+      phaseNum,
+      phaseLabel,
+      stalled,
+      quietMinutes: Math.max(1, Math.round(quietMs / 60000)),
+      roster: Array.isArray(active?.roster) ? (active?.roster as unknown[]) : [],
+      openQuestions,
+      totalCount: questions.length,
+      resolvedCount: questions.length - openQuestions.length,
+    };
+  }, [detail]);
+  function quoteDiscussionQuestion(text: string) {
+    insertComposerText(`Re “${text}”: `);
+  }
   const channelScrollSignature = agentConversationScrollSignature(
     channelConversation,
     activeChannelThreadId,
@@ -980,13 +1039,25 @@ export function ChannelPage({
     setMentionQuery("");
     setPostingCount((count) => count + 1);
     void onPostMessage(messageText, refs)
+      .then(() => {
+        // Success: keep the optimistic row until the REAL message lands in
+        // `detail` — channelDetailWithPendingMessage drops it by identity
+        // the moment the projection catches up. Removing it here (the old
+        // finally) opened a visible gap: the POST returns before read_model
+        // ingests the event, so the message vanished for a beat and then
+        // reappeared. The timeout is only a ghost-row backstop in case the
+        // projection never picks the message up.
+        window.setTimeout(() => {
+          setPendingChannelMessages((current) => current.filter((item) => item.id !== pendingId));
+        }, 20000);
+      })
       .catch((error) => {
         setComposerError(error instanceof Error ? error.message : "message was not posted");
         if (!composerPlainText().trim()) restoreComposerEditor(pendingHtml, pendingText);
         setComposerAttachments((current) => current.length ? current : pendingAttachments);
+        setPendingChannelMessages((current) => current.filter((item) => item.id !== pendingId));
       })
       .finally(() => {
-        setPendingChannelMessages((current) => current.filter((item) => item.id !== pendingId));
         setPostingCount((count) => Math.max(0, count - 1));
       });
   }
@@ -2013,6 +2084,69 @@ export function ChannelPage({
           {activeTab === "chat" ? (
             <>
               {renderHistorySearchPanel()}
+              {discussionBand?.stalled ? (
+                <div aria-label="Discussion stalled" className="channel-discussion-stalled">
+                  <span aria-hidden="true">⚠</span>
+                  Discussion stalled at {discussionBand.phaseLabel.toLowerCase()}
+                  {" "}(phase {discussionBand.phaseNum}/3) · quiet for {discussionBand.quietMinutes}m
+                  — agents stopped relaying; close it or restart with @all.
+                </div>
+              ) : null}
+              {discussionBand && !discussionBand.stalled ? (
+                <div aria-label="Discussion status" className="channel-discussion-band">
+                  <div className="channel-discussion-head">
+                    {discussionBand.phaseNum ? (
+                      <span aria-hidden="true" className="channel-discussion-dots">
+                        {[1, 2, 3].map((step) => (
+                          <i
+                            className={step < discussionBand.phaseNum ? "done"
+                              : step === discussionBand.phaseNum ? "on" : ""}
+                            key={step}
+                          />
+                        ))}
+                      </span>
+                    ) : null}
+                    <strong>{discussionBand.phaseLabel}</strong>
+                    {discussionBand.phaseNum ? (
+                      <span className="channel-discussion-meta">phase {discussionBand.phaseNum}/3</span>
+                    ) : null}
+                    <span className="channel-discussion-spacer" />
+                    {discussionBand.roster.length ? (
+                      <span className="channel-discussion-pill">
+                        {discussionBand.roster.length} debating
+                      </span>
+                    ) : null}
+                    {discussionBand.totalCount ? (
+                      <span className={`channel-discussion-pill ${
+                        discussionBand.resolvedCount === discussionBand.totalCount ? "ok" : "open"}`}
+                      >
+                        {discussionBand.resolvedCount}/{discussionBand.totalCount} resolved
+                      </span>
+                    ) : null}
+                  </div>
+                  {discussionBand.openQuestions.length ? (
+                    <ul className="channel-discussion-questions">
+                      {discussionBand.openQuestions.map((q) => (
+                        <li key={q.id}>
+                          <button
+                            title="Quote into composer"
+                            type="button"
+                            onClick={() => quoteDiscussionQuestion(q.text)}
+                          >
+                            {q.category ? (
+                              <span className={`channel-discussion-cat cat-${q.category}`}>
+                                {q.category.replace("_", " ")}
+                              </span>
+                            ) : null}
+                            <span className="channel-discussion-qtext">{q.text}</span>
+                            {q.askedBy ? <small>{q.askedBy}</small> : null}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
               <div
                 ref={channelTimelineRef}
                 className="channel-timeline"

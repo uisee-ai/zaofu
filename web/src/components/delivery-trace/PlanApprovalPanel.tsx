@@ -31,7 +31,7 @@ interface ContractHealth {
   summary: { total: number; flagged: number; awaiting_approval: number };
 }
 
-type InboxMode = "pending" | "all";
+type InboxView = "action_required" | "runtime_attention" | "automation" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "runtime_attention" | "approval";
 
 const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
@@ -40,6 +40,14 @@ const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "human_decision", label: "Human Decision" },
   { value: "runtime_attention", label: "Runtime Attention" },
   { value: "approval", label: "Approval" },
+];
+
+const VIEW_OPTIONS: Array<{ value: InboxView; label: string }> = [
+  { value: "action_required", label: "Action" },
+  { value: "runtime_attention", label: "Runtime" },
+  { value: "automation", label: "Automation" },
+  { value: "all", label: "All" },
+  { value: "resolved", label: "Resolved" },
 ];
 
 export function PlanApprovalPanel(
@@ -56,7 +64,7 @@ export function PlanApprovalPanel(
   const [preview, setPreview] = useState<PlanPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [mode, setMode] = useState<InboxMode>("pending");
+  const [view, setView] = useState<InboxView>("action_required");
   const [kindFilter, setKindFilter] = useState<InboxKindFilter>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
@@ -64,7 +72,7 @@ export function PlanApprovalPanel(
   const inboxRefreshInFlight = useRef(false);
   const healthRefreshInFlight = useRef(false);
 
-  const baseItems = useMemo(() => (mode === "all" ? (inbox?.items ?? []) : (inbox?.pending ?? [])), [inbox, mode]);
+  const baseItems = useMemo(() => inboxItemsForView(inbox, view), [inbox, view]);
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return baseItems.filter((item) => {
@@ -258,7 +266,8 @@ export function PlanApprovalPanel(
   };
 
   const initialLoading = !hasLoadedInbox && !inbox;
-  const pendingCount = inbox?.pending.length ?? 0;
+  const pendingCount = inbox?.summary.action_required_pending ?? inbox?.pending.filter((item) => item.actionability === "human_required").length ?? 0;
+  const diagnosticCount = inbox?.summary.noise_pending ?? inbox?.pending.filter((item) => item.actionability !== "human_required").length ?? 0;
   const totalCount = inbox?.items.length ?? 0;
 
   return (
@@ -272,8 +281,9 @@ export function PlanApprovalPanel(
         <div>
           <h3>Inbox</h3>
           <span className="muted">
-            {initialLoading ? "loading" : pendingCount ? `${pendingCount} pending` : "clear"}
-            {mode === "all" && totalCount ? ` / ${totalCount} total` : ""}
+            {initialLoading ? "loading" : pendingCount ? `${pendingCount} action required` : "clear"}
+            {diagnosticCount ? ` / ${diagnosticCount} diagnostics` : ""}
+            {view === "all" && totalCount ? ` / ${totalCount} total` : ""}
           </span>
         </div>
         <div className="operator-inbox-tools">
@@ -298,21 +308,17 @@ export function PlanApprovalPanel(
               ))}
             </select>
           </label>
-          <div className="operator-inbox-mode" aria-label="Inbox display mode">
-            <button
-              type="button"
-              className={mode === "pending" ? "active" : ""}
-              onClick={() => setMode("pending")}
-            >
-              Pending
-            </button>
-            <button
-              type="button"
-              className={mode === "all" ? "active" : ""}
-              onClick={() => setMode("all")}
-            >
-              All
-            </button>
+          <div className="operator-inbox-mode" aria-label="Inbox display view">
+            {VIEW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={view === option.value ? "active" : ""}
+                onClick={() => setView(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
           <button
             type="button"
@@ -334,34 +340,98 @@ export function PlanApprovalPanel(
         <p className="muted plan-approval-empty operator-inbox-empty">Loading inbox...</p>
       ) : loadError && !inbox ? null : filteredItems.length === 0 ? (
         <p className="muted plan-approval-empty operator-inbox-empty">
-          {query || kindFilter !== "all" ? "No matching inbox items." : "No pending inbox items."}
+          {query || kindFilter !== "all" ? "No matching inbox items." : "No inbox items in this view."}
         </p>
       ) : (
         <div className="operator-inbox-list" role="list" aria-label="Operator inbox items">
-          {filteredItems.map((item) => (
-            <InboxRow
-              key={item.id}
-              item={item}
-              selected={item.id === selectedItem?.id}
-              busy={busy}
-              rejectReason={rejectReason[inboxItemReasonKey(item)] || ""}
-              onRejectReason={(value) => {
-                const reasonKey = inboxItemReasonKey(item);
-                setRejectReason((current) => ({ ...current, [reasonKey]: value }));
-              }}
-              onSelect={() => setSelectedId(item.id)}
-              onPreview={() => item.plan_id && void openPreview(String(item.plan_id))}
-              onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
-              onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
-              onRepair={() => void repairChat(item)}
-              onAction={(action) => void actOnItem(item, action)}
-            />
-          ))}
+          {(() => {
+            const renderRow = (item: OperatorInboxItem) => (
+              <InboxRow
+                key={item.id}
+                item={item}
+                selected={item.id === selectedItem?.id}
+                busy={busy}
+                rejectReason={rejectReason[inboxItemReasonKey(item)] || ""}
+                onRejectReason={(value) => {
+                  const reasonKey = inboxItemReasonKey(item);
+                  setRejectReason((current) => ({ ...current, [reasonKey]: value }));
+                }}
+                onSelect={() => setSelectedId(item.id)}
+                onPreview={() => item.plan_id && void openPreview(String(item.plan_id))}
+                onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
+                onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
+                onRepair={() => void repairChat(item)}
+                onAction={(action) => void actOnItem(item, action)}
+              />
+            );
+            // Human decisions stay individual and pinned first; the rest
+            // groups by (kind, title) — 210 identical attention rows buried
+            // the 15 real decisions on the r2 walk.
+            const isDecision = (item: OperatorInboxItem) =>
+              item.kind === "plan_approval" || item.kind === "human_decision";
+            const decisions = filteredItems.filter(isDecision);
+            const rest = filteredItems.filter((item) => !isDecision(item));
+            const groups = new Map<string, OperatorInboxItem[]>();
+            for (const item of rest) {
+              const key = `${item.kind}::${item.title || item.summary || item.id}`;
+              const bucket = groups.get(key);
+              if (bucket) bucket.push(item);
+              else groups.set(key, [item]);
+            }
+            const ackAll = (items: OperatorInboxItem[]) => {
+              for (const entry of items) {
+                const action = (entry.actions ?? []).find((candidate) =>
+                  String(candidate.action || "").includes("ack"));
+                if (action?.action) void actOnItem(entry, String(action.action));
+              }
+            };
+            return (
+              <>
+                {decisions.length > 1 ? (
+                  <div className="operator-inbox-inline-actions">
+                    <span className="muted">{decisions.length} pending decisions</span>
+                    <button
+                      type="button"
+                      className="delivery-action-button"
+                      disabled={Boolean(busy)}
+                      onClick={() => { for (const entry of decisions) void actOnItem(entry, "human-decision-dismiss"); }}
+                    >
+                      Dismiss all
+                    </button>
+                  </div>
+                ) : null}
+                {decisions.map(renderRow)}
+                {[...groups.entries()].map(([key, items]) => (
+                  items.length === 1 ? renderRow(items[0]) : (
+                    <details className="operator-inbox-group" key={key}>
+                      <summary>
+                        <span className="operator-inbox-group-title">{items[0].title || items[0].summary || items[0].kind}</span>
+                        <span className="muted"> ×{items.length} · {items[0].kind}</span>
+                        {(items[0].actions ?? []).some((candidate) => String(candidate.action || "").includes("ack")) ? (
+                          <button
+                            type="button"
+                            className="delivery-action-button"
+                            disabled={Boolean(busy)}
+                            onClick={(event) => { event.preventDefault(); event.stopPropagation(); ackAll(items); }}
+                          >
+                            Ack all
+                          </button>
+                        ) : null}
+                      </summary>
+                      {items.map(renderRow)}
+                    </details>
+                  )
+                ))}
+              </>
+            );
+          })()}
         </div>
       )}
 
-      {health ? (
-        <details className="plan-contract-health operator-inbox-health">
+      {/* Zero flagged contracts is silence, not information — render only
+          when something needs an operator (flagged / awaiting approval). */}
+      {health && (health.summary.flagged > 0 || (health.summary.awaiting_approval ?? 0) > 0) ? (
+        <details className="plan-contract-health operator-inbox-health" open>
           <summary>
             Contract health: {health.summary.flagged}/{health.summary.total}
             {health.summary.awaiting_approval ? `, ${health.summary.awaiting_approval} awaiting` : ""}
@@ -464,6 +534,9 @@ function InboxRow({
             {typeof item.task_count === "number" ? <span>{item.task_count} tasks</span> : null}
             {item.trace_id ? <span>trace {item.trace_id}</span> : null}
             {item.checkpoint_id ? <span>checkpoint {item.checkpoint_id}</span> : null}
+            {item.category ? <span>{categoryLabel(item.category)}</span> : null}
+            {item.source_role ? <span>{sourceLabel(item.source_role)}</span> : null}
+            {Number(item.dedupe_count || 0) > 1 ? <span>{item.dedupe_count} grouped</span> : null}
           </div>
         </div>
       </div>
@@ -628,6 +701,11 @@ function itemSearchText(item: OperatorInboxItem): string {
   return [
     item.id,
     item.kind,
+    item.category,
+    item.actionability,
+    item.source_role,
+    item.owner_route,
+    item.group_key,
     item.status,
     item.title,
     item.summary,
@@ -655,6 +733,19 @@ function inboxItemPrimaryRef(item: OperatorInboxItem): string {
   return String(item.plan_id || item.decision_token || item.attention_id || item.approval_ref || item.id || "");
 }
 
+function inboxItemsForView(inbox: OperatorInboxProjection | null, view: InboxView): OperatorInboxItem[] {
+  const items = inbox?.items ?? [];
+  if (view === "all") return items;
+  if (view === "resolved") return items.filter((item) => item.status !== "pending" || item.category === "resolved");
+  if (view === "action_required") {
+    return items.filter((item) => item.status === "pending" && item.actionability === "human_required");
+  }
+  if (view === "runtime_attention") {
+    return items.filter((item) => item.status === "pending" && item.category === "runtime_attention");
+  }
+  return items.filter((item) => item.status === "pending" && item.category === "automation_diagnostic");
+}
+
 function inboxActionPayload(item: OperatorInboxItem): Record<string, unknown> {
   return {
     source: "operator-inbox",
@@ -674,6 +765,24 @@ function kindLabel(kind: string): string {
   if (kind === "runtime_attention") return "Runtime Attention";
   if (kind === "approval") return "Approval";
   return kind.replace(/_/g, " ");
+}
+
+function categoryLabel(category: string): string {
+  if (category === "action_required") return "Action required";
+  if (category === "automation_diagnostic") return "Automation";
+  if (category === "runtime_attention") return "Runtime";
+  if (category === "notification") return "Notification";
+  if (category === "resolved") return "Resolved";
+  return category.replace(/_/g, " ");
+}
+
+function sourceLabel(source: string): string {
+  if (source === "run_manager") return "Run Manager";
+  if (source === "autoresearch") return "Autoresearch";
+  if (source === "supervisor") return "Supervisor";
+  if (source === "orchestrator") return "Orchestrator";
+  if (source === "worker") return "Worker";
+  return source.replace(/_/g, " ");
 }
 
 function kindIcon(kind: string): LucideIcon {

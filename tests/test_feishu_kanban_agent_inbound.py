@@ -12,6 +12,7 @@ from zf.core.config.project_context import resolve_project_context
 from zf.core.events.log import EventLog
 from zf.integrations.feishu.transport import MockFeishuTransport
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_sidecar import hydrate_channel_message_text
 
 
 def _project(tmp_path: Path):
@@ -78,3 +79,28 @@ def test_dedup_kanban_inbound(tmp_path, monkeypatch):
         and event.payload.get("role") == "user"
     ]
     assert len(messages) == 1
+
+
+def test_kanban_inbound_message_body_is_sidecar_backed(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    ctx = _project(tmp_path)
+    long_text = "请分析当前项目状态。" + ("补充上下文 " * 500)
+
+    r = bridge_inbound_message(_event(long_text, "m-long"), context=ctx)
+
+    assert r["status"] == "replied"
+    messages = [
+        event for event in EventLog(ctx.state_dir / "events.jsonl").read_all()
+        if event.type == "channel.message.posted"
+        and event.payload.get("message_id") == "m-long"
+        and event.payload.get("role") == "user"
+    ]
+    assert len(messages) == 1
+    payload = messages[0].payload
+    assert payload["body_ref"]
+    assert payload["body_byte_count"] > len(payload["text"])
+    assert long_text not in payload["text"]
+    assert hydrate_channel_message_text(ctx.state_dir, payload) == long_text

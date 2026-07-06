@@ -20,6 +20,28 @@ from zf.runtime.tmux import TmuxSession
 PANE_PROBE_SCHEMA_VERSION = "runtime.pane_probe.v0"
 Runner = Callable[..., subprocess.CompletedProcess[str]]
 
+# 交互确认假死态标记(avbs-r5 实证:9/15 codex pane 停在撞限确认提示,
+# pane 活/进程活/事件静默,heartbeat/stuck/respawn/drift 全部失明)。
+# 这是一个类别——任何 TUI 等键盘输入的场景都构成假死;标记只匹配 pane
+# 尾部 excerpt(等待提示必然停在底部),避免误伤滚屏历史。
+_INTERACTIVE_PROMPT_MARKERS: tuple[tuple[str, str], ...] = (
+    ("usage_limit_reset_confirm", "usage limit resets available"),
+    ("usage_limit_reached", "hit your usage limit"),
+    ("login_required", "please sign in"),
+    ("login_required", "session expired"),
+    ("login_required", "please log in"),
+    ("trust_prompt", "do you trust the files"),
+)
+_FLEET_CORRELATED_MIN = 3
+
+
+def _interactive_prompt_marker(excerpt: str) -> str:
+    text = (excerpt or "").lower()
+    for key, needle in _INTERACTIVE_PROMPT_MARKERS:
+        if needle in text:
+            return key
+    return ""
+
 
 def build_runtime_pane_probe(
     state_dir: Path,
@@ -64,6 +86,15 @@ def build_runtime_pane_probe(
             capture_lines=max(10, min(capture_lines, 300)),
         ))
     status_counts = Counter(str(item.get("activity_status") or "unknown") for item in panes)
+    marker_counts = Counter(
+        str(item.get("interactive_prompt_marker") or "")
+        for item in panes
+        if item.get("interactive_prompt_marker")
+    )
+    correlated = {
+        marker: count for marker, count in marker_counts.items()
+        if count >= _FLEET_CORRELATED_MIN
+    }
     return redact_obj({
         "schema_version": PANE_PROBE_SCHEMA_VERSION,
         "is_derived_projection": True,
@@ -78,6 +109,8 @@ def build_runtime_pane_probe(
             "observed": sum(1 for item in panes if item.get("alive")),
             "mismatch": status_counts.get("activity_mismatch", 0),
             "missing": status_counts.get("pane_missing", 0) + status_counts.get("missing_binding", 0),
+            "interactive_prompt": status_counts.get("interactive_prompt", 0),
+            "correlated_interactive_prompts": correlated,
             "by_status": dict(sorted(status_counts.items())),
         },
         "panes": panes,
@@ -90,10 +123,73 @@ def pane_probe_attention_items(probe: dict[str, Any]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     if not probe.get("enabled"):
         return items
+    correlated = (
+        (probe.get("summary") or {}).get("correlated_interactive_prompts") or {}
+    )
+    for marker, count in sorted(correlated.items()):
+        # 舰队级相关性失效(共享账号配额 → 多 worker 同时死):比单
+        # pane 更高一级,critical + 人类必需。
+        fingerprint = f"pane_probe_fleet:{marker}"
+        items.append(redact_obj({
+            "schema_version": "attention-item.v0",
+            "attention_id": "attn-" + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12],
+            "source": "pane_probe",
+            "fingerprint": fingerprint,
+            "severity": "critical",
+            "status": "open",
+            "human_action_required": True,
+            "title": f"{count} workers stalled at the same interactive prompt ({marker})",
+            "summary": (
+                "Multiple worker panes are waiting at the same interactive "
+                "confirmation prompt (shared quota/login). No event-based "
+                "detector can see this; a human keystroke or quota action is "
+                "required to resume the fleet."
+            ),
+            "task_id": "",
+            "source_event_ids": [],
+            "source_ref": "",
+            "suggested_route": "owner_notify",
+            "suggested_action": {
+                "kind": "confirm_interactive_prompt_fleet",
+                "marker": marker,
+                "count": count,
+            },
+        }))
     for pane in probe.get("panes") or []:
         if not isinstance(pane, dict):
             continue
         status = str(pane.get("activity_status") or "")
+        if status == "interactive_prompt":
+            instance_id = str(pane.get("instance_id") or "")
+            marker = str(pane.get("interactive_prompt_marker") or "")
+            fingerprint = f"pane_probe_interactive:{instance_id}:{marker}"
+            items.append(redact_obj({
+                "schema_version": "attention-item.v0",
+                "attention_id": "attn-" + hashlib.sha1(fingerprint.encode("utf-8")).hexdigest()[:12],
+                "source": "pane_probe",
+                "fingerprint": fingerprint,
+                "severity": "high",
+                "status": "open",
+                "human_action_required": True,
+                "title": f"{instance_id} waiting at interactive prompt ({marker})",
+                "summary": (
+                    "Worker pane is alive but parked at an interactive "
+                    "confirmation prompt (usage limit / login / trust). It "
+                    "will not recover on its own and emits no events; a "
+                    "human keystroke is required."
+                ),
+                "task_id": str(pane.get("current_task_id") or ""),
+                "source_event_ids": [],
+                "source_ref": str(pane.get("target") or ""),
+                "suggested_route": "owner_notify",
+                "suggested_action": {
+                    "kind": "confirm_interactive_prompt",
+                    "instance_id": instance_id,
+                    "marker": marker,
+                    "pane": str(pane.get("pane") or ""),
+                },
+            }))
+            continue
         if status != "activity_mismatch":
             continue
         instance_id = str(pane.get("instance_id") or "")
@@ -290,6 +386,7 @@ def _probe_role(
         excerpt = _excerpt(text)
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else ""
     alive = pane_dead != "1"
+    prompt_marker = _interactive_prompt_marker(excerpt) if alive else ""
     status = _activity_status(
         alive=alive,
         capture_ok=capture.returncode == 0,
@@ -298,9 +395,14 @@ def _probe_role(
         threshold=role_threshold,
         heartbeat_state=str(base["heartbeat_state"]),
     )
+    if prompt_marker:
+        # 交互确认假死优先于其它判定:pane 停在等键盘输入的提示上,
+        # 事件沉默与否都不会自行恢复。
+        status = "interactive_prompt"
     return redact_obj({
         **base,
         "alive": alive,
+        "interactive_prompt_marker": prompt_marker,
         "activity_status": status,
         "capture_ok": capture.returncode == 0,
         "pane": pane_id or str(base["pane"]),

@@ -123,6 +123,73 @@ class TestHermesSampleCompiles:
         assert review["next_stage"] == "verify"
 
 
+class TestStageTransitionBarriers:
+    def test_default_stage_barrier_contract_preserves_existing_shape(self):
+        spec = parse_lane_pipeline(_hermes_raw())
+        contract, diags = compile_lane_pipeline(spec, _hermes_roles())
+        assert [d for d in diags if d["severity"] == "STOP"] == []
+        assert spec.stage_transition == "stage_barrier"
+        assert spec.final_barrier == ""
+        assert contract["stage_transition"] == "stage_barrier"
+        assert contract["handoff_contract"] == {
+            "mode": "stage_barrier",
+            "emitter": "stage_aggregate",
+        }
+        impl = next(s for s in contract["stages"] if s["stage_id"] == "impl")
+        assert impl["transition_scope"] == "stage_barrier"
+        assert "handoff_success_event" not in impl
+
+    def test_per_lane_contract_declares_kernel_handoff_events(self):
+        spec = parse_lane_pipeline(_hermes_raw(
+            barriers={
+                "stage_transition": "per_lane",
+                "final": "all_lanes_verified",
+            },
+        ))
+        contract, diags = compile_lane_pipeline(spec, _hermes_roles())
+        assert [d for d in diags if d["severity"] == "STOP"] == []
+        assert spec.stage_transition == "per_lane"
+        assert spec.final_barrier == "all_lanes_verified"
+        assert contract["stage_transition"] == "per_lane"
+        assert contract["final_gate"]["barrier"] == "all_lanes_verified"
+        handoff = contract["handoff_contract"]
+        assert handoff["mode"] == "per_lane"
+        assert handoff["emitter"] == "kernel"
+        assert handoff["events"] == {
+            "success": "lane.stage.completed",
+            "failure": "lane.stage.failed",
+        }
+        assert handoff["identity_fields"] == [
+            "pipeline_id", "task_id", "attempt_id", "stage_slot", "lane_id",
+        ]
+        assert handoff["dispatch"]["scope"] == "same_lane"
+        assert handoff["currentness_gate"]["requires_handoff_ref"] is True
+        impl = next(s for s in contract["stages"] if s["stage_id"] == "impl")
+        assert impl["transition_scope"] == "per_lane"
+        assert impl["handoff_success_event"] == "lane.stage.completed"
+
+    def test_per_lane_defaults_final_barrier(self):
+        spec = parse_lane_pipeline(_hermes_raw(
+            barriers={"stage_transition": "per_lane"},
+        ))
+        assert spec.final_barrier == "all_lanes_verified"
+
+    def test_unknown_barrier_key_fails_at_parse(self):
+        with pytest.raises(LanePipelineSpecError, match="unknown key"):
+            parse_lane_pipeline(_hermes_raw(
+                barriers={"stage_transiton": "per_lane"},
+            ))
+
+    def test_invalid_stage_transition_fails_closed_at_compile(self):
+        spec = parse_lane_pipeline(_hermes_raw(
+            barriers={"stage_transition": "stream_everything"},
+        ))
+        _, diags = compile_lane_pipeline(spec, _hermes_roles())
+        assert "lane_pipeline_invalid_stage_transition" in {
+            d["kind"] for d in diags if d["severity"] == "STOP"
+        }
+
+
 class TestFailClosedStops:
     def _stops(self, raw, roles=None):
         spec = parse_lane_pipeline(raw)
@@ -252,6 +319,9 @@ class TestInspectOnlyBoundary:
         allowed = {
             "writer_fanout_admission.py", "orchestrator.py",
             "writer_fanout_data.py", "orchestrator_fanout.py",
+            # Read-only event diagnostics may name lane_pipeline producers or
+            # sources; they do not import the materializer or mutate workflow.
+            "event_contracts.py", "event_problem_registry.py",
         }
         offenders = []
         for path in (_REPO / "src/zf/runtime").glob("*.py"):
@@ -434,6 +504,20 @@ class TestSchemaProfile:
         assert "fanout_id" in schemas["judge.passed"]["required"]
         assert len(schemas) == 22
         assert cfg.workflow.pipelines_schema_sources["judge.passed"] == "profile"
+
+    def test_v2_profile_adds_lane_stage_handoff_events(self, tmp_path):
+        from zf.core.config.loader import load_config
+        cfg = load_config(self._yaml(tmp_path, profile="refactor-flow/v2"))
+        schemas = cfg.workflow.dag.event_schemas
+        assert len(schemas) == 24
+        assert "lane.stage.completed" in schemas
+        assert "lane.stage.failed" in schemas
+        assert "handoff_ref" in schemas["lane.stage.completed"]["required"]
+        assert "failure_target" in schemas["lane.stage.failed"]["required"]
+        assert (
+            cfg.workflow.pipelines_schema_sources["lane.stage.completed"]
+            == "profile"
+        )
 
     def test_unknown_profile_fails_closed(self, tmp_path):
         from zf.core.config.loader import ConfigError, load_config
@@ -646,6 +730,26 @@ class TestAssemblyOwnerGate:
             spec, self._items(with_root=False),
         )
         assert any("workspace-root" in p for p in problems)
+
+    def test_admission_allows_single_assembly_slice_without_root_owner(self):
+        from zf.core.workflow.lane_pipeline import (
+            validate_lane_pipeline_admission,
+        )
+        spec = parse_lane_pipeline(_hermes_raw(
+            lane_count=1,
+            assembly={"task": "TINYCALC-ASM-001"},
+        ))
+        items = [{
+            "task_id": "TINYCALC-ASM-001",
+            "root_owner_class": "assembly",
+            "allowed_paths": [
+                "src/tinycalc/calculator.py",
+                "src/tinycalc/__init__.py",
+                "tests/test_calculator.py",
+            ],
+        }]
+
+        assert validate_lane_pipeline_admission(spec, items) == []
 
     def test_admission_none_skips_assembly_but_checks_root(self):
         from zf.core.workflow.lane_pipeline import (

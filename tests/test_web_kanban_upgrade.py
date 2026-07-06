@@ -561,6 +561,97 @@ def test_snapshot_ignores_superseded_plan_blocked_after_replan(
     assert "verify failed" not in task["kanban_column_badges"]
 
 
+def test_snapshot_ignores_superseded_verify_failed_after_rework_progress(
+    state_dir: Path,
+) -> None:
+    store = TaskStore(state_dir / "kanban.json")
+    task_map_ref = str(state_dir / "artifacts" / "fanout-r5" / "task_map.json")
+    store.add(Task(
+        id="TASK-VERIFY-REWORK",
+        title="verify rework task",
+        status="in_progress",
+        assigned_to="dev-lane-0",
+        contract=TaskContract(
+            feature_id="CANGJIE-R5",
+            evidence_contract={"source_refs": {"task_map": task_map_ref}},
+        ),
+    ))
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="verify.failed",
+        actor="zf-cli",
+        payload={
+            "pdd_id": "CANGJIE-R5",
+            "task_map_ref": task_map_ref,
+            "failed_task_ids": ["TASK-VERIFY-REWORK"],
+            "reason": "missing webchat parity",
+        },
+    ))
+    log.append(ZfEvent(
+        type="task_map.ready",
+        actor="zf-cli",
+        payload={
+            "pdd_id": "CANGJIE-R5",
+            "task_map_ref": task_map_ref,
+            "task_ids": ["TASK-VERIFY-REWORK"],
+            "rework_source": "verify.failed",
+        },
+    ))
+    log.append(ZfEvent(
+        type="fanout.started",
+        actor="zf-cli",
+        payload={
+            "pdd_id": "CANGJIE-R5",
+            "fanout_id": "fanout-rework",
+            "stage_id": "cangjie-slice-implementation",
+            "task_map_ref": task_map_ref,
+        },
+    ))
+    client = TestClient(create_app(state_dir, project_root=state_dir.parent))
+
+    snapshot = client.get("/api/snapshot").json()
+    task = next(item for item in snapshot["tasks"] if item["id"] == "TASK-VERIFY-REWORK")
+
+    assert task["status"] == "in_progress"
+    assert task["kanban_column"] == "in_progress"
+    assert task["kanban_column_reason"] != "workflow_failure:missing webchat parity"
+    assert "verify failed" not in task["kanban_column_badges"]
+
+
+def test_snapshot_keeps_current_verify_failed_blocked_without_rework_progress(
+    state_dir: Path,
+) -> None:
+    store = TaskStore(state_dir / "kanban.json")
+    task_map_ref = str(state_dir / "artifacts" / "fanout-r5" / "task_map.json")
+    store.add(Task(
+        id="TASK-VERIFY-BLOCKED",
+        title="verify blocked task",
+        status="in_progress",
+        assigned_to="dev-lane-0",
+        contract=TaskContract(
+            feature_id="CANGJIE-R5",
+            evidence_contract={"source_refs": {"task_map": task_map_ref}},
+        ),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="verify.failed",
+        actor="zf-cli",
+        payload={
+            "pdd_id": "CANGJIE-R5",
+            "task_map_ref": task_map_ref,
+            "failed_task_ids": ["TASK-VERIFY-BLOCKED"],
+            "reason": "missing real llm test",
+        },
+    ))
+    client = TestClient(create_app(state_dir, project_root=state_dir.parent))
+
+    snapshot = client.get("/api/snapshot").json()
+    task = next(item for item in snapshot["tasks"] if item["id"] == "TASK-VERIFY-BLOCKED")
+
+    assert task["kanban_column"] == "blocked"
+    assert task["kanban_column_reason"] == "workflow_failure:missing real llm test"
+
+
 def test_snapshot_projects_simplified_kanban_keeps_old_statuses_visible(state_dir: Path):
     store = TaskStore(state_dir / "kanban.json")
     store.add(Task(id="TASK-BACKLOG", title="backlog", status="backlog"))

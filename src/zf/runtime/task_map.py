@@ -96,6 +96,29 @@ def validate_task_map_payload(
     waves: dict[str, int] = {}
     task_count_by_wave: dict[str, int] = {}
     missing_allowed_path_reason: list[str] = []
+    assembly_owner_roles: dict[str, str] = {}
+    bundle_owner_roles: dict[str, str] = {}
+    quality_contract = (
+        payload.get("quality_contract")
+        if isinstance(payload.get("quality_contract"), dict)
+        else {}
+    )
+    require_inventory_binding = _truthy(
+        payload.get("require_inventory_binding")
+        or quality_contract.get("require_inventory_binding")
+    )
+    require_non_smoke = _truthy(
+        quality_contract.get("require_non_smoke_for_blocking_inventory"),
+        default=True,
+    )
+    blocking_priorities = {
+        item.strip().upper()
+        for item in (
+            _string_list(quality_contract.get("blocking_priorities"))
+            or ["P0", "P1"]
+        )
+        if item.strip()
+    }
     # A task's verification COMMAND runs tests (read-only) and may legitimately
     # reference files owned by sibling tasks in the same plan — e.g. the refactor
     # flow's characterization-test pattern, where the refactor task verifies
@@ -121,6 +144,12 @@ def validate_task_map_payload(
         wave = _int_value(raw.get("wave"))
         waves[task_id] = wave
         task_count_by_wave[str(wave)] = task_count_by_wave.get(str(wave), 0) + 1
+        owner_role = str(raw.get("owner_role") or "").strip()
+        if str(raw.get("root_owner_class") or "").strip().lower() == "assembly":
+            if owner_role:
+                assembly_owner_roles[task_id] = owner_role
+        elif owner_role:
+            bundle_owner_roles[task_id] = owner_role
         if (
             require_task_verification
             and not normalize_verification_command(raw.get("verification"))
@@ -137,6 +166,14 @@ def validate_task_map_payload(
             raw.get("allowed_paths_reason") or raw.get("scope_reason") or ""
         ).strip():
             missing_allowed_path_reason.append(task_id)
+        if require_inventory_binding:
+            errors.extend(
+                _inventory_binding_errors(
+                    raw,
+                    blocking_priorities=blocking_priorities,
+                    require_non_smoke=require_non_smoke,
+                )
+            )
         for path in _string_list(raw.get("exclusive_files")):
             owner = exclusive_claims.get(path)
             if owner and owner != task_id:
@@ -159,14 +196,86 @@ def validate_task_map_payload(
     if source_refs is not None and not isinstance(source_refs, dict):
         errors.append("source_refs must be an object when present")
 
+    errors.extend(_assembly_ownership_errors(
+        assembly_owner_roles=assembly_owner_roles,
+        bundle_owner_roles=bundle_owner_roles,
+    ))
+
     summary = {
         "task_count": len(ids),
         "wave_count": len(task_count_by_wave),
         "tasks_by_wave": task_count_by_wave,
         "exclusive_file_count": len(exclusive_claims),
         "tasks_missing_allowed_paths_reason": missing_allowed_path_reason,
+        "bundle_owner_count": len(set(bundle_owner_roles.values())),
+        "assembly_task_count": len(assembly_owner_roles),
     }
     return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
+
+
+def _assembly_ownership_errors(
+    *,
+    assembly_owner_roles: dict[str, str],
+    bundle_owner_roles: dict[str, str],
+) -> list[str]:
+    """Fail closed on the avbs-r1 self-deadlock class: a parallel plan (>1
+    distinct bundle owner_role) with no independent assembly task, or an
+    assembly task whose owner_role collides with a bundle it depends on
+    (the assembly writer ends up waiting on its own unstarted work)."""
+    bundle_owners = set(bundle_owner_roles.values())
+    if len(bundle_owners) <= 1:
+        return []
+    if not assembly_owner_roles:
+        return ["缺 assembly 任务: 多个并行 bundle 需要一个独立 root_owner_class=assembly 任务"]
+    errors: list[str] = []
+    for task_id, owner_role in assembly_owner_roles.items():
+        if owner_role in bundle_owners:
+            errors.append(
+                f"{task_id}.owner_role {owner_role!r} 与并行 bundle owner 冲突: "
+                "assembly 任务不能和它依赖的 bundle 共用同一 owner_role(自锁)"
+            )
+    return errors
+
+
+def _inventory_binding_errors(
+    raw: dict[str, Any],
+    *,
+    blocking_priorities: set[str],
+    require_non_smoke: bool,
+) -> list[str]:
+    task_id = _task_id(raw) or "<unknown>"
+    priority = str(raw.get("priority") or "P0").strip().upper()
+    if blocking_priorities and priority not in blocking_priorities:
+        return []
+    errors: list[str] = []
+    root_owner_class = str(raw.get("root_owner_class") or "").strip().lower()
+    is_assembly = root_owner_class == "assembly"
+    inventory_ids = _string_list(raw.get("inventory_ids")) or _string_list(
+        raw.get("source_inventory_ids")
+    ) or _string_list(raw.get("inventory_refs"))
+    if not inventory_ids and not is_assembly:
+        errors.append(
+            f"{task_id}.inventory_ids or source_inventory_ids is required by quality_contract"
+        )
+    source_refs = (
+        _string_list(raw.get("source_refs"))
+        or _string_list(raw.get("source_ref"))
+        or _string_list(raw.get("source_keys"))
+        or _string_list(raw.get("source_key"))
+    )
+    if not source_refs:
+        errors.append(f"{task_id}.source_refs is required by quality_contract")
+    verification = (
+        normalize_verification_command(raw.get("verification"))
+        or normalize_verification_command(raw.get("verify_commands"))
+        or normalize_verification_command(raw.get("verification_commands"))
+        or _validation_command(raw)
+    )
+    if not verification:
+        errors.append(f"{task_id}.verification or verify_commands is required by quality_contract")
+    if require_non_smoke and not is_assembly and not _truthy(raw.get("non_smoke_test_required")):
+        errors.append(f"{task_id}.non_smoke_test_required=true is required by quality_contract")
+    return errors
 
 
 def validate_source_index_payload(
@@ -574,12 +683,12 @@ def _command_path_refs(command: str) -> list[str]:
         return []
     refs: list[str] = []
     for token in tokens:
-        cleaned = token.strip().strip(",")
+        cleaned = _clean_path_ref_token(token)
         if not cleaned or cleaned.startswith("-") or "://" in cleaned:
             continue
         if "=" in cleaned and not cleaned.startswith(("./", "../", "/")):
             cleaned = cleaned.rsplit("=", 1)[-1]
-        cleaned = cleaned.strip("'\"")
+        cleaned = _clean_path_ref_token(cleaned)
         # A pytest node-id (path::test_name, optionally path::Class::test) is a
         # test target, not a separate file. Validate only the file part so an
         # in-scope test file is not rejected for naming a specific node — e.g.
@@ -591,6 +700,15 @@ def _command_path_refs(command: str) -> list[str]:
             continue
         refs.append(cleaned)
     return list(dict.fromkeys(refs))
+
+
+def _clean_path_ref_token(token: str) -> str:
+    cleaned = str(token or "").strip().strip("'\"")
+    # Path refs often appear in generated acceptance/prose as
+    # ``tests/foo.py.`` or ``src/app.ts)``. Treat sentence punctuation as
+    # prose, not as part of the path, while leaving real internal path
+    # characters untouched.
+    return cleaned.rstrip(".,;:)]}，。；：、）】》")
 
 
 def _looks_like_path_ref(token: str) -> bool:
@@ -658,6 +776,14 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
+
+
+def _truthy(value: Any, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _int_value(value: Any) -> int:

@@ -133,6 +133,19 @@ list dispatch-safe paths, and include verification evidence. If a task touches
 workspace scaffolding such as `package.json`, `tsconfig.json`, lockfiles, or
 root build config, it must own those paths explicitly.
 
+**Verification timing rule (avbs-r4 lesson)**: a bundle task's `verification`
+may only contain commands that can pass with THIS task's own outputs plus the
+pre-existing scaffold — unit tests scoped to the task's test dirs plus the
+build. Do NOT put end-to-end (Playwright/browser) execution into parallel
+bundle tasks: app wiring belongs to the assembly task, so per-lane e2e is
+structurally unpassable at impl time and burns rework rounds. E2e execution
+belongs in the assembly task's verification (and the verify stage). Writing
+the e2e SPEC files is still a bundle deliverable; executing them is not.
+Also: `schema_version` must be exactly `task-map.v1`, and verification
+commands must not reference paths outside the task's
+`allowed_paths`/`exclusive_files` (docker-style mounts like `$PWD:/work`
+are rejected by admission).
+
 ## Decomposition Rule: Vertical Slices, Not Horizontal Layers
 
 Decompose by **vertical slice** — a behavior together with the production code
@@ -151,6 +164,18 @@ commits — a bad split dead-ends at `integration.failed`):
   the matching test paths (e.g. `["src/ledger.js", "test/**"]`).
 - Do not create a code-only task plus a test-only task for the same feature.
   Two writers cannot share the same test files without colliding.
+
+## Workflow Assembly Contract
+
+When the briefing contains `refactor_contract`, obey it before applying the
+parallel-bundle heuristic:
+
+- `assembly_policy: "declared_task"` means the task map must include
+  `assembly_task_id` exactly or include one task with
+  `root_owner_class: "assembly"`.
+- `assembly_policy: "none"` means a single serial plan may omit assembly.
+- Do not emit success when a declared workflow assembly task is missing. Emit
+  the configured failure event with the missing id and the proposed fix.
 
 ## Assembly Task: Required When the Plan Has >1 Parallel Bundle
 

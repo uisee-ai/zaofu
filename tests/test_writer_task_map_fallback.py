@@ -107,7 +107,7 @@ def test_state_dir_relative_artifacts_ref_resolves_from_runtime_state(tmp_path):
     assert [t["task_id"] for t in loaded.task_items] == ["ISSUE-CORE-001"]
 
 
-def test_gap_only_resume_validates_lane_pipeline_against_full_task_map(tmp_path):
+def test_gap_only_resume_loads_requested_task_from_full_task_map(tmp_path):
     state_dir = tmp_path / ".zf"
     path = state_dir / "artifacts" / "CANGJIE" / "task_map.json"
     path.parent.mkdir(parents=True)
@@ -160,3 +160,64 @@ def test_gap_only_resume_validates_lane_pipeline_against_full_task_map(tmp_path)
     )
 
     assert [item["task_id"] for item in loaded.task_items] == ["CANGJIE-GAP-001"]
+
+
+def test_gap_only_resume_skips_global_lane_pipeline_root_owner_gate(tmp_path):
+    state_dir = tmp_path / ".zf"
+    path = state_dir / "artifacts" / "PRD" / "task_map.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps({
+            "schema_version": "task-map.v1",
+            "feature_id": "PRD",
+            "tasks": [
+                {
+                    "task_id": "PRD-BASE-001",
+                    "title": "base",
+                    "allowed_paths": ["app/**"],
+                    "allowed_paths_reason": "feature code",
+                    "acceptance": ["base"],
+                    "verify_commands": ["npm test"],
+                },
+                {
+                    "task_id": "PRD-GAP-001",
+                    "title": "Gap",
+                    "affinity_tag": "web",
+                    "allowed_paths": ["app/**"],
+                    "allowed_paths_reason": "gap task",
+                    "acceptance": ["gap"],
+                    "verify_commands": ["npm test"],
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+    pipeline = parse_lane_pipeline({
+        "id": "prd-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "affinity_key": "affinity_tag",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{"id": "impl"}],
+    })
+    event = ZfEvent(
+        type="task_map.ready",
+        payload={
+            "pdd_id": "PRD",
+            "task_map_ref": ".zf/artifacts/PRD/task_map.json",
+            "resume_scope": "gap_tasks_only",
+            "task_ids": ["PRD-GAP-001"],
+        },
+    )
+
+    loaded = load_writer_task_map(
+        stage=SimpleNamespace(task_map="${task_map_ref}"),
+        event=event,
+        pdd_id="PRD",
+        state_dir=state_dir,
+        project_root=tmp_path,
+        pipeline_spec=pipeline,
+    )
+
+    assert [item["task_id"] for item in loaded.task_items] == ["PRD-GAP-001"]

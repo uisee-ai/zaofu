@@ -120,6 +120,20 @@ def run(args: argparse.Namespace) -> int:
         pass
     owner_delivery_warnings = _owner_visible_delivery_warnings(owner_env)
     if owner_delivery_warnings:
+        # P0-7(审计 D5 unattended 硬门):配置已授权自主动作
+        # (autoresearch continuous / source_repair 开启)而 owner 通道
+        # 未配 → escalate 无人可达 = 结构性 dead-end,validate FAIL。
+        # 纯人工值守(未授权自主)维持 WARN。
+        if _unattended_autonomy_enabled(config):
+            print("Unattended autonomy without owner channel:", file=sys.stderr)
+            for warning in owner_delivery_warnings:
+                print(f"  - FAIL: {warning}", file=sys.stderr)
+            print(
+                "  To fix: set ZF_OWNER_VISIBLE_CHAT, or disable "
+                "autoresearch continuous / source_repair.",
+                file=sys.stderr,
+            )
+            return 1
         print("Owner-visible delivery warnings:", file=sys.stderr)
         for warning in owner_delivery_warnings:
             print(f"  - {warning}", file=sys.stderr)
@@ -151,6 +165,24 @@ def run(args: argparse.Namespace) -> int:
     )
     print(f"OK: {path} is valid")
     return 0
+
+
+def _unattended_autonomy_enabled(config) -> bool:
+    """已授权自主动作的判定(P0-7):autoresearch continuous 或
+    run_manager source_repair 开启,即 run 期望在无人值守下自我修复——
+    此时 escalate 的唯一出口是 owner 通道,通道缺配即 dead-end。"""
+    try:
+        trigger = getattr(getattr(config, "autoresearch", None), "trigger_policy", None)
+        if str(getattr(trigger, "mode", "") or "") == "continuous":
+            return True
+        source_repair = getattr(
+            getattr(getattr(config, "runtime", None), "run_manager", None),
+            "source_repair",
+            None,
+        )
+        return bool(getattr(source_repair, "enabled", False))
+    except Exception:
+        return False
 
 
 def _owner_visible_delivery_warnings(env: dict[str, str]) -> list[str]:
@@ -219,6 +251,14 @@ def _run_cold_start(config_path: Path) -> int:
             handoff_fatal.append(f"dead_end_roles={list(topo.dead_end_roles)}")
         if getattr(topo, "unwoken_events", None):
             handoff_fatal.append(f"unwoken_events={list(topo.unwoken_events)}")
+
+    print()
+    event_contract = _print_event_contract_report(config)
+    if strict_profile and not event_contract.get("ok", True):
+        errors = event_contract.get("errors") or []
+        handoff_fatal.append(
+            f"event_contract_errors={len(errors)}"
+        )
 
     # ZF-TR-PROVIDER-CAP-001: backend capability matrix.
     print()
@@ -415,13 +455,69 @@ def _print_topology_report(config) -> None:
     except Exception as exc:
         print(f"  WARNING: workflow graph compile failed: {exc}")
         return report
-    if graph.diagnostics:
+    graph_diagnostics = _filter_expected_graph_diagnostics(config, graph.diagnostics)
+    if graph_diagnostics:
         print("  WARNING: workflow graph diagnostics:")
-        for item in graph.diagnostics:
+        for item in graph_diagnostics:
             stage = item.get("stage_id") or "-"
             event = item.get("event") or "-"
             kind = item.get("kind") or "diagnostic"
             print(f"    - {kind}: stage={stage} event={event}")
+    return report
+
+
+def _filter_expected_graph_diagnostics(config, diagnostics: list[dict]) -> list[dict]:
+    """Hide known runtime bridge sinks from validate's raw graph warning list."""
+
+    try:
+        from zf.core.config.render import _classify_expected_event_sinks
+    except Exception:
+        return list(diagnostics)
+    normalized = []
+    for item in diagnostics:
+        normalized.append({
+            "severity": "WARN",
+            "kind": str(item.get("kind") or ""),
+            "source": "workflow_graph",
+            "stage_id": str(item.get("stage_id") or ""),
+            "event": str(item.get("event") or ""),
+            "field": str(item.get("field") or ""),
+            "message": "",
+            "detail": {},
+        })
+    classified = _classify_expected_event_sinks(config, normalized)
+    keep: list[dict] = []
+    for original, item in zip(diagnostics, classified, strict=False):
+        if str(item.get("kind") or "") == "expected_event_without_consumer":
+            continue
+        keep.append(original)
+    return keep
+
+
+def _print_event_contract_report(config) -> dict:
+    from zf.runtime.event_contracts import build_event_contract_report
+
+    report = build_event_contract_report(config)
+    summary = report.get("summary", {})
+    print("Event Contract:")
+    print(
+        f"  producers={summary.get('producers', 0)} "
+        f"event_types={summary.get('producer_event_types', 0)} "
+        f"errors={summary.get('errors', 0)} "
+        f"warnings={summary.get('warnings', 0)}"
+    )
+    for item in report.get("errors", [])[:10]:
+        print(
+            "  [FAIL] "
+            f"{item.get('kind')}: {item.get('event_type')} — "
+            f"{item.get('message')}"
+        )
+    for item in report.get("warnings", [])[:10]:
+        print(
+            "  [WARN] "
+            f"{item.get('kind')}: {item.get('event_type')} — "
+            f"{item.get('message')}"
+        )
     return report
 
 

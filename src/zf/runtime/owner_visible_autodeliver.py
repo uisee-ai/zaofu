@@ -62,6 +62,8 @@ def deliver_owner_visible_to_feishu(
             state_dir=state_dir,
             config=config,
         )
+    if transport is None and _live_feishu_delivery_blocked(Path(state_dir), src):
+        return None
     try:
         from zf.core.events import EventWriter
         from zf.core.events.factory import event_log_from_project
@@ -93,6 +95,32 @@ def deliver_owner_visible_to_feishu(
                 close()
     except Exception:
         return None
+
+
+def _live_feishu_delivery_blocked(state_dir: Path, src: dict[str, str]) -> bool:
+    """Fail closed for tests / self-repair unless live Feishu is explicit.
+
+    The owner-visible delivery path is allowed to use real Feishu only in a real
+    runtime process. Tests can still verify delivery by injecting a fake
+    transport; this guard only blocks automatic construction of
+    ``FeishuHttpTransport``.
+    """
+
+    allow_live = str(src.get("ZF_ALLOW_LIVE_FEISHU_IN_TESTS") or "").strip().lower()
+    if allow_live in {"1", "true", "yes", "on"}:
+        return False
+    disabled = str(src.get("ZF_DISABLE_LIVE_FEISHU") or "").strip().lower()
+    if disabled in {"1", "true", "yes", "on"}:
+        return True
+    if src.get("PYTEST_CURRENT_TEST"):
+        return True
+    path_text = str(state_dir.resolve())
+    return (
+        "/pytest-" in path_text
+        or "/pytest-of-" in path_text
+        or "/zf-self-repair/" in path_text
+        or path_text.endswith("/zf-self-repair")
+    )
 
 
 def _owner_visible_routing_from_env(src: dict[str, str]) -> Any | None:

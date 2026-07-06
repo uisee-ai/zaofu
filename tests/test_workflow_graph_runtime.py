@@ -1052,5 +1052,12 @@ def test_workflow_graph_web_projection_uses_read_model_cache(
 
     assert first["projection"]["source"] == "read_model.sqlite"
     assert first["projection"]["source_seq"] == 1
-    assert second["projection"]["source_seq"] == 2
-    assert second["counts"]["fanout_events"] == 1
+    # Serve-stale-with-lag (RF-2/RF-5, F0-A fix): a small append is surfaced as
+    # lag on the cached graph instead of an immediate multi-MB recompute per
+    # request. The read model DID advance — projection_lag = current_seq(2) -
+    # cached_seq(1) = 1 — so the graph serves the cached row marked stale and
+    # refreshes in the background. The exact-seq immediacy asserted here before
+    # was precisely the per-append recompute the cache intentionally replaced.
+    assert second["projection"]["source_seq"] == 1
+    assert second["projection"]["projection_lag"] == 1
+    assert second["projection"]["stale"] is True

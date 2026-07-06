@@ -70,6 +70,23 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     ratio.set_defaults(func=_run_decision_ratio)
 
+    # P1-12(审计 SYNTHESIS §6):S1-S5「跑稳」判据机械化
+    stability = sub.add_parser(
+        "stability",
+        help="S1-S5 stability verdict over an events log (audit SYNTHESIS §6)",
+    )
+    stability.add_argument("--state-dir", default=None)
+    stability.add_argument(
+        "--events", default=None,
+        help="Path to an events.jsonl (overrides --state-dir; archives OK)",
+    )
+    stability.add_argument(
+        "--baseline", default=None,
+        help="Baseline events.jsonl for S1 new-failure-class diff",
+    )
+    stability.add_argument("--format", choices=["json", "md"], default="md")
+    stability.set_defaults(func=_run_stability)
+
     parser.set_defaults(func=lambda a: _show_help(parser))
 
 
@@ -325,3 +342,43 @@ def _print_diff(baseline: dict, snap: MetricsSnapshot) -> None:
         delta = c - b
         sign = "+" if delta >= 0 else ""
         print(f"{label:28s}  {b:10.3f}  {c:10.3f}  {sign}{delta:9.3f}")
+
+
+def _run_stability(args: argparse.Namespace) -> int:
+    import json as _json
+    from pathlib import Path as _Path
+
+    from zf.core.events.log import EventLog
+    from zf.runtime.stability_metrics import evaluate_stability
+
+    def _load(path_str: str | None, state_dir: str | None) -> list:
+        if path_str:
+            return EventLog(_Path(path_str)).read_all()
+        from zf.core.config.loader import load_config
+
+        config = load_config(_Path("zf.yaml"))
+        sd = _Path(state_dir) if state_dir else _Path(config.project.state_dir)
+        return EventLog(sd / "events.jsonl").read_all()
+
+    events = _load(getattr(args, "events", None), getattr(args, "state_dir", None))
+    baseline = None
+    if getattr(args, "baseline", None):
+        baseline = EventLog(_Path(args.baseline)).read_all()
+    report = evaluate_stability(events, baseline_events=baseline)
+    data = report.to_dict()
+    if args.format == "json":
+        print(_json.dumps(data, ensure_ascii=False, indent=1))
+    else:
+        verdict = "STABLE" if data["stable"] else "NOT STABLE"
+        print(f"stability: {verdict}")
+        print(f"  S1 new failure classes: {data['s1']['new_failure_classes'] or '-'}"
+              f" (pass={data['s1']['pass']})")
+        print(f"  S2 interventions: {data['s2']['interventions']} in "
+              f"{data['s2']['window_hours']}h (pass={data['s2']['pass']})")
+        print(f"  S3 unacked escalates: {data['s3']['unacked']}/{data['s3']['total']}"
+              f" (pass={data['s3']['pass']})")
+        print(f"  S4 stall recovery p95: {data['s4']['recovery_p95_s']}s "
+              f"({data['s4']['samples']} samples)")
+        print(f"  S5 blackouts/env failures: {data['s5']['blackouts']}/"
+              f"{data['s5']['env_failures']} (pass={data['s5']['pass']})")
+    return 0 if data["stable"] else 1

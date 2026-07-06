@@ -23,6 +23,7 @@ from zf.runtime.channel_router import (
     resolve_channel_mentions,
     route_channel_message,
 )
+from zf.runtime.channel_sidecar import channel_message_event_payload
 from zf.runtime.channel_roles import (
     load_role_definition_excerpt,
     normalize_role_context_ref,
@@ -337,11 +338,126 @@ def test_structured_debate_round_guard_blocks_after_max_rounds(
         headless_backends={},
     )
 
+    # r3 live regression (2026-07-03): the budget is agent-loop circuit
+    # breaking — a HUMAN direct mention must never be blocked by it. The
+    # old behavior bricked the channel for the operator permanently.
     channel = project_channel(state_dir, "ch-zaofu")
-    assert result.reply_requests == []
-    assert result.skipped == [{"reason": "debate_round_limit_reached"}]
     assert channel is not None
-    assert channel["routes"][-1]["reason"] == "debate_round_limit_reached"
+    assert result.reply_requests, "human direct mention bypasses the debate budget"
+    assert not any(
+        route.get("reason") == "debate_round_limit_reached"
+        for route in channel["routes"]
+    )
+
+
+def test_debate_round_guard_is_session_scoped_and_agent_only() -> None:
+    from zf.runtime.channel_router import _debate_round_guard_reason
+
+    def _channel(session_state: str, reply_created: str, *, explicit: bool = True) -> dict:
+        return {
+            "members": [{"member_id": f"m{i}", "member_type": "provider_agent"} for i in range(3)],
+            "discussion": {
+                "mode": "fanout_then_synthesis",
+                "max_rounds": 1,
+                "max_rounds_explicit": explicit,
+            },
+            "discussions": {"main": {
+                "thread_id": "main",
+                "state": session_state,
+                "started_at": "2026-07-03T10:00:00+00:00",
+            }},
+            "reply_requests": [{
+                "thread_id": "main",
+                "status": "completed",
+                "created_at": reply_created,
+            }],
+        }
+
+    in_session = _channel("phase2_relay", "2026-07-03T10:05:00+00:00")
+    # agent-authored + active session + budget exhausted → blocked
+    assert _debate_round_guard_reason(in_session, thread_id="main", human_author=False) \
+        == "debate_round_limit_reached"
+    # the same state never blocks a human
+    assert _debate_round_guard_reason(in_session, thread_id="main", human_author=True) == ""
+    # replies from BEFORE the session don't count against its budget
+    pre_session = _channel("phase2_relay", "2026-07-03T09:00:00+00:00")
+    assert _debate_round_guard_reason(pre_session, thread_id="main", human_author=False) == ""
+    # no active session → nothing to meter
+    idle = _channel("idle", "2026-07-03T10:05:00+00:00")
+    assert _debate_round_guard_reason(idle, thread_id="main", human_author=False) == ""
+    # operator ruling 2026-07-03: only an EXPLICIT max_rounds arms the guard;
+    # the projected roster-scaled default never blocks routing (relay hop
+    # depth still bounds agent chains).
+    default_budget = _channel("phase2_relay", "2026-07-03T10:05:00+00:00", explicit=False)
+    assert _debate_round_guard_reason(default_budget, thread_id="main", human_author=False) == ""
+
+
+def _invite_member(writer: EventWriter, channel_id: str, member_id: str) -> None:
+    writer.emit(
+        "channel.member.invited",
+        actor="web",
+        correlation_id=channel_id,
+        payload={
+            "channel_id": channel_id,
+            "member_id": member_id,
+            "member_type": "provider_agent",
+            "provider": "codex",
+            "backend": "codex",
+            "permissions": ["read", "message", "summarize"],
+            "source": "web",
+        },
+    )
+
+
+def test_default_max_rounds_scales_with_roster_size(tmp_path: Path) -> None:
+    # 2026-07-03 racing-codex e2e rounds 1-3 (100% reproduction): a fixed
+    # default of 6 exhausts before a 3-member discussion's blind fanout (3)
+    # + phase2-relay-kickoff (3) even completes, permanently blocking the
+    # synthesis-kickoff dispatch. The default must scale with roster size.
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    writer.emit(
+        "channel.created", actor="web", correlation_id="ch-zaofu",
+        payload={"channel_id": "ch-zaofu", "name": "zaofu", "source": "web"},
+    )
+    for member_id in ("pm-1", "arch-1", "critic-1"):
+        _invite_member(writer, "ch-zaofu", member_id)
+    writer.emit(
+        "channel.discussion.mode.set",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={"channel_id": "ch-zaofu", "mode": "fanout_then_synthesis", "source": "web"},
+    )
+
+    channel = project_channel(state_dir, "ch-zaofu")
+    assert channel is not None
+    assert channel["discussion"]["max_rounds"] == 12  # max(6, 3*4)
+
+
+def test_explicit_max_rounds_not_overridden_by_roster_default(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    writer.emit(
+        "channel.created", actor="web", correlation_id="ch-zaofu",
+        payload={"channel_id": "ch-zaofu", "name": "zaofu", "source": "web"},
+    )
+    for member_id in ("pm-1", "arch-1", "critic-1"):
+        _invite_member(writer, "ch-zaofu", member_id)
+    writer.emit(
+        "channel.discussion.mode.set",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={
+            "channel_id": "ch-zaofu", "mode": "fanout_then_synthesis",
+            "max_rounds": 3, "source": "web",
+        },
+    )
+
+    channel = project_channel(state_dir, "ch-zaofu")
+    assert channel is not None
+    assert channel["discussion"]["max_rounds"] == 3
 
 
 def test_channel_router_matches_member_role_backend_and_chinese_punctuation() -> None:
@@ -510,6 +626,113 @@ def test_channel_router_dispatches_fake_provider_to_completed_reply(tmp_path: Pa
     assert detail["members"][0]["presence"] == "ready"
     assert detail["members"][0]["latest_run_status"] == "completed"
     assert any(item["role"] == "assistant" for item in detail["messages"])
+
+
+def test_channel_router_hydrates_sidecar_message_before_routing(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    writer.emit(
+        "channel.member.invited",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={
+            "channel_id": "ch-zaofu",
+            "thread_id": "main",
+            "member_id": "fake-1",
+            "persona": "fake-1",
+            "member_type": "persona_agent",
+            "backend": "fake",
+            "permissions": ["read", "message"],
+            "source": "web",
+        },
+    )
+    full_text = "x" * 2600 + " @fake please respond"
+    payload = channel_message_event_payload(
+        state_dir,
+        {
+            "channel_id": "ch-zaofu",
+            "thread_id": "main",
+            "message_id": "msg-sidecar",
+            "member_id": "operator",
+            "role": "user",
+            "source": "web",
+            "text": full_text,
+            "mentions": [],
+        },
+        created_by="test",
+    )
+    assert "@fake" not in payload["text"]
+    message = writer.emit(
+        "channel.message.posted",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload=payload,
+    )
+
+    result = route_channel_message(
+        state_dir=state_dir,
+        writer=writer,
+        message_event=message,
+        message_payload=message.payload,
+        actor="web",
+        source="web",
+    )
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    context_events = [event for event in events if event.type == "channel.context_pack.built"]
+    detail = project_channel(state_dir, "ch-zaofu")
+
+    assert result.targets == ["fake-1"]
+    assert context_events[-1].payload["context_pack_ref"].startswith("channels/ch-zaofu/context-packs/")
+    assert context_events[-1].payload["refs"]["context_pack"]["kind"] == "channel_context_pack"
+    assert "message_refs" not in context_events[-1].payload
+    assert detail is not None
+    assert detail["context_packs"][0]["message_refs"][0]["message_id"] == "msg-sidecar"
+
+
+def test_channel_router_blocks_missing_sidecar_message_body(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    message = writer.emit(
+        "channel.message.posted",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={
+            "schema_version": "channel.message.posted.v2",
+            "channel_id": "ch-zaofu",
+            "thread_id": "main",
+            "message_id": "msg-missing-body",
+            "member_id": "operator",
+            "role": "user",
+            "source": "web",
+            "text": "@fake preview only",
+            "body_ref": "channels/ch-zaofu/messages/missing.json",
+            "refs": {
+                "message_body": {
+                    "kind": "channel_message_body",
+                    "ref": "channels/ch-zaofu/messages/missing.json",
+                    "schema_version": "channel.message.body.v1",
+                    "content_type": "application/json",
+                    "required": True,
+                }
+            },
+        },
+    )
+
+    result = route_channel_message(
+        state_dir=state_dir,
+        writer=writer,
+        message_event=message,
+        message_payload=message.payload,
+        actor="web",
+        source="web",
+    )
+    blocked = [event for event in EventLog(state_dir / "events.jsonl").read_all()
+               if event.type == "channel.route.blocked"]
+
+    assert result.skipped == [{"reason": "message_body_missing"}]
+    assert blocked[-1].payload["reason"] == "message_body_missing"
 
 
 def test_channel_router_routes_unmentioned_message_to_default_responder(tmp_path: Path) -> None:

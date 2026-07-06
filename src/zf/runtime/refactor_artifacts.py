@@ -260,14 +260,22 @@ def _project_plan_artifacts(
         "plan_intent": plan_intent,
         "task_count": len(task_map_obj.get("tasks", [])),
     }
-    for key in (
-        "inventory_ref",
-        "source_inventory_ref",
-        "hermes_source_inventory_ref",
-        "inventory_coverage_matrix_ref",
-        "expected_module_parity_report_paths_ref",
-    ):
-        value = str(_field(source, key) or "").strip()
+    source_inventory_ref = str(
+        _field(source, "source_inventory_ref")
+        or _field(source, "hermes_source_inventory_ref")
+        or ""
+    ).strip()
+    scalar_refs = {
+        "inventory_ref": str(_field(source, "inventory_ref") or "").strip(),
+        "source_inventory_ref": source_inventory_ref,
+        "inventory_coverage_matrix_ref": str(
+            _field(source, "inventory_coverage_matrix_ref") or ""
+        ).strip(),
+        "expected_module_parity_report_paths_ref": str(
+            _field(source, "expected_module_parity_report_paths_ref") or ""
+        ).strip(),
+    }
+    for key, value in scalar_refs.items():
         if value:
             payload[key] = value
             artifact_refs.append(value)

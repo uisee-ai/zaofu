@@ -52,9 +52,13 @@ def build_workflow_inspection_report(
 
     diagnostics: list[dict[str, Any]] = []
     event_consumers = _event_consumers(config)
+    same_lane_rework_events = _same_lane_stage_backedge_events(
+        getattr(config.workflow, "stages", None),
+    )
     diagnostics.extend(_graph_diagnostics(
         list(graph.diagnostics),
         event_consumers=event_consumers,
+        same_lane_rework_events=same_lane_rework_events,
     ))
     diagnostics.extend(_reserved_event_diagnostics(config))
     diagnostics.extend(_terminal_policy_diagnostics(config, graph))
@@ -162,10 +166,22 @@ def _graph_diagnostics(
     items: list[dict[str, str]],
     *,
     event_consumers: dict[str, list[str]],
+    same_lane_rework_events: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     diagnostics: list[dict[str, Any]] = []
+    same_lane_rework_events = same_lane_rework_events or set()
     for item in items:
         kind = item.get("kind", "")
+        if (
+            kind == "trigger_without_producer"
+            and item.get("event", "") in _KERNEL_PRODUCED_EXTERNAL_TRIGGERS
+        ):
+            continue
+        if (
+            kind == "missing_rework_route"
+            and item.get("event", "") in same_lane_rework_events
+        ):
+            continue
         severity = _GRAPH_DIAGNOSTIC_SEVERITY.get(kind, "WARN")
         if kind == "missing_rework_route" and _has_event_consumer(
             item.get("event", ""),
@@ -277,6 +293,9 @@ def _explicit_rework_route_diagnostics(
         for route in list(getattr(graph, "rework_routes", ()) or ())
         if str(route.event)
     } | set(lane_pipeline_rework_events(getattr(config.workflow, "pipelines", ())))
+    route_events |= _same_lane_stage_backedge_events(
+        getattr(config.workflow, "stages", None),
+    )
     terminal_failures = set(getattr(graph.terminal_policy, "failure_events", frozenset()))
     consumers = _event_consumers(config)
     diagnostics: list[dict[str, Any]] = []
@@ -323,11 +342,49 @@ def _explicit_rework_route_diagnostics(
     return diagnostics
 
 
-# Events the kernel deterministically produces OUTSIDE any stage success_event,
-# so they may legitimately be declared external_triggers: task_map.ready is
-# emitted by the refactor plan→task_map bridge (P0-2 fix) and the candidate
-# rework sweep. Extend this set when a new deterministic kernel producer lands.
-_KERNEL_PRODUCED_EXTERNAL_TRIGGERS = frozenset({"task_map.ready"})
+# Events the kernel deterministically produces OUTSIDE any stage success_event.
+#
+# ``task_map.ready`` is emitted by the refactor plan→task_map bridge and the
+# candidate rework sweep. The refactor goal loop also has deterministic runtime
+# bridges: lane handoff emits the candidate-level ``test.passed``; verify
+# completion emits ``verify.parity_scan.requested``; module parity closeout
+# emits ``module.parity.closed``. Static graph inspection must recognize these
+# producer paths without forcing users to model kernel internals as reader
+# stages.
+_KERNEL_PRODUCED_EXTERNAL_TRIGGERS = frozenset({
+    "task_map.ready",
+    "test.passed",
+    "verify.parity_scan.requested",
+    "module.parity.closed",
+})
+
+
+def _same_lane_stage_backedge_events(stages: Any) -> set[str]:
+    stages_by_id = {
+        getattr(stage, "id", ""): stage
+        for stage in (stages or [])
+        if getattr(stage, "id", "")
+    }
+    events: set[str] = set()
+    for stage in stages or []:
+        for backedge in (
+            getattr(stage, "on_reject", None),
+            getattr(stage, "on_fail", None),
+        ):
+            event = str(getattr(backedge, "event", "") or "").strip()
+            if not event:
+                continue
+            if str(getattr(backedge, "target_affinity", "") or "") != "same_lane":
+                continue
+            target_stage = stages_by_id.get(
+                str(getattr(backedge, "restart_stage", "") or "")
+            )
+            if target_stage is None:
+                continue
+            assignment = getattr(target_stage, "assignment", None)
+            if str(getattr(assignment, "strategy", "") or "") == "affinity_stage_slots":
+                events.add(event)
+    return events
 _WRITER_TOPOLOGY_TOKENS = ("writer", "lane_pipeline")
 
 

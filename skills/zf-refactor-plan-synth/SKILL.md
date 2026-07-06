@@ -16,7 +16,8 @@ source of truth for lane dispatch.
 - `review_artifact_ref` from the scan/review fanout.
 - Coverage matrix, findings, uncovered areas, and scan evidence.
 - `plan_intent` if provided by the triggering event.
-- Lane count and assembly task declared by the workflow.
+- `refactor_contract` from the briefing. This is the runtime contract for lane
+  count and assembly policy; read it before synthesizing `task_map.json`.
 
 ## Required Outputs
 
@@ -58,8 +59,16 @@ Every task must be dispatchable:
   serialized.
 - `verification` names concrete commands or evidence checks.
 
-If the workflow declares an assembly task, the task map must either include
-that exact task id or include a task with `root_owner_class: "assembly"`.
+The workflow contract is authoritative:
+
+- If `refactor_contract.assembly_policy == "declared_task"`, the task map must
+  either include `refactor_contract.assembly_task_id` exactly or include one
+  task with `root_owner_class: "assembly"`.
+- If `refactor_contract.assembly_policy == "none"`, a one-bundle serial plan
+  may omit assembly, but every task still needs explicit owned paths and source
+  anchors.
+- Do not infer that assembly is optional from task count when the workflow
+  contract declares an assembly task.
 
 Any task that owns scaffolding such as `package.json`, `pnpm-lock.yaml`,
 `tsconfig.json`, `vitest.config.ts`, or root build config must include those
@@ -70,7 +79,9 @@ unowned during lane execution.
 
 Do not emit plan success until:
 
-1. `task_map.json` contains the assembly/root owner requirement.
+1. `task_map.json` satisfies `refactor_contract` assembly/root owner
+   requirements, or the configured failure event is emitted with a concrete
+   reason.
 2. Each lane has complete allowed paths and verification.
 3. `scan_quality_audit_ref` is present or a clear failure reason is emitted.
 

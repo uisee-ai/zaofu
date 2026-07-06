@@ -1,7 +1,13 @@
-# prod/new templates
+# prod/new LKG / E2E Templates
 
-These templates are the current production-facing examples for the three common
-ZaoFu entry types:
+These templates are expanded last-known-good / E2E regression samples for the
+three common ZaoFu entry types. They are intentionally verbose so tests can
+compare the low-level shape, but they are no longer the recommended product
+entry for operators.
+
+Use `examples/prod/controller/*.yaml` for new production runs. The controller
+files keep project-facing YAML short and let profiles/rendering compile the
+canonical `ZfConfig`.
 
 - `prd-fanout-v2.yaml`: PRD / new product delivery.
 - `issue-fanout-v2.yaml`: issue or bug-fix delivery.

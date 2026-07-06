@@ -11,6 +11,7 @@ from zf.runtime.injection import (
     write_task_briefing,
     build_task_prompt,
 )
+from zf.runtime.briefing_hydration import evaluate_instruction_hydration
 from zf.core.config.schema import (
     ZfConfig,
     ProjectConfig,
@@ -119,6 +120,68 @@ class TestGenerateRoleInstructions:
         assert "/test-driven-development" in result
         assert "Drives development with tests." in result
         assert ".zf/workdirs/dev/codex-home/skills/test-driven-development" in result
+
+    def test_run_contract_context_included_when_state_dir_ref_is_available(
+        self,
+        tmp_path: Path,
+    ):
+        state_dir = tmp_path / ".zf"
+        (state_dir / "config").mkdir(parents=True)
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-123",
+                "workflow": {"kind": "refactor", "strictness": "full-parity"},
+                "refs": {
+                    "task_map": ["docs/task-map.json"],
+                    "real_e2e_matrix": ["docs/real-e2e-matrix.json"],
+                },
+                "required_delivery_artifacts": [
+                    {"name": "task_map", "required_for": "strict"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+
+        result = generate_role_instructions(
+            self.config,
+            self.role,
+            state_dir_ref=state_dir,
+            project_root=tmp_path,
+        )
+
+        assert "## Run Contract Context" in result
+        assert "digest-123" in result
+        assert "docs/task-map.json" in result
+        assert "docs/real-e2e-matrix.json" in result
+
+    def test_strict_hydration_stops_when_required_ref_group_empty(self, tmp_path: Path):
+        state_dir = tmp_path / ".zf"
+        (state_dir / "config").mkdir(parents=True)
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-123",
+                "workflow": {"kind": "refactor", "strictness": "full-parity"},
+                "refs": {
+                    "task_map": ["docs/task-map.json"],
+                    "real_e2e_matrix": [],
+                },
+                "required_delivery_artifacts": [
+                    {"name": "task_map", "required_for": "strict"},
+                    {"name": "real_e2e_matrix", "required_for": "full-parity"},
+                ],
+            }),
+            encoding="utf-8",
+        )
+
+        report = evaluate_instruction_hydration(
+            state_dir,
+            "## Run Contract Context\n\n- `task_map`:\n  - `docs/task-map.json`\n",
+        )
+
+        assert report["status"] == "STOP"
+        assert report["missing_required_groups"] == ["real_e2e_matrix"]
 
     def test_skill_entries_are_split_by_injection_mode(self):
         role = RoleConfig(

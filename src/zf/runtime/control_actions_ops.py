@@ -15,8 +15,10 @@ from zf.runtime.control_actions_helpers import _dedupe_ids
 from zf.runtime.control_actions_helpers import _proposal_id
 from zf.runtime.control_actions_helpers import _required_text
 from zf.runtime.control_actions_helpers import _runtime_impact_summary
+from zf.runtime.control_actions_helpers import _string_list
 from zf.runtime.control_actions_helpers import _task_id_from_payload
 import hashlib
+from pathlib import Path
 
 
 class OpsActionsMixin:
@@ -440,4 +442,353 @@ class OpsActionsMixin:
             "proposal_id": proposal_id,
             "event_type": event_type,
             "event_id": event.id,
+        }
+
+    def _failure_closeout_action(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        from zf.runtime.failure_to_eval import materialize_failure_closeout
+
+        raw_kinds = payload.get("kinds") or payload.get("kind") or "backlog,eval,skill"
+        if isinstance(raw_kinds, str):
+            kinds = [item.strip() for item in raw_kinds.split(",")]
+        elif isinstance(raw_kinds, list | tuple | set):
+            kinds = [str(item).strip() for item in raw_kinds]
+        else:
+            kinds = ["backlog", "eval", "skill"]
+        output_root_raw = str(payload.get("output_root") or payload.get("output_dir") or "").strip()
+        output_root = Path(output_root_raw).expanduser() if output_root_raw else None
+        if output_root is not None and not output_root.is_absolute() and self.project_root is not None:
+            output_root = self.project_root / output_root
+        try:
+            result = materialize_failure_closeout(
+                self.state_dir,
+                output_root=output_root,
+                kinds=kinds,
+                limit=int(payload["limit"]) if str(payload.get("limit") or "").strip() else None,
+            )
+        except (OSError, ValueError) as exc:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=f"failure closeout failed: {exc}",
+                status_code=422,
+                status="closeout_failed",
+            )
+        event = self.writer.emit(
+            "failure.closeout.materialized",
+            actor=self.actor,
+            task_id=_task_id_from_payload(payload),
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": "failure-closeout.event.v1",
+                "manifest_ref": result.get("manifest_ref"),
+                "materialized_count": result.get("materialized_count", 0),
+                "candidate_count": result.get("candidate_count", 0),
+                "requested_kinds": result.get("requested_kinds", []),
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status="materialized",
+            task_id=_task_id_from_payload(payload),
+            extra={
+                "manifest_ref": result.get("manifest_ref"),
+                "materialized_count": result.get("materialized_count", 0),
+                "candidate_count": result.get("candidate_count", 0),
+            },
+        )
+        return {
+            "_status_code": 202,
+            "ok": True,
+            "status": "materialized",
+            "action": action,
+            "requested_action": requested_action,
+            "event_id": event.id,
+            "manifest_ref": result.get("manifest_ref"),
+            "materialized_count": result.get("materialized_count", 0),
+            "candidate_count": result.get("candidate_count", 0),
+        }
+
+    def _failure_closeout_activate_action(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        from zf.runtime.failure_to_eval import promote_failure_closeout_backlogs
+
+        approval_ref = _approval_ref(payload)
+        if not approval_ref:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="approval_ref is required before failure closeout activation",
+                status_code=403,
+                status="approval_required",
+            )
+        manifest_ref = _required_text(payload, "manifest_ref") or _required_text(payload, "manifest")
+        if not manifest_ref:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="manifest_ref is required",
+                status_code=422,
+                status="invalid_payload",
+            )
+        project_root = self.project_root or self.state_dir.parent
+        output_dir_raw = str(payload.get("output_dir") or "tasks/active").strip()
+        try:
+            result = promote_failure_closeout_backlogs(
+                Path(manifest_ref),
+                project_root=project_root,
+                approval_ref=approval_ref,
+                output_dir=Path(output_dir_raw),
+                limit=int(payload["limit"]) if str(payload.get("limit") or "").strip() else None,
+            )
+        except (OSError, ValueError) as exc:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=f"failure closeout activation failed: {exc}",
+                status_code=422,
+                status="activation_failed",
+            )
+        event = self.writer.emit(
+            "failure.closeout.activated",
+            actor=self.actor,
+            task_id=_task_id_from_payload(payload),
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": "failure-closeout-activation.event.v1",
+                "approval_ref": approval_ref,
+                "manifest_ref": result.get("manifest_ref"),
+                "report_ref": result.get("report_ref"),
+                "promoted_count": result.get("promoted_count", 0),
+                "skipped_count": result.get("skipped_count", 0),
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status="activated",
+            task_id=_task_id_from_payload(payload),
+            extra={
+                "manifest_ref": result.get("manifest_ref"),
+                "report_ref": result.get("report_ref"),
+                "promoted_count": result.get("promoted_count", 0),
+                "skipped_count": result.get("skipped_count", 0),
+            },
+        )
+        return {
+            "_status_code": 202,
+            "ok": True,
+            "status": "activated",
+            "action": action,
+            "requested_action": requested_action,
+            "event_id": event.id,
+            "manifest_ref": result.get("manifest_ref"),
+            "report_ref": result.get("report_ref"),
+            "promoted_count": result.get("promoted_count", 0),
+            "skipped_count": result.get("skipped_count", 0),
+        }
+
+    def _real_e2e_run_action(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        from zf.runtime.real_e2e_runner import run_real_e2e_matrix
+        from zf.runtime.run_contract import load_run_contract
+
+        project_root = self.project_root or self.state_dir.parent
+        refs = (
+            _string_list(payload.get("real_e2e_matrix_paths"))
+            + _string_list(payload.get("real_e2e_matrix_refs"))
+            + _string_list(payload.get("matrix_refs"))
+        )
+        contract = load_run_contract(self.state_dir)
+        if not refs and isinstance(contract, dict):
+            contract_refs = contract.get("refs") if isinstance(contract.get("refs"), dict) else {}
+            refs = _string_list(contract_refs.get("real_e2e_matrix"))
+        refs = list(dict.fromkeys(refs))
+        if not refs:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="no real_e2e_matrix refs declared in payload or run contract",
+                status_code=422,
+                status="missing_matrix_refs",
+            )
+        config = {
+            "real_e2e_matrix_paths": refs,
+            "evidence_dir": str(payload.get("evidence_dir") or "artifacts/real-e2e"),
+            "timeout_seconds": int(payload["timeout_seconds"]) if str(payload.get("timeout_seconds") or "").strip() else 120,
+        }
+        try:
+            result = run_real_e2e_matrix(project_root, config)
+        except (OSError, ValueError) as exc:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=f"real E2E run failed: {exc}",
+                status_code=422,
+                status="run_failed",
+            )
+        event = self.writer.emit(
+            "real_e2e.run.completed",
+            actor=self.actor,
+            task_id=_task_id_from_payload(payload),
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": "real-e2e-run.event.v1",
+                "passed": result.passed,
+                "result_matrix_ref": result.result_matrix_ref,
+                "evidence_refs": result.evidence_refs,
+                "row_count": len(result.rows),
+                "matrix_refs": refs,
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        status = "passed" if result.passed else "failed"
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status=status,
+            task_id=_task_id_from_payload(payload),
+            extra={
+                "passed": result.passed,
+                "result_matrix_ref": result.result_matrix_ref,
+                "evidence_refs": result.evidence_refs,
+                "row_count": len(result.rows),
+            },
+        )
+        return {
+            "_status_code": 202,
+            "ok": True,
+            "status": status,
+            "action": action,
+            "requested_action": requested_action,
+            "event_id": event.id,
+            **result.to_dict(),
+        }
+
+    def _run_contract_review_action(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        from zf.runtime.run_contract import load_run_contract
+
+        contract = load_run_contract(self.state_dir)
+        if not isinstance(contract, dict):
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="run contract is missing",
+                status_code=404,
+                status="missing_run_contract",
+            )
+        decision = str(payload.get("decision") or "reviewed").strip().lower()
+        allowed = {"reviewed", "ack", "hold", "approve_resume"}
+        if decision not in allowed:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="decision must be one of " + ", ".join(sorted(allowed)),
+                status_code=422,
+                status="invalid_payload",
+            )
+        approval_ref = _approval_ref(payload)
+        if decision == "approve_resume" and not approval_ref:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="approval_ref is required for approve_resume",
+                status_code=403,
+                status="approval_required",
+            )
+        event = self.writer.emit(
+            "run_contract.review.recorded",
+            actor=self.actor,
+            task_id=_task_id_from_payload(payload),
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": "run-contract-review.event.v1",
+                "decision": decision,
+                "approval_ref": approval_ref,
+                "contract_digest": str(contract.get("contract_digest") or ""),
+                "run_tag": str(contract.get("run_tag") or ""),
+                "reason": _required_text(payload, "reason"),
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status=decision,
+            task_id=_task_id_from_payload(payload),
+            extra={
+                "decision": decision,
+                "contract_digest": str(contract.get("contract_digest") or ""),
+            },
+        )
+        return {
+            "_status_code": 202,
+            "ok": True,
+            "status": decision,
+            "action": action,
+            "requested_action": requested_action,
+            "event_id": event.id,
+            "contract_digest": str(contract.get("contract_digest") or ""),
         }

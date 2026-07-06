@@ -1,0 +1,54 @@
+apiVersion: zaofu.dev/v1
+kind: RefactorFlow
+metadata:
+  name: refactor-lane/v3
+spec:
+  flowProfile: refactor-flow/v3
+  lanes: 2
+  assembly: none
+  laneRoleTemplate:
+    backend: codex
+  roleDefaults:
+    backend: codex
+    permission_mode: bypass
+  objectiveRef: docs/plans/refactor-goal.md
+  parityScope: [cli, provider, tools, webui, tui, memory, skills]
+  gapLoop: enabled
+  verifyRescan: module_parity
+  completionThreshold: close_p0_p1
+  roleSkillBundles:
+    scan-contract: [zf-harness-spec-freeze-contract, zf-harness-evidence-collection]
+    scan-runtime: [zf-cr, zf-harness-evidence-collection]
+    scan-verification: [zf-harness-verification-checklist, zf-mechanical-claim-verifier]
+    refactor-plan-synth: [zf-refactor-plan-synth, zf-plan-task-map-contract]
+    refactor-verify-bridge: [zf-verify-rescan-replan, zf-gap-task-synth]
+    module-parity-scan: [zf-verify-rescan-replan, zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    judge-refactor: [zf-harness-gate-evaluator, zf-goal-closure-replan-contract]
+    impl: [zf-harness-done-contract, zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: refactor-lane-v3
+  zaofu:
+    catalog:
+      id: refactor-lane-v3-codex
+      label: Refactor Lane v3
+      description: Short refactor controller with per-lane verify and module parity loop.
+      intent: refactor
+      backend: codex
+      roles: 11
+      recommended_for: [refactor]
+      preferred: true
+      order: 32
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [refactor-controller-runtime/v3]
+  version: "1.0"
+  project:
+    name: refactor-lane-v3
+  skill_sources:
+  - {name: zaofu-skills, path: ../../../skills, mode: readonly}
+  workflow:
+    dag:
+      external_triggers: [refactor.scan.requested]

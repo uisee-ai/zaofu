@@ -59,11 +59,20 @@ def evaluate_artifact_matrix_gate(
     - ``status_field`` / ``priority_field``: row field names.
     - ``allowed_statuses``: terminal statuses for blocking rows.
     - ``required_row_fields``: fields required on blocking rows.
+    - ``required_row_field_groups``: list of alternative field groups required
+      on blocking rows; at least one field in each group must be non-empty.
     - ``forbidden_text``: list of ``{"path": "...", "contains": "..."}``.
     - ``module_parity_report_paths``: JSON module parity reports to validate.
+    - ``module_parity_field_aliases``: optional field aliases for project or
+      legacy report dialects; new reports should use canonical field names.
+    - ``legacy_module_parity_field_aliases``: when true, accept historical
+      Hermes/Cangjie report path fields for old runs only.
     - ``gap_task_map_paths``: module-gap-plan JSON files to validate.
     - ``goal_gap_report_paths``: generic goal gap reports to validate.
     - ``goal_gap_task_map_paths``: goal-gap-plan JSON files to validate.
+    - ``delivery_contract``: source capability -> task -> acceptance -> test
+      -> lane relationship refs to validate.
+    - ``real_e2e_matrix_paths``: real-environment E2E matrix refs to validate.
     - ``inventory_coverage``: generic source-inventory to matrix coverage
       rules. Project skills define inventory content; this gate only checks
       that required inventory item ids are represented by blocking matrix rows.
@@ -88,6 +97,7 @@ def evaluate_artifact_matrix_gate(
     priority_field = str(cfg.get("priority_field") or "priority")
     status_field = str(cfg.get("status_field") or "status")
     required_fields = _string_list(cfg.get("required_row_fields"))
+    required_field_groups = _field_groups(cfg.get("required_row_field_groups"))
     allowed_statuses = {
         str(item).strip().lower()
         for item in _string_list(cfg.get("allowed_statuses"))
@@ -138,6 +148,17 @@ def evaluate_artifact_matrix_gate(
                         row_id=row_id,
                         message=f"blocking row {row_id!r} is missing field {field_name!r}",
                     ))
+            for group in required_field_groups:
+                if not any(not _field_missing(row.get(field_name)) for field_name in group):
+                    findings.append(ArtifactMatrixFinding(
+                        code="matrix_row_required_field_group_missing",
+                        path=rel,
+                        row_id=row_id,
+                        message=(
+                            f"blocking row {row_id!r} is missing one of fields "
+                            f"{', '.join(repr(item) for item in group)}"
+                        ),
+                    ))
             if allowed_statuses:
                 status = str(row.get(status_field) or "").strip().lower()
                 if status not in allowed_statuses:
@@ -162,6 +183,18 @@ def evaluate_artifact_matrix_gate(
         config=cfg,
         checked_artifacts=checked_artifacts,
         checked_matrices=checked_matrices,
+        findings=findings,
+    )
+    _evaluate_delivery_contract(
+        root=root,
+        config=cfg,
+        checked_artifacts=checked_artifacts,
+        findings=findings,
+    )
+    _evaluate_real_e2e_contract(
+        root=root,
+        config=cfg,
+        checked_artifacts=checked_artifacts,
         findings=findings,
     )
 
@@ -310,14 +343,22 @@ _MODULE_PARITY_REQUIRED_FIELDS = (
     "parent_task_id",
     "affinity_tag",
     "lane_id",
-    "hermes_original_paths",
-    "cangjie_target_paths",
+    "source_paths",
+    "target_paths",
     "capability_rows",
     "test_rows",
     "runtime_evidence_refs",
     "gap_tasks",
     "open_p0_p1_gap_count",
 )
+_MODULE_PARITY_GENERIC_FIELD_ALIASES = {
+    "source_paths": ("original_paths",),
+    "target_paths": ("implementation_paths",),
+}
+_MODULE_PARITY_LEGACY_FIELD_ALIASES = {
+    "source_paths": ("hermes_original_paths",),
+    "target_paths": ("cangjie_target_paths",),
+}
 
 
 def _evaluate_module_parity_report(
@@ -331,10 +372,11 @@ def _evaluate_module_parity_report(
         _string_list(config.get("module_parity_required_fields"))
         or list(_MODULE_PARITY_REQUIRED_FIELDS)
     )
+    field_aliases = _module_parity_field_aliases(config)
     module_id = str(report.get("module_id") or "").strip()
     row_id = module_id or _row_id(report)
     for field_name in required_fields:
-        if _field_missing(report.get(field_name)):
+        if _module_parity_field_missing(report, field_name, field_aliases):
             findings.append(ArtifactMatrixFinding(
                 code="module_parity_required_field_missing",
                 path=path,
@@ -363,6 +405,42 @@ def _evaluate_module_parity_report(
                 row_id=row_id,
                 message=f"module parity report {row_id!r} lacks runtime path evidence",
             ))
+
+
+def _module_parity_field_missing(
+    report: Mapping[str, Any],
+    field_name: str,
+    field_aliases: Mapping[str, tuple[str, ...]],
+) -> bool:
+    if not _field_missing(report.get(field_name)):
+        return False
+    for alias in field_aliases.get(field_name, ()):
+        if not _field_missing(report.get(alias)):
+            return False
+    return True
+
+
+def _module_parity_field_aliases(
+    config: Mapping[str, Any],
+) -> dict[str, tuple[str, ...]]:
+    aliases: dict[str, list[str]] = {
+        key: list(values)
+        for key, values in _MODULE_PARITY_GENERIC_FIELD_ALIASES.items()
+    }
+    if _truthy(config.get("legacy_module_parity_field_aliases"), default=False):
+        for key, values in _MODULE_PARITY_LEGACY_FIELD_ALIASES.items():
+            aliases.setdefault(key, []).extend(values)
+    configured = config.get("module_parity_field_aliases")
+    if isinstance(configured, Mapping):
+        for key, values in configured.items():
+            field_name = str(key or "").strip()
+            if not field_name:
+                continue
+            aliases.setdefault(field_name, []).extend(_string_list(values))
+    return {
+        key: tuple(dict.fromkeys(value for value in values if value))
+        for key, values in aliases.items()
+    }
 
 
 def _evaluate_goal_gap_report(
@@ -612,6 +690,63 @@ def _evaluate_inventory_coverage(
                     ))
 
 
+def _evaluate_delivery_contract(
+    *,
+    root: Path,
+    config: Mapping[str, Any],
+    checked_artifacts: list[str],
+    findings: list[ArtifactMatrixFinding],
+) -> None:
+    raw = config.get("delivery_contract")
+    if raw in (None, "", []):
+        return
+    if not isinstance(raw, Mapping):
+        findings.append(ArtifactMatrixFinding(
+            code="delivery_contract_config_invalid",
+            message="delivery_contract must be an object",
+        ))
+        return
+    from zf.runtime.delivery_contract_gate import evaluate_delivery_contract
+
+    result = evaluate_delivery_contract(root, dict(raw))
+    checked_artifacts.extend(result.checked_artifacts)
+    for item in result.findings:
+        findings.append(ArtifactMatrixFinding(
+            code=item.code,
+            path=item.path,
+            row_id=item.row_id,
+            severity=item.severity,
+            message=item.message,
+        ))
+
+
+def _evaluate_real_e2e_contract(
+    *,
+    root: Path,
+    config: Mapping[str, Any],
+    checked_artifacts: list[str],
+    findings: list[ArtifactMatrixFinding],
+) -> None:
+    if not (
+        config.get("real_e2e_matrix_paths")
+        or config.get("real_e2e_matrix_refs")
+        or config.get("e2e_matrix_paths")
+    ):
+        return
+    from zf.runtime.delivery_contract_gate import evaluate_real_e2e_matrix
+
+    result = evaluate_real_e2e_matrix(root, config)
+    checked_artifacts.extend(result.checked_artifacts)
+    for item in result.findings:
+        findings.append(ArtifactMatrixFinding(
+            code=item.code,
+            path=item.path,
+            row_id=item.row_id,
+            severity=item.severity,
+            message=item.message,
+        ))
+
+
 def _load_rows_from_ref(
     *,
     root: Path,
@@ -703,6 +838,19 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
+
+
+def _field_groups(value: Any) -> list[list[str]]:
+    if value is None:
+        return []
+    if not isinstance(value, list | tuple):
+        return []
+    groups: list[list[str]] = []
+    for item in value:
+        group = _string_list(item)
+        if group:
+            groups.append(group)
+    return groups
 
 
 def _forbidden_text_items(value: Any) -> list[dict[str, str]]:

@@ -42,6 +42,7 @@ def project_handoff_summary(
     project_root: Path | None = None,
     dispatch_id: str = "",
     now: datetime | None = None,
+    index: Any = None,
 ) -> dict[str, Any]:
     """Build handoff-summary.v1 without mutating runtime state."""
 
@@ -55,6 +56,7 @@ def project_handoff_summary(
         dispatch_id=dispatch_id,
         config=config,
         project_root=project_root,
+        index=index,
     )
     packet_dict = packet_to_dict(state_packet) if state_packet else {}
     resume_ref = _resume_packet_ref(state_dir, task_id, dispatch_id)
@@ -150,6 +152,7 @@ def _safe_resume_packet(
     dispatch_id: str = "",
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    index: Any = None,
 ) -> dict[str, Any]:
     try:
         packet = build_resume_packet(
@@ -158,6 +161,7 @@ def _safe_resume_packet(
             dispatch_id=dispatch_id,
             config=config,
             project_root=project_root,
+            index=index,
         )
         return packet if isinstance(packet, dict) else {}
     except Exception:

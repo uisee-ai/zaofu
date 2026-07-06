@@ -1,0 +1,32 @@
+#!/bin/bash
+# ZaoFu multi-driver staged 自检(审计 P0-2,机制化 AGENTS.md git 纪律)。
+# 事故谱系:ddd1dd9e(index 竞争)→ 159affd0(误带 21 并行文件)→
+# eed79540(整树回退双删修复,靠 13 维审计才发现)。三发同型,零机制。
+#
+# 安装:bash scripts/install-git-hooks.sh(逐 clone opt-in,不改共享配置)
+
+staged=$(git diff --cached --name-only)
+[ -z "$staged" ] && exit 0
+count=$(printf '%s\n' "$staged" | wc -l)
+
+# 1) 运行时真相文件绝不入库
+runtime_truth=$(printf '%s\n' "$staged" | grep -E '(^|/)\.zf[^/]*/|(^|/)(events\.jsonl|kanban\.json|session\.yaml|role_sessions\.yaml|feature_list\.json)$')
+if [ -n "$runtime_truth" ]; then
+  echo "pre-commit BLOCK: 暂存区含运行时真相文件(kernel API 管理,禁入 git):" >&2
+  printf '  %s\n' $runtime_truth >&2
+  exit 1
+fi
+
+# 2) 大暂存集熔断:>25 文件极可能扫进并行驾驶员的 staged 内容
+if [ "$count" -gt 25 ] && [ -z "$ZF_ALLOW_LARGE_COMMIT" ]; then
+  echo "pre-commit BLOCK: 暂存 $count 个文件(>25)。" >&2
+  echo "多驾驶共享 index 下大暂存集是 159affd0/eed79540 型事故信号。" >&2
+  echo "逐一核对以下清单确属本次意图后,ZF_ALLOW_LARGE_COMMIT=1 重试:" >&2
+  printf '  %s\n' $staged >&2
+  exit 1
+fi
+
+# 3) 意图回显(不拦截):最后一眼
+echo "pre-commit: 即将提交 $count 个文件:" >&2
+printf '  %s\n' $staged | head -30 >&2
+exit 0

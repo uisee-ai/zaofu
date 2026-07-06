@@ -26,6 +26,7 @@ class FlowCatalogEntry:
     intent: str
     backend: str
     recommended_for: tuple[str, ...]
+    preferred: bool
     order: int
     path: Path
 
@@ -57,13 +58,19 @@ def _catalog_entries() -> list[FlowCatalogEntry]:
     if prod is None:
         return []
     entries: list[FlowCatalogEntry] = []
-    for path in sorted(prod.glob("*.yaml")):
+    paths = [*prod.glob("*.yaml"), *prod.glob("controller/*.yaml")]
+    for path in sorted(paths):
         entry = _entry_from_yaml(path)
         if entry is not None:
             entries.append(entry)
     return sorted(
         entries,
-        key=lambda e: (e.order, _BACKEND_ORDER.get(e.backend, 99), e.id),
+        key=lambda e: (
+            0 if e.preferred else 1,
+            e.order,
+            _BACKEND_ORDER.get(e.backend, 99),
+            e.id,
+        ),
     )
 
 
@@ -112,6 +119,7 @@ def _entry_from_catalog(path: Path, catalog: dict) -> FlowCatalogEntry | None:
         recommended_for = (intent,)
     if intent not in recommended_for:
         recommended_for = (intent, *recommended_for)
+    preferred = bool(catalog.get("preferred") or catalog.get("default"))
     return FlowCatalogEntry(
         id=flow_id_value,
         label=label,
@@ -120,6 +128,7 @@ def _entry_from_catalog(path: Path, catalog: dict) -> FlowCatalogEntry | None:
         intent=intent,
         backend=backend,
         recommended_for=recommended_for,
+        preferred=preferred,
         order=order,
         path=path,
     )
@@ -153,6 +162,12 @@ def read_flow_yaml(archetype: str) -> str | None:
     return entry.path.read_text(encoding="utf-8")
 
 
+def flow_path(archetype: str) -> Path | None:
+    """Return the source YAML path for a flow id, or None if unavailable."""
+    entry = _entry_by_id(archetype)
+    return entry.path if entry is not None else None
+
+
 def list_flows_detailed() -> list[dict]:
     """All YAML-registered flow archetypes for the wizard catalog."""
     return [
@@ -164,6 +179,7 @@ def list_flows_detailed() -> list[dict]:
             "kind": "flow",
             "intent": entry.intent,
             "backend": entry.backend,
+            "preferred": entry.preferred,
             "available": True,
         }
         for entry in _catalog_entries()

@@ -13,6 +13,7 @@ from zf.runtime.channel_adapter import dispatch_reply_request
 from zf.runtime.channel_context import build_channel_context_pack
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_run_owner import provider_run_fields
+from zf.runtime.channel_sidecar import channel_context_pack_event_payload
 from zf.runtime.openclaw_provider import OpenClawGatewayClient
 
 
@@ -131,7 +132,12 @@ def request_channel_handoff(
         actor=actor,
         causation_id=accepted.id,
         correlation_id=channel_id,
-        payload={**context_pack, "source": source},
+        payload=channel_context_pack_event_payload(
+            Path(state_dir),
+            {**context_pack, "source": source},
+            created_by=f"channel-handoff:{source}",
+            source_event_id=accepted.id,
+        ),
     )
     request_id = _stable_reply_request_id(channel_id, thread_id or "main", message_id, target_member_id)
     busy = _member_busy(channel, target_member_id)

@@ -130,8 +130,11 @@ class DispatchRoutingQueriesMixin:
         interesting = (
             '"type":"task.dispatched"',
             '"type":"fanout.child.dispatched"',
+            '"type":"fanout.child.completed"',
+            '"type":"fanout.child.failed"',
             '"type":"task.assigned"',
             '"type":"task.requeued"',
+            '"type":"task.status_changed"',
         )
         try:
             if path is None:
@@ -163,6 +166,15 @@ class DispatchRoutingQueriesMixin:
                         )
                         if assignee:
                             latest[tid] = str(assignee)
+                    elif event_type in {
+                        "fanout.child.completed",
+                        "fanout.child.failed",
+                    }:
+                        latest.pop(tid, None)
+                    elif event_type == "task.status_changed":
+                        to_status = str(payload.get("to") or "")
+                        if to_status in {"done", "cancelled", "blocked"}:
+                            latest.pop(tid, None)
                     elif event_type in {"task.assigned", "task.requeued"}:
                         latest.pop(tid, None)
         except Exception:
@@ -182,6 +194,15 @@ class DispatchRoutingQueriesMixin:
                         )
                         if a:
                             latest[tid] = a
+                    elif event.type in {
+                        "fanout.child.completed",
+                        "fanout.child.failed",
+                    }:
+                        latest.pop(tid, None)
+                    elif event.type == "task.status_changed":
+                        to_status = str(event.payload.get("to") or "")
+                        if to_status in {"done", "cancelled", "blocked"}:
+                            latest.pop(tid, None)
                     elif event.type in {"task.assigned", "task.requeued"}:
                         latest.pop(tid, None)
             except Exception:
@@ -230,11 +251,21 @@ class DispatchRoutingQueriesMixin:
             return False
         now = _time.time()
         # Global check
+        fail_closed = bool(getattr(self.config, "budget_fail_closed", False))
         global_cap = getattr(self.config, "global_budget_usd", None)
         if global_cap is not None:
             try:
                 total = self.cost_tracker.total_usd()
             except Exception:
+                # P0-8(审计 D9):历史 fail-open = 读失败按 $0 放行,
+                # 瞄具黑屏照常开火。fail_closed 档位下按超额熔断。
+                if fail_closed:
+                    self._emit_cost_block(
+                        scope="global_tracker_read_failed",
+                        role_name=role.name,
+                        budget=global_cap, current=-1.0, now=now,
+                    )
+                    return True
                 total = 0.0
             if total >= global_cap:
                 self._emit_cost_block(
@@ -249,6 +280,13 @@ class DispatchRoutingQueriesMixin:
                 role_summary = self.cost_tracker.per_role_totals().get(role.name)
                 role_total = role_summary.total_usd if role_summary else 0.0
             except Exception:
+                if fail_closed:
+                    self._emit_cost_block(
+                        scope="role_tracker_read_failed",
+                        role_name=role.name,
+                        budget=role_cap, current=-1.0, now=now,
+                    )
+                    return True
                 role_total = 0.0
             if role_total >= role_cap:
                 self._emit_cost_block(

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tool Skill Parity"
+  short_description: "Check tool registry, function calling, and skill loading parity."
+  default_prompt: "Use this skill to verify tool/function calling and skill discovery parity."

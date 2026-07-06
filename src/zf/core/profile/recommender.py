@@ -47,8 +47,13 @@ def recommend(
     # --- axis ①: intent → validated prod flow, else lightweight preset -------
     # Catalog = examples/prod/ flows (PB7 validated). Long tail (hobby / empty /
     # tiny single-unit-no-tests) falls back to the minimal preset.
+    tiny_without_tests = not has_tests and not fullstack and not multi
+    # Explicit long-horizon intents should still use validated prod flows for
+    # declared/from-zero projects.  Only hobby scope or genuinely low-signal
+    # detection falls back to the single-dev minimal preset.
+    intent_prefers_flow = intent in {"refactor", "maintain", "review"}
     lightweight = scale == "hobby" or low_signal or (
-        not has_tests and not fullstack and not multi
+        tiny_without_tests and not intent_prefers_flow
     )
     flow_archetype = flow_id_for_intent(intent, backend)
     if lightweight or flow_archetype is None:

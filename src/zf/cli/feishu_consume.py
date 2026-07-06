@@ -15,6 +15,7 @@ without a live lark-cli. The subprocess runner is thin glue.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import signal
@@ -29,6 +30,8 @@ from zf.core.events.factory import event_log_from_project
 from zf.integrations.feishu.routing import resolve_feishu_route
 from zf.integrations.feishu.storage import IdempotencyStore
 from zf.integrations.feishu.transport import MockFeishuTransport
+from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_sidecar import channel_message_event_payload
 from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.channel_reply_turn import run_channel_reply_turn
 
@@ -48,6 +51,43 @@ def ingest_feishu_event(raw_event: dict, *, context) -> dict:
     return {"status": "ignored", "reason": event.event_type}
 
 
+def _inbound_idempotency_key(event) -> str:
+    """Dedup key for one inbound message. message_id when Feishu provides it;
+    otherwise a content digest so a re-delivered message-id-less WS frame
+    cannot double-fire (2026-07-03 audit B2)."""
+    message_id = str(event.payload.get("message_id") or "")
+    if message_id:
+        return f"feishu:msg:{message_id}"
+    digest = hashlib.sha1("|".join((
+        str(event.chat_id or ""),
+        str(event.user_id or ""),
+        str(event.payload.get("create_time") or ""),
+        str(event.payload.get("text") or ""),
+    )).encode("utf-8")).hexdigest()[:16]
+    return f"feishu:msg-fallback:{digest}"
+
+
+def _sender_blocked(event, *, context) -> bool:
+    """runtime.feishu_inbound.allowed_senders gate (empty = allow all)."""
+    runtime = getattr(context.config, "runtime", None)
+    inbound = getattr(runtime, "feishu_inbound", None)
+    allowed = list(getattr(inbound, "allowed_senders", None) or [])
+    if not allowed or str(event.user_id or "") in allowed:
+        return False
+    writer = EventWriter(
+        event_log_from_project(context.state_dir, config=context.config))
+    writer.emit(
+        "feishu.inbound.sender_blocked",
+        actor=f"feishu:{event.user_id or 'unknown'}",
+        payload={
+            "chat_id": event.chat_id,
+            "user_id": str(event.user_id or ""),
+            "reason": "sender_not_in_allowlist",
+        },
+    )
+    return True
+
+
 def _route_inbound_message(event, *, context) -> dict:
     route = resolve_feishu_route(
         context.config,
@@ -58,13 +98,17 @@ def _route_inbound_message(event, *, context) -> dict:
     if route is None:
         return {"status": "dropped", "reason": "unmapped_chat",
                 "chat_id": event.chat_id}
+    if _sender_blocked(event, context=context):
+        return {"status": "dropped", "reason": "sender_not_allowed",
+                "chat_id": event.chat_id}
 
     message_id = str(event.payload.get("message_id") or "")
     store = IdempotencyStore(
         context.state_dir / "integrations" / "feishu" / "inbound_idempotency.jsonl")
-    if message_id and store.check_and_record(
-            f"feishu:msg:{message_id}", command="inbound", user_id=event.user_id,
-            chat_id=event.chat_id, source="feishu-consume"):
+    if store.check_and_record(
+            _inbound_idempotency_key(event), command="inbound",
+            user_id=event.user_id, chat_id=event.chat_id,
+            source="feishu-consume"):
         return {"status": "duplicate", "message_id": message_id}
 
     if route.target == "channel":
@@ -141,7 +185,6 @@ def bridge_inbound_message(event, *, context) -> dict:
 
     from zf.integrations.feishu import catchup
     from zf.integrations.feishu.routing import resolve_feishu_route
-    from zf.runtime.channel_projection import project_channel
 
     route = resolve_feishu_route(
         context.config,
@@ -157,18 +200,20 @@ def bridge_inbound_message(event, *, context) -> dict:
     ):
         return {"status": "skipped", "reason": "no_channel_route"}
     setattr(event, "route", route)
+    if _sender_blocked(event, context=context):
+        return {"status": "dropped", "reason": "sender_not_allowed",
+                "chat_id": event.chat_id}
 
     # W5 dedup: gate live + catchup-replay on the Feishu message_id so a restart
     # replay (or a re-delivered WS frame) never re-fires a reply. message_id-less
-    # events (rare) fall through and are processed.
+    # events dedup on a content digest (2026-07-03 audit B2).
     message_id = str(event.payload.get("message_id") or "")
-    if message_id:
-        store = IdempotencyStore(
-            context.state_dir / "integrations" / "feishu" / "inbound_idempotency.jsonl")
-        if store.check_and_record(f"feishu:msg:{message_id}", command="bridge-inbound",
-                                  user_id=event.user_id, chat_id=event.chat_id,
-                                  source="feishu-bridge"):
-            return {"status": "duplicate", "message_id": message_id}
+    store = IdempotencyStore(
+        context.state_dir / "integrations" / "feishu" / "inbound_idempotency.jsonl")
+    if store.check_and_record(_inbound_idempotency_key(event), command="bridge-inbound",
+                              user_id=event.user_id, chat_id=event.chat_id,
+                              source="feishu-bridge"):
+        return {"status": "duplicate", "message_id": message_id}
 
     writer = EventWriter(
         event_log_from_project(context.state_dir, config=context.config))
@@ -215,18 +260,19 @@ def bridge_inbound_message(event, *, context) -> dict:
                                  "permissions": ["read", "message"],
                                  "source": "feishu"})
 
+    msg_payload = channel_message_event_payload(context.state_dir, {
+        "channel_id": channel_id, "thread_id": "main",
+        "message_id": message_id or f"feishu-{event.user_id}",
+        "member_id": event.user_id or "feishu", "role": "user",
+        "source": "feishu", "text": str(event.payload.get("text") or ""),
+        "mentions": [member_id],
+        "refs": {"feishu": {"chat_id": event.chat_id, "message_id": message_id}},
+    }, created_by="feishu-consume")
     msg = writer.emit(
         "channel.message.posted",
         actor=f"feishu:{event.user_id or 'unknown'}",
         correlation_id=channel_id,
-        payload={
-            "channel_id": channel_id, "thread_id": "main",
-            "message_id": message_id or f"feishu-{event.user_id}",
-            "member_id": event.user_id or "feishu", "role": "user",
-            "source": "feishu", "text": str(event.payload.get("text") or ""),
-            "mentions": [member_id],
-            "refs": {"feishu": {"chat_id": event.chat_id, "message_id": message_id}},
-        },
+        payload=msg_payload,
     )
     turn = run_channel_reply_turn(
         context.state_dir, writer, context.config,

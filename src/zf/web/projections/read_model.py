@@ -32,7 +32,7 @@ from zf.core.state.locks import locked_path
 from zf.runtime.sidecar_refs import iter_sidecar_ref_descriptors
 
 
-SCHEMA_VERSION = "event-read-model.v3"
+SCHEMA_VERSION = "event-read-model.v4"
 _JOBS: dict[str, threading.Thread] = {}
 _JOBS_LOCK = threading.Lock()
 # Throttle background tail catch-ups: a busy dashboard calls hydrate/events/
@@ -268,6 +268,41 @@ def projection_status(state_dir: Path, *, count_source: bool = False) -> dict[st
     }
 
 
+_INFLIGHT_REBUILDS: dict[str, threading.Event] = {}
+_INFLIGHT_REBUILDS_LOCK = threading.Lock()
+
+
+def _rebuild_single_flight(
+    state_dir: Path,
+    *,
+    config: ZfConfig | None = None,
+    wait_timeout_s: float = 15.0,
+) -> None:
+    """Run at most one rebuild per db at a time; joiners wait for the owner.
+
+    Concurrent page loads each saw tail_behind and each called rebuild(),
+    convoying on the cross-process FileLock and holding threadpool tokens
+    (contributing to the live-project full-site hangs). The owner builds;
+    joiners block until it lands (read-your-writes preserved) or time out.
+    """
+    key = str(db_path(state_dir).resolve())
+    with _INFLIGHT_REBUILDS_LOCK:
+        event = _INFLIGHT_REBUILDS.get(key)
+        owner = event is None
+        if owner:
+            event = threading.Event()
+            _INFLIGHT_REBUILDS[key] = event
+    if owner:
+        try:
+            rebuild(state_dir, config=config)
+        finally:
+            with _INFLIGHT_REBUILDS_LOCK:
+                _INFLIGHT_REBUILDS.pop(key, None)
+            event.set()
+    else:
+        event.wait(wait_timeout_s)
+
+
 def ensure_requested(
     state_dir: Path,
     *,
@@ -283,11 +318,11 @@ def ensure_requested(
         # forced on every request. When nothing was appended (idle / repeated
         # requests) this is skipped entirely and we serve straight from sqlite.
         if status.get("tail_behind"):
-            rebuild(state_dir, config=config)
+            _rebuild_single_flight(state_dir, config=config)
             return projection_status(state_dir)
         return status
     if synchronous_if_missing and status["projection_state"] == "missing":
-        rebuild(state_dir, config=config)
+        _rebuild_single_flight(state_dir, config=config)
         return projection_status(state_dir)
     request_catch_up(state_dir, config=config)
     return status
@@ -469,6 +504,13 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
             _set_meta(conn, "segment_count", len(manifest.segments))
             _set_meta(conn, "total_bytes", manifest.total_bytes)
             conn.commit()
+            try:
+                # Truncate the WAL after a rebuild: multi-MB projection_cache
+                # REPLACEs otherwise pile up (58MB WAL observed on a live
+                # project) because concurrent readers pin auto-checkpointing.
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            except sqlite3.Error:
+                pass
     return {
         "schema_version": SCHEMA_VERSION,
         "projection_state": "ready",
@@ -1401,6 +1443,10 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         "fallback_reason",
         "mutates_task_state",
         "action_proposal",
+        # kanban.agent.action.proposed carries the proposal object under
+        # `proposal` (both Web-panel and Feishu emitters); without it the
+        # Triage Accept card cannot reconstruct the action to run.
+        "proposal",
         "has_action_proposal",
         "delta_count",
         "reply_event_id",
@@ -1410,7 +1456,7 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         value = payload.get(key)
         if value in (None, ""):
             continue
-        if key == "action_proposal" and isinstance(value, dict):
+        if key in {"action_proposal", "proposal"} and isinstance(value, dict):
             keep[key] = redact_obj(value)
             continue
         if isinstance(value, (str, int, float, bool)):

@@ -177,3 +177,86 @@ def test_validate_cold_start_prints_topology_section(tmp_path, monkeypatch):
     assert "Dead-end roles" in out
     # Returns 0 or 1 depending on score, but shouldn't crash
     assert rc in (0, 1)
+
+
+def test_validate_cold_start_filters_expected_parity_bridge_graph_warnings(tmp_path):
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "README.md").write_text("x")
+    (workspace / "CLAUDE.md").write_text("x")
+    (workspace / "src").mkdir()
+    (workspace / "tests").mkdir()
+    state = workspace / ".zf"
+    state.mkdir()
+    (state / "events.jsonl").touch()
+    (workspace / "zf.yaml").write_text("""\
+version: "1.0"
+project: {name: hand-written-refactor}
+roles:
+- name: verify-lane-0
+  backend: mock
+  instance_id: verify-lane-0
+  role_kind: reader
+- name: module-parity-scan
+  backend: mock
+  instance_id: module-parity-scan
+  role_kind: reader
+- name: judge-refactor
+  backend: mock
+  instance_id: judge-refactor
+  role_kind: reader
+workflow:
+  dag:
+    external_triggers: [candidate.ready, module.parity.closed]
+  stages:
+  - id: verify
+    trigger: candidate.ready
+    topology: fanout_reader
+    roles: [verify-lane-0]
+    aggregate:
+      mode: wait_for_all
+      child_success_event: verify.child.completed
+      child_failure_event: verify.child.failed
+      success_event: verify.passed
+      failure_event: verify.failed
+  - id: module-parity
+    trigger: verify.parity_scan.requested
+    topology: fanout_reader
+    roles: [module-parity-scan]
+    aggregate:
+      mode: wait_for_all
+      child_success_event: module.parity.child.completed
+      child_failure_event: module.parity.child.failed
+      success_event: cangjie.module.parity.scan.completed
+      failure_event: cangjie.module.parity.scan.failed
+  - id: judge
+    trigger: module.parity.closed
+    topology: fanout_reader
+    roles: [judge-refactor]
+    aggregate:
+      mode: wait_for_all
+      child_success_event: judge.child.completed
+      child_failure_event: judge.child.failed
+      success_event: judge.passed
+      failure_event: judge.failed
+""")
+
+    from zf.cli import validate as validate_mod
+
+    class _Args:
+        path = str(workspace / "zf.yaml")
+        cold_start = True
+        architecture = False
+        instructions = False
+
+    buf = io.StringIO()
+    with redirect_stdout(buf):
+        rc = validate_mod.run(_Args())
+    out = buf.getvalue()
+
+    assert rc in (0, 1)
+    assert "event_without_consumer: stage=verify event=verify.passed" not in out
+    assert (
+        "event_without_consumer: stage=module-parity "
+        "event=cangjie.module.parity.scan.completed"
+    ) not in out

@@ -27,6 +27,14 @@ if TYPE_CHECKING:
 
 
 _READ_ALL_CACHE: dict[tuple, tuple] = {}
+# R11-1 (2026-07-03): append-fold companion. _READ_ALL_CACHE is exact-key
+# (mtime,size) so EVERY append invalidated it and forced a full re-decode of
+# archives+active for all ~16 read_all consumers (metrics, channel projection,
+# run archive, ...). events.jsonl is append-only and archives are immutable,
+# so when the archive inventory is unchanged and the active file only grew we
+# decode just the tail. Keyed by (path, signer, allow_unsigned) — stable
+# across appends.
+_READ_ALL_FOLD: dict[tuple, dict] = {}
 
 
 class EventLog:
@@ -246,24 +254,32 @@ class EventLog:
         return events, new_offset
 
     def _parse_file(self, path: Path) -> list[ZfEvent]:
+        events, _consumed = self._parse_file_consumed(path)
+        return events
+
+    def _parse_file_consumed(self, path: Path) -> tuple[list[ZfEvent], int]:
+        """Parse a log file; also return how many bytes were consumed.
+
+        The consumed offset (last complete line boundary) lets read_all's
+        fold cache decode only the appended tail on the next call."""
         if not path.exists():
-            return []
+            return [], 0
         try:
             snapshot_size = path.stat().st_size
         except FileNotFoundError:
-            return []
+            return [], 0
         try:
             with path.open("rb") as f:
                 data = f.read(snapshot_size)
         except FileNotFoundError:
-            return []
+            return [], 0
         # Decode only the bytes present when the read began. If the active log
         # is being appended concurrently, this prevents readers from chasing a
         # moving EOF. A trailing newline-less row may be a partial write; leave
         # it for a later read, matching read_from_offset().
         last_newline = data.rfind(b"\n")
         if last_newline < 0:
-            return []
+            return [], 0
         data = data[: last_newline + 1]
         events: list[ZfEvent] = []
         for raw in data.split(b"\n"):
@@ -273,7 +289,29 @@ class EventLog:
             ev = self._decode(line)
             if ev is not None:
                 events.append(ev)
-        return events
+        return events, len(data)
+
+    def _parse_tail(self, path: Path, offset: int, snapshot_size: int) -> tuple[list[ZfEvent], int]:
+        """Decode only bytes [offset, snapshot_size) — the appended tail."""
+        try:
+            with path.open("rb") as f:
+                f.seek(offset)
+                data = f.read(max(0, snapshot_size - offset))
+        except (FileNotFoundError, OSError):
+            return [], 0
+        last_newline = data.rfind(b"\n")
+        if last_newline < 0:
+            return [], 0
+        data = data[: last_newline + 1]
+        events: list[ZfEvent] = []
+        for raw in data.split(b"\n"):
+            line = raw.decode("utf-8", "replace").strip()
+            if not line:
+                continue
+            ev = self._decode(line)
+            if ev is not None:
+                events.append(ev)
+        return events, len(data)
 
     def read_all(self) -> list[ZfEvent]:
         """Read archives (oldest first) + today's active file.
@@ -311,16 +349,62 @@ class EventLog:
             cached = _READ_ALL_CACHE.get(key)
             if cached is not None:
                 return list(cached)
+        try:
+            archive_inventory = tuple(
+                (str(f), f.stat().st_size)
+                for f in list_archives(self._archive_dir, suffix=".jsonl")
+            )
+        except OSError:
+            archive_inventory = None
+        fold_key = None if key is None else (key[0], key[3], key[4])
+        if (
+            fold_key is not None
+            and archive_inventory is not None
+        ):
+            entry = _READ_ALL_FOLD.get(fold_key)
+            if (
+                entry is not None
+                and entry["archives"] == archive_inventory
+                and key[2] >= entry["consumed"]
+            ):
+                # Append-only tail: decode just the new bytes.
+                tail, tail_bytes = self._parse_tail(
+                    self.path, entry["consumed"], key[2],
+                )
+                folded = entry["events"] + tuple(tail) if tail else entry["events"]
+                # Replace the entry wholesale (single dict assignment) instead
+                # of mutating in place — a concurrent reader must never see
+                # events updated but consumed not yet (it would re-fold the
+                # same tail and duplicate rows).
+                _READ_ALL_FOLD[fold_key] = {
+                    "archives": entry["archives"],
+                    "consumed": entry["consumed"] + tail_bytes,
+                    "events": folded,
+                }
+                if len(_READ_ALL_CACHE) > 8:
+                    _READ_ALL_CACHE.clear()
+                _READ_ALL_CACHE[key] = folded
+                return list(folded)
         events: list[ZfEvent] = []
         # Archives in chronological order (oldest first)
         for f in list_archives(self._archive_dir, suffix=".jsonl"):
             events.extend(self._parse_file(f))
         # Today's active file
-        events.extend(self._parse_file(self.path))
+        active_events, consumed = self._parse_file_consumed(self.path)
+        events.extend(active_events)
         if key is not None:
             if len(_READ_ALL_CACHE) > 8:
                 _READ_ALL_CACHE.clear()
-            _READ_ALL_CACHE[key] = tuple(events)
+            events_tuple = tuple(events)
+            _READ_ALL_CACHE[key] = events_tuple
+            if archive_inventory is not None:
+                while len(_READ_ALL_FOLD) > 8:
+                    _READ_ALL_FOLD.pop(next(iter(_READ_ALL_FOLD)))
+                _READ_ALL_FOLD[fold_key] = {
+                    "archives": archive_inventory,
+                    "consumed": consumed,
+                    "events": events_tuple,
+                }
         return events
 
     def events_for_task(self, task_id: str, *, limit: int | None = None) -> list[ZfEvent]:

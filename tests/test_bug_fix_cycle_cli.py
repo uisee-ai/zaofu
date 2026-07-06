@@ -3,7 +3,7 @@
 Per docs/design/36 §4.5 + backlog beta-self-healing.md (β-3 section).
 
 Wraps the operator playbook (β-2 markdown) into a CLI helper that:
-  - reads the latest zaofu.bug.detected from a cangjie .zf/events.jsonl
+  - reads the latest zaofu.bug.detected from a project .zf/events.jsonl
   - prints diagnosis + step-by-step instructions
   - --json flag for tooling / automation
   - --signature filter for selecting a specific bug pattern
@@ -51,7 +51,7 @@ def _bug_event(
             "confidence": confidence,
             "evidence_event_ids": evidence or ["evt-1", "evt-2"],
             "suggested_fix_area": suggested_fix_area,
-            "cangjie_state_snapshot": snapshot or {"pdd_id": "F-abcdef00"},
+            "run_state_snapshot": snapshot or {"pdd_id": "F-abcdef00"},
         },
     )
 
@@ -132,9 +132,23 @@ def test_cli_prints_human_diagnosis_by_default(tmp_path: Path):
     assert "evt-foo" in out
     assert "evt-bar" in out
     assert "F-12345678" in out
+    assert "Run state snapshot" in out
     # Playbook steps
     assert "stash" in out.lower()
     assert "restart" in out.lower()
+
+
+def test_cli_reads_legacy_cangjie_snapshot_payload(tmp_path: Path):
+    event = _bug_event(snapshot={"pdd_id": "F-legacy"})
+    payload = dict(event.payload)
+    payload["cangjie_state_snapshot"] = payload.pop("run_state_snapshot")
+    event.payload = payload
+    sd = _make_state_with_bug(tmp_path, event)
+
+    code, out = _run_cli("--state-dir", str(sd))
+
+    assert code == 0
+    assert "F-legacy" in out
 
 
 # ─── JSON output ─────────────────────────────────────────────────────────

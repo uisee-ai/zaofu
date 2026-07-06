@@ -1124,6 +1124,63 @@ class LifecycleManagerMixin(
             pass
 
 
+    def _rescue_orphan_pending_recycles(self) -> None:
+        """r6-F6:回收任务重启即丢 → pending_recycle 孤儿救援。
+
+        force-recycle 依赖内存态(_hard_cap_exceeded/_instance_state),
+        重启后清零;worker 停在 pending_recycle,回收无人执行,该实例的
+        dispatch 永久 deferred(r6 实弹:verify-scene 卡 40 分钟,全靠
+        operator 杀 pane)。sweep 从 role_sessions 心跳真相接管:state
+        为 pending_recycle 且心跳静止超过 600s 且本进程未在跟踪 →
+        强制进入 recycling 并启动回收。
+        """
+        try:
+            from datetime import datetime, timezone
+
+            from zf.core.state.role_sessions import RoleSessionRegistry
+
+            registry = RoleSessionRegistry(
+                self.state_dir / "role_sessions.yaml",
+                project_root=str(self.project_root),
+            )
+        except Exception:
+            return
+        for role in getattr(self.config, "roles", []) or []:
+            instance_id = getattr(role, "instance_id", "") or getattr(role, "name", "")
+            if not instance_id:
+                continue
+            if self._instance_state.get(instance_id) in ("pending_recycle", "recycling"):
+                continue  # 本进程已在管
+            try:
+                heartbeat_ts, heartbeat = registry.get_last_heartbeat(instance_id)
+            except Exception:
+                continue
+            state = str((heartbeat or {}).get("state") or "")
+            if state != "pending_recycle":
+                continue
+            age = None
+            try:
+                parsed = datetime.fromisoformat(str(heartbeat_ts).replace("Z", "+00:00"))
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                age = (datetime.now(timezone.utc) - parsed).total_seconds()
+            except Exception:
+                continue
+            if age is None or age < 600.0:
+                continue
+            self._instance_state[instance_id] = "recycling"
+            self._set_worker_state(
+                instance_id, "recycling",
+                reason=(
+                    f"orphan pending_recycle rescued after {age:.0f}s silence "
+                    "(recycle executor lost across restart, r6-F6)"
+                ),
+            )
+            try:
+                self._start_recycle(role)
+            except Exception:
+                pass
+
     def _check_context_thresholds(self) -> None:
         """Poll every role's session file.
 
@@ -1134,6 +1191,7 @@ class LifecycleManagerMixin(
           2. Recycle decisions: skipped for orchestrator (can't hot-swap
              Layer 2 mid-flight) and for mock/python backends.
         """
+        self._rescue_orphan_pending_recycles()
         for role in self.config.roles:
             reader = self._session_readers.get(role.backend)
             if reader is None:
@@ -1756,6 +1814,8 @@ class LifecycleManagerMixin(
                         role,
                         task=None,
                         skill_entries=skill_entries,
+                        state_dir_ref=self.state_dir,
+                        project_root=getattr(self, "project_root", None),
                     ),
                     encoding="utf-8",
                 )

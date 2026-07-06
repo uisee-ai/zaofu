@@ -195,3 +195,107 @@ def kanban_agent_evidence_model() -> dict[str, Any]:
         "interaction": "Kanban Agent chat and PTY transcript are interaction evidence",
         "completion_rule": "operator/backend completion never moves a task to done by itself",
     }
+
+
+# Alias -> canonical controlled-action name. Moved verbatim from
+# web/server.py so non-fastapi consumers (Feishu specialist conversation,
+# proposal extraction) canonicalize identically to the Web action surface.
+CANONICAL_ACTIONS = {
+    "dispatch": "dispatch-task",
+    "rerun-verify": "request-verify",
+    "ship": "ship-candidate",
+    "suspend": "pause-agent",
+    "resume": "resume-agent",
+    "create-issue": "create-task",
+    "update-issue": "update-task",
+    "reply-worker": "worker-reply",
+    "respawn-worker": "worker-respawn",
+    "drain-worker": "worker-drain",
+    "channel.create": "channel-create",
+    "channel-new": "channel-create",
+    "channel.add_member": "channel-invite-member",
+    "channel-add-member": "channel-invite-member",
+    "channel.member.permission": "channel-update-member-permission",
+    "channel.member.permission.update": "channel-update-member-permission",
+    "channel.member.remove": "channel-remove-member",
+    "channel-remove-agent": "channel-remove-member",
+    "channel.delete": "channel-delete",
+    "channel.history.clear": "channel-clear-history",
+    "channel.synthesis.request": "channel-synthesis-request",
+    "channel.mark_read": "channel-mark-read",
+    "channel.handoff": "channel-handoff",
+    "channel.discussion_mode": "channel-discussion-mode",
+    "channel.owner_report.request": "channel-owner-report",
+    "channel-owner-report-request": "channel-owner-report",
+    "cancel-agent-session": "agent-session-cancel",
+    "agent.session.cancel": "agent-session-cancel",
+    "assignment.propose": "assignment-propose",
+    "assignment-intent": "assignment-propose",
+    "automation.run": "automation-run",
+    "automation.run.manual": "automation-run",
+    "run-automation": "automation-run",
+    "maintenance.prepare": "maintenance-prepare",
+    "maintenance_prepare": "maintenance-prepare",
+    "attention.ack": "attention-ack",
+    "attention.snooze": "attention-snooze",
+    "attention.resolve": "attention-resolve",
+    "attention.feedback": "attention-feedback",
+    "attention.escalate": "attention-escalate",
+    "operator.intent.create": "operator-intent-create",
+    "operator.intent.approve": "operator-intent-approve",
+    "operator.intent.reject": "operator-intent-reject",
+    "replan.approve": "replan-approve",
+    "replan.defer": "replan-defer",
+    "replan.reject": "replan-reject",
+    "plan.approve": "plan-approve",
+    "plan.reject": "plan-reject",
+    "workflow.invoke": "workflow-invoke",
+    "workflow.batch.resume": "workflow-batch-resume",
+    "candidate.rework.apply": "candidate-rework-apply",
+    "idea.to_product": "idea-to-product",
+    "productize-idea": "idea-to-product",
+    "provider.dev_chat.start": "provider-dev-chat-start",
+    "provider.dev_chat.send": "provider-dev-chat-send",
+    "provider.dev_chat.stop": "provider-dev-chat-stop",
+    "workflow.config.propose": "workflow-config-propose",
+    "workflow.config.validate": "workflow-config-validate",
+    "workflow.config.apply": "workflow-config-apply",
+    "runtime.stop": "runtime-stop",
+    "runtime.restart": "runtime-restart",
+    "runtime.resume": "runtime-resume",
+    "failure.closeout": "failure-closeout",
+    "failure.materialize.closeout": "failure-closeout",
+    "failure.closeout.activate": "failure-closeout-activate",
+    "failure.activate.closeout": "failure-closeout-activate",
+    "real.e2e.run": "real-e2e-run",
+    "real_e2e.run": "real-e2e-run",
+    "run.contract.review": "run-contract-review",
+}
+
+
+def canonical_action(action_name: str) -> str:
+    return CANONICAL_ACTIONS.get(action_name, action_name)
+
+
+# Reply-output contract for kanban-agent channel members (Feishu surface).
+# The Web panel teaches this through KanbanHeadlessAgent._system_prompt; a
+# channel member's system prompt has no such section, so the Feishu inviter
+# attaches this as the member's reply_contract. Shape rules mirror what
+# normalize_proposed_task_contract expects (racing-e2e contract-shape fix).
+KANBAN_AGENT_CHANNEL_PROPOSAL_CONTRACT = (
+    "Action proposals: you are the ZaoFu Kanban Agent on this channel. "
+    "Read-only requests (introduce, explain, analyze, debug, review, why) must "
+    "be answered in plain text without action_proposal JSON, and never include "
+    "example action_proposal JSON in explanations. Only when the operator "
+    "explicitly asks to create, track, or schedule work, end your reply with a "
+    "compact fenced json block containing "
+    '{"action_proposal": {"action": "create-task", "payload": {"title": ..., '
+    '"contract": {"behavior": ..., "verification": ..., "acceptance": ...}}, '
+    '"reason": ...}}. '
+    "contract.behavior and contract.verification must each be a single string "
+    "(join multiple checks with newlines, not a JSON list); contract.scope, if "
+    "present, must contain only repo-relative path globs like src/** — put any "
+    "non-path scope prose in the behavior text instead. For product ideas "
+    "prefer action=idea-to-product with payload.objective. The operator must "
+    "approve every proposal before it runs; never claim the task was created."
+)

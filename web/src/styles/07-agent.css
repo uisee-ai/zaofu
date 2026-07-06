@@ -1140,3 +1140,113 @@
   border-bottom: 1.5px solid var(--brand);
   transform: rotate(45deg);
 }
+
+/* chat-e2e F2: durable pending-proposal strip above the composer */
+.headless-pending-proposals {
+  border-top: 1px solid var(--line);
+  background: color-mix(in oklab, var(--brand) 5%, transparent);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.headless-pending-title {
+  font-size: var(--text-12, 12px);
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.headless-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.headless-pending-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.headless-pending-main strong {
+  font-size: var(--text-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.headless-pending-main small {
+  color: var(--muted-foreground);
+  font-size: var(--text-12, 12px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.headless-pending-run,
+.headless-pending-dismiss {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-size: var(--text-12, 12px);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+.headless-pending-run:not(:disabled) {
+  border-color: color-mix(in oklab, var(--brand) 55%, var(--line));
+  color: var(--brand);
+}
+.headless-pending-run:disabled,
+.headless-pending-dismiss:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* visibility batch #4: informed approval on the pending-proposal strip */
+.headless-pending-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.headless-pending-expand {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: var(--text-12, 12px);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.headless-pending-details {
+  border-left: 2px solid color-mix(in oklab, var(--brand) 40%, var(--line));
+  margin-left: 2px;
+  padding: 4px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--text-12, 12px);
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.headless-pending-key {
+  display: inline-block;
+  min-width: 82px;
+  color: var(--brand);
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+.headless-pending-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--text-12, 12px);
+  color: var(--ok, #3fb950);
+}
+.headless-pending-error {
+  color: var(--warn);
+  font-size: var(--text-12, 12px);
+}

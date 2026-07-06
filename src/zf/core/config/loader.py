@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import glob
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -35,6 +37,13 @@ _VALID_AUTOPILOT_ACTIONS = ("triage",)
 _VALID_OPENCLAW_BINDING_MODES = ("remote_gateway",)
 _VALID_OPENCLAW_WORKSPACE_POLICIES = ("isolated",)
 _VALID_OPENCLAW_TOOL_PROFILES = ("safe", "readonly", "reviewer", "coding")
+_DESIGN_ROLE_NAMES = frozenset({"arch", "critic"})
+_DESIGN_STAGE_NAMES = frozenset({"design", "design_critique"})
+_LANE_RUNTIME_REWORK_EVENTS = frozenset(
+    {
+        "dev.failed",
+    }
+)
 _ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 _VALID_AGGREGATE_MODES = (
     "wait_for_all",
@@ -222,11 +231,12 @@ _KNOWN_TOP_LEVEL_KEYS = frozenset({
     "budget_enforcement", "budget_enforcement_enabled",
 })
 _KNOWN_WORKFLOW_KEYS = frozenset({
+    "attempt_lease_grace_s",  # 131-P2-3 lease 宽限(r6 首用)
     "harness_profile", "affinity_lanes", "stages", "rework_routing",
     "gan_rounds", "event_actions", "wake_extensions", "dag",
     "inline_overrides", "work_units", "completion_audit", "resume_packet",
     "integration", "strict_triggers", "fast_path", "replan_eval",
-    "pipelines", "admission_replan", "plan_approval",
+    "pipelines", "admission_replan", "plan_approval", "_flow_metadata",
 })
 _KNOWN_ROLE_KEYS = frozenset({
     "name", "backend", "backends", "role_kind", "model", "allowed_tools",
@@ -932,18 +942,56 @@ def _derive_stage_backedge_rework_routing(
     return routing
 
 
+def _has_affinity_stage_slots(stages: list[WorkflowStageConfig]) -> bool:
+    return any(
+        stage.assignment.strategy == "affinity_stage_slots"
+        for stage in stages
+    )
+
+
+def _role_by_rework_target(roles: list[RoleConfig]) -> dict[str, RoleConfig]:
+    out: dict[str, RoleConfig] = {}
+    for role in roles:
+        if role.name:
+            out.setdefault(role.name, role)
+        if role.instance_id:
+            out.setdefault(role.instance_id, role)
+    return out
+
+
+def _is_design_rework_target(
+    target: str,
+    roles_by_target: dict[str, RoleConfig],
+) -> bool:
+    if not target:
+        return False
+    if target in _DESIGN_ROLE_NAMES:
+        return True
+    role = roles_by_target.get(target)
+    if role is None:
+        return False
+    role_refs = {role.name, role.instance_id}
+    if role_refs & _DESIGN_ROLE_NAMES:
+        return True
+    return bool(set(role.stages) & _DESIGN_STAGE_NAMES)
+
+
 def _validate_rework_routing(
     raw_routing: object,
     stages: list[WorkflowStageConfig],
+    roles: list[RoleConfig],
 ) -> dict:
     if raw_routing in (None, ""):
         return {}
     if not isinstance(raw_routing, dict):
         raise ConfigError("workflow.rework_routing must be a mapping")
     same_lane_events = _same_lane_affinity_backedge_events(stages)
+    has_lane_pipeline = _has_affinity_stage_slots(stages)
+    roles_by_target = _role_by_rework_target(roles)
     routing = dict(raw_routing)
     for event in routing:
         event_name = str(event or "").strip()
+        target = str(routing[event] or "").strip()
         if "," in event_name:
             raise ConfigError(
                 "workflow.rework_routing keys must name exactly one event; "
@@ -954,6 +1002,16 @@ def _validate_rework_routing(
                 f"workflow.rework_routing.{event_name} duplicates an "
                 "affinity same-lane stage backedge; remove the top-level "
                 "fixed route to avoid cross-lane rework"
+            )
+        if (
+            has_lane_pipeline
+            and event_name in _LANE_RUNTIME_REWORK_EVENTS
+            and _is_design_rework_target(target, roles_by_target)
+        ):
+            raise ConfigError(
+                f"workflow.rework_routing.{event_name} cannot route lane "
+                f"runtime event to design role {target!r}; use same-lane "
+                "stage backedge, orchestrator, or a plan synth role"
             )
     return routing
 
@@ -1419,6 +1477,106 @@ def _build_skill_sources(data: list | None) -> list[SkillSourceConfig]:
     return sources
 
 
+def _profile_source_refs_from_documents(documents: list[object]) -> list[object]:
+    """Extract ZfConfig.spec.profile_sources before envelope assembly.
+
+    This is a load-time source list only.  The field is stripped before the
+    canonical ZfConfig is built, so runtime consumers never read profile files.
+    """
+    refs: list[object] = []
+    docs = [doc for doc in documents if doc is not None]
+    if not docs:
+        return refs
+    if len(docs) == 1 and isinstance(docs[0], dict) and "kind" not in docs[0]:
+        raw = docs[0].get("profile_sources") or []
+        return raw if isinstance(raw, list) else [raw]
+    for doc in docs:
+        if not isinstance(doc, dict):
+            continue
+        if str(doc.get("kind") or "") != "ZfConfig":
+            continue
+        spec = doc.get("spec") or {}
+        if not isinstance(spec, dict):
+            continue
+        raw = spec.get("profile_sources") or []
+        return raw if isinstance(raw, list) else [raw]
+    return refs
+
+
+def _profile_source_item_path(item: object, *, index: int) -> str:
+    if isinstance(item, str):
+        ref = item.strip()
+    elif isinstance(item, dict):
+        unknown = sorted(str(k) for k in item if str(k) not in {"path"})
+        if unknown:
+            raise ConfigError(
+                f"profile_sources[{index}] unknown key(s) {unknown}; "
+                "only 'path' is supported"
+            )
+        ref = str(item.get("path") or "").strip()
+    else:
+        raise ConfigError(f"profile_sources[{index}] must be a string or mapping")
+    if not ref:
+        raise ConfigError(f"profile_sources[{index}] path is required")
+    return ref
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _load_profile_source_documents(
+    config_path: Path,
+    refs: list[object],
+    *,
+    env: dict[str, str],
+) -> tuple[list[object], list[dict[str, str]]]:
+    if not refs:
+        return [], []
+    base = config_path.parent
+    documents: list[object] = []
+    sources: list[dict[str, str]] = []
+    seen: set[Path] = set()
+    for index, item in enumerate(refs):
+        ref = _profile_source_item_path(item, index=index)
+        pattern = ref if Path(ref).is_absolute() else str(base / ref)
+        matches = [Path(p).resolve() for p in sorted(glob.glob(pattern))]
+        if not matches:
+            raise ConfigError(
+                f"profile_sources[{index}] {ref!r} did not match any files"
+            )
+        for source_path in matches:
+            if source_path in seen:
+                continue
+            seen.add(source_path)
+            if not source_path.is_file():
+                raise ConfigError(
+                    f"profile source {source_path} is not a regular file"
+                )
+            text = _expand_env_vars(
+                source_path.read_text(encoding="utf-8"),
+                env,
+            )
+            try:
+                loaded = list(yaml.safe_load_all(text))
+            except yaml.YAMLError as exc:
+                raise ConfigError(
+                    f"profile source {source_path} YAML parse error: {exc}"
+                )
+            documents.extend(loaded)
+            sources.append({
+                "kind": "ProfileSource",
+                "name": ref,
+                "path": str(source_path),
+                "sha256": _sha256_file(source_path),
+            })
+    return documents, sources
+
+
 def load_config(path: Path) -> ZfConfig:
     import sys
     from zf.core.events.known_types import validate_role_event_names
@@ -1426,14 +1584,32 @@ def load_config(path: Path) -> ZfConfig:
     if not path.exists():
         raise ConfigError(f"Config file not found: {path}")
 
-    text = _expand_env_vars(
-        path.read_text(encoding="utf-8"),
-        _config_env_map(path),
-    )
+    env = _config_env_map(path)
+    text = _expand_env_vars(path.read_text(encoding="utf-8"), env)
     try:
         documents = list(yaml.safe_load_all(text))
     except yaml.YAMLError as e:
         raise ConfigError(f"YAML parse error: {e}")
+    profile_documents, profile_source_files = _load_profile_source_documents(
+        path,
+        _profile_source_refs_from_documents(documents),
+        env=env,
+    )
+    if profile_documents:
+        non_empty_documents = [doc for doc in documents if doc is not None]
+        first_document = non_empty_documents[0] if non_empty_documents else None
+        if (
+            len(non_empty_documents) == 1
+            and isinstance(first_document, dict)
+            and "kind" not in first_document
+        ):
+            documents = [{
+                "apiVersion": "zaofu.dev/v1",
+                "kind": "ZfConfig",
+                "metadata": {"name": "legacy"},
+                "spec": first_document,
+            }]
+        documents = profile_documents + documents
     # doc 90 B1: kind envelope 前置层。单文档无 kind = 隐式 ZfConfig
     # (legacy 零迁移);多文档/kind 流路由进同一 raw dict —— envelope
     # 是语法糖,不是第二控制面。
@@ -1442,7 +1618,10 @@ def load_config(path: Path) -> ZfConfig:
         assemble_envelope_stream,
     )
     try:
-        raw, _envelope_profiles = assemble_envelope_stream(documents)
+        raw, _envelope_profiles = assemble_envelope_stream(
+            documents,
+            profile_source_files=profile_source_files,
+        )
     except KindEnvelopeError as e:
         raise ConfigError(str(e))
     if raw is None:
@@ -1605,6 +1784,7 @@ def load_config(path: Path) -> ZfConfig:
         _validate_rework_routing(
             workflow_data.get("rework_routing", {}) or {},
             workflow_stages,
+            roles,
         )
     )
 
@@ -1641,6 +1821,10 @@ def load_config(path: Path) -> ZfConfig:
                 default=harness_profile in ("strict", "release"),
             ),
             event_actions=workflow_data.get("event_actions", []) or [],
+            # 131-P2-3:lease 宽限可配置(F15 实证出厂 900s)。
+            attempt_lease_grace_s=float(
+                workflow_data.get("attempt_lease_grace_s", 900.0) or 900.0
+            ),
             rework_routing=rework_routing,
             # R28 (doc 93 §1/§5): admission/W1 机械拒 → 自动回 synth。缺省关。
             admission_replan=_build_admission_replan(
@@ -1680,6 +1864,7 @@ def load_config(path: Path) -> ZfConfig:
                 workflow_data.get("replan_eval"),
                 harness_profile=harness_profile,
             ),
+            flow_metadata=workflow_data.get("_flow_metadata", {}) or {},
             pipelines=pipelines,
             pipelines_role_meta=pipelines_role_meta,
         ),
@@ -1707,6 +1892,10 @@ def load_config(path: Path) -> ZfConfig:
         budget_enforcement_enabled=_bool_value(
             budget_enforcement_enabled,
             default=True,
+        ),
+        budget_fail_closed=_bool_value(
+            raw.get("budget_fail_closed"),
+            default=False,
         ),
     )
     # doc 90 增补:dag 顶层 schema_profile(不依赖 lane_pipeline 的引用位)。
@@ -1811,6 +2000,7 @@ def load_config(path: Path) -> ZfConfig:
     # they declare new event names and are NOT validated.
     for warn in validate_role_event_names(cfg.roles):
         print(f"Warning: {warn}", file=sys.stderr)
+    cfg.config_sources = list(raw.get("_config_profile_sources", []) or [])
     return cfg
 
 
@@ -2080,6 +2270,14 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
         ) from exc
     if feishu_inbound_debounce_ms < 0:
         raise ConfigError("runtime.feishu_inbound.debounce_ms must be >= 0")
+    feishu_allowed_senders_raw = feishu_inbound_raw.get("allowed_senders") or []
+    if not isinstance(feishu_allowed_senders_raw, list):
+        raise ConfigError("runtime.feishu_inbound.allowed_senders must be a list")
+    feishu_allowed_senders = [
+        str(value).strip()
+        for value in feishu_allowed_senders_raw
+        if str(value or "").strip()
+    ]
     candidate_strategy = str(git_raw.get("candidate_strategy", "cherry-pick"))
     if candidate_strategy not in _VALID_CANDIDATE_STRATEGIES:
         raise ConfigError(
@@ -2208,6 +2406,7 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
                 feishu_inbound_raw.get("require_routing"),
                 default=True,
             ),
+            allowed_senders=feishu_allowed_senders,
         ),
     )
 

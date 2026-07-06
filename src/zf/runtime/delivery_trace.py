@@ -16,6 +16,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from zf.core.events.module_parity import (
+    MODULE_PARITY_SCAN_FAILED_EVENTS,
+    MODULE_PARITY_SCAN_REQUESTED,
+    MODULE_PARITY_SCAN_RESULT_EVENTS,
+)
 from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.schema import Task
@@ -122,6 +127,12 @@ def build_delivery_trace(
         task_map_ref=task_map_ref,
     )
     goal_closure_loop = _goal_closure_loop(module_parity_loop)
+    control_room = _control_room_projection(
+        events=events,
+        tasks=tasks,
+        counts=counts,
+        feature_id=feature_id,
+    )
 
     result = {
         "schema_version": "delivery-trace.v1",
@@ -161,6 +172,7 @@ def build_delivery_trace(
         "replan_contract_gate": replan_contract_gate,
         "module_parity_loop": module_parity_loop,
         "goal_closure_loop": goal_closure_loop,
+        "control_room": control_room,
         # doc 82 P3: trace-level cockpit summaries (additive, read-only)
         "score_summary": build_score_summary(
             cycle_projection["autoresearch_cycles"]),
@@ -293,6 +305,160 @@ def _source_event_ids(events: EventSlice) -> list[str]:
     return ids[-80:]
 
 
+def _control_room_projection(
+    *,
+    events: EventSlice,
+    tasks: dict[str, Task],
+    counts: dict[str, int],
+    feature_id: str,
+) -> dict[str, Any]:
+    latest_event: ZfEvent | None = events[-1][1] if events else None
+    latest_payload = (
+        latest_event.payload
+        if latest_event is not None and isinstance(latest_event.payload, dict)
+        else {}
+    )
+    blocked_event = _latest_event(
+        events,
+        {
+            "flow.goal.blocked",
+            "goal.closure.blocked",
+            "module.parity.blocked",
+            "human.escalate",
+            "fanout.cancelled",
+        },
+    )
+    pending_event = _latest_event(
+        events,
+        {
+            "flow.goal.blocked",
+            "goal.closure.blocked",
+            "module.parity.blocked",
+            "flow.gap_plan.ready",
+            "goal.gap_plan.ready",
+            "task_map.ready",
+            "workflow.resume.applied",
+        },
+    )
+    latest_evidence = _latest_refs(events)
+    blocked_tasks = [task for task in tasks.values() if task.blocked_reason]
+    active_tasks = [
+        task
+        for task in tasks.values()
+        if task.status in {"in_progress", "review", "test", "judge", "blocked"}
+    ]
+    next_owner = _task_owner(active_tasks[0]) if active_tasks else ""
+    if not next_owner and pending_event is not None:
+        payload = pending_event.payload if isinstance(pending_event.payload, dict) else {}
+        next_owner = str(
+            payload.get("owner_role")
+            or payload.get("next_owner")
+            or payload.get("target_role")
+            or ""
+        )
+    blocked_reason = ""
+    if blocked_event is not None:
+        payload = blocked_event.payload if isinstance(blocked_event.payload, dict) else {}
+        blocked_reason = str(payload.get("reason") or blocked_event.type)
+    elif blocked_tasks:
+        blocked_reason = blocked_tasks[0].blocked_reason
+    return {
+        "schema_version": "control-room.v1",
+        "feature_id": feature_id,
+        "current_stage": str(
+            latest_payload.get("stage_id")
+            or latest_payload.get("current_stage")
+            or (latest_event.type if latest_event is not None else "")
+        ),
+        "blocked_reason": blocked_reason,
+        "next_owner": next_owner,
+        "pending_action": _pending_action(pending_event),
+        "latest_evidence": latest_evidence,
+        "gap_count": _gap_count(events),
+        "counts": {
+            "total": counts["total"],
+            "done": counts["done"],
+            "in_progress": counts["in_progress"],
+            "blocked": counts["blocked"],
+        },
+        "source_event_id": latest_event.id if latest_event is not None else "",
+    }
+
+
+def _latest_event(events: EventSlice, event_types: set[str]) -> ZfEvent | None:
+    for _seq, event in reversed(events):
+        if event.type in event_types:
+            return event
+    return None
+
+
+def _task_owner(task: Task) -> str:
+    return (
+        str(getattr(task, "assigned_to", "") or "")
+        or str(getattr(task.contract, "owner_instance", "") or "")
+        or str(getattr(task.contract, "owner_role", "") or "")
+    )
+
+
+def _pending_action(event: ZfEvent | None) -> str:
+    if event is None:
+        return ""
+    if event.type in {"flow.goal.blocked", "goal.closure.blocked", "module.parity.blocked"}:
+        return "run_manager_diagnose_gap"
+    if event.type in {"flow.gap_plan.ready", "goal.gap_plan.ready"}:
+        return "apply_gap_task_map"
+    if event.type == "task_map.ready":
+        return "dispatch_ready_tasks"
+    if event.type == "workflow.resume.applied":
+        return "continue_workflow"
+    return event.type
+
+
+def _latest_refs(events: EventSlice) -> list[str]:
+    keys = (
+        "artifact_refs",
+        "evidence_refs",
+        "test_refs",
+        "demo_refs",
+        "e2e_refs",
+        "provider_refs",
+        "parity_refs",
+        "regression_refs",
+        "gap_plan_ref",
+        "task_map_ref",
+    )
+    for _seq, event in reversed(events):
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        refs: list[str] = []
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value:
+                refs.append(value)
+            elif isinstance(value, list):
+                refs.extend(str(item) for item in value if str(item or ""))
+        if refs:
+            return list(dict.fromkeys(refs))[:12]
+    return []
+
+
+def _gap_count(events: EventSlice) -> int:
+    count = 0
+    for _seq, event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type in {"flow.gap_plan.ready", "goal.gap_plan.ready", "gap_plan.ready"}:
+            tasks = payload.get("gap_tasks")
+            if isinstance(tasks, list):
+                count += len(tasks)
+            else:
+                count += 1
+            continue
+        try:
+            count = max(count, int(payload.get("open_p0_p1_gap_count") or 0))
+        except (TypeError, ValueError):
+            pass
+    return count
+
+
 def _workflow_spine(
     *,
     events: EventSlice,
@@ -315,6 +481,8 @@ def _workflow_spine(
             "feature_id",
             "task_map_ref",
             "source_index_ref",
+            "pipeline_id",
+            "root_fanout_id",
         ):
             if payload.get(key) not in (None, "") and not meta.get(key):
                 meta[key] = payload.get(key)
@@ -357,6 +525,15 @@ def _workflow_spine(
             "source_index_ref": str(
                 payload.get("source_index_ref") or meta.get("source_index_ref") or ""
             ),
+            "pipeline_id": str(payload.get("pipeline_id") or meta.get("pipeline_id") or ""),
+            "root_fanout_id": str(
+                payload.get("root_fanout_id") or meta.get("root_fanout_id") or ""
+            ),
+            "lane_id": str(payload.get("lane_id") or ""),
+            "stage_slot": str(payload.get("stage_slot") or ""),
+            "next_stage_slot": str(payload.get("next_stage_slot") or ""),
+            "upstream_fanout_id": str(payload.get("upstream_fanout_id") or ""),
+            "upstream_child_id": str(payload.get("upstream_child_id") or ""),
             "candidate_ref": str(payload.get("candidate_ref") or payload.get("branch") or ""),
         })
     if not nodes:
@@ -387,11 +564,16 @@ def _module_parity_loop(
     """
 
     event_types = {
-        "verify.parity_scan.requested",
-        "cangjie.module.parity.scan.completed",
-        "cangjie.module.parity.scan.failed",
+        MODULE_PARITY_SCAN_REQUESTED,
+        *MODULE_PARITY_SCAN_RESULT_EVENTS,
         "module.parity.closed",
         "module.parity.blocked",
+        "flow.discovery.requested",
+        "flow.discovery.completed",
+        "flow.discovery.failed",
+        "flow.gap_plan.ready",
+        "flow.goal.closed",
+        "flow.goal.blocked",
         "goal.rescan.requested",
         "goal.rescan.completed",
         "goal.rescan.failed",
@@ -459,34 +641,42 @@ def _module_parity_loop(
             "status": str(payload.get("status") or ""),
             "reason": str(payload.get("reason") or ""),
         }
-        if event.type == "verify.parity_scan.requested":
+        if event.type == MODULE_PARITY_SCAN_REQUESTED:
             scan_requests.append(row)
             status = "scan_requested"
-        elif event.type == "goal.rescan.requested":
+        elif event.type in {"goal.rescan.requested", "flow.discovery.requested"}:
             scan_requests.append(row)
             status = "scan_requested"
-        elif event.type.startswith("cangjie.module.parity.scan."):
+        elif event.type in MODULE_PARITY_SCAN_RESULT_EVENTS:
             scan_results.append(row)
-            status = "scan_failed" if event.type.endswith(".failed") else "scan_completed"
-        elif event.type.startswith("goal.rescan."):
+            status = (
+                "scan_failed"
+                if event.type in MODULE_PARITY_SCAN_FAILED_EVENTS
+                else "scan_completed"
+            )
+        elif event.type.startswith("goal.rescan.") or event.type.startswith("flow.discovery."):
             scan_results.append(row)
             status = "scan_failed" if event.type.endswith(".failed") else "scan_completed"
         elif event.type == "module.parity.closed":
             scan_results.append(row)
             status = "closed"
-        elif event.type == "goal.closure.closed":
+        elif event.type in {"goal.closure.closed", "flow.goal.closed"}:
             scan_results.append(row)
             status = "closed"
         elif event.type == "module.parity.blocked":
             scan_results.append(row)
             status = "blocked"
-        elif event.type == "goal.closure.blocked":
+        elif event.type in {"goal.closure.blocked", "flow.goal.blocked"}:
             scan_results.append(row)
             status = "blocked"
         elif event.type == "gap_plan.ready":
             gap_plans.append(row)
             status = "gap_planned"
-        elif event.type in {"goal.gap.detected", "goal.gap_plan.ready"}:
+        elif event.type in {
+            "goal.gap.detected",
+            "goal.gap_plan.ready",
+            "flow.gap_plan.ready",
+        }:
             gap_plans.append(row)
             status = "gap_planned"
         elif event.type.startswith("task_map.amend"):
@@ -640,6 +830,10 @@ def _workflow_node_kind(
         return "accepted_delivery_bundle"
     if event_type == "product_delivery.wave.ready":
         return "delivery_wave_ready"
+    if event_type == "lane.stage.completed":
+        return "lane_stage_completed"
+    if event_type == "lane.stage.failed":
+        return "lane_stage_failed"
     if event_type == "task.created":
         return "kanban_task"
     if event_type.startswith("candidate."):

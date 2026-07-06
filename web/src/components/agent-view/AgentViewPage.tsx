@@ -4,7 +4,7 @@ import type { AgentSummary, ChannelSummary, CostSummary, ExecutionPatternProject
 import { formatTokens } from "../../lib/format";
 import { buildAgentAttentionRows, buildFleetMetrics, buildRoleFleetRows, contextPercent, isBackendWorker, needsAttention } from "../../app/cockpitModel";
 import { useEffect, useMemo, useState } from "react";
-import { KeyValuePanel, RuntimeDetailSection, RuntimeSummaryCard, TablePage, asRecord, formatUsd, needsOperatorAttention, supportLabel, textValue } from "../../app/shared";
+import { KeyValuePanel, RuntimeDetailSection, RuntimeSummaryCard, TablePage, asRecord, formatUsd, needsOperatorAttention, textValue } from "../../app/shared";
 
 export function AgentViewPage({
   actionReady,
@@ -113,13 +113,12 @@ export function AgentViewPage({
   const roleFleetRows = buildRoleFleetRows(effectiveAgents, cost);
 
   useEffect(() => {
-    if (workers.length === 0) {
-      if (selectedId) setSelectedId("");
-      return;
+    // Drawer semantics: nothing selected by default; only clear a selection
+    // that no longer resolves to a live worker row.
+    if (selectedId && !workers.some((worker) => worker.instance_id === selectedId)) {
+      setSelectedId("");
     }
-    if (selectedId && workers.some((worker) => worker.instance_id === selectedId)) return;
-    setSelectedId(attentionWorkers[0]?.instance_id ?? workers[0].instance_id);
-  }, [attentionWorkers, selectedId, workers]);
+  }, [selectedId, workers]);
 
   const groups = useMemo(() => {
     const grouped = new Map<string, AgentSummary[]>();
@@ -150,7 +149,7 @@ export function AgentViewPage({
           backend: worker.backend || "-",
           model: worker.model || "-",
           last_run: worker.last_heartbeat || worker.spawned_at || "-",
-          status: worker.lifecycle_state || worker.runtime_state || worker.state || "-",
+          status: worker.stale ? `last known: ${worker.lifecycle_state || worker.state || "-"}` : (worker.lifecycle_state || worker.runtime_state || worker.state || "-"),
           tools: (worker.skills ?? []).slice(0, 4).join(", ") || "-",
         });
       }
@@ -158,7 +157,7 @@ export function AgentViewPage({
     return rows;
   }, [groups]);
 
-  const selected = workers.find((worker) => worker.instance_id === selectedId) ?? workers[0] ?? null;
+  const selected = workers.find((worker) => worker.instance_id === selectedId) ?? null;
   const selectedTaskId = selected?.task_id || selected?.active_task || "";
   const selectedActions = new Set(selected?.allowed_actions ?? []);
   const workerActionReady = (action: string) => (
@@ -196,15 +195,6 @@ export function AgentViewPage({
     { key: "last_event", value: selected.last_event_type || "-" },
     { key: "actions", value: (selected.allowed_actions ?? []).join(", ") || "-" },
   ] : [];
-  const patternRows = executionPatterns?.patterns ?? [];
-  const activePatternRuns = executionPatterns?.active_runs ?? [];
-  const channelAttention: Array<Record<string, unknown>> = channels.flatMap((channel) => (
-    (channel.attention ?? []).map((item) => ({
-      ...item,
-      channel_id: channel.channel_id,
-      channel: channel.name || channel.channel_id,
-    }))
-  ));
   const zeroCost = { usd: 0, input_tokens: 0, output_tokens: 0, entries: 0 };
   const ledgerEntries = Object.entries(cost?.per_role ?? {});
   const hasLedgerUsage = ledgerEntries.some(([, entry]) => (
@@ -296,6 +286,7 @@ export function AgentViewPage({
     usd: formatUsd(worker.cost?.usd),
     attention: worker.attention_state || "idle",
   }));
+  const usageContextRows = contextRows.length ? contextRows : roleTokenRows;
   const liveAssignmentRows = (
     Array.isArray(effectiveAgentLive?.tasks) ? effectiveAgentLive.tasks : []
   ).map((item) => {
@@ -375,21 +366,19 @@ export function AgentViewPage({
       reason: String(row.reason || "-"),
     };
   });
-  const providerCapabilityRows = (
+  const providerHealthRows = (
     Array.isArray(providerCapabilities?.providers) ? providerCapabilities.providers : []
-  ).map((item) => {
-    const row = asRecord(item);
-    return {
+  )
+    .map((item) => asRecord(item))
+    .filter((row) => {
+      const availability = String(row.availability || (row.available === false ? "unavailable" : "")).toLowerCase();
+      return availability.includes("unavailable") || availability.includes("degraded");
+    })
+    .map((row) => ({
       backend: String(row.backend || row.provider || "-"),
+      availability: String(row.availability || (row.available === false ? "unavailable" : "degraded")),
       surface: String(row.surface || "-"),
-      available: String(row.availability || (row.available === false ? "unavailable" : "not_checked")),
-      resume: supportLabel(row.native_resume ?? row.resume),
-      stream: supportLabel(row.streaming),
-      interrupt: supportLabel(row.interrupt),
-      cost_context: `${supportLabel(row.cost)} / ${supportLabel(row.context_usage)}`,
-      test_mode: supportLabel(row.test_mode),
-    };
-  });
+    }));
 
   return (
     <>
@@ -461,42 +450,59 @@ export function AgentViewPage({
             ))}
           </div>
         ) : (
-          <p className="empty-text">No agent attention required.</p>
+          <p className="empty-text">
+            {fleetMetrics.stale
+              ? "Historical attention hidden — project runtime is archived/stopped."
+              : "No agent attention required."}
+          </p>
         )}
       </section>
 
-      <TablePage
-        title="Role Fleet"
-        rows={roleFleetRows.map((row) => {
-          const eff = (fleetStats?.role_efficiency ?? []).find((entry) => entry.role === row.role);
-          return {
-            role: row.role,
-            workers: row.workers,
-            backend: row.backend,
-            active_tasks: row.active_tasks,
-            done_7d: eff?.done ?? 0,
-            avg_duration: eff?.avg_duration_minutes != null ? `${eff.avg_duration_minutes}m` : "-",
-            rework: eff?.rework ?? 0,
-            respawn: eff?.respawn ?? 0,
-            total_tokens: formatTokens(row.total_tokens),
-            usd: formatUsd(row.usd),
-            max_context: contextPercent(row.max_context),
-            attention: row.attention,
-          };
-        })}
-        embedded
-      />
+      {workers.length ? (
+        <TablePage
+          title="Fleet"
+          onOpen={(row) => setSelectedId(String(row.instance || ""))}
+          rows={workers.map((worker) => {
+            const role = worker.parent_role || worker.role_type || worker.instance_id;
+            const eff = (fleetStats?.role_efficiency ?? []).find((entry) => entry.role === role);
+            return {
+              instance: worker.instance_id,
+              backend: worker.backend || "-",
+              task: worker.task_id || worker.active_task || "-",
+              state: worker.stale
+                ? `last known: ${worker.lifecycle_state || worker.state || "-"}`
+                : (worker.lifecycle_state || worker.state || "-"),
+              context: worker.context_usage_ratio == null ? "-" : `${Math.round(worker.context_usage_ratio * 100)}%`,
+              tokens: formatTokens((worker.cost?.input_tokens ?? 0) + (worker.cost?.output_tokens ?? 0)),
+              usd: formatUsd(worker.cost?.usd),
+              done_7d: eff?.done ?? 0,
+              rework: eff?.rework ?? 0,
+              respawn: eff?.respawn ?? 0,
+              attention: worker.attention_state || "idle",
+            };
+          })}
+          embedded
+        />
+      ) : (
+        <section className="subsection">
+          <div className="inline-heading">
+            <h3 className="section-title">Role Fleet</h3>
+            <span className="muted">0 workers</span>
+          </div>
+          <p className="empty-text">No backend worker projection data.</p>
+        </section>
+      )}
 
-      <RuntimeDetailSection title="Usage And Providers" meta={`${roleTokenRows.length} roles / ${providerCapabilityRows.length} providers`} defaultOpen={false}>
-        <TablePage title="Role Token Usage" rows={roleTokenRows} embedded />
-        <TablePage title="Provider Capability Registry" rows={providerCapabilityRows} embedded />
-      </RuntimeDetailSection>
+      {providerHealthRows.length ? (
+        <TablePage title="Provider Health Attention" rows={providerHealthRows} embedded />
+      ) : null}
+      {/* Stuck Cockpit deleted: same signal source as Attention Queue (counts in
+          the Health card, detail rows in the queue) — the last duplicate surface. */}
       <RuntimeDetailSection
-        title="Assignment And Recovery"
-        meta={`${liveAssignmentRows.length} live / ${assignmentRouteRows.length} routes / ${recoveryRows.length} recovery`}
+        title="Advanced"
+        meta={`${assignmentRouteRows.length} routes / ${recoverySuggestionRows.length} recovery suggestions`}
         defaultOpen={false}
       >
-        <TablePage title="Live Task Assignments" rows={liveAssignmentRows} embedded />
         <TablePage
           title="Assignment Routes"
           rows={assignmentRouteRows}
@@ -506,44 +512,16 @@ export function AgentViewPage({
             if (taskId && taskId !== "-") onSelectTask(taskId);
           }}
         />
-        <TablePage
-          title={`Agent Stuck Cockpit (${cockpitSummary.stuck ?? 0} stuck / ${cockpitSummary.silent ?? 0} silent)`}
-          rows={cockpitRows}
-          embedded
-          onOpen={(row) => {
-            const taskId = textValue(row.task_id);
-            if (taskId && taskId !== "-") onSelectTask(taskId);
-          }}
-        />
-        <TablePage title="Recovery Catalog" rows={recoveryRows} embedded />
-        <TablePage title="Recovery Suggestions" rows={recoverySuggestionRows} embedded />
+        {recoverySuggestionRows.length ? (
+          <TablePage title="Recovery Suggestions" rows={recoverySuggestionRows} embedded />
+        ) : null}
       </RuntimeDetailSection>
 
       <div className="agent-view-summary">
-        <section className="subsection">
-          <div className="inline-heading">
-            <h3 className="section-title">Role Groups</h3>
-            <span className="muted">effective actual</span>
-          </div>
-          <div className="agent-chip-row">
-            {groups.map(([role, rows]) => {
-              const attentionCount = rows.filter((agent) => needsOperatorAttention(agent.attention_state)).length;
-              const autoscaleCount = rows.filter((agent) => agent.origin === "autoscale").length;
-              return (
-                <button
-                  className="metric-chip"
-                  key={role}
-                  type="button"
-                  onClick={() => setSelectedId(rows[0]?.instance_id ?? "")}
-                >
-                  {role} {rows.length}{autoscaleCount ? ` (${autoscaleCount} auto)` : ""}
-                  {attentionCount ? ` / ${attentionCount} attention` : ""}
-                </button>
-              );
-            })}
-          </div>
-        </section>
 
+        {/* Second attention block: only surfaces when there is something to act on
+            (the Attention Queue at the top already covers the zero state). */}
+        {attentionWorkers.length > 0 && (
         <section className="subsection">
           <div className="inline-heading">
             <h3 className="section-title">Attention Needed</h3>
@@ -568,93 +546,27 @@ export function AgentViewPage({
             </div>
           )}
         </section>
+        )}
 
-        <section className="subsection">
-          <div className="inline-heading">
-            <h3 className="section-title">Channel Groups</h3>
-            <span className="muted">{channels.length} channels</span>
-          </div>
-          {channels.length === 0 ? (
-            <p className="empty-text">No channel projection data.</p>
-          ) : (
-            <div className="compact-list">
-              {channels.slice(0, 8).map((channel) => (
-                <div className="inline-row" key={channel.channel_id}>
-                  <span className="mono">{channel.name || channel.channel_id}</span>
-                  <span>{channel.status || "open"}</span>
-                  <span className="muted">{channel.members?.length ?? 0} members</span>
-                  <span className="muted">{channel.workflow_requests?.length ?? 0} workflow requests</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="subsection">
-          <div className="inline-heading">
-            <h3 className="section-title">Execution Patterns</h3>
-            <span className="muted">{patternRows.length} callable patterns</span>
-          </div>
-          {patternRows.length === 0 ? (
-            <p className="empty-text">No execution pattern catalog data.</p>
-          ) : (
-            <div className="compact-list">
-              {patternRows.slice(0, 8).map((pattern) => (
-                <div className="inline-row" key={textValue(pattern.pattern_id || pattern.id)}>
-                  <span className="mono">{textValue(pattern.pattern_id || pattern.id)}</span>
-                  <span>{textValue(pattern.kind || pattern.topology)}</span>
-                  <span className="muted">{textValue(pattern.trigger)}</span>
-                  <span className="muted">{textValue(pattern.barrier)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
       </div>
 
-      <TablePage
-        title="Worker Context & Tokens"
-        rows={contextRows}
-        embedded
-        onOpen={(row) => {
-          const taskId = textValue(row.task_id);
-          if (taskId && taskId !== "-") onSelectTask(taskId);
-        }}
-      />
-
+      {selected && (
       <div className="agent-view-layout">
-        <section className="subsection agent-tabs-panel">
-          <div className="inline-heading">
-            <h3 className="section-title">Worker Tabs</h3>
-            <span className="muted">instance_id first</span>
-          </div>
-          <div className="agent-tab-list">
-            {workers.map((worker) => (
-              <button
-                className={`agent-tab-button ${worker.instance_id === selected?.instance_id ? "active" : ""}`}
-                key={worker.instance_id}
-                type="button"
-                onClick={() => setSelectedId(worker.instance_id)}
-              >
-                <span className="mono">{worker.instance_id}</span>
-                <span>{worker.lifecycle_state || worker.runtime_state || worker.state || "-"}</span>
-                <span className={needsOperatorAttention(worker.attention_state) ? "warn-text" : "muted"}>
-                  {worker.attention_state || "idle"}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-
         <section className="subsection agent-cockpit-panel">
           <div className="inline-heading">
             <h3 className="section-title">Selected Worker</h3>
-            <span className="muted">{selected?.instance_id ?? "-"}</span>
+            <span className="muted">{selected.instance_id}</span>
+            <button className="icon-button" type="button" onClick={() => setSelectedId("")}>
+              Close
+            </button>
           </div>
           {selected ? (
             <>
               <KeyValuePanel title="Runtime" rows={selectedRows} />
               <div className="agent-cockpit-grid">
+                {/* Controls only make sense against a live runtime; on
+                    stale/archived workers they are dead buttons (F0-B ghosts). */}
+                {!selected.stale && (
                 <div className="subsection compact-subsection">
                   <div className="inline-heading">
                     <h3 className="section-title">Worker Controls</h3>
@@ -694,14 +606,7 @@ export function AgentViewPage({
                     </button>
                   </div>
                 </div>
-                <div className="subsection compact-subsection">
-                  <div className="inline-heading">
-                    <h3 className="section-title">Worker Output / Peek</h3>
-                    <span className="muted">read-only</span>
-                  </div>
-                  <p>{selected.last_output_summary || selected.needs_input_reason || "No recent worker summary."}</p>
-                  <p className="muted mono">{selected.provider_stop_reason || selected.debug?.attach_hint || ""}</p>
-                </div>
+                )}
                 <div className="subsection compact-subsection">
                   <div className="inline-heading">
                     <h3 className="section-title">Task / Evidence</h3>
@@ -723,46 +628,7 @@ export function AgentViewPage({
           )}
         </section>
       </div>
-
-      <div className="project-grid two">
-        <section className="subsection">
-          <div className="inline-heading">
-            <h3 className="section-title">Channel Attention</h3>
-            <span className="muted">{channelAttention.length} signals</span>
-          </div>
-          {channelAttention.length ? (
-            <div className="compact-list">
-              {channelAttention.slice(0, 10).map((item, index) => (
-                <div className="inline-row" key={`${textValue(item.channel_id)}:${index}`}>
-                  <span className="mono">{textValue(item.channel)}</span>
-                  <span>{textValue(item.kind || item.reason || item.type)}</span>
-                  <span className="muted">{textValue(item.member_id || item.message_id || item.thread_id)}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p className="empty-text">No channel attention required.</p>}
-        </section>
-
-        <section className="subsection">
-          <div className="inline-heading">
-            <h3 className="section-title">Pattern Runs</h3>
-            <span className="muted">{activePatternRuns.length} active</span>
-          </div>
-          {activePatternRuns.length ? (
-            <div className="compact-list">
-              {activePatternRuns.slice(0, 10).map((run, index) => (
-                <div className="inline-row" key={`${textValue(run.fanout_id || run.pattern_id)}:${index}`}>
-                  <span className="mono">{textValue(run.pattern_id || run.stage_id || run.fanout_id)}</span>
-                  <span>{textValue(run.status || run.kind || run.topology)}</span>
-                  <span className="muted">{textValue(run.task_id)}</span>
-                  <span className="muted">{textValue(run.fanout_id)}</span>
-                </div>
-              ))}
-            </div>
-          ) : <p className="empty-text">No active pattern run projection.</p>}
-        </section>
-      </div>
+      )}
     </>
   );
 }
-

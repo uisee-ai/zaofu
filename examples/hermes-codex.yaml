@@ -136,11 +136,11 @@ workflow:
     - gateway-adapter
     - public-api
   rework_routing:
-    zaofu.refactor.plan.blocked: arch
-    task.contract.invalid: arch
-    gate.failed: arch
-    fanout.serialize: arch
-    fanout.cancelled: arch
+    zaofu.refactor.plan.blocked: refactor-plan-synth
+    task.contract.invalid: refactor-plan-synth
+    gate.failed: refactor-plan-synth
+    fanout.serialize: orchestrator
+    fanout.cancelled: orchestrator
     # candidate-level failures (review.rejected / test.failed / judge.failed /
     # integration.failed — all task_id=None) are recovered by the kernel
     # candidate-rework sweep: bounded, same-pdd, escalates at cap. Routing them
@@ -149,10 +149,10 @@ workflow:
     # non-converging loop (observed 2026-06-02/03). Kernel is the sole
     # candidate-rework authority; do NOT re-add these. static_gate.failed is also
     # left to the kernel rather than a per-writer re-route.
-    discriminator.failed: arch
-    # B10(2026-06-12): dev 失败事件缺 route 会让 zf workflow inspect STOP
+    discriminator.failed: refactor-plan-synth
+    # dev.failed is owned by the stage same-lane backedge; only non-terminal
+    # dev stalls route through the orchestrator.
     dev.blocked: orchestrator
-    dev.failed: orchestrator
   dag:
     enabled: true
     default_gate_level: strict
@@ -446,6 +446,13 @@ workflow:
       success_event: candidate.ready
       failure_event: integration.failed
       max_retries: 1
+    on_fail:
+      event: dev.failed
+      restart_stage: cj-min-slice-implementation
+      target_affinity: same_lane
+      max_attempts: 2
+      feedback_artifact: dev-feedback.md
+      emit: impl.rework.requested
     timeout_seconds: 7200
 
   - id: cj-min-candidate-review

@@ -32,6 +32,26 @@ class WorkdirOwnerMarker:
 
 class PathGuard:
     @staticmethod
+    def assert_disjoint(source_root: Path, target_root: Path) -> None:
+        """Equal or nested refactor source/target roots turn candidate writes
+        into potential source mutations (r6 write_violation class)."""
+        source = source_root.resolve(strict=False)
+        target = target_root.resolve(strict=False)
+        if source == target:
+            raise PathGuardError(
+                f"source_root and target_root are the same path: {source}"
+            )
+        for inner, outer, label in (
+            (source, target, "source_root is nested inside target_root"),
+            (target, source, "target_root is nested inside source_root"),
+        ):
+            try:
+                inner.relative_to(outer)
+            except ValueError:
+                continue
+            raise PathGuardError(f"{label}: {inner} within {outer}")
+
+    @staticmethod
     def assert_under(path: Path, root: Path) -> Path:
         resolved_path = path.resolve(strict=False)
         resolved_root = root.resolve(strict=False)

@@ -156,6 +156,16 @@ export async function initWorkspaceProject(payload: {
   root: string;
   workspace?: string;
   preset?: string;
+  kind?: "issue" | "prd" | "refactor";
+  name?: string;
+  project_name?: string;
+  source_ref?: string;
+  source_root?: string;
+  target_root?: string;
+  backend?: string;
+  lanes?: number;
+  strictness?: string;
+  parity_scope?: string | string[];
   state_dir?: string;
   force?: boolean;
   apply_profile?: boolean;
@@ -178,6 +188,34 @@ export async function initWorkspaceProject(payload: {
   const data = (await response.json()) as Record<string, unknown>;
   if (!response.ok && response.status >= 500) {
     throw new Error(String(data.reason || `workspace init returned ${response.status}`));
+  }
+  return data;
+}
+
+export async function createWorkflowIntake(
+  projectId: string,
+  payload: {
+    kind: string;
+    objective?: string;
+    source_root?: string;
+    target_root?: string;
+    backend?: string;
+    lanes?: number;
+    request_id?: string;
+  },
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${projectPrefix(projectId)}/workflow-intake`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      ...webActionAuthHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json()) as Record<string, unknown>;
+  if (!response.ok && response.status >= 500) {
+    throw new Error(String(data.reason || `workflow intake returned ${response.status}`));
   }
   return data;
 }
@@ -225,8 +263,42 @@ export function getProjectTraces(projectId?: string): Promise<Record<string, unk
   return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/traces`);
 }
 
+export function getRunContractProjection(projectId?: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/run-contract`);
+}
+
+// 131-P0-5: shadow spine read-only explain (runs/stages/health/tasks).
+export function getWorkflowSpine(projectId?: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/workflow-spine`);
+}
+
+export function getFailureCandidatesProjection(projectId?: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/failure-candidates`);
+}
+
+export function getRealE2eMatrixProjection(projectId?: string): Promise<Record<string, unknown>> {
+  return requestJson<Record<string, unknown>>(`${projectPrefix(projectId)}/real-e2e-matrix`);
+}
+
 export function getSnapshot(projectId?: string): Promise<Snapshot> {
   return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot`);
+}
+
+export interface ProjectHealthSummary {
+  schema_version: string;
+  runtime_state: string;
+  live: boolean;
+  seq: number;
+  last_event_age_s: number | null;
+  task_counts: Record<string, number>;
+  active: number;
+  queued: number;
+  blocked: number;
+  projection: { state?: string; lag?: number | null; tail_behind?: boolean };
+}
+
+export function getProjectHealth(projectId?: string): Promise<ProjectHealthSummary> {
+  return requestJson<ProjectHealthSummary>(`${projectPrefix(projectId)}/health/summary`);
 }
 
 export function getSnapshotLight(projectId?: string): Promise<Snapshot> {
@@ -409,6 +481,29 @@ export function getTaskDiff(taskId: string, projectId?: string): Promise<TaskDif
 
 export function getEventsPage(params: URLSearchParams, projectId?: string): Promise<EventsPage> {
   return requestJson<EventsPage>(`${projectPrefix(projectId)}/events?${params.toString()}`);
+}
+
+export interface PendingKanbanProposal {
+  proposal_event_id: string;
+  ts: string;
+  action: string;
+  requested_action: string;
+  reason: string;
+  valid: boolean;
+  validation_error: string;
+  title: string;
+  payload: Record<string, unknown>;
+  turn_id: string;
+  conversation_id: string;
+  thread_key: string;
+}
+
+export function getKanbanPendingProposals(
+  projectId?: string,
+): Promise<{ items: PendingKanbanProposal[] }> {
+  return requestJson<{ items: PendingKanbanProposal[] }>(
+    `${projectPrefix(projectId)}/kanban-agent/pending-proposals`,
+  );
 }
 
 export function getAgentSessionHistory(

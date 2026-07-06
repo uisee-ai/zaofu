@@ -575,3 +575,51 @@ def test_backlog_why_not_done_cli_json(tmp_path: Path, monkeypatch, capsys) -> N
     data = json.loads(capsys.readouterr().out)
     assert data["task_id"] == "TASK-1"
     assert data["recommended_action"]["kind"] == "continuation"
+
+
+def test_matrix_gate_consumes_operator_waiver(tmp_path):
+    """r6-F5c:机械矩阵门必须吃 operator waiver(r6 死结:waive 只达
+    agent 层,机械门照拒)。命中活跃 waiver signature 的缺失项豁免。"""
+    import json as _json
+
+    from zf.core.events.log import EventLog
+    from zf.core.events.model import ZfEvent
+    from zf.core.task.schema import Task
+    from zf.runtime.long_horizon import SuccessCriterion, evaluate_success_criteria
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    project_root = tmp_path
+    gate_cfg = tmp_path / "gate.json"
+    gate_cfg.write_text(_json.dumps({
+        "required_artifacts": ["docs/plans/avbs-task-map.json"],
+    }), encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+
+    criterion = SuccessCriterion(
+        kind="artifact_matrix_gate",
+        value="gate",
+        params={"config_ref": "gate.json"},
+    )
+    task = Task(id="T1", title="x")
+
+    # 无 waiver → fail
+    results = evaluate_success_criteria(
+        [criterion], task=task, state_dir=state_dir,
+        events=log.read_all(), project_root=project_root,
+    )
+    assert results[0].passed is False
+
+    # waiver 命中路径 → 豁免通过,reason 留痕
+    log.append(ZfEvent(type="verification.waived", actor="operator", payload={
+        "task_ids": ["*"],
+        "signature": "required artifact docs/plans/avbs-task-map.json exists at task branch; candidate pin stale",
+        "reason": "r6-F5",
+        "waived_by": "operator",
+    }))
+    results = evaluate_success_criteria(
+        [criterion], task=task, state_dir=state_dir,
+        events=log.read_all(), project_root=project_root,
+    )
+    assert results[0].passed is True
+    assert "waived(" in results[0].reason

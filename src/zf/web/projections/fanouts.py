@@ -11,6 +11,7 @@ import json
 from zf.web.projections.common import _first_nonempty, _payload_mentions, _payload_ref, _read_json_file
 from zf.web.projections.summaries import _refs_from_events, _safe_token
 from zf.web.projections.events import _event_to_dict, _events_with_seq, _stage_summary
+from zf.web.projections.common import _payload_collect
 
 
 def _candidate_detail(
@@ -26,7 +27,7 @@ def _candidate_detail(
         or getattr(event, "correlation_id", None) == pdd_id
         or getattr(event, "task_id", None) == pdd_id
     ]
-    refs = _refs_from_events(events)
+    refs = _refs_from_events(events, state_dir=state_dir, config=config)
     verify = _stage_summary(events, {"test.", "verify.", "judge."})
     review = _stage_summary(events, {"review."})
     blockers = []
@@ -136,6 +137,7 @@ def _fanout_detail(
         projected_children,
         config=config,
     )
+    lane_stage_events = _fanout_lane_stage_events(events)
     progress = _fanout_progress(projected_children, lane_projection=lane_projection)
     aggregate_config = manifest.get("aggregate_config")
     aggregate_config = aggregate_config if isinstance(aggregate_config, dict) else {}
@@ -180,6 +182,7 @@ def _fanout_detail(
         "status": str(manifest.get("status") or "observed"),
         "progress": progress,
         "lane_projection": lane_projection,
+        "lane_stage_events": lane_stage_events,
         "trigger": _fanout_trigger_projection(manifest, events),
         "aggregate_role": _first_nonempty([
             _payload_ref(getattr(event, "payload", {}), "aggregate_role")
@@ -236,9 +239,13 @@ def _fanout_child_projection(
         "lane_id",
         "stage_slot",
         "affinity_tag",
+        "pipeline_id",
+        "root_fanout_id",
+        "upstream_root_fanout_id",
         "upstream_fanout_id",
         "upstream_child_id",
         "upstream_task_id",
+        "upstream_stage_slot",
     ):
         value = child.get(key)
         if (value is None or value == "") and isinstance(payload, dict):
@@ -271,6 +278,43 @@ def _fanout_child_projection(
         if key in child:
             projected[key] = child[key]
     return redact_obj(projected)
+
+
+def _fanout_lane_stage_events(events: list[tuple[int, object]]) -> list[dict]:
+    projected: list[dict] = []
+    for seq, event in events:
+        event_type = str(getattr(event, "type", "") or "")
+        if event_type not in {"lane.stage.completed", "lane.stage.failed"}:
+            continue
+        payload = getattr(event, "payload", {}) or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        projected.append({
+            "seq": seq,
+            "event_id": str(getattr(event, "id", "") or ""),
+            "event_type": event_type,
+            "task_id": str(getattr(event, "task_id", "") or payload.get("task_id") or ""),
+            "pipeline_id": str(payload.get("pipeline_id") or ""),
+            "fanout_id": str(payload.get("fanout_id") or ""),
+            "root_fanout_id": str(payload.get("root_fanout_id") or ""),
+            "stage_id": str(payload.get("stage_id") or ""),
+            "stage_slot": str(payload.get("stage_slot") or ""),
+            "next_stage_slot": str(payload.get("next_stage_slot") or ""),
+            "lane_id": str(payload.get("lane_id") or ""),
+            "child_id": str(payload.get("child_id") or ""),
+            "upstream_fanout_id": str(payload.get("upstream_fanout_id") or ""),
+            "upstream_child_id": str(payload.get("upstream_child_id") or ""),
+            "status": str(payload.get("status") or ""),
+            "task_ref": str(payload.get("task_ref") or ""),
+            "source_commit": str(payload.get("source_commit") or ""),
+            "handoff_ref": str(
+                payload.get("handoff_ref")
+                or payload.get("task_ref")
+                or payload.get("report_path")
+                or ""
+            ),
+        })
+    return projected[-120:]
 
 
 def _fanout_progress(
@@ -481,15 +525,21 @@ def _fanout_trigger_projection(
 
 def _candidates(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
     grouped: dict[str, dict] = {}
+    _CAND_KEYS = ("pdd_id", "candidate_id", "candidate_ref", "candidate_branch", "branch")
+    from zf.web.projections.events import event_topology_kv
+
+    _topo_kv = event_topology_kv(state_dir, config=config)
     for seq, event in _events_with_seq(state_dir, config=config):
         payload = getattr(event, "payload", {}) or {}
-        candidate = _first_nonempty([
-            _payload_ref(payload, "pdd_id"),
-            _payload_ref(payload, "candidate_id"),
-            _payload_ref(payload, "candidate_ref"),
-            _payload_ref(payload, "candidate_branch"),
-            _payload_ref(payload, "branch"),
-        ])
+        _hit = _topo_kv.get(seq)
+        if _hit is not None and _hit[0] is event:
+            _cand_refs = _hit[1]
+        else:
+            _cand_refs = {
+                k: v for k, v in _payload_collect(payload, _CAND_KEYS).items()
+                if v not in (None, "")
+            }
+        candidate = _first_nonempty([_cand_refs.get(k) for k in _CAND_KEYS])
         if not candidate and "candidate" not in getattr(event, "type", ""):
             continue
         candidate_id = str(candidate or getattr(event, "correlation_id", None) or "candidate")
@@ -514,12 +564,12 @@ def _candidates(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
         if candidate_id.startswith("candidate/"):
             item["candidate_ref"] = candidate_id
         candidate_ref = _first_nonempty([
-            _payload_ref(payload, "candidate_ref"),
-            _payload_ref(payload, "candidate_branch"),
+            _cand_refs.get("candidate_ref"),
+            _cand_refs.get("candidate_branch"),
         ])
         if isinstance(candidate_ref, str) and candidate_ref.startswith("candidate/"):
             item["candidate_ref"] = candidate_ref
-        branch = _payload_ref(payload, "branch")
+        branch = _cand_refs.get("branch")
         if isinstance(branch, str) and branch.startswith("candidate/"):
             item["candidate_ref"] = branch
         included = payload.get("included_tasks") if isinstance(payload, dict) else None
@@ -582,13 +632,29 @@ def _fanouts(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
     task_index = _task_index_with_archive(state_dir)
     event_rows = list(_events_with_seq(state_dir, config=config))
     events = [event for _seq, event in event_rows]
+    _FANOUT_KEYS = (
+        "fanout_id", "fanout", "parent_run", "topology", "stage_id",
+        "target_ref", "trace_id", "pdd_id", "status",
+        "child_id", "child_run", "child",
+    )
+    # RF-8: per-event collect moved into the fingerprint-cached (and folding)
+    # event_topology_kv view — this loop was re-running a full-log DFS per
+    # request (700k+ recursive _payload_collect calls). Identity-checked with
+    # a direct-collect fallback for foreign event objects.
+    from zf.web.projections.events import event_topology_kv
+
+    _topo_kv = event_topology_kv(state_dir, config=config)
     for seq, event in event_rows:
         payload = getattr(event, "payload", {}) or {}
-        fanout_id = _first_nonempty([
-            _payload_ref(payload, "fanout_id"),
-            _payload_ref(payload, "fanout"),
-            _payload_ref(payload, "parent_run"),
-        ])
+        _hit = _topo_kv.get(seq)
+        if _hit is not None and _hit[0] is event:
+            refs = _hit[1]
+        else:
+            refs = {
+                k: v for k, v in _payload_collect(payload, _FANOUT_KEYS).items()
+                if v not in (None, "")
+            }
+        fanout_id = _first_nonempty([refs.get("fanout_id"), refs.get("fanout"), refs.get("parent_run")])
         if not fanout_id and "fanout" not in getattr(event, "type", ""):
             continue
         key = str(fanout_id or getattr(event, "correlation_id", None) or "fanout")
@@ -607,13 +673,13 @@ def _fanouts(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
         })
         item["last_seq"] = seq
         item["last_type"] = getattr(event, "type", "")
-        item["topology"] = item["topology"] or str(_payload_ref(payload, "topology") or "")
-        item["stage_id"] = item["stage_id"] or str(_payload_ref(payload, "stage_id") or "")
-        item["target_ref"] = item["target_ref"] or str(_payload_ref(payload, "target_ref") or "")
+        item["topology"] = item["topology"] or str(refs.get("topology") or "")
+        item["stage_id"] = item["stage_id"] or str(refs.get("stage_id") or "")
+        item["target_ref"] = item["target_ref"] or str(refs.get("target_ref") or "")
         item["trace_id"] = item["trace_id"] or str(
-            _payload_ref(payload, "trace_id") or getattr(event, "correlation_id", "") or ""
+            refs.get("trace_id") or getattr(event, "correlation_id", "") or ""
         )
-        item["pdd_id"] = item["pdd_id"] or str(_payload_ref(payload, "pdd_id") or "")
+        item["pdd_id"] = item["pdd_id"] or str(refs.get("pdd_id") or "")
         if getattr(event, "type", "") == "fanout.requested":
             item["status"] = "requested"
         elif getattr(event, "type", "") == "fanout.started":
@@ -623,16 +689,12 @@ def _fanouts(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
             "fanout.timed_out",
             "fanout.cancelled",
         }:
-            item["status"] = str(_payload_ref(payload, "status") or "").strip() or (
+            item["status"] = str(refs.get("status") or "").strip() or (
                 "timed_out" if getattr(event, "type", "") == "fanout.timed_out"
                 else "cancelled" if getattr(event, "type", "") == "fanout.cancelled"
                 else "completed"
             )
-        child = _first_nonempty([
-            _payload_ref(payload, "child_id"),
-            _payload_ref(payload, "child_run"),
-            _payload_ref(payload, "child"),
-        ])
+        child = _first_nonempty([refs.get("child_id"), refs.get("child_run"), refs.get("child")])
         if not child and "child" in getattr(event, "type", ""):
             child = getattr(event, "task_id", None)
         if child:

@@ -184,3 +184,58 @@ def test_repeated_dispatch_skipped_emits_actionable_dispatch_blocked(
     assert payload["target_role"] == "dev"
     assert payload["skip_count"] == 3
     assert "start, recycle, or free" in payload["recommended_action"]
+
+
+def test_transition_only_one_pair_per_block_episode(
+    state_dir, config_dev_only, transport,
+):
+    """RF-7B: 阻塞持续期间静默——同 (task, reason) 连续 skip 只发
+    1 条 dispatch_skipped(进入)+ 1 条 dispatch.blocked(证实持续),
+    解除(成功派发路径 _clear_dispatch_failure)发 1 条 dispatch.unblocked;
+    新一轮阻塞开启新 episode。r10 取证:旧 30s cooldown 在 19h 阻塞期
+    产出 ~3.3k 对(占 30k 事件日志 53%)。"""
+    orch = Orchestrator(state_dir, config_dev_only, transport)
+    task = Task(id="T-transition", title="transition", status="backlog")
+
+    for _ in range(20):  # 模拟 20 个 tick 同因跳过
+        orch._emit_dispatch_skipped(
+            task=task, role=None, reason="wip_busy_reassign_branch",
+        )
+
+    events = orch.event_log.read_all()
+    skipped = [e for e in events if e.type == "orchestrator.dispatch_skipped" and e.task_id == "T-transition"]
+    blocked = [e for e in events if e.type == "dispatch.blocked" and e.task_id == "T-transition"]
+    assert len(skipped) == 1, f"entry emits once, got {len(skipped)}"
+    assert len(blocked) == 1, f"blocked emits once when persistent, got {len(blocked)}"
+    assert blocked[0].payload["skip_count"] >= 3
+
+    orch._clear_dispatch_failure("T-transition")
+    events = orch.event_log.read_all()
+    unblocked = [e for e in events if e.type == "dispatch.unblocked" and e.task_id == "T-transition"]
+    assert len(unblocked) == 1
+    assert unblocked[0].payload["reason"] == "wip_busy_reassign_branch"
+    assert unblocked[0].payload["observations"] == 20
+
+    # 解除后再次阻塞 = 新 episode,重新发进入事件
+    orch._emit_dispatch_skipped(
+        task=task, role=None, reason="wip_busy_reassign_branch",
+    )
+    events = orch.event_log.read_all()
+    skipped = [e for e in events if e.type == "orchestrator.dispatch_skipped" and e.task_id == "T-transition"]
+    assert len(skipped) == 2
+
+
+def test_transition_only_distinct_reasons_independent_episodes(
+    state_dir, config_dev_only, transport,
+):
+    orch = Orchestrator(state_dir, config_dev_only, transport)
+    task = Task(id="T-two-reasons", title="two", status="backlog")
+    for _ in range(4):
+        orch._emit_dispatch_skipped(task=task, role=None, reason="wip_busy_reassign_branch")
+        orch._emit_dispatch_skipped(task=task, role=None, reason="no_available_role")
+    events = orch.event_log.read_all()
+    skipped = [e for e in events if e.type == "orchestrator.dispatch_skipped" and e.task_id == "T-two-reasons"]
+    assert len(skipped) == 2  # 每个 reason 各 1 条进入
+    orch._clear_dispatch_failure("T-two-reasons")
+    unblocked = [e for e in orch.event_log.read_all() if e.type == "dispatch.unblocked" and e.task_id == "T-two-reasons"]
+    assert len(unblocked) == 2  # 两个 episode 各自闭合

@@ -11,11 +11,25 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 
 
+_SUPERVISOR_STALENESS_OBSERVER_EVENTS = frozenset({
+    "run.manager.tick.completed",
+    "run.manager.resident.prompted",
+    "run.manager.agent.observation",
+    "run.manager.agent.recommendation.consumed",
+    "agent.usage",
+    "worker.heartbeat",
+})
+
+
 @dataclass
 class TickServiceState:
     last_heartbeat_sweep_at: float = 0.0
     last_bug_scan_at: float = 0.0
     last_supervisor_inspection_at: float = 0.0
+    last_spine_projection_at: float = 0.0
+    last_blackout_check_at: float = 0.0
+    last_blackout_emit_at: float = 0.0
+    last_blocked_burn_emit_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -24,6 +38,15 @@ class TickServiceIntervals:
     bug_scan_s: float = 300.0
     supervisor_inspection_s: float = 300.0
     stale_supervisor_projection_s: float = 300.0
+    # 131-P0 shadow spine:游标增量折叠,单轮成本 O(新事件数)
+    spine_projection_s: float = 30.0
+    # P0-8(审计 D9 G1):采集盲区看门狗——dispatch 活跃而 usage 停更
+    cost_blackout_check_s: float = 300.0
+    cost_blackout_stale_s: float = 900.0
+    cost_blackout_cooldown_s: float = 1800.0
+    # blocked 角色烧钱看门狗(r5:dev-flow blocked_human 冷却期烧 30M)
+    blocked_burn_tokens: int = 250_000
+    blocked_burn_cooldown_s: float = 1800.0
 
 
 @dataclass(frozen=True)
@@ -42,6 +65,10 @@ class TickServiceResult:
     run_manager_card_delivery: bool = False
     owner_visible_delivery: bool = False
     stale_supervisor_projection: bool = False
+    failure_candidates_materialized: int = 0
+    failure_closeout_materialized: int = 0
+    channel_discussion_sweep: int = 0
+    invoke_backlog_replayed: int = 0
 
 
 def run_autoresearch_trigger_scan(
@@ -106,6 +133,8 @@ def run_standard_tick_services(
     run_manager_card_delivery = False
     owner_visible_delivery = False
     stale_supervisor_projection = False
+    failure_candidates_materialized = 0
+    failure_closeout_materialized = 0
 
     if now - state.last_heartbeat_sweep_at >= intervals.heartbeat_sweep_s:
         state.last_heartbeat_sweep_at = now
@@ -117,6 +146,43 @@ def run_standard_tick_services(
     if now - state.last_bug_scan_at >= intervals.bug_scan_s:
         state.last_bug_scan_at = now
         bug_scan = _call_noarg(orchestrator, "_run_zaofu_bug_scan")
+
+    if now - state.last_spine_projection_at >= intervals.spine_projection_s:
+        state.last_spine_projection_at = now
+        # 131-P0 shadow spine:只读派生投影,失败绝不阻塞主循环。
+        try:
+            from zf.runtime.workflow_spine_projection import (
+                refresh_spine_projections,
+            )
+
+            refresh_spine_projections(state_dir, event_log)
+        except Exception:
+            pass
+
+    if now - state.last_blackout_check_at >= intervals.cost_blackout_check_s:
+        state.last_blackout_check_at = now
+        # P0-8(审计 D9 G1,cangjie r5 实证 11h 盲区零告警):dispatch
+        # 持续而 agent.usage 停更 = 采集死了没人知道,预算门按旧值放行。
+        try:
+            _emit_cost_blackout_if_needed(
+                event_log=event_log,
+                event_writer=event_writer,
+                state_dir=state_dir,
+                state=state,
+                intervals=intervals,
+            )
+        except Exception:
+            pass
+        try:
+            _emit_blocked_role_burn_if_needed(
+                event_log=event_log,
+                event_writer=event_writer,
+                state_dir=state_dir,
+                state=state,
+                intervals=intervals,
+            )
+        except Exception:
+            pass
 
     if now - state.last_supervisor_inspection_at >= intervals.supervisor_inspection_s:
         state.last_supervisor_inspection_at = now
@@ -174,6 +240,21 @@ def run_standard_tick_services(
             project_root=project_root,
         )
         run_manager_card_delivery = _deliver_run_manager_cards(state_dir, config)
+        failure_candidates_materialized = _materialize_failure_candidates(
+            event_log=event_log,
+            writer=event_writer,
+            state_dir=state_dir,
+        )
+        failure_closeout_materialized = failure_candidates_materialized
+        invoke_backlog_replayed = _replay_unconsumed_invokes(
+            orchestrator, event_log=event_log, now=now,
+        )
+        channel_discussion_sweep = _sweep_channel_discussions(
+            state_dir=state_dir,
+            writer=event_writer,
+            config=config,
+            project_root=project_root,
+        )
         source_repair_dispatched = _consume_run_manager_source_repairs(
             event_log=event_log,
             writer=event_writer,
@@ -200,6 +281,10 @@ def run_standard_tick_services(
         run_manager_card_delivery=run_manager_card_delivery,
         owner_visible_delivery=owner_visible_delivery,
         stale_supervisor_projection=stale_supervisor_projection,
+        failure_candidates_materialized=failure_candidates_materialized,
+        failure_closeout_materialized=failure_closeout_materialized,
+        channel_discussion_sweep=channel_discussion_sweep if "channel_discussion_sweep" in locals() else 0,
+        invoke_backlog_replayed=invoke_backlog_replayed if "invoke_backlog_replayed" in locals() else 0,
     )
 
 
@@ -232,6 +317,8 @@ def emit_stale_supervisor_projection_if_needed(
     age = (latest_event_ts - generated_at).total_seconds()
     if age <= max_stale_seconds:
         return False
+    if _only_observer_events_since_snapshot(events, generated_at):
+        return False
     fingerprint = f"supervisor_projection_stale:{snapshot_path}"
     if _has_open_stale_projection_event(events, fingerprint=fingerprint):
         return False
@@ -252,6 +339,21 @@ def emit_stale_supervisor_projection_if_needed(
         },
     ))
     return True
+
+
+def _only_observer_events_since_snapshot(
+    events: list[ZfEvent],
+    generated_at,
+) -> bool:
+    seen_later = False
+    for event in events:
+        ts = _parse_ts(getattr(event, "ts", ""))
+        if ts is None or ts <= generated_at:
+            continue
+        seen_later = True
+        if getattr(event, "type", "") not in _SUPERVISOR_STALENESS_OBSERVER_EVENTS:
+            return False
+    return seen_later
 
 
 def _safe_housekeeping(orchestrator: Any, label: str, method_name: str) -> None:
@@ -283,6 +385,74 @@ def _deliver_owner_visible(state_dir: Path, config: Any) -> bool:
         return deliver_owner_visible_to_feishu(state_dir=state_dir, config=config) is not None
     except Exception:
         return False
+
+
+INVOKE_REPLAY_GRACE_SECONDS = 60.0
+
+
+def _replay_unconsumed_invokes(
+    orchestrator: Any,
+    *,
+    event_log: Any,
+    now: float,
+) -> int:
+    """Feed verdict-less workflow.invoke.requested events back to the reactor.
+
+    An invoke emitted before the orchestrator was ready (or missed by the
+    watcher) otherwise becomes permanent backlog: the watcher only tails new
+    events (observed live in the doc 122 approve->fanout e2e). The verdict
+    fold (accepted/rejected by source_event_id) is the idempotency guard; the
+    grace period keeps this from racing the live watcher path.
+    """
+    try:
+        events = event_log.read_all()
+    except Exception:
+        return 0
+    verdicts = {
+        str((event.payload or {}).get("source_event_id") or "")
+        for event in events
+        if event.type in {"workflow.invoke.accepted", "workflow.invoke.rejected"}
+    }
+    replayed = 0
+    for event in events:
+        if event.type != "workflow.invoke.requested":
+            continue
+        if event.id in verdicts:
+            continue
+        try:
+            from datetime import datetime
+
+            age = now - datetime.fromisoformat(str(event.ts)).timestamp()
+        except (TypeError, ValueError):
+            continue
+        if age < INVOKE_REPLAY_GRACE_SECONDS:
+            continue
+        handler = getattr(orchestrator, "_on_workflow_invoke_requested", None)
+        if handler is None:
+            return 0
+        try:
+            handler(event)
+            replayed += 1
+        except Exception:
+            continue
+    return replayed
+
+
+def _sweep_channel_discussions(
+    *,
+    state_dir: Path,
+    writer: Any,
+    config: Any,
+    project_root: Path | None,
+) -> int:
+    try:
+        from zf.runtime.channel_discussion import sweep_discussion_deadlines
+
+        return sweep_discussion_deadlines(
+            Path(state_dir), writer, config=config, project_root=project_root,
+        )
+    except Exception:
+        return 0
 
 
 def _deliver_run_manager_cards(state_dir: Path, config: Any) -> bool:
@@ -330,6 +500,69 @@ def _deliver_run_manager_cards(state_dir: Path, config: Any) -> bool:
         )
     except Exception:
         return False
+
+
+def _materialize_failure_candidates(
+    *,
+    event_log: Any,
+    writer: Any,
+    state_dir: Path,
+) -> int:
+    try:
+        events = _read_events(state_dir, event_log=event_log)
+        from zf.runtime.failure_to_eval import (
+            materialize_failure_candidates_from_events,
+            materialize_failure_closeout,
+        )
+
+        refs = materialize_failure_candidates_from_events(
+            state_dir,
+            events,
+            source="runtime_tick",
+        )
+        if refs:
+            closeout = materialize_failure_closeout(
+                state_dir,
+                output_root=state_dir / "failure-closeout",
+                kinds=("backlog", "eval", "skill"),
+                candidate_refs=refs,
+            )
+            writer.append(ZfEvent(
+                type="failure.candidates.materialized",
+                actor="zf-runtime",
+                payload={
+                    "schema_version": "failure-candidates.materialized.v1",
+                    "count": len(refs),
+                    "candidate_refs": [str(path) for path in refs],
+                },
+            ))
+            writer.append(ZfEvent(
+                type="failure.closeout.materialized",
+                actor="zf-runtime",
+                payload={
+                    "schema_version": "failure-closeout.event.v1",
+                    "manifest_ref": closeout.get("manifest_ref"),
+                    "materialized_count": closeout.get("materialized_count", 0),
+                    "candidate_count": closeout.get("candidate_count", 0),
+                    "requested_kinds": closeout.get("requested_kinds", []),
+                    "source": "runtime_tick",
+                },
+            ))
+        return len(refs)
+    except Exception as exc:
+        try:
+            writer.append(ZfEvent(
+                type="failure.candidates.materialize_failed",
+                actor="zf-runtime",
+                payload={
+                    "schema_version": "failure-candidates.materialize-failed.v1",
+                    "reason": "failure_candidate_projection_failed",
+                    "error": str(exc)[:400],
+                },
+            ))
+        except Exception:
+            pass
+        return 0
 
 
 def _run_supervisor(*, state_dir: Path, config: Any, project_root: Path) -> bool:
@@ -693,3 +926,145 @@ __all__ = [
     "run_autoresearch_trigger_scan",
     "run_standard_tick_services",
 ]
+
+
+def _emit_blocked_role_burn_if_needed(
+    *,
+    event_log,
+    event_writer,
+    state_dir,
+    state: TickServiceState,
+    intervals: TickServiceIntervals,
+) -> bool:
+    """blocked 角色烧钱看门狗(avbs-r5:dev-flow blocked_human 冷却期
+    烧 30M token 零产出)。角色进入 blocked_* 后 agent.usage 仍累积超
+    阈值 → cost.blocked_role_burn;按实例以事件去重 + 全局冷却。"""
+    import time as _time
+
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.event_window import read_runtime_events
+
+    now_wall = _time.time()
+    if now_wall - state.last_blocked_burn_emit_at < intervals.blocked_burn_cooldown_s:
+        return False
+    events = read_runtime_events(event_log, state_dir)
+    blocked_since: dict[str, int] = {}
+    burn_tokens: dict[str, int] = {}
+    burned_reported: dict[str, int] = {}
+    for idx, event in enumerate(events):
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type == "worker.state.changed":
+            instance = str(payload.get("instance_id") or "")
+            if not instance:
+                continue
+            if str(payload.get("state") or "").startswith("blocked"):
+                blocked_since.setdefault(instance, idx)
+            else:
+                blocked_since.pop(instance, None)
+                burn_tokens.pop(instance, None)
+        elif event.type == "agent.usage":
+            instance = str(
+                payload.get("instance_id")
+                or str(event.actor or "").split(":")[-1]
+                or ""
+            )
+            if instance in blocked_since:
+                usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+                burn_tokens[instance] = burn_tokens.get(instance, 0) + int(
+                    usage.get("input_tokens") or 0
+                ) + int(usage.get("output_tokens") or 0)
+        elif event.type == "cost.blocked_role_burn":
+            instance = str(payload.get("instance_id") or "")
+            if instance:
+                burned_reported[instance] = idx
+    emitted = False
+    for instance, since_idx in blocked_since.items():
+        tokens = burn_tokens.get(instance, 0)
+        if tokens < intervals.blocked_burn_tokens:
+            continue
+        if burned_reported.get(instance, -1) > since_idx:
+            continue  # 本次 blocked 段已报过
+        event_writer.append(ZfEvent(
+            type="cost.blocked_role_burn",
+            actor="zf-cli",
+            payload={
+                "instance_id": instance,
+                "tokens_since_blocked": tokens,
+                "threshold": intervals.blocked_burn_tokens,
+                "reason": (
+                    "role is in a blocked_* state but keeps consuming "
+                    "tokens; frozen roles should not run agentic turns"
+                ),
+            },
+        ))
+        state.last_blocked_burn_emit_at = now_wall
+        emitted = True
+    return emitted
+
+
+def _emit_cost_blackout_if_needed(
+    *,
+    event_log,
+    event_writer,
+    state_dir,
+    state: TickServiceState,
+    intervals: TickServiceIntervals,
+) -> bool:
+    """P0-8: dispatch 活跃但 usage 停更超过阈值 → cost.usage.blackout。
+
+    判定用事件时间戳(非墙钟差),避免 run 暂停期误报;带冷却去重。
+    """
+    import time as _time
+    from datetime import datetime
+
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.event_window import read_runtime_events
+
+    now_wall = _time.time()
+    if now_wall - state.last_blackout_emit_at < intervals.cost_blackout_cooldown_s:
+        return False
+    events = read_runtime_events(event_log, state_dir)
+    last_dispatch_ts = None
+    last_usage_ts = None
+    for event in events:
+        if event.type in ("task.dispatched", "fanout.child.dispatched"):
+            last_dispatch_ts = event.ts
+        elif event.type == "agent.usage":
+            last_usage_ts = event.ts
+
+    def _epoch(ts: str | None) -> float | None:
+        if not ts:
+            return None
+        try:
+            return datetime.fromisoformat(ts).timestamp()
+        except (TypeError, ValueError):
+            return None
+
+    dispatch_epoch = _epoch(last_dispatch_ts)
+    usage_epoch = _epoch(last_usage_ts)
+    if dispatch_epoch is None:
+        return False  # 本窗无派发,无成本可盲
+    stale_s = intervals.cost_blackout_stale_s
+    if now_wall - dispatch_epoch > stale_s * 2:
+        return False  # 派发本身已冷,run 空闲期不报
+    usage_stale = (
+        usage_epoch is None or now_wall - usage_epoch >= stale_s
+    )
+    if not usage_stale:
+        return False
+    state.last_blackout_emit_at = now_wall
+    event_writer.append(ZfEvent(
+        type="cost.usage.blackout",
+        actor="zf-cli",
+        payload={
+            "last_dispatch_ts": last_dispatch_ts,
+            "last_usage_ts": last_usage_ts,
+            "stale_threshold_s": stale_s,
+            "problem_class": "harness",
+            "reason": (
+                "dispatch active but agent.usage stopped updating; budget "
+                "gate is deciding on a frozen total (D9: r5 ran 11h blind)"
+            ),
+        },
+    ))
+    return True

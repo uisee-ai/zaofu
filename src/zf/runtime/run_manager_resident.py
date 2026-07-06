@@ -270,7 +270,12 @@ def spawn_resident_run_manager(
 
     instructions_dir.mkdir(parents=True, exist_ok=True)
     (instructions_dir / f"{role.instance_id}.md").write_text(
-        generate_role_instructions(config, role),
+        generate_role_instructions(
+            config,
+            role,
+            state_dir_ref=state_dir,
+            project_root=project_root,
+        ),
         encoding="utf-8",
     )
 
@@ -368,7 +373,12 @@ def rebind_preserved_resident_run_manager(
 
     instructions_dir.mkdir(parents=True, exist_ok=True)
     (instructions_dir / f"{role.instance_id}.md").write_text(
-        generate_role_instructions(config, role),
+        generate_role_instructions(
+            config,
+            role,
+            state_dir_ref=state_dir,
+            project_root=project_root,
+        ),
         encoding="utf-8",
     )
 
@@ -577,7 +587,12 @@ def _apply_resident_restart_request(
 
     instructions_dir.mkdir(parents=True, exist_ok=True)
     (instructions_dir / f"{role.instance_id}.md").write_text(
-        generate_role_instructions(config, role),
+        generate_role_instructions(
+            config,
+            role,
+            state_dir_ref=state_dir,
+            project_root=project_root,
+        ),
         encoding="utf-8",
     )
     briefing_path = state_dir / "briefings" / "run-manager-resident.md"

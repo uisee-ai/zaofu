@@ -83,3 +83,47 @@ def test_split_quality_still_blocks_writer_dispatch(tmp_path: Path) -> None:
         if event.type == "task.split_quality.blocked"
     ]
     assert len(events) == 1
+
+
+def test_split_quality_allows_refactor_task_map_module_scope_with_surface(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        workflow=WorkflowConfig(
+            work_units=WorkflowWorkUnitsConfig(
+                enabled=True,
+                split_quality=WorkflowSplitQualityConfig(
+                    mode="blocking",
+                    max_scope_files=1,
+                ),
+            ),
+        ),
+    )
+    harness = _Harness(state_dir, config)
+    task = harness.task_store.add(Task(
+        id="TASK-REF",
+        title="refactor slice",
+        status="backlog",
+        contract=TaskContract(
+            behavior="Rebuild the module",
+            verification="npm test",
+            verification_tiers=["runtime"],
+            owner_role="dev",
+            scope=["src/a.ts", "src/b.ts"],
+            acceptance_criteria=["module parity is preserved"],
+            evidence_contract={
+                "source": "refactor_task_map",
+                "source_refs": {"task_map_ref": ".zf/artifacts/F/task_map.json"},
+            },
+        ),
+    ))
+
+    blocked = harness._split_quality_blocks_dispatch(
+        task,
+        RoleConfig(name="dev-lane-0", role_kind="writer"),
+    )
+
+    assert blocked is False
+    assert harness.task_store.get("TASK-REF").status == "backlog"

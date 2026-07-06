@@ -164,8 +164,10 @@ def _finding_to_gap_task(
     ])
     acceptance = [_acceptance_text(item) for item in messages]
     acceptance = _dedupe(acceptance) or [
-        "Restore Hermes module parity for these findings.",
+        "Restore goal parity for these findings.",
     ]
+    claim_paths = _claim_paths(path, module_id, findings)
+    verify_commands = _verify_commands(findings)
     return {
         "task_id": task_id,
         "module_id": module_id,
@@ -174,9 +176,9 @@ def _finding_to_gap_task(
         "priority": priority,
         "gap_kind": "module_parity_gap",
         "title": _task_title(priority, module_id, messages, path),
-        "claim_paths": _claim_paths(path, module_id),
+        "claim_paths": claim_paths,
         "acceptance": acceptance,
-        "verify_commands": _verify_commands(module_id),
+        "verify_commands": verify_commands,
         "source_refs": refs or ["module parity scan findings"],
         "findings": [_finding_summary(item) for item in findings],
     }
@@ -381,33 +383,63 @@ def _task_title(
     return f"{prefix}: {location} - {summary}"
 
 
-def _claim_paths(path: str, module_id: str) -> list[str]:
+def _claim_paths(path: str, module_id: str, findings: list[dict[str, Any]]) -> list[str]:
+    explicit: list[str] = []
+    for finding in findings:
+        for key in (
+            "claim_paths",
+            "source_paths",
+            "target_paths",
+            "affected_paths",
+            "paths",
+        ):
+            explicit.extend(_string_list(finding.get(key)))
+    explicit = _dedupe(explicit)
+    if explicit:
+        return explicit
     if path:
         return [path]
     if module_id and module_id != "runtime":
-        return [f"packages/{module_id}/**"]
-    return ["packages/**"]
+        return [f"**/{module_id}/**"]
+    return ["**"]
 
 
 def _acceptance_text(message: str) -> str:
     hint = ""
     if "Gap task hint:" in message:
         hint = message.split("Gap task hint:", 1)[1].strip()
-    text = hint or message or "Restore Hermes module parity for this finding."
+    text = hint or message or "Restore goal parity for this finding."
     if len(text) > 500:
         text = text[:497].rstrip() + "..."
     return text
 
 
-def _verify_commands(module_id: str) -> list[str]:
-    return [
-        "pnpm -r --if-present run test",
-        "pnpm run typecheck",
+def _verify_commands(findings: list[dict[str, Any]]) -> list[str]:
+    commands: list[str] = []
+    for finding in findings:
+        for key in (
+            "verify_commands",
+            "verification_commands",
+            "verification",
+            "test_commands",
+        ):
+            commands.extend(_string_list(finding.get(key)))
+    return _dedupe(commands) or [
+        "Project-specific verification command required by workflow profile or scan artifact.",
     ]
 
 
 def _python_refs(text: str) -> list[str]:
     return re.findall(r"[A-Za-z0-9_./-]+\.py(?::\d+(?:-\d+)?)?", text or "")
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
 
 
 def _dedupe(values: list[str]) -> list[str]:

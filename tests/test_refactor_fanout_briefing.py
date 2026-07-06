@@ -92,7 +92,17 @@ def test_refactor_plan_briefing_includes_required_artifact_fields(tmp_path: Path
                 topology="fanout_reader",
                 roles=[],
                 target_ref="${target_ref}",
-                children=[FanoutChildConfig(role_instance="refactor-plan-author")],
+                children=[FanoutChildConfig(
+                    role_instance="refactor-plan-author",
+                    payload={
+                        "refactor_contract": {
+                            "schema_version": "refactor-plan-contract.v1",
+                            "lane_count": 1,
+                            "assembly_policy": "declared_task",
+                            "assembly_task_id": "ASM-001",
+                        },
+                    },
+                )],
                 aggregate=FanoutAggregateConfig(
                     mode="wait_for_all",
                     success_event="zaofu.refactor.plan.ready",
@@ -120,6 +130,11 @@ def test_refactor_plan_briefing_includes_required_artifact_fields(tmp_path: Path
     assert "task_map" in briefing
     assert "gates" in briefing
     assert "scan_quality_audit_ref" in briefing
+    assert "refactor_contract" in briefing
+    assert "assembly_policy" in briefing
+    assert "declared_task" in briefing
+    assert "ASM-001" in briefing
+    assert "do not emit success unless" in briefing
     assert "report.recommendation` as `approve`" in briefing
     assert "zf emit workflow.child.completed" in briefing
     assert "Aggregate success event: `zaofu.refactor.plan.ready`" in briefing

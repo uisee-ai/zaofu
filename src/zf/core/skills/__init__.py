@@ -5,6 +5,10 @@ from zf.core.skills.materialize import (
     SkillMaterializationResult,
     materialize_role_skills,
 )
+from zf.core.skills.adapter_resolver import (
+    AdapterSkillResolverInput,
+    build_project_adapter_skill_plan,
+)
 from zf.core.skills.provenance import (
     SkillCandidate,
     SkillMetadata,
@@ -23,6 +27,8 @@ from zf.core.skills.provenance import (
 __all__ = [
     "MaterializedSkill",
     "SkillMaterializationResult",
+    "AdapterSkillResolverInput",
+    "build_project_adapter_skill_plan",
     "SkillCandidate",
     "SkillMetadata",
     "SkillLockEntry",

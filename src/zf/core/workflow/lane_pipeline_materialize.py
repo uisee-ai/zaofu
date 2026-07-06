@@ -19,6 +19,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from zf.core.workflow.lane_pipeline import (
+    LANE_STAGE_HANDOFF_FAILURE_EVENT,
+    LANE_STAGE_HANDOFF_SUCCESS_EVENT,
+)
+
 # stage 级(candidate 级)事件的 canonical 词汇映射;不在表内走
 # {id}.completed/failed 约定。
 # final 段 child 终态约定(judge 自身失败 = kernel sweep/escalate 域,
@@ -75,6 +80,7 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
     stages: list[dict[str, Any]] = []
     profile = lane_profile_name(spec)
     retries = max(int(spec.max_rework_attempts or 1) - 1, 0)
+    per_lane = str(getattr(spec, "stage_transition", "") or "") == "per_lane"
 
     first = spec.stages[0]
     impl: dict[str, Any] = {
@@ -106,11 +112,15 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
     stages.append(impl)
 
     prev_success = "candidate.ready"
+    final_trigger = "candidate.ready"
     for stage in spec.stages[1:]:
-        success, failure = _stage_level_pair(stage.stage_id)
+        stage_success, stage_failure = _stage_level_pair(stage.stage_id)
+        success = LANE_STAGE_HANDOFF_SUCCESS_EVENT if per_lane else stage_success
+        failure = LANE_STAGE_HANDOFF_FAILURE_EVENT if per_lane else stage_failure
+        trigger = LANE_STAGE_HANDOFF_SUCCESS_EVENT if per_lane else prev_success
         entry: dict[str, Any] = {
             "id": f"{spec.pipeline_id}-{stage.stage_id}",
-            "trigger": prev_success,
+            "trigger": trigger,
             "topology": "fanout_reader",
             "roles": _lane_roles(stage, spec.lane_count),
             "fanout": {"assignment": {
@@ -134,11 +144,12 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
             entry["on_fail"] = backedge
         stages.append(entry)
         prev_success = success
+        final_trigger = stage_success if per_lane else success
 
     if spec.final_role:
         stages.append({
             "id": f"{spec.pipeline_id}-final",
-            "trigger": prev_success,
+            "trigger": final_trigger,
             "topology": "fanout_reader",
             "roles": [spec.final_role],
             "aggregate": {

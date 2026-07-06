@@ -22,11 +22,22 @@ import yaml
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events.log import EventLog
+from zf.core.events.module_parity import (
+    MODULE_PARITY_SCAN_COMPLETED_EVENTS,
+    is_module_parity_scan_completed_event,
+)
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.security.redaction import redact_obj
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.task.store import TaskStore
+from zf.runtime.event_problem_registry import (
+    RUN_MANAGER_PENDING_EVENT_TYPES,
+    RUN_MANAGER_POST_TERMINAL_EVENT_TYPES,
+    looks_actionable_event,
+    spec_for_event,
+)
+from zf.runtime.channel_reply_remediation import pending_channel_reply_exhausted_actions
 from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
@@ -38,6 +49,7 @@ from zf.runtime.run_manager_reports import (
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
     SAFE_BATCH_ACTIONS,
+    SAFE_TASK_ACTIONS,
     build_no_progress_projection,
     classify_recovery_context as router_classify_recovery_context,
     decide_action_policy as router_decide_action_policy,
@@ -106,8 +118,14 @@ _POST_TERMINAL_WORK_EVENTS = frozenset({
     "task_map.ready",
     "task_map.amended",
     "gap_plan.ready",
+    "goal.gap_plan.ready",
+    "flow.gap_plan.ready",
+    "flow.discovery.requested",
+    "flow.discovery.completed",
+    "flow.goal.closed",
+    *RUN_MANAGER_POST_TERMINAL_EVENT_TYPES,
     "module.parity.gap_plan.ready",
-    "cangjie.module.parity.scan.completed",
+    *MODULE_PARITY_SCAN_COMPLETED_EVENTS,
     "task.assigned",
     "task.dispatched",
     "fanout.started",
@@ -132,7 +150,9 @@ _RUN_MANAGER_REPAIR_TERMINALS = {
     RUN_MANAGER_REPAIR_BLOCKED,
 }
 _SAFE_BATCH_ACTIONS = set(SAFE_BATCH_ACTIONS)
+_SAFE_TASK_ACTIONS = set(SAFE_TASK_ACTIONS)
 _ACTION_POLICIES = set(ACTION_POLICIES)
+_DIAGNOSIS_REQUEST_STALE_SECONDS = 300
 
 
 @dataclass(frozen=True)
@@ -181,6 +201,7 @@ def run_manager_tick(
     config: ZfConfig | None = None,
     project_root: Path | None = None,
     event_log: EventLog | None = None,
+    transport: object | None = None,
     auto_execute: bool = True,
     action_filter: set[str] | None = None,
     spawn_repairs: bool = True,
@@ -203,6 +224,63 @@ def run_manager_tick(
         },
     )
 
+    deterministic_actions_applied = 0
+    deterministic_actions_failed = 0
+    try:
+        from zf.runtime.fanout_recovery import (
+            recover_unrecorded_writer_fanout_results,
+        )
+
+        fanout_recovery = recover_unrecorded_writer_fanout_results(
+            state_dir=state_dir,
+            config=config,
+            project_root=project_root,
+            event_log=event_log,
+            transport=transport,
+        )
+        if fanout_recovery.recovered:
+            writer.emit(
+                RUN_MANAGER_ACTION_APPLIED,
+                actor="run-manager",
+                causation_id=started.id,
+                payload={
+                    "schema_version": "run-manager.action.v1",
+                    "action": "fanout-terminal-recover",
+                    "safe_resume_action": "recover_unrecorded_writer_fanout_results",
+                    "status": "applied",
+                    "reason": "writer fanout result events were missing child terminal records",
+                    "candidate_count": len(fanout_recovery.candidates),
+                    "events_appended": fanout_recovery.events_appended,
+                    "terminals_appended": fanout_recovery.terminals_appended,
+                    "expected_downstream_events": [
+                        "fanout.child.completed",
+                        "fanout.child.failed",
+                        "fanout.child.dispatched",
+                    ],
+                    "verify_condition": (
+                        "expected_downstream_event:"
+                        "fanout.child.completed,fanout.child.failed,fanout.child.dispatched"
+                    ),
+                },
+            )
+            deterministic_actions_applied += 1
+            events = _read_events(state_dir, event_log=event_log)
+    except Exception as exc:
+        writer.emit(
+            RUN_MANAGER_ACTION_FAILED,
+            actor="run-manager",
+            causation_id=started.id,
+            payload={
+                "schema_version": "run-manager.action.v1",
+                "action": "fanout-terminal-recover",
+                "safe_resume_action": "recover_unrecorded_writer_fanout_results",
+                "status": "failed",
+                "reason": str(exc)[:400],
+            },
+        )
+        deterministic_actions_failed += 1
+        events = _read_events(state_dir, event_log=event_log)
+
     repairs_accepted = _accept_autoresearch_repairs(events, writer)
     if repairs_accepted:
         events = _read_events(state_dir, event_log=event_log)
@@ -219,7 +297,15 @@ def run_manager_tick(
     )
     if human_decisions_applied or human_decisions_rejected:
         events = _read_events(state_dir, event_log=event_log)
-    agent_recommendations_consumed, agent_recommendation_autoresearch, agent_recommendation_reflects, agent_recommendation_repairs = (
+    (
+        agent_recommendations_consumed,
+        agent_recommendation_autoresearch,
+        agent_recommendation_reflects,
+        agent_recommendation_repairs,
+        agent_recommendation_actions_applied,
+        agent_recommendation_actions_blocked,
+        agent_recommendation_actions_failed,
+    ) = (
         _consume_agent_recommendations(
             state_dir=state_dir,
             writer=writer,
@@ -289,9 +375,9 @@ def run_manager_tick(
         )
     write_run_manager_projections(state_dir, projection)
 
-    actions_applied = 0
-    actions_blocked = 0
-    actions_failed = 0
+    actions_applied = deterministic_actions_applied + agent_recommendation_actions_applied
+    actions_blocked = agent_recommendation_actions_blocked
+    actions_failed = deterministic_actions_failed + agent_recommendation_actions_failed
     autoresearch_requested = agent_recommendation_autoresearch
     reflect_requested = agent_recommendation_reflects
     reflect_completed = agent_recommendation_reflects
@@ -307,6 +393,28 @@ def run_manager_tick(
             decision = action.get("policy_decision")
             decision = decision if isinstance(decision, dict) else {}
             if decision.get("decision") == "auto_decide":
+                break_reason = _outcome_no_progress_break(events, action)
+                if break_reason:
+                    # 结果级熔断:同签名动作 3 连发零进展,拒绝再烧。
+                    try:
+                        writer.emit(
+                            "run.manager.action.no_progress_break",
+                            actor="run-manager",
+                            task_id=str(action.get("task_id") or "") or None,
+                            payload={
+                                "schema_version": "run-manager.no-progress-break.v1",
+                                "task_id": str(action.get("task_id") or ""),
+                                "safe_resume_action": str(action.get("safe_resume_action") or ""),
+                                "action": str(action.get("action") or ""),
+                                "checkpoint_id": str(action.get("checkpoint_id") or ""),
+                                "reason": break_reason,
+                            },
+                            causation_id=started.id,
+                        )
+                    except Exception:
+                        pass
+                    actions_blocked += 1
+                    continue
                 status = _execute_controlled_run_action(
                     state_dir=state_dir,
                     writer=writer,
@@ -324,6 +432,19 @@ def run_manager_tick(
                     actions_failed += 1
                 events = _read_events(state_dir, event_log=event_log)
             elif decision.get("decision") == "needs_diagnosis":
+                if _diagnosis_action_request_stalled(events, action):
+                    _emit_failed_action(
+                        writer,
+                        action,
+                        causation_id=started.id,
+                        reason=(
+                            "run manager autoresearch request became stale without "
+                            "autoresearch.loop.completed or autoresearch.loop.failed"
+                        ),
+                    )
+                    actions_failed += 1
+                    events = _read_events(state_dir, event_log=event_log)
+                    continue
                 diagnosis_satisfied = False
                 resident_action = _resident_diagnosis_reprompt_action(
                     action,
@@ -529,6 +650,16 @@ def build_run_manager_projection(
     resident_agent = build_resident_agent_projection(events, config=config)
     resident_actions = _pending_resident_agent_actions(resident_agent, events)
     repair_validation_actions = _pending_repair_validation_actions(merge_queue, events)
+    failure_closeout_actions = _pending_failure_closeout_activation_actions(events)
+    channel_reply_actions = []
+    for action in pending_channel_reply_exhausted_actions(events):
+        if _action_seen(events, action):
+            continue
+        action["preflight"] = preflight_action(action="diagnose-attention", payload=action)
+        action["policy_decision"] = router_decide_action_policy(
+            action="diagnose-attention", payload=action,
+        )
+        channel_reply_actions.append(action)
     post_repair_continuation_actions = _pending_post_repair_continuation_actions(
         merge_queue,
         events,
@@ -552,12 +683,22 @@ def build_run_manager_projection(
         )
         if human_gate_actions and candidate_human_only:
             candidate_actions = []
+    semantic_event_actions = []
+    if (
+        not workflow_actions
+        and not post_repair_continuation_actions
+        and not candidate_actions
+        and not human_gate_actions
+        and completion_profile.get("status") != "complete"
+    ):
+        semantic_event_actions = _pending_semantic_event_actions(events)
     attention_actions = []
     if (
         not workflow_actions
         and not post_repair_continuation_actions
         and not candidate_actions
         and not human_gate_actions
+        and not semantic_event_actions
         and completion_profile.get("status") != "complete"
     ):
         attention_actions = _pending_attention_diagnostic_actions(
@@ -575,9 +716,12 @@ def build_run_manager_projection(
         *worker_actions,
         *resident_actions,
         *repair_validation_actions,
+        *failure_closeout_actions,
+        *channel_reply_actions,
         *post_repair_continuation_actions,
         *candidate_actions,
         *human_gate_actions,
+        *semantic_event_actions,
         *attention_actions,
     ]
     unknown_gap_actions = []
@@ -600,6 +744,7 @@ def build_run_manager_projection(
         _action_with_problem_envelope(action)
         for action in pending_actions
     ]
+    pending_actions = _prioritize_pending_actions(pending_actions)
     monitor = build_run_monitor_projection(
         state_dir,
         events=events,
@@ -751,6 +896,40 @@ def _action_with_problem_envelope(action: dict[str, Any]) -> dict[str, Any]:
     return redact_obj(updated)
 
 
+def _prioritize_pending_actions(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Run deterministic resume/recover actions before generic diagnosis."""
+
+    return sorted(actions, key=_pending_action_priority)
+
+
+def _pending_action_priority(action: dict[str, Any]) -> tuple[int, str, str]:
+    action_name = str(action.get("action") or "")
+    safe_action = str(action.get("safe_resume_action") or "")
+    readiness = _pending_action_readiness(action)
+    if readiness == "ready_to_execute":
+        if action_name in {"workflow-task-resume", "workflow-batch-resume"}:
+            if safe_action in _SAFE_TASK_ACTIONS or safe_action in _SAFE_BATCH_ACTIONS:
+                return (0, action_name, str(action.get("checkpoint_id") or ""))
+        if action_name == "worker-lifecycle-recover":
+            return (10, action_name, str(action.get("checkpoint_id") or ""))
+        if action_name == "resident-agent-reprompt":
+            return (20, action_name, str(action.get("checkpoint_id") or ""))
+        if action_name in {
+            "repair-closeout-validate",
+            "candidate-rework-apply",
+            "failure-closeout-activate",
+        }:
+            return (30, action_name, str(action.get("checkpoint_id") or ""))
+        return (40, action_name, str(action.get("checkpoint_id") or ""))
+    if readiness == "needs_diagnosis":
+        return (70, action_name, str(action.get("checkpoint_id") or ""))
+    if readiness == "human_blocked":
+        return (80, action_name, str(action.get("checkpoint_id") or ""))
+    if readiness == "preflight_blocked":
+        return (90, action_name, str(action.get("checkpoint_id") or ""))
+    return (60, action_name, str(action.get("checkpoint_id") or ""))
+
+
 def _safe_runtime_pane_snapshot(
     state_dir: Path,
     *,
@@ -795,6 +974,10 @@ def build_run_manager_monitor_projection(
     resident_agent: dict[str, Any],
     runtime_pane_snapshot: dict[str, Any],
 ) -> dict[str, Any]:
+    monitor_state = str(monitor.get("state") or "")
+    blocking = bool(status_explain.get("blocking"))
+    if monitor_state in {"blocked", "needs_human", "repair_closeout_required"}:
+        blocking = True
     pending_by_decision = Counter(
         str((item.get("policy_decision") or {}).get("decision") or "unknown")
         for item in pending_actions
@@ -807,14 +990,20 @@ def build_run_manager_monitor_projection(
     )
     pane_summary = runtime_pane_snapshot.get("summary")
     pane_summary = pane_summary if isinstance(pane_summary, dict) else {}
+    if (
+        monitor_state == "healthy_waiting"
+        and str(no_progress.get("status") or "") == "tripped"
+        and pending_actions
+    ):
+        monitor_state = "diagnosis_pending"
     return redact_obj({
         "schema_version": "run-manager.monitor.v1",
         "is_derived_projection": True,
         "completion_status": str(completion_profile.get("status") or "unknown"),
-        "monitor_state": str(monitor.get("state") or ""),
+        "monitor_state": monitor_state,
         "wait_reason": str(status_explain.get("wait_reason") or ""),
         "next_auto_action": str(status_explain.get("next_auto_action") or ""),
-        "blocking": bool(status_explain.get("blocking")),
+        "blocking": blocking,
         "summary": {
             "pending_actions": len(pending_actions),
             "pending_by_decision": dict(sorted(pending_by_decision.items())),
@@ -1135,8 +1324,12 @@ def build_run_monitor_projection(
         RUN_MANAGER_HUMAN_DECISION_REJECTED,
     ))
     completion_status = ""
+    completion_blockers: list[Any] = []
     if isinstance(completion_profile, dict):
         completion_status = str(completion_profile.get("status") or "")
+        raw_blockers = completion_profile.get("blockers")
+        if isinstance(raw_blockers, list):
+            completion_blockers = list(raw_blockers)
     display_in_flight = in_flight[-50:]
     display_open_attention = len(open_attention)
     residual_in_flight: list[dict[str, str]] = []
@@ -1156,6 +1349,8 @@ def build_run_monitor_projection(
         state = "repair_closeout_required"
     elif any(event.type in {RUN_MANAGER_REPAIR_ACCEPTED, "autoresearch.repair.dispatched"} for event in events[-20:]):
         state = "repair_in_flight"
+    elif completion_status == "blocked" or completion_blockers:
+        state = "blocked"
     elif open_attention and not pending_actions:
         state = "silent_stall"
     closeout_projection_status = "not_applicable"
@@ -1757,9 +1952,28 @@ def classify_recovery_context(action: dict[str, Any]) -> dict[str, Any]:
     return router_classify_recovery_context(action)
 
 
+def _spine_summary(projections_dir: Path) -> dict[str, Any]:
+    """131-P0-6:只读引用 shadow spine 投影,展示级 enrich,不改变任何决策。"""
+    summary: dict[str, Any] = {}
+    for key, name in (("health", "workflow_health.json"), ("runs", "workflow_spine.json")):
+        try:
+            data = json.loads((projections_dir / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if key == "health":
+            summary["counters"] = data.get("counters") or {}
+            summary["last_event_ts"] = data.get("last_event_ts") or ""
+        else:
+            summary["runs"] = data.get("runs") or {}
+    return summary
+
+
 def write_run_manager_projections(state_dir: Path, projection: dict[str, Any]) -> None:
     state_dir = Path(state_dir)
     projections_dir = state_dir / "projections"
+    spine = _spine_summary(projections_dir)
+    if spine:
+        projection = {**projection, "spine_summary": spine}
     atomic_write_text(
         projections_dir / "run_manager.json",
         json.dumps(projection, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -1827,6 +2041,9 @@ def emit_human_escalation_package(
         "recent_action": str(action.get("action") or ""),
         "action": str(action.get("action") or ""),
         "safe_resume_action": str(action.get("safe_resume_action") or ""),
+        "manifest_ref": str(action.get("manifest_ref") or ""),
+        "output_dir": str(action.get("output_dir") or ""),
+        "limit": action.get("limit") if action.get("limit") is not None else None,
         "fanout_id": str(action.get("fanout_id") or ""),
         "pdd_id": str(action.get("pdd_id") or ""),
         "feature_id": str(action.get("feature_id") or ""),
@@ -1883,11 +2100,14 @@ def _consume_agent_recommendations(
     events: list[ZfEvent],
     causation_id: str,
     reflect_fn: Callable[..., Any] | None,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, int, int, int, int, int, int]:
     consumed = 0
     autoresearch_requested = 0
     reflects_completed = 0
     repairs_accepted = 0
+    actions_applied = 0
+    actions_blocked = 0
+    actions_failed = 0
     for event in events:
         if event.type != RUN_MANAGER_AGENT_RECOMMENDATION:
             continue
@@ -1949,14 +2169,98 @@ def _consume_agent_recommendations(
                     )
                 else:
                     reason = "repair_request_already_exists"
+        elif route == "controlled_action":
+            decision = action.get("policy_decision")
+            decision = decision if isinstance(decision, dict) else {}
+            decision_name = str(decision.get("decision") or "")
+            if decision_name == "auto_decide":
+                before = len(writer.event_log.read_all())
+                action_status = _execute_controlled_run_action(
+                    state_dir=state_dir,
+                    writer=writer,
+                    config=config,
+                    project_root=project_root,
+                    action=action,
+                    causation_id=causation_id,
+                )
+                after_events = writer.event_log.read_all()[before:]
+                downstream_event_ids.extend(
+                    item.id for item in after_events
+                    if item.type in {
+                        RUN_MANAGER_ACTION_APPLIED,
+                        RUN_MANAGER_ACTION_BLOCKED,
+                        RUN_MANAGER_ACTION_FAILED,
+                        RUN_MANAGER_ACTION_VERIFY_PASSED,
+                        RUN_MANAGER_ACTION_VERIFY_FAILED,
+                        "workflow.resume.applied",
+                        RUN_MANAGER_RESIDENT_PROMPTED,
+                        "worker.respawn.requested",
+                    }
+                )
+                if action_status == "applied":
+                    actions_applied += 1
+                elif action_status == "blocked":
+                    actions_blocked += 1
+                else:
+                    actions_failed += 1
+                reason = f"controlled_action_status={action_status}"
+            elif decision_name == "needs_diagnosis":
+                before = len(writer.event_log.read_all())
+                if _emit_autoresearch_request(
+                    state_dir=state_dir,
+                    writer=writer,
+                    action=action,
+                    projection={},
+                    project_root=project_root,
+                    causation_id=causation_id,
+                ):
+                    autoresearch_requested += 1
+                    after_events = writer.event_log.read_all()[before:]
+                    downstream_event_ids.extend(
+                        item.id for item in after_events
+                        if item.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+                    )
+                    reason = "controlled_action_requires_diagnosis"
+                else:
+                    reason = "controlled_action_diagnosis_request_already_exists"
+            elif decision_name in {"human_escalate", "needs_approval", "safe_halt"}:
+                status = "blocked"
+                reason = str(decision.get("reason") or "controlled action requires owner decision")
+                _emit_blocked_action(
+                    writer,
+                    action,
+                    causation_id=causation_id,
+                    reason=reason,
+                    human=decision_name in {"human_escalate", "needs_approval"},
+                )
+                actions_blocked += 1
+            else:
+                status = "blocked"
+                reason = f"controlled action has unsupported policy decision {decision_name!r}"
+                _emit_blocked_action(
+                    writer,
+                    action,
+                    causation_id=causation_id,
+                    reason=reason,
+                    human=False,
+                )
+                actions_blocked += 1
         elif route == "human":
-            escalation = emit_human_escalation_package(
-                writer,
-                action=action,
-                reason=str(payload.get("reason") or "resident Run Manager requested human decision"),
-                causation_id=causation_id,
-            )
-            downstream_event_ids.append(escalation.id)
+            if (
+                str(action.get("safe_resume_action") or "")
+                == "needs_terminal_closeout"
+                and _current_terminal_signal(events) is not None
+            ):
+                status = "wait"
+                reason = "terminal closeout is handled by deterministic run manager closeout"
+            else:
+                escalation = emit_human_escalation_package(
+                    writer,
+                    action=action,
+                    reason=str(payload.get("reason") or "resident Run Manager requested human decision"),
+                    causation_id=causation_id,
+                )
+                downstream_event_ids.append(escalation.id)
         elif route in {"wait", ""}:
             status = "wait"
             reason = "resident recommendation requested wait/noop"
@@ -1980,7 +2284,15 @@ def _consume_agent_recommendations(
             },
         )
         consumed += 1
-    return consumed, autoresearch_requested, reflects_completed, repairs_accepted
+    return (
+        consumed,
+        autoresearch_requested,
+        reflects_completed,
+        repairs_accepted,
+        actions_applied,
+        actions_blocked,
+        actions_failed,
+    )
 
 
 def _agent_recommendation_seen(events: list[ZfEvent], recommendation: ZfEvent) -> bool:
@@ -2027,6 +2339,38 @@ def _recommendation_route(payload: dict[str, Any]) -> str:
     return aliases.get(normalized, normalized)
 
 
+def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
+    requested = payload.get("controlled_action") or payload.get("action")
+    if isinstance(requested, dict):
+        requested = requested.get("action") or requested.get("kind")
+    requested_name = str(requested or "").strip()
+    supported = {
+        "workflow-task-resume",
+        "workflow-batch-resume",
+        "worker-lifecycle-recover",
+        "repair-closeout-validate",
+        "resident-agent-reprompt",
+        "candidate-rework-apply",
+        "failure-closeout-activate",
+        "diagnose-attention",
+    }
+    if requested_name in supported:
+        return requested_name
+    safe_action = str(payload.get("safe_resume_action") or "").strip()
+    if safe_action in _SAFE_TASK_ACTIONS:
+        return "workflow-task-resume"
+    if safe_action in _SAFE_BATCH_ACTIONS:
+        return "workflow-batch-resume"
+    safe_to_action = {
+        "worker_lifecycle_recover": "worker-lifecycle-recover",
+        "repair_closeout_validate": "repair-closeout-validate",
+        "resident_agent_reprompt": "resident-agent-reprompt",
+        "failure_closeout_activate": "failure-closeout-activate",
+        "diagnose_attention": "diagnose-attention",
+    }
+    return safe_to_action.get(safe_action, "agent-recommendation")
+
+
 def _action_from_agent_recommendation(
     event: ZfEvent,
     payload: dict[str, Any],
@@ -2036,10 +2380,16 @@ def _action_from_agent_recommendation(
         or payload.get("source_action_checkpoint_id")
         or "agent-recommendation-" + hashlib.sha1((event.id or "").encode("utf-8")).hexdigest()[:12]
     )
-    return {
+    route = _recommendation_route(payload)
+    safe_resume_action = str(payload.get("safe_resume_action") or "agent_recommendation")
+    action_name = (
+        _controlled_action_name_from_recommendation(payload)
+        if route == "controlled_action" else "agent-recommendation"
+    )
+    action = {
         "schema_version": "run-manager.pending-action.v1",
-        "action": "agent-recommendation",
-        "safe_resume_action": str(payload.get("safe_resume_action") or "agent_recommendation"),
+        "action": action_name,
+        "safe_resume_action": safe_resume_action,
         "checkpoint_id": checkpoint_id,
         "fingerprint": _fingerprint(payload, fallback=checkpoint_id),
         "failure_class": str(payload.get("failure_class") or "resident_agent_recommendation"),
@@ -2054,6 +2404,57 @@ def _action_from_agent_recommendation(
         "recommended_actions": _string_list(payload.get("recommended_actions")),
         "expected_output": _string_list(payload.get("expected_output")),
     }
+    for key in (
+        "task_id",
+        "fanout_id",
+        "pdd_id",
+        "feature_id",
+        "stage_id",
+        "trace_id",
+        "tmux_session",
+        "session_mode",
+        "briefing_path",
+        "instance_id",
+        "role_instance",
+        "briefing_ref",
+        "candidate_ref",
+        "candidate_head_commit",
+        "candidate_base_commit",
+        "override_task_map_ref",
+        "manifest_ref",
+        "worktree_path",
+        "queue_id",
+    ):
+        if payload.get(key) is not None:
+            action[key] = payload.get(key)
+    if payload.get("mutating_resume_supported") is not None:
+        action["mutating_resume_supported"] = bool(payload.get("mutating_resume_supported"))
+    expected_downstream = _string_list(payload.get("expected_downstream_events"))
+    if expected_downstream:
+        action["expected_downstream_events"] = expected_downstream
+    if route == "controlled_action":
+        if action_name in {"workflow-task-resume", "workflow-batch-resume"}:
+            action.update(router_classify_recovery_context(action))
+        elif action_name == "diagnose-attention":
+            action.update({
+                "safe_resume_action": "diagnose_attention",
+                "failure_class": str(action.get("failure_class") or "resident_agent_recommendation"),
+                "owner_route": "run_manager",
+                "action_policy": "needs_diagnosis",
+                "intervention_class": "diagnose",
+                "expected_downstream_events": sorted(_expected_downstream_events("diagnose_attention")),
+            })
+        action["preflight"] = preflight_action(
+            action=action_name,
+            payload=action,
+            mutating_resume_supported=bool(action.get("mutating_resume_supported")),
+        )
+        action["policy_decision"] = router_decide_action_policy(
+            action=action_name,
+            payload=action,
+            mutating_resume_supported=bool(action.get("mutating_resume_supported")),
+        )
+    return action
 
 
 def _emit_repair_acceptance_from_agent(
@@ -2680,6 +3081,15 @@ def _execute_controlled_run_action(
             action=action,
             causation_id=causation_id,
         )
+    if action_name == "failure-closeout-activate":
+        return _execute_operator_controlled_action(
+            state_dir=state_dir,
+            writer=writer,
+            config=config,
+            project_root=project_root,
+            action=action,
+            causation_id=causation_id,
+        )
     _emit_blocked_action(
         writer,
         action,
@@ -2688,6 +3098,95 @@ def _execute_controlled_run_action(
         human=False,
     )
     return "blocked"
+
+
+def _execute_operator_controlled_action(
+    *,
+    state_dir: Path,
+    writer: EventWriter,
+    config: ZfConfig,
+    project_root: Path | None,
+    action: dict[str, Any],
+    causation_id: str,
+) -> str:
+    from zf.runtime.control_actions import ControlledActionService
+
+    action_name = str(action.get("action") or "")
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        causation_id=causation_id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+        },
+    )
+    service = ControlledActionService(
+        state_dir,
+        writer,
+        config=config,
+        project_root=project_root,
+        actor="run-manager",
+        source="run-manager",
+        surface="run-manager",
+    )
+    try:
+        result = service.execute(
+            action=action_name,
+            requested_action=action_name,
+            payload=_operator_controlled_action_payload(action),
+            requested=planned,
+        )
+    except Exception as exc:
+        writer.emit(
+            RUN_MANAGER_ACTION_FAILED,
+            actor="run-manager",
+            causation_id=planned.id,
+            payload={
+                "schema_version": "run-manager.action.v1",
+                **_action_payload(action),
+                "status": "failed",
+                "reason": str(exc),
+            },
+        )
+        return "failed"
+    status = str(result.get("status") or "")
+    ok = bool(result.get("ok"))
+    event_type = RUN_MANAGER_ACTION_APPLIED if ok else RUN_MANAGER_ACTION_FAILED
+    if status in {"blocked", "approval_required"}:
+        event_type = RUN_MANAGER_ACTION_BLOCKED
+    emitted_result = {
+        **result,
+        "emitted_event_ids": [
+            str(result.get("event_id") or ""),
+            *[
+                str(value) for value in result.get("emitted_event_ids") or []
+                if str(value).strip()
+            ],
+        ],
+    }
+    outcome = writer.emit(
+        event_type,
+        actor="run-manager",
+        causation_id=planned.id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": status,
+            "controlled_action_result": result,
+            "event_id": str(result.get("event_id") or ""),
+            "reason": str(result.get("reason") or ""),
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        emitted_result,
+        causation_id=outcome.id,
+        state_dir=state_dir,
+        config=config,
+    )
+    return "applied" if ok else "blocked" if event_type == RUN_MANAGER_ACTION_BLOCKED else "failed"
 
 
 def _execute_workflow_batch_resume(
@@ -2763,7 +3262,14 @@ def _execute_workflow_batch_resume(
             "reason": str(result.get("reason") or ""),
         },
     )
-    _post_verify_action(writer, action, result, causation_id=outcome.id)
+    _post_verify_action(
+        writer,
+        action,
+        result,
+        causation_id=outcome.id,
+        state_dir=state_dir,
+        config=config,
+    )
     if event_type == RUN_MANAGER_ACTION_APPLIED:
         return "applied" if status != "no_op" else "no_op"
     return "blocked" if event_type == RUN_MANAGER_ACTION_BLOCKED else "failed"
@@ -3245,6 +3751,8 @@ def _post_verify_action(
     result: dict[str, Any],
     *,
     causation_id: str,
+    state_dir: Path | None = None,
+    config: ZfConfig | None = None,
 ) -> None:
     expected = {
         str(value) for value in action.get("expected_downstream_events") or []
@@ -3254,6 +3762,16 @@ def _post_verify_action(
         expected = _expected_downstream_events(str(action.get("safe_resume_action") or ""))
     emitted = _emitted_event_types(writer.event_log, _collect_emitted_event_ids(result))
     passed = bool(expected.intersection(emitted))
+    failure_reason = "" if passed else "expected downstream event not observed"
+    resume_pending_reason = _workflow_resume_checkpoint_still_pending(
+        writer,
+        action,
+        state_dir=state_dir,
+        config=config,
+    )
+    if resume_pending_reason:
+        passed = False
+        failure_reason = resume_pending_reason
     writer.emit(
         RUN_MANAGER_ACTION_VERIFY_PASSED if passed else RUN_MANAGER_ACTION_VERIFY_FAILED,
         actor="run-manager",
@@ -3264,9 +3782,59 @@ def _post_verify_action(
             "expected_event_types": sorted(expected),
             "observed_event_types": sorted(emitted),
             "status": "passed" if passed else "failed",
-            "reason": "" if passed else "expected downstream event not observed",
+            "reason": failure_reason,
         },
     )
+
+
+def _workflow_resume_checkpoint_still_pending(
+    writer: EventWriter,
+    action: dict[str, Any],
+    *,
+    state_dir: Path | None,
+    config: ZfConfig | None,
+) -> str:
+    if state_dir is None or config is None:
+        return ""
+    if str(action.get("action") or "") not in {
+        "workflow-batch-resume",
+        "workflow-task-resume",
+    }:
+        return ""
+    checkpoint_id = str(action.get("checkpoint_id") or "").strip()
+    if not checkpoint_id:
+        return ""
+    safe_action = str(action.get("safe_resume_action") or "").strip()
+    try:
+        projection = build_workflow_resume_projection(
+            state_dir,
+            config,
+            events=writer.event_log.read_all(),
+        )
+    except Exception as exc:
+        return f"workflow resume post-verify projection failed: {exc}"
+    for bucket in ("checkpoints", "batch_checkpoints"):
+        for item in projection.get(bucket) or []:
+            if not isinstance(item, dict):
+                continue
+            item_checkpoint_id = str(
+                item.get("id")
+                or item.get("checkpoint_id")
+                or item.get("idempotency_key")
+                or item.get("resume_checkpoint_ref")
+                or ""
+            )
+            if item_checkpoint_id != checkpoint_id:
+                continue
+            pending_action = str(item.get("safe_resume_action") or "")
+            if pending_action and pending_action != "no_action":
+                if safe_action and pending_action != safe_action:
+                    return (
+                        "workflow resume checkpoint still pending with "
+                        f"{pending_action!r} after {safe_action!r}"
+                    )
+                return "workflow resume checkpoint still pending after action"
+    return ""
 
 
 def _accept_autoresearch_repairs(events: list[ZfEvent], writer: EventWriter) -> int:
@@ -3381,7 +3949,7 @@ def _consume_human_decisions(
         decision = str(payload.get("decision") or payload.get("resolution") or "acknowledged")
         if decision == "approve_controlled_action":
             action["mutating_resume_supported"] = True
-            status = _execute_workflow_batch_resume(
+            status = _execute_controlled_run_action(
                 state_dir=state_dir,
                 writer=writer,
                 config=config,
@@ -3489,6 +4057,26 @@ def _emit_blocked_action(
             reason=reason,
             causation_id=blocked.id,
         )
+
+
+def _emit_failed_action(
+    writer: EventWriter,
+    action: dict[str, Any],
+    *,
+    causation_id: str,
+    reason: str,
+) -> None:
+    writer.emit(
+        RUN_MANAGER_ACTION_FAILED,
+        actor="run-manager",
+        causation_id=causation_id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "failed",
+            "reason": reason,
+        },
+    )
 
 
 def _pending_workflow_task_actions(
@@ -3732,6 +4320,61 @@ def _pending_repair_validation_actions(
         )
         action["policy_decision"] = decide_action_policy(
             action="repair-closeout-validate",
+            payload=action,
+        )
+        out.append(action)
+    return out
+
+
+def _pending_failure_closeout_activation_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+    activated_refs = {
+        str((event.payload or {}).get("manifest_ref") or "")
+        for event in events
+        if event.type == "failure.closeout.activated" and isinstance(event.payload, dict)
+    }
+    out: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "failure.closeout.materialized":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        manifest_ref = str(payload.get("manifest_ref") or "").strip()
+        if not manifest_ref or manifest_ref in activated_refs:
+            continue
+        if _safe_int(payload.get("materialized_count")) <= 0:
+            continue
+        checkpoint_id = "failure-closeout-activate-" + hashlib.sha1(
+            manifest_ref.encode("utf-8")
+        ).hexdigest()[:12]
+        action = {
+            "schema_version": "run-manager.pending-action.v1",
+            "action": "failure-closeout-activate",
+            "checkpoint_id": checkpoint_id,
+            "safe_resume_action": "failure_closeout_activate",
+            "manifest_ref": manifest_ref,
+            "output_dir": str(payload.get("output_dir") or "tasks/active"),
+            "source_event_id": event.id,
+            "source_event_type": event.type,
+            "source_event_ids": [event.id] if event.id else [],
+            "failure_class": "failure_closeout_activation",
+            "owner_route": "controlled_action",
+            "action_policy": "needs_approval",
+            "intervention_class": "human_decision",
+            "expected_downstream_events": sorted(_expected_downstream_events("failure_closeout_activate")),
+            "verify_condition": (
+                "expected_downstream_event:"
+                + ",".join(sorted(_expected_downstream_events("failure_closeout_activate")))
+            ),
+            "route_registry": "run-manager-router.v1",
+            "reason": "failure closeout manifest is ready and requires owner approval before tasks/active promotion",
+        }
+        if _action_seen(events, action):
+            continue
+        action["preflight"] = preflight_action(
+            action="failure-closeout-activate",
+            payload=action,
+        )
+        action["policy_decision"] = decide_action_policy(
+            action="failure-closeout-activate",
             payload=action,
         )
         out.append(action)
@@ -4081,6 +4724,209 @@ def _human_gate_repair_resume_item(
             "re-run_candidate_verification",
         ],
     )
+
+
+def _pending_semantic_event_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for idx, event in enumerate(events):
+        spec = spec_for_event(event.type)
+        if event.type in RUN_MANAGER_PENDING_EVENT_TYPES:
+            if spec is None or spec.event_class != "expected_negative":
+                continue
+            action = _semantic_event_diagnostic_action(event, spec)
+        elif spec is None and _is_unknown_actionable_workflow_event(event):
+            action = _unknown_actionable_event_diagnostic_action(event)
+        else:
+            continue
+        if _event_superseded_by_later_progress(events, event):
+            continue
+        fingerprint = str(action.get("fingerprint") or "")
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        if _action_seen(events, action):
+            continue
+        action_name = str(action.get("action") or "diagnose-attention")
+        action["preflight"] = preflight_action(
+            action=action_name,
+            payload=action,
+        )
+        action["policy_decision"] = decide_action_policy(
+            action=action_name,
+            payload=action,
+        )
+        out.append(action)
+        if len(out) >= 10:
+            break
+    return out
+
+
+def _is_unknown_actionable_workflow_event(event: ZfEvent) -> bool:
+    event_type = str(event.type or "")
+    if not looks_actionable_event(event_type):
+        return False
+    # These are Run Manager / control-loop feedback events, not workflow
+    # producer outputs. Let the existing no-progress and repair ledgers consume
+    # them instead of preempting with a generic unknown-actionable diagnosis.
+    if event_type.startswith((
+        "run.manager.",
+        "autoresearch.",
+        "supervisor.",
+        "loop.",
+        "repair.action.",
+        "owner.visible_message.",
+    )):
+        return False
+    return True
+
+
+def _unknown_actionable_event_diagnostic_action(event: ZfEvent) -> dict[str, Any]:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    scope = _semantic_event_scope(event, payload)
+    fingerprint = f"unknown-actionable:{event.type}:{scope}"
+    checkpoint_id = "unknown-actionable-" + hashlib.sha1(
+        fingerprint.encode("utf-8")
+    ).hexdigest()[:12]
+    reason = str(
+        payload.get("reason")
+        or payload.get("error")
+        or payload.get("summary")
+        or f"unregistered actionable event {event.type}"
+    )
+    return {
+        "schema_version": "run-manager.pending-action.v1",
+        "action": "diagnose-attention",
+        "checkpoint_id": checkpoint_id,
+        "safe_resume_action": "diagnose_attention",
+        "fingerprint": fingerprint,
+        "failure_class": "unknown_actionable_event",
+        "owner_route": "run_manager",
+        "action_policy": "needs_diagnosis",
+        "intervention_class": "diagnose",
+        "verify_condition": (
+            "expected_downstream_event:"
+            "run.manager.autoresearch.requested,run.manager.resident.prompted"
+        ),
+        "expected_downstream_events": [
+            "run.manager.autoresearch.requested",
+            "run.manager.resident.prompted",
+        ],
+        "severity": "high",
+        "title": f"Unregistered actionable event: {event.type}",
+        "summary": reason,
+        "task_id": str(event.task_id or payload.get("task_id") or ""),
+        "source_event_ids": [event.id] if event.id else [],
+        "source_ref": f"events.jsonl#{event.id}" if event.id else "events.jsonl",
+        "source": "event_contract",
+        "suggested_route": "run_manager_recovery",
+        "suggested_action": {
+            "kind": "diagnose_unknown_actionable_event",
+            "event_type": event.type,
+            "scope": scope,
+        },
+        "recommended_actions": [
+            "inspect_event_payload_and_producer",
+            "add_event_problem_registry_contract_or_mark_projection_only",
+            "decide_controlled_resume_rework_or_human_escalation",
+        ],
+        "expected_output": [
+            "diagnosis_report",
+            "event_contract_decision",
+            "recommended_recovery_or_registry_patch",
+        ],
+        "route_registry": "event-problem-registry.v1",
+    }
+
+
+def _semantic_event_diagnostic_action(
+    event: ZfEvent,
+    spec: Any,
+) -> dict[str, Any]:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    fingerprint = str(
+        payload.get("fingerprint")
+        or f"semantic:{event.type}:{_semantic_event_scope(event, payload)}"
+    )
+    checkpoint_id = "semantic-diagnosis-" + hashlib.sha1(
+        fingerprint.encode("utf-8")
+    ).hexdigest()[:12]
+    reason = str(
+        payload.get("reason")
+        or payload.get("error")
+        or payload.get("summary")
+        or spec.title
+        or event.type
+    )
+    action = {
+        "schema_version": "run-manager.pending-action.v1",
+        "action": "diagnose-attention",
+        "checkpoint_id": checkpoint_id,
+        "safe_resume_action": "diagnose_attention",
+        "fingerprint": fingerprint,
+        "failure_class": spec.failure_class,
+        "owner_route": spec.owner_route or "run_manager",
+        "action_policy": spec.action_policy or "needs_diagnosis",
+        "intervention_class": spec.intervention_class or "semantic_replan",
+        "verify_condition": (
+            "expected_downstream_event:"
+            "run.manager.autoresearch.requested,run.manager.resident.prompted,"
+            "flow.gap_plan.ready,goal.gap_plan.ready,flow.goal.closed"
+        ),
+        "expected_downstream_events": [
+            "run.manager.autoresearch.requested",
+            "run.manager.resident.prompted",
+            "flow.gap_plan.ready",
+            "goal.gap_plan.ready",
+            "flow.goal.closed",
+        ],
+        "severity": spec.severity or "high",
+        "title": spec.title or event.type,
+        "summary": reason,
+        "task_id": str(event.task_id or payload.get("task_id") or ""),
+        "source_event_ids": [event.id] if event.id else [],
+        "source_ref": f"events.jsonl#{event.id}" if event.id else "events.jsonl",
+        "source": spec.source,
+        "suggested_route": spec.suggested_route,
+        "suggested_action": {
+            "kind": spec.suggested_action_kind or "diagnose_semantic_event",
+            "event_type": event.type,
+            "scope": _semantic_event_scope(event, payload),
+        },
+        "recommended_actions": [
+            "inspect_semantic_failure_event",
+            "compare_goal_or_parity_gap_evidence",
+            "request_gap_plan_or_semantic_replan",
+            "ask_autoresearch_if_recovery_is_not_mechanical",
+        ],
+        "expected_output": [
+            "diagnosis_report",
+            "gap_or_no_gap_decision",
+            "recommended_replan_or_resume_action",
+            "post_verify_downstream_event",
+        ],
+        "route_registry": "event-problem-registry.v1",
+    }
+    return action
+
+
+def _semantic_event_scope(event: ZfEvent, payload: dict[str, Any]) -> str:
+    for key in (
+        "pdd_id",
+        "feature_id",
+        "trace_id",
+        "target_ref",
+        "candidate_ref",
+        "task_id",
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return f"{key}:{value}"
+    if event.correlation_id:
+        return f"trace_id:{event.correlation_id}"
+    if event.task_id:
+        return f"task_id:{event.task_id}"
+    return event.id or event.type
 
 
 def _latest_failure_event_ids(events: list[ZfEvent], *, limit: int = 4) -> list[str]:
@@ -4807,6 +5653,10 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "action": str(action.get("action") or ""),
         "checkpoint_id": str(action.get("checkpoint_id") or ""),
         "safe_resume_action": str(action.get("safe_resume_action") or ""),
+        "approval_ref": str(action.get("approval_ref") or ""),
+        "manifest_ref": str(action.get("manifest_ref") or ""),
+        "output_dir": str(action.get("output_dir") or ""),
+        "limit": action.get("limit") if action.get("limit") is not None else None,
         "task_id": str(action.get("task_id") or ""),
         "instance_id": str(action.get("instance_id") or action.get("role_instance") or ""),
         "candidate_rework_action": str(action.get("candidate_rework_action") or ""),
@@ -4849,6 +5699,18 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "continuation": action.get("continuation")
         if isinstance(action.get("continuation"), dict) else {},
     }
+
+
+def _operator_controlled_action_payload(action: dict[str, Any]) -> dict[str, Any]:
+    payload = {
+        "source": "run-manager",
+        "approval_ref": str(action.get("approval_ref") or ""),
+        "manifest_ref": str(action.get("manifest_ref") or ""),
+        "output_dir": str(action.get("output_dir") or ""),
+    }
+    if action.get("limit") is not None:
+        payload["limit"] = action.get("limit")
+    return payload
 
 
 def _human_decision_token(action: dict[str, Any]) -> str:
@@ -4935,6 +5797,10 @@ def _human_decision_action(
         "action": str(merged.get("action") or "workflow-batch-resume"),
         "checkpoint_id": str(merged.get("checkpoint_id") or ""),
         "safe_resume_action": str(merged.get("safe_resume_action") or ""),
+        "approval_ref": str(merged.get("approval_ref") or ""),
+        "manifest_ref": str(merged.get("manifest_ref") or ""),
+        "output_dir": str(merged.get("output_dir") or ""),
+        "limit": merged.get("limit") if merged.get("limit") is not None else None,
         "fanout_id": str(merged.get("fanout_id") or ""),
         "pdd_id": str(merged.get("pdd_id") or merged.get("run_id") or ""),
         "stage_id": str(merged.get("stage_id") or merged.get("stage") or ""),
@@ -5031,7 +5897,13 @@ _PROGRESS_SUCCESS_EVENTS = frozenset({
     "fanout.started",
     "workflow.resume.applied",
     "verify.passed",
-    "cangjie.module.parity.scan.completed",
+    "flow.discovery.completed",
+    "goal.rescan.completed",
+    "flow.gap_plan.ready",
+    "goal.gap_plan.ready",
+    "flow.goal.closed",
+    "goal.closure.closed",
+    *MODULE_PARITY_SCAN_COMPLETED_EVENTS,
     "module.parity.closed",
     "judge.passed",
     "candidate.promoted",
@@ -5062,7 +5934,7 @@ def _is_progress_success_event(event: ZfEvent) -> bool:
     if event.type not in _PROGRESS_SUCCESS_EVENTS:
         return False
     payload = event.payload if isinstance(event.payload, dict) else {}
-    if event.type == "cangjie.module.parity.scan.completed":
+    if is_module_parity_scan_completed_event(event.type):
         try:
             return int(payload.get("open_p0_p1_gap_count") or 0) <= 0
         except (TypeError, ValueError):
@@ -5273,17 +6145,72 @@ def _has_auto_ready_actions(pending_actions: list[dict[str, Any]]) -> bool:
     )
 
 
+# 结果级熔断的"进展"口径:任一正向里程碑即算世界变好。
+_OUTCOME_PROGRESS_EVENTS = frozenset({
+    "dev.build.done",
+    "workflow.child.completed",
+    "fanout.child.completed",
+    "review.approved",
+    "verify.passed",
+    "judge.passed",
+    "static_gate.passed",
+    "task.done",
+})
+
+
+def _outcome_no_progress_break(events: list[ZfEvent], action: dict[str, Any]) -> str:
+    """结果级熔断(avbs-r5 教训):同 (task, safe_resume_action) 连续 3 次
+    applied 而任务零正向进展 → 拒绝再执行。RM 的 action.verify 只验证
+    "动作已应用",不验证"局面变好"——r5 里 251 次 rework 每次都
+    verify.passed。窗口取最近 3 次,进展一旦出现计数自然复位。"""
+    task_id = str(action.get("task_id") or "")
+    safe_action = str(action.get("safe_resume_action") or "")
+    if not task_id or not safe_action:
+        return ""
+    applied_idx = []
+    for idx, event in enumerate(events):
+        if event.type != "workflow.resume.applied":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(event.task_id or payload.get("task_id") or "") != task_id:
+            continue
+        if str(payload.get("safe_resume_action") or "") != safe_action:
+            continue
+        applied_idx.append(idx)
+    if len(applied_idx) < 3:
+        return ""
+    window_start = applied_idx[-3]
+    for event in events[window_start + 1:]:
+        if event.type not in _OUTCOME_PROGRESS_EVENTS:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(event.task_id or payload.get("task_id") or "") == task_id:
+            return ""
+    return (
+        f"safe_resume_action {safe_action!r} applied "
+        f"{len(applied_idx)} times for {task_id} without any task progress"
+    )
+
+
 def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
     checkpoint_id = str(action.get("checkpoint_id") or "")
     if not checkpoint_id:
         return False
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED and str(
+            payload.get("checkpoint_id")
+            or payload.get("resume_checkpoint_ref")
+            or payload.get("idempotency_key")
+            or ""
+        ) == checkpoint_id:
+            if _diagnosis_action_request_stalled(events, action):
+                continue
+            return True
         if event.type in {
             RUN_MANAGER_ACTION_APPLIED,
             RUN_MANAGER_ACTION_BLOCKED,
             RUN_MANAGER_ACTION_FAILED,
-            RUN_MANAGER_AUTORESEARCH_REQUESTED,
             "workflow.resume.applied",
         } and str(payload.get("checkpoint_id") or payload.get("resume_checkpoint_ref") or payload.get("idempotency_key") or "") == checkpoint_id:
             return True
@@ -5295,8 +6222,72 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
     return False
 
 
+def _diagnosis_action_request_stalled(
+    events: list[ZfEvent],
+    action: dict[str, Any],
+    *,
+    stale_seconds: int = _DIAGNOSIS_REQUEST_STALE_SECONDS,
+) -> bool:
+    if not _is_diagnosis_action(action):
+        return False
+    checkpoint_id = str(action.get("checkpoint_id") or "").strip()
+    if not checkpoint_id:
+        return False
+    fingerprint = _fingerprint(action, fallback=checkpoint_id)
+    request_index = -1
+    request_event: ZfEvent | None = None
+    request_id = ""
+    for index, event in enumerate(events):
+        if event.type != RUN_MANAGER_AUTORESEARCH_REQUESTED:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("checkpoint_id") or "") != checkpoint_id and (
+            fingerprint
+            and str(payload.get("fingerprint") or "") != fingerprint
+        ):
+            continue
+        request_index = index
+        request_event = event
+        request_id = _autoresearch_request_id(event, payload)
+    if request_event is None:
+        return False
+    for event in events[request_index + 1:]:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type in {
+            RUN_MANAGER_ACTION_APPLIED,
+            RUN_MANAGER_ACTION_BLOCKED,
+            RUN_MANAGER_ACTION_FAILED,
+        } and str(payload.get("checkpoint_id") or "") == checkpoint_id:
+            return False
+        if event.type == RUN_MANAGER_AUTORESEARCH_CONSUMED and (
+            str(payload.get("request_id") or "") == request_id
+            or str(payload.get("checkpoint_id") or "") == checkpoint_id
+        ):
+            return False
+        if event.type in {"autoresearch.loop.completed", "autoresearch.loop.failed"}:
+            result_request_id = _autoresearch_result_request_id(event, payload)
+            if result_request_id and result_request_id == request_id:
+                return False
+            if str(payload.get("checkpoint_id") or "") == checkpoint_id:
+                return False
+    age_seconds = _event_age_seconds(request_event, datetime.now(timezone.utc))
+    return age_seconds is not None and age_seconds >= stale_seconds
+
+
+def _is_diagnosis_action(action: dict[str, Any]) -> bool:
+    decision = action.get("policy_decision")
+    decision = decision if isinstance(decision, dict) else {}
+    return bool(
+        str(action.get("safe_resume_action") or "") == "diagnose_attention"
+        or str(action.get("action") or "") == "diagnose-attention"
+        or str(decision.get("decision") or "") == "needs_diagnosis"
+    )
+
+
 def _collect_emitted_event_ids(result: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
+    if str(result.get("event_id") or ""):
+        ids.add(str(result.get("event_id")))
     for event_id in result.get("emitted_event_ids") or []:
         if str(event_id):
             ids.add(str(event_id))
@@ -5459,12 +6450,16 @@ def _status_explain_decision(
             wait_reason = "run_manager_action_ready"
             blocking = False
         elif decision_name == "needs_diagnosis":
-            next_auto_action = (
-                "invoke_autoresearch"
-                if str(pending_action.get("owner_route") or "") == "autoresearch"
-                else "run_manager_diagnosis"
-            )
-            wait_reason = "diagnosis_required"
+            if no_progress.get("status") == "tripped":
+                next_auto_action = "diagnose_or_escalate_stale_recovery"
+                wait_reason = "diagnosis_required_no_progress_tripped"
+            else:
+                next_auto_action = (
+                    "invoke_autoresearch"
+                    if str(pending_action.get("owner_route") or "") == "autoresearch"
+                    else "run_manager_diagnosis"
+                )
+                wait_reason = "diagnosis_required"
             blocking = False
         elif decision_name in {"human_escalate", "needs_approval"}:
             next_auto_action = "wait_for_human_decision"

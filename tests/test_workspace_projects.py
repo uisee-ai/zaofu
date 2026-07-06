@@ -582,7 +582,7 @@ def test_workspace_lifecycle_and_uninitialized_project_guard(
     assert not (root_b / ".zf" / "kanban.json").exists()
 
 
-def test_web_workspace_active_project_prefers_server_default_until_user_touch(
+def test_web_workspace_active_project_always_prefers_server_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -606,8 +606,12 @@ def test_web_workspace_active_project_prefers_server_default_until_user_touch(
     touched = client.post(f"/api/workspace/projects/{project_b.project_id}/touch")
     assert touched.status_code == 200
     projects_after_touch = client.get("/api/workspace/projects").json()
-    assert projects_after_touch["active_project_id"] == project_b.project_id
-    assert projects_after_touch["active_project_is_server_default"] is False
+    # chat-e2e F1 (262339bf): last_opened_at 是全局 registry 状态,另一 server
+    # touch 自己的项目不得把本 server 的 active 拽走(实测 8002 会话被 steer 到
+    # bizsim-fanout)。带默认项目的 server 恒报自己 active;操作员切换记在前端
+    # localStorage(per-origin)。touch 仍更新 recency,只影响 workspace-only 模式。
+    assert projects_after_touch["active_project_id"] == project_a.project_id
+    assert projects_after_touch["active_project_is_server_default"] is True
 
 
 def test_workspace_registry_uses_stable_project_id_with_legacy_alias(

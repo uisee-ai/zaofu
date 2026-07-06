@@ -394,6 +394,25 @@ def test_projection_cli_rebuild_and_status(tmp_path: Path, monkeypatch, capsys) 
 
     assert main(["projection", "status", "--count-source", "--json"]) == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["schema_version"] == "event-read-model.v3"
+    assert status["schema_version"] == "event-read-model.v4"
     assert status["source_cursor"]["schema_version"] == "event-segment-cursor.v1"
     assert status["projection_lag"] == 0
+
+
+def test_payload_slim_keeps_proposal_object() -> None:
+    """kanban.agent.action.proposed carries the proposal under `proposal`;
+    slimming it away leaves the Triage Accept card with nothing to run
+    (feishu-proposal e2e finding)."""
+    from zf.web.projections.read_model import _payload_slim
+
+    slim = _payload_slim({
+        "turn_id": "evt-1",
+        "conversation_id": "feishu-kanban_agent-oc_x",
+        "proposal": {
+            "action": "create-task",
+            "valid": True,
+            "payload": {"title": "赛车 MVP", "contract": {"behavior": "b", "verification": "v"}},
+        },
+    })
+    assert slim["proposal"]["action"] == "create-task"
+    assert slim["proposal"]["payload"]["title"] == "赛车 MVP"

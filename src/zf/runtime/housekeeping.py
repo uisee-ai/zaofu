@@ -424,16 +424,38 @@ def apply_circuit_breaker_failure(
     breaker.record_failure(reason=event.type)
 
 
-def apply_rework_failure_event(store: TaskStore, event: ZfEvent) -> None:
+def apply_rework_failure_event(
+    store: TaskStore,
+    event: ZfEvent,
+    *,
+    events: list[ZfEvent] | None = None,
+) -> None:
     """LH-0.T1: bump task.retry_count on rework-triggering failure.
 
     Runs for both Layer 1 legacy and Layer 2 modes because it lives in
     _apply_housekeeping (the one path both modes share). The subsequent
     dispatch — whether legacy _dispatch_rework or Layer 2's reassign +
     _dispatch_ready — reads retry_count to decide cap.
+
+    avbs-r4 F12: 传入 events 时按 (task_id, fanout_id) 去重——echo 重派
+    /重放会让同一个 fanout 的失败事件多次进流,机制性重放不是任务真实
+    失败,不得刷爆 rework cap(r4 实测 cap 4/3 全部来自重放记账)。
     """
     if event.type not in _REWORK_FAILURE_TYPES or not event.task_id:
         return
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    fanout_id = str(payload.get("fanout_id") or "")
+    if events and fanout_id:
+        for prior in events:
+            if prior.id == event.id:
+                break  # 只看当前事件之前的,否则窗口内两条重放互相抵消成零计数
+            if prior.type not in _REWORK_FAILURE_TYPES:
+                continue
+            if str(prior.task_id or "") != str(event.task_id):
+                continue
+            prior_payload = prior.payload if isinstance(prior.payload, dict) else {}
+            if str(prior_payload.get("fanout_id") or "") == fanout_id:
+                return  # 同 fanout 已计数,重放不再 bump
     task = store.get(event.task_id)
     if task is None:
         return
@@ -451,7 +473,29 @@ def apply_task_contract_event(store: TaskStore, event: ZfEvent) -> None:
     Layer 2 (Claude Code Orchestrator) fires this event when it has decided
     on a task contract. Layer 1 mechanically writes it to kanban.json on
     the matching task.
+
+    avbs-r4 F9: payload.additional_task_ids 把同一份修订一次应用到多个
+    同型任务——r4 中 Layer-2 修 flow 契约后没修 scene,同类 escalate 的
+    处理一致性只靠 agent 记性;字段级回退到各任务现值,批量应用安全。
     """
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    extra_ids = [
+        str(x).strip() for x in (payload.get("additional_task_ids") or [])
+        if str(x).strip()
+    ]
+    if extra_ids:
+        base_payload = {
+            k: v for k, v in payload.items() if k != "additional_task_ids"
+        }
+        for extra_id in dict.fromkeys(extra_ids):
+            if extra_id == event.task_id:
+                continue
+            apply_task_contract_event(store, ZfEvent(
+                type=event.type,
+                actor=event.actor,
+                task_id=extra_id,
+                payload=base_payload,
+            ))
     if not event.task_id:
         return
     task = store.get(event.task_id)

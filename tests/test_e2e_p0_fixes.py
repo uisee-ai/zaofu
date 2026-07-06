@@ -224,6 +224,9 @@ def test_dispatch_waits_for_ready_before_sending_briefing():
         _find_role_by_instance=lambda n: role,
         _find_role_by_name=lambda n: role,
         _wait_role_ready=lambda r: calls.append("wait_ready"),
+        # _send_transport_task gained a transport-availability guard at its head;
+        # the stub must satisfy it for the wait→send→notify ordering under test.
+        _transport_dispatch_enabled=lambda: True,
         _get_spawn_coordinator=lambda: SimpleNamespace(
             notify_first_dispatch=lambda r: calls.append("notify")
         ),

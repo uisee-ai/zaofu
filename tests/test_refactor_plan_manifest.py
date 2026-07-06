@@ -143,9 +143,10 @@ def test_refactor_plan_projection_preserves_inventory_refs(tmp_path):
     assert projection.payload["inventory_refs"] == [
         "docs/plans/hermes-tool-inventory.json",
     ]
-    assert projection.payload["hermes_source_inventory_ref"] == (
+    assert projection.payload["source_inventory_ref"] == (
         "docs/plans/hermes-source-inventory.json"
     )
+    assert "hermes_source_inventory_ref" not in projection.payload
     assert projection.payload["inventory_coverage_matrix_ref"] == (
         "docs/plans/hermes-inventory-coverage-matrix.json"
     )

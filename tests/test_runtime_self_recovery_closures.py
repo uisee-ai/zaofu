@@ -7,6 +7,9 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
+from zf.runtime.autoresearch_invocation import (
+    build_invocation_request_from_run_manager_event,
+)
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.tmux import TmuxSession
 from zf.runtime.transport import TmuxTransport
@@ -76,6 +79,47 @@ def _orchestrator_layer2(state_dir: Path) -> Orchestrator:
         _config_layer2(),
         TmuxTransport(TmuxSession(session_name="test-zf", dry_run=True)),
     )
+
+
+def test_run_manager_autoresearch_ignores_inflight_fanout_pending() -> None:
+    event = ZfEvent(
+        type="run.manager.autoresearch.requested",
+        actor="run-manager",
+        payload={
+            "request_id": "rm-pending",
+            "fingerprint": "failure:fanout_child_pending:fanout-1:child-1",
+            "summary": "Fanout child dispatched without a terminal child event",
+            "severity": "high",
+        },
+    )
+
+    invocation = build_invocation_request_from_run_manager_event(
+        event,
+        events=[event],
+    )
+
+    assert invocation is None
+
+
+def test_run_manager_autoresearch_keeps_timed_out_fanout_request() -> None:
+    event = ZfEvent(
+        type="run.manager.autoresearch.requested",
+        actor="run-manager",
+        payload={
+            "request_id": "rm-timeout",
+            "fingerprint": "failure:fanout_child_pending:fanout-1:child-1",
+            "summary": "Fanout child timed out without a terminal child event",
+            "severity": "high",
+        },
+    )
+
+    invocation = build_invocation_request_from_run_manager_event(
+        event,
+        events=[event],
+    )
+
+    assert invocation is not None
+    assert invocation.type == "autoresearch.invocation.requested"
 
 
 def test_completion_schedule_requeues_task_once(tmp_path: Path) -> None:

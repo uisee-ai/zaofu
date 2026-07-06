@@ -236,8 +236,12 @@ export function TaskDetail({
           </button>
         </div>
         <p className="empty-text">
-          {selectedTaskId && loadError
-            ? `Task unavailable: ${selectedTaskId}`
+          {selectedTaskId
+            ? (loadError
+              ? `Task unavailable: ${selectedTaskId}`
+              : detail
+                ? `Task unavailable: ${selectedTaskId}`
+                : `Loading task ${selectedTaskId}…`)
             : "Select a task."}
         </p>
       </section>

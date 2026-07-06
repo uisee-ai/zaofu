@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web UI TUI Parity"
+  short_description: "Check web dashboard, chat, and TUI parity."
+  default_prompt: "Use this skill to compare rebuilt web UI, chat, dashboard, and TUI behavior against the source agent."

@@ -353,6 +353,25 @@ def sync_stream_card(state_dir, *, send_card, update_card, ledger: dict | None =
         events = EventLog(Path(state_dir) / "events.jsonl").read_all()
     except Exception:
         events = []
+    # doc 106 B axis: token deltas ride the ephemeral LiveDeltaBus, not the
+    # ledger. The card fold merges both — the bus file scratch is readable
+    # across processes, so the bridge keeps streaming while replies run in
+    # the web/orchestrator process. Committed terminal events still come
+    # from events.jsonl.
+    try:
+        from zf.runtime.live_delta_bus import LiveDeltaBus
+
+        live_rows, _ = LiveDeltaBus(Path(state_dir)).read_since()
+        if live_rows:
+            # Re-sort by ts: a committed terminal event must fold AFTER the
+            # bus deltas that created its stream state, or the card never
+            # finalizes.
+            events = sorted(
+                [*events, *live_rows],
+                key=lambda e: str(getattr(e, "ts", "") or ""),
+            )
+    except Exception:
+        pass
     states = _fold_stream_states(events, member=member)
     sent, updated = [], []
     for request_id, state in states.items():

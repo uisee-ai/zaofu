@@ -109,6 +109,42 @@ def test_expected_negative_event_projects_without_becoming_actionable() -> None:
     assert envelope["suggested_route"] == "workflow_rework"
 
 
+def test_flow_semantic_events_project_to_product_gap_envelopes() -> None:
+    for event_type, failure_class in {
+        "flow.discovery.failed": "flow_discovery_failed",
+        "goal.rescan.failed": "flow_discovery_failed",
+        "module.parity.scan.failed": "flow_discovery_failed",
+        "cangjie.module.parity.scan.failed": "flow_discovery_failed",
+        "flow.goal.blocked": "flow_goal_blocked",
+        "goal.closure.blocked": "flow_goal_blocked",
+        "module.parity.blocked": "flow_goal_blocked",
+    }.items():
+        envelope = problem_envelope_from_event(ZfEvent(
+            type=event_type,
+            id=f"evt-{event_type}",
+            payload={"pdd_id": "PDD-1", "reason": "gap remains"},
+        ))
+
+        assert envelope is not None
+        assert envelope["problem_class"] == "product_gap"
+        assert envelope["failure_class"] == failure_class
+        assert envelope["owner_route"] == "run_manager"
+        assert envelope["suggested_route"] == "run_manager_recovery"
+
+
+def test_refactor_plan_blocked_projects_to_artifact_contract_envelope() -> None:
+    envelope = problem_envelope_from_event(ZfEvent(
+        type="zaofu.refactor.plan.blocked",
+        id="evt-plan-blocked",
+        payload={"pdd_id": "PDD-1", "reason": "task map missing"},
+    ))
+
+    assert envelope is not None
+    assert envelope["problem_class"] == "artifact_contract"
+    assert envelope["failure_class"] == "refactor_plan_blocked"
+    assert envelope["owner_route"] == "run_manager"
+
+
 def test_owner_delivery_failure_overrides_external_gate_to_run_manager() -> None:
     event = ZfEvent(
         type="owner.visible_message.failed",

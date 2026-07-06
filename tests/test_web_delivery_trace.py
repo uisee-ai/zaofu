@@ -148,6 +148,79 @@ def test_delivery_trace_endpoint_includes_goal_closure_loop(
     assert loop["latest_replan_history_ref"] == "docs/plans/F-1/replan-history.jsonl"
 
 
+def test_delivery_trace_endpoint_includes_flow_neutral_goal_closure_loop(
+    client: TestClient,
+    state_dir: Path,
+):
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="PRD-GAP-001",
+        title="fill product gap",
+        status="todo",
+        assigned_to="dev-gap",
+        contract=TaskContract(feature_id="F-1", owner_role="dev", wave=3),
+    ))
+    base_task_map_ref = ".zf/artifacts/F-1/task_map.json"
+    amended_task_map_ref = ".zf/artifacts/F-1/gap-amends/evt-flow/task_map.json"
+    gap_plan_ref = "reports/F-1/flow-gap-plan.json"
+    log = event_log_from_project(state_dir, config=None, warn=False)
+    log.append(ZfEvent(
+        type="flow.discovery.requested",
+        id="flow-scan-1",
+        payload={"pdd_id": "F-1", "flow_kind": "prd", "task_map_ref": base_task_map_ref},
+    ))
+    log.append(ZfEvent(
+        type="flow.discovery.completed",
+        id="flow-scan-2",
+        payload={"pdd_id": "F-1", "flow_kind": "prd", "task_map_ref": base_task_map_ref},
+    ))
+    log.append(ZfEvent(
+        type="flow.gap_plan.ready",
+        id="flow-gap-1",
+        payload={
+            "pdd_id": "F-1",
+            "flow_kind": "prd",
+            "goal_kind": "prd",
+            "gap_category": "acceptance_gap",
+            "task_map_ref": base_task_map_ref,
+            "gap_plan_ref": gap_plan_ref,
+            "gap_tasks": [{"task_id": "PRD-GAP-001"}],
+        },
+    ))
+    log.append(ZfEvent(
+        type="task_map.amended",
+        id="flow-amend-1",
+        payload={
+            "pdd_id": "F-1",
+            "task_map_ref": base_task_map_ref,
+            "new_task_map_ref": amended_task_map_ref,
+            "gap_plan_ref": gap_plan_ref,
+            "gap_task_ids": ["PRD-GAP-001"],
+        },
+    ))
+    log.append(ZfEvent(
+        type="task_map.ready",
+        id="flow-ready-1",
+        payload={
+            "pdd_id": "F-1",
+            "task_map_ref": amended_task_map_ref,
+            "resume_scope": "gap_tasks_only",
+            "task_ids": ["PRD-GAP-001"],
+        },
+    ))
+
+    r = client.get("/api/projects/default/delivery-traces/F-1")
+
+    assert r.status_code == 200
+    loop = r.json()["goal_closure_loop"]
+    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["status"] == "gap_tasks_dispatched"
+    assert loop["scan_request_count"] == 1
+    assert loop["scan_result_count"] == 1
+    assert loop["gap_task_ids"] == ["PRD-GAP-001"]
+    assert loop["latest_gap_plan_ref"] == gap_plan_ref
+
+
 def test_delivery_features_endpoint(client: TestClient):
     r = client.get("/api/projects/default/delivery-features")
 

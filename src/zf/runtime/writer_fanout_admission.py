@@ -128,7 +128,10 @@ def load_writer_task_map(
     elif wave is not None:
         items = [item for item in all_items if _optional_int(item.get("wave")) == wave]
     validate_writer_task_items(items)
-    if pipeline_spec is not None:
+    resume_scope = str(payload.get("resume_scope") or "").strip()
+    if pipeline_spec is not None and not (
+        resume_scope == "gap_tasks_only" and requested_task_ids
+    ):
         # doc 90 §3.3.1 / A6:assembly/根 owner 内容校验在 admission 期
         # fail-closed(task_map 解析后才可校验,非编译期)。
         from zf.core.workflow.lane_pipeline import (
@@ -137,7 +140,7 @@ def load_writer_task_map(
         # Global lane_pipeline invariants (declared assembly/root owner) must
         # see the full task_map. Gap-only resumes intentionally dispatch a
         # filtered subset, so validating those global invariants against only
-        # requested gap tasks produces a false assembly-missing cancellation.
+        # requested gap tasks produces a false assembly/root-owner cancellation.
         problems = validate_lane_pipeline_admission(pipeline_spec, all_items)
         if problems:
             raise ValueError(

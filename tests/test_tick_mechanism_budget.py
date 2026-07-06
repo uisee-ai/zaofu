@@ -34,7 +34,12 @@ ON_TICK_BUDGET = 2
 # failures while the shared tick_services runner still covers periodic idle
 # recovery. Freeze at the merged count; new recovery sweeps still require
 # one-in-one-out.
-RUN_ONCE_HOUSEKEEPING_BUDGET = 15
+# 15→16 上调评审依据(merge 2026-07-03, origin 9a82839e audit B1):
+# channel_reply_remediation — channel 回复 no-dead-end 补救(714b5fa0),
+# 属 doc 96 §5 无人值守不能 dead-end 的 kernel recovery hard rule,与
+# unclaimed_new_tasks 同类,并入预算。合流方代账(远端批未同步本快照);
+# 新 sweep 仍要求 one-in-one-out。
+RUN_ONCE_HOUSEKEEPING_BUDGET = 16
 RUN_ONCE_SWEEP_BUDGET = 7
 
 _PERIODIC_PREFIXES = (

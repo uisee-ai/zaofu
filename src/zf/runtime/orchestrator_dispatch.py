@@ -51,6 +51,7 @@ from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 _WORKFLOW_EVENT_SETS = WorkflowEventSets.baseline()
 TASK_REF_REPAIR_REQUESTED_EVENT = "task.ref.repair.requested"
 TASK_REF_SCOPE_REJECTION_REASON = "source_commit changes outside task contract scope"
+DESIGN_HANDOFF_EVENTS = {"arch.proposal.done", "design.critique.done"}
 
 
 def _discriminator_failure_hints(evidence: object) -> list[str]:
@@ -1232,6 +1233,16 @@ class DispatchMixin(
                 continue
             if not self._is_handoff_success_event(progress_event):
                 continue
+            if self._ignore_design_handoff_for_lane_task(task, progress_event):
+                decisions.append(OrchestratorDecision(
+                    action="wait",
+                    task_id=task.id,
+                    reason=(
+                        f"{progress_event.type} ignored for lane task "
+                        "(pending handoff reconcile)"
+                    ),
+                ))
+                continue
             if self._requires_task_ref_for_progress_event(progress_event):
                 task_ref_entry = self._task_ref_entry(task.id)
                 task_ref_trigger = ""
@@ -1397,6 +1408,30 @@ class DispatchMixin(
                 ),
             ))
         return decisions
+
+    def _ignore_design_handoff_for_lane_task(
+        self,
+        task: Task,
+        progress_event: ZfEvent,
+    ) -> bool:
+        if progress_event.type not in DESIGN_HANDOFF_EVENTS:
+            return False
+        workflow = getattr(self.config, "workflow", None)
+        if not getattr(workflow, "affinity_lanes", None):
+            return False
+        contract = getattr(task, "contract", None)
+        evidence = getattr(contract, "evidence_contract", {}) or {}
+        if not isinstance(evidence, dict):
+            evidence = {}
+        owner_role = str(getattr(contract, "owner_role", "") or "").strip()
+        source = str(evidence.get("source") or "").strip()
+        affinity_tag = str(evidence.get("affinity_tag") or "").strip()
+        return bool(
+            affinity_tag
+            or source == "refactor_task_map"
+            or owner_role.startswith("dev-")
+            or owner_role in {"dev", "impl", "writer", "coding", "coding-agent"}
+        )
 
     def _emit_task_ref_repair_requested(
         self,
@@ -1691,6 +1726,7 @@ class DispatchMixin(
         """
         latest_assigned: dict[str, tuple[str, int, dict]] = {}
         latest_dispatched: dict[str, tuple[str, int]] = {}
+        latest_terminal: dict[str, int] = {}
         try:
             from zf.runtime.event_window import read_runtime_events
 
@@ -1708,10 +1744,24 @@ class DispatchMixin(
                     a = event.payload.get("assignee") or event.payload.get("role")
                     if a:
                         latest_dispatched[tid] = (str(a), idx)
+                elif event.type in {
+                    "fanout.child.completed",
+                    "fanout.child.failed",
+                }:
+                    latest_terminal[tid] = idx
+                elif event.type == "task.status_changed":
+                    if str(event.payload.get("to") or "") in {
+                        "done",
+                        "cancelled",
+                        "blocked",
+                    }:
+                        latest_terminal[tid] = idx
         except Exception:
             return set()
         pending: set[str] = set()
         for tid, (assignee, assigned_idx, payload) in latest_assigned.items():
+            if latest_terminal.get(tid, -1) > assigned_idx:
+                continue
             dispatched = latest_dispatched.get(tid)
             if dispatched is None:
                 pending.add(tid)
@@ -1807,29 +1857,54 @@ class DispatchMixin(
         """
         role_name = role.name if role is not None else ""
         instance_id = role.instance_id if role is not None else ""
-        key = (
-            task.id,
-            instance_id,
-            reason,
-            task.assigned_to or "",
-            task.status,
-        )
-        cache = getattr(self, "_dispatch_skip_last_emit", None)
-        if cache is None:
-            cache = {}
-            self._dispatch_skip_last_emit = cache
+        # RF-7B (2026-07-02): transition-only emission. The previous 30s
+        # cooldown still re-emitted a skipped(+blocked) pair per key for the
+        # whole blocked period — 19h of wip_busy produced ~3.3k pairs (53% of
+        # a 30k-event log, r10 forensics). "State persists" is not "new
+        # event": emit once on entry, one dispatch.blocked when the condition
+        # proves persistent, one dispatch.unblocked on exit
+        # (_emit_dispatch_unblocked, called from the task.dispatched paths).
+        # Orchestrator restart loses this in-memory state and may re-emit one
+        # entry — accepted (≤2 rows per episode either way).
+        state = getattr(self, "_dispatch_block_state", None)
+        if state is None:
+            state = {}
+            self._dispatch_block_state = state
+        block_key = (task.id, reason)
+        info = state.get(block_key)
         now = time.time()
-        cooldown_s = 30.0
-        if now - cache.get(key, 0.0) < cooldown_s:
+        if info is not None:
+            info["observations"] = int(info["observations"]) + 1
+            if info["observations"] < 3 or info.get("blocked_emitted"):
+                return
+            info["blocked_emitted"] = True
+            target_role = role_name or task.assigned_to or ""
+            try:
+                self.event_writer.append(ZfEvent(
+                    type="dispatch.blocked",
+                    actor="zf-cli",
+                    task_id=task.id,
+                    payload={
+                        "role": role_name,
+                        "target_role": target_role,
+                        "assignee": instance_id,
+                        "reason": reason,
+                        "skip_count": info["observations"],
+                        "severity": "warning",
+                        "recommended_action": _dispatch_blocked_recommendation(
+                            reason,
+                            target_role=target_role,
+                        ),
+                    },
+                ))
+            except Exception:
+                pass
             return
-        cache[key] = now
-        counts = getattr(self, "_dispatch_skip_counts", None)
-        if counts is None:
-            counts = {}
-            self._dispatch_skip_counts = counts
-        count_key = (task.id, instance_id, reason)
-        skip_count = int(counts.get(count_key, 0)) + 1
-        counts[count_key] = skip_count
+        state[block_key] = {
+            "entered": now,
+            "observations": 1,
+            "blocked_emitted": False,
+        }
         try:
             self.event_writer.append(ZfEvent(
                 type="orchestrator.dispatch_skipped",
@@ -1841,30 +1916,34 @@ class DispatchMixin(
                     "reason": reason,
                     "assigned_to": task.assigned_to or "",
                     "status": task.status,
-                    "skip_count": skip_count,
+                    "skip_count": 1,
                 },
             ))
-            if skip_count >= 3:
-                target_role = role_name or task.assigned_to or ""
+        except Exception:
+            pass
+
+    def _emit_dispatch_unblocked(self, task_id: str) -> None:
+        """Close any open dispatch-block episodes for a task that dispatched."""
+        state = getattr(self, "_dispatch_block_state", None)
+        if not state:
+            return
+        for block_key in [k for k in state if k[0] == task_id]:
+            info = state.pop(block_key)
+            try:
                 self.event_writer.append(ZfEvent(
-                    type="dispatch.blocked",
+                    type="dispatch.unblocked",
                     actor="zf-cli",
-                    task_id=task.id,
+                    task_id=task_id,
                     payload={
-                        "role": role_name,
-                        "target_role": target_role,
-                        "assignee": instance_id,
-                        "reason": reason,
-                        "skip_count": skip_count,
-                        "severity": "warning",
-                        "recommended_action": _dispatch_blocked_recommendation(
-                            reason,
-                            target_role=target_role,
+                        "reason": block_key[1],
+                        "observations": int(info.get("observations") or 0),
+                        "blocked_seconds": round(
+                            time.time() - float(info.get("entered") or time.time()), 1
                         ),
                     },
                 ))
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     # Dispatch retry guards — prevent infinite loops when an upstream
     # phase (writer_workdir_sync, briefing render, etc.) deterministically
@@ -1935,6 +2014,9 @@ class DispatchMixin(
         registry = getattr(self, "_dispatch_failure_registry", None)
         if registry is not None:
             registry.pop(task_id, None)
+        # Called at exactly the dispatch-success sites — close any open
+        # transition-only block episode (RF-7B) with one dispatch.unblocked.
+        self._emit_dispatch_unblocked(task_id)
 
     def _project_state_packet_on_dispatch(
         self,
@@ -2575,10 +2657,61 @@ class DispatchMixin(
             role,
             task=task,
             skill_entries=skill_entries,
+            state_dir_ref=self.state_dir,
+            project_root=getattr(self, "project_root", None),
         )
         instructions_dir = self.state_dir / "instructions"
         instructions_dir.mkdir(parents=True, exist_ok=True)
         (instructions_dir / f"{role.instance_id}.md").write_text(instructions)
+        try:
+            from zf.runtime.briefing_hydration import evaluate_instruction_hydration
+
+            hydration = evaluate_instruction_hydration(self.state_dir, instructions)
+        except Exception as exc:
+            hydration = {
+                "status": "STOP",
+                "reason": "briefing_hydration_check_failed",
+                "error": str(exc),
+            }
+        if str(hydration.get("status") or "").upper() == "STOP":
+            self._active_dispatch_ids.pop(task.id, None)
+            try:
+                self.task_store.update(
+                    task.id,
+                    status=current.status,
+                    assigned_to=current.assigned_to or "",
+                    active_dispatch_id=getattr(current, "active_dispatch_id", ""),
+                )
+            except Exception:
+                pass
+            self.event_writer.append(ZfEvent(
+                type="dispatch.briefing_hydration.failed",
+                actor="orchestrator",
+                task_id=task.id,
+                payload={
+                    "schema_version": "dispatch.briefing-hydration.failed.v1",
+                    "role": role.name,
+                    "assignee": role.instance_id,
+                    "dispatch_id": dispatch_id,
+                    "briefing": str(briefing_path),
+                    "instructions_ref": str(instructions_dir / f"{role.instance_id}.md"),
+                    "hydration": hydration,
+                },
+            ))
+            self.event_writer.append(ZfEvent(
+                type="orchestrator.dispatch_failed",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "role": role.name,
+                    "assignee": role.instance_id,
+                    "dispatch_id": dispatch_id,
+                    "stage": "briefing_hydration",
+                    "error": "run contract refs missing from role instructions",
+                },
+            ))
+            self._record_dispatch_failure(task.id)
+            return False
 
         # 4. Deliver briefing via transport — routed by instance_id
         prompt = build_task_prompt(role.instance_id, briefing_path)
@@ -2824,6 +2957,11 @@ class DispatchMixin(
             for item in findings
             if item.severity == "blocking"
         ]
+        if blocking and self._refactor_task_map_scope_has_contract_surface(task):
+            blocking = [
+                item for item in blocking
+                if item["kind"] != "scope_too_large"
+            ]
         if not blocking:
             return False
         reason = "; ".join(item["message"] for item in blocking)
@@ -2848,6 +2986,26 @@ class DispatchMixin(
         except Exception:
             pass
         return True
+
+    def _refactor_task_map_scope_has_contract_surface(self, task: Task) -> bool:
+        contract = getattr(task, "contract", None)
+        if contract is None:
+            return False
+        evidence = getattr(contract, "evidence_contract", {}) or {}
+        if not isinstance(evidence, dict):
+            return False
+        if str(evidence.get("source") or "").strip() != "refactor_task_map":
+            return False
+        refs = evidence.get("source_refs")
+        if not isinstance(refs, dict) or not str(refs.get("task_map_ref") or "").strip():
+            return False
+        acceptance = str(getattr(contract, "acceptance", "") or "").strip()
+        verification = str(getattr(contract, "verification", "") or "").strip()
+        return bool(
+            getattr(contract, "acceptance_criteria", None)
+            or acceptance not in {"", "exit_code=0"}
+            or verification
+        )
 
     def _sync_writer_workdir_to_dispatch_base(
         self,
@@ -3243,6 +3401,28 @@ class DispatchMixin(
             return ""
         return metadata.get("source_commit", "")
 
+    def _warn_rework_scope_mismatch(
+        self, task: Task, trigger_event: ZfEvent, role: RoleConfig,
+    ) -> None:
+        try:
+            from zf.runtime.rework_scope_guard import rework_scope_mismatch
+
+            payload = rework_scope_mismatch(task, trigger_event)
+            if payload is None:
+                return
+            payload["target_role"] = role.instance_id
+            payload["trigger_event_id"] = trigger_event.id
+            payload["trigger_event_type"] = trigger_event.type
+            self.event_writer.append(ZfEvent(
+                type="rework.routing.scope_mismatch",
+                actor="zf-cli",
+                task_id=task.id,
+                payload=payload,
+                correlation_id=trigger_event.correlation_id or trigger_event.id,
+            ))
+        except Exception:
+            pass  # 告警只增可观察性,绝不阻断 rework 派发
+
     def _resolve_rework_role(
         self, task: Task, trigger_event: ZfEvent,
     ) -> RoleConfig | None:
@@ -3294,6 +3474,10 @@ class DispatchMixin(
 
         role = self._resolve_rework_candidate_role(task, candidate)
         if role is not None:
+            # avbs-r4 F1-D2: 固定路由把 rework 派给改不了 finding 文件的
+            # 任务是 r3 活锁的第一因(review.rejected: dev-scene × 独占
+            # scope)。告警不改行为——operator 至少能立刻看见错位。
+            self._warn_rework_scope_mismatch(task, trigger_event, role)
             return role
 
         # Unresolvable — emit signal for diagnostics (don't raise, the
@@ -3695,6 +3879,43 @@ class DispatchMixin(
         role = self._resolve_rework_role(task, trigger_event)
         if role is None:
             return None
+        # E5(131-P2 条款 3):environment/终毒类失败重试是烧钱 —— 直达
+        # deadletter + human,不占 attempt 预算(avbs-r5:root 属主文件
+        # 把 parity 证据永久卡死,rework 空烧 10 圈)。
+        from zf.runtime.attempt_ledger import non_retryable_reason
+
+        deadletter_reason = non_retryable_reason(trigger_event)
+        if deadletter_reason:
+            try:
+                self.event_writer.append(ZfEvent(
+                    type="task.attempt.deadlettered",
+                    actor="zf-cli",
+                    task_id=task.id,
+                    payload={
+                        "trigger_event_id": trigger_event.id,
+                        "trigger_event_type": trigger_event.type,
+                        "reason": deadletter_reason,
+                        "problem_class": "environment",
+                        "recommendation": (
+                            "repair the environment (workdir ownership / "
+                            "system libs / permissions) then resume with an "
+                            "operator_authorized task_map.ready; retrying "
+                            "the worker cannot fix this class"
+                        ),
+                    },
+                    correlation_id=trigger_event.correlation_id or trigger_event.id,
+                ))
+            except Exception:
+                pass
+            try:
+                self.escalation.escalate(
+                    f"task {task.id}: non-retryable failure deadlettered "
+                    f"({deadletter_reason})",
+                    task_id=task.id,
+                )
+            except Exception:
+                pass
+            return None
         backedge = self._workflow_stage_backedge_for_event(trigger_event.type)
 
         # LH-0.T1 rework cap.
@@ -3703,7 +3924,20 @@ class DispatchMixin(
         max_attempts_source = (
             "workflow_stage_backedge" if backedge_max_attempts else "role"
         )
-        if task.retry_count > max_attempts:
+        # E5(131-P2 条款 4,F16):cap = max(scalar, 账本真实轮次)。
+        # scalar 保住既有语义(F12 已防 echo 虚增),账本兜住 rework_of
+        # 链重置导致的漏计(r5 实测 10 圈无界循环);账本异常时纯 scalar。
+        cap_count = int(getattr(task, "retry_count", 0) or 0)
+        try:
+            from zf.runtime.attempt_ledger import counted_rework_rounds
+            from zf.runtime.event_window import read_runtime_events
+
+            cap_count = max(cap_count, counted_rework_rounds(
+                read_runtime_events(self.event_log, self.state_dir), task.id,
+            ))
+        except Exception:
+            pass
+        if cap_count > max_attempts:
             self._emit_rework_capped(
                 task,
                 role,
@@ -3733,6 +3967,28 @@ class DispatchMixin(
         dispatch_id = _new_dispatch_id()
         self._remember_dispatch_id(task.id, dispatch_id)  # B-STUCK-1
         task.active_dispatch_id = dispatch_id
+        # 131-P2-1/P2-3:attempt 族 retry_scheduled 显式发射——counted
+        # ordinal + cap + lease_token(dispatch_id)现网可见,r4/r5 盲
+        # rework 时这三个数全靠事后考古。
+        try:
+            self.event_writer.append(ZfEvent(
+                type="task.attempt.retry_scheduled",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "task_id": task.id,
+                    "ordinal": cap_count + 1,
+                    "cap": max_attempts,
+                    "cap_source": max_attempts_source,
+                    "lease_token": dispatch_id,
+                    "trigger_event_type": trigger_event.type,
+                    "trigger_event_id": trigger_event.id,
+                },
+                causation_id=trigger_event.id,
+                correlation_id=trigger_event.correlation_id or trigger_event.id,
+            ))
+        except Exception:
+            pass
         base_git_head = _capture_head(self.project_root)
         base_git_context = None
         try:
@@ -3987,6 +4243,8 @@ class DispatchMixin(
             role,
             task=task,
             skill_entries=skill_entries,
+            state_dir_ref=self.state_dir,
+            project_root=getattr(self, "project_root", None),
         )
         instructions_dir = self.state_dir / "instructions"
         instructions_dir.mkdir(parents=True, exist_ok=True)
@@ -4499,6 +4757,8 @@ class DispatchMixin(
             role,
             task=task,
             skill_entries=skill_entries,
+            state_dir_ref=self.state_dir,
+            project_root=getattr(self, "project_root", None),
         )
         instructions_dir = self.state_dir / "instructions"
         instructions_dir.mkdir(parents=True, exist_ok=True)

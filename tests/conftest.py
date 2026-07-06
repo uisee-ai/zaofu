@@ -59,3 +59,34 @@ def _zf_imports_from_this_repo() -> None:
         f"zaofu in the offending interpreter) or fix the venv before "
         f"trusting any test result."
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _real_workspace_registry_untouched() -> None:
+    """Fail the session if any test wrote to the REAL user workspace registry.
+
+    2026-07-02: three pytest runs of test_web_profile.py (init endpoints
+    without ZF_WORKSPACE_HOME isolation) leaked 9 ghost projects with dead
+    /tmp roots into ~/.zaofu/workspaces/default/projects.json, which the web
+    project picker then showed as duplicates. Tests must isolate
+    ZF_WORKSPACE_HOME; this tripwire catches the next leak at the source."""
+    import hashlib
+    import os
+
+    real_home = Path(os.environ.get("ZF_WORKSPACE_HOME", "") or Path.home() / ".zaofu")
+    registry = real_home / "workspaces" / "default" / "projects.json"
+
+    def digest() -> str:
+        try:
+            return hashlib.md5(registry.read_bytes()).hexdigest()
+        except OSError:
+            return "absent"
+
+    before = digest()
+    yield
+    after = digest()
+    assert before == after, (
+        f"a test wrote to the real workspace registry ({registry}): "
+        f"md5 {before} -> {after}. Isolate ZF_WORKSPACE_HOME "
+        f"(monkeypatch.setenv) in the offending test."
+    )

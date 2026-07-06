@@ -22,6 +22,8 @@ export interface FleetMetrics {
   operatorAgents: number;
   providerSummary: string;
   silent: number;
+  /** All backend workers are last-known/stale (archived or stopped runtime). */
+  stale: boolean;
   stuck: number;
   totalCostUsd: number;
   totalInputTokens: number;
@@ -84,7 +86,10 @@ export function buildFleetMetrics(
     if (typeof agent.context_usage_ratio === "number") {
       maxContext = Math.max(maxContext ?? 0, agent.context_usage_ratio);
     }
-    if (["healthy", "running", "running_task", "working"].includes(agent.lifecycle_state || agent.attention_state || "")) {
+    if (
+      !agent.stale
+      && ["healthy", "running", "running_task", "working"].includes(agent.lifecycle_state || agent.attention_state || "")
+    ) {
       healthy += 1;
     }
   }
@@ -92,20 +97,29 @@ export function buildFleetMetrics(
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([provider, count]) => `${provider} x${count}`)
     .join(", ") || "-";
-  const totalInputTokens = Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.input_tokens ?? 0), 0);
-  const totalOutputTokens = Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.output_tokens ?? 0), 0);
+  // Stuck/silent/drift are liveness claims; on an archived/stopped project the
+  // persisted signals are history, not "5 silent right now" (F0-B family).
+  const allStale = backendAgents.length > 0 && backendAgents.every((agent) => agent.stale);
+  const costInputTokens = Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.input_tokens ?? 0), 0);
+  const costOutputTokens = Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.output_tokens ?? 0), 0);
+  // The cost summary can be absent while per-worker cost is present (seen on
+  // archives: Tokens card said $0.0000 next to a fleet full of real $).
+  const totalInputTokens = costInputTokens || backendAgents.reduce((total, agent) => total + (agent.cost?.input_tokens ?? 0), 0);
+  const totalOutputTokens = costOutputTokens || backendAgents.reduce((total, agent) => total + (agent.cost?.output_tokens ?? 0), 0);
+  const agentCostUsd = backendAgents.reduce((total, agent) => total + (agent.cost?.usd ?? 0), 0);
   return {
     backendWorkers: backendAgents.length,
     controlAgents: agents.filter(isControlAgent).length,
     contextWarn: numberValue(summary.context_warn) ?? backendAgents.filter((agent) => (agent.context_usage_ratio ?? 0) >= 0.75).length,
-    drift: numberValue(summary.drift) ?? backendAgents.filter((agent) => String(agent.attention_state || "").includes("drift")).length,
+    drift: allStale ? 0 : numberValue(summary.drift) ?? backendAgents.filter((agent) => String(agent.attention_state || "").includes("drift")).length,
     healthy,
     maxContext,
     operatorAgents: agents.filter(isOperatorAgent).length,
     providerSummary,
-    silent: numberValue(summary.silent) ?? 0,
-    stuck: numberValue(summary.stuck) ?? backendAgents.filter((agent) => String(agent.lifecycle_state || agent.attention_state || "").includes("stuck")).length,
-    totalCostUsd: cost?.total_usd ?? Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.usd ?? 0), 0),
+    silent: allStale ? 0 : numberValue(summary.silent) ?? 0,
+    stale: allStale,
+    stuck: allStale ? 0 : numberValue(summary.stuck) ?? backendAgents.filter((agent) => String(agent.lifecycle_state || agent.attention_state || "").includes("stuck")).length,
+    totalCostUsd: (cost?.total_usd || Object.values(cost?.per_role ?? {}).reduce((total, row) => total + (row.usd ?? 0), 0)) || agentCostUsd,
     totalInputTokens,
     totalOutputTokens,
     workerAgents: agents.filter((agent) => agentClassLabel(agent) === "worker").length,
@@ -117,6 +131,11 @@ export function buildAgentAttentionRows(
   agentCockpit: Record<string, unknown> | null,
   recovery: Record<string, unknown> | null,
 ): AttentionRow[] {
+  const backend = agents.filter(isBackendWorker);
+  if (backend.length > 0 && backend.every((agent) => agent.stale)) {
+    // Archived/stopped project: persisted attention signals are history.
+    return [];
+  }
   const rows: AttentionRow[] = [];
   const seen = new Set<string>();
   for (const item of asRecordArray(agentCockpit?.workers)) {
@@ -166,7 +185,10 @@ export function buildAgentAttentionRows(
       source_projection: "recovery",
     });
   }
-  return rows.sort((left, right) => severityRank(right.severity) - severityRank(left.severity)).slice(0, 24);
+  return rows
+    .filter((row) => row.severity !== "info")  // "fresh"/OK rows are queue noise
+    .sort((left, right) => severityRank(right.severity) - severityRank(left.severity))
+    .slice(0, 24);
 }
 
 export function buildRoleFleetRows(agents: AgentSummary[], cost: CostSummary | null): RoleFleetRow[] {

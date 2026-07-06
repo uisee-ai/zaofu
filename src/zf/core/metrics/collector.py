@@ -152,6 +152,29 @@ class MetricsCollector:
         else:
             snap.window_hours = 0.0
 
+        # R11-2 (2026-07-03): one pass over all_events instead of 11 per-metric
+        # full scans (each metric ran its own `sum(1 for e in all_events ...)`).
+        type_counts: dict[str, int] = {}
+        drift_bad = 0
+        stuck_indices: list[int] = []
+        crashes: list[ZfEvent] = []
+        by_task: dict[str, list] = {}
+        for i, e in enumerate(all_events):
+            etype = e.type
+            type_counts[etype] = type_counts.get(etype, 0) + 1
+            if (
+                etype == "worker.drift.detected"
+                and isinstance(e.payload, dict)
+                and e.payload.get("signal") in ("thrashing", "repeat_decisions")
+            ):
+                drift_bad += 1
+            if etype == "worker.stuck":
+                stuck_indices.append(i)
+            if etype in ("task.orphaned", "pane.crash", "worker.respawn.failed"):
+                crashes.append(e)
+            if e.task_id:
+                by_task.setdefault(e.task_id, []).append(e)
+
         # --- Group C: Throughput / Rework ---
         task_list = tasks.list_all_with_archive()
         done = [t for t in task_list if t.status == "done"]
@@ -160,12 +183,11 @@ class MetricsCollector:
             snap.throughput_per_hour = len(done) / snap.window_hours
             # recycle freq uses same span
             snap.recycle_freq_per_hour = (
-                sum(1 for e in all_events if e.type == "worker.recycled")
-                / snap.window_hours
+                type_counts.get("worker.recycled", 0) / snap.window_hours
             )
 
         if len(done) > 0:
-            fails = sum(1 for e in all_events if e.type in _FAILURE_TYPES)
+            fails = sum(type_counts.get(t, 0) for t in _FAILURE_TYPES)
             snap.rework_ratio = fails / len(done)
 
         # --- Group B: VCR / Scope violation / Discriminator / Drift ---
@@ -175,39 +197,26 @@ class MetricsCollector:
         except Exception:
             snap.vcr = 0.0
 
-        dispatched = sum(1 for e in all_events if e.type == "task.dispatched")
+        dispatched = type_counts.get("task.dispatched", 0)
         if dispatched > 0:
             snap.scope_violation_rate = (
-                sum(1 for e in all_events if e.type == "scope.violation")
-                / dispatched
+                type_counts.get("scope.violation", 0) / dispatched
             )
             snap.budget_breach_rate = (
-                sum(1 for e in all_events if e.type == "cost.budget.exceeded")
-                / dispatched
+                type_counts.get("cost.budget.exceeded", 0) / dispatched
             )
 
-        disc_passed = sum(1 for e in all_events
-                          if e.type == "discriminator.passed")
-        disc_failed = sum(1 for e in all_events
-                          if e.type == "discriminator.failed")
+        disc_passed = type_counts.get("discriminator.passed", 0)
+        disc_failed = type_counts.get("discriminator.failed", 0)
         if disc_passed + disc_failed > 0:
             snap.discriminator_catch_rate = (
                 disc_failed / (disc_passed + disc_failed)
             )
-        # Goal drift — count thrashing/repeat_decisions events.
-        drift_bad = sum(
-            1 for e in all_events
-            if e.type == "worker.drift.detected"
-            and isinstance(e.payload, dict)
-            and e.payload.get("signal") in ("thrashing", "repeat_decisions")
-        )
+        # Goal drift — thrashing/repeat_decisions counted in the single pass.
         if dispatched > 0:
             snap.goal_drift = drift_bad / dispatched
 
         # --- Group A: Stuck / Recovery / Crash-free ---
-        stuck_indices = [
-            i for i, e in enumerate(all_events) if e.type == "worker.stuck"
-        ]
         setattr(snap, "_stuck_count", len(stuck_indices))
         if len(stuck_indices) >= 2:
             gaps = [stuck_indices[i + 1] - stuck_indices[i]
@@ -235,11 +244,6 @@ class MetricsCollector:
             snap.stuck_recovery_rate = recovered / len(stuck_indices)
 
         # crash_free_hours ~ window_hours while no task.orphaned / pane.crash
-        crashes = [
-            e for e in all_events
-            if e.type in ("task.orphaned", "pane.crash",
-                          "worker.respawn.failed")
-        ]
         if not crashes:
             snap.crash_free_hours = snap.window_hours
         else:
@@ -254,14 +258,10 @@ class MetricsCollector:
                 snap.crash_free_hours = 0.0
 
         # resume_fidelity: 1.0 if no orphans in window, else 0.0
-        orphans = sum(1 for e in all_events if e.type == "task.orphaned")
+        orphans = type_counts.get("task.orphaned", 0)
         snap.resume_fidelity = 1.0 if orphans == 0 else 0.0
 
         # --- LH-5 trace health ---
-        by_task: dict[str, list] = {}
-        for e in all_events:
-            if e.task_id:
-                by_task.setdefault(e.task_id, []).append(e)
         if by_task:
             snap.avg_events_per_task = (
                 sum(len(v) for v in by_task.values()) / len(by_task)

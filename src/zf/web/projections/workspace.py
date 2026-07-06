@@ -235,10 +235,13 @@ def _workspace_automation_summary(
     project_name: str,
 ) -> dict[str, Any]:
     try:
+        from zf.web.projections.events import events_read_days
+
         page = project_automations(
             state_dir,
             project_id=project_id,
             project_name=project_name,
+            events=events_read_days(state_dir, 14),
         )
         items = page.get("items", [])
         if not isinstance(items, list):

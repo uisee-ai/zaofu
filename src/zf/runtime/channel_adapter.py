@@ -21,6 +21,10 @@ from zf.runtime.channel_run_owner import (
     active_reply_for_target,
     provider_run_fields_for_request,
 )
+from zf.runtime.channel_sidecar import (
+    channel_message_event_payload,
+    hydrate_channel_message_text,
+)
 from zf.runtime.agent_session_stream import AgentSessionIdentity, AgentSessionStreamEmitter
 from zf.runtime.openclaw_provider import OpenClawGatewayClient
 from zf.runtime.provider_permissions import (
@@ -125,6 +129,23 @@ def dispatch_reply_request(
             "source": source,
         },
     )
+    try:
+        hydrated_text = hydrate_channel_message_text(Path(state_dir), message, strict=True)
+    except Exception as exc:
+        _emit_headless_failed(
+            writer=writer,
+            request=request,
+            request_id=request_id,
+            started_event_id=started.id,
+            actor=actor,
+            source=source,
+            channel_id=channel_id,
+            reason=f"message_body_missing: {exc}",
+            provider_session_id="",
+        )
+        return ChannelDispatchResult(dispatched=[request_id], failed=[request_id])
+    if hydrated_text:
+        message = {**message, "text": hydrated_text}
 
     worker_session_id = _worker_session(member) or str(request.get("worker_session_id") or "")
     if worker_session_id:
@@ -151,24 +172,25 @@ def dispatch_reply_request(
     backend = str(member.get("backend") or request.get("backend") or "").strip().lower()
     if backend in FAKE_BACKENDS or str(member.get("member_type") or "") in {"persona", "persona_agent"}:
         response = _fake_reply_text(member, message)
+        reply_payload = channel_message_event_payload(Path(state_dir), {
+            "channel_id": channel_id,
+            "thread_id": str(request.get("thread_id") or "main"),
+            "message_id": f"msg-{request_id}-reply",
+            "member_id": str(request.get("target_member_id") or ""),
+            "role": "assistant",
+            "source": source,
+            "text": response,
+            "mentions": [],
+            "refs": {"request_id": request_id, "run_id": run_fields["run_id"],
+                     **_origin_external_refs(message)},
+        }, created_by=f"channel-adapter:{source}", source_event_id=started.id)
         message_event = writer.emit(
             "channel.message.posted",
             actor=str(request.get("target_member_id") or actor),
             task_id=str(request.get("task_id") or "") or None,
             causation_id=started.id,
             correlation_id=channel_id,
-            payload={
-                "channel_id": channel_id,
-                "thread_id": str(request.get("thread_id") or "main"),
-                "message_id": f"msg-{request_id}-reply",
-                "member_id": str(request.get("target_member_id") or ""),
-                "role": "assistant",
-                "source": source,
-                "text": response,
-                "mentions": [],
-                "refs": {"request_id": request_id, "run_id": run_fields["run_id"],
-                         **_origin_external_refs(message)},
-            },
+            payload=reply_payload,
         )
         writer.emit(
             "channel.agent.reply.completed",
@@ -311,8 +333,9 @@ def dispatch_pending_replies(
     completed: list[str] = []
     failed: list[str] = [request_id for request_id in superseded_request_ids if request_id]
     skipped: list[dict[str, str]] = []
-    for item in candidates[:max_dispatch]:
-        result = dispatch_reply_request(
+
+    def _dispatch_one(item: dict[str, Any]) -> ChannelDispatchResult:
+        return dispatch_reply_request(
             state_dir=state_dir,
             writer=writer,
             channel_id=channel_id,
@@ -325,6 +348,23 @@ def dispatch_pending_replies(
             config=config,
             openclaw_client=openclaw_client,
         )
+
+    batch = candidates[:max_dispatch]
+    if len(batch) <= 1:
+        results = [_dispatch_one(item) for item in batch]
+    else:
+        # Fan-out targets are distinct members (deduped above), each dispatch
+        # is an independent backend run, and EventLog.append is lock-guarded —
+        # so a blind round of N agents costs one turn of wall clock, not N
+        # (doc 122 §5; the serial loop made real-agent rounds 3x slower).
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(
+            max_workers=min(len(batch), 6),
+            thread_name_prefix=f"zf-channel-dispatch-{channel_id}",
+        ) as pool:
+            results = list(pool.map(_dispatch_one, batch))
+    for result in results:
         dispatched.extend(result.dispatched)
         completed.extend(result.completed)
         failed.extend(result.failed)
@@ -491,29 +531,30 @@ def _dispatch_headless_reply(
     provider_session_id = str(getattr(result, "provider_session_id", "") or "")
     usage = getattr(result, "usage", {}) if isinstance(getattr(result, "usage", {}), dict) else {}
     run_fields = provider_run_fields_for_request(channel_id, request)
+    reply_payload = channel_message_event_payload(state_dir, {
+        "channel_id": channel_id,
+        "thread_id": thread_id,
+        "message_id": f"msg-{request_id}-reply",
+        "member_id": str(request.get("target_member_id") or ""),
+        "role": "assistant",
+        "source": str(getattr(result, "backend", "") or headless_backend),
+        "text": reply,
+        "mentions": [],
+        "refs": {
+            "request_id": request_id,
+            "run_id": run_fields["run_id"],
+            "provider_session_id": provider_session_id,
+            "usage": usage,
+            **_origin_external_refs(message),
+        },
+    }, created_by=f"channel-adapter:{source}", source_event_id=started_event_id)
     message_event = writer.emit(
         "channel.message.posted",
         actor=str(request.get("target_member_id") or actor),
         task_id=str(request.get("task_id") or "") or None,
         causation_id=started_event_id,
         correlation_id=channel_id,
-        payload=redact_obj({
-            "channel_id": channel_id,
-            "thread_id": thread_id,
-            "message_id": f"msg-{request_id}-reply",
-            "member_id": str(request.get("target_member_id") or ""),
-            "role": "assistant",
-            "source": str(getattr(result, "backend", "") or headless_backend),
-            "text": reply,
-            "mentions": [],
-            "refs": {
-                "request_id": request_id,
-                "run_id": run_fields["run_id"],
-                "provider_session_id": provider_session_id,
-                "usage": usage,
-                **_origin_external_refs(message),
-            },
-        }),
+        payload=redact_obj(reply_payload),
     )
     writer.emit(
         "channel.agent.reply.completed",
@@ -611,6 +652,8 @@ def _run_headless_reply(
         )
         stream = AgentSessionStreamEmitter(
             writer=writer,
+            # wrapped run: channel.message.posted commits the full reply body
+            commit_final_text=False,
             identity=AgentSessionIdentity(
                 run_id=str(run_fields["run_id"]),
                 thread_id=thread_id,
@@ -770,7 +813,7 @@ def _build_channel_system_prompt(member: dict[str, Any]) -> str:
         for item in (member.get("skill_refs") or [])
         if str(item).strip()
     ][:8]
-    return (
+    prompt = (
         f"You are {member_id}, a {provider} agent participating in a ZaoFu Agent Channel. "
         f"Your channel role is {role}. Reply as a channel teammate. Keep the answer concise, "
         "grounded in the provided channel context, and do not mutate runtime state directly. "
@@ -784,6 +827,13 @@ def _build_channel_system_prompt(member: dict[str, Any]) -> str:
         "If work should be executed by ZaoFu, recommend a controlled workflow/action request. "
         "Only write files when the permission_profile and write policy explicitly allow it."
     )
+    # Member-declared reply-output contract (folded from channel.member.invited
+    # payload.reply_contract): the inviter owns the semantics, the kernel only
+    # relays it — e.g. the Feishu kanban agent's action-proposal JSON contract.
+    reply_contract = str(member.get("reply_contract") or "").strip()
+    if reply_contract:
+        prompt = f"{prompt}\n\n{reply_contract}"
+    return prompt
 
 
 def _build_channel_prompt(

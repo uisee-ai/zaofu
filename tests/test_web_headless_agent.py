@@ -19,6 +19,7 @@ from zf.core.events import EventWriter
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.runtime.agent_session_stream import AgentSessionIdentity, AgentSessionStreamEmitter
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.web.headless_agent import (
     ClaudeHeadlessBackend,
     CodexHeadlessBackend,
@@ -883,7 +884,10 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
         assert required in tail
     assert tail.index("runtime.snapshot.recorded") < tail.index("agent.session.run.started")
     assert tail.index("kanban.agent.reply") < tail.index("agent.session.run.completed")
-    deltas = [event for event in events if event.type == "kanban.agent.turn.delta"]
+    assert "kanban.agent.turn.delta" not in event_types, (
+        "deltas are ephemeral bus transport, never ledger truth (doc 106)"
+    )
+    deltas = _bus_rows(state_dir, "kanban.agent.turn.delta")
     assert deltas[-1].payload["content"] == "headless answer"
     replies = [event for event in events if event.type == "kanban.agent.reply"]
     assert replies[-1].payload["answer"] == "final headless answer"
@@ -897,6 +901,15 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     snapshots = [event for event in events if event.type == "provider.permission.snapshot.recorded"]
     assert snapshots[-1].payload["snapshot"]["permission_profile"] == "read_only"
     assert snapshots[-1].payload["runtime_snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
+
+
+def _bus_rows(state_dir: Path, type_: str = ""):
+    """doc 106 B axis: token deltas live on the ephemeral LiveDeltaBus, not
+    in events.jsonl — streaming assertions read the bus."""
+    from zf.runtime.live_delta_bus import LiveDeltaBus
+
+    rows, _ = LiveDeltaBus(state_dir).read_since()
+    return [r for r in rows if not type_ or r.type == type_]
 
 
 def test_agent_session_stream_flushes_first_content_delta_immediately(state_dir: Path):
@@ -917,19 +930,18 @@ def test_agent_session_stream_flushes_first_content_delta_immediately(state_dir:
     stream.start()
     stream.emit_message(HeadlessMessage(type="text", content="first chunk"))
 
-    events = EventLog(state_dir / "events.jsonl").read_all()
-    parts = [event for event in events if event.type == "agent.session.part.delta"]
+    parts = _bus_rows(state_dir, "agent.session.part.delta")
     assert len(parts) == 1
     assert parts[0].payload["content"] == "first chunk"
 
     stream.emit_message(HeadlessMessage(type="text", content=" second chunk"))
-    events = EventLog(state_dir / "events.jsonl").read_all()
-    assert len([event for event in events if event.type == "agent.session.part.delta"]) == 1
+    assert len(_bus_rows(state_dir, "agent.session.part.delta")) == 1
 
     stream.flush()
-    events = EventLog(state_dir / "events.jsonl").read_all()
-    parts = [event for event in events if event.type == "agent.session.part.delta"]
+    parts = _bus_rows(state_dir, "agent.session.part.delta")
     assert [event.payload["content"] for event in parts] == ["first chunk", " second chunk"]
+    ledger_types = [e.type for e in EventLog(state_dir / "events.jsonl").read_all()]
+    assert "agent.session.part.delta" not in ledger_types
 
 
 def test_agent_session_stream_spills_large_tool_output(
@@ -997,14 +1009,11 @@ def test_chat_orchestrator_streams_first_text_delta_before_final_reply(
 
     assert response.status_code == 202
     deadline = time.monotonic() + 0.6
-    events = []
     text_deltas = []
     while time.monotonic() < deadline:
-        events = EventLog(state_dir / "events.jsonl").read_all()
         text_deltas = [
-            event for event in events
-            if event.type == "kanban.agent.turn.delta"
-            and event.payload.get("message_type") == "text"
+            row for row in _bus_rows(state_dir, "kanban.agent.turn.delta")
+            if row.payload.get("message_type") == "text"
         ]
         if text_deltas:
             break
@@ -1012,6 +1021,7 @@ def test_chat_orchestrator_streams_first_text_delta_before_final_reply(
 
     assert text_deltas
     assert text_deltas[0].payload["content"] == "first chunk"
+    events = EventLog(state_dir / "events.jsonl").read_all()
     assert not [event for event in events if event.type == "kanban.agent.reply"]
 
     events = _wait_for_event_type(state_dir, "web.action.completed", timeout_s=3.0)
@@ -1054,11 +1064,63 @@ def test_chat_orchestrator_batches_fast_text_and_thinking_deltas(
 
     assert response.status_code == 200
     events = EventLog(state_dir / "events.jsonl").read_all()
-    deltas = [event for event in events if event.type == "kanban.agent.turn.delta"]
-    assert [event.payload["message_type"] for event in deltas] == ["status", "thinking", "text"]
-    assert [event.payload["content"] for event in deltas if event.payload["message_type"] == "text"] == ["alpha beta"]
+    deltas = _bus_rows(state_dir, "kanban.agent.turn.delta")
+    assert [row.payload["message_type"] for row in deltas] == ["status", "thinking", "text"]
+    assert [row.payload["content"] for row in deltas if row.payload["message_type"] == "text"] == ["alpha beta"]
+    assert not [event for event in events if event.type == "kanban.agent.turn.delta"]
     replies = [event for event in events if event.type == "kanban.agent.reply"]
     assert replies[-1].payload["answer"] == "alpha beta"
+
+
+def test_chat_orchestrator_spills_large_delta_and_reply_to_sidecar(
+    state_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    script = tmp_path / "fake_claude_large_output.py"
+    script.write_text(
+        "\n".join([
+            "import json, sys",
+            "sys.stdin.readline()",
+            "text = 'A' * 15000",
+            "print(json.dumps({'type':'system','session_id':'claude-large-1'}), flush=True)",
+            "print(json.dumps({'type':'assistant','message':{'content':[{'type':'text','text':text}]}}), flush=True)",
+            "print(json.dumps({'type':'result','session_id':'claude-large-1','result':text}), flush=True)",
+        ]),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    monkeypatch.setenv("ZF_KANBAN_AGENT_CLAUDE_HEADLESS_CMD", f"{sys.executable} {script}")
+    monkeypatch.setenv("ZF_KANBAN_AGENT_SIDECAR_THRESHOLD_BYTES", "16")
+    client = TestClient(create_app(state_dir, project_root=state_dir.parent))
+
+    response = client.post(
+        "/api/actions/chat-orchestrator",
+        headers={"x-zf-web-token": "test-token"},
+        json={
+            "backend": "claude-headless",
+            "task_id": "TASK-LARGE",
+            "sync": True,
+            "message": "large output",
+        },
+    )
+
+    assert response.status_code == 200
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    reply = [event for event in events if event.type == "kanban.agent.reply"][-1]
+
+    # The committed reply still spills to the sidecar; the delta is ephemeral
+    # bus transport and carries its content inline (never written to the
+    # ledger, so no spill needed — doc 106).
+    assert reply.payload["answer"] != "A" * 15000
+    reply_ref = reply.payload["refs"]["raw_output"]
+    assert hydrate_sidecar_ref(state_dir, reply_ref).payload == "A" * 15000
+    assert "A" * 15000 not in (state_dir / "events.jsonl").read_text(encoding="utf-8")
+    text_delta = [
+        row for row in _bus_rows(state_dir, "kanban.agent.turn.delta")
+        if row.payload.get("message_type") == "text"
+    ][-1]
+    assert text_delta.payload["content"] == "A" * 15000
 
 
 def test_headless_thread_key_isolates_provider_sessions(
@@ -1252,6 +1314,158 @@ def test_explicit_create_task_message_keeps_create_task_proposal():
     assert proposal is not None
     assert proposal["action"] == "create-task"
     assert proposal["valid"] is True
+
+
+def test_proposal_list_verification_becomes_readable_text():
+    """An LLM verification list must be joined into readable lines, not
+    persisted as a Python-list repr string (racing-e2e kanban-autonomy)."""
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "payload": {
+                "title": "赛车小游戏 MVP",
+                "contract": {
+                    "verification": ["打开页面 3 秒内可开始", "按 ↑ 车辆加速"],
+                },
+            },
+        }
+    })
+
+    proposal = _headless_action_proposal(answer, user_message="创建任务")
+
+    assert proposal is not None
+    verification = proposal["payload"]["contract"]["verification"]
+    assert verification == "打开页面 3 秒内可开始\n按 ↑ 车辆加速"
+    assert "['" not in verification  # not a Python-list repr
+
+
+def test_proposal_prose_scope_moved_to_notes_paths_kept():
+    """Prose scope entries would be gated as unmatchable path globs by writer
+    fanout; keep only path-like entries in scope and preserve prose in notes."""
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "payload": {
+                "title": "赛车小游戏 MVP",
+                "contract": {
+                    "scope": [
+                        "src/**",
+                        "index.html",
+                        "仅包含现代桌面浏览器 Web 页面、键盘方向键输入",
+                    ],
+                },
+            },
+        }
+    })
+
+    proposal = _headless_action_proposal(answer, user_message="创建任务")
+
+    assert proposal is not None
+    payload = proposal["payload"]
+    assert payload["contract"]["scope"] == ["src/**", "index.html"]
+    assert "scope(non-path):" in payload["notes"]
+    assert "键盘方向键输入" in payload["notes"]
+
+
+def test_proposal_cjk_prose_with_slash_is_not_path_like():
+    """CJK prose has no whitespace, so a bare "/" must not qualify it as a
+    path — but real CJK paths with a glob or extension stay path-like."""
+    from zf.web.projections.common import _scope_entry_is_path_like
+
+    assert not _scope_entry_is_path_like("修改src/core下的文件")
+    assert not _scope_entry_is_path_like("只允许改动前端目录")
+    assert _scope_entry_is_path_like("文档/说明.md")
+    assert _scope_entry_is_path_like("前端/**")
+    assert _scope_entry_is_path_like("src/core/**")
+
+
+def test_proposal_acceptance_synonym_maps_into_verification():
+    """chat-e2e F3: a real codex proposal used `acceptance` (a list) instead
+    of `verification`; the schema dropped it and TASK-8EA6C8 landed with no
+    acceptance criteria. Synonyms must map into verification."""
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "payload": {
+                "title": "实现键盘方向键和移动端触摸滑动操作",
+                "contract": {
+                    "behavior": "接入键盘与触摸输入并映射到核心移动逻辑。",
+                    "acceptance": [
+                        "按方向键时棋盘执行一次有效移动",
+                        "移动端滑动手势触发对应方向移动",
+                    ],
+                },
+            },
+        }
+    })
+
+    proposal = _headless_action_proposal(answer, user_message="创建任务")
+
+    assert proposal is not None and proposal["valid"] is True
+    contract = proposal["payload"]["contract"]
+    assert contract["verification"] == (
+        "按方向键时棋盘执行一次有效移动\n移动端滑动手势触发对应方向移动"
+    )
+    assert "acceptance" not in contract
+
+
+def test_proposal_unknown_contract_keys_preserved_in_notes():
+    from zf.web.projections.common import normalize_proposed_task_contract
+
+    payload = normalize_proposed_task_contract({
+        "title": "t",
+        "contract": {
+            "behavior": "做某事",
+            "verification": "step -> verify",
+            "risk_notes": ["低端机可能掉帧"],
+        },
+    })
+
+    assert "risk_notes" not in payload["contract"]
+    assert "contract.risk_notes(unmapped): 低端机可能掉帧" in payload["notes"]
+
+
+def test_proposal_semantically_empty_contract_is_invalid():
+    """A contract whose semantic fields all normalized away must not sail
+    through as valid — the task would land with no behavior/verification."""
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "payload": {
+                "title": "空语义任务",
+                "contract": {"scope": ["src/**"]},
+            },
+        }
+    })
+
+    proposal = _headless_action_proposal(answer, user_message="创建任务")
+
+    assert proposal is not None
+    assert proposal["valid"] is False
+    assert "behavior/verification" in proposal["validation_error"]
+
+
+def test_proposal_without_contract_stays_title_only_valid():
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "create-task",
+            "payload": {"title": "纯标题直建"},
+        }
+    })
+
+    proposal = _headless_action_proposal(answer, user_message="创建任务")
+
+    assert proposal is not None and proposal["valid"] is True
 
 
 def test_explicit_task_proposal_message_keeps_create_task_proposal():

@@ -29,6 +29,7 @@ RUN_MANAGER_HUMAN_DECISION_REJECTED = "run.manager.human_decision.rejected"
 
 OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v1"
 _HIDDEN_VISIBLE_STATUSES = {"acknowledged"}
+_ACTION_REQUIRED_KINDS = {"plan_approval", "approval", "human_decision"}
 
 
 def build_operator_inbox(
@@ -181,21 +182,36 @@ def build_operator_inbox(
             item["id"] = key
             if etype == "runtime.attention.escalated":
                 item["status"] = "escalated"
-            items[key] = item
+            existing = items.get(key)
+            if existing is not None:
+                _merge_duplicate_item(existing, item)
+            else:
+                items[key] = item
 
     ordered_all = sorted(
-        items.values(),
+        (_decorate_item(item) for item in items.values()),
         key=lambda item: (item.get("status") != "pending", item.get("created_ts") or ""),
     )
     hidden = [item for item in ordered_all if _hide_from_inbox(item)]
     ordered = [item for item in ordered_all if not _hide_from_inbox(item)]
     pending = [item for item in ordered if item.get("status") == "pending"]
+    views = _build_views(ordered)
+    action_required_pending = sum(
+        1 for item in ordered
+        if item.get("status") == "pending" and item.get("actionability") == "human_required"
+    )
+    noise_pending = sum(
+        1 for item in ordered
+        if item.get("status") == "pending" and item.get("actionability") != "human_required"
+    )
     return {
         "schema_version": OPERATOR_INBOX_SCHEMA_VERSION,
         "is_derived_projection": True,
         "summary": {
             "total": len(ordered),
             "pending": len(pending),
+            "action_required_pending": action_required_pending,
+            "noise_pending": noise_pending,
             "plan_approvals": sum(1 for item in ordered if item.get("kind") == "plan_approval"),
             "attention": sum(1 for item in ordered if item.get("kind") == "runtime_attention"),
             "human_decisions": sum(1 for item in ordered if item.get("kind") == "human_decision"),
@@ -203,6 +219,7 @@ def build_operator_inbox(
         },
         "items": ordered,
         "pending": pending,
+        "views": views,
         "policy": {
             "truth_source": "events.jsonl",
             "mutation_path": "controlled-action",
@@ -214,6 +231,140 @@ def build_operator_inbox(
 
 def _hide_from_inbox(item: dict[str, Any]) -> bool:
     return str(item.get("status") or "") in _HIDDEN_VISIBLE_STATUSES
+
+
+def _merge_duplicate_item(existing: dict[str, Any], incoming: dict[str, Any]) -> None:
+    existing["dedupe_count"] = _int_or_none(existing.get("dedupe_count")) or 1
+    existing["dedupe_count"] += 1
+    existing["latest_event_id"] = incoming.get("created_event_id") or existing.get("latest_event_id") or ""
+    existing["last_seen_at"] = incoming.get("created_ts") or existing.get("last_seen_at") or ""
+    existing["summary"] = incoming.get("summary") or existing.get("summary") or ""
+    existing["title"] = incoming.get("title") or existing.get("title") or ""
+    if incoming.get("status") == "escalated":
+        existing["status"] = "escalated"
+
+
+def _decorate_item(item: dict[str, Any]) -> dict[str, Any]:
+    decorated = dict(item)
+    status = str(decorated.get("status") or "")
+    kind = str(decorated.get("kind") or "")
+
+    decorated.setdefault("dedupe_count", 1)
+    decorated.setdefault("first_seen_at", str(decorated.get("created_ts") or ""))
+    decorated.setdefault("last_seen_at", str(decorated.get("created_ts") or ""))
+    decorated.setdefault("latest_event_id", str(decorated.get("created_event_id") or ""))
+    decorated.setdefault("source_role", _source_role_for_item(decorated))
+    decorated.setdefault("owner_route", _owner_route_for_item(decorated))
+    decorated.setdefault("group_key", _group_key_for_item(decorated))
+
+    if status != "pending":
+        decorated["category"] = "resolved"
+        decorated["actionability"] = "resolved"
+        return decorated
+
+    if kind in _ACTION_REQUIRED_KINDS:
+        decorated["category"] = "action_required"
+        decorated["actionability"] = "human_required"
+        return decorated
+
+    if kind == "runtime_attention":
+        if decorated.get("source_role") in {"supervisor", "autoresearch", "run_manager", "orchestrator"}:
+            decorated["category"] = "automation_diagnostic"
+        else:
+            decorated["category"] = "runtime_attention"
+        decorated["actionability"] = "automation_owned"
+        return decorated
+
+    decorated["category"] = "notification"
+    decorated["actionability"] = "informational"
+    return decorated
+
+
+def _build_views(items: list[dict[str, Any]]) -> dict[str, Any]:
+    view_defs = {
+        "action_required": lambda item: item.get("status") == "pending" and item.get("actionability") == "human_required",
+        "runtime_attention": lambda item: item.get("status") == "pending" and item.get("category") == "runtime_attention",
+        "automation": lambda item: item.get("status") == "pending" and item.get("category") == "automation_diagnostic",
+        "notification": lambda item: item.get("status") == "pending" and item.get("category") == "notification",
+        "resolved": lambda item: item.get("status") != "pending" or item.get("category") == "resolved",
+        "all": lambda item: True,
+    }
+    views: dict[str, Any] = {}
+    for name, predicate in view_defs.items():
+        ids = [str(item.get("id") or "") for item in items if predicate(item)]
+        views[name] = {"count": len(ids), "ids": ids}
+    return views
+
+
+def _group_key_for_item(item: dict[str, Any]) -> str:
+    fingerprint = str(item.get("fingerprint") or "").strip()
+    if fingerprint:
+        return f"fingerprint:{fingerprint}"
+    for prefix, key in (
+        ("plan", "plan_id"),
+        ("human", "decision_token"),
+        ("approval", "approval_ref"),
+        ("attention", "attention_id"),
+        ("event", "created_event_id"),
+    ):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return f"{prefix}:{value}"
+    title = str(item.get("title") or "").strip().lower().replace(" ", "-")
+    return f"{item.get('kind') or 'item'}:{title or item.get('id') or 'unknown'}"
+
+
+def _owner_route_for_item(item: dict[str, Any]) -> str:
+    explicit = str(item.get("owner_route") or "").strip()
+    if explicit:
+        return explicit
+    if item.get("kind") in _ACTION_REQUIRED_KINDS:
+        return "human"
+    source_role = str(item.get("source_role") or "")
+    if source_role in {"run_manager", "supervisor", "autoresearch", "orchestrator"}:
+        return source_role
+    return "none"
+
+
+def _source_role_for_item(item: dict[str, Any]) -> str:
+    explicit = str(item.get("source_role") or "").strip()
+    return explicit or "unknown"
+
+
+def _source_role(event: Any, payload: dict[str, Any]) -> str:
+    explicit = str(
+        payload.get("source_role")
+        or payload.get("owner_role")
+        or payload.get("owner")
+        or payload.get("source")
+        or ""
+    ).strip().lower().replace("-", "_")
+    if explicit in {"run_manager", "supervisor", "autoresearch", "orchestrator", "worker", "web", "operator"}:
+        return explicit
+    etype = _etype(event).replace("-", "_")
+    actor = _actor(event).replace("-", "_")
+    combined = f"{actor} {etype}"
+    if "run_manager" in combined or "run.manager" in etype or "run-manager" in actor:
+        return "run_manager"
+    if "supervisor" in combined:
+        return "supervisor"
+    if "autoresearch" in combined:
+        return "autoresearch"
+    if "orchestrator" in combined:
+        return "orchestrator"
+    if "worker" in combined or "lane" in actor:
+        return "worker"
+    if "web" in combined:
+        return "web"
+    if "operator" in combined:
+        return "operator"
+    return "unknown"
+
+
+def _actor(event: Any) -> str:
+    if isinstance(event, dict):
+        return str(event.get("actor") or "")
+    return str(getattr(event, "actor", "") or "")
 
 
 def _plan_approval_item(
@@ -240,6 +391,8 @@ def _plan_approval_item(
         "created_ts": _event_ts(event),
         "resolved_event_id": resolved_event_id,
         "resolved_ts": resolved_ts,
+        "source_role": _source_role(event, payload),
+        "source_actor": _actor(event),
         "approval_ref": f"plan:{plan_id}",
         "plan_id": plan_id,
         "stage_id": str(payload.get("stage_id") or ""),
@@ -290,6 +443,8 @@ def _resolved_plan_placeholder(
         "created_ts": "",
         "resolved_event_id": _event_id(event),
         "resolved_ts": _event_ts(event),
+        "source_role": _source_role(event, payload),
+        "source_actor": _actor(event),
         "approval_ref": f"plan:{plan_id}",
         "plan_id": plan_id,
         "stage_id": str(payload.get("stage_id") or ""),
@@ -321,6 +476,8 @@ def _generic_approval_item(
         "created_ts": _event_ts(event),
         "resolved_event_id": "",
         "resolved_ts": "",
+        "source_role": _source_role(event, payload),
+        "source_actor": _actor(event),
         "approval_ref": approval_ref,
         "actions": [
             {"action": str(payload.get("approve_action") or ""), "label": "Approve", "requires_token": True},
@@ -345,7 +502,11 @@ def _attention_item(
         "created_ts": _event_ts(event),
         "resolved_event_id": "",
         "resolved_ts": "",
+        "source_role": _source_role(event, payload),
+        "source_actor": _actor(event),
         "attention_id": attention_id,
+        "fingerprint": str(payload.get("fingerprint") or ""),
+        "source_event_id": str(payload.get("source_event_id") or ""),
         "actions": [{"action": "attention-ack", "label": "Ack", "requires_token": True}],
     }
 
@@ -408,6 +569,8 @@ def _human_decision_item(
         "created_ts": _event_ts(event),
         "resolved_event_id": "",
         "resolved_ts": "",
+        "source_role": _source_role(event, payload),
+        "source_actor": _actor(event),
         "decision_token": decision_token,
         "approval_ref": f"human:{decision_token}",
         "checkpoint_id": str(payload.get("checkpoint_id") or ""),
@@ -415,6 +578,7 @@ def _human_decision_item(
         "actions": [
             {"action": "human-decision-approve-controlled-action", "label": "Approve", "requires_token": True},
             {"action": "human-decision-request-autoresearch", "label": "Diagnose", "requires_token": True},
+            {"action": "human-decision-dismiss", "label": "Dismiss", "requires_token": True},
             {"action": "human-decision-safe-halt", "label": "Halt", "requires_token": True},
         ],
         "policy": {

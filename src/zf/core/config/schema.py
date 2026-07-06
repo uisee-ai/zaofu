@@ -622,6 +622,11 @@ class WorkflowConfig:
     # plan.approved —— 开关只决定这枚事件由谁铸。
     plan_approval_enabled: bool = False
 
+    # 131-P2-3(Temporal 借鉴条款):thinking backend 闲置宽限,自派发起
+    # max(idle_threshold, attempt_lease_grace_s) 内不判 idle。F15 实证值
+    # 900s 出厂;深读型 reader 多的项目可调大。
+    attempt_lease_grace_s: float = 900.0
+
     # P0-2 (2026-04-20): YAML-declared event→action bindings. Each entry
     # has shape:
     #   - event: <event_type>
@@ -702,6 +707,10 @@ class WorkflowConfig:
     replan_eval: WorkflowReplanEvalConfig = field(
         default_factory=WorkflowReplanEvalConfig,
     )
+    # FlowProfile / controller emitted metadata. This is not runtime truth and
+    # never drives scheduling directly; it lets inspect/render audit whether
+    # declared high-level policies have deterministic consumers.
+    flow_metadata: dict = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.harness_profile not in {"baseline", "strict", "release"}:
@@ -953,6 +962,9 @@ class RuntimeFeishuInboundConfig:
     mode: str = "bridge"
     debounce_ms: int = 600
     require_routing: bool = True
+    # Non-empty = per-sender allowlist: inbound messages from other senders
+    # are dropped with a `feishu.inbound.sender_blocked` audit event.
+    allowed_senders: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -1226,6 +1238,10 @@ class ZfConfig:
     # Global kill switch for dispatch-time hard budget enforcement.
     # Cost tracking still records usage when disabled.
     budget_enforcement_enabled: bool = True
+    # P0-8(审计 D9):tracker 读失败时的档位。默认 False 维持历史
+    # fail-open(读失败按 $0 放行);True 时读失败按超额熔断——
+    # "瞄具黑屏就停火",不再盲开。
+    budget_fail_closed: bool = False
 
     def __post_init__(self) -> None:
         # G-INST-2: expand replicas into independent RoleConfig instances.

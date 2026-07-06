@@ -1,3 +1,8 @@
+---
+name: zf-harness-spec-freeze-contract
+description: "Use when PRD/spec/design artifacts must be frozen into stable artifact refs and SHA-256 attestations before downstream implementation, review, verify, or judge workers consume them."
+---
+
 # Skill: zf-harness-spec-freeze-contract
 
 > Sprint: ZF-SKILL-MP-006 (doc 39 §4.7)

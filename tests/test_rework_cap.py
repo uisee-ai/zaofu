@@ -237,3 +237,31 @@ class TestWireUpProof:
             "retry_count increment must live in housekeeping path so "
             "it fires in both Layer 1 legacy and Layer 2 modes"
         )
+
+
+class TestAttemptRetryScheduledEvent:
+    """131-P2-1/P2-3:rework 派发发射 task.attempt.retry_scheduled。"""
+
+    def test_rework_dispatch_emits_retry_scheduled_with_lease(
+        self, state_dir, legacy_config, transport
+    ):
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(id="T1", title="x", status="review", assigned_to="dev"))
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="review.rejected", actor="review", task_id="T1",
+            payload={"reason": "style"},
+        ))
+        orch = Orchestrator(state_dir, legacy_config, transport)
+        orch.run_once()
+
+        scheduled = [
+            e for e in log.read_all()
+            if e.type == "task.attempt.retry_scheduled"
+        ]
+        assert len(scheduled) == 1
+        payload = scheduled[0].payload
+        assert payload["ordinal"] >= 1
+        assert payload["cap"] == 3  # role 默认 max_rework_attempts
+        assert payload["lease_token"].startswith("disp-")
+        assert payload["trigger_event_type"] == "review.rejected"

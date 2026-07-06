@@ -257,6 +257,43 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     }
     thread.updatedAt = run.updatedAt || thread.updatedAt;
   }
+  // chat-e2e F5: a human message that the router blocked (no @mention, no
+  // default responder) used to sit in the timeline with zero feedback. Fold
+  // blocked routes into a status line under the originating message so the
+  // operator learns nobody will answer — and why.
+  const blockedRoutes = (detail?.routes ?? [])
+    .filter((item): item is Record<string, unknown> => Boolean(recordValue(item)))
+    .filter((item) => recordString(item, "routing_reason") === "blocked");
+  for (const route of blockedRoutes) {
+    const messageId = recordString(route, "message_id");
+    if (!messageId) continue;
+    const threadId = recordString(route, "thread_id", "main");
+    const thread = ensureThread(threads, threadId);
+    const turn = ensureTurn(thread, messageId, recordString(route, "ts"));
+    const reason = recordString(route, "reason");
+    const run = ensureRun(turn, `route-blocked-${messageId}`, {
+      provider: "",
+      memberId: "",
+      status: "completed",
+      updatedAt: recordString(route, "ts"),
+    });
+    upsertPart(run, {
+      id: `route-blocked-${messageId}`,
+      runId: run.id,
+      // chat mode filters `status` parts out of completed runs; `error`
+      // renders — and an unroutable message is a delivery failure anyway.
+      kind: "error",
+      state: "completed",
+      title: "Not routed",
+      summary: reason === "no_target"
+        ? "Not routed to any member — mention someone with @, or configure a default responder for this channel."
+        : reason === "debate_round_limit_reached"
+          ? "Debate round budget exhausted — agent relays are paused. Close the discussion or raise max_rounds."
+          : `Routing blocked: ${reason || "unknown reason"}`,
+      updatedAt: recordString(route, "ts"),
+    });
+  }
+
   for (const providerRun of providerRuns) {
     const runId = recordString(providerRun, "run_id") || recordString(providerRun, "provider_run_id");
     if (!runId) continue;

@@ -66,6 +66,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     task_p = runs_sub.add_parser("for-task", help="List runs for a task id")
     task_p.add_argument("task_id")
     task_p.set_defaults(func=run_for_task)
+
+    explain_p = runs_sub.add_parser(
+        "explain",
+        help="Explain run/stage/attempt state from shadow spine projections (131-P0)",
+    )
+    explain_p.add_argument("--task", default="", help="Only show this task's attempts")
+    explain_p.add_argument(
+        "--no-refresh", action="store_true",
+        help="Skip incremental fold of new events before reading projections",
+    )
+    explain_p.set_defaults(func=run_explain)
     runs_p.set_defaults(func=run_list)
 
 
@@ -244,6 +255,23 @@ def run_list(args: argparse.Namespace) -> int:
         "runs": projector.load_index().get("runs") or [],
     }
     print(json.dumps(data, ensure_ascii=False, indent=2))
+    return 0
+
+
+def run_explain(args: argparse.Namespace) -> int:
+    resolved = _context(args)
+    if resolved is None:
+        return 2
+    context, _project_root = resolved
+    state_dir = context.state_dir
+    from zf.runtime.workflow_spine_projection import (
+        read_spine_explain,
+        refresh_spine_projections,
+    )
+    if not args.no_refresh:
+        refresh_spine_projections(state_dir, EventLog(state_dir / "events.jsonl"))
+    out = read_spine_explain(state_dir, task_id=str(args.task or ""))
+    print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 

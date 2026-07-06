@@ -91,6 +91,8 @@ class TestKnownEventTypes:
     def test_task_map_amended_event_present(self):
         for name in (
             "verify.parity_scan.requested",
+            "module.parity.scan.completed",
+            "module.parity.scan.failed",
             "cangjie.module.parity.scan.completed",
             "cangjie.module.parity.scan.failed",
             "module.parity.closed",
@@ -99,6 +101,12 @@ class TestKnownEventTypes:
             "task_map.amend.requested",
             "task_map.amended",
             "task_map.amend.failed",
+            "flow.discovery.requested",
+            "flow.discovery.completed",
+            "flow.discovery.failed",
+            "flow.gap_plan.ready",
+            "flow.goal.closed",
+            "flow.goal.blocked",
         ):
             assert name in KNOWN_EVENT_TYPES
 

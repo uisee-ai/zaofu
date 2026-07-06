@@ -17,6 +17,7 @@ from typing import Any, Iterable
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.runtime.event_problem_registry import RUN_MANAGER_PENDING_EVENT_TYPES, spec_for_event
 from zf.runtime.fanout_identity import fanout_current_status
 
 
@@ -136,6 +137,11 @@ _RUN_COMPLETED_REOPEN_EVENTS = frozenset({
     "run.failed",
     "run.goal.started",
     "run.goal.blocked",
+    "flow.discovery.failed",
+    "flow.goal.blocked",
+    "goal.rescan.failed",
+    "goal.closure.blocked",
+    "module.parity.blocked",
     "verify.failed",
     "test.failed",
     "judge.failed",
@@ -513,6 +519,104 @@ def detect_fatal_events(events: list[ZfEvent], *, state_dir: Path) -> list[Failu
             metric_impacts={"runtime_reliability": -0.4},
         ))
     return signals
+
+
+def detect_semantic_flow_failures(
+    events: list[ZfEvent],
+    *,
+    state_dir: Path,
+) -> list[FailureSignal]:
+    signals: list[FailureSignal] = []
+    for idx, event in enumerate(events):
+        spec = spec_for_event(event.type)
+        if spec is None:
+            continue
+        if event.type not in RUN_MANAGER_PENDING_EVENT_TYPES:
+            continue
+        if spec.event_class != "expected_negative":
+            continue
+        if spec.problem_class not in {"artifact_contract", "product_gap"}:
+            continue
+        if _semantic_event_recovered(events, event_idx=idx, source_event=event):
+            continue
+        payload = _payload(event)
+        reason = str(
+            payload.get("reason")
+            or payload.get("error")
+            or payload.get("summary")
+            or spec.title
+            or event.type
+        )
+        signals.append(_signal(
+            state_dir=state_dir,
+            source_kind="event_log",
+            fingerprint=f"semantic-flow:{spec.failure_class}:{_semantic_scope(event, payload)}",
+            category=spec.failure_class,
+            severity=spec.severity or "high",
+            summary=f"{spec.title or event.type}: {reason}",
+            expected=(
+                "semantic failure is followed by a gap plan, closed goal, "
+                "or bounded recovery owner"
+            ),
+            actual=reason,
+            event_ids=[event.id],
+            repro_command=(
+                "uv run zf run-manager tick "
+                "# verify a pending action or autoresearch trigger is produced"
+            ),
+            metric_impacts={"goal_convergence": -0.35},
+        ))
+    return signals
+
+
+def _semantic_event_recovered(
+    events: list[ZfEvent],
+    *,
+    event_idx: int,
+    source_event: ZfEvent,
+) -> bool:
+    source_payload = _payload(source_event)
+    source_keys = _runtime_context_keys(source_event, source_payload)
+    for event in events[event_idx + 1:]:
+        if event.type in {
+            "flow.gap_plan.ready",
+            "goal.gap_plan.ready",
+            "gap_plan.ready",
+            "task_map.amended",
+            "task_map.ready",
+            "flow.discovery.completed",
+            "goal.rescan.completed",
+            "module.parity.scan.completed",
+            "cangjie.module.parity.scan.completed",
+            "flow.goal.closed",
+            "goal.closure.closed",
+            "module.parity.closed",
+            "workflow.resume.applied",
+        }:
+            payload = _payload(event)
+            success_keys = _runtime_context_keys(event, payload)
+            if not source_keys or not success_keys or source_keys & success_keys:
+                return True
+    return False
+
+
+def _semantic_scope(event: ZfEvent, payload: dict[str, Any]) -> str:
+    for key in (
+        "trace_id",
+        "pdd_id",
+        "feature_id",
+        "target_ref",
+        "candidate_ref",
+        "task_id",
+    ):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return f"{key}:{value}"
+    if event.correlation_id:
+        return f"trace_id:{event.correlation_id}"
+    if event.task_id:
+        return f"task_id:{event.task_id}"
+    return event.id or event.type
 
 
 def detect_fanout_failures(
@@ -1543,6 +1647,7 @@ def collect_failure_signals(
         return []
     signals: list[FailureSignal] = []
     signals.extend(detect_fatal_events(events, state_dir=state_dir))
+    signals.extend(detect_semantic_flow_failures(events, state_dir=state_dir))
     signals.extend(detect_fanout_failures(events, state_dir=state_dir))
     signals.extend(detect_replan_followthrough_gaps(events, state_dir=state_dir))
     signals.extend(detect_task_ref_handoff_deadends(events, state_dir=state_dir))
@@ -1675,6 +1780,7 @@ __all__ = [
     "severity_rank",
     "collect_failure_signals",
     "detect_readonly_gate_mutations",
+    "detect_semantic_flow_failures",
     "detect_worker_stuck",
     "detect_fatal_events",
     "detect_fanout_failures",

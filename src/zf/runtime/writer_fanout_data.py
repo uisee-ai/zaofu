@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zf.core.events.model import ZfEvent
 from zf.core.config.schema import RoleConfig
+from zf.core.events.model import ZfEvent
+from zf.core.events.module_parity import is_module_parity_scan_completed_event
 import subprocess
 
 
@@ -17,9 +18,13 @@ _FANOUT_AFFINITY_METADATA_KEYS = (
     "lane_id",
     "stage_slot",
     "affinity_tag",
+    "pipeline_id",
+    "root_fanout_id",
+    "upstream_root_fanout_id",
     "upstream_fanout_id",
     "upstream_child_id",
     "upstream_task_id",
+    "upstream_stage_slot",
 )
 
 
@@ -196,6 +201,23 @@ class WriterFanoutDataMixin:
         }
         if inventory_refs:
             payload["inventory_refs"] = self._dedupe_strings(inventory_refs)
+        # E3-2(审计 D3 dead-end 修复):quality-floor 词表键必须随聚合
+        # 透传,否则 judge children 报了 repro/demo/e2e 证据、聚合
+        # judge.passed 却把键丢掉,_reject_flow_judge_evidence_gap 永拒
+        # —— Issue/PRD 终局在结构上不可能过自己的 floor 门。
+        for list_key in (
+            "regression_refs", "test_refs", "demo_refs",
+            "e2e_refs", "parity_refs", "provider_refs",
+        ):
+            values = self._collect_payload_list(payloads, list_key)
+            if values:
+                payload[list_key] = self._dedupe_strings(values)
+                evidence_refs.extend(values)
+        repro_ref = self._first_child_value(manifest, payloads, "repro_ref")
+        if repro_ref:
+            payload["repro_ref"] = repro_ref
+            evidence_refs.append(repro_ref)
+        payload["evidence_refs"] = self._dedupe_strings(evidence_refs)
         plan_artifact_ref = (
             self._first_child_value(manifest, payloads, "plan_artifact_ref")
             or self._first_child_value(manifest, payloads, "plan_ref")
@@ -206,15 +228,31 @@ class WriterFanoutDataMixin:
             payloads,
             "source_index_ref",
         )
-        inventory_scalar_refs = {
-            key: self._first_child_value(manifest, payloads, key)
-            for key in (
-                "inventory_ref",
-                "source_inventory_ref",
+        source_inventory_ref = (
+            self._first_child_value(manifest, payloads, "source_inventory_ref")
+            or self._first_child_value(
+                manifest,
+                payloads,
                 "hermes_source_inventory_ref",
-                "inventory_coverage_matrix_ref",
-                "expected_module_parity_report_paths_ref",
             )
+        )
+        inventory_scalar_refs = {
+            "inventory_ref": self._first_child_value(
+                manifest,
+                payloads,
+                "inventory_ref",
+            ),
+            "source_inventory_ref": source_inventory_ref,
+            "inventory_coverage_matrix_ref": self._first_child_value(
+                manifest,
+                payloads,
+                "inventory_coverage_matrix_ref",
+            ),
+            "expected_module_parity_report_paths_ref": self._first_child_value(
+                manifest,
+                payloads,
+                "expected_module_parity_report_paths_ref",
+            ),
         }
         if plan_artifact_ref:
             payload["plan_artifact_ref"] = plan_artifact_ref
@@ -281,7 +319,7 @@ class WriterFanoutDataMixin:
                 "source_commit": source_commit,
                 "candidate_base_commit": base_commit,
             })
-        if success_event == "cangjie.module.parity.scan.completed":
+        if is_module_parity_scan_completed_event(success_event):
             from zf.runtime.module_parity_gap_synthesis import (
                 filter_open_p0_p1_gap_tasks,
                 synthesize_gap_tasks_from_parity_payloads,
@@ -482,9 +520,15 @@ class WriterFanoutDataMixin:
             raw_affinity_tag = raw_task.get(affinity_key)
         affinity_tag = str(raw_affinity_tag or "").strip()
         if not affinity_tag:
+            # prod-e2e(2026-07-04 prd 轮实弹):planner 按 task-map 合同交付
+            # 但合同从未要求 affinity_tag,单任务 task_map 因此整盘取消。
+            # 确定性回退:task_id 即亲和键(每任务独占 lane,impl→verify
+            # 同 lane 语义成立);显式 tag 仍优先。
+            affinity_tag = str(copied.get("task_id") or "").strip()
+        if not affinity_tag:
             raise RuntimeError(
                 f"writer fanout affinity key {affinity_key!r} missing "
-                f"for task {copied.get('task_id')!r}"
+                f"for task {copied.get('task_id')!r} and task_id fallback empty"
             )
         copied.update({
             "assignment_strategy": "affinity_stage_slots",

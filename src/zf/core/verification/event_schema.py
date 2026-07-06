@@ -658,7 +658,18 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
         },
         "channel.message.posted": {
             "required": [*base, "message_id", "text"],
-            "optional": ["member_id", "role", "mentions", "refs"],
+            "optional": [
+                "schema_version",
+                "member_id",
+                "role",
+                "mentions",
+                "mention_tokens",
+                "refs",
+                "text_preview",
+                "body_ref",
+                "body_sha256",
+                "body_byte_count",
+            ],
         },
         "channel.attachment.uploaded": {
             "required": [*base, "attachment_id", "message_id"],
@@ -892,6 +903,17 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
                 "role_context_ref",
                 "role_definition",
                 "limits",
+                "schema_version",
+                "skill_refs",
+                "routing_reason",
+                "source",
+                "context_pack_ref",
+                "context_pack_sha256",
+                "context_pack_byte_count",
+                "message_ref_count",
+                "artifact_ref_count",
+                "report_ref_count",
+                "refs",
             ],
         },
         "channel.context_pack.rejected": {
@@ -971,6 +993,40 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
 def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
     """Canonical payload contracts for channel/workflow invocation."""
     return {
+        "workflow.submit.requested": {
+            "required": [
+                "request_id",
+                "kind",
+                "task_id",
+                "pattern_id",
+                "config_ref",
+                "workflow_prompt_ref",
+                "workflow_input_manifest_ref",
+                "requested_by",
+                "source_refs",
+            ],
+            "optional": [
+                "schema_version",
+                "workflow_preflight_ref",
+                "reason",
+                "artifact_refs",
+                "dry_run",
+                "preflight_status",
+            ],
+        },
+        "workflow.submit.accepted": {
+            "required": ["request_id", "source_event_id"],
+            "optional": [
+                "workflow_preflight_ref",
+                "workflow_input_manifest_ref",
+                "workflow_prompt_ref",
+                "config_ref",
+            ],
+        },
+        "workflow.submit.rejected": {
+            "required": ["request_id", "source_event_id", "reason"],
+            "optional": ["preflight_ref", "blockers"],
+        },
         "workflow.invoke.requested": {
             "required": ["task_id", "pattern_id", "requested_by", "reason", "source", "source_refs"],
             "optional": [

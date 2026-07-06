@@ -121,6 +121,15 @@ def _run_workflow(args: argparse.Namespace) -> int:
         return 1
 
     if args.resume_pending:
+        if not _run_contract_recovery_allowed(
+            config,
+            event_log,
+            state_dir,
+            context.project_root,
+            context.config_path,
+        ):
+            print("Error: run contract drift detected; workflow resume blocked for strict run.", file=sys.stderr)
+            return 1
         if str(args.task_map_ref or "").strip() and not str(
             args.checkpoint_id or ""
         ).strip():
@@ -247,6 +256,15 @@ def _run_fanout_terminal(args: argparse.Namespace) -> int:
     existing = event_log.read_all()
     preview = _fanout_terminal_recovery_preview(args, state_dir, existing)
     if args.apply:
+        if not _run_contract_recovery_allowed(
+            config,
+            event_log,
+            state_dir,
+            context.project_root,
+            context.config_path,
+        ):
+            print("Error: run contract drift detected; fanout recovery blocked for strict run.", file=sys.stderr)
+            return 1
         writer = EventWriter(event_log)
         for event in preview["events"]:
             writer.append(event)
@@ -263,6 +281,35 @@ def _run_fanout_terminal(args: argparse.Namespace) -> int:
         for event in preview["events"]:
             print(f"- {event.type}: {event.payload}")
     return 0
+
+
+def _run_contract_recovery_allowed(
+    config,
+    event_log,
+    state_dir: Path,
+    project_root: Path,
+    config_path: Path,
+) -> bool:
+    if config is None:
+        return True
+    try:
+        from zf.runtime.run_contract import evaluate_run_contract_resume_policy
+
+        policy = evaluate_run_contract_resume_policy(
+            config,
+            config_path=config_path,
+            project_root=project_root,
+            state_dir=state_dir,
+        )
+    except Exception:
+        return True
+    if policy.get("status") in {"STOP", "WARN"}:
+        EventWriter(event_log).append(ZfEvent(
+            type="config.run_contract.resume_checked",
+            actor="zf-cli",
+            payload=policy,
+        ))
+    return policy.get("status") != "STOP"
 
 
 def _fanout_terminal_recovery_preview(

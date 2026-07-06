@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from zf.autoresearch.failure_signals import FailureSignal, detect_fanout_failures
+from zf.autoresearch.failure_signals import (
+    FailureSignal,
+    detect_fanout_failures,
+    detect_semantic_flow_failures,
+)
 from zf.autoresearch.triggers import (
     TriggerPolicy,
     decide_trigger_for_signal,
@@ -365,6 +369,54 @@ def test_scan_trigger_decisions_reopens_after_post_completion_regression(
         and decision.failure_class == "worker_stuck"
         for decision in decisions
     )
+
+
+def test_semantic_flow_failure_triggers_autoresearch(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="flow.discovery.failed",
+        id="evt-flow-discovery-failed",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "reason": "dashboard missing"},
+    ))
+
+    signals = detect_semantic_flow_failures(log.read_all(), state_dir=state_dir)
+    decisions = scan_trigger_decisions(
+        state_dir,
+        policy=TriggerPolicy(max_triggers_per_hour=10, max_daily_runs=10),
+    )
+
+    assert len(signals) == 1
+    assert signals[0].category == "flow_discovery_failed"
+    assert any(
+        decision.decision == "accepted"
+        and decision.failure_class == "flow_discovery_failed"
+        for decision in decisions
+    )
+
+
+def test_semantic_flow_failure_superseded_by_gap_plan_does_not_trigger(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="flow.goal.blocked",
+        id="evt-flow-goal-blocked",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "reason": "dashboard missing"},
+    ))
+    log.append(ZfEvent(
+        type="flow.gap_plan.ready",
+        id="evt-flow-gap-ready",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "gap_plan_ref": "reports/PDD-1/gap-plan.json"},
+    ))
+
+    signals = detect_semantic_flow_failures(log.read_all(), state_dir=state_dir)
+
+    assert signals == []
 
 
 def test_scan_trigger_decisions_classifies_pane_dead_dispatch(

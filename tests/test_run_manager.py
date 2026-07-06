@@ -34,6 +34,7 @@ from zf.runtime.run_manager import (
     RUN_MANAGER_ACTION_APPLIED,
     RUN_MANAGER_ACTION_BLOCKED,
     RUN_MANAGER_ACTION_FAILED,
+    RUN_MANAGER_ACTION_VERIFY_FAILED,
     RUN_MANAGER_ACTION_VERIFY_PASSED,
     RUN_MANAGER_AUTORESEARCH_CONSUMED,
     RUN_MANAGER_AUTORESEARCH_REQUESTED,
@@ -47,7 +48,9 @@ from zf.runtime.run_manager import (
     RUN_MANAGER_REPAIR_MERGE_QUEUED,
     RUN_MANAGER_TRANSITION,
     build_run_goal_projection,
+    build_run_manager_monitor_projection,
     build_run_manager_projection,
+    build_run_monitor_projection,
     build_repair_merge_queue,
     decide_action_policy,
     run_manager_tick,
@@ -107,6 +110,33 @@ def _write_supervisor_attention(state_dir: Path) -> None:
         }) + "\n",
         encoding="utf-8",
     )
+
+
+def _write_failure_closeout_manifest(project_root: Path) -> Path:
+    backlogs = project_root / "artifacts" / "failure-closeout" / "backlogs"
+    backlogs.mkdir(parents=True, exist_ok=True)
+    draft = backlogs / "2026-07-03-0000-fail-run-manager.md"
+    draft.write_text(
+        "# Failure Candidate fail-run-manager\n\n"
+        "> 状态: proposed\n\n"
+        "## 背景\n\n"
+        "run.manager.action.failed: test fixture\n",
+        encoding="utf-8",
+    )
+    manifest = project_root / "artifacts" / "failure-closeout" / "failure-closeout-manifest.json"
+    manifest.write_text(
+        json.dumps({
+            "schema_version": "failure-closeout.v1",
+            "status": "ready",
+            "manifest_ref": str(manifest),
+            "items": [{
+                "failure_id": "fail-run-manager",
+                "outputs": {"backlog": str(draft)},
+            }],
+        }) + "\n",
+        encoding="utf-8",
+    )
+    return manifest
 
 
 def _config() -> ZfConfig:
@@ -651,6 +681,67 @@ def test_run_manager_executes_task_level_rework_resume_once(
     assert any(event.type == RUN_MANAGER_ACTION_VERIFY_PASSED for event in events)
 
 
+def test_run_manager_fails_post_verify_when_gate_resume_checkpoint_remains(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="CJMIN-GATEWAY-001",
+        title="gateway",
+        status="in_progress",
+        assigned_to="dev-lane-0",
+    ))
+    dev_done = ZfEvent(
+        id="dev-done-rm-gate",
+        type="dev.build.done",
+        actor="dev-lane-0",
+        task_id="CJMIN-GATEWAY-001",
+        payload={"dispatch_id": "disp-dev"},
+    )
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="CJMIN-GATEWAY-001",
+        payload={"assignee": "dev-lane-0", "dispatch_id": "disp-dev"},
+    ))
+    log.append(dev_done)
+
+    initial = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_lane_resume_config(),
+    )
+    pending = initial["pending_actions"][0]
+    assert pending["action"] == "workflow-task-resume"
+    assert pending["safe_resume_action"] == "needs_gate_dispatch"
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_lane_resume_config(),
+        event_log=log,
+        action_filter={"workflow-task-resume"},
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    assert result.actions_applied == 1
+    assert any(event.type == "stage.transition.stalled" for event in events)
+    verify_failed = [
+        event for event in events
+        if event.type == RUN_MANAGER_ACTION_VERIFY_FAILED
+    ]
+    assert verify_failed
+    assert "checkpoint still pending" in verify_failed[-1].payload["reason"]
+    projection = build_workflow_resume_projection(
+        state_dir,
+        _lane_resume_config(),
+        events=events,
+    )
+    assert projection["summary"]["pending"] == 1
+
+
 def test_run_manager_executes_candidate_rework_controlled_action(
     tmp_path: Path,
 ) -> None:
@@ -854,7 +945,7 @@ def test_run_manager_suppresses_candidate_rework_after_clean_parity_closure(
     ))
     log.append(ZfEvent(
         id="parity-clean",
-        type="cangjie.module.parity.scan.completed",
+        type="module.parity.scan.completed",
         actor="zf-cli",
         payload={
             "pdd_id": "CANGJIE-R3",
@@ -907,6 +998,33 @@ def test_run_manager_projection_writes_pane_snapshot_and_monitor(
     monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
     assert monitor["refs"]["runtime_pane_snapshot"] == "projections/runtime_pane_snapshot.json"
     assert "pending_actions" in monitor["summary"]
+
+
+def test_run_manager_projection_attaches_spine_summary(tmp_path: Path) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    projections_dir = state_dir / "projections"
+    projections_dir.mkdir(parents=True, exist_ok=True)
+    (projections_dir / "workflow_health.json").write_text(
+        json.dumps({"counters": {"human.escalate": 2}, "last_event_ts": "t1"}),
+        encoding="utf-8",
+    )
+    (projections_dir / "workflow_spine.json").write_text(
+        json.dumps({"runs": {"PDD-1": {"milestones": 3, "attention": True}}}),
+        encoding="utf-8",
+    )
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+        project_root=tmp_path,
+    )
+    write_run_manager_projections(state_dir, projection)
+
+    written = json.loads(
+        (projections_dir / "run_manager.json").read_text(encoding="utf-8"),
+    )
+    assert written["spine_summary"]["counters"]["human.escalate"] == 2
+    assert written["spine_summary"]["runs"]["PDD-1"]["attention"] is True
 
 
 def test_run_manager_unknown_gap_fallback_for_all_missing_panes(
@@ -1165,6 +1283,94 @@ def test_open_supervisor_attention_becomes_diagnosis_pending_action(
     assert projection["status_explain"]["next_auto_action"] == "run_manager_diagnosis"
 
 
+def test_flow_goal_blocked_becomes_semantic_pending_action(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        id="evt-flow-blocked",
+        type="flow.goal.blocked",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "reason": "dashboard gap remains"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    pending = next(
+        action for action in projection["pending_actions"]
+        if action.get("failure_class") == "flow_goal_blocked"
+    )
+    assert pending["action"] == "diagnose-attention"
+    assert pending["suggested_action"]["kind"] == "request_goal_gap_plan"
+    assert pending["owner_route"] == "run_manager"
+    assert pending["problem_envelope"]["problem_class"] == "product_gap"
+    assert pending["source_event_ids"] == ["evt-flow-blocked"]
+    assert "flow.gap_plan.ready" in pending["expected_downstream_events"]
+    assert "goal.gap_plan.ready" in pending["expected_downstream_events"]
+    assert pending["verify_condition"].startswith("expected_downstream_event:")
+
+
+def test_flow_goal_blocked_superseded_by_gap_plan_ready(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        id="evt-flow-blocked",
+        type="flow.goal.blocked",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "reason": "dashboard gap remains"},
+    ))
+    log.append(ZfEvent(
+        id="evt-gap-plan-ready",
+        type="flow.gap_plan.ready",
+        actor="verify",
+        payload={"pdd_id": "PDD-1", "gap_plan_ref": "reports/PDD-1/gap-plan.json"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    assert not any(
+        action.get("failure_class") == "flow_goal_blocked"
+        for action in projection["pending_actions"]
+    )
+
+
+def test_unknown_actionable_event_becomes_pending_diagnostic(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        id="evt-custom-failed",
+        type="custom.discovery.failed",
+        actor="worker",
+        task_id="TASK-CUSTOM",
+        payload={"reason": "custom profile failure"},
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+
+    pending = next(
+        action for action in projection["pending_actions"]
+        if action.get("failure_class") == "unknown_actionable_event"
+    )
+    assert pending["action"] == "diagnose-attention"
+    assert pending["suggested_action"]["kind"] == "diagnose_unknown_actionable_event"
+    assert pending["suggested_action"]["event_type"] == "custom.discovery.failed"
+    assert pending["source_event_ids"] == ["evt-custom-failed"]
+
+
 def test_run_manager_tick_requests_autoresearch_once_for_attention_diagnosis(
     tmp_path: Path,
 ) -> None:
@@ -1198,6 +1404,75 @@ def test_run_manager_tick_requests_autoresearch_once_for_attention_diagnosis(
     assert requests[0].payload["checkpoint_id"].startswith("attention-diagnosis-")
     assert requests[0].payload["source_event_ids"] == ["evt-stall-1"]
     assert "replay_worker_briefing" in requests[0].payload["recommended_actions"]
+
+
+def test_run_manager_marks_stale_autoresearch_diagnosis_as_failed(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    log.append(ZfEvent(
+        id="evt-rmar-stale",
+        type=RUN_MANAGER_AUTORESEARCH_REQUESTED,
+        ts="2026-06-01T00:00:00+00:00",
+        actor="run-manager",
+        correlation_id="rmar-stale-1",
+        payload={
+            "request_id": "rmar-stale-1",
+            "checkpoint_id": pending["checkpoint_id"],
+            "fingerprint": pending["fingerprint"],
+            "safe_resume_action": "diagnose_attention",
+        },
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    failed = [
+        event for event in log.read_all()
+        if event.type == RUN_MANAGER_ACTION_FAILED
+        and event.payload.get("checkpoint_id") == pending["checkpoint_id"]
+    ]
+    assert result.actions_failed == 1
+    assert failed
+    assert "autoresearch request became stale" in failed[-1].payload["reason"]
+
+
+def test_run_manager_monitor_does_not_report_healthy_when_diagnosis_pending() -> None:
+    projection = build_run_manager_monitor_projection(
+        completion_profile={"status": "running"},
+        monitor={"state": "healthy_waiting"},
+        status_explain={
+            "blocking": False,
+            "wait_reason": "diagnosis_required",
+            "next_auto_action": "run_manager_diagnosis",
+        },
+        pending_actions=[{
+            "action": "diagnose-attention",
+            "safe_resume_action": "diagnose_attention",
+            "policy_decision": {"decision": "needs_diagnosis"},
+            "owner_route": "run_manager",
+        }],
+        no_progress={"status": "tripped"},
+        advisor={"summary": {}},
+        wait_hints={"summary": {}},
+        resident_agent={"status": "observing"},
+        runtime_pane_snapshot={"summary": {}},
+    )
+
+    assert projection["monitor_state"] == "diagnosis_pending"
+    assert projection["summary"]["no_progress_status"] == "tripped"
 
 
 def test_attention_diagnosis_with_resident_does_not_fake_recovery(
@@ -1349,6 +1624,112 @@ def test_run_manager_consumes_agent_recommendation_to_autoresearch(
     assert len(consumed) == 1
     assert consumed[0].payload["route"] == "autoresearch"
     assert consumed[0].payload["source_event_id"] == "evt-rec-1"
+
+
+def test_run_manager_consumes_agent_controlled_action_to_resident_reprompt(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    briefing = state_dir / "briefings" / "run-manager.md"
+    briefing.parent.mkdir(parents=True)
+    briefing.write_text("observe the run", encoding="utf-8")
+    log.append(ZfEvent(
+        type="run.manager.agent.recommendation",
+        id="evt-rec-controlled-reprompt",
+        actor="run-manager",
+        payload={
+            "recommended_route": "controlled_action",
+            "safe_resume_action": "resident_agent_reprompt",
+            "checkpoint_id": "ck-reprompt-1",
+            "fingerprint": "resident:ck-reprompt-1",
+            "tmux_session": "zf-rm",
+            "instance_id": "run-manager",
+            "briefing_path": str(briefing),
+            "summary": "resident agent should continue observing the run",
+        },
+    ))
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        if args[:3] == ["tmux", "display-message", "-p"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout=f"%9\tcodex\t{tmp_path}\t0\n",
+                stderr="",
+            )
+        if args[:2] == ["tmux", "send-keys"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        return subprocess.CompletedProcess(args, 1, stdout="", stderr="unexpected")
+
+    monkeypatch.setattr("zf.runtime.run_manager.subprocess.run", fake_run)
+    monkeypatch.setattr("zf.runtime.run_manager.time.sleep", lambda _seconds: None)
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    assert result.agent_recommendations_consumed == 1
+    assert result.actions_applied == 1
+    assert any(call[:2] == ["tmux", "send-keys"] for call in calls)
+    reprompts = [
+        event for event in events
+        if event.type == "run.manager.resident.prompted"
+        and event.payload.get("reprompt") is True
+    ]
+    assert reprompts
+    consumed = [
+        event for event in events
+        if event.type == RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED
+    ][-1]
+    assert consumed.payload["route"] == "controlled_action"
+    assert consumed.payload["status"] == "consumed"
+    assert consumed.payload["downstream_event_ids"]
+
+
+def test_run_manager_controlled_action_diagnosis_requests_autoresearch(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="run.manager.agent.recommendation",
+        id="evt-rec-controlled-diagnosis",
+        actor="run-manager",
+        payload={
+            "recommended_route": "controlled_action",
+            "safe_resume_action": "diagnose_attention",
+            "checkpoint_id": "ck-diagnose-1",
+            "fingerprint": "resident:ck-diagnose-1",
+            "summary": "worker no-op needs diagnosis",
+        },
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    assert result.agent_recommendations_consumed == 1
+    assert result.autoresearch_requested == 1
+    assert any(event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED for event in events)
+    consumed = [
+        event for event in events
+        if event.type == RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED
+    ][-1]
+    assert consumed.payload["route"] == "controlled_action"
+    assert consumed.payload["status"] == "consumed"
+    assert consumed.payload["reason"] == "controlled_action_requires_diagnosis"
 
 
 def test_run_manager_consumes_agent_recommendation_to_reflect(
@@ -1787,6 +2168,98 @@ def test_run_manager_consumes_human_approval_and_applies_controlled_action(
     assert third.human_decisions_applied == 0
 
 
+def test_run_manager_projects_failure_closeout_activation_for_owner_approval(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    manifest = _write_failure_closeout_manifest(tmp_path)
+    materialized = writer.emit(
+        "failure.closeout.materialized",
+        actor="run-manager",
+        payload={
+            "schema_version": "failure-closeout.event.v1",
+            "manifest_ref": str(manifest),
+            "materialized_count": 1,
+        },
+    )
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+        project_root=tmp_path,
+    )
+
+    pending = projection["pending_actions"][0]
+    assert pending["action"] == "failure-closeout-activate"
+    assert pending["manifest_ref"] == str(manifest)
+    assert pending["source_event_ids"] == [materialized.id]
+    assert pending["policy_decision"]["decision"] == "needs_approval"
+    assert pending["preflight"]["status"] == "passed"
+    assert "failure.closeout.activated" in pending["verify_condition"]
+
+
+def test_run_manager_approval_activates_failure_closeout_backlog(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    manifest = _write_failure_closeout_manifest(tmp_path)
+    writer.emit(
+        "failure.closeout.materialized",
+        actor="run-manager",
+        payload={
+            "schema_version": "failure-closeout.event.v1",
+            "manifest_ref": str(manifest),
+            "materialized_count": 1,
+        },
+    )
+
+    first = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        project_root=tmp_path,
+        event_log=log,
+        spawn_repairs=False,
+    )
+    assert first.actions_blocked == 1
+    escalation = [
+        event for event in log.read_all()
+        if event.type == "human.escalate"
+    ][-1]
+    assert escalation.payload["action"] == "failure-closeout-activate"
+    assert escalation.payload["manifest_ref"] == str(manifest)
+
+    writer.emit(
+        "human.escalation.acknowledged",
+        actor="operator",
+        payload={
+            "decision_token": escalation.payload["decision_token"],
+            "decision": "approve_controlled_action",
+        },
+    )
+    second = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        project_root=tmp_path,
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    assert second.human_decisions_applied == 1
+    assert any(event.type == "failure.closeout.activated" for event in events)
+    assert any(
+        event.type == RUN_MANAGER_ACTION_VERIFY_PASSED
+        and event.payload.get("safe_resume_action") == "failure_closeout_activate"
+        for event in events
+    )
+    active_tasks = list((tmp_path / "tasks" / "active").glob("*.md"))
+    assert len(active_tasks) == 1
+    assert "> 状态: active" in active_tasks[0].read_text(encoding="utf-8")
+
+
 def test_run_manager_routes_rework_exhausted_human_gate_to_repair_resume(
     tmp_path: Path,
 ) -> None:
@@ -1868,6 +2341,66 @@ def test_completion_profile_blocks_terminal_success_on_pending_human_decision(
     assert projection["completion_profile"]["status"] == "blocked"
     assert "pending_human_decision" in projection["completion_profile"]["blockers"]
     assert projection["monitor"]["state"] == "needs_human"
+
+
+def test_run_monitor_reports_blocked_when_completion_has_nonhuman_blockers(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _writer = _state(tmp_path)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="TASK-A",
+        title="still active",
+        status="in_progress",
+        assigned_to="dev-1",
+    ))
+
+    monitor = build_run_monitor_projection(
+        state_dir,
+        events=[],
+        pending_actions=[],
+        completion_profile={
+            "status": "active",
+            "blockers": ["action_verify_failed"],
+        },
+    )
+
+    assert monitor["state"] == "blocked"
+    assert monitor["in_flight_tasks"][0]["task_id"] == "TASK-A"
+
+
+def test_run_manager_monitor_keeps_blocking_when_monitor_blocked_with_auto_action(
+    tmp_path: Path,
+) -> None:
+    projection = build_run_manager_monitor_projection(
+        completion_profile={
+            "status": "active",
+            "blockers": ["action_verify_failed"],
+        },
+        monitor={
+            "state": "blocked",
+            "next_wait": "run_manager_action",
+        },
+        status_explain={
+            "wait_reason": "run_manager_action_ready",
+            "next_auto_action": "candidate_escalate",
+            "blocking": False,
+        },
+        pending_actions=[{
+            "safe_resume_action": "candidate_escalate",
+            "owner_route": "candidate_rework",
+            "policy_decision": {"decision": "auto_decide"},
+        }],
+        no_progress={},
+        advisor={"summary": {}},
+        wait_hints={"summary": {}},
+        resident_agent={},
+        runtime_pane_snapshot={"summary": {}},
+    )
+
+    assert projection["monitor_state"] == "blocked"
+    assert projection["blocking"] is True
+    assert projection["wait_reason"] == "run_manager_action_ready"
+    assert projection["next_auto_action"] == "candidate_escalate"
 
 
 def test_terminal_success_overrides_stale_silent_stall_attention(tmp_path: Path) -> None:
@@ -1965,6 +2498,60 @@ def test_run_manager_tick_emits_idempotent_run_completed_closeout(
     assert projection["monitor"]["residual_in_flight_tasks"][0]["task_id"] == "TASK-RESIDUAL"
     assert projection["status_explain"]["blocking"] is False
     assert projection["status_explain"]["active_task_id"] == ""
+
+
+def test_terminal_closeout_recommendation_does_not_open_human_gate(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="TASK-RESIDUAL",
+        title="residual task already covered by candidate judge",
+        status="in_progress",
+        assigned_to="verify-lane-0",
+    ))
+    log.append(ZfEvent(
+        type="judge.passed",
+        actor="judge",
+        payload={
+            "run_id": "R4",
+            "pdd_id": "CANGJIE-R4",
+            "candidate_ref": "cand/CANGJIE-R4",
+        },
+    ))
+    log.append(ZfEvent(
+        type="run.manager.agent.recommendation",
+        actor="run-manager",
+        payload={
+            "checkpoint_id": "resident-terminal-closeout",
+            "safe_resume_action": "needs_terminal_closeout",
+            "recommended_route": "human",
+            "failure_class": "workflow_terminal_closeout_stalled",
+            "reason": "request terminal closeout",
+        },
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    events = log.read_all()
+    assert result.agent_recommendations_consumed == 1
+    assert result.closeout_events == 1
+    assert "human.escalate" not in {event.type for event in events}
+    consumed = [
+        event for event in events
+        if event.type == RUN_MANAGER_AGENT_RECOMMENDATION_CONSUMED
+    ][-1]
+    assert consumed.payload["status"] == "wait"
+    assert consumed.payload["reason"] == (
+        "terminal closeout is handled by deterministic run manager closeout"
+    )
+    assert any(event.type == "run.completed" for event in events)
 
 
 def test_completion_profile_ignores_stale_terminal_signal_after_new_work(
@@ -2748,3 +3335,20 @@ def test_run_manager_consumes_autoresearch_diagnosis_result(tmp_path: Path) -> N
     assert len(consumed) == 1
     assert consumed[0].payload["request_id"] == "rm-ar-1"
     assert consumed[0].payload["next_route"] == "proposal_review"
+
+
+def test_every_pending_action_carries_problem_envelope(tmp_path: Path) -> None:
+    """131-P1-3 forcing:RM pending action 必带 problem_envelope,缺失即红。"""
+    state_dir, log, _writer = _state(tmp_path)
+    _append_repair_failed_children_fixture(log)
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_lane_resume_config(),
+    )
+    actions = projection["pending_actions"]
+    assert actions, "fixture 应产生至少一个 pending action"
+    for action in actions:
+        envelope = action.get("problem_envelope")
+        assert isinstance(envelope, dict), f"action {action.get('action')} 缺 envelope"
+        assert envelope.get("schema_version"), f"action {action.get('action')} envelope 无 schema"

@@ -13,6 +13,36 @@ from zf.core.task.store import TaskStore
 
 
 _GRAPH_CACHE_KIND = "workflow_graph.v2"
+# Serve a cached graph up to this many events behind truth (background refresh
+# catches up). Tuned to absorb live append storms without lying for long.
+_GRAPH_CACHE_MAX_LAG_EVENTS = 2000
+
+_GRAPH_REFRESH_JOBS: dict[str, object] = {}
+_GRAPH_REFRESH_LOCK = __import__("threading").Lock()
+
+
+def _spawn_graph_refresh(state_dir: Path, *, config: "ZfConfig | None", cache_key: str) -> None:
+    import threading
+
+    key = f"{state_dir.resolve()}::{cache_key}"
+    with _GRAPH_REFRESH_LOCK:
+        existing = _GRAPH_REFRESH_JOBS.get(key)
+        if existing is not None and getattr(existing, "is_alive", lambda: False)():
+            return
+
+        def _job() -> None:
+            try:
+                _workflow_graph(state_dir, config=config, force_recompute=True)
+            except Exception:
+                pass
+            finally:
+                with _GRAPH_REFRESH_LOCK:
+                    if _GRAPH_REFRESH_JOBS.get(key) is threading.current_thread():
+                        _GRAPH_REFRESH_JOBS.pop(key, None)
+
+        thread = threading.Thread(target=_job, name="zf-graph-refresh", daemon=True)
+        _GRAPH_REFRESH_JOBS[key] = thread
+        thread.start()
 _ACTION_DECISION_EVENT_TYPES = {
     "workflow.dispatch.requested",
     "workflow.gate.requested",
@@ -158,7 +188,7 @@ def _role_outcome_aggregates(
     return agg
 
 
-def _workflow_graph(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any]:
+def _workflow_graph(state_dir: Path, *, config: ZfConfig | None = None, force_recompute: bool = False) -> dict[str, Any]:
     stages = list(getattr(getattr(config, "workflow", None), "stages", []) or [])
     roles = list(getattr(config, "roles", []) or []) if config is not None else []
     try:
@@ -402,13 +432,25 @@ def _workflow_graph(state_dir: Path, *, config: ZfConfig | None = None) -> dict[
             stages=stages,
             roles=roles,
         )
-        cached = read_model.get_cached_projection(
+        cached = None if force_recompute else read_model.get_cached_projection(
             state_dir,
             cache_key,
-            source_seq=source_seq,
         )
         if cached is not None:
-            return cached
+            cached_seq = int((cached.get("projection_cache") or {}).get("source_seq") or 0)
+            lag = max(0, int(source_seq) - cached_seq)
+            if lag == 0:
+                return cached
+            if lag <= _GRAPH_CACHE_MAX_LAG_EVENTS:
+                # Serve-stale-with-lag: on a live project every append used to
+                # miss this cache (exact-seq test) and rewrite the multi-MB
+                # graph row per request — the F0-A collapse. Serve the cached
+                # graph, surface the lag, refresh once in the background.
+                projection = cached.setdefault("projection", {})
+                projection["projection_lag"] = lag
+                projection["stale"] = True
+                _spawn_graph_refresh(state_dir, config=config, cache_key=cache_key)
+                return cached
     except Exception:
         projection_status = {"projection_state": "unavailable"}
         source_seq = 0

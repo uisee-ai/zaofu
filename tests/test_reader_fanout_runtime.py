@@ -1831,7 +1831,7 @@ def test_parity_aggregate_synthesizes_gap_tasks_from_p1_findings(tmp_path: Path)
                 "source_index_ref": ".zf/artifacts/CANGJIE/source_index.json",
             },
         },
-        success_event="cangjie.module.parity.scan.completed",
+        success_event="module.parity.scan.completed",
     )
 
     assert payload["open_p0_p1_gap_count"] == 2
@@ -1911,7 +1911,7 @@ def test_parity_aggregate_ignores_info_findings_that_deny_p0_p1_gaps(
                 "source_index_ref": ".zf/artifacts/CANGJIE/source_index.json",
             },
         },
-        success_event="cangjie.module.parity.scan.completed",
+        success_event="module.parity.scan.completed",
     )
 
     assert payload["open_p0_p1_gap_count"] == 0
@@ -2257,7 +2257,11 @@ def test_provider_style_finding_fields_are_normalized():
     assert finding["message"] == "Loader crashes on malformed config section."
 
 
-def test_synth_role_receives_child_report_paths_and_defers_final_event(tmp_path: Path):
+def test_synth_role_receives_child_report_paths_and_defers_final_event(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
     state_dir, log, transport, orch = _state(
         tmp_path,
         synth=True,
@@ -2306,6 +2310,7 @@ def test_synth_role_receives_child_report_paths_and_defers_final_event(tmp_path:
     assert "candidate/F-11111111" in briefing
     assert "review-a passed" in briefing
     assert "`/zf-harness-gate-evaluator`" in briefing
+    assert "uv --project /repo run zf emit fanout.synth.completed" in briefing
     assert not any(event.type == "review.approved" for event in events)
 
 

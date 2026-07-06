@@ -446,6 +446,39 @@ class TestOrchestratorBriefing:
         assert "dev" in content
         assert "zf emit" in content
 
+    def test_dispatch_blocks_when_strict_run_contract_not_hydrated(
+        self,
+        state_dir,
+        config,
+        transport,
+        monkeypatch,
+    ):
+        (state_dir / "config").mkdir()
+        (state_dir / "config" / "run-contract.json").write_text(
+            json.dumps({
+                "schema_version": "run-contract.v1",
+                "contract_digest": "digest-strict",
+                "workflow": {"strictness": "full-parity"},
+                "refs": {"task_map": ["docs/task-map.json"]},
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "zf.runtime.orchestrator_dispatch.generate_role_instructions",
+            lambda *args, **kwargs: "# dev\n\nmissing run contract context\n",
+        )
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(title="Build", id="T1", status="backlog"))
+
+        orch = Orchestrator(state_dir, config, transport)
+        orch.run_once()
+
+        task = store.get("T1")
+        assert task.status == "backlog"
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        assert "dispatch.briefing_hydration.failed" in [event.type for event in events]
+        assert "task.dispatched" not in [event.type for event in events]
+
     def test_dispatch_writes_skills_lockfile(self, state_dir, config, transport):
         (state_dir / "skills" / "reviewer").mkdir(parents=True)
         (state_dir / "skills" / "reviewer" / "SKILL.md").write_text(

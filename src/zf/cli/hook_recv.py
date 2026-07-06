@@ -72,6 +72,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=run)
 
 
+def _tool_response_threshold_bytes() -> int:
+    import os
+
+    raw = os.environ.get("ZF_HOOK_TOOL_RESPONSE_THRESHOLD_BYTES", "").strip()
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return 2000
+    return parsed if parsed > 0 else 2000
+
+
 def _log_error(state_dir: Path, message: str) -> None:
     """Structured JSON log line to .zf/hooks/errors.log (never raises)."""
     try:
@@ -661,8 +672,37 @@ def run(args: argparse.Namespace) -> int:
     if "tool_response" in payload:
         raw_resp = payload["tool_response"]
         if isinstance(raw_resp, (dict, list)):
-            raw_resp = json.dumps(raw_resp, ensure_ascii=False)[:2000]
-        event_payload["tool_response"] = str(raw_resp)[:2000]
+            raw_resp = json.dumps(raw_resp, ensure_ascii=False)
+        # doc 106 D axis: NEVER head-truncate — pytest/green markers live at
+        # the TAIL and the reactor green-check reads them. Oversized responses
+        # are externalized to a sidecar ref (head+tail preview stays inline);
+        # the truncation fallback below also keeps the tail.
+        text = str(raw_resp)
+        try:
+            from zf.core.security.redaction import redact_obj
+            from zf.runtime.agent_session_output import apply_agent_output_contract
+
+            event_payload["tool_response"] = redact_obj(text)
+            event_payload = apply_agent_output_contract(
+                state_dir,
+                event_payload,
+                text_keys=("tool_response",),
+                threshold_bytes=_tool_response_threshold_bytes(),
+                metadata={
+                    "source": f"hook:{args.event}",
+                    "producer": actor,
+                    "run_id": str(payload.get("turn_id") or session_id or "hook"),
+                    "part_id": "tool-response",
+                    "kind": "tool_response",
+                    "message_type": "tool_response",
+                },
+            )
+        except Exception:
+            threshold = _tool_response_threshold_bytes()
+            if len(text) > threshold:
+                half = max(threshold // 2, 200)
+                text = f"{text[:half]}\n[... truncated ...]\n{text[-half:]}"
+            event_payload["tool_response"] = text
     if "stop_hook_active" in payload:
         event_payload["stop_hook_active"] = payload["stop_hook_active"]
 

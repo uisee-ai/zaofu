@@ -13,6 +13,11 @@ from dataclasses import asdict
 from typing import Any
 
 from zf.core.security.redaction import redact_obj
+from zf.runtime.event_problem_registry import (
+    abnormal_event_specs,
+    expected_negative_event_types,
+    spec_for_event,
+)
 
 
 PROBLEM_ENVELOPE_SCHEMA_VERSION = "runtime.problem-envelope.v1"
@@ -29,81 +34,21 @@ PROBLEM_CLASSES = frozenset({
     "unknown",
 })
 
-EXPECTED_NEGATIVE_EVENT_TYPES = frozenset({
-    "static_gate.failed",
-    "review.rejected",
-    "test.failed",
-    "verify.failed",
-    "judge.failed",
-    "integration.failed",
-})
+EXPECTED_NEGATIVE_EVENT_TYPES = expected_negative_event_types()
 
 _ABNORMAL_EVENT_RULES: dict[str, dict[str, Any]] = {
-    "worker.stuck": {
-        "source": "runtime_worker",
-        "severity": "high",
-        "title": "Worker stuck",
-        "failure_class": "worker_stuck",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_worker_lifecycle",
-    },
-    "worker.respawn.failed": {
-        "source": "runtime_worker",
-        "severity": "high",
-        "title": "Worker respawn failed",
-        "failure_class": "worker_respawn_failed",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_worker_lifecycle",
-    },
-    "worker.recycle.failed": {
-        "source": "runtime_worker",
-        "severity": "high",
-        "title": "Worker recycle failed",
-        "failure_class": "worker_recycle_failed",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_worker_lifecycle",
-    },
-    "dispatch.silent_stall": {
-        "source": "workflow_runtime",
-        "severity": "high",
-        "title": "Dispatch silent stall",
-        "failure_class": "dispatch_silent_stall",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_worker_noop",
-    },
-    "owner.visible_message.failed": {
-        "source": "owner_delivery",
-        "severity": "high",
-        "title": "Owner message delivery failed",
-        "failure_class": "external_gate_delivery_failed",
-        "owner_route": "run_manager",
-        "action_policy": "needs_diagnosis",
-        "intervention_class": "diagnose",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_owner_delivery",
-    },
-    "owner.visible_message.delivery_failed": {
-        "source": "owner_delivery",
-        "severity": "high",
-        "title": "Owner message delivery failed",
-        "failure_class": "external_gate_delivery_failed",
-        "owner_route": "run_manager",
-        "action_policy": "needs_diagnosis",
-        "intervention_class": "diagnose",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_owner_delivery",
-    },
-    "owner.visible_message.expired": {
-        "source": "owner_delivery",
-        "severity": "medium",
-        "title": "Owner message expired",
-        "failure_class": "external_gate_delivery_expired",
-        "owner_route": "run_manager",
-        "action_policy": "needs_diagnosis",
-        "intervention_class": "diagnose",
-        "suggested_route": "run_manager_recovery",
-        "action_kind": "diagnose_owner_delivery",
-    },
+    event_type: {
+        "source": spec.source,
+        "severity": spec.severity,
+        "title": spec.title,
+        "failure_class": spec.failure_class,
+        "owner_route": spec.owner_route,
+        "action_policy": spec.action_policy,
+        "intervention_class": spec.intervention_class,
+        "suggested_route": spec.suggested_route,
+        "action_kind": spec.suggested_action_kind,
+    }
+    for event_type, spec in abnormal_event_specs().items()
 }
 
 _PROBLEM_CLASS_DEFAULTS: dict[str, dict[str, str]] = {
@@ -337,22 +282,44 @@ def problem_envelope_from_event(event: Any) -> dict[str, Any] | None:
     event_type = str(row.get("type") or "").strip()
     if event_type not in EXPECTED_NEGATIVE_EVENT_TYPES:
         return None
+    spec = spec_for_event(event_type)
     payload = _safe_mapping(row.get("payload"))
     event_id = str(row.get("id") or "")
-    failure_class = event_type.replace(".", "_")
+    failure_class = (
+        spec.failure_class if spec is not None and spec.failure_class
+        else event_type.replace(".", "_")
+    )
+    action_kind = (
+        spec.suggested_action_kind if spec is not None and spec.suggested_action_kind
+        else "follow_workflow_rework"
+    )
+    source = spec.source if spec is not None and spec.source else "workflow_branch"
+    suggested_route = (
+        spec.suggested_route if spec is not None and spec.suggested_route
+        else "workflow_rework"
+    )
     return build_problem_envelope(
-        source="workflow_branch",
+        source=source,
         fingerprint=str(
             payload.get("fingerprint")
             or f"{event_type}:{_event_scope(row, payload)}"
         ),
-        severity=str(payload.get("severity") or "medium"),
-        title=str(payload.get("title") or event_type),
+        severity=str(
+            payload.get("severity")
+            or (spec.severity if spec is not None and spec.severity else "medium")
+        ),
+        title=str(
+            payload.get("title")
+            or (spec.title if spec is not None and spec.title else event_type)
+        ),
         summary=_event_summary(payload, default=f"{event_type} entered workflow branch"),
         task_id=str(row.get("task_id") or payload.get("task_id") or ""),
         failure_class=failure_class,
-        suggested_route="workflow_rework",
-        suggested_action={"kind": "follow_workflow_rework", "event_type": event_type},
+        owner_route=spec.owner_route if spec is not None else "",
+        action_policy=spec.action_policy if spec is not None else "",
+        intervention_class=spec.intervention_class if spec is not None else "",
+        suggested_route=suggested_route,
+        suggested_action={"kind": action_kind, "event_type": event_type},
         source_event_ids=[event_id] if event_id else [],
         source_ref=f"events.jsonl#{event_id}" if event_id else "",
         confidence="event_registry",
@@ -521,6 +488,8 @@ def problem_class_for(
         "state_dir_violation",
         "readonly_gate_mutation",
         "replan_followthrough",
+        "refactor_plan_blocked",
+        "refactor_review_blocked",
     )):
         return "artifact_contract"
     if any(token in text for token in (
@@ -569,6 +538,11 @@ def problem_class_for(
         "parity",
         "codex_realism_gap",
         "feature_gap",
+        "flow_discovery_failed",
+        "flow_goal_blocked",
+        "goal_rescan_failed",
+        "goal_closure_blocked",
+        "request_goal_gap_plan",
     )):
         return "product_gap"
     return "unknown"

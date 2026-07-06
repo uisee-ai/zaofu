@@ -70,6 +70,48 @@ def test_artifact_matrix_gate_fails_missing_artifact_and_bad_blocking_row(
     assert "matrix_row_required_field_missing" in codes
 
 
+def test_artifact_matrix_gate_requires_one_field_from_group_for_blocking_row(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "matrix.json",
+        {"rows": [
+            {
+                "id": "CAP-1",
+                "priority": "P0",
+                "status": "passed",
+                "source_refs": ["src/app.ts"],
+                "evidence_refs": ["reports/app.md"],
+                "verification": ["pnpm test"],
+            },
+            {
+                "id": "CAP-2",
+                "priority": "P0",
+                "status": "passed",
+                "source_refs": ["src/worker.ts"],
+                "evidence_refs": ["reports/worker.md"],
+            },
+        ]},
+    )
+
+    result = evaluate_artifact_matrix_gate(tmp_path, {
+        "matrix_paths": ["matrix.json"],
+        "blocking_priority": "P0",
+        "allowed_statuses": ["passed"],
+        "required_row_fields": ["source_refs", "evidence_refs"],
+        "required_row_field_groups": [
+            ["verification", "verify_commands", "verification_commands"],
+        ],
+    })
+
+    assert result.passed is False
+    assert any(
+        finding.code == "matrix_row_required_field_group_missing"
+        and finding.row_id == "CAP-2"
+        for finding in result.findings
+    )
+
+
 def test_artifact_matrix_gate_loads_config_ref_and_blocks_forbidden_text(
     tmp_path: Path,
 ) -> None:
@@ -118,8 +160,8 @@ def test_artifact_matrix_gate_blocks_open_module_parity_gaps(tmp_path: Path) -> 
             "parent_task_id": "CANGJIE-WEB-001",
             "affinity_tag": "web-tui",
             "lane_id": "lane-4",
-            "hermes_original_paths": ["hermes-agent/web"],
-            "cangjie_target_paths": ["web/src"],
+            "source_paths": ["source/web"],
+            "target_paths": ["web/src"],
             "capability_rows": [{"id": "WEBCHAT", "priority": "P0", "status": "partial"}],
             "test_rows": [{"id": "WEBCHAT-E2E", "priority": "P0", "status": "missing"}],
             "runtime_evidence_refs": ["reports/webchat.md"],
@@ -138,6 +180,108 @@ def test_artifact_matrix_gate_blocks_open_module_parity_gaps(tmp_path: Path) -> 
     codes = {finding.code for finding in result.findings}
     assert result.passed is False
     assert "module_parity_open_gaps" in codes
+
+
+def test_artifact_matrix_gate_rejects_project_path_aliases_by_default(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "docs/validation/module-parity/web-dashboard.json",
+        {
+            "schema_version": "module-parity-report.v1",
+            "module_id": "web-dashboard",
+            "parent_task_id": "WEB-001",
+            "affinity_tag": "web-tui",
+            "lane_id": "lane-4",
+            "hermes_original_paths": ["legacy-source/web"],
+            "cangjie_target_paths": ["web/src"],
+            "capability_rows": [{"id": "WEBCHAT", "priority": "P0", "status": "done"}],
+            "test_rows": [{"id": "WEBCHAT-E2E", "priority": "P0", "status": "done"}],
+            "runtime_evidence_refs": ["reports/webchat.md"],
+            "gap_tasks": [{"task_id": "WEB-GAP-CLOSED", "status": "closed"}],
+            "open_p0_p1_gap_count": 0,
+        },
+    )
+
+    result = evaluate_artifact_matrix_gate(tmp_path, {
+        "module_parity_report_paths": [
+            "docs/validation/module-parity/web-dashboard.json",
+        ],
+    })
+
+    assert result.passed is False
+    missing = {
+        finding.message
+        for finding in result.findings
+        if finding.code == "module_parity_required_field_missing"
+    }
+    assert any("source_paths" in item for item in missing)
+    assert any("target_paths" in item for item in missing)
+
+
+def test_artifact_matrix_gate_accepts_legacy_module_parity_path_aliases_when_enabled(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "docs/validation/module-parity/web-dashboard.json",
+        {
+            "schema_version": "module-parity-report.v1",
+            "module_id": "web-dashboard",
+            "parent_task_id": "WEB-001",
+            "affinity_tag": "web-tui",
+            "lane_id": "lane-4",
+            "hermes_original_paths": ["legacy-source/web"],
+            "cangjie_target_paths": ["web/src"],
+            "capability_rows": [{"id": "WEBCHAT", "priority": "P0", "status": "done"}],
+            "test_rows": [{"id": "WEBCHAT-E2E", "priority": "P0", "status": "done"}],
+            "runtime_evidence_refs": ["reports/webchat.md"],
+            "gap_tasks": [{"task_id": "WEB-GAP-CLOSED", "status": "closed"}],
+            "open_p0_p1_gap_count": 0,
+        },
+    )
+
+    result = evaluate_artifact_matrix_gate(tmp_path, {
+        "module_parity_report_paths": [
+            "docs/validation/module-parity/web-dashboard.json",
+        ],
+        "legacy_module_parity_field_aliases": True,
+    })
+
+    assert result.passed is True
+
+
+def test_artifact_matrix_gate_accepts_configured_module_parity_aliases(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "docs/validation/module-parity/web-dashboard.json",
+        {
+            "schema_version": "module-parity-report.v1",
+            "module_id": "web-dashboard",
+            "parent_task_id": "WEB-001",
+            "affinity_tag": "web-tui",
+            "lane_id": "lane-4",
+            "project_source_refs": ["source/web"],
+            "project_target_refs": ["web/src"],
+            "capability_rows": [{"id": "WEBCHAT", "priority": "P0", "status": "done"}],
+            "test_rows": [{"id": "WEBCHAT-E2E", "priority": "P0", "status": "done"}],
+            "runtime_evidence_refs": ["reports/webchat.md"],
+            "gap_tasks": [{"task_id": "WEB-GAP-CLOSED", "status": "closed"}],
+            "open_p0_p1_gap_count": 0,
+        },
+    )
+
+    result = evaluate_artifact_matrix_gate(tmp_path, {
+        "module_parity_report_paths": [
+            "docs/validation/module-parity/web-dashboard.json",
+        ],
+        "module_parity_field_aliases": {
+            "source_paths": ["project_source_refs"],
+            "target_paths": ["project_target_refs"],
+        },
+    })
+
+    assert result.passed is True
 
 
 def test_artifact_matrix_gate_validates_gap_task_map_schema(tmp_path: Path) -> None:

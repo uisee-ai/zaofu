@@ -271,6 +271,44 @@ def test_duplicate_rework_markers_count_once_for_attempt_budget():
     assert plans[0].attempt == 2
 
 
+def test_same_failed_event_with_repeated_resume_markers_stays_handled():
+    events = [
+        _ev("verify.failed", {
+            "target_ref": "cand/CJMIN-1",
+            "trace_id": "t1",
+            "failed_task_ids": ["CJMIN-GATEWAY-001"],
+        }, eid="vf1", corr="t1"),
+        _ev("task_map.ready", {
+            "pdd_id": "CJMIN-1",
+            "rework_of": "vf1",
+            "rework_source": "verify.failed",
+            "rework_attempt": 1,
+            "failed_task_ids": ["CJMIN-GATEWAY-001"],
+        }, eid="rw1", corr="t1"),
+        _ev("workflow.resume.applied", {
+            "checkpoint_id": "ck1",
+            "idempotency_key": "ck1",
+            "safe_resume_action": "repair_failed_children",
+            "source_event_id": "vf1",
+        }, eid="wr1", corr="t1"),
+        _ev("task_map.ready", {
+            "pdd_id": "CJMIN-1",
+            "rework_of": "vf1",
+            "rework_source": "verify.failed",
+            "rework_attempt": 1,
+            "failed_task_ids": ["CJMIN-GATEWAY-001"],
+        }, eid="rw1-dup", corr="t1"),
+        _ev("workflow.resume.applied", {
+            "checkpoint_id": "ck1",
+            "idempotency_key": "ck1",
+            "safe_resume_action": "repair_failed_children",
+            "source_event_id": "vf1",
+        }, eid="wr1-dup", corr="t1"),
+    ]
+
+    assert plan_candidate_rework(events, max_attempts=2) == []
+
+
 def test_review_rejected_uses_source_budget_after_runtime_rework_history():
     events = [
         _ev("fanout.child.failed", {
@@ -724,7 +762,7 @@ def test_clean_module_parity_closure_supersedes_stale_w1_cancel():
                 "'packages/core/**' and 'packages/core/src/agent-loop.ts'"
             ),
         }, eid="cx3", corr="trace-r3"),
-        _ev("cangjie.module.parity.scan.completed", {
+        _ev("module.parity.scan.completed", {
             "pdd_id": "CANGJIE-R3",
             "trace_id": "trace-r3",
             "candidate_ref": "cand/CANGJIE-R3",
@@ -766,3 +804,24 @@ def test_clean_module_parity_closure_does_not_supersede_other_pdd_cancel():
 
     assert len(plans) == 1
     assert plans[0].action == "replan"
+
+
+def test_task_map_validation_cancel_plans_replan():
+    # avbs-r4 F5: schema_version/verification-scope 校验拒(reason 取自 r4
+    # 归档原文)属"synth 必须重拆",此前不在白名单 → 静默停摆需人工回炉。
+    events = [
+        _ev("fanout.cancelled", {
+            "pdd_id": "AVBS-PRD-REBUILD-R4",
+            "trace_id": "t1",
+            "reason": (
+                "writer fanout task_map validation failed: unsupported "
+                "schema_version 'canonical-dag/v1'; AVBS-ASSEMBLY-001."
+                "verification references path outside allowed_paths/"
+                "exclusive_files: '$PWD:/work'"
+            ),
+        }, eid="cx9", corr="t1"),
+    ]
+    plans = plan_candidate_rework(events, config=_replan_config())
+    assert len(plans) == 1
+    assert plans[0].action == "replan"
+    assert any("schema_version" in f for f in plans[0].feedback)

@@ -12,6 +12,8 @@ SchemaProfile → 单一 ZfConfig)。
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 
@@ -103,6 +105,18 @@ def _norm_stage(value: Any) -> Any:
     return out
 
 
+def _norm_barriers(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    return _normalize_mapping(
+        value,
+        rename={
+            "stageTransition": "stage_transition",
+        },
+        context="spec.barriers",
+    )
+
+
 def normalize_lane_pipeline_external(raw: dict) -> dict:
     """LanePipeline 的 envelope 外部 spec → canonical pipeline dict。
 
@@ -135,6 +149,7 @@ def normalize_lane_pipeline_external(raw: dict) -> dict:
             "stages": lambda v: (
                 [_norm_stage(s) for s in v] if isinstance(v, list) else v
             ),
+            "barriers": _norm_barriers,
         },
         context="LanePipeline.spec",
     )
@@ -161,12 +176,14 @@ _API_VERSION = "zaofu.dev/v1"
 _ENVELOPE_KEYS = frozenset({"apiVersion", "kind", "metadata", "spec"})
 _KNOWN_KINDS = frozenset({
     "ZfConfig", "LanePipeline", "SchemaProfile", "Workflow",
-    "RefactorFlow",
+    "RefactorFlow", "IssueFlow", "PrdFlow", "ConfigProfile", "RoleSet",
 })
 
 
 def assemble_envelope_stream(
     documents: list[Any],
+    *,
+    profile_source_files: list[dict[str, str]] | None = None,
 ) -> tuple[dict, dict[str, dict]]:
     """`---` 多文档 kind 流 → (canonical zf.yaml raw dict, extra_profiles)。
 
@@ -184,11 +201,15 @@ def assemble_envelope_stream(
         # "Missing required section: project" 报错(零迁移)。
         return {}, {}
     if len(docs) == 1 and "kind" not in docs[0]:
-        return docs[0], {}
+        if not isinstance(docs[0], dict):
+            return docs[0], {}
+        return _apply_config_uses(dict(docs[0]), {}, {}), {}
 
     body: dict | None = None
     pipelines: list[dict] = []
     profiles: dict[str, dict] = {}
+    config_profiles: dict[str, dict] = {}
+    role_sets: dict[str, dict] = {}
     kind_stages: list[dict] = []
     flow_expansions: list[dict] = []
     for i, doc in enumerate(docs):
@@ -256,6 +277,24 @@ def assemble_envelope_stream(
                 flow_expansions.append(expand_workflow_profile(dict(spec)))
             except WorkflowProfileError as exc:
                 raise KindEnvelopeError(str(exc))
+        elif kind == "IssueFlow":
+            from zf.core.config.workflow_profiles import (
+                WorkflowProfileError,
+                expand_issue_flow,
+            )
+            try:
+                flow_expansions.append(expand_issue_flow(dict(spec)))
+            except WorkflowProfileError as exc:
+                raise KindEnvelopeError(str(exc))
+        elif kind == "PrdFlow":
+            from zf.core.config.workflow_profiles import (
+                WorkflowProfileError,
+                expand_prd_flow,
+            )
+            try:
+                flow_expansions.append(expand_prd_flow(dict(spec)))
+            except WorkflowProfileError as exc:
+                raise KindEnvelopeError(str(exc))
         elif kind == "SchemaProfile":
             name = str(metadata.get("name") or "").strip()
             if not name:
@@ -272,10 +311,30 @@ def assemble_envelope_stream(
                 str(e): {"required": list((r or {}).get("required", []))}
                 for e, r in events.items()
             }
+        elif kind == "ConfigProfile":
+            name = str(metadata.get("name") or "").strip()
+            if not name:
+                raise KindEnvelopeError(
+                    f"document[{i}]: ConfigProfile requires metadata.name"
+                )
+            config_profiles[name] = dict(spec)
+        elif kind == "RoleSet":
+            name = str(metadata.get("name") or "").strip()
+            if not name:
+                raise KindEnvelopeError(
+                    f"document[{i}]: RoleSet requires metadata.name"
+                )
+            role_sets[name] = dict(spec)
     if body is None:
         raise KindEnvelopeError(
             "a kind: ZfConfig document is required (project body)"
         )
+    body = _apply_config_uses(
+        body,
+        config_profiles,
+        role_sets,
+        profile_source_files=profile_source_files,
+    )
     if flow_expansions:
         from zf.core.config.workflow_profiles import (
             merge_expansion_into_body,
@@ -301,3 +360,280 @@ def assemble_envelope_stream(
                 )
             existing_stages.extend(kind_stages)
     return body, profiles
+
+
+def _apply_config_uses(
+    body: dict,
+    config_profiles: dict[str, dict],
+    role_sets: dict[str, dict],
+    *,
+    profile_source_files: list[dict[str, str]] | None = None,
+) -> dict:
+    uses = body.get("uses") or []
+    if not uses:
+        clean = dict(body)
+        clean.pop("profile_sources", None)
+        if profile_source_files:
+            clean["_config_profile_sources"] = [
+                _copy_value(item) for item in profile_source_files
+            ]
+        return clean
+    if isinstance(uses, str):
+        uses = [uses]
+    if not isinstance(uses, list):
+        raise KindEnvelopeError("ZfConfig spec.uses must be a list of profile names")
+
+    base: dict[str, Any] = {}
+    sources: list[dict[str, str]] = []
+    for raw_ref in uses:
+        ref = str(raw_ref or "").strip()
+        if not ref:
+            continue
+        resolved_body, resolved_sources = _resolve_config_use(
+            ref,
+            config_profiles,
+            role_sets,
+            stack=(),
+            context="ZfConfig.spec.uses",
+        )
+        _deep_merge(base, resolved_body, path=f"use[{ref}]", override=False)
+        sources.extend(resolved_sources)
+
+    project_body = dict(body)
+    project_body.pop("uses", None)
+    project_body.pop("profile_sources", None)
+    _deep_merge(base, project_body, path="ZfConfig.spec", override=True)
+    if profile_source_files:
+        sources.extend(_copy_value(item) for item in profile_source_files)
+    if sources:
+        base["_config_profile_sources"] = sources
+    return base
+
+
+def _resolve_config_use(
+    ref: str,
+    config_profiles: dict[str, dict],
+    role_sets: dict[str, dict],
+    *,
+    stack: tuple[str, ...],
+    context: str,
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    if ref in config_profiles:
+        if ref in stack:
+            cycle = " -> ".join((*stack, ref))
+            raise KindEnvelopeError(
+                f"{context}: ConfigProfile uses cycle detected: {cycle}"
+            )
+        profile_spec = config_profiles[ref]
+        base: dict[str, Any] = {}
+        sources: list[dict[str, str]] = []
+        for nested_ref in _uses_list(
+            profile_spec.get("uses"),
+            context=f"ConfigProfile[{ref}].uses",
+        ):
+            nested_body, nested_sources = _resolve_config_use(
+                nested_ref,
+                config_profiles,
+                role_sets,
+                stack=(*stack, ref),
+                context=f"ConfigProfile[{ref}].uses",
+            )
+            _deep_merge(
+                base,
+                nested_body,
+                path=f"ConfigProfile[{ref}].uses[{nested_ref}]",
+                override=False,
+            )
+            sources.extend(nested_sources)
+        own_spec = dict(profile_spec)
+        own_spec.pop("uses", None)
+        _deep_merge(
+            base,
+            own_spec,
+            path=f"ConfigProfile[{ref}]",
+            override=False,
+        )
+        sources.append(_source_ref("ConfigProfile", ref, profile_spec))
+        return base, sources
+    if ref in role_sets:
+        roles = _roles_from_role_set(ref, role_sets[ref])
+        return (
+            {"roles": roles},
+            [_source_ref("RoleSet", ref, role_sets[ref])],
+        )
+    raise KindEnvelopeError(
+        f"{context} references unknown profile {ref!r}; "
+        f"available ConfigProfile={sorted(config_profiles)}, "
+        f"RoleSet={sorted(role_sets)}"
+    )
+
+
+def _uses_list(value: object, *, context: str) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, str):
+        return [value]
+    if not isinstance(value, list):
+        raise KindEnvelopeError(f"{context} must be a list of profile names")
+    return [str(item or "").strip() for item in value if str(item or "").strip()]
+
+
+def _source_ref(kind: str, name: str, spec: dict) -> dict[str, str]:
+    payload = json.dumps(spec, ensure_ascii=False, sort_keys=True).encode()
+    return {
+        "kind": kind,
+        "name": name,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def _deep_merge(
+    target: dict,
+    incoming: dict,
+    *,
+    path: str,
+    override: bool,
+) -> None:
+    if not isinstance(incoming, dict):
+        raise KindEnvelopeError(f"{path}: profile body must be a mapping")
+    for key, value in incoming.items():
+        k = str(key)
+        if k.startswith("_"):
+            continue
+        current = target.get(k)
+        current_path = f"{path}.{k}"
+        if current is None:
+            target[k] = _copy_value(value)
+            continue
+        if isinstance(current, dict) and isinstance(value, dict):
+            _deep_merge(current, value, path=current_path, override=override)
+            continue
+        if isinstance(current, list) and isinstance(value, list):
+            target[k] = _merge_named_list(
+                current,
+                value,
+                path=current_path,
+                override=override,
+            )
+            continue
+        if override:
+            target[k] = _copy_value(value)
+            continue
+        if current != value:
+            raise KindEnvelopeError(
+                f"{current_path}: conflicting profile value without explicit "
+                "project override"
+            )
+
+
+def _merge_named_list(
+    left: list,
+    right: list,
+    *,
+    path: str,
+    override: bool,
+) -> list:
+    out = [_copy_value(item) for item in left]
+    index: dict[str, int] = {}
+    for pos, item in enumerate(out):
+        if isinstance(item, dict):
+            item_id = _item_identity(item)
+            if item_id:
+                index[item_id] = pos
+    for item in right:
+        if not isinstance(item, dict):
+            if item not in out:
+                out.append(_copy_value(item))
+            continue
+        item_id = _item_identity(item)
+        if not item_id:
+            out.append(_copy_value(item))
+            continue
+        if item_id in index:
+            if override:
+                out[index[item_id]] = _copy_value(item)
+                continue
+            raise KindEnvelopeError(
+                f"{path}: duplicate topology item {item_id!r} from profiles"
+            )
+        index[item_id] = len(out)
+        out.append(_copy_value(item))
+    return out
+
+
+def _item_identity(item: dict) -> str:
+    for key in ("name", "instance_id", "id"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    trigger = str(item.get("trigger") or "").strip()
+    if trigger:
+        return f"trigger:{trigger}"
+    return ""
+
+
+def _copy_value(value: Any) -> Any:
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def _roles_from_role_set(name: str, spec: dict) -> list[dict[str, Any]]:
+    backend = str(spec.get("backend") or "").strip()
+    model = str(spec.get("model") or "").strip()
+    lane_count = int(spec.get("lane_count") or spec.get("lanes") or 0)
+    if lane_count < 1:
+        raise KindEnvelopeError(f"RoleSet {name!r}: lanes/lane_count must be >= 1")
+    stages = spec.get("stages") or {}
+    stage_items: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(stages, dict):
+        stage_items = [
+            (str(stage_id), dict(raw or {}))
+            for stage_id, raw in stages.items()
+            if str(stage_id).strip()
+        ]
+    elif isinstance(stages, list):
+        for raw in stages:
+            if not isinstance(raw, dict):
+                raise KindEnvelopeError(
+                    f"RoleSet {name!r}: stages[] must be mappings"
+                )
+            stage_id = str(raw.get("id") or "").strip()
+            if not stage_id:
+                raise KindEnvelopeError(
+                    f"RoleSet {name!r}: stages[].id is required"
+                )
+            stage_items.append((stage_id, dict(raw)))
+    else:
+        raise KindEnvelopeError(f"RoleSet {name!r}: stages must be a mapping/list")
+    if not stage_items:
+        raise KindEnvelopeError(f"RoleSet {name!r}: stages must not be empty")
+
+    roles: list[dict[str, Any]] = []
+    for order, (stage_id, raw) in enumerate(stage_items):
+        pattern = str(
+            raw.get("role_pattern") or raw.get("rolePattern")
+            or f"{stage_id}-lane-{{lane}}"
+        )
+        role_kind = str(raw.get("role_kind") or raw.get("roleKind") or "").strip()
+        if not role_kind:
+            role_kind = "writer" if order == 0 else "reader"
+        skills = raw.get("skills") or []
+        for lane in range(lane_count):
+            role_name = pattern.format(lane=lane)
+            role = {
+                "name": role_name,
+                "instance_id": role_name,
+                "backend": str(raw.get("backend") or backend or "claude-code"),
+                "role_kind": role_kind,
+                "stages": [stage_id],
+                "publishes": [
+                    f"{stage_id}.child.completed",
+                    f"{stage_id}.child.failed",
+                ],
+            }
+            role_model = str(raw.get("model") or model or "").strip()
+            if role_model:
+                role["model"] = role_model
+            if isinstance(skills, list):
+                role["skills"] = [str(s) for s in skills if str(s).strip()]
+            roles.append(role)
+    return roles

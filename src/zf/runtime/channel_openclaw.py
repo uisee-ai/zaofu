@@ -13,6 +13,7 @@ from zf.runtime.channel_contracts import (
     normalize_permission_profile,
     permission_profile_write_policy,
 )
+from zf.runtime.channel_sidecar import channel_message_event_payload
 from zf.runtime.openclaw_provider import (
     OpenClawGatewayClient,
     build_openclaw_agent_descriptor,
@@ -277,29 +278,30 @@ def dispatch_openclaw_channel_reply(
     if not reply:
         reply = "(OpenClaw completed without text)"
     thread_id = str(request.get("thread_id") or "main")
+    reply_payload = channel_message_event_payload(Path(state_dir), {
+        "channel_id": channel_id,
+        "thread_id": thread_id,
+        "message_id": f"msg-{request_id}-reply",
+        "member_id": str(request.get("target_member_id") or ""),
+        "role": "assistant",
+        "source": "openclaw",
+        "text": reply,
+        "mentions": [],
+        "refs": {
+            "request_id": request_id,
+            "provider_session_id": provider_session_id,
+            "provider_binding_id": binding.id,
+            "remote_agent_id": remote_agent_id,
+            "usage": result.usage,
+        },
+    }, created_by=f"channel-openclaw:{source}", source_event_id=started_event_id)
     message_event = writer.emit(
         "channel.message.posted",
         actor=str(request.get("target_member_id") or actor),
         task_id=str(request.get("task_id") or "") or None,
         causation_id=started_event_id,
         correlation_id=channel_id,
-        payload=redact_obj({
-            "channel_id": channel_id,
-            "thread_id": thread_id,
-            "message_id": f"msg-{request_id}-reply",
-            "member_id": str(request.get("target_member_id") or ""),
-            "role": "assistant",
-            "source": "openclaw",
-            "text": reply,
-            "mentions": [],
-            "refs": {
-                "request_id": request_id,
-                "provider_session_id": provider_session_id,
-                "provider_binding_id": binding.id,
-                "remote_agent_id": remote_agent_id,
-                "usage": result.usage,
-            },
-        }),
+        payload=redact_obj(reply_payload),
     )
     writer.emit(
         "channel.agent.reply.completed",

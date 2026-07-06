@@ -1,9 +1,12 @@
 """ChannelAdminActionsMixin — controlled-action handlers (moved verbatim from control_actions.py)."""
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import Any
 from zf.core.events import ZfEvent
 from zf.core.security.redaction import redact_obj
+from zf.core.skills.provenance import resolve_skill_source
 from zf.runtime.channel_contracts import normalize_channel_role
 from zf.runtime.channel_contracts import normalize_channel_skill_refs
 from zf.runtime.channel_contracts import normalize_member_type
@@ -20,6 +23,44 @@ from zf.runtime.control_actions_helpers import _optional_str
 from zf.runtime.control_actions_helpers import _provider_binding_id
 from zf.runtime.control_actions_helpers import _required_text
 from zf.runtime.control_actions_helpers import _task_id_from_payload
+
+
+def _materialize_channel_skill_refs(
+    skill_refs: list[str],
+    *,
+    project_root: Path,
+    state_dir: Path,
+    config: Any,
+) -> None:
+    """Copy each channel skill_ref's source dir to the project-root-relative
+    path the ref names, if it isn't already there.
+
+    Channel members run with cwd=project_root (channel_adapter.py) and
+    resolve `skill_refs` as literal `skills/<name>/SKILL.md` paths — unlike
+    `roles:`, which go through `skills.materialize: copy` into an isolated
+    workdir, nothing previously copied the actual skill content into that
+    project-root location. Members then had only the path string in their
+    system prompt and could not read the file (2026-07-03 racing-codex e2e
+    finding #4).
+    """
+    for ref in skill_refs:
+        parts = ref.split("/")
+        if len(parts) != 3 or parts[0] != "skills" or parts[2] != "SKILL.md":
+            continue
+        name = parts[1]
+        target = project_root / "skills" / name / "SKILL.md"
+        if target.exists():
+            continue
+        source = resolve_skill_source(
+            project_root=project_root,
+            state_dir=state_dir,
+            name=name,
+            config=config,
+        )
+        if source is None or not source.is_file():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source.parent, target.parent, dirs_exist_ok=True)
 
 
 class ChannelAdminActionsMixin:
@@ -93,6 +134,12 @@ class ChannelAdminActionsMixin:
         write_policy = permission_profile_write_policy(permission_profile)
         permissions = normalize_permissions(payload.get("permissions"), member_type=member_type)
         skill_refs = normalize_channel_skill_refs(payload.get("skill_refs"))
+        _materialize_channel_skill_refs(
+            skill_refs,
+            project_root=self.project_root or self.state_dir.parent,
+            state_dir=self.state_dir,
+            config=self.config,
+        )
         workflow_role_binding = (
             payload.get("workflow_role_binding")
             if isinstance(payload.get("workflow_role_binding"), dict)

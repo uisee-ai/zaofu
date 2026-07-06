@@ -39,11 +39,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator
 
+import yaml
 from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import (
     FileResponse,
     JSONResponse,
     PlainTextResponse,
+    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -69,6 +71,13 @@ from zf.core.task.kanban_projection import (
 from zf.core.task.schema import Task, TaskContract, TaskEvidence
 from zf.core.task.store import TaskStore
 from zf.core.trace.diagnostics import _safe_trace_id
+from zf.cli.flow import (
+    apply_flow_submit,
+    build_flow_intake,
+    build_flow_intent,
+    build_flow_submit_preview,
+    draft_flow_spec,
+)
 from zf.integrations.feishu.views import TaskView
 from zf.runtime.run_archive import (
     RunArchiveError,
@@ -106,7 +115,9 @@ from zf.runtime.provider_capabilities import (
     provider_capability_for_backend,
 )
 from zf.runtime.project_spine_review import project_spine_review_insight
+from zf.runtime.workflow_spine_projection import read_spine_explain
 from zf.runtime.agent_session_stream import AgentSessionIdentity, AgentSessionStreamEmitter
+from zf.runtime.live_delta_bus import live_delta_bus_for_writer
 from zf.runtime.provider_permissions import emit_provider_permission_snapshot
 from zf.core.workspace import (
     ProjectInitializer,
@@ -119,6 +130,7 @@ from zf.core.workspace import (
 )
 from zf.runtime.workdirs import WorkdirManager
 from zf.web.operator_contract import (
+    CANONICAL_ACTIONS,
     KANBAN_AGENT_ALLOWED_ACTIONS,
     KANBAN_AGENT_CAPABILITIES,
     KANBAN_AGENT_FORBIDDEN_CAPABILITIES,
@@ -128,6 +140,11 @@ from zf.web.operator_contract import (
     kanban_agent_status_model,
 )
 from zf.web.headless_agent import HeadlessMessage, KanbanHeadlessAgent, canonical_headless_backend
+from zf.web.proposal_extraction import (
+    extract_action_proposal,
+    json_candidates as proposal_json_candidates,
+    normalize_action_proposal,
+)
 from zf.web.agent_session_runtime import (
     begin_agent_session_run,
     cancel_agent_session_run,
@@ -177,6 +194,7 @@ from zf.web.projections.common import (  # noqa: F401
     _payload_hash,
     _message_allows_create_task_proposal,
     _message_allows_idea_to_product_proposal,
+    normalize_proposed_task_contract,
     _is_lifecycle_probe_request,
     _emit_action_completed,
     _action_failed,
@@ -244,6 +262,7 @@ from zf.web.projections.summaries import (  # noqa: F401
 )
 from zf.web.projections.events import (  # noqa: F401
     _EVENT_LOG_RUN_ID,
+    events_read_days as _events_read_days,
     _trace_detail,
     _fleet_stats_projection,
     _event_log_run_summary,
@@ -363,15 +382,38 @@ from zf.web.projections.workspace import (  # noqa: F401
 )
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REACT_DIST_DIR = _REPO_ROOT / "web" / "dist"
+
+_SLOW_REQUEST_WARN_MS = 2000.0
+_SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat()
+
+
+def _server_git_commit() -> str:
+    try:
+        import subprocess
+
+        return subprocess.run(
+            ["git", "-C", str(_REPO_ROOT), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout.strip()
+    except Exception:
+        return ""
+
+
+_SERVER_GIT_COMMIT = _server_git_commit()
 _HUMAN_DECISION_ACTIONS = {
     "human-decision-approve-controlled-action",
     "human-decision-request-autoresearch",
     "human-decision-safe-halt",
+    # Dismiss: resolve the inbox item without instructing the run — the only
+    # exit for decisions whose run is stopped/archived (they were pinned on
+    # the badge forever). Consumers ignore unknown decision values safely.
+    "human-decision-dismiss",
 }
 _HUMAN_DECISION_BY_ACTION = {
     "human-decision-approve-controlled-action": "approve_controlled_action",
     "human-decision-request-autoresearch": "request_autoresearch",
     "human-decision-safe-halt": "safe_halt",
+    "human-decision-dismiss": "dismissed",
 }
 _ACTION_ALIASES = {
     "dispatch",
@@ -408,6 +450,7 @@ _ACTION_ALIASES = {
     "human-decision-approve-controlled-action",
     "human-decision-request-autoresearch",
     "human-decision-safe-halt",
+    "human-decision-dismiss",
     "agent-session-cancel",
     "cancel-agent-session",
     "agent.session.cancel",
@@ -415,6 +458,7 @@ _ACTION_ALIASES = {
     "request-fanout",
     "start-operator-session",
     "create-task",
+    "kanban-proposal-dismiss",
     "capture-regression-case",
     "replay-regression-case",
     "update-task",
@@ -505,71 +549,21 @@ _ACTION_ALIASES = {
     "runtime.restart",
     "runtime-resume",
     "runtime.resume",
+    "failure-closeout",
+    "failure.closeout",
+    "failure.materialize.closeout",
+    "failure-closeout-activate",
+    "failure.closeout.activate",
+    "failure.activate.closeout",
+    "real-e2e-run",
+    "real.e2e.run",
+    "real_e2e.run",
+    "run-contract-review",
+    "run.contract.review",
 }
-_CANONICAL_ACTIONS = {
-    "dispatch": "dispatch-task",
-    "rerun-verify": "request-verify",
-    "ship": "ship-candidate",
-    "suspend": "pause-agent",
-    "resume": "resume-agent",
-    "create-issue": "create-task",
-    "update-issue": "update-task",
-    "reply-worker": "worker-reply",
-    "respawn-worker": "worker-respawn",
-    "drain-worker": "worker-drain",
-    "channel.create": "channel-create",
-    "channel-new": "channel-create",
-    "channel.add_member": "channel-invite-member",
-    "channel-add-member": "channel-invite-member",
-    "channel.member.permission": "channel-update-member-permission",
-    "channel.member.permission.update": "channel-update-member-permission",
-    "channel.member.remove": "channel-remove-member",
-    "channel-remove-agent": "channel-remove-member",
-    "channel.delete": "channel-delete",
-    "channel.history.clear": "channel-clear-history",
-    "channel.synthesis.request": "channel-synthesis-request",
-    "channel.mark_read": "channel-mark-read",
-    "channel.handoff": "channel-handoff",
-    "channel.discussion_mode": "channel-discussion-mode",
-    "channel.owner_report.request": "channel-owner-report",
-    "channel-owner-report-request": "channel-owner-report",
-    "cancel-agent-session": "agent-session-cancel",
-    "agent.session.cancel": "agent-session-cancel",
-    "assignment.propose": "assignment-propose",
-    "assignment-intent": "assignment-propose",
-    "automation.run": "automation-run",
-    "automation.run.manual": "automation-run",
-    "run-automation": "automation-run",
-    "maintenance.prepare": "maintenance-prepare",
-    "maintenance_prepare": "maintenance-prepare",
-    "attention.ack": "attention-ack",
-    "attention.snooze": "attention-snooze",
-    "attention.resolve": "attention-resolve",
-    "attention.feedback": "attention-feedback",
-    "attention.escalate": "attention-escalate",
-    "operator.intent.create": "operator-intent-create",
-    "operator.intent.approve": "operator-intent-approve",
-    "operator.intent.reject": "operator-intent-reject",
-    "replan.approve": "replan-approve",
-    "replan.defer": "replan-defer",
-    "replan.reject": "replan-reject",
-    "plan.approve": "plan-approve",
-    "plan.reject": "plan-reject",
-    "workflow.invoke": "workflow-invoke",
-    "workflow.batch.resume": "workflow-batch-resume",
-    "candidate.rework.apply": "candidate-rework-apply",
-    "idea.to_product": "idea-to-product",
-    "productize-idea": "idea-to-product",
-    "provider.dev_chat.start": "provider-dev-chat-start",
-    "provider.dev_chat.send": "provider-dev-chat-send",
-    "provider.dev_chat.stop": "provider-dev-chat-stop",
-    "workflow.config.propose": "workflow-config-propose",
-    "workflow.config.validate": "workflow-config-validate",
-    "workflow.config.apply": "workflow-config-apply",
-    "runtime.stop": "runtime-stop",
-    "runtime.restart": "runtime-restart",
-    "runtime.resume": "runtime-resume",
-}
+# Moved verbatim to operator_contract.CANONICAL_ACTIONS (kept import-aliased
+# so every existing _CANONICAL_ACTIONS reference keeps working).
+_CANONICAL_ACTIONS = CANONICAL_ACTIONS
 _ALLOWED_WEB_ACTIONS = set(_ACTION_ALIASES)
 _CHANNEL_DISCUSSION_MODES = CHANNEL_DISCUSSION_MODES
 _PROJECT_OPERATOR_CONTROLLED_ACTIONS = {
@@ -593,6 +587,10 @@ _PROJECT_OPERATOR_CONTROLLED_ACTIONS = {
     "runtime-stop",
     "runtime-restart",
     "runtime-resume",
+    "failure-closeout",
+    "failure-closeout-activate",
+    "real-e2e-run",
+    "run-contract-review",
 }
 _OPERATOR_MANAGERS: dict[str, OperatorSessionManager] = {}
 _WEB_SESSION_COOKIE = "zf_web_session"
@@ -641,12 +639,98 @@ def create_app(
     snapshot_cache: dict[str, tuple[float, dict[str, Any]]] = {}
     snapshot_lock = threading.Lock()
 
+    # Project-scoped snapshot cache: fingerprint-valid + short TTL, single-flight
+    # per key. The dashboard's slow tail (light median 8.2s, worst 58s in the
+    # timing log) was convoys of identical snapshot builds serializing on the
+    # GIL; repeat pulls of an unchanged log now return in O(1).
+    project_snapshot_cache: dict[str, tuple[float, tuple[int, int], dict[str, Any]]] = {}
+    project_snapshot_locks: dict[str, threading.Lock] = {}
+    project_snapshot_guard = threading.Lock()
+
+    def _with_session_overlay(data: dict[str, Any], token: str | None) -> dict[str, Any]:
+        """Cached snapshots are token-agnostic; only runtime.web_session and
+        actions.requires_token depend on the caller's session — patch those."""
+        web_session = _web_session_projection(token)
+        result = dict(data)
+        runtime = dict(result.get("runtime") or {})
+        runtime["web_session"] = web_session
+        actions = dict(runtime.get("actions") or {})
+        actions["requires_token"] = web_session.get("mode") == "token_required"
+        runtime["actions"] = actions
+        result["runtime"] = runtime
+        return result
+
+    def _build_project_snapshot(sd: Path, *, slice_name: str, cfg, root, key: str, fingerprint) -> dict[str, Any]:
+        with project_snapshot_guard:
+            lock = project_snapshot_locks.setdefault(key, threading.Lock())
+        with lock:
+            entry = project_snapshot_cache.get(key)
+            ttl = max(_snapshot_cache_seconds(), 5.0)
+            if (
+                entry is not None and entry[1] == fingerprint
+                and time.monotonic() - entry[0] <= ttl
+            ):
+                return entry[2]
+            data = _snapshot_slice(
+                sd,
+                slice_name=slice_name,
+                config=cfg,
+                project_root=root,
+                web_session_token=None,
+            )
+            project_snapshot_cache[key] = (time.monotonic(), fingerprint, data)
+            while len(project_snapshot_cache) > 24:
+                project_snapshot_cache.pop(next(iter(project_snapshot_cache)))
+            return data
+
+    def _cached_project_snapshot(sd: Path, *, slice_name: str, cfg, root, token) -> dict[str, Any]:
+        from zf.web.projections.events import _event_log_fingerprint
+
+        key = f"{sd}::{slice_name}"
+        fingerprint = _event_log_fingerprint(sd)
+        ttl = max(_snapshot_cache_seconds(), 5.0)
+        entry = project_snapshot_cache.get(key)
+        now = time.monotonic()
+        if entry is not None and entry[1] == fingerprint:
+            # Fingerprint-identical events: serve immediately. Past the TTL,
+            # non-event inputs (tmux/git probes) may have drifted — refresh in
+            # the background instead of making the request pay (this also lets
+            # startup prewarm survive: a hard TTL evicted it before first use).
+            if now - entry[0] > ttl:
+                threading.Thread(
+                    target=_build_project_snapshot,
+                    kwargs=dict(sd=sd, slice_name=slice_name, cfg=cfg, root=root,
+                                key=key, fingerprint=fingerprint),
+                    name="zf-snapshot-refresh",
+                    daemon=True,
+                ).start()
+            return _with_session_overlay(entry[2], token)
+        data = _build_project_snapshot(
+            sd, slice_name=slice_name, cfg=cfg, root=root, key=key, fingerprint=fingerprint,
+        )
+        return _with_session_overlay(data, token)
+
+    # R6-4: compress large JSON payloads (multi-hundred-KB snapshots). SSE
+    # endpoints (…/stream) are excluded — chunked event delivery must not be
+    # buffered/re-framed by compression.
+    from starlette.middleware.gzip import GZipMiddleware
+
+    class _GzipSkipSSE(GZipMiddleware):
+        async def __call__(self, scope, receive, send):
+            if scope.get("type") == "http" and str(scope.get("path", "")).endswith("/stream"):
+                await self.app(scope, receive, send)
+                return
+            await super().__call__(scope, receive, send)
+
+    app.add_middleware(_GzipSkipSSE, minimum_size=1024)
+
     @app.middleware("http")
     async def web_api_timing_middleware(request: Request, call_next):
         path = request.url.path
         if not should_record_path(path):
             return await call_next(request)
         started = time.perf_counter()
+        app.state.last_api_request_monotonic = time.monotonic()
         status_code = 500
         response = None
         try:
@@ -664,6 +748,39 @@ def create_app(
                 elapsed_ms=elapsed_ms,
                 response_bytes=response_size_from_headers(response.headers) if response is not None else None,
             )
+            if elapsed_ms > _SLOW_REQUEST_WARN_MS:
+                # The timing log had no consumer — regressions stayed invisible
+                # until someone happened to feel the lag. Make slow paths loud.
+                print(
+                    f"warning: slow web request {request.method} {path} "
+                    f"took {elapsed_ms / 1000.0:.1f}s (status {status_code})",
+                    file=sys.stderr,
+                )
+
+    # ---- health / version stamp ----
+    # Two incidents this week served week-old code invisibly (a 22h-old server
+    # process predating a perf merge; a 1.5-day-stale web/dist). /health makes
+    # "which code is this server actually running" a one-curl question.
+
+    @app.get("/health")
+    def health() -> JSONResponse:
+        dist = _react_dist_dir()
+        dist_mtime = ""
+        if dist is not None:
+            try:
+                index = dist / "index.html"
+                dist_mtime = datetime.fromtimestamp(
+                    index.stat().st_mtime, tz=timezone.utc,
+                ).isoformat()
+            except OSError:
+                dist_mtime = ""
+        return JSONResponse({
+            "ok": True,
+            "git_commit": _SERVER_GIT_COMMIT,
+            "started_at": _SERVER_STARTED_AT,
+            "dist_index_mtime": dist_mtime,
+            "state_dir": str(state_dir),
+        })
 
     # ---- HTML root ----
 
@@ -672,7 +789,14 @@ def create_app(
         index = _ui_index()
         if not index.exists():
             raise HTTPException(500, "web UI index missing")
-        return FileResponse(index, media_type="text/html")
+        # no-cache: index.html references hashed bundles; a heuristically
+        # cached index keeps serving week-old JS after a rebuild ("页面还是旧的").
+        # Hashed assets under /assets stay long-cacheable.
+        return FileResponse(
+            index,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
 
     # ---- Snapshot endpoints ----
 
@@ -683,8 +807,8 @@ def create_app(
         return JSONResponse({
             "tasks": _kanban(state_dir, config=config),
             "archive_tasks": _archive_tasks(state_dir, include_active=False),
-            "features": _features(state_dir),
-            "delivery_features": _delivery_features(state_dir),
+            "delivery_features": (_delivery_rows := _delivery_features(state_dir)),
+            "features": _features(state_dir, delivery_features=_delivery_rows),
             "cost": _cost(state_dir),
             "workers": _workers(state_dir, config=config),
             "state_dir": str(state_dir),
@@ -766,14 +890,14 @@ def create_app(
         return JSONResponse(summarize_timings(state_dir, limit=limit))
 
     @app.get("/api/workspace/projects")
-    def workspace_projects() -> JSONResponse:
-        return JSONResponse(_workspace_projects_payload(
+    def workspace_projects(request: Request) -> Response:
+        return _etag_json(_workspace_projects_payload(
             default_project_id=default_project_id,
             default_state_dir=state_dir,
             default_config=config,
             default_project_root=project_root,
             default_project_opened_at=default_project_opened_at,
-        ))
+        ), request)
 
     @app.get("/api/workspace/overview")
     def workspace_overview() -> JSONResponse:
@@ -792,13 +916,97 @@ def create_app(
         if not raw_root:
             return JSONResponse({"ok": False, "status": "invalid", "reason": "root is required"}, status_code=422)
         root = Path(raw_root).expanduser()
+        resolved_root = root.resolve(strict=False)
         exists = root.exists()
+        state_dir_raw = str(payload.get("state_dir") or ".zf").strip() or ".zf"
+        state_dir = Path(state_dir_raw).expanduser()
+        if not state_dir.is_absolute():
+            state_dir = root / state_dir
+        resolved_state_dir = state_dir.resolve(strict=False)
+        diagnostics: list[dict[str, Any]] = []
+        parent = root.parent
+        parent_exists = parent.exists()
+        parent_writable = parent_exists and os.access(parent, os.W_OK)
+        if not parent_exists:
+            diagnostics.append({
+                "severity": "STOP",
+                "kind": "parent_missing",
+                "message": f"parent does not exist: {parent}",
+            })
+        elif not parent_writable:
+            diagnostics.append({
+                "severity": "STOP",
+                "kind": "parent_not_writable",
+                "message": f"parent is not writable: {parent}",
+            })
+        if exists and not root.is_dir():
+            diagnostics.append({
+                "severity": "STOP",
+                "kind": "root_not_directory",
+                "message": f"root is not a directory: {root}",
+            })
+        try:
+            resolved_state_dir.relative_to(resolved_root)
+        except ValueError:
+            diagnostics.append({
+                "severity": "STOP",
+                "kind": "state_dir_outside_root",
+                "message": f"state_dir is outside root: {resolved_state_dir}",
+            })
+        registered_conflicts: list[dict[str, str]] = []
+        try:
+            workspace = str(payload.get("workspace") or "default")
+            for project in WorkspaceRegistry(workspace=workspace).list_projects():
+                try:
+                    project_root_path = Path(project.root).expanduser().resolve(strict=False)
+                except Exception:
+                    continue
+                if project_root_path == resolved_root:
+                    registered_conflicts.append({
+                        "project_id": project.project_id,
+                        "name": project.name,
+                        "root": str(project_root_path),
+                    })
+        except Exception:
+            registered_conflicts = []
+        if registered_conflicts:
+            diagnostics.append({
+                "severity": "WARN",
+                "kind": "root_already_registered",
+                "message": "root is already registered in workspace",
+                "project_ids": [item["project_id"] for item in registered_conflicts],
+            })
+        state_dir_non_empty = resolved_state_dir.is_dir() and any(resolved_state_dir.iterdir())
+        if resolved_state_dir.exists() and not resolved_state_dir.is_dir():
+            diagnostics.append({
+                "severity": "STOP",
+                "kind": "state_dir_not_directory",
+                "message": f"state_dir is not a directory: {resolved_state_dir}",
+            })
+        if state_dir_non_empty:
+            diagnostics.append({
+                "severity": "WARN",
+                "kind": "state_dir_non_empty",
+                "message": f"state_dir already exists and is non-empty: {resolved_state_dir}",
+            })
+        stop = any(str(item.get("severity") or "").upper() == "STOP" for item in diagnostics)
         return JSONResponse({
-            "ok": exists,
-            "status": "valid" if exists else "missing",
+            "ok": exists and not stop,
+            "status": "invalid" if stop else "valid" if exists else "missing",
             "root": str(root.resolve()) if exists else str(root),
+            "root_resolved": str(resolved_root),
             "config_path": str((root / "zf.yaml").resolve()) if exists else str(root / "zf.yaml"),
             "has_config": bool((root / "zf.yaml").exists()) if exists else False,
+            "state_dir": str(state_dir),
+            "state_dir_resolved": str(resolved_state_dir),
+            "state_dir_exists": resolved_state_dir.exists(),
+            "state_dir_non_empty": state_dir_non_empty,
+            "parent_exists": parent_exists,
+            "parent_writable": bool(parent_writable),
+            "can_create": (not exists) and parent_exists and bool(parent_writable) and not stop,
+            "can_register": exists and bool((root / "zf.yaml").exists()) and not stop,
+            "registered_conflicts": registered_conflicts,
+            "diagnostics": diagnostics,
         })
 
     @app.post("/api/workspace/projects/register")
@@ -896,6 +1104,61 @@ def create_app(
         payload = await _request_json(request)
         root = Path(str(payload.get("root") or "")).expanduser()
         preset_arg = str(payload.get("preset") or "") or None
+        flow_kind = str(payload.get("kind") or payload.get("request_kind") or "").strip().lower()
+        if flow_kind and flow_kind not in {"issue", "prd", "refactor"}:
+            return JSONResponse({
+                "ok": False,
+                "status": "invalid_payload",
+                "reason": "kind must be one of issue, prd, refactor",
+            }, status_code=422)
+        generated_flow_kind = ""
+        if flow_kind:
+            project_name = (
+                str(payload.get("name") or payload.get("project_name") or "").strip()
+                or root.expanduser().name
+                or f"{flow_kind}-project"
+            )
+            lanes_raw = payload.get("lanes") or payload.get("requested_lanes")
+            lanes = int(lanes_raw) if lanes_raw else {"issue": 2, "prd": 4, "refactor": 5}[flow_kind]
+            parity_scope_raw = payload.get("parity_scope") or payload.get("parityScope") or []
+            if isinstance(parity_scope_raw, str):
+                parity_scope = tuple(
+                    item.strip() for item in parity_scope_raw.split(",") if item.strip()
+                )
+            elif isinstance(parity_scope_raw, list):
+                parity_scope = tuple(str(item).strip() for item in parity_scope_raw if str(item).strip())
+            else:
+                parity_scope = ()
+            root.mkdir(parents=True, exist_ok=True)
+            docs = draft_flow_spec(
+                kind=flow_kind,
+                source_ref=str(
+                    payload.get("from")
+                    or payload.get("source_ref")
+                    or payload.get("objective_ref")
+                    or ""
+                ),
+                source_root=str(payload.get("source_root") or payload.get("sourceRoot") or ""),
+                target_root=str(
+                    payload.get("target_root")
+                    or payload.get("targetRoot")
+                    or payload.get("target")
+                    or ""
+                ),
+                backend=str(payload.get("backend") or "codex"),
+                lanes=lanes,
+                project_name=project_name,
+                state_dir=str(payload.get("state_dir") or ""),
+                project_root=root,
+                strictness=str(payload.get("strictness") or "standard"),
+                parity_scope=parity_scope,
+            )
+            (root / "zf.yaml").write_text(
+                yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            preset_arg = None
+            generated_flow_kind = flow_kind
         # A validated prod flow archetype → write its yaml directly, skip preset gen.
         if preset_arg:
             from zf.core.profile.flows import is_flow_id, read_flow_yaml
@@ -950,6 +1213,10 @@ def create_app(
             },
             "profile": profile_applied,
             "notes": notes_written,
+            "kind": generated_flow_kind,
+            "config_generated": "typed_flow_spec" if generated_flow_kind else (
+                "preset" if preset_arg else "existing"
+            ),
             "project": (
                 _workspace_project_payload(result.registered_project)
                 if result.registered_project is not None else None
@@ -1014,6 +1281,20 @@ def create_app(
             "project_id": project_id,
         }, status_code=200 if removed else 404)
 
+    def _etag_json(payload, request: Request) -> Response:
+        """JSONResponse + ETag/304. The snapshot cache serves the same object
+        until its fingerprint changes, so repeat polls hit 304 and skip both
+        transfer and client-side parse. Build policy is unchanged (the cache
+        layer still owns rebuilds)."""
+        body = json.dumps(
+            payload, ensure_ascii=False, allow_nan=False,
+            indent=None, separators=(",", ":"),
+        ).encode("utf-8")
+        etag = '"' + hashlib.md5(body).hexdigest() + '"'
+        if request.headers.get("if-none-match") == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+        return Response(content=body, media_type="application/json", headers={"ETag": etag})
+
     @app.get("/api/projects/{project_id}/snapshot")
     def project_snapshot(project_id: str, request: Request) -> JSONResponse:
         context = _resolve_api_project(
@@ -1023,12 +1304,13 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot(
+        return _etag_json(_cached_project_snapshot(
             context.state_dir,
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            slice_name="observability",
+            cfg=context.config,
+            root=context.project_root,
+            token=_web_session_cookie(request),
+        ), request)
 
     @app.get("/api/projects/{project_id}/web/perf/summary")
     def project_web_perf_summary(project_id: str, limit: int = 2000) -> JSONResponse:
@@ -1046,6 +1328,75 @@ def create_app(
             limit=limit,
         ))
 
+    @app.get("/api/projects/{project_id}/health/summary")
+    def project_health_summary(project_id: str) -> JSONResponse:
+        """Cheap canonical header source (doc116 §11.1): runtime truth, one
+        task-count authority (active kanban set), projection freshness.
+        Never touches snapshot aggregation."""
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        sd = context.state_dir
+        runtime_state = _project_runtime_state(sd, config=context.config)
+        counts: dict[str, int] = {}
+        queued = 0
+        try:
+            from zf.core.task.kanban_projection import _is_fanout_queue_wait
+            from zf.core.task.store import TaskStore as _TaskStore
+
+            for task in _TaskStore(sd / "kanban.json").list_all():
+                status = str(getattr(task, "status", "") or "unknown")
+                counts[status] = counts.get(status, 0) + 1
+                # Board 把 fanout 排队(等 lane 空位)投影到 Todo 列(7c0ec4c7,
+                # 刻意:排队≠被问题挡住);header 若按 raw status 数 blocked,
+                # 就会出现"列里没有 Blocked、header 却报 N blocked"的口径打架。
+                # 与 Board 同一判据拆分:queued 单列,blocked 只剩真阻塞。
+                if status == "blocked" and _is_fanout_queue_wait(task):
+                    queued += 1
+        except Exception:
+            counts = {}
+            queued = 0
+        events_path = sd / "events.jsonl"
+        last_event_age_s: float | None = None
+        seq = 0
+        if events_path.exists():
+            try:
+                import time as _time
+
+                last_event_age_s = round(_time.time() - events_path.stat().st_mtime, 1)
+                seq = _line_count(events_path)
+            except OSError:
+                pass
+        try:
+            from zf.web.projections import read_model
+
+            proj = read_model.projection_status(sd)
+            projection = {
+                "state": proj.get("projection_state"),
+                "lag": proj.get("projection_lag"),
+                "tail_behind": proj.get("tail_behind"),
+            }
+        except Exception:
+            projection = {}
+        active = sum(v for k, v in counts.items() if k in ("in_progress", "review", "verify"))
+        blocked = max(0, counts.get("blocked", 0) - queued)
+        return JSONResponse({
+            "schema_version": "project-health.v1",
+            "runtime_state": runtime_state,
+            "live": runtime_state == "running",
+            "seq": seq,
+            "last_event_age_s": last_event_age_s,
+            "task_counts": counts,
+            "active": active,
+            "queued": queued,
+            "blocked": blocked,
+            "projection": projection,
+        })
+
     @app.get("/api/projects/{project_id}/snapshot/light")
     def project_snapshot_light(project_id: str, request: Request) -> JSONResponse:
         context = _resolve_api_project(
@@ -1055,13 +1406,13 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot_slice(
+        return _etag_json(_cached_project_snapshot(
             context.state_dir,
             slice_name="light",
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            cfg=context.config,
+            root=context.project_root,
+            token=_web_session_cookie(request),
+        ), request)
 
     @app.get("/api/projects/{project_id}/snapshot/board")
     def project_snapshot_board(project_id: str, request: Request) -> JSONResponse:
@@ -1123,12 +1474,13 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
+        delivery_rows = _safe_snapshot_projection(
+            "delivery_features", [], lambda: _delivery_features(context.state_dir)
+        )
         return JSONResponse({
-            "delivery_features": _safe_snapshot_projection(
-                "delivery_features", [], lambda: _delivery_features(context.state_dir)
-            ),
+            "delivery_features": delivery_rows,
             "features": _safe_snapshot_projection(
-                "features", [], lambda: _features(context.state_dir)
+                "features", [], lambda: _features(context.state_dir, delivery_features=delivery_rows)
             ),
         })
 
@@ -1147,6 +1499,28 @@ def create_app(
             project_root=context.project_root,
             project_id=project_id,
         ))
+
+    @app.get("/api/projects/{project_id}/kanban-agent/pending-proposals")
+    def project_kanban_pending_proposals(project_id: str) -> JSONResponse:
+        # chat-e2e F2: proposals must survive the originating browser session.
+        from zf.runtime.kanban_proposals import pending_kanban_proposals
+
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        try:
+            events = EventLog(context.state_dir / "events.jsonl").read_all()
+        except Exception:
+            events = []
+        return JSONResponse({
+            "schema_version": "kanban-agent.pending-proposals.v1",
+            "project_id": project_id,
+            "items": pending_kanban_proposals(events),
+        })
 
     @app.get("/api/projects/{project_id}/tasks/{task_id}")
     def project_task_detail(project_id: str, task_id: str) -> JSONResponse:
@@ -1311,6 +1685,48 @@ def create_app(
             project_root=context.project_root,
         ))
 
+    @app.get("/api/projects/{project_id}/run-contract")
+    def project_run_contract(project_id: str) -> JSONResponse:
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        from zf.runtime.delivery_projection import project_run_contract
+
+        return JSONResponse(project_run_contract(context.state_dir))
+
+    @app.get("/api/projects/{project_id}/failure-candidates")
+    def project_failure_candidates(project_id: str) -> JSONResponse:
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        from zf.runtime.delivery_projection import project_failure_candidates
+
+        return JSONResponse(project_failure_candidates(context.state_dir))
+
+    @app.get("/api/projects/{project_id}/real-e2e-matrix")
+    def project_real_e2e_matrix(project_id: str) -> JSONResponse:
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        from zf.runtime.delivery_projection import project_real_e2e_matrix
+
+        return JSONResponse(project_real_e2e_matrix(
+            context.state_dir,
+            project_root=context.project_root,
+        ))
+
     @app.get("/api/projects/{project_id}/run-goal")
     def project_run_goal(project_id: str) -> JSONResponse:
         context = _resolve_api_project(
@@ -1336,6 +1752,161 @@ def create_app(
             default_project_root=project_root,
         )
         return JSONResponse(_workflow_graph(context.state_dir, config=context.config))
+
+    @app.get("/api/projects/{project_id}/config/render")
+    def project_config_render(project_id: str) -> JSONResponse:
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        if context.config is None:
+            raise HTTPException(404, f"project {project_id!r} has no loaded zf.yaml")
+        from zf.core.config.render import build_config_inspection_report
+
+        return JSONResponse(build_config_inspection_report(
+            context.config,
+            config_path=context.config_path,
+            project_root=context.project_root,
+            state_dir=context.state_dir,
+        ))
+
+    @app.post("/api/projects/{project_id}/workflow-intake")
+    async def project_workflow_intake(
+        project_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        auth_error = _web_mutation_auth_error(
+            "workflow-intake",
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+            web_session_token=_web_session_cookie(request),
+        )
+        if auth_error is not None:
+            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        payload = await _request_json(request)
+        request_id = str(payload.get("request_id") or "")
+        output = payload.get("output")
+        if not output and request_id:
+            output = context.project_root / "docs" / "intake" / f"{request_id}.md"
+        result = build_flow_intake(
+            kind=str(payload.get("kind") or payload.get("request_kind") or "auto"),
+            source_ref=str(payload.get("from") or payload.get("source_ref") or ""),
+            objective=str(payload.get("objective") or payload.get("message") or payload.get("reason") or ""),
+            source_root=str(payload.get("source_root") or ""),
+            target_root=str(payload.get("target_root") or payload.get("target") or ""),
+            backend=str(payload.get("backend") or "codex"),
+            lanes=int(payload.get("lanes") or payload.get("requested_lanes") or 2),
+            project_id=project_id,
+            project_name=str(payload.get("project_name") or ""),
+            request_id=request_id,
+            source=str(payload.get("source") or "web"),
+            created_by=str(payload.get("created_by") or "web"),
+            channel_id=str(payload.get("channel_id") or ""),
+            thread_id=str(payload.get("thread_id") or ""),
+            output=Path(str(output)).expanduser() if output else None,
+        )
+        return JSONResponse({"ok": True, "status": "intake_created", "result": result})
+
+    @app.post("/api/projects/{project_id}/workflow-classify")
+    async def project_workflow_classify(
+        project_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        auth_error = _web_mutation_auth_error(
+            "workflow-classify",
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+            web_session_token=_web_session_cookie(request),
+        )
+        if auth_error is not None:
+            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
+        _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        payload = await _request_json(request)
+        intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
+        if not intake_ref:
+            return JSONResponse({
+                "ok": False,
+                "status": "invalid_payload",
+                "reason": "intake_ref is required",
+            }, status_code=422)
+        result = build_flow_intent(
+            intake_path=Path(intake_ref).expanduser(),
+            explicit_kind=str(payload.get("kind") or "auto"),
+        )
+        return JSONResponse({"ok": True, "status": "classified", "result": result})
+
+    @app.post("/api/projects/{project_id}/workflow-submit")
+    async def project_workflow_submit(
+        project_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        auth_error = _web_mutation_auth_error(
+            "workflow-submit",
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+            web_session_token=_web_session_cookie(request),
+        )
+        if auth_error is not None:
+            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        payload = await _request_json(request)
+        intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
+        if not intake_ref:
+            return JSONResponse({
+                "ok": False,
+                "status": "invalid_payload",
+                "reason": "intake_ref is required",
+            }, status_code=422)
+        config_ref = Path(str(payload.get("config") or payload.get("config_ref") or context.config_path)).expanduser()
+        apply = bool(payload.get("apply"))
+        builder = apply_flow_submit if apply else build_flow_submit_preview
+        result = builder(
+            config_path=config_ref,
+            intake_path=Path(intake_ref).expanduser(),
+            flow_kind=str(payload.get("kind") or ""),
+            task_id=str(payload.get("task_id") or ""),
+            pattern_id=str(payload.get("pattern_id") or ""),
+            requested_by=str(payload.get("requested_by") or "web"),
+            reason=str(payload.get("reason") or ""),
+            allow_missing_env=bool(payload.get("allow_missing_env")),
+        )
+        code = 202 if apply and result.get("status") != "STOP" else 200
+        if result.get("status") == "STOP":
+            code = 409
+        return JSONResponse({
+            "ok": result.get("status") != "STOP",
+            "status": result.get("status"),
+            "applied": apply,
+            "result": result,
+        }, status_code=code)
 
     @app.get("/api/projects/{project_id}/regression-cases")
     def project_regression_cases(project_id: str, feature_id: str = "") -> JSONResponse:
@@ -1663,8 +2234,11 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
+        from zf.web.projections.events import events_read_days as _erd
+
         return JSONResponse(project_automations(
             context.state_dir,
+            events=_erd(context.state_dir, 14, config=context.config),
             project_id=project_id,
             project_name=(
                 context.config.project.name
@@ -1681,7 +2255,9 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(project_agent_live(context.state_dir))
+        from zf.web.projections.events import events_read_days as _erd
+
+        return JSONResponse(project_agent_live(context.state_dir, events=_erd(context.state_dir, 7, config=context.config)))
 
     @app.get("/api/projects/{project_id}/agent-cockpit")
     def project_agent_cockpit_page(project_id: str) -> JSONResponse:
@@ -1697,7 +2273,9 @@ def create_app(
             config=context.config,
             project_root=context.project_root,
         )
-        return JSONResponse(project_agent_cockpit(context.state_dir, agents=agents))
+        from zf.web.projections.events import events_read_days as _erd
+
+        return JSONResponse(project_agent_cockpit(context.state_dir, events=_erd(context.state_dir, 7, config=context.config), agents=agents))
 
     @app.get("/api/projects/{project_id}/assignment-routes")
     def project_assignment_routes_page(project_id: str) -> JSONResponse:
@@ -1810,6 +2388,18 @@ def create_app(
             context.state_dir,
             project_id=project_id,
         ))
+
+    @app.get("/api/projects/{project_id}/workflow-spine")
+    def project_workflow_spine_page(project_id: str) -> JSONResponse:
+        """131-P0-5:shadow spine 四投影的只读解释(WebKanban health/explain)。"""
+        context = _resolve_api_project(
+            project_id,
+            default_project_id=default_project_id,
+            default_state_dir=state_dir,
+            default_config=config,
+            default_project_root=project_root,
+        )
+        return JSONResponse(read_spine_explain(context.state_dir))
 
     @app.get("/api/projects/{project_id}/mutation-audit")
     def project_mutation_audit_page(project_id: str) -> JSONResponse:
@@ -2380,6 +2970,27 @@ def create_app(
             project_root=project_root,
         ))
 
+    @app.get("/api/run-contract")
+    def run_contract_projection() -> JSONResponse:
+        from zf.runtime.delivery_projection import project_run_contract
+
+        return JSONResponse(project_run_contract(state_dir))
+
+    @app.get("/api/failure-candidates")
+    def failure_candidates_projection() -> JSONResponse:
+        from zf.runtime.delivery_projection import project_failure_candidates
+
+        return JSONResponse(project_failure_candidates(state_dir))
+
+    @app.get("/api/real-e2e-matrix")
+    def real_e2e_matrix_projection() -> JSONResponse:
+        from zf.runtime.delivery_projection import project_real_e2e_matrix
+
+        return JSONResponse(project_real_e2e_matrix(
+            state_dir,
+            project_root=project_root,
+        ))
+
     @app.get("/api/run-goal")
     def run_goal_projection() -> JSONResponse:
         from zf.runtime.run_manager import build_run_goal_projection
@@ -2560,6 +3171,74 @@ def create_app(
     ) -> JSONResponse:
         payload = await _request_json(request)
         payload["channel_id"] = channel_id
+        if config is not None and (project_root / "zf.yaml").exists():
+            auth_error = _web_mutation_auth_error(
+                "workflow-submit",
+                authorization=authorization,
+                x_zf_web_token=x_zf_web_token,
+                web_session_token=_web_session_cookie(request),
+            )
+            if auth_error is not None:
+                return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
+            request_id = str(payload.get("request_id") or x_idempotency_key or "")
+            intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
+            if not intake_ref:
+                intake = build_flow_intake(
+                    kind=str(payload.get("kind") or payload.get("request_kind") or "auto"),
+                    source_ref=str(payload.get("from") or payload.get("source_ref") or ""),
+                    objective=str(payload.get("objective") or payload.get("reason") or payload.get("summary") or ""),
+                    source_root=str(payload.get("source_root") or ""),
+                    target_root=str(payload.get("target_root") or payload.get("target") or ""),
+                    backend=str(payload.get("backend") or "codex"),
+                    lanes=int(payload.get("lanes") or payload.get("requested_lanes") or 2),
+                    project_id=default_project_id,
+                    request_id=request_id,
+                    source="channel",
+                    created_by=str(payload.get("requested_by") or "channel"),
+                    channel_id=channel_id,
+                    thread_id=str(payload.get("thread_id") or ""),
+                    output=(project_root / "docs" / "intake" / f"{request_id}.md") if request_id else None,
+                )
+                intake_ref = str(intake.get("intake_ref") or "")
+                build_flow_intent(intake_path=Path(intake_ref), explicit_kind=str(payload.get("kind") or "auto"))
+            result = apply_flow_submit(
+                config_path=project_root / "zf.yaml",
+                intake_path=Path(intake_ref),
+                flow_kind=str(payload.get("kind") or ""),
+                task_id=str(payload.get("task_id") or ""),
+                pattern_id=str(payload.get("pattern_id") or ""),
+                requested_by=str(payload.get("requested_by") or "channel"),
+                reason=str(payload.get("reason") or "channel workflow request"),
+                allow_missing_env=bool(payload.get("allow_missing_env")),
+            )
+            code = 202 if result.get("status") != "STOP" else 409
+            if result.get("status") != "STOP":
+                EventWriter(event_log_from_project(state_dir, config=config)).append(ZfEvent(
+                    type="channel.state_update.posted",
+                    actor="web",
+                    task_id=str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
+                    correlation_id=channel_id,
+                    payload={
+                        "channel_id": channel_id,
+                        "thread_id": str(payload.get("thread_id") or "main"),
+                        "status": "workflow_submitted",
+                        "summary": "workflow submit accepted and invoke requested",
+                        "task_id": str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
+                        "refs": {
+                            "workflow_invoke_event_id": str(result.get("workflow_invoke_event_id") or ""),
+                            "workflow_input_manifest_ref": str((result.get("payload") or {}).get("workflow_input_manifest_ref") or ""),
+                            "workflow_prompt_ref": str((result.get("payload") or {}).get("workflow_prompt_ref") or ""),
+                        },
+                        "source": "workflow-submit",
+                    },
+                ))
+            return JSONResponse({
+                "ok": result.get("status") != "STOP",
+                "status": result.get("status"),
+                "action": "workflow-submit",
+                "requested_action": "workflow-request",
+                "result": result,
+            }, status_code=code)
         result = _web_action(
             state_dir,
             "workflow-invoke",
@@ -2921,7 +3600,92 @@ def create_app(
         index = _ui_index()
         if not index.exists():
             raise HTTPException(500, "web UI index missing")
-        return FileResponse(index, media_type="text/html")
+        return FileResponse(
+            index,
+            media_type="text/html",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    def _prewarm_recent_projects() -> None:
+        """Warm the event memo + derived caches for recently opened projects.
+
+        Cold start on a 30k-event log costs ~12s (one-time full decode + leaf
+        index); without prewarm the first page load after a server restart eats
+        it. Background daemon, best-effort, one project at a time (GIL-bound
+        work — do not parallelize).
+        """
+        try:
+            from zf.core.workspace import WorkspaceRegistry, project_lifecycle
+            from zf.web.projections.events import (
+                _events_with_seq,
+                payload_search_texts,
+                task_event_index,
+            )
+
+            targets: list[tuple[str, Path]] = []
+            if default_project_enabled and state_dir.exists():
+                targets.append(("default", state_dir))
+            try:
+                rows = sorted(
+                    WorkspaceRegistry().list_projects(),
+                    key=lambda item: str(getattr(item, "last_opened_at", "") or ""),
+                    reverse=True,
+                )
+            except Exception:
+                rows = []
+            row_meta: dict[str, tuple] = {}
+            for row in rows[:4]:
+                lifecycle = project_lifecycle(row)
+                if lifecycle.can_open_board and lifecycle.state_dir_resolved:
+                    targets.append((row.project_id, Path(lifecycle.state_dir_resolved)))
+                    row_meta[str(lifecycle.state_dir_resolved)] = (
+                        getattr(row, "config_path", ""), getattr(row, "root", ""),
+                    )
+            seen: set[str] = set()
+
+            def _yield_to_requests() -> None:
+                # GIL courtesy: prewarming a 30k-event project starves a live
+                # request (observed: a cold project paid 20s queued behind
+                # prewarm). Wait for 2s of API silence before each project.
+                deadline = time.monotonic() + 60
+                while time.monotonic() < deadline:
+                    last = getattr(app.state, "last_api_request_monotonic", 0.0)
+                    if time.monotonic() - last >= 2.0:
+                        return
+                    time.sleep(0.5)
+
+            for name, sd in targets:
+                _yield_to_requests()
+                key = str(sd)
+                if key in seen or not sd.exists():
+                    continue
+                seen.add(key)
+                try:
+                    cfg = config if name == "default" else None
+                    root = project_root if name == "default" else None
+                    meta = row_meta.get(str(sd))
+                    if cfg is None and meta and meta[0]:
+                        try:
+                            from zf.core.config.loader import load_config as _load
+
+                            cfg = _load(Path(meta[0]))
+                            root = Path(meta[1]) if meta[1] else None
+                        except Exception:
+                            cfg = None
+                    _events_with_seq(sd, config=cfg)
+                    payload_search_texts(sd, config=cfg)
+                    task_event_index(sd, config=cfg)
+                    _cached_project_snapshot(
+                        sd, slice_name="light", cfg=cfg, root=root, token=None,
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    threading.Thread(
+        target=_prewarm_recent_projects, name="zf-web-prewarm", daemon=True,
+    ).start()
 
     return app
 
@@ -3188,9 +3952,13 @@ def _snapshot(
         "archive_tasks": _safe_snapshot_projection(
             "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)
         ),
-        "features": _safe_snapshot_projection("features", [], lambda: _features(state_dir)),
-        "delivery_features": _safe_snapshot_projection(
+        # R3: delivery features computed once and shared with the features
+        # section (each independently ran the full fallback scan, 2x1.4s).
+        "delivery_features": (_delivery_shared := _safe_snapshot_projection(
             "delivery_features", [], lambda: _delivery_features(state_dir)
+        )),
+        "features": _safe_snapshot_projection(
+            "features", [], lambda: _features(state_dir, delivery_features=_delivery_shared)
         ),
         "metrics_snapshot": _safe_snapshot_projection(
             "metrics_snapshot", {}, lambda: _metrics_snapshot_projection(state_dir)
@@ -3215,6 +3983,7 @@ def _snapshot(
             [],
             lambda: project_automations(
                 state_dir,
+                events=_events_read_days(state_dir, 14, config=config),
                 project_id=_default_project_id(config=config, project_root=project_root),
                 project_name=(
                     config.project.name
@@ -3241,13 +4010,13 @@ def _snapshot(
         "agents": agents,
         "agent_view": agent_view,
         "agent_live": _safe_snapshot_projection(
-            "agent_live", {}, lambda: project_agent_live(state_dir)
+            "agent_live", {}, lambda: project_agent_live(state_dir, events=_events_read_days(state_dir, 7, config=config))
         ),
         "assignment_routes": _safe_snapshot_projection(
             "assignment_routes", {}, lambda: project_assignment_routes(state_dir)
         ),
         "agent_cockpit": _safe_snapshot_projection(
-            "agent_cockpit", {}, lambda: project_agent_cockpit(state_dir, agents=agents)
+            "agent_cockpit", {}, lambda: project_agent_cockpit(state_dir, events=_events_read_days(state_dir, 7, config=config), agents=agents)
         ),
         "recovery": _safe_snapshot_projection(
             "recovery", {}, lambda: project_recovery_catalog(state_dir)
@@ -3353,9 +4122,11 @@ def _snapshot_slice(
             "archive_tasks": _safe_snapshot_projection(
                 "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)
             ),
-            "features": _safe_snapshot_projection("features", [], lambda: _features(state_dir)),
-            "delivery_features": _safe_snapshot_projection(
+            "delivery_features": (_light_delivery := _safe_snapshot_projection(
                 "delivery_features", [], lambda: _delivery_features(state_dir)
+            )),
+            "features": _safe_snapshot_projection(
+                "features", [], lambda: _features(state_dir, delivery_features=_light_delivery)
             ),
             "channels": _safe_snapshot_projection(
                 "channels", [], lambda: _snapshot_channel_list(state_dir, config=config)
@@ -3406,10 +4177,10 @@ def _snapshot_slice(
                 ),
             ),
             "agent_live": _safe_snapshot_projection(
-                "agent_live", {}, lambda: project_agent_live(state_dir)
+                "agent_live", {}, lambda: project_agent_live(state_dir, events=_events_read_days(state_dir, 7, config=config))
             ),
             "agent_cockpit": _safe_snapshot_projection(
-                "agent_cockpit", {}, lambda: project_agent_cockpit(state_dir, agents=agents)
+                "agent_cockpit", {}, lambda: project_agent_cockpit(state_dir, events=_events_read_days(state_dir, 7, config=config), agents=agents)
             ),
             "runtime": _safe_snapshot_projection(
                 "runtime",
@@ -3514,6 +4285,44 @@ def _empty_runtime_projection() -> dict:
     }
 
 
+def _project_runtime_state(state_dir: Path, *, config: ZfConfig | None = None) -> str:
+    """Truthful project runtime state for read projections.
+
+    "archived" (state_dir carries an .archived marker), "running" (tmux session
+    alive), else "stopped". Costs at most one `tmux has-session` per call.
+    """
+    if ".archived" in state_dir.name:
+        return "archived"
+    # Activity beats session probing: configs parameterize tmux_session via env
+    # (${CANGJIE_ZF_TMUX_SESSION:-...}) that this server never sees, so probing
+    # the config default can mislabel a running run as stopped. A live
+    # orchestrator appends events continuously.
+    import time as _time
+
+    age_s: float | None = None
+    try:
+        age_s = _time.time() - (state_dir / "events.jsonl").stat().st_mtime
+    except OSError:
+        age_s = None
+    if age_s is not None and age_s < 600:
+        return "running"
+    session = ""
+    try:
+        session = str(config.session.tmux_session or "") if config is not None else ""
+    except AttributeError:
+        session = ""
+    if session and session != "zf":
+        try:
+            from zf.core.workspace.runtime_manager import RuntimeManager
+
+            return RuntimeManager().status(
+                state_dir=state_dir, config=config, project_id="",
+            ).state
+        except Exception:
+            return "unknown"
+    return "stopped" if age_s is not None else "unknown"
+
+
 def _light_runtime_projection(
     state_dir: Path,
     *,
@@ -3523,8 +4332,12 @@ def _light_runtime_projection(
     runtime = _empty_runtime_projection()
     events_path = state_dir / "events.jsonl"
     web_session = _web_session_projection(web_session_token)
+    runtime_state = _project_runtime_state(state_dir, config=config)
     runtime.update({
-        "live": True,
+        # Truthful liveness (was hardcoded True): an archived project rendering
+        # "live" with running workers is a trust killer (F0-B).
+        "live": runtime_state in ("running", "unknown"),
+        "runtime_state": runtime_state,
         "mode": "snapshot-light",
         "state_dir": str(state_dir),
         "seq": _line_count(events_path) if events_path.exists() else 0,
@@ -3789,6 +4602,7 @@ def _agent_view(
             state_dir,
             config=config,
             project_root=project_root,
+            events=_events_read_days(state_dir, 1, config=config),
         )
     except Exception:
         dispatch_diagnostics = {
@@ -4082,6 +4896,7 @@ def _agents(
             ),
         })
 
+    _freshness_index = None  # shared per-request task/actor event index (RF-1)
     for role in roles:
         instance_id = str(role.get("instance_id") or "")
         workdir = workdirs.get(instance_id, {})
@@ -4095,11 +4910,15 @@ def _agents(
         if active_task:
             try:
                 from zf.runtime.long_horizon import project_state_freshness
+                from zf.web.projections.events import task_event_index
 
+                if _freshness_index is None:
+                    _freshness_index = task_event_index(state_dir, config=config)
                 freshness = project_state_freshness(
                     state_dir,
                     task_id=active_task,
                     actor=instance_id,
+                    index=_freshness_index,
                 )
             except Exception:
                 freshness = {}
@@ -4177,6 +4996,15 @@ def _agents(
                 project_root=project_root,
             ),
         })
+    # Liveness gate (F0-B): role_sessions.yaml persists last-known worker
+    # states; on an archived/stopped project those must not render as current
+    # ("19 workers running" on an archive). Annotate instead of erasing so the
+    # UI can show "last known (stale)".
+    project_runtime_state = _project_runtime_state(state_dir, config=config)
+    if project_runtime_state != "running":
+        for worker in out:
+            worker["stale"] = True
+            worker["project_runtime_state"] = project_runtime_state
     return out
 
 
@@ -5259,7 +6087,7 @@ def _web_action(
         )
         return response
 
-    if canonical_action == "create-task":
+    if canonical_action in ("create-task", "kanban-proposal-dismiss"):
         response = ControlledActionService(
             state_dir,
             writer,
@@ -6295,6 +7123,7 @@ def _headless_thinking_level(payload: dict) -> str:
 
 
 _HEADLESS_STREAM_FLUSH_INTERVAL_S = 0.15
+_KANBAN_AGENT_SIDECAR_THRESHOLD_BYTES = 4 * 1024
 
 
 def _headless_stream_flush_interval_s() -> float:
@@ -6308,6 +7137,18 @@ def _headless_stream_flush_interval_s() -> float:
     except ValueError:
         return _HEADLESS_STREAM_FLUSH_INTERVAL_S
     return min(max(value, 0.05), 2.0)
+
+
+def _kanban_agent_sidecar_threshold_bytes() -> int:
+    raw = str(
+        os.environ.get("ZF_KANBAN_AGENT_SIDECAR_THRESHOLD_BYTES")
+        or _KANBAN_AGENT_SIDECAR_THRESHOLD_BYTES
+    ).strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return _KANBAN_AGENT_SIDECAR_THRESHOLD_BYTES
+    return max(1, value)
 
 
 class _HeadlessDeltaEmitter:
@@ -6384,6 +7225,10 @@ class _HeadlessDeltaEmitter:
         self._flush_if_due()
 
     def _emit_one(self, message: HeadlessMessage) -> None:
+        # doc 106 B axis: turn deltas are ephemeral UI transport — published
+        # to the LiveDeltaBus (SSE merges them), never to events.jsonl. The
+        # committed truth is kanban.agent.reply (full answer). The old dual
+        # kanban.agent.message.delta emit is gone entirely (pure duplicate).
         self.delta_seq += 1
         payload = {
             "turn_id": self.turn_id,
@@ -6394,46 +7239,17 @@ class _HeadlessDeltaEmitter:
             "seq": self.delta_seq,
             **_headless_message_event_payload(message),
         }
-        try:
-            from zf.runtime.agent_session_output import apply_agent_output_contract
-
-            event_log_path = getattr(getattr(self.writer, "event_log", None), "path", None)
-            if event_log_path is not None:
-                payload = apply_agent_output_contract(
-                    Path(event_log_path).parent,
-                    payload,
-                    text_keys=("content", "output"),
-                    metadata={
-                        "source": "kanban-agent.headless",
-                        "producer": "web",
-                        "run_id": self.turn_id,
-                        "turn_id": self.turn_id,
-                        "thread_id": self.thread_key,
-                        "part_id": f"kanban-delta-{self.delta_seq:04d}",
-                        "message_type": message.type,
-                        "seq": self.delta_seq,
-                        "project_id": self.project_id,
-                        "conversation_id": self.conversation_id,
-                        "task_id": self.task_id or "",
-                    },
-                )
-        except Exception:
-            pass
-        self.writer.emit(
+        bus = live_delta_bus_for_writer(self.writer)
+        if bus is None:
+            return
+        bus.publish(
             "kanban.agent.turn.delta",
+            payload,
+            key=self.turn_id,
             actor="web",
             task_id=self.task_id,
             causation_id=self.turn_started.id,
             correlation_id=self.user_message.correlation_id,
-            payload=payload,
-        )
-        self.writer.emit(
-            "kanban.agent.message.delta",
-            actor="web",
-            task_id=self.task_id,
-            causation_id=self.turn_started.id,
-            correlation_id=self.user_message.correlation_id,
-            payload={**payload, "source_event_type": "kanban.agent.turn.delta"},
         )
 
 
@@ -6534,6 +7350,8 @@ def _run_headless_kanban_agent_turn(
     stream_flush_interval_s = _headless_stream_flush_interval_s()
     agent_stream = AgentSessionStreamEmitter(
         writer=writer,
+        # wrapped run: kanban.agent.reply commits the full answer
+        commit_final_text=False,
         identity=AgentSessionIdentity(
             run_id=turn_id,
             thread_id=run_thread_id or thread_key or "main",
@@ -6691,6 +7509,7 @@ def _run_headless_kanban_agent_turn(
             state_dir,
             reply,
             text_keys=("answer", "error"),
+            threshold_bytes=_kanban_agent_sidecar_threshold_bytes(),
             metadata={
                 "source": "kanban-agent.headless",
                 "producer": "web",
@@ -6931,48 +7750,26 @@ def _headless_message_event_payload(message: HeadlessMessage) -> dict[str, Any]:
     return payload
 
 
+# Extraction logic moved verbatim to zf/web/proposal_extraction.py so the
+# Feishu specialist conversation (no-fastapi CLI context) shares the exact
+# same gates. These wrappers keep the historical server-local names and bind
+# the server's full config-aware payload validator.
 def _headless_action_proposal(
     answer: str,
     *,
     user_message: str = "",
     proposal_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    for candidate in _headless_json_candidates(answer):
-        try:
-            decoded = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        proposal = _normalize_headless_action_proposal(
-            decoded,
-            user_message=user_message,
-            proposal_context=proposal_context or {},
-        )
-        if proposal is not None:
-            return proposal
-    return None
+    return extract_action_proposal(
+        answer,
+        user_message=user_message,
+        proposal_context=proposal_context,
+        validate_payload=_validate_action_payload,
+    )
 
 
 def _headless_json_candidates(text: str) -> list[str]:
-    stripped = str(text or "").strip()
-    candidates: list[str] = []
-    if stripped:
-        candidates.append(stripped)
-    for marker in ("```json", "```JSON", "```"):
-        start = stripped.find(marker)
-        while start >= 0:
-            body_start = start + len(marker)
-            end = stripped.find("```", body_start)
-            if end < 0:
-                break
-            body = stripped[body_start:end].strip()
-            if body:
-                candidates.append(body)
-            start = stripped.find(marker, end + 3)
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if 0 <= start < end:
-        candidates.append(stripped[start:end + 1])
-    return candidates
+    return proposal_json_candidates(text)
 
 
 def _normalize_headless_action_proposal(
@@ -6981,51 +7778,12 @@ def _normalize_headless_action_proposal(
     user_message: str = "",
     proposal_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
-    if not isinstance(decoded, dict):
-        return None
-    proposal = decoded.get("action_proposal") or decoded.get("proposal") or decoded
-    if not isinstance(proposal, dict):
-        return None
-    requested_action = str(
-        proposal.get("action")
-        or proposal.get("requested_action")
-        or proposal.get("name")
-        or ""
-    ).strip()
-    if not requested_action:
-        return None
-    action = _canonical_action(requested_action)
-    if action not in KANBAN_AGENT_ALLOWED_ACTIONS:
-        return None
-    if action in {"chat-orchestrator", "start-operator-session"}:
-        return None
-    if action == "create-task" and not _message_allows_create_task_proposal(user_message):
-        return None
-    if action == "idea-to-product" and not _message_allows_idea_to_product_proposal(user_message):
-        return None
-    payload = proposal.get("payload") or proposal.get("params") or {}
-    if not isinstance(payload, dict):
-        return None
-    payload = dict(payload)
-    for key, value in (proposal_context or {}).items():
-        if value and not payload.get(key):
-            payload[key] = value
-    validation_error = _validate_action_payload(action, payload)
-    return {
-        "action": action,
-        "requested_action": requested_action,
-        "payload": redact_obj(payload),
-        "reason": str(proposal.get("reason") or proposal.get("summary") or ""),
-        "confidence": str(proposal.get("confidence") or ""),
-        "valid": not validation_error,
-        "validation_error": validation_error,
-        "mutates_task_state": action in {
-            "create-task",
-            "update-task",
-            "archive-task",
-            "link-evidence",
-        },
-    }
+    return normalize_action_proposal(
+        decoded,
+        user_message=user_message,
+        proposal_context=proposal_context,
+        validate_payload=_validate_action_payload,
+    )
 
 
 

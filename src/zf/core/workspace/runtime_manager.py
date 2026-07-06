@@ -83,7 +83,9 @@ def _tmux_session_name(*, config: ZfConfig | None, project_id: str) -> str:
 def _tmux_has_session(session: str) -> bool:
     try:
         result = subprocess.run(
-            ["tmux", "has-session", "-t", session],
+            # "=" forces exact-name match; bare -t does prefix matching and
+            # "zf" would match any zf-* session (false "running").
+            ["tmux", "has-session", "-t", f"={session}"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=False,

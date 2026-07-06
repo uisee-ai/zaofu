@@ -3,7 +3,7 @@
 Periodic scan over recent events to spot **known zaofu kernel failure
 patterns** (e.g. ship loop, respawn cascade, judge whack-a-mole). On
 match the orchestrator emits ``zaofu.bug.detected`` with structured
-``cangjie_state_snapshot`` so the operator playbook (β-2) and the
+``run_state_snapshot`` so the operator playbook (β-2) and the
 ``zf bug-fix-cycle`` CLI (β-3) can drive an off-line fix cycle.
 
 Validate-First Discipline (CLAUDE.md): these signatures are seeded
@@ -32,7 +32,12 @@ class SignatureMatch:
     confidence: str                      # "high" | "medium" | "low"
     evidence_event_ids: list[str]        # the raw events that matched
     suggested_fix_area: str              # file:symbol hint
-    cangjie_state_snapshot: dict = field(default_factory=dict)
+    run_state_snapshot: dict = field(default_factory=dict)
+
+    @property
+    def cangjie_state_snapshot(self) -> dict:
+        """Legacy alias for historical Cangjie-specific callers/tests."""
+        return self.run_state_snapshot
 
 
 def _safe_payload(event: ZfEvent) -> dict:
@@ -64,7 +69,7 @@ def ship_block_loop_signature(events: list[ZfEvent]) -> SignatureMatch | None:
                 confidence="high" if len(group) >= 3 else "medium",
                 evidence_event_ids=[e.id for e in group],
                 suggested_fix_area="src/zf/runtime/ship.py",
-                cangjie_state_snapshot={
+                run_state_snapshot={
                     "pdd_id": pdd_id,
                     "blockers": list(blockers),
                     "occurrence_count": len(group),
@@ -95,7 +100,7 @@ def respawn_failure_cascade_signature(
                 confidence="high" if len(group) >= 3 else "medium",
                 evidence_event_ids=[e.id for e in group],
                 suggested_fix_area="src/zf/runtime/spawn_coordinator.py",
-                cangjie_state_snapshot={
+                run_state_snapshot={
                     "instance_id": instance_id,
                     "occurrence_count": len(group),
                 },
@@ -130,7 +135,7 @@ def judge_failure_loop_signature(events: list[ZfEvent]) -> SignatureMatch | None
                         "src/zf/core/verification/discriminator.py "
                         "or judge prompt template"
                     ),
-                    cangjie_state_snapshot={
+                    run_state_snapshot={
                         "task_id": task_id,
                         "occurrence_count": len(group),
                         "rejection_summaries": summaries,

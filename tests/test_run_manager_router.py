@@ -6,6 +6,7 @@ from zf.runtime.run_manager_router import (
     classify_recovery_context,
     decide_action_policy,
     preflight_action,
+    recovery_closeout_contract_report,
     route_for_safe_action,
 )
 
@@ -193,3 +194,15 @@ def test_no_progress_projection_trips_stale_completion_loop() -> None:
     assert projection["status"] == "tripped"
     assert projection["items"][0]["count"] == 3
     assert projection["items"][0]["event_type"] == "fanout.child.stale_completion"
+
+
+def test_recovery_closeout_contract_report_is_complete_for_goal_gap() -> None:
+    report = recovery_closeout_contract_report(event_types={"flow.goal.blocked"})
+
+    assert report["ok"] is True
+    assert report["summary"]["checked"] == 1
+    entry = report["entries"][0]
+    assert entry["event_type"] == "flow.goal.blocked"
+    assert entry["owner_route"] == "run_manager"
+    assert entry["attempt_cap"] >= 1
+    assert entry["expected_downstream_events"]

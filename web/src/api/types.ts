@@ -1394,6 +1394,8 @@ export interface ChannelSummary {
   workflow_requests?: Array<Record<string, unknown>>;
   mentions_detected?: Array<Record<string, unknown>>;
   routes?: Array<Record<string, unknown>>;
+  discussions?: Record<string, Record<string, unknown>>;
+  open_questions?: Record<string, Record<string, unknown>>;
   reply_requests?: Array<Record<string, unknown>>;
   provider_runs?: Array<Record<string, unknown>>;
   agent_session_runs?: Array<Record<string, unknown>>;
@@ -1478,6 +1480,9 @@ export interface AgentSummary {
   state: string;
   lifecycle_state?: string;
   attention_state?: string;
+  /** Project runtime stopped/archived: states are last-known, not current. */
+  stale?: boolean;
+  project_runtime_state?: string;
   active_task: string;
   task_id?: string;
   session_id: string;
@@ -1930,6 +1935,8 @@ export interface ChannelDetail extends ChannelSummary {
   workflow_requests: Array<Record<string, unknown>>;
   mentions_detected?: Array<Record<string, unknown>>;
   routes?: Array<Record<string, unknown>>;
+  discussions?: Record<string, Record<string, unknown>>;
+  open_questions?: Record<string, Record<string, unknown>>;
   reply_requests?: Array<Record<string, unknown>>;
   provider_runs?: Array<Record<string, unknown>>;
   agent_session_runs?: Array<Record<string, unknown>>;
@@ -2133,6 +2140,16 @@ export interface OperatorInboxItem {
   checkpoint_id?: string;
   fingerprint?: string;
   attention_id?: string;
+  category?: "action_required" | "automation_diagnostic" | "runtime_attention" | "notification" | "resolved" | string;
+  actionability?: "human_required" | "automation_owned" | "informational" | "resolved" | string;
+  source_role?: string;
+  source_actor?: string;
+  owner_route?: string;
+  group_key?: string;
+  dedupe_count?: number;
+  first_seen_at?: string;
+  last_seen_at?: string;
+  latest_event_id?: string;
   policy?: Record<string, unknown>;
 }
 
@@ -2142,6 +2159,8 @@ export interface OperatorInboxProjection {
   summary: {
     total: number;
     pending: number;
+    action_required_pending?: number;
+    noise_pending?: number;
     plan_approvals: number;
     attention: number;
     human_decisions?: number;
@@ -2149,6 +2168,7 @@ export interface OperatorInboxProjection {
   };
   items: OperatorInboxItem[];
   pending: OperatorInboxItem[];
+  views?: Record<string, { count: number; ids: string[] }>;
   policy: Record<string, unknown>;
 }
 

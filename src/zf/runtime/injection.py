@@ -93,6 +93,8 @@ def generate_role_instructions(
     *,
     task: Task | None = None,
     skill_entries: list[SkillLockEntry] | None = None,
+    state_dir_ref: Path | str | None = None,
+    project_root: Path | str | None = None,
 ) -> str:
     """Generate CLAUDE.md content for a role."""
     sections: list[str] = []
@@ -145,6 +147,19 @@ def generate_role_instructions(
         sections.append("## Stages")
         sections.append(f"You participate in: {', '.join(role.stages)}")
         sections.append("")
+
+    if state_dir_ref is not None:
+        try:
+            from zf.runtime.briefing_hydration import render_run_contract_context
+
+            run_contract_context = render_run_contract_context(
+                state_dir_ref,
+                project_root=project_root,
+            )
+        except Exception:
+            run_contract_context = ""
+        if run_contract_context:
+            sections.append(run_contract_context)
 
     # P-Y2/P-SKILL: skills are declared by role.skills and resolved by the
     # runtime materializer. Render name + description so providers that do
@@ -812,6 +827,17 @@ def generate_task_briefing(
             lines.append(f"**Behavior**: {task.contract.behavior}")
         if task.contract.verification:
             lines.append(f"**Verification**: `{task.contract.verification}`")
+        # avbs-r4 F6: operator waive 走事件持久化,briefing 自动带出——
+        # 裁决一次生效,worker respawn 不再丢语境(doc 124 STOP waive-trail)。
+        if state_dir_ref:
+            from zf.runtime.waivers import (
+                load_active_waivers,
+                render_waiver_lines,
+            )
+
+            lines.extend(render_waiver_lines(
+                load_active_waivers(Path(state_dir_ref), task.id),
+            ))
         if task.contract.validation:
             validation_text = json.dumps(
                 task.contract.validation,

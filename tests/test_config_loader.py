@@ -1285,6 +1285,70 @@ def test_top_level_rework_routing_overrides_stage_backedge(tmp_path: Path):
     assert cfg.workflow.rework_routing["review.rejected"] == "arch"
 
 
+def test_lane_pipeline_runtime_rework_cannot_route_to_design_role(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "roles:\n"
+        "  - name: arch\n"
+        "    backend: mock\n"
+        "    role_kind: reader\n"
+        "    stages: [design]\n"
+        "  - name: dev\n"
+        "    instance_id: dev-lane-0\n"
+        "    backend: mock\n"
+        "    role_kind: writer\n"
+        "workflow:\n"
+        "  affinity_lanes:\n"
+        "    refactor-slot:\n"
+        "      lanes:\n"
+        "        - id: lane0\n"
+        "          impl: dev-lane-0\n"
+        "  rework_routing:\n"
+        "    dev.failed: arch\n"
+        "  stages:\n"
+        "    - id: impl\n"
+        "      trigger: task_map.ready\n"
+        "      topology: fanout_writer_scoped\n"
+        "      roles: [dev-lane-0]\n"
+        "      source:\n"
+        "        task_map: ${task_map_ref}\n"
+        "      fanout:\n"
+        "        assignment:\n"
+        "          strategy: affinity_stage_slots\n"
+        "          lane_profile: refactor-slot\n"
+        "          stage_slot: impl\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="cannot route lane runtime event"):
+        load_config(p)
+
+
+def test_design_first_rework_can_still_route_to_arch(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "roles:\n"
+        "  - name: arch\n"
+        "    backend: mock\n"
+        "    role_kind: reader\n"
+        "    stages: [design]\n"
+        "workflow:\n"
+        "  rework_routing:\n"
+        "    gate.failed: arch\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(p)
+
+    assert cfg.workflow.rework_routing["gate.failed"] == "arch"
+
+
 def test_validate_passes_for_dev_codex_star_example():
     """The all-Codex star preset must declare a real fanout_reader stage."""
     candidate = Path(__file__).parent.parent / "examples" / "dev-codex-star.yaml"

@@ -140,6 +140,14 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("task.fanout.requested", "_on_task_fanout_requested"),
     ("channel.message.posted", "_on_channel_message_posted"),
     ("channel.agent.reply.requested", "_on_channel_agent_reply_requested"),
+    ("channel.agent.reply.completed", "_on_channel_discussion_event"),
+    ("channel.question.opened", "_on_channel_discussion_event"),
+    ("channel.question.resolved", "_on_channel_discussion_event"),
+    ("channel.question.merged", "_on_channel_discussion_event"),
+    ("channel.questions.frozen", "_on_channel_discussion_event"),
+    ("channel.consensus.proposed", "_on_channel_discussion_event"),
+    ("channel.consensus.signed", "_on_channel_discussion_event"),
+    ("channel.consensus.blocked", "_on_channel_discussion_event"),
     ("autoresearch.trigger.accepted", "_on_autoresearch_trigger_accepted"),
     ("autoresearch.invocation.requested", "_on_autoresearch_invocation_requested"),
     ("run.manager.autoresearch.requested", "_on_run_manager_autoresearch_requested"),
@@ -210,6 +218,14 @@ def _string_list(value: Any) -> list[str]:
         return items
     text = str(value).strip()
     return [text] if text else []
+
+
+def _reply_run_generation(payload: dict) -> int:
+    try:
+        parsed = int(payload.get("run_generation") or 1)
+    except (TypeError, ValueError):
+        return 1
+    return parsed if parsed > 0 else 1
 
 
 def _payload_requests_writer_capability(payload: dict) -> bool:
@@ -305,8 +321,60 @@ class EventReactorMixin:
         if yaml_actions:
             registry.load_yaml_actions(yaml_actions, self.event_log)
 
+        self._register_stage_failure_replan_handlers(registry)
         self._register_workflow_graph_shadow_handlers(registry)
         return registry
+
+    def _register_stage_failure_replan_handlers(self, registry) -> None:
+        """reader stage 的 failure_event → 机械 replan(配置驱动)。
+
+        只注册不在 builtin 表里的事件类型(review.rejected 等既有语义
+        不抢);prd.plan.failed / issue.triage.failed 这类"任务接纳前"
+        失败由此闭环,不再依赖 operator 手工重发 trigger。
+        """
+        try:
+            from zf.runtime.stage_failure_replan import reader_stage_failure_events
+
+            builtin = {event_type for event_type, _ in _BUILTIN_HANDLER_METHODS}
+            for failure_event in reader_stage_failure_events(self.config):
+                if failure_event in builtin:
+                    continue
+                registry.register(
+                    failure_event,
+                    self._on_reader_stage_failure_replan,
+                    source="builtin",
+                )
+        except Exception:
+            pass
+
+    def _on_reader_stage_failure_replan(self, event: ZfEvent):
+        from zf.runtime.event_window import read_runtime_events
+        from zf.runtime.stage_failure_replan import plan_reader_stage_replan
+
+        events = read_runtime_events(self.event_log, self.state_dir)
+        replan_event, note = plan_reader_stage_replan(self.config, events, event)
+        if replan_event is None:
+            if note == "cap_exhausted":
+                try:
+                    self.escalation.escalate(
+                        f"{event.type}: stage replan cap exhausted; "
+                        "plan/triage output keeps failing admission",
+                        task_id=str(event.task_id or "") or None,
+                    )
+                except Exception:
+                    pass
+                return OrchestratorDecision(
+                    action="escalate",
+                    task_id=str(event.task_id or ""),
+                    reason=f"{event.type} → replan cap exhausted → human",
+                )
+            return None
+        self.event_writer.append(replan_event)
+        return OrchestratorDecision(
+            action="dispatch",
+            task_id=str(event.task_id or ""),
+            reason=f"{event.type} → {note} (re-trigger {replan_event.type})",
+        )
 
     def _register_workflow_graph_shadow_handlers(
         self,
@@ -869,8 +937,15 @@ class EventReactorMixin:
         }
 
     def _on_build_done(self, event: ZfEvent) -> OrchestratorDecision | None:
+        self._warn_unverified_completion_claims(event)  # r6-F7 诚实核验
         graph_decision = self._workflow_graph_reconcile_bridge(event)
         if graph_decision is not None:
+            # r6-F1:graph-bridge 早退曾绕过 P3-3 evidence 观测门,
+            # strict 下 fanout 流的 build.done 零观测。门是观测级,
+            # 在早退前补一枪(task 缺失时内部自守卫)。
+            task = self.task_store.get(event.task_id) if event.task_id else None
+            if task is not None:
+                self._warn_impl_evidence_gap(task, event)
             return graph_decision
         task = self.task_store.get(event.task_id)
         if task and task.status == "in_progress":
@@ -958,6 +1033,7 @@ class EventReactorMixin:
                     role=dispatched_role or task.assigned_to or "dev",
                     reason="scope.violation → rework (fail-closed)",
                 )
+            self._warn_impl_evidence_gap(task, event)
             self._move_task(event.task_id, "review")
             # B3: the worker that emitted this build is now done with
             # the task. Their state transitions from busy → awaiting_review.
@@ -971,6 +1047,71 @@ class EventReactorMixin:
                 reason=f"{event.type} → review",
             )
         return None
+
+    def _warn_unverified_completion_claims(self, event: ZfEvent) -> None:
+        """r6-F7:完成事件声称与实物一致性核验(观测级)。
+
+        虚报完成(声称产物不存在/头不符)每次烧一整轮 review;kernel 只核
+        存在性,质量仍归 review agent。失败发注册事件,不阻塞。
+        """
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        try:
+            from zf.runtime.completion_honesty import unverified_completion_claims
+
+            problems = unverified_completion_claims(
+                payload, project_root=self.project_root,
+            )
+        except Exception:
+            return
+        if not problems:
+            return
+        try:
+            self.event_writer.append(ZfEvent(
+                type="dev.completion.claims_unverified",
+                actor="zf-cli",
+                task_id=event.task_id,
+                payload={
+                    "task_id": str(event.task_id or payload.get("task_id") or ""),
+                    "trigger_event_id": event.id,
+                    "trigger_event_type": event.type,
+                    "problems": problems[:10],
+                    "reason": "; ".join(problems[:3]),
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+        except Exception:
+            pass
+
+    def _warn_impl_evidence_gap(self, task, event: ZfEvent) -> None:
+        """131-P3-3:strict profile 下 impl 完成不带 evidence refs → 观测事件。
+
+        不阻塞 review 流转(fail-closed rework 会复刻 r4/r5 盲 rework 风暴),
+        由 registry 路由 on_repeated attention。
+        """
+        if str(getattr(self.config.workflow, "harness_profile", "") or "") != "strict":
+            return
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        for key in ("evidence_refs", "evidence_ref", "artifact_refs", "artifact_ref"):
+            value = payload.get(key)
+            if value and (not isinstance(value, list | tuple) or any(value)):
+                return
+        try:
+            self.event_writer.append(ZfEvent(
+                type="impl.evidence.missing",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "task_id": task.id,
+                    "trigger_event": event.type,
+                    "trigger_event_id": event.id,
+                    "reason": "impl completion carried no evidence refs",
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+        except Exception:
+            pass
 
     def _on_artifact_manifest_published(
         self,
@@ -1336,6 +1477,12 @@ class EventReactorMixin:
             coverage_report=coverage_report_payload,
             coverage_report_ref=coverage_report_ref,
             require_source_index=True,
+            # E3-1: strict profile 强制 coverage 分母(默认档位声明:
+            # baseline 维持 presence-gated,strict 出厂即开)。
+            require_coverage_report=(
+                str(getattr(self.config.workflow, "harness_profile", "") or "")
+                == "strict"
+            ),
             task_map_ref=task_map_ref,
             writer=self.event_writer,
             actor="zf-cli",
@@ -4701,8 +4848,7 @@ class EventReactorMixin:
                 latest_green = event
         return latest_green
 
-    @staticmethod
-    def _provider_tool_response_looks_green(payload: dict[str, Any]) -> bool:
+    def _provider_tool_response_looks_green(self, payload: dict[str, Any]) -> bool:
         tool_input = payload.get("tool_input")
         if not isinstance(tool_input, dict):
             tool_input = {}
@@ -4716,7 +4862,23 @@ class EventReactorMixin:
             "zf guard ownership",
         )):
             return False
-        response = str(payload.get("tool_response") or "").lower()
+        response = str(payload.get("tool_response") or "")
+        # doc 106 D axis: an oversized tool_response is externalized to a
+        # sidecar ref by hook_recv. The inline preview keeps head+tail, but
+        # hydrate the full text when available so green markers can never
+        # be lost to preview boundaries.
+        refs = payload.get("refs") if isinstance(payload.get("refs"), dict) else {}
+        raw_output = refs.get("raw_output") if isinstance(refs.get("raw_output"), dict) else None
+        if raw_output:
+            try:
+                from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+
+                hydrated = hydrate_sidecar_ref(self.state_dir, raw_output)
+                if getattr(hydrated, "payload", None):
+                    response = str(hydrated.payload)
+            except Exception:
+                pass
+        response = response.lower()
         return (
             "process exited with code 0" in response
             or "exit_code\": 0" in response
@@ -5361,6 +5523,29 @@ class EventReactorMixin:
         )
         return None
 
+    def _on_channel_discussion_event(self, event: ZfEvent) -> OrchestratorDecision | None:
+        """Tick the doc-122 discussion state machine on ledger / reply /
+        consensus events arriving over async transports (`zf emit`). The tick
+        is idempotent against the folded projection, so double invocation via
+        the inline router path is a no-op.
+        """
+        if event.actor in {"orchestrator-reactor", "channel-discussion"}:
+            return None
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        channel_id = str(payload.get("channel_id") or event.correlation_id or "")
+        if not channel_id:
+            return None
+        from zf.runtime.channel_discussion import advance_discussion
+
+        advance_discussion(
+            self.state_dir,
+            self.event_writer,
+            channel_id=channel_id,
+            thread_id=str(payload.get("thread_id") or "main"),
+            source="runtime",
+        )
+        return None
+
     def _on_channel_agent_reply_requested(self, event: ZfEvent) -> OrchestratorDecision | None:
         """Raw `zf emit channel.agent.reply.requested` dispatches to the
         target member's backend via `dispatch_reply_request`. The inline
@@ -5376,6 +5561,11 @@ class EventReactorMixin:
         request_id = str(payload.get("request_id") or "")
         if not channel_id or not request_id:
             return None
+        # Generation-aware dedup (2026-07-03 audit B1): a plain started match
+        # blocked remediation redispatch forever — a request whose dispatch
+        # crashed after `started` could never run again. Only a started of the
+        # same-or-newer run_generation makes this handler a no-op.
+        requested_generation = _reply_run_generation(payload)
         for prior in self.event_log.read_all():
             if prior.type != "channel.agent.reply.started":
                 continue
@@ -5383,6 +5573,7 @@ class EventReactorMixin:
             if (
                 str(prior_payload.get("channel_id") or "") == channel_id
                 and str(prior_payload.get("request_id") or "") == request_id
+                and _reply_run_generation(prior_payload) >= requested_generation
             ):
                 return None
         dispatch_reply_request(
@@ -5397,6 +5588,40 @@ class EventReactorMixin:
             openclaw_client=getattr(self, "openclaw_client", None),
         )
         return None
+
+    def _check_channel_reply_remediation(self) -> None:
+        """Tick housekeeping (2026-07-03 audit B1): channel replies must not
+        dead-end. Bounded redispatch for failed/stuck replies via
+        `channel_reply_remediation`; at the generation cap the exhausted
+        event surfaces as a run-manager diagnose-attention action.
+        """
+        from zf.runtime.channel_reply_remediation import remediate_channel_replies
+
+        try:
+            events = self.event_log.read_all()
+        except Exception:
+            return
+        if not any(event.type.startswith("channel.agent.reply.") for event in events):
+            return
+
+        def _dispatch(channel_id: str, request_id: str) -> None:
+            dispatch_reply_request(
+                state_dir=self.state_dir,
+                writer=self.event_writer,
+                channel_id=channel_id,
+                request_id=request_id,
+                actor="orchestrator-remediation",
+                source="runtime",
+                project_root=getattr(self, "project_root", None),
+                config=getattr(self, "config", None),
+                openclaw_client=getattr(self, "openclaw_client", None),
+            )
+
+        remediate_channel_replies(
+            self.event_writer,
+            events=events,
+            dispatch=_dispatch,
+        )
 
     def _on_worker_completed(self, event: ZfEvent) -> OrchestratorDecision | None:
         """Route provider/worker self-completion through completion audit.

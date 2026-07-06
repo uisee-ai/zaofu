@@ -24,7 +24,7 @@ from zf.runtime.run_archive import read_task_runs
 from zf.web.operator_contract import kanban_agent_evidence_model
 from zf.web.operator_contract import kanban_agent_status_model
 import json
-from zf.web.projections.common import _artifact_ref_warnings_from_events, _deep_kanban_enabled, _first_artifact_ref_path, _first_nonempty, _git, _optional_str, _payload_mentions, _resolve_project_root_for_state, _string_list
+from zf.web.projections.common import _artifact_ref_warnings_from_events, _deep_kanban_enabled, _first_artifact_ref_path, _first_nonempty, _git, _optional_str, _payload_mentions, _payload_search_text, _resolve_project_root_for_state, _string_list
 from zf.web.projections.summaries import _refs_from_events, _safe_handoff_summary_projection, _safe_task_capsule_projection, _safe_task_operations_projection, _safe_task_progress_projection, _safe_task_run_panel_projection
 from zf.web.projections.events import _EVENT_LOG_RUN_ID, _diagnostics, _event_log_fingerprint, _event_log_run_summary, _event_to_dict, _events_with_exact_task_id, _events_with_seq, _stage_summary, _trace_id_from_events
 from zf.web.projections.workflow_graph import _workflow_judge_configured, _workflow_terminal_success_event
@@ -90,7 +90,22 @@ _PLAN_FAILURE_SUPERSEDING_EVENTS = {
     "task_map.amended",
     "gap_plan.ready",
     "goal.gap_plan.ready",
+    "flow.gap_plan.ready",
     "module.parity.gap_plan.ready",
+}
+_QUALITY_FAILURE_EVENTS = {
+    "verify.failed",
+    "test.failed",
+    "judge.failed",
+}
+_QUALITY_FAILURE_SUPERSEDING_EVENTS = {
+    "task_map.ready",
+    "task_map.amended",
+    "workflow.resume.applied",
+    "fanout.started",
+    "fanout.child.dispatched",
+    "fanout.child.completed",
+    "candidate.ready",
 }
 _GLOBAL_FAILURE_REF_KEYS = {
     "candidate_ref",
@@ -113,7 +128,12 @@ _RUN_COMPLETED_PROJECTION_RESET_EVENTS = {
     "task_map.ready",
     "task_map.amended",
     "gap_plan.ready",
+    "goal.gap_plan.ready",
+    "flow.gap_plan.ready",
     "module.parity.gap_plan.ready",
+    "flow.discovery.requested",
+    "flow.discovery.completed",
+    "flow.goal.closed",
     "task.assigned",
     "task.dispatched",
     "fanout.started",
@@ -145,6 +165,8 @@ def _workflow_events_with_candidate_context(
     task: Task | str,
     task_events: list[tuple[int, ZfEvent]],
     all_events: list[tuple[int, ZfEvent]] | None = None,
+    state_dir: Path | None = None,
+    config: ZfConfig | None = None,
 ) -> list[tuple[int, ZfEvent]]:
     """Add projection-only workflow hints from candidate-level fanout events.
 
@@ -156,16 +178,43 @@ def _workflow_events_with_candidate_context(
     task_id = task.id if isinstance(task, Task) else str(task)
     if not task_id:
         return task_events
-    projected: list[tuple[int, ZfEvent]] = list(task_events)
+    context_refs = (
+        _task_failure_context_refs(task, task_events, state_dir=state_dir, config=config)
+        if isinstance(task, Task) and all_events
+        else set()
+    )
+    projected: list[tuple[int, ZfEvent]] = []
+    superseded_task_event_ids: set[str] = set()
+    for seq, event in task_events:
+        event_id = str(getattr(event, "id", "") or "")
+        if (
+            isinstance(task, Task)
+            and all_events
+            and event.type in _QUALITY_FAILURE_EVENTS
+            and _global_failure_superseded_for_task(
+                task.id,
+                seq,
+                event,
+                all_events,
+                context_refs=context_refs,
+            )
+        ):
+            if event_id:
+                superseded_task_event_ids.add(event_id)
+            continue
+        projected.append((seq, event))
     has_impl_gate = any(
         event.type in {
             "static_gate.passed",
             "static_gate.failed",
             "static_gate.skipped",
         }
-        for _, event in task_events
+        for _, event in projected
     )
     for seq, event in task_events:
+        event_id = str(getattr(event, "id", "") or "")
+        if event_id and event_id in superseded_task_event_ids:
+            continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         if not has_impl_gate and _candidate_impl_completed_for_task(
             event.type,
@@ -188,6 +237,18 @@ def _workflow_events_with_candidate_context(
             task_id,
         )
         if failure_type:
+            if (
+                isinstance(task, Task)
+                and all_events
+                and _global_failure_superseded_for_task(
+                    task.id,
+                    seq,
+                    event,
+                    all_events,
+                    context_refs=context_refs,
+                )
+            ):
+                continue
             projected.append((
                 seq,
                 _projection_workflow_event(
@@ -199,7 +260,6 @@ def _workflow_events_with_candidate_context(
                 ),
             ))
     if isinstance(task, Task) and all_events:
-        context_refs = _task_failure_context_refs(task, task_events)
         existing_event_ids = {
             str(getattr(event, "id", "") or "")
             for _, event in projected
@@ -244,10 +304,12 @@ def _workflow_events_with_candidate_context(
 def _task_failure_context_refs(
     task: Task,
     task_events: list[tuple[int, ZfEvent]],
+    state_dir: Path | None = None,
+    config: ZfConfig | None = None,
 ) -> set[str]:
     refs = {
         str(value).strip()
-        for value in _refs_from_events(task_events, task=task).values()
+        for value in _refs_from_events(task_events, task=task, state_dir=state_dir, config=config).values()
         if _usable_failure_ref(value)
     }
     contract = task.contract
@@ -324,12 +386,17 @@ def _global_failure_superseded_for_task(
     *,
     context_refs: set[str],
 ) -> bool:
-    if str(getattr(failure, "type", "") or "") not in _PLAN_FAILURE_EVENTS:
+    failure_type = str(getattr(failure, "type", "") or "")
+    if failure_type in _PLAN_FAILURE_EVENTS:
+        superseding_events = _PLAN_FAILURE_SUPERSEDING_EVENTS
+    elif failure_type in _QUALITY_FAILURE_EVENTS:
+        superseding_events = _QUALITY_FAILURE_SUPERSEDING_EVENTS
+    else:
         return False
     for seq, event in all_events:
         if seq <= failure_seq:
             continue
-        if str(getattr(event, "type", "") or "") not in _PLAN_FAILURE_SUPERSEDING_EVENTS:
+        if str(getattr(event, "type", "") or "") not in superseding_events:
             continue
         if _event_context_applies_to_task(task_id, event, context_refs=context_refs):
             return True
@@ -488,16 +555,13 @@ def _latest_task_fanout_runtime(
     """Return the newest fanout child runtime for a task, projection-only."""
     if not task_id:
         return {}
-    last_seq_by_fanout: dict[str, int] = {}
-    started_seq_by_fanout: dict[str, int] = {}
-    for seq, event in all_events:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        fanout_id = str(payload.get("fanout_id") or "").strip()
-        if not fanout_id:
-            continue
-        last_seq_by_fanout[fanout_id] = max(seq, last_seq_by_fanout.get(fanout_id, 0))
-        if event.type == "fanout.started":
-            started_seq_by_fanout[fanout_id] = seq
+    # RF-8: these maps are task-independent but were rebuilt with a full-log
+    # scan per task (kanban loop + task detail). Shared fingerprint-cached
+    # view; all_events stays in the signature for API stability (callers all
+    # pass the full _events_with_seq list, which the view derives from).
+    from zf.web.projections.events import fanout_seq_maps
+
+    last_seq_by_fanout, started_seq_by_fanout = fanout_seq_maps(state_dir)
 
     latest: dict[str, Any] = {}
     for manifest_path in sorted((state_dir / "fanouts").glob("*/manifest.json")):
@@ -531,6 +595,11 @@ def _latest_task_fanout_runtime(
                 "lane_id": str(child.get("lane_id") or ""),
                 "affinity_tag": str(child.get("affinity_tag") or ""),
                 "assignment_strategy": str(child.get("assignment_strategy") or ""),
+                "pipeline_id": str(projected_child.get("pipeline_id") or ""),
+                "root_fanout_id": str(projected_child.get("root_fanout_id") or ""),
+                "upstream_fanout_id": str(projected_child.get("upstream_fanout_id") or ""),
+                "upstream_child_id": str(projected_child.get("upstream_child_id") or ""),
+                "upstream_stage_slot": str(projected_child.get("upstream_stage_slot") or ""),
                 "run_id": str(projected_child.get("run_id") or ""),
                 "source_branch": str(projected_child.get("source_branch") or ""),
                 "source_commit": str(projected_child.get("source_commit") or ""),
@@ -686,7 +755,7 @@ def _task_detail(
     all_events = _events_with_seq(state_dir, config=config)
     latest_fanout = _latest_task_fanout_runtime(state_dir, task.id, all_events)
     trace_id = _trace_id_from_events(task_events)
-    refs = _refs_from_events(task_events, task=task)
+    refs = _refs_from_events(task_events, task=task, state_dir=state_dir, config=config)
     if latest_fanout:
         refs = {**refs, **{
             key: latest_fanout.get(key, "")
@@ -721,7 +790,7 @@ def _task_detail(
     phase = _fanout_phase_override(latest_fanout) or phase
     workflow = workflow_projection(
         task,
-        _workflow_events_with_candidate_context(task, task_events, all_events),
+        _workflow_events_with_candidate_context(task, task_events, all_events, state_dir=state_dir, config=config),
         phase=phase,
         judge_configured=_workflow_judge_configured(config),
         terminal_success_event=_workflow_terminal_success_event(config),
@@ -784,6 +853,9 @@ def _task_detail(
         role_instance=role_instance,
         transcript_count=int(interaction_evidence.get("transcript_count") or 0),
     )
+    from zf.web.projections.events import task_event_index
+
+    lh_index = task_event_index(state_dir, config=config)
     handoff_summary = _safe_handoff_summary_projection(
         state_dir,
         task_id,
@@ -791,6 +863,7 @@ def _task_detail(
         task_events=task_events,
         config=config,
         project_root=project_root,
+        index=lh_index,
     )
     artifact_refs = _task_artifact_refs(
         state_dir,
@@ -1063,7 +1136,7 @@ def _task_diff(
         config=config,
         include_payload_mentions=False,
     )
-    git = _refs_from_events(task_events, task=task)
+    git = _refs_from_events(task_events, task=task, state_dir=state_dir, config=config)
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     role_instance = task.assigned_to or git.get("role_instance") or ""
     workdir = _workdir_for_instance(
@@ -1150,20 +1223,34 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
     events = []
     if events_path.exists():
         try:
-            events = list(event_log_from_project(state_dir, config=config).read_days(1))
+            from zf.web.projections.events import events_read_days
+
+            events = events_read_days(state_dir, 1, config=config)
         except Exception:
             events = []
     all_events = _events_with_seq(state_dir, config=config)
     completed_closeout = _current_completed_run_closeout_for_projection(all_events)
     out = []
+    _deep_index = None  # lazily built once for the deep-kanban per-task projections
+    # One lowered dump per event (exact _payload_mentions parity), memoized by
+    # the event-log fingerprint (was rebuilt per request: seconds on 30k events).
+    from zf.web.projections.events import payload_search_texts
+
+    _search_texts = payload_search_texts(state_dir, config=config)
+    if len(_search_texts) != len(all_events):  # safety: fall back to local build
+        _search_texts = [
+            _payload_search_text(getattr(event, "payload", {}) or {})
+            for _, event in all_events
+        ]
     for t in tasks:
+        _tid = t.id.lower()
         task_events = [
             (seq, event)
-            for seq, event in all_events
+            for (seq, event), _text in zip(all_events, _search_texts)
             if getattr(event, "task_id", None) == t.id
-            or _payload_mentions(getattr(event, "payload", {}) or {}, t.id)
+            or (_tid and _tid in _text)
         ]
-        refs = _refs_from_events(task_events, task=t)
+        refs = _refs_from_events(task_events, task=t, state_dir=state_dir, config=config)
         latest_fanout = _latest_task_fanout_runtime(state_dir, t.id, all_events)
         if latest_fanout:
             refs = {**refs, **{
@@ -1201,13 +1288,18 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
         retry_metadata = {}
         if _deep_kanban_enabled():
             try:
-                from zf.runtime.long_horizon import project_why_not_done
+                from zf.runtime.long_horizon import TaskEventIndex, project_why_not_done
 
+                if _deep_index is None:
+                    from zf.web.projections.events import task_event_index
+
+                    _deep_index = task_event_index(state_dir, config=config)
                 why_not_done = project_why_not_done(
                     state_dir,
                     t.id,
                     config=config,
                     project_root=_resolve_project_root_for_state(state_dir, None),
+                    index=_deep_index,
                 ).to_dict()
             except Exception:
                 why_not_done = {}
@@ -1234,7 +1326,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
         fanout_projection = _task_fanout_projection(state_dir, refs, latest_fanout)
         workflow = workflow_projection(
             t,
-            _workflow_events_with_candidate_context(t, task_events, all_events),
+            _workflow_events_with_candidate_context(t, task_events, all_events, state_dir=state_dir, config=config),
             phase=phase,
             judge_configured=_workflow_judge_configured(config),
             terminal_success_event=_workflow_terminal_success_event(config),
@@ -1464,6 +1556,11 @@ def _task_fanout_projection(
                 "lane_id",
                 "affinity_tag",
                 "assignment_strategy",
+                "pipeline_id",
+                "root_fanout_id",
+                "upstream_fanout_id",
+                "upstream_child_id",
+                "upstream_stage_slot",
                 "role_instance",
                 "stage_id",
                 "fanout_status",

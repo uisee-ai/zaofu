@@ -169,6 +169,13 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
+        if action == "kanban-proposal-dismiss":
+            return self._kanban_proposal_dismiss(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
         if action == "capture-regression-case":
             return self._capture_regression_case(
                 requested=requested,
@@ -393,6 +400,34 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
+        if action == "failure-closeout":
+            return self._failure_closeout_action(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
+        if action == "failure-closeout-activate":
+            return self._failure_closeout_activate_action(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
+        if action == "real-e2e-run":
+            return self._real_e2e_run_action(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
+        if action == "run-contract-review":
+            return self._run_contract_review_action(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
         if action == "workflow-batch-resume":
             return self._workflow_batch_resume(
                 requested=requested,
@@ -416,8 +451,6 @@ class ControlledActionService(
             status_code=501,
             status="not_implemented",
         )
-
-
 
 
 

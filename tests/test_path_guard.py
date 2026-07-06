@@ -74,3 +74,19 @@ def test_valid_workdir_ownership_marker_accepted(tmp_path: Path):
 
     assert marker.project_name == "test"
     assert marker.instance_id == "dev-1"
+
+
+def test_assert_disjoint_rejects_equal_and_nested_roots(tmp_path: Path):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+
+    PathGuard.assert_disjoint(source, target)
+
+    with pytest.raises(PathGuardError):
+        PathGuard.assert_disjoint(source, source)
+    with pytest.raises(PathGuardError):
+        PathGuard.assert_disjoint(source, source / "candidate")
+    with pytest.raises(PathGuardError):
+        PathGuard.assert_disjoint(target / "vendor" / "old", target)

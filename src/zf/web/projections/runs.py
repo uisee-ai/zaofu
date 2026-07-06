@@ -24,7 +24,9 @@ def _runtime_snapshots(
 ) -> dict[str, Any]:
     project_root = project_root or state_dir.parent
     try:
-        events = EventLog(state_dir / "events.jsonl").read_all()
+        from zf.web.projections.events import _events_with_seq
+
+        events = [event for _, event in _events_with_seq(state_dir)]
     except Exception:
         events = []
     rows: list[dict[str, Any]] = []

@@ -39,9 +39,11 @@ def project_automations(
     *,
     project_id: str,
     project_name: str = "",
+    events: list | None = None,
 ) -> dict[str, Any]:
     state_dir = Path(state_dir)
-    events = EventLog(state_dir / "events.jsonl").read_days(14)
+    if events is None:
+        events = EventLog(state_dir / "events.jsonl").read_days(14)
     runs = _automation_runs(events, project_id=project_id)
     by_automation: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for run in runs:

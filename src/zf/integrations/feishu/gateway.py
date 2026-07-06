@@ -61,6 +61,10 @@ _COMMAND_AUTH: dict[str, AuthLevel] = {
     "human-decision-diagnose": AuthLevel.OPERATOR,
     "human-decision-halt": AuthLevel.OPERATOR,
     "human-decision-reject": AuthLevel.OPERATOR,
+    # Channel discussion owner-question callbacks. They resolve open
+    # clarification questions, so require an operator-level owner identity.
+    "channel-question-adopt": AuthLevel.OPERATOR,
+    "channel-question-oos": AuthLevel.OPERATOR,
 }
 
 _WHITELIST = set(_COMMAND_AUTH.keys())
