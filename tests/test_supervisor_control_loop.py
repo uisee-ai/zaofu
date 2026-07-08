@@ -56,6 +56,88 @@ def test_control_loop_routes_low_severity_actionable_attention() -> None:
     assert decisions[0].payload["outcome"] == "run_manager_triage_first"
 
 
+def test_control_loop_suppresses_cost_blackout_until_run_manager_escalates() -> None:
+    events = build_supervisor_control_loop_events(
+        {
+            "attention_items": [
+                {
+                    "attention_id": "attn-cost",
+                    "fingerprint": "cost.usage.blackout:zf-cli",
+                    "source": "workflow_runtime",
+                    "severity": "high",
+                    "status": "open",
+                    "title": "Cost usage collection stopped while dispatch active",
+                    "summary": (
+                        "dispatch active but agent.usage stopped updating; "
+                        "budget gate is deciding on a frozen total"
+                    ),
+                    "suggested_route": "run_manager_recovery",
+                    "suggested_action": {
+                        "kind": "diagnose_cost_collection",
+                    },
+                },
+            ],
+        },
+        events=[],
+        projection_ref={},
+    )
+
+    decisions = [
+        event for event in events
+        if event.type == "supervisor.decision.recorded"
+    ]
+    messages = [
+        event for event in events
+        if event.type == "owner.visible_message.requested"
+    ]
+    assert len(decisions) == 1
+    assert decisions[0].payload["route"] == "run_manager_recovery"
+    assert decisions[0].payload["outcome"] == "run_manager_triage_first"
+    assert messages == []
+
+
+def test_control_loop_suppresses_budget_exceeded_until_run_manager_escalates() -> None:
+    events = build_supervisor_control_loop_events(
+        {
+            "attention_items": [
+                {
+                    "attention_id": "attn-budget",
+                    "fingerprint": (
+                        "cost.budget.exceeded:scope=global:budget_usd=60.0000"
+                    ),
+                    "source": "kernel_budget",
+                    "severity": "high",
+                    "status": "open",
+                    "title": "Cost budget exceeded",
+                    "summary": "budget exceeded; dispatch paused",
+                    "suggested_route": "run_manager_recovery",
+                    "notification_policy": "owner_on_human_required",
+                    "recovery_policy": "run_manager",
+                    "suggested_action": {
+                        "kind": "diagnose_budget_exceeded",
+                        "event_type": "cost.budget.exceeded",
+                    },
+                },
+            ],
+        },
+        events=[],
+        projection_ref={},
+    )
+
+    decisions = [
+        event for event in events
+        if event.type == "supervisor.decision.recorded"
+    ]
+    messages = [
+        event for event in events
+        if event.type == "owner.visible_message.requested"
+    ]
+    assert len(decisions) == 1
+    assert decisions[0].payload["outcome"] == "run_manager_triage_first"
+    assert decisions[0].payload["notification_policy"] == "owner_on_human_required"
+    assert messages == []
+
+
 def test_control_loop_routes_human_gate_to_feishu() -> None:
     events = build_supervisor_control_loop_events(
         {

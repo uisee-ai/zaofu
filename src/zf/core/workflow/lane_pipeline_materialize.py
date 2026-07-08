@@ -96,6 +96,8 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
         }},
         "aggregate": {
             "mode": "candidate_integration",
+            "child_success_event": first.success_event,
+            "child_failure_event": first.failure_event,
             "success_event": "candidate.ready",
             "failure_event": "integration.failed",
             "max_retries": retries,
@@ -149,7 +151,7 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
     if spec.final_role:
         stages.append({
             "id": f"{spec.pipeline_id}-final",
-            "trigger": final_trigger,
+            "trigger": str(getattr(spec, "final_trigger", "") or final_trigger),
             "topology": "fanout_reader",
             "roles": [spec.final_role],
             "aggregate": {

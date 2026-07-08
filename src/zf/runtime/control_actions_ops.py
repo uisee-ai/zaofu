@@ -523,6 +523,57 @@ class OpsActionsMixin:
             "candidate_count": result.get("candidate_count", 0),
         }
 
+    def _auto_acknowledge_owner_approval(
+        self,
+        *,
+        requested,
+        action: str,
+        approval_ref: str,
+    ) -> None:
+        """FIX-4(bizsim r4 F3):直调 OWNER_APPROVAL_ACTIONS 干成活后自动
+        补发决议回执,消灭「活干了 lease 不放」的账实分叉。
+
+        r4 实锚:operator 两次直调 failure-closeout-activate 均 activated,
+        但决议消费器只认 human.escalation.acknowledged,checkpoint lease 持续
+        阻塞派发。回执失败不影响主动作(补救层不放大故障);approve 路径
+        重执行由动作自身幂等兜底(已 promote 的条目计入 skipped)。
+        """
+        try:
+            from zf.runtime.run_manager import (
+                _human_escalations_by_token,
+                _seen_human_decisions,
+            )
+
+            events = self.writer.event_log.read_all()
+            escalations = _human_escalations_by_token(events)
+            resolved = _seen_human_decisions(events)
+            for token, package in escalations.items():
+                if token in resolved:
+                    continue
+                pkg_action = str(
+                    package.get("recent_action") or package.get("action") or ""
+                )
+                if pkg_action != action:
+                    continue
+                self.writer.emit(
+                    "human.escalation.acknowledged",
+                    actor=self.actor,
+                    causation_id=requested.id,
+                    correlation_id=requested.correlation_id,
+                    payload={
+                        "schema_version": "human-escalation-acknowledged.v1",
+                        "decision_token": token,
+                        "decision": "approve_controlled_action",
+                        "source": "auto-ack:direct-owner-action",
+                        "surface": self.surface,
+                        "approval_ref": approval_ref,
+                        "checkpoint_id": str(package.get("checkpoint_id") or ""),
+                        "fingerprint": str(package.get("fingerprint") or ""),
+                    },
+                )
+        except Exception:
+            pass
+
     def _failure_closeout_activate_action(
         self,
         *,
@@ -605,6 +656,11 @@ class OpsActionsMixin:
                 "promoted_count": result.get("promoted_count", 0),
                 "skipped_count": result.get("skipped_count", 0),
             },
+        )
+        self._auto_acknowledge_owner_approval(
+            requested=requested,
+            action=action,
+            approval_ref=approval_ref,
         )
         return {
             "_status_code": 202,

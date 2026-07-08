@@ -766,6 +766,35 @@ class TestAssemblyOwnerGate:
         )
         assert any("workspace-root" in p for p in problems)
 
+    def test_admission_refactor_contract_none_allows_leaf_only_refactor(self):
+        from zf.core.workflow.lane_pipeline import (
+            validate_lane_pipeline_admission,
+        )
+        spec = parse_lane_pipeline(_hermes_raw(assembly="none"))
+        items = [
+            {
+                "task_id": "REFACTOR-PRICING-CHAR",
+                "allowed_paths": ["tests/test_pricing.py"],
+            },
+            {
+                "task_id": "REFACTOR-PRICING-HELPERS",
+                "allowed_paths": ["src/orders/pricing.py"],
+            },
+        ]
+        task_map = {
+            "refactor_contract": {
+                "assembly": "none",
+                "assembly_policy": "none",
+            },
+            "tasks": items,
+        }
+
+        assert validate_lane_pipeline_admission(
+            spec,
+            items,
+            task_map_payload=task_map,
+        ) == []
+
 
 class TestInstructionRefs:
     """doc 90 §6.1(0722):repo artifact 引用,非 truth。"""
@@ -1036,6 +1065,40 @@ def test_admission_accepts_subdir_scaffolding():
         {"task_id": "CJMIN-X-001", "allowed_paths": ["cj-min/packages/x/**"]},
     ]
     assert _admit(items) == []
+
+
+def test_admission_accepts_python_pyproject_scaffolding():
+    """PRD greenfield: app/pyproject.toml is the package scaffold owner."""
+    from zf.core.workflow.lane_pipeline import (
+        parse_lane_pipeline, validate_lane_pipeline_admission,
+    )
+
+    spec = parse_lane_pipeline({
+        "id": "prd-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "affinity_key": "affinity_tag",
+        "lane_count": 2,
+        "assembly": "none",
+        "stages": [{"id": "impl"}, {"id": "verify"}],
+        "final": {"when": "all_tasks_verified", "role": "judge"},
+    })
+    items = [
+        {
+            "task_id": "PDD-TEXTSTAT-SCAFFOLD-001",
+            "allowed_paths": ["app/pyproject.toml", "app/textstat/__init__.py"],
+        },
+        {
+            "task_id": "PDD-TEXTSTAT-CORE-002",
+            "allowed_paths": ["app/textstat/stats.py", "app/tests/test_stats.py"],
+        },
+        {
+            "task_id": "PDD-TEXTSTAT-CLI-003",
+            "allowed_paths": ["app/textstat/cli.py", "app/tests/test_cli.py"],
+        },
+    ]
+
+    assert validate_lane_pipeline_admission(spec, items) == []
 
 
 def test_admission_still_rejects_truly_unowned_scaffold():

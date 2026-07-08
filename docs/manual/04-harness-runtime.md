@@ -14,9 +14,9 @@ ZaoFu 当前按三层运行:
 
 Kernel 管 truth 和机械状态转移;agent 通过事件和 CLI 表达意图。
 
-## 2. 标准任务链路
+## 2. 任务链路
 
-标准代码任务通常按以下链路推进:
+经典代码任务通常按以下链路推进:
 
 ```text
 user.message
@@ -45,17 +45,24 @@ user.message
 
 设计评审场景可把 `gate.failed` 或 critic rejection 路由回 `arch`。
 
+这条链不是唯一合法拓扑。当前实现支持 `workflow.stages` / `workflow.pipelines`、
+`static_gate.*`、`impl.child.*`、`verify.child.*`、fanout/fan-in、reader/writer 分工,
+以及 issue / PRD / refactor flow。实际阶段、terminal predicate 和返工路由以
+`zf.yaml` 与 `zf workflow inspect` 的推导结果为准。
+
 ## 3. 防止提前宣告完成
 
 ZaoFu 不以 agent 口头说“完成”为终点。done 需要满足:
 
 - task 已经历合法阶段事件链。
-- dev/review/test/judge 或配置中的 terminal predicate 已满足。
+- dev/verify/judge 或配置中的 terminal predicate 已满足。
 - 严格配置下通过 contract discriminator。
 - scope、architecture、promoted rule、quality gate 等已按配置通过。
 - task done evidence 可追溯到事件链和 git evidence。
 
-`zf kanban move <task_id> done` 也会检查前置事件。缺少 `judge.passed`、`test.passed`、`review.approved` 或 `discriminator.passed` 时,会被拒绝并写入非法迁移事件。
+`zf kanban move <task_id> done` 也会检查前置事件。在经典链路下,缺少
+`judge.passed`、`test.passed`、`review.approved` 或 `discriminator.passed` 时会被拒绝
+并写入非法迁移事件。自定义 workflow 下,检查项按当前拓扑和 terminal predicate 收敛。
 
 ## 4. Contract 与 Dispatch Token
 
@@ -72,12 +79,14 @@ worker 完成事件必须能对上 dispatch token。这样可以避免旧 sessio
 
 ## 5. Watcher 与 Wake Patterns
 
-`zf start --foreground` 会启动 `EventWatcher`。它做两件事:
+`zf start` 会启动 `EventWatcher`。它做两件事:
 
 - 新事件命中 wake pattern 时,调用 orchestrator 处理。
 - 即使没有事件,也周期性 tick,驱动 stuck/orphan/context recycle 扫描。
 
-这就是为什么真实长任务推荐 foreground。只启动 tmux 而不运行 watcher,worker 可能完成了但 pipeline 不继续推进。
+这就是为什么真实长任务推荐保持 `zf start` 前台运行。`--foreground` 现在只是兼容旧命令的 no-op alias;
+只有 `--no-watch` 会明确选择不长期运行 watcher。只启动 tmux 而不运行 watcher,
+worker 可能完成了但 pipeline 不继续推进。
 
 可观察命令:
 
@@ -150,7 +159,20 @@ Session tailer 会把 provider session jsonl 中的工具调用、文本、usage
 
 严格配置下,`judge.passed` 之后仍可能被 `discriminator.failed` 打回返工。这是预期行为,不是重复审核。
 
-## 10. 结束一轮长任务的签收口径
+## 10. Run Manager、Supervisor 与 Autoresearch
+
+当前 runtime tick 除了 watcher 推进,还会按配置/节流刷新若干控制面 projection:
+
+- **Run Manager**:维护 run / attempt / workflow spine 投影,做可重试、可恢复的 deterministic
+  run 管理。可选 resident agent 只能 emit 观察/建议事件,不直接改 kernel truth。
+- **Supervisor**:读取 events、kanban、role_sessions、failure signals、automation 等输入,
+  生成 supervisor projection,并可通过受控事件记录 decision、owner visible message、
+  autoresearch invocation request。它不是第二控制面,不直接 kill worker 或手写 state。
+- **Autoresearch invocation**:Supervisor/Run Manager 可以请求诊断或自修复候选。默认策略是
+  `proposal_only`、`sandbox_required: true`、`requires_owner_approval_for_apply: true`,
+  不允许直接 mainline apply。
+
+## 11. 结束一轮长任务的签收口径
 
 不要只看 agent 最后一段话。至少检查:
 

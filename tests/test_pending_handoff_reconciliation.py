@@ -66,7 +66,7 @@ def _make_orchestrator(tmp_path: Path) -> tuple[Orchestrator, TaskStore, EventLo
             RoleConfig(
                 name="dev",
                 backend="mock",
-                publishes=["dev.build.done"],
+                publishes=["dev.build.done", "impl.child.completed", "impl.child.failed"],
                 triggers=["task.assigned"],
             ),
             RoleConfig(
@@ -416,6 +416,28 @@ def test_reconcile_emits_task_ref_repair_request_after_rejection(
         and event.payload.get("trigger_event") == "task.ref.repair.requested"
         for event in events
     )
+
+
+def test_task_ref_repair_dirty_scan_ignores_runtime_materialized_files(
+    tmp_path: Path,
+) -> None:
+    orch, _, _ = _make_orchestrator(tmp_path)
+    workdir = tmp_path / ".zf" / "workdirs" / "dev-lane-0" / "project"
+    workdir.mkdir(parents=True)
+    _git(workdir, "init", "-q")
+    skill = workdir / ".claude" / "skills" / "test-driven-development" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("# materialized skill\n", encoding="utf-8")
+    (workdir / ".zf-setup.done").write_text("ok\n", encoding="utf-8")
+    business_file = workdir / "packages" / "core" / "package.json"
+    business_file.parent.mkdir(parents=True)
+    business_file.write_text("{}\n", encoding="utf-8")
+
+    dirty_files = orch._task_ref_rejection_dirty_files({  # type: ignore[attr-defined]
+        "workdir": str(workdir),
+    })
+
+    assert dirty_files == ["packages/core/package.json"]
 
 
 def test_task_ref_scope_rejection_requests_source_scope_repair(
@@ -1103,6 +1125,155 @@ def test_reconcile_terminal_test_passed_closes_task_without_judge_role(
     assert len(done_events) == 1
     assert done_events[0].payload["trigger_event_id"] == passed.id
     assert not [e for e in _events(log) if e.type == "task.invalid_transition"]
+
+
+def test_reconcile_impl_child_completed_closes_writer_task(
+    tmp_path: Path,
+) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    dispatch_id = "disp-impl"
+    store.add(Task(
+        id="pulse-data",
+        title="Create data module",
+        status="in_progress",
+        assigned_to="dev",
+        active_dispatch_id=dispatch_id,
+        contract=TaskContract(behavior="x", verification="true"),
+    ))
+    store.add(Task(
+        id="http-server",
+        title="Add server",
+        status="backlog",
+        blocked_by=["pulse-data"],
+        contract=TaskContract(behavior="server", verification="true"),
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="pulse-data",
+        payload={"assignee": "dev", "role": "dev", "dispatch_id": dispatch_id},
+    ))
+    completed = ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="pulse-data",
+        payload={
+            "dispatch_id": dispatch_id,
+            "status": "completed",
+            "summary": "data module done",
+            "changed_files": ["src/pulse-data.mjs"],
+            "evidence_refs": ["node --check src/pulse-data.mjs"],
+        },
+    )
+    log.append(completed)
+
+    decisions = orch._reconcile_pending_handoffs()  # type: ignore[attr-defined]
+
+    assert any(d.action == "move" and d.task_id == "pulse-data" for d in decisions)
+    assert store.get("pulse-data").status == "done"
+    assert [task.id for task in store.ready()] == ["http-server"]
+
+
+def test_reconcile_blocks_worktree_impl_child_completed_without_task_ref(
+    tmp_path: Path,
+) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    orch.config.runtime = RuntimeConfig(
+        workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+    )
+    dispatch_id = "disp-impl"
+    store.add(Task(
+        id="pulse-data",
+        title="Create data module",
+        status="in_progress",
+        assigned_to="dev",
+        active_dispatch_id=dispatch_id,
+        contract=TaskContract(behavior="x", verification="true"),
+    ))
+    store.add(Task(
+        id="http-server",
+        title="Add server",
+        status="backlog",
+        blocked_by=["pulse-data"],
+        contract=TaskContract(behavior="server", verification="true"),
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="pulse-data",
+        payload={"assignee": "dev", "role": "dev", "dispatch_id": dispatch_id},
+    ))
+    completed = ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="pulse-data",
+        payload={
+            "dispatch_id": dispatch_id,
+            "status": "completed",
+            "summary": "done without git handoff",
+        },
+    )
+    log.append(completed)
+
+    decisions = orch._reconcile_pending_handoffs()  # type: ignore[attr-defined]
+
+    assert len(decisions) == 1
+    assert decisions[0].action == "block"
+    assert store.get("pulse-data").status == "in_progress"
+    assert [task.id for task in store.ready()] == []
+    assert any(
+        e.type == "task.ref.rejected"
+        and e.task_id == "pulse-data"
+        and e.payload.get("trigger_event_id") == completed.id
+        for e in _events(log)
+    )
+
+
+def test_reconcile_child_terminal_without_orchestrator_worker_role(
+    tmp_path: Path,
+) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    orch.config.roles = [
+        role for role in orch.config.roles if role.name != "orchestrator"
+    ]
+    dispatch_id = "disp-impl"
+    store.add(Task(
+        id="data-source",
+        title="Create data module",
+        status="in_progress",
+        assigned_to="dev",
+        active_dispatch_id=dispatch_id,
+        contract=TaskContract(behavior="x", verification="true"),
+    ))
+    store.add(Task(
+        id="http-server",
+        title="Add server",
+        status="backlog",
+        blocked_by=["data-source"],
+        contract=TaskContract(behavior="server", verification="true"),
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="data-source",
+        payload={"assignee": "dev", "role": "dev", "dispatch_id": dispatch_id},
+    ))
+    log.append(ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="data-source",
+        payload={
+            "dispatch_id": dispatch_id,
+            "status": "completed",
+            "evidence_refs": ["node --check data.mjs"],
+        },
+    ))
+
+    decisions = orch._reconcile_pending_handoffs()  # type: ignore[attr-defined]
+
+    assert any(d.action == "move" and d.task_id == "data-source" for d in decisions)
+    assert store.get("data-source").status == "done"
+    assert [task.id for task in store.ready()] == ["http-server"]
 
 
 def test_reconcile_terminal_done_evidence_is_idempotent_for_same_event(

@@ -132,11 +132,13 @@ class TestGracefulShutdown:
         # in-process index introduced alongside the events.jsonl
         # causation projection. stale_inflight_cleanup added by
         # TR-ZF-STOP-GRACEFUL-CLEANUP-001 (task.requeued for stale
-        # in-flight WIP on graceful stop).
-        assert len(steps) == 13
+        # in-flight WIP on graceful stop). preserve_run_manager added so
+        # scoped stop can keep the resident monitor alive.
+        assert len(steps) == 14
         assert "shutdown_marker" in steps
         assert "kill_watcher" in steps
         assert "stale_inflight_cleanup" in steps
+        assert "preserve_run_manager" in steps
         assert "release_lock" in steps
         assert "flush_event_index" in steps
 

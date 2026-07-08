@@ -83,6 +83,42 @@ def test_validate_rejects_missing_artifact_matrix_gate_config_ref(
     assert validate_config(p) == []
 
 
+def test_loads_stage_criteria_instructions_without_success_gate(
+    tmp_path: Path,
+) -> None:
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "roles:\n"
+        "- name: scan\n"
+        "  backend: mock\n"
+        "  role_kind: reader\n"
+        "workflow:\n"
+        "  stages:\n"
+        "  - id: scan\n"
+        "    trigger: prd.requested\n"
+        "    topology: fanout_reader\n"
+        "    roles: [scan]\n"
+        "    aggregate:\n"
+        "      success_event: prd.scan.completed\n"
+        "      failure_event: prd.scan.failed\n"
+        "    criteria:\n"
+        "      instructions:\n"
+        "      - Initial scan is not implementation verification.\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(p)
+
+    criteria = cfg.workflow.stages[0].criteria
+    assert criteria.instructions == [
+        "Initial scan is not implementation verification.",
+    ]
+    assert criteria.success_criteria == []
+
+
 def test_load_safety_tool_closure_default_enabled(tmp_path: Path):
     p = tmp_path / "zf.yaml"
     p.write_text('version: "1.0"\nproject:\n  name: test\n')
@@ -214,6 +250,37 @@ def test_load_runtime_feishu_inbound_config(tmp_path: Path):
     assert inbound.mode == "bridge"
     assert inbound.debounce_ms == 250
     assert inbound.require_routing is False
+
+
+def test_load_runtime_autoresearch_resident_config(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "runtime:\n"
+        "  autoresearch_resident:\n"
+        "    enabled: true\n"
+        "    interval_seconds: 2.5\n"
+        "    max_actions_per_tick: 4\n"
+        "    worktree_root: /tmp/ar-worktrees\n"
+        "    output_root: /tmp/ar-output\n"
+        "    self_repair_consumer: true\n"
+        "    self_repair_spawn: true\n"
+        "    self_repair_backend: claude-code\n"
+    )
+
+    cfg = load_config(p)
+
+    resident = cfg.runtime.autoresearch_resident
+    assert resident.enabled is True
+    assert resident.interval_seconds == 2.5
+    assert resident.max_actions_per_tick == 4
+    assert resident.worktree_root == "/tmp/ar-worktrees"
+    assert resident.output_root == "/tmp/ar-output"
+    assert resident.self_repair_consumer is True
+    assert resident.self_repair_spawn is True
+    assert resident.self_repair_backend == "claude-code"
 
 
 def test_load_runtime_feishu_inbound_rejects_bad_mode(tmp_path: Path):
@@ -1864,3 +1931,54 @@ def test_plan_approval_strict_profile_defaults_to_hold(tmp_path: Path):
     # 显式声明覆盖 profile 默认
     assert _load("strict", "  plan_approval: false\n") is False
     assert _load("baseline", "  plan_approval: true\n") is True
+
+
+def test_project_scripts_setup_parsed(tmp_path: Path):
+    cfg_path = tmp_path / "zf.yaml"
+    cfg_path.write_text(
+        "version: '1.0'\n"
+        "project:\n"
+        "  name: demo\n"
+        "  scripts:\n"
+        "    setup: |\n"
+        "      pnpm install\n",
+        encoding="utf-8",
+    )
+    cfg = load_config(cfg_path)
+    assert cfg.project.setup_script == "pnpm install"
+
+
+def test_project_scripts_default_empty(tmp_path: Path):
+    cfg_path = tmp_path / "zf.yaml"
+    cfg_path.write_text(
+        "version: '1.0'\nproject:\n  name: demo\n", encoding="utf-8",
+    )
+    assert load_config(cfg_path).project.setup_script == ""
+
+
+def test_project_scripts_unknown_key_rejected(tmp_path: Path):
+    cfg_path = tmp_path / "zf.yaml"
+    cfg_path.write_text(
+        "version: '1.0'\n"
+        "project:\n"
+        "  name: demo\n"
+        "  scripts:\n"
+        "    steup: pnpm install\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="project.scripts"):
+        load_config(cfg_path)
+
+
+def test_project_scripts_setup_must_be_string(tmp_path: Path):
+    cfg_path = tmp_path / "zf.yaml"
+    cfg_path.write_text(
+        "version: '1.0'\n"
+        "project:\n"
+        "  name: demo\n"
+        "  scripts:\n"
+        "    setup: [pnpm, install]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="must be a string"):
+        load_config(cfg_path)

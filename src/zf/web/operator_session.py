@@ -270,6 +270,12 @@ class OperatorSessionManager:
                     "ok": False,
                     "status": "not_running",
                     "reason": "operator session is not running",
+                    # FIX-8(bizsim r4 F8):给 operator 指条活路——外部触发
+                    # workflow 不依赖 operator 会话在跑。
+                    "hint": (
+                        "无 operator 会话时可用 `zf emit user.message "
+                        "--payload-file <json>` 直接触发 workflow 外部事件"
+                    ),
                 }
             try:
                 os.write(self._master_fd, data)
@@ -290,6 +296,12 @@ class OperatorSessionManager:
                     "ok": False,
                     "status": "not_running",
                     "reason": "operator session is not running",
+                    # FIX-8(bizsim r4 F8):给 operator 指条活路——外部触发
+                    # workflow 不依赖 operator 会话在跑。
+                    "hint": (
+                        "无 operator 会话时可用 `zf emit user.message "
+                        "--payload-file <json>` 直接触发 workflow 外部事件"
+                    ),
                 }
             payload = text if text.endswith("\n") else text + "\n"
             try:
@@ -313,6 +325,12 @@ class OperatorSessionManager:
                     "ok": False,
                     "status": "not_running",
                     "reason": "operator session is not running",
+                    # FIX-8(bizsim r4 F8):给 operator 指条活路——外部触发
+                    # workflow 不依赖 operator 会话在跑。
+                    "hint": (
+                        "无 operator 会话时可用 `zf emit user.message "
+                        "--payload-file <json>` 直接触发 workflow 外部事件"
+                    ),
                 }
             try:
                 _set_winsize(self._master_fd, cols=cols, rows=rows)

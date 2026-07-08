@@ -7,6 +7,7 @@ triggers, but does not start repairs or mutate business truth by itself.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable as IterableABC
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timedelta, timezone
@@ -138,6 +139,7 @@ class TriggerDecision:
     trigger_id: str
     source_kind: str
     fingerprint: str
+    problem_fingerprint: str
     severity: str
     reason: str
     failure_class: str = ""
@@ -145,6 +147,8 @@ class TriggerDecision:
     state_dir: str = ""
     decision: str = "skipped"  # accepted | skipped
     skip_reason: str = ""
+    dedupe_decision: str = ""
+    confidence: str = ""
     signal_ids: list[str] = field(default_factory=list)
     created_at: str = ""
 
@@ -193,6 +197,7 @@ def read_trigger_decisions(state_dir: Path) -> list[TriggerDecision]:
             trigger_id=str(data.get("trigger_id") or ""),
             source_kind=str(data.get("source_kind") or ""),
             fingerprint=str(data.get("fingerprint") or ""),
+            problem_fingerprint=str(data.get("problem_fingerprint") or ""),
             severity=str(data.get("severity") or "medium"),
             reason=str(data.get("reason") or ""),
             failure_class=str(data.get("failure_class") or ""),
@@ -200,6 +205,8 @@ def read_trigger_decisions(state_dir: Path) -> list[TriggerDecision]:
             state_dir=str(data.get("state_dir") or ""),
             decision=str(data.get("decision") or "skipped"),
             skip_reason=str(data.get("skip_reason") or ""),
+            dedupe_decision=str(data.get("dedupe_decision") or ""),
+            confidence=str(data.get("confidence") or ""),
             signal_ids=[str(v) for v in data.get("signal_ids") or []],
             created_at=str(data.get("created_at") or ""),
         ))
@@ -236,6 +243,7 @@ def decide_trigger_for_signal(
         "trigger_id": _trigger_id(signal.fingerprint, created_at),
         "source_kind": signal.source_kind,
         "fingerprint": signal.fingerprint,
+        "problem_fingerprint": problem_fingerprint_for_signal(signal),
         "severity": signal.severity,
         "reason": signal.summary,
         "failure_class": failure_class_for_signal(signal),
@@ -243,6 +251,8 @@ def decide_trigger_for_signal(
         "state_dir": str(state_dir),
         "signal_ids": [signal.signal_id],
         "created_at": created_at,
+        "dedupe_decision": "new_candidate",
+        "confidence": _confidence_for_signal(signal),
     }
     if not policy.enabled or policy.mode == "off":
         return TriggerDecision(**base, decision="skipped", skip_reason="disabled")
@@ -261,17 +271,63 @@ def decide_trigger_for_signal(
 
     cooldown = timedelta(minutes=policy.cooldown_minutes)
     for previous in accepted:
-        if previous.fingerprint != signal.fingerprint:
+        previous_problem = previous.problem_fingerprint or previous.fingerprint
+        if previous_problem != base["problem_fingerprint"]:
             continue
         ts = _parse_ts(previous.created_at)
         if ts is not None and current - ts <= cooldown:
-            return TriggerDecision(**base, decision="skipped", skip_reason="cooldown")
+            return TriggerDecision(
+                **{**base, "dedupe_decision": "cooldown_duplicate"},
+                decision="skipped",
+                skip_reason="cooldown",
+            )
 
     return TriggerDecision(**base, decision="accepted")
 
 
 def failure_class_for_signal(signal: FailureSignal) -> str:
     return str(signal.category or signal.source_kind or "unknown").strip() or "unknown"
+
+
+_ID_LIKE_RE = re.compile(
+    r"\b(?:evt|sig|fanout|child|task|TASK|ck|wfres|run|trace|pdd)[-_:/]?[A-Za-z0-9_.:-]{4,}\b"
+)
+_HEX_RE = re.compile(r"\b[0-9a-f]{8,40}\b", re.IGNORECASE)
+_SPACE_RE = re.compile(r"\s+")
+
+
+def problem_fingerprint_for_signal(signal: FailureSignal) -> str:
+    """Return a root-cause fingerprint coarser than one raw event instance."""
+
+    failure_class = failure_class_for_signal(signal)
+    reason_source = " ".join(
+        part
+        for part in (signal.summary, signal.actual, signal.expected)
+        if str(part or "").strip()
+    )
+    reason = _normalize_problem_text(reason_source)
+    raw = _normalize_problem_text(signal.fingerprint)
+    if reason:
+        return f"{failure_class}:{reason}"
+    return f"{failure_class}:{raw or signal.source_kind or 'unknown'}"
+
+
+def _normalize_problem_text(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = _HEX_RE.sub("<hex>", text)
+    text = _ID_LIKE_RE.sub("<id>", text)
+    text = _SPACE_RE.sub(" ", text)
+    return text[:240]
+
+
+def _confidence_for_signal(signal: FailureSignal) -> str:
+    if signal.event_ids and signal.evidence_paths:
+        return "high"
+    if signal.event_ids or signal.evidence_paths:
+        return "medium"
+    return "low"
 
 
 def _failure_class_allowed(failure_class: str, eligible: Iterable[str]) -> bool:

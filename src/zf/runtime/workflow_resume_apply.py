@@ -64,6 +64,7 @@ def apply_workflow_resume(
     gate_dispatcher=None,
     checkpoint_id: str = "",
     override_task_map_ref: str = "",
+    force_gate_dispatch: bool = False,
 ) -> dict[str, Any]:
     state_dir = Path(state_dir)
     event_log = (
@@ -154,6 +155,13 @@ def apply_workflow_resume(
                 reason="resume action already applied",
             ))
             continue
+        if _semantically_duplicate_resume_pending(events, checkpoint):
+            results.append(WorkflowResumeApplyResult(
+                checkpoint=checkpoint,
+                applied=False,
+                reason="similar resume action already applied without downstream progress",
+            ))
+            continue
         if dry_run:
             results.append(WorkflowResumeApplyResult(
                 checkpoint=checkpoint,
@@ -168,6 +176,7 @@ def apply_workflow_resume(
             config=config,
             state_dir=state_dir,
             gate_dispatcher=gate_dispatcher,
+            force_gate_dispatch=force_gate_dispatch,
             events=events,
         )
         results.append(result)
@@ -210,6 +219,7 @@ def apply_workflow_resume(
             checkpoint,
             state_dir=state_dir,
             gate_dispatcher=gate_dispatcher,
+            force_gate_dispatch=force_gate_dispatch,
             override_task_map_ref=override_task_map_ref,
             events=events,
         )
@@ -263,6 +273,7 @@ def _apply_checkpoint(
     state_dir: Path | None = None,
     gate_dispatcher=None,
     events=None,
+    force_gate_dispatch: bool = False,
 ) -> WorkflowResumeApplyResult:
     emitted: list[str] = []
 
@@ -294,6 +305,15 @@ def _apply_checkpoint(
             state_dir=state_dir,
         )
 
+    if checkpoint.safe_resume_action == "needs_stage_replan":
+        return _apply_stage_replan(
+            writer,
+            checkpoint,
+            emitted,
+            config=config,
+            events=events,
+        )
+
     if checkpoint.safe_resume_action == "needs_rework_dispatch":
         return _apply_rework_dispatch(
             store,
@@ -307,8 +327,13 @@ def _apply_checkpoint(
     if checkpoint.safe_resume_action == "needs_terminal_closeout":
         return _apply_terminal_closeout(store, writer, checkpoint, emitted)
 
+    forced_gate_dispatch = (
+        force_gate_dispatch
+        and checkpoint.safe_resume_action == "blocked_external_gate"
+    )
     if (
-        checkpoint.safe_resume_action == "needs_gate_dispatch"
+        (checkpoint.safe_resume_action == "needs_gate_dispatch"
+         or forced_gate_dispatch)
         and gate_dispatcher is not None
     ):
         # B7 (doc 91 P4 / R25 ISSUE-006): out-of-band 直接执行缺失
@@ -343,7 +368,11 @@ def _apply_checkpoint(
             task_id=checkpoint.task_id,
             payload={
                 **checkpoint.to_dict(),
-                "mode": "out_of_band_gate_dispatch",
+                "mode": (
+                    "operator_forced_gate_dispatch"
+                    if forced_gate_dispatch
+                    else "out_of_band_gate_dispatch"
+                ),
             },
             causation_id=checkpoint.blocking_event_id,
         ))
@@ -377,6 +406,86 @@ def _apply_checkpoint(
     )
 
 
+def _apply_stage_replan(
+    writer: EventWriter,
+    checkpoint: WorkflowResumeCheckpoint,
+    emitted: list[str],
+    *,
+    config: object,
+    events: list[ZfEvent] | None,
+) -> WorkflowResumeApplyResult:
+    if config is None:
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            False,
+            "rejected: missing config for stage replan",
+            _append_rejected(writer, checkpoint, emitted, "missing config"),
+        )
+    event_list = list(events or writer.event_log.read_all())
+    failure_event = next(
+        (event for event in event_list if event.id == checkpoint.blocking_event_id),
+        None,
+    )
+    if failure_event is None:
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            False,
+            "rejected: blocking failure event missing",
+            _append_rejected(
+                writer,
+                checkpoint,
+                emitted,
+                "blocking failure event missing",
+            ),
+        )
+    from zf.runtime.stage_failure_replan import plan_reader_stage_replan
+
+    replan_event, note = plan_reader_stage_replan(config, event_list, failure_event)
+    if replan_event is None:
+        applied = writer.append(ZfEvent(
+            type=WORKFLOW_RESUME_APPLIED_EVENT,
+            actor="zf-cli",
+            task_id=checkpoint.task_id,
+            payload={
+                **checkpoint.to_dict(),
+                "mode": "stage_replan_noop",
+                "reason": note,
+            },
+            causation_id=failure_event.id,
+            correlation_id=failure_event.correlation_id,
+        ))
+        emitted.append(applied.id)
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            True,
+            f"stage replan noop: {note}",
+            emitted,
+        )
+    replan = writer.append(replan_event)
+    emitted.append(replan.id)
+    applied = writer.append(ZfEvent(
+        type=WORKFLOW_RESUME_APPLIED_EVENT,
+        actor="zf-cli",
+        task_id=checkpoint.task_id,
+        payload={
+            **checkpoint.to_dict(),
+            "mode": "stage_replan_trigger",
+            "replan_event_id": replan.id,
+            "replan_event_type": replan.type,
+            "reason": note,
+        },
+        causation_id=failure_event.id,
+        correlation_id=failure_event.correlation_id,
+    ))
+    emitted.append(applied.id)
+    return WorkflowResumeApplyResult(
+        checkpoint,
+        True,
+        "stage replan trigger emitted",
+        emitted,
+    )
+
+
 def _apply_batch_checkpoint(
     writer: EventWriter,
     checkpoint: WorkflowBatchResumeCheckpoint,
@@ -385,6 +494,9 @@ def _apply_batch_checkpoint(
     gate_dispatcher=None,
     override_task_map_ref: str = "",
     events: list[ZfEvent] | None = None,
+    # FIX-2:batch 侧暂不支持强制路由,仅收下参数保持调用面一致;
+    # per-task 侧见 _apply_checkpoint 的 forced_gate_dispatch。
+    force_gate_dispatch: bool = False,
 ) -> WorkflowResumeApplyResult:
     emitted: list[str] = []
     superseded_reason = _batch_checkpoint_superseded_reason(events or [], checkpoint)
@@ -1533,6 +1645,67 @@ def _idempotent_resume_effect_seen(
             event.type == "task.status_changed"
             and str(payload.get("to") or payload.get("status") or "") == "done"
         ):
+            return True
+    return False
+
+
+def _semantically_duplicate_resume_pending(
+    events: list[ZfEvent],
+    checkpoint: WorkflowResumeCheckpoint,
+) -> bool:
+    if checkpoint.safe_resume_action not in {
+        "needs_rework_dispatch",
+        "needs_assignment_correction",
+    }:
+        return False
+    latest_match_idx = -1
+    for idx, event in enumerate(events):
+        if event.type != WORKFLOW_RESUME_APPLIED_EVENT:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(event.task_id or payload.get("task_id") or "") != checkpoint.task_id:
+            continue
+        if str(payload.get("safe_resume_action") or "") != checkpoint.safe_resume_action:
+            continue
+        if str(payload.get("expected_next_stage") or "") != checkpoint.expected_next_stage:
+            continue
+        if str(payload.get("reason") or "") != checkpoint.reason:
+            continue
+        latest_match_idx = idx
+    if latest_match_idx < 0:
+        return False
+    return not _resume_progress_after_index(events, latest_match_idx, checkpoint.task_id)
+
+
+_RESUME_DOWNSTREAM_PROGRESS_EVENTS = frozenset({
+    "task.assigned",
+    "task.dispatched",
+    "task.rework.requested",
+    "task.ref.updated",
+    "dev.build.done",
+    "dev.failed",
+    "review.approved",
+    "review.rejected",
+    "test.passed",
+    "test.failed",
+    "verify.passed",
+    "verify.failed",
+    "task.done.evidence",
+    "task.done",
+})
+
+
+def _resume_progress_after_index(
+    events: list[ZfEvent],
+    start_idx: int,
+    task_id: str,
+) -> bool:
+    for event in events[start_idx + 1:]:
+        if event.type not in _RESUME_DOWNSTREAM_PROGRESS_EVENTS:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        event_task_id = str(event.task_id or payload.get("task_id") or "")
+        if not event_task_id or event_task_id == task_id:
             return True
     return False
 

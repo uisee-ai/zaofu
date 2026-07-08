@@ -22,6 +22,8 @@ it as a self-healing sweep and it stays unit-testable.
 
 from __future__ import annotations
 
+import hashlib
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -157,6 +159,29 @@ def _is_stale_task_map_candidate_failure(event: object, payload: dict) -> bool:
     return suggested in {"", STALE_TASK_MAP_SUGGESTED_ACTION}
 
 
+def _fingerprint_counting_enabled(config: object) -> bool:
+    goal = getattr(config, "goal", None)
+    return bool(getattr(goal, "rework_fingerprint", False))
+
+
+def _rejection_fingerprint(payload: dict) -> str:
+    """U2:驳回内容指纹(doom-loop 形态的机械等值——同 findings 才同指纹)。"""
+    parts = [str(payload.get("reason") or "").strip().lower()]
+    findings = payload.get("findings")
+    for item in findings if isinstance(findings, list) else []:
+        if isinstance(item, dict):
+            parts.append(str(item.get("message") or item.get("path") or "").strip().lower())
+        else:
+            parts.append(str(item).strip().lower())
+    report = payload.get("report")
+    if isinstance(report, dict):
+        for item in report.get("findings") or []:
+            if isinstance(item, dict):
+                parts.append(str(item.get("message") or "").strip().lower())
+    text = "\n".join(sorted(part for part in parts if part))
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
+
+
 def plan_candidate_rework(
     events: list,
     *,
@@ -183,6 +208,8 @@ def plan_candidate_rework(
         pdd_by_fanout_id=pdd_by_fanout_id,
     )
     event_type_by_id: dict[str, str] = {}
+    rejection_fp_by_id: dict[str, str] = {}
+    fingerprint_on = _fingerprint_counting_enabled(config)
     rejections: list = []
     # R28: admission/W1 机械拒 → 回 synth,仅在 config 开关打开时识别(默认关 =
     # fanout.cancelled 落入 no_action 现状,零回归)。
@@ -196,6 +223,10 @@ def plan_candidate_rework(
         payload = getattr(event, "payload", {}) or {}
         if not isinstance(payload, dict):
             payload = {}
+        if event_id and (
+            etype in CANDIDATE_FAIL_EVENTS or etype.endswith(".child.failed")
+        ):
+            rejection_fp_by_id[event_id] = _rejection_fingerprint(payload)
         if etype == "fanout.started":
             fanout_id = str(payload.get("fanout_id") or "").strip()
             fanout_pdd = str(payload.get("pdd_id") or "").strip()
@@ -205,6 +236,9 @@ def plan_candidate_rework(
             RETRIGGER_EVENT,
             REPLAN_EVENT,
             ESCALATE_EVENT,
+            # 批B:微环注入 = 该拒收已被处理(并计入指纹 attempt,
+            # 同指纹再拒时停滞判定正常工作)
+            "task.rework.continuation_injected",
         ) and payload.get("rework_of"):
             pdd = str(payload.get("pdd_id") or "")
             rework_of = str(payload.get("rework_of"))
@@ -223,6 +257,47 @@ def plan_candidate_rework(
                 if source:
                     key = (pdd, source)
                     attempts_by_pdd_source.setdefault(key, set()).add(rework_of)
+        elif etype == "diagnosis.completed":
+            # Tier-2(doc 131 §5):诊断结论 route_to_lane 经 feedback 管线
+            # 回流 replan——归因证据链直接喂给 synth,替代人肉转述。
+            report = payload.get("report")
+            report = report if isinstance(report, dict) else {}
+            if str(report.get("next_action") or "") == "route_to_lane":
+                trace = str(
+                    payload.get("trace_id")
+                    or getattr(event, "correlation_id", "")
+                    or ""
+                )
+                hypothesis = str(
+                    report.get("root_cause_hypothesis") or "",
+                ).strip()
+                target = str(
+                    report.get("target_lane") or report.get("fix_target") or "?"
+                )
+                evidence = str(report.get("attribution_evidence") or "")[:200]
+                if hypothesis:
+                    feedback_by_trace.setdefault(trace, []).append(
+                        f"diagnosis→{target}: {hypothesis[:220]}"
+                        + (f" (evidence: {evidence})" if evidence else "")
+                    )
+        elif etype == "dev.failed":
+            # FIX-11(bizsim r4 F11):worker 诚实拒单(implicated surface 不在
+            # 本 lane)是归因错误的最强反证——r4 里 dev-sim-core 拒了被误
+            # 路由的 five-camera 修复。拒单理由必须回流 replan 输入,否则
+            # synth 下一轮还往同一条错 lane 派。
+            reason = str(payload.get("reason") or "").strip()
+            if reason:
+                trace = str(
+                    payload.get("trace_id")
+                    or getattr(event, "correlation_id", "")
+                    or ""
+                )
+                who = str(
+                    payload.get("child_id") or payload.get("role_instance") or "?"
+                )
+                feedback_by_trace.setdefault(trace, []).append(
+                    f"worker-rejection {who}: {reason[:220]}"
+                )
         elif etype.endswith(".child.failed"):
             trace = str(payload.get("trace_id") or getattr(event, "correlation_id", "") or "")
             task_ids = _task_ids_from_payload(payload)
@@ -330,6 +405,31 @@ def plan_candidate_rework(
         failed_task_ids = tuple(sorted(failed_task_ids_by_trace.get(trace, set())))
         gap_tasks = tuple(_dedupe_gap_tasks(gap_tasks_by_trace.get(trace, [])))
         source_attempts = attempts_by_pdd_source.get((pdd, source_event_type), set())
+        ineffective_rejection = False
+        if fingerprint_on:
+            # U2:同 findings 指纹才计满(doom-loop 形态);findings 在
+            # 前进 → 新预算,不误报 escalate(r6.1 续跑 6 次误报实弹)。
+            current_fp = _rejection_fingerprint(payload)
+            source_attempts = {
+                rework_id for rework_id in source_attempts
+                if rejection_fp_by_id.get(rework_id) == current_fp
+            }
+            # U22:被审 candidate 落后于最新交付 → 驳回无效,不计 cap
+            # (触发 r6.1 续跑停机的第 12 轮正是此类伪拒)。
+            from zf.runtime.rejection_validity import rejection_effective
+
+            check_ids = _task_ids_from_payload(payload) or sorted(
+                failed_task_ids_by_trace.get(trace, set())
+            )
+            for check_id in check_ids:
+                verdict = rejection_effective(
+                    events,
+                    task_id=check_id,
+                    rejection_event_id=str(getattr(event, "id", "")),
+                )
+                if not verdict.effective:
+                    ineffective_rejection = True
+                    break
         if source_attempts:
             attempt = len(source_attempts)
         elif any(key_pdd == pdd for key_pdd, _source in attempts_by_pdd_source):
@@ -349,6 +449,10 @@ def plan_candidate_rework(
             and attempt >= 1
             and bool(CONTRACT_REPLAN_CATEGORIES & set(failure_categories))
         )
+        if fingerprint_on and ineffective_rejection:
+            attempt = 0
+            repeated_contract_verify = False
+            classification = "rejection_ineffective_candidate_behind"
         if attempt >= max_attempts:
             action = "escalate"
         elif source_event_type == "plan.rejected":
@@ -723,6 +827,16 @@ def _rework_summary(
         "gap_tasks": list(gap_tasks),
         "feedback_count": len(feedback),
         "feedback_excerpt": list(feedback[:5]),
+        # FIX-11(bizsim r4 F11):归因是判断题归 synth,但合约要求它给出
+        # 证据链——失败测试→牵涉文件/包→目标 lane,并顺带任何 worker
+        # 拒单反证。r4 的 five-camera 误路由渲染 lane 即缺这一环。
+        "attribution_contract": (
+            "Route the rework to the lane whose owned files the failure "
+            "actually implicates. Provide attribution_evidence: failing "
+            "check -> implicated files/packages -> target lane. Treat any "
+            "worker-rejection feedback above as counter-evidence against "
+            "the previous routing."
+        ),
     }
 
 

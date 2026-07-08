@@ -127,3 +127,24 @@ def test_agent_usage_liveness_survives_rich_path_failure(state_dir, transport, m
                               project_root=str(state_dir.parent))
     ts, _ = reg.get_last_heartbeat("dev")
     assert ts, "minimal liveness touch must survive rich-path failure"
+
+
+def test_generic_child_completion_releases_worker_liveness(state_dir, transport):
+    from zf.core.state.role_sessions import RoleSessionRegistry
+
+    orch = Orchestrator(state_dir, _config(), transport)
+    orch._set_worker_state("dev", "busy", reason="dispatch", task_id="T1", force=True)
+    orch._apply_housekeeping(ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="T1",
+        payload={"dispatch_id": "disp-1"},
+    ))
+
+    reg = RoleSessionRegistry(
+        state_dir / "role_sessions.yaml",
+        project_root=str(state_dir.parent),
+    )
+    _, payload = reg.get_last_heartbeat("dev")
+    assert payload is not None
+    assert payload["state"] == "idle"

@@ -204,3 +204,85 @@ def test_lane_rework_cap_quarantines_without_dispatching_new_child(
     assert quarantined[0].payload["attempt"] == 3
     assert quarantined[0].payload["max_attempts"] == 2
     assert len(transport.sent) == before_dispatches
+
+
+def test_lane_rework_fanout_does_not_supersede_sibling_lanes(
+    tmp_path: Path,
+) -> None:
+    """F4(bizsim r4 实锚):per-lane rework 重生的 stage 级 fanout 不得与原代
+    共享 fanout identity logical_key,否则兄弟 lane 在飞完工被 stale 连坐。"""
+    from zf.runtime.fanout_identity import fanout_current_status
+
+    state_dir, log, transport, orch = _state(tmp_path, task_count=2)
+    _start(orch)
+    impl_id = _fanout_id(log, "demo-impl")
+    impl_manifest = _manifest(state_dir, impl_id)
+
+    _complete_writer(
+        orch,
+        fanout_id=impl_id,
+        child=_child(impl_manifest, "TASK-1"),
+        task_id="TASK-1",
+        file_name="task-1.txt",
+    )
+    verify_id = _fanout_id(log, "demo-verify")
+    _fail_verify(orch, state_dir=state_dir, fanout_id=verify_id)
+
+    events = log.read_all()
+    rework_fanouts = [
+        event for event in events
+        if event.type == "fanout.started"
+        and event.payload.get("stage_id") == "demo-impl"
+        and event.payload.get("rework_of_lane_stage_event_id")
+    ]
+    assert len(rework_fanouts) == 1
+    rework_started = rework_fanouts[0]
+    # 代际隔离字段:task_id + rework_attempt 必须进 started payload,
+    # 使 logical_key 与原代(task 位为空)不同。
+    assert rework_started.payload.get("task_id") == "TASK-1"
+    assert rework_started.payload.get("rework_attempt") == 1
+
+    # 原代必须仍为 current —— 兄弟 lane(TASK-2)的在飞完工不得被 stale。
+    status = fanout_current_status(events, impl_id)
+    assert status.known and status.current, (
+        f"gen-1 impl fanout 被 rework fanout 取代: {status}"
+    )
+
+
+def test_workflow_reconcile_revives_unconsumed_stage_trigger(
+    tmp_path: Path,
+) -> None:
+    """FIX-6(bizsim r4 F2):阻塞期被 wait 掉的 stage 触发边沿,经
+    workflow.reconcile.requested 由 reactor 补孵化;幂等不重复孵化。"""
+    from zf.core.events.model import ZfEvent
+
+    state_dir, log, transport, orch = _state(tmp_path, task_count=2)
+
+    # 直接落账一条 task_map.ready(模拟阻塞期错过的边沿——orchestrator
+    # 从未对它 run_once)。
+    missed = ZfEvent(
+        type="task_map.ready",
+        actor="zf-cli",
+        correlation_id="trace-1",
+        payload={"pdd_id": "F-11111111"},
+    )
+    log.append(missed)
+    assert not [e for e in log.read_all() if e.type == "fanout.started"]
+
+    orch.run_once(events=[ZfEvent(
+        type="workflow.reconcile.requested",
+        actor="run-manager",
+        payload={"source": "human_decision_applied"},
+    )])
+    started = [e for e in log.read_all() if e.type == "fanout.started"]
+    assert started, "重扫必须补孵化被错过的 stage 触发"
+
+    # 幂等:再次重扫不重复孵化。
+    orch.run_once(events=[ZfEvent(
+        type="workflow.reconcile.requested",
+        actor="run-manager",
+        payload={"source": "human_decision_applied"},
+    )])
+    assert len([
+        e for e in log.read_all() if e.type == "fanout.started"
+    ]) == len(started)

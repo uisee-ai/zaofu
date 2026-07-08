@@ -336,7 +336,7 @@ roles:
   backend: codex
   role_kind: reader
   permission_mode: bypass
-  skills: [using-agent-skills, planning-and-task-breakdown, context-engineering, zf-yoke-orchestrator-role-context, zf-harness-state-sync, zf-harness-spec-bridge]
+  skills: [using-agent-skills, planning-and-task-breakdown, context-engineering, zf-yoke-orchestrator-role-context, zf-harness-state-sync, zf-harness-spec-bridge, zf-harness-goal-loop-contract]
   stages: [meta]
   triggers: [task.contract.invalid, static_gate.failed, fanout.serialize, fanout.cancelled, dispatch.silent_stall, worker.stuck]
   publishes: [task.created, task.dispatched, task.contract.update]

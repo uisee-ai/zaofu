@@ -22,6 +22,7 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.fanout import FanoutChild, FanoutContext, validate_fanout_report
+from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
 from zf.runtime.orchestrator import Orchestrator
 from zf.core.workflow.lane_pipeline import parse_lane_pipeline
 
@@ -43,6 +44,10 @@ class _RecordingTransport:
         return []
 
 
+class _FanoutReportProbe(FanoutEvidenceQueriesMixin):
+    pass
+
+
 def _config(
     *,
     mode: str = "wait_for_all",
@@ -52,7 +57,7 @@ def _config(
     child_success_event: str = "",
     child_failure_event: str = "",
 ) -> ZfConfig:
-    reader_skills = ["zf-harness-dual-axis-review"] if review_skills else []
+    reader_skills = ["verify-review"] if review_skills else []
     roles = [
         RoleConfig(
             name="review-a",
@@ -176,6 +181,27 @@ def test_trigger_creates_one_fanout_and_dispatches_children(
     assert "Do not emit the aggregate success/failure event directly" in briefing
     assert f"--state-dir {state_dir}" in briefing
     assert '"fanout_id":' in briefing
+
+
+def test_reader_fanout_briefing_includes_stage_instructions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
+    _state_dir, _log, transport, orch = _state(tmp_path)
+    orch.config.workflow.stages[0].criteria = WorkflowStageCriteriaConfig(
+        instructions=[
+            "Initial scan is not implementation verification.",
+            "Missing code belongs in planning input, not scan failure.",
+        ],
+    )
+
+    _start_fanout(orch)
+
+    briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "## Stage Intent" in briefing
+    assert "Initial scan is not implementation verification." in briefing
+    assert "Missing code belongs in planning input, not scan failure." in briefing
 
 
 def test_reader_fanout_stage_success_criteria_can_fail_aggregate(
@@ -1143,10 +1169,10 @@ def test_reader_fanout_briefing_includes_enabled_role_skills(tmp_path: Path):
         event for event in log.read_all()
         if event.type == "fanout.child.dispatched"
     ]
-    assert dispatched[0].payload["skills"] == ["zf-harness-dual-axis-review"]
+    assert dispatched[0].payload["skills"] == ["verify-review"]
     briefing = transport.sent[0][1].read_text(encoding="utf-8")
     assert "## Enabled Skills" in briefing
-    assert "`/zf-harness-dual-axis-review`" in briefing
+    assert "`/verify-review`" in briefing
 
 
 def test_wait_for_all_waits_for_all_terminal_children(tmp_path: Path):
@@ -2257,6 +2283,86 @@ def test_provider_style_finding_fields_are_normalized():
     assert finding["message"] == "Loader crashes on malformed config section."
 
 
+def test_fanout_report_preserves_audit_evidence_fields():
+    result = validate_fanout_report(
+        {
+            "child_id": "verify-a",
+            "status": "passed",
+            "summary": "verified",
+            "findings": [],
+            "recommendation": "approve",
+            "checks": [{"command": "pytest -q", "exit_code": 0}],
+            "artifact_refs": ["reports/verify.json"],
+            "evidence_refs": ["reports/verify.json", "git:abc123"],
+            "test_refs": ["pytest"],
+            "e2e_refs": ["smoke"],
+            "scores": {"evidence_quality": 1.0},
+        },
+        child_id="verify-a",
+    )
+
+    assert result.valid is True
+    assert result.report["checks"][0]["command"] == "pytest -q"
+    assert result.report["artifact_refs"] == ["reports/verify.json"]
+    assert result.report["evidence_refs"] == ["reports/verify.json", "git:abc123"]
+    assert result.report["test_refs"] == ["pytest"]
+    assert result.report["e2e_refs"] == ["smoke"]
+    assert result.report["scores"]["evidence_quality"] == 1.0
+
+
+def test_fanout_child_report_merges_top_level_evidence_refs():
+    result = _FanoutReportProbe()._fanout_child_report(
+        child_id="verify-a",
+        event=ZfEvent(
+            type="verify.child.completed",
+            payload={
+                "report": {
+                    "status": "passed",
+                    "summary": "verified",
+                    "findings": [],
+                    "recommendation": "approve",
+                },
+                "artifact_refs": ["reports/verify.json"],
+                "evidence_refs": ["git:abc123"],
+            },
+        ),
+        success=True,
+    )
+
+    assert result.report["artifact_refs"] == ["reports/verify.json"]
+    assert result.report["evidence_refs"] == ["git:abc123"]
+
+
+def test_fanout_synth_report_paths_become_evidence_refs():
+    result = _FanoutReportProbe()._fanout_child_report(
+        child_id="judge-synth",
+        event=ZfEvent(
+            type="fanout.synth.completed",
+            payload={
+                "status": "completed",
+                "summary": "all child reports passed",
+                "report_paths": [
+                    "fanouts/fanout-final/children/verify-a/report.json",
+                    "fanouts/fanout-final/children/verify-b/report.json",
+                ],
+                "report": {
+                    "child_id": "judge-synth",
+                    "status": "passed",
+                    "summary": "all child reports passed",
+                    "findings": [],
+                    "recommendation": "approve",
+                },
+            },
+        ),
+        success=True,
+    )
+
+    assert result.report["evidence_refs"] == [
+        "fanouts/fanout-final/children/verify-a/report.json",
+        "fanouts/fanout-final/children/verify-b/report.json",
+    ]
+
+
 def test_synth_role_receives_child_report_paths_and_defers_final_event(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2864,26 +2970,28 @@ def test_refactor_plan_ready_projects_plan_and_task_map(tmp_path: Path):
     assert final.payload["artifact_gate"] == "passed"
 
 
-def _lane_pipeline_spec():
+def _lane_pipeline_spec(assembly=None):
+    if assembly is None:
+        assembly = {"task": "CJMIN-ASSEMBLY-001"}
     return parse_lane_pipeline({
         "id": "cj-min-refactor-lane-pipeline",
         "kind": "lane_pipeline",
         "trigger": "task_map.ready",
         "affinity_key": "affinity_tag",
         "lane_count": 2,
-        "assembly": {"task": "CJMIN-ASSEMBLY-001"},
+        "assembly": assembly,
         "stages": [{"id": "impl"}],
     })
 
 
-def _refactor_plan_config_with_pipeline() -> ZfConfig:
+def _refactor_plan_config_with_pipeline(assembly=None) -> ZfConfig:
     return ZfConfig(
         project=ProjectConfig(name="test"),
         roles=[
             RoleConfig(name="refactor-plan-author", backend="mock", role_kind="reader"),
         ],
         workflow=WorkflowConfig(
-            pipelines=[_lane_pipeline_spec()],
+            pipelines=[_lane_pipeline_spec(assembly=assembly)],
             stages=[
                 WorkflowStageConfig(
                     id="zaofu-refactor-plan-synthesis",
@@ -2905,14 +3013,19 @@ def _refactor_plan_config_with_pipeline() -> ZfConfig:
     )
 
 
-def _run_refactor_plan_with_task_map(tmp_path: Path, task_map: dict) -> list[ZfEvent]:
+def _run_refactor_plan_with_task_map(
+    tmp_path: Path,
+    task_map: dict,
+    *,
+    assembly=None,
+) -> list[ZfEvent]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
     log = EventLog(state_dir / "events.jsonl")
     orch = Orchestrator(
         state_dir,
-        _refactor_plan_config_with_pipeline(),
+        _refactor_plan_config_with_pipeline(assembly=assembly),
         _RecordingTransport(),
     )  # type: ignore[arg-type]
     trigger = ZfEvent(
@@ -3028,6 +3141,45 @@ def test_refactor_plan_compile_accepts_role_assembly_alias(tmp_path: Path):
     assert ready.payload["plan_compile_gate"] == "passed"
 
 
+def test_refactor_plan_compile_accepts_assembly_none_leaf_refactor(
+    tmp_path: Path,
+):
+    events = _run_refactor_plan_with_task_map(
+        tmp_path,
+        {
+            "schema_version": "task-map.v1",
+            "feature_id": "REFACTOR-PRICING-001",
+            "refactor_contract": {
+                "assembly": "none",
+                "assembly_policy": "none",
+            },
+            "tasks": [
+                {
+                    "task_id": "REFACTOR-PRICING-CHAR",
+                    "allowed_paths": ["tests/test_pricing.py"],
+                    "verification": "uv run pytest -q",
+                },
+                {
+                    "task_id": "REFACTOR-PRICING-HELPERS",
+                    "allowed_paths": ["src/orders/pricing.py"],
+                    "verification": "uv run pytest -q",
+                },
+            ],
+        },
+        assembly="none",
+    )
+
+    assert not [
+        event for event in events
+        if event.type == "zaofu.refactor.plan.blocked"
+    ]
+    ready = next(event for event in events
+                 if event.type == "zaofu.refactor.plan.ready"
+                 and event.actor == "zf-cli")
+    assert ready.payload["artifact_gate"] == "passed"
+    assert ready.payload["plan_compile_gate"] == "passed"
+
+
 def test_orphan_child_result_rebinds_by_role_instance(tmp_path: Path):
     """B-STUCK-1b: a reader child completion that lost fanout_id/child_id
     (restart / regular re-dispatch strips the fanout context) is re-bound to
@@ -3102,6 +3254,60 @@ def test_orphan_child_result_unknown_role_not_bound(tmp_path: Path):
         c["status"] not in {"completed", "failed"}
         for c in manifest["children"]
     )
+
+
+def test_orphan_child_result_does_not_rebind_to_superseded_fanout(tmp_path: Path):
+    """Regression (feishu e2e prd-refine stall): the orphan re-bind (B-STUCK-1b)
+    must skip SUPERSEDED fanout generations, not only terminal ones. A superseded
+    fanout is abandoned mid-flight -- its manifest status is not terminal and its
+    children stay 'dispatched' -- so binding a fresh bare completion to it only
+    gets that completion dropped as fanout.child.stale_completion, stalling the
+    current stage. A resident role re-used across rounds emitted exactly this bare
+    completion and bound to a stale, long-superseded prd-refine fanout -> the new
+    task's prd stage stalled. The resolver must not pick the superseded generation."""
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _start_fanout(orch)
+    started = next(e for e in log.read_all() if e.type == "fanout.started")
+    old_fanout_id = started.payload["fanout_id"]
+    child = _manifest(state_dir, old_fanout_id)["children"][0]
+    role_instance = child["role_instance"]
+
+    # Supersede gen-1 with a fresh generation of the same logical stage.
+    new_payload = dict(started.payload)
+    new_payload["fanout_id"] = "fanout-review-candidate-new"
+    new_payload["trigger_event_id"] = "candidate-ready-new"
+    EventWriter(log).append(ZfEvent(
+        type="fanout.started", actor="zf-cli", correlation_id="trace-2",
+        payload=new_payload,
+    ))
+
+    # Bare completion from the resident role: only actor, no fanout_id/child_id.
+    orch.run_once(events=[ZfEvent(
+        type="workflow.child.completed",
+        actor=role_instance,
+        correlation_id="trace-1",
+        payload={"status": "completed"},
+    )])
+
+    events = log.read_all()
+    # Must NOT bind the fresh completion onto the superseded generation ...
+    assert not [
+        e for e in events
+        if e.type == "fanout.child.completed"
+        and e.payload.get("fanout_id") == old_fanout_id
+    ]
+    # ... and must NOT drop it as a stale completion of that superseded fanout.
+    assert not [
+        e for e in events
+        if e.type == "fanout.child.stale_completion"
+        and e.payload.get("fanout_id") == old_fanout_id
+    ]
+    # the superseded child stays dispatched (untouched), never falsely completed.
+    stale_child = next(
+        c for c in _manifest(state_dir, old_fanout_id)["children"]
+        if c["child_id"] == child["child_id"]
+    )
+    assert stale_child["status"] not in {"completed", "failed"}
 
 
 def test_reader_fanout_retries_lost_dispatched_child_after_worker_session_replace(

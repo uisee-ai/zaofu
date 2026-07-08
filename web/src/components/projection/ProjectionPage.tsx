@@ -1,6 +1,20 @@
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, Task, TraceSummary, WorkdirSummary } from "../../api/types";
 import { BehaviorLoopPage } from "../../components/delivery-trace/BehaviorLoopPage";
+import { LoopPageV2 } from "../../components/delivery-trace/LoopPageV2";
+
+// Loop v2 is the default; legacy page stays reachable via ?v=1 or
+// localStorage zf.loopV1 for one release cycle (tasks/2026-07-06-0632).
+function loopLegacyRequested(): boolean {
+  try {
+    return (
+      new URLSearchParams(window.location.search).get("v") === "1"
+      || window.localStorage.getItem("zf.loopV1") === "1"
+    );
+  } catch {
+    return false;
+  }
+}
 import { DeliveryTracePage } from "../../components/delivery-trace/DeliveryTracePage";
 import { Archive, Bell, Boxes, FileText, FolderGit2, GitFork, ListTodo, Map as MapIcon, PlayCircle, Radio, Route, Settings, Users } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -12,7 +26,6 @@ import { AutomationsPage } from "../automations/AutomationsPage";
 import { getProjectAutomations, getProjectTraces } from "../../api/client";
 import { SkillsPage } from "../skills/SkillsPage";
 import { RuntimePanel } from "../runtime/RuntimePanel";
-import { ControlRoomPage } from "../control-room/ControlRoomPage";
 
 export function ProjectionPage({
   actionReady,
@@ -132,16 +145,10 @@ export function ProjectionPage({
     );
   }
 
-  if (page === "control-room") {
-    return (
-      <ControlRoomPage
-        actionReady={actionReady}
-        projectId={activeProjectId}
-      />
-    );
-  }
-
   if (page === "behavior-loop") {
+    if (!loopLegacyRequested()) {
+      return <LoopPageV2 projectId={activeProjectId} />;
+    }
     return (
       <BehaviorLoopPage
           projectId={activeProjectId}

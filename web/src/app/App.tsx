@@ -81,6 +81,7 @@ import {
   getTraceDetail,
   createWorkflowIntake,
   getWorkspaceProjects,
+  getOnboarding,
   initWorkspaceProject,
   lockWebSession,
   postAction,
@@ -179,7 +180,9 @@ import { AutomationsPage } from "../components/automations/AutomationsPage";
 import { TaskDetail } from "../components/kanban/TaskDetail";
 import { SkillsPage } from "../components/skills/SkillsPage";
 import { RuntimePanel } from "../components/runtime/RuntimePanel";
+import { ProjectInitOnboarding } from "../components/workspace/ProjectInitOnboarding";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
+import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { NewTaskModal } from "../components/modals/NewTaskModal";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
 import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, NewTaskDraft, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
@@ -192,7 +195,7 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
   "kanban.agent.message.delta",
   "channel.message.stream.delta",
 ]);
-const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id"]);
+const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v"]);
 const TRACE_EXPLORER_QUERY_KEYS = new Set(["trace_id"]);
 const REFRESH_EVENT_PREFIXES = [
   "task.",
@@ -623,10 +626,10 @@ function pageTitle(page: PageId): string {
     skills: "Skills",
     traces: "Event Traces",
     delivery: "Delivery",
-    "control-room": "Control",
     "delivery-trace": "Trace",
     "delivery-graph": "Graph",
     "behavior-loop": "Loop",
+    "control-room": "Control (retired)",
     diagnostics: "Diagnostics",
     candidates: "Candidates",
     fanouts: "Fanouts",
@@ -672,7 +675,7 @@ export function App() {
   const [page, setPage] = useState<PageId>(initial.page);
   // Retired page: deep links keep working via redirect (doc116 §7.5 / P0-C2).
   useEffect(() => {
-    if (page === "runtime") setPage("observability");
+    if (page === "runtime" || page === "control-room") setPage("observability");
   }, [page]);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
@@ -704,6 +707,14 @@ export function App() {
   const [projectWizardOpen, setProjectWizardOpen] = useState(false);
   const [projectWizardDraft, setProjectWizardDraft] = useState<ProjectWizardDraft>(() => emptyProjectWizardDraft());
   const [projectWizardResult, setProjectWizardResult] = useState<Record<string, unknown> | null>(null);
+  const [showWelcome, setShowWelcome] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getOnboarding()
+      .then((o) => { if (!cancelled) setShowWelcome(o.show_welcome); })
+      .catch(() => { if (!cancelled) setShowWelcome(false); });
+    return () => { cancelled = true; };
+  }, []);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -1862,6 +1873,26 @@ export function App() {
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
     : "docked";
+
+  if (showWelcome) {
+    return (
+      <WelcomeWizard
+        hasProject={workspaceProjects.length > 0}
+        onOpenProjectWizard={(prefill) => {
+          if (prefill?.root || prefill?.preset) {
+            setProjectWizardDraft((d) => ({
+              ...d,
+              root: prefill.root ?? d.root,
+              preset: prefill.preset ?? d.preset,
+              applyProfile: true,
+            }));
+          }
+          setProjectWizardOpen(true);
+        }}
+        onDone={() => { setShowWelcome(false); void loadWorkspaceProjects(); }}
+      />
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -3229,11 +3260,19 @@ function ProjectWizardModal({
     onSaveToken(tokenInput);
     setTokenInput("");
   }
+  const presetRank = (p: PresetInfo): number =>
+    p.name.includes("-v3-") ? 0 : p.kind === "flow" ? 1 : 2;
   const presetOptions: PresetInfo[] = presets.length
-    ? presets
+    ? [...presets].sort((a, b) => presetRank(a) - presetRank(b))
     : ["minimal", "code-assist"].map(
         (name) => ({ name, description: "", roleCount: 0, kind: "preset", backend: "" }),
       );
+  useEffect(() => {
+    if (draft.preset === "minimal" && presetOptions.length && presetOptions[0].name !== "minimal") {
+      update({ preset: presetOptions[0].name });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presets.length]);
   const selectedPreset = presetOptions.find((p) => p.name === draft.preset);
   return (
     <div className="modal-backdrop" role="presentation">
@@ -3442,6 +3481,7 @@ function ProjectWizardModal({
               </button>
             </div>
           ) : null}
+          <ProjectInitOnboarding result={result} />
           {result ? <PreBlock value={result} /> : null}
         </div>
         <div className="action-row">

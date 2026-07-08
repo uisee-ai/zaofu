@@ -30,6 +30,7 @@ def test_baseline_handoff_success_events_locked() -> None:
         "arch.proposal.done",
         "design.critique.done",
         "dev.build.done",
+        "impl.child.completed",
         "static_gate.passed",
         "review.approved",
         "verify.passed",
@@ -50,6 +51,7 @@ def test_baseline_rework_trigger_events_locked() -> None:
         "task.done.blocked",
         "dev.blocked",   # cangjie-mono drift fix 2026-05-18
         "dev.failed",
+        "impl.child.failed",
         "review.child.failed",
         "verify.child.failed",
     })
@@ -63,8 +65,8 @@ def test_baseline_stage_progress_is_handoff_plus_rework() -> None:
         | frozenset({"static_gate.skipped"})
     )
     assert baseline.stage_progress_events == expected
-    # 8 handoff + 11 rework + 1 equivalent-progress event = 20 distinct events
-    assert len(baseline.stage_progress_events) == 20
+    # 9 handoff + 12 rework + 1 equivalent-progress event = 22 distinct events
+    assert len(baseline.stage_progress_events) == 22
     assert "static_gate.skipped" not in baseline.handoff_success_events
 
 

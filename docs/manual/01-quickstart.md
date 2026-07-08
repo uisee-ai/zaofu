@@ -6,14 +6,14 @@
 > ```bash
 > # 0. 前置:后端 CLI + tmux 在 PATH 上(见 §0)
 > command -v claude && command -v tmux        # claude-code 后端
-> # 1. 装环境
-> uv sync --extra dev && uv run zf --version
-> # 2. 生成可运行配置(首跑请用 ✅ 通过 dry-run 的 preset,见 §2)
+> # 1. 装环境(safe-team/claude-code 真实运行需要 stream-json extra)
+> uv sync --extra dev --extra stream-json && uv run zf --version
+> # 2. 生成可运行配置(首跑请用 fresh project + 通过 dry-run 的 preset,见 §2)
 > uv run zf init --preset safe-team
 > # 3. 启动前检查
 > uv run zf validate --cold-start && uv run zf start --dry-run --no-watch
 > # 4. 启动 + 投递任务
-> uv run zf start --foreground
+> uv run zf start
 > uv run zf chat "实现一个小功能并完成测试、review、judge 全流程"
 > ```
 
@@ -30,6 +30,7 @@ command -v tmux      # 所有 backend 都需要(harness 跑在 tmux 里)
 # 2) 后端已登录 / 真实可用
 uv run zf doctor provider --backend codex   # codex 的真实可用性探测
 claude --version                            # claude-code 自检(应能正常输出)
+claude -p 'Reply with exactly: zaofu-ok' --output-format text --dangerously-skip-permissions
 
 # 3) Python 环境就绪
 uv run zf --version
@@ -39,19 +40,21 @@ uv run zf --version
 
 ## 1. 进入仓库
 
-源码 checkout 下推荐用 `uv` 管理 Python 环境和依赖。第一次进入仓库先同步常用开发依赖:
+源码 checkout 下推荐用 `uv` 管理 Python 环境和依赖。第一次进入仓库先同步常用开发依赖。
+如果后续要按 `safe-team` 启动真实 Claude Code stream-json 后端,不要只装
+`--extra dev`;必须包含 `--extra stream-json`,否则运行时会报
+`No module named 'claude_code_sdk'`。
 
 ```bash
 cd /path/to/zaofu
-uv sync --extra dev
+uv sync --extra dev --extra stream-json
 uv run zf --version
 ```
 
-需要 Web dashboard 或真实 Claude stream-json provider 时,同步对应 optional
-extras:
+需要 Web dashboard 或 Feishu bridge 时,同步对应 optional extras:
 
 ```bash
-uv sync --extra dev --extra web --extra stream-json
+uv sync --extra dev --extra web --extra stream-json --extra feishu
 ```
 
 如果只需要复现锁定环境,使用:
@@ -62,26 +65,29 @@ uv run --locked zf --version
 
 ## 2. 生成或确认 `zf.yaml`
 
-`zf.yaml` 是唯一控制面。已有项目应先查看现有 `zf.yaml`;新项目可以从 preset 生成:
+`zf.yaml` 是唯一控制面。已有项目应先查看现有 `zf.yaml`;新项目可以从 preset 生成。
+注意: `zf init --preset ...` 不等于"覆盖当前仓库已有复杂 `zf.yaml`"。如果你在 ZaoFu
+源码 checkout 或任何已有 `zf.yaml` 的目录里验证 quickstart,实际 dry-run 仍以当前
+`zf.yaml` 为准;要验证 preset,请在 fresh project 里运行。
 
 ```bash
 uv run zf presets
 uv run zf init --preset safe-team
 ```
 
-常用 preset 及其 `zf start --dry-run` 状态(2026-06-19 实测当前 HEAD):
+常用 preset 及其适用场景(2026-07-07 远端 fresh-project dry-run 实测):
 
-| Preset | 适用场景 | `zf start --dry-run` |
+| Preset | 适用场景 | fresh-project `zf start --dry-run --no-watch` |
 |---|---|---|
-| `safe-team` | orchestrator + arch/dev/review/test/judge 的标准三层架构 | ✅ 通过 —— **首跑推荐** |
+| `safe-team` | orchestrator + arch/dev/review/test/judge 的标准三层架构 | ✅ 通过,首跑推荐 |
 | `design-first` | design -> dev -> review/test/judge 的设计先行流 | ✅ 通过 |
-| `minimal` | 只启动一个 dev worker 的最小 harness | ⚠️ 当前 STOP |
-| `code-assist` | dev/review/test 的代码辅助流 | ⚠️ 当前 STOP |
-| `safe-local` | 本地单 dev,适合快速验证 CLI/runtime | ⚠️ 当前 STOP |
+| `minimal` | 只启动一个 dev worker 的最小 harness | ⚠️ STOP:`terminal_event_without_producer judge.failed` |
+| `code-assist` | dev/review/test 的代码辅助流 | ✅ 通过 |
+| `safe-local` | 本地单 dev,适合快速验证 CLI/runtime | ⚠️ STOP:`missing_rework_route static_gate.failed` + `judge.failed` |
 
-> **⚠️ 已知问题(P0-5)**:`minimal` / `code-assist` 因没有 judge 角色,工作流图推导出一个无人发布的终态事件 `judge.failed` → dry-run 报
-> `STOP terminal_event_without_producer`;`safe-local` 因失败事件 `static_gate.failed` 缺 rework route 报 `STOP missing_rework_route`。
-> 这是工作流图**终态/rework 事件推导缺 publish-scoping** 的 bug(`src/zf/core/workflow/graph.py`,终态默认硬编码 `judge.failed`,未按角色实际 `publishes` 收敛),**不是这些 preset 本身不可用**。修复前,**首次运行请用上表 ✅ 的 preset**(`safe-team` 或 `design-first`)。修复跟踪见 backlog(把 success 分支已有的 publish-scoping 延伸到 failure 默认即可)。
+不同 preset 的 topology 会随实现演进。启动前以当前代码的
+`uv run zf start --dry-run --no-watch` 和 `uv run zf workflow inspect`
+输出为准;出现 `STOP` 时先按诊断信息修配置,不要按旧手册假设 preset 固定失败。
 
 当前仓库的真实 Codex 压测配置在 `examples/dev-codex-backends.yaml`,通常用于 E2E 和鲁棒性验证,不建议直接作为普通项目默认配置。
 
@@ -124,6 +130,16 @@ tools/init-project.sh \
 ```bash
 uv run zf init
 ```
+
+新项目可直接指定路径并创建目录:
+
+```bash
+uv run zf init /path/to/project --create --preset safe-team
+```
+
+默认会尝试注册到 workspace project manager;需要显式控制时使用
+`--workspace-register` / `--no-workspace-register`。需要初始化前环境探测时加
+`--env-check`;不希望写 git hooks 时加 `--no-git-hooks`。
 
 `zf init` 默认会创建/刷新项目根指令文件:
 
@@ -168,18 +184,29 @@ uv run zf start --dry-run --no-watch
 
 **读懂结果**:
 - 无 `STOP` 输出 = dry-run 通过,可以启动真实 harness。
-- 出现 `STOP terminal_event_without_producer` / `STOP missing_rework_route` 且你用的是 `minimal` / `code-assist` / `safe-local` —— 这是 §2 的**已知 preset 问题(P0-5)**,不是你的配置错误。换用 `safe-team` 或 `design-first` 即可继续。
-- 其它 `STOP` —— 多为你自定义 `zf.yaml` 的 roles `triggers`/`publishes` 拼写或断边;`uv run zf workflow inspect` 看推导出的拓扑(`unhandled` / `orphan` / `dead-end` 即问题边)。
+- 出现 `STOP terminal_event_without_producer` / `STOP missing_rework_route` 等拓扑错误时,
+  先运行 `uv run zf workflow inspect` 看推导出的 `unhandled` / `orphan` / `dead-end`
+  边,再修 `roles.triggers` / `roles.publishes` / `workflow.rework_routing`。
+- 如果使用内置 preset 仍出现 STOP,以当前 dry-run 输出为准生成 bug/backlog;不要沿用旧手册里某个日期的 preset 状态判断。
 
 Dry run 通过后,再启动真实 harness。
 
+> 远端真实 E2E 注意(2026-07-07):fresh `safe-team` 能启动 9 个 tmux worker,Claude Code
+> 能消费 `zf chat` 并创建 task;但首个真实任务可能停在 backlog,因为 orchestrator 角色的
+> tool allowlist 过窄,而 briefing 要求它写 contract payload 文件再 emit。看到
+> `agent.timeout` 或 `Claude requested permissions to write ... contract.json` 时,这是
+> preset/allowlist 需要修复,不是安装步骤问题。
+
 ## 7. 启动真实 Harness
 
-推荐用 foreground 模式启动 watcher,因为 watcher 负责事件唤醒、stuck/orphan/recycle 扫描和 orchestrator 推进:
+推荐直接启动 watcher,因为 watcher 负责事件唤醒、stuck/orphan/recycle 扫描和 orchestrator 推进:
 
 ```bash
-uv run zf start --foreground
+uv run zf start
 ```
+
+`--foreground` 仍被接受,但当前代码里只是 deprecated no-op alias;默认行为已经是在前台运行 watcher。
+如果只想 spawn workers 后退出、不长期运行 watcher,才使用 `--no-watch`。
 
 另开一个终端观察:
 

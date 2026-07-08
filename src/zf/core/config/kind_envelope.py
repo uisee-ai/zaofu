@@ -211,7 +211,7 @@ def assemble_envelope_stream(
     config_profiles: dict[str, dict] = {}
     role_sets: dict[str, dict] = {}
     kind_stages: list[dict] = []
-    flow_expansions: list[dict] = []
+    flow_documents: list[tuple[str, dict]] = []
     for i, doc in enumerate(docs):
         if not isinstance(doc, dict):
             raise KindEnvelopeError(f"document[{i}] must be a mapping")
@@ -269,32 +269,11 @@ def assemble_envelope_stream(
             except WorkflowKindError as exc:
                 raise KindEnvelopeError(str(exc))
         elif kind == "RefactorFlow":
-            from zf.core.config.workflow_profiles import (
-                WorkflowProfileError,
-                expand_workflow_profile,
-            )
-            try:
-                flow_expansions.append(expand_workflow_profile(dict(spec)))
-            except WorkflowProfileError as exc:
-                raise KindEnvelopeError(str(exc))
+            flow_documents.append((kind, dict(spec)))
         elif kind == "IssueFlow":
-            from zf.core.config.workflow_profiles import (
-                WorkflowProfileError,
-                expand_issue_flow,
-            )
-            try:
-                flow_expansions.append(expand_issue_flow(dict(spec)))
-            except WorkflowProfileError as exc:
-                raise KindEnvelopeError(str(exc))
+            flow_documents.append((kind, dict(spec)))
         elif kind == "PrdFlow":
-            from zf.core.config.workflow_profiles import (
-                WorkflowProfileError,
-                expand_prd_flow,
-            )
-            try:
-                flow_expansions.append(expand_prd_flow(dict(spec)))
-            except WorkflowProfileError as exc:
-                raise KindEnvelopeError(str(exc))
+            flow_documents.append((kind, dict(spec)))
         elif kind == "SchemaProfile":
             name = str(metadata.get("name") or "").strip()
             if not name:
@@ -335,10 +314,27 @@ def assemble_envelope_stream(
         role_sets,
         profile_source_files=profile_source_files,
     )
-    if flow_expansions:
+    flow_defaults = body.pop("flow_defaults", {})
+    flow_expansions: list[dict] = []
+    for kind, spec in flow_documents:
         from zf.core.config.workflow_profiles import (
-            merge_expansion_into_body,
+            WorkflowProfileError,
+            expand_issue_flow,
+            expand_prd_flow,
+            expand_workflow_profile,
         )
+        flow_spec = _apply_flow_defaults(kind, spec, flow_defaults)
+        try:
+            if kind == "RefactorFlow":
+                flow_expansions.append(expand_workflow_profile(flow_spec))
+            elif kind == "IssueFlow":
+                flow_expansions.append(expand_issue_flow(flow_spec))
+            elif kind == "PrdFlow":
+                flow_expansions.append(expand_prd_flow(flow_spec))
+        except WorkflowProfileError as exc:
+            raise KindEnvelopeError(str(exc))
+    if flow_expansions:
+        from zf.core.config.workflow_profiles import merge_expansion_into_body
         for expansion in flow_expansions:
             merge_expansion_into_body(body, expansion)
     if pipelines or kind_stages:
@@ -360,6 +356,90 @@ def assemble_envelope_stream(
                 )
             existing_stages.extend(kind_stages)
     return body, profiles
+
+
+def _apply_flow_defaults(
+    kind: str,
+    spec: dict,
+    flow_defaults: object,
+) -> dict:
+    if flow_defaults in (None, ""):
+        return dict(spec)
+    if not isinstance(flow_defaults, dict):
+        raise KindEnvelopeError("flow_defaults must be a mapping")
+    kind_key = {
+        "IssueFlow": "issue",
+        "PrdFlow": "prd",
+        "RefactorFlow": "refactor",
+    }.get(kind, kind)
+    raw_defaults = flow_defaults.get(kind_key) or flow_defaults.get(kind)
+    if raw_defaults in (None, ""):
+        return dict(spec)
+    if not isinstance(raw_defaults, dict):
+        raise KindEnvelopeError(f"flow_defaults.{kind_key} must be a mapping")
+    unknown = sorted(
+        str(key)
+        for key in raw_defaults
+        if str(key) not in {"roleSkillBundles", "role_skill_bundles"}
+    )
+    if unknown:
+        raise KindEnvelopeError(
+            f"flow_defaults.{kind_key}: unknown key(s) {unknown}; "
+            "only roleSkillBundles is supported"
+        )
+    out = dict(spec)
+    default_bundles = (
+        raw_defaults.get("roleSkillBundles")
+        or raw_defaults.get("role_skill_bundles")
+        or {}
+    )
+    if default_bundles:
+        out["roleSkillBundles"] = _merge_role_skill_bundle_defaults(
+            default_bundles,
+            out.get("roleSkillBundles") or out.get("role_skill_bundles") or {},
+            context=f"flow_defaults.{kind_key}.roleSkillBundles",
+        )
+        out.pop("role_skill_bundles", None)
+    return out
+
+
+def _merge_role_skill_bundle_defaults(
+    defaults: object,
+    explicit: object,
+    *,
+    context: str,
+) -> dict[str, list[str]]:
+    if not isinstance(defaults, dict):
+        raise KindEnvelopeError(f"{context} must be a mapping")
+    if not isinstance(explicit, dict):
+        raise KindEnvelopeError("Flow spec roleSkillBundles must be a mapping")
+    out = {
+        str(key): _string_list(value, context=f"{context}.{key}")
+        for key, value in defaults.items()
+    }
+    for key, value in explicit.items():
+        bundle_name = str(key)
+        explicit_values = _string_list(
+            value,
+            context=f"Flow spec roleSkillBundles.{bundle_name}",
+        )
+        if not explicit_values:
+            out[bundle_name] = []
+            continue
+        merged = list(out.get(bundle_name, []))
+        for item in explicit_values:
+            if item not in merged:
+                merged.append(item)
+        out[bundle_name] = merged
+    return out
+
+
+def _string_list(value: object, *, context: str) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise KindEnvelopeError(f"{context} must be a list")
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _apply_config_uses(

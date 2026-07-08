@@ -54,6 +54,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Do not create or refresh project AGENTS.md / CLAUDE.md during init",
     )
+    parser.add_argument(
+        "--no-git-hooks",
+        action="store_true",
+        help="Do not install the ZaoFu pre-commit hook into .git/hooks",
+    )
+    parser.add_argument(
+        "--env-check",
+        action="store_true",
+        help="Verify the hook command chain (zf hook-recv) resolves and runs; "
+             "exit 1 on failure. `zf start` always enforces this preflight.",
+    )
     parser.set_defaults(func=run)
 
 
@@ -76,6 +87,7 @@ def run(args: argparse.Namespace) -> int:
             with_instruction_docs=not bool(
                 getattr(args, "skip_instruction_docs", False)
             ),
+            with_git_hooks=not bool(getattr(args, "no_git_hooks", False)),
             create_root=bool(getattr(args, "create", False)),
             workspace_register=workspace_register,
         )
@@ -118,6 +130,30 @@ def run(args: argparse.Namespace) -> int:
             "  + feishu default channel bootstrap "
             f"{result.feishu_channel_bootstrap}: zaofu"
         )
+    if result.git_hook_status == "installed":
+        print("  + git pre-commit hook installed(运行时真相守卫 + 大暂存集熔断)")
+    elif result.git_hook_status == "exists":
+        print("  + git pre-commit hook 已存在,保持不动")
+    if getattr(args, "env_check", False):
+        from zf.runtime.cli_command import zf_cli_cmd
+        from zf.runtime.env_preflight import check_hook_command
+
+        check = check_hook_command(zf_cli_cmd())
+        if not check.ok:
+            print("Error: hook 命令链自检失败(worker hooks 将全灭):", file=sys.stderr)
+            print(f"  - {check.detail}", file=sys.stderr)
+            print("  修复 zf 解析链(常见:全局 zf 符号链接指向坏 shim)后重试",
+                  file=sys.stderr)
+            return 1
+        print("  + hook 命令链自检通过")
+    else:
+        print("  + 提示: `zf start` 会强制 env preflight;`zf init --env-check` 可提前自检 hook 链")
+    if result.setup_suggestion:
+        print("  + 未声明 project.scripts.setup;检测到依赖清单 → 建议在 zf.yaml 加:")
+        print("      project:")
+        print("        scripts:")
+        print(f"          setup: {result.setup_suggestion}")
+        print("    (worktree 铸造时自动执行,使 worker 的新 worktree 开箱可运行)")
     _print_profile_hint(project_root)
     return 0
 

@@ -39,7 +39,15 @@ ON_TICK_BUDGET = 2
 # 属 doc 96 §5 无人值守不能 dead-end 的 kernel recovery hard rule,与
 # unclaimed_new_tasks 同类,并入预算。合流方代账(远端批未同步本快照);
 # 新 sweep 仍要求 one-in-one-out。
-RUN_ONCE_HOUSEKEEPING_BUDGET = 16
+# 16→18 上调评审依据(2026-07-06 bizsim r4 终局批):
+# ① budget_sweep(FIX-13,35fa1611)——预算越限主动可见,r4 $1150 被在途
+#   燃烧静默穿透的补救;属 S5 成本盲区的 kernel guard,派发时点检查
+#   无法覆盖"无派发仍在烧"场景,必须独立 sweep。
+# ② diagnosis(Tier-2,612045dc)——不收敛升级信号铸诊断请求 + needs_owner
+#   结论升级,doc 96 §5 无人值守不能 dead-end 的 kernel recovery hard
+#   rule,与 unclaimed_new_tasks/channel_reply_remediation 同类。
+# 新 sweep 仍要求 one-in-one-out 或此处留痕评审。
+RUN_ONCE_HOUSEKEEPING_BUDGET = 18
 RUN_ONCE_SWEEP_BUDGET = 7
 
 _PERIODIC_PREFIXES = (

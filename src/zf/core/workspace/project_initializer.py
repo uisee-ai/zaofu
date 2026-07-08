@@ -39,6 +39,11 @@ class ProjectInitResult:
     # feishu_channel_binding because the default route now targets a channel.
     feishu_kanban_agent_binding: str = ""
     reason: str = ""
+    # onboarding(CLI 与 Web init 入口共用,防单入口打通):
+    # git_hook_status: installed | exists | no-git | skipped
+    git_hook_status: str = ""
+    # 建议的 project.scripts.setup 命令,空串 = 已声明或无依赖清单
+    setup_suggestion: str = ""
 
 
 class ProjectInitializer:
@@ -54,6 +59,7 @@ class ProjectInitializer:
         preset: str | None = None,
         with_bootstrap: bool = False,
         with_instruction_docs: bool = True,
+        with_git_hooks: bool = True,
         workspace_register: bool | None = None,
         create_root: bool = False,
     ) -> ProjectInitResult:
@@ -107,6 +113,15 @@ class ProjectInitializer:
                 state_dir=state_dir,
             )
 
+        git_hook_status = "skipped"
+        if with_git_hooks:
+            from zf.core.workspace.git_hooks import install_pre_commit_hook
+
+            git_hook_status = install_pre_commit_hook(project_root)
+        from zf.core.workspace.setup_suggestion import suggest_setup_script
+
+        setup_suggestion = suggest_setup_script(project_root)
+
         feishu_channel_binding = ensure_feishu_kanban_agent_binding(
             project_root,
             config=context.config,
@@ -117,8 +132,18 @@ class ProjectInitializer:
         )
 
         registered = None
-        if self._should_register(context, requested=workspace_register):
-            registered = WorkspaceRegistry(workspace=self.workspace).upsert_context(
+        registry = WorkspaceRegistry(workspace=self.workspace)
+        # FIX-7(bizsim r4 F7):root 已注册的项目,重 init(换 state_dir/
+        # 改名)必须无条件回写注册表——r4 实锚:CLI 重 init 后 hint 仍指向
+        # 已删除的旧 state_dir,web 只读投影按坏 hint 读空。
+        already_registered = workspace_register is not False and any(
+            str(item.root) == str(project_root)
+            for item in registry.list_projects()
+        )
+        if already_registered or self._should_register(
+            context, requested=workspace_register,
+        ):
+            registered = registry.upsert_context(
                 context,
                 display_name=os.environ.get("ZF_WORKSPACE_PROJECT_DISPLAY_NAME", ""),
             )
@@ -133,6 +158,8 @@ class ProjectInitializer:
             feishu_channel_binding=feishu_channel_binding,
             feishu_channel_bootstrap=feishu_channel_bootstrap,
             feishu_kanban_agent_binding=feishu_channel_binding,
+            git_hook_status=git_hook_status,
+            setup_suggestion=setup_suggestion,
         )
 
     def _ensure_preset(self, project_root: Path, *, preset: str, force: bool) -> None:

@@ -22,6 +22,7 @@ from zf.core.workspace import stable_project_id
 from zf.integrations.feishu.approval import ApprovalStore
 from zf.integrations.feishu.callback_security import (
     identity_auth_levels,
+    resolve_identity,
     verify_feishu_signature,
 )
 from zf.integrations.feishu.callback_token import verify_action
@@ -1019,6 +1020,41 @@ def _audit_callback_rejected(
         pass
 
 
+def _audit_identity_binding_requested(
+    context: ProjectContext,
+    envelope: FeishuCommandEnvelope,
+    *,
+    reason: str,
+) -> None:
+    """Record a safe follow-up for unmapped Feishu principals.
+
+    This is intentionally not an authorization path. It gives operators and
+    dashboards a deterministic artifact to review while the callback remains
+    fail-closed.
+    """
+    try:
+        writer = EventWriter(
+            event_log_from_project(context.state_dir, config=context.config)
+        )
+        writer.emit(
+            "identity.binding.requested",
+            actor=f"feishu:{envelope.user_id or 'unknown'}",
+            payload={
+                "schema_version": "identity-binding-request.v1",
+                "provider": "feishu",
+                "principal_id": envelope.user_id,
+                "chat_id": envelope.chat_id,
+                "command": envelope.command,
+                "source": envelope.source,
+                "reason": reason,
+                "status": "pending",
+                "suggested_action": "add integrations.feishu_identity.users entry in zf.yaml",
+            },
+        )
+    except Exception:
+        pass
+
+
 def _audit_signature_invalid(
     context: ProjectContext, *, reason: str
 ) -> None:
@@ -1101,7 +1137,17 @@ def _handle_event_data(
         return {"ok": True, "status": "ignored", "message": "Ignored: unsupported Feishu command"}
 
     if not gateway.is_authorized(envelope):
-        _audit_callback_rejected(context, envelope, reason="identity.unmapped")
+        reject_reason = "identity.unmapped"
+        if identity is not None and identity.enabled:
+            if resolve_identity(identity, envelope.user_id or "") is not None:
+                reject_reason = "identity.insufficient_permission"
+        _audit_callback_rejected(context, envelope, reason=reject_reason)
+        if reject_reason == "identity.unmapped":
+            _audit_identity_binding_requested(
+                context,
+                envelope,
+                reason=reject_reason,
+            )
         message = (
             f"Rejected: user {envelope.user_id or 'unknown'} "
             f"is not authorized for /zf {envelope.command}"

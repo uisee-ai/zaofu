@@ -1,6 +1,6 @@
 # Autoresearch 使用手册
 
-> 适用日期: 2026-05-26 UTC
+> 适用日期: 2026-07-07 UTC
 > 来源: 当前工作区 `uv run zf autoresearch --help`、`uv run zf watch --help`
 
 本文是 Autoresearch 的总入口。更窄的操作说明见
@@ -26,6 +26,8 @@ ZaoFu runtime,而是用真实或可控场景反复验证这些能力:
 - 观察运行态时优先使用 `zf watch`、`zf events`、`zf status --workers`、
   `zf kanban --board`。
 - 真实 provider run 会消耗预算,加 `--confirm` 前先确认 worktree、配置和预算。
+- 常驻/自修复路径必须显式授权。默认诊断策略是 proposal-only、sandbox-first,
+  不直接把 repair 应用到 mainline。
 
 ## 2. 命令地图
 
@@ -36,9 +38,23 @@ ZaoFu runtime,而是用真实或可控场景反复验证这些能力:
 | `uv run zf autoresearch campaign plan` | 生成多 scenario campaign 计划和脚本 |
 | `uv run zf autoresearch discover-bugs` | 从 run 或 state 中提取 failure signals / bug candidates |
 | `uv run zf autoresearch triggers scan` | 按 trigger policy 扫描是否应启动 autoresearch/self-repair |
+| `uv run zf autoresearch review-gate` | 对 repair / closeout 做人工 gate 前检查 |
+| `uv run zf autoresearch compare` | 对 baseline/candidate run 做对比 |
+| `uv run zf autoresearch export-eval-result` | 导出 eval result 供报告/看板消费 |
+| `uv run zf autoresearch resident` | 启动 opt-in resident consumer |
 | `uv run zf autoresearch self-repair prepare` | 进入维护/修复准备状态 |
 | `uv run zf autoresearch self-repair checkpoint` | 记录修复过程 checkpoint |
 | `uv run zf autoresearch self-repair validate` | 标记某次 repair run 的验证结果 |
+
+### Runtime 集成边界
+
+当前 runtime tick 可以扫描 autoresearch triggers,Supervisor/Run Manager 也可以产生
+`autoresearch.invocation.requested` 这类请求事件。它们是受控诊断/建议入口,不是自动 mainline
+修复入口。
+
+- `resident` 是显式启动的消费者,不会因为 `zf start` 默认常驻。
+- 执行型 resident 需要额外授权环境变量/参数;未授权时只做观察或 proposal。
+- self-repair closeout 仍需要人工 apply gate,不应让 worker 直接把修复合入主线。
 
 常用观察命令:
 

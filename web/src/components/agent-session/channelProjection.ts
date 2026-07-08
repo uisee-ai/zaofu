@@ -271,6 +271,10 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     const thread = ensureThread(threads, threadId);
     const turn = ensureTurn(thread, messageId, recordString(route, "ts"));
     const reason = recordString(route, "reason");
+    // bizsim r4:auto_route_not_allowed 是 agent 回帖的防风暴守卫
+    // (doc 64 §5,by design)——渲染为中性说明而非 error;红色告警留给
+    // 真正无人应答的人类消息。
+    const byDesignGuard = reason === "auto_route_not_allowed";
     const run = ensureRun(turn, `route-blocked-${messageId}`, {
       provider: "",
       memberId: "",
@@ -282,14 +286,18 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
       runId: run.id,
       // chat mode filters `status` parts out of completed runs; `error`
       // renders — and an unroutable message is a delivery failure anyway.
-      kind: "error",
+      kind: byDesignGuard ? "status" : "error",
       state: "completed",
-      title: "Not routed",
-      summary: reason === "no_target"
-        ? "Not routed to any member — mention someone with @, or configure a default responder for this channel."
-        : reason === "debate_round_limit_reached"
-          ? "Debate round budget exhausted — agent relays are paused. Close the discussion or raise max_rounds."
-          : `Routing blocked: ${reason || "unknown reason"}`,
+      title: byDesignGuard ? "未自动扇出(防风暴)" : "Not routed",
+      summary: byDesignGuard
+        ? "Agent 回帖不自动扇出(by design)。需要成员间 @mention 定向转发时,"
+          + "用 channel-discussion-mode 动作把频道 discussion.mode 设为 "
+          + "mention_relay 或 fanout_then_synthesis。"
+        : reason === "no_target"
+          ? "Not routed to any member — mention someone with @, or configure a default responder for this channel."
+          : reason === "debate_round_limit_reached"
+            ? "Debate round budget exhausted — agent relays are paused. Close the discussion or raise max_rounds."
+            : `Routing blocked: ${reason || "unknown reason"}`,
       updatedAt: recordString(route, "ts"),
     });
   }

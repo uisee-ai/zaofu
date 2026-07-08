@@ -174,7 +174,19 @@ _OVERSIZED_FILE_CAPS = {
     # +44 (2026-07-04, avbs-r4 F 批): 三个 sibling 模块的 call site 接线
     # (reader_child_task_resolution 富化、rework bump 事件窗、lag 自监控)
     # ——逻辑均在 sibling,call site 必须在 run_once 环点无法外移。
-    "src/zf/runtime/orchestrator.py": 4471,
+    # +22 (2026-07-06, bizsim r4 FIX-5②): 同型触发退避的 streak 记账
+    # (__init__ 两字段)+ notify 门控 call site;窗口计算逻辑在
+    # wake_patterns sibling(layer2_effective_wake_interval)。
+    # +11 (2026-07-06, bizsim r4 FIX-6): workflow.reconcile.requested 进
+    # _KERNEL_LIVENESS_EVENTS + Layer-1 fallback 对无 task_id 活性事件跑
+    # primary——均为 run_once 路由 call site;重扫逻辑本体在
+    # orchestrator_reactor._on_workflow_reconcile_requested。
+    # Reconciliation 2026-07-07: terminal child progress predicate + invalid
+    # rework-state retry guard are run_once/_apply_housekeeping call sites;
+    # predicate/state logic lives in siblings. Freeze current size.
+    # +39 (2026-07-08): task-attempt recovery / quiescent lightweight routing
+    # call sites; recovery state machines live in sibling modules.
+    "src/zf/runtime/orchestrator.py": 4725,
     # +14 (2026-06-20): PRD-product-stage branch in the fanout-child briefing
     # builder (emits prd_ref/artifact_refs/evidence_refs). It is one more
     # sibling branch of the same _write_*_fanout_briefing method that already
@@ -223,8 +235,39 @@ _OVERSIZED_FILE_CAPS = {
     # +81 (2026-07-05, BF-1): 跨代收编接线 + completion_adopted 审计
     # 发射器;收编决策逻辑在 sibling fanout_completion_adoption.py,
     # 留此处的是必须访问 event_writer/manifest 的 call site。
-    "src/zf/runtime/orchestrator_fanout.py": 7429,
-    "src/zf/runtime/orchestrator_reactor.py": 6700,
+    # +10 (2026-07-06, G4/U21): goal 块渲染 call site(文案在 sibling
+    # goal_briefing.py)。
+    # +48 (2026-07-06, U20/U7/U10): 证据观测门 call site(判定在 sibling
+    # report_evidence_gate.py)+ briefing 身份注记与权限醒目段(纯文案,
+    # 必须与既有 briefing 渲染同点)。
+    # +53 (2026-07-06, 批A A1/A3/A5): task_map 绝对路径写入指令、candidate
+    # 受审对象注记(judge 顺序缺陷根治)、defer 分级冷却——全部是既有
+    # briefing 渲染/派发检查的同点插入,无独立逻辑可拆。
+    # +25 (2026-07-06, 批C C1/C2/C3): planner briefing 合同条款(共享约定
+    # 单源/验证层级/骨架波)——与既有 task_map guidance 同点,纯文案。
+    # +21 (2026-07-06, E6/E7): 超时地板与单 lane 兜底——派发/超时检查的
+    # 同点插入。
+    # +5 (2026-07-06, bizsim r4 FIX-1): rework fanout.started payload 补
+    # task_id/rework_attempt 代际隔离字段——emission call site 必须内联;
+    # identity 判定逻辑在 fanout_identity sibling。
+    # +batch(2026-07-06, A2/B/D/E1): 外部状态事件入内存/微环与 light/
+    # rescan 消费/invoke 自举——全部是 registry 注册与 handler 转发,
+    # 判定逻辑在 sibling(lane_micro_loop/light_flow/quiescent)。
+    # +FIX-6(2026-07-06, bizsim r4 F2): workflow reconcile 重扫 handler
+    # 作为 registry handler call site 留在 reactor mixin。
+    # Reconciliation 2026-07-07: controller child terminal event support and
+    # fanout briefing config-safe call sites; helpers live in siblings.
+    # +13 (2026-07-07): stale-generation guard inside
+    # _resolve_orphan_reader_fanout_child — an inline candidate filter in that
+    # method's loop (skip superseded fanout generations so a resident worker's
+    # fresh completion is not re-bound to a long-superseded fanout and dropped).
+    # Cannot be a sibling: it is a guard clause on the loop's own iteration.
+    "src/zf/runtime/orchestrator_fanout.py": 8196,
+    # Reconciliation 2026-07-07: terminal child success predicate and
+    # judge.failed state guard call sites; predicates live in terminal_events.
+    # +21 (2026-07-08): operator-resume and diagnosis event router call sites;
+    # policy/state logic lives in workflow_resume/diagnosis siblings.
+    "src/zf/runtime/orchestrator_reactor.py": 6962,
     # Merge 2026-06-22: dispatch recovery helpers crossed the previous cap.
     # Reconciliation 2026-07-03: RF-7B transition-only dispatch (+32) + prior
     # merges pushed to 4851. Freeze at clean dev size; next dispatch feature extracts.
@@ -236,7 +279,10 @@ _OVERSIZED_FILE_CAPS = {
     # +22 (2026-07-04, 131-P2-1): task.attempt.retry_scheduled 发射必须
     # 与 dispatch_id 铸造同点(lease_token 即 dispatch_id),纯 emit call
     # site;事件语义/registry 合同在 event_problem_registry sibling。
-    "src/zf/runtime/orchestrator_dispatch.py": 5019,
+    # Reconciliation 2026-07-07: child terminal rework/attempt/cap de-dupe and
+    # legacy rework-state guard call sites; policy/helpers stay outside.
+    # +4 (2026-07-08): assignee-change/retry accounting call-site adjustment.
+    "src/zf/runtime/orchestrator_dispatch.py": 5072,
     # P2 (2026-06-12): handler domains moved to 5 mixins + helpers
     # (control_actions_{channel_msg,channel_admin,product,ops,emit,
     # helpers}.py); cap lowered to new size +10%.
@@ -264,7 +310,10 @@ _OVERSIZED_FILE_CAPS = {
     # 下一个 view 增量必须外提组件。
     # +1 (2026-07-04, 131-P0-5): SpineHealthStrip 接线仅 projectId prop
     # 一行;组件本体在 kanban/SpineHealthStrip.tsx sibling。
-    "web/src/app/App.tsx": 3475,
+    # +2 (2026-07-05, init onboarding 打通): ProjectWizardModal 渲染点
+    # + import 各一行;展示逻辑在 workspace/ProjectInitOnboarding.tsx
+    # sibling(git hook 状态 + scripts.setup 建议)。
+    "web/src/app/App.tsx": 3515,
     # P2 phase 1 (2026-06-12): split into web/src/styles/ ordered chunks
     # (bundle byte-identical); styles.css is now an @import manifest.
     "web/src/styles.css": 200,

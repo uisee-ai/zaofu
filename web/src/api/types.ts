@@ -2309,3 +2309,98 @@ export interface OverviewPulse {
   attention?: OverviewPulseAttention | null;
   why_not?: OverviewWhyNot | null;
 }
+
+// loop-view.v1 (Loop page v2 single data source; see stage_loop_projection.py)
+export interface LoopViewPromiseItem {
+  event: string;
+  satisfied: boolean;
+  seq?: number;
+  ts?: string;
+}
+
+export interface LoopViewAttempt {
+  started_ts: string;
+  role: string;
+  terminal: { type: string; ts: string; reason?: string; seq?: number } | null;
+  open: boolean;
+  counted: boolean;
+  orphan?: boolean;
+}
+
+export interface LoopViewTask {
+  id: string;
+  stage_id?: string;
+  attempts: LoopViewAttempt[];
+  fails: number;
+  counted: number;
+  source: string;
+}
+
+export interface LoopViewLoop {
+  id: string;
+  label: string;
+  shape: string[];
+  closure_edge: [string, string] | string[];
+  counts: Record<string, number>;
+  arc: { state: "flow" | "active" | "broken"; label: string };
+  health: string;
+  members?: Array<{ kind: string; id: string; note: string }>;
+  node_stats?: Record<string, Record<string, number>>;
+  acct?: { open: number; recovered: number; exhausted: number };
+}
+
+export interface LoopViewProjection {
+  schema_version: string;
+  generated_at: string;
+  project_id: string;
+  run: {
+    event_count: number;
+    semantic_event_count: number;
+    first_ts: string;
+    last_ts: string;
+    latched: boolean;
+    promise: {
+      source: string;
+      chain: LoopViewPromiseItem[];
+      satisfied: number;
+      latched: boolean;
+    };
+  };
+  stages: Array<{
+    id: string;
+    rounds: number;
+    last_status: string;
+    last_ts: string;
+    warn: boolean;
+  }>;
+  tasks: LoopViewTask[];
+  backflows: Array<{ from_stage: string; to_stage: string; kind: string; count: number }>;
+  subscriber_chains: Array<{ topic: string; seq: number; subscriber: string; result: string; result_seq: number }>;
+  loops: Record<string, LoopViewLoop>;
+  faults: Array<{ kind: string; count: number; owner_loop: string }>;
+  companions: Record<string, Record<string, number>>;
+  pump: { total: number; lag_warnings: number };
+  health_counters: Record<string, number>;
+  source_projection_refs: string[];
+}
+
+// First-run welcome onboarding (see core/workspace/onboarding.py)
+export interface OnboardingBackend {
+  id: string;
+  detected: boolean;
+  path: string;
+  note: string;
+  always_available: boolean;
+}
+
+export interface OnboardingStatus {
+  schema_version: string;
+  show_welcome: boolean;
+  completed: boolean;
+  skipped: boolean;
+  step: number;
+  backend: string;
+  notifications: string;
+  backends: OnboardingBackend[];
+  preflight: Array<{ name: string; ok: boolean; detail: string }>;
+}

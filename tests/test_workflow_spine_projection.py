@@ -50,6 +50,87 @@ def test_attempt_lifecycle_and_incremental_cursor(tmp_path: Path) -> None:
     assert stats3["events_folded"] == 0
 
 
+def test_standard_task_attempt_events_project_full_attempt_context(
+    tmp_path: Path,
+) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    log.append(ZfEvent(
+        type="task.attempt.started",
+        task_id="T-STD",
+        payload={
+            "attempt_key": "attempt-1",
+            "role_instance": "dev-lane-1",
+            "fanout_id": "fanout-1",
+            "lease_token": "lease-1",
+        },
+    ))
+    log.append(ZfEvent(
+        type="task.attempt.heartbeat",
+        task_id="T-STD",
+        payload={"attempt_key": "attempt-1"},
+    ))
+    log.append(ZfEvent(
+        type="task.attempt.failed",
+        task_id="T-STD",
+        payload={"reason": "missing acceptance evidence"},
+    ))
+    log.append(ZfEvent(
+        type="task.attempt.started",
+        task_id="T-DEAD",
+        payload={"attempt_key": "attempt-dead", "role": "dev-lane-2"},
+    ))
+    log.append(ZfEvent(
+        type="task.attempt.deadlettered",
+        task_id="T-DEAD",
+        payload={"reason": "environment poison", "retryable": False},
+    ))
+
+    refresh_spine_projections(state_dir, log)
+
+    attempts = _read(tmp_path, "task_attempts.json")
+    std = attempts["tasks"]["T-STD"]
+    assert std["attempt_count"] == 1
+    assert std["latest_attempt_key"] == "attempt-1"
+    assert std["latest_state"] == "failed"
+    assert std["lease_state"] == "released"
+    assert std["open_attempts"] == 0
+    assert std["counted_failures"] == 1
+    assert std["attempts"][0]["last_heartbeat_ts"]
+    assert std["attempts"][0]["failure_signature"] == "task_attempt_failed"
+    assert std["attempts"][0]["retryable"] is True
+
+    dead = attempts["tasks"]["T-DEAD"]
+    assert dead["latest_state"] == "deadlettered"
+    assert dead["attempts"][0]["retryable"] is False
+    assert dead["counted_failures"] == 1
+
+
+def test_generic_child_completed_closes_attempt(tmp_path: Path) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    log.append(ZfEvent(
+        type="task.dispatched",
+        task_id="T-IMPL",
+        payload={"role": "dev-lane-0", "dispatch_id": "disp-1"},
+    ))
+    log.append(ZfEvent(
+        type="impl.child.completed",
+        actor="dev-lane-0",
+        task_id="T-IMPL",
+        payload={"dispatch_id": "disp-1", "status": "completed"},
+    ))
+
+    refresh_spine_projections(state_dir, log)
+
+    attempts = _read(tmp_path, "task_attempts.json")
+    task = attempts["tasks"]["T-IMPL"]
+    assert task["latest_state"] == "succeeded"
+    assert task["lease_state"] == "released"
+    assert task["open_attempts"] == 0
+    assert task["last_terminal"] == "impl.child.completed"
+
+
 def test_stage_rounds_and_status(tmp_path: Path) -> None:
     log = _log(tmp_path)
     state_dir = tmp_path / ".zf"

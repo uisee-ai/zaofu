@@ -155,7 +155,8 @@ def test_web_init_with_kind_writes_typed_flow_yaml(client, tmp_path, monkeypatch
     assert docs[0]["spec"]["sourceRoot"] == str(source)
     assert docs[0]["spec"]["targetRoot"] == str(target)
     assert docs[0]["spec"]["lanes"] == 3
-    assert docs[1]["spec"]["project"]["state_dir"] == ".zf-cangjie"
+    config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
+    assert config_doc["spec"]["project"]["state_dir"] == ".zf-cangjie"
 
 
 def test_web_recommend_backend_codex_flow(client, py_repo):

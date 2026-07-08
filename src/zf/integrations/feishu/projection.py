@@ -9,6 +9,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.integrations.feishu.views import SummaryView, TaskView
 from zf.integrations.feishu.transport import FeishuTransport, FeishuMessage
+from zf.runtime.event_problem_registry import spec_for_event
 
 
 # Event types that trigger push notifications
@@ -131,6 +132,9 @@ class ProjectionRouter:
 
     def should_push(self, event: ZfEvent) -> bool:
         """Check if event warrants a push notification."""
+        spec = spec_for_event(event.type)
+        if spec is not None and spec.notification_policy:
+            return spec.effective_notification_policy == "owner_immediate"
         return event.type in _MUST_PUSH
 
     def route_event(self, event: ZfEvent) -> bool:

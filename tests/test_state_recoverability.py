@@ -316,6 +316,11 @@ _AUDITED_FIELDS: set[str] = {
     "_layer2_last_wake_at",
     "_layer2_pending",
     "_layer2_in_batch",
+    # FIX-5②(bizsim r4):同型触发指数退避的瞬态节流状态。重启归零 =
+    # 恢复默认唤醒节奏,无真相依赖;事件痕迹在 dispatch_skipped
+    # (same_trigger_backoff)。
+    "_layer2_streak_type",
+    "_layer2_streak_count",
     "_recover_in_progress",
     "_scope_ratchet",
     "_scope_snapshots",

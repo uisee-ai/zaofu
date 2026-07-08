@@ -738,3 +738,86 @@ def test_workspace_overview_includes_resource_rollup(
     assert row["resources"]["channels"]["failed_replies"] == 1
     assert row["resources"]["automations"]["proposals"] == 1
     assert "operator" in row["resources"]
+
+
+def test_web_init_onboarding_parity_with_cli(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Web init 必须与 CLI init 同享 onboarding(hooks + setup 建议)。"""
+    import subprocess
+
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace-home"))
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    host_root = tmp_path / "host"
+    host_state = _make_project(host_root, name="host")
+    app = create_app(
+        host_state, config=load_config(host_root / "zf.yaml"), project_root=host_root,
+    )
+    client = TestClient(app)
+
+    # node 项目 + git 仓库:期待 hook 安装 + pnpm 建议
+    target = tmp_path / "node-project"
+    target.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+    (target / "package.json").write_text("{}")
+    (target / "pnpm-lock.yaml").write_text("")
+
+    resp = client.post(
+        "/api/workspace/projects/init",
+        headers={"x-zf-web-token": "test-token"},
+        json={"root": str(target), "workspace": "qa", "preset": "minimal"},
+    )
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["git_hook"] == "installed"
+    assert (target / ".git" / "hooks" / "pre-commit").exists()
+    assert body["setup_suggestion"] == "pnpm install"
+
+    # 非 git、无依赖清单:hook no-git、无建议
+    plain = tmp_path / "plain-project"
+    resp2 = client.post(
+        "/api/workspace/projects/init",
+        headers={"x-zf-web-token": "test-token"},
+        json={"root": str(plain), "workspace": "qa", "preset": "minimal"},
+    )
+    assert resp2.status_code == 201
+    assert resp2.json()["git_hook"] == "no-git"
+    assert resp2.json()["setup_suggestion"] is None
+
+
+def test_reinit_refreshes_registry_state_dir_hint(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FIX-7(bizsim r4 F7):已注册项目重 init 换 state_dir 必须回写注册表,
+    否则 hint 指向已删目录,web 只读投影读空。"""
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace-home"))
+    from zf.core.workspace.project_initializer import ProjectInitializer
+    from zf.core.workspace.registry import WorkspaceRegistry
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "zf.yaml").write_text(
+        "version: '1.0'\nproject:\n  name: demo\n  state_dir: .zf-old\n",
+        encoding="utf-8",
+    )
+    first = ProjectInitializer(workspace="default").initialize(
+        cwd=root, workspace_register=True,
+    )
+    assert first.registered_project is not None
+    project_id = first.registered_project.project_id
+
+    # 换 state_dir 重 init(非 tty、无显式 register 请求)
+    (root / "zf.yaml").write_text(
+        "version: '1.0'\nproject:\n  name: demo-renamed\n  state_dir: .zf-new\n",
+        encoding="utf-8",
+    )
+    second = ProjectInitializer(workspace="default").initialize(cwd=root, force=True)
+
+    assert second.registered_project is not None, "重 init 必须回写注册表"
+    assert second.registered_project.project_id == project_id
+    refreshed = WorkspaceRegistry(workspace="default").get(project_id)
+    assert ".zf-new" in str(refreshed.state_dir_hint)
+    assert refreshed.name == "demo-renamed"

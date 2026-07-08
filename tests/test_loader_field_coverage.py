@@ -53,6 +53,12 @@ _ALLOWLIST: dict[tuple[str, str], str] = {
         "loader.py:732 does tool_closure.get('enabled', True), so the "
         "schema field name doesn't appear as a literal string"
     ),
+    ("ProjectConfig", "setup_script"): (
+        "read via nested yaml key project.scripts.setup — "
+        "loader.py:283 does scripts.get('setup', ''), so the schema field "
+        "name doesn't appear as a data.get literal; parse covered by "
+        "test_config_loader.py::test_project_scripts_setup_parsed"
+    ),
     ("WorkflowConfig", "plan_approval_enabled"): (
         "B14 (doc 93 §8): read via nested yaml key workflow.plan_approval "
         "(bool or {enabled: bool}) through _parse_plan_approval_enabled — "

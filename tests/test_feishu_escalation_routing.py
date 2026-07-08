@@ -1,9 +1,4 @@
-"""Tests for G-LIFE-4: Feishu projection routes escalation events.
-
-human.escalate was already in _MUST_PUSH. This task verifies and
-extends coverage to worker.stuck so stuck detection reaches humans
-via the same channel.
-"""
+"""Feishu projection routing for human escalation and triage-first events."""
 
 from __future__ import annotations
 
@@ -66,16 +61,23 @@ class TestRoutingFire:
         assert transport.sent_messages[0].chat_id == "chat-approval"
         assert "dev blocked" in transport.sent_messages[0].content
 
-    def test_worker_stuck_sent_to_approval_channel(self, router):
+    def test_worker_stuck_is_not_direct_pushed_before_run_manager_triage(self, router):
         r, transport = router
         ok = r.route_event(ZfEvent(
             type="worker.stuck", actor="dev",
             payload={"role": "dev", "threshold_seconds": 300.0},
         ))
-        assert ok
-        assert len(transport.sent_messages) == 1
-        assert transport.sent_messages[0].chat_id == "chat-approval"
-        assert "dev" in transport.sent_messages[0].content
+        assert not ok
+        assert transport.sent_messages == []
+
+    def test_budget_exceeded_is_not_direct_pushed_before_run_manager_triage(self, router):
+        r, transport = router
+        ok = r.route_event(ZfEvent(
+            type="cost.budget.exceeded", actor="zf-cli",
+            payload={"scope": "global", "budget_usd": 60.0, "current_usd": 96.0},
+        ))
+        assert not ok
+        assert transport.sent_messages == []
 
     def test_non_must_push_event_not_routed(self, router):
         r, transport = router

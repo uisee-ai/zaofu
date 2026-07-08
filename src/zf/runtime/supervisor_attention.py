@@ -176,13 +176,118 @@ def apply_attention_lifecycle(
                 status = str(ref.get("status") or status)
                 lifecycle_ref = ref
                 break
+        if not lifecycle_ref and _attention_superseded_by_later_progress(
+            updated,
+            events,
+        ):
+            status = "resolved"
+            lifecycle_ref = {
+                "event_id": "",
+                "resolution": "later_progress",
+            }
         updated["status"] = status
         if lifecycle_ref:
             updated["lifecycle_event_id"] = str(lifecycle_ref.get("event_id") or "")
+            if lifecycle_ref.get("resolution"):
+                updated["quiesced_by"] = str(lifecycle_ref.get("resolution") or "")
             if lifecycle_ref.get("snooze_until"):
                 updated["snooze_until"] = str(lifecycle_ref.get("snooze_until") or "")
         out.append(redact_obj(updated))
     return out
+
+
+def _attention_superseded_by_later_progress(
+    item: dict[str, Any],
+    events: list[ZfEvent],
+) -> bool:
+    source_ids = [
+        str(value) for value in item.get("source_event_ids") or []
+        if str(value).strip()
+    ]
+    if not source_ids:
+        return False
+    source_indexes = [
+        idx for idx, event in enumerate(events)
+        if event.id in source_ids
+    ]
+    if not source_indexes:
+        return False
+    source_idx = min(source_indexes)
+    source_events = [event for event in events if event.id in source_ids]
+    for event in events[source_idx + 1:]:
+        if not _is_attention_progress_event(event):
+            continue
+        if event.type == "run.completed":
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("status") or "passed").lower() != "passed":
+                continue
+            return True
+        if any(_attention_progress_matches_source(source, event) for source in source_events):
+            return True
+    return False
+
+
+_ATTENTION_PROGRESS_EVENTS = frozenset({
+    "task.ref.updated",
+    "fanout.child.completed",
+    "fanout.aggregate.completed",
+    "candidate.ready",
+    "test.passed",
+    "verify.passed",
+    "flow.discovery.completed",
+    "flow.goal.closed",
+    "judge.passed",
+    "run.completed",
+})
+
+
+def _is_attention_progress_event(event: ZfEvent) -> bool:
+    if event.type not in _ATTENTION_PROGRESS_EVENTS:
+        return False
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    status = str(payload.get("status") or payload.get("quality_status") or "").lower()
+    if status in {"failed", "failure", "rejected", "blocked"}:
+        return False
+    if event.type == "fanout.aggregate.completed":
+        return status in {"completed", "passed", "success"} and not payload.get("failed_children")
+    return True
+
+
+def _attention_progress_matches_source(source: ZfEvent, progress: ZfEvent) -> bool:
+    source_payload = source.payload if isinstance(source.payload, dict) else {}
+    progress_payload = progress.payload if isinstance(progress.payload, dict) else {}
+    source_scope = _attention_scope(source, source_payload)
+    progress_scope = _attention_scope(progress, progress_payload)
+    if source_scope and progress_scope:
+        return any(
+            value and progress_scope.get(key) == value
+            for key, value in source_scope.items()
+        )
+    source_fanout = str(source_payload.get("fanout_id") or "")
+    progress_fanout = str(progress_payload.get("fanout_id") or "")
+    if source_fanout and source_fanout == progress_fanout:
+        return True
+    return False
+
+
+def _attention_scope(event: ZfEvent, payload: dict[str, Any]) -> dict[str, str]:
+    scope: dict[str, str] = {}
+    for key in (
+        "pdd_id",
+        "feature_id",
+        "trace_id",
+        "task_id",
+        "fanout_id",
+        "child_id",
+        "candidate_ref",
+        "task_map_ref",
+    ):
+        value = str(payload.get(key) or "")
+        if not value and key == "task_id":
+            value = str(event.task_id or "")
+        if value:
+            scope[key] = value
+    return scope
 
 
 def _attention_from_autopilot(event: ZfEvent) -> dict[str, Any]:
@@ -410,6 +515,12 @@ def _attention_from_abnormal_event_registry(
             owner_route=str(projection.get("owner_route") or ""),
             action_policy=str(projection.get("action_policy") or ""),
             intervention_class=str(projection.get("intervention_class") or ""),
+            notification_policy=str(projection.get("notification_policy") or ""),
+            recovery_policy=str(projection.get("recovery_policy") or ""),
+            human_required_when=[
+                str(value) for value in projection.get("human_required_when") or []
+                if str(value).strip()
+            ],
             problem_envelope=(
                 projection.get("problem_envelope")
                 if isinstance(projection.get("problem_envelope"), dict)
@@ -588,6 +699,9 @@ def _attention_item(
     owner_route: str = "",
     action_policy: str = "",
     intervention_class: str = "",
+    notification_policy: str = "",
+    recovery_policy: str = "",
+    human_required_when: list[str] | None = None,
     problem_envelope: dict[str, Any] | None = None,
     human_action_required: bool | None = None,
     decision_token: str = "",
@@ -616,6 +730,15 @@ def _attention_item(
         item["action_policy"] = action_policy
     if intervention_class:
         item["intervention_class"] = intervention_class
+    if notification_policy:
+        item["notification_policy"] = notification_policy
+    if recovery_policy:
+        item["recovery_policy"] = recovery_policy
+    if human_required_when:
+        item["human_required_when"] = [
+            str(value) for value in human_required_when
+            if str(value).strip()
+        ]
     if human_action_required is not None:
         item["human_action_required"] = bool(human_action_required)
     if decision_token:

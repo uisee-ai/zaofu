@@ -40,8 +40,9 @@ from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.pause_lifecycle import is_dispatch_paused
 from zf.runtime.recovery_sufficiency import build_artifact_recovery_refs
 from zf.runtime.rework_triage import REWORK_RETRY_CLASSIFICATIONS
-from zf.runtime.terminal_ledger import TERMINAL_SUCCESS_EVENTS
+from zf.runtime.task_refs import runtime_materialized_dirty_files
 from zf.runtime.transport import transport_error_diagnostics
+from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 
 
@@ -594,6 +595,8 @@ class DispatchMixin(
         self._event_writer = writer
 
     def _assign_ready_backlog_task(self, task: Task) -> Task:
+        if is_workflow_fanout_anchor_task(task):
+            return task
         if task.assigned_to or not self._contract_ready_for_backlog_scheduler(task):
             return task
         if self._backlog_scheduler_should_yield_to_handoff(task):
@@ -747,6 +750,8 @@ class DispatchMixin(
 
         for task in candidates:
             if task.status in {"done", "cancelled", "blocked"}:
+                continue
+            if is_workflow_fanout_anchor_task(task):
                 continue
             if _task_quiesced_by_terminal_run(task, terminal_run_keys):
                 continue
@@ -931,15 +936,15 @@ class DispatchMixin(
     def _reconcile_pending_handoffs(self) -> list[OrchestratorDecision]:
         """Repair missed mechanical handoffs in Layer 2 mode.
 
-        Layer 2 still owns semantic decisions such as task decomposition,
-        rejection reason, and rework target. Once a worker has emitted a
-        successful stage event, though, the next worker role is fully
-        determined by zf.yaml ``role.triggers``. This sweep prevents bursty
-        events from stranding older completions when the orchestrator agent
-        only reacts to the latest wake.
+        Semantic decisions such as task decomposition, rejection reason, and
+        rework target still belong to agents/stages. Once a worker has emitted
+        a successful stage event, though, the next worker role or terminal
+        closeout is fully determined by zf.yaml role subscriptions and
+        terminal policy. This sweep prevents bursty events from stranding older
+        completions when the orchestrator agent only reacts to the latest wake,
+        and it also protects controller-profile runs that use the Python
+        orchestrator loop without a dedicated ``orchestrator`` worker role.
         """
-        if self._find_role_by_name("orchestrator") is None:
-            return []
         try:
             from zf.runtime.event_window import read_runtime_events
 
@@ -963,6 +968,7 @@ class DispatchMixin(
         latest_ref_rejected: dict[str, tuple[int, ZfEvent]] = {}
         latest_task_ref_repair_requested: dict[str, tuple[int, ZfEvent]] = {}
         latest_rework_requested: dict[str, int] = {}
+        latest_rework_capped: dict[str, int] = {}
         rework_trigger_ordinals: dict[str, int] = {}
         rework_counts_by_task: dict[str, int] = {}
         ref_status_by_trigger: dict[str, str] = {}
@@ -1046,6 +1052,14 @@ class DispatchMixin(
                     trigger_event_id = str(event.payload.get("trigger_event_id") or "")
                     if trigger_event_id:
                         latest_rework_requested[trigger_event_id] = idx
+                if event.type == "task.rework.capped":
+                    trigger_event_id = str(
+                        event.payload.get("trigger_event_id")
+                        or event.causation_id
+                        or ""
+                    )
+                    if trigger_event_id:
+                        latest_rework_capped[trigger_event_id] = idx
 
         decisions: list[OrchestratorDecision] = []
         for task in self.task_store.list_all():
@@ -1209,10 +1223,15 @@ class DispatchMixin(
                     latest_rework_requested.get(progress_event.id, -1)
                     > progress_idx
                 )
+                capped_after_progress = (
+                    latest_rework_capped.get(progress_event.id, -1)
+                    > progress_idx
+                )
                 if (
                     assigned_after_progress
                     or dispatched_after_progress
                     or rework_after_progress
+                    or capped_after_progress
                 ):
                     continue
                 current = self.task_store.get(task.id) or task
@@ -1345,7 +1364,7 @@ class DispatchMixin(
                 progress_event
             )
             if not next_roles:
-                if progress_event.type not in TERMINAL_SUCCESS_EVENTS:
+                if not self._is_configured_terminal_success(progress_event.type):
                     continue
                 if not self._evaluate_terminal_done(progress_event, task):
                     decisions.append(OrchestratorDecision(
@@ -1484,7 +1503,9 @@ class DispatchMixin(
     def _task_ref_rejection_dirty_files(self, payload: dict[str, object]) -> list[str]:
         files = payload.get("dirty_files")
         if isinstance(files, list):
-            return [str(item) for item in files if str(item).strip()]
+            raw = [str(item) for item in files if str(item).strip()]
+            runtime_dirty = set(runtime_materialized_dirty_files(raw))
+            return [item for item in raw if item not in runtime_dirty]
         workdir = str(payload.get("workdir") or "").strip()
         if not workdir:
             return []
@@ -1513,7 +1534,8 @@ class DispatchMixin(
                 path_text = path_text.rsplit(" -> ", 1)[-1].strip()
             if path_text and path_text not in out:
                 out.append(path_text)
-        return out
+        runtime_dirty = set(runtime_materialized_dirty_files(out))
+        return [item for item in out if item not in runtime_dirty]
 
     def _reconcile_writer_fanout_child_completion(self, event: ZfEvent) -> None:
         source_event = event
@@ -1554,7 +1576,7 @@ class DispatchMixin(
         )
         if event.type == "arch.proposal.done":
             return manager.process_arch_proposal_done(event)
-        if event.type == "dev.build.done":
+        if event.type in {"dev.build.done", "impl.child.completed"}:
             return manager.process_dev_build_done(event)
         return None
 
@@ -4465,6 +4487,12 @@ class DispatchMixin(
         K3 相 3(影子):remediation_pipeline.route 的统一三层决策以
         shadow 事件并行发射,零执行;分歧即 bug 线索,切换前必须零分歧。
         """
+        if not self._rework_trigger_valid_for_task_state(task, trigger_event):
+            return OrchestratorDecision(
+                action="ignore",
+                task_id=task.id,
+                reason=f"{reason}: invalid task state {task.status}",
+            )
         if self._fanout_scoped_stage_progress_event(trigger_event):
             return OrchestratorDecision(
                 action="ignore",
@@ -4527,6 +4555,28 @@ class DispatchMixin(
             role=triage.suspected_owner,
             reason=f"{reason}: {triage.classification}",
         )
+
+    def _rework_trigger_valid_for_task_state(
+        self,
+        task: Task,
+        trigger_event: ZfEvent,
+    ) -> bool:
+        """Return whether a per-task failure may trigger rework.
+
+        Controller child failures are generic workflow events and may arrive
+        while the task is simply ``in_progress``. Legacy review/test/judge
+        events encode a concrete lifecycle phase; accepting them in the wrong
+        phase lets stale or misbound worker output rewrite kernel truth.
+        """
+        event_type = trigger_event.type
+        status = str(getattr(task, "status", "") or "")
+        if event_type == "review.rejected":
+            return status in {"review", "in_progress"}
+        if event_type in {"verify.failed", "test.failed", "judge.failed"}:
+            return status in {"testing", "in_progress"}
+        if event_type == "gate.failed":
+            return status not in {"done", "cancelled", "blocked"}
+        return True
 
     def _rework_defer_reason(
         self,
@@ -4990,7 +5040,10 @@ class DispatchMixin(
                     "max_attempts_source": max_attempts_source,
                     "last_reason": reason or trigger_event.type,
                     "trigger_event_type": trigger_event.type,
+                    "trigger_event_id": trigger_event.id,
                 },
+                causation_id=trigger_event.id,
+                correlation_id=trigger_event.correlation_id,
             ))
         except Exception:
             pass

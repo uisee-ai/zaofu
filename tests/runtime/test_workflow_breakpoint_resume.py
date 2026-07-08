@@ -22,11 +22,15 @@ from zf.runtime.workflow_resume import (
     WORKFLOW_RESUME_APPLIED_EVENT,
     WORKFLOW_RESUME_PLANNED_EVENT,
     WorkflowBatchResumeCheckpoint,
+    WorkflowResumeCheckpoint,
     apply_workflow_resume,
     build_workflow_resume_checkpoints,
     build_workflow_resume_projection,
 )
-from zf.runtime.workflow_resume_apply import _apply_batch_checkpoint
+from zf.runtime.workflow_resume_apply import (
+    _apply_batch_checkpoint,
+    _semantically_duplicate_resume_pending,
+)
 
 
 def _state(tmp_path: Path) -> tuple[Path, TaskStore, EventLog]:
@@ -184,6 +188,74 @@ def test_resume_dispatches_static_gate_to_same_review_lane(tmp_path: Path) -> No
         if event.type == "task.dispatched"
         and event.payload.get("source") == "workflow_resume"
     ]) == 1
+
+
+def test_lane_gate_resume_is_suppressed_by_candidate_ready(
+    tmp_path: Path,
+) -> None:
+    state_dir, store, log = _state(tmp_path)
+    store.add(Task(
+        id="cli-tests",
+        title="tests",
+        status="in_progress",
+        assigned_to="dev-lane-3",
+    ))
+    log.append(ZfEvent(
+        type="lane.stage.completed",
+        actor="zf-cli",
+        task_id="cli-tests",
+        payload={"stage_id": "prd-lanes-verify"},
+    ))
+    log.append(ZfEvent(
+        type="candidate.ready",
+        actor="zf-cli",
+        payload={"completed_task_ids": ["cli-tests"]},
+    ))
+
+    projection = build_workflow_resume_projection(state_dir, _lane_config())
+
+    assert all(
+        item["safe_resume_action"] == "no_action"
+        for item in projection["checkpoints"]
+    )
+
+
+def test_semantic_resume_dedupe_waits_for_downstream_progress() -> None:
+    checkpoint = WorkflowResumeCheckpoint(
+        task_id="TASK-1",
+        last_trusted_event_id="evt-new",
+        last_completed_stage="verify",
+        expected_next_stage="impl",
+        expected_next_role="dev-lane-0",
+        blocking_event_id="evt-new",
+        safe_resume_action="needs_rework_dispatch",
+        idempotency_key="different-key",
+        reason="verify failed",
+        source_event_type="verify.failed",
+    )
+    previous = ZfEvent(
+        id="resume-old",
+        type=WORKFLOW_RESUME_APPLIED_EVENT,
+        actor="zf-cli",
+        task_id="TASK-1",
+        payload={
+            "safe_resume_action": "needs_rework_dispatch",
+            "expected_next_stage": "impl",
+            "reason": "verify failed",
+            "idempotency_key": "old-key",
+        },
+    )
+
+    assert _semantically_duplicate_resume_pending([previous], checkpoint) is True
+    assert _semantically_duplicate_resume_pending([
+        previous,
+        ZfEvent(
+            id="worker-progress",
+            type="dev.failed",
+            actor="dev-lane-0",
+            task_id="TASK-1",
+        ),
+    ], checkpoint) is False
 
 
 def test_resume_marks_stale_worker_registry_without_blocking_dispatch(

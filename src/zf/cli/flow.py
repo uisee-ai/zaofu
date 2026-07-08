@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -62,7 +63,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     intake.add_argument("--objective", default="")
     intake.add_argument("--source-root", default="")
     intake.add_argument("--target", "--target-root", dest="target_root", default="")
-    intake.add_argument("--backend", default="codex")
+    intake.add_argument("--backend", default="")
     intake.add_argument("--lanes", type=int, default=0)
     intake.add_argument("--project-id", default="")
     intake.add_argument("--project-name", default="")
@@ -200,7 +201,7 @@ def build_flow_intake(
     objective: str = "",
     source_root: str = "",
     target_root: str = "",
-    backend: str = "codex",
+    backend: str = "",
     lanes: int = 2,
     project_id: str = "",
     project_name: str = "",
@@ -216,12 +217,20 @@ def build_flow_intake(
     request_id = request_id or _unique_request_id(kind)
     output_path = (output or Path("docs") / "intake" / f"{request_id}.md").expanduser()
     project_root = _project_root_from_intake_path(output_path)
+    backend = _resolve_intake_backend(project_root, backend)
     workflow_dir = project_root / "artifacts" / "workflow" / request_id
-    intake_json_path = project_root / "artifacts" / "intake" / f"{request_id}.json"
+    output_is_json = output_path.suffix.lower() == ".json"
+    intake_json_path = output_path if output_is_json else (
+        project_root / "artifacts" / "intake" / f"{request_id}.json"
+    )
+    intake_markdown_path = (
+        output_path.with_suffix(".md") if output_is_json else output_path
+    )
     manifest_path = workflow_dir / "workflow-input-manifest.json"
     skill_plan_path = workflow_dir / "skill-adapter-plan.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     intake_json_path.parent.mkdir(parents=True, exist_ok=True)
+    intake_markdown_path.parent.mkdir(parents=True, exist_ok=True)
     workflow_dir.mkdir(parents=True, exist_ok=True)
 
     source_text = _read_text_ref(source_ref)
@@ -261,12 +270,12 @@ def build_flow_intake(
         "thread_id": thread_id,
         "created_at": now,
     }
-    output_path.write_text(
-        _render_intake_markdown(intake_payload, source_text=source_text),
-        encoding="utf-8",
-    )
     intake_json_path.write_text(
         json.dumps(intake_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    intake_markdown_path.write_text(
+        _render_intake_markdown(intake_payload, source_text=source_text),
         encoding="utf-8",
     )
     skill_plan = _build_skill_adapter_plan(
@@ -293,8 +302,8 @@ def build_flow_intake(
         created_at=now,
     )
     artifact_refs = [
-        str(output_path),
         str(intake_json_path),
+        str(intake_markdown_path),
         str(skill_plan_path),
         *matrix_refs.values(),
     ]
@@ -317,6 +326,7 @@ def build_flow_intake(
         "thread_id": thread_id,
         "intake_ref": str(output_path),
         "intake_json_ref": str(intake_json_path),
+        "intake_markdown_ref": str(intake_markdown_path),
         "skill_adapter_plan_ref": str(skill_plan_path),
         **matrix_refs,
         "workflow_dir": str(workflow_dir),
@@ -336,6 +346,7 @@ def build_flow_intake(
         "effective_kind": effective_kind,
         "intake_ref": str(output_path),
         "intake_json_ref": str(intake_json_path),
+        "intake_markdown_ref": str(intake_markdown_path),
         "workflow_input_manifest_ref": str(manifest_path),
         "skill_adapter_plan_ref": str(skill_plan_path),
         **matrix_refs,
@@ -483,8 +494,6 @@ def draft_flow_spec(
             "evidencePolicy": "strict_refs",
             "deliveryPolicy": "report_only",
         }
-        if role_skill_bundles:
-            spec["roleSkillBundles"] = role_skill_bundles
         flow = {
             "apiVersion": "zaofu.dev/v1",
             "kind": "IssueFlow",
@@ -501,8 +510,6 @@ def draft_flow_spec(
             "evidencePolicy": "strict_refs",
             "deliveryPolicy": "report_and_demo",
         }
-        if role_skill_bundles:
-            spec["roleSkillBundles"] = role_skill_bundles
         flow = {
             "apiVersion": "zaofu.dev/v1",
             "kind": "PrdFlow",
@@ -532,8 +539,6 @@ def draft_flow_spec(
             "environmentPolicy": "real_env_required",
             "projectionPolicy": "control_room",
         }
-        if role_skill_bundles:
-            spec["roleSkillBundles"] = role_skill_bundles
         flow = {
             "apiVersion": "zaofu.dev/v1",
             "kind": "RefactorFlow",
@@ -549,15 +554,85 @@ def draft_flow_spec(
         "spec": {
             "version": "1.0",
             "project": {"name": project, "state_dir": state},
+            "session": {
+                "tmux_session": f"${{ZF_TMUX_SESSION:-{_default_tmux_session(project)}}}",
+            },
         },
     }
+    runtime_profile_name = "flow-draft-runtime/v1"
+    runtime_profile = _draft_runtime_profile_doc(
+        name=runtime_profile_name,
+        backend=backend,
+        kind=kind,
+        role_skill_bundles=role_skill_bundles,
+    )
+    config["spec"]["uses"] = [runtime_profile_name]
     skill_sources = _skill_sources_from_adapter_plan(
         adapter_plan,
         project_root=project_root or Path.cwd(),
     )
     if skill_sources:
         config["spec"]["skill_sources"] = skill_sources
-    return [flow, config]
+    return [flow, runtime_profile, config]
+
+
+def _default_tmux_session(project: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(project or "flow").strip()).strip("-")
+    slug = slug.lower()[:48] or "flow"
+    return f"zf-{slug}"
+
+
+def _draft_runtime_profile_doc(
+    *,
+    name: str,
+    backend: str,
+    kind: str = "",
+    role_skill_bundles: dict[str, list[str]] | None = None,
+) -> dict[str, Any]:
+    """Return the executable runtime profile embedded in portable flow drafts."""
+
+    run_manager_backend = backend if backend in {"codex", "claude-code"} else ""
+    resident_enabled = bool(run_manager_backend)
+    spec: dict[str, Any] = {
+        "runtime": {
+            "workdirs": {
+                "enabled": True,
+                "mode": "worktree",
+            },
+            "run_manager": {
+                "backend": run_manager_backend,
+                "resident_agent": {
+                    "enabled": resident_enabled,
+                    "session_mode": "dedicated",
+                },
+            },
+            "autoresearch_resident": {
+                "enabled": resident_enabled,
+                "interval_seconds": 10,
+                "max_actions_per_tick": 1,
+            },
+        },
+        "workflow": {
+            "work_units": {
+                "enabled": True,
+                "split_quality": {
+                    "mode": "blocking",
+                },
+            },
+        },
+    }
+    if kind in {"issue", "prd", "refactor"} and role_skill_bundles:
+        spec["flow_defaults"] = {
+            kind: {
+                "roleSkillBundles": role_skill_bundles,
+            },
+        }
+    return {
+        "apiVersion": "zaofu.dev/v1",
+        "kind": "ConfigProfile",
+        "metadata": {"name": name},
+        "spec": spec,
+    }
 
 
 def run_start(args: argparse.Namespace) -> int:
@@ -849,6 +924,23 @@ def build_flow_submit_preview(
         json.dumps(_public_preflight_report(report), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    manifest_artifact_refs = _workflow_manifest_artifact_refs(
+        manifest,
+        manifest_path=manifest_path,
+        intake_path=intake_path,
+        preflight_path=preflight_path,
+    )
+    matrix_ref_payload = {
+        key: str(manifest.get(key) or "")
+        for key in _WORKFLOW_MATRIX_REF_KEYS
+        if str(manifest.get(key) or "").strip()
+    }
+    canonical_intake_ref = str(manifest.get("intake_json_ref") or intake_path)
+    display_intake_ref = str(
+        manifest.get("intake_markdown_ref")
+        or manifest.get("intake_ref")
+        or intake_path
+    )
     submit_payload = {
         "schema_version": "workflow.submit.requested.v1",
         "request_id": request_id,
@@ -856,27 +948,25 @@ def build_flow_submit_preview(
         "task_id": resolved_task_id,
         "pattern_id": resolved_pattern_id,
         "config_ref": str(config_path),
-        "workflow_prompt_ref": str(intake_path),
+        "workflow_prompt_ref": canonical_intake_ref,
         "workflow_input_manifest_ref": str(manifest_path or ""),
         "workflow_preflight_ref": str(preflight_path),
         "requested_by": requested_by or "zf-cli",
         "reason": reason or f"workflow submit {request_id}",
+        # E2(prd-goal e2e):objective 曾不入 submit payload,G0 铸造
+        # 落到 reason(操作员备注被当成了 run 目标)。真源=manifest。
+        "objective": str(manifest.get("objective") or ""),
+        **matrix_ref_payload,
         "source_refs": {
             "source_ref": str(manifest.get("source_ref") or ""),
             "source_root": str(manifest.get("source_root") or ""),
             "target_root": str(manifest.get("target_root") or ""),
-            "intake_ref": str(intake_path),
+            "intake_ref": canonical_intake_ref,
+            "intake_markdown_ref": display_intake_ref,
             "workflow_input_manifest_ref": str(manifest_path or ""),
+            **matrix_ref_payload,
         },
-        "artifact_refs": [
-            ref for ref in [
-                str(intake_path),
-                str(manifest_path or ""),
-                str(preflight_path),
-                str(manifest.get("intent_ref") or ""),
-                str(manifest.get("skill_adapter_plan_ref") or ""),
-            ] if ref
-        ],
+        "artifact_refs": manifest_artifact_refs,
     }
     result = {
         "schema_version": "workflow.submit.preview.v1",
@@ -897,6 +987,40 @@ def build_flow_submit_preview(
         encoding="utf-8",
     )
     return result
+
+
+_WORKFLOW_MATRIX_REF_KEYS = (
+    "source_inventory_ref",
+    "capability_matrix_ref",
+    "acceptance_matrix_ref",
+    "test_matrix_ref",
+    "task_map_ref",
+    "real_e2e_matrix_ref",
+    "skill_adapter_plan_ref",
+    "intake_json_ref",
+)
+
+
+def _workflow_manifest_artifact_refs(
+    manifest: dict[str, Any],
+    *,
+    manifest_path: Path | None,
+    intake_path: Path,
+    preflight_path: Path,
+) -> list[str]:
+    refs: list[str] = [str(intake_path), str(manifest_path or ""), str(preflight_path)]
+    for item in manifest.get("artifact_refs") or []:
+        if isinstance(item, dict):
+            refs.extend(
+                str(item.get(key) or "")
+                for key in ("path", "ref", "uri")
+            )
+        else:
+            refs.append(str(item or ""))
+    for key in _WORKFLOW_MATRIX_REF_KEYS:
+        refs.append(str(manifest.get(key) or ""))
+    refs.append(str(manifest.get("intent_ref") or ""))
+    return [ref for ref in dict.fromkeys(ref.strip() for ref in refs) if ref]
 
 
 def apply_flow_submit(
@@ -979,6 +1103,55 @@ def apply_flow_submit(
         },
     ))
     event_ids.append(accepted.id)
+    # G0(133):goal 铸造——submit accepted 即 kernel 发 run.goal.started
+    # (投影 build_run_goal_projection 已在等这个事件;灰度 goal.enabled)。
+    if bool(getattr(getattr(config, "goal", None), "enabled", False)):
+        objective = str(
+            payload.get("objective")
+            or payload.get("summary")
+            or payload.get("reason")
+            or f"deliver workflow submit {correlation_id or task}"
+        )
+        goal_started = writer.append(ZfEvent(
+            type="run.goal.started",
+            actor="zf-cli",
+            task_id=task,
+            causation_id=accepted.id,
+            correlation_id=correlation_id,
+            payload={
+                "objective": objective,
+                "run_id": correlation_id or accepted.id,
+                "source_refs": [
+                    ref for ref in (
+                        payload.get("workflow_input_manifest_ref"),
+                        payload.get("workflow_prompt_ref"),
+                        payload.get("config_ref"),
+                    ) if ref
+                ],
+            },
+        ))
+        event_ids.append(goal_started.id)
+    # LB-2: light topology is driven by the `prd.requested` entry trigger →
+    # kernel task_map synthesizer, not by the bootstrap invoke. Emitting the
+    # invoke here direct-dispatches the whole-objective task to the judge role
+    # (light has no impl/review path for it), creating a zombie the operator
+    # must cancel by hand. Skip it; the operator emits `prd.requested` to start.
+    from zf.runtime.light_flow import light_flow_metadata
+    if light_flow_metadata(config) is not None:
+        return {
+            **preview,
+            "schema_version": "workflow.submit.apply.v1",
+            "dry_run": False,
+            "status": "accepted",
+            "event_type": "workflow.submit.accepted",
+            "workflow_invoke_status": "skipped_light",
+            "next_action": (
+                "light topology: emit `prd.requested` to start the flow "
+                "(kernel synthesizes task_map)"
+            ),
+            "event_ids": event_ids,
+            "state_dir": str(state_dir),
+        }
     invoke_payload = _submit_payload_to_workflow_invoke(payload)
     invoked = writer.append(ZfEvent(
         type="workflow.invoke.requested",
@@ -1078,13 +1251,16 @@ def build_flow_preflight_report(
             "fix_it": "按 preflight detail 修复角色/backend/dispatch 配置。",
             "safe_auto_fix": False,
         })
-    metadata = dict(getattr(config.workflow, "flow_metadata", {}) or {})
+    intake_report = _intake_preflight_report(intake_path)
+    diagnostics.extend(intake_report.get("diagnostics", []))
+    metadata = _effective_flow_metadata(
+        dict(getattr(config.workflow, "flow_metadata", {}) or {}),
+        intake_report=intake_report,
+    )
     diagnostics.extend(_environment_readiness_diagnostics(
         metadata,
         allow_missing_env=allow_missing_env,
     ))
-    intake_report = _intake_preflight_report(intake_path)
-    diagnostics.extend(intake_report.get("diagnostics", []))
     skill_report = _skill_adapter_preflight_report(intake_report)
     diagnostics.extend(skill_report.get("diagnostics", []))
     delivery_report = _delivery_launch_coverage_report(
@@ -1123,6 +1299,7 @@ def build_flow_preflight_report(
         "project": inspect_report.get("project", {}),
         "summary": inspect_report.get("summary", {}),
         "generated": inspect_report.get("generated", {}),
+        "effective_flow_metadata": metadata,
         "preflight": {
             "static_dispatch": "PASS" if preflight_ok(static_results) else "FAIL",
             "profile_sources_locked": bool(
@@ -1360,6 +1537,23 @@ def _flow_kind(config: Any) -> str:
     ))
 
 
+def _effective_flow_metadata(
+    metadata: dict[str, Any],
+    *,
+    intake_report: dict[str, Any],
+) -> dict[str, Any]:
+    effective = dict(metadata)
+    if not intake_report or intake_report.get("status") == "not_requested":
+        return effective
+    for key in ("source_root", "target_root"):
+        if str(effective.get(key) or "").strip():
+            continue
+        value = str(intake_report.get(key) or "").strip()
+        if value:
+            effective[key] = value
+    return effective
+
+
 def _git_is_work_tree(root: Path) -> bool:
     try:
         proc = subprocess.run(
@@ -1393,6 +1587,22 @@ def _resolve_declared_root(raw: str, project_root: Path) -> Path | None:
         return None
     root = Path(raw).expanduser()
     return root if root.is_absolute() else (project_root / root)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.resolve(strict=False).relative_to(root.resolve(strict=False))
+    except ValueError:
+        return False
+    return True
+
+
+def _target_git_root(target_root: Path, project_root: Path) -> Path | None:
+    if _git_is_work_tree(target_root):
+        return target_root
+    if _is_relative_to(target_root, project_root) and _git_is_work_tree(project_root):
+        return project_root
+    return None
 
 
 def _refactor_safety_report(
@@ -1447,19 +1657,21 @@ def _refactor_safety_report(
                 "fix_it": "让 sourceRoot 与 targetRoot 完全互斥。",
                 "safe_auto_fix": False,
             })
-    if not _git_is_work_tree(target_root):
+    target_git_root = _target_git_root(target_root, project_root)
+    if target_git_root is None:
         diagnostics.append({
             "severity": "STOP",
             "kind": "workflow_target_not_git",
             "title": "refactor target 不是 git 仓库",
             "message": str(target_root),
-            "why_it_matters": "candidate/worktree 机制假设 git;缺 git 会在 scan 期爆 target_ref_not_a_git_ref(r10 实况)。",
-            "fix_it": "在 target 运行 git init,或使用 `zf project init --kind refactor --git-init`。",
+            "why_it_matters": "candidate/worktree 机制需要一个 git 承载根; target 子目录可不存在,但必须在 git project root 内。",
+            "fix_it": "在项目根运行 git init,或使用 `zf project init --kind refactor --git-init`。",
             "safe_auto_fix": True,
         })
     report: dict[str, Any] = {
         "source_root": str(source_root or ""),
         "target_root": str(target_root),
+        "target_git_root": str(target_git_root or ""),
     }
     if source_root is not None and source_root.exists():
         if not _git_is_work_tree(source_root):
@@ -1552,8 +1764,8 @@ def _unique_request_id(kind: str) -> str:
 
 def _request_id_from_path(path: Path) -> str:
     stem = path.expanduser().name
-    if stem.endswith(".md"):
-        stem = stem[:-3]
+    if stem.endswith((".md", ".json")):
+        stem = Path(stem).stem
     return stem or _unique_request_id("auto")
 
 
@@ -1562,7 +1774,36 @@ def _project_root_from_intake_path(path: Path) -> Path:
     parent = expanded.parent
     if parent.name == "intake" and parent.parent.name == "docs":
         return parent.parent.parent
+    if parent.name == "intake" and parent.parent.name == "artifacts":
+        return parent.parent.parent
     return Path.cwd()
+
+
+def _resolve_intake_backend(project_root: Path, backend: str) -> str:
+    explicit = str(backend or "").strip()
+    if explicit:
+        return explicit
+    configured = _project_default_backend(project_root)
+    return configured or "codex"
+
+
+def _project_default_backend(project_root: Path) -> str:
+    config_path = Path(project_root) / "zf.yaml"
+    if not config_path.exists():
+        return ""
+    try:
+        config = load_config(config_path)
+    except ConfigError:
+        return ""
+    for role in getattr(config, "roles", []) or []:
+        for backend in list(getattr(role, "backends", []) or []):
+            text = str(backend or "").strip()
+            if text and text != "python":
+                return text
+        text = str(getattr(role, "backend", "") or "").strip()
+        if text and text != "python":
+            return text
+    return ""
 
 
 def _read_text_ref(source_ref: str) -> str:
@@ -1584,6 +1825,11 @@ def _compact_text(value: object) -> str:
 def _render_intake_markdown(payload: dict[str, Any], *, source_text: str = "") -> str:
     lines = [
         f"# Workflow Intake: {payload['request_id']}",
+        "",
+        "> ⚠️ 本文件是**展示副本**;submit 读取的真源是同名 JSON manifest。",
+        "> 修改任何字段(如 target_root)必须**重跑 `zf flow intake`** 带",
+        "> 对应 flags(--target-root/--source-root/--objective)——直接编辑",
+        "> 本 md 不会生效(prd-goal e2e 实弹教训)。",
         "",
         f"- schema_version: `{payload['schema_version']}`",
         f"- request_kind: `{payload['request_kind']}`",
@@ -1706,7 +1952,15 @@ def _write_delivery_matrix_drafts(
     skill_plan: dict[str, Any],
     created_at: str,
 ) -> dict[str, str]:
-    surfaces = _delivery_surfaces_for_kind(kind, parity_scope=parity_scope)
+    source_text = _read_text_ref(source_ref)
+    extracted_acceptance = _extract_acceptance_criteria(source_text)
+    extracted_commands = _extract_verification_commands(source_text)
+    surfaces = _delivery_surfaces_for_kind(
+        kind,
+        parity_scope=parity_scope,
+        source_text=source_text,
+        target_root=target_root,
+    )
     lane_count = max(int(lanes or 1), 1)
     capabilities = []
     acceptances = []
@@ -1727,6 +1981,10 @@ def _write_delivery_matrix_drafts(
             "source_ref": source_ref,
             "source_root": source_root,
             "target_root": target_root,
+            "source_evidence": {
+                "extracted_acceptance_count": len(extracted_acceptance),
+                "extracted_command_count": len(extracted_commands),
+            },
         }
         inventory.append({
             "id": cap_id,
@@ -1736,24 +1994,22 @@ def _write_delivery_matrix_drafts(
             "source_ref": source_ref or source_root,
             "status": "draft",
         })
-        acceptance_id = f"accept-{cap_id}"
         test_id = f"test-{cap_id}"
         task_id = f"TASK-{cap_id.upper()}"
         capabilities.append(capability)
-        acceptances.append({
-            "id": acceptance_id,
-            "acceptance_id": acceptance_id,
-            "capability_id": cap_id,
-            "criteria": f"{surface} capability satisfies the workflow objective",
-            "status": "planned",
-            "evidence_required": True,
-        })
+        related_commands = (
+            extracted_commands
+            if surface == "cli"
+            else []
+        )
         tests.append({
             "id": test_id,
             "test_id": test_id,
             "capability_id": cap_id,
-            "acceptance_id": acceptance_id,
+            "acceptance_id": "",
             "tier": "real-e2e" if _surface_needs_real_e2e(surface) else "integration",
+            "commands": related_commands,
+            "command_source": "source_prd" if related_commands else "project-adapter-skill",
             "status": "planned",
             "evidence_required": True,
         })
@@ -1767,21 +2023,79 @@ def _write_delivery_matrix_drafts(
             "status": "planned",
         })
         if _surface_needs_real_e2e(surface):
+            command = ""
+            command_source = "project-adapter-skill"
+            command_hint = (
+                "Replace with a project-specific real command such as CLI smoke, "
+                "Docker Playwright, live LLM provider probe, or gateway webhook drill."
+            )
+            if related_commands:
+                command = " && ".join(related_commands)
+                command_source = "source_prd"
+                command_hint = "Extracted from the source PRD acceptance/test instructions."
             real_e2e.append({
                 "id": f"e2e-{cap_id}",
                 "surface": surface,
                 "capability_id": cap_id,
                 "status": "planned",
-                "command": "",
+                "command": command,
                 "command_required": True,
-                "command_source": "project-adapter-skill",
-                "command_hint": (
-                    "Replace with a project-specific real command such as CLI smoke, "
-                    "Docker Playwright, live LLM provider probe, or gateway webhook drill."
-                ),
+                "command_source": command_source,
+                "command_hint": command_hint,
                 "evidence_refs": [],
                 "required": True,
             })
+    capability_by_surface = {
+        str(row["surface"]): str(row["capability_id"])
+        for row in capabilities
+    }
+    default_capability_id = (
+        capability_by_surface.get("product")
+        or (str(capabilities[0]["capability_id"]) if capabilities else _safe_matrix_id(kind))
+    )
+    if extracted_acceptance:
+        for criteria_index, criteria in enumerate(extracted_acceptance, start=1):
+            cap_id = _capability_for_acceptance(
+                criteria,
+                capability_by_surface,
+                default_capability_id=default_capability_id,
+            )
+            acceptance_id = f"accept-{_safe_matrix_id(f'{cap_id}-{criteria_index}')}"
+            acceptances.append({
+                "id": acceptance_id,
+                "acceptance_id": acceptance_id,
+                "capability_id": cap_id,
+                "criteria": criteria,
+                "source": "source_prd",
+                "status": "planned",
+                "evidence_required": True,
+            })
+    else:
+        for row in capabilities:
+            cap_id = str(row["capability_id"])
+            surface = str(row["surface"])
+            acceptance_id = f"accept-{cap_id}"
+            acceptances.append({
+                "id": acceptance_id,
+                "acceptance_id": acceptance_id,
+                "capability_id": cap_id,
+                "criteria": f"{surface} capability satisfies the workflow objective",
+                "source": "portable_draft",
+                "status": "planned",
+                "evidence_required": True,
+            })
+    first_acceptance_by_capability: dict[str, str] = {}
+    for row in acceptances:
+        first_acceptance_by_capability.setdefault(
+            str(row["capability_id"]),
+            str(row["acceptance_id"]),
+        )
+    for row in tests:
+        cap_id = str(row["capability_id"])
+        row["acceptance_id"] = (
+            first_acceptance_by_capability.get(cap_id)
+            or (str(acceptances[0]["acceptance_id"]) if acceptances else "")
+        )
     adapter_skills = skill_plan.get("loaded_skills")
     if not isinstance(adapter_skills, list):
         adapter_skills = []
@@ -1877,6 +2191,8 @@ def _delivery_surfaces_for_kind(
     kind: str,
     *,
     parity_scope: tuple[str, ...],
+    source_text: str = "",
+    target_root: str = "",
 ) -> list[str]:
     explicit = [str(item).strip() for item in parity_scope if str(item).strip()]
     if explicit:
@@ -1884,10 +2200,119 @@ def _delivery_surfaces_for_kind(
     if kind == "issue":
         return ["regression"]
     if kind == "prd":
+        inferred = _infer_prd_surfaces(source_text, target_root=target_root)
+        if inferred:
+            return inferred
         return ["product", "cli", "web"]
     if kind == "refactor":
         return ["core", "cli", "api", "web", "runtime"]
     return ["core"]
+
+
+def _infer_prd_surfaces(source_text: str, *, target_root: str = "") -> list[str]:
+    text = (source_text or "").lower()
+    target = (target_root or "").lower()
+    surfaces: list[str] = ["product"]
+    cli_terms = (
+        "cli", "command", "命令", "terminal", "stdout", "stdin",
+        "node ", "npm ", "python ", "uv ", "bin/", "src/index",
+    )
+    web_terms = (
+        "web", "browser", "dashboard", "web ui", "页面", "前端", "react",
+        "next.js", "playwright", "http://", "https://",
+    )
+    api_terms = ("api", "http endpoint", "rest", "graphql", "接口")
+    if any(term in text for term in cli_terms) or target.endswith("/cli"):
+        surfaces.append("cli")
+    if any(term in text for term in web_terms):
+        surfaces.append("web")
+    if any(term in text for term in api_terms):
+        surfaces.append("api")
+    return list(dict.fromkeys(surfaces))
+
+
+_COMMAND_START_RE = re.compile(
+    r"^(?:npm|pnpm|yarn|bun|node|python|python3|uv|pytest|npx|docker|curl|go|cargo|deno)\b"
+)
+
+
+def _extract_verification_commands(source_text: str) -> list[str]:
+    commands: list[str] = []
+    for raw_line in (source_text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        inline = re.findall(r"`([^`]+)`", raw_line)
+        inline_commands = [
+            item.strip()
+            for item in inline
+            if _COMMAND_START_RE.match(item.strip())
+        ]
+        if inline_commands:
+            commands.extend(inline_commands)
+            continue
+        line = re.sub(r"^[-*+]\s+", "", line).strip()
+        line = re.sub(r"^\d+[.)]\s+", "", line).strip()
+        line = line.strip("`")
+        if line.startswith("$ "):
+            line = line[2:].strip()
+        if _COMMAND_START_RE.match(line):
+            commands.append(line)
+            continue
+    return list(dict.fromkeys(commands))
+
+
+def _extract_acceptance_criteria(source_text: str) -> list[str]:
+    criteria: list[str] = []
+    in_acceptance = False
+    for raw_line in (source_text or "").splitlines():
+        stripped = raw_line.strip()
+        lowered = stripped.lower()
+        if not stripped:
+            if in_acceptance and criteria:
+                break
+            continue
+        if stripped.startswith("#"):
+            header = stripped.lstrip("#").strip().lower()
+            in_acceptance = any(
+                term in header
+                for term in ("acceptance", "验收", "criteria", "test", "验证")
+            )
+            continue
+        if not in_acceptance:
+            continue
+        line = re.sub(r"^[-*+]\s+", "", stripped).strip()
+        line = re.sub(r"^\d+[.)]\s+", "", line).strip()
+        if not line:
+            continue
+        if lowered.startswith(("```", "---")):
+            continue
+        criteria.append(line)
+    return list(dict.fromkeys(criteria))
+
+
+def _capability_for_acceptance(
+    criteria: str,
+    capability_by_surface: dict[str, str],
+    *,
+    default_capability_id: str,
+) -> str:
+    text = (criteria or "").lower()
+    if any(
+        term in text
+        for term in (
+            "cli", "command", "命令", "stdout", "stdin",
+            "node ", "npm ", "python ", "uv ", "bin/", "src/index",
+        )
+    ) and "cli" in capability_by_surface:
+        return capability_by_surface["cli"]
+    if any(term in text for term in ("web", "browser", "页面", "playwright")):
+        if "web" in capability_by_surface:
+            return capability_by_surface["web"]
+    if any(term in text for term in ("api", "http", "endpoint", "接口")):
+        if "api" in capability_by_surface:
+            return capability_by_surface["api"]
+    return default_capability_id
 
 
 def _surface_needs_real_e2e(surface: str) -> bool:
@@ -1943,13 +2368,22 @@ def _load_manifest_for_intake(intake_path: Path) -> tuple[Path | None, dict[str,
         "*/workflow-input-manifest.json"
     ):
         manifest = _load_json(manifest_path)
-        if Path(str(manifest.get("intake_ref") or "")).expanduser() == intake_path:
-            return manifest_path, manifest
-        try:
-            if Path(str(manifest.get("intake_ref") or "")).resolve() == intake_path.resolve():
+        candidates = [
+            str(manifest.get("intake_ref") or ""),
+            str(manifest.get("intake_json_ref") or ""),
+            str(manifest.get("intake_markdown_ref") or ""),
+        ]
+        for candidate in candidates:
+            if not candidate:
+                continue
+            candidate_path = Path(candidate).expanduser()
+            if candidate_path == intake_path:
                 return manifest_path, manifest
-        except OSError:
-            continue
+            try:
+                if candidate_path.resolve() == intake_path.resolve():
+                    return manifest_path, manifest
+            except OSError:
+                continue
     return None, {}
 
 
@@ -2132,7 +2566,7 @@ def _intake_preflight_report(intake_path: Path | None) -> dict[str, Any]:
             "title": "workflow intake 必填字段缺失",
             "message": ", ".join(missing),
             "why_it_matters": "缺少最小需求信息时启动 workflow 会导致后续 agent 猜测。",
-            "fix_it": "补充 intake 后重新 classify / draft / preflight。",
+            "fix_it": "重跑 `zf flow intake` 并带缺失字段的 flags(如 --target-root);直接编辑 intake md 不生效(真源=manifest JSON)。补齐后重新 submit。",
             "safe_auto_fix": False,
         })
     return {
@@ -2141,6 +2575,8 @@ def _intake_preflight_report(intake_path: Path | None) -> dict[str, Any]:
         "workflow_input_manifest_ref": str(manifest_path),
         "request_id": str(manifest.get("request_id") or ""),
         "kind": str(manifest.get("kind") or ""),
+        "source_root": str(manifest.get("source_root") or ""),
+        "target_root": str(manifest.get("target_root") or ""),
         "missing_required_fields": missing,
         "diagnostics": diagnostics,
     }

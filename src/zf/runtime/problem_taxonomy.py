@@ -47,6 +47,10 @@ _ABNORMAL_EVENT_RULES: dict[str, dict[str, Any]] = {
         "intervention_class": spec.intervention_class,
         "suggested_route": spec.suggested_route,
         "action_kind": spec.suggested_action_kind,
+        "notification_policy": spec.effective_notification_policy,
+        "recovery_policy": spec.effective_recovery_policy,
+        "dedupe_key_fields": spec.dedupe_key_fields,
+        "human_required_when": spec.human_required_when,
     }
     for event_type, spec in abnormal_event_specs().items()
 }
@@ -226,7 +230,7 @@ def abnormal_event_projection(event: Any) -> dict[str, Any] | None:
         payload.get("fingerprint")
         or payload.get("checkpoint_id")
         or payload.get("attention_id")
-        or f"{event_type}:{_event_scope(row, payload)}"
+        or _event_policy_fingerprint(event_type, row, payload, rule)
     )
     failure_class = str(rule.get("failure_class") or event_type.replace(".", "_"))
     summary = _event_summary(payload, default=f"{event_type} requires runtime diagnosis")
@@ -267,6 +271,10 @@ def abnormal_event_projection(event: Any) -> dict[str, Any] | None:
         "owner_route": str(rule.get("owner_route") or ""),
         "action_policy": str(rule.get("action_policy") or ""),
         "intervention_class": str(rule.get("intervention_class") or ""),
+        "notification_policy": str(rule.get("notification_policy") or ""),
+        "recovery_policy": str(rule.get("recovery_policy") or ""),
+        "dedupe_key_fields": _string_list(rule.get("dedupe_key_fields")),
+        "human_required_when": _string_list(rule.get("human_required_when")),
         "problem_envelope": envelope,
     })
 
@@ -475,6 +483,9 @@ def problem_class_for(
         "no_progress",
         "unknown_runtime_gap",
         "dispatch_preflight_blocker",
+        "cost_budget_exceeded",
+        "cost.budget.exceeded",
+        "budget_exceeded",
     )):
         return "runtime_liveness"
     if any(token in text for token in (
@@ -666,6 +677,23 @@ def _event_scope(row: dict[str, Any], payload: dict[str, Any]) -> str:
     if actor:
         return actor
     return str(row.get("id") or "unknown")
+
+
+def _event_policy_fingerprint(
+    event_type: str,
+    row: dict[str, Any],
+    payload: dict[str, Any],
+    rule: dict[str, Any],
+) -> str:
+    fields = _string_list(rule.get("dedupe_key_fields"))
+    parts: list[str] = []
+    for field in fields:
+        value = str(payload.get(field) or row.get(field) or "").strip()
+        if value:
+            parts.append(f"{field}={value}")
+    if parts:
+        return f"{event_type}:{':'.join(parts)}"
+    return f"{event_type}:{_event_scope(row, payload)}"
 
 
 def _event_summary(payload: dict[str, Any], *, default: str) -> str:

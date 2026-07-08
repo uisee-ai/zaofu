@@ -7,6 +7,23 @@ description: "Use for ZaoFu orchestrator roles that need yoke-style harness disc
 
 Local adaptation of yoke orchestrator role context for ZaoFu.
 
+## Precedence
+
+This role context owns only ROLE BOUNDARY — ownership, scope, evidence, and
+completion authority. Method detail is delegated to the in-repo `yoke/`
+methodology family (not external skill packs). When a yoke methodology skill and
+this file both apply, follow this file for ZaoFu runtime truth, task scope, and
+completion claims; follow the yoke skill for how to execute. For this role:
+
+- `yoke/diagnosis` — Tier-2 diagnostician method (read scene → root-cause
+  hypothesis → structured `next_action`). The orchestrator does NOT diagnose;
+  it consumes the resulting `diagnosis.completed` `next_action` (see the
+  escalation table below).
+- `yoke/context-hygiene` — long-session read discipline, chaos handling, and
+  recycle/resume semantics for a durable orchestrator session.
+
+Do not restate their content here.
+
 ## Rules
 
 - Understand the request before dispatching work.
@@ -27,6 +44,21 @@ Local adaptation of yoke orchestrator role context for ZaoFu.
   verification, and handoff evidence. Attach the
   `zf-harness-lane-goal-continuation` discipline so each lane completes only
   its assigned slice and cannot claim feature/product done.
+- **Fanout is de-duplicated and judged by the kernel — do not fight it.** Three
+  landed mechanics constrain what re-dispatch is even possible; know their
+  event shapes:
+  - `plan.minting.suppressed` (FIX-12, `orchestrator_fanout.py:3086`): a pending
+    plan whose fingerprint (stage + pdd + task set) matches an undecided plan is
+    suppressed. Do NOT replan-and-mint a fresh `plan_id` every round — wait on
+    the pending plan's approval/rejection.
+  - `fanout.retrigger.suppressed` (FIX-15②, `orchestrator_fanout.py:6492`):
+    re-opening review against a `target_commit` that already carries a rejection
+    is suppressed. Produce a real delta first, then the retrigger is allowed.
+  - `fanout.child.workdir_mismatch` (FIX-9, `orchestrator_fanout.py:6604`): a
+    reader child's audit target is pinned into its child payload
+    (`target_commit`) before dispatch; if it cannot be pinned the dispatch is
+    rejected with this event. When a reader dispatch fails, recognize this
+    rejection shape — the fix is a resolvable pin target, not a blind reissue.
 - In topologies with `arch` plus `critic`, dispatch fresh user-message tasks to
   `arch` first; do not bypass the design gate by jumping directly to a
   downstream worker. Let `arch.proposal.done` and `design.critique.done` drive
@@ -68,9 +100,9 @@ Local adaptation of yoke orchestrator role context for ZaoFu.
   | Escalation reason | Orchestrator action |
   |---|---|
   | writer blocked / `dev.blocked`: ambiguous | request critic/design triage with `critic.gate.requested` or reissue arch rework with the ambiguous evidence |
-  | retry cap exceeded | reduce scope with `task.contract.update`, split a smaller task, or cancel the vertical with explicit reason |
+  | `judge_nonconvergence` / rework exhausted (**Tier-2**) | **First check for a same-fingerprint `diagnosis.requested` / `diagnosis.completed`.** Since 2026-07-06 the kernel diagnosis sweep (`orchestrator.py:1661-1697`) auto-mints `diagnosis.requested` (one per fingerprint) for these signals. If a diagnosis is pending, wait for `diagnosis.completed` and consume its `next_action`: `route_to_lane` flows back through the `candidate_rework` feedback pipeline, `fix_target` names the fix, `needs_owner` is already re-escalated by the kernel as `human.escalate`. Do NOT pre-cut scope or mint your own `task.contract.update` — the kernel is the minting party; you do not duplicate-mint |
   | `classification phase_gate_violation` | update the contract to clarify phase boundary or request critic triage; do not keep evidence-reissue looping |
-  | `runtime_offline` / `transport_failed` | request worker respawn or requeue to a healthy instance |
+  | `runtime_offline` / `transport_failed` | emit `worker.respawn.requested` (the event name the kernel reactor expects, `orchestrator_reactor.py:4425`) to respawn or requeue to a healthy instance |
   | external secret/permission blocker | keep blocked and ask for one specific operator decision |
 
   Always record the decision rationale in the emitted event payload or memory
@@ -87,8 +119,13 @@ Local adaptation of yoke orchestrator role context for ZaoFu.
   These events are terminal claims only; ZaoFu Layer 1 closes the task after
   discriminator and terminal evidence checks pass. If `discriminator.failed`
   appears, route bounded rework instead of claiming completion.
-- When a loop reaches the configured ceiling, escalate or reduce scope instead
-  of retrying indefinitely.
+- When a loop reaches the configured ceiling, the kernel has already
+  mechanically suppressed no-delta retries (`fanout.retrigger.suppressed`) and
+  auto-escalates after ≥3 non-converging rejections (`judge_nonconvergence`,
+  `orchestrator_fanout.py:6392-6393`). Your job is therefore NOT to hand-roll an
+  escalate-or-cut-scope decision — it is to **supply a real delta** so a retry
+  can make progress, or to **consume the `diagnosis.completed` conclusion** once
+  the Tier-2 sweep runs. Never retry with no delta.
 - Persist stage handoff artifacts; do not rely on memory-only state.
 - Closure is mechanical: all required gates pass, or route back to the failing
   stage.

@@ -84,6 +84,21 @@ class TestMaterialization:
         assert final.trigger == "test.passed"
         assert final.aggregate.success_event == "judge.passed"
 
+    def test_pipeline_final_can_wait_for_custom_post_verify_stage(self, tmp_path):
+        path = _pipelines_only_yaml(tmp_path)
+        data = yaml.safe_load(path.read_text())
+        data["workflow"]["pipelines"][0]["final"]["trigger"] = (
+            "flow.discovery.completed"
+        )
+        path.write_text(yaml.dump(data))
+
+        cfg = load_config(path)
+
+        final = next(
+            stage for stage in cfg.workflow.stages if stage.id == "demo-final"
+        )
+        assert final.trigger == "flow.discovery.completed"
+
     def test_materialized_graph_compiles_zero_stop(self, tmp_path):
         from zf.core.workflow.graph import compile_workflow_graph
         cfg = load_config(_pipelines_only_yaml(tmp_path))

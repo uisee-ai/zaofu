@@ -88,6 +88,9 @@ class TestKnownEventTypes:
     def test_repair_projection_rebuild_event_present(self):
         assert "projection.rebuild.requested" in KNOWN_EVENT_TYPES
 
+    def test_identity_binding_request_event_present(self):
+        assert "identity.binding.requested" in KNOWN_EVENT_TYPES
+
     def test_task_map_amended_event_present(self):
         for name in (
             "verify.parity_scan.requested",

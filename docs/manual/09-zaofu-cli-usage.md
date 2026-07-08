@@ -24,7 +24,7 @@ ZaoFu 的 CLI 有三条边界:
 - `zf.yaml` 是唯一控制面配置。
 - 运行态目录来自 `project.state_dir`,默认是 `.zf/`;不要在代码里硬编码。
 - `events.jsonl`、`kanban.json`、`session.yaml`、`feature_list.json`、
-  `role_sessions.yaml` 是 kernel 管理的 truth/projection,日常变更优先走
+  `role_sessions.yaml` 是 kernel 管理的 canonical state,日常变更优先走
   `zf` 命令,不要手工编辑。
 
 常见参数:
@@ -45,8 +45,8 @@ ZaoFu 的 CLI 有三条边界:
 uv run zf presets
 uv run zf init --preset safe-team
 uv run zf validate --cold-start
-uv run zf start --dry-run
-uv run zf start --foreground
+uv run zf start --dry-run --no-watch
+uv run zf start
 ```
 
 给 harness 一个任务:
@@ -77,9 +77,13 @@ uv run zf stop
 |---|---|
 | `uv run zf presets` | 列出内置 preset |
 | `uv run zf presets show <name>` | 输出某个 preset 的 YAML |
-| `uv run zf init [--preset NAME] [--state-dir PATH]` | 初始化项目运行态,并补齐 `AGENTS.md` / `CLAUDE.md` |
+| `uv run zf init [PATH] [--create] [--preset NAME] [--state-dir PATH]` | 初始化项目运行态,并补齐 `AGENTS.md` / `CLAUDE.md` |
 | `uv run zf init --skip-instruction-docs` | 只初始化运行态,不创建/刷新项目指令文档 |
 | `uv run zf init --workspace-register` | 初始化后注册到 workspace |
+| `uv run zf init --env-check` | 初始化时执行环境探测 |
+| `uv run zf profile detect` | 探测项目技术栈 |
+| `uv run zf profile recommend` | 推荐 profile/preset |
+| `uv run zf profile bootstrap` | 生成 bootstrap 建议 |
 | `uv run zf validate --path zf.yaml` | 校验配置文件 |
 | `uv run zf validate --cold-start` | 冷启动 readiness 检查 |
 | `uv run zf validate --strict-skills` | skill 问题按失败处理 |
@@ -103,8 +107,8 @@ uv run zf gate list
 | 命令 | 用途 |
 |---|---|
 | `uv run zf start --dry-run` | 检查并记录启动动作,不启动真实 worker |
-| `uv run zf start --foreground` | 启动 harness loop 并前台运行 watcher |
-| `uv run zf start --no-watch` | 启动但不运行 watcher |
+| `uv run zf start` | 启动 harness loop 并前台运行 watcher |
+| `uv run zf start --no-watch` | spawn workers 后退出,不长期运行 watcher |
 | `uv run zf status` | 当前 session/task 概览 |
 | `uv run zf status --workers` | worker / role session 概览 |
 | `uv run zf attach [role]` | attach 到 tmux session/pane |
@@ -113,7 +117,7 @@ uv run zf gate list
 | `uv run zf stop` | 优雅停止 |
 | `uv run zf stop --force` | 强制停止并清理 lock |
 
-stream-json / headless backend 不一定有可 attach 的 tmux pane。此时优先用
+`--foreground` 仍兼容,但当前只是 deprecated no-op alias。stream-json / headless backend 不一定有可 attach 的 tmux pane。此时优先用
 `zf watch`、`zf events`、`zf trace` 和 Web dashboard 看运行态。
 
 ## 5. Feature 与 Task

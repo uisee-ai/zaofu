@@ -63,6 +63,7 @@ _ENV_SUB_RE = re.compile(
 )
 
 from zf.core.config.schema import (  # noqa: E402
+    GoalConfig,
     ZfConfig,
     ProjectConfig,
     SessionConfig,
@@ -96,6 +97,7 @@ from zf.core.config.schema import (  # noqa: E402
     RuntimeRuleDConfig,
     EventSchemaValidationConfig,
     RuntimeConfig,
+    RuntimeAutoresearchResidentConfig,
     WorkdirConfig,
     GitIsolationConfig,
     RuntimeSkillsConfig,
@@ -229,6 +231,8 @@ _KNOWN_TOP_LEVEL_KEYS = frozenset({
     "safety", "verification", "runtime", "providers", "integrations",
     "autopilot", "autoresearch", "skill_sources", "global_budget_usd",
     "budget_enforcement", "budget_enforcement_enabled",
+    # P0-8 存量遗漏(与 attempt_lease_grace_s 同族白名单坑)+ 133/G 批
+    "budget_fail_closed", "goal",
 })
 _KNOWN_WORKFLOW_KEYS = frozenset({
     "attempt_lease_grace_s",  # 131-P2-3 lease 宽限(r6 首用)
@@ -272,6 +276,18 @@ def _reject_unknown_keys(
         f"Unknown key(s) in {context}: {', '.join(hints)}. "
         f"Typo'd keys silently fall back to defaults, so they are rejected."
     )
+
+
+def _parse_project_setup_script(project_data: dict) -> str:
+    """project.scripts.setup:项目自声明的 worktree 就绪脚本,可选。"""
+    scripts = project_data.get("scripts") or {}
+    if not isinstance(scripts, dict):
+        raise ConfigError("project.scripts must be a mapping")
+    _reject_unknown_keys(scripts, frozenset({"setup"}), "project.scripts")
+    setup = scripts.get("setup", "")
+    if setup and not isinstance(setup, str):
+        raise ConfigError("project.scripts.setup must be a string")
+    return str(setup or "").strip()
 
 
 def _build_constraints(data: dict | None) -> ConstraintsConfig:
@@ -799,6 +815,9 @@ def _build_workflow_stages(
                 or (source.get("synthesize_canonical_tasks")
                     if isinstance(source, dict) else False)
             ),
+            retrigger_requires_delta=bool(
+                raw_stage.get("retrigger_requires_delta") or False
+            ),
         ))
     _validate_stage_backedge_semantics(stages)
     return stages
@@ -1032,8 +1051,18 @@ def _build_stage_criteria(data: object) -> WorkflowStageCriteriaConfig:
         success_raw = [success_raw]
     if not isinstance(success_raw, list):
         raise ConfigError("workflow stage criteria.success_criteria must be a list")
+    instructions_raw = data.get("instructions") or []
+    if isinstance(instructions_raw, str):
+        instructions_raw = [instructions_raw]
+    if not isinstance(instructions_raw, list):
+        raise ConfigError("workflow stage criteria.instructions must be a list")
     try:
         return WorkflowStageCriteriaConfig(
+            instructions=[
+                str(item).strip()
+                for item in instructions_raw
+                if str(item).strip()
+            ],
             success_criteria=[
                 item if isinstance(item, dict) else {
                     "kind": "command_passed",
@@ -1713,6 +1742,11 @@ def load_config(path: Path) -> ZfConfig:
             str(s.get("trigger") or "")
             for s in stage_dicts if isinstance(s, dict)
         }
+        flow_metadata_raw = workflow_data.get("_flow_metadata")
+        rendered_pipeline_stages = bool(
+            isinstance(flow_metadata_raw, dict)
+            and flow_metadata_raw.get("rendered_pipeline_stages")
+        )
         affinity_data = workflow_data.get("affinity_lanes")
         if not isinstance(affinity_data, dict):
             affinity_data = {}
@@ -1736,15 +1770,16 @@ def load_config(path: Path) -> ZfConfig:
                 # 诊断负责,这里不重复告警。
                 continue
             if pipeline_spec.trigger in hand_triggers:
-                print(
-                    f"Warning: lane_pipeline "
-                    f"{pipeline_spec.pipeline_id!r} and hand-written "
-                    f"stages cover the same trigger "
-                    f"{pipeline_spec.trigger!r} — dual representation "
-                    f"drifts; remove the hand stages once P4 lands "
-                    f"(doc 90 §7)",
-                    file=sys.stderr,
-                )
+                if not rendered_pipeline_stages:
+                    print(
+                        f"Warning: lane_pipeline "
+                        f"{pipeline_spec.pipeline_id!r} and hand-written "
+                        f"stages cover the same trigger "
+                        f"{pipeline_spec.trigger!r} — dual representation "
+                        f"drifts; remove the hand stages once P4 lands "
+                        f"(doc 90 §7)",
+                        file=sys.stderr,
+                    )
                 continue
             stage_dicts.extend(
                 materialize_lane_pipeline_stages(pipeline_spec),
@@ -1795,6 +1830,7 @@ def load_config(path: Path) -> ZfConfig:
             name=project_data["name"],
             workspace=project_data.get("workspace", "."),
             state_dir=project_data.get("state_dir", ".zf"),
+            setup_script=_parse_project_setup_script(project_data),
         ),
         session=_build_session(session_data),
         orchestrator=OrchestratorConfig(
@@ -1897,6 +1933,7 @@ def load_config(path: Path) -> ZfConfig:
             raw.get("budget_fail_closed"),
             default=False,
         ),
+        goal=_build_goal(raw.get("goal")),
     )
     # doc 90 增补:dag 顶层 schema_profile(不依赖 lane_pipeline 的引用位)。
     if cfg.workflow.dag.schema_profile:
@@ -2123,6 +2160,7 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
     git_raw = data.get("git") or {}
     skills_raw = data.get("skills") or {}
     run_manager_raw = data.get("run_manager") or {}
+    autoresearch_resident_raw = data.get("autoresearch_resident") or {}
     feishu_inbound_raw = data.get("feishu_inbound") or {}
     if not isinstance(workdirs_raw, dict):
         raise ConfigError("runtime.workdirs must be a mapping")
@@ -2132,6 +2170,8 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
         raise ConfigError("runtime.skills must be a mapping")
     if not isinstance(run_manager_raw, dict):
         raise ConfigError("runtime.run_manager must be a mapping")
+    if not isinstance(autoresearch_resident_raw, dict):
+        raise ConfigError("runtime.autoresearch_resident must be a mapping")
     if not isinstance(feishu_inbound_raw, dict):
         raise ConfigError("runtime.feishu_inbound must be a mapping")
     resident_raw = run_manager_raw.get("resident_agent") or {}
@@ -2251,6 +2291,41 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
         raise ConfigError(
             "runtime.run_manager.backend is required when "
             "runtime.run_manager.resident_agent.enabled is true"
+        )
+    try:
+        autoresearch_resident_interval = float(
+            autoresearch_resident_raw.get("interval_seconds", 10.0) or 10.0
+        )
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "runtime.autoresearch_resident.interval_seconds must be numeric"
+        ) from exc
+    if autoresearch_resident_interval <= 0:
+        raise ConfigError(
+            "runtime.autoresearch_resident.interval_seconds must be > 0"
+        )
+    try:
+        autoresearch_resident_max_actions = int(
+            autoresearch_resident_raw.get("max_actions_per_tick", 1) or 1
+        )
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(
+            "runtime.autoresearch_resident.max_actions_per_tick must be an integer"
+        ) from exc
+    if autoresearch_resident_max_actions <= 0:
+        raise ConfigError(
+            "runtime.autoresearch_resident.max_actions_per_tick must be > 0"
+        )
+    autoresearch_resident_backend = str(
+        autoresearch_resident_raw.get("self_repair_backend", "") or ""
+    ).strip()
+    if (
+        autoresearch_resident_backend
+        and autoresearch_resident_backend not in _VALID_REPAIR_BACKENDS
+    ):
+        raise ConfigError(
+            "Invalid runtime.autoresearch_resident.self_repair_backend "
+            f"{autoresearch_resident_backend!r}: must be one of {_VALID_REPAIR_BACKENDS}"
         )
     feishu_inbound_mode = str(
         feishu_inbound_raw.get("mode", "bridge") or "bridge"
@@ -2397,6 +2472,30 @@ def _build_runtime(data: dict | None) -> RuntimeConfig:
                     ],
                 ),
             ),
+        ),
+        autoresearch_resident=RuntimeAutoresearchResidentConfig(
+            enabled=_bool_value(
+                autoresearch_resident_raw.get("enabled"),
+                default=False,
+            ),
+            interval_seconds=autoresearch_resident_interval,
+            max_actions_per_tick=autoresearch_resident_max_actions,
+            worktree_root=str(
+                autoresearch_resident_raw.get(
+                    "worktree_root",
+                    "/tmp/zaofu-autoresearch-resident/worktrees",
+                )
+            ),
+            output_root=str(autoresearch_resident_raw.get("output_root", "") or ""),
+            self_repair_consumer=_bool_value(
+                autoresearch_resident_raw.get("self_repair_consumer"),
+                default=False,
+            ),
+            self_repair_spawn=_bool_value(
+                autoresearch_resident_raw.get("self_repair_spawn"),
+                default=False,
+            ),
+            self_repair_backend=autoresearch_resident_backend,
         ),
         feishu_inbound=RuntimeFeishuInboundConfig(
             enabled=_bool_value(feishu_inbound_raw.get("enabled"), default=False),
@@ -2786,6 +2885,38 @@ def _build_openclaw_feishu_bridge_binding(
             ).strip()
             or "ZF_OPENCLAW_FEISHU_INBOUND_TOKEN",
         ),
+    )
+
+
+_KNOWN_GOAL_KEYS = frozenset({
+    "enabled", "max_rescans", "idle_progress_ticks",
+    "rework_fingerprint", "quiescent_after_escalate", "micro_loop",
+})
+
+
+def _build_goal(data: dict | None) -> GoalConfig:
+    if not data:
+        return GoalConfig()
+    if not isinstance(data, dict):
+        raise ConfigError("goal must be a mapping")
+    _reject_unknown_keys(data, _KNOWN_GOAL_KEYS, "goal")
+    max_rescans = int(data.get("max_rescans", 5))
+    idle_ticks = int(data.get("idle_progress_ticks", 3))
+    if max_rescans < 0:
+        raise ConfigError("goal.max_rescans must be >= 0")
+    if idle_ticks < 1:
+        raise ConfigError("goal.idle_progress_ticks must be >= 1")
+    return GoalConfig(
+        enabled=_bool_value(data.get("enabled"), default=False),
+        max_rescans=max_rescans,
+        idle_progress_ticks=idle_ticks,
+        rework_fingerprint=_bool_value(
+            data.get("rework_fingerprint"), default=False,
+        ),
+        quiescent_after_escalate=_bool_value(
+            data.get("quiescent_after_escalate"), default=True,
+        ),
+        micro_loop=_bool_value(data.get("micro_loop"), default=False),
     )
 
 

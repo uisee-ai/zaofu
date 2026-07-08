@@ -499,6 +499,38 @@ def test_resident_execute_requires_authorization_and_emits_markers(tmp_path):
     assert "autoresearch.loop.completed" in event_types
 
 
+def test_resident_execute_respects_max_actions_per_tick(tmp_path):
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    for index in range(3):
+        payload = build_loop_request_payload(
+            {"trigger_id": f"t-limit-{index}"},
+            source_event_id=f"evt-limit-{index}",
+        )
+        log.append(ZfEvent(type=LOOP_REQUESTED, actor="test", payload=payload))
+    calls = []
+
+    def _fake_runner(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    actions = run_resident_once(
+        state_dir=state_dir,
+        worktree_root=tmp_path / "worktrees",
+        output_root=tmp_path / "out",
+        execute=True,
+        env={"ZF_AUTORESEARCH_RESIDENT": "authorized"},
+        runner=_fake_runner,
+        max_actions_per_tick=1,
+    )
+
+    assert len(actions) == 1
+    assert len(calls) == 1
+    event_types = [event.type for event in log.read_all()]
+    assert event_types.count("autoresearch.loop.completed") == 1
+    assert event_types.count("autoresearch.loop.requested") == 3
+
+
 def test_resident_dry_run_plans_review_gate_prepare(tmp_path):
     state_dir = tmp_path / ".zf"
     run_dir = tmp_path / "run"

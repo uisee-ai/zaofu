@@ -229,8 +229,10 @@ class TestEmptyContractAllowsTaskDone:
         )
         orch.run_once()
 
-        assert store.get("T1").status == "testing"
-        assert any(e.type == "discriminator.failed" for e in log.read_all())
+        assert store.get("T1").status == "in_progress"
+        events = log.read_all()
+        assert any(e.type == "discriminator.failed" for e in events)
+        assert any(e.type == "task.rework.requested" for e in events)
 
 
 class TestFailingContractBlocks:
@@ -247,10 +249,11 @@ class TestFailingContractBlocks:
         orch = Orchestrator(state_dir, _make_config(), transport)
         orch.run_once()
 
-        # Task NOT moved to done
-        assert store.get("T1").status == "testing"
+        # Task NOT moved to done; verification failure is routed to rework.
+        assert store.get("T1").status == "in_progress"
         events = log.read_all()
         assert any(e.type == "discriminator.failed" for e in events)
+        assert any(e.type == "task.rework.requested" for e in events)
 
     def test_discriminator_failed_event_dispatches_bounded_rework(
         self, state_dir, transport,
@@ -836,9 +839,10 @@ class TestFailingFunctionalGateBlocks:
         orch = Orchestrator(state_dir, cfg, transport)
         orch.run_once()
 
-        assert store.get("T1").status == "testing"
+        assert store.get("T1").status == "in_progress"
         events = log.read_all()
         assert any(e.type == "discriminator.failed" for e in events)
+        assert any(e.type == "task.rework.requested" for e in events)
 
 
 class TestEventPayload:

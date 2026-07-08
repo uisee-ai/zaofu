@@ -17,6 +17,10 @@ from zf.core.events.log import EventLog
 from zf.core.security.redaction import redact_obj
 from zf.integrations.feishu.projection import RoutingConfig
 from zf.integrations.feishu.transport import FeishuMessage, FeishuTransport
+from zf.runtime.owner_visible_render import (
+    owner_message_dedup_key,
+    owner_message_is_empty,
+)
 
 
 OWNER_MESSAGE_REQUESTED = "owner.visible_message.requested"
@@ -25,6 +29,7 @@ OWNER_MESSAGE_DELIVERED = "owner.visible_message.delivered"
 OWNER_MESSAGE_FAILED = "owner.visible_message.failed"
 OWNER_MESSAGE_ROUTE_UNHEALTHY = "owner.visible_message.route_unhealthy"
 OWNER_MESSAGE_SUPPRESSED = "owner.visible_message.suppressed"
+GENERIC_APPROVAL_REQUESTED = "approval.requested"
 OWNER_MESSAGE_TERMINAL = {
     OWNER_MESSAGE_DELIVERED,
     "owner.visible_message.expired",
@@ -45,6 +50,33 @@ class OwnerVisibleDeliveryResult:
     attempted_event_ids: list[str] | None = None
     delivered_event_ids: list[str] | None = None
     failed_event_ids: list[str] | None = None
+
+
+def _emit_owner_hygiene_suppressed(
+    writer: EventWriter,
+    event: ZfEvent,
+    payload: dict[str, Any],
+    *,
+    reason: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Suppress an owner-visible request for a delivery-hygiene reason (empty
+    body / duplicate fingerprint) — backlog 2026-07-07-1315. Compact receipt: no
+    route resolution needed, we are dropping before any transport work."""
+    writer.emit(
+        OWNER_MESSAGE_SUPPRESSED,
+        actor="zf-owner-visible-delivery",
+        task_id=event.task_id or _text(payload, "task_id") or None,
+        causation_id=event.id,
+        correlation_id=event.correlation_id,
+        payload=redact_obj({
+            "message_id": _message_id(payload, fallback=event.id),
+            "status": "suppressed",
+            "reason": reason,
+            "fingerprint": _text(payload, "fingerprint"),
+            **(extra or {}),
+        }),
+    )
 
 
 def deliver_owner_visible_messages_once(
@@ -69,13 +101,39 @@ def deliver_owner_visible_messages_once(
     lifecycle = _delivery_lifecycle(events, target=target)
     unhealthy_routes = _unhealthy_owner_visible_routes(events, target=target)
     requested = [event for event in events if event.type == OWNER_MESSAGE_REQUESTED]
+    runtime_stopped = _runtime_state_from_event_log(event_log) == "stopped"
     attempted_event_ids: list[str] = []
     delivered_event_ids: list[str] = []
     failed_event_ids: list[str] = []
     skipped = 0
+    # backlog 2026-07-07-1315: collapse duplicate content within one pass so a
+    # repeating signal (recycle_threshold_exceeded ×9, each with a DISTINCT
+    # fingerprint) is not spammed to the owner. Keyed on rendered content, not
+    # fingerprint, precisely because the spam carries varying fingerprints.
+    delivered_content_keys: set[str] = set()
     for event in requested:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if not _wants_target(payload, target):
+            skipped += 1
+            continue
+        if runtime_stopped and not _stopped_runtime_delivery_allowed(payload):
+            _emit_owner_hygiene_suppressed(
+                writer, event, payload, reason="runtime_stopped",
+                extra={"runtime_state": "stopped", "target": target})
+            skipped += 1
+            continue
+        # Drop empty (no title/summary) requests: the old path shipped a
+        # near-empty field dump for these (backlog 2026-07-07-1315).
+        if owner_message_is_empty(payload):
+            _emit_owner_hygiene_suppressed(
+                writer, event, payload, reason="empty_owner_message")
+            skipped += 1
+            continue
+        content_key = owner_message_dedup_key(payload)
+        if content_key in delivered_content_keys:
+            _emit_owner_hygiene_suppressed(
+                writer, event, payload, reason="duplicate_owner_message",
+                extra={"dedup_key": content_key})
             skipped += 1
             continue
         message_id = _message_id(payload, fallback=event.id)
@@ -204,6 +262,7 @@ def deliver_owner_visible_messages_once(
             payload=redact_obj({**base, "status": "delivered"}),
         )
         delivered_event_ids.append(delivered.id)
+        delivered_content_keys.add(content_key)
 
     failed_count = len(failed_event_ids)
     delivered_count = len(delivered_event_ids)
@@ -382,7 +441,7 @@ def _emit_failed(
     reason: str,
 ) -> ZfEvent:
     error_class = _delivery_error_class(reason)
-    return writer.emit(
+    failed = writer.emit(
         OWNER_MESSAGE_FAILED,
         actor="zf-supervisor",
         task_id=event.task_id or _text(payload, "task_id") or None,
@@ -394,6 +453,58 @@ def _emit_failed(
             "reason": reason,
             "error_class": error_class,
             "action_hint": _delivery_action_hint(error_class),
+        }),
+    )
+    if error_class == "feishu_route_unconfigured":
+        _emit_route_missing_fallback(
+            writer,
+            failed=failed,
+            event=event,
+            payload=payload,
+            base=base,
+            reason=reason,
+        )
+    return failed
+
+
+def _emit_route_missing_fallback(
+    writer: EventWriter,
+    *,
+    failed: ZfEvent,
+    event: ZfEvent,
+    payload: dict[str, Any],
+    base: dict[str, Any],
+    reason: str,
+) -> None:
+    message_id = _message_id(payload, fallback=event.id)
+    approval_ref = _text(payload, "approval_ref") or f"owner-visible:{message_id}"
+    source = _text(payload, "source").lower()
+    writer.emit(
+        GENERIC_APPROVAL_REQUESTED,
+        actor="zf-owner-visible-delivery",
+        task_id=event.task_id or _text(payload, "task_id") or None,
+        causation_id=failed.id,
+        correlation_id=event.correlation_id,
+        payload=redact_obj({
+            "schema_version": "approval.requested.v1",
+            "approval_ref": approval_ref,
+            "source_role": (
+                "run_manager"
+                if source in {"run-manager", "run_manager"} else "supervisor"
+            ),
+            "owner_route": "owner_visible_delivery",
+            "title": "Owner-visible delivery route is not configured",
+            "summary": reason,
+            "reason": reason,
+            "message_id": message_id,
+            "source_event_id": event.id,
+            "failed_event_id": failed.id,
+            "route": str(base.get("route") or ""),
+            "target": str(base.get("target") or ""),
+            "receive_id_type": str(base.get("receive_id_type") or ""),
+            "approve_action": "configure-owner-visible-route",
+            "reject_action": "snooze-owner-visible-route",
+            "action_hint": _delivery_action_hint("feishu_route_unconfigured"),
         }),
     )
 
@@ -464,54 +575,15 @@ def _receipt_payload(
 
 
 def _format_owner_message(event: ZfEvent, payload: dict[str, Any]) -> str:
-    lines = [
-        _owner_message_header(payload),
-    ]
-    # G2 (I41 operator 推论): 先陈述 events 推导的真相,pane 观感只是附注。
-    derived = payload.get("events_derived_state")
-    if isinstance(derived, dict):
-        verdict = str(derived.get("verdict") or "unknown")
-        missing = derived.get("missing") or []
-        terminal = str(derived.get("task_terminal_seen") or "")
-        state_line = f"events-state: {verdict}"
-        if terminal:
-            state_line += f" ({terminal})"
-        elif missing:
-            heads = ", ".join(
-                f"{m.get('stage_id')}@{m.get('age_s')}s"
-                for m in missing[:3]
-                if isinstance(m, dict)
-            )
-            state_line += f" [{heads}]"
-        lines.append(state_line)
-    lines += [
-        f"severity: {_text(payload, 'severity') or 'unknown'}",
-        f"title: {_text(payload, 'title') or 'Owner attention requested'}",
-    ]
-    summary = _text(payload, "summary")
-    if summary:
-        lines.append(f"summary: {summary}")
-    task_id = event.task_id or _text(payload, "task_id")
-    if task_id:
-        lines.append(f"task: {task_id}")
-    attention_id = _text(payload, "attention_id")
-    if attention_id:
-        lines.append(f"attention: {attention_id}")
-    route = _text(payload, "route")
-    if route:
-        lines.append(f"route: {route}")
-    if _text(payload, "handled_by"):
-        lines.append(f"handled_by: {_text(payload, 'handled_by')}")
-    if "human_action_required" in payload:
-        lines.append(
-            "human_action_required: "
-            + ("true" if bool(payload.get("human_action_required")) else "false")
-        )
-    restart_strategy = _text(payload, "restart_strategy")
-    if restart_strategy:
-        lines.append(f"restart_strategy: {restart_strategy}")
-    lines.append("reply with /zf attention ack|resolve|snooze <attention_id>")
-    return "\n".join(lines)
+    # backlog 2026-07-07-1315: owner-facing text is now a friendly, Chinese,
+    # severity-tagged message (see owner_visible_render) instead of the developer
+    # key-value dump + ``/zf`` CLI line this used to ship.
+    from zf.runtime.owner_visible_render import render_owner_message
+
+    return render_owner_message(
+        payload,
+        task_id=event.task_id or _text(payload, "task_id"),
+    )
 
 
 def _owner_message_header(payload: dict[str, Any]) -> str:
@@ -535,6 +607,33 @@ def _should_suppress_delivery(payload: dict[str, Any], *, target: str) -> bool:
     if bool(payload.get("human_action_required")):
         return False
     return True
+
+
+def _runtime_state_from_event_log(event_log: EventLog) -> str:
+    try:
+        from zf.core.state.session import SessionStore
+
+        session = SessionStore(Path(event_log.path).parent / "session.yaml").load()
+        return str(session.runtime_state or "").strip()
+    except Exception:
+        return ""
+
+
+def _stopped_runtime_delivery_allowed(payload: dict[str, Any]) -> bool:
+    if bool(payload.get("human_action_required")):
+        return True
+    source = _text(payload, "source").lower()
+    handled_by = _text(payload, "handled_by").lower()
+    if source in {"alert", "system"}:
+        return True
+    if source in {"run-manager", "run_manager"} or handled_by in {
+        "run-manager",
+        "run_manager",
+    }:
+        return _text(payload, "route") == "run_manager_human_decision"
+    title = _text(payload, "title").lower()
+    summary = _text(payload, "summary").lower()
+    return "stop" in title or "stopped" in title or "shutdown" in summary
 
 
 def _wants_target(payload: dict[str, Any], target: str) -> bool:

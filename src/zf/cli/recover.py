@@ -58,6 +58,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
             "resume checkpoint; requires --resume-pending and --checkpoint-id"
         ),
     )
+    workflow.add_argument(
+        "--force-gate-dispatch",
+        action="store_true",
+        help=(
+            "Operator override: route blocked_external_gate checkpoints "
+            "through the out-of-band gate dispatcher (bizsim r4 FIX-2); "
+            "events carry mode=operator_forced_gate_dispatch"
+        ),
+    )
     workflow.add_argument("--json", action="store_true", dest="as_json")
     workflow.set_defaults(func=_run_workflow)
 
@@ -173,6 +182,7 @@ def _run_workflow(args: argparse.Namespace) -> int:
             gate_dispatcher=gate_dispatcher,
             checkpoint_id=str(args.checkpoint_id or ""),
             override_task_map_ref=str(args.task_map_ref or ""),
+            force_gate_dispatch=bool(getattr(args, "force_gate_dispatch", False)),
         )
     else:
         projection = build_workflow_resume_projection(

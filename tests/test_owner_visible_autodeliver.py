@@ -88,6 +88,41 @@ def test_fake_transport_is_allowed_even_when_live_feishu_is_disabled(tmp_path):
     assert len(transport.sent) == 1
 
 
+def test_stopped_runtime_suppresses_pending_non_human_owner_message(tmp_path):
+    (tmp_path / "session.yaml").write_text(
+        "runtime_state: stopped\nsession_id: sess-test\n",
+        encoding="utf-8",
+    )
+    events = tmp_path / "events.jsonl"
+    events.write_text(json.dumps({
+        "id": "evt-1",
+        "type": "owner.visible_message.requested",
+        "actor": "supervisor",
+        "payload": {
+            "message_id": "m1",
+            "title": "Cost budget exceeded",
+            "summary": "budget exceeded; run manager will diagnose",
+            "severity": "high",
+            "delivery_targets": ["feishu"],
+            "human_action_required": False,
+        },
+    }) + "\n", encoding="utf-8")
+
+    transport = _FakeTransport()
+    result = deliver_owner_visible_to_feishu(
+        state_dir=tmp_path,
+        env={"ZF_OWNER_VISIBLE_CHAT": "oc_fake"},
+        transport=transport,
+    )
+
+    assert result is not None
+    assert result.delivered == 0
+    assert result.skipped == 1
+    assert transport.sent == []
+    suppressed = _event_payloads(events, "owner.visible_message.suppressed")
+    assert suppressed[-1]["reason"] == "runtime_stopped"
+
+
 def test_deliver_noop_when_unconfigured(tmp_path):
     # No ZF_OWNER_VISIBLE_CHAT → returns None, never touches a transport.
     result = deliver_owner_visible_to_feishu(state_dir=tmp_path, env={})

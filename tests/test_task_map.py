@@ -337,6 +337,80 @@ def test_task_map_validation_accepts_verification_path_inside_allowed_paths() ->
     assert result.summary["tasks_missing_allowed_paths_reason"] == []
 
 
+def test_task_map_validation_accepts_package_root_relative_node_commands() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "target_root": "app",
+        "shared_conventions": {
+            "package_root": "app",
+            "test_path_prefix": "app/test/",
+            "run_cwd": "app (commands run from the package root)",
+        },
+        "waves": [
+            {"wave": 1, "tasks": ["TASK-SCAFFOLD"]},
+            {"wave": 2, "tasks": ["TASK-CLI"]},
+        ],
+        "tasks": [
+            {
+                "task_id": "TASK-SCAFFOLD",
+                "title": "scaffold",
+                "wave": 1,
+                "allowed_paths": [
+                    "app/package.json",
+                    "app/src/.gitkeep",
+                    "app/test/.gitkeep",
+                ],
+                "verification": [
+                    (
+                        "cd app && node -e \"const p=require('./package.json'); "
+                        "if(p.scripts.test!=='node --test test/'){process.exit(1)}\""
+                    ),
+                    "test -d app/src && test -d app/test",
+                ],
+            },
+            {
+                "task_id": "TASK-CLI",
+                "title": "cli",
+                "wave": 2,
+                "allowed_paths": [
+                    "app/src/index.js",
+                    "app/test/cli.test.js",
+                ],
+                "blocked_by": ["TASK-SCAFFOLD"],
+                "verification": [
+                    "cd app && test \"$(node src/index.js echo hello)\" = \"hello\"",
+                    "cd app && node src/index.js help | grep -qF 'echo <text>'",
+                    "cd app && node --test test/",
+                ],
+            },
+        ],
+    })
+
+    assert result.passed is True, result.errors
+    assert result.summary["wave_count"] == 2
+    assert result.summary["tasks_by_wave"] == {"1": 1, "2": 1}
+
+
+def test_task_map_validation_rejects_package_root_parent_escape() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "target_root": "app",
+        "shared_conventions": {"package_root": "app"},
+        "tasks": [
+            {
+                "task_id": "TASK-CLI",
+                "title": "cli",
+                "wave": 1,
+                "allowed_paths": ["app/src/index.js"],
+                "verification": "cd app && node ../outside.js",
+            },
+        ],
+    })
+
+    assert result.passed is False
+    assert any("references path outside allowed_paths" in error for error in result.errors)
+
+
 def test_task_map_validation_ignores_sentence_punctuation_on_path_refs() -> None:
     result = validate_task_map_payload({
         "schema_version": "task-map.v1",

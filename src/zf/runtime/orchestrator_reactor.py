@@ -81,6 +81,7 @@ from zf.runtime.task_map import (
 from zf.runtime.terminal_ledger import (
     TERMINAL_SUCCESS_EVENTS,
     TerminalLedger,
+    is_terminal_success_event,
     terminal_dispatch_id,
 )
 
@@ -89,6 +90,7 @@ from zf.runtime.terminal_ledger import (
 # registry-build time to register each built-in as a primary handler.
 # Adding a new built-in event = one line here + one `_on_<name>` method.
 _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
+    ("worker.state.changed", "_on_worker_state_changed_event"),
     ("dev.build.done", "_on_build_done"),
     ("arch.proposal.done", "_on_build_done"),     # same flow
     ("design.critique.done", "_on_build_done"),
@@ -137,6 +139,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("task.retry_scheduled", "_on_completion_scheduled"),
     ("phase.progressed", "_on_phase_progressed"),
     ("workflow.invoke.requested", "_on_workflow_invoke_requested"),
+    ("workflow.reconcile.requested", "_on_workflow_reconcile_requested"),
     ("task.fanout.requested", "_on_task_fanout_requested"),
     ("channel.message.posted", "_on_channel_message_posted"),
     ("channel.agent.reply.requested", "_on_channel_agent_reply_requested"),
@@ -148,6 +151,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("channel.consensus.proposed", "_on_channel_discussion_event"),
     ("channel.consensus.signed", "_on_channel_discussion_event"),
     ("channel.consensus.blocked", "_on_channel_discussion_event"),
+    ("cost.budget.exceeded", "_on_cost_budget_exceeded"),
     ("autoresearch.trigger.accepted", "_on_autoresearch_trigger_accepted"),
     ("autoresearch.invocation.requested", "_on_autoresearch_invocation_requested"),
     ("run.manager.autoresearch.requested", "_on_run_manager_autoresearch_requested"),
@@ -237,6 +241,18 @@ def _payload_requests_writer_capability(payload: dict) -> bool:
     return False
 
 
+def _workflow_invoke_target_ref(payload: dict, stage_target_ref: str) -> str:
+    explicit = str(payload.get("target_ref") or "").strip()
+    if explicit:
+        return explicit
+    kind = str(payload.get("prompt_kind") or payload.get("kind") or "").strip().lower()
+    source_refs = payload.get("source_refs") if isinstance(payload.get("source_refs"), dict) else {}
+    source_ref = str(source_refs.get("source_ref") or "").strip()
+    if kind in {"prd", "issue"} and source_ref:
+        return source_ref
+    return str(stage_target_ref or "").strip()
+
+
 def _workflow_graph_action_priority(action_type: str) -> int:
     return {
         "route_rework": 0,
@@ -323,7 +339,75 @@ class EventReactorMixin:
 
         self._register_stage_failure_replan_handlers(registry)
         self._register_workflow_graph_shadow_handlers(registry)
+        self._register_light_flow_handlers(registry)
+        self._register_goal_rescan_handlers(registry)
         return registry
+
+    def _register_goal_rescan_handlers(self, registry) -> None:
+        """B2(G1 消费侧):rescan → lane 微环 continuation,不新起 fanout。"""
+        try:
+            from zf.runtime.lane_micro_loop import micro_loop_enabled
+
+            if not micro_loop_enabled(self.config):
+                return
+            registry.register(
+                "goal.rescan.requested",
+                self._on_goal_rescan_requested,
+                source="builtin",
+            )
+        except Exception:
+            pass
+
+    def _on_goal_rescan_requested(self, event: ZfEvent):
+        try:
+            from zf.runtime.event_window import read_runtime_events
+            from zf.runtime.lane_micro_loop import maybe_inject_rescan_continuation
+
+            events = list(read_runtime_events(self.event_log, self.state_dir))
+            maybe_inject_rescan_continuation(
+                event=event,
+                config=self.config,
+                state_dir=Path(self.state_dir),
+                events=events,
+                event_writer=self.event_writer,
+                transport=self.transport,
+                task_store=self.task_store,
+            )
+        except Exception:
+            pass
+        return None
+
+    def _register_light_flow_handlers(self, registry) -> None:
+        """批D:light 拓扑入口触发 → kernel 合成单任务 task_map。"""
+        try:
+            from zf.runtime.light_flow import light_flow_metadata
+
+            metadata = light_flow_metadata(self.config)
+            if metadata is None:
+                return
+            entry = str(metadata.get("light_entry_trigger") or "prd.requested")
+            registry.register(
+                entry, self._on_light_flow_entry, source="builtin",
+            )
+        except Exception:
+            pass
+
+    def _on_light_flow_entry(self, event: ZfEvent):
+        from zf.runtime.event_window import read_runtime_events
+        from zf.runtime.light_flow import maybe_synthesize_light_task_map
+
+        try:
+            events = read_runtime_events(self.event_log, self.state_dir)
+            maybe_synthesize_light_task_map(
+                event=event,
+                config=self.config,
+                state_dir=Path(self.state_dir),
+                event_writer=self.event_writer,
+                events=list(events),
+            )
+        except Exception:
+            pass
+        return None
 
     def _register_stage_failure_replan_handlers(self, registry) -> None:
         """reader stage 的 failure_event → 机械 replan(配置驱动)。
@@ -935,6 +1019,26 @@ class EventReactorMixin:
             for event_type, entries in registry._entries.items()
             for entry in entries[:1]  # primary only
         }
+
+    def _on_worker_state_changed_event(
+        self, event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        """A2(PRD goal-mode e2e finding-3):blocked_human 曾无事件出口——
+        内存态只在启动 catch-up 重建,运行中外部 worker.state.changed 只进
+        registry 永不进内存,唯一解锁是重启(r6.1 悬案根因)。此处把
+        外部状态事件按 payload.instance_id 应用到内存;kernel 自身发射的
+        事件重放为幂等同值,无害。"""
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        instance = str(
+            payload.get("instance_id") or payload.get("role") or ""
+        ).strip()
+        to_state = str(payload.get("to") or "").strip()
+        if instance and to_state:
+            try:
+                self._last_worker_state[instance] = to_state
+            except Exception:
+                pass
+        return None
 
     def _on_build_done(self, event: ZfEvent) -> OrchestratorDecision | None:
         self._warn_unverified_completion_claims(event)  # r6-F7 诚实核验
@@ -3533,7 +3637,38 @@ class EventReactorMixin:
             )
         return None
 
+    def _try_lane_micro_loop(self, event: ZfEvent) -> bool:
+        """批B:拒收 → 活会话 continuation(成功注入则抑制全价重派)。"""
+        try:
+            from zf.runtime.event_window import read_runtime_events
+            from zf.runtime.lane_micro_loop import (
+                maybe_inject_rework_continuation,
+                micro_loop_enabled,
+            )
+
+            if not micro_loop_enabled(self.config):
+                return False
+            events = list(read_runtime_events(self.event_log, self.state_dir))
+            injected = maybe_inject_rework_continuation(
+                event=event,
+                config=self.config,
+                state_dir=Path(self.state_dir),
+                events=events,
+                event_writer=self.event_writer,
+                transport=self.transport,
+                task_store=self.task_store,
+            )
+            return bool(injected)
+        except Exception:
+            return False
+
     def _on_review_rejected(self, event: ZfEvent) -> OrchestratorDecision | None:
+        if self._try_lane_micro_loop(event):
+            return OrchestratorDecision(
+                action="continuation_injected",
+                task_id=event.task_id or "",
+                reason="lane micro-loop handled rejection in live session",
+            )
         graph_decision = self._workflow_graph_reconcile_bridge(event)
         if graph_decision is not None:
             return graph_decision
@@ -3599,18 +3734,32 @@ class EventReactorMixin:
             for role in self.config.roles
             for event_type in getattr(role, "publishes", [])
         }
-        for event_type in ("judge.passed", "verify.passed", "test.passed", "review.approved"):
+        for event_type in (
+            "judge.passed",
+            "verify.passed",
+            "test.passed",
+            "review.approved",
+            "impl.child.completed",
+        ):
             if event_type in published:
                 return event_type
         return "judge.passed"
 
     def _is_configured_terminal_success(self, event_type: str) -> bool:
-        if event_type != self._configured_terminal_success_event():
+        if not is_terminal_success_event(event_type):
+            return False
+        if (
+            event_type != "impl.child.completed"
+            and event_type != self._configured_terminal_success_event()
+        ):
             return False
         try:
             return not self._non_orchestrator_subscribers(event_type)
         except Exception:
-            return event_type == "judge.passed"
+            return (
+                event_type == "impl.child.completed"
+                or event_type == self._configured_terminal_success_event()
+            )
 
     def _discriminator_details(self, report: Any) -> list[dict[str, Any]]:
         return [
@@ -4112,6 +4261,12 @@ class EventReactorMixin:
         return self._on_test_passed(event)
 
     def _on_verify_failed(self, event: ZfEvent) -> OrchestratorDecision | None:
+        if self._try_lane_micro_loop(event):
+            return OrchestratorDecision(
+                action="continuation_injected",
+                task_id=event.task_id or "",
+                reason="lane micro-loop handled verify failure in live session",
+            )
         return self._on_test_failed(event)
 
     def _on_judge_passed(self, event: ZfEvent) -> OrchestratorDecision | None:
@@ -4161,13 +4316,13 @@ class EventReactorMixin:
         PRD/issue/refactor fanout emit a candidate/PDD-level ``judge.passed``
         with NO single ``task_id`` — it covers every canonical task that
         delivered into the passed candidate. The single-task path above can't
-        resolve them, so the kanban cards stayed ``in_progress`` forever despite
+        resolve them, so the kanban cards stayed active forever despite
         judge.passed (ledger PRD e2e 2026-06-20: delivery layer reached
         judge.passed but the projection layer never moved cards to done). Gate
         strictly on candidate-level shape (empty task_id + a pdd_id) so a
         per-task judge.passed never sweeps sibling tasks, then move every
-        in-progress/testing task sharing the candidate's feature_id or the
-        candidate/container task id itself.
+        active task sharing the candidate's feature_id or the candidate/container
+        task id itself.
         """
         if str(event.task_id or "").strip():
             return None
@@ -4178,14 +4333,27 @@ class EventReactorMixin:
             return None
         moved: list[str] = []
         for task in self.task_store.list_all():
-            if task.status not in {"in_progress", "testing"}:
+            if task.status not in {
+                "backlog",
+                "in_progress",
+                "review",
+                "verify",
+                "testing",
+                "test",
+                "judge",
+            }:
                 continue
             task_feature = str(
                 getattr(getattr(task, "contract", None), "feature_id", "") or ""
             ).strip()
+            is_container = task.id in {pdd_id, feature_id}
+            if task.status == "backlog" and not (
+                is_container and self._is_workflow_bootstrap_task(task)
+            ):
+                continue
             if not (
                 task_feature == feature_id
-                or task.id in {pdd_id, feature_id}
+                or is_container
             ):
                 continue
             if self._move_task(task.id, "done", trigger_event=event.type):
@@ -4205,6 +4373,14 @@ class EventReactorMixin:
                 f"{len(moved)} task(s) done"
             ),
         )
+
+    @staticmethod
+    def _is_workflow_bootstrap_task(task: Task) -> bool:
+        contract = getattr(task, "contract", None)
+        evidence_contract = getattr(contract, "evidence_contract", None)
+        if not isinstance(evidence_contract, dict):
+            return False
+        return str(evidence_contract.get("source") or "") == "workflow_invoke_bootstrap"
 
     def _emit_spec_promote_decision(self, event, task) -> None:
         """ZF-LH-SPEC-PROMOTE-001: emit spec.promote.{completed,skipped}
@@ -4289,11 +4465,11 @@ class EventReactorMixin:
                 self._set_worker_state(assignee, "idle", reason=reason)
 
     def _on_judge_failed(self, event: ZfEvent) -> OrchestratorDecision | None:
-        graph_decision = self._workflow_graph_reconcile_bridge(event)
-        if graph_decision is not None:
-            return graph_decision
         task = self.task_store.get(event.task_id)
         if task and task.status in {"testing", "in_progress"}:
+            graph_decision = self._workflow_graph_reconcile_bridge(event)
+            if graph_decision is not None:
+                return graph_decision
             # Bypass state machine (testing→in_progress not in happy-path
             # table; matches _on_test_failed / _on_review_rejected pattern).
             self.task_store.update(event.task_id, status="in_progress")
@@ -4487,6 +4663,37 @@ class EventReactorMixin:
     ) -> OrchestratorDecision | None:
         return self._recover_provider_stop(event)
 
+    def _on_cost_budget_exceeded(
+        self, event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        try:
+            self.event_writer.append(ZfEvent(
+                type="run.goal.updated",
+                actor="zf-cli",
+                task_id=event.task_id,
+                payload={
+                    "status": "budget_limited",
+                    "source": "cost_budget_exceeded",
+                    "reason": "cost budget exceeded",
+                    "scope": payload.get("scope", ""),
+                    "role": payload.get("role", ""),
+                    "budget_usd": payload.get("budget_usd"),
+                    "current_usd": payload.get("current_usd"),
+                    "origin_event": event.type,
+                    "origin_event_id": event.id,
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+        except Exception:
+            pass
+        return OrchestratorDecision(
+            action="skip",
+            task_id=event.task_id,
+            reason="cost budget exceeded → run goal budget_limited",
+        )
+
     def _on_autoresearch_worker_stuck_inject(
         self,
         event: ZfEvent,
@@ -4645,6 +4852,13 @@ class EventReactorMixin:
                 role=role,
                 cooldown_until=cooldown_until,
             )
+            self._emit_goal_limited_status(
+                event,
+                task=task,
+                status="usage_limited",
+                reason=f"provider stop: {reason}",
+                role=role,
+            )
             return OrchestratorDecision(
                 action="skip",
                 task_id=task_id,
@@ -4710,6 +4924,37 @@ class EventReactorMixin:
         }:
             return "requeue"
         return "observe"
+
+    def _emit_goal_limited_status(
+        self,
+        event: ZfEvent,
+        *,
+        task: Task,
+        status: str,
+        reason: str,
+        role: RoleConfig | None,
+    ) -> None:
+        try:
+            self.event_writer.append(ZfEvent(
+                type="run.goal.updated",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "status": status,
+                    "source": "provider_stop_recovery",
+                    "reason": reason,
+                    "origin_event": event.type,
+                    "origin_event_id": event.id,
+                    "assigned_to": task.assigned_to or "",
+                    "role": role.name if role is not None else "",
+                    "instance_id": role.instance_id if role is not None else "",
+                    "backend": role.backend if role is not None else "",
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+        except Exception:
+            pass
 
     def _request_green_terminal_completion_if_pending(
         self,
@@ -5150,9 +5395,16 @@ class EventReactorMixin:
                 task_id=task_id,
                 reason="fanout request rejected: write capability requested",
             )
+        from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
+
         expected_dispatch = getattr(task, "active_dispatch_id", "") or ""
         actual_dispatch = str(payload.get("dispatch_id") or "")
-        if expected_dispatch and actual_dispatch != expected_dispatch:
+        workflow_anchor_request = (
+            is_workflow_fanout_anchor_task(task)
+            and bool(str(payload.get("workflow_input_manifest_ref") or "").strip())
+            and not actual_dispatch
+        )
+        if expected_dispatch and actual_dispatch != expected_dispatch and not workflow_anchor_request:
             self._emit_task_fanout_rejected(
                 event,
                 "dispatch_id mismatch",
@@ -5164,6 +5416,13 @@ class EventReactorMixin:
                 task_id=task_id,
                 reason="fanout request rejected: stale dispatch",
             )
+        declared_fanout = self._try_start_declared_workflow_fanout(
+            event,
+            payload,
+            task_id=task_id,
+        )
+        if declared_fanout is not None:
+            return declared_fanout
         scope = _string_list(payload.get("scope"))
         specialists = _string_list(payload.get("requested_specialists")) or ["review"]
         if len(specialists) > 6:
@@ -5282,11 +5541,146 @@ class EventReactorMixin:
             reason=f"fanout request accepted: {context.fanout_id}",
         )
 
+    def _try_start_declared_workflow_fanout(
+        self,
+        event: ZfEvent,
+        payload: dict,
+        *,
+        task_id: str,
+    ) -> OrchestratorDecision | None:
+        pattern_id = str(payload.get("pattern_id") or "").strip()
+        if not pattern_id:
+            return None
+        stage = self._workflow_stage_by_id(pattern_id)
+        if stage is None:
+            return None
+        topology = str(getattr(stage, "topology", "") or "")
+        if topology != "fanout_reader":
+            return None
+        trigger = str(getattr(stage, "trigger", "") or "").strip()
+        if not trigger:
+            return None
+        stage_payload = dict(payload)
+        target_ref = _workflow_invoke_target_ref(
+            stage_payload,
+            str(getattr(stage, "target_ref", "") or ""),
+        )
+        if target_ref:
+            stage_payload["target_ref"] = target_ref
+        stage_payload.setdefault("source_event_id", event.id)
+        stage_payload.setdefault("workflow_invoke_pattern_id", pattern_id)
+        stage_payload.setdefault("workflow_invoke_event_type", event.type)
+        stage_event = ZfEvent(
+            type=trigger,
+            id=event.id,
+            actor=event.actor,
+            task_id=task_id or event.task_id,
+            payload=stage_payload,
+            causation_id=event.causation_id,
+            correlation_id=event.correlation_id,
+        )
+        self._maybe_start_reader_fanout(stage_event)
+        return OrchestratorDecision(
+            action="workflow_fanout",
+            task_id=task_id,
+            reason=f"workflow fanout started from pattern: {pattern_id}",
+        )
+
+    def _bootstrap_invoke_task(self, event: ZfEvent, payload: dict, task_id: str):
+        """E1:submit 链的 invoke 自举 kanban 任务(kernel API,保 id)。"""
+        if not task_id:
+            return None
+        if not str(payload.get("workflow_input_manifest_ref") or "").strip():
+            return None
+        try:
+            from zf.core.task.schema import Task
+            from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor
+
+            objective = str(
+                payload.get("objective")
+                or payload.get("reason")
+                or f"workflow submit {payload.get('request_id') or task_id}"
+            )
+            task = Task(id=task_id, title=objective[:120])
+            task = mark_workflow_fanout_anchor(
+                task,
+                request_id=str(payload.get("request_id") or ""),
+                workflow_input_manifest_ref=str(
+                    payload.get("workflow_input_manifest_ref") or ""
+                ),
+                pattern_id=str(payload.get("pattern_id") or payload.get("stage_id") or ""),
+            )
+            task = self.task_store.add(task)
+            self.event_writer.append(ZfEvent(
+                type="task.created",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "task_id": task.id,
+                    "title": task.title,
+                    "source": "workflow_invoke_bootstrap",
+                    "request_id": str(payload.get("request_id") or ""),
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+            return task
+        except Exception:
+            return None
+
+    def _on_workflow_reconcile_requested(self, event: ZfEvent) -> OrchestratorDecision | None:
+        """FIX-6(bizsim r4 F2):审批解锁后的 level 重扫。
+
+        阻塞期间被 wait 掉的 stage 触发边沿不会自动重放(r4 实锚:
+        task_map.ready 解锁后 orchestrator 数小时空转 wait,operator 只能
+        手工重发原事件)。重扫:对配置声明的每个 stage trigger 类型取最新
+        一条事件,若从未孵化过 fanout(无 fanout.started 指向它),经既有
+        入口补孵化。幂等由孵化侧 trigger_event_id 判重保证(B7 同一保障)。
+        """
+        events = self.event_writer.event_log.read_all()
+        consumed = {
+            str((e.payload or {}).get("trigger_event_id") or "")
+            for e in events
+            if e.type == "fanout.started" and isinstance(e.payload, dict)
+        }
+        stage_triggers = {
+            str(getattr(stage, "trigger", "") or "")
+            for stage in getattr(
+                getattr(self.config, "workflow", None), "stages", []
+            ) or []
+        }
+        stage_triggers.discard("")
+        latest: dict[str, ZfEvent] = {}
+        for candidate in events:
+            if candidate.type in stage_triggers:
+                latest[candidate.type] = candidate
+        revived: list[str] = []
+        for trigger_type in sorted(latest):
+            candidate = latest[trigger_type]
+            if candidate.id in consumed:
+                continue
+            self._maybe_start_reader_fanout(candidate)
+            self._maybe_start_writer_fanout(candidate)
+            revived.append(trigger_type)
+        return OrchestratorDecision(
+            action="capture",
+            reason=(
+                "workflow reconcile revived: " + ", ".join(revived)
+                if revived else "workflow reconcile: nothing pending"
+            ),
+        )
+
     def _on_workflow_invoke_requested(self, event: ZfEvent) -> OrchestratorDecision | None:
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_id = event.task_id or str(payload.get("task_id") or "")
         pattern_id = str(payload.get("pattern_id") or payload.get("stage_id") or "")
         task = self.task_store.get(task_id) if task_id else None
+        if task is None:
+            # E1(prd-goal e2e finding:统一入口无冷启路径):flow submit
+            # 的 invoke 曾因 kanban 无预置任务被拒("task missing"),
+            # 而 flow start 仅 dry-run——入口死路。凡载荷携带 submit 链
+            # 凭证(input manifest),kernel 直接自举任务(id 保留)。
+            task = self._bootstrap_invoke_task(event, payload, task_id)
         if task is None:
             self._emit_workflow_invoke_rejected(event, "task missing", task_id=task_id, pattern_id=pattern_id)
             return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: task missing")
@@ -5369,7 +5763,7 @@ class EventReactorMixin:
                 "workflow_run_id": str(payload.get("workflow_run_id") or ""),
                 "workflow_input_manifest_ref": str(payload.get("workflow_input_manifest_ref") or ""),
                 "workflow_prompt_ref": str(payload.get("workflow_prompt_ref") or ""),
-                "prompt_kind": str(payload.get("prompt_kind") or ""),
+                "prompt_kind": str(payload.get("prompt_kind") or payload.get("kind") or ""),
                 "artifact_refs": payload.get("artifact_refs")
                 if isinstance(payload.get("artifact_refs"), list)
                 else [],
@@ -5378,6 +5772,10 @@ class EventReactorMixin:
             correlation_id=event.correlation_id,
         )
         roles = list(getattr(stage, "roles", []) or [])
+        target_ref = _workflow_invoke_target_ref(
+            payload,
+            str(getattr(stage, "target_ref", "") or ""),
+        )
         fanout_request = ZfEvent(
             type="task.fanout.requested",
             actor="zf-cli",
@@ -5391,7 +5789,7 @@ class EventReactorMixin:
                 "requested_specialists": _string_list(payload.get("requested_specialists")) or [str(role) for role in roles],
                 "expected_output": str(payload.get("expected_output") or f"run execution pattern {pattern_id}"),
                 "risk": str(payload.get("risk") or ""),
-                "target_ref": str(payload.get("target_ref") or getattr(stage, "target_ref", "") or ""),
+                "target_ref": target_ref,
                 "source_event_id": event.id,
                 "source_intent_event_id": accepted_event.id,
                 "pattern_id": pattern_id,
@@ -5403,7 +5801,7 @@ class EventReactorMixin:
                 "workflow_run_id": str(payload.get("workflow_run_id") or ""),
                 "workflow_input_manifest_ref": str(payload.get("workflow_input_manifest_ref") or ""),
                 "workflow_prompt_ref": str(payload.get("workflow_prompt_ref") or ""),
-                "prompt_kind": str(payload.get("prompt_kind") or ""),
+                "prompt_kind": str(payload.get("prompt_kind") or payload.get("kind") or ""),
                 "artifact_refs": payload.get("artifact_refs")
                 if isinstance(payload.get("artifact_refs"), list)
                 else [],
@@ -6398,10 +6796,10 @@ class EventReactorMixin:
         late_terminal_success = (
             task.status == "backlog"
             and to_status == "done"
-            and trigger_event in {"review.approved", "verify.passed", "test.passed", "judge.passed"}
+            and is_terminal_success_event(trigger_event)
         )
         configured_terminal_success = (
-            task.status == "in_progress"
+            task.status in {"in_progress", "review", "verify", "testing", "test", "judge"}
             and to_status == "done"
             and self._is_configured_terminal_success(trigger_event)
         )

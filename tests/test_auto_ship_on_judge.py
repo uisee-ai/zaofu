@@ -141,6 +141,90 @@ def test_judge_passed_ships_candidate_end_to_end(tmp_path: Path):
     assert completed.correlation_id == "trace-judge"
 
 
+def test_judge_passed_ships_through_apply_housekeeping(tmp_path: Path):
+    """LB-1: exercise the real dispatch path, not _maybe_auto_ship directly.
+
+    judge.passed matches an earlier acceptance-evidence `elif` in the
+    _apply_housekeeping chain, so the auto-ship `elif` further down was
+    unreachable — auto_ship_on_judge_passed silently never fired. Pin that
+    judge.passed reaches ship through _apply_housekeeping."""
+    from tests.test_ship import _candidate_branch, _candidate_ready, _init_repo
+
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+
+    pdd_id = "HOUSEKEEP-1"
+    candidate_head = _candidate_branch(tmp_path, pdd_id, "feature.txt", "shipped\n")
+    main_before = _git_head(tmp_path, "main")
+
+    orch, log = _orch(state_dir, judge_flag=True)
+    _candidate_ready(log, pdd_id)
+
+    judge = ZfEvent(
+        type="judge.passed",
+        actor="zf-cli",
+        payload={"target_ref": f"candidate/{pdd_id}", "pdd_id": pdd_id},
+        correlation_id="trace-hk",
+    )
+    orch._promoted_causations = set()
+    orch._apply_housekeeping(judge)
+
+    types = [e.type for e in log.read_all()]
+    assert "ship.completed" in types, (
+        f"judge.passed did not ship through _apply_housekeeping "
+        f"(elif shadow?); got {types}"
+    )
+    assert _git_head(tmp_path, "main") != main_before
+
+
+def test_judge_passed_prd_flow_resolves_candidate_from_feature_id(tmp_path: Path):
+    """LB-1: PRD/issue fanout judge.passed carries target_ref = ship DESTINATION
+    (e.g. "main"), not the candidate branch. Auto-ship must ignore that and
+    resolve the candidate from feature_id/pdd_id, else it tries to ship "main"
+    onto main (no-op) and the deliverable never lands (light baseline 2026-07-06)."""
+    from tests.test_ship import _candidate_branch, _candidate_ready, _init_repo
+
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+
+    pdd_id = "default"
+    candidate_head = _candidate_branch(tmp_path, pdd_id, "feature.txt", "shipped\n")
+    main_before = _git_head(tmp_path, "main")
+
+    orch, log = _orch(state_dir, judge_flag=True)
+    _candidate_ready(log, pdd_id)
+
+    # PRD light judge.passed shape: target_ref is the DESTINATION "main",
+    # feature_id/pdd_id name the candidate.
+    judge = ZfEvent(
+        type="judge.passed",
+        actor="zf-cli",
+        payload={
+            "target_ref": "main",
+            "feature_id": pdd_id,
+            "pdd_id": pdd_id,
+            "task_id": None,
+            "fanout_id": "fanout-prd-lanes-final-x",
+        },
+        correlation_id="trace-prd-judge",
+    )
+    orch._maybe_auto_ship(judge)
+
+    types = [e.type for e in log.read_all()]
+    assert "ship.completed" in types, f"PRD judge.passed did not ship; got {types}"
+    main_after = _git_head(tmp_path, "main")
+    assert main_after != main_before, "ship_target_branch did not advance"
+    main_log = subprocess.run(
+        ["git", "log", "--format=%H", "main"], cwd=tmp_path,
+        capture_output=True, text=True, check=True,
+    ).stdout.strip().splitlines()
+    assert candidate_head in main_log
+
+
 def test_judge_flag_off_does_not_ship_even_if_candidate_flag_on(tmp_path: Path):
     """judge.passed must gate on ITS OWN flag — the cangjie candidate-complete
     flag must not make judge.passed ship (else it double/early-ships)."""

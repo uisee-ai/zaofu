@@ -18,6 +18,25 @@ from zf.runtime.transport import DispatchContext
 from zf.core.task.schema import Task
 
 
+def _fanout_report_evidence_fallback(payload: dict[str, object]) -> list[str]:
+    """Return deterministic evidence refs for pure aggregate/synth reports."""
+    refs: list[str] = []
+    for key in (
+        "report_paths",
+        "child_report_paths",
+        "source_report_paths",
+        "input_report_paths",
+    ):
+        value = payload.get(key)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            ref = str(item or "").strip()
+            if ref and ref not in refs:
+                refs.append(ref)
+    return refs
+
+
 class FanoutEvidenceQueriesMixin:
     def _dispatch_context(
         self,
@@ -473,16 +492,32 @@ class FanoutEvidenceQueriesMixin:
         event: ZfEvent,
         success: bool,
     ):
-        from zf.runtime.fanout import validate_fanout_report
+        from zf.runtime.fanout import REPORT_AUDIT_FIELD_KEYS, validate_fanout_report
 
         payload = event.payload if isinstance(event.payload, dict) else {}
-        return validate_fanout_report(
-            payload.get("report"),
+        raw_report = payload.get("report")
+        if isinstance(raw_report, dict):
+            raw_report = dict(raw_report)
+            for key in REPORT_AUDIT_FIELD_KEYS:
+                if key not in raw_report and key in payload:
+                    raw_report[key] = payload[key]
+        else:
+            raw_report = None
+        result = validate_fanout_report(
+            raw_report,
             child_id=child_id,
             default_status="passed" if success else "failed",
             default_recommendation="approve" if success else "reject",
             default_summary=str(payload.get("summary") or payload.get("reason") or ""),
         )
+        for key in REPORT_AUDIT_FIELD_KEYS:
+            if key not in result.report and key in payload:
+                result.report[key] = payload[key]
+        if "evidence_refs" not in result.report:
+            inherited = _fanout_report_evidence_fallback(payload)
+            if inherited:
+                result.report["evidence_refs"] = inherited
+        return result
 
     @staticmethod
     def _fanout_reports(manifest: dict) -> list[dict]:

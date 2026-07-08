@@ -127,6 +127,9 @@ class WorkflowEventSets:
             "arch.proposal.done",
             "design.critique.done",
             "dev.build.done",
+            # Controller/profile workflows close writer task slices with the
+            # canonical stage-child event instead of legacy dev.build.done.
+            "impl.child.completed",
             # B-NEW-4: P3 added static_gate as an independent DAG stage
             # between dev and review; without listing static_gate.passed
             # here the reconciler never auto-routes the handoff.
@@ -155,6 +158,7 @@ class WorkflowEventSets:
             # reconciler can route bounded rework instead of stranding the
             # task after the child event is recorded.
             "dev.failed",
+            "impl.child.failed",
             "review.child.failed",
             "verify.child.failed",
         })

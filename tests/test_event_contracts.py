@@ -78,6 +78,19 @@ def test_prod_new_yaml_event_contracts_are_clean() -> None:
         assert report["ok"], (path, report["errors"], report["warnings"])
 
 
+def test_prod_controller_prd_accepts_lane_terminal_child_alias() -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    path = repo_root / "examples/prod/controller/prd-fanout-v3.yaml"
+
+    report = build_event_contract_report(load_config(path))
+
+    assert not any(
+        item["kind"] == "child_result_owner_boundary_violation"
+        and item["event_type"] == "dev.failed"
+        for item in report["errors"]
+    )
+
+
 def test_event_contract_report_flags_custom_actionable_stage_failure(
     tmp_path: Path,
 ) -> None:

@@ -50,7 +50,7 @@ class DispatchRoutingQueriesMixin:
     def _requires_task_ref_for_progress_event(self, event: ZfEvent) -> bool:
         if not self._requires_task_ref_for_worktree_handoff():
             return False
-        if event.type == "dev.build.done":
+        if event.type in {"dev.build.done", "impl.child.completed"}:
             return True
         if event.type != "arch.proposal.done":
             return False
@@ -239,6 +239,7 @@ class DispatchRoutingQueriesMixin:
             "redispatch",
             "operator_reissue",
             "evidence_reissue",
+            "workflow_resume_rework",
         }
 
     def _budget_exceeded(self, role: "RoleConfig") -> bool:

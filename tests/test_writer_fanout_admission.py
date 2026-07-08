@@ -8,6 +8,10 @@ from types import SimpleNamespace
 import pytest
 
 from zf.core.events.model import ZfEvent
+from zf.core.workflow.lane_pipeline import (
+    parse_lane_pipeline,
+    validate_lane_pipeline_admission,
+)
 from zf.runtime.writer_fanout_admission import (
     load_writer_task_map,
     validate_writer_task_items,
@@ -101,6 +105,60 @@ def test_within_slice_parent_child_allowed():
     ])
 
 
+def test_writer_task_items_drops_placeholder_paths_owned_by_subtree_slice():
+    items = writer_task_items({
+        "tasks": [
+            {
+                "task_id": "scaffold",
+                "allowed_paths": [
+                    "app/package.json",
+                    "app/test/.gitkeep",
+                ],
+            },
+            {
+                "task_id": "cli-tests",
+                "allowed_paths": ["app/test/**"],
+            },
+        ],
+    })
+
+    by_id = {item["task_id"]: item for item in items}
+    assert by_id["scaffold"]["allowed_paths"] == ["app/package.json"]
+    validate_writer_task_items(items)
+
+
+def test_writer_task_items_keeps_real_cross_task_file_subtree_overlap_rejected():
+    items = writer_task_items({
+        "tasks": [
+            {
+                "task_id": "scaffold",
+                "allowed_paths": [
+                    "app/test/cli.test.js",
+                ],
+            },
+            {
+                "task_id": "cli-tests",
+                "allowed_paths": ["app/test/**"],
+            },
+        ],
+    })
+
+    with pytest.raises(RuntimeError, match="overlap"):
+        validate_writer_task_items(items)
+
+
+def test_writer_task_items_dedupes_same_task_redundant_subtree_files():
+    items = writer_task_items({
+        "tasks": [{
+            "task_id": "tests",
+            "allowed_paths": ["app/test/**", "app/test/cli.test.js"],
+        }],
+    })
+
+    assert items[0]["allowed_paths"] == ["app/test/**"]
+    validate_writer_task_items(items)
+
+
 def test_midpath_recursion_glob_overlap_rejected():
     # 2026-06-10 review P1-5: `src/foo/**/*.py` previously kept the literal
     # `**` component (only TRAILING globs were stripped), so it compared as
@@ -175,6 +233,68 @@ def test_writer_task_items_preserves_lane_pipeline_contract_fields():
     assert item["verification_tiers"] == ["static", "manual_evidence"]
     assert item["raw_verification_tiers"] == ["static", "judge"]
     assert item["acceptance_criteria"] == ["root build passes"]
+
+
+def test_writer_task_items_accepts_issue_style_path_field():
+    items = writer_task_items({
+        "tasks": [{
+            "id": "T1",
+            "title": "Fix list command",
+            "path": "app/src/index.js",
+        }],
+    })
+
+    assert items[0]["task_id"] == "T1"
+    assert items[0]["allowed_paths"] == ["app/src/index.js"]
+
+
+def test_lane_pipeline_admission_rejects_single_nested_bugfix_without_root_owner():
+    spec = parse_lane_pipeline({
+        "id": "issue-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "affinity_key": "affinity_tag",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{"id": "impl"}, {"id": "verify"}],
+        "final": {"when": "all_tasks_verified", "role": "judge"},
+    })
+    items = writer_task_items({
+        "tasks": [{
+            "id": "T1",
+            "title": "Fix list command",
+            "path": "app/src/index.js",
+        }],
+    })
+
+    problems = validate_lane_pipeline_admission(spec, items)
+    assert problems
+    assert "no task in the task_map owns workspace-root paths" in problems[0]
+
+
+def test_writer_task_items_derives_wave_from_top_level_waves_and_keeps_blocked_by():
+    items = writer_task_items({
+        "waves": [
+            {"wave": 1, "tasks": ["TASK-SCAFFOLD"]},
+            {"wave": 2, "tasks": ["TASK-CLI"]},
+        ],
+        "tasks": [
+            {
+                "task_id": "TASK-SCAFFOLD",
+                "allowed_paths": ["app/package.json"],
+            },
+            {
+                "task_id": "TASK-CLI",
+                "allowed_paths": ["app/src/index.js"],
+                "blocked_by": ["TASK-SCAFFOLD"],
+            },
+        ],
+    })
+
+    by_id = {item["task_id"]: item for item in items}
+    assert by_id["TASK-SCAFFOLD"]["wave"] == 1
+    assert by_id["TASK-CLI"]["wave"] == 2
+    assert by_id["TASK-CLI"]["blocked_by"] == ["TASK-SCAFFOLD"]
 
 
 def test_load_writer_task_map_rejects_bad_verification_before_dispatch(tmp_path):

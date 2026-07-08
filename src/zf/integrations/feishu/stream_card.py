@@ -379,17 +379,34 @@ def sync_stream_card(state_dir, *, send_card, update_card, ledger: dict | None =
         entry = ledger.get(key) or {}
         card = render_streaming_card(state)
         sig = _render_signature(state)
+        has_content = _has_content(state)
         if not entry.get("message_id"):
+            # Don't create a card for a reply that folds to an empty terminal
+            # (bus rotated away, terminal events carry no text): there is nothing
+            # to show and it renders as "（未返回内容）". A still-running reply
+            # with no content yet keeps its thinking card.
+            if state["terminal"] in _TERMINAL and not has_content:
+                continue
             message_id = send_card(card)
             ledger[key] = {"message_id": str(message_id), "seq": 0,
-                           "sig": sig, "terminal": state["terminal"]}
+                           "sig": sig, "terminal": state["terminal"],
+                           "had_content": has_content}
             sent.append(request_id)
+            continue
+        # Never downgrade a card that already rendered content to an empty
+        # "（未返回内容）" terminal. Streaming deltas live on the ephemeral
+        # LiveDeltaBus and terminal events carry no text (feishu e2e): once the
+        # bus rotates, a later re-fold folds the reply to empty. Overwriting the
+        # good card with that empty render stomped real replies. Hold the last
+        # good card instead.
+        if entry.get("had_content") and not has_content:
             continue
         if sig != entry.get("sig"):
             seq = int(entry.get("seq", 0)) + 1
             update_card(entry["message_id"], card, seq)
             ledger[key] = {**entry, "seq": seq, "sig": sig,
-                           "terminal": state["terminal"]}
+                           "terminal": state["terminal"],
+                           "had_content": entry.get("had_content") or has_content}
             updated.append(request_id)
     return {"sent": sent, "updated": updated, "ledger": ledger}
 

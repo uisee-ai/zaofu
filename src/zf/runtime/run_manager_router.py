@@ -11,6 +11,7 @@ from typing import Any
 SAFE_BATCH_ACTIONS = frozenset({"repair_failed_children", "reemit_candidate_ready"})
 SAFE_TASK_ACTIONS = frozenset({
     "needs_stage_dispatch",
+    "needs_stage_replan",
     "needs_rework_dispatch",
     "needs_task_ref_repair",
     "needs_gate_dispatch",
@@ -81,6 +82,7 @@ def route_for_safe_action(safe_resume_action: str) -> ActionRoute:
     safe_resume_action = str(safe_resume_action or "")
     if safe_resume_action in {
         "needs_stage_dispatch",
+        "needs_stage_replan",
         "needs_rework_dispatch",
         "needs_task_ref_repair",
         "needs_gate_dispatch",
@@ -751,6 +753,7 @@ def _safe_action_for_spec(spec: Any) -> str:
         return suggested
     if suggested in {
         "needs_stage_dispatch",
+        "needs_stage_replan",
         "needs_rework_dispatch",
         "needs_task_ref_repair",
         "needs_gate_dispatch",
@@ -819,6 +822,8 @@ def expected_downstream_events(safe_action: str) -> set[str]:
         return {"task.dispatched", "workflow.resume.applied"}
     if safe_action == "needs_rework_dispatch":
         return {"task.rework.requested", "workflow.resume.applied"}
+    if safe_action == "needs_stage_replan":
+        return {"workflow.resume.applied"}
     if safe_action == "needs_task_ref_repair":
         return {"task.ref.repair.requested", "workflow.resume.applied"}
     if safe_action in {"needs_gate_dispatch", "blocked_external_gate", "needs_terminal_closeout"}:

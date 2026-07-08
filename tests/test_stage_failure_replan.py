@@ -42,6 +42,21 @@ def test_replan_re_emits_trigger_with_feedback() -> None:
     assert replan.causation_id == failure.id
 
 
+def test_replan_preserves_failure_target_ref_without_origin_trigger() -> None:
+    failure = ZfEvent(type="issue.triage.failed", payload={
+        "reason": "bad task_map",
+        "target_ref": "docs/issues/fix-list.md",
+        "source_refs": {"source_ref": "docs/issues/fix-list.md"},
+    })
+
+    replan, note = plan_reader_stage_replan(_config(), [failure], failure)
+
+    assert replan is not None and "issue-triage" in note
+    assert replan.payload["target_ref"] == "docs/issues/fix-list.md"
+    assert replan.payload["issue_ref"] == "docs/issues/fix-list.md"
+    assert replan.payload["source_refs"]["source_ref"] == "docs/issues/fix-list.md"
+
+
 def test_idempotent_per_failure_event() -> None:
     origin = ZfEvent(type="issue.requested", payload={})
     failure = _failure()
@@ -67,3 +82,185 @@ def test_unknown_failure_event_ignored() -> None:
     failure = ZfEvent(type="something.else.failed", payload={})
     replan, note = plan_reader_stage_replan(_config(), [failure], failure)
     assert replan is None and note == "no_reader_stage_for_failure"
+
+
+def test_layer2_active_reader_stage_failure_replans_in_kernel(tmp_path) -> None:
+    from zf.core.config.schema import (
+        FanoutAggregateConfig,
+        ProjectConfig,
+        RoleConfig,
+        SessionConfig,
+        WorkflowConfig,
+        WorkflowStageConfig,
+        ZfConfig,
+    )
+    from zf.core.events.log import EventLog
+    from zf.core.state.session import SessionStore
+    from zf.runtime.orchestrator import Orchestrator
+    from zf.runtime.tmux import TmuxSession
+    from zf.runtime.transport import TmuxTransport
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "memory").mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    SessionStore(state_dir / "session.yaml").create(project_root=str(tmp_path))
+    log = EventLog(state_dir / "events.jsonl")
+    origin = ZfEvent(type="prd.scan.completed", actor="zf-cli",
+                     payload={"target_ref": "docs/prd/TODO.md"})
+    failure = ZfEvent(type="prd.plan.failed", actor="zf-cli",
+                      payload={"reason": "bad task_map"})
+    log.append(origin)
+    log.append(failure)
+    cfg = ZfConfig(
+        project=ProjectConfig(name="stage-replan"),
+        session=SessionConfig(tmux_session="stage-replan"),
+        roles=[
+            RoleConfig(name="orchestrator", backend="mock"),
+            RoleConfig(name="planner", backend="mock"),
+        ],
+        workflow=WorkflowConfig(stages=[
+            WorkflowStageConfig(
+                id="prd-plan",
+                trigger="prd.scan.completed",
+                topology="fanout_reader",
+                aggregate=FanoutAggregateConfig(
+                    success_event="task_map.ready",
+                    failure_event="prd.plan.failed",
+                ),
+            ),
+        ]),
+    )
+    orch = Orchestrator(
+        state_dir,
+        cfg,
+        TmuxTransport(TmuxSession(session_name="stage-replan", dry_run=True)),
+    )
+
+    orch.run_once(events=[failure])
+
+    replans = [
+        event for event in log.read_all()
+        if event.type == "prd.scan.completed" and event.causation_id == failure.id
+    ]
+    assert len(replans) == 1
+    assert replans[0].payload["rework_attempt"] == 1
+
+
+def test_workflow_resume_replays_reader_stage_failure_as_stage_replan(
+    tmp_path,
+) -> None:
+    from zf.core.config.schema import (
+        FanoutAggregateConfig,
+        ProjectConfig,
+        SessionConfig,
+        WorkflowConfig,
+        WorkflowStageConfig,
+        ZfConfig,
+    )
+    from zf.core.events.log import EventLog
+    from zf.core.task.schema import Task
+    from zf.core.task.store import TaskStore
+    from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor
+    from zf.runtime.workflow_resume import (
+        apply_workflow_resume,
+        build_workflow_resume_projection,
+    )
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    store = TaskStore(state_dir / "kanban.json")
+    anchor = mark_workflow_fanout_anchor(
+        Task(id="PRD-WFINT-1", title="PRD flow", status="in_progress"),
+        request_id="wfint-1",
+        pattern_id="prd-scan",
+    )
+    store.add(anchor)
+    log = EventLog(state_dir / "events.jsonl")
+    origin = ZfEvent(type="prd.scan.completed", actor="zf-cli",
+                     payload={"target_ref": "docs/prd/TODO.md"})
+    failure = ZfEvent(type="prd.plan.failed", actor="zf-cli",
+                      payload={"reason": "bad task_map"})
+    log.append(origin)
+    log.append(failure)
+    cfg = ZfConfig(
+        project=ProjectConfig(name="stage-replan"),
+        session=SessionConfig(tmux_session="stage-replan"),
+        workflow=WorkflowConfig(stages=[
+            WorkflowStageConfig(
+                id="prd-plan",
+                trigger="prd.scan.completed",
+                topology="fanout_reader",
+                aggregate=FanoutAggregateConfig(
+                    success_event="task_map.ready",
+                    failure_event="prd.plan.failed",
+                ),
+            ),
+        ]),
+    )
+
+    projection = build_workflow_resume_projection(state_dir, cfg)
+    pending = [
+        item for item in projection["checkpoints"]
+        if item["safe_resume_action"] != "no_action"
+    ]
+    assert [item["safe_resume_action"] for item in pending] == [
+        "needs_stage_replan",
+    ]
+    assert pending[0]["task_id"] == "PRD-WFINT-1"
+
+    result = apply_workflow_resume(state_dir, cfg)
+
+    assert result["applied"] == 1
+    events = log.read_all()
+    assert any(
+        event.type == "prd.scan.completed" and event.causation_id == failure.id
+        for event in events
+    )
+    assert any(
+        event.type == "workflow.resume.applied"
+        and event.payload.get("mode") == "stage_replan_trigger"
+        for event in events
+    )
+    after = build_workflow_resume_projection(state_dir, cfg)
+    assert all(
+        item["safe_resume_action"] == "no_action"
+        for item in after["checkpoints"]
+    )
+
+
+def test_workflow_resume_does_not_broadcast_taskless_events_to_all_tasks() -> None:
+    from zf.runtime.workflow_resume import _events_for_task
+
+    explicit = ZfEvent(
+        type="lane.stage.completed",
+        actor="zf-cli",
+        task_id="cli-impl",
+        payload={"child_id": "verify-lane-0-cli-impl"},
+    )
+    taskless_child_name_only = ZfEvent(
+        type="lane.stage.completed",
+        actor="zf-stall-redispatch",
+        payload={"child_id": "verify-lane-0-cli-impl"},
+    )
+    taskless_exact_payload = ZfEvent(
+        type="runtime.attention.needed",
+        actor="zf-supervisor",
+        payload={"task_id": "cli-tests"},
+    )
+    taskless_aggregate_payload = ZfEvent(
+        type="candidate.ready",
+        actor="zf-cli",
+        payload={"completed_task_ids": ["cli-impl", "cli-tests"]},
+    )
+    events = [
+        explicit,
+        taskless_child_name_only,
+        taskless_exact_payload,
+        taskless_aggregate_payload,
+    ]
+
+    assert _events_for_task(events, "cli-impl") == [explicit]
+    assert _events_for_task(events, "scaffold") == []
+    assert _events_for_task(events, "cli-tests") == [taskless_exact_payload]

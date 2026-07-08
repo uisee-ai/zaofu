@@ -61,3 +61,14 @@ def test_measure_loop_endpoint_is_read_only(client: TestClient, state_dir: Path)
     after = (kanban.stat().st_mtime_ns, kanban.read_bytes())
     assert response.status_code == 200
     assert before == after
+
+
+def test_loop_view_endpoint(client: TestClient) -> None:
+    response = client.get("/api/projects/default/loop-view")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["schema_version"] == "loop-view.v1"
+    assert data["run"]["promise"]["source"] == "generic fallback"
+    assert "delivery" in data["loops"]
+    assert data["tasks"]  # T1 dispatch 产生 attempt 行

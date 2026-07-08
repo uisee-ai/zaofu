@@ -166,6 +166,27 @@ def test_unauthorized_principal_rejected_and_audited(project: Path):
     assert not [e for e in _events(ctx.state_dir) if e.type == "plan.approved"]
 
 
+def test_unmapped_principal_creates_identity_binding_request(project: Path):
+    ctx = resolve_project_context()
+    result = _handle_event_data(
+        _button("approve:plan-1", "ou_attacker", "m-bind"),
+        context=ctx, user_levels={},
+    )
+
+    assert result["status"] == "rejected"
+    requests = [
+        e for e in _events(ctx.state_dir)
+        if e.type == "identity.binding.requested"
+    ]
+    assert requests
+    payload = requests[-1].payload
+    assert payload["provider"] == "feishu"
+    assert payload["principal_id"] == "ou_attacker"
+    assert payload["command"] == "approve"
+    assert payload["reason"] == "identity.unmapped"
+    assert payload["status"] == "pending"
+
+
 def test_cli_user_level_cannot_override_identity_map(project: Path):
     # An operator passing --user-level granting the attacker APPROVER must be
     # ignored: the config identity map is the sole source of permissions.

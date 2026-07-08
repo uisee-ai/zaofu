@@ -92,7 +92,6 @@ export function WorkspaceRail({
   ];
   const monitoringNav: RailNavItem[] = [
     { id: "delivery", icon: Route, label: "Delivery" },
-    { id: "control-room", icon: Gauge, label: "Control" },
     { id: "delivery-trace", icon: MapIcon, label: "Trace" },
     { id: "delivery-graph", icon: Boxes, label: "Graph" },
     { id: "behavior-loop", icon: GitFork, label: "Loop" },

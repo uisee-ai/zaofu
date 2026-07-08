@@ -22,7 +22,7 @@ from zf.core.config.schema import (
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.state.session import SessionStore
-from zf.core.task.schema import Task
+from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.tmux import TmuxSession
@@ -101,6 +101,10 @@ class TestJudgePassed:
             assigned_to="dev-web", contract=TaskContract(feature_id="feat-x"),
         ))
         store.add(Task(
+            id="PDD-A-003", title="verified but not projected", status="review",
+            assigned_to="verify-web", contract=TaskContract(feature_id="feat-x"),
+        ))
+        store.add(Task(
             id="PDD-B-001", title="other", status="in_progress",
             assigned_to="dev-api", contract=TaskContract(feature_id="feat-y"),
         ))
@@ -123,14 +127,13 @@ class TestJudgePassed:
 
         assert store.get("PDD-A-001").status == "done"
         assert store.get("PDD-A-002").status == "done"
+        assert store.get("PDD-A-003").status == "done"
         # different feature_id untouched
         assert store.get("PDD-B-001").status == "in_progress"
 
     def test_candidate_level_judge_passed_closes_container_task_by_id(
         self, state_dir: Path, legacy_config, transport
     ):
-        from zf.core.task.schema import TaskContract
-
         store = TaskStore(state_dir / "kanban.json")
         store.add(Task(
             id="TASK-D27C0B",
@@ -162,6 +165,54 @@ class TestJudgePassed:
 
         assert store.get("TASK-D27C0B").status == "done"
         assert store.get("PDD-TODO-001").status == "done"
+
+    def test_candidate_level_judge_passed_closes_workflow_bootstrap_root_card(
+        self, state_dir: Path, legacy_config, transport
+    ):
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(
+            id="ISSUE-WF-1",
+            title="workflow root",
+            status="backlog",
+            contract=TaskContract(
+                feature_id="issue-regression",
+                evidence_contract={
+                    "source": "workflow_invoke_bootstrap",
+                    "workflow_fanout_anchor": True,
+                },
+            ),
+        ))
+        store.add(Task(
+            id="TASK-CHILD-1",
+            title="child",
+            status="testing",
+            assigned_to="verify-lane-0",
+            contract=TaskContract(feature_id="issue-regression"),
+        ))
+        store.add(Task(
+            id="TASK-OTHER",
+            title="other backlog",
+            status="backlog",
+            contract=TaskContract(feature_id="issue-regression"),
+        ))
+
+        _emit(state_dir, ZfEvent(
+            type="judge.passed",
+            actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-issue-final-1",
+                "stage_id": "issue-final",
+                "pdd_id": "ISSUE-WF-1",
+                "feature_id": "issue-regression",
+            },
+        ))
+
+        orch = Orchestrator(state_dir, legacy_config, transport)
+        orch.run_once()
+
+        assert store.get("ISSUE-WF-1").status == "done"
+        assert store.get("TASK-CHILD-1").status == "done"
+        assert store.get("TASK-OTHER").status == "backlog"
 
 
 class TestJudgeFailed:
@@ -197,7 +248,10 @@ class TestJudgeFailed:
         orch = Orchestrator(state_dir, legacy_config, transport)
         orch.run_once()
 
-        assert store.get("T1").status == "review"
+        task = store.get("T1")
+        assert task.status == "review"
+        assert task.assigned_to == "review"
+        assert task.retry_count == 0
 
 
 class TestDevBlocked:

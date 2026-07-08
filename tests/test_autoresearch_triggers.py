@@ -119,6 +119,50 @@ def test_trigger_policy_cooldown_skips_duplicate(tmp_path: Path) -> None:
     assert second.skip_reason == "cooldown"
 
 
+def test_trigger_policy_cooldown_uses_problem_fingerprint(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    first_signal = FailureSignal(
+        signal_id="sig-fanout-a",
+        source_kind="event_log",
+        source_path=".zf/events.jsonl",
+        fingerprint="fanout_child_pending:fanout-a:verify-1",
+        category="fanout_runtime_pending",
+        severity="high",
+        summary="fanout child has no terminal event",
+        evidence_paths=[".zf/events.jsonl"],
+    )
+    second_signal = FailureSignal(
+        signal_id="sig-fanout-b",
+        source_kind="event_log",
+        source_path=".zf/events.jsonl",
+        fingerprint="fanout_child_pending:fanout-b:verify-2",
+        category="fanout_runtime_pending",
+        severity="high",
+        summary="fanout child has no terminal event",
+        evidence_paths=[".zf/events.jsonl"],
+    )
+    first = decide_trigger_for_signal(
+        first_signal,
+        state_dir=state_dir,
+        policy=TriggerPolicy(max_triggers_per_hour=5000, max_daily_runs=5000),
+        now=datetime(2026, 7, 7, 14, 0, tzinfo=timezone.utc),
+    )
+
+    second = decide_trigger_for_signal(
+        second_signal,
+        state_dir=state_dir,
+        policy=TriggerPolicy(max_triggers_per_hour=5000, max_daily_runs=5000),
+        history=[first],
+        now=datetime(2026, 7, 7, 14, 5, tzinfo=timezone.utc),
+    )
+
+    assert first.fingerprint != second.fingerprint
+    assert first.problem_fingerprint == second.problem_fingerprint
+    assert second.decision == "skipped"
+    assert second.skip_reason == "cooldown"
+    assert second.dedupe_decision == "cooldown_duplicate"
+
+
 def test_write_trigger_decision_emits_event(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     decision = decide_trigger_for_signal(
@@ -303,6 +347,56 @@ def test_scan_trigger_decisions_skips_fanout_pending_after_judge_passed(
     assert not [
         decision for decision in decisions
         if decision.fingerprint == "fanout_child_pending:fanout-verify:verify-1"
+    ]
+
+
+def test_detect_fanout_pending_uses_grace_window(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    base = datetime(2026, 7, 6, 12, 0, tzinfo=timezone.utc)
+    events = [
+        ZfEvent(
+            id="started",
+            type="fanout.started",
+            actor="zf-cli",
+            ts=base.isoformat(),
+            payload={"fanout_id": "fanout-verify", "trace_id": "trace-r1"},
+            correlation_id="trace-r1",
+        ),
+        ZfEvent(
+            id="child",
+            type="fanout.child.dispatched",
+            actor="zf-cli",
+            ts=(base + timedelta(seconds=5)).isoformat(),
+            payload={"fanout_id": "fanout-verify", "child_id": "verify-1", "trace_id": "trace-r1"},
+            correlation_id="trace-r1",
+        ),
+        ZfEvent(
+            id="heartbeat",
+            type="worker.heartbeat",
+            actor="verify-1",
+            ts=(base + timedelta(seconds=30)).isoformat(),
+            payload={"trace_id": "trace-r1"},
+            correlation_id="trace-r1",
+        ),
+    ]
+
+    assert detect_fanout_failures(events, state_dir=state_dir) == []
+
+    old_events = [
+        *events,
+        ZfEvent(
+            id="later",
+            type="run.manager.tick.completed",
+            actor="run-manager",
+            ts=(base + timedelta(seconds=180)).isoformat(),
+            payload={"trace_id": "trace-r1"},
+            correlation_id="trace-r1",
+        ),
+    ]
+
+    assert [
+        signal for signal in detect_fanout_failures(old_events, state_dir=state_dir)
+        if signal.fingerprint == "fanout_child_pending:fanout-verify:verify-1"
     ]
 
 

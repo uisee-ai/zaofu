@@ -37,6 +37,25 @@ uv run zf web \
 
 ## 2. 运行中观测
 
+当前 Web/API 是 project-scoped dashboard。左侧主要入口包括:
+
+| 页面 | 用途 |
+|---|---|
+| Overview | 项目级摘要、任务流、关键健康指标 |
+| Inbox | 需要 operator 关注的消息/告警 |
+| Channels | channel 会话、成员和流式回复 |
+| Tasks | Kanban board 与 task inspector |
+| Agents | worker/role/provider 状态、上下文和 token 摘要 |
+| Automations | Daily Brief、Weekly Review、Project Monitor 等自动化 |
+| Delivery | feature/task delivery spine、stage、fanout 和 ship readiness |
+| Trace / Graph / Loop | 事件因果、执行图、autoresearch/cycle trace |
+| Observability | events、logs、runtime diagnostics、failed/blocked 投影 |
+| Settings | Web/runtime 设置和 action token 状态 |
+
+Web 默认以读为主。创建 task、channel member、maintenance prepare、runtime resume 等写操作
+必须走 token/passcode/trusted-session gated controlled action path;它们会落审计事件,
+不能绕过 kernel helper 直接写业务真相。
+
 终端观测:
 
 ```bash

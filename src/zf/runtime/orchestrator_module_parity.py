@@ -154,7 +154,7 @@ class ModuleParityBridgeMixin:
             "target_ref": candidate_ref,
             "artifact_refs": [str(item) for item in artifact_refs if str(item).strip()],
             "source_event_id": event.id,
-            "source": "verify_passed_flow_discovery_bridge",
+            "source": "post_verify_flow_discovery_bridge",
         }
         requested = self.event_writer.append(ZfEvent(
             type="flow.discovery.requested",
@@ -167,7 +167,7 @@ class ModuleParityBridgeMixin:
         return OrchestratorDecision(
             action="bridge",
             reason=(
-                f"verify.passed requested {flow_kind} "
+                f"{event.type} requested {flow_kind} "
                 f"{discovery_profile} discovery"
             ),
         )
@@ -279,6 +279,20 @@ class ModuleParityBridgeMixin:
             or payload.get("supersedes_task_map_ref")
             or ""
         ).strip()
+        ref_payload = {
+            key: list(value)
+            for key in (
+                "artifact_refs",
+                "evidence_refs",
+                "test_refs",
+                "e2e_refs",
+                "demo_refs",
+                "regression_refs",
+                "parity_refs",
+                "provider_refs",
+            )
+            if isinstance((value := payload.get(key)), list) and value
+        }
         gap_tasks = self._parity_gap_tasks(payload)
         open_gap_count = self._payload_int(
             payload,
@@ -311,6 +325,7 @@ class ModuleParityBridgeMixin:
                     "gap_task_count": len(gap_tasks),
                     "source_event_id": event.id,
                     "source": "flow_discovery_bridge",
+                    **ref_payload,
                 },
             ))
             decision = self._bridge_gap_plan_ready_to_task_map(gap_event)
@@ -361,6 +376,7 @@ class ModuleParityBridgeMixin:
                     "open_p0_p1_gap_count": 0,
                     "source_event_id": event.id,
                     "source": "flow_discovery_bridge",
+                    **ref_payload,
                 },
             ))
             self._maybe_start_reader_fanout(closed)
@@ -647,19 +663,46 @@ class ModuleParityBridgeMixin:
 
     @staticmethod
     def _payload_declares_parity_closed(payload: dict) -> bool:
-        values = [
-            payload.get("parity_status"),
-            payload.get("status"),
-            payload.get("recommendation"),
-            payload.get("result"),
-        ]
+        sources = [payload]
+        for key in ("report", "closure", "verdict", "summary"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                sources.append(value)
+        values = []
+        for source in sources:
+            values.extend([
+                source.get("parity_status"),
+                source.get("closure_status"),
+                source.get("goal_status"),
+                source.get("status"),
+                source.get("recommendation"),
+                source.get("result"),
+                source.get("verdict"),
+            ])
+            for count_key in (
+                "open_p0_p1_gap_count",
+                "open_gap_count",
+                "gap_task_count",
+                "blocking_gap_count",
+            ):
+                if ModuleParityBridgeMixin._payload_int(source, count_key) == 0:
+                    values.append("no_open_p0_p1_gaps")
         normalized = {str(value or "").strip().lower() for value in values}
         return bool(normalized & {
             "closed",
             "passed",
             "approved",
+            "pass",
+            "approve",
+            "complete",
+            "completed",
+            "no_gap",
+            "no_gaps",
+            "no-open-gaps",
             "no_open_p0_p1_gaps",
             "no-open-p0-p1-gaps",
+            "no_blocking_gaps",
+            "no-blocking-gaps",
         })
 
 

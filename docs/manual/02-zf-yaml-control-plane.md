@@ -40,12 +40,16 @@ roles:
 | `session.tmux_layout` | `window_per_role` 或 `pane_grid` |
 | `orchestrator` | L2 orchestrator backend、turn、timeout、冷却配置 |
 | `roles` | worker/orchestrator 角色列表 |
+| `providers` | workspace/provider 绑定和 provider-specific 配置入口 |
+| `integrations` | 飞书、外部 channel/bridge 等集成配置 |
 | `skill_sources` | skills 来源目录 |
 | `runtime` | workdir、git isolation、skills materialize 配置 |
-| `workflow` | rework routing、wake extension、fanout stage 等流程配置 |
+| `workflow` | rework routing、wake extension、stages、pipelines、fanout/fan-in 等流程配置 |
 | `quality_gates` | 外部命令门禁 |
 | `verification` | contract/scope/architecture/promoted 等 discriminator 开关 |
 | `autopilot` | deterministic proposal-only 自检 |
+| `autoresearch` | trigger、review gate、resident/loop 相关配置 |
+| `goal` | goal/evaluation 相关配置 |
 | `security` | event signing 等安全配置 |
 | `global_budget_usd` | 全局预算硬上限 |
 
@@ -63,9 +67,9 @@ roles:
 | `backend` | `claude-code`、`codex`、`python` 等 |
 | `backends` | 多副本时按副本指定 backend,长度必须等于 `replicas` |
 | `model` | 留空表示使用 provider CLI 默认模型 |
-| `permission_mode` | `bypass` 或 `allowlist` |
+| `permission_mode` | `bypass`、`allowlist`、`default` 或 `restricted` |
 | `allowed_tools` | allowlist 模式下的工具白名单 |
-| `transport` | 默认 `tmux`;旧 `stream-json` 仅保留兼容 |
+| `transport` | 默认 `tmux`;`stream-json` 也是有效 transport,常用于自动化/Layer 2 路径 |
 | `replicas` | 静态副本数 |
 | `role_kind` | `auto`、`writer`、`reader`;配合 workdir/git isolation |
 | `skills` | 当前角色启用的 skill 名 |
@@ -82,6 +86,7 @@ roles:
 
 - `model` 默认留空,让 provider CLI 使用当前默认模型。
 - Codex 自动化场景通常使用 `permission_mode: bypass`,避免交互式 approval 挂起。
+  `default` / `restricted` 对应更保守的 provider 权限姿态,需要结合具体后端能力验证。
 - 多副本 dev/test 应优先显式设置 `replicas`,不要复制多个同名 role。
 
 ## 4. Skills 配置
@@ -178,19 +183,26 @@ verification:
 
 | 文件 | 说明 |
 |---|---|
-| `events.jsonl` | append-only 事件日志,核心 truth |
-| `kanban.json` | task truth |
-| `feature_list.json` | feature truth |
-| `session.yaml` | harness session 状态 |
-| `role_sessions.yaml` | role instance 到 provider session 的映射 |
-| `cost.jsonl` | 成本投影 |
+| `events.jsonl` | append-only 事件日志 |
+| `kanban.json` | active task canonical state; terminal task 归档到 `kanban/` |
+| `feature_list.json` | active feature canonical state; terminal feature 归档到 `feature_list/` |
+| `session.yaml` | harness session canonical state |
+| `role_sessions.yaml` | role instance 到 provider session 的 canonical mapping |
+| `cost.jsonl` | 成本 projection |
 | `skills.lock.json` | skill 解析/物化投影 |
 | `instructions/` | 生成给各 role 的指令 |
 | `workdirs/` | runtime workdir、skills manifest、隔离 checkout |
 | `runs/` | E2E/真实 run archive |
+| `projections/` | Web、Delivery、Supervisor、diagnostics 等可重建 projection |
+| `fanouts/` | fanout child sidecar result / manifest |
 
 不要手写 `events.jsonl`、`kanban.json`、`feature_list.json`、`session.yaml`、`role_sessions.yaml`。代码层应使用 `EventWriter`、`TaskStore`、`FeatureStore`、`SessionStore`。
 
 ## 8. 兼容性提示
 
-大部分新 CLI 会解析 `project.state_dir` 或提供 `--state-dir`。少数 legacy 命令当前仍默认读取当前目录下 `.zf/`,例如部分 `watch`、`feature`、`cost`、`stop` 路径。使用自定义 state dir 时,优先选择支持 `--state-dir` 的命令,或从项目根目录和默认 `.zf` 布局运行。
+大部分新 CLI 会解析 `project.state_dir` 或提供 `--state-dir`。使用自定义 state dir 时,
+优先从项目根目录执行,并用 `zf validate --cold-start` / `zf start --dry-run --no-watch`
+确认所有入口都解析到同一个 runtime state。
+
+`zf.yaml` 同目录 `.env` 只参与变量插值和部分 provider/runtime 环境加载;它不是第二控制面。
+shell 环境变量通常优先级更高。

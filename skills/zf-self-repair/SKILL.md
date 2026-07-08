@@ -16,7 +16,9 @@ When the operator has **authorized** auto-repair, this skill runs the loop:
 
 ```
 detect (bug_candidate) → write backlog → fix in isolated worktree → verify
-  → green: mark backlog done + commit hash   (operator tracks via backlogs/ + git)
+  → green: mark backlog done + commit hash → kernel mints
+           autoresearch.repair.closeout.required → operator applies via
+           zf-self-repair-apply-closeout (human apply gate)
   → red / over cap:  leave un-merged, mark backlog blocked, human.escalate
 ```
 
@@ -31,9 +33,17 @@ Default repository-facing output is Chinese unless the operator asks otherwise.
 
 ## Pre-conditions (refuse if any fail)
 
-1. **Authorization on.** `ZF_AUTORESEARCH_AUTO_REPAIR=authorized` in the env (the
-   kernel gates dispatch, but re-assert here). If not authorized → do nothing,
-   say so. Default off.
+1. **Authorization on (dual gate).** The kernel opens auto-repair dispatch when
+   EITHER gate is set (`repair_authorization.auto_repair_consumer_enabled`,
+   `src/zf/runtime/repair_authorization.py:81-98`):
+   - **env override**: `ZF_AUTORESEARCH_AUTO_REPAIR=authorized` — the deliberate
+     override for legacy/manual runs that have not encoded policy in config; or
+   - **control-plane authorization**: `zf.yaml`
+     `autoresearch.trigger_policy.repair_mode: bounded_repair` — the config-side
+     grant to consume budget on already-gated repair dispatches (default
+     `proposal_only` = do nothing but propose).
+   The kernel gates dispatch, but re-assert here: if NEITHER gate is set → do
+   nothing, say so. Default off (`proposal_only`, env unset).
 2. **A concrete self-bug to fix.** An autoresearch `bug_candidate` (with
    `repair_task_payload`: `hypothesis`, `contract.scope`, `success_criteria`)
    or a supervisor attention naming a harness self-bug. No vague "improve X".
@@ -47,12 +57,19 @@ Default repository-facing output is Chinese unless the operator asks otherwise.
 
 ## The loop
 
-### 1. Intake the bug_candidate
+### 1. Intake the bug_candidate (consume diagnosis products first)
 Read the candidate's `hypothesis`, `contract.scope`, `success_criteria`
 (usually `event_exists` + a focused `pytest` target), evidence event ids, and
-`fingerprint`. Reproduce the failure signature against current HEAD first (the
-backlog Validate-First rule); if it no longer reproduces, mark "verified
-resolved", note the closing commit, stop.
+`fingerprint`. **Before repro-from-scratch, check for a Tier-2 diagnosis
+product.** Tier-2 diagnosis is productized (`diagnosis.requested` /
+`diagnosis.completed`, `src/zf/core/events/known_types.py:381`;
+`src/zf/runtime/diagnosis.py`, doc131 §5): a dispatch/stall-class candidate may
+already carry a `diagnosis.completed` conclusion (root-cause layer, event
+window, worktree evidence). Prefer that structured conclusion over re-deriving.
+For worker-frozen / dispatch-stall triage method see `yoke/debugging-triage`;
+for Tier-2 stall-diagnosis method see `yoke/diagnosis`. Then reproduce the
+failure signature against current HEAD (the backlog Validate-First rule); if it
+no longer reproduces, mark "verified resolved", note the closing commit, stop.
 
 ### 2. Write the backlog (this is the audit anchor — skill, not kernel)
 Create `backlogs/YYYY-MM-DD-HHMM-self-repair-<short-fingerprint>.md` (UTC
@@ -89,11 +106,22 @@ relevant regression. It MUST be green. If RED:
 - Mark the backlog `> 状态: done (<commit> "<title>")` and `git mv` it to
   `tasks/` per `[[zf-backlog-batch-closeout]]`.
 - **Do NOT merge to the live `src/zf`, and do NOT push to any remote.** The
-  verified fix stays on the isolated branch as the deliverable. The OPERATOR
-  reviews the branch + the backlog audit trail and applies / merges / pushes —
-  that is the human apply gate. `ZF_AUTORESEARCH_AUTO_REPAIR=authorized` gates
-  whether the loop RUNS, NOT whether the agent merges to live or pushes. The fix
-  is one `git revert` away from undo precisely because it is not auto-merged.
+  verified fix stays on the isolated branch as the deliverable. The authorization
+  gates whether the loop RUNS, NOT whether the agent merges to live or pushes.
+  The fix is one `git revert` away from undo precisely because it is not
+  auto-merged.
+- **The handoff is productized — do not stop at "backlogs/ + git, apply by
+  hand".** After the green commit lands on the isolated worktree branch, the
+  kernel runner scans the worktree and mints
+  `autoresearch.repair.closeout.required`
+  (`src/zf/runtime/self_repair_runner.py:34,233-269`), carrying
+  `risk_classification`, `verification_plan`, and a `continuation` block
+  (restart/resume policy). The Feishu projection maps this event to an
+  **approval** card (`src/zf/integrations/feishu/projection.py:97`). That is the
+  human apply gate. The operator then runs **`[[zf-self-repair-apply-closeout]]`**
+  to review the branch + backlog trail, merge / cherry-pick, and tear down the
+  isolated worktree/branch. This skill (`zf-self-repair`) NEVER applies the
+  closeout itself.
 
 ## Reuse (do not re-derive)
 - `[[zf-harness-self-improve]]` — backlog authoring conventions (step 2).
@@ -101,8 +129,14 @@ relevant regression. It MUST be green. If RED:
 - `[[zf-harness-commit-push]]` — the COMMIT discipline for step 5 (secret-scan,
   explicit paths, conventional prefix, no force). Self-repair uses its commit
   step ONLY — never its push step (the isolated branch is the deliverable).
-- `[[zf-dispatch-stall-diagnose]]` — if the candidate is a dispatch/stall class,
-  use its root-cause checklist for step 1.
+- `yoke/debugging-triage` — worker-frozen / dispatch-stall triage method for a
+  dispatch/stall-class candidate at step 1 (replaces the retired
+  `zf-dispatch-stall-diagnose`).
+- `yoke/diagnosis` — Tier-2 stall-diagnosis method; pair with the
+  `diagnosis.completed` product consumed at step 1.
+- `[[zf-self-repair-apply-closeout]]` — the OPERATOR-side apply gate that
+  consumes the `autoresearch.repair.closeout.required` event minted after the
+  green commit (step 5). Never run it from inside this skill.
 
 ## On false-positive candidates
 A `bug_candidate` may name the WRONG layer: the real bug can be the detector /

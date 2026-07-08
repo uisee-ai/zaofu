@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
 from zf.cli.main import main
 
@@ -36,8 +37,67 @@ def test_flow_draft_issue_outputs_short_issue_flow(tmp_path):
     docs = list(yaml.safe_load_all(output.read_text(encoding="utf-8")))
     assert docs[0]["kind"] == "IssueFlow"
     assert docs[0]["spec"]["issueRef"] == "backlogs/bug.md"
-    assert docs[1]["kind"] == "ZfConfig"
-    assert docs[1]["spec"]["project"]["name"] == "issue-demo"
+    assert "roleSkillBundles" not in docs[0]["spec"]
+    profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
+    bundles = profile["spec"]["flow_defaults"]["issue"]["roleSkillBundles"]
+    assert "zf-issue-plan-synth" in bundles["issue-triage"]
+    assert "zf-harness-done-contract" in bundles["fix"]
+    config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
+    assert config_doc["spec"]["project"]["name"] == "issue-demo"
+    assert config_doc["spec"]["uses"] == ["flow-draft-runtime/v1"]
+
+
+def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
+    output = tmp_path / "prd-flow.yaml"
+
+    rc = main([
+        "flow",
+        "draft",
+        "--kind",
+        "prd",
+        "--from",
+        "docs/prd/textstat.md",
+        "--target",
+        "app",
+        "--backend",
+        "claude-code",
+        "--lanes",
+        "2",
+        "--project-name",
+        "prd-demo",
+        "--output",
+        str(output),
+    ])
+
+    assert rc == 0
+    docs = list(yaml.safe_load_all(output.read_text(encoding="utf-8")))
+    profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
+    assert profile["metadata"]["name"] == "flow-draft-runtime/v1"
+    assert profile["spec"]["runtime"]["workdirs"] == {
+        "enabled": True,
+        "mode": "worktree",
+    }
+    assert profile["spec"]["runtime"]["run_manager"]["backend"] == "claude-code"
+    assert profile["spec"]["runtime"]["autoresearch_resident"] == {
+        "enabled": True,
+        "interval_seconds": 10,
+        "max_actions_per_tick": 1,
+    }
+    bundles = profile["spec"]["flow_defaults"]["prd"]["roleSkillBundles"]
+    assert "zf-prd-plan-synth" in bundles["planner"]
+    assert "zf-harness-done-contract" in bundles["impl"]
+    assert "roleSkillBundles" not in docs[0]["spec"]
+
+    config = load_config(output)
+    assert config.runtime.workdirs.enabled is True
+    assert config.runtime.workdirs.mode == "worktree"
+    assert config.runtime.run_manager.backend == "claude-code"
+    assert config.runtime.run_manager.resident_agent.enabled is True
+    assert config.runtime.autoresearch_resident.enabled is True
+    planner = next(role for role in config.roles if role.name == "planner")
+    dev = next(role for role in config.roles if role.name == "dev-lane-0")
+    assert "zf-prd-plan-synth" in planner.skills
+    assert "zf-harness-done-contract" in dev.skills
 
 
 def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):
@@ -59,14 +119,19 @@ def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):
     ])
 
     assert rc == 0
-    docs = list(yaml.safe_load_all(capsys.readouterr().out))
+    output = capsys.readouterr().out
+    docs = list(yaml.safe_load_all(output))
     assert docs[0]["kind"] == "RefactorFlow"
     assert docs[0]["spec"]["flowProfile"] == "refactor-flow/v3"
     assert docs[0]["spec"]["parityScope"] == ["core", "cli", "api", "web", "runtime"]
     assert docs[0]["spec"]["verifyRescan"] == "module_parity"
     assert docs[0]["spec"]["environmentPolicy"] == "real_env_required"
-    assert "roleSkillBundles" in docs[0]["spec"]
-    assert "zf-verify-rescan-replan" in docs[0]["spec"]["roleSkillBundles"]["verify"]
+    assert "roleSkillBundles" not in docs[0]["spec"]
+    profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
+    bundles = profile["spec"]["flow_defaults"]["refactor"]["roleSkillBundles"]
+    assert "zf-verify-rescan-replan" in bundles["verify"]
+    assert "zf-refactor-plan-synth" in bundles["refactor-plan-synth"]
+    assert "skill_sources" not in profile["spec"]
 
 
 def test_flow_intake_writes_manifest_and_json(tmp_path, capsys):
@@ -102,6 +167,8 @@ def test_flow_intake_writes_manifest_and_json(tmp_path, capsys):
     assert data["schema_version"] == "workflow.input_manifest.v1"
     assert data["kind"] == "issue"
     assert data["intake_ref"] == str(intake)
+    assert data["intake_json_ref"] == str(intake_json)
+    assert data["intake_markdown_ref"] == str(intake)
     assert (tmp_path / "artifacts" / "workflow" / "wfint-test" / "skill-adapter-plan.json").exists()
     for key in (
         "source_inventory_ref",
@@ -119,6 +186,125 @@ def test_flow_intake_writes_manifest_and_json(tmp_path, capsys):
         assert enrichment["owner"] == "project-adapter-skill"
         assert "scan" in enrichment["adapter_skill_phases"]
         assert enrichment["command_policy"]["mode"] == "declared_only"
+
+
+def test_flow_intake_defaults_backend_from_project_config(tmp_path, capsys):
+    (tmp_path / "zf.yaml").write_text(
+        """\
+version: "1.0"
+project:
+  name: backend-demo
+roles:
+  - name: dev
+    backend: claude-code
+""",
+        encoding="utf-8",
+    )
+    source = tmp_path / "bug.md"
+    source.write_text("修复列表命令。\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "bug.md"
+
+    rc = main([
+        "flow",
+        "intake",
+        "--kind",
+        "issue",
+        "--from",
+        str(source),
+        "--request-id",
+        "wfint-backend",
+        "--output",
+        str(intake),
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    manifest = json.loads(Path(result["workflow_input_manifest_ref"]).read_text(encoding="utf-8"))
+    intake_payload = json.loads(Path(result["intake_json_ref"]).read_text(encoding="utf-8"))
+    assert manifest["requested_backend"] == "claude-code"
+    assert intake_payload["requested_backend"] == "claude-code"
+
+
+def test_flow_intake_json_output_writes_canonical_json_and_display_md(tmp_path, capsys):
+    source = tmp_path / "prd.md"
+    source.write_text("Build a tiny CLI.\n", encoding="utf-8")
+    intake = tmp_path / "artifacts" / "intake" / "tiny.json"
+
+    rc = main([
+        "flow", "intake",
+        "--kind", "prd",
+        "--from", str(source),
+        "--request-id", "wfint-json-output",
+        "--output", str(intake),
+        "--target-root", "app",
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert json.loads(intake.read_text(encoding="utf-8"))["schema_version"] == "workflow.intake.v1"
+    display = intake.with_suffix(".md")
+    assert display.exists()
+    assert display.read_text(encoding="utf-8").startswith("# Workflow Intake:")
+    manifest = json.loads(Path(result["workflow_input_manifest_ref"]).read_text(encoding="utf-8"))
+    assert manifest["intake_ref"] == str(intake)
+    assert manifest["intake_json_ref"] == str(intake)
+    assert manifest["intake_markdown_ref"] == str(display)
+
+
+def test_flow_intake_prd_extracts_cli_surface_and_commands(tmp_path, capsys):
+    source = tmp_path / "tiny-notes.md"
+    source.write_text(
+        """# Tiny Notes PRD
+
+Build a dependency-free Node.js CLI under app/.
+
+## Acceptance
+
+- `npm test` passes from app/.
+- `node src/index.js add "buy milk"` prints `Added: buy milk`.
+- `node src/index.js list` prints `No notes yet.`.
+- `node src/index.js help` mentions `add <text>` and `list`.
+""",
+        encoding="utf-8",
+    )
+    intake = tmp_path / "docs" / "intake" / "tiny-notes.md"
+
+    rc = main([
+        "flow", "intake",
+        "--kind", "prd",
+        "--from", str(source),
+        "--request-id", "wfint-prd-cli",
+        "--output", str(intake),
+        "--objective", "Build Tiny Notes CLI",
+        "--target-root", "app",
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    manifest = json.loads(Path(result["workflow_input_manifest_ref"]).read_text(encoding="utf-8"))
+    capabilities = json.loads(Path(manifest["capability_matrix_ref"]).read_text(encoding="utf-8"))
+    acceptance = json.loads(Path(manifest["acceptance_matrix_ref"]).read_text(encoding="utf-8"))
+    tests = json.loads(Path(manifest["test_matrix_ref"]).read_text(encoding="utf-8"))
+    e2e = json.loads(Path(manifest["real_e2e_matrix_ref"]).read_text(encoding="utf-8"))
+
+    assert {row["surface"] for row in capabilities["capabilities"]} == {"product", "cli"}
+    assert "web" not in {row["surface"] for row in capabilities["capabilities"]}
+    criteria = [row["criteria"] for row in acceptance["acceptance"]]
+    assert len(criteria) == 4
+    assert any("npm test" in item for item in criteria)
+    assert any("add \"buy milk\"" in item for item in criteria)
+    assert any("node src/index.js list" in item for item in criteria)
+    assert any("node src/index.js help" in item for item in criteria)
+    cli_tests = [row for row in tests["tests"] if row["capability_id"] == "prd-cli"]
+    assert cli_tests and "npm test" in cli_tests[0]["commands"]
+    assert e2e["rows"]
+    assert e2e["rows"][0]["surface"] == "cli"
+    assert e2e["rows"][0]["command_source"] == "source_prd"
+    assert "npm test" in e2e["rows"][0]["command"]
+    assert "node src/index.js list" in e2e["rows"][0]["command"]
 
 
 def test_flow_intake_delivery_matrix_draft_passes_contract_gate(tmp_path, capsys):
@@ -284,7 +470,7 @@ spec:
     report = json.loads(capsys.readouterr().out)
     assert report["schema_version"] == "flow-start-readiness.v1"
     assert report["flow_kind"] == "issue"
-    assert report["summary"]["roles"] == 4
+    assert report["summary"]["roles"] == 5
 
 
 def test_flow_preflight_with_intake_reports_manifest(tmp_path, capsys):
@@ -482,7 +668,7 @@ def test_flow_start_dry_run_writes_safe_unique_proposal(tmp_path, capsys):
     assert proposal["kind"] == "issue"
     assert proposal["project"]["name"] == "issue-start-demo"
     assert proposal["project"]["state_dir"] == ".zf-issue-start-demo"
-    assert proposal["summary"]["roles"] == 6
+    assert proposal["summary"]["roles"] == 7
     assert proposal["policies"]["quality_floor"] == "issue-regression"
     assert output.exists()
 
@@ -533,7 +719,14 @@ spec:
     assert preview["schema_version"] == "workflow.submit.preview.v1"
     assert preview["dry_run"] is True
     assert preview["event_type"] == "workflow.submit.requested"
-    assert preview["payload"]["workflow_prompt_ref"] == str(intake)
+    assert preview["payload"]["workflow_prompt_ref"].endswith("artifacts/intake/wfint-submit.json")
+    artifact_refs = preview["payload"]["artifact_refs"]
+    assert any(ref.endswith("workflow-input-manifest.json") for ref in artifact_refs)
+    assert any(ref.endswith("acceptance-matrix.json") for ref in artifact_refs)
+    assert any(ref.endswith("test-matrix.json") for ref in artifact_refs)
+    assert any(ref.endswith("task-map.json") for ref in artifact_refs)
+    assert preview["payload"]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
+    assert preview["payload"]["source_refs"]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
     preview_path = tmp_path / "artifacts" / "workflow" / "wfint-submit" / "workflow-submit-preview.json"
     preflight_path = tmp_path / "artifacts" / "workflow" / "wfint-submit" / "workflow-preflight.json"
     assert preview_path.exists()
@@ -598,7 +791,59 @@ spec:
     assert "workflow.invoke.requested" in types
     invoke = next(event for event in events if event.type == "workflow.invoke.requested")
     assert invoke.payload["workflow_input_manifest_ref"].endswith("workflow-input-manifest.json")
-    assert invoke.payload["workflow_prompt_ref"] == str(intake)
+    assert invoke.payload["workflow_prompt_ref"].endswith("artifacts/intake/wfint-apply.json")
+
+
+def test_flow_submit_apply_light_topology_skips_invoke(tmp_path, capsys):
+    """LB-2: light submit must NOT emit the bootstrap invoke — it would
+    direct-dispatch the whole objective to the judge role (dead path)."""
+    source = tmp_path / "prd.md"
+    source.write_text("deliver mdtoc CLI\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "prd.md"
+    assert main([
+        "flow", "intake", "--kind", "prd", "--from", str(source),
+        "--request-id", "wfint-light", "--output", str(intake),
+        "--objective", "deliver mdtoc CLI",
+        "--source-root", "docs", "--target-root", "app",
+    ]) == 0
+    capsys.readouterr()
+    config = tmp_path / "zf.yaml"
+    config.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata: {name: prd-light-demo}
+spec:
+  topology: light
+  lanes: 1
+  backend: mock
+  prdRef: docs/intake/prd.md
+  targetRoot: app
+  roleSkillBundles:
+    impl: []
+    verify: []
+    judge-prd: []
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo, state_dir: .zf-light-apply}
+""")
+
+    rc = main([
+        "flow", "submit", "--apply", "--config", str(config),
+        "--intake", str(intake), "--task-id", "TASK-LIGHT",
+        "--pattern-id", "prd-lanes-impl", "--json",
+    ])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "accepted"
+    assert result["workflow_invoke_status"] == "skipped_light"
+    assert "prd.requested" in result["next_action"]
+    types = [e.type for e in EventLog(tmp_path / ".zf-light-apply" / "events.jsonl").read_all()]
+    assert "workflow.submit.accepted" in types
+    assert "workflow.invoke.requested" not in types
 
 
 def test_project_init_creates_flow_project(tmp_path, capsys, monkeypatch):
@@ -632,6 +877,50 @@ def test_project_init_creates_flow_project(tmp_path, capsys, monkeypatch):
     assert (root / ".zf-issue-project" / "session.yaml").exists()
     docs = list(yaml.safe_load_all((root / "zf.yaml").read_text(encoding="utf-8")))
     assert docs[0]["kind"] == "IssueFlow"
+    config = load_config(root / "zf.yaml")
+    assert config.session.tmux_session == "zf-issue-project"
+
+
+def test_project_init_prd_git_init_and_greenfield_seed(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "notes-prd"
+
+    rc = main([
+        "project",
+        "init",
+        "--kind",
+        "prd",
+        "--name",
+        "notes-prd",
+        "--root",
+        str(root),
+        "--from",
+        "docs/prd/notes.md",
+        "--target",
+        "app",
+        "--backend",
+        "mock",
+        "--create",
+        "--git-init",
+        "--force",
+        "--no-workspace-register",
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["kind"] == "prd"
+    assert (root / ".git").exists()
+    assert (root / "README.md").exists()
+    assert (root / "src" / ".gitkeep").exists()
+    assert (root / "tests" / ".gitkeep").exists()
+    assert (root / "app" / ".gitkeep").exists()
+    config = load_config(root / "zf.yaml")
+    assert config.session.tmux_session == "zf-notes-prd"
 
 
 def _git(root, *args):
@@ -729,6 +1018,107 @@ def test_flow_preflight_refactor_source_baseline_drift_stops(tmp_path, capsys):
     report = _preflight_report(config, capsys, "--intake", str(intake))
     kinds = {item["kind"] for item in report["blockers"]}
     assert "workflow_source_root_modified" in kinds
+
+
+def test_flow_preflight_refactor_uses_intake_roots_when_yaml_is_thin(
+    tmp_path,
+    capsys,
+):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    _git(source, "init")
+    (source / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(source, "add", "a.txt")
+    _git(source, "commit", "-m", "seed")
+    _git(target, "init")
+    config = _draft_refactor_config(tmp_path, source, target)
+    docs = list(yaml.safe_load_all(config.read_text(encoding="utf-8")))
+    docs[0]["spec"].pop("sourceRoot", None)
+    docs[0]["spec"].pop("targetRoot", None)
+    config.write_text(
+        yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    capsys.readouterr()
+    intake = target / "docs" / "intake" / "refactor.md"
+    assert main([
+        "flow", "intake",
+        "--kind", "refactor",
+        "--from", str(tmp_path / "refactor.md"),
+        "--source-root", str(source),
+        "--target", str(target),
+        "--request-id", "wfint-thin-roots",
+        "--output", str(intake),
+    ]) == 0
+    capsys.readouterr()
+
+    without_intake = _preflight_report(config, capsys)
+    assert any(
+        item["kind"] == "workflow_source_root_undeclared"
+        for item in without_intake["blockers"]
+    )
+
+    report = _preflight_report(config, capsys, "--intake", str(intake))
+    kinds = {item["kind"] for item in report["blockers"]}
+    assert "workflow_source_root_undeclared" not in kinds
+    assert report["effective_flow_metadata"]["source_root"] == str(source)
+    assert report["effective_flow_metadata"]["target_root"] == str(target)
+    assert report["refactor_safety"]["source_root"] == str(source)
+    assert report["refactor_safety"]["target_root"] == str(target)
+
+
+def test_flow_preflight_refactor_allows_project_git_target_subdir(
+    tmp_path,
+    capsys,
+):
+    project = tmp_path / "project"
+    project.mkdir()
+    _git(project, "init")
+    (project / "docs" / "plans").mkdir(parents=True)
+    (project / "docs" / "plans" / "refactor.md").write_text(
+        "move legacy math into modern while preserving CLI behavior\n",
+        encoding="utf-8",
+    )
+    (project / "legacy" / "src").mkdir(parents=True)
+    (project / "legacy" / "src" / "math.js").write_text(
+        "exports.add=(a,b)=>a+b\n",
+        encoding="utf-8",
+    )
+    assert main([
+        "flow", "draft",
+        "--kind", "refactor",
+        "--from", "docs/plans/refactor.md",
+        "--source-root", "legacy",
+        "--target", "modern",
+        "--backend", "mock",
+        "--project-name", "refactor-subdir",
+        "--output", str(project / "zf.yaml"),
+    ]) == 0
+    capsys.readouterr()
+    intake = project / "artifacts" / "intake" / "refactor.json"
+    assert main([
+        "flow", "intake",
+        "--kind", "refactor",
+        "--from", str(project / "docs" / "plans" / "refactor.md"),
+        "--source-root", "legacy",
+        "--target", "modern",
+        "--request-id", "wfint-subdir-target",
+        "--output", str(intake),
+    ]) == 0
+    capsys.readouterr()
+
+    report = _preflight_report(
+        project / "zf.yaml",
+        capsys,
+        "--kind", "refactor",
+        "--intake", str(intake),
+    )
+    kinds = {item["kind"] for item in report["blockers"]}
+    assert "workflow_target_not_git" not in kinds
+    assert report["refactor_safety"]["target_root"] == str(project / "modern")
+    assert report["refactor_safety"]["target_git_root"] == str(project)
 
 
 def test_project_init_refactor_requires_source_and_git(tmp_path, capsys, monkeypatch):

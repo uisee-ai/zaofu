@@ -61,6 +61,11 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "phase.progressed",
     "task.fanout.requested",
     "workflow.invoke.requested",
+    "workflow.reconcile.requested",
+    # Tier-2 诊断(task 2026-07-06-0930):requested 唤醒诊断 stage 派发,
+    # completed 唤醒结论消费(rework feedback / needs_owner 升级)。
+    "diagnosis.requested",
+    "diagnosis.completed",
     # Run 11 fix: task.assigned must wake Layer 1 so _dispatch_ready
     # can send the briefing to the assigned worker. Without this the
     # task sat in backlog forever after Layer 2 called `zf kanban assign`.
@@ -344,6 +349,17 @@ def compute_effective_wake_patterns(config) -> set[str]:
         if getattr(aggregate, "synth_role", ""):
             result.add("fanout.synth.completed")
 
+    # YAML-declared external_triggers are events the kernel reacts to from
+    # outside the flow (entry points such as the light-topology
+    # `prd.requested` synthesizer). They have builtin reactor handlers but
+    # no owning stage, so without this fold-in the EventWatcher never wakes
+    # run_once for them and the handler silently never fires (light baseline
+    # 2026-07-06: prd.requested emitted but task_map never synthesized).
+    dag = getattr(workflow, "dag", None)
+    for trigger in getattr(dag, "external_triggers", []) or []:
+        if trigger:
+            result.add(trigger)
+
     ext = getattr(workflow, "wake_extensions", None)
     if ext is None:
         return result
@@ -513,3 +529,33 @@ def wake_worthy(event) -> bool:
         payload = payload if isinstance(payload, dict) else {}
         return payload.get("permissionDecision") == "deny"
     return True
+
+
+# FIX-5②(bizsim r4 $697 空转账单):同型触发指数退避参数与窗口计算。
+# 判定逻辑在此 sibling;orchestrator._notify_orchestrator_agent 仅保留
+# streak 记账与门控 call site。
+LAYER2_SAME_TRIGGER_FREE = 3
+LAYER2_STREAK_BASE_S = 5.0
+LAYER2_STREAK_CAP_S = 300.0
+
+
+def layer2_effective_wake_interval(
+    *,
+    interval: float,
+    event_type: str,
+    streak_type: str,
+    streak_count: int,
+) -> float:
+    """Return the effective min-interval before the next Layer-2 turn.
+
+    同型触发连续 commit 未超免额 → 维持基础窗;超过后窗口按 2^n 增长至
+    上限。异型触发不受影响(调用方在 commit 时复位 streak)。
+    """
+    if event_type != streak_type or streak_count < LAYER2_SAME_TRIGGER_FREE:
+        return interval
+    return max(interval, min(
+        max(interval, LAYER2_STREAK_BASE_S) * (
+            2 ** (streak_count - LAYER2_SAME_TRIGGER_FREE)
+        ),
+        LAYER2_STREAK_CAP_S,
+    ))

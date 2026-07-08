@@ -1819,3 +1819,42 @@ def test_candidate_rebuild_uses_task_index_changed_files_when_event_report_is_su
         "show",
         "candidate/F-11111111:packages/assembly/src/boot.ts",
     ) == "export const boot = true;"
+
+
+def test_candidate_rebuild_idempotent_against_patch_equivalent_base(tmp_path: Path):
+    """FIX-10(bizsim r4 F10):增量 base 含 cherry-pick 拷贝(hash 不同、
+    patch 相同)时,同一补丁不得再次集成——r4 churn 期重复系列即树损坏根源。"""
+    _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+    commit = _task_commit(
+        tmp_path,
+        branch="worker/TASK-1",
+        file_name="a.txt",
+        content="TASK-1\n",
+        message="TASK-1",
+    )
+    _record_task_ref(
+        tmp_path, state_dir, config,
+        task_id="TASK-1", commit=commit, branch="worker/TASK-1",
+    )
+    _add_task(state_dir, log, task_id="TASK-1")
+    _approve(log, "TASK-1")
+    writer = EventWriter(log)
+    rebuilder = _rebuilder(tmp_path, state_dir, config, log)
+
+    first = rebuilder.rebuild("F-11111111", event_writer=writer)
+    assert first is not None and first.status == "updated"
+    first_head = _git(tmp_path, "rev-parse", "candidate/F-11111111")
+
+    # 模拟增量 base = 旧 candidate(patch-equivalent 拷贝已在 base 侧)
+    config.runtime.git.candidate_base_ref = "candidate/F-11111111"
+    second = rebuilder.rebuild("F-11111111", event_writer=writer)
+
+    assert second is not None
+    second_head = _git(tmp_path, "rev-parse", "candidate/F-11111111")
+    assert second_head == first_head, "同一补丁被重复集成(patch-id 幂等失效)"
+    picked_again = [
+        e for e in log.read_all()
+        if e.type == "candidate.task_ref.applied"
+    ]
+    assert len(picked_again) == 1, "第二次 rebuild 不得再次 apply 等价补丁"

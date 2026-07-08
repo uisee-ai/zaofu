@@ -3,15 +3,19 @@
 > 适用对象: 需要观察 long-horizon / multi-agent 运行健康度、确认是否需要
 > Autoresearch / maintenance / Project Spine Review 介入的 ZaoFu 操作者。
 >
-> 状态: **v0**(只读巡检层 — 生成 supervisor projection 并给出建议,自动执行
-> 恢复动作的能力仍有限,边界见文末"当前限制")。
+> 状态: **当前可用范围版**(生成 supervisor projection,并可发出 bounded decision /
+> owner-visible / autoresearch invocation 信号;不直接替代 `zf.yaml` 或手写 runtime truth)。
 
 ## 1. 当前定位
 
-Supervisor Inspection 是一个轻量、只读、可重建的在线巡检层。它读取
+Supervisor Inspection 是一个轻量、可重建的在线巡检层。它读取
 `events.jsonl`、`kanban.json`、`role_sessions.yaml`、Autoresearch failure
 signals、Automation projection、Pause Lifecycle projection 和 Project Spine
 Review insight,生成一个 supervisor projection。
+
+当前实现还包含一个 bounded control loop:当发现需要 operator 或 Autoresearch 介入的场景时,
+它可以通过 `EventWriter` 记录 decision、owner visible message 或
+`autoresearch.invocation.requested`。这些是可审计信号,不是直接修复或直接改状态。
 
 它不是新的控制面:
 
@@ -19,10 +23,10 @@ Review insight,生成一个 supervisor projection。
 - 不直接派发任务。
 - 不直接修改 `kanban.json` / `feature_list.json` / `session.yaml`。
 - 不直接 kill worker 或恢复 worker。
-- v0 不 emit `runtime.attention.*`。
-- v0 不在每轮 tick 自动运行 Project Spine Review。
+- 不把 repair 直接 apply 到 mainline。
+- 不在每轮 tick 自动运行 Project Spine Review。
 
-当前 v0 的主要产物在:
+当前主要产物在:
 
 ```text
 <state_dir>/projections/supervisor/snapshot.json
@@ -47,15 +51,15 @@ Review insight,生成一个 supervisor projection。
 | maintenance 前检查 | 当前是否已 pause,是否有 checkpoint/resume 线索 |
 | Project Spine Review 前置输入 | spine review 是否能读取 supervisor snapshot 作为 runtime context |
 
-不适合用 Supervisor v0 做这些事:
+不适合用 Supervisor 做这些事:
 
 - 自动修复 zaofu bug。
 - 自动停止业务任务。
 - 自动创建 bug backlog。
-- 自动把 high severity attention 转成 spine review artifact/proposal。
+- 自动把 high severity attention 转成已应用的 spine review artifact/proposal。
 - 代替 Autoresearch replay / eval。
 
-这些属于后续 P2/P3 能力或 Autoresearch 本身。
+这些属于 Autoresearch/self-repair 或人工 apply gate 的职责。
 
 ## 3. 自动刷新
 
@@ -145,7 +149,7 @@ jq '{
 
 ## 6. Attention Candidates
 
-`attention-candidates.json` 是 v0 的统一告警候选入口。
+`attention-candidates.json` 是统一告警候选入口。
 
 ```bash
 jq '.summary' .zf/projections/supervisor/attention-candidates.json
@@ -162,7 +166,8 @@ jq '.items[] | {source,severity,title,task_id,suggested_route,source_ref}' \
 | `autoresearch` | `collect_failure_signals()` | `autoresearch_trigger` |
 | `plan_integrity` | `plan-integrity.json` findings | `plan_revision` |
 
-v0 只生成 candidates,不自动唤醒 L2,也不自动执行 suggested route。
+attention candidates 本身只做候选聚合。是否唤醒 L2、触发 Autoresearch 或进入 maintenance,
+由 bounded control loop、Web action 或 operator 决策完成。
 
 `autoresearch` 来源中的 `handoff_stall` 只表示“一个成功事件老化后仍没有可观察到
 的后续推进”。`static_gate.passed` / `static_gate.skipped` 刚出现后的短暂调度窗口
@@ -181,7 +186,7 @@ jq '.findings[] | {kind,severity,title,task_id,source_ref,suggested_route}' \
   .zf/projections/supervisor/plan-integrity.json
 ```
 
-当前 v0 检查:
+当前检查:
 
 | kind | 含义 |
 |---|---|
@@ -263,7 +268,7 @@ web.action.completed
 
 ## 9. Project Spine Review 联动
 
-Project Spine Review 会读取 supervisor snapshot,但 Supervisor v0 不主动运行
+Project Spine Review 会读取 supervisor snapshot,但 Supervisor 不主动运行
 spine review。推荐先刷新 supervisor,再手动运行 spine review 相关命令或 API。
 
 用 Python 验证 spine 是否读到 snapshot:
@@ -386,8 +391,8 @@ projection churn。
 
 ### attention 很多,但任务没有自动暂停
 
-这是 v0 预期。v0 只生成 candidates。自动路由到 L2 / Autoresearch / Spine
-Review / maintenance 仍是后续阶段。
+这是预期边界。attention candidates 只做候选聚合;自动路由到 L2 / Autoresearch / Spine
+Review / maintenance 必须经过 bounded control loop 或 operator action,不会静默直接修复。
 
 ### `maintenance.prepare` 返回 403
 
@@ -427,10 +432,10 @@ PY
 
 - 没有 `zf supervisor` CLI。
 - 没有 Web 页面专门展示 supervisor queue。
-- 没有 `runtime.attention.*` event 化。
+- attention event 化以当前代码事件类型为准;不要假设存在单一 `runtime.attention.*` 命名空间。
 - 没有 attention ack / snooze / feedback。
 - 没有 high severity 自动触发 Project Spine Review artifact/proposal。
 - 没有自动恢复 maintenance 后的业务任务 checkpoint。
 - 没有 supervisor meta metrics / false positive feedback loop。
 
-这些限制是刻意保守的。v0 目标是先把观察面打通,不引入第二控制面。
+这些限制是刻意保守的。目标是把观察面和受控信号打通,不引入第二控制面。

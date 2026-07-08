@@ -15,7 +15,7 @@
 它**不写任何 runtime 状态**（不碰 `events.jsonl` / `kanban.json`），也**不重判** kernel 已裁决的事
 ——scope 偏移只是把 kernel 发过的 `scope.violation` 事件 surface 出来，不重跑 gate。
 
-> 当前面向 CLI（本手册）。Web 页面（doc 65 P1）是后续增强。
+当前既有 CLI,也有 Web/API projection。Web 侧主要入口是 Delivery、Trace、Graph、Loop。
 
 ## 2. 命令一览
 
@@ -25,6 +25,9 @@
 | `zf trace execution-graph <feature_id>` | planned task-map 与实际状态 join 的对账图（节点 + blocked_by 边 + wave） | `execution-graph.v1` |
 | `zf trace drift <feature_id>` | planned vs actual 偏移报告 | `drift-report.v1` |
 | `zf trace task-node <task_id>` | 单个 task 节点的 planned vs actual + drift | execution-graph 节点 |
+| `zf trace workflow-run <fanout_id>` | 查看 fanout/workflow run trace | workflow run projection |
+| `zf trace report <feature_id>` | 生成 delivery trace report | report artifact |
+| `zf trace export <feature_id>` | 导出 trace 数据 | JSON/export artifact |
 
 公共参数：
 
@@ -44,6 +47,8 @@ zf trace delivery F-CANGJIE-GA
 zf trace execution-graph F-CANGJIE-GA
 zf trace drift F-CANGJIE-GA
 zf trace task-node TASK-API-002
+zf trace workflow-run fanout-123
+zf trace report F-CANGJIE-GA
 
 # 机器可读输出
 zf trace delivery F-CANGJIE-GA --format json
@@ -93,8 +98,23 @@ Drift [warning] error=0 warning=3 info=0
 
 - 投影纯函数：`src/zf/runtime/execution_graph.py`、`delivery_trace.py`、`drift_report.py`
 - 加载层（从盘读 kanban/events/task-map）：`src/zf/runtime/delivery_trace_resolve.py`
-- CLI：`src/zf/cli/trace.py`（`run_delivery_trace`）
+- Web/API：`src/zf/web/delivery_trace_routes.py`
+- CLI：`src/zf/cli/trace.py`（`run_delivery_trace` 等）
 - 复用：`execution_route` / `task_run_panel` 在节点级被复用，本系列只做 feature JOIN + 对账 + drift（不另造投影）。
+
+Web/API 当前常用路由:
+
+| 路由 | 用途 |
+|---|---|
+| `/api/projects/{project_id}/delivery-traces/{feature_id}` | 基础 delivery trace |
+| `/api/projects/{project_id}/delivery-traces/{feature_id}/thick` | thick trace / cursor / deltas |
+| `/api/projects/{project_id}/delivery-traces/{feature_id}/causation/{event_id}` | event causation |
+| `/api/projects/{project_id}/delivery-traces/{feature_id}/execution-graph` | execution graph |
+| `/api/projects/{project_id}/delivery-traces/{feature_id}/drift-report` | drift report |
+| `/api/projects/{project_id}/workflow-runs/{fanout_id}` | fanout/workflow run |
+
+Loop 页面会消费 related loop / autoresearch trace 信息,用于把 bug-fix、reflection、
+replan、A/B 对比等循环和 delivery trace 连起来。
 
 ## 7. 一句话原则
 

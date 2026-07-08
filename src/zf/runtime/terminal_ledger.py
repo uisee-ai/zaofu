@@ -13,11 +13,16 @@ from zf.core.state.locks import locked_path
 
 
 TERMINAL_SUCCESS_EVENTS = frozenset({
+    "impl.child.completed",
     "review.approved",
     "verify.passed",
     "test.passed",
     "judge.passed",
 })
+
+
+def is_terminal_success_event(event_type: str) -> bool:
+    return event_type in TERMINAL_SUCCESS_EVENTS
 
 
 @dataclass(frozen=True)
@@ -55,7 +60,7 @@ class TerminalLedger:
         dispatch_id: str,
         event_type: str,
     ) -> dict[str, Any] | None:
-        if not task_id or not dispatch_id or event_type not in TERMINAL_SUCCESS_EVENTS:
+        if not task_id or not dispatch_id or not is_terminal_success_event(event_type):
             return None
         key = self._key(task_id, dispatch_id, event_type)
         data = self._read()
@@ -71,7 +76,7 @@ class TerminalLedger:
         event_id: str,
         actor: str,
     ) -> TerminalLedgerRecord | None:
-        if not task_id or not dispatch_id or event_type not in TERMINAL_SUCCESS_EVENTS:
+        if not task_id or not dispatch_id or not is_terminal_success_event(event_type):
             return None
         key = self._key(task_id, dispatch_id, event_type)
         with locked_path(self.path):

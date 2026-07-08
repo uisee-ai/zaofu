@@ -96,7 +96,7 @@ PYTHONPATH="$(pwd)/src" python3 -m zf.cli.main kanban --board
 
 常见原因:
 
-- 没用 `zf start --foreground`,watcher 没有持续运行。
+- 使用了 `zf start --no-watch` 或启动进程已退出,watcher 没有持续运行。
 - role `triggers` 没包含上游事件。
 - worker 完成事件缺 dispatch token 或 contract evidence。
 - `max_rework_attempts` 已到上限。

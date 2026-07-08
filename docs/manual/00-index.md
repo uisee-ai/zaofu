@@ -8,7 +8,7 @@
 
 ## 0. 架构总览
 
-- [架构总览](architecture.md) — 三层架构、事件溯源真相、`zf.yaml` 控制面、核心技术点与任务生命周期(自包含,新用户先读)
+- [架构总览](architecture.md) — 三层架构、kernel truth/state、`zf.yaml` 控制面、核心技术点与任务生命周期(自包含,新用户先读)
 
 ## 1. 入门
 
@@ -29,7 +29,7 @@
 - [08 New Task、Agent 与 Squad](08-new-task-agent-squad.md) — Web 新任务入口与 assignment intent
 - [13 Plan、Task Map 与 Orchestrator 调度手册](13-plan-task-map-orchestrator-dispatch.md) — 计划到调度的链路
 - [14 Delivery Trace 使用手册（zf trace）](14-delivery-trace-usage.md) — 交付追踪与 drift 报告
-- [12 Supervisor Inspection 使用手册](12-supervisor-inspection-usage.md) — 只读巡检层(v0)
+- [12 Supervisor Inspection 使用手册](12-supervisor-inspection-usage.md) — supervisor projection、attention candidates 与 bounded invocation 信号
 
 ## 4. 飞书集成与 Channel 协作
 

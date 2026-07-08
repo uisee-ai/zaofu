@@ -299,6 +299,23 @@ def register(subparsers) -> None:
         default="",
         help="Backend id passed to zf self-repair run --backend when --self-repair-spawn is set",
     )
+    resident.add_argument(
+        "--watch",
+        action="store_true",
+        help="Keep polling for pending loop requests instead of running once",
+    )
+    resident.add_argument(
+        "--interval-seconds",
+        type=float,
+        default=10.0,
+        help="Polling interval for --watch",
+    )
+    resident.add_argument(
+        "--max-actions-per-tick",
+        type=int,
+        default=0,
+        help="Maximum pending actions consumed per polling tick; 0 means unlimited",
+    )
     resident.set_defaults(func=_resident)
 
     loop = nested.add_parser(
@@ -724,16 +741,28 @@ def _resident(args) -> int:
         if args.output_root is not None
         else state_dir / "autoresearch" / "resident"
     )
-    actions = run_resident_once(
-        state_dir=state_dir,
-        worktree_root=args.worktree_root,
-        output_root=output_root,
-        execute=args.execute,
-        self_repair_consumer=args.self_repair_consumer,
-        self_repair_spawn=args.self_repair_spawn,
-        self_repair_backend=args.self_repair_backend,
+    interval = max(float(getattr(args, "interval_seconds", 10.0) or 10.0), 0.1)
+    max_actions_per_tick = max(
+        int(getattr(args, "max_actions_per_tick", 0) or 0),
+        0,
     )
-    print(actions_json(actions))
+    while True:
+        actions = run_resident_once(
+            state_dir=state_dir,
+            worktree_root=args.worktree_root,
+            output_root=output_root,
+            execute=args.execute,
+            self_repair_consumer=args.self_repair_consumer,
+            self_repair_spawn=args.self_repair_spawn,
+            self_repair_backend=args.self_repair_backend,
+            max_actions_per_tick=max_actions_per_tick,
+        )
+        print(actions_json(actions), flush=True)
+        if not getattr(args, "watch", False):
+            break
+        import time as _time
+
+        _time.sleep(interval)
     return 0
 
 

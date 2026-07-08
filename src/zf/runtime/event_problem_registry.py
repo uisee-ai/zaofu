@@ -11,6 +11,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
+NOTIFICATION_POLICIES: frozenset[str] = frozenset({
+    "",
+    "trace_only",
+    "run_manager_first",
+    "owner_on_repair_failed",
+    "owner_on_human_required",
+    "owner_immediate",
+})
+
+RECOVERY_POLICIES: frozenset[str] = frozenset({
+    "",
+    "none",
+    "run_manager",
+    "autoresearch",
+    "run_manager_then_autoresearch",
+    "human",
+})
+
+
 @dataclass(frozen=True)
 class EventProblemSpec:
     event_type: str
@@ -31,6 +50,10 @@ class EventProblemSpec:
     projection_visibility: bool = True
     producer_kind: str = ""
     required_scope_any: tuple[str, ...] = ()
+    notification_policy: str = ""
+    recovery_policy: str = ""
+    dedupe_key_fields: tuple[str, ...] = ()
+    human_required_when: tuple[str, ...] = ()
 
     @property
     def is_expected_negative(self) -> bool:
@@ -43,6 +66,31 @@ class EventProblemSpec:
     @property
     def is_projection_only(self) -> bool:
         return self.event_class == "projection_only"
+
+    @property
+    def effective_notification_policy(self) -> str:
+        if self.notification_policy:
+            return self.notification_policy
+        if self.action_policy == "human_escalate" or self.owner_route in {
+            "human",
+            "owner_notify",
+        }:
+            return "owner_immediate"
+        if self.owner_route in {"run_manager", "autoresearch"}:
+            return "owner_on_repair_failed"
+        return "trace_only" if self.is_projection_only else "run_manager_first"
+
+    @property
+    def effective_recovery_policy(self) -> str:
+        if self.recovery_policy:
+            return self.recovery_policy
+        if self.action_policy == "human_escalate" or self.owner_route == "human":
+            return "human"
+        if self.owner_route == "autoresearch" or self.autoresearch_eligible:
+            return "run_manager_then_autoresearch"
+        if self.owner_route == "run_manager":
+            return "run_manager"
+        return "none"
 
 
 def _candidate_quality_expected(event_type: str, title: str = "") -> EventProblemSpec:
@@ -93,6 +141,9 @@ def _abnormal(
     owner_route: str = "run_manager",
     action_policy: str = "needs_diagnosis",
     intervention_class: str = "diagnose",
+    notification_policy: str = "owner_on_repair_failed",
+    recovery_policy: str = "run_manager_then_autoresearch",
+    dedupe_key_fields: tuple[str, ...] = (),
 ) -> EventProblemSpec:
     return EventProblemSpec(
         event_type=event_type,
@@ -112,6 +163,9 @@ def _abnormal(
         autoresearch_eligible=True,
         producer_kind="runtime",
         required_scope_any=("task_id", "role", "role_instance", "worker_id"),
+        notification_policy=notification_policy,
+        recovery_policy=recovery_policy,
+        dedupe_key_fields=dedupe_key_fields,
     )
 
 
@@ -149,6 +203,8 @@ def _product_gap_expected(
             "target_ref",
             "candidate_ref",
         ),
+        notification_policy="owner_on_repair_failed",
+        recovery_policy="run_manager_then_autoresearch",
     )
 
 
@@ -184,6 +240,8 @@ def _artifact_contract_expected(
             "target_ref",
             "candidate_ref",
         ),
+        notification_policy="owner_on_repair_failed",
+        recovery_policy="run_manager",
     )
 
 
@@ -312,6 +370,18 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
         _kernel_child_result("prd.plan.child.failed", failed=True),
         _kernel_child_result("prd.child.completed", failed=False),
         _kernel_child_result("prd.child.failed", failed=True),
+        # research-fanout 固定工作流(zf-research-fanout-trigger)的失败面:
+        # 项目配置声明 research 段即产生这两类 actionable 事件,缺 spec 会被
+        # strict 冷启动的 missing_consumer_contract 拦启(bizsim r4 实弹)。
+        _kernel_child_result("research.child.completed", failed=False),
+        _kernel_child_result("research.child.failed", failed=True),
+        _flow_stage_expected(
+            "research.fanout.failed",
+            failure_class="research_fanout_failed",
+            title="Research fanout failed",
+            source="workflow_runtime",
+            suggested_action_kind="diagnose_research_fanout_failure",
+        ),
         _kernel_child_result("prd.critic.completed", failed=False),
         _kernel_child_result("prd.critic.failed", failed=True),
         _flow_stage_expected(
@@ -368,6 +438,22 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
         _kernel_child_result("workflow.child.failed", failed=True),
         _kernel_child_result("fanout.child.completed", failed=False),
         _kernel_child_result("fanout.child.failed", failed=True),
+        _flow_stage_expected(
+            "diagnosis.failed",
+            failure_class="diagnosis_failed",
+            title="Tier-2 diagnosis run failed",
+            source="diagnosis_runtime",
+            problem_class="workflow_progress",
+            suggested_action_kind="diagnose_diagnosis_failure",
+        ),
+        _flow_stage_expected(
+            "fanout.child.workdir_mismatch",
+            failure_class="fanout_child_workdir_mismatch",
+            title="Reader workdir/target mismatch (dispatch refused)",
+            source="fanout_runtime",
+            problem_class="artifact_contract",
+            suggested_action_kind="diagnose_reader_target_pinning",
+        ),
         _kernel_child_result("review.child.completed", failed=False),
         _kernel_child_result("review.child.failed", failed=True),
         _kernel_child_result("impl.child.completed", failed=False),
@@ -564,6 +650,39 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             supervisor_attention="none",
             autoresearch_eligible=False,
             producer_kind="kernel",
+        ),
+        EventProblemSpec(
+            event_type="autoresearch.resident_sidecar.failed",
+            event_class="abnormal",
+            problem_class="harness",
+            failure_class="autoresearch_resident_sidecar_failed",
+            source="autoresearch_resident",
+            severity="medium",
+            title="autoresearch.resident_sidecar.failed",
+            owner_route="run_manager",
+            action_policy="needs_diagnosis",
+            intervention_class="repair_harness",
+            suggested_action_kind="diagnose_autoresearch_resident_sidecar",
+            supervisor_attention="on_repeated",
+            autoresearch_eligible=False,
+            producer_kind="kernel",
+        ),
+        EventProblemSpec(
+            event_type="approval.rejected_by_policy",
+            event_class="expected_negative",
+            problem_class="human",
+            failure_class="approval_rejected_by_policy",
+            source="operator_inbox",
+            severity="low",
+            title="approval.rejected_by_policy",
+            owner_route="run_manager",
+            action_policy="informational",
+            suggested_action_kind="informational_governance",
+            supervisor_attention="none",
+            autoresearch_eligible=False,
+            producer_kind="kernel",
+            notification_policy="trace_only",
+            recovery_policy="none",
         ),
         EventProblemSpec(
             event_type="autoscale.scale_down.blocked",
@@ -1135,6 +1254,36 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             suggested_action_kind="diagnose_cost_collection",
             supervisor_attention="on_single",
             producer_kind="kernel",
+            notification_policy="owner_on_repair_failed",
+            recovery_policy="run_manager_then_autoresearch",
+            dedupe_key_fields=("scope", "role", "task_id"),
+        ),
+        EventProblemSpec(
+            event_type="cost.budget.exceeded",
+            event_class="abnormal",
+            problem_class="runtime_liveness",
+            failure_class="cost_budget_exceeded",
+            source="kernel_budget",
+            severity="high",
+            title="Cost budget exceeded",
+            owner_route="run_manager",
+            action_policy="needs_diagnosis",
+            intervention_class="diagnose",
+            suggested_route="run_manager_recovery",
+            suggested_action_kind="diagnose_budget_exceeded",
+            supervisor_attention="on_single",
+            run_manager_semantics=("pending_action",),
+            autoresearch_eligible=False,
+            producer_kind="kernel",
+            required_scope_any=("scope", "role", "task_id", "trace_id"),
+            notification_policy="owner_on_human_required",
+            recovery_policy="run_manager",
+            dedupe_key_fields=("scope", "role", "budget_usd"),
+            human_required_when=(
+                "budget_level_changed",
+                "owner_budget_decision_needed",
+                "run_manager_no_progress",
+            ),
         ),
         # --- E5(131-P2):attempt 合同决策事件 ---
         # 族内映射(131-P2-1 裁决 A 收编口径):started/succeeded/failed
@@ -1142,6 +1291,66 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
         # 映射,attempt_ledger 派生);heartbeat 由 worker.heartbeat 承载。
         # 显式发射的只有决策点新增信息:retry_scheduled(ordinal/cap/
         # lease_token)与 deadlettered(non-retryable 短路)。
+        EventProblemSpec(
+            event_type="task.attempt.started",
+            event_class="projection_only",
+            problem_class="workflow_progress",
+            failure_class="task_attempt_started",
+            source="kernel_dispatch",
+            severity="low",
+            title="Task attempt started",
+            owner_route="run_manager",
+            action_policy="informational",
+            supervisor_attention="none",
+            producer_kind="kernel",
+            required_scope_any=("task_id",),
+        ),
+        EventProblemSpec(
+            event_type="task.attempt.heartbeat",
+            event_class="projection_only",
+            problem_class="workflow_progress",
+            failure_class="task_attempt_heartbeat",
+            source="kernel_dispatch",
+            severity="low",
+            title="Task attempt heartbeat",
+            owner_route="run_manager",
+            action_policy="informational",
+            supervisor_attention="none",
+            producer_kind="kernel",
+            required_scope_any=("task_id",),
+        ),
+        EventProblemSpec(
+            event_type="task.attempt.succeeded",
+            event_class="projection_only",
+            problem_class="workflow_progress",
+            failure_class="task_attempt_succeeded",
+            source="kernel_dispatch",
+            severity="low",
+            title="Task attempt succeeded",
+            owner_route="run_manager",
+            action_policy="informational",
+            supervisor_attention="none",
+            producer_kind="kernel",
+            required_scope_any=("task_id",),
+        ),
+        EventProblemSpec(
+            event_type="task.attempt.failed",
+            event_class="expected_negative",
+            problem_class="workflow_progress",
+            failure_class="task_attempt_failed",
+            source="kernel_dispatch",
+            severity="medium",
+            title="Task attempt failed",
+            owner_route="run_manager",
+            action_policy="needs_diagnosis",
+            intervention_class="diagnose",
+            suggested_action_kind="diagnose_task_attempt_failure",
+            supervisor_attention="on_repeated",
+            run_manager_semantics=("pending_action",),
+            autoresearch_eligible=True,
+            producer_kind="kernel",
+            required_scope_any=("task_id",),
+        ),
         EventProblemSpec(
             event_type="task.attempt.retry_scheduled",
             event_class="projection_only",
@@ -1255,6 +1464,8 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             supervisor_attention="on_single",
             producer_kind="kernel",
             required_scope_any=("task_id",),
+            notification_policy="owner_immediate",
+            recovery_policy="human",
         ),
         # --- avbs-r4/r5 F 批新事件注册(131-P1 closure 首批,E1)---
         EventProblemSpec(
@@ -1457,6 +1668,8 @@ __all__ = [
     "AUTORESEARCH_ELIGIBLE_FAILURE_CLASSES",
     "EVENT_PROBLEM_SPECS",
     "EXPECTED_NEGATIVE_EVENT_TYPES",
+    "NOTIFICATION_POLICIES",
+    "RECOVERY_POLICIES",
     "RUN_MANAGER_PENDING_EVENT_TYPES",
     "RUN_MANAGER_POST_TERMINAL_EVENT_TYPES",
     "EventProblemSpec",

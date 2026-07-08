@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from zf.core.events.model import ZfEvent
-from zf.runtime.supervisor_attention import build_attention_items
+from zf.runtime.supervisor_attention import (
+    apply_attention_lifecycle,
+    build_attention_items,
+)
 
 
 def test_abnormal_event_registry_routes_runtime_events_to_attention() -> None:
@@ -116,6 +121,73 @@ def test_repeated_expected_negative_event_creates_diagnostic_attention() -> None
     assert items[0]["suggested_route"] == "autoresearch_trigger"
     assert items[0]["problem_envelope"]["problem_class"] == "candidate_quality"
     assert items[0]["source_event_ids"] == ["evt-test-failed-1", "evt-test-failed-2"]
+
+
+def test_attention_lifecycle_resolves_after_run_completed() -> None:
+    item = {
+        "fingerprint": "supervisor_projection_stale:/tmp/snapshot.json",
+        "attention_id": "attn-stale",
+        "status": "open",
+        "source_event_ids": ["evt-stale"],
+    }
+    events = [
+        ZfEvent(
+            id="evt-stale",
+            type="supervisor.projection.stale",
+            payload={"snapshot_path": "/tmp/snapshot.json"},
+        ),
+        ZfEvent(
+            id="evt-run-completed",
+            type="run.completed",
+            payload={"status": "passed", "run_id": "R-ISSUE"},
+        ),
+    ]
+
+    updated = apply_attention_lifecycle(
+        [item],
+        events,
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    assert updated[0]["status"] == "resolved"
+    assert updated[0]["quiesced_by"] == "later_progress"
+
+
+def test_attention_lifecycle_resolves_after_matching_fanout_terminal() -> None:
+    item = {
+        "fingerprint": "failure:fanout_child_pending:fanout-1:child-1",
+        "attention_id": "attn-fanout",
+        "status": "open",
+        "source_event_ids": ["evt-fanout-pending"],
+    }
+    events = [
+        ZfEvent(
+            id="evt-fanout-pending",
+            type="runtime.attention.needed",
+            payload={
+                "fanout_id": "fanout-1",
+                "child_id": "child-1",
+                "summary": "Fanout child dispatched without a terminal child event",
+            },
+        ),
+        ZfEvent(
+            id="evt-child-completed",
+            type="fanout.child.completed",
+            payload={
+                "fanout_id": "fanout-1",
+                "child_id": "child-1",
+                "status": "completed",
+            },
+        ),
+    ]
+
+    updated = apply_attention_lifecycle(
+        [item],
+        events,
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    assert updated[0]["status"] == "resolved"
 
 
 def test_repeated_flow_goal_blocked_routes_to_run_manager() -> None:

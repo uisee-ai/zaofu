@@ -226,3 +226,56 @@ def test_auth_error_suspends_task_for_operator(tmp_path: Path) -> None:
     events = EventLog(state_dir / "events.jsonl").read_all()
     assert any(e.type == "provider.stop.recovery" for e in events)
     assert any(e.type == "human.escalate" for e in events)
+
+
+def test_rate_limit_updates_run_goal_usage_limited(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="T1",
+        title="recover",
+        status="in_progress",
+        assigned_to="dev",
+    ))
+    orch = Orchestrator(state_dir, _config(state_dir), _StubTransport())
+
+    decision = orch._on_agent_api_blocked(ZfEvent(  # type: ignore[attr-defined]
+        type="agent.api_blocked",
+        actor="dev",
+        task_id="T1",
+        payload={"provider_stop_reason": "rate_limited"},
+    ))
+
+    assert decision is not None
+    assert decision.action == "skip"
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    goal_updates = [e for e in events if e.type == "run.goal.updated"]
+    assert goal_updates[-1].payload["status"] == "usage_limited"
+    assert goal_updates[-1].payload["source"] == "provider_stop_recovery"
+    assert any(e.type == "provider.stop.recovery" for e in events)
+
+
+def test_cost_budget_exceeded_updates_run_goal_budget_limited(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    orch = Orchestrator(state_dir, _config(state_dir), _StubTransport())
+
+    decision = orch._on_cost_budget_exceeded(ZfEvent(  # type: ignore[attr-defined]
+        type="cost.budget.exceeded",
+        actor="zf-cli",
+        payload={
+            "scope": "global",
+            "budget_usd": 1.0,
+            "current_usd": 1.2,
+        },
+    ))
+
+    assert decision is not None
+    assert decision.action == "skip"
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    goal_updates = [e for e in events if e.type == "run.goal.updated"]
+    assert goal_updates[-1].payload["status"] == "budget_limited"
+    assert goal_updates[-1].payload["source"] == "cost_budget_exceeded"

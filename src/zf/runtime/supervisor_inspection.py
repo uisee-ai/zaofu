@@ -414,6 +414,12 @@ def _emit_attention_events(
                 item.get("suggested_action")
                 if isinstance(item.get("suggested_action"), dict) else {}
             ),
+            "notification_policy": str(item.get("notification_policy") or ""),
+            "recovery_policy": str(item.get("recovery_policy") or ""),
+            "human_required_when": [
+                str(value) for value in item.get("human_required_when") or []
+                if str(value).strip()
+            ],
             "problem_envelope": problem_envelope_from_attention(item),
             "projection_ref": projection_ref,
         }

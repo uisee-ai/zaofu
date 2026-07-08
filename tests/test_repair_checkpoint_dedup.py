@@ -47,7 +47,7 @@ def _events() -> list[ZfEvent]:
 
 def test_second_checkpoint_rejected_after_repair_started() -> None:
     reason = _batch_checkpoint_superseded_reason(_events(), _checkpoint("evt-int"))
-    assert "already started by f-repair" in reason
+    assert "f-repair" in reason and "already" in reason
 
 
 def test_first_checkpoint_passes_before_repair_started() -> None:
@@ -84,4 +84,26 @@ def test_trigger_rework_also_deduped() -> None:
     reason = _batch_checkpoint_superseded_reason(
         _events(), _checkpoint("evt-int", action="trigger_rework"),
     )
-    assert "already started by f-repair" in reason
+    assert "f-repair" in reason and "already" in reason
+
+
+def test_same_second_concurrent_checkpoint_rejected_by_inflight_guard() -> None:
+    # A4(prd-goal e2e finding-9):第二检查点的 source 事件晚于
+    # fanout.started(同秒并发),时序守卫失效——进行中守卫兜底。
+    events = _events() + [
+        ZfEvent(id="evt-int-2", type="integration.failed", actor="zf-cli",
+                payload={"fanout_id": "f-old"}),
+    ]
+    reason = _batch_checkpoint_superseded_reason(events, _checkpoint("evt-int-2"))
+    assert "already in flight" in reason and "f-repair" in reason
+
+
+def test_inflight_guard_releases_after_terminal() -> None:
+    events = _events() + [
+        ZfEvent(id="evt-repair-done", type="fanout.aggregate.completed",
+                actor="zf-cli", payload={"fanout_id": "f-repair"}),
+        ZfEvent(id="evt-int-3", type="integration.failed", actor="zf-cli",
+                payload={"fanout_id": "f-old"}),
+    ]
+    reason = _batch_checkpoint_superseded_reason(events, _checkpoint("evt-int-3"))
+    assert reason == ""

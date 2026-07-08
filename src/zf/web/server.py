@@ -909,6 +909,58 @@ def create_app(
             default_project_opened_at=default_project_opened_at,
         ))
 
+    @app.get("/api/workspace/onboarding")
+    def workspace_onboarding() -> JSONResponse:
+        from zf.core.workspace.onboarding import detect_backends, read_onboarding
+        from zf.runtime.env_preflight import check_tmux
+
+        state = read_onboarding()
+        tmux = check_tmux()
+        return JSONResponse({
+            "schema_version": state.schema_version,
+            "show_welcome": state.show_welcome,
+            "completed": state.completed,
+            "skipped": state.skipped,
+            "step": state.step,
+            "backend": state.backend,
+            "notifications": state.notifications,
+            "backends": detect_backends(),
+            "preflight": [
+                {"name": tmux.name, "ok": tmux.ok, "detail": tmux.detail},
+            ],
+        })
+
+    @app.get("/api/workspace/bootstrap/inspect")
+    def workspace_bootstrap_inspect(root: str = "", backend: str = "claude") -> JSONResponse:
+        from zf.core.workspace.bootstrap_inspect import inspect_project
+
+        if not root.strip():
+            raise HTTPException(status_code=400, detail="root required")
+        return JSONResponse(inspect_project(root, backend=backend or "claude"))
+
+    @app.post("/api/workspace/onboarding")
+    def workspace_onboarding_update(payload: dict) -> JSONResponse:
+        from zf.core.workspace.onboarding import apply_action
+
+        action = str((payload or {}).get("action") or "")
+        if action not in {"step", "complete", "skip", "reset"}:
+            raise HTTPException(status_code=400, detail="invalid onboarding action")
+        raw_step = (payload or {}).get("step")
+        state = apply_action(
+            action,
+            step=int(raw_step) if isinstance(raw_step, (int, float, str)) and str(raw_step).strip().lstrip("-").isdigit() else None,
+            backend=str((payload or {}).get("backend") or ""),
+            notifications=str((payload or {}).get("notifications") or ""),
+            now=datetime.now(timezone.utc).isoformat(),
+        )
+        return JSONResponse({
+            "ok": True,
+            "show_welcome": state.show_welcome,
+            "completed": state.completed,
+            "skipped": state.skipped,
+            "step": state.step,
+        })
+
     @app.post("/api/workspace/projects/validate-path")
     async def workspace_validate_path(request: Request) -> JSONResponse:
         payload = await _request_json(request)
@@ -1167,6 +1219,12 @@ def create_app(
                 if flow_text is not None:
                     root.mkdir(parents=True, exist_ok=True)
                     (root / "zf.yaml").write_text(flow_text, encoding="utf-8")
+                    # Controller flows reference sibling common/ profile+skill
+                    # assets; copy them so profile_sources aren't dangling
+                    # (CLI `zf profile bootstrap` does the same via this helper).
+                    from zf.core.profile.apply import materialize_flow_assets
+
+                    materialize_flow_assets(preset_arg, root, config_path=root / "zf.yaml")
                 preset_arg = None
         try:
             result = ProjectInitializer(
@@ -1211,6 +1269,9 @@ def create_app(
                 "updated": list(result.instruction_docs.updated),
                 "skipped": list(result.instruction_docs.skipped),
             },
+            # onboarding 与 CLI init 对齐(入口打通):
+            "git_hook": result.git_hook_status,
+            "setup_suggestion": result.setup_suggestion or None,
             "profile": profile_applied,
             "notes": notes_written,
             "kind": generated_flow_kind,

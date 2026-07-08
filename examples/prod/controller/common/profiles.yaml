@@ -3,12 +3,41 @@ kind: ConfigProfile
 metadata:
   name: prod-runtime/v1
 spec:
+  skill_sources:
+  - {name: agent-skills, path: /home/user/workspace/agent-skills/skills, mode: readonly}
+  - {name: zaofu-skills, path: /path/to/zaofu/skills, mode: readonly}
+  flow_defaults:
+    issue:
+      roleSkillBundles:
+        issue-triage: [using-agent-skills, debugging-and-error-recovery, source-driven-development, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-issue-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth]
+        discovery: [using-agent-skills, zf-verify-rescan-replan, zf-gap-task-synth, code-review-and-quality, zf-harness-verification-checklist, zf-verify-gap-producer-contract]
+        judge-issue: [using-agent-skills, zf-harness-gate-evaluator, zf-goal-closure-replan-contract]
+        fix: [using-agent-skills, incremental-implementation, test-driven-development, debugging-and-error-recovery, source-driven-development, zf-harness-done-contract]
+        verify: [using-agent-skills, test-driven-development, code-review-and-quality, debugging-and-error-recovery, zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract]
+    prd:
+      roleSkillBundles:
+        scan: [using-agent-skills, spec-driven-development, source-driven-development, context-engineering, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-plan-task-map-contract]
+        planner: [using-agent-skills, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth, planning-and-task-breakdown, spec-driven-development]
+        discovery: [using-agent-skills, zf-verify-rescan-replan, zf-gap-task-synth, code-review-and-quality, zf-harness-verification-checklist, zf-verify-gap-producer-contract]
+        judge-prd: [using-agent-skills, zf-harness-gate-evaluator, zf-goal-closure-replan-contract, shipping-and-launch]
+        impl: [using-agent-skills, incremental-implementation, test-driven-development, debugging-and-error-recovery, source-driven-development, zf-harness-done-contract]
+        verify: [using-agent-skills, test-driven-development, code-review-and-quality, debugging-and-error-recovery, zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract]
   runtime:
+    skills:
+      strict: false
+      materialize: copy
+    workdirs:
+      enabled: true
+      mode: worktree
     run_manager:
       backend: codex
       resident_agent:
         enabled: true
         session_mode: dedicated
+    autoresearch_resident:
+      enabled: true
+      interval_seconds: 10
+      max_actions_per_tick: 1
   workflow:
     work_units:
       enabled: true
@@ -20,12 +49,34 @@ kind: ConfigProfile
 metadata:
   name: refactor-controller-runtime/v3
 spec:
+  skill_sources:
+  - {name: agent-skills, path: /home/user/workspace/agent-skills/skills, mode: readonly}
+  - {name: zaofu-skills, path: /path/to/zaofu/skills, mode: readonly}
+  flow_defaults:
+    refactor:
+      roleSkillBundles:
+        scan-contract: [using-agent-skills, source-driven-development, context-engineering, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-plan-task-map-contract, zf-refactor-plan-synth, zf-harness-spec-freeze-contract, zf-harness-evidence-collection]
+        scan-runtime: [using-agent-skills, source-driven-development, context-engineering, zf-harness-evidence-collection]
+        scan-verification: [using-agent-skills, code-review-and-quality, zf-harness-verification-checklist, zf-mechanical-claim-verifier]
+        refactor-plan-synth: [using-agent-skills, planning-and-task-breakdown, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth]
+        refactor-verify-bridge: [using-agent-skills, zf-verify-gap-producer-contract, zf-verify-rescan-replan, zf-gap-task-synth]
+        module-parity-scan: [using-agent-skills, source-driven-development, code-review-and-quality, zf-verify-rescan-replan, zf-verify-gap-producer-contract]
+        judge-refactor: [using-agent-skills, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-harness-gate-evaluator, zf-goal-closure-replan-contract, zf-mechanical-claim-verifier]
+        impl: [using-agent-skills, incremental-implementation, test-driven-development, debugging-and-error-recovery, source-driven-development, code-simplification, zf-harness-done-contract]
+        verify: [using-agent-skills, test-driven-development, code-review-and-quality, debugging-and-error-recovery, zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-verify-rescan-replan, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract]
   runtime:
+    workdirs:
+      enabled: true
+      mode: worktree
     run_manager:
       backend: codex
       resident_agent:
         enabled: true
         session_mode: dedicated
+    autoresearch_resident:
+      enabled: true
+      interval_seconds: 10
+      max_actions_per_tick: 1
   workflow:
     plan_approval: false
     admission_replan:

@@ -54,7 +54,12 @@ commit.
    - reject ambiguous "everything" if unrelated proposed items are present;
    - keep unapproved items in `backlogs/`.
 2. Activate:
-   - move approved candidates with `git mv backlogs/<file>.md tasks/active/`;
+   - `backlogs/` is gitignored (`.gitignore:48`), so typical candidates are
+     untracked — `git mv` fails there (`fatal: not under version control`).
+     Move with `mv backlogs/<file>.md tasks/active/` then
+     `git add tasks/active/<file>.md`;
+   - only for the rare already-tracked file does `git mv backlogs/<file>.md
+     tasks/active/` apply;
    - if a task is already in `tasks/active/`, keep its path;
    - preserve UTC filename and existing content.
 3. Implement:
@@ -103,6 +108,16 @@ commit.
   code.
 - Keep `docs/`, `ideas/`, `prompt/`, runtime state, and dotfile policy aligned
   with repo rules and `.gitignore`; do not commit gitignored local candidates.
+- Multi-driver git discipline (CLAUDE.md hard rule, 2026-06-11): when other
+  sessions may be driving in parallel, work on `wip/<driver>-<utc-date>-<slug>`
+  rather than committing straight to `dev`; before each `dev` commit re-check
+  `git log -1` — if `HEAD` moved unexpectedly, another driver is active, so
+  switch to a work branch instead of committing on `dev`. (See yoke/git-evidence
+  for evidence-before-commit method.)
+- dev pre-merge gate (CLAUDE.md hard rule, 2026-07-04): if this batch's commits
+  are to land on `dev`, first run `bash scripts/dev-premerge-gate.sh` (<60s
+  contract sentinels); red means do not merge. It does not replace full
+  regression — it only blocks the classes most likely to redden a merge.
 
 ## When To Stop
 
@@ -132,3 +147,11 @@ Use a concise Chinese closeout:
 ```
 
 How to test: ask "使用 zf-backlog-batch-closeout 关闭这批已批准 backlog，完成后只 commit 不 push。"
+
+## Maintenance
+
+This skill ships as three independent copies (not symlinks):
+`skills/`, `.claude/skills/`, and `.codex/skills/`
+`zf-backlog-batch-closeout/SKILL.md`. Any edit here must be mirrored to all
+three or the copies silently drift — or convert them to single-source
+distribution.

@@ -265,7 +265,17 @@ def _workflow_events_with_candidate_context(
             for _, event in projected
             if getattr(event, "id", "")
         }
+        # A global failure that happened BEFORE this task's first event cannot be
+        # a failure OF this task. Without this guard, a project reused across
+        # rounds leaks stale prd.blocked / candidate failures from an earlier run
+        # (task_id=None, matched only by a shared/empty context ref) onto a
+        # brand-new task, injecting phantom review.rejected -> verify_state=failed
+        # -> the card shows "blocked" while the task is actually in_progress
+        # (feishu e2e). seq is the append-only log position, so it is chronological.
+        task_start_seq = min((seq for seq, _ in task_events), default=-1)
         for seq, event in all_events:
+            if seq < task_start_seq:
+                continue
             event_id = str(getattr(event, "id", "") or "")
             if event_id and event_id in existing_event_ids:
                 continue

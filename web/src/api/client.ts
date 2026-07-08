@@ -1,4 +1,6 @@
 import type {
+  OnboardingStatus,
+  LoopViewProjection,
   ActionResponse,
   AgentSessionHistoryPage,
   AgentSessionRawOutput,
@@ -88,6 +90,58 @@ function webActionAuthHeaders(): Record<string, string> {
 
 export function getWorkspaceProjects(): Promise<WorkspaceProjectsPage> {
   return requestJson<WorkspaceProjectsPage>("/api/workspace/projects");
+}
+
+export async function getOnboarding(): Promise<OnboardingStatus> {
+  // Gate check must reflect current server state — never the GET cache
+  // (a stale completed/skipped read would wrongly show or hide the wizard).
+  const response = await fetch("/api/workspace/onboarding", {
+    headers: { Accept: "application/json" },
+    cache: "no-store",
+  });
+  if (!response.ok) throw new Error(`onboarding fetch failed: ${response.status}`);
+  return response.json();
+}
+
+export interface BootstrapInspect {
+  schema_version: string;
+  root: string;
+  confidence: string;
+  stack: string;
+  layout: string;
+  recommended_flow: string;
+  candidates: Array<{
+    kind: "setup" | "gate" | "doc_fact" | "flow";
+    label: string;
+    note: string;
+    value?: string;
+    values?: string[];
+    facts?: Record<string, string>;
+  }>;
+  error?: string;
+}
+
+export async function inspectBootstrap(root: string, backend = "claude"): Promise<BootstrapInspect> {
+  const response = await fetch(`/api/workspace/bootstrap/inspect?root=${encodeURIComponent(root)}&backend=${encodeURIComponent(backend)}`, {
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`inspect failed: ${response.status}`);
+  return response.json();
+}
+
+export async function updateOnboarding(payload: {
+  action: "step" | "complete" | "skip" | "reset";
+  step?: number;
+  backend?: string;
+  notifications?: string;
+}): Promise<Record<string, unknown>> {
+  const response = await fetch("/api/workspace/onboarding", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) throw new Error(`onboarding update failed: ${response.status}`);
+  return response.json();
 }
 
 export async function validateWorkspaceProjectPath(root: string): Promise<Record<string, unknown>> {
@@ -338,6 +392,10 @@ export function getDeliveryThickTrace(
 
 export function getLoops(projectId?: string): Promise<LoopProjection> {
   return requestJson<LoopProjection>(`${projectPrefix(projectId)}/loops`);
+}
+
+export function getLoopView(projectId?: string): Promise<LoopViewProjection> {
+  return requestJson<LoopViewProjection>(`${projectPrefix(projectId)}/loop-view`);
 }
 
 export function getMeasureLoops(

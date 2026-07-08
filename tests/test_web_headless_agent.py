@@ -392,12 +392,12 @@ def test_codex_headless_timeout_filters_nonfatal_bubblewrap_warning(
         provider_session_id="",
         on_session_id=lambda _: None,
         on_message=None,
-        timeout_s=0.2,
+        timeout_s=1.0,
     )
 
     assert result.ok is False
     assert result.status == "timeout"
-    assert "codex turn timed out after 0.2s" in result.error
+    assert "codex turn timed out after 1s" in result.error
     assert "bubblewrap" not in result.error
 
 

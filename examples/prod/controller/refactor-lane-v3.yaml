@@ -17,14 +17,9 @@ spec:
   verifyRescan: module_parity
   completionThreshold: close_p0_p1
   roleSkillBundles:
-    scan-contract: [zf-harness-spec-freeze-contract, zf-harness-evidence-collection]
-    scan-runtime: [zf-cr, zf-harness-evidence-collection]
-    scan-verification: [zf-harness-verification-checklist, zf-mechanical-claim-verifier]
-    refactor-plan-synth: [zf-refactor-plan-synth, zf-plan-task-map-contract]
-    refactor-verify-bridge: [zf-verify-rescan-replan, zf-gap-task-synth]
-    module-parity-scan: [zf-verify-rescan-replan, zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
-    judge-refactor: [zf-harness-gate-evaluator, zf-goal-closure-replan-contract]
-    impl: [zf-harness-done-contract, zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    module-parity-scan: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    impl: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    verify: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
 ---
 apiVersion: zaofu.dev/v1
 kind: ZfConfig
@@ -47,8 +42,6 @@ spec:
   version: "1.0"
   project:
     name: refactor-lane-v3
-  skill_sources:
-  - {name: zaofu-skills, path: ../../../skills, mode: readonly}
   workflow:
     dag:
       external_triggers: [refactor.scan.requested]

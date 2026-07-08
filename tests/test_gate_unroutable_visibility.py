@@ -57,3 +57,46 @@ def test_blocked_external_gate_does_not_emit(tmp_path: Path) -> None:
         events=[], gate_dispatcher=None,
     )
     assert "workflow.resume.gate_unroutable" not in [e.type for e in log.read_all()]
+
+
+def test_force_gate_dispatch_routes_blocked_external_gate(tmp_path: Path) -> None:
+    """FIX-2(bizsim r4):operator 显式强制时,blocked_external_gate 可借
+    out-of-band dispatcher 推进;默认(无 force)保持 stalled 不误派。"""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]")
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(id="T-GATE", title="x", status="in_progress"))
+
+    blocking = ZfEvent(type="candidate.ready", actor="zf-cli", payload={})
+    dispatched: list[str] = []
+
+    checkpoint = _checkpoint("blocked_external_gate")
+    checkpoint = WorkflowResumeCheckpoint(
+        **{**checkpoint.to_dict(), "blocking_event_id": blocking.id},
+    )
+
+    # 默认:不派发,stalled。
+    _apply_checkpoint(
+        store, writer, checkpoint,
+        events=[blocking], gate_dispatcher=lambda e: dispatched.append(e.id),
+    )
+    assert dispatched == []
+
+    # operator 强制:走 out-of-band 派发,事件标注 operator 强制来源。
+    result = _apply_checkpoint(
+        store, writer, checkpoint,
+        events=[blocking],
+        gate_dispatcher=lambda e: dispatched.append(e.id),
+        force_gate_dispatch=True,
+    )
+    assert dispatched == [blocking.id]
+    assert result.applied is True
+    applied = [
+        e for e in log.read_all()
+        if e.type == "workflow.resume.applied"
+        and e.payload.get("mode") == "operator_forced_gate_dispatch"
+    ]
+    assert len(applied) == 1

@@ -8,7 +8,7 @@ import re
 import shutil
 import subprocess
 import time
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -106,6 +106,10 @@ class CandidateRebuilder:
         )
         if not tasks:
             return None
+        tasks = self._sync_tasks_with_latest_completions(
+            tasks,
+            event_writer=event_writer,
+        )
 
         branch = f"{self.config.runtime.git.candidate_branch_prefix}/{pdd_id}"
         requested_base_ref = self.config.runtime.git.candidate_base_ref
@@ -352,6 +356,72 @@ class CandidateRebuilder:
                 approval_event_id=str(entry.get("trigger_event_id") or ""),
                 approval_event_type="task.ref.updated",
             ))
+        return out
+
+    def _sync_tasks_with_latest_completions(
+        self,
+        tasks: list[CandidateTask],
+        *,
+        event_writer: EventWriter | None = None,
+    ) -> list[CandidateTask]:
+        """U1(缝上传值/顺序绑定):集成前把 task ref 与最新有效完成对齐。
+
+        ref 链挂 run_once wake 路径,滞后 fanout 补扫分钟级;集成直接读
+        索引会永远慢一拍(r6.1 断点续跑实弹:空 diff 3 轮 + 慢一拍 2 轮,
+        含触发停机的第 12 轮伪拒)。此处以事件流中该 task 最新的 worker
+        完成事件为准,同步驱动 TaskRefManager——复用其全部握手校验
+        (分支头一致/脏工作区),不绕过任何检查;wake 路径事后重复处理
+        为幂等。kernel 回声(actor=zf-cli)携带 manifest 旧值,不作数。
+        """
+        if not tasks:
+            return tasks
+        latest: dict[str, ZfEvent] = {}
+        for event in self.event_log.read_all():
+            if event.type != "dev.build.done" or not event.task_id:
+                continue
+            if str(event.actor or "") == "zf-cli":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("source_commit") or "").strip():
+                latest[event.task_id] = event
+        out: list[CandidateTask] = []
+        for task in tasks:
+            event = latest.get(task.task_id)
+            if event is None:
+                out.append(task)
+                continue
+            commit = str(event.payload.get("source_commit") or "").strip()
+            if not commit or commit == task.source_commit:
+                out.append(task)
+                continue
+            try:
+                from zf.runtime.task_refs import TaskRefManager
+
+                result = TaskRefManager(
+                    state_dir=self.state_dir,
+                    project_root=self.project_root,
+                    config=self.config,
+                ).process_dev_build_done(event)
+            except Exception:
+                out.append(task)
+                continue
+            if result is not None and result.status == "updated":
+                synced = str(result.payload.get("source_commit") or commit)
+                if event_writer is not None:
+                    event_writer.append(ZfEvent(
+                        type="task.ref.updated",
+                        actor="zf-cli",
+                        task_id=task.task_id,
+                        payload={
+                            **result.payload,
+                            "source": "candidate_integration_sync",
+                        },
+                        causation_id=event.id,
+                        correlation_id=event.correlation_id,
+                    ))
+                out.append(replace(task, source_commit=synced))
+            else:
+                out.append(task)
         return out
 
     def pdd_id_for_task(self, task_id: str, event: ZfEvent | None = None) -> str:
@@ -1370,11 +1440,18 @@ class CandidateRebuilder:
         *,
         declared_files: set[str] | None = None,
     ) -> tuple[list[str], list[str]]:
+        # FIX-10(bizsim r4 F10):--cherry-pick 按 patch-id 排除 base 侧已含
+        # 等价补丁的提交。增量 base(旧 candidate)里是 cherry-pick 拷贝、
+        # hash 不同,朴素 base..ref 会把同一补丁再集成一遍——r4 churn 期
+        # candidate 树即因重复系列而 typecheck 断裂。
         out = self._git(
             self.project_root,
             "rev-list",
             "--reverse",
-            f"{base_ref}..refs/heads/{task.task_ref}",
+            "--cherry-pick",
+            "--right-only",
+            "--no-merges",
+            f"{base_ref}...refs/heads/{task.task_ref}",
         )
         commits = [line.strip() for line in out.splitlines() if line.strip()]
         if not commits:
@@ -1384,12 +1461,36 @@ class CandidateRebuilder:
                 f"refs/heads/{task.task_ref}",
             )
             return [], [resolved]
+        # E5(prd-goal e2e finding-13):子集重建以旧 candidate 为基,
+        # task 分支补丁(cherry-pick 后 SHA 不同)对 rev-list 永远是
+        # "新提交" → 同批修复被重复堆叠 ×3。按 patch-id(git cherry)
+        # 过滤 base 已含的等价补丁。
+        try:
+            cherry_out = self._git(
+                self.project_root,
+                "cherry",
+                base_ref,
+                f"refs/heads/{task.task_ref}",
+            )
+            equivalent = {
+                line.split()[1]
+                for line in cherry_out.splitlines()
+                if line.startswith("-") and len(line.split()) > 1
+            }
+        except Exception:
+            equivalent = set()
+        already_in_base: list[str] = []
+        if equivalent:
+            already_in_base = [c for c in commits if c in equivalent]
+            commits = [c for c in commits if c not in equivalent]
+            if not commits:
+                return [], already_in_base
         if declared_files is None:
             declared_files = self._declared_task_files(task.task_id)
         if not declared_files:
-            return commits, []
+            return commits, already_in_base
         selected: list[str] = []
-        skipped: list[str] = []
+        skipped: list[str] = list(already_in_base)
         for commit in commits:
             commit_files = self._commit_files(commit)
             if not commit_files or _paths_overlap(commit_files, declared_files):
@@ -1397,7 +1498,7 @@ class CandidateRebuilder:
             else:
                 skipped.append(commit)
         if not selected:
-            return commits, []
+            return commits, already_in_base
         return selected, skipped
 
     def _candidate_task_scope_files(

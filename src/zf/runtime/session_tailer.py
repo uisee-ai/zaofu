@@ -68,9 +68,15 @@ class _BaseSessionTailer:
         """
         if instance_id in self._threads:
             return
+        initial_offset = 0
+        if session_path.exists():
+            try:
+                initial_offset = session_path.stat().st_size
+            except OSError:
+                initial_offset = 0
         t = threading.Thread(
             target=self._tail_loop,
-            args=(instance_id, session_path),
+            args=(instance_id, session_path, initial_offset),
             name=f"SessionTailer-{instance_id}",
             daemon=True,
         )
@@ -82,16 +88,18 @@ class _BaseSessionTailer:
         for t in self._threads.values():
             t.join(timeout=1.0)
 
-    def _tail_loop(self, instance_id: str, session_path: Path) -> None:
+    def _tail_loop(
+        self,
+        instance_id: str,
+        session_path: Path,
+        initial_offset: int,
+    ) -> None:
         """Main tail loop: open file when available, track offset, emit."""
-        offset = 0
-        # If the file already exists when we start, begin at EOF so
-        # restart doesn't double-emit history. New files start at 0.
-        if session_path.exists():
-            try:
-                offset = session_path.stat().st_size
-            except OSError:
-                offset = 0
+        # If the file already exists when tail() is called, begin at EOF so
+        # restart doesn't double-emit history. If it is created immediately
+        # after tail() returns, start at 0; computing this inside the thread is
+        # racy and can skip the first fresh line.
+        offset = initial_offset
         while not self._stopping.is_set():
             try:
                 if session_path.exists():

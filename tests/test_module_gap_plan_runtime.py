@@ -308,6 +308,43 @@ def test_prd_verify_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path
     assert [sent[0] for sent in transport.sent] == ["flow-discovery"]
 
 
+def test_prd_test_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path) -> None:
+    _state_dir, log, transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="prd",
+        discovery_profile="product_completeness",
+        with_discovery_stage=True,
+    )
+
+    decisions = orch.run_once(events=[ZfEvent(
+        id="prd-test-passed-1",
+        type="test.passed",
+        actor="zf-cli",
+        correlation_id="trace-prd",
+        payload={
+            "pdd_id": "PRD-1",
+            "feature_id": "PRD-1",
+            "trace_id": "trace-prd",
+            "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
+            "candidate_ref": "cand/PRD-1",
+        },
+    )])
+
+    events = log.read_all()
+    requested = [event for event in events if event.type == "flow.discovery.requested"]
+    started = [event for event in events if event.type == "fanout.started"]
+    assert any(decision.action == "bridge" for decision in decisions)
+    assert len(requested) == 1
+    assert requested[0].payload["flow_kind"] == "prd"
+    assert requested[0].payload["discovery_profile"] == "product_completeness"
+    assert requested[0].payload["source_event_id"] == "prd-test-passed-1"
+    assert requested[0].payload["source"] == "post_verify_flow_discovery_bridge"
+    assert [event.payload["stage_id"] for event in started] == [
+        "prd-post-verify-discovery",
+    ]
+    assert [sent[0] for sent in transport.sent] == ["flow-discovery"]
+
+
 def test_issue_judge_passed_without_quality_evidence_blocks_goal(
     tmp_path: Path,
 ) -> None:
@@ -528,6 +565,8 @@ def test_flow_discovery_completed_without_gaps_closes_goal(
             "trace_id": "trace-issue-clean",
             "task_map_ref": ".zf/artifacts/ISSUE-123/task_map.json",
             "open_p0_p1_gap_count": 0,
+            "evidence_refs": ["reports/ISSUE-123/discovery.json"],
+            "test_refs": ["pytest"],
         },
     )])
 
@@ -537,6 +576,44 @@ def test_flow_discovery_completed_without_gaps_closes_goal(
     assert len(closed) == 1
     assert closed[0].payload["flow_kind"] == "issue"
     assert closed[0].payload["source_event_id"] == "flow-discovery-clean"
+    assert closed[0].payload["evidence_refs"] == ["reports/ISSUE-123/discovery.json"]
+    assert closed[0].payload["test_refs"] == ["pytest"]
+
+
+def test_flow_discovery_nested_report_without_gaps_closes_goal(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, _transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="issue",
+        discovery_profile="regression_impact",
+    )
+
+    decisions = orch.run_once(events=[ZfEvent(
+        id="flow-discovery-nested-clean",
+        type="flow.discovery.completed",
+        actor="flow-discovery",
+        correlation_id="trace-issue-clean",
+        payload={
+            "pdd_id": "ISSUE-123",
+            "feature_id": "ISSUE-123",
+            "flow_kind": "issue",
+            "trace_id": "trace-issue-clean",
+            "task_map_ref": ".zf/artifacts/ISSUE-123/task_map.json",
+            "evidence_refs": ["reports/ISSUE-123/discovery.json"],
+            "test_refs": ["pytest"],
+            "report": {
+                "status": "passed",
+                "recommendation": "approve",
+                "open_gap_count": 0,
+            },
+        },
+    )])
+
+    events = log.read_all()
+    assert any(decision.action == "bridge" for decision in decisions)
+    assert [event.type for event in events].count("flow.goal.closed") == 1
+    assert not [event for event in events if event.type == "flow.goal.blocked"]
 
 
 def test_verify_parity_scan_request_starts_reader_fanout(tmp_path: Path) -> None:

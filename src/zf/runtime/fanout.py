@@ -165,6 +165,22 @@ class FanoutReportValidation:
     synthetic: bool = False
 
 
+REPORT_AUDIT_FIELD_KEYS = (
+    "checks",
+    "probes",
+    "artifact_refs",
+    "evidence_refs",
+    "test_refs",
+    "e2e_refs",
+    "demo_refs",
+    "regression_refs",
+    "parity_refs",
+    "provider_refs",
+    "scores",
+    "acceptance_evidence_update",
+)
+
+
 def validate_fanout_report(
     raw: object,
     *,
@@ -239,6 +255,9 @@ def validate_fanout_report(
         "findings": findings,
         "recommendation": recommendation,
     }
+    for key in REPORT_AUDIT_FIELD_KEYS:
+        if key in raw:
+            report[key] = raw[key]
     if diagnostics:
         report["status"] = "failed"
         report["recommendation"] = "reject"

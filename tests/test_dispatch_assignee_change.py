@@ -216,6 +216,51 @@ class TestC3Reassignment:
         assert any(d.action == "dispatch" and d.task_id == task.id
                    for d in decisions)
 
+    def test_same_assignee_workflow_resume_rework_redispatches(
+        self, state_dir, layer2_config, transport,
+    ):
+        task = Task(title="T1", status="in_progress", assigned_to="planner")
+        TaskStore(state_dir / "kanban.json").add(task)
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="task.assigned",
+            actor="zf-cli",
+            task_id=task.id,
+            payload={"assignee": "planner", "role": "planner"},
+        ))
+        log.append(ZfEvent(
+            type="task.dispatched",
+            actor="orchestrator",
+            task_id=task.id,
+            payload={"assignee": "planner", "role": "planner"},
+        ))
+        log.append(ZfEvent(
+            type="task.assigned",
+            actor="zf-cli",
+            task_id=task.id,
+            payload={
+                "assignee": "planner",
+                "role": "planner",
+                "source": "workflow_resume_rework",
+                "trigger_event": "prd.plan.failed",
+            },
+        ))
+
+        config = ZfConfig(
+            project=ProjectConfig(name="t"),
+            session=SessionConfig(tmux_session="t"),
+            roles=[
+                RoleConfig(name="orchestrator", backend="mock"),
+                RoleConfig(name="planner", backend="mock"),
+            ],
+        )
+
+        orch = Orchestrator(state_dir, config, transport)
+        decisions = orch._dispatch_ready()
+
+        assert any(d.action == "dispatch" and d.task_id == task.id
+                   for d in decisions)
+
     def test_no_dispatch_for_orchestrator_role(
         self, state_dir, layer2_config, transport,
     ):

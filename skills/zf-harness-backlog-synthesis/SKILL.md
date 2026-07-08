@@ -42,6 +42,11 @@ synthesis or explicitly finish the plan-only artifact handoff.
 
 ## Task-map hard contract (multi-task splits — R25 lessons)
 
+> 机器契约的**权威形状**(`task_map.json` 字段、`schema_version`、
+> vertical-slice 分解、assembly 任务规则、fail-closed / fingerprint dedupe)
+> 在 `zf-plan-task-map-contract`——一处权威,此处不重述。下面四条是
+> orchestrator 合成时的 R25 admission killers,是那份契约**之上的增量教训**。
+
 When your output is a multi-task `task_map.json` (refactor/greenfield
 splits), four rules are admission/review killers. All four were hit in
 real runs (hermes R24/R25 — zaofu
@@ -83,6 +88,16 @@ Pre-flight self-check before emitting `task_map.ready`:
     no invented tasks beyond the plan)
 ```
 
+**Plan 审批门(emit `task_map.ready` 之后,不是自检项而是运行后果)**: 若
+`workflow.plan_approval_enabled=True`,不要假设 kernel 立即派发。B14
+(doc 93,`orchestrator_fanout.py` `_plan_approval_satisfied`)会先挂
+`plan.approval.requested` 并 hold,等 operator 的 `plan.approved` 才孵化
+(`plan.rejected` 后同 `plan_id` 不再重发 requested)。`plan_id` = 触发
+事件 id。不要为同一 `stage+pdd+task` 集重发 `task_map.ready`:已有未决 plan
+时 kernel 发 `plan.minting.suppressed`(`reason: pending_plan_same_fingerprint`,
+`duplicate_of` 指向未决 plan)并 hold,不铸新审批——replan 必须实质改动 task 集
+或等待未决 plan 被批/驳,重发同一份 map 不算重试。
+
 ## Inputs you have
 
 | Source | Where to read |
@@ -111,9 +126,15 @@ Every implementation task contract MUST contain these 6 fields:
 ### Step 1: Read arch + critic events and candidate artifacts
 
 ```bash
-# Find arch.proposal.done for this task
-arch_event=$(zf events --task "$task_id" --type arch.proposal.done | tail -1)
-critic_event=$(zf events --task "$task_id" --type design.critique.done | tail -1)
+# `zf events` 查询只支持 --type / --last(没有 --task):拉最近同类型事件后
+# 自行按 task_id 过滤取最后一条,或改用 `zf events trace <event_id>` 追因果链。
+pick() { zf events --type "$1" --last 50 | python3 -c "
+import sys, json
+for l in reversed(sys.stdin.readlines()):
+    if l.strip() and json.loads(l).get('task_id') == '$task_id':
+        print(l.rstrip()); break"; }
+arch_event=$(pick arch.proposal.done)
+critic_event=$(pick design.critique.done)
 ```
 
 Parse out the relevant fields and artifact refs. The events are JSONL — use
@@ -183,8 +204,10 @@ zf emit task.contract.update --task "$task_id" --payload-file .zf/tmp/contract.j
 ```
 
 This updates kanban.json with the synthesized contract. Kernel's
-`apply_sprint_contract_event` handles this (legitimate housekeeping — it's
-responding to a Layer-2 directive, not auto-projecting).
+`apply_task_contract_event` (`src/zf/runtime/housekeeping.py`) handles this
+(legitimate housekeeping — it's responding to a Layer-2 directive, not
+auto-projecting). The old `sprint_contract` naming is retired by the CLAUDE.md
+hard rule; the field is `contract` and the function is `apply_task_contract_event`.
 
 ### Step 4: Assign to the configured implementation role
 
@@ -240,6 +263,12 @@ task stays non-terminal for bounded rework.
 
 When does a single arch proposal warrant N parallel implementation tasks?
 
+> 纵切优先:每个 slice 是"一个行为 + 它自己的生产代码 + 它自己的测试"同任务
+> (默认形状的权威在 `zf-plan-task-map-contract` §Decomposition Rule 与
+> `yoke/vertical-slicing`)。下面的"≥2 packages"是粗粒度闸门,不是按文件类型
+> (code / test / config)横切的许可——横切会在 writer fanout 的 `allowed_paths`
+> 处 dead-end 到 `integration.failed`。
+
 **Fanout if ALL of these**:
 - arch.file_plan touches ≥ 2 packages
 - packages are independent (no shared file like package.json edits)
@@ -263,7 +292,12 @@ zf kanban assign "$sub_task_1" <implementation-role-from-zf.yaml>
 zf kanban assign "$sub_task_2" <implementation-role-from-zf.yaml>
 ```
 
-Kernel will dispatch them in parallel to the configured writer role pool.
+Kernel dispatches the assigned sub-tasks to the configured writer role pool.
+Caveat: if you instead drive fanout through `task_map.ready` (affinity-lane /
+`fanout_writer_scoped`) and `workflow.plan_approval_enabled=True`, plan minting
+first holds for operator `plan.approved` (B14, doc 93) — dispatch is not
+immediate, and re-emitting the same `stage+pdd+task` set while a plan is pending
+is suppressed via `plan.minting.suppressed`. See the Plan 审批门 note above.
 
 ## Affinity lane task-map requirements
 

@@ -500,6 +500,18 @@ class TestTaskBriefing:
             "design.critique.done"
         ) in briefing
 
+    def test_verify_lane_briefing_requires_evidence_refs(self):
+        """LB-3: fanout verify-lane completes on lane.stage.completed and must
+        get the evidence clause, else it ships empty evidence_refs (U20
+        stage.report.evidence_missing on the light baseline)."""
+        config = ZfConfig(project=ProjectConfig(name="test"))
+        role = RoleConfig(name="verify-lane-0", publishes=["lane.stage.completed"])
+        task = Task(id="T1", title="Verify the candidate")
+        briefing = generate_task_briefing(config, role, task)
+
+        assert "Handoff Evidence Required" in briefing
+        assert "evidence_refs" in briefing
+
     def test_briefing_prefers_configured_workflow_stage(self):
         config = ZfConfig(project=ProjectConfig(name="test"))
         task = Task(id="T1", title="Implement it")

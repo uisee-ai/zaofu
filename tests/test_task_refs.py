@@ -679,6 +679,7 @@ def test_task_ref_manager_ignores_undeclared_runtime_materialized_dirty(
     skill = workdir / ".claude" / "skills" / "incremental-implementation" / "SKILL.md"
     skill.parent.mkdir(parents=True)
     skill.write_text("# materialized skill\n", encoding="utf-8")
+    (workdir / ".zf-setup.done").write_text("ok\n", encoding="utf-8")
     config = ZfConfig(
         project=ProjectConfig(name="test", state_dir=str(state_dir)),
         roles=[
@@ -715,6 +716,7 @@ def test_task_ref_manager_ignores_undeclared_runtime_materialized_dirty(
         ref.startswith(".claude/")
         for ref in diagnostics["ignored_runtime_dirty_files"]
     )
+    assert ".zf-setup.done" in diagnostics["ignored_runtime_dirty_files"]
 
 
 def test_task_ref_manager_rejects_non_head_source_commit(tmp_path: Path):

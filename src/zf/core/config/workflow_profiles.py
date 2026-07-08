@@ -81,6 +81,7 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "judgeRole", "judge_role",
 })
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
     "scanRoles", "scan_roles",
     "planRole", "plan_role",
@@ -95,6 +96,78 @@ _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
 # refactor-flow/v1 的 scan child 缺省三件套(id 即专长;指令正文住
 # skills/PRD,经 instruction_ref 在 briefing 期物化 —— W1)。
 _SCAN_CHILDREN_V1 = ("scan-contract", "scan-runtime", "scan-verification")
+
+_PRD_SCAN_INSTRUCTIONS = [
+    "This is the initial PRD scan stage, not implementation verification.",
+    "Missing product code is expected before impl; record it as required work, risk, or gap input, not as a blocking scan failure.",
+    "Emit success when you can read the PRD/scope and produce a useful product/technical scan report for planning.",
+    "Emit failure only when the PRD/scope cannot be read or the scan report cannot be produced.",
+]
+
+_TASK_MAP_CONTRACT_INSTRUCTIONS = [
+    "Task-map hard contract: write valid JSON with top-level `schema_version` exactly `task-map.v1`.",
+    "Task-map hard contract: when the workflow has a target root, include top-level `target_root` and keep all paths repo-relative.",
+    "Task-map hard contract: include `shared_conventions.test_path_prefix` and package/scaffold conventions such as `package_root` and `packaging_file` when more than one task depends on them.",
+    "Task-map hard contract: top-level `tasks` must be a non-empty array; each task must have a stable `task_id`, `title`, scoped `allowed_paths`, executable `verification`, `acceptance_criteria`, and `blocked_by` (empty array when none).",
+    "Task-map hard contract: when `allowed_paths` is non-empty, include `allowed_paths_reason` or `scope_reason` explaining the ownership boundary.",
+    "Task-map hard contract: dependencies in `blocked_by` must reference existing task ids and must not point to a later wave.",
+    "Task-map hard contract: `verification` must be an executable shell command only, not prose; put explanatory text in acceptance criteria or evidence fields.",
+    "Task-map hard contract: verification may use `cd <target_root>`, but referenced files must still be represented by repo-relative `allowed_paths` such as `app/tests/...`, not bare `tests/...`.",
+    "Task-map hard contract: scaffold owners must list package metadata files they create, including `package.json`, `pyproject.toml`, `setup.py`, `setup.cfg`, `tsconfig.json`, or lockfiles.",
+]
+
+_PRD_PLAN_INSTRUCTIONS = [
+    "Convert the completed PRD scan into a machine-readable task_map and a human-readable plan.",
+    "The task_map must be JSON and must contain implementable tasks with stable ids, owned paths, acceptance criteria, and verification.",
+    "Do not treat unimplemented product requirements as plan failure; they belong in the task_map.",
+    *_TASK_MAP_CONTRACT_INSTRUCTIONS,
+]
+
+_ISSUE_TRIAGE_INSTRUCTIONS = [
+    "This is issue triage and task-map synthesis, not fix verification.",
+    "The reported bug or missing behavior is expected before fix; turn it into scoped repair tasks and regression checks.",
+    "Emit success when you can understand the issue and produce a machine-readable task_map.",
+    "Emit failure only when the issue/scope cannot be read or no actionable task_map can be produced.",
+    *_TASK_MAP_CONTRACT_INSTRUCTIONS,
+]
+
+_POST_VERIFY_DISCOVERY_INSTRUCTIONS = [
+    "This stage runs after implementation verification and should inspect the delivered candidate for residual gaps.",
+    "Use concrete evidence from files, tests, and prior artifacts; emit failure for blocking product/regression/parity gaps that still need rework.",
+    "If no blocking gaps remain, emit success with explicit zero-gap closure evidence: include `evidence_refs` and at least one of `test_refs`, `e2e_refs`, `demo_refs`, `regression_refs`, or `parity_refs` as applicable.",
+    "If gaps remain, emit bounded `gap_tasks` with source refs and verification commands instead of a prose-only finding.",
+]
+
+_FINAL_JUDGE_INSTRUCTIONS = [
+    "This is the final delivery judge. Evaluate the delivered candidate against the original request, task_map, verification evidence, and residual gap reports.",
+    "Emit success only when release evidence is complete enough for the workflow quality floor; otherwise emit failure with actionable findings.",
+    "A passing report must be machine-readable: include concrete `evidence_refs` and the quality-floor refs that justify the pass (`test_refs`, `e2e_refs`, `demo_refs`, `regression_refs`, `parity_refs`, or `provider_refs`).",
+    "Do not rely on natural-language summaries alone; every pass/fail verdict must point to artifacts, commands, or reports that a deterministic gate can verify.",
+]
+
+_REFACTOR_SCAN_INSTRUCTIONS = [
+    "This is the initial refactor scan stage, not parity completion verification.",
+    "Missing target implementation is expected before impl; convert it into source inventory, capability/parity gaps, risks, and planning inputs.",
+    "Emit success when the assigned source/scope has been inspected and an evidence-backed scan report can feed the plan stage.",
+    "Emit failure only when the assigned scope cannot be inspected or the scan report cannot be produced.",
+]
+
+_REFACTOR_PLAN_INSTRUCTIONS = [
+    "Synthesize the scan reports into a refactor plan, task_map, gates, and risk register.",
+    "Do not re-scan from scratch; use child scan artifacts and preserve source anchors/evidence refs for each task.",
+    "Emit success only when downstream impl lanes can consume the task_map without inventing missing scope.",
+    *_TASK_MAP_CONTRACT_INSTRUCTIONS,
+]
+
+_REFACTOR_VERIFY_BRIDGE_INSTRUCTIONS = [
+    "This bridge runs after candidate tests pass; inspect whether enough evidence exists to trigger post-verify parity scanning.",
+    "Do not reject merely because parity scan has not run yet; request/enable the configured parity scan unless tests or candidate evidence are invalid.",
+]
+
+_REFACTOR_PARITY_SCAN_INSTRUCTIONS = [
+    "This is post-verify parity discovery. Compare the delivered candidate with the original source/plan and report residual module gaps.",
+    "Emit success when parity evidence closes the configured threshold or produces a bounded gap plan; emit failure for blocking unclosed P0/P1 gaps.",
+]
 
 
 def _pick(raw: dict, *names: str, default: Any = None) -> Any:
@@ -211,6 +284,7 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
             "roles": scan_roles,
             "target_ref": "",
             "fanout": {"children": children_cfg},
+            "criteria": {"instructions": _REFACTOR_SCAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.review.ready",
@@ -231,6 +305,7 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
                     },
                 }],
             },
+            "criteria": {"instructions": _REFACTOR_PLAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.plan.ready",
@@ -380,6 +455,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "roles": scan_roles,
             "target_ref": str(_pick(params, "targetRef", "target_ref", default="")),
             "fanout": {"children": children_cfg},
+            "criteria": {"instructions": _REFACTOR_SCAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.review.ready",
@@ -400,6 +476,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
                     },
                 }],
             },
+            "criteria": {"instructions": _REFACTOR_PLAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.plan.ready",
@@ -411,6 +488,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "trigger": "test.passed",
             "topology": "fanout_reader",
             "roles": [verify_bridge_role],
+            "criteria": {"instructions": _REFACTOR_VERIFY_BRIDGE_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "verify.passed",
@@ -424,6 +502,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "trigger": MODULE_PARITY_SCAN_REQUESTED,
             "topology": "fanout_reader",
             "roles": [module_parity_role],
+            "criteria": {"instructions": _REFACTOR_PARITY_SCAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": MODULE_PARITY_SCAN_COMPLETED,
@@ -437,6 +516,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "trigger": "module.parity.closed",
             "topology": "fanout_reader",
             "roles": [judge_role],
+            "criteria": {"instructions": _FINAL_JUDGE_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "judge.passed",
@@ -630,8 +710,16 @@ def _flow_kernel_lane_pipeline(
     max_rework_attempts: int = 2,
     trace_budget: int = 6,
     final: dict[str, Any] | None = None,
+    stage_transition: str = "per_lane",
+    final_barrier: str | None = None,
 ) -> dict[str, Any]:
     """Common post-task-map lane kernel shared by Issue/PRD/Refactor flows."""
+
+    if final_barrier is None:
+        final_barrier = "all_lanes_verified" if stage_transition == "per_lane" else ""
+    barriers: dict[str, Any] = {"stage_transition": stage_transition}
+    if final_barrier:
+        barriers["final"] = final_barrier
 
     pipeline: dict[str, Any] = {
         "id": pipeline_id,
@@ -644,13 +732,17 @@ def _flow_kernel_lane_pipeline(
         "trace_budget": trace_budget,
         "assembly": assembly,
         "schema_profile": schema_profile,
-        "barriers": {
-            "stage_transition": "per_lane",
-            "final": "all_lanes_verified",
-        },
+        "barriers": barriers,
         "lane_role_template": lane_template,
         "stages": [
-            {"id": "impl", "role_pattern": impl_pattern},
+            {
+                "id": "impl",
+                "role_pattern": impl_pattern,
+                # Writer fanout briefing and runtime completion adoption use
+                # dev.build.done/dev.failed as the authoritative writer
+                # terminal events, regardless of lane role naming.
+                "terminal": {"success": "dev.build.done", "failure": "dev.failed"},
+            },
             {
                 "id": "verify",
                 "role_pattern": verify_pattern,
@@ -709,14 +801,16 @@ def _post_verify_discovery_stage(
     flow_kind: str,
     discovery_role: str,
     enabled: bool,
+    trigger: str = "flow.discovery.requested",
 ) -> dict[str, Any] | None:
     if not enabled:
         return None
     return {
         "id": f"{flow_kind}-post-verify-discovery",
-        "trigger": "flow.discovery.requested",
+        "trigger": trigger,
         "topology": "fanout_reader",
         "roles": [discovery_role],
+        "criteria": {"instructions": _POST_VERIFY_DISCOVERY_INSTRUCTIONS},
         "aggregate": {
             "mode": "wait_for_all",
             "success_event": "flow.discovery.completed",
@@ -812,6 +906,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
             "topology": "fanout_reader",
             "roles": [triage_role],
             "target_ref": str(_pick(params, "issueRef", "issue_ref", default="")),
+            "criteria": {"instructions": _ISSUE_TRIAGE_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "task_map.ready",
@@ -858,6 +953,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         enabled=bool(str(metadata.get("post_verify_discovery") or "").strip()),
     )
     if discovery_stage:
+        pipeline.setdefault("final", {})["trigger"] = "flow.discovery.completed"
         stages.append(discovery_stage)
     metadata["issue_ref"] = str(_pick(params, "issueRef", "issue_ref", default=""))
     return {
@@ -865,6 +961,91 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
+        "schema_profile": "canonical-dag/v2",
+        "metadata": metadata,
+    }
+
+
+def _expand_prd_flow_light(params: dict, *, backend: str) -> dict[str, Any]:
+    """批D(prd-goal e2e 复盘):小任务轻拓扑。
+
+    textstat 实弹:编排固定成本 ≈ 实际工作量的 200%,"塞得进单上下文
+    的任务"用全拓扑是净负资产。light = 单 lane goal 环 + 候选级
+    verify + judge 三件套;scan/plan fanout 整段跳过,task_map 由
+    kernel 在入口触发时机械合成单任务(runtime/light_flow.py),
+    机械验收门(admission/F7/树哈希/judge)一个不拆。错判可免费
+    升级全拓扑(topology: fanout)。
+    """
+    entry = str(_pick(
+        params, "entryTrigger", "entry_trigger", default="prd.requested",
+    ))
+    judge_role = str(_pick(params, "judgeRole", "judge_role", default="judge-prd"))
+    role_defaults = _mapping_param(
+        _pick(params, "roleDefaults", "role_defaults"),
+        name="PrdFlow.roleDefaults",
+    )
+    bundles = _mapping_param(
+        _pick(params, "roleSkillBundles", "role_skill_bundles"),
+        name="PrdFlow.roleSkillBundles",
+    )
+    roles = [
+        _controller_role(
+            judge_role,
+            backend=backend,
+            role_kind="reader",
+            role_defaults=role_defaults,
+            skills=_role_skills(bundles, judge_role),
+        ),
+    ]
+    lane_template = {
+        "backend": backend,
+        "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
+        "skills_by_stage": {},
+    }
+    if _role_skills(bundles, "impl"):
+        lane_template["skills_by_stage"]["impl"] = _role_skills(bundles, "impl")
+    if _role_skills(bundles, "verify"):
+        lane_template["skills_by_stage"]["verify"] = _role_skills(bundles, "verify")
+    pipeline = _flow_kernel_lane_pipeline(
+        pipeline_id="prd-lanes",
+        lanes=1,
+        impl_pattern=str(_pick(
+            params, "implRolePattern", "impl_role_pattern",
+            default="dev-lane-{lane}",
+        )),
+        verify_pattern=str(_pick(
+            params, "verifyRolePattern", "verify_role_pattern",
+            default="verify-lane-{lane}",
+        )),
+        lane_template=lane_template,
+        schema_profile="canonical-dag/v2",
+        task_map_ref=str(_pick(
+            params, "taskMapRef", "task_map_ref", default="${task_map_ref}",
+        )),
+        stage_transition="stage_barrier",
+        final={
+            "when": "all_tasks_verified",
+            "role": judge_role,
+            "success": "judge.passed",
+            "failure": "judge.failed",
+        },
+    )
+    metadata = _controller_metadata(
+        kind="prd",
+        params=params,
+        default_quality="product-demo",
+        default_delivery="report_and_demo",
+        default_discovery="",
+    )
+    metadata["topology"] = "light"
+    metadata["light_entry_trigger"] = entry
+    metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
+    metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))
+    return {
+        "roles": roles,
+        "stages": [],
+        "pipelines": [pipeline],
+        "external_triggers": [entry, "task_map.ready"],
         "schema_profile": "canonical-dag/v2",
         "metadata": metadata,
     }
@@ -879,6 +1060,13 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         )
     lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
     backend = str(_pick(params, "backend", default="codex"))
+    topology = str(_pick(params, "topology", default="fanout")).strip() or "fanout"
+    if topology not in {"fanout", "light"}:
+        raise WorkflowProfileError(
+            f"PrdFlow: unknown topology {topology!r} (fanout|light)"
+        )
+    if topology == "light":
+        return _expand_prd_flow_light(params, backend=backend)
     entry = str(_pick(
         params, "entryTrigger", "entry_trigger",
         default="prd.requested",
@@ -958,6 +1146,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             "topology": "fanout_reader",
             "roles": scan_roles,
             "target_ref": str(_pick(params, "prdRef", "prd_ref", default="")),
+            "criteria": {"instructions": _PRD_SCAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "prd.scan.completed",
@@ -971,6 +1160,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             "trigger": "prd.scan.completed",
             "topology": "fanout_reader",
             "roles": [plan_role],
+            "criteria": {"instructions": _PRD_PLAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "task_map.ready",
@@ -1017,6 +1207,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         enabled=bool(str(metadata.get("post_verify_discovery") or "").strip()),
     )
     if discovery_stage:
+        pipeline.setdefault("final", {})["trigger"] = "flow.discovery.completed"
         stages.append(discovery_stage)
     metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
     metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))

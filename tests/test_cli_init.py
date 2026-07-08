@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -277,3 +278,81 @@ def test_init_explicit_state_dir_overrides_project_config(tmp_path: Path, monkey
     assert result == 0
     assert (tmp_path / "override-state" / "events.jsonl").exists()
     assert not (tmp_path / "runtime-state").exists()
+
+
+def test_init_installs_pre_commit_hook_in_git_repo(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    assert main(["init"]) == 0
+
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    assert hook.exists()
+    assert hook.stat().st_mode & 0o111  # executable
+    assert "运行时真相" in hook.read_text(encoding="utf-8")
+
+
+def test_init_preserves_existing_pre_commit_hook(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    hooks = tmp_path / ".git" / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    (hooks / "pre-commit").write_text("#!/bin/sh\necho mine\n")
+
+    assert main(["init"]) == 0
+
+    assert (hooks / "pre-commit").read_text() == "#!/bin/sh\necho mine\n"
+
+
+def test_init_no_git_hooks_flag_skips_install(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    assert main(["init", "--no-git-hooks"]) == 0
+
+    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_init_env_check_failure_exits_nonzero(tmp_path: Path, monkeypatch):
+    from zf.runtime.env_preflight import EnvCheck
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+    monkeypatch.setattr(
+        "zf.runtime.env_preflight.check_hook_command",
+        lambda cmd: EnvCheck("hook_command", False, True, "hook 命令 exit 1: shim broken"),
+    )
+
+    assert main(["init", "--env-check"]) == 1
+
+
+def test_init_setup_contract_hint_for_node_project(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+    (tmp_path / "package.json").write_text("{}")
+    (tmp_path / "pnpm-lock.yaml").write_text("")
+
+    assert main(["init"]) == 0
+
+    out = capsys.readouterr().out
+    assert "project.scripts.setup" in out
+    assert "setup: pnpm install" in out
+
+
+def test_init_setup_hint_absent_when_declared(tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "  scripts:\n"
+        "    setup: pnpm install\n"
+    )
+    (tmp_path / "package.json").write_text("{}")
+
+    assert main(["init"]) == 0
+
+    assert "建议在 zf.yaml 加" not in capsys.readouterr().out

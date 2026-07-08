@@ -130,6 +130,42 @@ def test_failure_closeout_cli(tmp_path, capsys, monkeypatch):
     assert set(result["items"][0]["outputs"]) == {"backlog", "eval"}
 
 
+def test_unknown_actionable_events_materialize_failure_candidates(tmp_path):
+    state_dir = tmp_path / ".zf"
+    events = [
+        ZfEvent(
+            id="evt-custom-rejected",
+            type="adapter.custom.rejected",
+            task_id="TASK-ADAPTER",
+            payload={"reason": "adapter emitted an unregistered rejection"},
+        ),
+        ZfEvent(
+            id="evt-custom-missing",
+            type="adapter.artifact.missing",
+            task_id="TASK-ADAPTER",
+            payload={"artifact_ref": "reports/custom/missing.json"},
+        ),
+    ]
+
+    written = materialize_failure_candidates_from_events(state_dir, events)
+
+    assert len(written) == 2
+    candidates = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in written
+    ]
+    assert {item["event"]["type"] for item in candidates} == {
+        "adapter.custom.rejected",
+        "adapter.artifact.missing",
+    }
+    assert {item["classification"]["problem_class"] for item in candidates} == {
+        "unknown",
+    }
+    assert {item["classification"]["owner_route"] for item in candidates} == {
+        "run_manager",
+    }
+
+
 def test_failure_closeout_promote_requires_approval_and_creates_active_task(tmp_path):
     state_dir = tmp_path / ".zf"
     write_failure_candidate(

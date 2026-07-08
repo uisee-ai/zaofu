@@ -16,6 +16,7 @@ from zf.runtime.task_doc import (
 )
 from zf.runtime.task_doc_audit import audit_task_docs
 from zf.runtime.task_doc_ingest import ingest_task_doc
+from zf.runtime.task_progress_projector import render_projected_evidence_doc
 
 
 def _task(status: str = "in_progress") -> Task:
@@ -67,6 +68,36 @@ def test_render_task_doc_is_agent_facing_contract() -> None:
     assert "required_events" in text
     assert "source_index_ref" in text
     assert "workers must not edit this file to mark completion" in text
+
+
+def test_projected_evidence_doc_includes_lane_stage_completed(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        id="evt-lane-verify",
+        type="lane.stage.completed",
+        actor="zf-cli",
+        task_id="TASK-DOC-1",
+        payload={
+            "task_id": "TASK-DOC-1",
+            "stage_slot": "verify",
+            "artifact_refs": ["reports/verify.json"],
+            "evidence_refs": ["git:abc123", "reports/verify.json"],
+        },
+    ))
+
+    text = render_projected_evidence_doc(
+        state_dir,
+        _task(status="review"),
+        generated_at="2026-07-07T00:00:00+00:00",
+    )
+
+    assert "lane.stage.completed" in text
+    assert "reports/verify.json" in text
+    assert "git:abc123" in text
 
 
 def test_write_task_doc_writes_capsule_manifest(tmp_path: Path) -> None:

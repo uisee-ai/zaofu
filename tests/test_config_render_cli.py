@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+from pathlib import Path
 
 import yaml
 
+from zf.core.config.render import renderable_config_to_primitive
 from zf.core.config.loader import load_config
 from zf.cli.main import main
 
@@ -119,6 +123,106 @@ def test_config_rendered_controller_yaml_is_reloadable(tmp_path, capsys):
     reloaded = load_config(output)
     assert reloaded.workflow.flow_metadata["flow_kind"] == "issue"
     assert json.loads(capsys.readouterr().out)["summary"]["pipelines"] == 1
+
+
+def test_config_rendered_controller_yaml_uses_single_execution_representation(
+    tmp_path,
+):
+    for source in (
+        Path("examples/prod/controller/prd-fanout-v3.yaml"),
+        Path("examples/prod/controller/issue-fanout-v3.yaml"),
+        Path("examples/prod/controller/refactor-lane-v3.yaml"),
+    ):
+        config = load_config(source)
+        rendered = renderable_config_to_primitive(config)
+        output = tmp_path / f"{source.name}.rendered.yaml"
+        output.write_text(
+            yaml.safe_dump(rendered, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+        assert rendered["workflow"]["pipelines"]
+        assert rendered["workflow"]["_flow_metadata"]["rendered_pipeline_stages"] is True
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            reloaded = load_config(output)
+
+        assert "dual representation drifts" not in stderr.getvalue()
+        assert reloaded.workflow.stages
+        assert reloaded.workflow.flow_metadata["flow_kind"] in {
+            "prd",
+            "issue",
+            "refactor",
+        }
+
+
+def test_config_rendered_controller_yaml_preserves_affinity_assignment(
+    tmp_path,
+    capsys,
+):
+    cases = [
+        (
+            "examples/prod/controller/prd-fanout-v3.yaml",
+            "prd-lanes-impl",
+            "prd-lanes-verify",
+        ),
+        (
+            "examples/prod/controller/issue-fanout-v3.yaml",
+            "issue-lanes-impl",
+            "issue-lanes-verify",
+        ),
+        (
+            "examples/prod/controller/refactor-lane-v3.yaml",
+            "flow-lanes-impl",
+            "flow-lanes-verify",
+        ),
+    ]
+    for source, impl_stage_id, verify_stage_id in cases:
+        output = tmp_path / (source.rsplit("/", 1)[-1] + ".rendered.yaml")
+        lock = tmp_path / (source.rsplit("/", 1)[-1] + ".lock.json")
+
+        rc = main([
+            "config",
+            "render",
+            "--config",
+            source,
+            "--output",
+            str(output),
+            "--lock",
+            str(lock),
+        ])
+
+        assert rc == 0
+        rendered = yaml.safe_load(output.read_text(encoding="utf-8"))
+        rendered_stages = {
+            stage["id"]: stage
+            for stage in rendered["workflow"]["stages"]
+        }
+        for stage_id, slot in (
+            (impl_stage_id, "impl"),
+            (verify_stage_id, "verify"),
+        ):
+            stage = rendered_stages[stage_id]
+            assert "assignment" not in stage
+            assignment = stage["fanout"]["assignment"]
+            assert assignment["strategy"] == "affinity_stage_slots"
+            assert assignment["stage_slot"] == slot
+
+        reloaded = load_config(output)
+        reloaded_stages = {
+            stage.id: stage
+            for stage in reloaded.workflow.stages
+        }
+        for stage_id, slot in (
+            (impl_stage_id, "impl"),
+            (verify_stage_id, "verify"),
+        ):
+            stage = reloaded_stages[stage_id]
+            assert stage.assignment.strategy == "affinity_stage_slots"
+            assert stage.assignment.lane_profile
+            assert stage.assignment.stage_slot == slot
+
+    capsys.readouterr()
 
 
 def test_config_inspect_classifies_flow_discovery_bridge_trigger(capsys):

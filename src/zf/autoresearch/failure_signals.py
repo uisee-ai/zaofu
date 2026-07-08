@@ -761,6 +761,12 @@ def detect_fanout_failures(
     for fanout_id, child_id in sorted(dispatched_children - terminal_children):
         if fanout_id in terminal_fanouts:
             continue
+        if not _fanout_child_pending_grace_expired(
+            events,
+            fanout_id=fanout_id,
+            child_id=child_id,
+        ):
+            continue
         if _fanout_is_stale_or_terminal(
             events=events,
             fanout_id=fanout_id,
@@ -790,6 +796,46 @@ def detect_fanout_failures(
             metric_impacts={"runtime_reliability": -0.15},
         ))
     return signals
+
+
+def _fanout_child_pending_grace_expired(
+    events: list[ZfEvent],
+    *,
+    fanout_id: str,
+    child_id: str,
+    grace_seconds: int = 120,
+) -> bool:
+    dispatch_ts: datetime | None = None
+    latest_ts: datetime | None = None
+    for event in events:
+        event_ts = _parse_event_ts(event)
+        if event_ts is not None:
+            latest_ts = event_ts if latest_ts is None else max(latest_ts, event_ts)
+        payload = _payload(event)
+        if (
+            event.type == "fanout.child.dispatched"
+            and str(payload.get("fanout_id") or "") == fanout_id
+            and str(payload.get("child_id") or payload.get("child_run") or "") == child_id
+        ):
+            dispatch_ts = event_ts
+    if dispatch_ts is None or latest_ts is None:
+        return True
+    return (latest_ts - dispatch_ts).total_seconds() >= grace_seconds
+
+
+def _parse_event_ts(event: ZfEvent) -> datetime | None:
+    raw = str(getattr(event, "ts", "") or "").strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _fanout_is_stale_or_terminal(

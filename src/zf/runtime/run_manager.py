@@ -61,6 +61,7 @@ from zf.runtime.run_manager_wait_hint import (
     build_wait_hint_projection,
 )
 from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.task_attempt_recovery import pending_task_attempt_recovery_actions
 from zf.runtime.workflow_resume import build_workflow_resume_projection
 
 
@@ -93,6 +94,8 @@ RUN_MANAGER_ACTION_BLOCKED = "run.manager.action.blocked"
 RUN_MANAGER_ACTION_FAILED = "run.manager.action.failed"
 RUN_MANAGER_ACTION_VERIFY_PASSED = "run.manager.action.verify.passed"
 RUN_MANAGER_ACTION_VERIFY_FAILED = "run.manager.action.verify.failed"
+# FIX-5①:同 checkpoint 的 verify.failed 有界重试上限,达到即停止重规划。
+_ACTION_VERIFY_FAILED_CAP = 3
 RUN_COMPLETED = "run.completed"
 RUN_MANAGER_TICK_STARTED = "run.manager.tick.started"
 RUN_MANAGER_TICK_COMPLETED = "run.manager.tick.completed"
@@ -642,6 +645,11 @@ def build_run_manager_projection(
         *_pending_workflow_task_actions(workflow_resume, events),
         *_pending_workflow_batch_actions(workflow_resume, events),
     ]
+    attempt_recovery_actions = _pending_task_attempt_recovery_actions(
+        state_dir,
+        config=config,
+        events=events,
+    )
     worker_actions = _pending_worker_lifecycle_actions(
         state_dir,
         workflow_resume,
@@ -713,6 +721,7 @@ def build_run_manager_projection(
     )
     base_pending_actions = [
         *workflow_actions,
+        *attempt_recovery_actions,
         *worker_actions,
         *resident_actions,
         *repair_validation_actions,
@@ -744,6 +753,12 @@ def build_run_manager_projection(
         _action_with_problem_envelope(action)
         for action in pending_actions
     ]
+    attempt_contexts = _task_attempt_contexts(state_dir / "projections")
+    if attempt_contexts:
+        pending_actions = [
+            _action_with_attempt_context(action, attempt_contexts)
+            for action in pending_actions
+        ]
     pending_actions = _prioritize_pending_actions(pending_actions)
     monitor = build_run_monitor_projection(
         state_dir,
@@ -764,9 +779,15 @@ def build_run_manager_projection(
         repair_merge_queue=merge_queue,
         no_progress=no_progress,
     )
+    budget_status = _budget_status_block(state_dir, config=config)
+    budget_diagnostics = _budget_diagnostics_projection(
+        events,
+        budget=budget_status,
+    )
     status_explain = build_run_status_explain_projection(
         state_dir,
         events=events,
+        budget=budget_status,
         goal=goal,
         completion_profile=completion_profile,
         monitor=monitor,
@@ -847,6 +868,7 @@ def build_run_manager_projection(
         "runtime_pane_snapshot": runtime_pane_snapshot,
         "run_manager_monitor": run_manager_monitor,
         "resident_repair_worker": build_resident_repair_policy_projection(),
+        "budget_diagnostics": budget_diagnostics,
         "resident_agent": resident_agent,
         "report_artifacts": report_artifacts,
         "run_context_bundle": context,
@@ -1314,6 +1336,10 @@ def build_run_monitor_projection(
         item for item in (attention if isinstance(attention, list) else [])
         if isinstance(item, dict) and str(item.get("status") or "open") in {"", "open", "unacknowledged"}
     ]
+    open_attention, suppressed_attention = _suppress_stale_open_attention(
+        events,
+        open_attention,
+    )
     last_action = _last_event(events, (
         RUN_MANAGER_ACTION_APPLIED,
         RUN_MANAGER_ACTION_BLOCKED,
@@ -1343,7 +1369,10 @@ def build_run_monitor_projection(
         display_open_attention = 0
     elif any((item.get("policy_decision") or {}).get("decision") in {"human_escalate", "safe_halt"} for item in pending_actions):
         state = "needs_human"
-    elif _pending_human_decisions(events) and not _has_auto_ready_actions(pending_actions):
+    elif (
+        _blocking_human_decisions(events)
+        and not _has_auto_ready_actions(pending_actions)
+    ):
         state = "needs_human"
     elif _has_pending_repair_closeout(events):
         state = "repair_closeout_required"
@@ -1369,16 +1398,242 @@ def build_run_monitor_projection(
         "residual_in_flight_tasks": residual_in_flight,
         "open_attention": display_open_attention,
         "residual_open_attention": residual_open_attention,
+        "suppressed_open_attention": suppressed_attention[-20:],
         "pending_actions": len(pending_actions),
         "last_action": _event_summary(last_action) if last_action else {},
         "next_wait": _next_wait(state, pending_actions, open_attention),
     }
 
 
+_ATTENTION_RECOVERY_EVENTS = frozenset({
+    "worker.heartbeat",
+    "worker.state.changed",
+    "task.assigned",
+    "task.dispatched",
+    "task.rework.requested",
+    "dev.build.done",
+    "task.ref.updated",
+    "workflow.resume.applied",
+    "fanout.started",
+    "fanout.child.completed",
+    "fanout.aggregate.completed",
+    "lane.stage.completed",
+    "candidate.ready",
+    "verify.passed",
+    "test.passed",
+    "judge.passed",
+    RUN_COMPLETED,
+    "task.done",
+    "task.done.accepted",
+})
+
+
+def _suppress_stale_open_attention(
+    events: list[ZfEvent],
+    open_attention: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    kept: list[dict[str, Any]] = []
+    suppressed: list[dict[str, Any]] = []
+    for item in open_attention:
+        evidence = _stale_attention_recovery_evidence(events, item)
+        if evidence:
+            suppressed.append({
+                **evidence,
+                "fingerprint": str(item.get("fingerprint") or ""),
+                "attention_id": str(item.get("attention_id") or item.get("id") or ""),
+                "status": "false_positive",
+                "confidence": "high",
+            })
+        else:
+            kept.append(item)
+    return kept, suppressed
+
+
+def _stale_attention_recovery_evidence(
+    events: list[ZfEvent],
+    item: dict[str, Any],
+) -> dict[str, Any]:
+    source_event_id = _attention_source_event_id(item)
+    source_idx = next(
+        (idx for idx, event in enumerate(events) if event.id == source_event_id),
+        -1,
+    )
+    if source_idx < 0:
+        return {}
+    task_id = str(item.get("task_id") or "").strip()
+    lane = str(
+        item.get("lane")
+        or item.get("assignee")
+        or item.get("worker")
+        or item.get("instance_id")
+        or ""
+    ).strip()
+    for event in events[source_idx + 1:]:
+        if event.type not in _ATTENTION_RECOVERY_EVENTS:
+            continue
+        if not _recovery_event_matches_attention(event, task_id=task_id, lane=lane):
+            continue
+        terminal = event.type in {
+            "judge.passed",
+            RUN_COMPLETED,
+            "task.done",
+            "task.done.accepted",
+        }
+        return {
+            "evidence_window": {
+                "source_event_id": source_event_id,
+                "recovery_event_id": event.id,
+            },
+            "last_progress_event": _event_summary(event),
+            "newer_terminal_event": _event_summary(event) if terminal else {},
+        }
+    return {}
+
+
+def _attention_source_event_id(item: dict[str, Any]) -> str:
+    raw_ids = item.get("source_event_ids")
+    if isinstance(raw_ids, list):
+        for value in raw_ids:
+            text = str(value or "").strip()
+            if text:
+                return text
+    return str(
+        item.get("source_event_id")
+        or item.get("trigger_event_id")
+        or item.get("event_id")
+        or ""
+    ).strip()
+
+
+def _recovery_event_matches_attention(
+    event: ZfEvent,
+    *,
+    task_id: str,
+    lane: str,
+) -> bool:
+    if task_id and _event_task_id(event) == task_id:
+        return True
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    if lane:
+        values = {
+            str(payload.get("worker") or ""),
+            str(payload.get("assignee") or ""),
+            str(payload.get("instance") or ""),
+            str(payload.get("instance_id") or ""),
+            str(event.actor or ""),
+        }
+        if lane in values:
+            return True
+    return not task_id and not lane
+
+
+def _event_task_id(event: ZfEvent) -> str:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    return str(event.task_id or payload.get("task_id") or "").strip()
+
+
+def _budget_status_block(state_dir: Path, *, config) -> dict[str, Any]:
+    """FIX-13②(bizsim r4 F13):explain 带预算区块(cap/spent/enforcement/
+    exceeded)——预算被在途燃烧穿透时 operator 一眼可见。"""
+    cap = getattr(config, "global_budget_usd", None) if config else None
+    if cap is None:
+        return {}
+    try:
+        from zf.core.cost.tracker import CostTracker
+
+        spent = float(CostTracker(state_dir / "cost.jsonl").total_usd())
+    except Exception:
+        spent = -1.0
+    return {
+        "global_budget_usd": float(cap),
+        "spent_usd": round(spent, 4),
+        "enforcement_enabled": bool(
+            getattr(config, "budget_enforcement_enabled", True),
+        ),
+        "exceeded": bool(spent >= 0 and spent >= float(cap)),
+    }
+
+
+def _budget_diagnostics_projection(
+    events: list[ZfEvent],
+    *,
+    budget: dict[str, Any],
+) -> dict[str, Any]:
+    rows: dict[str, dict[str, Any]] = {}
+    for event in events:
+        if event.type != "cost.budget.exceeded":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        scope = str(payload.get("scope") or "global").strip() or "global"
+        role = str(payload.get("role") or payload.get("role_name") or "").strip()
+        task_id = str(event.task_id or payload.get("task_id") or "").strip()
+        budget_usd = _float_or_none(payload.get("budget_usd"))
+        current_usd = _float_or_none(
+            payload.get("current_usd")
+            if payload.get("current_usd") is not None
+            else payload.get("spent_usd")
+        )
+        key = ":".join([
+            "cost.budget.exceeded",
+            scope,
+            role or "_",
+            "" if budget_usd is None else f"{budget_usd:.4f}",
+        ])
+        row = rows.setdefault(key, {
+            "fingerprint": key,
+            "scope": scope,
+            "role": role,
+            "task_id": task_id,
+            "budget_usd": budget_usd,
+            "current_usd": current_usd,
+            "level": "exceeded",
+            "first_event_id": event.id,
+            "first_seen_at": event.ts,
+            "latest_event_id": event.id,
+            "latest_seen_at": event.ts,
+            "event_count": 0,
+            "notification_policy": "owner_on_human_required",
+            "recovery_policy": "run_manager",
+            "owner_visible_default": False,
+            "recommended_action": "diagnose_budget_exceeded",
+        })
+        row["event_count"] = int(row.get("event_count") or 0) + 1
+        row["latest_event_id"] = event.id
+        row["latest_seen_at"] = event.ts
+        if current_usd is not None:
+            row["current_usd"] = current_usd
+        if not row.get("task_id") and task_id:
+            row["task_id"] = task_id
+    items = sorted(rows.values(), key=lambda item: str(item.get("latest_seen_at") or ""))
+    return redact_obj({
+        "schema_version": "run-manager.budget-diagnostics.v1",
+        "is_derived_projection": True,
+        "status": "exceeded" if items or bool(budget.get("exceeded")) else "clear",
+        "budget": budget,
+        "items": items,
+        "summary": {
+            "open": len(items),
+            "event_count": sum(int(item.get("event_count") or 0) for item in items),
+            "owner_visible_default": False,
+            "notification_policy": "owner_on_human_required",
+        },
+    })
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        if value is None or str(value).strip() == "":
+            return None
+        return round(float(value), 4)
+    except Exception:
+        return None
+
+
 def build_run_status_explain_projection(
     state_dir: Path,
     *,
     events: list[ZfEvent] | None = None,
+    budget: dict[str, Any] | None = None,
     goal: dict[str, Any],
     completion_profile: dict[str, Any],
     monitor: dict[str, Any],
@@ -1407,6 +1662,7 @@ def build_run_status_explain_projection(
         "schema_version": RUN_STATUS_EXPLAIN_SCHEMA_VERSION,
         "is_derived_projection": True,
         "generated_at": _now(),
+        "budget": budget or {},
         "state_dir": str(state_dir),
         "current_phase": str(monitor.get("current_phase") or "unknown"),
         "active_task_id": str(active.get("task_id") or ""),
@@ -1432,6 +1688,7 @@ def build_run_status_explain_projection(
             "events": "events.jsonl",
             "kanban": "kanban.json",
             "supervisor": "projections/supervisor/snapshot.json",
+            "task_attempts": "projections/task_attempts.json",
         },
     })
 
@@ -1498,6 +1755,37 @@ def build_run_goal_projection(
         "last_blocker": last_blocker,
         "source_event_id": source_event_id,
     }
+
+
+def run_goal_completion_event(
+    events: list[ZfEvent], *, cause: ZfEvent
+) -> ZfEvent | None:
+    """LB-1: emit run.goal.completed when a terminal success (judge.passed)
+    lands while a real goal is still active.
+
+    Without this the goal projection never reaches ``complete``, so the
+    run-manager keeps escalating/autoresearching after the deliverable already
+    passed (light baseline 2026-07-06: ~50min of tick/autoresearch churn after
+    judge.passed). Requires a genuine ``run.goal.started`` (non-empty run_id) so
+    the ``loop.started``→active fallback alone does not synthesize a completion.
+    Idempotent: returns None once the goal is already complete.
+    """
+    proj = build_run_goal_projection(events)
+    run_id = str(proj.get("run_id") or "")
+    if proj.get("status") != "active" or not run_id:
+        return None
+    return ZfEvent(
+        type="run.goal.completed",
+        actor="zf-cli",
+        causation_id=cause.id,
+        correlation_id=cause.correlation_id or run_id,
+        payload={
+            "run_id": run_id,
+            "objective": str(proj.get("objective") or ""),
+            "reason": f"terminal success: {cause.type}",
+            "source_event_id": cause.id,
+        },
+    )
 
 
 def build_repair_ledger(events: list[ZfEvent]) -> dict[str, Any]:
@@ -1708,6 +1996,10 @@ def build_run_completion_profile(
     repair_merge_queue: dict[str, Any],
 ) -> dict[str, Any]:
     pending_human = _pending_human_decisions(events)
+    blocking_human = [
+        item for item in pending_human
+        if _is_blocking_human_decision(item)
+    ]
     failed_verifications = _open_verify_failures(events)
     _ = repair_ledger
     repair_blockers = _blocking_repair_merge_counts(events, repair_merge_queue)
@@ -1725,7 +2017,7 @@ def build_run_completion_profile(
         and terminal_signal.type == RUN_COMPLETED
         and str(terminal_payload.get("status") or "passed") == "passed"
     )
-    if pending_human:
+    if blocking_human:
         blockers.append("pending_human_decision")
     if (closeout_required or merge_pending) and not terminal_run_passed:
         blockers.append("repair_closeout_pending")
@@ -1746,6 +2038,7 @@ def build_run_completion_profile(
         "terminal_signal": _event_summary(terminal_signal) if terminal_signal else {},
         "blockers": blockers,
         "pending_human_decisions": pending_human,
+        "blocking_human_decisions": blocking_human,
         "open_verify_failures": failed_verifications,
         "repair_closeout_required": closeout_required,
         "repair_merge_pending": merge_pending,
@@ -1955,7 +2248,11 @@ def classify_recovery_context(action: dict[str, Any]) -> dict[str, Any]:
 def _spine_summary(projections_dir: Path) -> dict[str, Any]:
     """131-P0-6:只读引用 shadow spine 投影,展示级 enrich,不改变任何决策。"""
     summary: dict[str, Any] = {}
-    for key, name in (("health", "workflow_health.json"), ("runs", "workflow_spine.json")):
+    for key, name in (
+        ("health", "workflow_health.json"),
+        ("runs", "workflow_spine.json"),
+        ("task_attempts", "task_attempts.json"),
+    ):
         try:
             data = json.loads((projections_dir / name).read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -1963,9 +2260,107 @@ def _spine_summary(projections_dir: Path) -> dict[str, Any]:
         if key == "health":
             summary["counters"] = data.get("counters") or {}
             summary["last_event_ts"] = data.get("last_event_ts") or ""
-        else:
+        elif key == "runs":
             summary["runs"] = data.get("runs") or {}
+        else:
+            contexts = _task_attempt_contexts(projections_dir)
+            if contexts:
+                summary["task_attempts"] = {
+                    "task_count": len(contexts),
+                    "open_attempts": sum(
+                        int(item.get("open_attempts") or 0)
+                        for item in contexts.values()
+                    ),
+                    "counted_failures": sum(
+                        int(item.get("counted_failures") or 0)
+                        for item in contexts.values()
+                    ),
+                    # Compact run-manager projection: enough for operator/RM
+                    # explain, while the full attempt ledger stays in the
+                    # projection source ref.
+                    "tasks": {
+                        task_id: contexts[task_id]
+                        for task_id in sorted(contexts)[:50]
+                    },
+                }
     return summary
+
+
+def _task_attempt_contexts(projections_dir: Path) -> dict[str, dict[str, Any]]:
+    try:
+        data = json.loads((projections_dir / "task_attempts.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    tasks = data.get("tasks")
+    if not isinstance(tasks, dict):
+        return {}
+    contexts: dict[str, dict[str, Any]] = {}
+    for task_id, entry in tasks.items():
+        if not isinstance(entry, dict):
+            continue
+        attempts = entry.get("attempts")
+        attempts = attempts if isinstance(attempts, list) else []
+        latest = attempts[-1] if attempts and isinstance(attempts[-1], dict) else {}
+        contexts[str(task_id)] = {
+            "schema_version": "run-manager.attempt-context.v1",
+            "task_id": str(task_id),
+            "source_ref": f"projections/task_attempts.json#tasks.{task_id}",
+            "attempt_count": int(entry.get("attempt_count") or len(attempts)),
+            "current_owner": str(entry.get("current_owner") or latest.get("role") or ""),
+            "latest_attempt_key": str(
+                entry.get("latest_attempt_key") or latest.get("attempt_key") or ""
+            ),
+            "latest_state": str(entry.get("latest_state") or latest.get("state") or ""),
+            "lease_state": str(entry.get("lease_state") or latest.get("lease_state") or ""),
+            "last_terminal": str(entry.get("last_terminal") or ""),
+            "open_attempts": int(entry.get("open_attempts") or 0),
+            "counted_failures": int(entry.get("counted_failures") or 0),
+        }
+    return contexts
+
+
+def _action_with_attempt_context(
+    action: dict[str, Any],
+    contexts: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    matched: list[dict[str, Any]] = []
+    task_id = str(action.get("task_id") or "")
+    if task_id and contexts.get(task_id):
+        matched.append(contexts[task_id])
+    for key in ("failed_children", "pending_children", "completed_task_ids"):
+        for raw in action.get(key) or []:
+            ref = str(raw or "")
+            if not ref:
+                continue
+            context = contexts.get(ref)
+            if context is None:
+                context = next(
+                    (
+                        item for candidate, item in contexts.items()
+                        if ref.endswith(candidate)
+                    ),
+                    None,
+                )
+            if context is not None and context not in matched:
+                matched.append(context)
+    if not matched:
+        return action
+    updated = dict(action)
+    if task_id and matched:
+        updated.setdefault("attempt_context", matched[0])
+    if matched:
+        updated.setdefault("attempt_contexts", matched[:10])
+    source_refs = [
+        str(item) for item in updated.get("source_refs") or []
+        if str(item).strip()
+    ]
+    for context in matched:
+        ref = str(context.get("source_ref") or "")
+        if ref and ref not in source_refs:
+            source_refs.append(ref)
+    if source_refs:
+        updated["source_refs"] = source_refs
+    return updated
 
 
 def write_run_manager_projections(state_dir: Path, projection: dict[str, Any]) -> None:
@@ -2064,6 +2459,22 @@ def emit_human_escalation_package(
             if str(value).strip()
         ],
         "suggested_options": ["approve_controlled_action", "request_autoresearch", "safe_halt"],
+        # FIX-3(bizsim r4 F1/F8):① blocking_scope——无 workflow 锚点的
+        # 审批不冻结全 run 派发(side);② approval_command——给 operator
+        # 确切的批准入口(r4 教训:直调目标动作活干成但 lease 不放)。
+        "blocking_scope": (
+            "run"
+            if any(
+                str(action.get(key) or "").strip()
+                for key in ("task_id", "stage_id", "lane", "fanout_id", "run_id", "pdd_id")
+            )
+            else "side"
+        ),
+        "approval_command": (
+            "POST /api/projects/<id>/actions/"
+            "human-decision-approve-controlled-action "
+            f"payload={{\"decision_token\": \"{_human_decision_token(action)}\"}}"
+        ),
         "question": "请选择是否允许 Run Manager 执行该高风险恢复动作。",
         "reason": reason,
     }
@@ -2158,6 +2569,14 @@ def _consume_agent_recommendations(
             if not _run_manager_source_repair_enabled(config):
                 status = "blocked"
                 reason = "runtime.run_manager.source_repair.enabled is false"
+                blocked_event = _emit_source_repair_not_allowed(
+                    writer,
+                    action,
+                    payload,
+                    causation_id=event.id,
+                    reason=reason,
+                )
+                downstream_event_ids.append(blocked_event.id)
             else:
                 before = len(writer.event_log.read_all())
                 if _emit_repair_acceptance_from_agent(writer, action, payload, causation_id=causation_id):
@@ -2312,6 +2731,62 @@ def _run_manager_source_repair_enabled(config: ZfConfig) -> bool:
         None,
     )
     return bool(getattr(source_repair, "enabled", False))
+
+
+def _emit_source_repair_not_allowed(
+    writer: EventWriter,
+    action: dict[str, Any],
+    payload: dict[str, Any],
+    *,
+    causation_id: str,
+    reason: str,
+) -> ZfEvent:
+    checkpoint_id = str(action.get("checkpoint_id") or payload.get("checkpoint_id") or "")
+    fingerprint = str(action.get("fingerprint") or payload.get("fingerprint") or "")
+    title = str(
+        payload.get("title")
+        or action.get("title")
+        or "Run Manager source repair is disabled"
+    )
+    summary = str(
+        payload.get("summary")
+        or action.get("summary")
+        or "Run Manager diagnosed a source-level repair, but source repair is disabled."
+    )
+    approval_ref = "source-repair:" + hashlib.sha1(
+        (checkpoint_id or fingerprint or causation_id).encode("utf-8")
+    ).hexdigest()[:12]
+    return writer.emit(
+        "approval.requested",
+        actor="run-manager",
+        causation_id=causation_id,
+        payload={
+            "schema_version": "approval.requested.v1",
+            "approval_ref": approval_ref,
+            "source_role": "run_manager",
+            "owner_route": "run_manager",
+            "title": title,
+            "summary": summary,
+            "reason": reason,
+            "checkpoint_id": checkpoint_id,
+            "fingerprint": fingerprint,
+            "source_event_id": causation_id,
+            "repair_not_allowed": True,
+            "repair_permission": {
+                "required_config": "runtime.run_manager.source_repair.enabled",
+                "current": False,
+                "allowed_operator_actions": [
+                    "approve_source_repair_once",
+                    "create_backlog_only",
+                    "snooze",
+                ],
+            },
+            "patch_area": payload.get("patch_area") or action.get("patch_area") or [],
+            "minimal_repro": payload.get("minimal_repro") or action.get("minimal_repro") or "",
+            "approve_action": "approve-source-repair-once",
+            "reject_action": "create-backlog-only",
+        },
+    )
 
 
 def _recommendation_route(payload: dict[str, Any]) -> str:
@@ -3760,16 +4235,30 @@ def _post_verify_action(
     }
     if not expected:
         expected = _expected_downstream_events(str(action.get("safe_resume_action") or ""))
-    emitted = _emitted_event_types(writer.event_log, _collect_emitted_event_ids(result))
+    emitted = _observed_event_types_for_action(
+        writer.event_log,
+        action,
+        result,
+        expected=expected,
+    )
     passed = bool(expected.intersection(emitted))
     failure_reason = "" if passed else "expected downstream event not observed"
+    resume_pending_reason = ""
+    closeout_observed = bool(emitted.intersection({
+        "task.done",
+        "task.done.accepted",
+        "test.passed",
+        "verify.passed",
+        "judge.passed",
+        "flow.goal.closed",
+    })) or _workflow_resume_applied_closeout_observed(writer, action)
     resume_pending_reason = _workflow_resume_checkpoint_still_pending(
         writer,
         action,
         state_dir=state_dir,
         config=config,
     )
-    if resume_pending_reason:
+    if resume_pending_reason and not closeout_observed:
         passed = False
         failure_reason = resume_pending_reason
     writer.emit(
@@ -3785,6 +4274,38 @@ def _post_verify_action(
             "reason": failure_reason,
         },
     )
+
+
+def _workflow_resume_applied_closeout_observed(
+    writer: EventWriter,
+    action: dict[str, Any],
+) -> bool:
+    checkpoint_id = str(action.get("checkpoint_id") or "").strip()
+    source_event_id = str(action.get("source_event_id") or "").strip()
+    if not checkpoint_id and not source_event_id:
+        return False
+    try:
+        events = writer.event_log.read_all()
+    except Exception:
+        return False
+    for event in events:
+        if event.type != "workflow.resume.applied":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("reason") or "").strip() == "stage transition stalled":
+            continue
+        marker_values = {
+            str(payload.get("checkpoint_id") or ""),
+            str(payload.get("resume_checkpoint_ref") or ""),
+            str(payload.get("idempotency_key") or ""),
+            str(payload.get("source_event_id") or ""),
+            str(event.causation_id or ""),
+        }
+        if checkpoint_id and checkpoint_id in marker_values:
+            return True
+        if source_event_id and source_event_id in marker_values:
+            return True
+    return False
 
 
 def _workflow_resume_checkpoint_still_pending(
@@ -3806,10 +4327,16 @@ def _workflow_resume_checkpoint_still_pending(
         return ""
     safe_action = str(action.get("safe_resume_action") or "").strip()
     try:
+        event_list = writer.event_log.read_all()
+    except Exception:
+        event_list = []
+    if _workflow_resume_has_newer_progress(event_list, action):
+        return ""
+    try:
         projection = build_workflow_resume_projection(
             state_dir,
             config,
-            events=writer.event_log.read_all(),
+            events=event_list,
         )
     except Exception as exc:
         return f"workflow resume post-verify projection failed: {exc}"
@@ -3835,6 +4362,54 @@ def _workflow_resume_checkpoint_still_pending(
                     )
                 return "workflow resume checkpoint still pending after action"
     return ""
+
+
+def _workflow_resume_has_newer_progress(
+    events: list[ZfEvent],
+    action: dict[str, Any],
+) -> bool:
+    checkpoint_id = str(action.get("checkpoint_id") or "").strip()
+    source_event_id = str(action.get("source_event_id") or "").strip()
+    task_id = str(action.get("task_id") or "").strip()
+    pdd_id = str(action.get("pdd_id") or action.get("feature_id") or "").strip()
+    fanout_id = str(
+        action.get("fanout_id") or action.get("upstream_fanout_id") or ""
+    ).strip()
+    source_idx = -1
+    for idx, event in enumerate(events):
+        if source_event_id and event.id == source_event_id:
+            source_idx = idx
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if checkpoint_id and checkpoint_id in {
+            str(payload.get("checkpoint_id") or ""),
+            str(payload.get("resume_checkpoint_ref") or ""),
+            str(payload.get("idempotency_key") or ""),
+        }:
+            source_idx = idx
+    tail = events[source_idx + 1:] if source_idx >= 0 else events
+    for event in tail:
+        if event.type not in _ATTENTION_RECOVERY_EVENTS:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if task_id and _event_task_id(event) == task_id:
+            return True
+        if pdd_id and pdd_id in {
+            str(payload.get("pdd_id") or ""),
+            str(payload.get("feature_id") or ""),
+        }:
+            return True
+        if fanout_id and fanout_id in {
+            str(payload.get("fanout_id") or ""),
+            str(payload.get("upstream_fanout_id") or ""),
+        }:
+            return True
+        completed = {
+            str(value) for value in payload.get("completed_task_ids") or []
+            if str(value).strip()
+        }
+        if task_id and task_id in completed:
+            return True
+    return False
 
 
 def _accept_autoresearch_repairs(events: list[ZfEvent], writer: EventWriter) -> int:
@@ -3972,6 +4547,18 @@ def _consume_human_decisions(
                     "next_route": "controlled_action",
                     "controlled_action_status": status,
                     **_action_payload(action),
+                },
+            )
+            # FIX-6(bizsim r4 F2):审批解锁后请求 level 重扫——阻塞期间
+            # 被 wait 掉的 stage 触发边沿由 orchestrator reactor 补孵化
+            # (_on_workflow_reconcile_requested,孵化幂等判重)。
+            writer.emit(
+                "workflow.reconcile.requested",
+                actor="run-manager",
+                causation_id=event.id,
+                payload={
+                    "source": "human_decision_applied",
+                    "decision_token": token,
                 },
             )
             applied += 1
@@ -4189,6 +4776,44 @@ def _pending_workflow_batch_actions(
     return out
 
 
+def _pending_task_attempt_recovery_actions(
+    state_dir: Path,
+    *,
+    config: ZfConfig,
+    events: list[ZfEvent],
+) -> list[dict[str, Any]]:
+    """Convert task attempt projection gaps into Run Manager actions.
+
+    This is intentionally downstream of workflow_resume: if a task already has
+    a concrete workflow resume checkpoint, that path remains the owner.
+    """
+
+    workflow = getattr(config, "workflow", None)
+    lease_grace_s = float(getattr(workflow, "attempt_lease_grace_s", 900.0) or 900.0)
+    actions = pending_task_attempt_recovery_actions(
+        state_dir / "projections",
+        lease_grace_s=lease_grace_s,
+        max_retry_attempts=_max_task_attempt_retries(config),
+    )
+    out: list[dict[str, Any]] = []
+    for action in actions:
+        if not isinstance(action, dict):
+            continue
+        if _action_seen(events, action):
+            continue
+        out.append(action)
+    return out
+
+
+def _max_task_attempt_retries(config: ZfConfig) -> int:
+    values = [
+        int(getattr(role, "max_rework_attempts", 0) or 0)
+        for role in getattr(config, "roles", []) or []
+    ]
+    values = [value for value in values if value > 0]
+    return max(values) if values else 3
+
+
 def _pending_worker_lifecycle_actions(
     state_dir: Path,
     projection: dict[str, Any],
@@ -4327,6 +4952,8 @@ def _pending_repair_validation_actions(
 
 
 def _pending_failure_closeout_activation_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+    if _current_run_completed_closeout(events) is not None:
+        return []
     activated_refs = {
         str((event.payload or {}).get("manifest_ref") or "")
         for event in events
@@ -5272,6 +5899,8 @@ def _attention_diagnostic_action(
         ),
         "suggested_route": str(item.get("suggested_route") or ""),
         "suggested_action": _safe_mapping(item.get("suggested_action")),
+        "notification_policy": str(item.get("notification_policy") or ""),
+        "recovery_policy": str(item.get("recovery_policy") or ""),
         "recommended_actions": _attention_recommended_actions(item, fingerprint=fingerprint),
         "expected_output": [
             "diagnosis_report",
@@ -5293,6 +5922,8 @@ def _attention_failure_class(item: dict[str, Any], *, fingerprint: str) -> str:
     ]).lower()
     if "silent_stall" in text or "worker_noop" in text or "terminal" in text:
         return "worker_noop_or_terminal_missing"
+    if "cost.budget" in text or "budget_exceeded" in text or "budget exceeded" in text:
+        return "cost_budget_exceeded"
     if "human.escalate" in text or "human" in text:
         return "human_attention_delivery"
     if "feishu" in text or "delivery" in text or "owner.visible" in text:
@@ -5315,6 +5946,12 @@ def _attention_recommended_actions(
             "replay_worker_briefing",
             "respawn_worker_lane",
             "rehydrate_task_state",
+        ])
+    elif failure_class == "cost_budget_exceeded":
+        recommendations.extend([
+            "inspect_budget_diagnostics_projection",
+            "summarize_budget_state",
+            "recommend_continue_or_stop_decision_if_needed",
         ])
     elif failure_class == "owner_visible_delivery":
         recommendations.append("notification_fallback_to_inbox")
@@ -5833,12 +6470,19 @@ def _human_decision_action(
 def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
     escalations = _human_escalations_by_token(events)
     resolved = _seen_human_decisions(events)
+    terminal_closeout = _current_run_completed_closeout(events)
     rows = []
     for token, payload in escalations.items():
         if token in resolved or str(payload.get("event_id") or "") in resolved:
             continue
         source_event = _event_by_id(events, str(payload.get("event_id") or ""))
         if source_event is not None and _event_superseded_by_later_progress(events, source_event):
+            continue
+        blocking_scope = str(payload.get("blocking_scope") or "run")
+        if (
+            terminal_closeout is not None
+            and not _is_blocking_human_decision({"blocking_scope": blocking_scope})
+        ):
             continue
         rows.append({
             "decision_token": token,
@@ -5858,8 +6502,34 @@ def _pending_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
             "suggested_options": [
                 str(value) for value in payload.get("suggested_options") or []
             ],
+            # FIX-3:blocking_scope/approval_command 随包透传;legacy 无
+            # scope 的包按 run 处理(fail-closed)。
+            "blocking_scope": blocking_scope,
+            "approval_command": str(payload.get("approval_command") or ""),
         })
     return sorted(rows, key=lambda item: item.get("created_ts") or "")
+
+
+def _blocking_human_decisions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+    return [
+        item for item in _pending_human_decisions(events)
+        if _is_blocking_human_decision(item)
+    ]
+
+
+def _is_blocking_human_decision(ref: Any) -> bool:
+    if not isinstance(ref, dict):
+        return True
+    scope = str(ref.get("blocking_scope") or "run").strip().lower().replace("-", "_")
+    return scope in {
+        "",
+        "run",
+        "workflow",
+        "main",
+        "main_flow",
+        "main_flow_blocking",
+        "blocking",
+    }
 
 
 def _event_by_id(events: list[ZfEvent], event_id: str) -> ZfEvent | None:
@@ -6204,6 +6874,8 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
             or payload.get("idempotency_key")
             or ""
         ) == checkpoint_id:
+            if not _is_diagnosis_action(action):
+                continue
             if _diagnosis_action_request_stalled(events, action):
                 continue
             return True
@@ -6219,6 +6891,19 @@ def _action_seen(events: list[ZfEvent], action: dict[str, Any]) -> bool:
             and str(payload.get("source_action_checkpoint_id") or "") == checkpoint_id
         ):
             return True
+    # FIX-5①(bizsim r4 $697 空转账单):verify.failed 不在上面的去重集,
+    # "applied 成功但预期下游事件未现"的动作会被逐 tick 无限重规划。
+    # 同 checkpoint 的 verify.failed 达到上限即视为 seen——3 条失败事件
+    # 本身就是可查痕迹,后续交 attention/operator,不再自动重烧。
+    verify_failed = 0
+    for event in events:
+        if event.type != RUN_MANAGER_ACTION_VERIFY_FAILED:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("checkpoint_id") or "") == checkpoint_id:
+            verify_failed += 1
+            if verify_failed >= _ACTION_VERIFY_FAILED_CAP:
+                return True
     return False
 
 
@@ -6250,6 +6935,8 @@ def _diagnosis_action_request_stalled(
         request_event = event
         request_id = _autoresearch_request_id(event, payload)
     if request_event is None:
+        return False
+    if _current_run_completed_closeout(events) is not None:
         return False
     for event in events[request_index + 1:]:
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -6302,6 +6989,41 @@ def _collect_emitted_event_ids(result: dict[str, Any]) -> set[str]:
                 if str(event_id):
                     ids.add(str(event_id))
     return ids
+
+
+def _observed_event_types_for_action(
+    event_log: EventLog,
+    action: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    expected: set[str],
+) -> set[str]:
+    observed = _emitted_event_types(event_log, _collect_emitted_event_ids(result))
+    checkpoint_id = str(action.get("checkpoint_id") or "").strip()
+    source_event_id = str(action.get("source_event_id") or "").strip()
+    if not expected or not (checkpoint_id or source_event_id):
+        return observed
+    try:
+        events = event_log.read_all()
+    except Exception:
+        return observed
+    for event in events:
+        if event.type not in expected:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        marker_values = {
+            str(payload.get("checkpoint_id") or ""),
+            str(payload.get("resume_checkpoint_ref") or ""),
+            str(payload.get("idempotency_key") or ""),
+            str(payload.get("source_event_id") or ""),
+            str(event.causation_id or ""),
+        }
+        if checkpoint_id and checkpoint_id in marker_values:
+            observed.add(event.type)
+            continue
+        if source_event_id and source_event_id in marker_values:
+            observed.add(event.type)
+    return observed
 
 
 def _emitted_event_types(event_log: EventLog, event_ids: set[str]) -> set[str]:
@@ -6484,13 +7206,34 @@ def _status_explain_decision(
 
     pending_human = completion_profile.get("pending_human_decisions")
     if pending_human:
+        # FIX-3(bizsim r4 F1):按 blocking_scope 分级。无任何 workflow
+        # 锚点(task/stage/lane/fanout/run)的审批(如频道侧成员失败的
+        # closeout)不再冻结全 run 派发——r4 实锚:一个频道回复失败的
+        # 审批把主链锁死 50min+,间接烧掉 $697 空转。legacy 无 scope
+        # 字段按 run 处理(fail-closed)。
+        run_refs = [
+            ref for ref in pending_human
+            if _is_blocking_human_decision(ref)
+        ]
+        side_refs = [
+            ref for ref in pending_human
+            if isinstance(ref, dict)
+            and not _is_blocking_human_decision(ref)
+        ]
         return {
             "owner_route": "human",
             "intervention_class": "human_decision",
-            "wait_reason": "human_decision_pending",
-            "next_auto_action": "wait_for_human_decision",
-            "blocking": True,
-            "blocking_refs": pending_human,
+            "wait_reason": (
+                "human_decision_pending"
+                if run_refs else "side_decision_pending"
+            ),
+            "next_auto_action": (
+                "wait_for_human_decision"
+                if run_refs else "continue_dispatch"
+            ),
+            "blocking": bool(run_refs),
+            "blocking_refs": run_refs,
+            "side_blocking_refs": side_refs,
         }
     if completion_profile.get("status") == "complete":
         maintenance = []
@@ -6643,6 +7386,16 @@ def _pending_action_explain(
         "preflight_status": str((action.get("preflight") or {}).get("status") or ""),
         "readiness": readiness,
         "skip_reason": skip_reason,
+        "attempt_context": (
+            action.get("attempt_context")
+            if isinstance(action.get("attempt_context"), dict)
+            else {}
+        ),
+        "attempt_contexts": (
+            action.get("attempt_contexts")
+            if isinstance(action.get("attempt_contexts"), list)
+            else []
+        ),
     }
 
 

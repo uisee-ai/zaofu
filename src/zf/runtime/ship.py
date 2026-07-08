@@ -384,7 +384,16 @@ class ShipService:
         try:
             self._git(self.project_root, "checkout", target_branch)
             self._git(self.project_root, "reset", "--hard", original_head)
-            self._git(self.project_root, "clean", "-fd")
+            clean_args = ["clean", "-fd"]
+            try:
+                state_rel = self.state_dir.resolve().relative_to(
+                    self.project_root.resolve(),
+                )
+            except (OSError, ValueError):
+                state_rel = None
+            if state_rel is not None and state_rel.parts:
+                clean_args.extend(["-e", f"{state_rel.as_posix()}/"])
+            self._git(self.project_root, *clean_args)
         except RuntimeError:
             pass
 

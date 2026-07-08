@@ -92,6 +92,37 @@ def test_abnormal_event_registry_projects_runtime_stall() -> None:
     assert envelope["source_refs"] == ["events.jsonl#evt-stall"]
 
 
+def test_budget_exceeded_projection_uses_stable_policy_fingerprint() -> None:
+    first = ZfEvent(
+        type="cost.budget.exceeded",
+        id="evt-budget-1",
+        payload={
+            "scope": "global",
+            "budget_usd": 60.0,
+            "current_usd": 96.03,
+        },
+    )
+    second = ZfEvent(
+        type="cost.budget.exceeded",
+        id="evt-budget-2",
+        payload={
+            "scope": "global",
+            "budget_usd": 60.0,
+            "current_usd": 96.03,
+        },
+    )
+
+    p1 = abnormal_event_projection(first)
+    p2 = abnormal_event_projection(second)
+
+    assert p1 is not None
+    assert p2 is not None
+    assert p1["fingerprint"] == p2["fingerprint"]
+    assert p1["notification_policy"] == "owner_on_human_required"
+    assert p1["recovery_policy"] == "run_manager"
+    assert p1["problem_envelope"]["problem_class"] == "runtime_liveness"
+
+
 def test_expected_negative_event_projects_without_becoming_actionable() -> None:
     event = ZfEvent(
         type="verify.failed",

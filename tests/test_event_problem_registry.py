@@ -4,6 +4,8 @@ from zf.core.config.workflow_profiles import expand_workflow_profile
 from zf.core.events.known_types import KNOWN_EVENT_TYPES
 from zf.runtime.event_problem_registry import (
     EVENT_PROBLEM_SPECS,
+    NOTIFICATION_POLICIES,
+    RECOVERY_POLICIES,
     event_consumer_contract_gaps,
     spec_for_event,
 )
@@ -22,6 +24,7 @@ def test_flow_semantic_failure_events_have_consumer_contracts() -> None:
         "module.parity.scan.failed",
         "cangjie.module.parity.scan.failed",
         "zaofu.refactor.plan.blocked",
+        "task.attempt.failed",
     }
 
     assert required <= set(EVENT_PROBLEM_SPECS)
@@ -94,3 +97,19 @@ def test_refactor_flow_profile_failure_events_have_registry_entries() -> None:
     assert event_consumer_contract_gaps(failure_events) == []
     assert spec_for_event("impl.child.failed") is not None
     assert spec_for_event("lane.stage.failed") is not None
+
+
+def test_notification_and_recovery_policies_are_registered_values() -> None:
+    for spec in EVENT_PROBLEM_SPECS.values():
+        assert spec.effective_notification_policy in NOTIFICATION_POLICIES
+        assert spec.effective_recovery_policy in RECOVERY_POLICIES
+
+
+def test_budget_exceeded_triages_through_run_manager_policy() -> None:
+    spec = spec_for_event("cost.budget.exceeded")
+
+    assert spec is not None
+    assert spec.owner_route == "run_manager"
+    assert spec.effective_recovery_policy == "run_manager"
+    assert spec.effective_notification_policy == "owner_on_human_required"
+    assert spec.dedupe_key_fields == ("scope", "role", "budget_usd")

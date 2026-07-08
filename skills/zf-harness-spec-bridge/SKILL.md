@@ -20,8 +20,25 @@ ZaoFu provides four `zf spec` subcommands to bridge markdown → kanban
 without per-round prompt engineering. This bridge is skill-pack agnostic:
 `agent-skills` is the default content producer, but another planning/spec skill
 pack is valid as long as it writes markdown artifacts that these commands can
-validate or merge. Use the commands in this order whenever a spec defines
-multiple downstream VS / tasks.
+validate or merge. Use the commands in this order for the **manual / single-session
+spec landing** scenario — an arch or operator hand-drafting a spec/plan/ADR md
+and turning it into kanban tasks outside of a running fanout.
+
+## Boundary: fanout plan pipeline vs `zf spec ingest`
+
+These two paths do NOT overlap — pick by whether you are inside a fanout run:
+
+- **Inside a fanout run** (plan → writer fanout), the plan stage's downstream
+  tasks are minted from the `task_map.json` machine contract, NOT from
+  `zf spec ingest`. That path is owned by **`zf-plan-task-map-contract`**, and
+  the kernel already de-dupes re-minting by fingerprint — emitting
+  `plan.minting.suppressed` when the same task_map would be minted twice
+  (`src/zf/runtime/orchestrator_fanout.py:3042,3086`). Do NOT route fanout plan
+  output through `zf spec ingest`; it would bypass the task_map contract and the
+  suppression fingerprint.
+- **Manual / single-session spec landing** (no fanout, an arch/operator drafting
+  a spec md by hand) is exactly what `zf spec ingest` is for. Use this bridge
+  here; do not hand-roll kanban.json.
 
 ## When to use which subcommand
 

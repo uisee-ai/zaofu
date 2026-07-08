@@ -41,7 +41,10 @@ def build_plan_integrity_projection(
                 "Active task has no plan/spec/design ref",
                 "task contract lacks plan_ref/spec_ref/source_backlog_task_id",
             ))
-        if task.contract.acceptance_criteria and not task.contract.acceptance_evidence:
+        if (
+            task.contract.acceptance_criteria
+            and not _has_acceptance_evidence(task, events)
+        ):
             findings.append(_finding(
                 "acceptance-without-evidence",
                 "warn",
@@ -88,9 +91,53 @@ def task_plan_refs(task: Task) -> list[str]:
         contract.source_backlog_task_id,
         contract.tdd_ref,
         contract.critic_gate_ref,
+        contract.source_ref,
+        contract.source_index_ref,
+        contract.product_contract_ref,
     ]
     values.extend(contract.handoff_artifacts or [])
+    evidence_contract = (
+        contract.evidence_contract
+        if isinstance(contract.evidence_contract, dict)
+        else {}
+    )
+    source_refs = evidence_contract.get("source_refs")
+    if isinstance(source_refs, dict):
+        values.extend(str(value) for value in source_refs.values())
+    elif isinstance(source_refs, list):
+        values.extend(str(value) for value in source_refs)
     return [str(value) for value in values if str(value or "").strip()]
+
+
+def _has_acceptance_evidence(task: Task, events: list[ZfEvent]) -> bool:
+    if task.contract.acceptance_evidence:
+        return True
+    task_id = str(task.id or "")
+    if not task_id:
+        return False
+    evidence_events = {
+        "lane.stage.completed",
+        "verify.child.completed",
+        "verify.passed",
+        "test.passed",
+        "judge.passed",
+        "task.done",
+        "task.done.accepted",
+    }
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        payload_task_id = str(payload.get("task_id") or "")
+        completed_task_ids = {
+            str(value) for value in payload.get("completed_task_ids") or []
+            if str(value or "").strip()
+        } if isinstance(payload.get("completed_task_ids"), list) else set()
+        if task_id not in {str(event.task_id or ""), payload_task_id} | completed_task_ids:
+            continue
+        if event.type in evidence_events:
+            return True
+        if payload.get("acceptance_evidence_update"):
+            return True
+    return False
 
 
 def _read_events(state_dir: Path) -> list[ZfEvent]:

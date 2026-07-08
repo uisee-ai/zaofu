@@ -233,11 +233,20 @@ def _child_boundary_diagnostics(
 ) -> list[EventContractDiagnostic]:
     diagnostics: list[EventContractDiagnostic] = []
     effective_wake = compute_effective_wake_patterns(config)
+    lane_terminal_events = {
+        producer.event_type
+        for producer in producers
+        if producer.producer_kind == "lane_pipeline_terminal"
+    }
     for producer in producers:
         if not producer.producer_kind.startswith("stage_aggregate_child_"):
             continue
         spec = spec_for_event(producer.event_type)
-        if spec is not None and spec.owner_route != "kernel_aggregate":
+        if (
+            spec is not None
+            and spec.owner_route != "kernel_aggregate"
+            and producer.event_type not in lane_terminal_events
+        ):
             diagnostics.append(EventContractDiagnostic(
                 severity="error",
                 kind="child_result_owner_boundary_violation",

@@ -165,7 +165,14 @@ class TestG2EventsDerivedState:
         }
         text = _format_owner_message(_ev("owner.visible_message.requested"), payload)
         lines = text.splitlines()
-        assert lines[1].startswith("events-state: terminal_seen")
+        # backlog 2026-07-07-1315: G2 events-derived truth still leads (line 2,
+        # right after the severity header) but is now plain Chinese, not the raw
+        # "events-state:" dump.
+        assert lines[1].startswith("事件判定:任务已到达终态")
+        assert "judge.passed" in lines[1]
+        # events truth leads the body: it sits above the actionable footer and
+        # there is no raw "severity:" field dump anymore.
+        assert not any(l.startswith("severity:") for l in lines)
         assert lines.index(lines[1]) < next(
-            i for i, l in enumerate(lines) if l.startswith("severity:")
+            i for i, l in enumerate(lines) if l.startswith("——回复")
         )

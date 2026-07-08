@@ -381,6 +381,7 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
         for stage in stages:
             if not isinstance(stage, dict):
                 continue
+            _normalize_rendered_stage_fanout(stage)
             for field in ("on_reject", "on_fail"):
                 backedge = stage.get(field)
                 if isinstance(backedge, dict) and not str(
@@ -394,7 +395,10 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
 
     flow_metadata = workflow.pop("flow_metadata", None)
     if isinstance(flow_metadata, dict) and flow_metadata:
-        workflow["_flow_metadata"] = flow_metadata
+        rendered_flow_metadata = dict(flow_metadata)
+        if workflow.get("pipelines") and workflow.get("stages"):
+            rendered_flow_metadata["rendered_pipeline_stages"] = True
+        workflow["_flow_metadata"] = rendered_flow_metadata
 
     pipelines = workflow.get("pipelines")
     if isinstance(pipelines, list):
@@ -411,6 +415,58 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
     workflow.pop("pipelines_role_meta", None)
     workflow.pop("pipelines_schema_sources", None)
     return data
+
+
+def _normalize_rendered_stage_fanout(stage: dict[str, Any]) -> None:
+    """Render stage fields in the shape the loader actually consumes.
+
+    ``WorkflowStageConfig`` stores ``assignment`` / ``children`` as top-level
+    dataclass fields, while the source YAML contract puts them under
+    ``fanout``.  Config render output is often copied to ``zf.yaml`` and loaded
+    again; leaving these fields top-level silently drops affinity scheduling on
+    reload.
+    """
+
+    assignment = stage.pop("assignment", None)
+    children = stage.pop("children", None)
+    fanout = stage.get("fanout")
+    if fanout is not None and not isinstance(fanout, dict):
+        fanout = {}
+        stage["fanout"] = fanout
+
+    needs_fanout = False
+    if isinstance(assignment, dict) and _rendered_assignment_has_contract(
+        assignment,
+    ):
+        fanout = fanout if isinstance(fanout, dict) else {}
+        fanout.setdefault("assignment", assignment)
+        needs_fanout = True
+    if isinstance(children, list) and children:
+        fanout = fanout if isinstance(fanout, dict) else {}
+        fanout.setdefault("children", children)
+        needs_fanout = True
+
+    if needs_fanout:
+        stage["fanout"] = fanout
+    elif isinstance(fanout, dict) and not fanout:
+        stage.pop("fanout", None)
+
+
+def _rendered_assignment_has_contract(assignment: dict[str, Any]) -> bool:
+    strategy = str(assignment.get("strategy") or "").strip()
+    lane_profile = str(assignment.get("lane_profile") or "").strip()
+    stage_slot = str(assignment.get("stage_slot") or "").strip()
+    role_pool = assignment.get("role_pool") or []
+    if isinstance(role_pool, list):
+        has_role_pool = any(str(item).strip() for item in role_pool)
+    else:
+        has_role_pool = bool(role_pool)
+    return (
+        bool(strategy and strategy != "static_index")
+        or has_role_pool
+        or bool(lane_profile)
+        or bool(stage_slot)
+    )
 
 
 def _renderable_lane_pipeline(item: dict[str, Any]) -> dict[str, Any]:

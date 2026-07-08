@@ -19,6 +19,7 @@ from zf.runtime.autoresearch_invocation import (
     autoresearch_invocation_projection,
     build_invocation_request_event,
 )
+from zf.runtime.event_problem_registry import spec_for_event
 from zf.runtime.problem_taxonomy import problem_envelope_from_attention
 from zf.runtime.supervisor_recovery_projection import (
     CONTEXT_RECOVERY_SCHEMA_VERSION,
@@ -349,6 +350,8 @@ def _decision_payload(
         "problem_envelope": problem_envelope,
         "confidence": "derived",
         "budget_class": "operator_visible",
+        "notification_policy": _notification_policy(item),
+        "recovery_policy": _recovery_policy(item),
         "projection_ref": projection_ref,
     }
 
@@ -454,6 +457,8 @@ def _owner_message_payload(
         "attention_id": str(item.get("attention_id") or ""),
         "fingerprint": str(item.get("fingerprint") or ""),
         "problem_envelope": decision.get("problem_envelope") or problem_envelope_from_attention(item),
+        "notification_policy": _notification_policy(item),
+        "recovery_policy": _recovery_policy(item),
         "delivery_targets": _owner_message_delivery_targets(
             item,
             decision=decision,
@@ -494,17 +499,21 @@ def _human_action_required(item: dict[str, Any], decision: dict[str, Any]) -> bo
         "operator_approval",
     }:
         return True
-    if any(token in title or token in summary for token in (
+    triage_first = (
+        _run_manager_triage_first(item, decision)
+        and not _run_manager_human_decision(item, decision)
+    )
+    human_tokens = (
         "approve",
         "approval",
         "credential",
         "secret",
-        "budget",
         "permission",
         "destructive",
         "merge",
         "restart",
-    )):
+    )
+    if any(token in title or token in summary for token in human_tokens):
         return True
     if source in {"human_gate", "owner_approval", "repair_closeout"}:
         return True
@@ -530,15 +539,81 @@ def _suppress_owner_message_for_triage(item: dict[str, Any], decision: dict[str,
         return False
     if str(item.get("severity") or "").lower() == "critical":
         return False
+    policy = _notification_policy(item)
+    if policy in {
+        "run_manager_first",
+        "owner_on_repair_failed",
+        "owner_on_human_required",
+    }:
+        return True
+    if policy == "owner_immediate":
+        return False
     return _run_manager_triage_first(item, decision)
 
 
 def _run_manager_triage_first(item: dict[str, Any], decision: dict[str, Any]) -> bool:
+    if _recovery_policy(item) in {"run_manager", "run_manager_then_autoresearch"}:
+        return True
     route = str(decision.get("route") or item.get("suggested_route") or "")
     source = str(item.get("source") or "")
     if route in {"run_manager_recovery", "run_manager_human_decision", "supervisor_autoresearch"}:
         return True
     return source in {"workflow_resume", "autoresearch", "plan_integrity", "run_manager_decision"}
+
+
+def _notification_policy(item: dict[str, Any]) -> str:
+    value = str(item.get("notification_policy") or "").strip()
+    if value:
+        return value
+    spec = _spec_for_attention(item)
+    if spec is not None:
+        return spec.effective_notification_policy
+    return ""
+
+
+def _recovery_policy(item: dict[str, Any]) -> str:
+    value = str(item.get("recovery_policy") or "").strip()
+    if value:
+        return value
+    spec = _spec_for_attention(item)
+    if spec is not None:
+        return spec.effective_recovery_policy
+    return ""
+
+
+def _spec_for_attention(item: dict[str, Any]):
+    for event_type in _attention_event_type_candidates(item):
+        spec = spec_for_event(event_type)
+        if spec is not None:
+            return spec
+    return None
+
+
+def _attention_event_type_candidates(item: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in ("event_type", "source_event_type", "type"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            candidates.append(value)
+    action = item.get("suggested_action")
+    if isinstance(action, dict):
+        for key in ("event_type", "source_event_type", "type"):
+            value = str(action.get(key) or "").strip()
+            if value:
+                candidates.append(value)
+    envelope = item.get("problem_envelope")
+    if isinstance(envelope, dict):
+        for key in ("event_type", "source_event_type", "type"):
+            value = str(envelope.get(key) or "").strip()
+            if value:
+                candidates.append(value)
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        if value not in seen:
+            seen.add(value)
+            out.append(value)
+    return out
 
 
 def _run_manager_human_decision(item: dict[str, Any], decision: dict[str, Any]) -> bool:

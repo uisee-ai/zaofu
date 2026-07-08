@@ -136,6 +136,48 @@ def test_plan_integrity_accepts_existing_contract_refs(tmp_path: Path) -> None:
     assert projection["summary"]["weak_acceptance"] == 0
 
 
+def test_plan_integrity_accepts_generated_task_source_refs(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task = Task(
+        id="TASK-GEN",
+        title="generated task",
+        status="review",
+        contract=TaskContract(
+            acceptance_criteria=["feature works"],
+            product_contract_ref=".zf/artifacts/default/task_map.json",
+            evidence_contract={
+                "source_refs": {
+                    "task_map_ref": ".zf/artifacts/default/task_map.json",
+                    "source_index_ref": ".zf/artifacts/default/source_index.json",
+                },
+            },
+        ),
+    )
+
+    projection = build_plan_integrity_projection(
+        state_dir,
+        project_root=tmp_path,
+        tasks=[task],
+        events=[ZfEvent(
+            id="evt-verify",
+            type="lane.stage.completed",
+            actor="zf-cli",
+            task_id="TASK-GEN",
+            payload={
+                "task_id": "TASK-GEN",
+                "evidence_refs": ["reports/verify.json"],
+            },
+        )],
+    )
+
+    kinds = {finding["kind"] for finding in projection["findings"]}
+    assert "task-missing-plan-ref" not in kinds
+    assert "acceptance-without-evidence" not in kinds
+
+
 def test_supervisor_snapshot_flags_stale_active_run(
     tmp_path: Path,
 ) -> None:

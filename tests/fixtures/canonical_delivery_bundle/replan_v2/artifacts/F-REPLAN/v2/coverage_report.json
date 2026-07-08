@@ -3,7 +3,8 @@
   "feature_id": "F-REPLAN",
   "tasks": [
     {"task_id": "TASK-REPLAN-A", "source_status": "covered"},
-    {"task_id": "TASK-REPLAN-B", "source_status": "covered"}
+    {"task_id": "TASK-REPLAN-B", "source_status": "covered"},
+    {"task_id": "TASK-REPLAN-ASSEMBLY", "source_status": "covered"}
   ],
   "unresolved_unknowns": []
 }

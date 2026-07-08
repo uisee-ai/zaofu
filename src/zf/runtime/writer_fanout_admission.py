@@ -94,7 +94,14 @@ def load_writer_task_map(
         if worktree_path is not None:
             path = worktree_path
         else:
-            raise RuntimeError(f"writer fanout task_map not found: {path}")
+            # A1(PRD goal-mode e2e finding-1):agent 按字面 `.zf/` 写进
+            # project root 而 state_dir 名不同 → 别名解析 404。补字面
+            # project_root 回退(仍要求文件真实存在,fail-closed 不变)。
+            literal_path = Path(project_root) / rendered
+            if literal_path.exists():
+                path = literal_path
+            else:
+                raise RuntimeError(f"writer fanout task_map not found: {path}")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
@@ -141,7 +148,11 @@ def load_writer_task_map(
         # see the full task_map. Gap-only resumes intentionally dispatch a
         # filtered subset, so validating those global invariants against only
         # requested gap tasks produces a false assembly/root-owner cancellation.
-        problems = validate_lane_pipeline_admission(pipeline_spec, all_items)
+        problems = validate_lane_pipeline_admission(
+            pipeline_spec,
+            all_items,
+            task_map_payload=data if isinstance(data, dict) else None,
+        )
         if problems:
             raise ValueError(
                 "lane_pipeline admission rejected task_map: "
@@ -264,9 +275,11 @@ def writer_completion_admission(
 
 def writer_task_items(data: object) -> list[dict[str, Any]]:
     raw_items: object = []
+    wave_by_task: dict[str, int] = {}
     if isinstance(data, list):
         raw_items = data
     elif isinstance(data, dict):
+        wave_by_task = _wave_by_task_id(data)
         for key in ("tasks", "children", "task_order", "order"):
             if isinstance(data.get(key), list):
                 raw_items = data[key]
@@ -291,6 +304,7 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
         allowed_paths = _string_list(
             raw.get("allowed_paths")
             or raw.get("paths")
+            or raw.get("path")
             or raw.get("scope")
             or raw.get("exclusive_files")
         )
@@ -312,7 +326,10 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
             "allowed_paths": allowed_paths,
             "protected_paths": protected_paths,
             "payload": dict(payload),
-            "wave": _optional_int(raw.get("wave")) or 0,
+            "wave": _optional_int(
+                raw.get("wave") if raw.get("wave") is not None else wave_by_task.get(task_id)
+            ) or 0,
+            "blocked_by": _source_refs_list(raw.get("blocked_by")),
             "owner_role": owner_role,
             "owner_instance": owner_instance,
             "affinity_tag": str(raw.get("affinity_tag") or "").strip(),
@@ -354,7 +371,96 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
             "verification": verification,
             "raw_task": dict(raw),
         })
-    return items
+    return _normalize_writer_task_items(items)
+
+
+def _normalize_writer_task_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize task-local ownership noise before cross-task admission.
+
+    The admission gate must remain strict for real cross-slice ownership
+    conflicts, but generated plans often use placeholder files such as
+    ``app/test/.gitkeep`` to scaffold a directory later owned by a test slice
+    via ``app/test/**``. Treat those placeholder files as directory-creation
+    implementation detail, not durable write ownership.
+    """
+    if not items:
+        return items
+    subtree_prefixes: list[tuple[str, ...]] = []
+    for item in items:
+        for raw_path in item.get("allowed_paths") or []:
+            path = str(raw_path or "").strip()
+            if _is_subtree_glob(path):
+                subtree_prefixes.append(_normalize_path_prefix(path))
+
+    out: list[dict[str, Any]] = []
+    for item in items:
+        allowed = _string_list(item.get("allowed_paths"))
+        normalized: list[str] = []
+        for path in allowed:
+            if _is_placeholder_path(path):
+                norm = _normalize_path_prefix(path)
+                if any(_prefix_contains(prefix, norm) for prefix in subtree_prefixes):
+                    continue
+            normalized.append(path)
+        normalized = _dedupe_redundant_task_paths(normalized)
+        if normalized == allowed:
+            out.append(item)
+        else:
+            updated = dict(item)
+            updated["allowed_paths"] = normalized
+            out.append(updated)
+    return out
+
+
+def _dedupe_redundant_task_paths(paths: list[str]) -> list[str]:
+    subtree_prefixes = [
+        _normalize_path_prefix(path)
+        for path in paths
+        if _is_subtree_glob(path)
+    ]
+    out: list[str] = []
+    for path in paths:
+        norm = _normalize_path_prefix(path)
+        if (
+            not _is_subtree_glob(path)
+            and any(_prefix_contains(prefix, norm) for prefix in subtree_prefixes)
+        ):
+            continue
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def _is_subtree_glob(path: str) -> bool:
+    text = str(path or "").strip().rstrip("/")
+    return text.endswith("/**") or text == "**"
+
+
+def _is_placeholder_path(path: str) -> bool:
+    name = Path(str(path or "").strip()).name
+    return name in {".gitkeep", ".keep", ".placeholder"}
+
+
+def _prefix_contains(prefix: tuple[str, ...], child: tuple[str, ...]) -> bool:
+    if not prefix:
+        return True
+    if len(child) < len(prefix):
+        return False
+    return child[: len(prefix)] == prefix
+
+
+def _wave_by_task_id(data: dict[str, Any]) -> dict[str, int]:
+    waves = data.get("waves")
+    if not isinstance(waves, list):
+        return {}
+    out: dict[str, int] = {}
+    for raw in waves:
+        if not isinstance(raw, dict):
+            continue
+        wave = _optional_int(raw.get("wave")) or 0
+        for task_id in _string_list(raw.get("tasks")):
+            out.setdefault(task_id, wave)
+    return out
 
 
 def validate_writer_task_items(task_items: list[dict[str, Any]]) -> None:

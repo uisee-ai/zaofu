@@ -41,6 +41,28 @@ def test_default_config_returns_base_wake_patterns():
     assert compute_effective_wake_patterns(config) == set(WAKE_PATTERNS)
 
 
+def test_dag_external_triggers_wake_the_watcher():
+    """Declared external_triggers must enter the wake surface.
+
+    Light-topology entry (`prd.requested`) has a builtin reactor handler
+    but no owning stage; without folding external_triggers in, the
+    EventWatcher never wakes run_once and the light task_map synthesizer
+    silently never fires (2026-07-06 light baseline stall)."""
+    from zf.core.config.schema import WorkflowDagConfig
+
+    config = ZfConfig(
+        project=ProjectConfig(name="x"),
+        workflow=WorkflowConfig(
+            dag=WorkflowDagConfig(
+                external_triggers=["prd.requested", "task_map.ready"],
+            ),
+        ),
+    )
+    result = compute_effective_wake_patterns(config)
+    assert "prd.requested" in result
+    assert "task_map.ready" in result
+
+
 def test_disabled_hooks_do_not_extend():
     """hooks.enabled=False (default) → extension ignored.
 

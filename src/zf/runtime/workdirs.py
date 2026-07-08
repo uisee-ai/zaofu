@@ -16,7 +16,7 @@ from zf.core.safety import (
     write_workdir_owner_marker,
 )
 from zf.core.state.atomic_io import atomic_write_text
-from zf.runtime.worktree_env import provision_worktree_env
+from zf.runtime.worktree_env import provision_worktree_env, run_project_setup
 
 
 @dataclass(frozen=True)
@@ -65,6 +65,19 @@ class WorkdirManager:
         if root.parts and root.parts[0] == ".zf":
             return self.state_dir.joinpath(*root.parts[1:])
         return self.project_root / root
+
+    def _run_declared_setup(self, role: RoleConfig, project_path: Path) -> None:
+        """执行 project.scripts.setup(若声明)。失败 fail-closed:
+        worktree 不可运行时派活只会烧 token,宁可铸造失败走既有补救。"""
+        setup = self.config.project.setup_script
+        if not setup:
+            return
+        result = run_project_setup(project_path, setup)
+        if not result.ok:
+            raise RuntimeError(
+                f"workdir setup failed for {role.instance_id}"
+                f" (exit {result.exit_code}): {result.detail}"
+            )
 
     def plan(self, role: RoleConfig) -> WorkdirPlan:
         workdir = self.root / role.instance_id
@@ -279,6 +292,7 @@ class WorkdirManager:
             self.config.runtime.workdirs.provision_paths,
             bootstrap_uv_dev=True,
         )
+        self._run_declared_setup(role, project_path)
         self._write_metadata(role, plan, git_worktree_created=True)
 
     def _prepare_reader_worktree(self, role: RoleConfig, plan: WorkdirPlan) -> None:
@@ -315,6 +329,7 @@ class WorkdirManager:
             self.config.runtime.workdirs.provision_paths,
             bootstrap_uv_dev=True,
         )
+        self._run_declared_setup(role, project_path)
         self._write_metadata(role, plan, git_worktree_created=True)
 
     def checkout_reader_task_ref(self, role: RoleConfig, task_id: str) -> str | None:
@@ -348,6 +363,38 @@ class WorkdirManager:
             source_commit=source_commit,
         )
         return target_ref
+
+    def pin_reader_target(self, role: RoleConfig, target_ref: str) -> str:
+        """FIX-9/15①(bizsim r4 F9):按 commit 锁定 reader 审计对象。
+
+        返回锁定的 commit sha;非 worktree reader 返回 ""(无 workdir 可审计,
+        由调用方决定是否放行)。解析/checkout/HEAD 校验任一步失败抛
+        RuntimeError——fail-closed 由派发方兑现,禁止静默降级到旧 HEAD。
+        """
+        plan = self.plan(role)
+        if not plan.enabled or plan.mode != "worktree" or plan.role_kind != "reader":
+            return ""
+        checkout_ref = self._resolve_reader_checkout_ref(target_ref)
+        pinned = self._git(
+            self.project_root, "rev-parse", f"{checkout_ref}^{{commit}}",
+        ).strip()
+        self.prepare(role)
+        project_path = Path(plan.project_path)
+        self._git(project_path, "reset", "--hard", "HEAD")
+        self._git(project_path, "clean", "-fd")
+        self._git(project_path, "checkout", "--detach", pinned)
+        head = self._git(project_path, "rev-parse", "HEAD").strip()
+        if head != pinned:
+            raise RuntimeError(
+                f"reader workdir HEAD {head[:12]} != pinned target {pinned[:12]}",
+            )
+        self._write_task_metadata(
+            role,
+            plan,
+            target_ref=target_ref,
+            source_commit=pinned,
+        )
+        return pinned
 
     def _resolve_reader_checkout_ref(self, target_ref: str) -> str:
         ref = str(target_ref or "HEAD").strip() or "HEAD"

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -23,6 +25,7 @@ from zf.runtime.tick_services import (
     TickServiceIntervals,
     TickServiceState,
     _configured_run_manager_backend,
+    _emit_cost_blackout_if_needed,
     emit_stale_supervisor_projection_if_needed,
     run_standard_tick_services,
 )
@@ -104,6 +107,39 @@ def _state(tmp_path: Path) -> Path:
     (state_dir / "feature_list.json").write_text("[]\n", encoding="utf-8")
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
     return state_dir
+
+
+def test_cost_blackout_has_startup_grace_for_missing_initial_usage(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    dispatch_ts = datetime.fromtimestamp(
+        time.time() - 5,
+        tz=timezone.utc,
+    ).isoformat()
+    log.append(ZfEvent(
+        type="fanout.child.dispatched",
+        ts=dispatch_ts,
+        payload={"role_instance": "dev-1"},
+    ))
+    state = TickServiceState()
+
+    emitted = _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=state,
+        intervals=TickServiceIntervals(
+            cost_blackout_stale_s=900,
+            cost_blackout_startup_grace_s=60,
+            cost_blackout_cooldown_s=0,
+        ),
+    )
+
+    assert emitted is False
+    assert not [event for event in log.read_all() if event.type == "cost.usage.blackout"]
 
 
 def test_standard_tick_services_runs_supervisor_and_autoresearch(tmp_path: Path) -> None:

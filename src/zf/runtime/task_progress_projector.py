@@ -14,6 +14,8 @@ from zf.core.task.schema import Task
 _COMPLETED_EVENTS = {
     "dev.build.done",
     "static_gate.passed",
+    "lane.stage.completed",
+    "verify.child.completed",
     "review.approved",
     "verify.passed",
     "test.passed",

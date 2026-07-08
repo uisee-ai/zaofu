@@ -10,6 +10,10 @@ class ProjectConfig:
     name: str = ""
     workspace: str = "."
     state_dir: str = ".zf"
+    # project.scripts.setup:项目自声明的 worktree 就绪脚本,workdir 铸造
+    # provision 后在 worktree 内执行。内容属项目语义(pnpm install /
+    # uv sync ...),kernel 只负责执行、超时、幂等与失败上浮。
+    setup_script: str = ""
 
 
 @dataclass
@@ -392,6 +396,7 @@ class WorkflowStageRetryPolicyConfig:
 
 @dataclass
 class WorkflowStageCriteriaConfig:
+    instructions: list[str] = field(default_factory=list)
     success_criteria: list[dict] = field(default_factory=list)
     output: WorkflowStageOutputConfig = field(default_factory=WorkflowStageOutputConfig)
     retry: WorkflowStageRetryPolicyConfig = field(default_factory=WorkflowStageRetryPolicyConfig)
@@ -428,6 +433,10 @@ class WorkflowStageConfig:
     on_reject: WorkflowStageBackedgeConfig = field(default_factory=WorkflowStageBackedgeConfig)
     on_fail: WorkflowStageBackedgeConfig = field(default_factory=WorkflowStageBackedgeConfig)
     gate_profile: list[str] = field(default_factory=list)
+    # FIX-15②(bizsim r4):判审段 delta 门——同一审计对象 commit 已有本段
+    # 驳回记录时拒绝重开审(r4 judge 两次必败审的实锚)。opt-in,verify
+    # 类基建重试段勿开。
+    retrigger_requires_delta: bool = False
     # Opt-in: when a writer-fanout stage is driven directly by task_map.ready
     # (the refactor scan flow) instead of the product-delivery handshake,
     # synthesize the task_map's tasks as canonical kanban tasks before the
@@ -956,6 +965,18 @@ class RuntimeRunManagerConfig:
 
 
 @dataclass
+class RuntimeAutoresearchResidentConfig:
+    enabled: bool = False
+    interval_seconds: float = 10.0
+    max_actions_per_tick: int = 1
+    worktree_root: str = "/tmp/zaofu-autoresearch-resident/worktrees"
+    output_root: str = ""
+    self_repair_consumer: bool = False
+    self_repair_spawn: bool = False
+    self_repair_backend: str = ""
+
+
+@dataclass
 class RuntimeFeishuInboundConfig:
     enabled: bool = False
     # Only the long-connection bridge is productized as a zf start sidecar.
@@ -974,6 +995,9 @@ class RuntimeConfig:
     skills: RuntimeSkillsConfig = field(default_factory=RuntimeSkillsConfig)
     run_manager: RuntimeRunManagerConfig = field(
         default_factory=RuntimeRunManagerConfig,
+    )
+    autoresearch_resident: RuntimeAutoresearchResidentConfig = field(
+        default_factory=RuntimeAutoresearchResidentConfig,
     )
     feishu_inbound: RuntimeFeishuInboundConfig = field(
         default_factory=RuntimeFeishuInboundConfig,
@@ -1212,6 +1236,20 @@ class SafetyConfig:
 
 
 @dataclass
+class GoalConfig:
+    """133/G 批 goal 回路(灰度,默认全关 = 现行为零回归)。"""
+
+    enabled: bool = False
+    max_rescans: int = 5
+    idle_progress_ticks: int = 3
+    # U2:rework cap 指纹计数(同 findings 指纹才 +1;含驳回有效性前置)
+    rework_fingerprint: bool = False
+    quiescent_after_escalate: bool = True
+    # 批B:lane 微环(拒收→活会话续改,不换代不重派)
+    micro_loop: bool = False
+
+
+@dataclass
 class ZfConfig:
     version: str = "1.0"
     preset: str = ""
@@ -1242,6 +1280,7 @@ class ZfConfig:
     # fail-open(读失败按 $0 放行);True 时读失败按超额熔断——
     # "瞄具黑屏就停火",不再盲开。
     budget_fail_closed: bool = False
+    goal: GoalConfig = field(default_factory=GoalConfig)
 
     def __post_init__(self) -> None:
         # G-INST-2: expand replicas into independent RoleConfig instances.

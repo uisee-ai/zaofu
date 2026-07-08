@@ -161,6 +161,7 @@ def build_workflow_resume_checkpoints(
     progress_events.update(graph.event_sets.terminal_success_events)
     reconciler = WorkflowGraphReconciler()
     checkpoints: list[WorkflowResumeCheckpoint] = []
+    checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
     for task in task_list:
         if task.status in {"done", "cancelled"}:
             continue
@@ -215,6 +216,7 @@ def build_workflow_resume_checkpoints(
         already_done = _action_already_done(
             task=task,
             events=task_events,
+            all_events=event_list,
             source_event=progress,
             action=action,
             target_role=target_role,
@@ -316,6 +318,20 @@ def build_workflow_batch_resume_checkpoints(
             integrations[event.id] = checkpoint
             if checkpoint.fanout_id:
                 integration_fanout_ids.add(checkpoint.fanout_id)
+            continue
+
+        if event.type == "fanout.cancelled":
+            if not _fanout_cancelled_resume_supported(payload):
+                continue
+            checkpoint = _batch_checkpoint_from_event(
+                event,
+                source_event_type=event.type,
+                safe_resume_action=_batch_safe_action(payload),
+                evidence_event_ids=[event.id],
+                anchor=_anchor_for_event(event, anchors),
+            )
+            if checkpoint.fanout_id:
+                aggregates[checkpoint.fanout_id] = checkpoint
             continue
 
         if event.type != "human.escalate":
@@ -635,6 +651,17 @@ def _batch_safe_action(
     return "blocked_external_gate"
 
 
+def _fanout_cancelled_resume_supported(payload: dict[str, Any]) -> bool:
+    reason = str(payload.get("reason") or payload.get("error") or "")
+    if not str(payload.get("task_map_ref") or "").strip():
+        return False
+    if "task_map validation failed" in reason:
+        return False
+    if "writer fanout task_map has no tasks" in reason:
+        return False
+    return "writer fanout has more tasks than writer role instances" in reason
+
+
 def _latest_matching_integration(
     integrations: dict[str, WorkflowBatchResumeCheckpoint],
     event: ZfEvent,
@@ -664,9 +691,26 @@ def _batch_checkpoint_recovered(
             "workflow.resume.applied",
             "task_map.ready",
             "candidate.ready",
+            "lane.stage.completed",
+            "fanout.aggregate.completed",
+            "verify.passed",
+            "test.passed",
+            "judge.passed",
+            "run.completed",
             "orchestrator.replan_requested",
             }
         ):
+            recovered = True
+            continue
+        if event.type in {
+            "lane.stage.completed",
+            "fanout.aggregate.completed",
+            "candidate.ready",
+            "verify.passed",
+            "test.passed",
+            "judge.passed",
+            "run.completed",
+        } and _batch_success_matches_checkpoint(payload, checkpoint):
             recovered = True
             continue
         if not recovered:
@@ -773,7 +817,43 @@ def _repair_checkpoint_superseded_reason(
     )
     if source_idx < 0:
         return ""
+    later_success = _repair_checkpoint_later_success_reason(
+        events,
+        checkpoint,
+        source_idx,
+    )
+    if later_success:
+        return later_success
     known_fanouts = {checkpoint.fanout_id, checkpoint.upstream_fanout_id} - {""}
+    # A4(prd-goal e2e finding-9,BF-2 同秒盲区):时序守卫挡不住同秒
+    # 并发的多源检查点。补一刀:同 stage 同域存在**进行中**(已 started
+    # 无终局)的 fanout,无论先后一律拒——修复已在跑,重复 repair 只会
+    # 互噬(30 秒三连 replan 实弹)。
+    inflight: dict[str, dict] = {}
+    for event in events:
+        payload = _payload(event)
+        fanout_id = str(payload.get("fanout_id") or "")
+        if not fanout_id:
+            continue
+        if event.type == "fanout.started":
+            inflight[fanout_id] = payload
+        elif event.type in {
+            "fanout.aggregate.completed", "fanout.timed_out", "fanout.cancelled",
+        }:
+            inflight.pop(fanout_id, None)
+    for fanout_id, payload in inflight.items():
+        if fanout_id in known_fanouts:
+            continue
+        if str(payload.get("stage_id") or "") != checkpoint.stage_id:
+            continue
+        pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "")
+        checkpoint_scope = {checkpoint.pdd_id, checkpoint.feature_id} - {""}
+        if checkpoint_scope and pdd_id and pdd_id not in checkpoint_scope:
+            continue
+        return (
+            f"repair for stage {checkpoint.stage_id} already in flight: "
+            f"{fanout_id}"
+        )
     for event in events[source_idx + 1:]:
         if event.type != "fanout.started":
             continue
@@ -792,6 +872,129 @@ def _repair_checkpoint_superseded_reason(
             f"{fanout_id} ({event.id})"
         )
     return ""
+
+
+def _repair_checkpoint_later_success_reason(
+    events: list[ZfEvent],
+    checkpoint: WorkflowBatchResumeCheckpoint,
+    source_idx: int,
+) -> str:
+    """Detect a repair checkpoint already closed by later durable progress.
+
+    A dirty-workdir handoff can emit ``integration.failed`` and then be fixed
+    by a later ``task.ref.updated`` / ``candidate.ready`` before Run Manager
+    consumes the batch checkpoint. In that case a second repair fanout is
+    duplicate work and can race the already-progressing flow.
+    """
+    known_fanouts = {checkpoint.fanout_id, checkpoint.upstream_fanout_id} - {""}
+    failed_children = set(checkpoint.failed_children)
+    for event in events[source_idx + 1:]:
+        payload = _payload(event)
+        if event.type == "task.ref.updated" and _task_ref_update_matches_repair(
+            events,
+            event,
+            checkpoint,
+            known_fanouts,
+            failed_children,
+        ):
+            return f"repair checkpoint superseded by task.ref.updated {event.id}"
+        if event.type == "fanout.child.completed":
+            fanout_id = str(payload.get("fanout_id") or "")
+            child_id = str(payload.get("child_id") or "")
+            if fanout_id in known_fanouts and (
+                not failed_children or child_id in failed_children
+            ):
+                return (
+                    "repair checkpoint superseded by completed fanout child "
+                    f"{event.id}"
+                )
+        if event.type in {
+            "candidate.ready",
+            "test.passed",
+            "verify.passed",
+            "flow.discovery.completed",
+            "judge.passed",
+            "run.completed",
+        } and _batch_success_matches_checkpoint(payload, checkpoint):
+            return f"repair checkpoint superseded by {event.type} {event.id}"
+    return ""
+
+
+def _task_ref_update_matches_repair(
+    events: list[ZfEvent],
+    event: ZfEvent,
+    checkpoint: WorkflowBatchResumeCheckpoint,
+    known_fanouts: set[str],
+    failed_children: set[str],
+) -> bool:
+    payload = _payload(event)
+    trigger_id = str(payload.get("trigger_event_id") or "")
+    task_id = str(event.task_id or payload.get("task_id") or "")
+    trigger_payload: dict[str, Any] = {}
+    if trigger_id:
+        for candidate in events:
+            if candidate.id == trigger_id:
+                trigger_payload = _payload(candidate)
+                break
+    fanout_id = str(
+        trigger_payload.get("fanout_id")
+        or payload.get("fanout_id")
+        or ""
+    )
+    child_id = str(
+        trigger_payload.get("child_id")
+        or payload.get("child_id")
+        or ""
+    )
+    if fanout_id and known_fanouts and fanout_id not in known_fanouts:
+        return False
+    if failed_children and child_id:
+        return child_id in failed_children
+    if failed_children and task_id:
+        return any(
+            failed == task_id or failed.endswith(f"-{task_id}")
+            for failed in failed_children
+        )
+    return bool(fanout_id and fanout_id in known_fanouts)
+
+
+def _batch_success_matches_checkpoint(
+    payload: dict[str, Any],
+    checkpoint: WorkflowBatchResumeCheckpoint,
+) -> bool:
+    status = str(payload.get("status") or payload.get("quality_status") or "").lower()
+    if status in {"failed", "failure", "rejected", "blocked"}:
+        return False
+    if _string_list(payload.get("failed_children")):
+        return False
+    scope = {
+        checkpoint.pdd_id,
+        checkpoint.feature_id,
+        checkpoint.trace_id,
+        checkpoint.candidate_ref,
+        checkpoint.task_map_ref,
+    } - {""}
+    if not scope:
+        return False
+    payload_scope = {
+        str(payload.get("pdd_id") or ""),
+        str(payload.get("feature_id") or ""),
+        str(payload.get("trace_id") or ""),
+        str(payload.get("candidate_ref") or payload.get("target_ref") or ""),
+        str(payload.get("task_map_ref") or ""),
+    } - {""}
+    if not scope.intersection(payload_scope):
+        return False
+    completed_task_ids = set(_string_list(payload.get("completed_task_ids")))
+    if checkpoint.failed_children and completed_task_ids:
+        return any(
+            failed == completed
+            or failed.endswith(f"-{completed}")
+            or completed.endswith(f"-{failed}")
+            for failed in checkpoint.failed_children
+            for completed in completed_task_ids
+        )
+    return True
 
 
 def _same_candidate_scope(
@@ -1029,6 +1232,7 @@ def _action_already_done(
     *,
     task: Task,
     events: list[ZfEvent],
+    all_events: list[ZfEvent] | None = None,
     source_event: ZfEvent,
     action: str,
     target_role: str,
@@ -1060,9 +1264,17 @@ def _action_already_done(
             for event in tail
         )
     if action == "needs_gate_dispatch":
+        gate_events = list(all_events or events)
+        source_idx = next(
+            (idx for idx, event in enumerate(gate_events) if event.id == source_event.id),
+            -1,
+        )
+        tail = gate_events[source_idx + 1:] if source_idx >= 0 else gate_events
         source_ids = _linked_event_ids(source_event)
         source_ids.add(source_event.id)
         for event in tail:
+            if _downstream_gate_progress_for_task(event, task.id, source_event):
+                return True
             event_ids = _linked_event_ids(event)
             if not event_ids:
                 continue
@@ -1079,6 +1291,30 @@ def _action_already_done(
             }:
                 return True
         return False
+    return False
+
+
+def _downstream_gate_progress_for_task(
+    event: ZfEvent,
+    task_id: str,
+    source_event: ZfEvent,
+) -> bool:
+    if not task_id or event.id == source_event.id:
+        return False
+    payload = _payload(event)
+    if event.type == "lane.stage.completed":
+        return _event_task_match(event, task_id)
+    if event.type in {
+        "fanout.aggregate.completed",
+        "candidate.ready",
+        "test.passed",
+        "judge.passed",
+    }:
+        completed = {
+            str(value) for value in payload.get("completed_task_ids") or []
+            if str(value).strip()
+        }
+        return task_id in completed
     return False
 
 
@@ -1176,6 +1412,67 @@ def _safe_action_for_plan(action_type: str) -> str:
     return "blocked_external_gate"
 
 
+def _reader_stage_replan_checkpoints(
+    events: list[ZfEvent],
+    tasks: list[Task],
+    config: object,
+) -> list[WorkflowResumeCheckpoint]:
+    try:
+        from zf.runtime.stage_failure_replan import (
+            plan_reader_stage_replan,
+            reader_stage_failure_events,
+        )
+    except Exception:
+        return []
+    stage_by_failure = reader_stage_failure_events(config)
+    if not stage_by_failure:
+        return []
+    anchor_task_id = _single_active_workflow_anchor_task_id(tasks)
+    out: list[WorkflowResumeCheckpoint] = []
+    for event in events:
+        if event.type not in stage_by_failure:
+            continue
+        replan_event, note = plan_reader_stage_replan(config, events, event)
+        if replan_event is None:
+            continue
+        stage = stage_by_failure[event.type]
+        stage_id = str(getattr(stage, "id", "") or event.type)
+        task_id = str(event.task_id or anchor_task_id or "")
+        out.append(WorkflowResumeCheckpoint(
+            task_id=task_id,
+            last_trusted_event_id=event.id,
+            last_completed_stage=_stage_from_event(event.type),
+            expected_next_stage=f"replan:{stage_id}",
+            expected_next_role="",
+            blocking_event_id=event.id,
+            safe_resume_action="needs_stage_replan",
+            idempotency_key=_idempotency_key(
+                task_id or "workflow",
+                event.id,
+                "needs_stage_replan",
+                stage_id,
+            ),
+            evidence_event_ids=[event.id],
+            reason=note,
+            source_event_type=event.type,
+        ))
+    return out
+
+
+def _single_active_workflow_anchor_task_id(tasks: list[Task]) -> str:
+    try:
+        from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
+    except Exception:
+        return ""
+    matches = [
+        task.id
+        for task in tasks
+        if task.status not in {"done", "cancelled"}
+        and is_workflow_fanout_anchor_task(task)
+    ]
+    return matches[0] if len(matches) == 1 else ""
+
+
 def _action_priority(action_type: str) -> int:
     return {
         "route_rework": 0,
@@ -1204,8 +1501,34 @@ def _stage_from_event(event_type: str) -> str:
 def _events_for_task(events: list[ZfEvent], task_id: str) -> list[ZfEvent]:
     return [
         event for event in events
-        if not event.task_id or event.task_id == task_id
+        if _event_task_match(event, task_id)
     ]
+
+
+def _event_task_match(event: ZfEvent, task_id: str) -> bool:
+    if not task_id:
+        return False
+    if event.task_id:
+        return event.task_id == task_id
+    return _payload_task_id_match(event.payload, task_id)
+
+
+def _payload_task_id_match(payload: Any, needle: str) -> bool:
+    if not needle:
+        return False
+    if isinstance(payload, dict):
+        for key in (
+            "task_id",
+            "source_task_id",
+            "target_task_id",
+            "active_task_id",
+        ):
+            if str(payload.get(key) or "") == needle:
+                return True
+        nested = payload.get("task")
+        if isinstance(nested, dict) and str(nested.get("id") or "") == needle:
+            return True
+    return False
 
 
 def _read_events(state_dir: Path) -> list[ZfEvent]:

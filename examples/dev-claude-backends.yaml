@@ -179,6 +179,11 @@ roles:
   - zf-yoke-dev-worker-role-context
   - zf-harness-done-contract
   - zf-harness-state-sync
+  # Persist findings/evidence as kernel-consumable artifacts. Consumption
+  # channel: evidence_refs on dev.build.done -> State Packet evidence +
+  # completion-honesty; dev.blocked auto-promotes to memory.note, which the
+  # next holder's briefing memory-injection reads back.
+  - zf-harness-persistent-working-memory
   publishes:
   - dev.build.done
   - dev.blocked
@@ -225,6 +230,9 @@ roles:
   - zf-harness-verification-checklist
   - zf-harness-eval-harness
   - zf-harness-evaluator-scoring
+  # Same as dev: evidence_refs on test.passed feed State Packet evidence,
+  # completion-honesty, and channel projection.
+  - zf-harness-persistent-working-memory
   publishes:
   - test.passed
   - test.failed

@@ -79,3 +79,63 @@ def test_bootstraps_uv_dev_env_before_symlink(tmp_path: Path):
     assert provisioned == [".venv"]
     assert (worktree / ".venv").is_dir()
     assert not (worktree / ".venv").is_symlink()
+
+
+# --- project.scripts.setup(项目自声明 worktree 就绪脚本)---
+
+
+def test_run_project_setup_executes_and_marks(tmp_path: Path):
+    from zf.runtime.worktree_env import SETUP_MARKER, run_project_setup
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    result = run_project_setup(worktree, "touch installed.flag")
+
+    assert result.ran and result.ok and result.exit_code == 0
+    assert (worktree / "installed.flag").exists()
+    assert (worktree / SETUP_MARKER).exists()
+
+    # 幂等:marker 匹配 → 不重跑
+    (worktree / "installed.flag").unlink()
+    again = run_project_setup(worktree, "touch installed.flag")
+    assert not again.ran and again.ok
+    assert not (worktree / "installed.flag").exists()
+
+
+def test_run_project_setup_reruns_when_script_changes(tmp_path: Path):
+    from zf.runtime.worktree_env import run_project_setup
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    run_project_setup(worktree, "touch a.flag")
+
+    result = run_project_setup(worktree, "touch b.flag")
+
+    assert result.ran and result.ok
+    assert (worktree / "b.flag").exists()
+
+
+def test_run_project_setup_failure_is_surfaced_without_marker(tmp_path: Path):
+    from zf.runtime.worktree_env import SETUP_MARKER, run_project_setup
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    result = run_project_setup(worktree, "echo boom >&2; exit 3")
+
+    assert result.ran and not result.ok
+    assert result.exit_code == 3
+    assert "boom" in result.detail
+    assert not (worktree / SETUP_MARKER).exists()  # 失败不得记成已就绪
+
+
+def test_run_project_setup_no_declaration_is_noop(tmp_path: Path):
+    from zf.runtime.worktree_env import run_project_setup
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+
+    result = run_project_setup(worktree, "   ")
+
+    assert not result.ran and result.ok

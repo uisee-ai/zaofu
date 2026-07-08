@@ -42,13 +42,14 @@ def test_audit_task_complete_has_all_required_events() -> None:
         _Ev("arch.proposal.done", "evt-2", "2026-05-18T10:05:00", "TASK-X"),
         _Ev("design.critique.done", "evt-3", "2026-05-18T10:10:00", "TASK-X"),
         _Ev("dev.build.done", "evt-4", "2026-05-18T10:15:00", "TASK-X"),
-        _Ev("static_gate.passed", "evt-5", "2026-05-18T10:20:00", "TASK-X"),
-        _Ev("review.approved", "evt-6", "2026-05-18T10:25:00", "TASK-X"),
-        _Ev("test.passed", "evt-7", "2026-05-18T10:30:00", "TASK-X"),
+        _Ev("impl.child.completed", "evt-5", "2026-05-18T10:18:00", "TASK-X"),
+        _Ev("static_gate.passed", "evt-6", "2026-05-18T10:20:00", "TASK-X"),
+        _Ev("review.approved", "evt-7", "2026-05-18T10:25:00", "TASK-X"),
+        _Ev("test.passed", "evt-8", "2026-05-18T10:30:00", "TASK-X"),
         # verify.passed joined the canonical handoff baseline in 38c3ce1
         # (doc 73: verify is the merged review/test lane exit).
-        _Ev("verify.passed", "evt-8", "2026-05-18T10:32:00", "TASK-X"),
-        _Ev("judge.passed", "evt-9", "2026-05-18T10:35:00", "TASK-X"),
+        _Ev("verify.passed", "evt-9", "2026-05-18T10:32:00", "TASK-X"),
+        _Ev("judge.passed", "evt-10", "2026-05-18T10:35:00", "TASK-X"),
     ]
     r = audit_task("TASK-X", events, _baseline())
     assert r["status"] == "complete"
@@ -159,15 +160,17 @@ def test_cli_audit_explicit_task_complete(
          "actor": "critic", "task_id": "TASK-A", "payload": {}},
         {"type": "dev.build.done", "id": "evt-4", "ts": "2026-05-18T10:15:00",
          "actor": "dev-1", "task_id": "TASK-A", "payload": {}},
-        {"type": "static_gate.passed", "id": "evt-5", "ts": "2026-05-18T10:20:00",
+        {"type": "impl.child.completed", "id": "evt-5", "ts": "2026-05-18T10:18:00",
          "actor": "zf-cli", "task_id": "TASK-A", "payload": {}},
-        {"type": "review.approved", "id": "evt-6", "ts": "2026-05-18T10:25:00",
+        {"type": "static_gate.passed", "id": "evt-6", "ts": "2026-05-18T10:20:00",
+         "actor": "zf-cli", "task_id": "TASK-A", "payload": {}},
+        {"type": "review.approved", "id": "evt-7", "ts": "2026-05-18T10:25:00",
          "actor": "review", "task_id": "TASK-A", "payload": {}},
-        {"type": "test.passed", "id": "evt-7", "ts": "2026-05-18T10:30:00",
+        {"type": "test.passed", "id": "evt-8", "ts": "2026-05-18T10:30:00",
          "actor": "test", "task_id": "TASK-A", "payload": {}},
-        {"type": "verify.passed", "id": "evt-8", "ts": "2026-05-18T10:32:00",
+        {"type": "verify.passed", "id": "evt-9", "ts": "2026-05-18T10:32:00",
          "actor": "zf-cli", "task_id": "TASK-A", "payload": {}},
-        {"type": "judge.passed", "id": "evt-9", "ts": "2026-05-18T10:35:00",
+        {"type": "judge.passed", "id": "evt-10", "ts": "2026-05-18T10:35:00",
          "actor": "judge", "task_id": "TASK-A", "payload": {}},
     ]
     _bootstrap(tmp_path, monkeypatch, events)

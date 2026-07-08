@@ -83,11 +83,16 @@ class EventSchemaRule:
     # For ``payload[<field>]`` being a list-of-dicts, validate each item.
     # Keyed by field name → rule applied to each item.
     list_item_rules: dict[str, "EventSchemaRule"] = field(default_factory=dict)
+    # FIX-14(bizsim r4 F14):字段必须非空(list/str)。r4 全轮 9 份 verify
+    # report 的 requirement_coverage_matrix 全 0 行——required 只保证键在,
+    # 空转合约需要 non_empty 档位。
+    non_empty: tuple[str, ...] = ()
 
     @classmethod
     def from_dict(cls, event_type: str, raw: Mapping[str, Any]) -> "EventSchemaRule":
         required = tuple(str(x) for x in raw.get("required", []) or [])
         optional = tuple(str(x) for x in raw.get("optional", []) or [])
+        non_empty = tuple(str(x) for x in raw.get("non_empty", []) or [])
 
         enum_raw = raw.get("enum") or {}
         enum_constraints: dict[str, tuple[str, ...]] = {
@@ -138,6 +143,7 @@ class EventSchemaRule:
             event_type=event_type,
             required=required,
             optional=optional,
+            non_empty=non_empty,
             enum_constraints=enum_constraints,
             nested_rules=nested_rules,
             conditional_trigger_field=cond_field,
@@ -193,6 +199,9 @@ class EventSchemaRegistry:
     def is_loose(self, event_type: str) -> bool:
         """No rule registered for this event type — caller must accept it."""
         return event_type not in self._rules
+
+    def rule_for(self, event_type: str) -> "EventSchemaRule | None":
+        return self._rules.get(event_type)
 
     def has_rule(self, event_type: str) -> bool:
         return event_type in self._rules
@@ -1163,6 +1172,24 @@ def _validate_against_rule(
                 code="missing_required",
                 expected=f"{key} present",
                 actual="missing",
+            ))
+
+    # 1.5 Non-empty fields (FIX-14)
+    for key in rule.non_empty:
+        if key not in data:
+            continue  # missing 由 required 档负责
+        value = data[key]
+        empty = (
+            (isinstance(value, (list, tuple, str)) and len(value) == 0)
+            or value is None
+        )
+        if empty:
+            violations.append(SchemaViolation(
+                event_type=event_type,
+                field_path=f"{path}.{key}",
+                code="empty_required",
+                expected=f"{key} non-empty",
+                actual="empty",
             ))
 
     # 2. Enum constraints

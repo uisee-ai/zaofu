@@ -17,6 +17,10 @@ from zf.core.config.schema import (
     WorkdirConfig,
     ZfConfig,
 )
+from zf.core.events.model import ZfEvent
+from zf.core.task.schema import Task, TaskContract
+from zf.core.task.store import TaskStore
+from zf.runtime.task_refs import TaskRefManager
 from zf.runtime.workdirs import WorkdirManager
 
 
@@ -391,6 +395,177 @@ def test_writer_worktree_applies_dependency_task_refs(tmp_path: Path):
     assert _git_output(project_path, "status", "--porcelain") == ""
     meta = json.loads((Path(plan.workdir) / "meta.json").read_text(encoding="utf-8"))
     assert meta["dependency_refs"][0]["task_ref"] == "task/TASK-A"
+
+
+def test_impl_child_completed_snapshots_changed_files_to_task_ref(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    workdirs = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = workdirs.prepare(config.roles[0])
+    project_path = Path(plan.project_path)
+    (project_path / "data").mkdir()
+    (project_path / "data" / "pulse.mjs").write_text(
+        "export const statusItems = [];\n",
+        encoding="utf-8",
+    )
+
+    result = TaskRefManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    ).process_dev_build_done(ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="pulse-data-module",
+        payload={
+            "dispatch_id": "disp-1",
+            "changed_files": ["data/pulse.mjs"],
+            "evidence_refs": ["node --check data/pulse.mjs"],
+        },
+    ))
+
+    assert result is not None
+    assert result.status == "updated"
+    payload = result.payload
+    assert payload["task_ref"] == "task/pulse-data-module"
+    source_commit = payload["source_commit"]
+    assert source_commit == _git_output(
+        tmp_path,
+        "rev-parse",
+        "refs/heads/task/pulse-data-module",
+    )
+    assert _git_output(
+        tmp_path,
+        "show",
+        f"{source_commit}:data/pulse.mjs",
+    ) == "export const statusItems = [];"
+    index = json.loads((state_dir / "refs" / "task-index.json").read_text(
+        encoding="utf-8",
+    ))
+    assert index["pulse-data-module"]["trigger_event_id"] == payload["trigger_event_id"]
+
+
+def test_task_ref_scope_uses_dependency_after_from_writer_workdir(tmp_path: Path):
+    base_head = _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="data-module",
+        title="data module",
+        status="done",
+        contract=TaskContract(scope=["data.mjs"]),
+    ))
+    store.add(Task(
+        id="http-server",
+        title="http server",
+        status="in_progress",
+        assigned_to="dev",
+        blocked_by=["data-module"],
+        contract=TaskContract(scope=["server.mjs"]),
+    ))
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = manager.prepare(config.roles[0])
+    project_path = Path(plan.project_path)
+    main_branch = _git_output(tmp_path, "branch", "--show-current")
+    _git(tmp_path, "checkout", "-q", "-b", "task/data-module")
+    (tmp_path / "data.mjs").write_text(
+        "export const statuses = ['green'];\n",
+        encoding="utf-8",
+    )
+    _git(tmp_path, "add", "data.mjs")
+    _git(tmp_path, "commit", "-q", "-m", "data task")
+    data_ref_commit = _git_output(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", main_branch)
+    refs_dir = state_dir / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "task-index.json").write_text(json.dumps({
+        "data-module": {
+            "task_id": "data-module",
+            "task_ref": "task/data-module",
+            "source_commit": data_ref_commit,
+        }
+    }), encoding="utf-8")
+
+    manager.sync_writer_to_source_ref(config.roles[0], source_ref_override=base_head)
+    dependency_result = manager.apply_dependency_task_refs(config.roles[0], ["data-module"])
+    dependency_after = str(dependency_result["after"])
+    if dependency_after == data_ref_commit:
+        _git(
+            project_path,
+            "-c",
+            "user.email=worker@example.com",
+            "-c",
+            "user.name=Worker",
+            "commit",
+            "--amend",
+            "-q",
+            "--no-edit",
+        )
+        dependency_after = _git_output(project_path, "rev-parse", "HEAD")
+        meta_path = Path(plan.workdir) / "meta.json"
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["dependency_after"] = dependency_after
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    (project_path / "server.mjs").write_text(
+        "import { statuses } from './data.mjs';\n"
+        "export function render() { return statuses.join(','); }\n",
+        encoding="utf-8",
+    )
+    _git(project_path, "add", "server.mjs")
+    _git(project_path, "commit", "-q", "-m", "server task")
+    server_commit = _git_output(project_path, "rev-parse", "HEAD")
+
+    result = TaskRefManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    ).process_dev_build_done(ZfEvent(
+        type="impl.child.completed",
+        actor="dev",
+        task_id="http-server",
+        payload={
+            "dispatch_id": "disp-server",
+            "source_commit": server_commit,
+            "source_branch": "worker/dev",
+            "workdir": str(project_path),
+            "changed_files": ["server.mjs"],
+            "files_touched": ["server.mjs"],
+        },
+    ))
+
+    assert dependency_after != data_ref_commit
+    assert result is not None
+    assert result.status == "updated"
+    assert result.payload["changed_files"] == ["server.mjs"]
+    assert _git_output(
+        tmp_path,
+        "rev-parse",
+        "refs/heads/task/http-server",
+    ) == server_commit
 
 
 def test_writer_worktree_dependency_ref_missing_fails_closed(tmp_path: Path):
@@ -778,3 +953,36 @@ def test_reader_reportable_status_filters_tooling_runtime_artifacts(tmp_path: Pa
     assert ".venv" not in out
     assert ".pytest_cache" not in out
     assert ".coverage" not in out
+
+
+def test_worktree_mode_runs_declared_setup_and_fails_closed(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        project=ProjectConfig(name="test", setup_script="touch setup-ran.flag"),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(state_dir=state_dir, project_root=tmp_path, config=config)
+
+    plan = manager.prepare(config.roles[0])
+
+    project_path = Path(plan.project_path)
+    assert (project_path / "setup-ran.flag").exists()
+
+    # 失败 fail-closed:声明的 setup 挂了 → 铸造失败,不产可派发 workdir
+    failing = ZfConfig(
+        project=ProjectConfig(name="test", setup_script="exit 7"),
+        roles=[RoleConfig(name="dev2", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    failing_manager = WorkdirManager(
+        state_dir=state_dir, project_root=tmp_path, config=failing,
+    )
+    with pytest.raises(RuntimeError, match="workdir setup failed for dev2"):
+        failing_manager.prepare(failing.roles[0])

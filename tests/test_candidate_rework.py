@@ -825,3 +825,30 @@ def test_task_map_validation_cancel_plans_replan():
     assert len(plans) == 1
     assert plans[0].action == "replan"
     assert any("schema_version" in f for f in plans[0].feedback)
+
+
+def test_worker_rejection_backflows_into_rework_feedback():
+    """FIX-11(bizsim r4 F11):worker 拒单(out-of-scope)必须回流 replan
+    输入作归因反证——r4 dev-sim-core 拒了被误路由的 five-camera 修复。"""
+    events = [
+        _ev("dev.failed", {
+            "child_id": "dev-sim-core-TASK-1",
+            "reason": "The only rework finding is a renderer/e2e failure; "
+                       "the implicated surface is not owned by this lane.",
+            "trace_id": "t1",
+        }, eid="d1", corr="t1"),
+        _ev("verify.failed", {
+            "target_ref": "cand/CJMIN-1",
+            "trace_id": "t1",
+        }, eid="vf1", corr="t1"),
+    ]
+
+    plans = plan_candidate_rework(events, max_attempts=2)
+
+    assert len(plans) == 1
+    joined = " ".join(plans[0].feedback)
+    assert "worker-rejection dev-sim-core-TASK-1" in joined
+    assert "not owned by this lane" in joined
+    assert "attribution_evidence" in str(
+        plans[0].rework_summary.get("attribution_contract"),
+    )

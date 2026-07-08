@@ -62,6 +62,20 @@ def test_success_closes_attempt_without_failure_count() -> None:
     assert ledger.attempts[0].terminal_type == "dev.build.done"
 
 
+def test_generic_child_events_close_and_count_attempts() -> None:
+    events = [
+        _ev("task.dispatched", role="dev-1", fanout_id="f1"),
+        _ev("impl.child.completed", fanout_id="f1", status="completed"),
+        _ev("task.dispatched", role="dev-2", fanout_id="f2"),
+        _ev("verify.child.failed", fanout_id="f2", reason="acceptance gap"),
+    ]
+    ledger = derive_task_ledger(events, "T-1")
+    assert len(ledger.attempts) == 2
+    assert ledger.attempts[0].terminal_type == "impl.child.completed"
+    assert ledger.attempts[1].terminal_type == "verify.child.failed"
+    assert ledger.counted_failures() == 1
+
+
 def test_non_retryable_classification() -> None:
     env = ZfEvent(type="dev.blocked", payload={
         "reason": "Chromium cannot load libnspr4.so under default host path",

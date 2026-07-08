@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from zf.core.config.schema import (
@@ -70,6 +71,23 @@ def _state(tmp_path: Path):
     return state_dir, log, transport, orch
 
 
+def _empty_state(tmp_path: Path):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, _config(), transport)  # type: ignore[arg-type]
+    return state_dir, log, transport, orch
+
+
+def _run_until_sent(orch: Orchestrator, transport: _RecordingTransport, expected: int) -> None:
+    for _ in range(6):
+        if len(transport.sent) >= expected:
+            return
+        orch.run_once()
+
+
 def test_workflow_invoke_accepts_declared_pattern_and_emits_fanout_intent(tmp_path: Path) -> None:
     _state_dir, log, _transport, orch = _state(tmp_path)
 
@@ -107,6 +125,82 @@ def test_workflow_invoke_accepts_declared_pattern_and_emits_fanout_intent(tmp_pa
     assert fanout.payload["requested_specialists"] == ["review-a", "review-b"]
     assert fanout.payload["expected_output"] == "review report"
     assert fanout.payload["artifact_refs"] == [{"path": "channels/ch-zaofu/spec.md"}]
+
+
+def test_prd_workflow_invoke_uses_source_ref_as_scan_target(tmp_path: Path) -> None:
+    state_dir, log, _transport, orch = _empty_state(tmp_path)
+
+    orch.run_once(events=[ZfEvent(
+        type="workflow.invoke.requested",
+        actor="web",
+        task_id="TASK-PRD",
+        payload={
+            "kind": "prd",
+            "task_id": "TASK-PRD",
+            "pattern_id": "review-wave",
+            "requested_by": "qa",
+            "reason": "run PRD scan",
+            "source_refs": {
+                "source_ref": "docs/prd/tiny-notes.md",
+                "workflow_input_manifest_ref": "workflow-inputs/wf-prd/manifest.json",
+            },
+            "workflow_input_manifest_ref": "workflow-inputs/wf-prd/manifest.json",
+            "artifact_refs": [{"path": "artifacts/workflow/wf-prd/acceptance-matrix.json"}],
+            "expected_output": "scan PRD",
+        },
+    )])
+
+    fanout = next(event for event in log.read_all() if event.type == "task.fanout.requested")
+    assert fanout.payload["target_ref"] == "docs/prd/tiny-notes.md"
+    assert fanout.payload["prompt_kind"] == "prd"
+
+    _run_until_sent(orch, _transport, 1)
+
+    manifests = sorted((state_dir / "fanouts").glob("*/manifest.json"))
+    assert manifests
+    manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
+    assert manifest["target_ref"] == "docs/prd/tiny-notes.md"
+    if _transport.sent:
+        briefing = _transport.sent[0][1].read_text(encoding="utf-8")
+        assert "- target_ref: `docs/prd/tiny-notes.md`" in briefing
+
+
+def test_workflow_invoke_cold_start_anchor_is_not_dispatched_directly(tmp_path: Path) -> None:
+    state_dir, log, transport, orch = _empty_state(tmp_path)
+
+    orch.run_once(events=[ZfEvent(
+        type="workflow.invoke.requested",
+        actor="web",
+        task_id="TASK-COLD",
+        payload={
+            "task_id": "TASK-COLD",
+            "pattern_id": "review-wave",
+            "request_id": "wf-cold",
+            "workflow_input_manifest_ref": "artifacts/workflow/wf-cold/workflow-input-manifest.json",
+            "artifact_refs": [{"path": "artifacts/workflow/wf-cold/acceptance-matrix.json"}],
+            "expected_output": "review report",
+        },
+    )])
+
+    events = log.read_all()
+    assert any(event.type == "task.created" for event in events)
+    assert any(event.type == "workflow.invoke.accepted" for event in events)
+    assert any(event.type == "task.fanout.requested" for event in events)
+    assert not any(event.type == "task.dispatched" for event in events)
+    assert transport.sent == []
+    task = TaskStore(state_dir / "kanban.json").get("TASK-COLD")
+    assert task is not None
+    assert task.contract.evidence_contract["workflow_fanout_anchor"] is True
+
+    _run_until_sent(orch, transport, 2)
+
+    events = log.read_all()
+    assert any(event.type == "fanout.started" for event in events)
+    assert not any(event.type == "task.fanout.rejected" for event in events)
+    assert not any(event.type == "task.dispatched" for event in events)
+    if transport.sent:
+        assert transport.sent[0][1].exists()
+        assert getattr(transport.sent[0][3], "trace_id", "")
 
 
 def test_workflow_invoke_rejects_blocking_open_questions(tmp_path: Path) -> None:

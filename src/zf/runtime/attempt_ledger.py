@@ -22,10 +22,13 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.runtime.event_problem_registry import EVENT_PROBLEM_SPECS
 from zf.runtime.housekeeping import _REWORK_FAILURE_TYPES
+from zf.runtime.terminal_events import (
+    is_task_attempt_failure_event,
+    is_task_attempt_success_event,
+    is_task_attempt_terminal_event,
+)
 
 _START_EVENTS = frozenset({"task.dispatched", "fanout.child.dispatched"})
-_SUCCESS_EVENTS = frozenset({"dev.build.done", "fanout.child.completed"})
-_FAILURE_EVENTS = frozenset({"dev.failed", "dev.blocked", "fanout.child.failed"})
 
 # 不可重试签名(131 §7.2 条款 3):environment/终毒类失败重试是烧钱,
 # 直达 deadletter/human。标记来源 = registry problem_class + 症状词表
@@ -62,7 +65,7 @@ class TaskAttemptLedger:
         return sum(
             1 for attempt in self.attempts
             if attempt.counted
-            and attempt.terminal_type in _FAILURE_EVENTS
+            and is_task_attempt_failure_event(attempt.terminal_type)
             and (signature is None or attempt.failure_signature == signature)
         )
 
@@ -124,14 +127,14 @@ def derive_task_ledger(events: list[ZfEvent], task_id: str) -> TaskAttemptLedger
                 started_ts=event.ts,
                 fanout_id=fanout_id,
             ))
-        elif event.type in (_SUCCESS_EVENTS | _FAILURE_EVENTS):
+        elif is_task_attempt_terminal_event(event.type):
             open_attempts = [a for a in ledger.attempts if not a.terminal_type]
             if not open_attempts:
                 continue
             attempt = open_attempts[-1]
             attempt.terminal_type = event.type
             attempt.terminal_ts = event.ts
-            if event.type in _FAILURE_EVENTS:
+            if is_task_attempt_failure_event(event.type):
                 attempt.failure_signature = _failure_signature(event)
                 # F16/F12: 同 fanout 重放不重复计数;superseded fanout 不计数
                 failure_key = (fanout_id or attempt.fanout_id, event.type)
@@ -142,7 +145,7 @@ def derive_task_ledger(events: list[ZfEvent], task_id: str) -> TaskAttemptLedger
                 attempt.counted = not (replay or superseded)
                 if failure_key[0]:
                     seen_failure_keys.add(failure_key)
-            else:
+            elif is_task_attempt_success_event(event.type):
                 attempt.counted = (
                     (fanout_id or attempt.fanout_id) not in superseded_fanouts
                 )

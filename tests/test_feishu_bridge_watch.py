@@ -132,6 +132,7 @@ def test_debounced_messages_dispatch_once_with_merged_text():
 def test_run_serialized_per_chat_via_block_unblock():
     calls: list = []
     gate = threading.Event()  # controls when the first run "completes"
+    second_dispatched = threading.Event()
     first_future: list = []
 
     def fake_dispatch(event, *, context, transport=None):
@@ -140,6 +141,7 @@ def test_run_serialized_per_chat_via_block_unblock():
         if len(calls) == 1:
             first_future.append(fut)  # leave first run pending until gate set
         else:
+            second_dispatched.set()
             fut.set_result({"status": "replied"})
         return fut
 
@@ -156,7 +158,7 @@ def test_run_serialized_per_chat_via_block_unblock():
 
     # complete the first run → unblock → queued turn2 flushes as a new run
     first_future[0].set_result({"status": "replied"})
-    time.sleep(0.25)
+    assert second_dispatched.wait(2.0)
     assert len(calls) == 2
     assert calls[1].payload.get("text") == "turn2"
 

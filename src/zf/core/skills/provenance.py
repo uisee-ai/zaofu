@@ -143,6 +143,10 @@ def find_skill_candidates(
                 source.name,
                 root / name / "SKILL.md",
             ))
+    candidate_paths.append((
+        "zaofu",
+        Path(__file__).resolve().parents[4] / "skills" / name / "SKILL.md",
+    ))
     candidates: list[SkillCandidate] = []
     seen: set[Path] = set()
     for source_name, path in candidate_paths:

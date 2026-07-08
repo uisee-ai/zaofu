@@ -47,7 +47,10 @@ from zf.runtime.transport import (
     transport_error_diagnostics,
 )
 from zf.runtime.orchestrator_lifecycle import LifecycleManagerMixin
-from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
+from zf.runtime.orchestrator_fanout import (
+    FanoutCoordinationMixin,
+    _writer_task_dependencies_satisfied,
+)
 from zf.runtime.orchestrator_dispatch import DispatchMixin
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 from zf.runtime.orchestrator_module_parity import ModuleParityBridgeMixin
@@ -97,12 +100,20 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     # Must not depend on Layer 2 remembering to recover. If terminal
     # verification rejects an agent/judge completion claim, Layer 1 turns
     # that blocked state into bounded rework.
+    #
+    # Kernel-owned flow-entry: light-topology `prd.requested` synthesizes the
+    # single-task task_map (runtime/light_flow.py). It carries no task_id, so
+    # it must fire its builtin primary regardless of Layer 1/2 mode.
+    "prd.requested",
     "discriminator.failed",
     "agent.api_blocked",
     "agent.timeout",
     "worker.context.critical",
     "phase.progressed",
     "task.fanout.requested",
+    # FIX-6(bizsim r4 F2):解锁后 level 重扫是纯机械的内核恢复动作,
+    # 不依赖 Layer-2 记得恢复 —— 必须由 Layer-1 handler 直接消费。
+    "workflow.reconcile.requested",
     "run.manager.autoresearch.requested",
     "task.continuation_scheduled",
     "task.retry_scheduled",
@@ -144,6 +155,23 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     "channel.consensus.blocked",
 })
 
+
+def _kernel_owns_liveness_event(config: object, event_type: str) -> bool:
+    """Return True when Layer 1 must consume a taskless event mechanically.
+
+    Most Layer-2-active events go to the orchestrator agent. Reader-stage
+    failure events are an exception: they happen before a canonical task exists
+    and must deterministically re-trigger the same reader fanout stage.
+    """
+    if event_type in _KERNEL_LIVENESS_EVENTS:
+        return True
+    try:
+        from zf.runtime.stage_failure_replan import reader_stage_failure_events
+
+        return event_type in reader_stage_failure_events(config)
+    except Exception:
+        return False
+
 _KERNEL_TERMINAL_EVENTS = frozenset({
     "review.approved",
     "verify.passed",
@@ -175,6 +203,7 @@ _CANDIDATE_REWORK_TRIGGER_EVENTS = frozenset({
 from zf.runtime.writer_fanout_data import (
     _FANOUT_AFFINITY_METADATA_KEYS,
 )
+from zf.runtime.terminal_events import is_stage_progress_event
 
 
 # EVAL-DECISION-OUTCOME-001: enumerated reasons for orchestrator.decision.recorded.
@@ -474,6 +503,10 @@ class Orchestrator(
         # whole burst's triggers reach the briefing, not just the last.
         self._layer2_pending: list[ZfEvent] = []
         self._layer2_in_batch: bool = False
+        # FIX-5②(bizsim r4 $697 空转账单):同型触发连发的指数退避状态。
+        # 纯瞬态节流(重启归零即恢复默认节奏),真相不依赖它。
+        self._layer2_streak_type: str = ""
+        self._layer2_streak_count: int = 0
         # B3 (test-plan 2026-04-15-2342): per-worker state tracking.
         # _last_worker_state is an in-memory dedup cache. Persistent
         # truth lives in events.jsonl as worker.state.changed events
@@ -850,6 +883,14 @@ class Orchestrator(
                 "candidate_rework",
                 self._run_candidate_rework_sweep,
             )
+        if events is None or any(
+            event.type in ("human.escalate", "diagnosis.completed")
+            for event in events
+        ):
+            self._safe_housekeeping(
+                "diagnosis",
+                self._run_diagnosis_sweep,
+            )
         decisions.extend(self._handle_worker_action_requests())
         decisions.extend(self._autoscale_workers())
         # Context recycle must run before dispatch. Otherwise an idle worker
@@ -857,6 +898,7 @@ class Orchestrator(
         # then be marked pending_recycle.
         self._safe_housekeeping("context_thresholds", self._check_context_thresholds)
         self._safe_housekeeping("pending_recycles", self._check_pending_recycles)
+        self._safe_housekeeping("budget_sweep", self._run_budget_sweep)
         decisions.extend(self._dispatch_ready())
         decisions.extend(self._sweep_feature_liveness())
         # G-EVT-2: drain any transport-side events (e.g. StreamJsonTransport's
@@ -1201,12 +1243,19 @@ class Orchestrator(
         # candidate.integration.completed real payload shape:
         #   pdd_id: F-xxxxxxxx, branch: candidate/F-xxxxxxxx,
         #   status / event_type / commit / quality_status / failed_task_id
+        prefix = git_config.candidate_branch_prefix or "candidate"
+        # judge.passed's `target_ref` is flow-dependent: cangjie puts the
+        # candidate branch there, but the PRD/issue fanout flow puts the ship
+        # DESTINATION (e.g. "main"). Only trust it as the candidate source when
+        # it actually names a candidate branch; otherwise fall through to the
+        # `candidate/{feature_id}` derivation below (LB-1: PRD light judge.passed
+        # carried target_ref="main", which auto-ship wrongly took as the source).
+        raw_target_ref = str(payload.get("target_ref") or "").strip()
         target_ref = (
             str(payload.get("branch") or "").strip()
             or str(payload.get("candidate_branch") or "").strip()
             or str(payload.get("candidate_ref") or "").strip()
-            # judge.passed carries the candidate branch as `target_ref`
-            or str(payload.get("target_ref") or "").strip()
+            or (raw_target_ref if raw_target_ref.startswith(f"{prefix}/") else "")
             or str(payload.get("feature_branch") or "").strip()
         )
         feature_id = (
@@ -1214,7 +1263,6 @@ class Orchestrator(
             or str(payload.get("feature_id") or "").strip()
         )
         if not target_ref and feature_id:
-            prefix = git_config.candidate_branch_prefix or "candidate"
             target_ref = f"{prefix}/{feature_id}"
         if not target_ref:
             return
@@ -1263,6 +1311,22 @@ class Orchestrator(
                 ))
             except Exception:
                 pass
+
+    def _maybe_complete_run_goal(self, event: ZfEvent) -> None:
+        """LB-1: terminal judge.passed marks an active run goal complete so the
+        run-manager stops escalating/autoresearching a run that already
+        succeeded. Gated on goal.enabled; idempotent via the goal projection."""
+        if not getattr(getattr(self.config, "goal", None), "enabled", False):
+            return
+        try:
+            from zf.runtime.event_window import read_runtime_events
+            from zf.runtime.run_manager import run_goal_completion_event
+            events = list(read_runtime_events(self.event_log, self.state_dir))
+            completion = run_goal_completion_event(events, cause=event)
+            if completion is not None:
+                self.event_writer.append(completion)
+        except Exception:
+            pass
 
     def _run_zaofu_bug_scan(self) -> None:
         """β-1 (2026-05-17): periodic scan for known zaofu kernel failure
@@ -1317,6 +1381,31 @@ class Orchestrator(
                 ))
             except Exception:
                 pass
+
+    def _run_budget_sweep(self) -> None:
+        """FIX-13①(bizsim r4 F13):spent≥cap 时主动发 cost.budget.exceeded,
+        不等下一次派发——在途 turns 的燃烧会静默穿透上限($1150→$1166 实锚),
+        sweep 让越限即刻可见。复用 _emit_cost_block 的 (scope, role) 冷却。
+        """
+        if not getattr(self.config, "budget_enforcement_enabled", True):
+            return
+        cap = getattr(self.config, "global_budget_usd", None)
+        if cap is None:
+            return
+        try:
+            total = self.cost_tracker.total_usd()
+        except Exception:
+            return
+        if total >= cap:
+            import time as _time
+
+            self._emit_cost_block(
+                scope="global_sweep",
+                role_name="*",
+                budget=cap,
+                current=total,
+                now=_time.time(),
+            )
 
     def _run_heartbeat_sweep(self) -> None:
         """α-3 (2026-05-17): periodic sweep over role_sessions.yaml.
@@ -1615,6 +1704,44 @@ class Orchestrator(
             return
         except Exception as exc:
             self._emit_housekeeping_failure("candidate_rework", exc)
+            return
+
+    def _run_diagnosis_sweep(self) -> None:
+        """Tier-2 诊断性介入(doc 131 §5;task 2026-07-06-0930)。
+
+        不收敛升级信号(judge_nonconvergence / rework exhausted)按 stall
+        指纹判重铸 diagnosis.requested——诊断 reader stage(项目配置)据此
+        派发;diagnosis.completed 判 needs_owner 的结论升级 owner。
+        propose-only:kernel 不执行诊断报告里的 proposed_commands。
+        """
+        try:
+            from zf.runtime.diagnosis import (
+                plan_diagnosis_requests,
+                plan_needs_owner_escalations,
+            )
+            from zf.runtime.event_window import read_runtime_events
+
+            events = read_runtime_events(self.event_log, self.state_dir)
+            for payload in plan_diagnosis_requests(events):
+                source_id = str(payload.get("source_event_id") or "") or None
+                self.event_writer.append(ZfEvent(
+                    type="diagnosis.requested",
+                    actor="zf-cli",
+                    payload=payload,
+                    causation_id=source_id,
+                ))
+            for payload in plan_needs_owner_escalations(events):
+                self.event_writer.append(ZfEvent(
+                    type="human.escalate",
+                    actor="zf-cli",
+                    payload=payload,
+                    causation_id=str(
+                        payload.get("diagnosis_event_id") or "",
+                    ) or None,
+                ))
+            return
+        except Exception as exc:
+            self._emit_housekeeping_failure("diagnosis", exc)
             return
 
     def _maybe_resynth_on_replan(self, plan, events: list[ZfEvent]) -> None:
@@ -2220,7 +2347,7 @@ class Orchestrator(
                 if settle is not None:
                     decisions.append(settle)
 
-            if not event.task_id and event.type == "verify.passed":
+            if not event.task_id and event.type in {"verify.passed", "test.passed"}:
                 decision = self._bridge_verify_passed_to_parity_scan(event)
                 if decision:
                     decisions.append(decision)
@@ -2306,7 +2433,7 @@ class Orchestrator(
                             ))
                     self._processed_event_ids.add(event.id)
                     continue
-                if event.type in _KERNEL_LIVENESS_EVENTS:
+                if _kernel_owns_liveness_event(self.config, event.type):
                     entries = self.event_registry.resolve(event.type)
                     if entries:
                         decision = entries[0].handler(event)
@@ -2349,13 +2476,34 @@ class Orchestrator(
                 # Still run side-effect handlers (log/emit) — they may
                 # not need a task_id. But skip built-in primary to
                 # match pre-P0-2 behavior that gated on task_id.
+                #
+                # Exception: kernel-owned entry/liveness events legitimately
+                # carry no task_id (e.g. light-topology `prd.requested` → the
+                # task_map synthesizer). The `_KERNEL_LIVENESS_EVENTS`
+                # fast-path above only fires in Layer-2-active configs, so in
+                # Layer-1-only mode their builtin primary must fire here or it
+                # never runs (light baseline 2026-07-06: prd.requested woke
+                # run_once but the synthesizer handler was skipped as
+                # task_id-less).
+                # FIX-6(bizsim r4 F2): 内核活性事件(如 workflow.reconcile
+                # .requested)天然无 task_id, primary 照跑。保留枚举式
+                # fallback，避免先跑 primary 后又在 side-effect loop 中重复。
                 entries = self.event_registry.resolve(event.type)
-                for entry in entries:
+                fire_builtin = (
+                    not event.task_id
+                    and _kernel_owns_liveness_event(self.config, event.type)
+                )
+                for idx, entry in enumerate(entries):
                     if entry.source == "yaml":
                         try:
                             entry.handler(event)
                         except Exception:
                             pass
+                    elif fire_builtin and idx == 0:
+                        decision = entry.handler(event)
+                        if decision:
+                            decisions.append(decision)
+                        self._processed_event_ids.add(event.id)
                 continue
             entries = self.event_registry.resolve(event.type)
             if entries:
@@ -2963,19 +3111,27 @@ class Orchestrator(
                     self._maybe_run_static_gate(event)
                 except Exception:
                     pass  # static_gate never blocks the dispatch loop
-            elif event.type in ("candidate.integration.completed", "judge.passed"):
+            elif event.type == "candidate.integration.completed":
                 # Auto-ship the validated candidate into ship_target_branch so
-                # operators stop running `git merge candidate/<id>` by hand:
-                #  - candidate.integration.completed → auto_ship_on_candidate_complete
-                #    (cangjie r-next B-3; pre-judge, quality_status-gated)
-                #  - judge.passed → auto_ship_on_judge_passed (cj-min; fires after
-                #    the terminal review→verify→judge gate — the safe ship point)
-                # ShipService re-checks blockers and merges with conflict-safe
-                # rollback (ship.blocked / ship.conflict on failure).
+                # operators stop running `git merge candidate/<id>` by hand
+                # (cangjie r-next B-3; pre-judge, quality_status-gated). The
+                # judge.passed path is handled by a standalone `if` below —
+                # judge.passed matches the earlier acceptance-evidence elif so it
+                # can never reach this elif branch.
                 self._maybe_auto_ship(event)
             elif event.type in REWORK_TRIAGE_TRIGGER_EVENTS:
                 triage = self._ensure_rework_triage(event)
-                if triage.should_increment_retry:
+                task_for_rework = (
+                    self.task_store.get(event.task_id) if event.task_id else None
+                )
+                valid_rework_state = (
+                    task_for_rework is None
+                    or self._rework_trigger_valid_for_task_state(
+                        task_for_rework,
+                        event,
+                    )
+                )
+                if triage.should_increment_retry and valid_rework_state:
                     # LH-0.T1: product/design rework counter bump (runs in
                     # both Layer 1 legacy and Layer 2 modes; cap enforced
                     # separately in _dispatch_rework / _dispatch_ready).
@@ -2995,18 +3151,19 @@ class Orchestrator(
                     apply_circuit_breaker_failure(
                         event, self.state_dir / "circuits.json",
                     )
+            # LB-1: judge.passed matches the earlier acceptance-evidence elif
+            # (review.approved/verify.passed/test.passed/judge.passed) so it never
+            # reaches the auto-ship elif in this chain. Run terminal ship + run-goal
+            # completion here as a standalone `if` so both fire regardless of the
+            # elif shadow (the reason auto_ship_on_judge_passed had no effect).
+            if event.type == "judge.passed":
+                self._maybe_auto_ship(event)
+                self._maybe_complete_run_goal(event)
             # LH-0.T3: stage-progress events reset the orphan clock so
             # a task that's advancing but slow doesn't wrongly trip the
             # warning. Both success and rework-trigger events count as
             # "the worker is alive" — only silence fires orphan.
-            if event.type in {
-                "dev.build.done", "dev.blocked",
-                "review.approved", "review.rejected",
-                "verify.passed", "verify.failed",
-                "test.passed", "test.failed", "judge.passed", "judge.failed",
-                "arch.proposal.done", "design.critique.done",
-                "gate.failed", "discriminator.failed",
-            } and event.task_id:
+            if is_stage_progress_event(event.type) and event.task_id:
                 self._release_stage_actor_liveness(event)
                 self._dispatch_epoch[event.task_id] = self._now()
                 self._orphan_warned.discard(event.task_id)
@@ -3303,6 +3460,10 @@ class Orchestrator(
                 or self._writer_task_contract_list(item.get("acceptance_criteria"))
                 or self._writer_task_contract_list(item.get("acceptance"))
             )
+            blocked_by = (
+                self._writer_task_contract_list(raw.get("blocked_by"))
+                or self._writer_task_contract_list(item.get("blocked_by"))
+            )
             raw_owner_role = self._first_nonempty(
                 raw.get("owner_role"),
                 item.get("owner_role"),
@@ -3385,29 +3546,38 @@ class Orchestrator(
                 id=task_id,
                 title=scope,
                 status="backlog",
+                blocked_by=blocked_by,
                 contract=contract,
             )
             if existing is None:
                 self.task_store.add(refreshed_task)
-            elif self._can_refresh_replan_writer_task(existing, loaded):
+            elif self._can_refresh_writer_task(existing, loaded):
                 old_ref = self._task_contract_task_map_ref(existing.contract)
                 old_status = str(getattr(existing, "status", "") or "")
                 if old_status in {"done"}:
                     self.task_store.reopen(refreshed_task)
                     reopened = True
                 else:
-                    self.task_store.update(task_id, title=scope, contract=contract)
+                    self.task_store.update(
+                        task_id,
+                        title=scope,
+                        blocked_by=blocked_by,
+                        contract=contract,
+                    )
                     reopened = False
                 self.event_writer.append(ZfEvent(
                     type="task.contract.update",
                     actor="zf-cli",
                     task_id=task_id,
                     payload={
-                        "source": "refactor_replan_adoption",
+                        "source": self._writer_task_refresh_source(
+                            existing,
+                            loaded,
+                        ),
                         "feature_id": feature_id,
                         "old_task_map_ref": old_ref,
                         "new_task_map_ref": loaded.task_map_ref,
-                        "replan": True,
+                        "replan": bool(getattr(loaded, "is_replan", False)),
                         "old_status": old_status,
                         "reopened_from_terminal": reopened,
                     },
@@ -3458,23 +3628,58 @@ class Orchestrator(
                 return str(manual_refs.get("task_map_ref") or "").strip()
         return ""
 
-    def _can_refresh_replan_writer_task(self, task, loaded) -> bool:
-        if not getattr(loaded, "is_replan", False):
-            return False
+    def _can_refresh_writer_task(self, task, loaded) -> bool:
         if str(getattr(task, "status", "") or "") in {"cancelled", "superseded"}:
             return False
         contract = getattr(task, "contract", None)
         if contract is None:
             return False
+        evidence = getattr(contract, "evidence_contract", {}) or {}
+        if self._is_workflow_bootstrap_task(task, evidence):
+            return bool(loaded.task_map_ref) and str(
+                getattr(task, "status", "") or "backlog"
+            ) in {"", "backlog", "todo"}
+        if not getattr(loaded, "is_replan", False):
+            return False
         if str(getattr(contract, "feature_id", "") or "") != str(
             loaded.feature_id or loaded.pdd_id or ""
         ):
             return False
-        evidence = getattr(contract, "evidence_contract", {}) or {}
         if isinstance(evidence, dict) and str(evidence.get("source") or "") != "refactor_task_map":
             return False
         old_ref = self._task_contract_task_map_ref(contract)
         return bool(old_ref and loaded.task_map_ref and old_ref != loaded.task_map_ref)
+
+    @staticmethod
+    def _is_workflow_bootstrap_task(task, evidence: object | None = None) -> bool:
+        """A workflow submit creates a placeholder kanban task before the real
+        triage/plan task_map exists. The first task_map.ready must be allowed
+        to replace that placeholder contract; otherwise writer admission sees
+        the empty task_map_ref as stale and the run dead-ends before impl."""
+        if evidence is None:
+            contract = getattr(task, "contract", None)
+            evidence = getattr(contract, "evidence_contract", None)
+        if not isinstance(evidence, dict):
+            return False
+        if str(evidence.get("source") or "") != "workflow_invoke_bootstrap":
+            return False
+        if not bool(evidence.get("workflow_fanout_anchor")):
+            return False
+        contract = getattr(task, "contract", None)
+        if contract is None:
+            return False
+        refs = evidence.get("source_refs")
+        if isinstance(refs, dict) and str(refs.get("task_map_ref") or "").strip():
+            return False
+        return True
+
+    def _writer_task_refresh_source(self, task, loaded) -> str:
+        evidence = getattr(getattr(task, "contract", None), "evidence_contract", {}) or {}
+        if self._is_workflow_bootstrap_task(task, evidence):
+            return "workflow_task_map_adoption"
+        if getattr(loaded, "is_replan", False):
+            return "refactor_replan_adoption"
+        return "task_map_contract_refresh"
 
     def _release_affinity_writer_slot_and_dispatch_next(
         self,
@@ -3531,6 +3736,13 @@ class Orchestrator(
         ]
         if not queued_children:
             return
+        completed_task_ids = {
+            str(child.get("task_id") or "")
+            for child in manifest.get("children", []) or []
+            if isinstance(child, dict)
+            and str(child.get("status") or "") == "completed"
+            and str(child.get("task_id") or "")
+        }
 
         def _queue_key(child: dict) -> tuple[int, str]:
             try:
@@ -3539,18 +3751,41 @@ class Orchestrator(
                 order = 0
             return order, str(child.get("child_id") or "")
 
-        queued = sorted(queued_children, key=_queue_key)[0]
+        def _queued_child_payload(child: dict) -> dict:
+            payload = (
+                dict(child.get("payload"))
+                if isinstance(child.get("payload"), dict)
+                else {}
+            )
+            for key in (
+                "task_id",
+                "scope",
+                "task_map_ref",
+                "source_index_ref",
+                "blocked_by",
+                "depends_on",
+            ):
+                value = child.get(key)
+                if value not in (None, ""):
+                    payload[key] = value
+            return payload
+
+        queued = None
+        child_payload: dict = {}
+        for candidate in sorted(queued_children, key=_queue_key):
+            candidate_payload = _queued_child_payload(candidate)
+            if _writer_task_dependencies_satisfied(
+                self.task_store,
+                candidate_payload,
+                completed_task_ids=completed_task_ids,
+            ):
+                queued = candidate
+                child_payload = candidate_payload
+                break
+        if queued is None:
+            return
         from zf.runtime.fanout import FanoutChild, FanoutContext
 
-        child_payload = (
-            dict(queued.get("payload"))
-            if isinstance(queued.get("payload"), dict)
-            else {}
-        )
-        for key in ("task_id", "scope", "task_map_ref", "source_index_ref"):
-            value = queued.get(key)
-            if value not in (None, ""):
-                child_payload[key] = value
         child_payload.update({
             "assignment_strategy": "affinity_stage_slots",
             "lane_profile": str(queued.get("lane_profile") or ""),
@@ -4096,6 +4331,7 @@ class Orchestrator(
             problems = validate_lane_pipeline_admission(
                 pipeline_spec,
                 task_items,
+                task_map_payload=data if isinstance(data, dict) else None,
             )
             diagnostics.extend(f"lane_pipeline: {problem}" for problem in problems)
         except Exception as exc:  # fail closed: malformed task_map is not ready.
@@ -4315,16 +4551,29 @@ class Orchestrator(
         # by _flush_pending_layer2_wake (run_once top / ~5s idle tick), never
         # dropped. First-ever wake passes (_layer2_last_wake_at is 0.0).
         interval = self._layer2_wake_min_interval_s
-        if interval > 0 and (now_ts - self._layer2_last_wake_at) < interval:
+        # FIX-5②(bizsim r4 $697 空转账单):同型触发连发指数退避——
+        # 窗口计算在 wake_patterns sibling,此处仅 streak 记账 + 门控。
+        from zf.runtime.wake_patterns import layer2_effective_wake_interval
+
+        effective = layer2_effective_wake_interval(
+            interval=interval,
+            event_type=event.type,
+            streak_type=self._layer2_streak_type,
+            streak_count=self._layer2_streak_count,
+        )
+        if effective > 0 and (now_ts - self._layer2_last_wake_at) < effective:
             self._add_layer2_pending(event)
             self.event_writer.append(ZfEvent(
                 type="orchestrator.dispatch_skipped",
                 actor="zf-cli",
                 payload={
                     "trigger_event_id": event.id,
-                    "reason": "wake_coalesced",
+                    "reason": (
+                        "same_trigger_backoff"
+                        if effective > interval else "wake_coalesced"
+                    ),
                     "remaining_s": round(
-                        interval - (now_ts - self._layer2_last_wake_at), 1
+                        effective - (now_ts - self._layer2_last_wake_at), 1
                     ),
                 },
             ))
@@ -4332,6 +4581,11 @@ class Orchestrator(
         # Committed to wake: fire one turn covering this event + any pending
         # (the burst's accumulated triggers). Fresh briefing rebuilds full
         # state from disk, so the multi-trigger turn loses nothing.
+        if event.type == self._layer2_streak_type:
+            self._layer2_streak_count += 1
+        else:
+            self._layer2_streak_type = event.type
+            self._layer2_streak_count = 1
         self._layer2_last_wake_at = now_ts
         triggers = self._drain_layer2_pending(also=event)
         self._fire_orchestrator_turn(orch_role, triggers)

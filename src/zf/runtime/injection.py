@@ -1403,6 +1403,12 @@ def _add_role_handoff_guidance(
             "review.approved",
             "test.passed",
             "judge.passed",
+            # LB-3: fanout verify-lane reader completes on lane.stage.completed /
+            # verify.* — without these it missed the evidence clause and shipped
+            # empty evidence_refs (light baseline U20 stage.report.evidence_missing).
+            "verify.passed",
+            "lane.stage.completed",
+            "verify.child.completed",
         }
     ):
         lines.append("## Handoff Evidence Required")

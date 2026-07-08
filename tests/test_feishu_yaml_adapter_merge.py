@@ -3,10 +3,14 @@ validation, one truth). Backward compatible with inline integrations.feishu_*.""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from zf.core.config.loader import ConfigError, load_config
 from zf.integrations.feishu.routing import resolve_feishu_route
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _ZF = """\
 version: "1.0"
@@ -64,6 +68,28 @@ integrations:
 feishu_routing:
   oc_b: { target: agent, backend: codex }
 """)
+
+
+def test_shipped_feishu_yaml_validates_green_without_secrets(tmp_path, monkeypatch):
+    # Regression (autoresearch controlled-stuck-recovery, validate_failed rc=1):
+    # every env-var reference in the shipped feishu.yaml must carry a
+    # `:-__..._unset__` sentinel default so `zf validate` stays green in
+    # sandboxes / CI / autoresearch worktrees that run without the Feishu
+    # secrets. A bare `${FEISHU_OPENID}` fail-closed the entire config load
+    # even for projects that never opted into Feishu.
+    for var in ("FEISHU_OPENID", "FEISHU_KANBAN", "FEISHU_RUNM",
+                "ZF_OWNER_VISIBLE_CHAT"):
+        monkeypatch.delenv(var, raising=False)
+    shipped = (_REPO_ROOT / "feishu.yaml").read_text(encoding="utf-8")
+    # no bare `${VAR}` without a `:-` default may survive in the shipped file
+    import re
+    bare = re.findall(r"\$\{[A-Za-z_][A-Za-z0-9_]*\}", shipped)
+    assert not bare, f"shipped feishu.yaml has default-less env refs: {bare}"
+    # and it must load+validate cleanly when merged into a minimal project
+    (tmp_path / "feishu.yaml").write_text(shipped)
+    cfg = _write(tmp_path)
+    # the sentinel open_id is inert (never matches a real Feishu principal)
+    assert "__zf_feishu_openid_unset__" in cfg.integrations.feishu_identity.users
 
 
 def test_feishu_yaml_invalid_target_still_validated(tmp_path):

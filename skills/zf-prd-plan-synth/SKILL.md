@@ -64,6 +64,12 @@ task needs direct `source_key` / `source_keys` / `source_ref` / `source_refs` /
 `source_excerpt`, or `source_index.json` must map every `task_id` through
 `tasks[]` or `task_sources[]`.
 
+For greenfield PRD builds, include top-level `schema_version: "task-map.v1"`,
+`target_root`, and `shared_conventions` before emitting success. At minimum,
+fix `test_path_prefix`, package/workdir root, package import name, and any
+packaging/scaffold file such as `app/pyproject.toml`. These values must be
+repo-relative even when verification commands run through `cd <target_root>`.
+
 ## Task Design
 
 Split by behavior, not by component-only layers. A good PRD task map usually
@@ -74,6 +80,21 @@ has API/runtime/web slices, each with:
 - dependencies and wave;
 - acceptance criteria tied to the PRD;
 - verification commands for product, API, and web verify agents.
+
+For small products, a serial task map is often better than parallel horizontal
+tasks:
+
+- Wave 1: one scaffold task owns package metadata, directory layout, and
+  conventions documentation.
+- Later waves: feature tasks own their production files and matching tests.
+- Final wave: one wiring/assembly task owns the real entrypoint and any package
+  scaffold it changes, sets `root_owner_class: "assembly"` when more than one
+  bundle feeds it, depends on prior feature tasks, and verifies the assembled
+  product through the real entrypoint plus the full suite.
+
+Do not emit a task map that places implementation in one task and its tests or
+entrypoint smoke in another. Do not use `tests/...` paths when the declared
+test prefix is `app/tests/...`; all owned paths stay repo-relative.
 
 ## Goal Closure Loop
 
@@ -90,3 +111,10 @@ verify or judge finds unmet acceptance criteria, use:
 The amended task map must dispatch only the new gap tasks with
 `resume_scope: "gap_tasks_only"`; final closure still requires a clean rescan
 with no open P0/P1 acceptance gaps.
+
+When PRD delivery runs as a long-horizon goal loop, the runtime (not the PRD
+roles) emits the goal lifecycle: `run.goal.started`, `run.goal.updated`,
+`run.goal.completed`, and `run.goal.blocked`, plus
+`run.goal.quiescent.entered` / `run.goal.quiescent.exited` when the loop idles.
+Goal closure is the `run.goal.completed` signal, so a replan is truly done only
+when a clean rescan lets the loop reach it instead of `run.goal.blocked`.

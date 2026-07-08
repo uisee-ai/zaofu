@@ -7,7 +7,8 @@
 ## 1. ZaoFu 是什么
 
 ZaoFu 是一个**多 agent 工程编排脚手架**:你给一个目标(一句话需求、一个 bug、一份 PRD),
-它用一组分工的 AI agent(设计 / 实现 / 评审 / 测试 / 判定)协作把它推进到**可验证的交付**,
+它用一组分工的 AI agent(设计 / 实现 / 验证 / 判定,也可以按 `zf.yaml` 自定义阶段)
+协作把它推进到**可验证的交付**,
 全过程的每一步都落成事件、可观测、可回放、可恢复。
 
 它的设计目标不是"让 LLM 跑得快",而是**让长程多 agent 协作不失控**:不提前宣告完成、
@@ -47,20 +48,25 @@ flowchart TD
 
 ## 3. 两个支柱:事件真相 + 单一控制面
 
-### 3.1 `events.jsonl` —— 系统唯一真相
+### 3.1 Kernel truth/state —— 事件流 + 内核状态文件
 
-所有发生的事都是一条 append-only 事件(`events.jsonl`,每行一个 JSON,可带 HMAC 签名)。
-**所有其它视图都从事件重建** —— kanban 看板、成本、Web dashboard、追踪图,都是"投影"(projection),
-不是独立真相。这意味着:删掉任何投影都能从事件重放出来;任何状态争议都以事件流为准。
-
+所有发生的事都会进入 append-only 事件流(`events.jsonl`,每行一个 JSON,可带 HMAC 签名)。
 事件带**因果血缘**(谁触发了谁),所以一次交付的完整链路可以被追溯成一张图。
+
+但当前实现里,系统真相不是"只有 events.jsonl 一个文件"。内核还维护少数 canonical
+state 文件:`kanban.json`、`feature_list.json`、`session.yaml`、`role_sessions.yaml`。
+它们必须通过 `EventWriter`、`TaskStore`、`FeatureStore`、`SessionStore` 等 helper
+更新,不能手写。
+
+Web dashboard、Delivery/Trace/Loop、成本、skills、workdirs、diagnostics、run archive
+这类视图是可重建 projection。删掉 projection 可以重建;删改 canonical state 则会破坏运行态。
 
 ### 3.2 `zf.yaml` —— 唯一控制面
 
 整个系统的行为由一个文件 `zf.yaml` 决定:有哪些角色、用什么后端(claude-code / codex)、
 每个角色订阅什么事件(triggers)/发布什么事件(publishes)、有哪些质量门禁、安全约束怎么配。
-**不存在第二个控制平面** —— 这是硬规则。运行态(事件、看板、会话、成本)落在 `.zf/` 目录,
-不进 git,可随时重建。
+**不存在第二个控制平面** —— 这是硬规则。运行态落在 `project.state_dir` 指向的目录
+(默认 `.zf/`),不进 git。canonical state 由内核管理,projection 可按需重建。
 
 ## 4. 核心技术点
 
@@ -68,12 +74,13 @@ flowchart TD
 
 - **append-only**:事件只追加不修改,历史不可篡改。
 - **因果血缘**:每个事件记录关联/起因,可还原"为什么会发生这一步"。
-- **投影可重建**:看板、成本、Web 视图都是纯函数投影,坏了重放即可。
+- **投影可重建**:Web 视图、Delivery/Trace/Loop、成本、skills、workdirs、diagnostics
+  等是 projection,坏了可按对应命令重建。
 - 命令:`zf events --last N`、`zf trace delivery <feature_id>`、`zf watch --follow`。
 
 ### 4.2 任务模型:Kanban + Task Contract
 
-- **Kanban**:任务在 `kanban.json` 里走 backlog → in-progress → done,迁移受事件守护
+- **Kanban**:任务在 `kanban.json` 里走 backlog → in-progress → done,迁移受内核守护
   (缺 `judge.passed` 等前置事件时,`zf kanban move ... done` 会被拒绝)。
 - **WIP=1**:每个角色实例同时只做一个任务,避免上下文混淆。
 - **Task Contract**:严格模式下每个任务带契约 —— `behavior`(要做什么)、`verification`
@@ -82,11 +89,16 @@ flowchart TD
 
 ### 4.3 状态机与质量门禁
 
-标准任务走一条**阶段事件链**,每一步都是显式事件,内核据此推进:
+经典代码任务通常走一条**阶段事件链**,每一步都是显式事件,内核据此推进:
 
 ```
 dev.build.done → review.approved → test.passed → judge.passed → discriminator.passed → done
 ```
+
+但这不是硬编码的唯一流程。当前代码支持 `workflow.stages` / `workflow.pipelines`、
+`static_gate.*`、`impl.child.*`、`verify.child.*`、fanout/fan-in、reader/writer 分工
+以及 issue / PRD / refactor flow。实际阶段链以 `zf.yaml` 和 `zf workflow inspect`
+推导结果为准。
 
 任一环失败(`review.rejected` / `test.failed` / `judge.failed`)按路由返工。两类门禁互补:
 
@@ -130,14 +142,15 @@ ZaoFu 用分层约束防止 agent 越权:
 
 ### 4.6 编排与事件驱动唤醒
 
-`zf start --foreground` 启动 `EventWatcher`:新事件命中 wake pattern 时唤醒 orchestrator;
+`zf start` 启动 workers 并在前台运行 `EventWatcher`:新事件命中 wake pattern 时唤醒 orchestrator;
 即使无事件也周期 tick,驱动 stuck/orphan/context 扫描。状态推进有两种:
 
 - **Layer 1 机械转移**:确定的状态迁移(如 `dev.build.done` → 派发给 review)内核直接做,不唤醒 LLM。
 - **Layer 2 唤醒**:需要判断时(如返工选谁、异常处理)才唤醒 orchestrator —— 省成本。
 
 角色间通过 `triggers`(订阅)/ `publishes`(发布)在 `zf.yaml` 里声明耦合;
-outbound 用 tmux 或 stream-json transport 把 briefing 送给 agent。
+outbound 常用 tmux transport 把 briefing 送给 agent;特定自动化/Layer 2 路径也可以使用
+`stream-json` transport。
 
 ### 4.7 隔离与证据
 
@@ -170,21 +183,26 @@ flowchart LR
   DC -->|failed| AD
 ```
 
-任何失败都回到 dev(或按契约 / workflow 路由到 arch),受 `max_rework_attempts` 上限保护。
+任何失败都按 task contract 或 `workflow.rework_routing` 路由,常见是回到 dev,
+也可回到 arch/plan/verify 等自定义阶段,受 `max_rework_attempts` 上限保护。
 
-## 6. 运行态目录 `.zf/`(不进 git,可重建)
+## 6. 运行态目录 `project.state_dir`(默认 `.zf/`,不进 git)
 
 | 文件 | 内容 |
 |---|---|
-| `events.jsonl` | append-only 事件流(每行可 HMAC 签名)—— 唯一真相 |
-| `kanban.json` | 看板投影 |
-| `session.yaml` / `role_sessions.yaml` | 会话与角色绑定 |
-| `cost.jsonl` / `cost_state.json` | per-turn 成本与累计 |
+| `events.jsonl` | append-only 事件流(每行可 HMAC 签名) |
+| `kanban.json` | active task canonical state; terminal task 会归档到 `kanban/` |
+| `feature_list.json` | active feature canonical state; terminal feature 会归档到 `feature_list/` |
+| `session.yaml` / `role_sessions.yaml` | harness session 与 role instance/provider session 绑定 |
+| `cost.jsonl` / `cost_state.json` | per-turn 成本与累计 projection |
 | `memory/` | 角色记忆(shared / arch / dev / review / test) |
 | `loop.lock` | 运行锁 + session secret(事件签名用) |
 | `logs/` | harness 与各 agent 日志 |
+| `artifacts/` / `fanouts/` / `runs/` / `projections/` | task-map、fanout、run archive、Web/trace/diagnostics projection |
+| `workdirs/` | worker 隔离 worktree / checkout |
 
-删掉任何投影都能从 `events.jsonl` 重放;`.zf/` 不该手工编辑,一律通过 ZaoFu 命令变更。
+`.zf/` 不该手工编辑。canonical state 一律通过 ZaoFu 命令或内核 helper 变更;
+projection 可通过对应 rebuild/refresh 命令恢复。
 
 ## 下一步
 

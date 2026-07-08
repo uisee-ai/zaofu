@@ -4,6 +4,7 @@ import json
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from zf.core.config.schema import (
     FanoutAggregateConfig,
@@ -423,6 +424,80 @@ def test_writer_fanout_synthesize_canonical_tasks_admits_unseeded(tmp_path: Path
     # prose entry rejects every writer handoff (HIC-E8311AE35F).
     assert store.get("TASK-1").contract.scope == ["a.txt"]
     assert store.get("TASK-2").contract.scope == ["b.txt"]
+
+
+def test_writer_fanout_synthesize_canonical_refreshes_workflow_bootstrap_placeholder(
+    tmp_path: Path,
+):
+    state_dir, log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    store = TaskStore(state_dir / "kanban.json")
+    for task_id in ("TASK-1", "TASK-2"):
+        store.add(Task(
+            id=task_id,
+            title=f"bootstrap {task_id}",
+            status="backlog",
+            contract=TaskContract(
+                acceptance="exit_code=0",
+                evidence_contract={
+                    "source": "workflow_invoke_bootstrap",
+                    "workflow_fanout_anchor": True,
+                    "pattern_id": "issue-triage",
+                },
+            ),
+        ))
+
+    _start(orch)
+
+    events = log.read_all()
+    assert not [event for event in events if event.type == "fanout.cancelled"]
+    assert [sent[0] for sent in transport.sent if sent[0].startswith("dev-")] == [
+        "dev-1",
+        "dev-2",
+    ]
+    updates = [
+        event for event in events
+        if event.type == "task.contract.update"
+        and event.payload.get("source") == "workflow_task_map_adoption"
+    ]
+    assert [event.task_id for event in updates] == ["TASK-1", "TASK-2"]
+    task = store.get("TASK-1")
+    assert task is not None
+    assert task.contract.evidence_contract["source"] == "refactor_task_map"
+    assert (
+        task.contract.evidence_contract["source_refs"]["task_map_ref"]
+        == ".zf/artifacts/F-11111111/task_map.json"
+    )
+    assert task.contract.behavior == "Create a.txt with TASK-1 smoke content."
+    assert validate_task_contract(task, config=orch.config, project_root=tmp_path) == []
+
+
+def test_writer_briefing_preserves_workflow_matrix_refs(tmp_path: Path):
+    state_dir, _log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"
+    data = json.loads(task_map.read_text(encoding="utf-8"))
+    data["tasks"][0].update({
+        "workflow_input_manifest_ref": "artifacts/workflow/wf/workflow-input-manifest.json",
+        "acceptance_matrix_ref": "artifacts/workflow/wf/acceptance-matrix.json",
+        "test_matrix_ref": "artifacts/workflow/wf/test-matrix.json",
+        "real_e2e_matrix_ref": "artifacts/workflow/wf/real-e2e-matrix.json",
+        "source_refs": {"prd_ref": "docs/prd/tiny.md"},
+        "artifact_refs": [
+            "artifacts/workflow/wf/acceptance-matrix.json",
+            "artifacts/workflow/wf/test-matrix.json",
+        ],
+    })
+    task_map.write_text(json.dumps(data), encoding="utf-8")
+
+    _start(orch)
+
+    briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "## Workflow Input Manifest" in briefing
+    assert '"workflow_input_manifest_ref": "artifacts/workflow/wf/workflow-input-manifest.json"' in briefing
+    assert '"acceptance_matrix_ref": "artifacts/workflow/wf/acceptance-matrix.json"' in briefing
+    assert '"test_matrix_ref": "artifacts/workflow/wf/test-matrix.json"' in briefing
+    assert '"real_e2e_matrix_ref": "artifacts/workflow/wf/real-e2e-matrix.json"' in briefing
+    assert '"workflow_source_refs"' in briefing
+    assert '"prd_ref": "docs/prd/tiny.md"' in briefing
 
 
 def test_writer_fanout_canonicalizes_semantic_task_map_owner_role(tmp_path: Path):
@@ -1939,6 +2014,117 @@ def test_affinity_stage_slots_queue_and_dispatch_next_on_lane_release(tmp_path: 
     assert store.get("TASK-3").assigned_to == "dev-2"
 
 
+def test_affinity_stage_slots_honors_blocked_by_before_dispatch(tmp_path: Path):
+    state_dir, log, transport, orch = _state(
+        tmp_path,
+        affinity_stage_slots=True,
+        affinity_lane_count=3,
+    )
+    task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"
+    task_map.write_text(json.dumps({
+        "tasks": [
+            {
+                "task_id": "TASK-SCAFFOLD",
+                "scope": "scaffold",
+                "affinity_tag": "scaffold",
+                "allowed_paths": ["app/package.json"],
+            },
+            {
+                "task_id": "TASK-CORE",
+                "scope": "core",
+                "affinity_tag": "core",
+                "blocked_by": ["TASK-SCAFFOLD"],
+                "allowed_paths": ["app/src/index.js"],
+            },
+            {
+                "task_id": "TASK-TESTS",
+                "scope": "tests",
+                "affinity_tag": "tests",
+                "blocked_by": ["TASK-CORE"],
+                "allowed_paths": ["app/test/cli.test.js"],
+            },
+        ],
+    }), encoding="utf-8")
+    store = TaskStore(state_dir / "kanban.json")
+    contract = TaskContract(
+        feature_id="F-11111111",
+        evidence_contract={
+            "source_refs": {
+                "task_map_ref": ".zf/artifacts/F-11111111/task_map.json",
+            },
+        },
+    )
+    store.add(Task(
+        id="TASK-SCAFFOLD",
+        title="TASK-SCAFFOLD",
+        status="backlog",
+        contract=contract,
+    ))
+    store.add(Task(
+        id="TASK-CORE",
+        title="TASK-CORE",
+        status="backlog",
+        blocked_by=["TASK-SCAFFOLD"],
+        contract=contract,
+    ))
+    store.add(Task(
+        id="TASK-TESTS",
+        title="TASK-TESTS",
+        status="backlog",
+        blocked_by=["TASK-CORE"],
+        contract=contract,
+    ))
+
+    _start(orch)
+
+    fanout_id = _fanout_id(log)
+    manifest = _manifest(state_dir, fanout_id)
+    assert [sent[0] for sent in transport.sent] == ["dev-1"]
+    assert _child(manifest, "TASK-SCAFFOLD")["status"] == "dispatched"
+    assert _child(manifest, "TASK-CORE")["status"] == "queued"
+    assert _child(manifest, "TASK-TESTS")["status"] == "queued"
+    assert [
+        event.payload["task_id"] for event in log.read_all()
+        if event.type == "fanout.slot.assigned"
+    ] == ["TASK-SCAFFOLD"]
+
+    scaffold = _child(manifest, "TASK-SCAFFOLD")
+    Path(scaffold["workdir"], "app").mkdir()
+    commit = _commit(
+        Path(scaffold["workdir"]),
+        "app/package.json",
+        "{}\n",
+        "scaffold",
+    )
+    orch.run_once(events=[ZfEvent(
+        type="dev.build.done",
+        actor=scaffold["role_instance"],
+        task_id="TASK-SCAFFOLD",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": scaffold["child_id"],
+            "run_id": scaffold["run_id"],
+            "dispatch_id": scaffold["run_id"],
+            "pdd_id": "F-11111111",
+            "source_commit": commit,
+            "source_branch": scaffold["source_branch"],
+            "workdir": scaffold["workdir"],
+        },
+    )])
+
+    manifest_after = _manifest(state_dir, fanout_id)
+    core = _child(manifest_after, "TASK-CORE")
+    tests = _child(manifest_after, "TASK-TESTS")
+    assert core["status"] == "dispatched"
+    assert tests["status"] == "queued"
+    assert core["lane_id"] == scaffold["lane_id"]
+    assert [
+        event.payload["task_id"] for event in log.read_all()
+        if event.type == "fanout.slot.assigned"
+    ] == ["TASK-SCAFFOLD", "TASK-CORE"]
+
+
 def test_affinity_stage_slots_honors_task_affinity_tag_for_initial_dispatch(tmp_path: Path):
     state_dir, log, transport, orch = _state(
         tmp_path,
@@ -3266,6 +3452,64 @@ def test_writer_candidate_ready_payload_matches_schema_contract(tmp_path: Path):
     assert payload["quality_gates_failed"] == []
 
 
+def test_lane_final_ready_targets_candidate_ref_from_root_aggregate(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch = _state(tmp_path)
+    root_fanout_id = "fanout-prd-lanes-impl-x"
+    manifest_dir = state_dir / "fanouts" / root_fanout_id
+    manifest_dir.mkdir(parents=True)
+    manifest_dir.joinpath("manifest.json").write_text(json.dumps({
+        "fanout_id": root_fanout_id,
+        "trace_id": "trace-1",
+        "stage_id": "prd-lanes-impl",
+        "target_ref": "main",
+        "pdd_id": "F-11111111",
+        "feature_id": "F-11111111",
+        "children": [{"task_id": "TASK-1"}],
+        "aggregate": {
+            "status": "completed",
+            "candidate_ref": "candidate/F-11111111",
+            "candidate_base_commit": "base123",
+            "candidate_head_commit": "head456",
+            "diff_ref": "base123..head456",
+        },
+    }), encoding="utf-8")
+    lane_event = ZfEvent(
+        type="lane.stage.completed",
+        actor="zf-cli",
+        task_id="TASK-1",
+        correlation_id="trace-1",
+        payload={
+            "pipeline_id": "prd-lanes",
+            "root_fanout_id": root_fanout_id,
+            "stage_slot": "verify",
+            "task_id": "TASK-1",
+            "status": "completed",
+        },
+    )
+    log.append(lane_event)
+    pipeline = SimpleNamespace(
+        pipeline_id="prd-lanes",
+        stages=[
+            SimpleNamespace(stage_id="impl"),
+            SimpleNamespace(stage_id="verify"),
+        ],
+    )
+
+    ready_event = orch._maybe_publish_lane_stage_final_ready(
+        lane_event=lane_event,
+        pipeline=pipeline,
+    )
+
+    assert ready_event is not None
+    assert ready_event.type == "test.passed"
+    assert ready_event.payload["target_ref"] == "candidate/F-11111111"
+    assert ready_event.payload["candidate_ref"] == "candidate/F-11111111"
+    assert ready_event.payload["candidate_head_commit"] == "head456"
+    assert ready_event.payload["diff_ref"] == "base123..head456"
+
+
 def test_writer_candidate_conflict_fails_fanout_aggregate(tmp_path: Path):
     state_dir, log, _transport, orch = _state(tmp_path)
     _seed_tasks(state_dir)
@@ -3857,3 +4101,44 @@ def test_plan_approval_rejected_stays_held_no_respam(tmp_path):
     assert len([
         e for e in events if e.type == "plan.approval.requested"
     ]) == 1
+
+
+def test_plan_minting_suppressed_for_pending_same_fingerprint(tmp_path):
+    """FIX-12(bizsim r4 F12):同 stage+pdd+task 集的未决 plan 已在队时,
+    新 trigger 不再铸新审批单(r4 冻结期 14 请求/批一生一的实锚)。"""
+    from zf.core.events.writer import EventWriter
+
+    _, log, orch = _approval_orch(tmp_path, enabled=True)
+    _approval_start(orch, log)
+    assert len([
+        e for e in log.read_all() if e.type == "plan.approval.requested"
+    ]) == 1
+
+    # 第二个 trigger(新 event id,同 task 集)→ 应被指纹判重抑制
+    second = ZfEvent(
+        type="task_map.ready",
+        actor="zf-cli",
+        correlation_id="trace-1",
+        payload={"pdd_id": "F-11111111"},
+    )
+    EventWriter(log).append(second)
+    orch.run_once(events=[second])
+    events = log.read_all()
+    assert len([
+        e for e in events if e.type == "plan.approval.requested"
+    ]) == 1, "同指纹未决 plan 在队,不得再铸"
+    suppressed = [e for e in events if e.type == "plan.minting.suppressed"]
+    assert suppressed
+    assert suppressed[0].payload["reason"] == "pending_plan_same_fingerprint"
+    assert not any(e.type == "fanout.started" for e in events)
+
+    # 首单批准后,老 pending 落定;同指纹新 trigger 可以再铸(非永久封印)
+    first_plan_id = [
+        e for e in events if e.type == "plan.approval.requested"
+    ][0].payload["plan_id"]
+    approved = ZfEvent(
+        type="plan.approved", actor="operator", payload={"plan_id": first_plan_id},
+    )
+    EventWriter(log).append(approved)
+    orch.run_once(events=[approved])
+    assert any(e.type == "fanout.started" for e in log.read_all())

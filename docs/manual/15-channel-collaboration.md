@@ -94,14 +94,48 @@ integrations:
 
 - **CLI 只有 `zf channel say`**。`list` / `show` / `invite` / `synth` 等未实现。成员邀请、
   归档等目前经 ControlledAction / Web API,不是稳定 CLI 面。
-- **多成员编排** —— speaker policy(round-robin / leader-delegation)、discussion mode
-  (`channel.discussion.mode.set` 事件已定义但策略层 WIP)尚不可配置。
+- **多成员编排** —— speaker policy(round-robin / leader-delegation)未实现;
+  **discussion mode 策略层已落地**(2026-07-06 bizsim r4 核实更新):经受控动作
+  `channel-discussion-mode` 可设 `mention_relay`(agent 帖内 @mention 定向转发,
+  relay 深度上限默认 4)或 `fanout_then_synthesis`(三阶段:phase1_blind 盲答 →
+  phase2_relay 互相转发 → phase3_synthesis 收敛)。**默认 `manual_mention` 下
+  agent 回帖不自动扇出**(doc 64 §5 防风暴守卫),事件流表现为
+  `channel.route.blocked: auto_route_not_allowed`——这是设计内行为,不是故障;
+  要 agent 间真实互达必须先设 relay 模式。
 - **channel → workflow 完整桥接** —— `channel.synthesis.proposed` →
   `workflow.invoke.requested` 的链路在设计中,生产可用性以代码为准,勿假设已闭环。
 - **provider adapter** —— Codex / Claude-Code 在 channel 内的连接器部分 WIP;
   `target: agent` 直连回复路径已可用,复杂多 provider 协作未稳定。
 
 需要这些能力时,先 `grep` 现网符号确认是否已落地,不要照设计文档当成已交付。
+
+## 成员管理值域(bizsim r4 教育配对)
+
+经受控动作 `channel-invite-member`(POST `/api/projects/<id>/actions/channel-invite-member`)
+邀请成员时,两个枚举字段值域如下——传错会被 422 拒绝,错误信息会回显合法值:
+
+- `member_type`:`automation_reporter` / `claude-code` / `codex` / `hermes` /
+  `human` / `observer` / `openclaw` / `owner_delegate` / `persona` /
+  `persona_agent` / `provider_agent` / `readonly-reviewer` / `runtime-role` /
+  `runtime_role_binding`。绑定 zf.yaml 已声明角色用 `runtime-role` +
+  `workflow_role_binding: {"role": "<instance_id>"}`。
+- `channel_role`:`arch` / `automation_reporter` / `critic` / `dev_reviewer` /
+  `facilitator` / `observer` / `owner_delegate` / `product_pm` / `qa_analyst` /
+  `researcher` / `security_reviewer` / `spine_reviewer` / `synthesizer` /
+  `tech_leader`。
+
+示例(绑定 prd-author 角色为产品视角参与者):
+
+```json
+{"channel_id": "ch-demo", "member_id": "prd-author",
+ "backend": "codex", "member_type": "runtime-role",
+ "channel_role": "product_pm",
+ "skill_refs": ["zf-channel-discussion-participant"],
+ "workflow_role_binding": {"role": "prd-author"}}
+```
+
+`skill_refs` 会按字面路径物化 `skills/<name>/SKILL.md` 给成员会话
+(与 roles 的 skills 解析不同,不走 skill pool 冲突消解)。
 
 ## 相关
 

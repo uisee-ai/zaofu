@@ -126,6 +126,7 @@ def validate_task_map_payload(
     # verification check against the whole plan's paths so cross-task test runs
     # are allowed while truly out-of-plan references are still caught.
     plan_scope_paths: list[str] = []
+    wave_by_task = _wave_by_task_id(payload)
     for raw in tasks_raw:
         if isinstance(raw, dict):
             plan_scope_paths.extend(_string_list(raw.get("allowed_paths")))
@@ -141,7 +142,7 @@ def validate_task_map_payload(
         if task_id in ids:
             errors.append(f"duplicate task_id {task_id!r}")
         ids.append(task_id)
-        wave = _int_value(raw.get("wave"))
+        wave = _int_value(raw.get("wave") if raw.get("wave") is not None else wave_by_task.get(task_id))
         waves[task_id] = wave
         task_count_by_wave[str(wave)] = task_count_by_wave.get(str(wave), 0) + 1
         owner_role = str(raw.get("owner_role") or "").strip()
@@ -160,7 +161,14 @@ def validate_task_map_payload(
         for field, command in _verification_command_fields(raw):
             for error in _verification_command_errors(command):
                 errors.append(f"{task_id}.{field} {error}")
-            for error in _verification_scope_errors(raw, command, plan_scope_paths):
+            for error in _verification_scope_errors(
+                raw,
+                command,
+                plan_scope_paths,
+                relative_roots=_relative_path_roots(payload),
+            ):
+                errors.append(f"{task_id}.{field} {error}")
+            for error in _verification_level_errors(command):
                 errors.append(f"{task_id}.{field} {error}")
         if _string_list(raw.get("allowed_paths")) and not str(
             raw.get("allowed_paths_reason") or raw.get("scope_reason") or ""
@@ -196,6 +204,10 @@ def validate_task_map_payload(
     if source_refs is not None and not isinstance(source_refs, dict):
         errors.append("source_refs must be an object when present")
 
+    errors.extend(_shared_convention_errors(
+        payload,
+        [raw for raw in tasks_raw if isinstance(raw, dict)],
+    ))
     errors.extend(_assembly_ownership_errors(
         assembly_owner_roles=assembly_owner_roles,
         bundle_owner_roles=bundle_owner_roles,
@@ -445,6 +457,20 @@ def _coverage_task_ids(tasks: list[Any] | dict[str, Any]) -> list[str]:
     return ids
 
 
+def _wave_by_task_id(payload: dict[str, Any]) -> dict[str, int]:
+    waves = payload.get("waves")
+    if not isinstance(waves, list):
+        return {}
+    out: dict[str, int] = {}
+    for raw in waves:
+        if not isinstance(raw, dict):
+            continue
+        wave = _int_value(raw.get("wave"))
+        for task_id in _string_list(raw.get("tasks")):
+            out.setdefault(task_id, wave)
+    return out
+
+
 def summarize_task_map_file(path: Path) -> dict[str, Any]:
     payload = load_task_map(path)
     result = validate_task_map_payload(payload)
@@ -649,10 +675,80 @@ def _shell_tokens_with_quote_state(command: str) -> list[tuple[str, bool]]:
     return tokens
 
 
+# C2(prd-goal e2e finding-2/14,验证层级错配):切片任务的 verification
+# 在隔离 task 分支上执行,系统级命令(安装整包/入口冒烟)只有集成后的
+# candidate 才可能通过——挂错层 = 结构性必败 + 返工路由永远错位
+# (3 轮同指纹实弹)。W1 原来只查文件引用,此处补命令类别维度。
+_SYSTEM_LEVEL_COMMAND_PATTERNS = (
+    re.compile(r"pip3?\s+install\s+(-e\b|\.($|\s)|--editable\b)"),
+    re.compile(r"python3?\s+-m\s+pip\s+install\s+(-e\b|\.($|\s)|--editable\b)"),
+)
+
+
+def _shared_convention_errors(
+    data: dict[str, Any],
+    task_items: list[dict[str, Any]],
+) -> list[str]:
+    """C1(prd-goal e2e finding-5/7):跨任务共享约定单源。
+
+    v1 规则:task_map.shared_conventions.test_path_prefix 存在时,所有
+    任务 allowed_paths/verification 引用的测试文件路径必须以该前缀开头
+    ——textstat 实弹里 tests/ 与 app/tests/ 四家各表,verify 逐层考古
+    式返工的直接根源。"""
+    conventions = data.get("shared_conventions")
+    if not isinstance(conventions, dict):
+        return []
+    prefix = str(conventions.get("test_path_prefix") or "").strip()
+    if not prefix:
+        return []
+    prefix = prefix.rstrip("/") + "/"
+    prefix_base = prefix.rstrip("/")
+    relative_roots = _relative_path_roots(data)
+    out: list[str] = []
+    test_like = re.compile(r"(^|/)(tests?)(/|$)|test_[^/]*\.py$")
+    for raw in task_items:
+        task_id = str(raw.get("task_id") or "?")
+        refs = list(_string_list(raw.get("allowed_paths")))
+        for _field, command in _verification_command_fields(raw):
+            refs.extend(_command_path_refs(command))
+        for ref in refs:
+            norm = str(ref).lstrip("./")
+            if not test_like.search(norm):
+                continue
+            if norm == prefix_base or norm.startswith(prefix):
+                continue
+            rooted = [
+                _normalize_scope_path(f"{root}/{norm}")
+                for root in relative_roots
+                if _can_apply_relative_root(norm)
+            ]
+            if not any(item == prefix_base or item.startswith(prefix) for item in rooted):
+                out.append(
+                    f"{task_id} test path {ref!r} violates shared convention "
+                    f"test_path_prefix={prefix!r}"
+                )
+    return out
+
+
+def _verification_level_errors(command: str) -> list[str]:
+    text = str(command or "")
+    for pattern in _SYSTEM_LEVEL_COMMAND_PATTERNS:
+        if pattern.search(text):
+            return [
+                "uses a system-level command (package install) that cannot "
+                "succeed on an isolated task slice; move it to the "
+                "integration/test stage checks: "
+                f"{text[:120]!r}"
+            ]
+    return []
+
+
 def _verification_scope_errors(
     raw: dict[str, Any],
     command: str,
     plan_scope_paths: list[str] | None = None,
+    *,
+    relative_roots: list[str] | None = None,
 ) -> list[str]:
     allowed_paths = _string_list(raw.get("allowed_paths"))
     if not allowed_paths:
@@ -668,12 +764,27 @@ def _verification_scope_errors(
         return []
     out: list[str] = []
     for path_ref in _command_path_refs(command):
-        if not _path_ref_covered(path_ref, scope_paths):
+        if not _path_ref_covered(
+            path_ref,
+            scope_paths,
+            relative_roots=relative_roots,
+        ):
             out.append(
                 "references path outside allowed_paths/exclusive_files: "
                 f"{path_ref!r}"
             )
     return out
+
+
+_CODE_ARGUMENT_FLAGS = {
+    "-c",
+    "-e",
+    "-ec",
+    "-lc",
+    "-lec",
+    "--command",
+    "--eval",
+}
 
 
 def _command_path_refs(command: str) -> list[str]:
@@ -682,24 +793,50 @@ def _command_path_refs(command: str) -> list[str]:
     except ValueError:
         return []
     refs: list[str] = []
+    skip_code_argument = False
     for token in tokens:
-        cleaned = _clean_path_ref_token(token)
-        if not cleaned or cleaned.startswith("-") or "://" in cleaned:
+        if skip_code_argument:
+            skip_code_argument = False
             continue
-        if "=" in cleaned and not cleaned.startswith(("./", "../", "/")):
-            cleaned = cleaned.rsplit("=", 1)[-1]
-        cleaned = _clean_path_ref_token(cleaned)
-        # A pytest node-id (path::test_name, optionally path::Class::test) is a
-        # test target, not a separate file. Validate only the file part so an
-        # in-scope test file is not rejected for naming a specific node — e.g.
-        # `pytest tests/test_x.py::test_case` must match allowed path
-        # `tests/test_x.py`, not the literal `tests/test_x.py::test_case`.
-        if "::" in cleaned:
-            cleaned = cleaned.split("::", 1)[0]
-        if not _looks_like_path_ref(cleaned):
+        if str(token).strip().lower() in _CODE_ARGUMENT_FLAGS:
+            skip_code_argument = True
             continue
-        refs.append(cleaned)
+        for cleaned in _path_ref_candidates_from_shell_token(token):
+            # A pytest node-id (path::test_name, optionally path::Class::test) is a
+            # test target, not a separate file. Validate only the file part so an
+            # in-scope test file is not rejected for naming a specific node — e.g.
+            # `pytest tests/test_x.py::test_case` must match allowed path
+            # `tests/test_x.py`, not the literal `tests/test_x.py::test_case`.
+            if "::" in cleaned:
+                cleaned = cleaned.split("::", 1)[0]
+            if not _looks_like_path_ref(cleaned):
+                continue
+            refs.append(cleaned)
     return list(dict.fromkeys(refs))
+
+
+def _path_ref_candidates_from_shell_token(token: str) -> list[str]:
+    cleaned = _clean_path_ref_token(token)
+    if not cleaned or cleaned.startswith("-") or "://" in cleaned:
+        return []
+    if cleaned.startswith("$("):
+        inner = cleaned[2:].strip()
+        if inner.endswith(")"):
+            inner = inner[:-1].strip()
+        try:
+            inner_tokens = shlex.split(inner)
+        except ValueError:
+            inner_tokens = inner.split()
+        out: list[str] = []
+        for inner_token in inner_tokens:
+            out.extend(_path_ref_candidates_from_shell_token(inner_token))
+        return out
+    if any(ch.isspace() for ch in cleaned):
+        return []
+    if "=" in cleaned and not cleaned.startswith(("./", "../", "/")):
+        cleaned = cleaned.rsplit("=", 1)[-1]
+    cleaned = _clean_path_ref_token(cleaned)
+    return [cleaned] if cleaned else []
 
 
 def _clean_path_ref_token(token: str) -> str:
@@ -719,21 +856,55 @@ def _looks_like_path_ref(token: str) -> bool:
     return "/" in token and not token.startswith("-")
 
 
-def _path_ref_covered(path_ref: str, scope_paths: list[str]) -> bool:
+def _path_ref_covered(
+    path_ref: str,
+    scope_paths: list[str],
+    *,
+    relative_roots: list[str] | None = None,
+) -> bool:
     ref = _normalize_scope_path(path_ref)
     if not ref:
         return True
-    for scope in scope_paths:
-        normalized_scope = _normalize_scope_path(scope)
-        if not normalized_scope:
-            return True
-        if ref == normalized_scope:
-            return True
-        if ref.startswith(f"{normalized_scope}/"):
-            return True
-        if normalized_scope.startswith(f"{ref}/"):
-            return True
+    refs = [ref]
+    if _can_apply_relative_root(path_ref):
+        for root in relative_roots or []:
+            rooted = _normalize_scope_path(f"{root}/{path_ref}")
+            if rooted and rooted not in refs:
+                refs.append(rooted)
+    for candidate_ref in refs:
+        for scope in scope_paths:
+            normalized_scope = _normalize_scope_path(scope)
+            if not normalized_scope:
+                return True
+            if candidate_ref == normalized_scope:
+                return True
+            if candidate_ref.startswith(f"{normalized_scope}/"):
+                return True
+            if normalized_scope.startswith(f"{candidate_ref}/"):
+                return True
     return False
+
+
+def _can_apply_relative_root(path_ref: str) -> bool:
+    text = str(path_ref or "").strip()
+    return bool(text) and not text.startswith(("./", "../", "/"))
+
+
+def _relative_path_roots(payload: dict[str, Any]) -> list[str]:
+    roots: list[str] = []
+    conventions = payload.get("shared_conventions")
+    if isinstance(conventions, dict):
+        for key in ("package_root", "target_root"):
+            value = str(conventions.get(key) or "").strip()
+            if value:
+                roots.append(_normalize_scope_path(value))
+        run_cwd = str(conventions.get("run_cwd") or "").strip()
+        if run_cwd:
+            roots.append(_normalize_scope_path(run_cwd.split()[0]))
+    target_root = str(payload.get("target_root") or "").strip()
+    if target_root:
+        roots.append(_normalize_scope_path(target_root))
+    return [root for root in dict.fromkeys(roots) if root]
 
 
 def _normalize_scope_path(path: str) -> str:

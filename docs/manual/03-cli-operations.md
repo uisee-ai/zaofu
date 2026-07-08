@@ -18,8 +18,13 @@ uv run zf <command>
 |---|---|
 | `zf presets` | 列出可用 preset |
 | `zf presets show <name>` | 输出 preset YAML |
-| `zf init [--preset NAME] [--state-dir PATH] [--force]` | 初始化运行态,可按 preset 生成 `zf.yaml`,并补齐项目根指令文档 |
+| `zf init [PATH] [--create] [--preset NAME] [--state-dir PATH] [--force]` | 初始化运行态,可按 preset 生成 `zf.yaml`,并补齐项目根指令文档 |
 | `zf init --skip-instruction-docs` | 只初始化运行态,不创建/刷新 `AGENTS.md` / `CLAUDE.md` |
+| `zf init --workspace-register` / `--no-workspace-register` | 控制是否注册到 workspace project manager |
+| `zf init --env-check` | 初始化时执行环境探测 |
+| `zf profile detect` | 探测项目技术栈 |
+| `zf profile recommend` | 基于项目特征推荐 profile/preset |
+| `zf profile bootstrap` | 生成 profile bootstrap 建议 |
 | `zf validate --path zf.yaml` | 校验配置 |
 | `zf validate --cold-start` | 5 点冷启动检查和 workflow topology 诊断 |
 | `zf validate --strict-skills` | skill 缺失/冲突直接失败 |
@@ -41,7 +46,8 @@ uv run zf doctor
 | 命令 | 用途 |
 |---|---|
 | `zf start --dry-run` | 记录启动命令,不启动真实 tmux/provider |
-| `zf start --foreground` | 启动 tmux workers 并在前台运行 watcher |
+| `zf start` | 启动 tmux workers 并在前台运行 watcher |
+| `zf start --no-watch` | spawn workers 后退出,不长期运行 event watcher |
 | `zf stop` | 优雅停止 session |
 | `zf stop --force` | 强制停止 session 并清理 lock |
 | `zf restart` | 重启 harness |
@@ -50,7 +56,8 @@ uv run zf doctor
 | `zf status` | 查看 session/task 状态 |
 | `zf status --workers` | 查看 worker 状态 |
 
-生产式长任务建议用 `start --foreground`。非 foreground 模式会创建 tmux session,但 event watcher 不会可靠地长期驻留。
+生产式长任务建议用 `zf start` 保持 watcher 前台运行。`--foreground` 仍兼容,
+但当前代码里只是 deprecated no-op alias;需要明确不跑 watcher 时才使用 `--no-watch`。
 
 ## 3. 任务与 Feature
 
@@ -73,6 +80,14 @@ uv run zf doctor
 | `zf kanban open` | 查看非终态 tasks |
 | `zf kanban pending` | 查看 backlog tasks |
 | `zf task trace <task_id>` | 查看 task 因果链 |
+| `zf project init --kind issue\|prd\|refactor` | 为 issue/PRD/refactor 任务生成项目级 flow 配置 |
+| `zf project review-spine` | 生成 project spine review |
+| `zf flow intake` | 接收 issue/PRD/refactor 输入并生成 intake artifact |
+| `zf flow classify` | 分类任务类型 |
+| `zf flow draft` | 生成 flow spec / yaml 草案 |
+| `zf flow preflight` | 对 flow spec 做启动前检查 |
+| `zf flow start` | 启动 flow |
+| `zf flow submit` | 提交流程入口 |
 
 脚本创建 task:
 
@@ -139,6 +154,17 @@ uv run zf skills doctor
 | `zf runs reconcile` | 标记 stale active runs |
 | `zf runs for-task <task_id>` | 查看某个 task 的 runs |
 | `zf archive-run ...` | 将 live state 归档到 `.zf/runs/<run_id>` |
+| `zf trace delivery <feature_id>` | 查看 Delivery spine / waves / ship readiness |
+| `zf trace execution-graph <feature_id>` | 查看计划和实际状态 join 后的执行图 |
+| `zf trace drift <feature_id>` | 查看 planned vs actual drift |
+| `zf trace task-node <task_id>` | 查看单 task trace 节点 |
+| `zf trace show <id>` | 按 correlation/event/task id 查看 trace |
+| `zf trace spans` | 将 `events.jsonl` 投影为 span records |
+| `zf trace operation` | 查看 dispatch-scoped operation timeline |
+| `zf trace gantt` | 输出 per-dev swim-lane Gantt / dep DAG |
+| `zf trace workflow-run <fanout_id>` | 查看 fanout/workflow run trace |
+| `zf trace report <feature_id>` | 生成 delivery trace report |
+| `zf trace export <feature_id>` | 导出 trace 数据 |
 
 建议在真实 E2E 或长任务结束后运行:
 
@@ -170,9 +196,14 @@ uv run zf metrics snapshot
 | `zf web --host 127.0.0.1 --port 8001` | 启动本地 dashboard |
 | `zf web --host 0.0.0.0 --port 5175` | 对容器/局域网暴露 dashboard |
 | `zf feishu ...` | 飞书适配相关命令 |
+| `zf workspace providers openclaw list` | 查看 workspace OpenClaw provider 绑定 |
+| `zf workspace providers openclaw set ...` | 写入 workspace OpenClaw provider 绑定 |
 | `zf autopilot tick` | deterministic proposal-only 自检 |
 | `zf self-eval ...` | 自评估命令 |
 | `zf autoresearch ...` | 真实场景 research/eval runner |
+| `zf projection ...` | 生成或刷新 runtime/Web projection |
+| `zf goal ...` | goal/evaluation 状态操作 |
+| `zf failure ...` | failure signal/诊断入口 |
 
 `0.0.0.0` 只应在可信网络或本地 Docker 测试中使用。
 

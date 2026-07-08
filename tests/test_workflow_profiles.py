@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from zf.core.config.loader import ConfigError, load_config
@@ -47,7 +49,19 @@ class TestExpansion:
                            "flow-lanes-verify", "flow-lanes-final"]
         scan = next(s for s in cfg.workflow.stages if s.id == "flow-scan")
         assert scan.target_ref == ""
+        assert any(
+            "initial refactor scan" in item
+            for item in scan.criteria.instructions
+        )
         plan = next(s for s in cfg.workflow.stages if s.id == "flow-plan")
+        assert any(
+            "Synthesize the scan reports" in item
+            for item in plan.criteria.instructions
+        )
+        assert any(
+            "schema_version` exactly `task-map.v1" in item
+            for item in plan.criteria.instructions
+        )
         contract = plan.children[0].payload["refactor_contract"]
         assert contract["assembly_policy"] == "declared_task"
         assert contract["assembly_task_id"] == "DEMO-ASM-001"
@@ -255,6 +269,52 @@ spec:
         assert cfg.workflow.flow_metadata["gap_loop"] == "enabled"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "module_parity"
 
+    def test_config_profile_flow_defaults_merge_refactor_role_skill_bundles(self, tmp_path):
+        text = """\
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata: {name: refactor-defaults/v1}
+spec:
+  flow_defaults:
+    refactor:
+      roleSkillBundles:
+        impl: [using-agent-skills, test-driven-development]
+        verify: [code-review-and-quality]
+---
+apiVersion: zaofu.dev/v1
+kind: RefactorFlow
+metadata: {name: demo-flow}
+spec:
+  flowProfile: refactor-flow/v3
+  lanes: 1
+  assembly: {task: DEMO-ASM-001}
+  laneRoleTemplate: {backend: mock}
+  roleSkillBundles:
+    impl: [zf-harness-done-contract]
+    verify: []
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  uses: [refactor-defaults/v1]
+  version: "1.0"
+  project: {name: demo}
+"""
+        path = tmp_path / "zf.yaml"
+        path.write_text(text)
+
+        cfg = load_config(path)
+
+        dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
+        verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+        assert dev.skills == [
+            "using-agent-skills",
+            "test-driven-development",
+            "zf-harness-done-contract",
+        ]
+        assert verify.skills == []
+
     def test_verify_gap_producer_default(self, tmp_path):
         path = tmp_path / "zf.yaml"
         path.write_text("""\
@@ -308,10 +368,38 @@ spec:
         ids = [stage.id for stage in cfg.workflow.stages]
         assert ids == [
             "issue-triage",
+            "issue-post-verify-discovery",
             "issue-lanes-impl",
             "issue-lanes-verify",
             "issue-lanes-final",
         ]
+        discovery = next(
+            stage for stage in cfg.workflow.stages
+            if stage.id == "issue-post-verify-discovery"
+        )
+        final = next(
+            stage for stage in cfg.workflow.stages
+            if stage.id == "issue-lanes-final"
+        )
+        assert discovery.trigger == "flow.discovery.requested"
+        assert final.trigger == "flow.discovery.completed"
+        assert any(
+            "issue triage" in item
+            for item in cfg.workflow.stages[0].criteria.instructions
+        )
+        assert any(
+            "schema_version` exactly `task-map.v1" in item
+            for item in cfg.workflow.stages[0].criteria.instructions
+        )
+        assert any(
+            "after implementation verification" in item
+            for item in discovery.criteria.instructions
+        )
+        impl = next(
+            stage for stage in cfg.workflow.stages
+            if stage.id == "issue-lanes-impl"
+        )
+        assert impl.synthesize_canonical_tasks is True
         names = {role.name for role in cfg.roles}
         assert {"issue-triage", "fix-lane-0", "fix-lane-1", "verify-lane-0", "judge-issue"} <= names
         assert cfg.workflow.flow_metadata["flow_kind"] == "issue"
@@ -323,6 +411,19 @@ spec:
     def test_prd_flow_generates_canonical_build_chain(self, tmp_path):
         path = tmp_path / "zf.yaml"
         path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata: {name: prd-defaults/v1}
+spec:
+  flow_defaults:
+    prd:
+      roleSkillBundles:
+        scan: [spec-driven-development]
+        planner: [planning-and-task-breakdown]
+        impl: [test-driven-development, zf-harness-done-contract]
+        verify: [zf-harness-verification-checklist]
+        judge-prd: [shipping-and-launch]
+---
 apiVersion: zaofu.dev/v1
 kind: PrdFlow
 metadata: {name: prd-demo}
@@ -336,6 +437,7 @@ apiVersion: zaofu.dev/v1
 kind: ZfConfig
 metadata: {name: demo}
 spec:
+  uses: [prd-defaults/v1]
   version: "1.0"
   project: {name: demo}
 """)
@@ -346,17 +448,130 @@ spec:
         assert ids == [
             "prd-scan",
             "prd-plan",
+            "prd-post-verify-discovery",
             "prd-lanes-impl",
             "prd-lanes-verify",
             "prd-lanes-final",
         ]
+        discovery = next(
+            stage for stage in cfg.workflow.stages
+            if stage.id == "prd-post-verify-discovery"
+        )
+        final = next(
+            stage for stage in cfg.workflow.stages
+            if stage.id == "prd-lanes-final"
+        )
+        assert discovery.trigger == "flow.discovery.requested"
+        assert final.trigger == "flow.discovery.completed"
+        scan = next(stage for stage in cfg.workflow.stages if stage.id == "prd-scan")
+        assert any(
+            "initial PRD scan" in item
+            for item in scan.criteria.instructions
+        )
+        plan = next(stage for stage in cfg.workflow.stages if stage.id == "prd-plan")
+        assert any(
+            "machine-readable task_map" in item
+            for item in plan.criteria.instructions
+        )
+        assert any(
+            "schema_version` exactly `task-map.v1" in item
+            for item in plan.criteria.instructions
+        )
         names = {role.name for role in cfg.roles}
         assert {"product-scan", "tech-scan", "planner", "dev-lane-0", "verify-lane-0", "judge-prd"} <= names
+        product_scan = next(role for role in cfg.roles if role.name == "product-scan")
+        planner = next(role for role in cfg.roles if role.name == "planner")
+        dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
+        verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+        judge = next(role for role in cfg.roles if role.name == "judge-prd")
+        assert "spec-driven-development" in product_scan.skills
+        assert "planning-and-task-breakdown" in planner.skills
+        assert "test-driven-development" in dev.skills
+        assert "zf-harness-done-contract" in dev.skills
+        assert "zf-harness-verification-checklist" in verify.skills
+        assert "shipping-and-launch" in judge.skills
         assert cfg.workflow.flow_metadata["flow_kind"] == "prd"
         assert cfg.workflow.flow_metadata["delivery_policy"] == "report_and_demo"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "product_completeness"
         assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
         assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v2"
+
+    def test_prd_flow_role_skill_bundles_override_defaults(self, tmp_path):
+        path = tmp_path / "zf.yaml"
+        path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata: {name: prd-demo}
+spec:
+  lanes: 1
+  backend: mock
+  roleSkillBundles:
+    impl: [custom-impl]
+    verify: [custom-verify]
+    judge-prd: []
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo}
+""")
+
+        cfg = load_config(path)
+
+        dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
+        verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+        judge = next(role for role in cfg.roles if role.name == "judge-prd")
+        assert dev.skills == ["custom-impl"]
+        assert verify.skills == ["custom-verify"]
+        assert judge.skills == []
+
+    def test_prod_controller_flows_enable_writer_workdirs(self):
+        root = Path(__file__).parent.parent
+        for relative in (
+            "examples/prod/controller/prd-fanout-v3.yaml",
+            "examples/prod/controller/issue-fanout-v3.yaml",
+            "examples/prod/controller/refactor-lane-v3.yaml",
+        ):
+            cfg = load_config(root / relative)
+            assert cfg.runtime.workdirs.enabled is True, relative
+            assert cfg.runtime.workdirs.mode == "worktree", relative
+            assert any(
+                source.name == "agent-skills"
+                and source.path == "/home/user/workspace/agent-skills/skills"
+                for source in cfg.skill_sources
+            ), relative
+            if relative == "examples/prod/controller/issue-fanout-v3.yaml":
+                triage = next(role for role in cfg.roles if role.name == "issue-triage")
+                fix = next(role for role in cfg.roles if role.name == "fix-lane-0")
+                verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+                assert "zf-issue-plan-synth" in triage.skills
+                assert "test-driven-development" in fix.skills
+                assert "zf-harness-done-contract" in fix.skills
+                assert "zf-verify-gap-producer-contract" in verify.skills
+            if relative == "examples/prod/controller/prd-fanout-v3.yaml":
+                scan = next(role for role in cfg.roles if role.name == "product-scan")
+                planner = next(role for role in cfg.roles if role.name == "planner")
+                dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
+                verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+                assert "zf-prd-plan-synth" in scan.skills
+                assert "zf-plan-task-map-contract" in planner.skills
+                assert "test-driven-development" in dev.skills
+                assert "zf-verify-gap-producer-contract" in verify.skills
+            if relative == "examples/prod/controller/refactor-lane-v3.yaml":
+                scan = next(role for role in cfg.roles if role.name == "scan-contract")
+                plan = next(role for role in cfg.roles if role.name == "refactor-plan-synth")
+                dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
+                verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
+                module = next(role for role in cfg.roles if role.name == "module-parity-scan")
+                assert "zf-refactor-plan-synth" in scan.skills
+                assert "zf-plan-task-map-contract" in plan.skills
+                assert "test-driven-development" in dev.skills
+                assert "code-simplification" in dev.skills
+                assert "code-review-and-quality" in verify.skills
+                assert "zf-verify-rescan-replan" in verify.skills
+                assert "zf-provider-contract-parity" in module.skills
 
     def test_issue_prd_flow_unknown_params_fail_closed(self, tmp_path):
         issue = tmp_path / "issue.yaml"

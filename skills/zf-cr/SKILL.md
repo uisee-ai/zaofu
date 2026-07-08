@@ -172,6 +172,25 @@ not biased toward only the files already known to the reviewer:
   evidence.
 - Check the 4-level rework cap (evidence_reissue / respawn / dispatch_retry /
   circuit_breaker) actually bounds long-running failures.
+- Verify the contract surfaces that landed after the rework cap (基线检查单,
+  漏掉即当新发现/漏真热点):
+  - **Tier-2 诊断路由**:`diagnosis.requested` / `diagnosis.completed`
+    (`src/zf/core/events/known_types.py:381`;铸造/消费在
+    `src/zf/runtime/diagnosis.py` + `orchestrator.py:1665`,propose-only
+    路由,`diagnosis.completed` 判 needs_owner 才升级 owner)。
+  - **plan 指纹判重**:`plan.minting.suppressed`
+    (`src/zf/runtime/orchestrator_fanout.py:3086`,FIX-12;语义指纹重复则
+    抑制铸造,防 judge cap 冻结期重复铸 plan)。
+  - **判审收敛 delta 门 + pin-commit**:`fanout.retrigger.suppressed`
+    (`orchestrator_fanout.py:6380-6505`,FIX-9/15)配合
+    `fanout.child.dispatched` payload 的 `target_commit`(pin 审计对象,
+    历史审计取 dispatch 时锁定的 commit,而非漂移的当前 HEAD)。
+  - **verify report schema `non_empty` 档位**:required 只保证键在,空转合约
+    需 `non_empty`(`src/zf/core/verification/event_schema.py:86-89`,FIX-14;
+    典型字段 `requirement_coverage_matrix` / `gap_findings` 必须非空)。
+  - **candidate 增量幂等**:`candidates.py` 的
+    `git rev-list --cherry-pick` 按 patch-id 排除 base 侧已含等价补丁
+    (`src/zf/runtime/candidates.py:1373-1381`,FIX-10)。
 - For Star/refactor-planning workflows, verify reader/writer/synth routes,
   artifact contracts, `target_ref` behavior, and final plan materialization
   boundary.
@@ -218,15 +237,23 @@ Known oversized files are explicit defer debt, not surprise findings:
 
 | File | Last known LOC | Status |
 |---|---:|---|
-| `src/zf/web/server.py` | ~7000+ | explicit defer |
-| `src/zf/runtime/orchestrator.py` | ~3500+ | already split, residual cohesion |
-| `src/zf/runtime/orchestrator_dispatch.py` | ~3400+ | already split, residual cohesion |
+| `src/zf/web/server.py` | ~9186 | explicit defer |
+| `src/zf/runtime/orchestrator_fanout.py` | ~7687 | 第二大文件、近期新合约主要落点(plan 判重 / 判审收敛 / pin-commit) |
+| `src/zf/runtime/orchestrator_dispatch.py` | ~5019 | already split, residual cohesion |
+| `src/zf/runtime/orchestrator.py` | ~4576 | already split, residual cohesion |
+
+`orchestrator_fanout.py` 已是第二大文件,且是 FIX-12/14/9/15 等合约的主要落点。
+新合约不断往它里加是一条真热点,不要因为它是已知 defer 就漏看。
 
 Do not repeat-flag these as new findings. Instead check:
 
-- Has any new file violated the <=500-line discipline?
-- Has any new code been appended to the 3 oversized files instead of creating
-  a sibling module when a sibling owner would be clearer?
+- Has any **new** file violated the ≤1000-line discipline?
+  (`.claude/rules/code.md:34`、CLAUDE.md Discipline Health Signals:新文件
+  首版 ≤1000 行,无后续"切分"refactor commit。旧超大文件是 out-of-scope
+  defer,不是新发现。)
+- Has any new code been appended to these oversized files instead of creating
+  a sibling module when a sibling owner would be clearer? (尤其
+  `orchestrator_fanout.py`,近期合约都往这里堆。)
 - Did a refactor reduce or increase coupling around these files?
 
 ### Step 8 — Coverage Audit
@@ -282,16 +309,17 @@ Supplement prompt must include:
 - required evidence shape
 - stop condition
 
-### Step 10 — Cangjie-Mono Cross-Check
+### Step 10 — Real-Run Project Cross-Check
 
-If `/path/to/project/` exists locally, glance at its recent
-`.zf/events.jsonl` tail and `tasks/` for r-next-N failure patterns. ZaoFu's
-primary validation loop is cangjie-mono real-task runs; review without this
-signal misses where real bugs are.
+Point `ZF_VALIDATION_PROJECT` at a cangjie 类真跑项目(ZaoFu 的主验证回路是这类
+real-task 跑,见 MEMORY.md / CLAUDE.md;review 缺这个信号就看不到真 bug 落在
+哪里)。若该目录存在,扫它最近的 `.zf/events.jsonl` 尾部和 `tasks/`,找
+r-next-N 失败模式。路径是参数化钩子,不是写死占位——照抄不设变量会空跑。
 
 ```bash
-ls -t /path/to/project/tasks/ 2>/dev/null | head -5
-tail -50 /path/to/project/.zf/events.jsonl 2>/dev/null | grep -E "ship.blocked|judge.failed|discriminator.failed|worker.stuck"
+ZF_VALIDATION_PROJECT="${ZF_VALIDATION_PROJECT:-/path/to/project}"
+ls -t "$ZF_VALIDATION_PROJECT"/tasks/ 2>/dev/null | head -5
+tail -50 "$ZF_VALIDATION_PROJECT"/.zf/events.jsonl 2>/dev/null | grep -E "ship.blocked|judge.failed|discriminator.failed|worker.stuck"
 ```
 
 ## Adaptive Full-Review Loop
@@ -404,6 +432,9 @@ The review skill works with other tooling already in place:
   handling
 - `skills/zf-harness-backlog-synthesis/` — convert findings into candidate
   backlog/task units
+- `skills/zf-tool-skill-parity/` — 治理 `skills/` 为单源、`.codex/skills/` 与
+  `.claude/skills/` 为分发副本的漂移。本技能的 canonical 版是
+  `skills/zf-cr/SKILL.md`;provider-local 副本须由此同步,不可各自演化。
 
 If any of these are missing, the review can still proceed but should flag the
 absence as a hygiene gap.

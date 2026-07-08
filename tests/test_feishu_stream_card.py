@@ -188,3 +188,74 @@ def test_oversized_tool_output_is_capped():
     # every element serializes well under Feishu's ~30KB per-element limit
     for el in card["body"]["elements"]:
         assert len(json.dumps(el, ensure_ascii=False)) < 30_000
+
+
+def test_empty_terminal_refold_does_not_stomp_good_card(tmp_path, monkeypatch):
+    """feishu e2e: streaming deltas live on the ephemeral LiveDeltaBus and
+    terminal events carry no text. Once the bus rotates, a later re-fold folds
+    a reply to an empty terminal state. sync_stream_card must NOT overwrite the
+    already-rendered content card with the '（未返回内容）' empty render."""
+    from zf.integrations.feishu import stream_card as sc
+
+    (tmp_path / "events.jsonl").write_text("", encoding="utf-8")
+
+    def _state(text: str, terminal: str):
+        st = new_stream_state("R1")
+        if text:
+            reduce(st, _delta("text", text))
+        st["terminal"] = terminal
+        return st
+
+    calls = {"sent": [], "updated": []}
+    send = lambda card: (calls["sent"].append(card), "om_msg_1")[1]
+    update = lambda mid, card, seq=0: calls["updated"].append((mid, card, seq))
+    ledger: dict = {}
+
+    # round 1: reply streamed real content -> card sent with content
+    monkeypatch.setattr(sc, "_fold_stream_states",
+                        lambda events, member="": {"R1": _state("最终 PRD v0.2 ...", "done")})
+    sc.sync_stream_card(tmp_path, send_card=send, update_card=update, ledger=ledger)
+    assert len(calls["sent"]) == 1
+    assert ledger["stream-R1"]["had_content"] is True
+
+    # round 2: bus rotated -> same reply now folds to an EMPTY terminal state
+    monkeypatch.setattr(sc, "_fold_stream_states",
+                        lambda events, member="": {"R1": _state("", "done")})
+    sc.sync_stream_card(tmp_path, send_card=send, update_card=update, ledger=ledger)
+    # guard: the good card must NOT be stomped to （未返回内容）
+    assert calls["updated"] == []
+
+
+def test_empty_terminal_first_send_is_skipped(tmp_path, monkeypatch):
+    """A reply that folds straight to an empty terminal state (bus already
+    rotated before the first push, e.g. after a ledger reset) must NOT be sent
+    as a fresh '（未返回内容）' card — there is nothing to show."""
+    from zf.integrations.feishu import stream_card as sc
+
+    (tmp_path / "events.jsonl").write_text("", encoding="utf-8")
+    st = new_stream_state("R9"); st["terminal"] = "done"  # empty + terminal
+
+    calls = {"sent": []}
+    send = lambda card: (calls["sent"].append(card), "om_x")[1]
+    update = lambda *a, **k: None
+    monkeypatch.setattr(sc, "_fold_stream_states",
+                        lambda events, member="": {"R9": st})
+    out = sc.sync_stream_card(tmp_path, send_card=send, update_card=update, ledger={})
+    assert calls["sent"] == []
+    assert out["sent"] == []
+
+
+def test_running_empty_reply_still_gets_thinking_card(tmp_path, monkeypatch):
+    """A still-running reply with no content yet must keep its thinking card —
+    the empty-terminal skip must not swallow the live spinner."""
+    from zf.integrations.feishu import stream_card as sc
+
+    (tmp_path / "events.jsonl").write_text("", encoding="utf-8")
+    st = new_stream_state("R8"); st["footer"] = "thinking"  # running, no content
+
+    sent = []
+    monkeypatch.setattr(sc, "_fold_stream_states",
+                        lambda events, member="": {"R8": st})
+    sc.sync_stream_card(tmp_path, send_card=lambda c: (sent.append(c), "om")[1],
+                        update_card=lambda *a, **k: None, ledger={})
+    assert len(sent) == 1

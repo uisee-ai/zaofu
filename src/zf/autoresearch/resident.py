@@ -1,8 +1,8 @@
 """Opt-in resident consumer for autoresearch loop requests.
 
-The resident is intentionally not wired into ``zf start`` by default. It is a
-thin consumer that can be run by an operator/automation process to convert
-proposal-only loop requests into bounded CLI executions.
+The resident can run standalone or as a ``zf start`` sidecar when
+``runtime.autoresearch_resident.enabled`` is set. It is a thin consumer that
+converts proposal-only loop requests into bounded CLI executions.
 """
 
 from __future__ import annotations
@@ -384,6 +384,7 @@ def run_resident_once(
     self_repair_consumer: bool = False,
     self_repair_spawn: bool = False,
     self_repair_backend: str = "",
+    max_actions_per_tick: int = 0,
     env: dict[str, str] | None = None,
     runner: Callable[..., subprocess.CompletedProcess] = subprocess.run,
 ) -> list[ResidentAction]:
@@ -395,6 +396,8 @@ def run_resident_once(
         self_repair_spawn=self_repair_spawn,
         self_repair_backend=self_repair_backend,
     )
+    if max_actions_per_tick > 0:
+        actions = actions[:max_actions_per_tick]
     writer = EventWriter(event_log_from_project(state_dir))
     src_env = os.environ if env is None else env
     authorized = str(src_env.get("ZF_AUTORESEARCH_RESIDENT") or "").lower() == "authorized"

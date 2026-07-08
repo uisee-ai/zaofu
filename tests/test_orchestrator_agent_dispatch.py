@@ -651,3 +651,36 @@ def test_wake_coalescing_disabled_when_interval_zero(
     assert len(transport.sent) == 2
     assert orch._layer2_pending == []
     assert _dispatch_skipped(state_dir) == []
+
+
+def test_same_trigger_streak_enters_exponential_backoff(
+    state_dir: Path, config_with_orchestrator, monkeypatch
+):
+    """FIX-5②(bizsim r4 $697 空转账单):同型触发连续 commit 超过免额后,
+    Layer-2 唤醒进入指数退避;异型触发一到即复位,新鲜信号不受阻。"""
+    clock = [1000.0]
+    monkeypatch.setattr("zf.runtime.orchestrator.time.time", lambda: clock[0])
+
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, config_with_orchestrator, transport)
+
+    # 同型事件每 10s 一发(> 基础窗 5s):免额 3 次 + 退避窗内前两次仍放行
+    # (2^1=10s 边界不小于间隔),直至窗口翻倍超过到达间隔后被吸收。
+    for _ in range(6):
+        orch._notify_orchestrator_agent(
+            ZE(type="run.manager.tick.completed", actor="run-manager")
+        )
+        clock[0] += 10.0
+    same_type_sends = len(transport.sent)
+    assert same_type_sends < 6, "同型连发未被退避吸收"
+
+    absorbed = [
+        e for e in EventLog(state_dir / "events.jsonl").read_all()
+        if e.type == "orchestrator.dispatch_skipped"
+        and e.payload.get("reason") == "same_trigger_backoff"
+    ]
+    assert absorbed, "被吸收的唤醒必须留下 same_trigger_backoff 痕迹"
+
+    # 异型触发复位 streak:立即放行(距上次 commit 已超基础窗)。
+    orch._notify_orchestrator_agent(ZE(type="dev.build.done", actor="dev", task_id="T9"))
+    assert len(transport.sent) == same_type_sends + 1

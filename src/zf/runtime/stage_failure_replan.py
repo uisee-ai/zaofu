@@ -22,6 +22,20 @@ from zf.core.events.model import ZfEvent
 STAGE_REPLAN_CAP = 2
 
 
+def _payload_target_ref(payload: dict[str, Any]) -> str:
+    for key in ("target_ref", "issue_ref", "prd_ref", "objective_ref"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value
+    source_refs = payload.get("source_refs")
+    if isinstance(source_refs, dict):
+        for key in ("source_ref", "issue_ref", "prd_ref", "objective_ref"):
+            value = str(source_refs.get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
 def reader_stage_failure_events(config: Any) -> dict[str, Any]:
     """failure_event → stage 映射(仅 fanout_reader,配置驱动零硬编码)。"""
     out: dict[str, Any] = {}
@@ -56,8 +70,21 @@ def plan_reader_stage_replan(
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
+    # E4(prd-goal e2e finding-8):cap 曾数全量历史,后续 admission
+    # 成功也不清零 → 每周期回声 escalate。只计"最近一次 stage 成功
+    # 之后"的失败——成功即翻篇。
+    success_event = str(
+        getattr(getattr(stage, "aggregate", None), "success_event", "") or ""
+    )
+    last_success_index = -1
+    if success_event:
+        for index, event in enumerate(events):
+            if event.type == success_event:
+                last_success_index = index
     prior_failures = 0
-    for event in events:
+    for index, event in enumerate(events):
+        if index <= last_success_index:
+            continue
         if event.type != failure_event.type:
             continue
         if event.id == failure_event.id:
@@ -79,12 +106,40 @@ def plan_reader_stage_replan(
     failure_payload = (
         failure_event.payload if isinstance(failure_event.payload, dict) else {}
     )
+    target_ref = _payload_target_ref(failure_payload) or _payload_target_ref(
+        origin_payload
+    )
+    if not target_ref:
+        for event in reversed(events):
+            if not isinstance(event.payload, dict):
+                continue
+            target_ref = _payload_target_ref(event.payload)
+            if target_ref:
+                break
     findings = failure_payload.get("findings")
     if not isinstance(findings, list) or not findings:
         findings = [{
             "severity": "high",
             "message": str(failure_payload.get("reason") or failure_event.type),
         }]
+    for key in (
+        "target_ref",
+        "source_refs",
+        "workflow_prompt_ref",
+        "workflow_input_manifest_ref",
+        "task_map_ref",
+        "artifact_refs",
+        "evidence_refs",
+    ):
+        value = failure_payload.get(key)
+        if value not in (None, "", [], {}) and not origin_payload.get(key):
+            origin_payload[key] = value
+    if target_ref:
+        origin_payload.setdefault("target_ref", target_ref)
+        if trigger_type.startswith("issue."):
+            origin_payload.setdefault("issue_ref", target_ref)
+        elif trigger_type.startswith("prd."):
+            origin_payload.setdefault("prd_ref", target_ref)
     origin_payload.update({
         "rework_of": str(
             failure_payload.get("trigger_event_id") or failure_event.id

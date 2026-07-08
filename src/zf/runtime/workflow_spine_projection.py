@@ -19,19 +19,21 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
+from zf.runtime.event_problem_registry import spec_for_event
+from zf.runtime.terminal_events import (
+    is_task_attempt_terminal_event,
+    task_attempt_terminal_state,
+)
 
 SPINE_SCHEMA_VERSION = "shadow-spine.v1"
 
 _ATTEMPT_START_EVENTS = frozenset({
     "task.dispatched",
     "fanout.child.dispatched",
+    "task.attempt.started",
 })
-_ATTEMPT_TERMINAL_EVENTS = frozenset({
-    "dev.build.done",
-    "dev.failed",
-    "dev.blocked",
-    "fanout.child.completed",
-    "fanout.child.failed",
+_ATTEMPT_HEARTBEAT_EVENTS = frozenset({
+    "task.attempt.heartbeat",
 })
 _RUN_MILESTONE_EVENTS = frozenset({
     "refactor.scan.requested", "refactor.scan.ready",
@@ -65,6 +67,115 @@ def _event_task_id(event: ZfEvent) -> str:
         or payload.get("task_id")
         or payload.get("upstream_task_id")
         or ""
+    )
+
+
+def _event_role(payload: dict[str, Any]) -> str:
+    return str(
+        payload.get("role")
+        or payload.get("role_instance")
+        or payload.get("assigned_to")
+        or payload.get("worker_id")
+        or ""
+    )
+
+
+def _attempt_key(task_id: str, event: ZfEvent, payload: dict[str, Any], ordinal: int) -> str:
+    explicit = str(
+        payload.get("attempt_key")
+        or payload.get("attempt_id")
+        or payload.get("lease_token")
+        or payload.get("dispatch_id")
+        or ""
+    ).strip()
+    if explicit:
+        return explicit
+    event_id = str(event.id or "").strip()
+    if event_id:
+        return f"{task_id}:{event_id}"
+    return f"{task_id}:attempt-{ordinal}"
+
+
+def _terminal_state(event_type: str) -> str:
+    return task_attempt_terminal_state(event_type)
+
+
+def _failure_signature(event: ZfEvent) -> str:
+    spec = spec_for_event(event.type)
+    if spec is not None and spec.failure_class:
+        return spec.failure_class
+    return event.type.replace(".", "_")
+
+
+def _retryable_terminal(event: ZfEvent, payload: dict[str, Any]) -> bool:
+    if event.type == "task.attempt.deadlettered":
+        return False
+    if _terminal_state(event.type) != "failed":
+        return False
+    if str(payload.get("retryable") or "").lower() in {"false", "0", "no"}:
+        return False
+    spec = spec_for_event(event.type)
+    return not (spec is not None and spec.problem_class == "environment")
+
+
+def _counted_terminal(
+    entry: dict[str, Any],
+    attempt: dict[str, Any],
+    event: ZfEvent,
+    payload: dict[str, Any],
+    superseded_fanouts: set[str],
+) -> bool:
+    if _terminal_state(event.type) == "succeeded":
+        return True
+    fanout_id = str(payload.get("fanout_id") or attempt.get("fanout_id") or "")
+    if fanout_id and fanout_id in superseded_fanouts:
+        return False
+    for previous in entry.get("attempts") or []:
+        if previous is attempt:
+            break
+        terminal = previous.get("terminal")
+        if not isinstance(terminal, dict):
+            continue
+        if (
+            fanout_id
+            and str(previous.get("fanout_id") or "") == fanout_id
+            and str(terminal.get("type") or "") == event.type
+        ):
+            return False
+    return True
+
+
+def _summarize_task_attempt_entry(entry: dict[str, Any]) -> None:
+    attempts = entry.get("attempts")
+    attempts = attempts if isinstance(attempts, list) else []
+    entry["attempt_count"] = len(attempts)
+    if attempts:
+        latest = attempts[-1]
+        entry["current_owner"] = str(latest.get("role") or "")
+        entry["latest_attempt_key"] = str(latest.get("attempt_key") or "")
+        entry["latest_state"] = str(latest.get("state") or "unknown")
+        entry["lease_state"] = str(latest.get("lease_state") or "")
+    else:
+        entry["current_owner"] = ""
+        entry["latest_attempt_key"] = ""
+        entry["latest_state"] = "none"
+        entry["lease_state"] = ""
+    terminal = None
+    for attempt in reversed(attempts):
+        candidate = attempt.get("terminal")
+        if isinstance(candidate, dict):
+            terminal = candidate
+            break
+    entry["last_terminal"] = str(terminal.get("type") or "") if terminal else ""
+    entry["open_attempts"] = sum(
+        1 for attempt in attempts
+        if isinstance(attempt, dict) and not isinstance(attempt.get("terminal"), dict)
+    )
+    entry["counted_failures"] = sum(
+        1 for attempt in attempts
+        if isinstance(attempt, dict)
+        and attempt.get("counted") is not False
+        and str(attempt.get("state") or "") in {"failed", "deadlettered"}
     )
 
 
@@ -111,6 +222,9 @@ def read_spine_explain(state_dir: Path, *, task_id: str = "") -> dict[str, Any]:
                     "attempt_count": entry.get("attempt_count", 0),
                     "current_owner": entry.get("current_owner", ""),
                     "last_terminal": entry.get("last_terminal", ""),
+                    "latest_state": entry.get("latest_state", ""),
+                    "lease_state": entry.get("lease_state", ""),
+                    "latest_attempt_key": entry.get("latest_attempt_key", ""),
                 }
                 for tid, entry in tasks.items()
             }
@@ -137,37 +251,84 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
     tasks: dict[str, Any] = attempts.setdefault("tasks", {})
     stage_map: dict[str, Any] = stages.setdefault("stages", {})
     counters: dict[str, int] = health.setdefault("counters", {})
+    superseded_fanouts = set(str(item) for item in attempts.get("superseded_fanouts") or [])
 
     for event in events:
         payload = _payload(event)
+        if event.type == "fanout.cancelled" and "supersede" in str(
+            payload.get("reason") or ""
+        ):
+            fanout_id = str(payload.get("fanout_id") or "")
+            if fanout_id:
+                superseded_fanouts.add(fanout_id)
+        elif event.type == "fanout.child.stale_completion":
+            fanout_id = str(payload.get("fanout_id") or "")
+            if fanout_id:
+                superseded_fanouts.add(fanout_id)
         if event.type in _ATTEMPT_START_EVENTS:
             task_id = _event_task_id(event)
             if task_id:
                 entry = tasks.setdefault(task_id, {"attempts": []})
+                ordinal = len(entry["attempts"]) + 1
                 entry["attempts"].append({
+                    "schema_version": "task-attempt.v1",
+                    "attempt_key": _attempt_key(task_id, event, payload, ordinal),
+                    "ordinal": ordinal,
+                    "state": "running",
+                    "source_event_id": str(event.id or ""),
+                    "source_event_type": event.type,
                     "started_ts": event.ts,
-                    "role": str(
-                        payload.get("role")
-                        or payload.get("role_instance")
-                        or payload.get("assigned_to")
-                        or ""
-                    ),
+                    "role": _event_role(payload),
                     "fanout_id": str(payload.get("fanout_id") or ""),
                     "child_id": str(payload.get("child_id") or ""),
+                    "lease_token": str(payload.get("lease_token") or payload.get("dispatch_id") or ""),
+                    "lease_state": "held",
+                    "last_heartbeat_ts": "",
+                    "failure_signature": "",
+                    "counted": True,
+                    "retryable": True,
                     "terminal": None,
                 })
                 entry["current_owner"] = entry["attempts"][-1]["role"]
-        elif event.type in _ATTEMPT_TERMINAL_EVENTS:
+        elif event.type in _ATTEMPT_HEARTBEAT_EVENTS:
             task_id = _event_task_id(event)
             entry = tasks.get(task_id)
             if entry and entry.get("attempts"):
                 last = entry["attempts"][-1]
                 if last.get("terminal") is None:
+                    last["last_heartbeat_ts"] = event.ts
+                    last["state"] = "running"
+                    last["lease_state"] = "held"
+        elif is_task_attempt_terminal_event(event.type):
+            task_id = _event_task_id(event)
+            entry = tasks.get(task_id)
+            if entry and entry.get("attempts"):
+                last = entry["attempts"][-1]
+                if last.get("terminal") is None:
+                    state = _terminal_state(event.type)
+                    counted = _counted_terminal(
+                        entry,
+                        last,
+                        event,
+                        payload,
+                        superseded_fanouts,
+                    )
+                    retryable = _retryable_terminal(event, payload)
+                    failure_signature = (
+                        _failure_signature(event)
+                        if state in {"failed", "deadlettered"} else ""
+                    )
                     last["terminal"] = {
                         "type": event.type,
+                        "event_id": str(event.id or ""),
                         "ts": event.ts,
                         "reason": str(payload.get("reason") or "")[:200],
                     }
+                    last["state"] = state
+                    last["lease_state"] = "released"
+                    last["counted"] = counted
+                    last["retryable"] = retryable
+                    last["failure_signature"] = failure_signature
                 entry["last_terminal"] = event.type
         if event.type == "fanout.started":
             stage_id = str(payload.get("stage_id") or "")
@@ -210,8 +371,10 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
     # attempt 派生量 = attempts 列表长度。E5 决策级 counted_failures 由
     # attempt_ledger 在 rework 决策点(低频)按窗派生——不进本 30s 热路径
     # (E2 硬前置:禁全量 read_all)。
+    attempts["superseded_fanouts"] = sorted(superseded_fanouts)
     for entry in tasks.values():
-        entry["attempt_count"] = len(entry.get("attempts") or [])
+        if isinstance(entry, dict):
+            _summarize_task_attempt_entry(entry)
 
     atomic_write_text(
         attempts_path, json.dumps(attempts, ensure_ascii=False, indent=1),

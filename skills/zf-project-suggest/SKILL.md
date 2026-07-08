@@ -13,6 +13,20 @@ in-flight work.
 
 Default repository-facing output is Chinese unless the user asks otherwise.
 
+## Boundary vs zf-harness-self-improve
+
+Keep the split clean so the two skills do not drift into overlap:
+
+- `zf-project-suggest` starts from **external signals** (docs/refer material,
+  GitHub projects, articles, PRs, competitor moves, raw ideas) and turns them
+  into grounded suggestions.
+- `zf-harness-self-improve` starts from **internal evidence** (session history,
+  runtime events, manual operations, repeated agent workflows) and turns them
+  into harness assets.
+
+If the driving input is an internal, evidence-first review of recent ZaoFu work,
+use `zf-harness-self-improve` instead of this skill.
+
 ## Grounding First
 
 Before drafting suggestions, read enough project context to avoid generic
@@ -30,6 +44,10 @@ advice:
   `.claude/skills/**/SKILL.md` when the suggestion changes agent-facing
   workflows or documented user-facing behavior.
 - Relevant source modules if the suggestion names a concrete subsystem.
+
+Run the freshness check on external material through `zf-research-preflight-law`
+(its preflight + LAW sections). Mark stale or degraded sources accordingly, and
+do not promote an out-of-date external signal into a strong fact.
 
 Do not re-propose existing accepted designs. Reference the existing doc and
 propose only the delta.

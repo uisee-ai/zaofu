@@ -138,6 +138,32 @@ def run(args: argparse.Namespace) -> int:
         for warning in owner_delivery_warnings:
             print(f"  - {warning}", file=sys.stderr)
 
+    budget_usd = getattr(config, "global_budget_usd", None)
+    if budget_usd and not bool(getattr(config, "budget_enforcement_enabled", True)):
+        # FIX-5③(bizsim r4:$806 击穿 $700 预算无刹车):声明了预算却
+        # 显式关闭 enforcement,预算门形同虚设。观测型预算是合法选择,
+        # 故 WARN 不 FAIL,但必须可见。
+        print(
+            f"  WARNING: global_budget_usd={budget_usd} declared but "
+            "budget_enforcement_enabled=false — overspend will NOT be "
+            "blocked. Set budget_enforcement_enabled: true to enforce.",
+            file=sys.stderr,
+        )
+    fanout_writer_stages = [
+        stage for stage in getattr(config.workflow, "stages", [])
+        if str(getattr(stage, "topology", "")).startswith("fanout_writer")
+    ]
+    if fanout_writer_stages and not getattr(config, "quality_gates", None):
+        # FIX-10(bizsim r4 F10):多任务写入型 workflow 没配 quality_gates,
+        # candidate 合成树不经任何验证即发 candidate.ready——r4 churn 期
+        # candidate typecheck 断裂而 judge 照审坏树。观测型运行合法,WARN。
+        print(
+            "  WARNING: workflow has fanout_writer stages but no "
+            "quality_gates configured — the integrated candidate tree is "
+            "NEVER verified (per-lane verify cannot catch cross-lane "
+            "skew). Configure quality_gates (e.g. typecheck + unit tests).",
+            file=sys.stderr,
+        )
     if getattr(args, "strict_contracts", False):
         from zf.core.task.contract_validation import validate_runtime_contracts
 

@@ -30,6 +30,9 @@ class TickServiceState:
     last_blackout_check_at: float = 0.0
     last_blackout_emit_at: float = 0.0
     last_blocked_burn_emit_at: float = 0.0
+    # G1 idle 驱动器计数(goal.enabled 灰度)
+    goal_idle_ticks: int = 0
+    goal_last_progress_event_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -44,6 +47,7 @@ class TickServiceIntervals:
     cost_blackout_check_s: float = 300.0
     cost_blackout_stale_s: float = 900.0
     cost_blackout_cooldown_s: float = 1800.0
+    cost_blackout_startup_grace_s: float = 60.0
     # blocked 角色烧钱看门狗(r5:dev-flow blocked_human 冷却期烧 30M)
     blocked_burn_tokens: int = 250_000
     blocked_burn_cooldown_s: float = 1800.0
@@ -120,6 +124,24 @@ def run_standard_tick_services(
     config = orchestrator.config
     project_root = Path(orchestrator.project_root)
 
+    # U3/G3(灰度,goal.enabled 默认关):终局 escalate 未获处置时全体
+    # tick 服务静默——escalate = 干净地等人,不是每 5s 空烧(r6.1 4h
+    # 6.4M 实弹)。唤醒(操作员动作/新进展)后自动恢复。
+    try:
+        import time as _qtime
+
+        from zf.runtime.quiescent import mark_quiescent_transition, quiescent_now
+
+        _q_events = event_log.read_all()
+        _q_status = quiescent_now(
+            _q_events, config=config, now_epoch=_qtime.time(),
+        )
+        mark_quiescent_transition(event_writer, _q_events, status=_q_status)
+        if _q_status.quiescent:
+            return TickServiceResult()
+    except Exception:
+        pass
+
     heartbeat_sweep = False
     bug_scan = False
     supervisor_inspection = False
@@ -140,6 +162,18 @@ def run_standard_tick_services(
         state.last_heartbeat_sweep_at = now
         _safe_housekeeping(orchestrator, "heartbeat_sweep", "_run_heartbeat_sweep")
         _safe_housekeeping(orchestrator, "dispatch_sweep", "_run_dispatch_sweep")
+        try:
+            # G1(灰度):goal active 且空转 N 个心跳 tick → 有界 rescan
+            from zf.runtime.goal_idle_driver import maybe_emit_goal_idle_rescan
+
+            maybe_emit_goal_idle_rescan(
+                event_log.read_all(),
+                config=config,
+                state=state,
+                event_writer=event_writer,
+            )
+        except Exception:
+            pass
         heartbeat_sweep = True
         owner_visible_delivery = _deliver_owner_visible(state_dir, config)
 
@@ -1044,6 +1078,11 @@ def _emit_cost_blackout_if_needed(
     usage_epoch = _epoch(last_usage_ts)
     if dispatch_epoch is None:
         return False  # 本窗无派发,无成本可盲
+    if (
+        usage_epoch is None
+        and now_wall - dispatch_epoch < intervals.cost_blackout_startup_grace_s
+    ):
+        return False  # 新 worker 启动早期 session/usage 文件可能尚未落盘
     stale_s = intervals.cost_blackout_stale_s
     if now_wall - dispatch_epoch > stale_s * 2:
         return False  # 派发本身已冷,run 空闲期不报

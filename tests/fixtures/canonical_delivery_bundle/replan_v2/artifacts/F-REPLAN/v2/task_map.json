@@ -35,6 +35,21 @@
       "acceptance": ["mixed input coverage exists"],
       "verification": "pytest tests/test_sorter.py",
       "verification_tiers": ["runtime"]
+    },
+    {
+      "task_id": "TASK-REPLAN-ASSEMBLY",
+      "title": "Assemble replan delivery",
+      "owner_role": "assembly",
+      "root_owner_class": "assembly",
+      "phase": "assembly",
+      "blocked_by": ["TASK-REPLAN-A", "TASK-REPLAN-B"],
+      "wave": 3,
+      "scope": ["sorter.py", "tests/test_sorter.py"],
+      "exclusive_files": [],
+      "behavior": "Integrate sorter behavior and tests into one delivery.",
+      "acceptance": ["sorter implementation and mixed input tests are both present"],
+      "verification": "pytest tests/test_sorter.py",
+      "verification_tiers": ["runtime"]
     }
   ]
 }

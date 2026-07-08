@@ -19,6 +19,15 @@
       "source_title": "Task 2",
       "source_mode": "canonical",
       "source_excerpt": "Add mixed input tests that prove strings and numbers are both sorted."
+    },
+    {
+      "task_id": "TASK-REPLAN-ASSEMBLY",
+      "source_key": "replan.v2.assembly",
+      "source_ref": "tests/fixtures/canonical_delivery_bundle/replan_v2/plan-v2.md#assembly",
+      "source_task_id": "Assembly",
+      "source_title": "Assembly",
+      "source_mode": "canonical",
+      "source_excerpt": "Integrate the sorter behavior and mixed input tests into one validated delivery."
     }
   ]
 }

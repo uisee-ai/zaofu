@@ -58,12 +58,25 @@ def _assert_flow_kernel_contract(name: str) -> None:
     assert pipeline.stage_transition == "per_lane"
     assert pipeline.final_barrier == "all_lanes_verified"
     assert [stage.stage_id for stage in pipeline.stages] == ["impl", "verify"]
+    impl = pipeline.stages[0]
+    assert impl.success_event == "dev.build.done"
+    assert impl.failure_event == "dev.failed"
     verify = pipeline.stages[1]
+    assert verify.success_event == "verify.child.completed"
+    assert verify.failure_event == "verify.child.failed"
     assert verify.rework_to == "impl"
     assert verify.feedback_artifact == "required"
     assert pipeline.final_when == "all_tasks_verified"
     assert pipeline.final_success == "judge.passed"
     assert pipeline.final_failure == "judge.failed"
+    stages = {stage.id: stage for stage in config.workflow.stages}
+    impl_stage = next(
+        stage for stage in stages.values()
+        if stage.topology == "fanout_writer_scoped"
+        and str(stage.id).endswith("-impl")
+    )
+    assert impl_stage.aggregate.child_success_event == "dev.build.done"
+    assert impl_stage.aggregate.child_failure_event == "dev.failed"
 
 
 def _assert_discovery_stage(name: str, stage_id: str) -> None:
