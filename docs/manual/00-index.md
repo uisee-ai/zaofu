@@ -3,6 +3,10 @@
 本手册是 ZaoFu 的**对外使用文档**,自包含、面向所有用户,按"架构总览 → 入门 →
 核心 → 观测与计划 → 集成 → 评估"分层组织。
 
+English documentation is available through the topic-by-topic
+[English manual index](00-index.en.md) or the consolidated
+[ZaoFu Operator Manual](zaofu-operator-manual.en.md).
+
 新用户建议先读 [架构总览](architecture.md) 建立整体模型,再从
 [01 快速开始](01-quickstart.md) 上手。
 
