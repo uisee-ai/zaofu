@@ -7,6 +7,7 @@ Orchestrator instance state via self; composed in orchestrator.py.
 from __future__ import annotations
 
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,10 @@ from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
 from zf.runtime.channel_workflow_bridge import emit_fanout_channel_state_update
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.failure_kind import (
+    aggregate_failure_kind,
+    classify_dispatch_exception,
+)
 from zf.runtime.fanout_stage_criteria import evaluate_fanout_stage_success_criteria_for_orchestrator
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.lane_stage_handoff import (
@@ -779,6 +784,7 @@ class FanoutCoordinationMixin:
         trace_id: str,
         causation_id: str | None = None,
         prompt_kind: str = "fanout_child",
+        skip_send_window: bool = False,
     ) -> bool:
         """Return True when a fanout role can receive a prompt now.
 
@@ -802,6 +808,39 @@ class FanoutCoordinationMixin:
             alive = False
             alive_error = str(exc)
         if alive and dispatchable:
+            # ZF-E2E-PRDCTL-P2-7-3:同实例简报吞没守卫(DID-7 fanout 变体,
+            # 深水 ×3 实证:2 秒双派/看门狗重派撞占用/撞 operator 手输)。
+            # pane 的 agent 还在消费上一份简报时立即再投,第二份会被静默
+            # 吞掉成僵尸 child——同实例发送后 10s 内一律 defer,交给下个
+            # run_once 重派(child 仍 pending,零丢失)。
+            last = getattr(self, "_last_prompt_sent_at", {}).get(role.instance_id)
+            last_key, last_sent = (last or ("", 0.0))
+            if (
+                not skip_send_window
+                and last_sent
+                and last_key == run_id
+                and time.monotonic() - float(last_sent) < 10.0
+            ):
+                self.event_writer.append(ZfEvent(
+                    type="fanout.child.dispatch_deferred",
+                    actor="zf-cli",
+                    payload={
+                        "fanout_id": fanout_id,
+                        "trace_id": trace_id,
+                        "stage_id": stage_id,
+                        "child_id": child_id,
+                        "run_id": run_id,
+                        "role_instance": role.instance_id,
+                        "prompt_kind": prompt_kind,
+                        "reason": "briefing_send_window_active",
+                        "worker_state": state,
+                        "transport_alive": alive,
+                        "dispatchable": dispatchable,
+                    },
+                    causation_id=causation_id,
+                    correlation_id=trace_id,
+                ))
+                return False
             return True
 
         # A5(prd-goal e2e finding-10,28 次撞墙):defer 先诊断——
@@ -916,6 +955,7 @@ class FanoutCoordinationMixin:
                 prompt,
                 dispatch_context,
             )
+            self._note_prompt_sent(role.instance_id, run_id)
             dispatched = context.child_dispatched_event(child, run_id=run_id)
             dispatched.payload["skills"] = list(role.skills)
             dispatched.payload["briefing_path"] = str(briefing_path)
@@ -2010,6 +2050,15 @@ class FanoutCoordinationMixin:
             "stage_slot": stage_slot,
             "next_stage_slot": match.next_stage_slot,
             "child_id": child_id,
+            # canonical-dag v2/v3 lane 契约 required 键:kernel 锻造侧必须
+            # 保证键在(值可空)。缺键曾在 blocking 档下把本事件整个换成
+            # discriminator.failed,verify 级联熄火(2026-07-08 实测)。
+            "attempt_id": str(child_payload.get("attempt_id") or ""),
+            "handoff_ref": str(
+                child_payload.get("handoff_ref")
+                or child_payload.get("task_ref")
+                or ""
+            ),
             "run_id": str(child_payload.get("run_id") or ""),
             "role_instance": str(child_payload.get("role_instance") or ""),
             "task_id": str(child_payload.get("task_id") or source_event.task_id or ""),
@@ -2043,15 +2092,31 @@ class FanoutCoordinationMixin:
             ),
             "status": status,
         }
-        if failure_target:
+        if event_type == LANE_STAGE_HANDOFF_FAILURE_EVENT:
+            # canonical-dag v3 requires `failure_target` PRESENT on the failure
+            # event (value may be empty when the failed stage declares no
+            # rework_to). Same "kernel forges required keys present, value can
+            # be empty" rule as the v2 contract keys above — omitting it trips
+            # the blocking schema and replaces the whole lane.stage.failed with
+            # discriminator.failed, which is strictly worse: rework routing then
+            # never sees the failure at all (2026-07-08 E2E: dev.blocked lane
+            # with no rework_to → discriminator.failed → run wedged).
             payload["failure_target"] = failure_target
-            payload["max_rework_attempts"] = int(
-                getattr(match.pipeline, "max_rework_attempts", 0) or 0
-            )
+            if failure_target:
+                payload["max_rework_attempts"] = int(
+                    getattr(match.pipeline, "max_rework_attempts", 0) or 0
+                )
         for key in ("report_path", "artifact_refs", "evidence_refs", "findings", "reason"):
             value = child_payload.get(key)
             if value not in (None, ""):
                 payload[key] = value
+        payload.setdefault("evidence_refs", [])
+        if event_type == LANE_STAGE_HANDOFF_FAILURE_EVENT:
+            # `reason` is likewise a v3-required key on the failure event and is
+            # only set above when the child supplied one — guarantee it present
+            # (empty ok) so a reasonless failure does not become discriminator.
+            # failed (same class as failure_target; fix the class, not one key).
+            payload.setdefault("reason", "")
         if extra_payload:
             for key, value in extra_payload.items():
                 if value not in (None, ""):
@@ -2788,7 +2853,21 @@ class FanoutCoordinationMixin:
                         if not isinstance(upstream_child, dict):
                             continue
                         if str(upstream_child.get("status") or "") != "completed":
-                            continue
+                            # ZF-E2E-PRDCTL-P2-7-5:manifest status 可能陈旧
+                            # (completion-adoption 路径完成但未回写——deepwater
+                            # TOPWORDS 的 verify child 因此漏派生)。事件证据
+                            # 为准:有完成证据则照常派生并记诊断。
+                            child_task_id = str(upstream_child.get("task_id") or "")
+                            if not child_task_id or not self._task_completed_by_events(
+                                child_task_id,
+                            ):
+                                continue
+                            identity_diagnostics.append({
+                                "upstream_child_id": str(upstream_child.get("child_id") or ""),
+                                "task_id": child_task_id,
+                                "errors": ["manifest_status_stale_completed_by_events"],
+                                "adopted": True,
+                            })
                         lane_id = str(upstream_child.get("lane_id") or "")
                         if not lane_id:
                             identity_diagnostics.append({
@@ -2863,6 +2942,53 @@ class FanoutCoordinationMixin:
                                     if identity_diagnostics
                                     else "no_affinity_stage_slot_children"
                                 ),
+                                "upstream_fanout_id": upstream_fanout_id,
+                                "stage_slot": stage_slot,
+                                "diagnostics": identity_diagnostics,
+                            },
+                            causation_id=event.id,
+                            correlation_id=trace_id,
+                        ))
+                        continue
+                    derivation_errors = [
+                        item for item in identity_diagnostics
+                        if not item.get("adopted")
+                    ]
+                    if derivation_errors:
+                        # ZF-E2E-PRDCTL-P2-7-5:漏派生不再静默——部分 impl
+                        # 任务无 verify child 时 fail-closed 取消(no-dead-end
+                        # 机制会按拓扑发上游 failure_event 路由返工),judge
+                        # 不再是第一个发现覆盖缺口的人。
+                        self.event_writer.append(ZfEvent(
+                            type="verify.children.derivation_gap",
+                            actor="zf-cli",
+                            payload={
+                                "fanout_id": base_context.fanout_id,
+                                "trace_id": trace_id,
+                                "stage_id": stage.id,
+                                "trigger_event_id": event.id,
+                                "upstream_fanout_id": upstream_fanout_id,
+                                "stage_slot": stage_slot,
+                                "derived_count": len(children),
+                                "diagnostics": identity_diagnostics,
+                                "missing_task_ids": [
+                                    str(item.get("task_id") or "")
+                                    for item in derivation_errors
+                                ],
+                            },
+                            causation_id=event.id,
+                            correlation_id=trace_id,
+                        ))
+                        self.event_writer.append(ZfEvent(
+                            type="fanout.cancelled",
+                            actor="zf-cli",
+                            payload={
+                                "fanout_id": base_context.fanout_id,
+                                "trace_id": trace_id,
+                                "stage_id": stage.id,
+                                "trigger_event_id": event.id,
+                                "reason": "verify_children_derivation_gap",
+                                "failure_kind": "infra",
                                 "upstream_fanout_id": upstream_fanout_id,
                                 "stage_slot": stage_slot,
                                 "diagnostics": identity_diagnostics,
@@ -3898,6 +4024,7 @@ class FanoutCoordinationMixin:
                 prompt,
                 dispatch_context,
             )
+            self._note_prompt_sent(role.instance_id, run_id)
             dispatched = context.child_dispatched_event(child, run_id=run_id)
             dispatched.payload.update({
                 "task_id": task_id,
@@ -3975,6 +4102,9 @@ class FanoutCoordinationMixin:
                 "source_index_ref": source_index_ref,
                 "reason": str(exc),
             }
+            dispatch_failure_kind = classify_dispatch_exception(exc)
+            if dispatch_failure_kind:
+                payload["failure_kind"] = dispatch_failure_kind
             self._copy_fanout_assignment_metadata(payload, task_item)
             self.event_writer.append(ZfEvent(
                 type="fanout.child.failed",
@@ -4290,44 +4420,55 @@ class FanoutCoordinationMixin:
             "report_path": artifact_paths.get("report_path", ""),
             "report_diagnostics": report_result.diagnostics,
         }
-        # U20(finding 13):审角色报告带判决却零证据引用 → 观测事件
-        # (不阻塞;判定文案在 sibling report_evidence_gate.py)。
-        try:
-            from zf.runtime.report_evidence_gate import (
-                REPORT_EVIDENCE_MISSING_EVENT,
-                is_verification_stage,
-                report_evidence_gap,
-            )
+        # U20(finding 13):审角色报告带判决却零证据引用 → 观测事件;
+        # LB-4(2026-07-08):verification.report_evidence_gate=fail_closed
+        # 时升级为 child 失败,并入既有 malformed-report 返工轨道(一次
+        # rework 语义与上限由既有 rework cap/升级链承担,不新造循环)。
+        from zf.runtime.report_evidence_gate import (
+            REPORT_EVIDENCE_MISSING_EVENT,
+            is_verification_stage,
+            report_evidence_gap,
+        )
 
-            if is_verification_stage(
-                stage_id=str(manifest.get("stage_id") or ""),
-                event_type=event.type,
-            ):
-                gap = report_evidence_gap(report_result.report)
-                if gap:
-                    self.event_writer.append(ZfEvent(
-                        type=REPORT_EVIDENCE_MISSING_EVENT,
-                        actor="zf-cli",
-                        task_id=base_payload.get("task_id") or None,
-                        payload={
-                            **{k: base_payload.get(k) for k in (
-                                "fanout_id", "stage_id", "child_id", "task_id",
-                            )},
-                            "reason": gap,
-                            "report_status": str(
-                                (report_result.report or {}).get("status") or ""
-                            ),
-                            "result_event_id": event.id,
-                        },
-                        causation_id=event.id,
-                        correlation_id=event.correlation_id or manifest.get("trace_id", ""),
-                    ))
-        except Exception:
-            pass
-        if failed_result or not report_result.valid:
+        evidence_gap = ""
+        if is_verification_stage(
+            stage_id=str(manifest.get("stage_id") or ""),
+            event_type=event.type,
+        ):
+            evidence_gap = report_evidence_gap(report_result.report)
+        if evidence_gap:
+            self.event_writer.append(ZfEvent(
+                type=REPORT_EVIDENCE_MISSING_EVENT,
+                actor="zf-cli",
+                task_id=base_payload.get("task_id") or None,
+                payload={
+                    **{k: base_payload.get(k) for k in (
+                        "fanout_id", "stage_id", "child_id", "task_id",
+                    )},
+                    "reason": evidence_gap,
+                    "report_status": str(
+                        (report_result.report or {}).get("status") or ""
+                    ),
+                    "result_event_id": event.id,
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id or manifest.get("trace_id", ""),
+            ))
+        evidence_fail_closed = bool(
+            evidence_gap
+            and completed_result
+            and str(getattr(
+                getattr(self.config, "verification", None),
+                "report_evidence_gate",
+                "signal",
+            ) or "signal") == "fail_closed"
+        )
+        if failed_result or not report_result.valid or evidence_fail_closed:
             reason = (
                 "malformed_report"
                 if not report_result.valid
+                else "report_evidence_missing"
+                if evidence_fail_closed and not failed_result
                 else str(payload.get("reason") or event.type)
             )
             self.event_writer.append(ZfEvent(
@@ -5008,6 +5149,28 @@ class FanoutCoordinationMixin:
             return False
         return True
 
+    def _note_prompt_sent(self, instance_id: str, run_key: str) -> None:
+        """ZF-E2E-PRDCTL-P2-7-3:记录 (run_key, ts) 供简报吞没守卫查询。"""
+        if not hasattr(self, "_last_prompt_sent_at"):
+            self._last_prompt_sent_at = {}
+        self._last_prompt_sent_at[instance_id] = (run_key, time.monotonic())
+
+    def _task_completed_by_events(self, task_id: str) -> bool:
+        """Event-evidence completion check for manifest-status staleness
+        (ZF-E2E-PRDCTL-P2-7-5; index-backed, cheap for a handful of tasks)."""
+        try:
+            for progressed in self.event_log.events_for_task(task_id):
+                if progressed.type in {
+                    "dev.build.done",
+                    "fanout.child.completed",
+                    "lane.stage.completed",
+                    "task.done",
+                }:
+                    return True
+        except Exception:
+            return False
+        return False
+
     def _record_writer_fanout_child_failed(
         self,
         *,
@@ -5236,6 +5399,7 @@ class FanoutCoordinationMixin:
                 "files_or_scope": list(candidate_payload.get("conflict_files") or []),
             })
         if status == "quality_failed":
+            from zf.runtime.candidate_rework import candidate_quality_failure_message
             quality = (
                 candidate_payload.get("quality")
                 if isinstance(candidate_payload.get("quality"), dict)
@@ -5245,7 +5409,7 @@ class FanoutCoordinationMixin:
                 "finding_id": "candidate-quality-failed",
                 "severity": "high",
                 "category": "candidate_quality",
-                "message": "candidate quality gates failed",
+                "message": candidate_quality_failure_message(quality),
                 "verification_command": "; ".join(
                     str(command)
                     for commands in (quality.get("failure_details") or {}).values()
@@ -5377,6 +5541,12 @@ class FanoutCoordinationMixin:
                     if str(child.get("status") or "") == "failed"
                 ],
             )
+            derived_failure_kind = aggregate_failure_kind([
+                child for child in children
+                if str(child.get("status") or "") == "failed"
+            ])
+            if derived_failure_kind:
+                aggregate_payload.setdefault("failure_kind", derived_failure_kind)
         aggregate_event = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",
@@ -5454,6 +5624,36 @@ class FanoutCoordinationMixin:
                     "failed_children",
                     aggregate_payload.get("failed_children", []),
                 )
+                # R5: judge.failed reached the operator with an empty reason.
+                # The aggregate knows which children failed and what they
+                # reported — say so instead of shipping "".
+                if not str(publish_payload.get("reason") or "").strip():
+                    failed_children = publish_payload.get("failed_children") or []
+                    first_message = ""
+                    if failure_findings and isinstance(failure_findings[0], dict):
+                        first_message = str(
+                            failure_findings[0].get("message") or "",
+                        )[:160]
+                    publish_payload["reason"] = (
+                        f"{len(failed_children)}/{len(children)} children failed"
+                        + (f": {first_message}" if first_message else "")
+                    )
+                # publish_event is config-driven (the stage's failure_event may
+                # name any contract event, e.g. lane.stage.failed). Forge the
+                # contract's required keys present — value may be empty, same
+                # rule as the lane-pipeline emitter — else a blocking
+                # discriminator replaces the failure with discriminator.failed
+                # and rework never sees it (R6: verify-timeout wedged 25min).
+                from zf.core.config.schema_profiles import union_required_keys
+
+                target_ref = str(publish_payload.get("target_ref") or "")
+                for key in union_required_keys(publish_event):
+                    if key == "task_id" and target_ref.startswith("task/"):
+                        publish_payload.setdefault(
+                            "task_id", target_ref.split("/", 1)[1],
+                        )
+                    else:
+                        publish_payload.setdefault(key, "")
             published = self.event_writer.append(ZfEvent(
                 type=publish_event,
                 actor="zf-cli",
@@ -6077,9 +6277,12 @@ class FanoutCoordinationMixin:
         run_id = f"run-{fanout_id}-{child_id}-retry-{attempt}"
         trace_id = str(manifest.get("trace_id") or "")
         stage_id = str(manifest.get("stage_id") or "")
+        # ZF-E2E-PRDCTL-P2-7-3:watchdog retry 自带 idle 判定(stuck 阈值
+        # 已远超发送窗),显式旁路 send window;pane 真值探测升级留待后续。
         if not self._ensure_fanout_role_dispatchable(
             role=role,
             fanout_id=fanout_id,
+            skip_send_window=True,
             stage_id=stage_id,
             child_id=child_id,
             run_id=run_id,
@@ -6104,12 +6307,42 @@ class FanoutCoordinationMixin:
             briefing_path=briefing_path,
             trace_id=trace_id,
         )
-        self._send_transport_task(
-            role.instance_id,
-            briefing_path,
-            prompt,
-            dispatch_context,
-        )
+        try:
+            self._send_transport_task(
+                role.instance_id,
+                briefing_path,
+                prompt,
+                dispatch_context,
+            )
+            self._note_prompt_sent(role.instance_id, run_id)
+        except Exception as exc:
+            # ZF-E2E-PRDCTL-P0-1: the primary dispatch path already converts
+            # send failures (incl. BudgetExceededError) into
+            # fanout.child.failed; the retry path let them propagate and kill
+            # the reactor turn.
+            failure_payload = {
+                "fanout_id": fanout_id,
+                "trace_id": trace_id,
+                "stage_id": stage_id,
+                "child_id": child_id,
+                "run_id": run_id,
+                "role_instance": role.instance_id,
+                "task_id": str(child.get("task_id") or ""),
+                "retry_of_run_id": str(previous_dispatch.payload.get("run_id") or ""),
+                "attempt": attempt + 1,
+                "reason": str(exc),
+            }
+            retry_failure_kind = classify_dispatch_exception(exc)
+            if retry_failure_kind:
+                failure_payload["failure_kind"] = retry_failure_kind
+            self.event_writer.append(ZfEvent(
+                type="fanout.child.failed",
+                actor="zf-cli",
+                payload=failure_payload,
+                causation_id=previous_dispatch.id,
+                correlation_id=trace_id,
+            ))
+            return
         payload = {
             "fanout_id": fanout_id,
             "trace_id": trace_id,
@@ -6216,6 +6449,12 @@ class FanoutCoordinationMixin:
     ) -> None:
         if not role_instance:
             return
+        # ZF-E2E-PRDCTL-P2-7-3:child 终局 → 清发送窗,合法的"完成后立即
+        # 续派同 lane"不受简报吞没守卫影响。
+        try:
+            getattr(self, "_last_prompt_sent_at", {}).pop(role_instance, None)
+        except Exception:
+            pass
         try:
             active = self._active_fanout_child_for_instance(role_instance)
         except Exception:
@@ -6319,6 +6558,7 @@ class FanoutCoordinationMixin:
                 prompt,
                 dispatch_context,
             )
+            self._note_prompt_sent(role.instance_id, run_id)
             reports = self._fanout_reports(manifest)
             from zf.core.workflow.runner_policy import pure_aggregator_policy_plan
 
@@ -6465,6 +6705,22 @@ class FanoutCoordinationMixin:
         # 走的就是此路径)。
         pdd_id = str(manifest.get("pdd_id") or "")
         feature_id = str(manifest.get("feature_id") or "")
+        # ZF-E2E-PRDCTL-P2-7-4:reader-synth 发布路径此前不转发 candidate_ref
+        # (lane final-ready 路径有,此路径无——路径不对称),下游 judge 段的
+        # ${candidate_ref} 模板解析失败秒败(deepwater 实证)。
+        synth_payload = event.payload if isinstance(event.payload, dict) else {}
+        trigger_payload = (
+            manifest.get("trigger_payload")
+            if isinstance(manifest.get("trigger_payload"), dict) else {}
+        )
+        candidate_ref = ""
+        for source in (manifest, trigger_payload, synth_payload):
+            candidate_ref = str(source.get("candidate_ref") or "").strip()
+            if candidate_ref:
+                break
+        candidate_ref_payload = (
+            {"candidate_ref": candidate_ref} if candidate_ref else {}
+        )
         aggregate_event = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",
@@ -6479,6 +6735,7 @@ class FanoutCoordinationMixin:
                 "failure_event": failure_event if final_status == "failed" else "",
                 "recommendation": recommendation,
                 "synth_event_id": event.id,
+                **candidate_ref_payload,
                 **artifact_payload,
             },
             causation_id=event.id,
@@ -6516,6 +6773,7 @@ class FanoutCoordinationMixin:
                     "child_count": len(children),
                     "recommendation": recommendation,
                     "synth_role": str(config.get("synth_role") or ""),
+                    **candidate_ref_payload,
                     **artifact_payload,
                 },
                 causation_id=event.id,
@@ -6639,6 +6897,14 @@ class FanoutCoordinationMixin:
             actor="zf-cli",
             payload={
                 **base_payload,
+                # v3 EventSchemaD requires child_id + status on
+                # refactor.scan.failed (kernel_aggregate_child). This is a
+                # pre-dispatch operator-config cancellation (no real child), so
+                # name the scan stage as the failing unit; without these the
+                # blocking discriminator rejects the fail-fast and the scan
+                # wedges for hours instead of surfacing the clear error.
+                "child_id": stage_id or "refactor-scan",
+                "status": "failed",
                 "error": (
                     f"target_ref {target_ref!r} is not a git branch, tag, "
                     "or commit; file paths belong in objective/prompt/artifacts"
@@ -6790,7 +7056,45 @@ class FanoutCoordinationMixin:
         "gap_findings": [],
         "replan_recommendation": "continue",
         "evidence_refs": ["<primary-evidence-path>"],
+        "summary": (
+            "One-line reviewable outcome with numbers "
+            "(N files / M tests / gate X of Y)."
+        ),
     }
+
+    def _schema_education_toplevel_fields(
+        self,
+        event_type: str,
+        *,
+        existing: dict,
+    ) -> dict:
+        """LB-4:child 完成事件的**顶层** required/non_empty 字段也进样例。
+
+        FIX-14 只镜像 report.* 子字段;canonical-dag/v3 给读者 child 完成
+        事件加了顶层 non_empty(summary/evidence_refs),默认骨架不含它们 →
+        blocking 档下即便合规 agent 照抄模板也会被拦一道。顶层字段与 report
+        字段同样机械教育,避免执法在 happy path 制造返工。
+        """
+        if not event_type:
+            return {}
+        try:
+            from zf.core.verification.event_schema import EventSchemaRegistry
+
+            rule = EventSchemaRegistry.from_config(self.config).rule_for(
+                event_type,
+            )
+        except Exception:
+            return {}
+        if rule is None:
+            return {}
+        out: dict = {}
+        for field_name in (*rule.required, *rule.non_empty):
+            if field_name == "report" or field_name in existing or field_name in out:
+                continue
+            out[field_name] = self._SCHEMA_EDU_PLACEHOLDERS.get(
+                field_name, f"<{field_name}>",
+            )
+        return out
 
     def _schema_education_report_fields(
         self,
@@ -7048,6 +7352,13 @@ class FanoutCoordinationMixin:
         ))
         failure_payload["report"].update(self._schema_education_report_fields(
             child_failure_event, existing=failure_payload["report"],
+        ))
+        # LB-4:顶层 required/non_empty 字段(summary/evidence_refs)同样进样例。
+        success_payload.update(self._schema_education_toplevel_fields(
+            child_success_event, existing=success_payload,
+        ))
+        failure_payload.update(self._schema_education_toplevel_fields(
+            child_failure_event, existing=failure_payload,
         ))
         is_refactor_review = success_event == "zaofu.refactor.review.ready"
         is_refactor_plan = success_event in {
@@ -7414,6 +7725,9 @@ class FanoutCoordinationMixin:
 
         # A3:candidate.ready 触发的读者(终审 judge/整体 review)拿到
         # 明确的受审对象——candidate 分支+头,而非 ship 目的地。
+        # LB-5(r3 light 误拒):candidate_ref 缺席的验收读者(light 终审
+        # 拿不到 candidate.ready payload)也必须拿到受审对象语义,否则
+        # judge 评空 target 树、把 target_ref 不可解析当拒因。
         candidate_eval_ref = str(
             trigger_payload.get("candidate_ref")
             or trigger_payload.get("branch")
@@ -7426,6 +7740,26 @@ class FanoutCoordinationMixin:
             or child_payload.get("candidate_head_commit")
             or ""
         ).strip()
+        subject_pdd_id = str(
+            trigger_payload.get("pdd_id")
+            or trigger_payload.get("feature_id")
+            or child_payload.get("pdd_id")
+            or ""
+        ).strip()
+        candidate_prefix = str(getattr(
+            getattr(
+                getattr(getattr(self, "config", None), "runtime", None),
+                "git", None,
+            ),
+            "candidate_branch_prefix",
+            "candidate",
+        ) or "candidate")
+        from zf.runtime.report_evidence_gate import is_verification_stage
+
+        verification_reader = is_verification_stage(
+            stage_id=str(context.stage_id or ""),
+            event_type=str(child_success_event or ""),
+        )
         path.write_text(
             "\n".join([
                 f"# Fanout Reader Child: {child_id}",
@@ -7451,10 +7785,27 @@ class FanoutCoordinationMixin:
                         "",
                     ]
                     if candidate_eval_ref
+                    # LB-5:candidate_ref 缺席的验收读者仍拿受审对象语义,
+                    # 不许把 target_ref 状态当拒因(scan/plan 读者不适用)。
+                    else [
+                        "SUBJECT OF REVIEW: no candidate_ref accompanied this "
+                        "dispatch. If a deliverable branch exists (default "
+                        f"prefix `{candidate_prefix}/`"
+                        + (
+                            f", e.g. `{candidate_prefix}/{subject_pdd_id}`"
+                            if subject_pdd_id else ""
+                        )
+                        + "), evaluate THAT branch at its head. `target_ref` is "
+                        "only the merge DESTINATION after ship; it may be "
+                        "unresolved or empty at review time and its state MUST "
+                        "NOT be a rejection reason.",
+                        "",
+                    ]
+                    if verification_reader
                     else []
                 ),
                 "Evaluate the target ref as a read-only fanout child."
-                if not candidate_eval_ref
+                if not candidate_eval_ref and not verification_reader
                 else "Read-only fanout child. Do not modify project source files.",
                 "Do not modify project source files.",
                 "",
@@ -7691,6 +8042,7 @@ class FanoutCoordinationMixin:
             "task_map_ref": str(task_item.get("task_map_ref") or ""),
             "source_index_ref": str(task_item.get("source_index_ref") or ""),
             "allowed_paths": task_item.get("allowed_paths", []),
+            "allowed_paths_reason": str(task_item.get("allowed_paths_reason") or contract_src.get("allowed_paths_reason") or ""),
             "protected_paths": task_item.get("protected_paths", [".zf/**"]),
             "base_ref": self.config.runtime.git.candidate_base_ref,
             "worker_branch": source_branch,
@@ -7752,11 +8104,11 @@ class FanoutCoordinationMixin:
                 # 权限面必须醒目且免歧义,先于 JSON 正文一句话拍死。
                 "## ⚠️ YOUR WRITE PERMISSIONS (read this before assuming a blocker)",
                 "",
-                "You ARE allowed to create/edit EVERY path in `allowed_paths` below — "
-                "including root-level entry files if they are listed. Never idle or "
-                "self-block claiming missing permission for a path that appears there; "
-                "if a needed path is truly absent from `allowed_paths`, emit your "
-                "completion with the blocker stated instead of waiting silently.",
+                "You ARE allowed to create/edit EVERY path in `allowed_paths` below "
+                "(including root-level entry files if listed) — but ONLY those exact "
+                "paths: do NOT invent an alternative layout (e.g. `src/`) or write "
+                "outside `allowed_paths` (rejected by verify/quality, blocked at write "
+                "time). If a path you need is truly absent, emit completion with the blocker.",
                 "",
                 "Scope contract:",
                 "```json",

@@ -44,6 +44,8 @@ class ProjectInitResult:
     git_hook_status: str = ""
     # 建议的 project.scripts.setup 命令,空串 = 已声明或无依赖清单
     setup_suggestion: str = ""
+    # 操作员备注写入 CLAUDE.md 的结果(created|appended|noop),空串 = 未提供 notes
+    notes_applied: str = ""
 
 
 class ProjectInitializer:
@@ -62,6 +64,7 @@ class ProjectInitializer:
         with_git_hooks: bool = True,
         workspace_register: bool | None = None,
         create_root: bool = False,
+        notes: str = "",
     ) -> ProjectInitResult:
         project_root = Path(cwd).resolve()
         if create_root:
@@ -106,12 +109,20 @@ class ProjectInitializer:
             )
 
         instruction_docs = ProjectInstructionDocsResult()
+        notes_applied = ""
         if with_instruction_docs:
             instruction_docs = ensure_project_instruction_docs(
                 project_root,
                 config=context.config,
                 state_dir=state_dir,
             )
+            # doc-125:操作员备注 → CLAUDE.md。收进共享 initializer,CLI(`zf init
+            # --notes`)与 Web New Project(description)走同一路径,消除入口不对称。
+            if notes.strip():
+                from zf.core.profile.apply import apply_project_notes
+                notes_applied = apply_project_notes(
+                    project_root / "CLAUDE.md", notes, write=True,
+                )["action"]
 
         git_hook_status = "skipped"
         if with_git_hooks:
@@ -160,6 +171,7 @@ class ProjectInitializer:
             feishu_kanban_agent_binding=feishu_channel_binding,
             git_hook_status=git_hook_status,
             setup_suggestion=setup_suggestion,
+            notes_applied=notes_applied,
         )
 
     def _ensure_preset(self, project_root: Path, *, preset: str, force: bool) -> None:

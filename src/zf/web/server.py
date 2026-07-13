@@ -531,6 +531,8 @@ _ACTION_ALIASES = {
     "attention.feedback",
     "attention-escalate",
     "attention.escalate",
+    "inbox-item-read",
+    "inbox-all-read",
     "provider-dev-chat-start",
     "provider.dev_chat.start",
     "provider-dev-chat-send",
@@ -1237,6 +1239,7 @@ def create_app(
                 with_instruction_docs=not bool(payload.get("skip_instruction_docs")),
                 workspace_register=True,
                 create_root=True,
+                notes=str(payload.get("description") or ""),
             )
         except Exception as exc:
             return JSONResponse({
@@ -1254,12 +1257,8 @@ def create_app(
                 scaffold=bool(payload.get("scaffold")),
                 intent=str(payload.get("intent") or "build"),
             )
-        notes_written = None
-        description = str(payload.get("description") or "").strip()
-        if description:
-            from zf.core.profile.apply import apply_project_notes
-            notes_written = apply_project_notes(
-                root / "CLAUDE.md", description, write=True)["action"]
+        # 备注写入已在共享 initializer 内完成(与 CLI `zf init --notes` 同路径)。
+        notes_written = result.notes_applied or None
         return JSONResponse({
             "ok": True,
             "status": "initialized",
@@ -3630,7 +3629,7 @@ def create_app(
 
     app.include_router(build_measure_loop_router(resolve_ctx=_delivery_trace_ctx))
 
-    # B9/B15 (doc 91 §8 / doc 93 §7): plan 审核 pending + contract-health
+    # B15 (doc 93 §7): plan 审核 pending + operator inbox + plan preview
     from zf.web.plan_health_routes import build_plan_health_router
 
     app.include_router(
@@ -6095,6 +6094,8 @@ def _web_action(
         return response
 
     if canonical_action in {
+        "inbox-item-read",
+        "inbox-all-read",
         "attention-ack",
         "attention-snooze",
         "attention-resolve",
@@ -6466,6 +6467,12 @@ def _validate_action_payload(
             or payload.get("checkpoint_required")
         ) and not str(payload.get("task_id") or "").strip():
             return "task_id is required when checkpoint is requested"
+    if action in {
+        "inbox-item-read",
+        "inbox-all-read",
+    }:
+        if action == "inbox-item-read" and not str(payload.get("item_id") or "").strip():
+            return "item_id is required"
     if action in {
         "attention-ack",
         "attention-snooze",
@@ -6890,7 +6897,15 @@ def _handle_chat_orchestrator(
             "request": redact_obj(payload),
         },
     )
-    if headless_backend:
+    # B6(b) 2026-07-11:快照按钮(mode=projection_first)在 headless 后端下
+    # 也走确定性快答——否则默认面板(Claude headless)的"快照"会烧一次 LLM。
+    # 手打自由问题仍交给 headless agent(任意问答归 agent,快照归投影)。
+    projection_first_reply = None
+    if str(payload.get("mode") or "").strip() == "projection_first":
+        projection_first_reply = _projection_reply_if_requested(
+            state_dir, payload, message, task_id,
+        )
+    if headless_backend and projection_first_reply is None:
         return _handle_headless_kanban_agent_chat(
             state_dir,
             writer,
@@ -6916,7 +6931,7 @@ def _handle_chat_orchestrator(
             message=message,
         )
     reply_event: ZfEvent | None = None
-    reply = _projection_reply_if_requested(state_dir, payload, message, task_id)
+    reply = projection_first_reply or _projection_reply_if_requested(state_dir, payload, message, task_id)
     if reply:
         reply_event = writer.emit(
             "kanban.agent.reply",

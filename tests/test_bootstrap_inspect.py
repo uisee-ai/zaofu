@@ -28,6 +28,14 @@ def test_node_project_setup_and_gate(tmp_path: Path) -> None:
     assert setup["value"] == "npm install"
 
 
+def test_has_config_flag_distinguishes_bare_vs_initialized(tmp_path: Path) -> None:
+    """has_config 让 Existing tab 能区分裸库(需初始化)vs 已初始化(可 register)。"""
+    (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+    assert inspect_project(tmp_path)["has_config"] is False
+    (tmp_path / "zf.yaml").write_text("version: 1\n")
+    assert inspect_project(tmp_path)["has_config"] is True
+
+
 def test_empty_dir_low_confidence_no_candidates(tmp_path: Path) -> None:
     result = inspect_project(tmp_path)
     assert result["confidence"] == "low"

@@ -65,13 +65,16 @@ replace State Packet, task capsule, `events.jsonl`, or task-map truth.
 ### Canonical transcript sources
 
 The primary kernel scenario is diagnosis. When the orchestrator mints
-`diagnosis.requested` (verified: `src/zf/runtime/diagnosis.py:19`), the
+`diagnosis.requested` (verified: `src/zf/runtime/diagnosis.py`
+`DIAGNOSIS_REQUESTED`), the
 diagnostician stage attaches to the live scene — `logs/<role>.log` /
 `.zf/logs/<role>.log` pane mirrors (verified:
-`src/zf/runtime/transport_stream_json.py:11`, `src/zf/runtime/diagnosis.py:86`),
+`src/zf/runtime/transport_stream_json.py` `attach_handle`,
+`src/zf/runtime/diagnosis.py` `plan_diagnosis_requests` `log_hints`),
 the event window, and the worktree — reads the transcript, and packages what it
 found as its structured `diagnosis.completed` report (verified:
-`src/zf/runtime/diagnosis.py:20`). Any role that reads pane mirrors this way
+`src/zf/runtime/diagnosis.py` `DIAGNOSIS_COMPLETED`). Any role that reads pane
+mirrors this way
 owes the same bounded-evidence discipline. Channel, hook, and provider-session
 transcripts follow the same rules.
 
@@ -103,8 +106,9 @@ transcripts follow the same rules.
 
 Package transcript evidence through the **same output shape** as the rest of
 this skill (`evidence` / `checks` / `artifact_refs` / `evidence_refs` —
-verified: `src/zf/runtime/completion_honesty.py:26`,
-`src/zf/runtime/stage_contract.py:36`) rather than a separate schema envelope.
+verified: `src/zf/runtime/completion_honesty.py` `_claimed_paths`,
+`src/zf/runtime/stage_contract.py` `StageContractResult.to_dict`) rather than a
+separate schema envelope.
 Do **not** mint a `zf.transcript_evidence_package.v1` schema_version; it has no
 kernel validator. The transcript-specific fields ride inside `evidence` as
 skill-owned extensions (no `src/zf/` validator — do not treat as

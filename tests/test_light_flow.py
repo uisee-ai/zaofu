@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from zf.core.config.loader import load_config
-from zf.core.config.workflow_profiles import expand_prd_flow
+from zf.core.config.workflow_profiles import expand_issue_flow, expand_prd_flow
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -69,10 +69,61 @@ spec:
     assert stages[2].aggregate.success_event == "judge.passed"
 
 
+def test_issue_light_config_loads_target_root_topology(tmp_path: Path) -> None:
+    path = tmp_path / "zf.yaml"
+    path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata: {name: issue-light-demo}
+spec:
+  topology: light
+  backend: mock
+  issueRef: docs/issues/login-500.md
+  targetRoot: app
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo}
+""")
+
+    cfg = load_config(path)
+
+    assert cfg.workflow.flow_metadata["flow_kind"] == "issue"
+    assert cfg.workflow.flow_metadata["topology"] == "light"
+    assert cfg.workflow.flow_metadata["light_entry_trigger"] == "issue.requested"
+    assert cfg.workflow.flow_metadata["target_root"] == "app"
+    assert cfg.workflow.stages[0].id == "issue-lanes-impl"
+    assert cfg.workflow.stages[0].trigger == "task_map.ready"
+
+
 def test_default_topology_unchanged() -> None:
     out = expand_prd_flow({"prdRef": "docs/prd/x.md", "targetRoot": "app"})
     assert len(out["stages"]) == 3  # scan/plan/discovery 现状
     assert out["metadata"].get("topology") is None
+
+
+def test_issue_light_expansion_reuses_single_lane_shape() -> None:
+    out = expand_issue_flow({
+        "topology": "light",
+        "issueRef": "docs/issues/login-500.md",
+        "targetRoot": ".",
+        "backend": "codex",
+    })
+
+    assert [r["name"] for r in out["roles"]] == ["judge-issue"]
+    assert out["stages"] == []
+    assert out["external_triggers"] == ["issue.requested", "task_map.ready"]
+    assert out["metadata"]["topology"] == "light"
+    assert out["metadata"]["flow_kind"] == "issue"
+    assert out["metadata"]["objective_ref"] == "docs/issues/login-500.md"
+    pipeline = out["pipelines"][0]
+    assert pipeline["id"] == "issue-lanes"
+    assert pipeline["lane_count"] == 1
+    assert pipeline["stages"][0]["role_pattern"] == "fix-lane-{lane}"
+    assert pipeline["stages"][1]["role_pattern"] == "verify-lane-{lane}"
 
 
 def test_synthesized_task_map_passes_validation() -> None:
@@ -84,6 +135,24 @@ def test_synthesized_task_map_passes_validation() -> None:
     assert result.passed, result.errors
     # C1 单源节自带;C2 无系统级命令
     assert payload["shared_conventions"]["test_path_prefix"] == "app/tests"
+
+
+def test_synthesized_issue_task_map_uses_generic_requirement_text() -> None:
+    payload = synthesize_light_task_map(
+        pdd_id="issue-default",
+        objective="修复登录页 500",
+        prd_ref="",
+        objective_ref="docs/issues/login-500.md",
+        target_root=".",
+        flow_kind="issue",
+    )
+    result = validate_task_map_payload(payload)
+    assert result.passed, result.errors
+    task = payload["tasks"][0]
+    assert payload["shared_conventions"]["test_path_prefix"] == "tests"
+    assert task["allowed_paths"][0] == "**"
+    assert "issue fix acceptance criteria" in task["description"]
+    assert "docs/issues/login-500.md" in task["acceptance_criteria"][0]
 
 
 def test_synthesized_task_map_preserves_workflow_refs() -> None:
@@ -177,3 +246,79 @@ def test_non_light_config_is_noop(tmp_path: Path) -> None:
         config=SimpleNamespace(workflow=SimpleNamespace(flow_metadata={})),
         state_dir=tmp_path, event_writer=None, events=[],
     ) is None
+
+
+def _light_goal_config():
+    cfg = _light_config()
+    cfg.goal = SimpleNamespace(enabled=True)
+    return cfg
+
+
+def test_entry_mints_run_goal_when_goal_enabled(tmp_path: Path) -> None:
+    """light goal 终态闭环(2026-07-08 第四批):最简配置只开 goal.enabled、
+    无人发 run.goal.started → run_id 守卫正确拒发完成事件 → light 没有 goal
+    终态。入口合成即补发真 goal(幂等),judge.passed 后可自动闭环。"""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    entry = ZfEvent(type="prd.requested", actor="operator",
+                    payload={"pdd_id": "default", "objective": "交付 X"})
+    emitted = maybe_synthesize_light_task_map(
+        event=entry, config=_light_goal_config(), state_dir=state_dir,
+        event_writer=EventWriter(log), events=[],
+    )
+    assert emitted is not None
+    started = [e for e in log.read_all() if e.type == "run.goal.started"]
+    assert len(started) == 1
+    payload = started[0].payload
+    assert payload["run_id"].startswith("run-light-default-")
+    assert payload["objective"] == "交付 X"
+    assert payload["source"] == "light_flow_kernel"
+
+    # 幂等:重放入口(带既有事件)不再补发
+    again = maybe_synthesize_light_task_map(
+        event=entry, config=_light_goal_config(), state_dir=state_dir,
+        event_writer=EventWriter(log), events=log.read_all(),
+    )
+    assert again is None
+    assert len([
+        e for e in log.read_all() if e.type == "run.goal.started"
+    ]) == 1
+
+
+def test_entry_minted_goal_completes_on_judge_passed(tmp_path: Path) -> None:
+    """串既有 helper:入口铸的 goal + judge.passed → run.goal.completed
+    可发(run_id 非空,不再被 loop.started 兜底守卫拒掉)。"""
+    from zf.runtime.run_manager import run_goal_completion_event
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    entry = ZfEvent(type="prd.requested", actor="operator",
+                    payload={"pdd_id": "default", "objective": "交付 X"})
+    maybe_synthesize_light_task_map(
+        event=entry, config=_light_goal_config(), state_dir=state_dir,
+        event_writer=EventWriter(log), events=[],
+    )
+    judge = ZfEvent(type="judge.passed", actor="zf-cli",
+                    payload={"fanout_id": "f", "stage_id": "s",
+                             "status": "passed"})
+    completion = run_goal_completion_event(
+        [*log.read_all(), judge], cause=judge,
+    )
+    assert completion is not None
+    assert completion.type == "run.goal.completed"
+    assert completion.payload["run_id"].startswith("run-light-default-")
+
+
+def test_entry_without_goal_enabled_mints_no_goal(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    entry = ZfEvent(type="prd.requested", actor="operator",
+                    payload={"pdd_id": "default"})
+    maybe_synthesize_light_task_map(
+        event=entry, config=_light_config(), state_dir=state_dir,
+        event_writer=EventWriter(log), events=[],
+    )
+    assert not [e for e in log.read_all() if e.type == "run.goal.started"]

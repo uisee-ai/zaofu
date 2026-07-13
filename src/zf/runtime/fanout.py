@@ -165,7 +165,9 @@ class FanoutReportValidation:
     synthetic: bool = False
 
 
-REPORT_AUDIT_FIELD_KEYS = (
+# Pure audit/evidence keys promoted from a child completion payload into its
+# report projection. Additive — not part of the event schema contract.
+_PURE_AUDIT_FIELD_KEYS = (
     "checks",
     "probes",
     "artifact_refs",
@@ -179,6 +181,50 @@ REPORT_AUDIT_FIELD_KEYS = (
     "scores",
     "acceptance_evidence_update",
 )
+
+# canonical-dag/v3 读者报告契约字段(FIX-14/LB-4)。These are event-schema
+# contract fields, historically hand-added here. 2026-07-08 live 轮实锚:verify
+# 事件里矩阵 3 行(schema 机械验证过),本白名单漏收 → children/*/report.json
+# 投影丢矩阵 → judge 读盘按纪律拒绝 → 烧掉一整轮返工(cb700c32 是此病第 N 次
+# 创可贴)。P1-5:report_audit_field_keys() 现在也从 EventSchemaRegistry 派生
+# 契约字段,新增契约字段自动流入投影,不必再手加到这里。
+_V3_CONTRACT_FALLBACK_KEYS = (
+    "requirement_understanding",
+    "requirement_coverage_matrix",
+    "gap_findings",
+    "replan_recommendation",
+)
+
+# Static superset — back-compat for any static consumer + forcing-test baseline.
+REPORT_AUDIT_FIELD_KEYS = _PURE_AUDIT_FIELD_KEYS + _V3_CONTRACT_FALLBACK_KEYS
+
+
+def report_audit_field_keys(config, event_type: str) -> tuple[str, ...]:
+    """Fields promoted from a child completion payload into its report.json
+    projection: the static superset above ∪ the event schema's top-level
+    contract fields (required∪non_empty, minus ``report``).
+
+    P1-5 (2026-07-09): the projection promotion used to iterate only the
+    hardcoded REPORT_AUDIT_FIELD_KEYS while the briefing *education* side
+    (_schema_education_toplevel_fields) derived required/non_empty from the
+    EventSchemaRegistry — so every new top-level contract field had to be
+    hand-added here or it was silently dropped from children/*/report.json,
+    diverging disk projection from event truth. Deriving from the same registry
+    keeps the two sides in sync. Superset semantics preserve current behavior
+    even when event-schema validation is not configured (rule is None).
+    """
+    keys = list(REPORT_AUDIT_FIELD_KEYS)
+    try:
+        from zf.core.verification.event_schema import EventSchemaRegistry
+
+        rule = EventSchemaRegistry.from_config(config).rule_for(event_type)
+    except Exception:
+        rule = None
+    if rule is not None:
+        for field_name in (*rule.required, *rule.non_empty):
+            if field_name != "report" and field_name not in keys:
+                keys.append(field_name)
+    return tuple(keys)
 
 
 def validate_fanout_report(
@@ -255,9 +301,13 @@ def validate_fanout_report(
         "findings": findings,
         "recommendation": recommendation,
     }
-    for key in REPORT_AUDIT_FIELD_KEYS:
-        if key in raw:
-            report[key] = raw[key]
+    # 投影必须忠实:归一化字段(上面五个)优先,其余原始键一律透传。
+    # 2026-07-08 教训:枚举白名单决定投影字段 = 与 scheme 打地鼠同构——
+    # v3 契约刚补 4 字段,下次契约再加字段 children/*/report.json 又丢
+    # (事件真相与磁盘投影分叉,judge 读盘按纪律误拒烧返工)。
+    # REPORT_AUDIT_FIELD_KEYS 保留给 fanout_evidence_queries 的聚合消费。
+    for key, value in raw.items():
+        report.setdefault(key, value)
     if diagnostics:
         report["status"] = "failed"
         report["recommendation"] = "reject"

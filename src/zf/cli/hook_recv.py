@@ -625,6 +625,140 @@ def _evaluate_runtime_write_guard(
     return 2
 
 
+def _write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
+    """Files a write tool will create/modify, in the cwd-relative frame.
+
+    Codex writes via ``apply_patch`` (``*** Add/Update/Delete File:`` markers);
+    Claude via Write/Edit/MultiEdit (``file_path``). Bash redirects are not parsed
+    — too fragile to match reliably — so they stay unenforced.
+    """
+    lower = tool_name.lower().strip()
+    if lower in {"write", "edit", "multiedit", "notebookedit"}:
+        raw = (
+            tool_input.get("file_path")
+            or tool_input.get("path")
+            or tool_input.get("notebook_path")
+        )
+        text = str(raw or "").strip()
+        return [text] if text else []
+    if lower == "apply_patch":
+        command = str(
+            tool_input.get("command")
+            or tool_input.get("patch")
+            or tool_input.get("input")
+            or ""
+        )
+        paths: list[str] = []
+        for line in command.splitlines():
+            stripped = line.strip()
+            for marker in (
+                "*** Add File:",
+                "*** Update File:",
+                "*** Delete File:",
+                "*** Move to:",
+            ):
+                if stripped.startswith(marker):
+                    target = stripped[len(marker):].strip()
+                    if target:
+                        paths.append(target)
+        return paths
+    return []
+
+
+def _to_scope_frame(path: str) -> str:
+    """Reduce an absolute worker workdir path to the repo-relative scope frame."""
+    text = path.strip()
+    marker = "/project/"
+    if marker in text:
+        text = text.rsplit(marker, 1)[1]
+    return text.lstrip("/")
+
+
+def _active_task_scope(state_dir: Path, task_id: str) -> list[str]:
+    """The active task's contract scope (allowed_paths); empty when undefined."""
+    try:
+        from zf.core.task.store import TaskStore
+
+        task = TaskStore(state_dir / "kanban.json").get(task_id)
+    except Exception:
+        return []
+    if task is None or getattr(task, "contract", None) is None:
+        return []
+    return [str(p).strip() for p in (task.contract.scope or []) if str(p).strip()]
+
+
+def _evaluate_allowed_paths_guard(
+    *,
+    state_dir: Path,
+    event_type: str,
+    actor: str,
+    event_payload: dict,
+    event_log: EventLog,
+    event_writer: EventWriter,
+    causation_id: str | None,
+) -> int:
+    """Block a worker write to a file outside its active task's allowed_paths.
+
+    Turns ``allowed_paths`` from a soft briefing convention into a hard mechanism:
+    a dev agent that builds ``app/src/api.js`` when the task scopes ``app/server.js``
+    is stopped at write time (recoverable — the advice steers the retry) instead of
+    only being caught post-hoc at verify/quality after the fanout is already spent.
+    Fails open on any ambiguity (no worker task, empty scope, unparseable target) —
+    a false block would break a legitimately-working worker.
+    """
+    if not event_type.endswith(".pre_tool_use"):
+        return 0
+    if not _should_check_causation(actor):
+        return 0
+    tool_input = event_payload.get("tool_input")
+    if not isinstance(tool_input, dict):
+        return 0
+    tool_name = str(event_payload.get("tool_name") or "").strip()
+    targets = _write_target_paths(tool_name, tool_input)
+    if not targets:
+        return 0
+    task_id = _active_task_id_for_actor(event_log, actor)
+    if not task_id:
+        return 0
+    scope = _active_task_scope(state_dir, task_id)
+    if not scope:
+        return 0
+
+    from zf.runtime.task_refs import _path_allowed_by_scope
+
+    offending = sorted({
+        target
+        for target in targets
+        if not _path_allowed_by_scope(_to_scope_frame(target), scope)
+    })
+    if not offending:
+        return 0
+    try:
+        event_writer.append(ZfEvent(
+            type="worker.scope_write.rejected",
+            actor="zf-cli",
+            task_id=task_id or None,
+            payload={
+                "worker": actor,
+                "tool_name": tool_name,
+                "offending_paths": offending[:10],
+                "allowed_paths": scope[:20],
+            },
+            causation_id=causation_id,
+        ))
+    except Exception:
+        pass
+    print(
+        "ZaoFu blocked this write: "
+        + ", ".join(offending[:5])
+        + f" is outside task {task_id} allowed_paths. Write ONLY within: "
+        + ", ".join(scope[:20])
+        + ". Follow the task file-structure contract exactly.",
+        file=sys.stderr,
+    )
+    return 2
+
+
 def run(args: argparse.Namespace) -> int:
     config: ZfConfig | None = None
     try:
@@ -789,6 +923,18 @@ def run(args: argparse.Namespace) -> int:
     )
     if guard_exit:
         return guard_exit
+
+    scope_guard_exit = _evaluate_allowed_paths_guard(
+        state_dir=state_dir,
+        event_type=args.event,
+        actor=actor,
+        event_payload=event_payload,
+        event_log=event_log,
+        event_writer=event_writer,
+        causation_id=causation_id,
+    )
+    if scope_guard_exit:
+        return scope_guard_exit
 
     # 6. ZF-PWF-STOP-GUARD-001 (doc 41 §4.5): for `provider.stop.check`
     # events, evaluate task gates and return exit 2 (block) when

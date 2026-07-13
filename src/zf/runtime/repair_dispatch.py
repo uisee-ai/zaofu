@@ -17,6 +17,7 @@ from typing import Any
 
 DISPATCH_REQUESTED = "autoresearch.repair.dispatch_requested"
 DISPATCHED = "autoresearch.repair.dispatched"
+RUN_MANAGER_ACCEPTED = "run.manager.repair.accepted"
 
 
 @dataclass(frozen=True)

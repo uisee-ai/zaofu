@@ -1,0 +1,59 @@
+apiVersion: zaofu.dev/v1
+kind: RefactorFlow
+metadata:
+  name: refactor-lane/v3-claude
+spec:
+  flowProfile: refactor-flow/v3
+  lanes: 2
+  assembly: none
+  laneRoleTemplate:
+    backend: claude-code
+  roleDefaults:
+    backend: claude-code
+    permission_mode: bypass
+  objectiveRef: docs/plans/refactor-goal.md
+  parityScope: [cli, provider, tools, webui, tui, memory, skills]
+  gapLoop: enabled
+  verifyRescan: module_parity
+  completionThreshold: close_p0_p1
+  roleSkillBundles:
+    module-parity-scan: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    impl: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+    verify: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: refactor-lane-v3-claude
+  zaofu:
+    catalog:
+      id: refactor-lane-v3-claude
+      label: Refactor Lane v3 (claude)
+      description: Short refactor controller with per-lane verify and module parity loop.
+      intent: refactor
+      backend: claude
+      roles: 11
+      recommended_for: [refactor]
+      preferred: true
+      order: 33
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [refactor-controller-runtime/v3]
+  version: "1.0"
+  project:
+    name: refactor-lane-v3-claude
+  runtime:
+    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
+    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
+    # (默认 main;master 基线仓请 override 为 master)。
+    git:
+      auto_ship_on_judge_passed: true
+    # override refactor-controller-runtime/v3 codex run_manager: claude lanes
+    # need a claude resident manager (else start fails on a claude-only host).
+    run_manager:
+      backend: claude-code
+  workflow:
+    dag:
+      external_triggers: [refactor.scan.requested]
+    rework_routing:
+      static_gate.failed: dev-lane-0

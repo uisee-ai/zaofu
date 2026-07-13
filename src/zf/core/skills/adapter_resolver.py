@@ -22,6 +22,12 @@ _COMMON_REQUIRED = (
     "zf-gap-task-synth",
     "zf-harness-done-contract",
     "zf-mechanical-claim-verifier",
+    # yoke 角色边界 wrapper(方法论技能经 frontmatter dependencies 闭包
+    # 物化,不在此列名):planner / writer / 验收读者 / 终审门。
+    "zf-yoke-planner-role-context",
+    "zf-yoke-dev-worker-role-context",
+    "zf-yoke-test-evaluator-role-context",
+    "zf-yoke-quality-gate-role-context",
 )
 _COMMON_RECOMMENDED = (
     "zf-dynamic-artifact-gate",
@@ -399,16 +405,24 @@ def _role_skill_bundles(
             "zf-issue-plan-synth",
             "zf-plan-task-map-contract",
             "zf-gap-task-synth",
+            "zf-yoke-planner-role-context",
         ], loaded_names)
-        bundles["fix"] = _present(["zf-harness-done-contract"], loaded_names)
+        bundles["fix"] = _present([
+            "zf-harness-done-contract",
+            "zf-yoke-dev-worker-role-context",
+        ], loaded_names)
         bundles["verify"] = _present([
             "zf-workflow-adaptation-boundary",
             "zf-project-adapter-matrix-enrichment",
             "zf-verify-gap-producer-contract",
             "zf-mechanical-claim-verifier",
             "zf-goal-closure-replan-contract",
+            "zf-yoke-test-evaluator-role-context",
         ], loaded_names)
-        bundles["judge-issue"] = _present(["zf-goal-closure-replan-contract"], loaded_names)
+        bundles["judge-issue"] = _present([
+            "zf-goal-closure-replan-contract",
+            "zf-yoke-quality-gate-role-context",
+        ], loaded_names)
         return {key: value for key, value in bundles.items() if value}
     if kind == "prd":
         bundles["scan"] = _present([
@@ -423,16 +437,24 @@ def _role_skill_bundles(
             "zf-prd-plan-synth",
             "zf-plan-task-map-contract",
             "zf-gap-task-synth",
+            "zf-yoke-planner-role-context",
         ], loaded_names)
-        bundles["impl"] = _present(["zf-harness-done-contract"], loaded_names)
+        bundles["impl"] = _present([
+            "zf-harness-done-contract",
+            "zf-yoke-dev-worker-role-context",
+        ], loaded_names)
         bundles["verify"] = _present([
             "zf-workflow-adaptation-boundary",
             "zf-project-adapter-matrix-enrichment",
             "zf-verify-gap-producer-contract",
             "zf-mechanical-claim-verifier",
             "zf-goal-closure-replan-contract",
+            "zf-yoke-test-evaluator-role-context",
         ], loaded_names)
-        bundles["judge-prd"] = _present(["zf-goal-closure-replan-contract"], loaded_names)
+        bundles["judge-prd"] = _present([
+            "zf-goal-closure-replan-contract",
+            "zf-yoke-quality-gate-role-context",
+        ], loaded_names)
         return {key: value for key, value in bundles.items() if value}
 
     cross_parity = _present([
@@ -460,10 +482,12 @@ def _role_skill_bundles(
         "zf-refactor-plan-synth",
         "zf-plan-task-map-contract",
         "zf-gap-task-synth",
+        "zf-yoke-planner-role-context",
         *project_plan,
     ], loaded_names)
     bundles["impl"] = _present([
         "zf-harness-done-contract",
+        "zf-yoke-dev-worker-role-context",
         *cross_parity,
         *project_impl,
     ], loaded_names)
@@ -474,6 +498,7 @@ def _role_skill_bundles(
         "zf-mechanical-claim-verifier",
         "zf-goal-closure-replan-contract",
         "zf-verify-rescan-replan",
+        "zf-yoke-test-evaluator-role-context",
         *cross_parity,
         *project_verify,
     ], loaded_names)
@@ -494,6 +519,7 @@ def _role_skill_bundles(
         "zf-verify-gap-producer-contract",
         "zf-goal-closure-replan-contract",
         "zf-mechanical-claim-verifier",
+        "zf-yoke-quality-gate-role-context",
         *project_verify,
     ], loaded_names)
     return {key: value for key, value in bundles.items() if value}

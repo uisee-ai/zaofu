@@ -44,7 +44,7 @@ artifact，而不是只留在聊天历史里——上下文一重置就丢。硬
    `decisions` 是**建议字段,不是机械配对**:它只被 channel owner-report
    投影 (`channel_projection.py` `_apply_owner_report`) 消费,服务于周期/
    owner 汇报事件;State Packet projector 把 `decisions` 恒置空
-   (`state_packet_projector.py:192`),完成事件里的 decisions **不会**
+   (`state_packet_projector.py` `StatePacketProjector.project`),完成事件里的 decisions **不会**
    进 SP-001。要让"为什么"跨会话可读,靠第 3 步的 memory.note 或 commit,
    别指望 decisions 重建 State Packet。
 

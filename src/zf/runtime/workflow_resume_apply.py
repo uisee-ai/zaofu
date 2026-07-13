@@ -810,7 +810,10 @@ def _apply_stage_dispatch(
         )
     target_status = _target_status(checkpoint.expected_next_role, task.status)
     if target_status != task.status:
-        store.update(checkpoint.task_id, status=target_status)
+        # P0-2 (2026-07-09): event-first. Append the event BEFORE the projection
+        # so a crash between them cannot leave events.jsonl (the single truth)
+        # missing the transition while kanban already shows it. already-done
+        # re-derives from events, so a lagging projection self-heals on rebuild.
         status_event = writer.append(ZfEvent(
             type="task.status_changed",
             actor="zf-cli",
@@ -826,7 +829,7 @@ def _apply_stage_dispatch(
             causation_id=checkpoint.last_trusted_event_id or None,
         ))
         emitted.append(status_event.id)
-    store.update(checkpoint.task_id, assigned_to=checkpoint.expected_next_role)
+        store.update(checkpoint.task_id, status=target_status)
     assigned = writer.append(ZfEvent(
         type="task.assigned",
         actor="zf-cli",
@@ -859,6 +862,11 @@ def _apply_stage_dispatch(
         causation_id=assigned.id,
     ))
     emitted.append(dispatched.id)
+    # P0-2: project the assignment only after task.assigned + task.dispatched are
+    # durable, so a crash cannot leave assigned_to set with no assign event —
+    # which already-done reads as "already dispatched" → task stuck assigned but
+    # never actually sent.
+    store.update(checkpoint.task_id, assigned_to=checkpoint.expected_next_role)
     applied = writer.append(_applied_event(checkpoint, "task dispatched"))
     emitted.append(applied.id)
     return WorkflowResumeApplyResult(checkpoint, True, "task dispatched", emitted)
@@ -1232,14 +1240,13 @@ def _apply_terminal_closeout(
 
     previous_status = task.status
     if task.status != "done":
-        updated = store.update(checkpoint.task_id, status="done")
-        if updated is None:
-            return WorkflowResumeApplyResult(
-                checkpoint,
-                False,
-                "rejected: task not found",
-                _append_rejected(writer, checkpoint, emitted, "task not found"),
-            )
+        # P0-2 (2026-07-09): event-first. Append the terminal events BEFORE the
+        # store projection (which, for a TERMINAL status, also archives + pops the
+        # task). The old order projected/archived first, so a crash before the
+        # events left events.jsonl missing the terminal record while the archive
+        # showed done — and build() iterates active only, so it never re-emitted
+        # them → the terminal event was lost forever. already-done re-derives from
+        # events; applying the projection last self-heals on rebuild.
         status_changed = writer.append(ZfEvent(
             type="task.status_changed",
             actor="zf-cli",
@@ -1274,6 +1281,11 @@ def _apply_terminal_closeout(
         causation_id=checkpoint.last_trusted_event_id or None,
     ))
     emitted.append(done_evidence.id)
+    # P0-2: project the terminal status only after both terminal events are
+    # durable. For a TERMINAL status this archives + pops the task, so doing it
+    # last guarantees the archive can never lead the events.jsonl truth.
+    if task.status != "done":
+        store.update(checkpoint.task_id, status="done")
     applied = writer.append(_applied_event(checkpoint, "task terminal closeout"))
     emitted.append(applied.id)
     return WorkflowResumeApplyResult(

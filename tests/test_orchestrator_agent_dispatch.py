@@ -684,3 +684,96 @@ def test_same_trigger_streak_enters_exponential_backoff(
     # 异型触发复位 streak:立即放行(距上次 commit 已超基础窗)。
     orch._notify_orchestrator_agent(ZE(type="dev.build.done", actor="dev", task_id="T9"))
     assert len(transport.sent) == same_type_sends + 1
+
+
+# -- budget-freeze silence (ZF-E2E-MINI-P2, 2026-07-11) ----------------------
+# A frozen global budget blocks Layer 2's own paid dispatch at the charging
+# primitive, so stall/attention wakes during a freeze only burn a briefing +
+# dispatch_failed per sweep re-emit (mini e2e: ~5min cycle for ~40min). One
+# wake per freeze episode passes as the observability anchor; repeats are
+# silenced; the flag resets when the freeze lifts.
+
+
+def _frozen_config():
+    cfg = ZfConfig(
+        project=ProjectConfig(name="test"),
+        session=SessionConfig(tmux_session="test-zf"),
+        global_budget_usd=1.0,
+        roles=[
+            RoleConfig(
+                name="orchestrator",
+                backend="claude-code",
+                transport="stream-json",
+                permission_mode="allowlist",
+                allowed_tools=["Read"],
+                stages=["meta"],
+                triggers=["dispatch.silent_stall", "dev.build.done"],
+            ),
+            RoleConfig(name="dev", backend="mock"),
+        ],
+    )
+    return cfg
+
+
+def test_freeze_silence_first_stall_wake_passes_then_silenced(state_dir: Path):
+    from zf.core.cost.tracker import CostTracker
+
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, _frozen_config(), transport)
+    CostTracker(state_dir / "cost.jsonl").record_usage("dev", 10_000_000, 5_000_000)
+    assert orch._global_budget_frozen() is True
+
+    stall = ZE(type="dispatch.silent_stall", actor="zf-cli", task_id="T1")
+    orch._notify_orchestrator_agent(stall)
+    first_sent = len(transport.sent)
+
+    orch._layer2_last_wake_at = 0.0  # rule out wake-coalescing interference
+    orch._notify_orchestrator_agent(
+        ZE(type="dispatch.silent_stall", actor="zf-cli", task_id="T1")
+    )
+
+    assert len(transport.sent) == first_sent  # second wake silenced
+    skipped = [
+        e for e in EventLog(state_dir / "events.jsonl").read_all()
+        if e.type == "orchestrator.dispatch_skipped"
+        and e.payload.get("reason") == "budget_freeze_silence"
+    ]
+    assert len(skipped) == 1
+
+
+def test_freeze_silence_resets_when_freeze_lifts(state_dir: Path):
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, _frozen_config(), transport)
+    orch._layer2_freeze_wake_fired = True  # as if a freeze episode fired
+
+    # No cost recorded → not frozen → flag resets and wake proceeds.
+    assert orch._global_budget_frozen() is False
+    orch._notify_orchestrator_agent(
+        ZE(type="dispatch.silent_stall", actor="zf-cli", task_id="T1")
+    )
+    assert orch._layer2_freeze_wake_fired is False
+    assert len(transport.sent) == 1
+
+
+def test_freeze_silence_does_not_touch_progress_wakes(state_dir: Path):
+    from zf.core.cost.tracker import CostTracker
+
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, _frozen_config(), transport)
+    CostTracker(state_dir / "cost.jsonl").record_usage("dev", 10_000_000, 5_000_000)
+    orch._layer2_freeze_wake_fired = True
+
+    orch._notify_orchestrator_agent(
+        ZE(type="dev.build.done", actor="dev", task_id="T1")
+    )
+
+    # Progress events bypass the freeze-silence gate: no
+    # budget_freeze_silence skip is emitted for them. (During a freeze the
+    # charging primitive still gates the actual send — that is P0-1's job,
+    # not this gate's.)
+    silenced = [
+        e for e in EventLog(state_dir / "events.jsonl").read_all()
+        if e.type == "orchestrator.dispatch_skipped"
+        and e.payload.get("reason") == "budget_freeze_silence"
+    ]
+    assert silenced == []

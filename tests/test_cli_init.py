@@ -30,6 +30,19 @@ def test_init_creates_zf_directory(tmp_path: Path, monkeypatch):
     assert (zf_dir / "logs").is_dir()
 
 
+def test_init_notes_flag_appends_to_claude_md(tmp_path: Path, monkeypatch):
+    """`zf init --notes` writes operator notes into CLAUDE.md — same shared
+    path as Web New Project 'description' (CLI/Web 入口不对称已抹平)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')
+
+    result = main(["init", "--notes", "团队约定:只用 pnpm;src/ 下不放测试。"])
+
+    assert result == 0
+    claude_md = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "团队约定:只用 pnpm" in claude_md
+
+
 def test_init_creates_project_instruction_docs(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "zf.yaml").write_text('version: "1.0"\nproject:\n  name: test\n')

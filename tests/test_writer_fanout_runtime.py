@@ -471,6 +471,49 @@ def test_writer_fanout_synthesize_canonical_refreshes_workflow_bootstrap_placeho
     assert validate_task_contract(task, config=orch.config, project_root=tmp_path) == []
 
 
+def test_plan_contract_requires_assembly_task_for_multi_bundle():
+    # A multi-bundle plan lacking a root_owner_class=assembly task is rejected by
+    # writer fanout admission → wasted replan. The plan contract must warn the
+    # planner up front for ALL flows (was refactor-gated; PRD/Issue planners
+    # missed it and only learned via the post-hoc rejection — 2026-07-09).
+    contract = "\n".join(WriterFanoutDataMixin._plan_artifact_contract_lines())
+    assert 'root_owner_class: "assembly"' in contract
+    assert "more than one parallel bundle" in contract
+
+
+def test_writer_briefing_forbids_out_of_scope_layout(tmp_path: Path):
+    # allowed_paths must be framed as a hard boundary, not just a permission —
+    # otherwise the agent invents its own layout (e.g. src/) and is only caught
+    # post-hoc at verify/quality (2026-07-09 fanout src/ divergence root).
+    state_dir, _log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    _start(orch)
+    briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "ONLY those exact" in briefing
+    assert "do NOT invent an alternative layout" in briefing
+    assert "`src/`" in briefing
+
+
+def test_writer_briefing_carries_allowed_paths_reason(tmp_path: Path):
+    # P0 structure-spec propagation: the dev's scope_contract must carry the
+    # positive structure narrative (allowed_paths_reason), not only the exact
+    # paths + a "no src/" prohibition — this is how the planner's structure
+    # intent reaches the implementer, aligning with agent-skills' Project
+    # Structure reaching the builder (2026-07-09 alignment root fix).
+    state_dir, _log, transport, orch = _state(tmp_path, synthesize_canonical=True)
+    task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"
+    data = json.loads(task_map.read_text(encoding="utf-8"))
+    data["tasks"][0]["allowed_paths_reason"] = (
+        "owns the server entrypoint app/server.js and store app/lib/task-store.js"
+    )
+    task_map.write_text(json.dumps(data), encoding="utf-8")
+
+    _start(orch)
+
+    briefing = transport.sent[0][1].read_text(encoding="utf-8")
+    assert "allowed_paths_reason" in briefing
+    assert "server entrypoint app/server.js and store app/lib/task-store.js" in briefing
+
+
 def test_writer_briefing_preserves_workflow_matrix_refs(tmp_path: Path):
     state_dir, _log, transport, orch = _state(tmp_path, synthesize_canonical=True)
     task_map = state_dir / "artifacts" / "F-11111111" / "task_map.json"

@@ -298,6 +298,136 @@ def test_materialize_copies_only_enabled_role_skills(tmp_path: Path):
     )
 
 
+def test_materialize_includes_declared_skill_dependencies_and_metadata(tmp_path: Path):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    _write_skill(
+        tmp_path / "skills",
+        "contract",
+        "---\n"
+        "name: contract\n"
+        "description: Contract skill.\n"
+        "stages: [impl]\n"
+        "tags: [contract]\n"
+        "dependencies: [method]\n"
+        "auto_inject: true\n"
+        "load_on_demand: false\n"
+        "---\n\n"
+        "# Contract\n",
+    )
+    _write_skill(tmp_path / "skills", "method", "# Method\n")
+    role = RoleConfig(name="dev", backend="codex", skills=["contract"])
+    config = ZfConfig(project=ProjectConfig(name="test"), roles=[role])
+
+    result = materialize_role_skills(
+        config=config,
+        project_root=tmp_path,
+        state_dir=state_dir,
+        role=role,
+        task_id="T1",
+    )
+
+    assert result is not None
+    target = state_dir / "workdirs" / "dev" / "codex-home" / "skills"
+    assert (target / "contract" / "SKILL.md").exists()
+    assert (target / "method" / "SKILL.md").exists()
+    manifest = json.loads(
+        (state_dir / "workdirs" / "dev" / "runtime" / "skills-manifest.json")
+        .read_text(encoding="utf-8")
+    )
+    by_name = {item["name"]: item for item in manifest["skills"]}
+    assert set(by_name) == {"contract", "method"}
+    assert by_name["contract"]["stages"] == ["impl"]
+    assert by_name["contract"]["tags"] == ["contract"]
+    assert by_name["contract"]["dependencies"] == ["method"]
+    assert by_name["contract"]["auto_inject"] is True
+    assert by_name["contract"]["load_on_demand"] is False
+    assert by_name["method"]["dependency_of"] == ["contract"]
+
+
+def test_yoke_dependency_can_be_materialized_from_repo_local_yoke_root(tmp_path: Path):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    _write_skill(
+        tmp_path / "skills",
+        "zf-yoke-test-evaluator-role-context",
+        "---\n"
+        "name: zf-yoke-test-evaluator-role-context\n"
+        "description: Test role context.\n"
+        "dependencies: [verify-review]\n"
+        "auto_inject: true\n"
+        "load_on_demand: false\n"
+        "---\n\n"
+        "# Test Role Context\n",
+    )
+    _write_skill(tmp_path / "yoke", "verify-review", "# Verify Review\n")
+    role = RoleConfig(
+        name="verify",
+        backend="claude-code",
+        skills=["zf-yoke-test-evaluator-role-context"],
+    )
+    config = ZfConfig(project=ProjectConfig(name="test"), roles=[role])
+
+    result = materialize_role_skills(
+        config=config,
+        project_root=tmp_path,
+        state_dir=state_dir,
+        role=role,
+    )
+
+    assert result is not None
+    target = state_dir / "workdirs" / "verify" / "project" / ".claude" / "skills"
+    assert (target / "zf-yoke-test-evaluator-role-context" / "SKILL.md").exists()
+    assert (target / "verify-review" / "SKILL.md").exists()
+    manifest = json.loads(
+        (state_dir / "workdirs" / "verify" / "runtime" / "skills-manifest.json")
+        .read_text(encoding="utf-8")
+    )
+    by_name = {item["name"]: item for item in manifest["skills"]}
+    assert by_name["verify-review"]["source_name"] == "yoke"
+    assert by_name["verify-review"]["dependency_of"] == [
+        "zf-yoke-test-evaluator-role-context"
+    ]
+
+
+def test_vendored_project_dependency_suppresses_implicit_yoke_collision(tmp_path: Path):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    _write_skill(
+        tmp_path / "skills",
+        "zf-yoke-test-evaluator-role-context",
+        "---\n"
+        "name: zf-yoke-test-evaluator-role-context\n"
+        "description: Test role context.\n"
+        "dependencies: [verify-review]\n"
+        "auto_inject: true\n"
+        "load_on_demand: false\n"
+        "---\n\n"
+        "# Test Role Context\n",
+    )
+    _write_skill(tmp_path / "skills", "verify-review", "# Vendored Verify Review\n")
+    _write_skill(tmp_path / "yoke", "verify-review", "# Local Yoke Verify Review\n")
+    role = RoleConfig(
+        name="verify",
+        backend="claude-code",
+        skills=["zf-yoke-test-evaluator-role-context"],
+    )
+    config = ZfConfig(project=ProjectConfig(name="test"), roles=[role])
+
+    warnings = validate_skill_sources(config=config, project_root=tmp_path)
+    entries = build_skill_lock_entries(
+        project_root=tmp_path,
+        state_dir=state_dir,
+        role=role,
+        config=config,
+    )
+
+    by_name = {entry.name: entry for entry in entries}
+    assert not any("multiple candidates" in warning for warning in warnings)
+    assert by_name["verify-review"].source_name == "project"
+    assert by_name["verify-review"].collision_candidates == ()
+
+
 def test_materialize_claude_code_targets_worktree_project_dot_claude(tmp_path: Path):
     # claude-code skills must land in the worktree's project-level
     # `.claude/skills/`, which Claude Code natively discovers relative to cwd.
@@ -329,7 +459,7 @@ def test_materialize_claude_code_targets_worktree_project_dot_claude(tmp_path: P
     )
 
 
-def test_dev_codex_example_materializes_only_each_role_enabled_skills(
+def test_dev_codex_example_materializes_each_role_skills_and_dependencies(
     tmp_path: Path,
 ):
     example = Path(__file__).parent.parent / "examples" / "dev-codex-backends.yaml"
@@ -361,7 +491,16 @@ def test_dev_codex_example_materializes_only_each_role_enabled_skills(
         )
 
         assert result is not None
-        expected = set(role.skills)
+        expected = {
+            entry.name
+            for entry in build_skill_lock_entries(
+                config=config,
+                project_root=project_root,
+                state_dir=state_dir,
+                role=role,
+            )
+            if entry.status == "resolved"
+        }
         manifest_path = (
             state_dir
             / "workdirs"

@@ -144,9 +144,13 @@ class FeatureStore:
                     new_status = d.get("status")
                     if new_status in TERMINAL_STATES:
                         today = self._today()
+                        # P1-1 (2026-07-09): archive BEFORE removing from active so
+                        # a crash mid-terminal cannot vanish the feature (same
+                        # inversion as task/store.py). A crash now leaves a harmless
+                        # active+archive duplicate, not a lost record.
+                        self._append_archive(today, d)
                         raw.pop(i)
                         self._save_raw(raw)
-                        self._append_archive(today, d)
                     else:
                         self._save_raw(raw)
                     return Feature(**d)

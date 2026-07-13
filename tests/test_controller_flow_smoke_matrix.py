@@ -47,7 +47,11 @@ def _assert_profile_sources(report: dict) -> None:
     assert all(item.get("sha256") for item in profiles)
 
 
-def _assert_flow_kernel_contract(name: str) -> None:
+def _assert_flow_kernel_contract(
+    name: str,
+    *,
+    final_inside_pipeline: bool = True,
+) -> None:
     config = _config(name)
     pipelines = list(config.workflow.pipelines)
     assert len(pipelines) == 1
@@ -66,9 +70,14 @@ def _assert_flow_kernel_contract(name: str) -> None:
     assert verify.failure_event == "verify.child.failed"
     assert verify.rework_to == "impl"
     assert verify.feedback_artifact == "required"
-    assert pipeline.final_when == "all_tasks_verified"
-    assert pipeline.final_success == "judge.passed"
-    assert pipeline.final_failure == "judge.failed"
+    if final_inside_pipeline:
+        assert pipeline.final_when == "all_tasks_verified"
+        assert pipeline.final_success == "judge.passed"
+        assert pipeline.final_failure == "judge.failed"
+    else:
+        assert pipeline.final_when == ""
+        assert pipeline.final_success == ""
+        assert pipeline.final_failure == ""
     stages = {stage.id: stage for stage in config.workflow.stages}
     impl_stage = next(
         stage for stage in stages.values()
@@ -105,6 +114,9 @@ def test_issue_flow_controller_smoke_matrix() -> None:
     assert "final judge gate" in policy["quality_floor"]["detail"]["target_gates"]
     _assert_discovery_stage("issue-fanout-v3.yaml", "issue-post-verify-discovery")
     _assert_flow_kernel_contract("issue-fanout-v3.yaml")
+    config = _config("issue-fanout-v3.yaml")
+    assert config.workflow.admission_replan.enabled is True
+    assert config.workflow.admission_replan.resynth_trigger == "issue.requested"
 
 
 def test_prd_flow_controller_smoke_matrix() -> None:
@@ -126,6 +138,9 @@ def test_prd_flow_controller_smoke_matrix() -> None:
     assert "flow.gap_plan.ready" in control_room["event_sources"]
     _assert_discovery_stage("prd-fanout-v3.yaml", "prd-post-verify-discovery")
     _assert_flow_kernel_contract("prd-fanout-v3.yaml")
+    config = _config("prd-fanout-v3.yaml")
+    assert config.workflow.admission_replan.enabled is True
+    assert config.workflow.admission_replan.resynth_trigger == "prd.scan.completed"
 
 
 def test_refactor_flow_controller_smoke_matrix() -> None:
@@ -142,4 +157,13 @@ def test_refactor_flow_controller_smoke_matrix() -> None:
     assert policy["gap_loop"]["detail"]["enforcement_status"] == "wired"
     assert "gap-scoped task_map.ready" in policy["gap_loop"]["detail"]["target_gates"]
     assert policy["completion_threshold"]["detail"]["target_gates"]
-    _assert_flow_kernel_contract("refactor-lane-v3.yaml")
+    _assert_flow_kernel_contract(
+        "refactor-lane-v3.yaml",
+        final_inside_pipeline=False,
+    )
+    config = _config("refactor-lane-v3.yaml")
+    final = next(
+        stage for stage in config.workflow.stages
+        if stage.id == "flow-final-judge"
+    )
+    assert final.trigger == "module.parity.closed"

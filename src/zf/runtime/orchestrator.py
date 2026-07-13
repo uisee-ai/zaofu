@@ -69,6 +69,7 @@ from zf.runtime.housekeeping import (
     apply_rework_failure_event,
     apply_task_contract_event,
     apply_task_dispatched_heartbeat_seed,
+    apply_worker_activity_heartbeat,
     apply_worker_heartbeat_event,
     apply_worker_state_changed_event,
     promote_to_memory_note_event,
@@ -79,7 +80,6 @@ from zf.runtime.housekeeping import (
 # zf-harness-backlog-synthesis skill at stage ④ backlog, but the kernel
 # must not auto-fire them on arch.proposal.done.
 from zf.runtime.rework_triage import (
-    REWORK_RETRY_CLASSIFICATIONS,
     REWORK_TRIAGE_TRIGGER_EVENTS,
     classify_rework_trigger,
     triage_from_payload,
@@ -105,6 +105,13 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     # single-task task_map (runtime/light_flow.py). It carries no task_id, so
     # it must fire its builtin primary regardless of Layer 1/2 mode.
     "prd.requested",
+    # ZF-E2E-PRD-P1 (2026-07-11): the unified-intake entry (doc 123,
+    # E1 bootstrap in _on_workflow_invoke_requested) is the same kernel-owned
+    # flow-entry class as prd.requested / workflow.reconcile.requested — but
+    # was never added here, so in Layer-2-active configs the invoke fell to
+    # the "Layer 2 owns it" branch and, absent an orchestrator trigger, was
+    # silently dropped (live: workflow-submit accepted, flow never started).
+    "workflow.invoke.requested",
     "discriminator.failed",
     "agent.api_blocked",
     "agent.timeout",
@@ -154,6 +161,17 @@ _KERNEL_LIVENESS_EVENTS = frozenset({
     "channel.consensus.signed",
     "channel.consensus.blocked",
 })
+
+
+class BudgetExceededError(RuntimeError):
+    """Raised by the charging primitive (``_send_transport_task``) when a paid
+    dispatch would exceed the configured budget.
+
+    Subclasses ``RuntimeError`` so the many dispatch call sites that already
+    tolerate the primitive's transport-unavailable ``raise`` treat an
+    over-budget block identically — they skip their post-send ``*.dispatched``
+    bookkeeping instead of recording a dispatch that never happened.
+    """
 
 
 def _kernel_owns_liveness_event(config: object, event_type: str) -> bool:
@@ -483,6 +501,9 @@ class Orchestrator(
         # _notify_orchestrator_agent skips dispatch — prevents wake storm
         # while Claude API is rate-limited or timing out.
         self._layer2_blocked_until: float = 0.0
+        # ZF-E2E-MINI-P2: one stall/attention wake per budget-freeze episode
+        # (see _notify_orchestrator_agent budget-freeze silence gate).
+        self._layer2_freeze_wake_fired: bool = False
         self._layer2_cooldown_s: float = self.config.orchestrator.rate_limit_cooldown_s
         # Wake coalescing (2026-05-28, docs/records/2026-05-28-orchestrator-wake-coalescing.md):
         # a burst of trigger events within wake_min_interval_s collapses into a
@@ -697,6 +718,47 @@ class Orchestrator(
             recent.remove(dispatch_id)
         recent.append(dispatch_id)
         del recent[:-3]  # keep the last 3 dispatch_ids
+
+    def _global_budget_frozen(self) -> bool:
+        """Non-emitting global-cap probe (ZF-E2E-MINI-P2).
+
+        _budget_exceeded emits cost.budget.exceeded as a side effect; the
+        freeze-silence gate needs a pure read.
+        """
+        cap = getattr(self.config, "global_budget_usd", None)
+        if cap is None or not getattr(
+            self.config, "budget_enforcement_enabled", True
+        ):
+            return False
+        try:
+            return self.cost_tracker.total_usd() >= float(cap)
+        except Exception:
+            return False
+
+    def _rollback_inflight_dispatch(self, context: "DispatchContext | None") -> None:
+        """ZF-E2E-RACING-P1 (2026-07-11): undo in-flight bookkeeping when a
+        paid dispatch fails at the charging primitive.
+
+        active_dispatch_id is persisted before _send_transport_task runs; the
+        main _dispatch_task path rolls back in its own except handler, but the
+        rework and evidence-reissue paths did not — a budget block (or any
+        send failure) left the task claiming an in-flight worker forever, so
+        the scheduler, the silent-stall sweep (assigned-without-dispatched
+        shape only) and restart reconciliation all skipped it. Rolling back at
+        the primitive covers every caller, current and future.
+        """
+        task_id = getattr(context, "task_id", None)
+        dispatch_id = getattr(context, "dispatch_id", None)
+        if not task_id or not dispatch_id:
+            return
+        if self._active_dispatch_ids.get(task_id) == dispatch_id:
+            self._active_dispatch_ids.pop(task_id, None)
+        try:
+            task = self.task_store.get(task_id)
+        except Exception:
+            return
+        if task is not None and (task.active_dispatch_id or "") == dispatch_id:
+            self.task_store.update(task_id, active_dispatch_id="")
 
     # -- B3: per-worker state tracking (persisted via events.jsonl) --
 
@@ -1852,7 +1914,10 @@ class Orchestrator(
                           r1-final.jsonl.bak (L179 task.assigned
                           role=dev @ 06:56:00, no follow-up dispatch).
         """
-        from zf.runtime.dispatch_sweep import sweep_silent_dispatches
+        from zf.runtime.dispatch_sweep import (
+            sweep_dead_dispatches,
+            sweep_silent_dispatches,
+        )
 
         try:
             # Read recent events (tail window). EventLog can grow large;
@@ -1893,6 +1958,66 @@ class Orchestrator(
                             f"with no matching task.dispatched "
                             f"(TR-DISPATCH-SILENT-STALL-001, follow-up to "
                             f"commit 4de1ff7's 5 _dispatch_ready sites)"
+                        ),
+                    },
+                ))
+            except Exception:
+                pass
+
+        # ZF-E2E-RACING-P1: second stall shape — task.dispatched exists but
+        # the worker session died (restart / pane reset). Same event window,
+        # same per-key cooldown; a distinct source lets consumers tell the
+        # two shapes apart.
+        try:
+            inflight = [
+                (task.id, task.assigned_to or "", task.active_dispatch_id or "")
+                for task in self.task_store.filter(status="in_progress")
+                if task.active_dispatch_id
+            ]
+            from zf.runtime.shutdown import _STAGE_PROGRESS_EVENTS
+
+            # Progress evidence must be authoritative, not window-bound: the
+            # 500-event tail floods long before in-flight bookkeeping clears
+            # (live: dev.build.done rolled out of the window and the false
+            # stall returned, re-arming RM resume). events_for_task is
+            # index-backed and cheap for the handful of in-flight tasks.
+            progressed = set()
+            for task_id, _assignee, _dispatch in inflight:
+                try:
+                    for ev in self.event_log.events_for_task(task_id):
+                        if ev.type in _STAGE_PROGRESS_EVENTS:
+                            progressed.add(task_id)
+                            break
+                except Exception:
+                    continue
+            dead_result = sweep_dead_dispatches(
+                inflight=inflight, events=events,
+                progressed_task_ids=progressed,
+            )
+        except Exception:
+            return
+        for task_id, assignee, dispatch_id, age_seconds in dead_result.dead_dispatches:
+            key = (assignee, "dispatch.dead_dispatch", task_id)
+            last = self._sweep_signal_last_emit_at.get(key, 0.0)
+            if _now_mono - last < _DISPATCH_SWEEP_DEDUP_COOLDOWN_S:
+                continue
+            self._sweep_signal_last_emit_at[key] = _now_mono
+            try:
+                self.event_writer.append(ZfEvent(
+                    type="dispatch.silent_stall",
+                    actor="zf-cli",
+                    task_id=task_id,
+                    payload={
+                        "task_id": task_id,
+                        "assignee": assignee,
+                        "dispatch_id": dispatch_id,
+                        "silent_age_s": round(age_seconds, 1),
+                        "source": "dead_dispatch_sweep",
+                        "reason": (
+                            f"in-flight dispatch {dispatch_id} for {task_id} → "
+                            f"{assignee} shows no worker activity for "
+                            f"{round(age_seconds, 1)}s after task.dispatched "
+                            f"(ZF-E2E-RACING-P1: worker session likely dead)"
                         ),
                     },
                 ))
@@ -2202,6 +2327,30 @@ class Orchestrator(
             self._find_role_by_instance(role_name)
             or self._find_role_by_name(role_name)
         )
+        # P0-1 (2026-07-09): budget gate at the charging primitive. Every paid
+        # dispatch funnels through here — the main _dispatch_ready loop AND the
+        # fanout child / synth / writer-rework / reader-rebind paths. Gating only
+        # _dispatch_ready let in-flight fanout burn past the cap (RB1) because
+        # those paths call this primitive directly. _budget_exceeded emits
+        # cost.budget.exceeded (per-scope cooldown); raising a RuntimeError
+        # subclass makes callers skip their post-send *.dispatched bookkeeping the
+        # same way they already handle the transport-unavailable raise below.
+        # ZF-E2E-MINI-P2 correction (2026-07-11): the old claim "role is None
+        # for the orchestrator agent's own dispatch" only holds when no
+        # orchestrator role is configured — and then _notify_orchestrator_agent
+        # no-ops, so there is nothing to exempt. With an agent orchestrator,
+        # being wakeable and being budget-gated resolve the same role: a frozen
+        # budget DOES block Layer-2 self-wakes (observed live). The freeze-
+        # silence gate in _notify_orchestrator_agent keeps that from becoming
+        # a briefing/dispatch_failed churn loop.
+        if role is not None and self._budget_exceeded(role):
+            # ZF-E2E-RACING-P1: roll back in-flight bookkeeping before
+            # raising — callers without their own rollback (rework path)
+            # otherwise wedge the task permanently.
+            self._rollback_inflight_dispatch(context)
+            raise BudgetExceededError(
+                f"dispatch to {role_name} blocked: budget exceeded"
+            )
         # DID-7 (2026-06-19 e2e): wait for the worker's agent prompt to be READY
         # before sending the briefing. transport.send_task only checks the pane's
         # process is *alive*, not that claude is at its input prompt — under
@@ -2216,18 +2365,24 @@ class Orchestrator(
             except Exception:
                 pass
         try:
-            self.transport.send_task(
-                role_name,
-                briefing_path,
-                prompt,
-                context=context,
-            )
-        except TypeError as exc:
-            # Compatibility for older test/custom TransportAdapter
-            # implementations that predate DispatchContext.
-            if "context" not in str(exc):
-                raise
-            self.transport.send_task(role_name, briefing_path, prompt)
+            try:
+                self.transport.send_task(
+                    role_name,
+                    briefing_path,
+                    prompt,
+                    context=context,
+                )
+            except TypeError as exc:
+                # Compatibility for older test/custom TransportAdapter
+                # implementations that predate DispatchContext.
+                if "context" not in str(exc):
+                    raise
+                self.transport.send_task(role_name, briefing_path, prompt)
+        except Exception:
+            # ZF-E2E-RACING-P1: send failed — the dispatch never reached the
+            # worker, so the in-flight claim must not survive.
+            self._rollback_inflight_dispatch(context)
+            raise
         try:
             if role is not None:
                 self._get_spawn_coordinator().notify_first_dispatch(role)
@@ -2546,17 +2701,8 @@ class Orchestrator(
             return event.type == "judge.passed"
 
     def _layer1_owns_rework_triage_event(self, event: ZfEvent) -> bool:
-        """Layer 1 must stop non-product failures before Layer 2 reworks.
-
-        Product/design rework remains a semantic routing decision for Layer 2
-        in orchestrator-agent mode. Evidence gaps, harness-rule issues,
-        environment issues, and ambiguous failures are runtime safety signals:
-        do not let them burn product retry or blindly reach a dev worker.
-        """
-        if not event.task_id or event.type not in REWORK_TRIAGE_TRIGGER_EVENTS:
-            return False
-        triage = self._rework_triage_for_event(event)
-        return triage.classification not in REWORK_RETRY_CLASSIFICATIONS
+        """Keep task rework in L1 until Run Manager requests L2 advice."""
+        return bool(event.task_id and event.type in REWORK_TRIAGE_TRIGGER_EVENTS)
 
     def _migrate_legacy_assigned_to(self) -> None:
         """G-INST-9: rewrite legacy ``assigned_to=<role.name>`` entries to
@@ -2997,6 +3143,20 @@ class Orchestrator(
                     apply_worker_state_changed_event(registry, event)
                 except Exception:
                     pass
+            elif event.type.startswith("codex.hook.") or event.type.startswith("claude.hook."):
+                # Universal activity liveness (2026-07-09): per-tool-call hooks
+                # prove a worker is alive during long turns where agent.usage
+                # is sparse (agent.usage keeps its own richer handler above).
+                # Throttled inside the helper; backend- and workflow-agnostic.
+                from zf.core.state.role_sessions import RoleSessionRegistry
+                try:
+                    registry = RoleSessionRegistry(
+                        self.state_dir / "role_sessions.yaml",
+                        project_root=str(self.project_root),
+                    )
+                    apply_worker_activity_heartbeat(registry, event)
+                except Exception:
+                    pass
             elif event.type == "repair.action.requested":
                 self._apply_repair_action_request(event)
             elif event.type in {
@@ -3148,8 +3308,22 @@ class Orchestrator(
                     # LH-4.T3: circuit breaker failure counter. Evidence,
                     # harness, and environment classifications do not count as
                     # product failures.
+                    # P1-7 (2026-07-09): key the breaker on the role that will
+                    # actually be re-dispatched (the producer), not the gate that
+                    # emitted the failure — otherwise the dispatch-time check
+                    # (which keys on the dispatched role) never sees these
+                    # failures and the breaker never trips.
+                    rework_role = None
+                    try:
+                        if task_for_rework is not None:
+                            rework_role = self._resolve_rework_role(
+                                task_for_rework, event,
+                            )
+                    except Exception:
+                        rework_role = None
                     apply_circuit_breaker_failure(
                         event, self.state_dir / "circuits.json",
+                        role_name=(rework_role.name if rework_role else None),
                     )
             # LB-1: judge.passed matches the earlier acceptance-evidence elif
             # (review.approved/verify.passed/test.passed/judge.passed) so it never
@@ -3375,6 +3549,10 @@ class Orchestrator(
         refactor task for the same feature so the admission gate matches the
         latest task_map_ref."""
         from zf.core.task.schema import Task, TaskContract
+        from zf.runtime.writer_task_map_supersede import apply_explicit_task_supersedes
+        apply_explicit_task_supersedes(
+            task_store=self.task_store, event_writer=self.event_writer, loaded=loaded
+        )
 
         feature_id = str(loaded.feature_id or loaded.pdd_id or "")
         default_owner_role = next(
@@ -4135,6 +4313,7 @@ class Orchestrator(
                 "gap_plan_ref": gap_plan_ref,
                 "gap_task_ids": gap_task_ids,
                 "gap_task_count": len(gap_task_ids),
+                "superseded_task_ids": list(amend.get("superseded_task_ids") or []),
                 "gap_event_type": gap_event_type,
                 "source_event_id": event.id,
                 "request_event_id": requested.id,
@@ -4163,6 +4342,7 @@ class Orchestrator(
                 "gap_plan_ref": gap_plan_ref,
                 "gap_task_ids": gap_task_ids,
                 "task_ids": gap_task_ids,
+                "superseded_task_ids": list(amend.get("superseded_task_ids") or []),
                 "resume_scope": "gap_tasks_only",
                 "gap_event_type": gap_event_type,
                 "source_event_id": event.id,
@@ -4534,6 +4714,28 @@ class Orchestrator(
                 },
             ))
             return
+        # ZF-E2E-MINI-P2 (2026-07-11): budget-freeze silence. When the global
+        # budget is frozen, the control loop's own paid dispatch is blocked at
+        # the charging primitive (being wakeable and being budget-gated
+        # resolve the same orchestrator role), so stall/attention wakes only
+        # burn a briefing + dispatch_failed per sweep re-emit (~5min cycle in
+        # the mini e2e). First wake per freeze episode passes as the
+        # observability anchor; the rest are silenced until the freeze lifts.
+        from zf.runtime.wake_patterns import LAYER2_FREEZE_SILENCED_EVENTS
+
+        if event.type in LAYER2_FREEZE_SILENCED_EVENTS:
+            frozen = self._global_budget_frozen()
+            if frozen and self._layer2_freeze_wake_fired:
+                self.event_writer.append(ZfEvent(
+                    type="orchestrator.dispatch_skipped",
+                    actor="zf-cli",
+                    payload={
+                        "trigger_event_id": event.id,
+                        "reason": "budget_freeze_silence",
+                    },
+                ))
+                return
+            self._layer2_freeze_wake_fired = frozen
         # Batch coalescing (doc 66 §14.0): while inside a run_once reaction
         # batch, every trigger event accumulates into _layer2_pending and the
         # batch fires ONE multi-trigger turn at its end (_flush_layer2_batch).

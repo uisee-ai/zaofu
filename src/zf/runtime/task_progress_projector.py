@@ -133,7 +133,20 @@ def _task_events(state_dir: Path, task_id: str) -> list[ZfEvent]:
     for event in events:
         payload = event.payload if isinstance(event.payload, dict) else {}
         payload_task = str(payload.get("task_id") or "")
-        if event.task_id == task_id or payload_task == task_id:
+        related_ids = {
+            str(value).strip()
+            for key in ("completed_task_ids", "task_ids", "source_task_ids")
+            for value in (payload.get(key) or [])
+            if str(value).strip()
+        }
+        # Candidate/lane terminal events often have no event.task_id. Keep
+        # them in each covered task's capsule when the aggregate explicitly
+        # names its children, without attributing it to unrelated tasks.
+        if (
+            event.task_id == task_id
+            or payload_task == task_id
+            or task_id in related_ids
+        ):
             out.append(event)
     return out
 

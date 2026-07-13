@@ -44,7 +44,7 @@ def build_task_context_manifest(
     implement: list[dict] = []
     source_md = docs_dir / "source.md"
     implement.append(_entry(
-        "source_doc", str(source_md), required=source_md.exists(),
+        "source_doc", str(source_md), required=True,
         reason="task 语义源头(Task Capsule)",
     ))
     for ref_key in ("instruction_ref", "criteria_ref"):
@@ -63,7 +63,7 @@ def build_task_context_manifest(
     check: list[dict] = []
     task_md = docs_dir / "task.md"
     check.append(_entry(
-        "task_doc", str(task_md), required=task_md.exists(),
+        "task_doc", str(task_md), required=True,
         reason="验收谓词与完成边界(Task Capsule)",
     ))
     behavior = str(getattr(contract, "behavior", "") or "")

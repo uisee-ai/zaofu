@@ -88,11 +88,13 @@ R21 失败形状:根 build config 无主,根 `tsc -b` / `pytest` 从未被任何
 被识别的脚手架 basename 含 `package.json` / `pnpm-lock.yaml` /
 `pnpm-workspace.yaml` / `tsconfig.json` / `vitest.config.ts` / `eslint.config.js`,
 以及 Python 侧 `pyproject.toml` / `setup.py` / `setup.cfg` / `requirements.txt` /
-`uv.lock` / `poetry.lock` / `Pipfile`(`lane_pipeline.py:661-667`)。
+`uv.lock` / `poetry.lock` / `Pipfile`(`lane_pipeline.py`
+`validate_lane_pipeline_admission` 的 `_SCAFFOLD_BASENAMES`)。
 
 **已有项目 / 局部 refactor 的 opt-out**:把一个已存在仓库导入做局部重构时,根
 脚手架通常已存在、由 plan 之外持有,不该强求某条 task 认领它。此时可关掉这条
-启发式(`lane_pipeline.py:685-703`,布尔显式优先于 policy 推断):
+启发式(`lane_pipeline.py` `validate_lane_pipeline_admission` 内的
+`_workspace_root_owner_required`,布尔显式优先于 policy 推断):
 
 - task_map 顶层 `workspace_root_owner_required: false`,或
   `refactor_contract.workspace_root_owner_required: false`(布尔,优先级最高);

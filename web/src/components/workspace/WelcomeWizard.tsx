@@ -20,13 +20,12 @@ const STEPS: StepDef[] = [
   { id: "backend", num: 1, title: "选后端", subtitle: "哪个 AI 后端驱动 agent" },
   { id: "preflight", num: 2, title: "环境自检", subtitle: "启动硬依赖当场验" },
   { id: "project", num: 3, title: "第一个项目", subtitle: "描述 · 探测 · 创建" },
-  { id: "notifications", num: 4, title: "通知", subtitle: "卡点时怎么提醒(可选)" },
-  { id: "launch", num: 5, title: "就绪", subtitle: "启动第一轮" },
+  { id: "launch", num: 4, title: "就绪", subtitle: "启动第一轮" },
 ];
 
 interface Props {
   hasProject: boolean;               // whether a project got created (STEP 3)
-  onOpenProjectWizard: (prefill?: { root?: string; preset?: string }) => void;
+  onOpenProjectWizard: (prefill?: { root?: string; preset?: string; stack?: string; description?: string }) => void;
   onDone: () => void;                // completed or skipped -> re-fetch + dismiss
 }
 
@@ -34,11 +33,12 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [backend, setBackend] = useState("");
-  const [notif, setNotif] = useState("none");
   const [busy, setBusy] = useState(false);
   const [inspectRoot, setInspectRoot] = useState("");
   const [inspect, setInspect] = useState<BootstrapInspect | null>(null);
   const [inspectBusy, setInspectBusy] = useState(false);
+  const [devLang, setDevLang] = useState("auto");   // 语言/栈偏好 → AGENTS.md 栈段
+  const [comments, setComments] = useState("");      // 项目备注 → CLAUDE.md
 
   useEffect(() => {
     getOnboarding().then((s) => {
@@ -63,7 +63,7 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
   }
   async function finish() {
     setBusy(true);
-    await updateOnboarding({ action: "complete", backend, notifications: notif });
+    await updateOnboarding({ action: "complete", backend });
     onDone();
   }
   async function skipAll() {
@@ -80,7 +80,6 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
     (cur.id === "backend" && !!backend)
     || (cur.id === "preflight" && preflightOk)
     || (cur.id === "project" && hasProject)
-    || cur.id === "notifications"
     || cur.id === "launch";
 
   return (
@@ -89,7 +88,7 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
         {/* header + progress rail */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
           <div style={{ fontSize: 11, letterSpacing: ".08em", textTransform: "uppercase", color: TONE.muted }}>
-            设置 ZaoFu · STEP {cur.num}/5
+            设置 ZaoFu · STEP {cur.num}/{STEPS.length}
           </div>
           <button type="button" onClick={skipAll} disabled={busy} data-testid="welcome-skip"
             style={linkBtn}>跳过全部</button>
@@ -207,6 +206,25 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
                 </div>
               ) : null}
 
+              {!hasProject ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+                  <label style={{ fontSize: 12, color: TONE.muted }}>
+                    开发语言(写进 AGENTS.md 栈段;auto = 用探测结果)
+                    <select data-testid="welcome-dev-lang" value={devLang}
+                      onChange={(e) => setDevLang(e.target.value)}
+                      style={{ marginLeft: 8, font: "inherit", fontSize: 12.5, padding: "5px 8px",
+                        border: `1px solid ${TONE.line}`, borderRadius: 6, background: TONE.panel, color: TONE.text }}>
+                      {["auto", "python", "node", "go", "rust"].map((s) => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                  <textarea data-testid="welcome-comments" value={comments}
+                    onChange={(e) => setComments(e.target.value)} rows={3}
+                    placeholder="项目备注 / 特殊约束 / 团队约定 → 写进 CLAUDE.md,让 agent 读到真相而非模板"
+                    style={{ font: "inherit", fontSize: 12.5, padding: "7px 10px",
+                      border: `1px solid ${TONE.line}`, borderRadius: 7, background: TONE.panel, color: TONE.text, resize: "vertical" }} />
+                </div>
+              ) : null}
+
               {hasProject ? (
                 <div data-testid="welcome-project-done" style={{ color: TONE.ok, fontSize: 13 }}>✓ 项目已创建,可继续。</div>
               ) : (
@@ -214,23 +232,11 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
                   onClick={() => onOpenProjectWizard({
                     root: inspect?.root || inspectRoot.trim() || undefined,
                     preset: inspect?.recommended_flow || undefined,
+                    stack: devLang !== "auto" ? devLang : undefined,
+                    description: comments.trim() || undefined,
                   })}
                   style={primaryBtn}>+ 用探测结果创建项目(controller flow)</button>
               )}
-            </div>
-          ) : null}
-
-          {cur.id === "notifications" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <div style={{ fontSize: 13, color: TONE.muted }}>长程跑到卡点/需你裁决时,怎么提醒?</div>
-              {[["none", "不用(dashboard 里看)"], ["feishu", "Feishu webhook"], ["desktop", "桌面通知"]].map(([id, label]) => (
-                <label key={id} data-testid={`welcome-notif-${id}`}
-                  style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
-                  <input type="radio" name="notif" checked={notif === id} onChange={() => setNotif(id)} />
-                  {label}
-                </label>
-              ))}
-              <div style={{ fontSize: 12, color: TONE.faint }}>以后设置里可改。</div>
             </div>
           ) : null}
 
@@ -240,7 +246,6 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
                 <span>✓ 后端 <b>{backend || "—"}</b></span>
                 <span>{preflightOk ? "✓" : "✗"} 环境自检</span>
                 <span>{hasProject ? "✓ 项目已建" : "○ 未建项目"}</span>
-                <span>✓ 通知 {notif}</span>
               </div>
               <div style={{ fontSize: 13, color: TONE.muted, marginBottom: 8 }}>
                 完成后进入 dashboard,带你看:🔁 Loop 环怎么转 · ▦ Board 任务 · 📥 Inbox 你要裁的。
@@ -254,7 +259,7 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
           <button type="button" disabled={stepIdx === 0 || busy}
             onClick={() => persistStep(stepIdx - 1)} style={ghostBtn}>← 上一步</button>
           <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: TONE.faint }}>
-            {cur.num} / 5
+            {cur.num} / {STEPS.length}
           </div>
           {cur.id !== "launch" && cur.id !== "project" ? (
             <button type="button" onClick={() => persistStep(stepIdx + 1)} style={linkBtn}>跳过此步</button>

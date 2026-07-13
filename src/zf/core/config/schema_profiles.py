@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -153,12 +154,60 @@ _CANONICAL_DAG_V2: dict[str, dict[str, Any]] = {
     **_LANE_STAGE_HANDOFF_EVENTS,
 }
 
+# canonical-dag/v3 — v2 + 读者子报告证据档位(LB-4,2026-07-08)。
+# r3 light 实弹:verify/judge 子报告带判决但 evidence_refs 空、矩阵 0 行,
+# briefing 条款(advisory)被无视 → 档位入 schema(FIX-14 non_empty)。
+# 只加在 agent 报告面的 child 完成事件上;kernel 铸造的 stage 聚合与 v2
+# 的 lane handoff 契约原样保留。briefing 教育由 FIX-14
+# `_schema_education_report_fields` 按此规则自动镜像,不需另配。
+_READER_CHILD_EVIDENCE: dict[str, Any] = {
+    "required": [
+        "fanout_id", "child_id", "status", "summary", "evidence_refs",
+        "report",
+    ],
+    "non_empty": ["summary", "evidence_refs"],
+    "nested": {
+        "report": {
+            "required": ["requirement_coverage_matrix"],
+            "non_empty": ["requirement_coverage_matrix"],
+        },
+    },
+}
+
+_CANONICAL_DAG_V3: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V2,
+    "verify.child.completed": _READER_CHILD_EVIDENCE,
+    "review.child.completed": _READER_CHILD_EVIDENCE,
+    "judge.child.completed": _READER_CHILD_EVIDENCE,
+}
+
 SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "refactor-flow/v1": _REFACTOR_FLOW_V1,
     "refactor-flow/v2": _REFACTOR_FLOW_V2,
     "canonical-dag/v1": _CANONICAL_DAG_V1,
     "canonical-dag/v2": _CANONICAL_DAG_V2,
+    "canonical-dag/v3": _CANONICAL_DAG_V3,
 }
+
+
+def union_required_keys(event_type: str) -> tuple[str, ...]:
+    """Union of `required` keys for an event across ALL built-in profiles.
+
+    For kernel emitters whose event type is config-driven (a stage's
+    failure_event may name any contract event): forge these keys present
+    (value may be empty) before emitting, else a blocking discriminator
+    replaces the failure signal with discriminator.failed and the run
+    wedges (2026-07-10 R6: fanout verify-timeout published
+    lane.stage.failed without the lane-pipeline keys)."""
+    out: list[str] = []
+    for table in SCHEMA_PROFILES.values():
+        rule = table.get(event_type)
+        if not isinstance(rule, dict):
+            continue
+        for key in rule.get("required", []):
+            if key not in out:
+                out.append(str(key))
+    return tuple(out)
 
 
 def resolve_schema_profile(
@@ -177,12 +226,18 @@ def resolve_schema_profile(
         raise SchemaProfileError(
             f"unknown schema profile {name!r}; known profiles: {known}"
         )
-    # 深拷贝防原地篡改(/vN 不可变);field_sources(1404)一并透传
+    # 深拷贝防原地篡改(/vN 不可变);field_sources(1404)与证据档位
+    # non_empty / nested(LB-4,v3)一并透传——早期只拷 required 曾把
+    # 档位静默剥掉,是"接线但被遮蔽"类缺陷。
     out: dict[str, dict[str, Any]] = {}
     for event, rule in source.items():
         entry: dict[str, Any] = {"required": list(rule.get("required", []))}
         if isinstance(rule.get("field_sources"), dict):
             entry["field_sources"] = dict(rule["field_sources"])
+        if rule.get("non_empty"):
+            entry["non_empty"] = [str(x) for x in rule["non_empty"]]
+        if isinstance(rule.get("nested"), dict) and rule["nested"]:
+            entry["nested"] = deepcopy(rule["nested"])
         out[event] = entry
     return out
 
@@ -191,14 +246,25 @@ def classify_override(
     base_rule: dict[str, Any] | None,
     override_rule: dict[str, Any],
 ) -> str:
-    """additive(只增 required)→ 'additive';删/放宽 → 'breaking';
-    base 无此事件 → 'additive'(新增事件规则不破坏 profile 契约)。"""
+    """additive(只增 required/收紧档位)→ 'additive';删/放宽 → 'breaking';
+    base 无此事件 → 'additive'(新增事件规则不破坏 profile 契约)。
+
+    non_empty / nested 只在 override **显式提供**该键时参与分级(缺席 =
+    继承 base,见 merge_event_schemas);显式缩水 profile 档位 = breaking。"""
     if not base_rule:
         return "additive"
     base_req = set(base_rule.get("required", []) or [])
     over_req = set(override_rule.get("required", []) or [])
     if base_req - over_req:
         return "breaking"  # profile 的 required 字段被删/放宽
+    if "non_empty" in override_rule:
+        base_ne = set(base_rule.get("non_empty", []) or [])
+        over_ne = set(override_rule.get("non_empty", []) or [])
+        if base_ne - over_ne:
+            return "breaking"  # profile 的 non_empty 档位被放宽
+    if "nested" in override_rule:
+        if (base_rule.get("nested") or {}) and not (override_rule.get("nested") or {}):
+            return "breaking"  # profile 的嵌套档位被整体摘除
     return "additive"
 
 
@@ -254,11 +320,27 @@ def merge_event_schemas(
                     "layer": label,
                     "message": f"{label} additive override on {event!r}",
                 })
-            effective[event] = {
+            base_rule = effective.get(event) or {}
+            entry: dict[str, Any] = {
                 "required": list(rule.get("required", []) or []),
             }
             if isinstance(rule.get("field_sources"), dict):
-                effective[event]["field_sources"] = dict(rule["field_sources"])
+                entry["field_sources"] = dict(rule["field_sources"])
+            # 档位继承:override 未显式提供 non_empty/nested 时继承 base
+            # (只写 required 的 additive override 不再静默剥掉证据档位)。
+            non_empty = (
+                rule.get("non_empty") if "non_empty" in rule
+                else base_rule.get("non_empty")
+            )
+            if non_empty:
+                entry["non_empty"] = [str(x) for x in non_empty]
+            nested = (
+                rule.get("nested") if "nested" in rule
+                else base_rule.get("nested")
+            )
+            if isinstance(nested, dict) and nested:
+                entry["nested"] = deepcopy(nested)
+            effective[event] = entry
             sources[event] = label
     _apply(spec_overrides, "override")
     _apply(local_schemas, "local")

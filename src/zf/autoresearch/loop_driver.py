@@ -518,6 +518,19 @@ def run_loop(
     state = LoopState()
     prev: IterationRecord | None = None
     final_status = "running"
+    # P1-d: baseline the parent project's cumulative cost at loop start, so the
+    # budget bound measures THIS loop's incremental spend — not the project's
+    # lifetime total. On an established project the lifetime total can already
+    # exceed budget_usd, which would otherwise stop the loop at iteration 1
+    # before it spends anything.
+    try:
+        from zf.core.cost.tracker import CostTracker as _CostTracker
+
+        _cost_baseline_usd = _CostTracker(
+            parent_state_dir / "cost.jsonl"
+        ).total_usd()
+    except Exception:
+        _cost_baseline_usd = 0.0
 
     for i in range(1, cfg.max_iterations + 1):
         scenario = cfg.scenarios[(i - 1) % len(cfg.scenarios)]
@@ -624,6 +637,24 @@ def run_loop(
             state.consecutive_regressed += 1
         else:
             state.consecutive_regressed = 0
+
+        # h2. P1-d (2026-07-09): accumulate THIS loop's incremental spend so the
+        # budget bound in should_stop_loop is actually live. Before this,
+        # cost_usd_so_far stayed 0.0 and the budget_exhausted branch was dead
+        # code — the "triple-bounded" budget layer was name-only (only
+        # max_iterations + streaks really bounded the loop). Measure delta from
+        # the loop-start baseline (not the project lifetime total) so an
+        # already-expensive project doesn't stop the loop at iteration 1.
+        try:
+            from zf.core.cost.tracker import CostTracker
+
+            state.cost_usd_so_far = max(
+                0.0,
+                CostTracker(parent_state_dir / "cost.jsonl").total_usd()
+                - _cost_baseline_usd,
+            )
+        except Exception:
+            pass
 
         # i. termination check
         decision = should_stop_loop(record=record, cfg=cfg, state=state)

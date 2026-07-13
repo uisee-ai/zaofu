@@ -1,6 +1,6 @@
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, Boxes, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Map as MapIcon, MessageSquare, Plus, Radio, Route, Settings, Trash2 } from "lucide-react";
+import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, MessageSquare, Plus, Radio, Route, Settings, Trash2 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
@@ -79,8 +79,10 @@ export function WorkspaceRail({
   });
   const selectedProjectValue = activeProjectId || projectOptions[0]?.project_id || "";
   const selectedProject = projectOptions.find((project) => project.project_id === selectedProjectValue) ?? projectOptions[0] ?? null;
-  // doc116 §6, operator-amended: the Measure group keeps its four entries
-  // (tabs-in-Delivery was reverted on looks); the Runtime page stays retired.
+  // 2026-07-11 operator re-decision(推翻 doc116 §6 的四项保留):Playwright
+  // 实测三页顶部 40%(feature 选择器+cockpit hero)逐像素相同,Stage Heatmap
+  // 在 Trace/Graph 双渲染 —— Delivery/Trace/Graph 收敛为单导航项 + 页内
+  // mode tab(delivery-trace/delivery-graph 深链仍有效,见 railActivePage)。
   // Act vs watch: Workspace = what I do (decide/assign/intervene);
   // Monitoring = what the system is doing (delivery + deep-dive).
   const workspaceNav: RailNavItem[] = [
@@ -92,8 +94,6 @@ export function WorkspaceRail({
   ];
   const monitoringNav: RailNavItem[] = [
     { id: "delivery", icon: Route, label: "Delivery" },
-    { id: "delivery-trace", icon: MapIcon, label: "Trace" },
-    { id: "delivery-graph", icon: Boxes, label: "Graph" },
     { id: "behavior-loop", icon: GitFork, label: "Loop" },
     { id: "observability", icon: Radio, label: "Observability" },
   ];
@@ -104,7 +104,9 @@ export function WorkspaceRail({
     ? "observability"
     : activePage === "runtime"
       ? "observability"
-      : activePage;
+      : activePage === "delivery-trace" || activePage === "delivery-graph"
+        ? "delivery"
+        : activePage;
 
   return (
     <section className="panel project-rail" aria-label="Navigation rail">

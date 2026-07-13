@@ -519,3 +519,98 @@ def test_wire_up_apply_housekeeping_handles_worker_heartbeat():
         "α-2 wire-up missing: orchestrator.py does not call "
         "apply_worker_heartbeat_event"
     )
+
+
+def _seed_busy(reg, instance_id, *, stale=False, tmp_path=None):
+    """Seed a busy worker heartbeat; if stale, backdate it past the throttle."""
+    reg.get_or_create(instance_id)
+    reg.record_heartbeat(instance_id, {"state": "busy", "current_task_id": "T1"})
+    if stale:
+        import yaml
+        p = reg.path
+        data = yaml.safe_load(p.read_text())
+        data["instance_meta"][instance_id]["last_heartbeat_at"] = "2020-01-01T00:00:00+00:00"
+        p.write_text(yaml.safe_dump(data))
+        return RoleSessionRegistry(p, project_root=str(p.parent))
+    return reg
+
+
+def test_activity_heartbeat_refreshes_stale_busy_worker_from_hook(tmp_path: Path):
+    """A tool-call hook proves an active worker is alive: refresh its liveness
+    so the sweep does not falsely respawn it mid-long-turn (E2E 2026-07-09)."""
+    from zf.runtime.housekeeping import apply_worker_activity_heartbeat
+
+    reg = _seed_busy(
+        RoleSessionRegistry(tmp_path / "role_sessions.yaml", project_root=str(tmp_path)),
+        "dev-1", stale=True,
+    )
+    apply_worker_activity_heartbeat(
+        reg, ZfEvent(type="codex.hook.post_tool_use", actor="dev-1",
+                     ts="2026-07-09T04:00:00+00:00"),
+    )
+    _, payload = reg.get_last_heartbeat("dev-1")
+    assert payload["source"] == "activity_liveness"
+    assert payload["state"] == "busy"
+
+
+def test_activity_heartbeat_claude_backend_parity(tmp_path: Path):
+    from zf.runtime.housekeeping import apply_worker_activity_heartbeat
+
+    reg = _seed_busy(
+        RoleSessionRegistry(tmp_path / "role_sessions.yaml", project_root=str(tmp_path)),
+        "dev-1", stale=True,
+    )
+    apply_worker_activity_heartbeat(
+        reg, ZfEvent(type="claude.hook.pre_tool_use", actor="dev-1",
+                     ts="2026-07-09T04:00:00+00:00"),
+    )
+    _, payload = reg.get_last_heartbeat("dev-1")
+    assert payload["source"] == "activity_liveness"
+
+
+def test_activity_heartbeat_throttled_when_fresh(tmp_path: Path):
+    """A fresh heartbeat (< throttle gap) is not rewritten on every hook."""
+    from zf.runtime.housekeeping import apply_worker_activity_heartbeat
+
+    reg = RoleSessionRegistry(tmp_path / "role_sessions.yaml", project_root=str(tmp_path))
+    reg.get_or_create("dev-1")
+    reg.record_heartbeat("dev-1", {"state": "busy", "current_task_id": "T1"})
+    apply_worker_activity_heartbeat(
+        reg, ZfEvent(type="codex.hook.pre_tool_use", actor="dev-1"),
+    )
+    _, payload = reg.get_last_heartbeat("dev-1")
+    assert payload.get("source") != "activity_liveness"  # throttled, kept original
+
+
+def test_activity_heartbeat_noop_for_idle_infra_and_non_activity(tmp_path: Path):
+    from zf.runtime.housekeeping import apply_worker_activity_heartbeat
+
+    # idle worker → not gated by stuck sweep → no refresh
+    reg = RoleSessionRegistry(tmp_path / "role_sessions.yaml", project_root=str(tmp_path))
+    reg.get_or_create("dev-1")
+    reg.record_heartbeat("dev-1", {"state": "idle"})
+    apply_worker_activity_heartbeat(reg, ZfEvent(type="codex.hook.stop", actor="dev-1"))
+    _, p = reg.get_last_heartbeat("dev-1")
+    assert p.get("source") != "activity_liveness"
+
+    # infra actor → never counts as agent activity
+    reg2 = _seed_busy(
+        RoleSessionRegistry(tmp_path / "rs2.yaml", project_root=str(tmp_path)),
+        "run-manager", stale=True,
+    )
+    apply_worker_activity_heartbeat(
+        reg2, ZfEvent(type="codex.hook.pre_tool_use", actor="run-manager",
+                      ts="2026-07-09T04:00:00+00:00"))
+    _, p2 = reg2.get_last_heartbeat("run-manager")
+    assert p2.get("source") != "activity_liveness"
+
+    # non-activity event → no-op
+    reg3 = _seed_busy(
+        RoleSessionRegistry(tmp_path / "rs3.yaml", project_root=str(tmp_path)),
+        "dev-2", stale=True,
+    )
+    apply_worker_activity_heartbeat(
+        reg3, ZfEvent(type="worker.state.changed", actor="dev-2",
+                      ts="2026-07-09T04:00:00+00:00"))
+    _, p3 = reg3.get_last_heartbeat("dev-2")
+    assert p3.get("source") != "activity_liveness"

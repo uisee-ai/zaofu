@@ -9,8 +9,8 @@ description: "Use to synthesize bounded gap tasks from a failed verify/rescan re
 
 gap task synth 的合法触发源不止失败的 `verify` / rescan 结果:Tier-2 的
 `diagnosis.completed`(`next_action: route_to_lane`)也是合法触发源——其结论经
-`candidate_rework` 的 feedback 管线回流 replan(`known_types.py:381`、
-`runtime/diagnosis.py`)。以诊断报告触发时,lane 归属优先采纳报告的 `target_lane`。
+`candidate_rework` 的 feedback 管线回流 replan(`known_types.py`
+`KNOWN_EVENT_TYPES` 注册、`runtime/diagnosis.py`)。以诊断报告触发时,lane 归属优先采纳报告的 `target_lane`。
 
 ## Task Shape
 
@@ -56,6 +56,11 @@ Add an `evidence_contract` or source fields that preserve:
 - `repro_ref` and `acceptance_id` when available;
 - `replan_history_ref`;
 - `affected_tasks` and `gate_changes` when the replan changed expectations.
+- `supersedes_task_ids` only when the semantic replan replaces failed tasks
+  rather than appending missing work. Replacement task ids must be new; the
+  kernel removes the superseded ids from the amended full task-map and records
+  `task.superseded` during normal task-map adoption. Do not set this field for
+  ordinary additive verify gaps.
 
 The worker briefing must show this context before implementation.
 

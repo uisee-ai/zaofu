@@ -844,3 +844,18 @@ def test_run_manager_projection_uses_archived_observation_when_prompt_is_newer(
         item for item in projection["pending_actions"]
         if item.get("failure_class") == "run_manager_resident_agent_stalled"
     ]
+
+
+def test_resident_briefing_contains_wait_semantics_rules(tmp_path) -> None:
+    """ZF-E2E-PRDCTL-P1-5: resume 前置三点核对(完成证据/兄弟在飞/unroutable
+    前科)必须在 briefing 里——csvstats 轮 resident 4 次把等待判成停滞。"""
+    role = build_resident_run_manager_role(_resident_config())
+    assert role is not None
+    briefing = build_resident_run_manager_briefing(
+        project_root=tmp_path,
+        state_dir=tmp_path / ".zf",
+        role=role,
+    )
+    assert "完成证据早于 stall 信号仍然算完成" in briefing
+    assert "等待中的流不是停滞" in briefing
+    assert "workflow.resume.gate_unroutable" in briefing

@@ -35,13 +35,31 @@ metadata:
       roles: 11
       recommended_for: [refactor]
       preferred: true
-      order: 32
+      # 33:与 prd-light(32,build 家族与 prd-fanout 相邻)错开撞号。
+      order: 33
 spec:
   profile_sources: [common/profiles.yaml]
   uses: [refactor-controller-runtime/v3]
   version: "1.0"
   project:
     name: refactor-lane-v3
+  # 合并候选树质量门(多 lane 必配,r4 F10)。填目标项目真实命令后取消
+  # 注释;多 lane 无 gates 时 start/validate fail-closed(显式豁免:
+  # workflow.allow_unverified_candidate: true)。
+  # quality_gates:
+  #   static:
+  #     required_checks:
+  #       - "TODO: 目标项目 typecheck 命令"
+  #       - "TODO: 目标项目单测/parity 冒烟命令"
+  #     on_fail: "combined candidate tree failed static gate — 修复后重触发集成"
+  runtime:
+    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
+    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
+    # (默认 main;master 基线仓请 override 为 master)。
+    git:
+      auto_ship_on_judge_passed: true
   workflow:
     dag:
       external_triggers: [refactor.scan.requested]
+    rework_routing:
+      static_gate.failed: dev-lane-0

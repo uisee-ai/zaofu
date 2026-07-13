@@ -323,6 +323,7 @@ def test_push_once_delivers_owner_visible_message(project: Path, capsys):
             "message_id": "omsg-cli-1",
             "attention_id": "attn-cli-1",
             "severity": "high",
+            "human_action_required": True,
             "title": "needs owner",
             "summary": "manual review required",
             "delivery_targets": ["feishu"],

@@ -190,7 +190,7 @@ Three consequences make these recommendations more than review hygiene:
 
 1. **`split_commit` has a kernel consumer — commit granularity is not cosmetic.**
    Candidate integration extracts commits idempotently by patch-id via
-   `git rev-list --cherry-pick` (`src/zf/runtime/candidates.py:1373-1381`,
+   `git rev-list --cherry-pick` (`src/zf/runtime/candidates.py` `_task_commits`,
    FIX-10): an incremental base that already contains an equivalent patch is
    excluded so it is not re-applied. A big-ball commit that later conflicts is
    rolled back as a whole package (`yoke/incremental-delivery` writes this

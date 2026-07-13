@@ -66,6 +66,12 @@ def build_orchestrator_briefing(
     sections.append(_render_trigger(trigger_event))
     sections.append("")
 
+    triage_contract = _render_rework_triage_contract(trigger_event)
+    if triage_contract:
+        sections.append("## Rework Semantic Triage Contract")
+        sections.append(triage_contract)
+        sections.append("")
+
     sections.append("## Features")
     sections.append(_render_features(state_dir))
     sections.append("")
@@ -510,6 +516,54 @@ def _render_trigger(event: ZfEvent) -> str:
     if event.payload:
         lines.append(f"- **Payload**: `{event.payload}`")
     return "\n".join(lines)
+
+
+def _render_rework_triage_contract(event: ZfEvent) -> str:
+    if event.type != "orchestrator.rework.triage.requested":
+        return ""
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    request_id = str(payload.get("request_id") or "")
+    task_id = str(event.task_id or payload.get("task_id") or "")
+    fingerprint = str(payload.get("failure_fingerprint") or "")
+    failure_count = int(payload.get("failure_count") or 0)
+    recovery_context = payload.get("recovery_context_ref")
+    recovery_context_ref = (
+        str(recovery_context.get("ref") or "")
+        if isinstance(recovery_context, dict)
+        else str(recovery_context or "")
+    )
+    advice = {
+        "schema_version": "orchestrator.rework-triage.advice.v1",
+        "request_id": request_id,
+        "task_id": task_id,
+        "failure_fingerprint": fingerprint,
+        "recommended_action": "REPLACE_WITH_ONE_ALLOWED_VALUE",
+        "guidance": "REPLACE_WITH_CONCISE_ACTIONABLE_GUIDANCE",
+        "evidence_event_ids": payload.get("failure_event_ids") or [],
+        "apply_policy": "proposal_only",
+    }
+    return "\n".join([
+        "This is proposal-only semantic triage requested by Run Manager.",
+        "Do not dispatch, reassign, edit TaskStore, emit `task_map.ready`, or emit "
+        "`orchestrator.replan_requested`.",
+        f"Read task `{task_id}`, failure fingerprint `{fingerprint}`, and all "
+        f"{failure_count} evidence events listed in the trigger payload.",
+        (
+            f"Read the bounded recovery context sidecar `{recovery_context_ref}` before deciding."
+            if recovery_context_ref
+            else "The trigger has no recovery context sidecar; use the listed evidence events only."
+        ),
+        "Choose exactly one `recommended_action`: `continue_rework`, "
+        "`precise_rework`, `revise_contract`, `split_task`, `replan`, "
+        "`diagnose`, or `human`.",
+        "Then emit exactly one advisory event with concise evidence-based guidance:",
+        "```bash",
+        "zf emit orchestrator.rework.triage.recorded "
+        f"--task {json.dumps(task_id)} --actor orchestrator --payload "
+        f"{json.dumps(json.dumps(advice, ensure_ascii=False))}",
+        "```",
+        "Run Manager validates and applies the advice; your turn ends after this event.",
+    ])
 
 
 def _render_workflow_from_topology(config: ZfConfig) -> str:

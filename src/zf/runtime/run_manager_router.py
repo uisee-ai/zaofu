@@ -7,6 +7,12 @@ from collections import Counter
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from zf.runtime.run_manager_rework_triage import (
+    ORCHESTRATOR_TRIAGE_ACTIONS,
+    triage_action_preflight,
+    triage_expected_downstream_events,
+)
+
 
 SAFE_BATCH_ACTIONS = frozenset({"repair_failed_children", "reemit_candidate_ready"})
 SAFE_TASK_ACTIONS = frozenset({
@@ -110,8 +116,8 @@ def route_for_safe_action(safe_resume_action: str) -> ActionRoute:
         return ActionRoute(
             safe_resume_action=safe_resume_action,
             failure_class="task_map_drift",
-            owner_route="orchestrator_replan",
-            action_policy="human_escalate",
+            owner_route="run_manager",
+            action_policy="needs_diagnosis",
             intervention_class="semantic_replan",
             attempt_cap=1,
             expected_downstream_events=tuple(sorted(expected_downstream_events(safe_resume_action))),
@@ -137,12 +143,55 @@ def classify_recovery_context(action: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+SURGERY_ACTIONS = frozenset({
+    # ZF-E2E-PRDCTL-P2-8:operator 手术动作词表——RM 可提案,恒需 owner
+    # 批准(payload 补键 re-emit / 简报重投 / 死决策 dismiss / ship 重试)。
+    "payload-repair-reemit",
+    "briefing-redeliver",
+    "human-decision-dismiss",
+    "ship-retry",
+})
+
+
 def decide_action_policy(
     *,
     action: str,
     payload: dict[str, Any],
     mutating_resume_supported: bool = False,
 ) -> dict[str, Any]:
+    if action in SURGERY_ACTIONS:
+        return _decision(
+            "needs_approval",
+            executable=False,
+            payload=payload,
+            preflight={"status": "passed", "missing": []},
+            reason="operator-surgery action always requires owner approval",
+        )
+    if action in ORCHESTRATOR_TRIAGE_ACTIONS:
+        preflight = preflight_action(action=action, payload=payload)
+        if preflight["status"] == "blocked":
+            return _decision(
+                "needs_diagnosis",
+                executable=True,
+                payload=payload,
+                preflight=preflight,
+                reason="orchestrator triage action is missing required evidence",
+            )
+        if str(payload.get("action_policy") or "") == "human_escalate":
+            return _decision(
+                "human_escalate",
+                executable=False,
+                payload=payload,
+                preflight=preflight,
+                reason="orchestrator triage advice requires an owner decision",
+            )
+        return _decision(
+            "auto_decide",
+            executable=True,
+            payload=payload,
+            preflight=preflight,
+            reason="Run Manager owns the bounded orchestrator triage handoff",
+        )
     if action in DIAGNOSIS_ACTIONS:
         preflight = preflight_action(action=action, payload=payload)
         if preflight["status"] == "blocked":
@@ -323,11 +372,14 @@ def decide_action_policy(
     if preflight["status"] == "blocked":
         if safe_action == "trigger_rework":
             return _decision(
-                "human_escalate",
-                executable=False,
+                "needs_diagnosis",
+                executable=True,
                 payload=payload,
                 preflight=preflight,
-                reason="trigger_rework mutates broad candidate scope and requires owner approval",
+                reason=(
+                    "trigger_rework requires Run Manager diagnosis before the "
+                    "controlled mutating action can be enabled"
+                ),
             )
         return _decision(
             "needs_diagnosis",
@@ -375,6 +427,8 @@ def preflight_action(
     warnings = []
     safe_action = str(payload.get("safe_resume_action") or "")
     checkpoint_id = str(payload.get("checkpoint_id") or "")
+    if action in ORCHESTRATOR_TRIAGE_ACTIONS:
+        return triage_action_preflight(action, payload)
     if action in DIAGNOSIS_ACTIONS:
         if not checkpoint_id:
             failures.append("missing_checkpoint_id")
@@ -808,6 +862,9 @@ def _no_progress_fingerprint(
 
 
 def expected_downstream_events(safe_action: str) -> set[str]:
+    triage_events = triage_expected_downstream_events(safe_action)
+    if triage_events:
+        return triage_events
     if safe_action == "diagnose_attention":
         return {"run.manager.autoresearch.requested", "run.manager.resident.prompted"}
     if safe_action == "worker_lifecycle_recover":
@@ -889,6 +946,7 @@ __all__ = [
     "DIAGNOSIS_ACTIONS",
     "INTERVENTION_CLASSES",
     "OWNER_APPROVAL_ACTIONS",
+    "ORCHESTRATOR_TRIAGE_ACTIONS",
     "REPAIR_CLOSEOUT_ACTIONS",
     "RESIDENT_AGENT_ACTIONS",
     "SAFE_BATCH_ACTIONS",

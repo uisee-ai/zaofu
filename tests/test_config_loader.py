@@ -140,6 +140,86 @@ def test_load_safety_tool_closure_can_disable(tmp_path: Path):
     assert cfg.safety.tool_closure_enabled is False
 
 
+def test_security_event_signing_typo_rejected(tmp_path: Path):
+    # P1-3: a typo'd sub-key must not silently fall back to default (which would
+    # leave event signing disabled while `zf validate` stays green).
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "security:\n"
+        "  event_signing:\n"
+        "    enable: true\n"  # typo: should be `enabled`
+    )
+    with pytest.raises(ConfigError, match="security.event_signing"):
+        load_config(p)
+
+
+def test_security_event_signing_valid_loads(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "security:\n"
+        "  event_signing:\n"
+        "    enabled: true\n"
+    )
+    cfg = load_config(p)
+    assert cfg.security.event_signing.enabled is True
+
+
+def test_verification_contract_subkey_typo_rejected(tmp_path: Path):
+    # P1-3: a typo'd gate key must surface, not silently disable the gate.
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "verification:\n"
+        "  contract:\n"
+        "    requird: true\n"  # typo: should be `required`
+    )
+    with pytest.raises(ConfigError, match="verification.contract"):
+        load_config(p)
+
+
+def test_verification_section_typo_rejected(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "verification:\n"
+        "  sceope:\n"  # typo: should be `scope`
+        "    fail_closed: true\n"
+    )
+    with pytest.raises(ConfigError, match="verification"):
+        load_config(p)
+
+
+def test_verification_full_valid_loads(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "verification:\n"
+        "  contract:\n"
+        "    required: true\n"
+        "    quality_required: true\n"
+        "  scope:\n"
+        "    fail_closed: true\n"
+        "  event_schema:\n"
+        "    mode: blocking\n"
+    )
+    cfg = load_config(p)
+    assert cfg.verification.contract.required is True
+    assert cfg.verification.scope.fail_closed is True
+    assert cfg.verification.event_schema.mode == "blocking"
+
+
 def test_load_autoresearch_trigger_policy_budget(tmp_path: Path):
     p = tmp_path / "zf.yaml"
     p.write_text(
@@ -1847,6 +1927,9 @@ class TestVersionedPreset:
         cfg = load_config(p)
         assert cfg.budget_enforcement_enabled is True
         assert cfg.workflow.harness_profile == "strict"
+        # P1-3: the strict preset now actually enforces the contract (required
+        # was dead top-level config before).
+        assert cfg.verification.contract.required is True
 
     def test_project_override_wins(self, tmp_path: Path):
         p = tmp_path / "zf.yaml"
@@ -1879,8 +1962,13 @@ class TestVersionedPreset:
             resolve_versioned_preset,
         )
         got = resolve_versioned_preset("refactor-strict/v1")
-        got["verification"]["required"] = False
-        assert VERSIONED_PRESETS["refactor-strict/v1"]["verification"]["required"] is True
+        got["verification"]["contract"]["required"] = False
+        assert (
+            VERSIONED_PRESETS["refactor-strict/v1"]["verification"]["contract"][
+                "required"
+            ]
+            is True
+        )
 
 
 class TestPublishesDerivation:

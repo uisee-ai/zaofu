@@ -57,7 +57,8 @@ the watcher on emit:
 }
 ```
 
-- `run_state_snapshot` 是当前字段名(`orchestrator.py:1331` 铸造)。旧名
+- `run_state_snapshot` 是当前字段名(`orchestrator.py` `_run_zaofu_bug_scan`
+  铸造)。旧名
   `cangjie_state_snapshot` 保留为 legacy alias(`SignatureMatch` 上的只读
   property;`zf bug-fix-cycle` 也向后兼容读 both keys),新代码只写
   `run_state_snapshot`。

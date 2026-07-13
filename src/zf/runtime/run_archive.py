@@ -625,10 +625,10 @@ def close_test_task_for_passed_run(
     if task is None or task.status in TASK_TERMINAL_STATES:
         return None
 
-    updated = task_store.update(task_id, status="done")
-    if updated is None:
-        return None
-
+    # P0-2 (2026-07-09): event-first. Emit task.status_changed BEFORE the store
+    # mutation (which archives + pops the terminal task) so a crash between them
+    # cannot leave events.jsonl missing the terminal event while the archive shows
+    # done. Task existence + non-terminal status were already verified above.
     event = writer.emit(
         "task.status_changed",
         actor="zf-cli",
@@ -643,6 +643,7 @@ def close_test_task_for_passed_run(
             "trigger_event": "run.completed",
         },
     )
+    task_store.update(task_id, status="done")
     try:
         close_feature_if_all_tasks_done(
             state_dir=Path(state_dir),

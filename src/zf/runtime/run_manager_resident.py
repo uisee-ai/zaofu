@@ -84,6 +84,7 @@ def build_resident_run_manager_role(config: ZfConfig) -> RoleConfig | None:
         publishes=[
             "run.manager.agent.observation",
             "run.manager.agent.recommendation",
+            "orchestrator.rework.triage.recorded",
             "human.escalate",
         ],
     )
@@ -224,6 +225,12 @@ def build_resident_run_manager_briefing(
         "## Decision Discipline",
         "",
         "- 如果只是 worker 正在正常执行,结论写 `status=watching`,不要打断。",
+        "- 建议 resume/rework 前必须依次核对三点(任一命中 → 建议 wait 并写明依据):",
+        "  ① 该任务是否已有完成证据(task.done/test.passed/judge.passed 等 closeout 事件,"
+        "不论新旧——完成证据早于 stall 信号仍然算完成);",
+        "  ② 所在 fanout 聚合是否未收拢、是否有兄弟 child 在飞——等待中的流不是停滞;",
+        "  ③ 同一 checkpoint 是否已有 workflow.resume.gate_unroutable 前科——"
+        "unroutable 是确定性事实,重复建议只会产生 no-op。",
         "- 如果发现已知 deterministic recovery 可以走,写"
         " `run.manager.agent.recommendation`,说明 action 名、证据 refs、预期 downstream event。",
         "- 如果是 harness bug、candidate hygiene/gate bug、projection/action bug,优先写"

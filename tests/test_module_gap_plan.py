@@ -63,3 +63,39 @@ def test_gap_tasks_append_to_full_task_map_as_canonical_tasks() -> None:
     assert appended["parent_task_id"] == "CANGJIE-WEB-001"
     assert appended["allowed_paths"] == ["web/src/**", "packages/web-adapter/**"]
     assert validate_task_map_payload(amended).passed is True
+
+
+def test_semantic_replan_replaces_superseded_task_in_amended_map() -> None:
+    base = {
+        "schema_version": "task-map.v1",
+        "feature_id": "ISSUE-1",
+        "source_refs": {"source_index_ref": "docs/plans/source-index.json"},
+        "tasks": [{
+            "task_id": "ISSUE-1-MIXED",
+            "title": "mixed task",
+            "owner_role": "dev",
+            "wave": 0,
+            "allowed_paths": ["src/**"],
+            "allowed_paths_reason": "initial mixed slice",
+            "acceptance": ["issue is fixed"],
+        }],
+    }
+    replacements = [{
+        "task_id": "ISSUE-1-CORE",
+        "parent_task_id": "ISSUE-1-MIXED",
+        "claim_paths": ["src/core/**", "tests/test_core.py"],
+        "acceptance": ["core expiry behavior is fixed"],
+        "verify_commands": ["uv run pytest tests/test_core.py"],
+        "source_refs": ["docs/issues/1.md"],
+        "supersedes_task_ids": ["ISSUE-1-MIXED"],
+    }]
+
+    amended = build_gap_task_map_amend(
+        base,
+        gap_tasks=replacements,
+        supersedes_task_map_ref="artifacts/ISSUE-1/task_map.json",
+    )
+
+    assert [task["task_id"] for task in amended["tasks"]] == ["ISSUE-1-CORE"]
+    assert amended["amend"]["superseded_task_ids"] == ["ISSUE-1-MIXED"]
+    assert validate_task_map_payload(amended).passed is True

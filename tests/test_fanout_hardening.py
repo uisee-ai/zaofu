@@ -212,6 +212,14 @@ def test_refactor_scan_rejects_file_path_target_ref_before_dispatch(tmp_path: Pa
     assert failed
     assert failed[-1].payload["reason"] == "target_ref_not_a_git_ref"
     assert failed[-1].payload["failure_classification"] == "operator_config"
+    # v3 EventSchemaD (schema_profiles: refactor.scan.failed requires
+    # fanout_id/child_id/status/reason). Without child_id+status the blocking
+    # discriminator rejected this fail-fast and the scan wedged for hours
+    # (2026-07-10 E2E). Assert the operator-config cancellation is schema-
+    # complete so it surfaces cleanly instead of livelocking.
+    for field in ("fanout_id", "child_id", "status", "reason"):
+        assert failed[-1].payload.get(field), f"refactor.scan.failed missing {field!r}"
+    assert failed[-1].payload["status"] == "failed"
     assert any(
         event.type == "fanout.cancelled"
         and event.payload.get("reason") == "target_ref_not_a_git_ref"
@@ -805,3 +813,60 @@ def test_synth_timeout_seconds_config_overrides_stage_budget(tmp_path: Path):
         if e.type == "fanout.synth.completed"
         and e.payload.get("reason") == "synth_timeout"
     ], "configured synth_timeout_seconds must override the stage budget"
+
+
+def test_duplicate_child_dispatch_within_send_window_is_deferred(
+    tmp_path: Path,
+    monkeypatch,
+):
+    """ZF-E2E-PRDCTL-P2-7-3:同 (instance, run_id) 10s 内重复投递 = 简报
+    吞没签名(深水 2 秒双派),defer 而非直投;不同 run_id(重播/新 fanout)
+    不受影响。"""
+    monkeypatch.setenv("ZF_CLI_CMD", "uv --project /repo run zf")
+    _state_dir, log, _transport, orch = _state(tmp_path)
+    _start(orch)
+    dispatched = next(event for event in log.read_all()
+                      if event.type == "fanout.child.dispatched")
+    fanout_id = dispatched.payload["fanout_id"]
+    child_id = dispatched.payload["child_id"]
+    run_id = dispatched.payload["run_id"]
+    role_instance = dispatched.payload["role_instance"]
+    role = next(iter(orch._fanout_roles([role_instance])))
+
+    # 同 run_id 立即再投 → defer(briefing_send_window_active)
+    ok = orch._ensure_fanout_role_dispatchable(
+        role=role,
+        fanout_id=fanout_id,
+        stage_id="scan",
+        child_id=child_id,
+        run_id=run_id,
+        trace_id="t1",
+    )
+    assert ok is False
+    deferred = [event for event in log.read_all()
+                if event.type == "fanout.child.dispatch_deferred"]
+    assert deferred
+    assert deferred[-1].payload["reason"] == "briefing_send_window_active"
+
+    # 不同 run_id(重播/新 fanout)不受窗口影响
+    ok2 = orch._ensure_fanout_role_dispatchable(
+        role=role,
+        fanout_id=fanout_id,
+        stage_id="scan",
+        child_id=child_id,
+        run_id=f"{run_id}-replay",
+        trace_id="t1",
+    )
+    assert ok2 is True
+
+    # skip_send_window(watchdog retry 路径)旁路
+    ok3 = orch._ensure_fanout_role_dispatchable(
+        role=role,
+        fanout_id=fanout_id,
+        stage_id="scan",
+        child_id=child_id,
+        run_id=run_id,
+        trace_id="t1",
+        skip_send_window=True,
+    )
+    assert ok3 is True

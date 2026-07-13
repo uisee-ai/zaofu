@@ -33,7 +33,7 @@ These two paths do NOT overlap — pick by whether you are inside a fanout run:
   `zf spec ingest`. That path is owned by **`zf-plan-task-map-contract`**, and
   the kernel already de-dupes re-minting by fingerprint — emitting
   `plan.minting.suppressed` when the same task_map would be minted twice
-  (`src/zf/runtime/orchestrator_fanout.py:3042,3086`). Do NOT route fanout plan
+  (`src/zf/runtime/orchestrator_fanout.py` `_plan_approval_satisfied`). Do NOT route fanout plan
   output through `zf spec ingest`; it would bypass the task_map contract and the
   suppression fingerprint.
 - **Manual / single-session spec landing** (no fanout, an arch/operator drafting

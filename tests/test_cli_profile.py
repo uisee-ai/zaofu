@@ -8,6 +8,7 @@ import json
 import yaml
 
 from zf.cli.profile import run_bootstrap, run_detect, run_recommend
+from zf.core.config.candidate_gate import combined_candidate_gate_gap
 from zf.core.config.loader import load_config
 from zf.core.config.render import build_config_inspection_report
 
@@ -35,8 +36,8 @@ def test_cli_recommend_json(tmp_path, capsys):
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     rec = payload["recommendation"]
-    # build on real code → validated prod flow
-    assert rec["archetype"] == "prd-fanout-claude" and rec["catalog"] == "flow"
+    # build on real code → validated prod flow (claude default = controller v3)
+    assert rec["archetype"] == "prd-fanout-v3-claude" and rec["catalog"] == "flow"
     assert payload["profile"]["confidence"] == "high"
 
 
@@ -94,9 +95,35 @@ def test_cli_bootstrap_refactor_flow_copies_profile_sources_and_skills(tmp_path)
     config = load_config(tmp_path / "zf.yaml")
     assert len(config.roles) == 11
     assert any(role.skills for role in config.roles)
+    assert combined_candidate_gate_gap(config) == ""
+    assert config.quality_gates["static"].required_checks == ["npm run lint", "npm test"]
+    # fb9aa16a 起 profile 携带 skill_sources(2026-07-08 agent-skills 退役
+    # 后只剩 zaofu-skills);bootstrap 自包含契约 = 启用技能(含 bundle 直挂
+    # 的裸 yoke 名)全部 vendor 进项目 `skills/`,拷贝的 profile 源全部重写
+    # 为本地相对路径,不留机器绝对路径。
     assert [(source.name, source.path) for source in config.skill_sources] == [
-        ("zaofu-skills", "skills")
+        ("zaofu-skills", "skills"),
     ]
+    enabled = {
+        str(skill)
+        for role in config.roles
+        for skill in (role.skills or [])
+    }
+    vendored = {
+        p.parent.name
+        for p in (tmp_path / "skills").glob("*/SKILL.md")
+    }
+    missing = sorted(enabled - vendored)
+    assert not missing, f"enabled skills not vendored locally: {missing}"
+    # Self-containment must include the transitive dependency closure, not just
+    # directly-enabled skills: zf-yoke-*-role-context wrappers declare
+    # `dependencies:` (method skills) materialized on demand at runtime. If the
+    # closure isn't vendored the project breaks on another host / stale repo
+    # (2026-07-08 E2E finding). source-verification is a dep of the dev-worker
+    # wrapper and is never a directly-enabled bundle name here → proves closure.
+    assert "zf-yoke-dev-worker-role-context" in vendored
+    for dep in ("source-verification", "tdd-evidence", "verify-review"):
+        assert dep in vendored, f"dependency-closure skill not vendored: {dep}"
     report = build_config_inspection_report(
         config,
         config_path=tmp_path / "zf.yaml",

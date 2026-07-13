@@ -239,6 +239,53 @@ class TestGenerateRoleInstructions:
         assert "/impl-helper" in demand_section
         assert "mode: load-on-demand" in demand_section
 
+    def test_skill_dependencies_are_rendered_as_allowed_index_entries(self):
+        role = RoleConfig(
+            name="verify",
+            backend="claude-code",
+            skills=["zf-yoke-test-evaluator-role-context"],
+        )
+        entries = [
+            SkillLockEntry(
+                role="verify",
+                instance_id="verify",
+                backend="claude-code",
+                task_id=None,
+                run_id=None,
+                name="zf-yoke-test-evaluator-role-context",
+                source="skills/zf-yoke-test-evaluator-role-context/SKILL.md",
+                sha256="ctx",
+                description="Verification role context.",
+                auto_inject=True,
+                load_on_demand=False,
+                dependencies=("verify-review",),
+            ),
+            SkillLockEntry(
+                role="verify",
+                instance_id="verify",
+                backend="claude-code",
+                task_id=None,
+                run_id=None,
+                name="verify-review",
+                source="yoke/verify-review/SKILL.md",
+                sha256="method",
+                description="Verify review method.",
+                materialized_to=".zf/workdirs/verify/project/.claude/skills/verify-review",
+                dependency_of=("zf-yoke-test-evaluator-role-context",),
+            ),
+        ]
+
+        result = generate_role_instructions(
+            self.config,
+            role,
+            skill_entries=entries,
+        )
+
+        assert "/zf-yoke-test-evaluator-role-context" in result
+        assert "/verify-review" in result
+        assert "dependency of: zf-yoke-test-evaluator-role-context" in result
+        assert "unlisted Claude skills" in result
+
     def test_codex_skill_entries_include_backend_discipline(self):
         role = RoleConfig(name="dev", backend="codex", skills=["impl-helper"])
 
@@ -882,3 +929,17 @@ class TestTaskBriefing:
         assert "child reports" in prompt
         assert "do not look for a task.md" in prompt
         assert "load the kernel-managed task.md" not in prompt
+
+
+def test_completion_contract_names_ref_grammar():
+    """ref 语法契约(2026-07-08 第四批):evidence_refs 条目 = <scheme>:<value>
+    结构化引用或真实存在的裸路径——agent scheme 拼写漂移(task_map:/task-map:)
+    与裸路径虚指都靠这句合同教育 + completion_honesty 按盘核验兜底。"""
+    from zf.runtime.injection import _append_completion_contract_block
+
+    lines: list[str] = []
+    _append_completion_contract_block(lines, advisory=False)
+    text = "\n".join(lines)
+    assert "`<scheme>:<value>` reference" in text
+    assert "actually exists on disk" in text
+    assert "completion honesty gate" in text

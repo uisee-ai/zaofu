@@ -37,6 +37,7 @@ from zf.core.workflow.inspection_render import (
     write_workflow_inspection_artifacts,
 )
 from zf.runtime.transport import make_transport, TmuxTransport
+from zf.runtime.tmux import TmuxError
 from zf.runtime.backend import get_adapter
 from zf.runtime.codex_hooks import write_codex_hook_settings
 from zf.runtime.injection import generate_role_instructions
@@ -579,6 +580,19 @@ def run(args: argparse.Namespace) -> int:
                 print(hint, file=sys.stderr)
             return 1
 
+    # ⑤c(2026-07-08):多 lane fanout_writer 无 quality_gates(且未显式
+    # 豁免)不予 start——candidate 合成树不经验证即进 judge 的洞,validate
+    # 的 WARN 连打三轮无人理(LB-3 教训同型),升 fail-closed。
+    from zf.core.config.candidate_gate import combined_candidate_gate_gap
+
+    candidate_gate_gap = combined_candidate_gate_gap(config)
+    if candidate_gate_gap:
+        print(
+            "Error: combined candidate gate check failed:", file=sys.stderr,
+        )
+        print(f"  - {candidate_gate_gap}", file=sys.stderr)
+        return 1
+
     # 3. Check .zf/ initialized
     state_dir = project_root / config.project.state_dir
     if not state_dir.exists():
@@ -1038,6 +1052,27 @@ def run(args: argparse.Namespace) -> int:
         # `workflow.wake_extensions.{hooks,agent}.enabled` opt-in.
         wake_patterns = sorted(compute_effective_wake_patterns(config))
         rate_limiter = WakeRateLimiter(rate_limits_for_config(config))
+        # ZF-E2E-RACING-P1: boot-side twin of the graceful-stop in-flight
+        # cleanup. Start (re)spawns worker panes, so a dispatch that was in
+        # flight before this process can never complete; requeue it unless
+        # its current dispatch already has stage progress (pending-handoff
+        # reconciliation owns those). Must run BEFORE the Orchestrator
+        # constructor revives active_dispatch_ids from kanban.json.
+        from zf.runtime.shutdown import requeue_stale_inflight_tasks
+
+        try:
+            requeue_stale_inflight_tasks(
+                state_dir,
+                event_log_from_project(state_dir, config=config),
+                source="zf_start_boot_reconcile",
+                reason=(
+                    "zf start boot reconcile — worker sessions do not "
+                    "survive restart; release in-flight WIP "
+                    "(ZF-E2E-RACING-P1 2026-07-11)"
+                ),
+            )
+        except Exception:
+            pass
         orchestrator = Orchestrator(
             state_dir, config, transport, project_root=project_root,
         )
@@ -1164,6 +1199,23 @@ def run(args: argparse.Namespace) -> int:
             # Don't call stop() or it'll immediately cancel the threads
             # we just started.
 
+    except TmuxError as exc:
+        # ZF-E2E-PRDCTL-P2-7-6:boot spawn 竞态(capture-pane 撞 pane 消失)
+        # 此前未捕获,异常带着半建的 tmux 会话与被持有的 loop.lock 冒泡
+        # ——前台路径 finally 不释放锁,残余线程让进程僵活(deepwater
+        # boot 僵尸持锁实证)。fail-closed:清会话、放锁、非零退出。
+        print(f"Error: tmux boot failed: {exc}", file=sys.stderr)
+        import subprocess as _subprocess
+        session_name = str(getattr(config.session, "tmux_session", "") or "")
+        for name in {session_name, f"{session_name}-run-manager"} - {""}:
+            _subprocess.run(
+                ["tmux", "kill-session", "-t", name],
+                capture_output=True,
+                check=False,
+            )
+        watcher_guard.release()
+        _release_lock(lock_fh, lock_path)
+        return 1
     finally:
         if autoresearch_resident_sidecar is not None:
             from zf.runtime.autoresearch_resident_sidecar import (

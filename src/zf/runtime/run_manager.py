@@ -46,6 +46,16 @@ from zf.runtime.run_manager_reports import (
     build_regression_backlog_candidates,
     build_retrospective_markdown,
 )
+from zf.runtime.run_manager_rework_triage import (
+    TRIAGE_APPLY_ACTION,
+    TRIAGE_RECORDED,
+    TRIAGE_REQUEST_ACTION,
+    TRIAGE_REQUESTED,
+    active_rework_triage_task_ids,
+    is_semantic_triage_cap,
+    pending_rework_triage_actions,
+)
+from zf.runtime.recovery_context import write_task_recovery_context
 from zf.runtime.run_manager_router import (
     ACTION_POLICIES,
     SAFE_BATCH_ACTIONS,
@@ -55,6 +65,10 @@ from zf.runtime.run_manager_router import (
     decide_action_policy as router_decide_action_policy,
     expected_downstream_events as router_expected_downstream_events,
     preflight_action,
+)
+from zf.runtime.semantic_replan import (
+    SEMANTIC_REPLAN_ACTION,
+    enrich_semantic_replan_action,
 )
 from zf.runtime.run_manager_wait_hint import (
     build_resident_repair_policy_projection,
@@ -156,6 +170,10 @@ _SAFE_BATCH_ACTIONS = set(SAFE_BATCH_ACTIONS)
 _SAFE_TASK_ACTIONS = set(SAFE_TASK_ACTIONS)
 _ACTION_POLICIES = set(ACTION_POLICIES)
 _DIAGNOSIS_REQUEST_STALE_SECONDS = 300
+# Once the resident anchors a request (loop.accepted/started) the bounded
+# runner guarantees a terminal event, so the stale window widens to ~2x the
+# 30min runner fallback bound; it only fires if the resident itself died.
+_DIAGNOSIS_ANCHORED_STALE_SECONDS = 3600
 
 
 @dataclass(frozen=True)
@@ -331,14 +349,15 @@ def run_manager_tick(
             emit_self_repair_closeouts,
         )
 
-        repairs_dispatched = dispatch_pending_self_repairs(
-            events,
-            writer,
-            request_types=(RUN_MANAGER_REPAIR_ACCEPTED,),
-            dispatch_actor="run-manager",
-            spawn=spawn_repairs,
-            backend=repair_backend,
-        )
+        if not _resident_owns_self_repair_execution(config):
+            repairs_dispatched = dispatch_pending_self_repairs(
+                events,
+                writer,
+                request_types=(RUN_MANAGER_REPAIR_ACCEPTED,),
+                dispatch_actor="run-manager",
+                spawn=spawn_repairs,
+                backend=repair_backend,
+            )
         if repairs_dispatched:
             events = _read_events(state_dir, event_log=event_log)
         repair_closeouts = emit_self_repair_closeouts(events, writer)
@@ -641,9 +660,49 @@ def build_run_manager_projection(
     )
     context = build_run_context_bundle(state_dir, events, project_root=project_root)
     workflow_resume = _workflow_resume_projection(state_dir, config, events)
+    strict = getattr(config.workflow, "strict_triggers", None)
+    triage_threshold = int(getattr(strict, "rework_attempts_gte", 0) or 0)
+    resident_agent = build_resident_agent_projection(events, config=config)
+    rework_triage_actions = pending_rework_triage_actions(
+        events,
+        threshold=triage_threshold,
+        stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
+        advisor_available=any(
+            str(getattr(role, "name", "") or "") == "orchestrator"
+            for role in getattr(config, "roles", []) or []
+        ),
+        resident_advisor=resident_agent,
+    )
+    rework_triage_actions = [
+        enrich_semantic_replan_action(
+            action,
+            state_dir=state_dir,
+            events=events,
+            config=config,
+        )
+        for action in rework_triage_actions
+    ]
+    for action in rework_triage_actions:
+        action_name = str(action.get("action") or "")
+        action["preflight"] = preflight_action(
+            action=action_name,
+            payload=action,
+        )
+        action["policy_decision"] = router_decide_action_policy(
+            action=action_name,
+            payload=action,
+        )
+    triage_owned_tasks = active_rework_triage_task_ids(
+        events,
+        threshold=triage_threshold,
+    )
     workflow_actions = [
         *_pending_workflow_task_actions(workflow_resume, events),
         *_pending_workflow_batch_actions(workflow_resume, events),
+    ]
+    workflow_actions = [
+        action for action in workflow_actions
+        if str(action.get("task_id") or "") not in triage_owned_tasks
     ]
     attempt_recovery_actions = _pending_task_attempt_recovery_actions(
         state_dir,
@@ -655,7 +714,6 @@ def build_run_manager_projection(
         workflow_resume,
         events,
     )
-    resident_agent = build_resident_agent_projection(events, config=config)
     resident_actions = _pending_resident_agent_actions(resident_agent, events)
     repair_validation_actions = _pending_repair_validation_actions(merge_queue, events)
     failure_closeout_actions = _pending_failure_closeout_activation_actions(events)
@@ -699,7 +757,14 @@ def build_run_manager_projection(
         and not human_gate_actions
         and completion_profile.get("status") != "complete"
     ):
-        semantic_event_actions = _pending_semantic_event_actions(events)
+        semantic_event_actions = _pending_semantic_event_actions(
+            events,
+            triage_threshold=triage_threshold,
+        )
+        semantic_event_actions = [
+            action for action in semantic_event_actions
+            if str(action.get("task_id") or "") not in triage_owned_tasks
+        ]
     attention_actions = []
     if (
         not workflow_actions
@@ -714,12 +779,17 @@ def build_run_manager_projection(
             events,
             resident_agent=resident_agent,
         )
+        attention_actions = [
+            action for action in attention_actions
+            if str(action.get("task_id") or "") not in triage_owned_tasks
+        ]
     runtime_pane_snapshot = _safe_runtime_pane_snapshot(
         state_dir,
         config=config,
         project_root=project_root,
     )
     base_pending_actions = [
+        *rework_triage_actions,
         *workflow_actions,
         *attempt_recovery_actions,
         *worker_actions,
@@ -1078,7 +1148,11 @@ def build_resident_agent_projection(
     agent_event = _last_event_after_index(
         events,
         prompted_index,
-        (RUN_MANAGER_AGENT_OBSERVATION, RUN_MANAGER_AGENT_RECOMMENDATION),
+        (
+            RUN_MANAGER_AGENT_OBSERVATION,
+            RUN_MANAGER_AGENT_RECOMMENDATION,
+            TRIAGE_RECORDED,
+        ),
     )
     if agent_event is None:
         # Runtime event windows may include archived observations before the
@@ -1087,7 +1161,11 @@ def build_resident_agent_projection(
         # stall after log rotation.
         agent_event = _last_event(
             events,
-            (RUN_MANAGER_AGENT_OBSERVATION, RUN_MANAGER_AGENT_RECOMMENDATION),
+            (
+                RUN_MANAGER_AGENT_OBSERVATION,
+                RUN_MANAGER_AGENT_RECOMMENDATION,
+                TRIAGE_RECORDED,
+            ),
         )
     prompt_payload = prompted.payload if prompted and isinstance(prompted.payload, dict) else {}
     prompt_sent = bool(prompt_payload.get("prompted")) if prompted else False
@@ -1132,7 +1210,7 @@ def build_resident_agent_projection(
             "threshold_seconds": threshold_seconds,
             "prompt_age_seconds": prompt_age,
             "reason": (
-                "prompted resident agent did not emit observation or recommendation"
+                "prompted resident agent did not emit observation, recommendation, or triage advice"
                 if stalled else ""
             ),
         },
@@ -2828,6 +2906,11 @@ def _controlled_action_name_from_recommendation(payload: dict[str, Any]) -> str:
         "candidate-rework-apply",
         "failure-closeout-activate",
         "diagnose-attention",
+        # ZF-E2E-PRDCTL-P2-8 手术动作(router 恒 needs_approval)
+        "payload-repair-reemit",
+        "briefing-redeliver",
+        "human-decision-dismiss",
+        "ship-retry",
     }
     if requested_name in supported:
         return requested_name
@@ -3508,6 +3591,30 @@ def _execute_controlled_run_action(
     causation_id: str,
 ) -> str:
     action_name = str(action.get("action") or "")
+    if action_name == TRIAGE_REQUEST_ACTION:
+        return _execute_orchestrator_triage_request(
+            writer=writer,
+            action=action,
+            causation_id=causation_id,
+            state_dir=state_dir,
+            config=config,
+        )
+    if action_name == TRIAGE_APPLY_ACTION:
+        return _execute_orchestrator_triage_advice(
+            writer=writer,
+            action=action,
+            causation_id=causation_id,
+            state_dir=state_dir,
+            config=config,
+        )
+    if action_name == SEMANTIC_REPLAN_ACTION:
+        return _execute_semantic_replan_request(
+            writer=writer,
+            action=action,
+            causation_id=causation_id,
+            state_dir=state_dir,
+            config=config,
+        )
     if action_name == "workflow-batch-resume":
         return _execute_workflow_batch_resume(
             state_dir=state_dir,
@@ -3573,6 +3680,302 @@ def _execute_controlled_run_action(
         human=False,
     )
     return "blocked"
+
+
+def _execute_orchestrator_triage_request(
+    *,
+    writer: EventWriter,
+    action: dict[str, Any],
+    causation_id: str,
+    state_dir: Path,
+    config: ZfConfig,
+) -> str:
+    context_ref = _write_recovery_context_for_action(
+        state_dir=state_dir,
+        writer=writer,
+        action=action,
+        source_event_id=causation_id,
+    )
+    if context_ref is None:
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=causation_id,
+            reason="semantic triage recovery context could not be materialized",
+            human=False,
+        )
+        return "blocked"
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=causation_id,
+        payload={"schema_version": "run-manager.action.v1", **_action_payload(action)},
+    )
+    requested = writer.emit(
+        TRIAGE_REQUESTED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        correlation_id=str(action.get("request_id") or "") or None,
+        payload={
+            "schema_version": "orchestrator.rework-triage.request.v1",
+            "request_id": str(action.get("request_id") or ""),
+            "checkpoint_id": str(action.get("checkpoint_id") or ""),
+            "task_id": str(action.get("task_id") or ""),
+            "role": str(action.get("role") or ""),
+            "failure_fingerprint": str(action.get("fingerprint") or ""),
+            "failure_count": int(action.get("failure_count") or 0),
+            "failure_event_ids": _string_list(action.get("failure_event_ids")),
+            "source_event_ids": _string_list(action.get("source_event_ids")),
+            "trigger_event_type": str(action.get("trigger_event_type") or ""),
+            "summary": str(action.get("summary") or ""),
+            "recovery_context_ref": context_ref,
+            "owner_route": "run_manager",
+            "apply_policy": "proposal_only",
+            "allowed_recommendations": [
+                "continue_rework",
+                "precise_rework",
+                "revise_contract",
+                "split_task",
+                "replan",
+                "diagnose",
+                "human",
+            ],
+        },
+    )
+    outcome = writer.emit(
+        RUN_MANAGER_ACTION_APPLIED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "applied",
+            "event_id": requested.id,
+            "emitted_event_ids": [requested.id],
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        {"ok": True, "status": "applied", "emitted_event_ids": [requested.id]},
+        causation_id=outcome.id,
+        state_dir=state_dir,
+        config=config,
+    )
+    return "applied"
+
+
+def _execute_semantic_replan_request(
+    *,
+    writer: EventWriter,
+    action: dict[str, Any],
+    causation_id: str,
+    state_dir: Path,
+    config: ZfConfig,
+) -> str:
+    trigger = str(action.get("semantic_replan_trigger") or "").strip()
+    task_map_ref = str(action.get("task_map_ref") or "").strip()
+    pdd_id = str(action.get("pdd_id") or action.get("feature_id") or "").strip()
+    if not trigger or not task_map_ref or not pdd_id:
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=causation_id,
+            reason="semantic replan requires trigger, pdd_id, and task_map_ref",
+            human=False,
+        )
+        return "blocked"
+    context_ref = _write_recovery_context_for_action(
+        state_dir=state_dir,
+        writer=writer,
+        action=action,
+        source_event_id=causation_id,
+    )
+    if context_ref is None:
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=causation_id,
+            reason="semantic replan recovery context could not be materialized",
+            human=False,
+        )
+        return "blocked"
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=causation_id,
+        payload={"schema_version": "run-manager.action.v1", **_action_payload(action)},
+    )
+    request = writer.emit(
+        trigger,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        correlation_id=str(action.get("request_id") or "") or None,
+        payload={
+            "schema_version": "semantic-replan-request.v1",
+            "request_id": str(action.get("request_id") or ""),
+            "checkpoint_id": str(action.get("checkpoint_id") or ""),
+            "pdd_id": pdd_id,
+            "feature_id": str(action.get("feature_id") or pdd_id),
+            "trace_id": str(action.get("trace_id") or action.get("request_id") or ""),
+            "task_id": str(action.get("task_id") or ""),
+            "task_map_ref": task_map_ref,
+            "source_index_ref": str(action.get("source_index_ref") or ""),
+            "source_commit": str(action.get("source_commit") or ""),
+            "candidate_base_commit": str(action.get("candidate_base_commit") or ""),
+            "candidate_ref": str(action.get("candidate_ref") or ""),
+            "target_ref": str(action.get("target_ref") or action.get("candidate_ref") or ""),
+            "recommended_action": str(action.get("recommended_action") or "replan"),
+            "guidance": str(action.get("guidance") or ""),
+            "failure_fingerprint": str(action.get("fingerprint") or ""),
+            "failure_count": int(action.get("failure_count") or 0),
+            "failure_event_ids": _string_list(action.get("failure_event_ids")),
+            "source_event_ids": _string_list(action.get("source_event_ids")),
+            "affected_task_ids": _string_list(action.get("affected_task_ids")),
+            "supersedes_task_ids": _string_list(action.get("supersedes_task_ids")),
+            "supersede_policy": "replace_failed_task_when_gap_tasks_materialized",
+            "recovery_context_ref": context_ref,
+            "semantic_replan_stage_id": str(action.get("semantic_replan_stage_id") or ""),
+            "semantic_replan_role": str(action.get("semantic_replan_role") or ""),
+            "owner_route": "run_manager",
+            "apply_policy": "artifact_first",
+            "source": "run_manager_semantic_replan",
+        },
+    )
+    outcome = writer.emit(
+        RUN_MANAGER_ACTION_APPLIED,
+        actor="run-manager",
+        task_id=str(action.get("task_id") or "") or None,
+        causation_id=planned.id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "applied",
+            "event_id": request.id,
+            "emitted_event_ids": [request.id],
+            "recovery_context_ref": context_ref,
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        {"ok": True, "status": "applied", "emitted_event_ids": [request.id]},
+        causation_id=outcome.id,
+        state_dir=state_dir,
+        config=config,
+    )
+    return "applied"
+
+
+def _execute_orchestrator_triage_advice(
+    *,
+    writer: EventWriter,
+    action: dict[str, Any],
+    causation_id: str,
+    state_dir: Path,
+    config: ZfConfig,
+) -> str:
+    task_id = str(action.get("task_id") or "")
+    role = str(action.get("role") or "")
+    recommendation = str(action.get("recommended_action") or "")
+    if recommendation not in {"continue_rework", "precise_rework"}:
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=causation_id,
+            reason=(
+                "semantic replan advice requires a materialized plan artifact "
+                "before apply"
+            ),
+            human=False,
+        )
+        return "blocked"
+    task_store = TaskStore(Path(state_dir) / "kanban.json")
+    task = task_store.get(task_id)
+    if task is None or not role:
+        _emit_blocked_action(
+            writer,
+            action,
+            causation_id=causation_id,
+            reason="triage rework apply requires an existing task and target role",
+            human=False,
+        )
+        return "blocked"
+    planned = writer.emit(
+        RUN_MANAGER_ACTION_PLANNED,
+        actor="run-manager",
+        task_id=task_id,
+        causation_id=causation_id,
+        payload={"schema_version": "run-manager.action.v1", **_action_payload(action)},
+    )
+    task_store.update(task_id, status="in_progress", assigned_to=role)
+    rework = writer.emit(
+        "task.rework.requested",
+        actor="run-manager",
+        task_id=task_id,
+        causation_id=planned.id,
+        correlation_id=str(action.get("request_id") or "") or None,
+        payload={
+            "schema_version": "task-rework-request.v1",
+            "source": "orchestrator_rework_triage",
+            "request_id": str(action.get("request_id") or ""),
+            "task_id": task_id,
+            "role": role,
+            "assignee": role,
+            "failure_fingerprint": str(action.get("fingerprint") or ""),
+            "recommended_action": recommendation,
+            "guidance": str(action.get("guidance") or ""),
+            "recorded_event_id": str(action.get("recorded_event_id") or ""),
+            "source_event_ids": _string_list(action.get("source_event_ids")),
+            "recovery_owner": "run_manager",
+        },
+    )
+    assigned = writer.emit(
+        "task.assigned",
+        actor="run-manager",
+        task_id=task_id,
+        causation_id=rework.id,
+        correlation_id=str(action.get("request_id") or "") or None,
+        payload={
+            "task_id": task_id,
+            "role": role,
+            "assignee": role,
+            "source": "orchestrator_rework_triage",
+            "rework_request_event_id": rework.id,
+            "failure_fingerprint": str(action.get("fingerprint") or ""),
+        },
+    )
+    outcome = writer.emit(
+        RUN_MANAGER_ACTION_APPLIED,
+        actor="run-manager",
+        task_id=task_id,
+        causation_id=planned.id,
+        payload={
+            "schema_version": "run-manager.action.v1",
+            **_action_payload(action),
+            "status": "applied",
+            "event_id": assigned.id,
+            "emitted_event_ids": [rework.id, assigned.id],
+        },
+    )
+    _post_verify_action(
+        writer,
+        action,
+        {
+            "ok": True,
+            "status": "applied",
+            "emitted_event_ids": [rework.id, assigned.id],
+        },
+        causation_id=outcome.id,
+        state_dir=state_dir,
+        config=config,
+    )
+    return "applied"
 
 
 def _execute_operator_controlled_action(
@@ -3942,6 +4345,27 @@ def _execute_resident_agent_reprompt(
     action: dict[str, Any],
     causation_id: str,
 ) -> str:
+    if str(action.get("semantic_triage_request_id") or ""):
+        context_ref = _write_recovery_context_for_action(
+            state_dir=state_dir,
+            writer=writer,
+            action=action,
+            source_event_id=causation_id,
+        )
+        if context_ref is None:
+            _emit_blocked_action(
+                writer,
+                action,
+                causation_id=causation_id,
+                reason="resident semantic triage context could not be materialized",
+                human=False,
+            )
+            return "blocked"
+        action = {
+            **action,
+            "recovery_context_ref": context_ref,
+            "source_ref": str(context_ref.get("ref") or ""),
+        }
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
         actor="run-manager",
@@ -4134,7 +4558,55 @@ def _resident_action_focus_prompt(action: dict[str, Any]) -> str:
         "请优先围绕 Current Focus 做一次观察,输出 "
         "`run.manager.agent.observation` 或 `run.manager.agent.recommendation`。",
     ])
+    semantic_request_id = str(action.get("semantic_triage_request_id") or "").strip()
+    if semantic_request_id:
+        task_id = str(action.get("task_id") or "").strip()
+        fingerprint = str(action.get("fingerprint") or "").strip()
+        lines.extend([
+            "",
+            "这是第三次同指纹失败的 proposal-only 语义分诊。读取 source_ref 指向的 "
+            "recovery context；不要直接改 TaskStore、重派任务或触发 replan。",
+            "选择且只选择一个 recommended_action: continue_rework, precise_rework, "
+            "revise_contract, split_task, replan, diagnose, human。",
+            "通过 `zf emit orchestrator.rework.triage.recorded` 返回建议，payload 必须包含:",
+            f"- request_id: `{semantic_request_id}`",
+            f"- task_id: `{task_id}`",
+            f"- failure_fingerprint: `{fingerprint}`",
+            "- recommended_action、guidance、apply_policy=proposal_only、evidence_event_ids。",
+            "发出该事件后结束本 turn。",
+        ])
     return "\n".join(lines)
+
+
+def _write_recovery_context_for_action(
+    *,
+    state_dir: Path,
+    writer: EventWriter,
+    action: dict[str, Any],
+    source_event_id: str,
+) -> dict[str, Any] | None:
+    task_id = str(action.get("task_id") or "").strip()
+    request_id = str(
+        action.get("request_id")
+        or action.get("semantic_triage_request_id")
+        or action.get("checkpoint_id")
+        or ""
+    ).strip()
+    if not task_id or not request_id:
+        return None
+    try:
+        from zf.runtime.event_window import read_runtime_events
+
+        return write_task_recovery_context(
+            state_dir,
+            read_runtime_events(writer.event_log, state_dir),
+            task_id=task_id,
+            failure_event_ids=_string_list(action.get("failure_event_ids")),
+            request_id=request_id,
+            source_event_id=source_event_id,
+        )
+    except Exception:
+        return None
 
 
 def _resident_pane_display(target: str) -> dict[str, Any]:
@@ -4332,6 +4804,16 @@ def _workflow_resume_checkpoint_still_pending(
         event_list = []
     if _workflow_resume_has_newer_progress(event_list, action):
         return ""
+    # ZF-E2E-PRDCTL-P1-4: the filing guard now suppresses re-filing a
+    # checkpoint that proved gate-unroutable, so the rebuilt projection no
+    # longer shows it pending — but the applied action still failed to
+    # achieve its goal. Keep post-verify honest via the event itself.
+    for event in event_list:
+        if event.type != "workflow.resume.gate_unroutable":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("checkpoint_idempotency_key") or "") == checkpoint_id:
+            return "workflow resume gate unroutable for this checkpoint"
     try:
         projection = build_workflow_resume_projection(
             state_dir,
@@ -4814,6 +5296,15 @@ def _max_task_attempt_retries(config: ZfConfig) -> int:
     return max(values) if values else 3
 
 
+def _resident_owns_self_repair_execution(config: ZfConfig) -> bool:
+    resident = getattr(getattr(config, "runtime", None), "autoresearch_resident", None)
+    return bool(
+        resident
+        and getattr(resident, "enabled", False)
+        and getattr(resident, "self_repair_consumer", False)
+    )
+
+
 def _pending_worker_lifecycle_actions(
     state_dir: Path,
     projection: dict[str, Any],
@@ -4951,17 +5442,79 @@ def _pending_repair_validation_actions(
     return out
 
 
+_INFRA_ACTORS = frozenset({
+    "zf-cli", "run-manager", "zf-supervisor", "zf-runtime",
+    "zf-autoresearch", "operator", "",
+})
+
+
+def _run_has_recent_worker_activity(
+    events: list[ZfEvent], *, grace_seconds: int = 300
+) -> bool:
+    """True if a worker (non-infrastructure role instance) emitted an event
+    within ``grace_seconds`` of the latest event — i.e. the run is actively
+    progressing, not idle/stuck.
+
+    2026-07-08 E2E T1: ``failure.closeout.materialized`` can fire from
+    resident-agent-stall detection or autoresearch acceptance-evidence noise
+    while lanes are mid-turn (xhigh codex turns run minutes; heartbeats are
+    sparse but the run is alive and producing). Escalating failure-closeout to
+    the owner then is premature. Defer until the run is genuinely idle past the
+    grace window. Mirrors the autoresearch failure_signals last-seen grace
+    (only silence beyond grace counts as stalled)."""
+    latest: datetime | None = None
+    latest_worker: datetime | None = None
+    for event in events:
+        value = str(getattr(event, "ts", "") or "")
+        if not value:
+            continue
+        try:
+            ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        if latest is None or ts > latest:
+            latest = ts
+        if str(getattr(event, "actor", "") or "") not in _INFRA_ACTORS:
+            if latest_worker is None or ts > latest_worker:
+                latest_worker = ts
+    if latest is None or latest_worker is None:
+        return False
+    return (latest - latest_worker).total_seconds() < grace_seconds
+
+
 def _pending_failure_closeout_activation_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
     if _current_run_completed_closeout(events) is not None:
+        return []
+    # T1 (2026-07-08 E2E): defer owner escalation while the run is actively
+    # progressing. failure-closeout is the common chokepoint for premature
+    # escalation (resident-agent-stall + autoresearch noise both route here);
+    # gating it on recent worker activity suppresses the false "run stalled"
+    # escalation during long in-flight lane turns. Genuine idleness (silence
+    # past the grace window) still escalates on a later tick.
+    if _run_has_recent_worker_activity(events):
         return []
     activated_refs = {
         str((event.payload or {}).get("manifest_ref") or "")
         for event in events
         if event.type == "failure.closeout.activated" and isinstance(event.payload, dict)
     }
+    # 2026-07-10 E2E retest: a shipped run kept escalating pre-ship failure
+    # manifests to the owner (PRD: ship.completed=1 yet human.escalate on
+    # "failure-closeout-activate requires owner approval"). A ship.completed
+    # LATER than the materialized manifest means the run has since delivered —
+    # activating that stale failure closeout is moot. Manifests materialized
+    # after the ship still activate.
+    last_ship_index = -1
+    for index, event in enumerate(events):
+        if event.type == "ship.completed":
+            last_ship_index = index
     out: list[dict[str, Any]] = []
-    for event in events:
+    for index, event in enumerate(events):
         if event.type != "failure.closeout.materialized":
+            continue
+        if index < last_ship_index:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
         manifest_ref = str(payload.get("manifest_ref") or "").strip()
@@ -5353,10 +5906,39 @@ def _human_gate_repair_resume_item(
     )
 
 
-def _pending_semantic_event_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+def _pending_semantic_event_actions(
+    events: list[ZfEvent],
+    *,
+    triage_threshold: int = 0,
+) -> list[dict[str, Any]]:
+    from zf.runtime.rework_triage import REWORK_TRIAGE_TRIGGER_EVENTS
+
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for idx, event in enumerate(events):
+        event_payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            event.type == "autoresearch.trigger.accepted"
+            and str(event_payload.get("source") or "")
+            == "autoresearch.invocation.accepted"
+        ):
+            continue
+        if event.type == "task.rework.capped" and is_semantic_triage_cap(
+            event,
+            threshold=triage_threshold,
+        ):
+            # Dedicated RM -> orchestrator triage path owns this event.  The
+            # generic semantic diagnosis path would create a competing owner.
+            continue
+        if (
+            event.task_id
+            and event.type in REWORK_TRIAGE_TRIGGER_EVENTS
+            and event.type != "task.rework.capped"
+        ):
+            # Task-scoped failures are L1-owned until the configured semantic
+            # threshold emits task.rework.capped. Candidate-level failures
+            # (without task_id) still enter Run Manager immediately.
+            continue
         spec = spec_for_event(event.type)
         if event.type in RUN_MANAGER_PENDING_EVENT_TYPES:
             if spec is None or spec.event_class != "expected_negative":
@@ -6324,6 +6906,24 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "mutating_resume_supported": bool(action.get("mutating_resume_supported")),
         "queue_id": str(action.get("queue_id") or ""),
         "fingerprint": str(action.get("fingerprint") or ""),
+        "request_id": str(action.get("request_id") or ""),
+        "role": str(action.get("role") or ""),
+        "failure_count": int(action.get("failure_count") or 0),
+        "failure_event_ids": _string_list(action.get("failure_event_ids")),
+        "source_event_ids": _string_list(action.get("source_event_ids")),
+        "recorded_event_id": str(action.get("recorded_event_id") or ""),
+        "recommended_action": str(action.get("recommended_action") or ""),
+        "guidance": str(action.get("guidance") or ""),
+        "semantic_replan_trigger": str(action.get("semantic_replan_trigger") or ""),
+        "semantic_replan_stage_id": str(action.get("semantic_replan_stage_id") or ""),
+        "semantic_replan_role": str(action.get("semantic_replan_role") or ""),
+        "affected_task_ids": _string_list(action.get("affected_task_ids")),
+        "supersedes_task_ids": _string_list(action.get("supersedes_task_ids")),
+        "recovery_context_ref": (
+            action.get("recovery_context_ref")
+            if isinstance(action.get("recovery_context_ref"), dict)
+            else {}
+        ),
         "candidate_id": str(action.get("candidate_id") or ""),
         "branch": str(action.get("branch") or ""),
         "worktree_path": str(action.get("worktree_path") or action.get("worktree") or ""),
@@ -6912,6 +7512,7 @@ def _diagnosis_action_request_stalled(
     action: dict[str, Any],
     *,
     stale_seconds: int = _DIAGNOSIS_REQUEST_STALE_SECONDS,
+    anchored_stale_seconds: int = _DIAGNOSIS_ANCHORED_STALE_SECONDS,
 ) -> bool:
     if not _is_diagnosis_action(action):
         return False
@@ -6938,6 +7539,13 @@ def _diagnosis_action_request_stalled(
         return False
     if _current_run_completed_closeout(events) is not None:
         return False
+    # 2026-07-10 E2E retest: anchor staleness age to the latest matching loop
+    # lifecycle event, not the request. A loop legitimately running past the
+    # 300s window (codex/claude agents inside) was declared stale mid-flight,
+    # and a resident dedupe-skip (autoresearch.loop.skipped) was invisible
+    # here, so skipped requests always burned the full window before failing
+    # (PRD: 8 stale action.failed with 1 real loop run).
+    liveness_event = request_event
     for event in events[request_index + 1:]:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if event.type in {
@@ -6951,14 +7559,42 @@ def _diagnosis_action_request_stalled(
             or str(payload.get("checkpoint_id") or "") == checkpoint_id
         ):
             return False
-        if event.type in {"autoresearch.loop.completed", "autoresearch.loop.failed"}:
+        if event.type in {
+            "autoresearch.loop.completed",
+            "autoresearch.loop.failed",
+            "autoresearch.loop.skipped",
+        }:
             result_request_id = _autoresearch_result_request_id(event, payload)
             if result_request_id and result_request_id == request_id:
                 return False
             if str(payload.get("checkpoint_id") or "") == checkpoint_id:
                 return False
-    age_seconds = _event_age_seconds(request_event, datetime.now(timezone.utc))
-    return age_seconds is not None and age_seconds >= stale_seconds
+        if event.type in {
+            # Three anchor grades, all under the wide anchored window:
+            # requested = the reactor forwarded it into the loop queue (R6:
+            # requests arriving while the resident is synchronously inside a
+            # bounded loop get no ack until that loop ends — the forward is
+            # the only timely receipt), accepted = resident queued it,
+            # started = executing. Only a request with NO trace at all runs
+            # on the tight window.
+            "autoresearch.loop.requested",
+            "autoresearch.loop.accepted",
+            "autoresearch.loop.started",
+        }:
+            result_request_id = _autoresearch_result_request_id(event, payload)
+            if (result_request_id and result_request_id == request_id) or (
+                str(payload.get("checkpoint_id") or "") == checkpoint_id
+            ):
+                liveness_event = event
+    # Two staleness windows (2026-07-10 R5): an unacknowledged request stales
+    # at the tight window, but once the resident has anchored it (accepted =
+    # queued, started = executing) the terminal answer is guaranteed by the
+    # bounded runner — a queued/running request is not dead, just slow. The
+    # anchored window (~2x the 30min runner fallback bound) is the backstop
+    # for a resident that died after anchoring.
+    window = stale_seconds if liveness_event is request_event else anchored_stale_seconds
+    age_seconds = _event_age_seconds(liveness_event, datetime.now(timezone.utc))
+    return age_seconds is not None and age_seconds >= window
 
 
 def _is_diagnosis_action(action: dict[str, Any]) -> bool:

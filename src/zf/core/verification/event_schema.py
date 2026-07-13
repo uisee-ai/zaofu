@@ -1026,6 +1026,10 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
         "workflow.submit.accepted": {
             "required": ["request_id", "source_event_id"],
             "optional": [
+                "run_id",
+                "kind",
+                "request_kind",
+                "workflow_tier",
                 "workflow_preflight_ref",
                 "workflow_input_manifest_ref",
                 "workflow_prompt_ref",
@@ -1049,6 +1053,11 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
                 "synthesis_event_id",
                 "open_questions",
                 "workflow_run_id",
+                "request_id",
+                "run_id",
+                "kind",
+                "request_kind",
+                "workflow_tier",
                 "workflow_input_manifest_ref",
                 "workflow_prompt_ref",
                 "prompt_kind",

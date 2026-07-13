@@ -1,6 +1,11 @@
 ---
 name: zf-yoke-quality-gate-role-context
 description: "Use for ZaoFu judge or quality gate roles that need yoke-style final gate discipline."
+stages: [judge, verify]
+tags: [yoke, role-context, quality-gate]
+dependencies: [verify-review]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Yoke Quality Gate Role Context
@@ -22,8 +27,18 @@ would treat the item as advisory.
 
 ## Rules
 
+- **受审对象是 candidate,不是 target**(A3;r3 light 终审误拒实锚,
+  2026-07-06):评 `candidate_ref`@`candidate_head_commit`;briefing 未带
+  candidate_ref 时按 `candidate/<pdd_id>` 前缀解析(`runtime.git.
+  candidate_branch_prefix`)。`target_ref` 只是 ship 后的合流目的地——
+  其未解析/为空/陈旧**不得**作为拒因(kernel 已在 reader briefing 注入
+  同源 SUBJECT OF REVIEW 条款,skill 层与其一致)。
 - Gate decisions require evidence from prior roles and commands.
 - A missing required check is a gate failure, not a warning.
+- **两轴判决(缺一即不完整)**:**落闩**——机械闸门逐个过(命令+退出码,
+  required checks 全绿),不接受"应当工作";**分母**——覆盖矩阵对齐全部
+  验收条款,无遗漏条目。只报分母不落闩 = 永远差一轮;只落闩不看分母 =
+  绿灯下漏需求。判决书两轴分别给结论。
 - Score the weakest required dimension, not the average narrative quality.
 - Keep gate output machine-routable: a tri-state verdict (see below), reason,
   owner, and a delta-producing next action.
@@ -57,6 +72,22 @@ Include:
   (`src/zf/core/verification/event_schema.py`):**空矩阵 = 证据缺失 = 门失败**
   (r4 全轮 9 份空矩阵即反面锚)。
 - rework target or archive readiness
+
+## Ship readiness(发布就绪判定)
+
+controller 预设下 `judge.passed` 不是"打个分"——kernel 会立即 auto-ship
+(`runtime.git.auto_ship_on_judge_passed`)把 candidate 合入
+`ship_target_branch`。因此:
+
+- **判过 = 判定可发布**。两轴齐(落闩+分母)且合并树机械闸门
+  (`quality_gates` / candidate gate)全绿才 pass;"代码大概没问题"
+  不构成 pass。
+- **回退语义不对称**:pass 之前拒绝 = candidate 不合流,零回滚成本;
+  pass 之后反悔 = 目标分支上 `git revert`,真实成本。犹豫时用
+  fail(给 delta-producing required_action)或 SUSPEND(外部依赖断),
+  不发"有保留的 pass"。
+- ship/archive 本身是 deterministic runtime 动作,不需要也不允许
+  gate 角色手工 merge。
 
 ## Rejection discipline
 

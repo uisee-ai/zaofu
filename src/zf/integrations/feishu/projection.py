@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -132,6 +133,8 @@ class ProjectionRouter:
 
     def should_push(self, event: ZfEvent) -> bool:
         """Check if event warrants a push notification."""
+        if event.type == "human.escalation.sent" and _run_manager_card_first_enabled():
+            return False
         spec = spec_for_event(event.type)
         if spec is not None and spec.notification_policy:
             return spec.effective_notification_policy == "owner_immediate"
@@ -209,3 +212,8 @@ class ProjectionRouter:
             for k, v in event.payload.items():
                 parts.append(f"{k}: {v}")
         return " | ".join(parts)
+
+
+def _run_manager_card_first_enabled() -> bool:
+    value = str(os.environ.get("ZF_RUN_MANAGER_CARD_FIRST", "1") or "").strip().lower()
+    return value not in {"0", "false", "no", "off"}

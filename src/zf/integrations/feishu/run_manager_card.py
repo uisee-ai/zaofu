@@ -9,9 +9,66 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
+
+
+# Run Manager status → owner-facing Chinese (the raw status card dumped state
+# codes like `diagnosis_required` and ignored the human-oriented fields the
+# status_explain projection already computes: next_auto_action / active_task /
+# intervention). Matched by substring so compound codes
+# (`diagnosis_required_no_progress_tripped`) still map. Order specific-first.
+_MONITOR_EMOJI = {
+    "blocked": "🔴", "stalled": "🔴", "error": "🔴",
+    "active": "🟢", "running": "🟢",
+    "idle": "⚪", "waiting": "⚪",
+    "done": "✅", "complete": "✅",
+}
+_WAIT_HUMAN: tuple[tuple[str, str], ...] = (
+    ("no_progress", "任务停滞、无进展,需要诊断"),
+    ("stale_recovery", "恢复停滞,待诊断或升级"),
+    ("diagnosis", "需要诊断(autoresearch 介入)"),
+    ("human_decision", "等待你的人工决策"),
+    ("wait_for_human", "等待你的人工决策"),
+    ("needs_approval", "有动作需你批准"),
+    ("pending_action", "有待批动作等你确认"),
+    ("continue_waiting", "正常等待中"),
+)
+_NEXT_HUMAN: tuple[tuple[str, str], ...] = (
+    ("invoke_autoresearch", "触发 autoresearch 诊断"),
+    ("autoresearch", "触发 autoresearch 诊断"),
+    ("safe_resume", "安全恢复执行"),
+    ("safe_halt", "安全暂停"),
+    ("run_manager_action", "执行下一个动作"),
+    ("auto_decide", "自动决策推进"),
+    ("wait_for_human", "等你决策"),
+    ("human_escalate", "升级给人工"),
+    ("continue_waiting", "继续等待"),
+)
+
+
+def _map_substr(value: object, table: tuple[tuple[str, str], ...]) -> str:
+    v = str(value or "").lower()
+    for needle, human in table:
+        if needle in v:
+            return human
+    return ""
+
+
+def _monitor_badge(state: object) -> str:
+    v = str(state or "").lower()
+    for needle, emoji in _MONITOR_EMOJI.items():
+        if needle in v:
+            return emoji
+    return "🔔"
+
+
+def _short_time(iso: object) -> str:
+    """2026-07-10T06:06:00.356202Z → 06:06(丢掉日期/微秒/时区噪声）。"""
+    match = re.search(r"T(\d{2}:\d{2})", str(iso or ""))
+    return match.group(1) if match else ""
 
 
 def build_run_manager_status_card(projection: dict[str, Any]) -> dict[str, Any]:
@@ -30,19 +87,58 @@ def build_run_manager_status_card(projection: dict[str, Any]) -> dict[str, Any]:
     )
     pending_human = completion.get("pending_human_decisions")
     pending_human_count = len(pending_human) if isinstance(pending_human, list) else 0
-    body = (
-        "**Run Manager 状态**\n"
-        f"goal: `{summary.get('goal_status') or '-'}`  "
-        f"completion: `{summary.get('completion_status') or '-'}`\n"
-        f"monitor: `{monitor.get('state') or '-'}`  "
-        f"wait: `{status_explain.get('wait_reason') or monitor.get('next_wait') or '-'}`\n"
-        f"pending_actions: `{summary.get('pending_actions') or 0}`  "
-        f"blocked: `{summary.get('blocked_actions') or 0}`  "
-        f"human: `{pending_human_count}`"
-    )
+
+    monitor_state = monitor.get("state")
+    blocking = bool(status_explain.get("blocking"))
+    pending = int(summary.get("pending_actions") or 0)
+    blocked = int(summary.get("blocked_actions") or 0)
+
+    # Header line: one plain-Chinese verdict + severity emoji (aligned with the
+    # card header color from _status_template).
+    if pending_human_count or blocking:
+        head = "🔴 Run Manager · 需要你关注"
+    elif _monitor_badge(monitor_state) == "🔴":
+        head = "🟡 Run Manager · 监控阻塞"
+    else:
+        head = f"{_monitor_badge(monitor_state)} Run Manager · 运行中"
+    lines = [f"**{head}**"]
+
+    # What it is doing (from the projection's active-task fields).
+    active_task = str(status_explain.get("active_task_id") or "")
+    active_lane = str(status_explain.get("active_lane") or "")
+    phase = str(status_explain.get("current_phase") or monitor.get("current_phase") or "")
+    if active_task:
+        ctx = f"正在做:`{active_task}`" + (f" @{active_lane}" if active_lane else "")
+        if phase and phase != "unknown":
+            ctx += f"(阶段 {phase})"
+        lines.append(ctx)
+
+    # Why it is waiting / blocked (human, not the raw wait code).
+    wait_human = _map_substr(
+        status_explain.get("wait_reason") or monitor.get("next_wait"), _WAIT_HUMAN)
+    if wait_human:
+        lines.append(f"卡在:{wait_human}")
+
+    # What it will do next automatically.
+    next_human = _map_substr(status_explain.get("next_auto_action"), _NEXT_HUMAN)
+    if next_human:
+        lines.append(f"下一步(自动):{next_human}")
+
+    # What needs the operator.
+    todo = []
+    if pending_human_count:
+        todo.append(f"{pending_human_count} 个人工决策")
+    if pending:
+        todo.append(f"{pending} 个待批动作")
+    if blocked:
+        todo.append(f"{blocked} 个阻塞动作")
+    lines.append("待你处理:" + ("、".join(todo) if todo else "暂无"))
+
     generated_at = str(projection.get("generated_at") or "")
-    if generated_at:
-        body += f"\ngenerated_at: `{generated_at}`"
+    short_time = _short_time(generated_at)
+    if short_time:
+        lines.append(f"🕐 {short_time} 更新")
+    body = "\n".join(lines)
     return {
         "config": {"wide_screen_mode": True},
         "header": {
@@ -102,6 +198,7 @@ def build_run_manager_escalation_card(
             "actions": [
                 _button("批准并执行", "primary", f"human-decision-approve:{token}"),
                 _button("转 Autoresearch", "default", f"human-decision-diagnose:{token}"),
+                _button("解释", "default", f"human-decision-explain:{token}"),
                 _button("安全暂停", "danger", f"human-decision-halt:{token}"),
             ],
         })
@@ -149,16 +246,26 @@ def sync_run_manager_cards(
         )
         if not entry.get("message_id"):
             message_id = send_card(card)
+            context = _context_from_escalation_item(token, item)
+            context["message_id"] = str(message_id or "")
             ledger[key] = {
                 "message_id": str(message_id),
                 "state": state,
                 "decision": decision,
+                "token": token,
+                "context": context,
             }
             escalation_sent.append(token)
             continue
         if entry.get("state") != state or entry.get("decision") != decision:
             update_card(str(entry["message_id"]), card)
-            ledger[key] = {**entry, "state": state, "decision": decision}
+            ledger[key] = {
+                **entry,
+                "state": state,
+                "decision": decision,
+                "token": token,
+                "context": entry.get("context") or _context_from_escalation_item(token, item),
+            }
             escalation_updated.append(token)
 
     status_sent = False
@@ -295,7 +402,15 @@ def _fold_escalations(events: list) -> dict[str, dict[str, Any]]:
             token = _decision_token_from_payload(payload) or str(getattr(event, "id", "") or "")
             if not token:
                 continue
-            items[token] = {"state": "pending", "payload": payload, "decision": ""}
+            items[token] = {
+                "state": "pending",
+                "payload": payload,
+                "decision": "",
+                "source_event_id": str(getattr(event, "id", "") or ""),
+                "source_event_type": etype,
+                "correlation_id": str(getattr(event, "correlation_id", "") or ""),
+                "created_at": str(getattr(event, "ts", "") or ""),
+            }
             continue
         if etype == "human.escalation.acknowledged":
             token = _decision_token_from_payload(payload) or str(getattr(event, "id", "") or "")
@@ -317,6 +432,35 @@ def _fold_escalations(events: list) -> dict[str, dict[str, Any]]:
     return items
 
 
+def resolve_run_manager_card_context(
+    state_dir,
+    *,
+    decision_token: str = "",
+    message_id: str = "",
+    chat_id: str = "",
+) -> dict[str, Any]:
+    """Resolve a Feishu follow-up to the Run Manager card it references."""
+
+    ledger_path = Path(state_dir) / "integrations" / "feishu" / "run_manager_ledger.json"
+    try:
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    for key, entry in (ledger or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        context = entry.get("context") if isinstance(entry.get("context"), dict) else {}
+        token = str(entry.get("token") or context.get("decision_token") or "")
+        if decision_token and decision_token == token:
+            return {"ledger_key": key, **context}
+        if message_id and message_id == str(entry.get("message_id") or context.get("message_id") or ""):
+            context_chat_id = str(context.get("chat_id") or "")
+            if chat_id and context_chat_id and chat_id != context_chat_id:
+                continue
+            return {"ledger_key": key, **context}
+    return {}
+
+
 def _decision_token_from_payload(payload: dict[str, Any]) -> str:
     raw = str(
         payload.get("decision_token")
@@ -329,6 +473,25 @@ def _decision_token_from_payload(payload: dict[str, Any]) -> str:
     if raw.startswith("human:"):
         raw = raw.removeprefix("human:")
     return raw
+
+
+def _context_from_escalation_item(token: str, item: dict[str, Any]) -> dict[str, Any]:
+    payload = item.get("payload") if isinstance(item.get("payload"), dict) else {}
+    return {
+        "schema_version": "run-manager.feishu-card-context.v1",
+        "decision_token": token,
+        "source_event_id": str(item.get("source_event_id") or ""),
+        "source_event_type": str(item.get("source_event_type") or "human.escalation.sent"),
+        "correlation_id": str(item.get("correlation_id") or ""),
+        "created_at": str(item.get("created_at") or ""),
+        "run_id": str(payload.get("run_id") or payload.get("pdd_id") or ""),
+        "task_id": str(payload.get("task_id") or ""),
+        "failure_class": str(payload.get("failure_class") or ""),
+        "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+        "fingerprint": str(payload.get("fingerprint") or ""),
+        "safe_resume_action": str(payload.get("safe_resume_action") or ""),
+        "reason": str(payload.get("reason") or payload.get("message") or ""),
+    }
 
 
 def _load_run_manager_projection(state_dir: Path) -> dict[str, Any]:

@@ -184,9 +184,33 @@ _OVERSIZED_FILE_CAPS = {
     # Reconciliation 2026-07-07: terminal child progress predicate + invalid
     # rework-state retry guard are run_once/_apply_housekeeping call sites;
     # predicate/state logic lives in siblings. Freeze current size.
-    # +39 (2026-07-08): task-attempt recovery / quiescent lightweight routing
-    # call sites; recovery state machines live in sibling modules.
-    "src/zf/runtime/orchestrator.py": 4725,
+    # Reconciliation 2026-07-08: run-manager feishu 回调/skill provider
+    # discovery merges 后 dev 已到 4725,cap 未随之更新(基线红)。按
+    # clean dev 尺寸冻结;下一个 orchestrator 行为增量必须外提 sibling。
+    # P0-1 (2026-07-09): +25 for the budget gate in _send_transport_task
+    # (BudgetExceededError + the check). It cannot be a sibling — the gate must
+    # live inside the charging primitive so every paid dispatch funnels through
+    # it (RB1). Re-freeze at the new size.
+    # P1-7 (2026-07-09): +14 for resolving the rework-target role at the
+    # circuit-breaker housekeeping call site (needs self.config, so it can't
+    # move into mechanical housekeeping). Re-freeze.
+    # Merge 2026-07-09: combined with dev's universal-activity-liveness
+    # (6d3f7379), which adds per-tool-call heartbeat wiring here too. Re-freeze
+    # at the merged size.
+    # +79 (2026-07-11, ZF-E2E-RACING-P1): _rollback_inflight_dispatch mutates
+    # the same self._active_dispatch_ids + task_store bookkeeping this file
+    # owns (same ownership argument as the B-STUCK-1 precedent above), and the
+    # dead-dispatch emission extends the existing _run_dispatch_sweep wrapper —
+    # the sweep logic itself lives in the dispatch_sweep.py sibling.
+    # +47 (2026-07-11, ZF-E2E-MINI-P2): budget-freeze silence gate inside
+    # the existing _notify_orchestrator_agent gate stack (parallel to the B11
+    # cooldown and coalescing gates it sits between) + the non-emitting
+    # _global_budget_frozen probe over self.cost_tracker this file owns. The
+    # silenced-event set lives in the wake_patterns.py sibling.
+    # +22 (2026-07-11): dead-sweep authoritative progress lookup (+12, part of
+    # the sweep calibration that owns this file's in-flight bookkeeping) merged
+    # with dev's semantic-recovery loop wiring (+10, parallel driver). Re-freeze.
+    "src/zf/runtime/orchestrator.py": 4927,
     # +14 (2026-06-20): PRD-product-stage branch in the fanout-child briefing
     # builder (emits prd_ref/artifact_refs/evidence_refs). It is one more
     # sibling branch of the same _write_*_fanout_briefing method that already
@@ -262,11 +286,25 @@ _OVERSIZED_FILE_CAPS = {
     # method's loop (skip superseded fanout generations so a resident worker's
     # fresh completion is not re-bound to a long-superseded fanout and dropped).
     # Cannot be a sibling: it is a guard clause on the loop's own iteration.
-    "src/zf/runtime/orchestrator_fanout.py": 8196,
+    # +61 (2026-07-08, LB-4/LB-5 执法批): ①A3 受审对象兜底段——
+    # candidate_ref 缺席的验收读者 briefing 注入 SUBJECT OF REVIEW(light
+    # 终审误拒根修),是 _write_fanout_briefing 既有 A3 条件块的 else 支;
+    # ②lane.stage.* 锻造补 attempt_id/handoff_ref/evidence_refs 契约键
+    # (blocking 档下缺键会让内核自己的交接事件被 discriminator.failed
+    # 替换);③U20 fail-closed 并入既有 malformed-report 失败轨道的判定
+    # 三行。三处都是既有方法内的同点插入,判定文案/门逻辑在
+    # report_evidence_gate 与 schema_profiles sibling,无独立逻辑可拆。
+    # +45 (2026-07-08, LB-4 模板缺口回归): _schema_education_toplevel_fields
+    # ——v3 给 child 完成事件加了顶层 non_empty(summary/evidence_refs),
+    # FIX-14 的 report.* 教育不覆盖顶层,blocking 档下合规 agent 照抄模板
+    # 也会被拦。新方法与既有 _schema_education_report_fields 是一对镜像,
+    # 紧贴 briefing 组装点(共用 _SCHEMA_EDU_PLACEHOLDERS + self.config
+    # registry),拆 sibling 会割裂这对教育逻辑,故 cap 吸收。
+    "src/zf/runtime/orchestrator_fanout.py": 8560,
     # Reconciliation 2026-07-07: terminal child success predicate and
     # judge.failed state guard call sites; predicates live in terminal_events.
-    # +21 (2026-07-08): operator-resume and diagnosis event router call sites;
-    # policy/state logic lives in workflow_resume/diagnosis siblings.
+    # Reconciliation 2026-07-08: dev 已到 6962(feishu/goal-spine merges),
+    # cap 未随之更新(基线红)。按 clean dev 尺寸冻结。
     "src/zf/runtime/orchestrator_reactor.py": 6962,
     # Merge 2026-06-22: dispatch recovery helpers crossed the previous cap.
     # Reconciliation 2026-07-03: RF-7B transition-only dispatch (+32) + prior
@@ -281,15 +319,24 @@ _OVERSIZED_FILE_CAPS = {
     # site;事件语义/registry 合同在 event_problem_registry sibling。
     # Reconciliation 2026-07-07: child terminal rework/attempt/cap de-dupe and
     # legacy rework-state guard call sites; policy/helpers stay outside.
-    # +4 (2026-07-08): assignee-change/retry accounting call-site adjustment.
-    "src/zf/runtime/orchestrator_dispatch.py": 5072,
+    # Reconciliation 2026-07-08: dev 已到 5072(并行 merges),按 clean dev
+    # 尺寸冻结(基线红清账)。
+    # P1-7 (2026-07-09): +9 for the circuit-breaker check in the legacy
+    # _dispatch_rework path (it previously bypassed the breaker the main
+    # dispatch loop already honors). Re-freeze.
+    # +36 (2026-07-11, ZF-E2E-RACING-P2): rework owner authority — routing
+    # reorder inside _resolve_rework_role plus the _triage_owner_excludes_
+    # lane_rework predicate. The predicate guards the single decision point
+    # (_route_rework_trigger) and uses this file's role-lookup helpers;
+    # extracting a 23-line gate to a sibling would split the routing decision.
+    "src/zf/runtime/orchestrator_dispatch.py": 5119,
     # P2 (2026-06-12): handler domains moved to 5 mixins + helpers
     # (control_actions_{channel_msg,channel_admin,product,ops,emit,
     # helpers}.py); cap lowered to new size +10%.
     # Full-suite reconciliation 2026-06-26: controlled-action runtime already
     # reached 497 in dev/HEAD before this branch's commit. Freeze here; next
     # action-domain growth must move into a domain sibling module.
-    "src/zf/runtime/control_actions.py": 530,
+    "src/zf/runtime/control_actions.py": 560,
     "src/zf/runtime/orchestrator_lifecycle.py": 2750,
     # Frontend freeze (2026-06-12): the two web monoliths had no size
     # gate at all (doc 44 "web 没人 review"); after the server.py split
@@ -313,7 +360,18 @@ _OVERSIZED_FILE_CAPS = {
     # +2 (2026-07-05, init onboarding 打通): ProjectWizardModal 渲染点
     # + import 各一行;展示逻辑在 workspace/ProjectInitOnboarding.tsx
     # sibling(git hook 状态 + scripts.setup 建议)。
-    "web/src/app/App.tsx": 3515,
+    # +69 (2026-07-08, BootstrapInspector 接进 New Project 两个 tab):
+    # 在既有 ProjectWizardModal 组件内原地扩展(inspect state + 共享候选面板
+    # + Existing 裸库→转 Create)。为何不 sibling:候选面板与 modal 的 draft/
+    # detect 状态强耦合,抽出需连带搬 draft 契约,属独立重构,超出本功能范围。
+    # +68 (2026-07-09, Triage autopilot durable-proposals fix 18d1afea): the
+    # reusable proposal-merge logic went to a sibling (web/src/app/triageProposals.ts);
+    # what remains in App.tsx is the Triage page's getKanbanPendingProposals fetch
+    # effect + wiring, which must live in the page component it feeds.
+    # -83 (2026-07-11, operator 决定移除 New Task 手工建任务:按钮×2/命令面板
+    # 入口/NewTaskModal/draft 持久化/createTaskFromDraft 全链删除)。缩水即
+    # 收紧:cap 3652→3579(新尺寸 +10)。
+    "web/src/app/App.tsx": 3579,
     # P2 phase 1 (2026-06-12): split into web/src/styles/ ordered chunks
     # (bundle byte-identical); styles.css is now an @import manifest.
     "web/src/styles.css": 200,
@@ -516,4 +574,66 @@ def test_builtin_handler_table_has_no_dangling_methods():
         f"{dangling}. Registry construction skips missing handlers "
         f"(getattr -> continue), so this registration would silently "
         f"never fire — fix the name or implement the handler."
+    )
+
+
+def test_skills_index_matches_directory():
+    """skills/INDEX.md 名字集守卫(2026-07-08):INDEX 是目录地图,新增/删除
+    技能不同步 = 地图失真。按名字集(非描述)双向比对 skills/ 与 yoke/。"""
+    repo = _REPO
+    index = repo / "skills" / "INDEX.md"
+    assert index.is_file(), "skills/INDEX.md missing — regenerate the map"
+    text = index.read_text(encoding="utf-8")
+    listed = set(re.findall(r"^- `(?:yoke/)?([a-z0-9-]+)`", text, re.M))
+    actual = {
+        p.parent.name for p in repo.glob("skills/*/SKILL.md")
+    } | {
+        p.parent.name for p in repo.glob("yoke/*/SKILL.md")
+    }
+    missing = sorted(actual - listed)
+    stale = sorted(listed - actual)
+    assert not missing and not stale, (
+        f"skills/INDEX.md drifted — missing entries: {missing}; "
+        f"stale entries: {stale}. 新增/删除技能必须同步 INDEX。"
+    )
+
+
+def test_provider_skill_mirrors_stay_in_sync():
+    """技能镜像同步哨兵(2026-07-08):同名技能在 skills/、.claude/skills/、
+    .codex/skills/ 多树并存时 SKILL.md 必须逐字节一致——skills/ 为 canonical,
+    provider 树是镜像。历史三向漂移(zf-cr 440/409/235 行)让三个入口各讲
+    各话;镜像更新必须与 canonical 同 changeset 落齐。
+
+    只枚举 **git 跟踪**的文件:.claude/.codex 里 gitignore 的本地物化副本
+    是 runtime 投影,不是仓库契约,不得让本地状态打红共享门。"""
+    import subprocess
+
+    repo = _REPO
+    tracked = subprocess.run(
+        [
+            "git", "-C", str(repo), "ls-files",
+            "skills/*/SKILL.md",
+            ".claude/skills/*/SKILL.md",
+            ".codex/skills/*/SKILL.md",
+        ],
+        capture_output=True, text=True, check=True,
+    ).stdout.splitlines()
+    by_name: dict[str, list] = {}
+    for rel in tracked:
+        path = repo / rel.strip()
+        if path.is_file():
+            by_name.setdefault(path.parent.name, []).append(path)
+    drifted = []
+    for name, paths in sorted(by_name.items()):
+        if len(paths) < 2:
+            continue
+        if len({p.read_bytes() for p in paths}) > 1:
+            drifted.append(
+                name + ": " + " ≠ ".join(
+                    str(p.relative_to(repo)) for p in paths
+                )
+            )
+    assert not drifted, (
+        "skill mirror drift(同名多树技能必须同 changeset 同步,"
+        "canonical 在 skills/):\n" + "\n".join(drifted)
     )

@@ -3565,3 +3565,179 @@ def test_reader_child_noninfra_dispatch_failure_fails_immediately(
         "briefing render exploded" in str(e.payload.get("reason") or "")
         for e in failed
     )
+
+
+# ---------------------------------------------------------------------------
+# U20 → LB-4 fail-closed(2026-07-08):审角色报告带判决但零证据。
+# 默认 signal 只发观测事件;verification.report_evidence_gate=fail_closed
+# 时该 child 并入 malformed-report 失败轨道(reason=report_evidence_missing),
+# 由既有 rework/上限链兜底。
+
+
+def _no_evidence_child_result(fanout_id: str) -> ZfEvent:
+    return ZfEvent(
+        type="review.approved",
+        actor="review-a",
+        correlation_id="trace-1",
+        payload={
+            "report": {
+                "fanout_id": fanout_id,
+                "child_id": "review-a",
+                "run_id": f"run-{fanout_id}-review-a",
+                "role_instance": "review-a",
+                "status": "passed",
+                "summary": "Looks good.",
+                "findings": [],
+                "recommendation": "approve",
+            },
+        },
+    )
+
+
+def test_report_evidence_signal_default_keeps_child_completed(tmp_path: Path):
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _start_fanout(orch)
+    fanout_id = next(event.payload["fanout_id"] for event in log.read_all()
+                     if event.type == "fanout.started")
+
+    orch.run_once(events=[_no_evidence_child_result(fanout_id)])
+
+    types = [e.type for e in log.read_all()]
+    assert "stage.report.evidence_missing" in types
+    assert "fanout.child.completed" in types
+    assert "fanout.child.failed" not in types
+
+
+def test_report_evidence_fail_closed_fails_child_without_evidence(
+    tmp_path: Path,
+):
+    state_dir, log, _transport, orch = _state(tmp_path)
+    orch.config.verification.report_evidence_gate = "fail_closed"
+    _start_fanout(orch)
+    fanout_id = next(event.payload["fanout_id"] for event in log.read_all()
+                     if event.type == "fanout.started")
+
+    orch.run_once(events=[_no_evidence_child_result(fanout_id)])
+
+    events = log.read_all()
+    failed = next(e for e in events if e.type == "fanout.child.failed")
+    assert failed.payload["reason"] == "report_evidence_missing"
+    assert failed.payload["child_id"] == "review-a"
+    types = [e.type for e in events]
+    assert "stage.report.evidence_missing" in types
+    assert "fanout.child.completed" not in types
+
+
+def test_report_evidence_fail_closed_passes_child_with_evidence(
+    tmp_path: Path,
+):
+    state_dir, log, _transport, orch = _state(tmp_path)
+    orch.config.verification.report_evidence_gate = "fail_closed"
+    _start_fanout(orch)
+    fanout_id = next(event.payload["fanout_id"] for event in log.read_all()
+                     if event.type == "fanout.started")
+
+    result = _no_evidence_child_result(fanout_id)
+    result.payload["report"]["evidence_refs"] = ["artifacts/review/report.json"]
+    orch.run_once(events=[result])
+
+    types = [e.type for e in log.read_all()]
+    assert "fanout.child.completed" in types
+    assert "fanout.child.failed" not in types
+    assert "stage.report.evidence_missing" not in types
+
+
+# ---------------------------------------------------------------------------
+# A3 → LB-5(2026-07-08):candidate_ref 缺席的验收读者 briefing 仍必须
+# 拿到受审对象语义(target_ref 状态不得作拒因);candidate_ref 在场时
+# 保持原 EVALUATE THE CANDIDATE 块。
+
+
+def test_reader_briefing_without_candidate_ref_gets_subject_guard(
+    tmp_path: Path,
+):
+    _state_dir, _log, transport, orch = _state(tmp_path)
+    _start_fanout(orch)  # candidate.ready 只带 pdd_id,无 candidate_ref
+
+    assert transport.sent
+    briefing = Path(transport.sent[0][1]).read_text(encoding="utf-8")
+    assert "SUBJECT OF REVIEW" in briefing
+    assert "MUST NOT be a rejection reason" in briefing
+    assert "candidate/F-11111111" in briefing
+    assert "Evaluate the target ref as a read-only fanout child." not in briefing
+
+
+def test_reader_briefing_with_candidate_ref_keeps_candidate_block(
+    tmp_path: Path,
+):
+    _state_dir, _log, transport, orch = _state(tmp_path)
+    orch.run_once(events=[ZfEvent(
+        type="candidate.ready",
+        actor="zf-cli",
+        correlation_id="trace-1",
+        payload={
+            "pdd_id": "F-11111111",
+            "candidate_ref": "candidate/F-11111111",
+            "candidate_head_commit": "abc1234",
+        },
+    )])
+
+    assert transport.sent
+    briefing = Path(transport.sent[0][1]).read_text(encoding="utf-8")
+    assert "EVALUATE THE CANDIDATE" in briefing
+    assert "SUBJECT OF REVIEW" not in briefing
+
+
+def test_report_projection_preserves_v3_contract_fields():
+    """2026-07-08 live 轮实锚:verify 事件带 3 行矩阵(schema 机械验证过),
+    但 REPORT_AUDIT_FIELD_KEYS 白名单漏收 v3 契约字段 → children/*/report.json
+    投影丢矩阵 → judge 读盘按纪律拒绝,事件真相与磁盘投影分叉烧一轮返工。
+    钉住:canonical 报告归一必须携带 v3 读者契约的结构化字段。"""
+    result = validate_fanout_report(
+        {
+            "child_id": "verify-lane-0",
+            "status": "passed",
+            "summary": "3 of 3 covered",
+            "findings": [],
+            "recommendation": "approve",
+            "requirement_understanding": "PRD asks for a TOC CLI.",
+            "requirement_coverage_matrix": [
+                {"requirement_id": "AC-1", "status": "covered"},
+                {"requirement_id": "AC-2", "status": "covered"},
+                {"requirement_id": "AC-3", "status": "covered"},
+            ],
+            "gap_findings": [],
+            "replan_recommendation": "continue",
+            "evidence_refs": ["cmd:pytest -> 7 passed"],
+        },
+        child_id="verify-lane-0",
+    )
+    assert result.valid
+    assert len(result.report["requirement_coverage_matrix"]) == 3
+    assert result.report["requirement_understanding"]
+    assert result.report["gap_findings"] == []
+    assert result.report["replan_recommendation"] == "continue"
+
+
+def test_report_projection_passes_through_unknown_fields():
+    """投影根治(2026-07-08 第四批):枚举白名单决定投影字段与 scheme
+    打地鼠同构——改为归一化字段优先、其余原始键一律透传。未知键存活,
+    归一化字段不被原始值覆盖(坏 status 仍被归一)。"""
+    result = validate_fanout_report(
+        {
+            "child_id": "verify-lane-0",
+            "status": "bogus-status",
+            "summary": "x",
+            "findings": [],
+            "recommendation": "approve",
+            "future_contract_field": {"rows": [1, 2]},
+            "custom_probe": "probe-x",
+        },
+        child_id="verify-lane-0",
+    )
+    # 未知键透传
+    assert result.report["future_contract_field"] == {"rows": [1, 2]}
+    assert result.report["custom_probe"] == "probe-x"
+    # 归一化仍优先:非法 status 被归一(并按既有语义判 invalid)
+    assert result.report["status"] == "failed"
+    assert not result.valid

@@ -307,7 +307,11 @@ def generate_preset_yaml(name: str, project_name: str) -> str:
 VERSIONED_PRESETS: dict[str, dict] = {
     "refactor-strict/v1": {
         "budget_enforcement_enabled": True,
-        "verification": {"required": True},
+        # P1-3 (2026-07-09): required belongs under `contract`. The loader reads
+        # verification.contract.required, so the old top-level `required` was dead
+        # config — this "strict" preset never actually required the contract. The
+        # new fail-closed key check surfaced it.
+        "verification": {"contract": {"required": True}},
         "constraints": {"max_file_lines": 500},
         "workflow": {"harness_profile": "strict"},
     },

@@ -12,6 +12,7 @@ from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.skills.provenance import (
     _display_path,
     _format_collision_candidates,
+    _normalize_dependency_name,
     _sha256,
     read_skill_metadata,
     resolve_skill,
@@ -30,6 +31,14 @@ class MaterializedSkill:
     status: str
     collision_candidates: tuple[str, ...] = field(default_factory=tuple)
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    stages: tuple[str, ...] = field(default_factory=tuple)
+    roles: tuple[str, ...] = field(default_factory=tuple)
+    backends: tuple[str, ...] = field(default_factory=tuple)
+    tags: tuple[str, ...] = field(default_factory=tuple)
+    dependencies: tuple[str, ...] = field(default_factory=tuple)
+    dependency_of: tuple[str, ...] = field(default_factory=tuple)
+    auto_inject: bool = False
+    load_on_demand: bool = True
 
 
 @dataclass(frozen=True)
@@ -96,7 +105,12 @@ def materialize_role_skills(
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
     materialized: list[MaterializedSkill] = []
-    for skill in role.skills:
+    for skill, dependency_of in _expanded_role_skill_requests(
+        config=config,
+        project_root=project_root,
+        state_dir=state_dir,
+        role=role,
+    ):
         resolution = resolve_skill(
             project_root=project_root,
             state_dir=state_dir,
@@ -112,6 +126,7 @@ def materialize_role_skills(
                 sha256=None,
                 description=None,
                 status="missing",
+                dependency_of=tuple(dependency_of),
             ))
             continue
 
@@ -136,6 +151,14 @@ def materialize_role_skills(
             status="invalid" if metadata.warnings else "resolved",
             collision_candidates=collision_candidates,
             warnings=metadata.warnings,
+            stages=metadata.stages,
+            roles=metadata.roles,
+            backends=metadata.backends,
+            tags=metadata.tags,
+            dependencies=metadata.dependencies,
+            dependency_of=tuple(dependency_of),
+            auto_inject=metadata.auto_inject,
+            load_on_demand=metadata.load_on_demand,
         ))
 
     result = SkillMaterializationResult(
@@ -153,6 +176,43 @@ def materialize_role_skills(
         json.dumps(result.to_payload(), ensure_ascii=False, indent=2) + "\n",
     )
     return result
+
+
+def _expanded_role_skill_requests(
+    *,
+    config: ZfConfig,
+    project_root: Path,
+    state_dir: Path,
+    role: RoleConfig,
+) -> list[tuple[str, tuple[str, ...]]]:
+    requests: list[tuple[str, tuple[str, ...]]] = []
+    queue: list[tuple[str, tuple[str, ...]]] = [
+        (_normalize_dependency_name(skill), ())
+        for skill in role.skills
+        if str(skill).strip()
+    ]
+    seen: set[str] = set()
+    while queue:
+        skill, dependency_of = queue.pop(0)
+        if skill in seen:
+            continue
+        seen.add(skill)
+        requests.append((skill, dependency_of))
+        resolution = resolve_skill(
+            project_root=project_root,
+            state_dir=state_dir,
+            name=skill,
+            config=config,
+        )
+        if resolution.path is None:
+            continue
+        metadata = read_skill_metadata(resolution.path, expected_name=skill)
+        for dependency in metadata.dependencies:
+            queue.append((
+                _normalize_dependency_name(dependency),
+                (*dependency_of, skill),
+            ))
+    return requests
 
 
 def _target_root_for_role(state_dir: Path, role: RoleConfig) -> Path:

@@ -151,7 +151,14 @@ class ShipService:
                 correlation_id=correlation_id,
             )
 
-        target_branch = self.config.runtime.git.ship_target_branch
+        target_branch, target_resolved_from = self._resolve_ship_target_branch(
+            target_ref,
+            payload_base=payload_base,
+            event_writer=event_writer,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+        )
+        payload_base = {**payload_base, "target_resolved_from": target_resolved_from}
         original_head = self._git(self.project_root, "rev-parse", target_branch)
         self._emit(
             event_writer,
@@ -240,8 +247,9 @@ class ShipService:
 
     def _blockers(self, target_ref: str, payload_base: dict) -> list[str]:
         blockers: list[str] = []
-        if self._dirty_files():
-            blockers.append("working tree is dirty")
+        dirty = self._dirty_files()
+        if dirty:
+            blockers.append("working tree is dirty: " + ", ".join(dirty))
         if not self._ref_exists(target_ref):
             blockers.append(f"target ref {target_ref!r} not found")
             return blockers
@@ -438,7 +446,12 @@ class ShipService:
             status_code = line[:2]
             if status_code == "??":
                 continue
-            path = line[3:].strip()
+            # _git() strips the whole porcelain output, so a leading unstaged
+            # line (" M path") loses its blank X column and lands as "M path";
+            # slice from col 2 (not the raw col-3 path offset) so the path
+            # parses whole in both cases (else the first file loses its first
+            # char: "README.md" -> "EADME.md").
+            path = line[2:].strip()
             if " -> " in path:
                 parts = [part.strip() for part in path.split(" -> ")]
             else:
@@ -469,6 +482,68 @@ class ShipService:
                 text=True,
                 check=False,
             )
+
+    def _resolve_ship_target_branch(
+        self,
+        target_ref: str,
+        *,
+        payload_base: dict,
+        event_writer: EventWriter | None,
+        causation_id: str | None,
+        correlation_id: str | None,
+    ) -> tuple[str, str]:
+        """Resolve the ship target branch, creating it when absent.
+
+        ZF-E2E-PRDCTL-P0-2 (2026-07-12): the hardcoded default `main` failed
+        `git rev-parse` in master-based repos and auto-ship died after
+        judge.passed. Order: explicit config (create if missing) > scan
+        main/master > create main.
+        """
+        configured = str(self.config.runtime.git.ship_target_branch or "").strip()
+        if configured:
+            if self._ref_exists(configured):
+                return configured, "config"
+            self._create_ship_target_branch(
+                configured,
+                target_ref,
+                payload_base=payload_base,
+                event_writer=event_writer,
+                causation_id=causation_id,
+                correlation_id=correlation_id,
+            )
+            return configured, "created"
+        for candidate in ("main", "master"):
+            if self._ref_exists(candidate):
+                return candidate, "scan"
+        self._create_ship_target_branch(
+            "main",
+            target_ref,
+            payload_base=payload_base,
+            event_writer=event_writer,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+        )
+        return "main", "created"
+
+    def _create_ship_target_branch(
+        self,
+        branch: str,
+        target_ref: str,
+        *,
+        payload_base: dict,
+        event_writer: EventWriter | None,
+        causation_id: str | None,
+        correlation_id: str | None,
+    ) -> None:
+        base = target_ref if self._ref_exists(target_ref) else "HEAD"
+        self._git(self.project_root, "branch", branch, base)
+        self._emit(
+            event_writer,
+            "ship.target.created",
+            {**payload_base, "target_branch": branch, "created_from": base},
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+        )
 
     def _ref_exists(self, ref: str) -> bool:
         if not ref:

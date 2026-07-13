@@ -766,24 +766,37 @@ class ChannelMessageActionsMixin:
         mode = _required_text(payload, "mode")
         channel = project_channel(self.state_dir, channel_id) or {}
         default_max_rounds = default_debate_max_rounds(len(channel.get("members") or []))
+        event_payload = {
+            "channel_id": channel_id,
+            "thread_id": str(payload.get("thread_id") or "main"),
+            "mode": mode,
+            "max_rounds": int(payload.get("max_rounds") or default_max_rounds),
+            "default_responder_id": str(payload.get("default_responder_id") or ""),
+            "speaker_policy": payload.get("speaker_policy") if isinstance(payload.get("speaker_policy"), dict) else {},
+            "provider_capabilities": (
+                payload.get("provider_capabilities")
+                if isinstance(payload.get("provider_capabilities"), dict) else {}
+            ),
+            "source": self.surface,
+        }
+        # Forward the discussion-config fields the projection folds
+        # (channel_projection._apply_discussion_mode) but that were previously
+        # dropped here, so the operator could never tune the relay depth cap,
+        # blind roster, synthesizer, or phase deadlines through this action.
+        if payload.get("max_relay_depth") is not None:
+            event_payload["max_relay_depth"] = payload.get("max_relay_depth")
+        if payload.get("participants") is not None:
+            event_payload["participants"] = payload.get("participants")
+        if payload.get("synthesizer") is not None:
+            event_payload["synthesizer"] = str(payload.get("synthesizer"))
+        if isinstance(payload.get("phase_deadline_seconds"), dict):
+            event_payload["phase_deadline_seconds"] = payload.get("phase_deadline_seconds")
         event = self.writer.emit(
             "channel.discussion.mode.set",
             actor=self.actor,
             causation_id=requested.id,
             correlation_id=channel_id,
-            payload={
-                "channel_id": channel_id,
-                "thread_id": str(payload.get("thread_id") or "main"),
-                "mode": mode,
-                "max_rounds": int(payload.get("max_rounds") or default_max_rounds),
-                "default_responder_id": str(payload.get("default_responder_id") or ""),
-                "speaker_policy": payload.get("speaker_policy") if isinstance(payload.get("speaker_policy"), dict) else {},
-                "provider_capabilities": (
-                    payload.get("provider_capabilities")
-                    if isinstance(payload.get("provider_capabilities"), dict) else {}
-                ),
-                "source": self.surface,
-            },
+            payload=event_payload,
         )
         self._completed(
             requested=requested,

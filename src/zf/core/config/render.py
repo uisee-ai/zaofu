@@ -43,11 +43,18 @@ _FLOW_POLICY_CONSUMERS = {
     "gap_loop": "RefactorFlow v3 generated module-parity loop",
     "verify_rescan": "RefactorFlow v3 generated verify.parity_scan.requested bridge",
     "completion_threshold": "module parity closeout / final judge gate",
+    # ⑤ 续(2026-07-08)执法化:strict_refs 由 loader 派生
+    # event_schema.mode=blocking + report_evidence_gate=fail_closed
+    # (显式 verification.* 配置优先,逃生门)。
+    "evidence_policy": (
+        "loader derives event_schema.mode=blocking + "
+        "report_evidence_gate=fail_closed for strict_refs "
+        "(explicit verification.* wins)"
+    ),
 }
 _FLOW_POLICY_METADATA_ONLY = {
     "goal_profile": "goal-loop closeout / delivery policy selector",
     "quality_floor": "quality gate profile / verification requirement matrix",
-    "evidence_policy": "artifact evidence gate / source-ref contract",
     "environment_policy": "verify env readiness / real provider probe",
     "post_verify_discovery": "flow-neutral post-verify discovery profile / gap scan",
     "projection_policy": "WebKanban / DeliveryTrace / Inbox projection contract",
@@ -89,11 +96,19 @@ _FLOW_POLICY_ENFORCEMENT_PLANS = {
         "next_step": "Introduce flow-specific evidence matrices and enable strict mode on controller examples first.",
     },
     "evidence_policy": {
-        "enforcement_status": "planned_consumer",
-        "target_gates": ["terminal evidence gate", "artifact refs gate", "source refs gate"],
-        "rollout_phase": "warn-before-strict",
-        "risk": "high",
-        "next_step": "Require artifact_refs/source_refs/test_refs for strict_refs before judge can pass.",
+        # ⑤ 续(2026-07-08):kernel-wired——strict_refs 派生 blocking +
+        # fail_closed(canonical-dag/v3 证据档 + U20 门),显式配置优先。
+        "enforcement_status": "wired",
+        "target_gates": [
+            "terminal evidence gate", "event_schema blocking (canonical-dag/v3)",
+            "report_evidence_gate fail_closed",
+        ],
+        "rollout_phase": "kernel-wired",
+        "risk": "low",
+        "next_step": (
+            "Keep explicit verification.* as the escape hatch; extend "
+            "derivation to other evidencePolicy values only with live proof."
+        ),
     },
     "environment_policy": {
         "enforcement_status": "planned_consumer",
@@ -364,6 +379,15 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
     data = config_to_primitive(config)
     if not isinstance(data, dict):
         return {}
+    # safety is stored flat (SafetyConfig.tool_closure_enabled) but the loader
+    # reads it nested (safety.tool_closure.enabled). Re-nest so the rendered YAML
+    # round-trips through the loader's fail-closed key check (P1-3) instead of
+    # emitting a flat key the loader now rejects. Same class of non-round-trip
+    # fixup as the provenance-field pops below.
+    safety = data.get("safety")
+    if isinstance(safety, dict) and "tool_closure_enabled" in safety:
+        enabled = safety.pop("tool_closure_enabled")
+        safety["tool_closure"] = {"enabled": bool(enabled)}
     roles = data.get("roles")
     if isinstance(roles, list):
         for role in roles:

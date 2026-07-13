@@ -10,11 +10,10 @@ fanout topology the review/verify/judge stages reject the WHOLE candidate
 None``), so the per-task path no-ops and the validate→reject→rework→re-validate
 loop never closes — the run stalls forever after the first rejection.
 
-This module plans the missing candidate-level rework deterministically from the
-event log: re-trigger the implementation stage (re-emit ``task_map.ready`` with
-a fresh event so ``_maybe_start_writer_fanout`` re-dispatches the writers) with
-the reviewers' findings attached, capped at ``max_attempts`` so a candidate that
-keeps failing escalates instead of looping forever.
+This module plans the missing candidate-level rework deterministically from
+the event log: re-trigger the implementation stage (re-emit ``task_map.ready``
+so ``_maybe_start_writer_fanout`` re-dispatches the writers) with reviewer
+findings attached, capped at ``max_attempts`` before escalating.
 
 Pure function (events in → planned actions out) so the orchestrator tick can run
 it as a self-healing sweep and it stays unit-testable.
@@ -29,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 
 from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
+from zf.runtime.failure_kind import budget_candidate_failure_ids
 from zf.runtime.rework_triage import classify_rework_trigger
 
 if TYPE_CHECKING:
@@ -190,12 +190,13 @@ def plan_candidate_rework(
 ) -> list[ReworkPlan]:
     """Return one ReworkPlan per unhandled candidate-level rejection.
 
-    A rejection is "handled" once a later ``task_map.ready`` carries
-    ``rework_of == <rejection event id>``. Attempts are counted from prior
-    rework re-triggers for the same pdd_id; at/over ``max_attempts`` the plan
-    escalates instead of re-triggering.
+    "Handled" = a later ``task_map.ready`` carries ``rework_of == <rejection
+    event id>``; attempts count prior re-triggers per pdd_id, and at/over
+    ``max_attempts`` the plan escalates instead of re-triggering.
     """
     infra_failure_ids = _infra_only_candidate_failure_ids(events)
+    budget_failure_ids = budget_candidate_failure_ids(events, CANDIDATE_FAIL_EVENTS)
+    no_attempt_ids = infra_failure_ids | budget_failure_ids
     handled_by_event: dict[str, set[str]] = {}
     attempts_by_pdd: dict[str, set[str]] = {}
     attempts_by_pdd_source: dict[tuple[str, str], set[str]] = {}
@@ -243,7 +244,7 @@ def plan_candidate_rework(
             pdd = str(payload.get("pdd_id") or "")
             rework_of = str(payload.get("rework_of"))
             handled_by_event.setdefault(rework_of, set()).add(pdd)
-            if etype != ESCALATE_EVENT and rework_of not in infra_failure_ids:
+            if etype != ESCALATE_EVENT and rework_of not in no_attempt_ids:
                 # Count unique handled source events, not raw task_map.ready rows.
                 # A replay/dedupe bug can emit equivalent task_map.ready events
                 # for the same rework_of; double-counting them prematurely
@@ -453,7 +454,12 @@ def plan_candidate_rework(
             attempt = 0
             repeated_contract_verify = False
             classification = "rejection_ineffective_candidate_behind"
-        if attempt >= max_attempts:
+        if str(getattr(event, "id", "")) in budget_failure_ids:
+            # ZF-E2E-PRDCTL-P0-1:预算失败是 funding 决策非质量 finding,
+            # retrigger 只会把付费段重新撞进同一道预算闸——路由 owner。
+            classification = "budget_blocked"
+            action = "escalate"
+        elif attempt >= max_attempts:
             action = "escalate"
         elif source_event_type == "plan.rejected":
             # B14-S6: operator 拒绝即 plan 级 — 恒走 replan(回喂 synth),
@@ -962,3 +968,33 @@ def quarantine_candidate_from_plan(plan: ReworkPlan) -> "BugCandidate":
         source_kind="quarantine",
         affinity_tag=plan.pdd_id,
     )
+
+
+def candidate_quality_failure_message(quality: Any) -> str:
+    """Rework message for a quality-gate failure, carrying the failing check's
+    actual output (both stdout+stderr tails) so rework sees the real cause — e.g.
+    ``Cannot find module '../lib/task-store'`` — not just the command that ran.
+    Without it the agent re-guesses and exhausts the rework cap into escalate.
+    `node --test` writes failures to stdout while stderr is often only npm noise,
+    so keep both; the payload already tail-bounds each stream and the error can
+    sit mid-tail (the summary trails it), so re-truncate only the joined body.
+    """
+    header = "candidate quality gates failed"
+    if not isinstance(quality, dict):
+        return header
+    excerpts: list[str] = []
+    for checks in (quality.get("gate_checks") or {}).values():
+        for check in checks if isinstance(checks, list) else []:
+            if not isinstance(check, dict) or check.get("passed"):
+                continue
+            command = str(check.get("command") or "").strip()
+            streams = [s for s in (
+                str(check.get("stdout_tail") or "").strip(),
+                str(check.get("stderr_tail") or "").strip(),
+            ) if s]
+            if not command and not streams:
+                continue
+            excerpts.append("\n".join([f"$ {command}".rstrip(), *streams]))
+    if not excerpts:
+        return header
+    return header + "\n\n" + "\n\n".join(excerpts[:5])[:4000]

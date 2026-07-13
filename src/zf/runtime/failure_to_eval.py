@@ -22,16 +22,19 @@ FAILURE_TO_EVAL_EVENT_TYPES = frozenset({
     "gate.failed",
     "supervisor.attention.opened",
     "supervisor.projection.stale",
-    "run.manager.action.blocked",
-    "run.manager.action.failed",
-    "run.manager.action.verify.failed",
-    "run.manager.tick.failed",
     "autoresearch.repair.dispatch_blocked",
     "autoresearch.repair.closeout.required",
     "candidate.integration.failed",
     "human.escalate",
     "orchestrator.tick.failed",
 })
+
+# ZF-E2E-PRDCTL-P0-3 (2026-07-12): Run Manager events about its own actions
+# must not become failure candidates — that files "RM diagnoses RM" work for
+# every honest no-op verify.failed (live: 2 self-referential candidates per
+# round). RM machinery health belongs to the watchdog channel; excluded
+# events are tallied into projections/rm_health.json instead.
+_RM_SELF_EVENT_PREFIX = "run.manager."
 
 
 def failure_candidate_from_event(
@@ -100,8 +103,13 @@ def materialize_failure_candidates_from_events(
     """
     written: list[Path] = []
     seen = _existing_failure_ids(state_dir)
+    rm_self_events: list[Any] = []
     for event in list(events)[-limit:]:
         event_type = str(getattr(event, "type", "") or "")
+        if event_type.startswith(_RM_SELF_EVENT_PREFIX) and (
+            event_type.endswith(".failed") or event_type.endswith(".blocked")
+        ):
+            rm_self_events.append(event)
         if not _should_materialize_event(event_type):
             continue
         candidate = failure_candidate_from_event(event, source=source)
@@ -111,7 +119,44 @@ def materialize_failure_candidates_from_events(
         path = write_failure_candidate(state_dir, candidate)
         seen.add(failure_id)
         written.append(path)
+    if rm_self_events:
+        _record_rm_health_events(state_dir, rm_self_events)
     return written
+
+
+def _record_rm_health_events(state_dir: Path, events: list[Any]) -> None:
+    """Tally excluded RM self-referential failures (rebuildable projection)."""
+    path = state_dir.expanduser() / "projections" / "rm_health.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    counts = data.get("counts") if isinstance(data.get("counts"), dict) else {}
+    seen_ids = [str(v) for v in data.get("seen_ids") or []]
+    recent = [item for item in data.get("recent") or [] if isinstance(item, dict)]
+    for event in events:
+        event_id = str(getattr(event, "id", "") or "")
+        if event_id and event_id in seen_ids:
+            continue
+        event_type = str(getattr(event, "type", "") or "")
+        counts[event_type] = int(counts.get(event_type) or 0) + 1
+        if event_id:
+            seen_ids.append(event_id)
+        recent.append({
+            "id": event_id,
+            "type": event_type,
+            "ts": str(getattr(event, "ts", "") or ""),
+        })
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema_version": "rm-health.v1",
+        "is_derived_projection": True,
+        "counts": counts,
+        "seen_ids": seen_ids[-200:],
+        "recent": recent[-20:],
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def materialize_failure_closeout(
@@ -407,6 +452,8 @@ def _failure_id(event_type: str, event_id: str, payload: Mapping[str, Any]) -> s
 
 
 def _should_materialize_event(event_type: str) -> bool:
+    if event_type.startswith(_RM_SELF_EVENT_PREFIX):
+        return False
     if event_type in FAILURE_TO_EVAL_EVENT_TYPES:
         return True
     if event_type.endswith(".failed") or event_type.endswith(".blocked"):

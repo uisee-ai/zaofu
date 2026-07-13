@@ -19,7 +19,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
-from zf.runtime.task_refs import TaskRefManager
+from zf.runtime.task_refs import TaskRefManager, _dirty_files_from_git_status
 from zf.runtime.workdirs import WorkdirManager
 
 _SHA = "a" * 64
@@ -2395,3 +2395,11 @@ def test_task_ref_manager_rejects_sibling_slice_paths_despite_prefix_tolerance(
     assert result.status == "rejected"
     assert result.payload["reason"] == "source_commit changes outside task contract scope"
     assert result.payload["out_of_scope_files"] == ["cj-min/packages/gateway/routes.ts"]
+
+
+def test_dirty_files_from_git_status_first_unstaged_path_not_truncated():
+    """Caller .strip()s the whole porcelain blob, so the first unstaged line
+    (" M path") lands as "M path"; the parser must not eat its first char
+    (regression: ".zf/x" -> "zf/x" defeated runtime-file ignore at handoff)."""
+    status = " M .zf/first.txt\n M src/second.js".strip()
+    assert _dirty_files_from_git_status(status) == [".zf/first.txt", "src/second.js"]

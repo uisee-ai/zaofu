@@ -458,6 +458,8 @@ class DispatchRoutingQueriesMixin:
             )
             if role is None or role.name == "orchestrator":
                 return None
+            if not self._role_supports_task_skills(role, task):
+                return None
             if not self._worker_dispatchable(role.instance_id):
                 return None
             if self.wip.can_accept(
@@ -480,6 +482,8 @@ class DispatchRoutingQueriesMixin:
             )
             if role is None or role.name == "orchestrator":
                 return None
+            if not self._role_supports_task_skills(role, task):
+                return None
             if not self._worker_dispatchable(role.instance_id):
                 return None
             if self.wip.can_accept(
@@ -493,6 +497,8 @@ class DispatchRoutingQueriesMixin:
         for role in self.config.roles:
             if role.name == "orchestrator":
                 continue
+            if not self._role_supports_task_skills(role, task):
+                continue
             if not self._worker_dispatchable(role.instance_id):
                 continue
             if self.wip.can_accept(
@@ -501,6 +507,59 @@ class DispatchRoutingQueriesMixin:
             ):
                 return role
         return None
+
+    @staticmethod
+    def _role_supports_task_skills(role: RoleConfig, task: Task) -> bool:
+        required = {
+            str(skill).strip()
+            for skill in getattr(task, "skills_required", []) or []
+            if str(skill).strip()
+        }
+        if not required:
+            return True
+        available = {
+            str(skill).strip()
+            for skill in getattr(role, "skills", []) or []
+            if str(skill).strip()
+        }
+        return required <= available
+
+    def _skills_required_gap(self, task: Task) -> dict[str, object] | None:
+        required = sorted({
+            str(skill).strip()
+            for skill in getattr(task, "skills_required", []) or []
+            if str(skill).strip()
+        })
+        if not required:
+            return None
+        roles = self.all_roles() if hasattr(self, "all_roles") else self.config.roles
+        intended = str(task.assigned_to or self._initial_role_for_ready_task(task) or "")
+        candidates = [
+            role for role in roles
+            if role.name != "orchestrator"
+            and (
+                not intended
+                or role.name == intended
+                or role.instance_id == intended
+            )
+        ]
+        if not candidates or any(
+            self._role_supports_task_skills(role, task) for role in candidates
+        ):
+            return None
+        return {
+            "required_skills": required,
+            "target_role": intended,
+            "candidate_roles": [role.instance_id for role in candidates],
+            "available_skills_by_role": {
+                role.instance_id: sorted({
+                    str(skill).strip()
+                    for skill in getattr(role, "skills", []) or []
+                    if str(skill).strip()
+                })
+                for role in candidates
+            },
+        }
 
     def _find_role_by_name(self, name: str) -> RoleConfig | None:
         """Find the first role config matching ``name``.

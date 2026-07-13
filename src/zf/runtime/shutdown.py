@@ -18,6 +18,150 @@ from zf.runtime.transport import TransportAdapter
 _STAGE_PROGRESS_EVENTS = WorkflowEventSets.baseline().stage_progress_events
 
 
+def requeue_stale_inflight_tasks(
+    state_dir: Path,
+    event_log,
+    *,
+    source: str,
+    reason: str,
+) -> bool:
+    """Requeue `in_progress` tasks whose current dispatch made no progress.
+
+    For each such task, emit `task.requeued` and reset `status=backlog,
+    assigned_to=None, active_dispatch_id=""`. Tasks whose current dispatch
+    already produced a stage-progress event (`dev.build.done`,
+    `static_gate.passed`, ...) are skipped with `task.requeue.skipped`:
+    pending-handoff reconciliation owns advancing those, and requeueing
+    would strand completed work back in backlog.
+
+    Two callers, one semantic (worker sessions do not survive either):
+    - graceful stop (#R cangjie 2026-05-21 stale-WIP fix)
+    - zf start boot reconcile (ZF-E2E-RACING-P1 2026-07-11: a restart reset
+      the review worker's pane mid-dispatch; the in-flight claim survived in
+      kanban.json and no sweep shape covered it — the pipeline froze until an
+      operator re-assign).
+
+    Errors are swallowed per task: cleanup must not break the caller's
+    sequence; manual intervention remains the fallback.
+    """
+    from zf.core.task.store import TaskStore
+
+    kanban_path = state_dir / "kanban.json"
+    if not kanban_path.exists():
+        return False
+    try:
+        task_store = TaskStore(kanban_path)
+        in_flight = task_store.filter(status="in_progress")
+    except Exception:
+        return False
+
+    requeued_any = False
+    for task in in_flight:
+        from_assignee = task.assigned_to or ""
+        from_dispatch_id = task.active_dispatch_id or ""
+        try:
+            progress_event = _latest_current_dispatch_progress(event_log, task)
+            if progress_event is not None:
+                event_log.append(ZfEvent(
+                    type="task.requeue.skipped",
+                    actor="zf-cli",
+                    task_id=task.id,
+                    payload={
+                        "task_id": task.id,
+                        "source": source,
+                        "from_status": "in_progress",
+                        "from_assignee": from_assignee,
+                        "from_dispatch_id": from_dispatch_id,
+                        "reason": (
+                            "current dispatch already has stage-progress "
+                            "evidence; preserve for restart handoff "
+                            "reconciliation"
+                        ),
+                        "progress_event_id": progress_event.id,
+                        "progress_event_type": progress_event.type,
+                    },
+                ))
+                continue
+            task_store.update(
+                task.id,
+                status="backlog",
+                assigned_to=None,
+                active_dispatch_id="",
+            )
+            requeued_any = True
+            event_log.append(ZfEvent(
+                type="task.requeued",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "task_id": task.id,
+                    "source": source,
+                    "from_status": "in_progress",
+                    "from_assignee": from_assignee,
+                    "from_dispatch_id": from_dispatch_id,
+                    "to_status": "backlog",
+                    "reason": reason,
+                },
+            ))
+        except Exception:
+            # Individual task failure shouldn't abort whole cleanup;
+            # log nothing (no logger in this module) and move on.
+            continue
+    return requeued_any
+
+
+def _latest_current_dispatch_progress(event_log, task: Task) -> ZfEvent | None:
+    """Return the latest stage-progress event for the active dispatch.
+
+    The scan is intentionally local to this task and ordered backward.
+    A later `task.requeued` invalidates earlier progress; a matching
+    `task.dispatched` without later progress means the worker was truly
+    mid-turn and should be requeued.
+    """
+    try:
+        events = event_log.events_for_task(task.id)
+    except Exception:
+        try:
+            events = [
+                event for event in event_log.read_all()
+                if event.task_id == task.id
+            ]
+        except Exception:
+            return None
+    if not events:
+        return None
+    active_dispatch_id = task.active_dispatch_id or ""
+    for event in reversed(events):
+        if event.type == "task.requeued":
+            return None
+        if event.type == "task.dispatched":
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            dispatch_id = str(payload.get("dispatch_id") or "")
+            if not active_dispatch_id or dispatch_id == active_dispatch_id:
+                return None
+            continue
+        if event.type not in _STAGE_PROGRESS_EVENTS:
+            continue
+        if _progress_matches_dispatch(event, active_dispatch_id):
+            return event
+    return None
+
+
+def _progress_matches_dispatch(
+    event: ZfEvent,
+    active_dispatch_id: str,
+) -> bool:
+    if not active_dispatch_id:
+        return True
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    dispatch_id = str(
+        payload.get("dispatch_id")
+        or payload.get("actual_dispatch_id")
+        or ""
+    )
+    return not dispatch_id or dispatch_id == active_dispatch_id
+
+
 class GracefulShutdown:
     """Execute the 10-step graceful shutdown sequence."""
 
@@ -92,6 +236,9 @@ class GracefulShutdown:
             reason="graceful_stop",
         )
         self.steps_completed.append("preserve_run_manager")
+
+        self._stop_autoresearch_sidecar()
+        self.steps_completed.append("stop_autoresearch_sidecar")
 
         # Final flush of the in-process event index so latest_event_by_*
         # mappings observed in the dying watcher survive into the next
@@ -176,6 +323,9 @@ class GracefulShutdown:
         )
         self.steps_completed.append("preserve_run_manager")
 
+        self._stop_autoresearch_sidecar()
+        self.steps_completed.append("stop_autoresearch_sidecar")
+
         try:
             self.event_log.close()
         except Exception:
@@ -195,6 +345,21 @@ class GracefulShutdown:
         self.steps_completed.append("release_lock")
 
         return self.steps_completed
+
+    def _stop_autoresearch_sidecar(self) -> None:
+        """Cross-process teardown of the autoresearch resident's process
+        group via its pid file (R3/R4/R5: zf stop left the resident, its loop
+        subprocess and a 2h inner runner orphaned every round)."""
+        try:
+            from zf.runtime.autoresearch_resident_sidecar import (
+                stop_autoresearch_resident_sidecar_by_pidfile,
+            )
+
+            stop_autoresearch_resident_sidecar_by_pidfile(
+                self.state_dir, event_log=self.event_log,
+            )
+        except Exception:
+            pass
 
     def _apply_resident_run_manager_preserve(self, *, reason: str) -> set[str]:
         if self.config is None:
@@ -291,147 +456,20 @@ class GracefulShutdown:
     def _emit_stale_inflight_cleanup(self) -> bool:
         """#R fix: requeue stale in_progress tasks before tmux kill.
 
-        Scans kanban.json for `status=in_progress` tasks. For each,
-        emits `task.requeued` event and resets `status=backlog,
-        assigned_to=None, active_dispatch_id=""` so post-restart kernel
-        state matches the empty fresh LLM sessions.
-
-        If the current dispatch has already produced a stage-progress event
-        (`dev.build.done`, `static_gate.passed`, `review.approved`, ...), do
-        not requeue it. Restart reconciliation needs that handoff evidence to
-        advance the task to the next role; clearing the dispatch would strand
-        already-completed work back in backlog.
-
-        Errors swallowed: shutdown cleanup must not break the rest of
-        the 12-step sequence. If kanban.json doesn't exist or task
-        store fails, log nothing and move on (post-restart manual
-        intervention is the fallback, which is the same as today).
-
         Cangjie evidence (2026-05-21): 4 P*V* tasks stuck
         `assigned_to=review status=in_progress` for 1h+ post zf
-        stop+start cycle. With this cleanup, post-restart kernel
-        WIP check sees no stale `task.dispatched` followed by no
-        completion event, because the requeue already cleared
-        `assigned_to`.
+        stop+start cycle. Logic shared with the zf start boot reconcile —
+        see requeue_stale_inflight_tasks.
         """
-        from zf.core.task.store import TaskStore
-
-        kanban_path = self.state_dir / "kanban.json"
-        if not kanban_path.exists():
-            return False
-        try:
-            task_store = TaskStore(kanban_path)
-            in_flight = task_store.filter(status="in_progress")
-        except Exception:
-            return False
-
-        requeued_any = False
-        for task in in_flight:
-            from_assignee = task.assigned_to or ""
-            from_dispatch_id = task.active_dispatch_id or ""
-            try:
-                progress_event = self._latest_current_dispatch_progress(task)
-                if progress_event is not None:
-                    self.event_log.append(ZfEvent(
-                        type="task.requeue.skipped",
-                        actor="zf-cli",
-                        task_id=task.id,
-                        payload={
-                            "task_id": task.id,
-                            "source": "graceful_stop_inflight_cleanup",
-                            "from_status": "in_progress",
-                            "from_assignee": from_assignee,
-                            "from_dispatch_id": from_dispatch_id,
-                            "reason": (
-                                "current dispatch already has stage-progress "
-                                "evidence; preserve for restart handoff "
-                                "reconciliation"
-                            ),
-                            "progress_event_id": progress_event.id,
-                            "progress_event_type": progress_event.type,
-                        },
-                    ))
-                    continue
-                task_store.update(
-                    task.id,
-                    status="backlog",
-                    assigned_to=None,
-                    active_dispatch_id="",
-                )
-                requeued_any = True
-                self.event_log.append(ZfEvent(
-                    type="task.requeued",
-                    actor="zf-cli",
-                    task_id=task.id,
-                    payload={
-                        "task_id": task.id,
-                        "source": "graceful_stop_inflight_cleanup",
-                        "from_status": "in_progress",
-                        "from_assignee": from_assignee,
-                        "from_dispatch_id": from_dispatch_id,
-                        "to_status": "backlog",
-                        "reason": (
-                            "zf stop graceful — release WIP before kill tmux "
-                            "(#R cangjie 2026-05-21 stale-WIP fix)"
-                        ),
-                    },
-                ))
-            except Exception:
-                # Individual task failure shouldn't abort whole cleanup;
-                # log nothing (no logger in this module) and move on.
-                continue
-        return requeued_any
-
-    def _latest_current_dispatch_progress(self, task: Task) -> ZfEvent | None:
-        """Return the latest stage-progress event for the active dispatch.
-
-        The scan is intentionally local to this task and ordered backward.
-        A later `task.requeued` invalidates earlier progress; a matching
-        `task.dispatched` without later progress means the worker was truly
-        mid-turn and should be requeued before tmux is killed.
-        """
-        try:
-            events = self.event_log.events_for_task(task.id)
-        except Exception:
-            try:
-                events = [
-                    event for event in self.event_log.read_all()
-                    if event.task_id == task.id
-                ]
-            except Exception:
-                return None
-        if not events:
-            return None
-        active_dispatch_id = task.active_dispatch_id or ""
-        for event in reversed(events):
-            if event.type == "task.requeued":
-                return None
-            if event.type == "task.dispatched":
-                payload = event.payload if isinstance(event.payload, dict) else {}
-                dispatch_id = str(payload.get("dispatch_id") or "")
-                if not active_dispatch_id or dispatch_id == active_dispatch_id:
-                    return None
-                continue
-            if event.type not in _STAGE_PROGRESS_EVENTS:
-                continue
-            if self._progress_matches_dispatch(event, active_dispatch_id):
-                return event
-        return None
-
-    @staticmethod
-    def _progress_matches_dispatch(
-        event: ZfEvent,
-        active_dispatch_id: str,
-    ) -> bool:
-        if not active_dispatch_id:
-            return True
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        dispatch_id = str(
-            payload.get("dispatch_id")
-            or payload.get("actual_dispatch_id")
-            or ""
+        return requeue_stale_inflight_tasks(
+            self.state_dir,
+            self.event_log,
+            source="graceful_stop_inflight_cleanup",
+            reason=(
+                "zf stop graceful — release WIP before kill tmux "
+                "(#R cangjie 2026-05-21 stale-WIP fix)"
+            ),
         )
-        return not dispatch_id or dispatch_id == active_dispatch_id
 
     def _save_last_shutdown_snapshot(self) -> None:
         """Copy key state files + memory to .zf/last-shutdown/ for

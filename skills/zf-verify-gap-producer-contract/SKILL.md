@@ -1,6 +1,10 @@
 ---
 name: zf-verify-gap-producer-contract
 description: "Use in ZaoFu issue, PRD, or refactor workflows when verify, rescan, judge, or post-verify agents must turn discovered product/parity/regression gaps into canonical gap artifacts and flow.gap_plan.ready or goal.gap_plan.ready events so the same run can loop back to implementation instead of starting a new manual round. Loop-back is fingerprint-deduped and commit-delta-gated by the kernel; see Expected Kernel Responses."
+stages: [verify, judge, replan]
+tags: [contract, gap-plan, evidence]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Verify Gap Producer Contract
@@ -21,6 +25,12 @@ current implementation is incomplete.
 Gap production is downstream of the per-child verify report contract, not a
 fresh prose exercise:
 
+- Every report that carries a `status` or `recommendation` verdict MUST carry
+  a non-empty top-level `evidence_refs` list. This includes bridge reports such
+  as `verify.bridge.child.completed`: cite the pinned candidate commit/ref and
+  the concrete test event, report, or command artifact. A source `path`, an
+  info finding, or a narrative summary is not an evidence ref and will fail
+  closed as `report_evidence_missing` under strict profiles.
 - `gap_tasks` must derive from the graded `gap_findings` rows of a schema-valid
   verify report — one whose `requirement_coverage_matrix` has at least one row
   (the `non_empty` schema tier) and which already passed the

@@ -189,6 +189,16 @@ function GraphCanvas({
     return out;
   }, [nodes]);
   const layers = Array.from(grouped.keys());
+  const neighborIds = new Set(
+    edges.flatMap((edge) =>
+      edge.source === selectedId ? [edge.target] : edge.target === selectedId ? [edge.source] : [],
+    ),
+  );
+  const sortedEdges = selectedId
+    ? [...edges].sort((a, b) =>
+        Number(b.source === selectedId || b.target === selectedId)
+        - Number(a.source === selectedId || a.target === selectedId))
+    : edges;
 
   return (
     <div className="dt-thick-canvas" data-testid="dt-thick-canvas">
@@ -200,7 +210,7 @@ function GraphCanvas({
               <button
                 key={node.id}
                 type="button"
-                className={`dt-thick-node tone-${dtTone(String(node.status || ""))} ${selectedId === node.id ? "active" : ""}`}
+                className={`dt-thick-node tone-${dtTone(String(node.status || ""))} ${selectedId === node.id ? "active" : ""} ${neighborIds.has(node.id) ? "neighbor" : ""}`}
                 data-testid="dt-thick-node"
                 onClick={() => onSelect(node)}
                 title={node.id}
@@ -214,12 +224,16 @@ function GraphCanvas({
         </section>
       ))}
       <div className="dt-thick-edge-strip" data-testid="dt-thick-edges">
-        {edges.slice(0, 18).map((edge) => (
-          <span key={edge.id} className="dt-thick-edge" title={`${edge.source} -> ${edge.target}`}>
-            {edge.kind}
-          </span>
-        ))}
-        {edges.length > 18 ? <span className="dt-thick-edge muted">+{edges.length - 18}</span> : null}
+        {/* PM 后批:选中节点的边排前并高亮(带方向),拓扑可感知。 */}
+        {sortedEdges.slice(0, 18).map((edge) => {
+          const touches = selectedId && (edge.source === selectedId || edge.target === selectedId);
+          return (
+            <span key={edge.id} className={`dt-thick-edge ${touches ? "active" : ""}`} title={`${edge.source} -> ${edge.target}`}>
+              {touches ? `${edge.source === selectedId ? "→" : "←"} ${edge.kind}` : edge.kind}
+            </span>
+          );
+        })}
+        {sortedEdges.length > 18 ? <span className="dt-thick-edge muted">+{sortedEdges.length - 18}</span> : null}
       </div>
     </div>
   );

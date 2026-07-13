@@ -49,6 +49,8 @@ class TestFacetedManifest:
         )
         missing = missing_required_refs(m)
         assert any("skills/none.md" in x for x in missing)
+        assert any("source.md" in x for x in missing)
+        assert any("task.md" in x for x in missing)
 
     def test_write_read_roundtrip(self, tmp_path):
         m = build_task_context_manifest(

@@ -109,6 +109,7 @@ class WriterFanoutDataMixin:
             "Write the plan under `docs/plans/` or a stage-specific artifact directory before emitting the success event.",
             "Include `plan_artifact_ref` or `plan_ref` in the result payload, and include the same path in `artifact_refs`.",
             "When a task map is produced, include `task_map_ref`; when source coverage is available, include `source_index_ref`.",
+            "If the plan splits work across more than one parallel bundle (distinct `owner_role` bundles running concurrently), it MUST include one separate task with `root_owner_class: \"assembly\"` that owns the shared entrypoint/wiring and merges the bundles. The writer fanout admission rejects a multi-bundle task_map lacking it and forces a replan — declare the assembly task up front.",
             "For refactor plan handoff, include `scan_quality_audit_ref` and list that audit artifact in `artifact_refs`.",
             "If the workflow asks for a full manifest, emit `artifact.manifest.published` with `kind=implementation_plan` and `kind=task_map` refs before the terminal success event.",
         ]
@@ -319,6 +320,64 @@ class WriterFanoutDataMixin:
                 "source_commit": source_commit,
                 "candidate_base_commit": base_commit,
             })
+        if success_event == "flow.discovery.completed":
+            trigger_payload = (
+                manifest.get("trigger_payload")
+                if isinstance(manifest.get("trigger_payload"), dict)
+                else {}
+            )
+            gap_tasks: list[dict] = []
+            for child_payload in payloads:
+                for source in (child_payload, child_payload.get("report")):
+                    if not isinstance(source, dict):
+                        continue
+                    raw_tasks = source.get("gap_tasks") or source.get("tasks")
+                    if isinstance(raw_tasks, list):
+                        gap_tasks.extend(
+                            task for task in raw_tasks
+                            if isinstance(task, dict)
+                        )
+            if gap_tasks:
+                payload["gap_tasks"] = gap_tasks
+                payload["gap_task_count"] = len(gap_tasks)
+                payload.setdefault("open_p0_p1_gap_count", len(gap_tasks))
+            for key in (
+                "pdd_id",
+                "feature_id",
+                "goal_id",
+                "goal_kind",
+                "flow_kind",
+                "gap_category",
+                "discovery_profile",
+                "trace_id",
+                "task_map_ref",
+                "source_index_ref",
+                "source_commit",
+                "candidate_base_commit",
+                "candidate_ref",
+                "target_ref",
+                "gap_plan_ref",
+                "open_p0_p1_gap_count",
+                "open_gap_count",
+                "parity_status",
+                "closure_status",
+                "goal_status",
+            ):
+                value = (
+                    self._first_child_value(manifest, payloads, key)
+                    or trigger_payload.get(key)
+                    or manifest.get(key)
+                )
+                if value not in (None, ""):
+                    payload[key] = value
+            for key in ("affected_task_ids", "supersedes_task_ids"):
+                values = self._collect_payload_list(payloads, key)
+                if not values:
+                    raw = trigger_payload.get(key)
+                    if isinstance(raw, list):
+                        values = [str(item) for item in raw if str(item).strip()]
+                if values:
+                    payload[key] = self._dedupe_strings(values)
         if is_module_parity_scan_completed_event(success_event):
             from zf.runtime.module_parity_gap_synthesis import (
                 filter_open_p0_p1_gap_tasks,

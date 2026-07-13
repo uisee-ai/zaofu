@@ -1,6 +1,11 @@
 ---
 name: zf-yoke-dev-worker-role-context
 description: "Use for ZaoFu dev workers that need yoke-style isolated, evidence-first implementation discipline."
+stages: [impl, fix]
+tags: [yoke, role-context, implementation]
+dependencies: [tdd-evidence, incremental-delivery, debugging-triage, git-evidence, source-verification]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Yoke Dev Worker Role Context
@@ -18,6 +23,10 @@ methodology family — do not restate their content here:
 - `yoke/incremental-delivery` — 薄切片实现→测→验→提交循环;提交粒度直接喂
   candidate patch-id 集成机械。
 - `yoke/debugging-triage` — 任务途中测试挂/构建断时的 Stop-the-Line 分诊。
+- `yoke/git-evidence` — git 引用即证据账本:task_ref/candidate/source_commit
+  绑定、多驾驶员纪律、隔离验证用 worktree 不用 stash。
+- `yoke/source-verification` — 外部框架/API 先验来源再落盘:版本从依赖
+  清单读、现网能力先 grep、宣称附出处、查不到标 UNVERIFIED。
 
 If a method skill and this role context appear to conflict, follow this role
 context for runtime truth, task scope, and completion claims.

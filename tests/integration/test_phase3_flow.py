@@ -134,11 +134,14 @@ class TestGracefulShutdown:
         # TR-ZF-STOP-GRACEFUL-CLEANUP-001 (task.requeued for stale
         # in-flight WIP on graceful stop). preserve_run_manager added so
         # scoped stop can keep the resident monitor alive.
-        assert len(steps) == 14
+        # stop_autoresearch_sidecar added 2026-07-10: cross-process pidfile
+        # teardown of the resident's process group (R3/R4/R5 orphan leak).
+        assert len(steps) == 15
         assert "shutdown_marker" in steps
         assert "kill_watcher" in steps
         assert "stale_inflight_cleanup" in steps
         assert "preserve_run_manager" in steps
+        assert "stop_autoresearch_sidecar" in steps
         assert "release_lock" in steps
         assert "flush_event_index" in steps
 

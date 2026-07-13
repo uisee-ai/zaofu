@@ -106,6 +106,7 @@ def write_gap_task_map_amend_artifact(
             for task in gap_tasks
             if _task_id(task)
         ],
+        "superseded_task_ids": _superseded_task_ids(gap_tasks),
     }
     result.update(history)
     return result
@@ -172,6 +173,22 @@ def build_gap_task_map_amend(
     out = dict(base_task_map)
     tasks = [dict(task) for task in _dict_list(base_task_map.get("tasks"))]
     existing_ids = {_task_id(task) for task in tasks if _task_id(task)}
+    superseded_task_ids = _superseded_task_ids(gap_tasks)
+    unknown_superseded = sorted(set(superseded_task_ids) - existing_ids)
+    if unknown_superseded:
+        raise ValueError(
+            "gap plan supersedes unknown task ids: " + ", ".join(unknown_superseded)
+        )
+    replacement_ids = {_task_id(task) for task in gap_tasks if _task_id(task)}
+    reused = sorted(set(superseded_task_ids) & replacement_ids)
+    if reused:
+        raise ValueError(
+            "gap plan replacement task ids must be new: " + ", ".join(reused)
+        )
+    if superseded_task_ids:
+        superseded_set = set(superseded_task_ids)
+        tasks = [task for task in tasks if _task_id(task) not in superseded_set]
+        existing_ids -= superseded_set
     next_wave = _next_wave(tasks)
     appended: list[str] = []
     for raw in gap_tasks:
@@ -197,6 +214,8 @@ def build_gap_task_map_amend(
         "gap_plan_ref": gap_plan_ref,
         "gap_task_ids": appended,
         "gap_task_count": len(appended),
+        "superseded_task_ids": superseded_task_ids,
+        "superseded_task_count": len(superseded_task_ids),
     }
     goal_kind = _first_nonempty(gap_tasks, "goal_kind")
     gap_category = _first_nonempty(gap_tasks, "gap_category")
@@ -277,6 +296,7 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             "goal_kind": goal_kind,
             "gap_category": gap_category,
             "gap_kind": gap_kind,
+            "supersedes_task_ids": _string_list(raw.get("supersedes_task_ids")),
         },
     }
 
@@ -314,7 +334,7 @@ def _enriched_gap_tasks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     }
     inherited_lists = {
         key: _string_list(payload.get(key))
-        for key in ("affected_tasks", "gate_changes")
+        for key in ("affected_tasks", "gate_changes", "supersedes_task_ids")
         if _string_list(payload.get(key))
     }
     if not inherited and not inherited_lists:
@@ -375,6 +395,7 @@ def _gap_task_evidence_contract(
         "replan_history_ref": str(raw.get("replan_history_ref") or "").strip(),
         "source_refs": source_refs,
         "affected_tasks": _string_list(raw.get("affected_tasks")),
+        "supersedes_task_ids": _string_list(raw.get("supersedes_task_ids")),
         "gate_changes": _string_list(raw.get("gate_changes")),
     }
     for key, value in fields.items():
@@ -417,6 +438,7 @@ def _append_replan_history_if_requested(
                 for task in gap_tasks
                 for value in _string_list(task.get("affected_tasks"))
             ),
+            "superseded_task_ids": _superseded_task_ids(gap_tasks),
             "gate_changes": _unique_strings(
                 value
                 for task in gap_tasks
@@ -433,6 +455,14 @@ def _append_replan_history_if_requested(
         "replan_history_ref": history["replan_history_ref"],
         "replan_history_path": history["replan_history_path"],
     }
+
+
+def _superseded_task_ids(gap_tasks: list[dict[str, Any]]) -> list[str]:
+    return _unique_strings(
+        value
+        for task in gap_tasks
+        for value in _string_list(task.get("supersedes_task_ids"))
+    )
 
 
 def _unique_strings(values: Any) -> list[str]:

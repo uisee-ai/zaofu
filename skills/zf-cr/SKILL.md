@@ -175,22 +175,22 @@ not biased toward only the files already known to the reviewer:
 - Verify the contract surfaces that landed after the rework cap (基线检查单,
   漏掉即当新发现/漏真热点):
   - **Tier-2 诊断路由**:`diagnosis.requested` / `diagnosis.completed`
-    (`src/zf/core/events/known_types.py:381`;铸造/消费在
-    `src/zf/runtime/diagnosis.py` + `orchestrator.py:1665`,propose-only
+    (`src/zf/core/events/known_types.py` `KNOWN_EVENT_TYPES`;铸造/消费在
+    `src/zf/runtime/diagnosis.py` + `orchestrator.py` `_run_diagnosis_sweep`,propose-only
     路由,`diagnosis.completed` 判 needs_owner 才升级 owner)。
   - **plan 指纹判重**:`plan.minting.suppressed`
-    (`src/zf/runtime/orchestrator_fanout.py:3086`,FIX-12;语义指纹重复则
+    (`src/zf/runtime/orchestrator_fanout.py` `_plan_approval_satisfied`,FIX-12;语义指纹重复则
     抑制铸造,防 judge cap 冻结期重复铸 plan)。
   - **判审收敛 delta 门 + pin-commit**:`fanout.retrigger.suppressed`
-    (`orchestrator_fanout.py:6380-6505`,FIX-9/15)配合
+    (`orchestrator_fanout.py` `_delta_gate_allows`,FIX-9/15)配合
     `fanout.child.dispatched` payload 的 `target_commit`(pin 审计对象,
     历史审计取 dispatch 时锁定的 commit,而非漂移的当前 HEAD)。
   - **verify report schema `non_empty` 档位**:required 只保证键在,空转合约
-    需 `non_empty`(`src/zf/core/verification/event_schema.py:86-89`,FIX-14;
+    需 `non_empty`(`src/zf/core/verification/event_schema.py` `EventSchemaRule.non_empty`,FIX-14;
     典型字段 `requirement_coverage_matrix` / `gap_findings` 必须非空)。
   - **candidate 增量幂等**:`candidates.py` 的
     `git rev-list --cherry-pick` 按 patch-id 排除 base 侧已含等价补丁
-    (`src/zf/runtime/candidates.py:1373-1381`,FIX-10)。
+    (`src/zf/runtime/candidates.py` `CandidateRebuilder._task_commits`,FIX-10)。
 - For Star/refactor-planning workflows, verify reader/writer/synth routes,
   artifact contracts, `target_ref` behavior, and final plan materialization
   boundary.
@@ -269,7 +269,7 @@ Minimum coverage matrix:
   "subsystem": "runtime/orchestration",
   "expected_paths": ["src/zf/runtime/", "tests/test_star_topology.py"],
   "inspected_paths": ["src/zf/runtime/orchestrator.py"],
-  "evidence_refs": ["src/zf/runtime/orchestrator.py:1234"],
+  "evidence_refs": ["src/zf/runtime/orchestrator.py:Orchestrator.run_once"],
   "coverage": "partial",
   "uncovered": ["writer fanout resume route"],
   "followup_prompt": "Review writer fanout resume route..."

@@ -562,3 +562,44 @@ class TestZfStop:
         events_file = project_dir / ".zf" / "events.jsonl"
         events = events_file.read_text()
         assert "loop.stopped" in events or "session.stopped" in events
+
+
+class TestBootTmuxErrorFailClosed:
+    """ZF-E2E-PRDCTL-P2-7-6:boot spawn TmuxError → 清理 + 放锁 + 非零退出
+    (deepwater boot 僵尸持锁:异常冒泡、前台路径 finally 不放锁)。"""
+
+    def test_tmux_error_during_boot_releases_lock_and_exits_nonzero(
+        self,
+        project_dir: Path,
+        monkeypatch,
+        capsys,
+    ):
+        from zf.runtime.tmux import TmuxError
+        import zf.cli.start as start_mod
+
+        def _boom(config, dry_run=False):
+            raise TmuxError("capture-pane failed: pane %2685 vanished")
+
+        monkeypatch.setattr(start_mod, "make_transport", _boom)
+        killed_sessions: list[list[str]] = []
+
+        import subprocess as real_subprocess
+        real_run = real_subprocess.run
+
+        def _record_run(cmd, *args, **kwargs):
+            if isinstance(cmd, list) and cmd[:2] == ["tmux", "kill-session"]:
+                killed_sessions.append(cmd)
+                return real_subprocess.CompletedProcess(cmd, 0, "", "")
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(real_subprocess, "run", _record_run)
+
+        result = main(["start"])
+
+        assert result == 1
+        captured = capsys.readouterr()
+        assert "tmux boot failed" in captured.err
+        state_dir = project_dir / ".zf"
+        # 锁文件已被显式清理;能再次拿锁 = 没有僵尸持锁。
+        assert not (state_dir / "loop.lock").exists()
+        assert killed_sessions, "boot cleanup must kill created tmux sessions"

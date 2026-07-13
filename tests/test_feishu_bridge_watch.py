@@ -48,6 +48,28 @@ def test_merge_batch_joins_text_keeps_last_ids():
     assert raw["chat_id"] == "oc_x"
 
 
+def test_merge_batch_preserves_reply_context_refs():
+    raw = merge_batch([
+        {"text": "a", "message_id": "m1", "user_id": "u", "chat_id": "oc_x"},
+        {
+            "text": "b",
+            "message_id": "m2",
+            "user_id": "u",
+            "chat_id": "oc_x",
+            "parent_message_id": "om_parent",
+            "root_message_id": "om_root",
+            "quote_message_id": "om_quote",
+            "thread_id": "thread-1",
+        },
+    ])
+
+    assert raw["payload"]["message_id"] == "m2"
+    assert raw["payload"]["parent_message_id"] == "om_parent"
+    assert raw["payload"]["root_message_id"] == "om_root"
+    assert raw["payload"]["quote_message_id"] == "om_quote"
+    assert raw["payload"]["thread_id"] == "thread-1"
+
+
 def test_sdk_log_level_avoids_info_urls():
     class FakeLogLevel:
         INFO = "info"

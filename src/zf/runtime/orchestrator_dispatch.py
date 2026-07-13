@@ -555,11 +555,13 @@ from zf.runtime.dispatch_evidence_queries import (
 from zf.runtime.dispatch_routing_queries import (
     DispatchRoutingQueriesMixin,
 )
+from zf.runtime.dispatch_recovery_policy import DispatchRecoveryPolicyMixin
 
 
 class DispatchMixin(
     DispatchEvidenceQueriesMixin,
     DispatchRoutingQueriesMixin,
+    DispatchRecoveryPolicyMixin,
 ):
     """Dispatch methods of Orchestrator. Mixin contract: relies on host
     Orchestrator's instance fields. Do not instantiate standalone."""
@@ -800,6 +802,9 @@ class DispatchMixin(
                         reason="reassign_role_unresolved",
                     )
                     continue
+                if not self._role_supports_task_skills(role, task):
+                    self._emit_skills_required_unmatched(task, role=role)
+                    continue
                 if not self._worker_dispatchable(role.instance_id):
                     self._emit_dispatch_skipped(
                         task=task,
@@ -850,11 +855,14 @@ class DispatchMixin(
                     task, latest_dispatched=latest_dispatched,
                 )
                 if role is None:
-                    self._emit_dispatch_skipped(
-                        task=task,
-                        role=None,
-                        reason="no_available_role",
-                    )
+                    if self._skills_required_gap(task) is not None:
+                        self._emit_skills_required_unmatched(task, role=None)
+                    else:
+                        self._emit_dispatch_skipped(
+                            task=task,
+                            role=None,
+                            reason="no_available_role",
+                        )
                     continue
 
             if cycle_dispatch_counts.get(role.instance_id, 0) >= self.wip.limit:
@@ -3449,11 +3457,13 @@ class DispatchMixin(
         self, task: Task, trigger_event: ZfEvent,
     ) -> RoleConfig | None:
         """P1-1 (2026-04-20): determine which role gets re-dispatched
-        on failure. Order of precedence:
+        on failure. Order of precedence (specificity: task > stage > global):
 
           1. task.contract.rework_to         (per-task override)
-          2. config.workflow.rework_routing  (per-project default)
-          3. "dev"                           (legacy fallback)
+          2. stage backedge same-lane        (stage-level on_fail/on_reject —
+                                              explicitly configured lane pin)
+          3. config.workflow.rework_routing  (per-project default)
+          4. "dev"                           (legacy fallback)
 
         Returns None if resolution points at a role that doesn't exist
         in the config (caller emits dispatch.rework.unresolvable).
@@ -3475,6 +3485,9 @@ class DispatchMixin(
         if task.contract and getattr(task.contract, "rework_to", ""):
             candidate = task.contract.rework_to
 
+        # Layer 2: stage-level backedge (fires only when the stage declares
+        # an on_fail/on_reject for this event — see the None guard in
+        # _resolve_backedge_same_lane_role).
         backedge = self._workflow_stage_backedge_for_event(trigger_event.type)
         if not candidate:
             same_lane_role = self._resolve_backedge_same_lane_role(
@@ -3485,12 +3498,12 @@ class DispatchMixin(
             if same_lane_role is not None:
                 return same_lane_role
 
-        # Layer 2: workflow.rework_routing for this event type
+        # Layer 3: workflow.rework_routing for this event type
         if not candidate:
             routing = getattr(self.config.workflow, "rework_routing", {}) or {}
             candidate = routing.get(trigger_event.type, "")
 
-        # Layer 3: legacy default
+        # Layer 4: legacy default
         if not candidate:
             candidate = "dev"
 
@@ -3901,6 +3914,15 @@ class DispatchMixin(
         role = self._resolve_rework_role(task, trigger_event)
         if role is None:
             return None
+        # P1-7 (2026-07-09): honor the circuit breaker on the legacy rework path
+        # too — the main _dispatch_ready loop already checks it, but rework
+        # re-dispatch bypassed it. With the breaker now keyed on the producer
+        # role (see apply_circuit_breaker_failure), repeated (role, task)
+        # failures trip it and stop infinite re-dispatch instead of burning turns.
+        rework_breaker = self._circuit_for(role, task)
+        if not rework_breaker.can_proceed():
+            self._emit_circuit_tripped(role, task, rework_breaker)
+            return None
         # E5(131-P2 条款 3):environment/终毒类失败重试是烧钱 —— 直达
         # deadletter + human,不占 attempt 预算(avbs-r5:root 属主文件
         # 把 parity 证据永久卡死,rework 空烧 10 圈)。
@@ -3950,15 +3972,25 @@ class DispatchMixin(
         # scalar 保住既有语义(F12 已防 echo 虚增),账本兜住 rework_of
         # 链重置导致的漏计(r5 实测 10 圈无界循环);账本异常时纯 scalar。
         cap_count = int(getattr(task, "retry_count", 0) or 0)
+        runtime_events: list[ZfEvent] = []
         try:
             from zf.runtime.attempt_ledger import counted_rework_rounds
             from zf.runtime.event_window import read_runtime_events
 
-            cap_count = max(cap_count, counted_rework_rounds(
-                read_runtime_events(self.event_log, self.state_dir), task.id,
-            ))
+            runtime_events = read_runtime_events(self.event_log, self.state_dir)
+            cap_count = max(
+                cap_count,
+                counted_rework_rounds(runtime_events, task.id),
+            )
         except Exception:
             pass
+        if self._semantic_rework_triage_required(
+            task,
+            role,
+            trigger_event,
+            events=runtime_events,
+        ):
+            return None
         if cap_count > max_attempts:
             self._emit_rework_capped(
                 task,
@@ -4482,7 +4514,9 @@ class DispatchMixin(
 
         候选级(无 task_id)失败不进本枢纽 → candidate_rework.plan_candidate_rework
         (分界符 = event.task_id,见该模块头注互链)。
-        dev.blocked 也不进(阻塞 ≠ 失败,_on_dev_blocked 直接 block+escalate)。
+        dev.blocked 经 reconcile/generic 路径仍会到达本枢纽(与 _on_dev_blocked
+        并存);ZF-E2E-RACING-P2:triage 把 owner 判给非 writer 角色时不走
+        REWORK_RETRY 分支,落 block+notify(见 _triage_owner_excludes_lane_rework)。
 
         K3 相 3(影子):remediation_pipeline.route 的统一三层决策以
         shadow 事件并行发射,零执行;分歧即 bug 线索,切换前必须零分歧。
@@ -4501,7 +4535,10 @@ class DispatchMixin(
             )
         triage = self._ensure_rework_triage(trigger_event)
         self._emit_remediation_shadow(task, trigger_event, triage)
-        if triage.classification in REWORK_RETRY_CLASSIFICATIONS:
+        if (
+            triage.classification in REWORK_RETRY_CLASSIFICATIONS
+            and not self._triage_owner_excludes_lane_rework(triage)
+        ):
             if task.status not in {"done", "cancelled", "blocked"}:
                 try:
                     self.task_store.update(task.id, status="in_progress")
@@ -4555,6 +4592,34 @@ class DispatchMixin(
             role=triage.suspected_owner,
             reason=f"{reason}: {triage.classification}",
         )
+
+    def _triage_owner_excludes_lane_rework(self, triage) -> bool:
+        """ZF-E2E-RACING-P2 (2026-07-11): triage's owner decision must bind.
+
+        When triage assigns the failure to the control-plane role
+        (yaml_routing: dev.blocked → orchestrator), dispatching a rework
+        briefing at it is circular — the orchestrator agent is woken by
+        events, it does not take task lanes. Racing e2e: triage recorded
+        yaml_routing/orchestrator/retryable=false, yet the rework was
+        re-dispatched to dev-2 and burned a round on the same scope wall.
+        Route those to the block/notify path, which reports suspected_owner;
+        the control loop wakes through its own triggers.
+
+        Worker roles — including readers like arch/review/judge, which take
+        dispatched work all the time — keep the normal rework dispatch (the
+        gate.failed → arch replan route depends on it).
+        """
+        owner = str(getattr(triage, "suspected_owner", "") or "").strip()
+        if not owner:
+            return False
+        role = (
+            self._find_role_by_name(owner)
+            or self._find_role_by_instance(owner)
+        )
+        if role is None:
+            return False
+        stages = {str(s) for s in (getattr(role, "stages", None) or [])}
+        return "meta" in stages or getattr(role, "name", "") == "orchestrator"
 
     def _rework_trigger_valid_for_task_state(
         self,
@@ -5008,53 +5073,6 @@ class DispatchMixin(
         if isinstance(failed_d, list) and failed_d:
             return f"{trigger_event.type}: {', '.join(map(str, failed_d))}"
         return trigger_event.type
-
-    def _emit_rework_capped(
-        self,
-        task: Task,
-        role: RoleConfig,
-        trigger_event: ZfEvent,
-        *,
-        max_attempts: int | None = None,
-        max_attempts_source: str = "role",
-    ) -> None:
-        """LH-0.T1: emit task.rework.capped + escalate when retry_count
-        exceeds max_rework_attempts. Called instead of dispatching."""
-        effective_max_attempts = (
-            int(max_attempts)
-            if max_attempts is not None
-            else int(role.max_rework_attempts)
-        )
-        reason = trigger_event.payload.get("reason") if isinstance(
-            trigger_event.payload, dict
-        ) else None
-        try:
-            self.event_writer.append(ZfEvent(
-                type="task.rework.capped",
-                actor="zf-cli",
-                task_id=task.id,
-                payload={
-                    "role": role.name,
-                    "retry_count": task.retry_count,
-                    "max_attempts": effective_max_attempts,
-                    "max_attempts_source": max_attempts_source,
-                    "last_reason": reason or trigger_event.type,
-                    "trigger_event_type": trigger_event.type,
-                    "trigger_event_id": trigger_event.id,
-                },
-                causation_id=trigger_event.id,
-                correlation_id=trigger_event.correlation_id,
-            ))
-        except Exception:
-            pass
-        # Route to human — rework cap is a genuine dead-end.
-        try:
-            self.escalation.escalate(
-                f"task {task.id}: rework cap "
-                f"({task.retry_count}/{effective_max_attempts}) exceeded"
-            )
-        except Exception:
-            pass
 
     # -- log capture --
 

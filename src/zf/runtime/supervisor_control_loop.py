@@ -484,8 +484,27 @@ def _owner_message_delivery_targets(
     return targets
 
 
+# ZF-E2E-RACING-P2 (2026-07-11): conditions that hold by the nature of the
+# event itself — declaring them in a registry spec means "when this fires, a
+# human owns the next move". A hard budget cap can only be raised/stopped by
+# the owner, so cost.budget.exceeded firing IS the condition. Stateful
+# conditions (budget_level_changed, run_manager_no_progress) still have no
+# evaluator and are intentionally not listed.
+_INTRINSIC_HUMAN_CONDITIONS = frozenset({"owner_budget_decision_needed"})
+
+
 def _human_action_required(item: dict[str, Any], decision: dict[str, Any]) -> bool:
     if bool(item.get("human_action_required")):
+        return True
+    # ZF-E2E-RACING-P2: registry specs declared human_required_when but
+    # nothing ever evaluated it, so an owner_on_human_required policy could
+    # never open its gate (racing e2e: cost.budget.exceeded ×38 froze the
+    # pipeline with zero owner-visible escalation). Evaluate the intrinsic
+    # subset here; fingerprint dedupe upstream folds repeats to one message.
+    declared = item.get("human_required_when") or ()
+    if isinstance(declared, (list, tuple, set)) and any(
+        str(cond) in _INTRINSIC_HUMAN_CONDITIONS for cond in declared
+    ):
         return True
     route = str(decision.get("route") or item.get("suggested_route") or "")
     source = str(item.get("source") or "")

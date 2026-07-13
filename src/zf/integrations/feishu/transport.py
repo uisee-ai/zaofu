@@ -345,11 +345,28 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
         sender_id = sender.get("sender_id") if isinstance(sender.get("sender_id"), dict) else {}
         text = _content_text(message.get("content"))
         message_id = str(message.get("message_id") or "")
+        mentions = [
+            str(item.get("id") or item.get("open_id") or "")
+            for item in (message.get("mentions") or [])
+            if isinstance(item, dict)
+        ]
         return FeishuWebhookEvent(
             event_type="message",
             payload={
                 "text": text,
                 "message_id": message_id,
+                "parent_message_id": str(
+                    message.get("parent_message_id") or message.get("parent_id") or ""
+                ),
+                "root_message_id": str(
+                    message.get("root_message_id") or message.get("root_id") or ""
+                ),
+                "quote_message_id": str(
+                    message.get("quote_message_id") or message.get("quote_id") or ""
+                ),
+                "thread_id": str(message.get("thread_id") or ""),
+                "mentions": mentions,
+                "app_id": str(header.get("app_id") or header.get("app_id_v2") or ""),
                 "raw": event,
             },
             user_id=str(sender_id.get("open_id") or sender_id.get("user_id") or ""),
@@ -361,6 +378,14 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
         value = action.get("value") if isinstance(action.get("value"), dict) else {}
         operator = event.get("operator") if isinstance(event.get("operator"), dict) else {}
         operator_id = operator.get("operator_id") if isinstance(operator.get("operator_id"), dict) else {}
+        context = event.get("context") if isinstance(event.get("context"), dict) else {}
+        chat_id = str(event.get("open_chat_id") or context.get("open_chat_id") or "")
+        message_id = str(
+            event.get("open_message_id")
+            or context.get("open_message_id")
+            or header.get("event_id")
+            or ""
+        )
         return FeishuWebhookEvent(
             event_type="button_action",
             payload={
@@ -370,11 +395,13 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
                 # otherwise drops everything but .action.
                 "action_value": value,
                 "action_token": str(value.get("t") or ""),
+                "message_id": message_id,
+                "open_message_id": message_id,
                 "action_id": str(action.get("tag") or header.get("event_id") or ""),
                 "raw": event,
             },
             user_id=str(operator_id.get("open_id") or operator_id.get("user_id") or ""),
-            chat_id=str(event.get("open_chat_id") or ""),
+            chat_id=chat_id,
         )
 
     return None

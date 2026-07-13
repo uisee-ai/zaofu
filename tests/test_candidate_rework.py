@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from zf.runtime.candidate_rework import plan_candidate_rework
+from zf.runtime.candidate_rework import (
+    candidate_quality_failure_message,
+    plan_candidate_rework,
+)
 
 
 def _ev(etype, payload=None, task_id=None, eid="", corr=""):
@@ -851,4 +854,33 @@ def test_worker_rejection_backflows_into_rework_feedback():
     assert "not owned by this lane" in joined
     assert "attribution_evidence" in str(
         plans[0].rework_summary.get("attribution_contract"),
+    )
+
+
+def test_candidate_quality_failure_message_surfaces_check_output():
+    # The rework message must carry the real error (stdout/stderr tail), not just
+    # the command — otherwise rework is blind and exhausts its cap into escalate.
+    quality = {
+        "failure_details": {"static": ["cd app && npm install && npm test"]},
+        "gate_checks": {
+            "static": [{
+                "command": "cd app && npm install && npm test",
+                "exit_code": 1,
+                "passed": False,
+                "stdout_tail": "Error: Cannot find module '../lib/task-store'",
+                "stderr_tail": "",
+            }],
+        },
+    }
+    message = candidate_quality_failure_message(quality)
+    assert "candidate quality gates failed" in message
+    assert "Cannot find module '../lib/task-store'" in message
+    assert "cd app && npm install && npm test" in message
+
+
+def test_candidate_quality_failure_message_falls_back_without_output():
+    assert candidate_quality_failure_message({}) == "candidate quality gates failed"
+    assert (
+        candidate_quality_failure_message({"gate_checks": {"static": [{"passed": True}]}})
+        == "candidate quality gates failed"
     )

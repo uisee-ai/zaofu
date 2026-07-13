@@ -172,7 +172,11 @@ def generate_role_instructions(
         }
         auto_lines: list[str] = []
         demand_lines: list[str] = []
-        for skill in role.skills:
+        ordered_skills = list(role.skills)
+        for entry in skill_entries or []:
+            if entry.name not in ordered_skills:
+                ordered_skills.append(entry.name)
+        for skill in ordered_skills:
             entry = entries_by_name.get(skill)
             if entry is None:
                 demand_lines.append(f"- `/{skill}`")
@@ -278,10 +282,14 @@ def _render_skill_instruction_line(skill: str, entry: SkillLockEntry) -> str:
         if entry.auto_inject
         else "indexed"
     )
+    dependency_suffix = (
+        f"; dependency of: {', '.join(entry.dependency_of)}"
+        if entry.dependency_of else ""
+    )
     return (
         f"- `/{skill}` - {description} "
         f"(status: {status}; mode: {load_state}; source: {source}; "
-        f"runtime: {materialized})"
+        f"runtime: {materialized}{dependency_suffix})"
     )
 
 
@@ -1127,8 +1135,13 @@ def _append_completion_contract_block(lines: list[str], *, advisory: bool) -> No
             "wrote / modified (no globs, empty list if you literally changed nothing)."
         )
     lines.append(
-        "- `evidence_refs` (required): non-empty list of pointers — `git:<sha>`, "
-        "`branch:<name>`, file paths to artifacts, or event IDs."
+        "- `evidence_refs` (required): non-empty list of pointers. Each entry "
+        "is EITHER a structured `<scheme>:<value>` reference (`git:<sha>`, "
+        "`branch:<name>`, `cmd:<command> -> <result>`, `test:<command>`, "
+        "`task_map:<ref>`, `event:<id>`) OR a repo-relative file path that "
+        "actually exists on disk — bare paths are mechanically verified "
+        "(completion honesty gate) and a missing path is flagged as an "
+        "unverified claim."
     )
     lines.append(
         "- `residual_risks` (WARN): list of known limitations / edge cases / "

@@ -1367,9 +1367,13 @@ def test_candidate_dirty_worktree_blocks_updated_result(tmp_path: Path):
     config = _config(
         state_dir,
         quality_gates={
+            # A gate that mutates *committed* (tracked) content leaves the
+            # candidate tree diverged from what was verified — that must still
+            # block. (Untracked byproducts like package-lock.json do NOT block;
+            # see test_candidate_worktree_clean_ignores_untracked_byproducts.)
             "candidate": QualityGateConfig(
                 enabled=True,
-                required_checks=["touch untracked-source.ts"],
+                required_checks=["echo dirtied-by-gate >> a.txt"],
             ),
         },
     )
@@ -1405,30 +1409,39 @@ def test_candidate_dirty_worktree_blocks_updated_result(tmp_path: Path):
     assert manifest["status"] == "quality_failed"
     assert "candidate_worktree_clean" in manifest["quality"]["gates_failed"]
     clean = manifest["quality"]["intrinsic_checks"]["candidate_worktree_clean"]
-    assert "untracked-source.ts" in clean["stdout_tail"]
+    assert "a.txt" in clean["stdout_tail"]
     event_types = [event.type for event in log.read_all()]
     assert "candidate.quality.failed" in event_types
     assert "candidate.updated" not in event_types
 
 
-def test_candidate_worktree_clean_ignores_provisioned_runtime_artifacts() -> None:
-    status = (
-        "?? .venv\n"
-        "?? node_modules/\n"
-        "?? web/node_modules\n"
-        "?? ui-tui/node_modules\n"
-        "?? packages/provider/node_modules/@types/node/index.d.ts\n"
-        "?? src/generated.ts\n"
-    )
-
-    reportable = __import__(
+def test_candidate_worktree_clean_ignores_untracked_byproducts() -> None:
+    """Untracked files (``??``) are never shipped by ``git merge candidate`` —
+    dependency-install byproducts (package-lock.json), build caches, and
+    generated files a gate leaves behind must not fail the candidate clean
+    check. Parity with ship.py _dirty_files (B-NEW-13). Only tracked changes
+    (M/A/D/R) count as a dirty candidate."""
+    reportable_fn = __import__(
         "zf.runtime.candidates",
         fromlist=["_candidate_reportable_status"],
-    )._candidate_reportable_status(status)
+    )._candidate_reportable_status
 
-    assert ".venv" not in reportable
-    assert "node_modules" not in reportable
-    assert "src/generated.ts" in reportable
+    untracked_only = (
+        "?? .venv\n"
+        "?? node_modules/\n"
+        "?? app/package-lock.json\n"          # the E2E regression (2026-07-08)
+        "?? yarn.lock\n"
+        "?? src/generated.ts\n"
+    )
+    assert reportable_fn(untracked_only) == ""   # all untracked → clean
+
+    # Tracked modifications still surface as dirty (they change shipped content).
+    with_tracked = untracked_only + " M src/app.ts\n" + "D  removed.py\n"
+    reportable = reportable_fn(with_tracked)
+    assert "src/app.ts" in reportable
+    assert "removed.py" in reportable
+    assert "package-lock.json" not in reportable
+    assert "generated.ts" not in reportable
 
 
 def test_candidate_quality_gate_repairs_whitespace_in_submitted_diff(tmp_path: Path):
@@ -1697,6 +1710,54 @@ def test_candidate_conflict_emits_event_and_does_not_update_ref(tmp_path: Path):
     )
     assert manifest["status"] == "conflict"
     assert any(event.type == "candidate.conflict" for event in log.read_all())
+
+
+def test_candidate_conflict_event_carries_fanout_id_from_trigger(tmp_path: Path):
+    """canonical-dag v1/v2/v3 require fanout_id on candidate.conflict, but the
+    manifest-derived payload never carried it — under a blocking discriminator
+    the real conflict signal would be rejected (2026-07-10 kernel-emission
+    audit, same wedge class as refactor.scan.failed). The emission enriches
+    fanout_id from the trigger event."""
+    _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+    for task_id, content in (("TASK-1", "one\n"), ("TASK-2", "two\n")):
+        branch = f"worker/{task_id}"
+        commit = _task_commit(
+            tmp_path,
+            branch=branch,
+            file_name="README.md",
+            content=content,
+            message=task_id,
+        )
+        _record_task_ref(
+            tmp_path,
+            state_dir,
+            config,
+            task_id=task_id,
+            commit=commit,
+            branch=branch,
+        )
+        _add_task(state_dir, log, task_id=task_id)
+        _approve(log, task_id)
+    writer = EventWriter(log)
+    trigger = ZfEvent(
+        type="task_map.ready",
+        actor="zf-cli",
+        payload={"fanout_id": "fanout-cand-1", "task_map_ref": "x"},
+    )
+
+    result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+        "F-11111111",
+        event_writer=writer,
+        trigger_event=trigger,
+    )
+
+    assert result is not None
+    assert result.status == "conflict"
+    conflicts = [e for e in log.read_all() if e.type == "candidate.conflict"]
+    assert conflicts
+    assert conflicts[-1].payload.get("fanout_id") == "fanout-cand-1"
+    assert conflicts[-1].payload.get("status") == "conflict"
 
 
 def test_review_approval_housekeeping_rebuilds_candidate(tmp_path: Path):

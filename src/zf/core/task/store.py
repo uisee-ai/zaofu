@@ -248,10 +248,19 @@ class TaskStore:
                     new_status = d.get("status")
                     if new_status in TERMINAL_STATES:
                         today = self._today()
-                        raw.pop(i)
-                        self._save_raw(raw)
+                        # P1-1 (2026-07-09): archive + terminal-index BEFORE
+                        # removing from active. The old order (pop → save_raw
+                        # first) meant a crash between the active-delete and the
+                        # archive-write left the task in *neither* active nor the
+                        # terminal index → its blocked_by dependents never resolved
+                        # (ready() checks both sets) → silent deadlock. Archiving
+                        # first means a crash leaves a harmless active+archive
+                        # duplicate (both paths mark it terminal), self-healing on
+                        # the next save, instead of a vanished task.
                         self._append_archive(today, d)
                         self._mark_terminal(task_id, today)
+                        raw.pop(i)
+                        self._save_raw(raw)
                     else:
                         self._save_raw(raw)
                     return self._to_task(dict(d))

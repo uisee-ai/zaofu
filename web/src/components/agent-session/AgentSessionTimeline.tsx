@@ -355,10 +355,20 @@ function RunBlock({
     // single session keeps it because a single-agent session benefits from a
     // compact reasoning trace.
     const thinking = channelChatMode ? [] : parts.filter((part) => part.kind === "thinking");
+    // ZF-E2E-RACING UI (2026-07-11): status parts that survive on a COMPLETED
+    // run are real notices (e.g. the blocked-route "未自动扇出(防风暴)" line
+    // from chat-e2e F5), not progress placeholders — those are synthesized
+    // only while a run is working. Dropping them left a bare presence dot:
+    // four mystery bubbles in one racing-channel discussion. Render them as
+    // muted system lines instead.
+    const notices = run.status === "completed"
+      ? parts.filter((part) => part.kind === "status" && Boolean(part.summary || part.title))
+      : [];
     const tools = parts.filter((part) => part.kind !== "thinking" && part.kind !== "status");
-    if (!thinking.length && !tools.length) return null;
+    if (!thinking.length && !tools.length && !notices.length) return null;
     return (
       <div className="agent-chat-details">
+        {notices.length ? renderPartList(notices, "agent-notice-list") : null}
         {thinking.length ? renderPartList(thinking, "agent-thinking-list") : null}
         {tools.length ? renderPartList(tools, "agent-process-list", true) : null}
       </div>

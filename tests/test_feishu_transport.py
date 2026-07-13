@@ -44,6 +44,54 @@ def test_parse_feishu_v2_message_event():
     assert event.payload["message_id"] == "om_1"
 
 
+def test_parse_feishu_v2_message_event_preserves_reply_aliases():
+    transport = FeishuHttpTransport(tenant_access_token="token")
+    event = transport.parse_webhook({
+        "schema": "2.0",
+        "header": {"event_type": "im.message.receive_v1", "event_id": "evt-1"},
+        "event": {
+            "sender": {"sender_id": {"open_id": "ou_sender"}},
+            "message": {
+                "message_id": "om_child",
+                "chat_id": "oc_1",
+                "content": json.dumps({"text": "reply"}),
+                "parent_id": "om_parent",
+                "root_id": "om_root",
+                "quote_id": "om_quote",
+                "thread_id": "thread-1",
+            },
+        },
+    })
+
+    assert event is not None
+    assert event.payload["parent_message_id"] == "om_parent"
+    assert event.payload["root_message_id"] == "om_root"
+    assert event.payload["quote_message_id"] == "om_quote"
+    assert event.payload["thread_id"] == "thread-1"
+
+
+def test_parse_card_action_uses_context_chat_and_message_id():
+    transport = FeishuHttpTransport(tenant_access_token="token")
+    event = transport.parse_webhook({
+        "schema": "2.0",
+        "header": {"event_type": "card.action.trigger", "event_id": "evt-card"},
+        "event": {
+            "action": {"value": {"action": "human-decision-approve:hdec-1"}},
+            "operator": {"operator_id": {"open_id": "ou_owner"}},
+            "context": {
+                "open_chat_id": "oc_1",
+                "open_message_id": "om_card",
+            },
+        },
+    })
+
+    assert event is not None
+    assert event.event_type == "button_action"
+    assert event.chat_id == "oc_1"
+    assert event.payload["message_id"] == "om_card"
+    assert event.payload["open_message_id"] == "om_card"
+
+
 def test_real_transport_send_message_supports_open_id_receive_type():
     requests = []
 

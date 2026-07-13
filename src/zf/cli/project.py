@@ -54,6 +54,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     init.add_argument("--workspace-register", action="store_true")
     init.add_argument("--no-workspace-register", action="store_true")
     init.add_argument("--skip-instruction-docs", action="store_true")
+    init.add_argument(
+        "--notes", default="",
+        help="Operator notes / conventions appended into project CLAUDE.md "
+             "(same shared path as Web New Project 'description').",
+    )
     init.add_argument("--json", action="store_true")
     init.set_defaults(func=_run_project_init)
 
@@ -124,6 +129,7 @@ def init_flow_project(
     git_init: bool = False,
     workspace_register: bool | None = None,
     with_instruction_docs: bool = True,
+    notes: str = "",
 ) -> dict[str, Any]:
     """Single implementation of kind-based project init, shared by
     `zf project init` and the Web wizard (doc 125 §4/§8). Raises ValueError /
@@ -191,6 +197,7 @@ def init_flow_project(
         force=force,
         with_instruction_docs=with_instruction_docs,
         workspace_register=workspace_register,
+        notes=notes,
     )
     return {
         "ok": True,
@@ -248,6 +255,7 @@ def _run_project_init(args: argparse.Namespace) -> int:
             git_init=bool(args.git_init),
             workspace_register=workspace_register,
             with_instruction_docs=not bool(args.skip_instruction_docs),
+            notes=str(getattr(args, "notes", "") or ""),
         )
     except (ValueError, PathGuardError, ConfigError, FileExistsError,
             subprocess.CalledProcessError) as exc:

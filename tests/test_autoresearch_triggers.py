@@ -1058,3 +1058,63 @@ def test_scan_trigger_decisions_applies_budget_within_current_batch(
     assert [decision.decision for decision in decisions].count("accepted") == 2
     assert decisions[-1].decision == "skipped"
     assert decisions[-1].skip_reason == "hourly_budget"
+
+
+def _ago(seconds: int) -> str:
+    from datetime import datetime, timedelta, timezone
+    return (
+        datetime.now(timezone.utc) - timedelta(seconds=seconds)
+    ).isoformat()
+
+
+def test_fanout_pending_skips_child_with_recent_worker_activity(
+    tmp_path: Path,
+) -> None:
+    """2026-07-08 live 三轮实锚:verify/judge 健康跑 3-6 分钟,纯按派发时长
+    判停滞每轮必产假候选(→ proposal → escalate 噪音)。宽限改从该 worker
+    最后一次可见活动起算——活跃即非停滞。"""
+    state_dir = tmp_path / ".zf"
+    events = [
+        ZfEvent(type="fanout.started", actor="zf-cli", ts=_ago(400),
+                payload={"fanout_id": "fanout-v", "stage_id": "verify"}),
+        ZfEvent(type="fanout.child.dispatched", actor="zf-cli", ts=_ago(390),
+                payload={"fanout_id": "fanout-v", "child_id": "verify-1",
+                         "stage_id": "verify",
+                         "role_instance": "verify-lane-0"}),
+        # worker 持续活跃(agent.usage / codex hook 事件都以它为 actor)
+        ZfEvent(type="agent.usage", actor="verify-lane-0", ts=_ago(15),
+                payload={}),
+        ZfEvent(type="run.manager.tick.completed", actor="zf-cli", ts=_ago(1),
+                payload={}),
+    ]
+
+    signals = detect_fanout_failures(events, state_dir=state_dir)
+
+    assert not [
+        signal for signal in signals
+        if signal.fingerprint == "fanout_child_pending:fanout-v:verify-1"
+    ]
+
+
+def test_fanout_pending_fires_when_worker_goes_quiet(tmp_path: Path) -> None:
+    """反向护栏:worker 静默超宽限(而非仅派发久)才是真停滞,候选照产。"""
+    state_dir = tmp_path / ".zf"
+    events = [
+        ZfEvent(type="fanout.started", actor="zf-cli", ts=_ago(600),
+                payload={"fanout_id": "fanout-v", "stage_id": "verify"}),
+        ZfEvent(type="fanout.child.dispatched", actor="zf-cli", ts=_ago(590),
+                payload={"fanout_id": "fanout-v", "child_id": "verify-1",
+                         "stage_id": "verify",
+                         "role_instance": "verify-lane-0"}),
+        ZfEvent(type="agent.usage", actor="verify-lane-0", ts=_ago(400),
+                payload={}),
+        ZfEvent(type="run.manager.tick.completed", actor="zf-cli", ts=_ago(1),
+                payload={}),
+    ]
+
+    signals = detect_fanout_failures(events, state_dir=state_dir)
+
+    assert [
+        signal for signal in signals
+        if signal.fingerprint == "fanout_child_pending:fanout-v:verify-1"
+    ]

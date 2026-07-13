@@ -49,6 +49,28 @@ class TestRepeatDecisions:
         signals = d.check(events)
         assert not any(s.signal == "repeat_decisions" for s in signals)
 
+    def test_run_manager_ticks_are_not_agent_drift(self):
+        # 2026-07-08 E2E: run-manager periodic ticks flooded worker.drift.detected
+        # (80-120 per fanout run) because _INFRA_ACTORS only excluded zf-cli.
+        # All infra actors emit periodic/loop events by design and must not count.
+        for actor, etype in (
+            ("run-manager", "run.manager.tick.started"),
+            ("zf-supervisor", "runtime.attention.needed"),
+            ("zf-autoresearch", "autoresearch.invocation.accepted"),
+            ("zf-runtime", "failure.candidates.materialized"),
+        ):
+            events = [{"type": etype, "actor": actor}] * 10
+            signals = DriftDetector(repeat_threshold=3).check(events)
+            assert not any(s.signal == "repeat_decisions" for s in signals), (
+                f"{actor}/{etype} must not count as agent repeat-decision drift"
+            )
+        # A genuine worker still triggers drift.
+        worker = [{"type": "dev.build.done", "actor": "dev-lane-0"}] * 10
+        assert any(
+            s.signal == "repeat_decisions"
+            for s in DriftDetector(repeat_threshold=3).check(worker)
+        )
+
     def test_worker_state_repeats_are_not_agent_drift(self):
         events = [
             {"type": "worker.state.changed", "actor": "review"}

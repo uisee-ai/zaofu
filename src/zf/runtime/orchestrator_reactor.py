@@ -6291,13 +6291,13 @@ class EventReactorMixin:
         self,
         event: ZfEvent,
     ) -> OrchestratorDecision | None:
-        """Turn an accepted autoresearch trigger into a supervised action proposal.
-
-        The trigger itself must not pause/kill workers. It creates a
-        token-gated `maintenance-prepare` proposal that the operator or Web
-        action path can apply deterministically.
-        """
+        """Turn a Run Manager-approved trigger into a supervised proposal."""
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("source") or "") != "autoresearch.invocation.accepted":
+            return OrchestratorDecision(
+                action="notify", task_id=event.task_id, role="run_manager",
+                reason="autoresearch trigger awaits Run Manager intake",
+            )
         trigger_id = str(payload.get("trigger_id") or event.id or "").strip()
         if not trigger_id:
             return None
@@ -6440,13 +6440,10 @@ class EventReactorMixin:
         except Exception:
             pass
 
-        # backlog 0820 block B: AUTHORIZED auto-repair gate (default OFF). Only
-        # when the operator sets ZF_AUTORESEARCH_AUTO_REPAIR=authorized does a
-        # candidate auto-dispatch to a zf-self-repair agent; bounded by a
-        # per-fingerprint cap (over cap → escalate to human, not a loop). The
-        # dispatch consumer turns this event into an isolated repair task with
-        # the zf-self-repair skill — the agent then runs the tracked playbook
-        # (backlog → fix → verify → done). Default off → behavior unchanged.
+        # Authorized auto-repair is default-off and bounded per fingerprint.
+        # Autoresearch proposes dispatch; Run Manager accepts before execution.
+        # Exhaustion returns an escalation request to Run Manager, not human.
+        # The isolated worker follows zf-self-repair (fix, verify, close out).
         try:
             from zf.runtime.repair_authorization import (
                 AUTO_REPAIR_ENV,
@@ -6486,9 +6483,7 @@ class EventReactorMixin:
                         "repair_task_payload": repair_task_payload,
                         "apply_policy": repair_mode,
                         "repair_mode": repair_mode,
-                        "failure_class": _autoresearch_failure_class(
-                            decision.fingerprint
-                        ),
+                        "failure_class": _autoresearch_failure_class(decision.fingerprint),
                         "repair_bucket": decision.bucket,
                         "source_event_id": event.id,
                         "resume_checkpoint_ref": str(
@@ -6502,13 +6497,18 @@ class EventReactorMixin:
                 ))
             elif decision.action == "escalate":
                 self.event_writer.append(ZfEvent(
-                    type="human.escalate",
+                    type="autoresearch.repair.escalation.requested",
                     actor="zf-autoresearch",
                     task_id=task_id or None,
                     payload={
                         "reason": decision.reason,
                         "fingerprint": decision.fingerprint,
                         "attempt": decision.attempt,
+                        "failure_class": _autoresearch_failure_class(
+                            decision.fingerprint
+                        ),
+                        "owner_route": "run_manager",
+                        "source_event_id": event.id,
                     },
                     causation_id=event.id,
                     correlation_id=event.correlation_id,

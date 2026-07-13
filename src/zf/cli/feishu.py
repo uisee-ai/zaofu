@@ -83,6 +83,7 @@ AGENT_CANCEL_COMMANDS = {"agent-cancel"}
 HUMAN_DECISION_COMMANDS = {
     "human-decision-approve",
     "human-decision-diagnose",
+    "human-decision-explain",
     "human-decision-halt",
     "human-decision-reject",
 }
@@ -1154,9 +1155,20 @@ def _handle_event_data(
         )
         return {"ok": False, "status": "rejected", "message": message}
 
+    idempotency_store = None
+    if not no_idempotency:
+        idempotency_store = IdempotencyStore(
+            context.state_dir / "integrations" / "feishu" / "idempotency.jsonl",
+        )
+        if idempotency_store.contains(envelope.idempotency_key):
+            message = f"Duplicate: {envelope.idempotency_key}"
+            return {"ok": True, "status": "duplicate", "message": message}
+
     # feishu-A2: mutation buttons must carry a valid signed action token bound to
     # (action, target, chat, expiry, nonce). Composes with the identity gate
     # above — both must pass. The nonce store also makes a signed click single-use.
+    # Exact duplicate callbacks are returned above before consuming the nonce
+    # again; new callbacks with a replayed token still fail closed here.
     if envelope.command in SIGNED_ACTION_COMMANDS:
         token_ok, token_reason = _verify_signed_action(event, envelope, context)
         if not token_ok:
@@ -1170,10 +1182,8 @@ def _handle_event_data(
             }
 
     if not no_idempotency:
-        store = IdempotencyStore(
-            context.state_dir / "integrations" / "feishu" / "idempotency.jsonl",
-        )
-        duplicate = store.check_and_record(
+        assert idempotency_store is not None
+        duplicate = idempotency_store.check_and_record(
             envelope.idempotency_key,
             command=envelope.command,
             user_id=envelope.user_id,
@@ -2091,6 +2101,46 @@ def _handle_human_decision_result(
             "message": f"Usage: /zf {envelope.command} <decision_token>",
         }
     decision_token = envelope.args[0]
+    if envelope.command == "human-decision-explain":
+        actor = f"feishu:{envelope.user_id or 'unknown'}"
+        writer = EventWriter(event_log_from_project(state_dir, config=config))
+        requested = writer.emit(
+            "feishu.command.enveloped",
+            actor=actor,
+            payload={
+                "command": envelope.command,
+                "action": "human-decision-explain",
+                "chat_id": envelope.chat_id,
+                "user_id": envelope.user_id,
+                "message_id": envelope.message_id,
+                "idempotency_key": envelope.idempotency_key,
+                "request": {"decision_token": decision_token},
+            },
+        )
+        event = writer.emit(
+            "run.manager.explanation.requested",
+            actor=actor,
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload={
+                "schema_version": "run-manager.explanation-requested.v1",
+                "decision_token": decision_token,
+                "source": "feishu",
+                "surface": "feishu",
+                "message_id": envelope.message_id,
+                "user_id": envelope.user_id,
+                "chat_id": envelope.chat_id,
+                "question": "explain this Run Manager escalation",
+            },
+        )
+        return {
+            "ok": True,
+            "status": "explanation_requested",
+            "decision_token": decision_token,
+            "event_id": event.id,
+            "message": f"Requested Run Manager explanation for {decision_token}",
+        }
+
     decision_by_command = {
         "human-decision-approve": "approve_controlled_action",
         "human-decision-diagnose": "request_autoresearch",

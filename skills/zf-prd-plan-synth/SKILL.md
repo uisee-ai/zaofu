@@ -70,6 +70,15 @@ fix `test_path_prefix`, package/workdir root, package import name, and any
 packaging/scaffold file such as `app/pyproject.toml`. These values must be
 repo-relative even when verification commands run through `cd <target_root>`.
 
+Verification execution-context rule (ZF-E2E-RACING-P2, 2026-07-11): each
+task's structured `verification` command is machine-executed from the
+repository root — it must run as-is from there. If it depends on
+`target_root` or another subdirectory, embed the directory in the command
+itself (`cd <subdir> && …` or an equivalent flag); a bare `npm test` with
+`package.json` under `app/` fails from the root and burns rework rounds.
+Keep the structured command identical to the one stated in the acceptance
+text.
+
 ## Task Design
 
 Split by behavior, not by component-only layers. A good PRD task map usually

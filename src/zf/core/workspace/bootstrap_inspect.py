@@ -34,7 +34,8 @@ def inspect_project(project_root: str | Path, *, backend: str = "claude") -> dic
     root = Path(project_root).expanduser()
     if not root.exists() or not root.is_dir():
         return {"schema_version": SCHEMA_VERSION, "root": str(root), "confidence": "low",
-                "candidates": [], "recommended_flow": "", "error": "path not found"}
+                "candidates": [], "recommended_flow": "", "has_config": False,
+                "error": "path not found"}
 
     profile = detect(root)
     candidates: list[dict[str, Any]] = []
@@ -85,5 +86,6 @@ def inspect_project(project_root: str | Path, *, backend: str = "claude") -> dic
         "stack": stack,
         "layout": profile.layout,
         "recommended_flow": recommended_flow,
+        "has_config": (root / "zf.yaml").exists(),
         "candidates": candidates,
     }

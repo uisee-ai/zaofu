@@ -14,7 +14,10 @@ from pathlib import Path
 
 from zf.cli.hook_recv import run as hook_recv_run
 from zf.core.events.log import EventLog
+from zf.core.events.model import ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
+from zf.core.task.schema import Task, TaskContract
+from zf.core.task.store import TaskStore
 
 
 def _invoke(state_dir: Path, event: str, backend: str, payload: dict,
@@ -356,3 +359,88 @@ def test_orchestrator_round_complete_unaffected(
     log = EventLog(state_dir / "events.jsonl")
     events = log.read_all()
     assert any(e.type == "orchestrator.round.complete" for e in events)
+
+
+def _seed_scoped_worker_task(state_dir: Path, scope: list[str]) -> Path:
+    transcript = (
+        state_dir / "workdirs" / "dev-1" / "codex-home"
+        / "sessions" / "2026" / "06" / "01" / "rollout.jsonl"
+    )
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="T1", title="core", status="in_progress", assigned_to="dev-1",
+        contract=TaskContract(scope=list(scope)),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="task.dispatched", actor="orchestrator", task_id="T1",
+        payload={"role": "dev-1", "assignee": "dev-1"},
+    ))
+    return transcript
+
+
+def test_codex_apply_patch_blocks_write_outside_allowed_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    transcript = _seed_scoped_worker_task(state_dir, ["app/server.js"])
+
+    code = _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-scope-block",
+            "transcript_path": str(transcript),
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": (
+                    "*** Begin Patch\n"
+                    "*** Add File: app/src/api.js\n"
+                    "+export const x = 1;\n"
+                    "*** End Patch"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    rejected = [e for e in events if e.type == "worker.scope_write.rejected"]
+    assert rejected
+    assert rejected[0].payload["worker"] == "dev-1"
+    assert "app/src/api.js" in rejected[0].payload["offending_paths"]
+
+
+def test_codex_apply_patch_allows_write_inside_allowed_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    transcript = _seed_scoped_worker_task(
+        state_dir, ["app/server.js", "app/tests/api.test.js"]
+    )
+
+    code = _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-scope-ok",
+            "transcript_path": str(transcript),
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": (
+                    "*** Begin Patch\n"
+                    "*** Add File: app/server.js\n"
+                    "+require('http');\n"
+                    "*** End Patch"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code != 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    assert not [e for e in events if e.type == "worker.scope_write.rejected"]

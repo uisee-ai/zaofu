@@ -19,10 +19,13 @@ class ProjectConfig:
 @dataclass
 class SessionConfig:
     tmux_session: str = "zf"
-    # 1206 Phase A: layout strategy. "window_per_role" keeps the legacy
-    # one-window-per-role behavior; "pane_grid" collapses all roles
-    # into panes of a single window for single-glance observability.
-    tmux_layout: str = "window_per_role"
+    # layout strategy. "pane_grid" collapses all roles into panes of a single
+    # window for single-glance observability; "window_per_role" is the legacy
+    # one-window-per-role behavior. Default is pane_grid (2026-07-09): configs
+    # that omit tmux_layout used to fall back to the legacy multi-window layout
+    # — a recurring "wrong tmux layout" trap. Still overridable per config /
+    # profile (set tmux_layout: window_per_role to opt back into legacy).
+    tmux_layout: str = "pane_grid"
 
 
 @dataclass
@@ -617,6 +620,32 @@ class WorkflowAdmissionReplanConfig:
 
 
 @dataclass
+class WorkflowKindRouteConfig:
+    pattern_id: str = ""
+    alias: str = ""
+    default_tier: str = ""
+    tier_routes: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.default_tier and self.default_tier not in {
+            "micro", "light", "standard", "full",
+        }:
+            raise ValueError(
+                "workflow.kind_routes.*.default_tier must be one of "
+                "micro, light, standard, full"
+            )
+        bad_tiers = sorted(
+            tier for tier in self.tier_routes
+            if tier not in {"micro", "light", "standard", "full"}
+        )
+        if bad_tiers:
+            raise ValueError(
+                "workflow.kind_routes.* tier routes contain unsupported tier(s): "
+                + ", ".join(bad_tiers)
+            )
+
+
+@dataclass
 class WorkflowConfig:
     # B/C sprint: removed mode/gate_level/strategy/stages — 0 runtime
     # references. Old yaml that sets them still loads (loader ignores
@@ -630,6 +659,12 @@ class WorkflowConfig:
     # plan.approval.requested 等 operator 批。fanout 触发语义恒挂
     # plan.approved —— 开关只决定这枚事件由谁铸。
     plan_approval_enabled: bool = False
+
+    # 2026-07-08(controller review ⑤c):多 lane fanout_writer 无
+    # quality_gates 时 `zf start`/`zf validate` fail-closed(candidate
+    # 合成树不经验证即进 judge,r4 F10)。此开关是显式豁免出口——
+    # 观测型运行合法,但必须显式声明,不许静默裸奔。
+    allow_unverified_candidate: bool = False
 
     # 131-P2-3(Temporal 借鉴条款):thinking backend 闲置宽限,自派发起
     # max(idle_threshold, attempt_lease_grace_s) 内不判 idle。F15 实证值
@@ -659,6 +694,9 @@ class WorkflowConfig:
     #     test.failed: dev
     #     critic.plan.rejected: arch     # critic driven design rework
     rework_routing: dict[str, str] = field(default_factory=dict)
+    # doc133: deterministic request kind -> workflow stage routing. Project
+    # semantics stay in skills/prompts; this only selects a declared stage.
+    kind_routes: dict[str, WorkflowKindRouteConfig] = field(default_factory=dict)
     # R28 (doc 93 §1/§5): admission/W1 机械拒 → 自动回 synth 重拆。默认
     # 关闭 = no_action 现状(零迁移);见 WorkflowAdmissionReplanConfig。
     admission_replan: WorkflowAdmissionReplanConfig = field(
@@ -854,6 +892,12 @@ class VerificationConfig:
     #   off                — mismatch neither emits nor blocks
     # Default "enforced" preserves the pre-LH-B1 fail-closed behavior.
     snapshot_gate: str = "enforced"
+    # U20 → LB-4 fail-closed: review/verify/judge 子报告带判决但零证据时,
+    #   signal (default) — 只发 stage.report.evidence_missing 观测事件
+    #   fail_closed      — 观测事件照发,同时该 child 按 malformed-report
+    #                      轨道失败(fanout.child.failed reason=
+    #                      report_evidence_missing),走既有 rework/上限链
+    report_evidence_gate: str = "signal"
 
 
 @dataclass
@@ -880,7 +924,9 @@ class GitIsolationConfig:
     # remote. The default is local-first: a local commit is the evidence
     # contract, and remote publication is an operator/task override.
     remote_policy: str = "local"
-    ship_target_branch: str = "main"
+    # "" = auto-resolve at ship time: scan main -> master -> create main
+    # (ZF-E2E-PRDCTL-P0-2; explicit values are used as-is, created if absent).
+    ship_target_branch: str = ""
     ship_candidate_strategy: str = "merge"
     ship_task_strategy: str = "cherry-pick"
     ship_final_command: str = ""

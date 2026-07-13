@@ -122,21 +122,6 @@ export type LiveState = "connecting" | "live" | "reconnecting" | "degraded";
 export type NewTaskAssigneeType = "none" | "agent" | "squad";
 
 
-export interface NewTaskDraft {
-  title: string;
-  behavior: string;
-  verification: string;
-  assignedTo: string;
-  assigneeType: NewTaskAssigneeType;
-  assigneeId: string;
-  assigneeLabel: string;
-  assigneeBackend: string;
-  assigneeSupervisor: string;
-  skills: string;
-  blockedBy: string;
-  priority: string;
-}
-
 
 export interface OrchestratorContext {
   taskId: string;

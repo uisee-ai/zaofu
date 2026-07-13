@@ -22,6 +22,53 @@ from pathlib import Path
 
 
 class OpsActionsMixin:
+    def _inbox_read(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+    ) -> dict:
+        item_id = _required_text(payload, "item_id")
+        if action == "inbox-item-read" and not item_id:
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=None, reason="item_id is required", status_code=422,
+                status="invalid_payload",
+            )
+        event_type = "inbox.item.read" if action == "inbox-item-read" else "inbox.all.read"
+        event = self.writer.emit(
+            event_type,
+            actor=self.actor,
+            causation_id=requested.id,
+            correlation_id=requested.correlation_id,
+            payload=redact_obj({
+                "schema_version": event_type + ".v0",
+                "item_id": item_id,
+                "source": self.source,
+                "surface": self.surface,
+            }),
+        )
+        self._completed(
+            requested=requested,
+            event=event,
+            action=action,
+            requested_action=requested_action,
+            status="recorded",
+            task_id=None,
+            extra={"item_id": item_id, "inbox_event_id": event.id},
+        )
+        return {
+            "_status_code": 202,
+            "ok": True,
+            "status": "recorded",
+            "action": action,
+            "requested_action": requested_action,
+            "event_type": event_type,
+            "event_id": event.id,
+            "item_id": item_id,
+        }
     def _automation_run(
         self,
         *,

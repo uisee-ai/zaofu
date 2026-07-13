@@ -149,7 +149,7 @@ workflow:
     dev.failed: task-map-synth
     dispatch.silent_stall: orchestrator
   strict_triggers:
-    rework_attempts_gte: 1
+    rework_attempts_gte: 3
     context_usage_gte: 0.80
     file_globs: [src/**, tests/**, web/**, docs/**]
   stages:
@@ -240,7 +240,7 @@ workflow:
     timeout_seconds: 1800
 
 roles:
-- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
+- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested], publishes: [orchestrator.rework.triage.recorded], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
 - {name: prd-author, instance_id: prd-author, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-prd-plan-synth, spec-driven-development, documentation-and-adrs]}
 - {name: prd-critic, instance_id: prd-critic, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-prd-plan-synth, doubt-driven-development, zf-yoke-critic-role-context]}
 - {name: task-map-synth, instance_id: task-map-synth, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-prd-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]}

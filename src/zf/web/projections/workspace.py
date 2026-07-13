@@ -320,10 +320,40 @@ def _projection_reply_if_requested(
         "status", "why", "blocker", "blocked", "progress", "summary",
         "summarize", "state", "当前", "状态", "为什么", "阻塞", "进度", "总结",
     }
-    if mode != "projection_first" and (not task_id or not any(term in lowered for term in status_terms)):
+    # B6(b)(2026-07-11):任务问答高频主题也确定性快答(省 LLM 且更准)。
+    verification_terms = {"verification", "verify", "验证", "怎么验", "测试命令", "test command", "how to test"}
+    contract_terms = {"contract", "behavior", "合同", "契约", "行为", "验收"}
+    evidence_terms = {"evidence", "证据", "artifact", "产物"}
+    who_terms = {"who", "assignee", "owner", "谁在做", "谁负责", "负责人"}
+    history_terms = {"history", "timeline", "历史", "时间线", "经过", "返工几次", "重试"}
+    topic_terms = (
+        verification_terms | contract_terms | evidence_terms | who_terms | history_terms
+    )
+    triggered = any(term in lowered for term in status_terms | topic_terms)
+    if mode != "projection_first" and (not task_id or not triggered):
         return None
     tasks = _kanban(state_dir)
     task = next((item for item in tasks if item.get("id") == task_id), None)
+    # 终态任务已归档,active 板投影找不到 —— 回落到 TaskStore 归档查找
+    # (racing 实锚:done 任务点"快照"答成 "0 active tasks")。
+    archived_task = None
+    if task is None and task_id:
+        from zf.core.task.store import TaskStore as _TaskStore
+        archived_task = next(
+            (t for t in _TaskStore(state_dir / "kanban.json").list_all_with_archive()
+             if t.id == task_id),
+            None,
+        )
+        if archived_task is not None:
+            task = {
+                "id": archived_task.id,
+                "status": archived_task.status,
+                "assigned_to": archived_task.assigned_to,
+                "blocked_reason": archived_task.blocked_reason,
+                "blocked_by": list(archived_task.blocked_by or []),
+                "retry_count": archived_task.retry_count,
+                "links": {},
+            }
     events = _events_with_seq(state_dir)
     relevant_events = [
         (seq, event)
@@ -349,6 +379,52 @@ def _projection_reply_if_requested(
             f"{task_id} is {status}, owned by {owner}."
             f"{blocker_text}{latest_text}"
         )
+        # _kanban() 是投影(无 contract/evidence 字段)——主题命中时读原始 task。
+        raw_task = archived_task
+        if raw_task is None and any(term in lowered for term in verification_terms | contract_terms | evidence_terms):
+            from zf.core.task.store import TaskStore as _TaskStore
+            raw_task = _TaskStore(state_dir / "kanban.json").get(str(task_id))
+        contract_obj = getattr(raw_task, "contract", None)
+        topic_lines: list[str] = []
+        if any(term in lowered for term in verification_terms | contract_terms):
+            behavior = str(getattr(contract_obj, "behavior", "") or "").strip()
+            verification = str(getattr(contract_obj, "verification", "") or "").strip()
+            if any(term in lowered for term in contract_terms) and behavior:
+                topic_lines.append(f"Contract behavior: {behavior}")
+            topic_lines.append(
+                f"Verification: {verification}" if verification
+                else "Verification: (contract 未声明 verification 命令)"
+            )
+        if any(term in lowered for term in evidence_terms):
+            raw_evidence = getattr(raw_task, "evidence", None)
+            evidence = raw_evidence if raw_evidence else {}
+            ev_refs = [
+                str(ref) for event_seq, event in relevant_events[-20:]
+                for ref in ((getattr(event, "payload", {}) or {}).get("evidence_refs") or [])
+            ]
+            if evidence or ev_refs:
+                parts = []
+                if evidence:
+                    parts.append(f"task.evidence={evidence}")
+                if ev_refs:
+                    parts.append("event evidence_refs: " + "; ".join(dict.fromkeys(ev_refs))[:400])
+                topic_lines.append("Evidence: " + " | ".join(parts))
+            else:
+                topic_lines.append("Evidence: 尚无 evidence 记录(task.evidence 空且近 20 事件无 evidence_refs)")
+        if any(term in lowered for term in who_terms):
+            topic_lines.append(f"Owner: {owner}")
+        if any(term in lowered for term in history_terms):
+            retry = task.get("retry_count") or 0
+            recent = [
+                f"seq {seq} {getattr(event, 'type', '')}"
+                for seq, event in relevant_events[-5:]
+            ]
+            topic_lines.append(
+                f"History: retry_count={retry}; recent events: "
+                + ("; ".join(recent) if recent else "(none)")
+            )
+        if topic_lines:
+            answer = answer + " " + " ".join(line.rstrip(".") + "." for line in topic_lines)
         refs = []
         if latest and latest.get("id"):
             refs.append({"kind": "event", "id": latest["id"]})

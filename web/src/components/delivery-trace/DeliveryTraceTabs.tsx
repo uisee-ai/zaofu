@@ -351,6 +351,17 @@ export function StageHeatmap({
   );
   // I4: hide quality columns that have no data across any role.
   const hasCost = rows.some((r) => typeof r.cost_usd === "number");
+  // PM 后批:名副其实的"热"——按成本占比着色底色,rework 加红边。
+  const maxCost = Math.max(0, ...rows.map((r) => (typeof r.cost_usd === "number" ? r.cost_usd : 0)));
+  const rowHeat = (r: HeatRow) => {
+    const ratio = maxCost > 0 && typeof r.cost_usd === "number" ? r.cost_usd / maxCost : 0;
+    return {
+      background: ratio > 0 ? `color-mix(in srgb, var(--warn, #b58a00) ${Math.round(4 + ratio * 22)}%, transparent)` : undefined,
+      borderLeft: (r.rework_count ?? 0) > 0 ? "3px solid var(--err, #c33)" : "3px solid transparent",
+      borderRadius: 5,
+      padding: "2px 6px",
+    };
+  };
   const hasScope = rows.some((r) => typeof r.scope_violation_rate === "number");
   const hasDcatch = rows.some((r) => typeof r.discriminator_catch_rate === "number");
   return (
@@ -386,6 +397,7 @@ export function StageHeatmap({
                 gap: 6,
                 alignItems: "baseline",
                 cursor: node.drill_task_id ? "pointer" : "default",
+                ...rowHeat(node),
               }}
             >
               <span>{heat(node.pass_rate)}</span>

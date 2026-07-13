@@ -6,7 +6,9 @@ from pathlib import Path
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.attempt_ledger import (
+    counted_failure_events,
     derive_task_ledger,
+    failure_fingerprint,
     ledger_summary,
     non_retryable_reason,
 )
@@ -115,6 +117,74 @@ def test_counted_rework_rounds_cap_semantics() -> None:
         "fanout_id": "rf9", "reason": "superseded_by_latest_fanout"}))
     events.append(_ev("review.rejected", fanout_id="rf9", reason="stale"))
     assert counted_rework_rounds(events, "T-1") == 3
+
+
+def test_counted_failure_events_groups_same_semantic_fingerprint() -> None:
+    events = [
+        _ev("review.rejected", fanout_id="f1", reason="missing expiry test"),
+        _ev("review.rejected", fanout_id="f2", reason="missing expiry test"),
+        _ev("review.rejected", fanout_id="f3", reason="different finding"),
+        # Same fanout echo does not count twice.
+        _ev("review.rejected", fanout_id="f1", reason="missing expiry test"),
+    ]
+    fingerprint = failure_fingerprint(events[0])
+
+    matched = counted_failure_events(
+        events,
+        "T-1",
+        fingerprint=fingerprint,
+    )
+
+    assert [event.payload["fanout_id"] for event in matched] == ["f1", "f2"]
+
+
+def test_counted_failure_events_ignores_stale_superseded_fanout() -> None:
+    failure = _ev(
+        "verify.failed",
+        fanout_id="stale-fanout",
+        failure_fingerprint="contract-gap",
+    )
+    events = [
+        ZfEvent(
+            type="fanout.child.stale_completion",
+            payload={"fanout_id": "stale-fanout"},
+        ),
+        failure,
+    ]
+
+    assert counted_failure_events(
+        events,
+        "T-1",
+        fingerprint="contract-gap",
+    ) == []
+
+
+def test_failure_fingerprint_ignores_dynamic_finding_ids_and_order() -> None:
+    first = _ev(
+        "review.rejected",
+        findings=[
+            {"event_id": "evt-1", "category": "test", "message": "missing expiry"},
+            {"task_id": "T-1", "category": "scope", "message": "broad edit"},
+        ],
+    )
+    second = _ev(
+        "review.rejected",
+        findings=[
+            {"task_id": "T-2", "category": "scope", "message": "broad edit"},
+            {"event_id": "evt-9", "category": "test", "message": "missing expiry"},
+        ],
+    )
+
+    assert failure_fingerprint(first) == failure_fingerprint(second)
+
+
+def test_counted_failure_events_ignores_explicit_replay_marker() -> None:
+    events = [
+        _ev("review.rejected", reason="same gap", replay=True),
+        _ev("review.rejected", reason="same gap"),
+    ]
+
+    assert len(counted_failure_events(events, "T-1")) == 1
 
 
 def test_lease_grace_reads_config(monkeypatch=None) -> None:

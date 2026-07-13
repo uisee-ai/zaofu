@@ -178,6 +178,8 @@ class ModuleParityBridgeMixin:
     ) -> OrchestratorDecision | None:
         """Require a module parity scan after candidate-level verify passes."""
 
+        if event.type != "verify.passed":
+            return None
         if not self._has_fanout_reader_trigger("verify.parity_scan.requested"):
             return None
         if self._has_bridge_output(
@@ -323,6 +325,10 @@ class ModuleParityBridgeMixin:
                     "gap_plan_ref": str(payload.get("gap_plan_ref") or ""),
                     "gap_tasks": gap_tasks,
                     "gap_task_count": len(gap_tasks),
+                    "supersedes_task_ids": self._payload_text_list(
+                        payload,
+                        "supersedes_task_ids",
+                    ),
                     "source_event_id": event.id,
                     "source": "flow_discovery_bridge",
                     **ref_payload,
@@ -452,6 +458,10 @@ class ModuleParityBridgeMixin:
                     "gap_plan_ref": str(payload.get("gap_plan_ref") or ""),
                     "gap_tasks": gap_tasks,
                     "gap_task_count": len(gap_tasks),
+                    "supersedes_task_ids": self._payload_text_list(
+                        payload,
+                        "supersedes_task_ids",
+                    ),
                     "source_index_ref": str(payload.get("source_index_ref") or ""),
                     "source_commit": str(payload.get("source_commit") or ""),
                     "candidate_base_commit": str(
@@ -644,6 +654,13 @@ class ModuleParityBridgeMixin:
             except (TypeError, ValueError):
                 continue
         return None
+
+    @staticmethod
+    def _payload_text_list(payload: dict, key: str) -> list[str]:
+        value = payload.get(key)
+        if not isinstance(value, list):
+            return []
+        return [str(item) for item in value if str(item).strip()]
 
     @staticmethod
     def _parity_gap_tasks(payload: dict) -> list[dict]:

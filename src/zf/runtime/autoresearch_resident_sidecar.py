@@ -140,6 +140,12 @@ def start_autoresearch_resident_sidecar(
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             text=True,
+            # Own process group: the resident spawns loop subprocesses which
+            # spawn inner test runners (2h timeouts). `zf stop` runs in a
+            # different process and can only clean the whole tree via
+            # killpg on this group (R3/R4/R5: one orphaned inner runner per
+            # round without this).
+            start_new_session=True,
         )
     except Exception as exc:
         log_handle.close()
@@ -221,6 +227,72 @@ def stop_autoresearch_resident_sidecar(
     })
 
 
+def _pidfile_process_matches(pid: int, expected_command: list[str]) -> bool:
+    """Guard against pid reuse: only treat the live process as ours when its
+    cmdline still contains the distinctive tail of the recorded command."""
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ")
+    except OSError:
+        return False
+    token = next(
+        (part for part in reversed(expected_command) if str(part).strip()), "",
+    )
+    return bool(token) and str(token).encode() in cmdline
+
+
+def stop_autoresearch_resident_sidecar_by_pidfile(
+    state_dir: Path,
+    *,
+    event_log: Any | None = None,
+    timeout: float = 10.0,
+) -> bool:
+    """Cross-process teardown for `zf stop`: the in-process handle variant
+    above only serves the `zf start` owner. Reads the recorded pid, kills the
+    sidecar's whole process group (loop subprocess + inner runners included —
+    spawned with start_new_session), and clears the pid file. Returns True
+    when a live sidecar was terminated."""
+    pid_path = Path(state_dir) / "processes" / "autoresearch-resident.pid.json"
+    try:
+        record = json.loads(pid_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    pid = int(record.get("pid") or 0)
+    command = [str(part) for part in (record.get("command") or [])]
+    if pid <= 0 or not _pidfile_process_matches(pid, command):
+        # Stale record (process gone or pid reused by something else): only
+        # clear the file, never signal a stranger.
+        pid_path.unlink(missing_ok=True)
+        return False
+    import signal
+
+    try:
+        pgid = os.getpgid(pid)
+        os.killpg(pgid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            pid_path.unlink(missing_ok=True)
+            return False
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pidfile_process_matches(pid, command):
+            break
+        time.sleep(0.2)
+    else:
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+    pid_path.unlink(missing_ok=True)
+    _append_event(event_log, "autoresearch.resident_sidecar.stopped", {
+        "pid": pid,
+        "stopped_by": "pidfile",
+        "log_path": str(record.get("log_path") or ""),
+    })
+    return True
+
+
 def _append_event(event_log: Any | None, event_type: str, payload: dict[str, Any]) -> None:
     if event_log is None:
         return
@@ -235,4 +307,5 @@ __all__ = [
     "build_autoresearch_resident_command",
     "start_autoresearch_resident_sidecar",
     "stop_autoresearch_resident_sidecar",
+    "stop_autoresearch_resident_sidecar_by_pidfile",
 ]

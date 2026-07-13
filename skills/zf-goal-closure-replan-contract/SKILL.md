@@ -1,6 +1,10 @@
 ---
 name: zf-goal-closure-replan-contract
 description: "Use when a ZaoFu issue, PRD, or refactor workflow must keep scanning, planning, implementing, and verifying until the stated goal is closed. Defines the generic goal-gap-plan input sources and the bridge-event replan contract; the kernel owns the task_map amend and enforces the loop idempotency gates."
+stages: [verify, judge, replan]
+tags: [contract, goal-closure, replan]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Goal Closure Replan Contract

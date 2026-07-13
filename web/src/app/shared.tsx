@@ -1,5 +1,5 @@
 // Shared helpers/components extracted verbatim from App.tsx (P1 split).
-import type { PageId, ParsedEventFilter, NewTaskDraft, AddAgentDraft, ProjectionKind, EmptyStateSpec, ProjectionMetricSpec } from "./sharedTypes";
+import type { PageId, ParsedEventFilter, AddAgentDraft, ProjectionKind, EmptyStateSpec, ProjectionMetricSpec } from "./sharedTypes";
 import type { ActionResponse, ChannelSummary, EventRecord, ExecutionRouteProjection, Snapshot, Task, TraceSummary } from "../api/types";
 import type { AgentConversation, AgentSessionCard } from "../components/agent-session/types";
 import { RouteSummaryStrip } from "../components/kanban/TaskCard";
@@ -201,23 +201,6 @@ export function actionFailureReason(value: unknown): string {
   return textValue(record?.reason || record?.status || "action failed") || "action failed";
 }
 
-
-export function emptyNewTaskDraft(): NewTaskDraft {
-  return {
-    title: "",
-    behavior: "",
-    verification: "",
-    assignedTo: "",
-    assigneeType: "none",
-    assigneeId: "",
-    assigneeLabel: "",
-    assigneeBackend: "",
-    assigneeSupervisor: "",
-    skills: "",
-    blockedBy: "",
-    priority: "3",
-  };
-}
 
 
 export function emptyAddAgentDraft(): AddAgentDraft {

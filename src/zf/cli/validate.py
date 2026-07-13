@@ -149,10 +149,27 @@ def run(args: argparse.Namespace) -> int:
             "blocked. Set budget_enforcement_enabled: true to enforce.",
             file=sys.stderr,
         )
+    for warning in _dead_letter_channel_warnings(config):
+        print(f"  WARNING: {warning}", file=sys.stderr)
+    failure_event_collisions = _stage_failure_event_collisions(config)
+    if failure_event_collisions:
+        print("Stage failure_event uniqueness:", file=sys.stderr)
+        for collision in failure_event_collisions:
+            print(f"  - FAIL: {collision}", file=sys.stderr)
+        return 1
     fanout_writer_stages = [
         stage for stage in getattr(config.workflow, "stages", [])
         if str(getattr(stage, "topology", "")).startswith("fanout_writer")
     ]
+    # ⑤c(2026-07-08):多 lane 时该缺口从 WARN 升 fail-closed——WARN 连打
+    # 三轮无人理(LB-3 教训同型),缺门直接拒;单 lane(light)保持 WARN。
+    from zf.core.config.candidate_gate import combined_candidate_gate_gap
+
+    candidate_gate_gap = combined_candidate_gate_gap(config)
+    if candidate_gate_gap:
+        print("Combined candidate gate check:", file=sys.stderr)
+        print(f"  - FAIL: {candidate_gate_gap}", file=sys.stderr)
+        return 1
     if fanout_writer_stages and not getattr(config, "quality_gates", None):
         # FIX-10(bizsim r4 F10):多任务写入型 workflow 没配 quality_gates,
         # candidate 合成树不经任何验证即发 candidate.ready——r4 churn 期
@@ -191,6 +208,72 @@ def run(args: argparse.Namespace) -> int:
     )
     print(f"OK: {path} is valid")
     return 0
+
+
+def _stage_failure_event_collisions(config) -> list[str]:
+    """ZF-E2E-PRDCTL-P2-7-1:stage failure_event 撞名 → FAIL。
+
+    深水轮无界付费环三层根之一:两个 stage 复用同一 failure_event,kernel
+    failure→stage 映射先到先得,admission 拒绝被翻译成"重跑上游 critic",
+    每圈 ~12 分钟无封顶。
+    """
+    seen: dict[str, str] = {}
+    out: list[str] = []
+    for stage in getattr(getattr(config, "workflow", None), "stages", None) or []:
+        aggregate = getattr(stage, "aggregate", None)
+        failure_event = str(getattr(aggregate, "failure_event", "") or "").strip()
+        stage_id = str(getattr(stage, "id", "") or "")
+        if not failure_event:
+            continue
+        if failure_event in seen:
+            out.append(
+                f"stages {seen[failure_event]!r} and {stage_id!r} share "
+                f"failure_event {failure_event!r} — kernel failure→stage "
+                "mapping is first-wins and will misroute replans"
+            )
+        else:
+            seen[failure_event] = stage_id
+    return out
+
+
+def _dead_letter_channel_warnings(config) -> list[str]:
+    """ZF-E2E-PRDCTL-P1-6:请求方常开、执行方默认关的死信通道预警。
+
+    实证:深水/mini 两轮共 141 次 autoresearch loop 请求、0 次 completed
+    ——RM 每 tick 发诊断请求,执行 sidecar 却默认关,validate 全绿。
+    执行侧关闭可以是有意的(观测型/轻量流),故 WARN 不 FAIL。
+    """
+    runtime = getattr(config, "runtime", None)
+    run_manager = getattr(runtime, "run_manager", None)
+    warnings: list[str] = []
+    if not bool(getattr(getattr(runtime, "autoresearch_resident", None), "enabled", False)):
+        warnings.append(
+            "runtime.autoresearch_resident.enabled=false — Run Manager 的诊断"
+            "请求(autoresearch.loop.requested)将无人执行,诊断动作会以 "
+            "'request became stale' 逐个失败。"
+        )
+    if not bool(getattr(getattr(run_manager, "reflect", None), "enabled", False)):
+        warnings.append(
+            "runtime.run_manager.reflect.enabled=false — resident/agent 的 "
+            "reflect 建议将恒被 blocked。"
+        )
+    if not bool(getattr(getattr(run_manager, "source_repair", None), "enabled", False)):
+        warnings.append(
+            "runtime.run_manager.source_repair.enabled=false — agent 的 "
+            "repair 建议将恒挂 owner 审批(approval.requested)。"
+        )
+    try:
+        from zf.runtime.repair_authorization import auto_repair_consumer_enabled
+        consumer_on = auto_repair_consumer_enabled(config)
+    except Exception:
+        consumer_on = True
+    if not consumer_on:
+        warnings.append(
+            "self-repair 执行消费者未授权(需 ZF_AUTORESEARCH_AUTO_REPAIR="
+            "authorized 或 repair_mode=bounded_repair)— repair dispatch "
+            "请求将无消费者。"
+        )
+    return warnings
 
 
 def _unattended_autonomy_enabled(config) -> bool:
@@ -286,6 +369,18 @@ def _run_cold_start(config_path: Path) -> int:
             f"event_contract_errors={len(errors)}"
         )
 
+    # ZF-E2E-RACING-P2 (2026-07-11): stage-event producibility. Unlike the
+    # warning-level topology signals above, an unproducible stage_order event
+    # is an unambiguous dead end (racing e2e: four roles without triggers →
+    # pipeline froze after static_gate.passed, cold-start scored 5/5), so it
+    # gates in every profile, not only strict.
+    print()
+    reach = _print_stage_reachability(config)
+    if reach is not None and reach.unproducible_stage_events:
+        handoff_fatal.append(
+            f"unproducible_stage_events={reach.unproducible_stage_events}"
+        )
+
     # ZF-TR-PROVIDER-CAP-001: backend capability matrix.
     print()
     _print_backend_capability_matrix(config)
@@ -300,10 +395,11 @@ def _run_cold_start(config_path: Path) -> int:
 
     if handoff_fatal:
         print(
-            "\n  [FAIL] workflow_handoff (strict profile): fatal handoff break — "
+            "\n  [FAIL] workflow_handoff: fatal handoff break — "
             + "; ".join(handoff_fatal)
-            + "\nTo fix: every stage success_event needs a producer and every "
-            "reactor handler needs a wake pattern before 'zf start'."
+            + "\nTo fix: every stage event needs a reachable producer (role "
+            "triggers form the wake chain) and every reactor handler needs a "
+            "wake pattern before 'zf start'."
         )
         return 1
 
@@ -423,6 +519,30 @@ def _print_backend_capability_matrix(config) -> None:
             f"hook_review_required={caps.hook_review_required} "
             f"nested_agent_disable={caps.nested_agent_disable!r}"
         )
+
+
+def _print_stage_reachability(config):
+    """ZF-E2E-RACING-P2: stage-event producibility (gating, all profiles)."""
+    from zf.core.workflow.reachability import check_stage_reachability
+
+    try:
+        report = check_stage_reachability(config)
+    except Exception as exc:
+        print(f"Stage reachability: skipped ({exc})")
+        return None
+    if not report.producible and not report.unproducible_stage_events:
+        print("Stage reachability: n/a (dag disabled or no stage_order)")
+        return report
+    if report.ok:
+        print("Stage reachability: PASS (all stage_order events producible)")
+        return report
+    print("Stage reachability: FAIL — declared but unreachable stage events:")
+    for ev in report.unproducible_stage_events:
+        print(
+            f"  [FAIL] {ev}: no role can be woken to publish it "
+            f"(add it to a role's `triggers` chain)"
+        )
+    return report
 
 
 def _print_topology_report(config) -> None:

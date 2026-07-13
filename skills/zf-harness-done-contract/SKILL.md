@@ -1,6 +1,10 @@
 ---
 name: zf-harness-done-contract
 description: "Use before a ZaoFu role claims done; requires concrete evidence and preserves terminal state decisions for the deterministic runtime."
+stages: [impl, fix, verify, judge]
+tags: [contract, evidence, completion]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Harness Done Contract
@@ -25,6 +29,14 @@ A done report must include:
 - acceptance criteria covered
 - known risks, skipped checks, or follow-up work
 - next expected role or gate
+
+**ref 语法约定**(`evidence_refs`/`artifact_refs` 逐条):要么是
+`<scheme>:<value>` 结构化引用(`git:<sha>`、`branch:<name>`、
+`cmd:<命令> -> <结果>`、`test:<命令>`、`task_map:<ref>`、`event:<id>`),
+要么是**真实存在**的 repo 相对文件路径——裸路径会被 kernel 按盘核验
+(completion honesty 门),不存在即记 `dev.completion.claims_unverified`。
+scheme 拼写用下划线/连字符皆可(RFC 3986 语法),但别把命令输出写成
+裸路径样子。
 
 For fanout writer / affinity lane work, also include:
 

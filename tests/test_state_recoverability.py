@@ -284,6 +284,11 @@ _AUDITED_FIELDS: set[str] = {
     "_dispatch_epoch",
     "_orphan_warned",
     "_hard_cap_exceeded",
+    # Transient: freeze-silence dedup flag (ZF-E2E-RACING-P2, registered
+    # ZF-E2E-PRDCTL). Restart resets to False → at worst one extra layer-2
+    # wake on the first frozen event after restart; freeze truth itself is
+    # re-probed from cost artifacts every event.
+    "_layer2_freeze_wake_fired",
     # Transient: consecutive usage-capture miss counter for debounce only.
     # Restarting at zero can at worst delay or duplicate a diagnostic probe;
     # usage truth is still captured through events/cost artifacts.

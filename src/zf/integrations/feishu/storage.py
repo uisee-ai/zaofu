@@ -45,6 +45,12 @@ class IdempotencyStore:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
             return False
 
+    def contains(self, key: str) -> bool:
+        """Return True when key has already been recorded."""
+
+        with locked_path(self.path):
+            return self._contains_unlocked(key)
+
     def _contains_unlocked(self, key: str) -> bool:
         if not self.path.exists():
             return False

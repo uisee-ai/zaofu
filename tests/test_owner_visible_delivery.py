@@ -21,6 +21,11 @@ class _FailingTransport(MockFeishuTransport):
     def send_message(self, message: FeishuMessage) -> bool:
         raise RuntimeError("send timeout")
 
+    def send_card(self, message: FeishuMessage) -> str | None:
+        # Card delivery falls back to text on failure; a fully-down transport
+        # must fail both paths for the failed-receipt semantics under test.
+        raise RuntimeError("send timeout")
+
 
 def _state(tmp_path: Path) -> tuple[EventLog, EventWriter]:
     state_dir = tmp_path / ".zf"
@@ -38,12 +43,23 @@ def _owner_message(log: EventLog) -> None:
             "message_id": "omsg-1",
             "decision_id": "dec-1",
             "attention_id": "attn-1",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "title": "worker stuck",
             "summary": "heartbeat is stale",
             "delivery_targets": ["web", "channel", "feishu"],
         },
     ))
+
+
+def _delivered_body(message) -> str:
+    """Interactive-card delivery wraps the rendered body in card JSON;
+    unwrap for text assertions (plain-text fallback passes through)."""
+    import json as _json
+    content = message.content
+    if not content.startswith("{"):
+        return content
+    card = _json.loads(content)
+    return card["elements"][0]["text"]["content"]
 
 
 def test_owner_visible_delivery_sends_feishu_receipt_once(tmp_path: Path) -> None:
@@ -75,7 +91,8 @@ def test_owner_visible_delivery_sends_feishu_receipt_once(tmp_path: Path) -> Non
     assert transport.sent_messages[0].chat_id == "ou-owner"
     assert transport.sent_messages[0].receive_id_type == "open_id"
     # backlog 2026-07-07-1315: friendly Chinese body, not a raw id/field dump.
-    content = transport.sent_messages[0].content
+    assert transport.sent_messages[0].msg_type == "interactive"
+    content = _delivered_body(transport.sent_messages[0])
     assert content.startswith("🟠")
     assert "/zf" not in content
     event_types = [event.type for event in log.read_all()]
@@ -197,7 +214,7 @@ def test_owner_visible_delivery_formats_run_manager_restart_message(tmp_path: Pa
             "source": "run-manager",
             "handled_by": "run-manager",
             "human_action_required": True,
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "title": "Source repair closeout requires operator merge",
             "summary": "restart only at a checkpoint boundary",
             "restart_strategy": "operator_approved",
@@ -215,9 +232,11 @@ def test_owner_visible_delivery_formats_run_manager_restart_message(tmp_path: Pa
 
     assert result.delivered == 1
     assert len(transport.sent_messages) == 1
-    content = transport.sent_messages[0].content
+    content = _delivered_body(transport.sent_messages[0])
     # backlog 2026-07-07-1315: friendly Chinese, severity emoji, human-action
     # prompt — no field dump, no "[ZaoFu ...]" header, no "/zf" CLI line.
+    # (2026-07-11: body now ships inside an interactive card; header may carry
+    # "[ZaoFu ...]" as the card title, the BODY stays clean.)
     assert content.startswith("🟠")
     assert "需要你的确认后才能继续。" in content
     assert "restart_strategy:" not in content
@@ -301,3 +320,69 @@ def test_owner_visible_duplicate_content_is_folded(tmp_path: Path) -> None:
                   if e.type == OWNER_MESSAGE_SUPPRESSED
                   and e.payload.get("reason") == "duplicate_owner_message"]
     assert len(suppressed) == 2
+
+
+def test_feishu_convergence_pushes_only_actionable_policies(tmp_path: Path) -> None:
+    """2026-07-11 operator convergence: Feishu is the human-attention channel.
+    Push = human_action_required / owner_immediate / owner_on_human_required /
+    policy-less critical; everything else downgrades to the inbox with a
+    suppressed receipt (never dropped)."""
+    from zf.runtime.owner_visible_delivery import _should_suppress_delivery
+
+    push_cases = [
+        {"human_action_required": True, "severity": "medium"},
+        {"notification_policy": "owner_immediate", "severity": "low"},
+        {"notification_policy": "owner_on_human_required"},
+        {"severity": "critical"},
+    ]
+    for payload in push_cases:
+        assert _should_suppress_delivery(payload, target="feishu") is False, payload
+
+    downgrade_cases = [
+        {"severity": "high"},
+        {"notification_policy": "owner_on_repair_failed", "severity": "high"},
+        {"severity": "warn", "source": "run-manager"},
+        {},
+    ]
+    for payload in downgrade_cases:
+        assert _should_suppress_delivery(payload, target="feishu") is True, payload
+    # non-feishu targets are never policy-filtered
+    assert _should_suppress_delivery({}, target="web") is False
+
+
+def test_feishu_delivery_ships_severity_colored_card(tmp_path: Path) -> None:
+    """2026-07-11: friendly formatting — delivery is an interactive card with a
+    severity-colored header and the rendered Chinese body as lark_md."""
+    import json as _json
+
+    log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="owner.visible_message.requested",
+        actor="zf-run-manager",
+        task_id="TASK-C",
+        payload={
+            "message_id": "omsg-card",
+            "source": "run-manager",
+            "human_action_required": True,
+            "severity": "high",
+            "title": "需要审批",
+            "summary": "run manager 等待你的决定",
+            "delivery_targets": ["feishu"],
+        },
+    ))
+    transport = MockFeishuTransport()
+
+    result = deliver_owner_visible_messages_once(
+        event_log=log,
+        writer=writer,
+        transport=transport,
+        routing=RoutingConfig(channels={"approval": "oc-alerts"}),
+    )
+
+    assert result.delivered == 1
+    sent = transport.sent_messages[0]
+    assert sent.msg_type == "interactive"
+    card = _json.loads(sent.content)
+    assert card["header"]["template"] == "red"
+    assert "需要审批" in card["header"]["title"]["content"]
+    assert card["elements"][0]["text"]["tag"] == "lark_md"

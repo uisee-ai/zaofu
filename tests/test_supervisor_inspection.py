@@ -430,7 +430,7 @@ def test_supervisor_routes_workflow_batch_resume_to_run_manager(
         correlation_id="trace-r37",
     ))
     config = ZfConfig(
-        session=SessionConfig(tmux_session="zf-test"),
+        session=SessionConfig(tmux_session="zf-test", tmux_layout="window_per_role"),
         roles=[RoleConfig(name="dev", backend="mock")],
     )
 
@@ -880,7 +880,7 @@ def test_supervisor_snapshot_projects_readonly_pane_probe_mismatch(
         encoding="utf-8",
     )
     config = ZfConfig(
-        session=SessionConfig(tmux_session="zf-test"),
+        session=SessionConfig(tmux_session="zf-test", tmux_layout="window_per_role"),
         roles=[RoleConfig(name="dev", backend="codex", instance_id="dev-1", stuck_threshold_seconds=60)],
     )
     commands: list[list[str]] = []

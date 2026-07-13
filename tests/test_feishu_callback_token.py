@@ -163,6 +163,46 @@ def test_require_on_accepts_valid_token(tmp_path, monkeypatch):
     assert [e for e in _events(ctx.state_dir) if e.type == "plan.approved"]
 
 
+def test_signed_duplicate_callback_is_idempotent_before_nonce_replay(
+    tmp_path,
+    monkeypatch,
+):
+    _project(tmp_path, monkeypatch, require_signed=True)
+    monkeypatch.setenv("ZF_FEISHU_ACTION_TOKEN_SECRET", "s3cr3t")
+    ctx = resolve_project_context()
+    import time
+
+    token = sign_action(
+        b"s3cr3t",
+        action="plan-approve",
+        target="plan-7",
+        chat_id="c1",
+        ttl_seconds=100,
+        now=time.time(),
+    )
+
+    first = _handle_event_data(
+        _button("plan-approve:plan-7", "m3", token=token),
+        context=ctx,
+        user_levels={},
+    )
+    duplicate = _handle_event_data(
+        _button("plan-approve:plan-7", "m3", token=token),
+        context=ctx,
+        user_levels={},
+    )
+    replay_with_new_message = _handle_event_data(
+        _button("plan-approve:plan-7", "m3-replay", token=token),
+        context=ctx,
+        user_levels={},
+    )
+
+    assert first["ok"] is True
+    assert duplicate["status"] == "duplicate"
+    assert replay_with_new_message["status"] == "rejected"
+    assert len([e for e in _events(ctx.state_dir) if e.type == "plan.approved"]) == 1
+
+
 def test_require_on_rejects_forged_target(tmp_path, monkeypatch):
     # token issued for plan-7 cannot approve plan-EVIL
     _project(tmp_path, monkeypatch, require_signed=True)

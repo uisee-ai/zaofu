@@ -26,7 +26,8 @@ def test_action_router_classifies_semantic_replan_and_diagnosis() -> None:
     unknown = route_for_safe_action("replex_reflection")
 
     assert replan.failure_class == "task_map_drift"
-    assert replan.owner_route == "orchestrator_replan"
+    assert replan.owner_route == "run_manager"
+    assert replan.action_policy == "needs_diagnosis"
     assert replan.intervention_class == "semantic_replan"
     assert unknown.failure_class == "unknown_complex"
     assert unknown.owner_route == "run_manager"
@@ -92,7 +93,7 @@ def test_unclassified_action_routes_to_run_manager_diagnosis() -> None:
     assert decision["owner_route"] == "run_manager"
 
 
-def test_preflight_blocks_mutating_rework_without_human_decision() -> None:
+def test_preflight_routes_mutating_rework_to_run_manager_diagnosis() -> None:
     payload = {
         "checkpoint_id": "ck-1",
         "safe_resume_action": "trigger_rework",
@@ -104,8 +105,10 @@ def test_preflight_blocks_mutating_rework_without_human_decision() -> None:
 
     assert preflight["status"] == "blocked"
     assert "mutating_resume_requires_human_decision" in preflight["failures"]
-    assert decision["decision"] == "human_escalate"
-    assert decision["intervention_class"] == "human_decision"
+    assert decision["decision"] == "needs_diagnosis"
+    assert decision["owner_route"] == "run_manager"
+    assert decision["intervention_class"] == "diagnose"
+    assert payload["intervention_class"] == "semantic_replan"
     assert decision["preflight"]["status"] == "blocked"
 
 

@@ -109,7 +109,8 @@ When `goal.micro_loop` is enabled, a reader-stage rejection
 fanout generation. The kernel injects the findings back into the **same live
 lane session** as a continuation briefing and records
 `task.rework.continuation_injected`
-(`src/zf/runtime/lane_micro_loop.py:23`, `src/zf/runtime/candidate_rework.py:241`)
+(`src/zf/runtime/lane_micro_loop.py` `CONTINUATION_EVENT`,
+`src/zf/runtime/candidate_rework.py` `plan_candidate_rework`)
 — same pane, same `task_id`, same identity, **no re-dispatch and no new child
 generation**.
 
@@ -130,7 +131,8 @@ If you receive a `REWORK CONTINUATION` briefing:
 A terminal claim re-emitted after a generation flip can still carry the prior
 identity. The kernel adopts such a completion into the current generation and
 records `fanout.child.completion_adopted`
-(`src/zf/runtime/orchestrator_fanout.py:4557`) rather than dropping it as stale
+(`src/zf/runtime/orchestrator_fanout.py`
+`_emit_writer_fanout_completion_adopted`) rather than dropping it as stale
 — so re-emitting the original terminal event from the same session stays valid
 across the flip. This continuation loop is lane/fanout-child scoped; the full
 long-horizon goal lifecycle (`run.goal.*`) is owned by

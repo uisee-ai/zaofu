@@ -115,10 +115,23 @@ def _review_gate_request_id_from_payload(
 
 
 def _handled_ids(events: list[ZfEvent]) -> set[str]:
-    terminal = {LOOP_ACCEPTED, LOOP_STARTED, LOOP_COMPLETED, LOOP_FAILED, LOOP_SKIPPED}
+    # ACCEPTED is deliberately NOT here: it is the queue acknowledgement (see
+    # run_resident_once) — an accepted-but-not-started request must stay
+    # pending so a later tick still executes it. Only execution (started) or a
+    # terminal answer removes a request from the pending pool.
+    terminal = {LOOP_STARTED, LOOP_COMPLETED, LOOP_FAILED, LOOP_SKIPPED}
     out: set[str] = set()
     for event in events:
         if event.type not in terminal:
+            continue
+        out.add(loop_request_id_from_payload(_payload(event), fallback=event.id))
+    return out
+
+
+def _accepted_ids(events: list[ZfEvent]) -> set[str]:
+    out: set[str] = set()
+    for event in events:
+        if event.type != LOOP_ACCEPTED:
             continue
         out.add(loop_request_id_from_payload(_payload(event), fallback=event.id))
     return out
@@ -138,6 +151,21 @@ def _handled_review_gate_ids(events: list[ZfEvent]) -> set[str]:
             continue
         out.add(_review_gate_request_id_from_payload(_payload(event), fallback=event.id))
     return out
+
+
+_LOOP_RUNNER_FALLBACK_TIMEOUT_S = 1800
+
+
+def _loop_runner_timeout_s(budget_cap: dict[str, Any] | None) -> int:
+    """Wall-clock bound for one synchronous loop run: the loop's own declared
+    budget (max_minutes) with 2x grace, else a 30min fallback."""
+    try:
+        max_minutes = int((budget_cap or {}).get("max_minutes") or 0)
+    except (TypeError, ValueError):
+        max_minutes = 0
+    if max_minutes > 0:
+        return max_minutes * 60 * 2
+    return _LOOP_RUNNER_FALLBACK_TIMEOUT_S
 
 
 def pending_loop_requests(events: list[ZfEvent]) -> list[ZfEvent]:
@@ -359,7 +387,12 @@ def plan_resident_actions(
             spawn=self_repair_spawn,
             backend=self_repair_backend,
         )
-        for request in pending_repair_dispatches(events):
+        # The resident is an execution transport, not a second repair owner.
+        # It may only consume a request that Run Manager already accepted.
+        for request in pending_repair_dispatches(
+            events,
+            request_types=("run.manager.repair.accepted",),
+        ):
             actions.append(ResidentAction(
                 loop_request_id=_stable_repair_id(request.fingerprint, request.attempt),
                 kind="repair_dispatch",
@@ -396,11 +429,40 @@ def run_resident_once(
         self_repair_spawn=self_repair_spawn,
         self_repair_backend=self_repair_backend,
     )
-    if max_actions_per_tick > 0:
-        actions = actions[:max_actions_per_tick]
     writer = EventWriter(event_log_from_project(state_dir))
     src_env = os.environ if env is None else env
     authorized = str(src_env.get("ZF_AUTORESEARCH_RESIDENT") or "").lower() == "authorized"
+    # Queue acknowledgement BEFORE the per-tick cap slices the action list:
+    # the resident consumes single-file, so a request can sit queued behind a
+    # long (bounded) loop for many minutes. Without any lifecycle event the
+    # requester's staleness clock runs against the request itself and queued
+    # work is declared stale (2026-07-10 R5: 8 queued rmar-* requests, 0
+    # lifecycle, staled at 300s while the running loop was still inside its
+    # budget). ACCEPTED here is the "resident has this in queue" anchor;
+    # execution still emits STARTED, and _handled_ids keeps accepted-only
+    # requests pending so later ticks run them.
+    accepted: set[str] = set()
+    if execute and authorized:
+        log = EventLog(Path(state_dir) / "events.jsonl")
+        try:
+            accepted = _accepted_ids(log.read_all())
+        finally:
+            log.close()
+        for action in actions:
+            if action.action != "run_loop" or action.loop_request_id in accepted:
+                continue
+            writer.append(ZfEvent(
+                type=LOOP_ACCEPTED,
+                actor="zf-autoresearch-resident",
+                payload={
+                    "loop_request_id": action.loop_request_id,
+                    "queued": True,
+                    "command": action.command,
+                },
+            ))
+            accepted.add(action.loop_request_id)
+    if max_actions_per_tick > 0:
+        actions = actions[:max_actions_per_tick]
     for action in actions:
         if action.action == "skip":
             if execute and authorized:
@@ -438,17 +500,40 @@ def run_resident_once(
             continue
         if not execute or not authorized:
             continue
-        writer.append(ZfEvent(
-            type=LOOP_ACCEPTED,
-            actor="zf-autoresearch-resident",
-            payload={"loop_request_id": action.loop_request_id, "command": action.command},
-        ))
+        # ACCEPTED was already emitted as the queue acknowledgement above;
+        # execution adds the STARTED anchor.
         writer.append(ZfEvent(
             type=LOOP_STARTED,
             actor="zf-autoresearch-resident",
             payload={"loop_request_id": action.loop_request_id, "command": action.command},
         ))
-        proc = runner(action.command, capture_output=True, text=True, check=False)
+        # Enforce the loop's own declared budget (research_mode_contract
+        # budget_cap.max_minutes, 2x grace) on the synchronous runner. The
+        # resident consumes requests single-file, so one unbounded loop starves
+        # every request behind it: 2026-07-10 R4 PRD, a loop wedged on an inner
+        # 2h test runner blocked the resident 80+ min and 11 pending requests
+        # got no lifecycle at all (run-manager staled them one by one). A
+        # timeout surfaces as LOOP_FAILED (rc=124) and the resident moves on.
+        timeout_s = _loop_runner_timeout_s(action.budget_cap)
+        try:
+            proc = runner(
+                action.command,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            proc = subprocess.CompletedProcess(
+                action.command,
+                returncode=124,
+                stdout=(exc.stdout or b"").decode("utf-8", "replace")[-2000:]
+                if isinstance(exc.stdout, bytes) else str(exc.stdout or "")[-2000:],
+                stderr=(
+                    f"resident bounded loop at {timeout_s}s "
+                    f"(budget_cap={action.budget_cap or {}})"
+                ),
+            )
         event_type = LOOP_COMPLETED if proc.returncode == 0 else LOOP_FAILED
         writer.append(ZfEvent(
             type=event_type,

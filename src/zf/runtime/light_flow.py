@@ -35,14 +35,19 @@ def synthesize_light_task_map(
     prd_ref: str,
     target_root: str,
     workflow_refs: dict[str, Any] | None = None,
+    flow_kind: str = "prd",
+    objective_ref: str = "",
 ) -> dict[str, Any]:
     root = (target_root or ".").strip().rstrip("/") or "."
     task_id = f"{pdd_id.upper()}-{LIGHT_TASK_SUFFIX}" if pdd_id else LIGHT_TASK_SUFFIX
-    objective_text = objective.strip() or f"Deliver the product described by {prd_ref}"
+    requirement_ref = objective_ref or prd_ref
+    objective_text = objective.strip() or f"Deliver the work described by {requirement_ref}"
     refs = dict(workflow_refs or {})
     matrix_refs = _matrix_refs(refs)
     source_refs = refs.get("source_refs") if isinstance(refs.get("source_refs"), dict) else {}
     artifact_refs = refs.get("artifact_refs") if isinstance(refs.get("artifact_refs"), list) else []
+    path_prefix = "" if root == "." else f"{root}/"
+    flow_label = _flow_label(flow_kind)
     return {
         "schema_version": "task-map.v1",
         "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),
@@ -51,18 +56,18 @@ def synthesize_light_task_map(
         "artifact_refs": artifact_refs,
         **matrix_refs,
         "shared_conventions": {
-            "test_path_prefix": f"{root}/tests",
+            "test_path_prefix": f"{path_prefix}tests",
         },
         "tasks": [{
             "task_id": task_id,
             "title": objective_text[:120],
             "description": (
-                f"{objective_text}\n\nSource requirement: {prd_ref}. "
+                f"{objective_text}\n\nSource requirement: {requirement_ref}. "
                 "Single-lane light flow: you own the entire deliverable; "
-                "follow the PRD acceptance criteria as the contract."
+                f"follow the {flow_label} acceptance criteria as the contract."
             ),
             "wave": 1,
-            "allowed_paths": [f"{root}/**", "README.md"],
+            "allowed_paths": [f"{path_prefix}**", "README.md"],
             "allowed_paths_reason": "light flow single-lane deliverable owns the target root",
             "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),
             "workflow_prompt_ref": str(refs.get("workflow_prompt_ref") or ""),
@@ -71,7 +76,7 @@ def synthesize_light_task_map(
             **matrix_refs,
             "acceptance": [objective_text],
             "acceptance_criteria": [
-                f"All acceptance criteria in {prd_ref} are met on the current tree.",
+                f"All acceptance criteria in {requirement_ref} are met on the current tree.",
                 "Read and satisfy every referenced acceptance/test/real-e2e matrix before completion.",
                 "Slice tests pass; runtime evidence regenerated and committed.",
             ],
@@ -108,19 +113,54 @@ def maybe_synthesize_light_task_map(
         ):
             return None  # 已合成过(幂等;重入靠 rework_of 通道)
     payload = event.payload if isinstance(event.payload, dict) else {}
-    pdd_id = str(payload.get("pdd_id") or "default")
+    flow_kind = str(payload.get("kind") or metadata.get("flow_kind") or "prd")
+    pdd_id = str(payload.get("pdd_id") or payload.get("request_id") or f"{flow_kind}-default")
+    objective = str(payload.get("objective") or payload.get("reason") or "")
     workflow_refs = _workflow_refs_from_payload(payload, state_dir=state_dir)
+    objective_ref = str(
+        payload.get("objective_ref")
+        or payload.get("prd_ref")
+        or payload.get("issue_ref")
+        or metadata.get("objective_ref")
+        or metadata.get("prd_ref")
+        or metadata.get("issue_ref")
+        or ""
+    )
     task_map = synthesize_light_task_map(
         pdd_id=pdd_id,
-        objective=str(payload.get("objective") or payload.get("reason") or ""),
+        objective=objective,
         prd_ref=str(
             payload.get("prd_ref") or metadata.get("prd_ref") or ""
         ),
+        objective_ref=objective_ref,
         target_root=str(
             payload.get("target_root") or metadata.get("target_root") or ""
         ),
         workflow_refs=workflow_refs,
+        flow_kind=flow_kind,
     )
+    # light goal 终态闭环(2026-07-08):最简配置只开 goal.enabled、无人发
+    # run.goal.started → goal 投影永远是 loop.started 兜底(run_id 空),
+    # run_goal_completion_event 的 run_id 守卫正确拒发完成事件 → light 没有
+    # goal 终态/停机语义。入口合成即补发真 goal(幂等),judge.passed 后由
+    # _maybe_complete_run_goal 自动闭环 run.goal.completed。
+    goal_enabled = bool(getattr(getattr(config, "goal", None), "enabled", False))
+    if goal_enabled and not any(
+        prior.type == "run.goal.started" for prior in events
+    ):
+        event_writer.append(ZfEvent(
+            type="run.goal.started",
+            actor="zf-cli",
+            payload={
+                "run_id": f"run-light-{pdd_id}-{event.id}",
+                "objective": objective,
+                "pdd_id": pdd_id,
+                "source": "light_flow_kernel",
+                "reason": "light topology: goal minted at entry synthesis",
+            },
+            causation_id=event.id,
+            correlation_id=event.correlation_id or event.id,
+        ))
     target = Path(state_dir) / "artifacts" / pdd_id / "task_map.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
@@ -186,9 +226,24 @@ def _workflow_refs_from_payload(payload: dict[str, Any], *, state_dir: Path) -> 
         if isinstance(manifest_artifacts, list):
             merged = [*refs.get("artifact_refs", []), *manifest_artifacts]
             refs["artifact_refs"] = _dedupe_artifact_refs(merged)
-    if refs.get("source_refs") or refs.get("artifact_refs") or refs.get("workflow_input_manifest_ref"):
+    if (
+        refs.get("source_refs")
+        or refs.get("artifact_refs")
+        or refs.get("workflow_input_manifest_ref")
+    ):
         return refs
     return {}
+
+
+def _flow_label(flow_kind: str) -> str:
+    value = str(flow_kind or "").strip().lower()
+    if value == "issue":
+        return "issue fix"
+    if value == "refactor":
+        return "refactor follow-up"
+    if value == "feat":
+        return "feature"
+    return "product"
 
 
 def _load_manifest_ref(ref: str, *, state_dir: Path) -> dict[str, Any]:

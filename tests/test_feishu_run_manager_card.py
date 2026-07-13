@@ -15,6 +15,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.integrations.feishu.run_manager_card import (
     build_run_manager_escalation_card,
+    resolve_run_manager_card_context,
     sync_run_manager_cards,
 )
 
@@ -51,6 +52,7 @@ def test_escalation_card_inlines_evidence_and_buttons() -> None:
     assert "ck-1" in text and "fp-1" in text
     assert "human-decision-approve:hdec-1" in text
     assert "human-decision-diagnose:hdec-1" in text
+    assert "human-decision-explain:hdec-1" in text
     assert "human-decision-halt:hdec-1" in text
 
 
@@ -67,6 +69,14 @@ def test_sync_sends_escalation_then_updates_on_ack(tmp_path: Path) -> None:
     r1 = _sync(state_dir, ledger, sent, updated)
     assert r1["escalation_sent"] == ["hdec-2"]
     assert "批准并执行" in str(sent[0])
+    assert ledger["run-manager-escalation-hdec-2"]["context"]["failure_class"] == "needs_human"
+    ledger_path = state_dir / "integrations" / "feishu" / "run_manager_ledger.json"
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(json.dumps(ledger, ensure_ascii=False), encoding="utf-8")
+    assert resolve_run_manager_card_context(
+        state_dir,
+        decision_token="hdec-2",
+    )["decision_token"] == "hdec-2"
 
     _emit(state_dir, "human.escalation.acknowledged", {
         "decision_token": "hdec-2",
@@ -103,7 +113,10 @@ def test_status_card_updates_in_place_when_digest_changes(tmp_path: Path) -> Non
     sent, updated = [], []
     r1 = _sync(state_dir, ledger, sent, updated)
     assert r1["status_sent"] is True
-    assert "pending_actions" in str(sent[0])
+    # friendly card (2026-07-10): pending actions surface as plain Chinese, not
+    # a raw "pending_actions:" field dump.
+    assert "待批动作" in str(sent[0])
+    assert "pending_actions:" not in str(sent[0])
 
     projection["summary"]["blocked_actions"] = 1
     (projection_dir / "run_manager.json").write_text(
@@ -198,3 +211,82 @@ def test_human_decision_button_emits_acknowledged_event(
         if event.type == "human.escalation.acknowledged"
         and event.payload.get("decision_token") == "hdec-5"
     ]
+
+
+def test_human_decision_explain_button_emits_explanation_request(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(yaml.dump({
+        "version": "1.0",
+        "project": {"name": "feishu-rm-explain-test", "state_dir": ".zf"},
+        "roles": [{"name": "dev", "backend": "mock"}],
+        "integrations": {
+            "feishu_identity": {
+                "enabled": True,
+                "users": {
+                    "ou_appr": {"name": "alice", "level": "approver"},
+                },
+            },
+        },
+    }))
+    main(["init"])
+    ctx = resolve_project_context()
+
+    result = _handle_event_data(
+        _button("human-decision-explain:hdec-6", "ou_appr", "m6"),
+        context=ctx,
+        user_levels={},
+    )
+
+    assert result["ok"] is True
+    assert result["status"] == "explanation_requested"
+    events = EventLog(ctx.state_dir / "events.jsonl").read_all()
+    assert [
+        event for event in events
+        if event.type == "run.manager.explanation.requested"
+        and event.payload.get("decision_token") == "hdec-6"
+    ]
+    assert not [
+        event for event in events
+        if event.type == "human.escalation.acknowledged"
+        and event.payload.get("decision_token") == "hdec-6"
+    ]
+
+
+def test_status_card_renders_friendly_chinese_not_raw_codes() -> None:
+    """friendly card (2026-07-10): the status card must surface the human-oriented
+    fields (active task / why-waiting / next auto action) in plain Chinese, not
+    dump raw state codes like `diagnosis_required` or a microsecond timestamp."""
+    from zf.integrations.feishu.run_manager_card import build_run_manager_status_card
+
+    card = build_run_manager_status_card({
+        "summary": {"goal_status": "active", "completion_status": "active",
+                    "pending_actions": 1, "blocked_actions": 0},
+        "monitor": {"state": "blocked"},
+        "status_explain": {
+            "wait_reason": "diagnosis_required_no_progress_tripped",
+            "next_auto_action": "invoke_autoresearch",
+            "blocking": True,
+            "active_task_id": "TASK-1E9817",
+            "active_lane": "dev-web",
+            "current_phase": "implement",
+        },
+        "completion_profile": {"pending_human_decisions": []},
+        "generated_at": "2026-07-10T06:06:00.356202Z",
+    })
+    body = card["elements"][0]["text"]["content"]
+    # human-mapped, not raw codes
+    assert "诊断" in body
+    assert "diagnosis_required" not in body
+    assert "invoke_autoresearch" not in body
+    assert "goal:" not in body and "monitor:" not in body
+    # surfaces what it is doing + next step + what needs the operator
+    assert "TASK-1E9817" in body
+    assert "下一步" in body
+    assert "待批动作" in body
+    # short timestamp, no microseconds/timezone noise
+    assert "06:06" in body
+    assert "356202" not in body
+    assert card["header"]["template"] == "red"

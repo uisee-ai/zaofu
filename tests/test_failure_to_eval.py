@@ -241,9 +241,9 @@ def test_failure_candidates_materialize_from_recent_events_idempotently(tmp_path
     events = [
         ZfEvent(type="loop.started", actor="zf-cli"),
         ZfEvent(
-            type="run.manager.action.failed",
-            actor="run-manager",
-            payload={"reason": "resume command failed", "task_id": "TASK-RM"},
+            type="gate.failed",
+            actor="zf-cli",
+            payload={"reason": "static gate red", "task_id": "TASK-G"},
         ),
     ]
 
@@ -253,8 +253,51 @@ def test_failure_candidates_materialize_from_recent_events_idempotently(tmp_path
     assert len(first) == 1
     assert second == []
     candidate = json.loads(first[0].read_text(encoding="utf-8"))
-    assert candidate["event"]["type"] == "run.manager.action.failed"
-    assert candidate["event"]["task_id"] == "TASK-RM"
+    assert candidate["event"]["type"] == "gate.failed"
+    assert candidate["event"]["task_id"] == "TASK-G"
+
+
+def test_rm_self_events_excluded_and_tallied_to_rm_health(tmp_path):
+    """ZF-E2E-PRDCTL-P0-3: RM 自指事件不物化为失败候选(自喂环),改记
+    rm_health 投影;真实失败照常物化。"""
+    state_dir = tmp_path / ".zf"
+    events = [
+        ZfEvent(
+            type="run.manager.action.verify.failed",
+            actor="run-manager",
+            payload={"reason": "workflow resume checkpoint still pending"},
+        ),
+        ZfEvent(
+            type="run.manager.action.blocked",
+            actor="run-manager",
+            payload={"reason": "action requires operator"},
+        ),
+        ZfEvent(
+            type="gate.failed",
+            actor="zf-cli",
+            payload={"reason": "static gate red", "task_id": "TASK-G"},
+        ),
+    ]
+
+    written = materialize_failure_candidates_from_events(state_dir, events)
+
+    types = [
+        json.loads(path.read_text(encoding="utf-8"))["event"]["type"]
+        for path in written
+    ]
+    assert types == ["gate.failed"]
+    health = json.loads(
+        (state_dir / "projections" / "rm_health.json").read_text(encoding="utf-8")
+    )
+    assert health["counts"]["run.manager.action.verify.failed"] == 1
+    assert health["counts"]["run.manager.action.blocked"] == 1
+
+    # Re-running must not double count (seen_ids dedupe).
+    materialize_failure_candidates_from_events(state_dir, events)
+    health2 = json.loads(
+        (state_dir / "projections" / "rm_health.json").read_text(encoding="utf-8")
+    )
+    assert health2["counts"]["run.manager.action.verify.failed"] == 1
 
 
 def test_unknown_actionable_event_forces_failure_candidate(tmp_path):

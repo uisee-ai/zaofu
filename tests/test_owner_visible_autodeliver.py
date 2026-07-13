@@ -33,7 +33,7 @@ def test_pytest_env_blocks_real_feishu_transport_construction(tmp_path):
         "payload": {
             "message_id": "m1",
             "text": "test fixture must not leave the process",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -68,7 +68,7 @@ def test_fake_transport_is_allowed_even_when_live_feishu_is_disabled(tmp_path):
         "payload": {
             "message_id": "m1",
             "text": "fake delivery",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -102,7 +102,7 @@ def test_stopped_runtime_suppresses_pending_non_human_owner_message(tmp_path):
             "message_id": "m1",
             "title": "Cost budget exceeded",
             "summary": "budget exceeded; run manager will diagnose",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
             "human_action_required": False,
         },
@@ -138,7 +138,7 @@ def test_unconfigured_feishu_records_failed_receipt_for_pending_message(tmp_path
         "payload": {
             "message_id": "m1",
             "text": "stall detected",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -180,7 +180,7 @@ def test_deliver_routes_owner_message_to_configured_chat(tmp_path):
         "id": "evt-1",
         "type": "owner.visible_message.requested",
         "actor": "supervisor",
-        "payload": {"message_id": "m1", "text": "stall detected", "severity": "high"},
+        "payload": {"message_id": "m1", "text": "stall detected", "severity": "high", "human_action_required": True},
     }) + "\n", encoding="utf-8")
 
     transport = _FakeTransport()
@@ -212,7 +212,7 @@ def test_owner_chat_aliases_high_severity_to_approval_route(tmp_path):
         "payload": {
             "message_id": "m1",
             "text": "stall detected",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -245,6 +245,7 @@ def test_explicit_approval_chat_overrides_owner_alias(tmp_path):
             "message_id": "m1",
             "text": "stale active run",
             "severity": "warn",
+            "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -282,6 +283,7 @@ def test_owner_visible_preflights_receive_id_type_prefix_mismatch(tmp_path):
             "message_id": "m1",
             "text": "stale active run",
             "severity": "warn",
+            "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -310,7 +312,7 @@ def test_owner_visible_classifies_open_id_cross_app_failure(tmp_path):
         "payload": {
             "message_id": "m1",
             "text": "needs owner",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -340,7 +342,7 @@ def test_owner_visible_cross_app_failure_marks_route_unhealthy_once(tmp_path):
         "payload": {
             "message_id": "m1",
             "text": "needs owner",
-            "severity": "high",
+            "severity": "high", "human_action_required": True,
             "delivery_targets": ["feishu"],
         },
     }) + "\n", encoding="utf-8")
@@ -361,7 +363,7 @@ def test_owner_visible_cross_app_failure_marks_route_unhealthy_once(tmp_path):
             "payload": {
                 "message_id": "m2",
                 "text": "needs owner again",
-                "severity": "high",
+                "severity": "high", "human_action_required": True,
                 "delivery_targets": ["feishu"],
             },
         }) + "\n")
@@ -417,7 +419,7 @@ def test_deliver_constructs_concrete_transport_when_none_injected(tmp_path, monk
         "id": "evt-1",
         "type": "owner.visible_message.requested",
         "actor": "supervisor",
-        "payload": {"message_id": "m1", "text": "stall", "severity": "high"},
+        "payload": {"message_id": "m1", "text": "stall", "severity": "high", "human_action_required": True},
     }) + "\n", encoding="utf-8")
 
     # No transport injected → exercises the default-construction branch.

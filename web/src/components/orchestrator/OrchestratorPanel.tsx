@@ -8,7 +8,13 @@ import { ComposerSubmitButton } from "../../components/agent-session/ComposerSub
 import { deriveComposerStatus } from "../../components/agent-session/workState";
 import { useWorkingTitle } from "../../components/agent-session/useWorkingTitle";
 import { buildKanbanConversation } from "../../components/agent-session/projection";
-import { kanbanAgentConversationId, kanbanAgentHistoryParams, kanbanAgentProjectId } from "./kanbanAgentHistoryPolicy";
+import {
+  defaultKanbanThreadKey,
+  kanbanAgentConversationId,
+  kanbanAgentHistoryParams,
+  kanbanAgentProjectId,
+  kanbanThreadStorageKey,
+} from "./kanbanAgentHistoryPolicy";
 import type { AgentConversation, AgentProviderCapability, AgentSessionActionProposal, AgentSessionCard, AgentSessionThreadRef } from "../../components/agent-session/types";
 import {
   kanbanAgentSessionEventsFromLive,
@@ -332,12 +338,15 @@ export function OrchestratorPanel({
   const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
   const [pendingProposalNotice, setPendingProposalNotice] = useState("");
   const [headlessThreadKey, setHeadlessThreadKey] = useState(() => {
-    if (typeof window === "undefined") return newHeadlessThreadKey();
-    const stored = window.localStorage.getItem("zf.kanbanAgentThreadKey");
+    // Default to the STABLE project-derived thread so a fresh browser/session
+    // lands on the existing kanban conversation instead of a random empty thread
+    // (channel-kanban E2E 2026-07-09). localStorage is project-scoped.
+    const projectDefault = defaultKanbanThreadKey(activeProjectId);
+    if (typeof window === "undefined") return projectDefault;
+    const stored = window.localStorage.getItem(kanbanThreadStorageKey(activeProjectId));
     if (stored) return stored;
-    const next = newHeadlessThreadKey();
-    window.localStorage.setItem("zf.kanbanAgentThreadKey", next);
-    return next;
+    window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), projectDefault);
+    return projectDefault;
   });
   const [headlessThreads, setHeadlessThreads] = useState<AgentSessionThreadRef[]>(() =>
     storedHeadlessThreadRefs(headlessThreadKey),
@@ -502,12 +511,18 @@ export function OrchestratorPanel({
     setHeadlessBufferedEvents((current) => mergeBoundedKanbanSessionEvents(current, scopedEvents));
   }, [context.taskId, events, headlessConversationId, headlessProjectId, operatorBackend]);
 
+  // 任务自动引用(operator 2026-07-11):从 TaskDetail 打开时 context.taskId
+  // 已自动派生;这里补"看得见/可解除"——chip + 可关。关掉后消息不再携带
+  // task/trace/pdd/fanout 引用。
+  const [taskRefOn, setTaskRefOn] = useState(true);
+  useEffect(() => { setTaskRefOn(true); }, [context.taskId]);
+
   function contextPayload(): Record<string, unknown> {
     return {
-      task_id: context.taskId || undefined,
-      trace_id: context.traceId || undefined,
-      pdd_id: context.pddId || undefined,
-      fanout_id: context.fanoutId || undefined,
+      task_id: (taskRefOn && context.taskId) || undefined,
+      trace_id: (taskRefOn && context.traceId) || undefined,
+      pdd_id: (taskRefOn && context.pddId) || undefined,
+      fanout_id: (taskRefOn && context.fanoutId) || undefined,
       project_id: headlessProjectId,
       conversation_id: headlessConversationId,
       thread_key: headlessThreadKey,
@@ -558,7 +573,7 @@ export function OrchestratorPanel({
     });
     setHeadlessSplitThreadKey("");
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("zf.kanbanAgentThreadKey", next);
+      window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), next);
     }
     setHeadlessMessage("");
     setOperatorError("");
@@ -569,7 +584,7 @@ export function OrchestratorPanel({
     setHeadlessThreadKey(threadId);
     if (headlessSplitThreadKey === threadId) setHeadlessSplitThreadKey("");
     if (typeof window !== "undefined") {
-      window.localStorage.setItem("zf.kanbanAgentThreadKey", threadId);
+      window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), threadId);
     }
     headlessInputRef.current?.focus();
   }
@@ -585,7 +600,7 @@ export function OrchestratorPanel({
     setHeadlessMessage("");
   }
 
-  async function submitHeadlessMessage(messageOverride?: string, options: { force?: boolean } = {}) {
+  async function submitHeadlessMessage(messageOverride?: string, options: { force?: boolean; projectionFirst?: boolean } = {}) {
     const message = (messageOverride ?? headlessMessage).trim();
     if (!message || !isChatBackend(operatorBackend) || headlessSubmitting) return;
     if (activeThreadBusy && !options.force) {
@@ -661,6 +676,8 @@ export function OrchestratorPanel({
         scope: desiredOperatorScope,
         message,
         turn_id: turnId,
+        // 快照按钮:强制确定性投影快答(server 端短路 headless 派发)
+        mode: options.projectionFirst ? "projection_first" : undefined,
       }));
       if (actionFailed(result)) {
         const reply = recordValue(result.reply);
@@ -938,7 +955,11 @@ export function OrchestratorPanel({
   const headlessEmptyBody = headlessCanChat
     ? "Ask for a board summary, plan a handoff, or prepare a task action."
     : "Save a valid action token to send messages. Existing replies will still appear here.";
-  const headlessPlaceholder = headlessCanChat ? "Tell me what to do..." : "Save action token to send...";
+  const headlessPlaceholder = !headlessCanChat
+    ? "Save action token to send..."
+    : taskRefOn && context.taskId
+      ? `问关于 ${context.taskId} 的任何事(状态 / 合同 / 证据 / 时间线…)`
+      : "Tell me what to do...";
 
   return (
     <section
@@ -1233,6 +1254,32 @@ export function OrchestratorPanel({
             </div>
           ) : null}
           <div className="headless-composer">
+            {context.taskId ? (
+              taskRefOn ? (
+                <div className="headless-task-ref" data-testid="agent-task-ref">
+                  <span className="headless-task-ref-chip" title={context.title || context.taskId}>
+                    ⛓ {context.taskId}{context.title ? ` · ${context.title.length > 32 ? `${context.title.slice(0, 31)}…` : context.title}` : ""}
+                  </span>
+                  <button type="button" className="headless-task-ref-action" data-testid="agent-task-snapshot"
+                    disabled={!headlessCanChat || headlessSubmitting}
+                    title="发送确定性状态快照(不走 LLM)"
+                    onClick={() => void submitHeadlessMessage("总结当前状态", { projectionFirst: true })}>
+                    快照
+                  </button>
+                  <button type="button" className="headless-task-ref-action" data-testid="agent-task-unref"
+                    title="解除任务引用" onClick={() => setTaskRefOn(false)}>
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <div className="headless-task-ref off">
+                  <button type="button" className="headless-task-ref-action" data-testid="agent-task-reref"
+                    onClick={() => setTaskRefOn(true)}>
+                    ⛓ 重新引用 {context.taskId}
+                  </button>
+                </div>
+              )
+            ) : null}
             {operatorError ? (
               <div className="headless-composer-alert" role="alert">{operatorError}</div>
             ) : !headlessCanChat ? (

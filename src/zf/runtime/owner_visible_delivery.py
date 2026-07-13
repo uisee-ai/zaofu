@@ -8,6 +8,8 @@ requests into Feishu delivery attempts and receipt events.
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -230,11 +232,26 @@ def deliver_owner_visible_messages_once(
             failed_event_ids.append(failed.id)
             continue
         try:
-            transport.send_message(FeishuMessage(
-                chat_id=receive_id,
-                receive_id_type=receive_id_type,
-                content=_format_owner_message(event, payload),
-            ))
+            body = _format_owner_message(event, payload)
+            # Interactive card first (severity-colored header + lark_md body,
+            # same visual family as the run-manager status card); if the card
+            # path throws, fall back to the plain-text message — a paged alert
+            # must never be lost to a rendering problem.
+            try:
+                transport.send_card(FeishuMessage(
+                    chat_id=receive_id,
+                    receive_id_type=receive_id_type,
+                    msg_type="interactive",
+                    content=json.dumps(
+                        _owner_visible_card(payload, body), ensure_ascii=False,
+                    ),
+                ))
+            except Exception:
+                transport.send_message(FeishuMessage(
+                    chat_id=receive_id,
+                    receive_id_type=receive_id_type,
+                    content=body,
+                ))
         except Exception as exc:
             failed = _emit_failed(
                 writer,
@@ -586,6 +603,46 @@ def _format_owner_message(event: ZfEvent, payload: dict[str, Any]) -> str:
     )
 
 
+_CARD_HEADER_TEMPLATE = {
+    "critical": "red",
+    "high": "red",
+    "medium": "orange",
+    "low": "grey",
+}
+
+
+def _owner_visible_card(payload: dict[str, Any], body: str) -> dict[str, Any]:
+    severity = _text(payload, "severity").lower()
+    title = _text(payload, "title") or "ZaoFu 告警"
+    note_bits = [
+        part for part in (
+            f"severity={severity}" if severity else "",
+            f"policy={_text(payload, 'notification_policy')}"
+            if _text(payload, "notification_policy") else "",
+            f"task={_text(payload, 'task_id')}" if _text(payload, "task_id") else "",
+        ) if part
+    ]
+    elements: list[dict[str, Any]] = [
+        {"tag": "div", "text": {"tag": "lark_md", "content": body}},
+    ]
+    if note_bits:
+        elements.append({
+            "tag": "note",
+            "elements": [{"tag": "plain_text", "content": " · ".join(note_bits)}],
+        })
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": _CARD_HEADER_TEMPLATE.get(severity, "blue"),
+            "title": {
+                "tag": "plain_text",
+                "content": f"{_owner_message_header(payload)} {title}"[:120],
+            },
+        },
+        "elements": elements,
+    }
+
+
 def _owner_message_header(payload: dict[str, Any]) -> str:
     source = _text(payload, "source").lower()
     handled_by = _text(payload, "handled_by").lower()
@@ -598,13 +655,34 @@ def _owner_message_header(payload: dict[str, Any]) -> str:
     return "[ZaoFu Supervisor]"
 
 
+# Feishu is the human-attention channel: only alerts a human must ACT on get
+# pushed (operator convergence decision 2026-07-11; R12's 286x escalate storm
+# and this week's attention noise are the evidence). Everything else stays in
+# the Web inbox with a suppressed receipt — downgrade, never drop.
+_FEISHU_PUSH_POLICIES = frozenset({"owner_immediate", "owner_on_human_required"})
+_FEISHU_PUSH_POLICIES_ENV = "ZF_OWNER_VISIBLE_FEISHU_POLICIES"
+
+
+def _feishu_push_policies() -> frozenset[str]:
+    raw = os.environ.get(_FEISHU_PUSH_POLICIES_ENV, "").strip()
+    if not raw:
+        return _FEISHU_PUSH_POLICIES
+    return frozenset(
+        part.strip().lower() for part in raw.split(",") if part.strip()
+    )
+
+
 def _should_suppress_delivery(payload: dict[str, Any], *, target: str) -> bool:
     if target != "feishu":
         return False
-    source = _text(payload, "source").lower()
-    if source != "supervisor":
-        return False
     if bool(payload.get("human_action_required")):
+        return False
+    policy = _text(payload, "notification_policy").lower()
+    if policy in _feishu_push_policies():
+        return False
+    # Policy-less critical alerts still page (fail-open for the one alert
+    # that must never drown); everything below waits in the inbox.
+    if _text(payload, "severity").lower() == "critical":
         return False
     return True
 

@@ -1,0 +1,54 @@
+# 批D:小任务轻拓扑示例——单 lane goal 环 + 候选级 verify + judge。
+# claude 变体:同 prd-light-v3.yaml,每个角色跑 backend=claude-code。
+# scan/plan fanout 整段跳过,task_map 由 kernel 入口合成(单任务)。
+# 适用:塞得进单上下文的 PRD(个位数文件/单包);错判时把 topology
+# 改回 fanout 即免费升级全拓扑。
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: prd-light/v3-claude
+spec:
+  topology: light
+  lanes: 1
+  backend: claude-code
+  prdRef: docs/prd/TODO.md
+  targetRoot: app
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_and_demo
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: prd-light-v3-claude
+  zaofu:
+    catalog:
+      id: prd-light-v3-claude
+      label: PRD Light v3 (claude)
+      description: Single-lane light PRD flow for small deliverables (no scan/plan fanout).
+      intent: build
+      backend: claude
+      roles: 3
+      recommended_for: [build]
+      order: 32
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [prod-runtime/v1]
+  version: "1.0"
+  project:
+    name: prd-light-v3-claude
+  goal:
+    enabled: true
+  runtime:
+    # override prod-runtime/v1 codex run_manager: claude lanes need a claude
+    # resident manager (else start fails on a claude-only host).
+    run_manager:
+      backend: claude-code
+    # light 拓扑目标是全程一键到 ship:judge.passed(终局门)后 kernel 自动把
+    # candidate 合入 ship_target_branch,操作员不再手工 `git merge candidate/*`。
+    # ship_target_branch 默认 main;master 基线仓请 override 为 master。
+    git:
+      auto_ship_on_judge_passed: true
+  workflow:
+    dag:
+      external_triggers: [prd.requested, task_map.ready]

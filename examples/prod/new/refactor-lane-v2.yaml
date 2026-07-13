@@ -158,7 +158,7 @@ workflow:
     dev.failed: refactor-plan-synth
     dispatch.silent_stall: orchestrator
   strict_triggers:
-    rework_attempts_gte: 1
+    rework_attempts_gte: 3
     context_usage_gte: 0.80
     file_globs: [src/**, tests/**, web/**, docs/**]
   stages:
@@ -256,7 +256,7 @@ workflow:
     timeout_seconds: 1800
 
 roles:
-- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall, fanout.serialize, fanout.cancelled], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
+- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall, fanout.serialize, fanout.cancelled, orchestrator.rework.triage.requested], publishes: [orchestrator.rework.triage.recorded], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
 - {name: scan-contract, instance_id: scan-contract, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [source-driven-development, zf-harness-evidence-collection]}
 - {name: scan-runtime, instance_id: scan-runtime, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [context-engineering, zf-cr]}
 - {name: scan-verification, instance_id: scan-verification, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [test-driven-development, zf-harness-verification-checklist]}

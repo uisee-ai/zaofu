@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from zf.core.config.schema import (
     AutoresearchConfig,
@@ -61,6 +63,7 @@ def _task_ref_trigger() -> ZfEvent:
         task_id="CJMIN-PROVIDER-001",
         payload={
             "trigger_id": "ar-task-ref",
+            "source": "autoresearch.invocation.accepted",
             "severity": "high",
             "reason": "task ref rejected after dev.build.done",
             "fingerprint": (
@@ -127,6 +130,36 @@ def test_proposal_only_does_not_dispatch_repair_without_env_authorization(
         item for item in events
         if item.type == "autoresearch.repair.dispatch_requested"
     ]
+
+
+def test_repair_attempt_exhaustion_returns_request_to_run_manager(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state_dir(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    event = _task_ref_trigger()
+    log.append(event)
+    orch = _orchestrator(state_dir, repair_mode="bounded_repair")
+
+    with patch(
+        "zf.runtime.repair_authorization.decide_repair",
+        return_value=SimpleNamespace(
+            action="escalate",
+            reason="repair attempt cap reached",
+            fingerprint="task_ref_rejected:cap",
+            attempt=3,
+        ),
+    ):
+        orch._on_autoresearch_trigger_accepted(event)
+
+    events = log.read_all()
+    requests = [
+        item for item in events
+        if item.type == "autoresearch.repair.escalation.requested"
+    ]
+    assert len(requests) == 1
+    assert requests[0].payload["owner_route"] == "run_manager"
+    assert not any(item.type == "human.escalate" for item in events)
 
 
 def test_bounded_repair_config_authorizes_consumer_without_env(

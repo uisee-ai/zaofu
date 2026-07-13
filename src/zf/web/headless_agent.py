@@ -299,11 +299,19 @@ class HeadlessThreadStore:
 class ClaudeHeadlessBackend:
     backend_id = "claude-headless"
 
-    def __init__(self, *, command: str | None = None, max_turns: int = 8) -> None:
+    def __init__(self, *, command: str | None = None, max_turns: int | None = None) -> None:
         self.command = command or os.environ.get(
             "ZF_KANBAN_AGENT_CLAUDE_HEADLESS_CMD",
             os.environ.get("ZF_KANBAN_AGENT_CLAUDE_CMD", "claude"),
         )
+        # 500: read-heavy / long agentic channel+kanban conversations (read a
+        # multi-KB spec via many tool calls, multi-round refine, then emit a
+        # proposal) blew past the old cap of 8 and returned status:failed
+        # (channel-kanban E2E 2026-07-09). 500 is a generous ceiling that still
+        # acts as a runaway circuit-breaker (a tool-call loop cannot burn tokens
+        # unbounded). Overridable via env; do NOT remove the cap entirely.
+        if max_turns is None:
+            max_turns = int(os.environ.get("ZF_KANBAN_AGENT_CLAUDE_MAX_TURNS", "500"))
         self.max_turns = max_turns
 
     def available(self) -> bool:
@@ -925,7 +933,16 @@ class KanbanHeadlessAgent:
             "owner-approved/proposal-only actions. For creating work, prefer "
             "action=create-task with payload.title and optional "
             "payload.contract={behavior,verification,acceptance}; the operator must "
-            "confirm before the action runs. Keep answers concise and evidence-oriented."
+            "confirm before the action runs. Contract discipline "
+            "(ZF-E2E-RACING-P2 2026-07-11: a structured verification of bare "
+            "'npm test' failed from the repo root and burned four rework "
+            "rounds): contract.verification is machine-executed from the "
+            "repository root — it must run as-is from there; if the command "
+            "depends on a subdirectory, embed the directory in the command "
+            "itself (cd <subdir> && ... or an equivalent flag). The structured "
+            "verification must state the same command as the acceptance text; "
+            "re-check both against each other before proposing. "
+            "Keep answers concise and evidence-oriented."
         )
 
     def _build_prompt(

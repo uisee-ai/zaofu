@@ -157,6 +157,88 @@ def test_driver_writes_journal_per_iter(tmp_path: Path) -> None:
     assert raw[0]["autoresearch_eval"]["lop"]["recommended_action"] == "continuation"
 
 
+def test_budget_read_stops_loop_before_max_iter(tmp_path: Path) -> None:
+    # P1-d (2026-07-09): run_loop must read accumulated spend so should_stop_loop's
+    # budget bound is live. Before the parent-CostTracker read, cost_usd_so_far
+    # stayed 0.0 and the loop only ever stopped at max_iterations — the budget
+    # layer of the "triple-bounded" claim was dead code.
+    from zf.core.cost.tracker import CostTracker
+
+    cfg = LoopConfig(
+        scenarios=["s"],
+        worktree=tmp_path / "wt",
+        parent_state_dir=tmp_path / ".zf",
+        max_iterations=5,
+        budget_usd=0.01,  # tiny — one real iteration blows past it
+        output_dir=tmp_path / "loop",
+    )
+    cfg.parent_state_dir.mkdir(parents=True)
+
+    def ar_fn(*, scenario: str, run_id: str, **kw) -> dict:
+        CostTracker(cfg.parent_state_dir / "cost.jsonl").record_usage(
+            "dev", 100_000, 50_000
+        )
+        return {
+            "status": "failed", "tasks_done": 0, "expected_done": 3,
+            "fatal_event": None, "report_path": "/tmp/r.md",
+        }
+
+    result = run_loop(
+        cfg,
+        autoresearch_fn=ar_fn,
+        eval_collector_fn=_StubEvalCollector(
+            [EvalSnapshot(8, 3, 7, 0.179, 8, 1, 0)] * 5
+        ),
+        reflect_fn=_StubReflect(
+            [ReflectionResult("unknown", [], "low", "x", "")] * 5
+        ),
+        git_head_fn=_StubGit([f"sha{i}" for i in range(6)]).head,
+        git_diff_fn=_StubGit([], diff="").diff_since,
+        backlog_fn=lambda _: [],
+        wait_for_fix_fn=lambda *_, **__: True,
+    )
+
+    assert result.final_status == "budget_exhausted"
+    assert result.iterations == 1  # budget tripped after the first iteration
+
+
+def test_no_cost_recorded_does_not_trip_budget(tmp_path: Path) -> None:
+    # Under budget → the cost read is harmless; the loop runs to its normal bound.
+    cfg = LoopConfig(
+        scenarios=["s"],
+        worktree=tmp_path / "wt",
+        parent_state_dir=tmp_path / ".zf",
+        max_iterations=2,
+        budget_usd=100.0,
+        output_dir=tmp_path / "loop",
+    )
+    cfg.parent_state_dir.mkdir(parents=True)
+
+    def ar_fn(*, scenario: str, run_id: str, **kw) -> dict:
+        return {
+            "status": "failed", "tasks_done": 0, "expected_done": 3,
+            "fatal_event": None, "report_path": "/tmp/r.md",
+        }
+
+    result = run_loop(
+        cfg,
+        autoresearch_fn=ar_fn,
+        eval_collector_fn=_StubEvalCollector(
+            [EvalSnapshot(8, 3, 7, 0.179, 8, 1, 0)] * 2
+        ),
+        reflect_fn=_StubReflect(
+            [ReflectionResult("unknown", [], "low", "x", "")] * 2
+        ),
+        git_head_fn=_StubGit([f"sha{i}" for i in range(3)]).head,
+        git_diff_fn=_StubGit([], diff="").diff_since,
+        backlog_fn=lambda _: [],
+        wait_for_fix_fn=lambda *_, **__: True,
+    )
+
+    assert result.final_status != "budget_exhausted"
+    assert result.iterations == 2
+
+
 def test_driver_writes_per_iter_markdown(tmp_path: Path) -> None:
     ar_seq, eval_seq, reflect_seq = _improved_then_passed_sequence()
     cfg = LoopConfig(
@@ -599,3 +681,52 @@ def test_driver_skips_wait_on_last_iter(tmp_path: Path) -> None:
     )
     # Since max_iterations=1, no wait should occur (we terminate after iter 1).
     assert wait_calls == []
+
+
+def test_preexisting_project_cost_is_baselined_out(tmp_path: Path) -> None:
+    # P1-d baseline: an already-expensive project (lifetime cost > budget_usd)
+    # must NOT stop the loop at iteration 1. The budget bound measures the
+    # loop's *incremental* spend from a start-of-loop baseline, not the
+    # project's lifetime total.
+    from zf.core.cost.tracker import CostTracker
+
+    cfg = LoopConfig(
+        scenarios=["s"],
+        worktree=tmp_path / "wt",
+        parent_state_dir=tmp_path / ".zf",
+        max_iterations=2,
+        budget_usd=0.01,  # tiny
+        output_dir=tmp_path / "loop",
+    )
+    cfg.parent_state_dir.mkdir(parents=True)
+    # Pre-seed lifetime cost far above budget (simulates an established project).
+    CostTracker(cfg.parent_state_dir / "cost.jsonl").record_usage(
+        "dev", 100_000, 50_000
+    )
+
+    def ar_fn(*, scenario: str, run_id: str, **kw) -> dict:
+        # This loop spends nothing new.
+        return {
+            "status": "failed", "tasks_done": 0, "expected_done": 3,
+            "fatal_event": None, "report_path": "/tmp/r.md",
+        }
+
+    result = run_loop(
+        cfg,
+        autoresearch_fn=ar_fn,
+        eval_collector_fn=_StubEvalCollector(
+            [EvalSnapshot(8, 3, 7, 0.179, 8, 1, 0)] * 2
+        ),
+        reflect_fn=_StubReflect(
+            [ReflectionResult("unknown", [], "low", "x", "")] * 2
+        ),
+        git_head_fn=_StubGit([f"sha{i}" for i in range(3)]).head,
+        git_diff_fn=_StubGit([], diff="").diff_since,
+        backlog_fn=lambda _: [],
+        wait_for_fix_fn=lambda *_, **__: True,
+    )
+
+    # Pre-existing cost is baselined out → the loop runs to max_iter, not a
+    # premature budget stop.
+    assert result.final_status != "budget_exhausted"
+    assert result.iterations == 2

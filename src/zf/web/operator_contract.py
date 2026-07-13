@@ -34,6 +34,8 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
     "attention-resolve",
     "attention-feedback",
     "attention-escalate",
+    "inbox-item-read",
+    "inbox-all-read",
     "provider-dev-chat-start",
     "provider-dev-chat-send",
     "provider-dev-chat-stop",

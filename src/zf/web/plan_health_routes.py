@@ -1,7 +1,9 @@
-"""Plan 审核与 contract-health Web API(B9/B15,doc 91 §8 + doc 93 §7)。
+"""Plan 审核 + operator inbox / plan preview Web API(B15,doc 93 §7)。
 
 只读投影路由(sibling,server oversized 纪律);approve/reject 动作走
 server 既有统一 action 入口(token gate 上游统一)。
+(contract-health 投影已退役 2026-07-09:纯展示不 gate,全绿为噪音,
+唯一出口 Inbox 已移除。)
 """
 
 from __future__ import annotations
@@ -43,26 +45,6 @@ def build_plan_health_router(
                 entry["advice"] = review_advice(path)
             items.append(entry)
         return {"schema_version": "plan-pending.v1", "pending": items}
-
-    @router.get("/api/projects/{project_id}/contract-health")
-    def contract_health(project_id: str) -> dict:
-        ctx = resolve_ctx(project_id)
-        if ctx is None:
-            raise HTTPException(status_code=404, detail="unknown project")
-        from zf.core.events.factory import event_log_from_project
-        from zf.core.task.contract_health_projection import (
-            build_contract_health,
-        )
-        from zf.core.task.store import TaskStore
-
-        return build_contract_health(
-            TaskStore(ctx.state_dir / "kanban.json").list_all(),
-            list(
-                event_log_from_project(
-                    ctx.state_dir, config=ctx.config,
-                ).read_all()
-            ),
-        )
 
     @router.get("/api/projects/{project_id}/operator/inbox")
     def operator_inbox(project_id: str) -> dict:

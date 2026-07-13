@@ -248,7 +248,15 @@ def test_tracked_modification_still_blocks_ship(tmp_path: Path):
     )
 
     assert result.status == "blocked"
-    assert "working tree is dirty" in result.payload["blockers"]
+    # The blocker names the dirty tracked file(s) so ship.blocked is
+    # self-diagnosing (avoids the opaque "working tree is dirty" that hid the
+    # root of the 2026-07-09 E2E ship stalls). Matches ship()'s final-gate
+    # message shape ("... left dirty files: <paths>").
+    dirty_blockers = [
+        b for b in result.payload["blockers"] if b.startswith("working tree is dirty")
+    ]
+    assert dirty_blockers
+    assert "README.md" in dirty_blockers[0]
 
 
 # ─── B-NEW-14: candidate.integration.completed should signal ready ──────

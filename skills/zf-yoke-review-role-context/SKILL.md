@@ -1,6 +1,11 @@
 ---
 name: zf-yoke-review-role-context
 description: "Use for ZaoFu review roles that need yoke-style scoped, evidence-grounded code review."
+stages: [review, verify]
+tags: [yoke, role-context, review]
+dependencies: [verify-review]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Yoke Review Role Context

@@ -26,8 +26,10 @@ HUMAN_ESCALATION_SENT = "human.escalation.sent"
 HUMAN_ESCALATION_ACKNOWLEDGED = "human.escalation.acknowledged"
 RUN_MANAGER_HUMAN_DECISION_APPLIED = "run.manager.human_decision.applied"
 RUN_MANAGER_HUMAN_DECISION_REJECTED = "run.manager.human_decision.rejected"
+INBOX_ITEM_READ = "inbox.item.read"
+INBOX_ALL_READ = "inbox.all.read"
 
-OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v1"
+OPERATOR_INBOX_SCHEMA_VERSION = "operator-inbox.v2"
 _HIDDEN_VISIBLE_STATUSES = {"acknowledged"}
 _ACTION_REQUIRED_KINDS = {"plan_approval", "approval", "human_decision"}
 
@@ -47,11 +49,22 @@ def build_operator_inbox(
     items: dict[str, dict[str, Any]] = {}
     attention_aliases: dict[str, str] = {}
     suppressed_acknowledged = 0
+    read_items: set[str] = set()
+    read_all_at = ""
     for event in events:
         etype = _etype(event)
         payload = _payload(event)
         event_id = _event_id(event)
         ts = _event_ts(event)
+
+        if etype == INBOX_ITEM_READ:
+            item_id = str(payload.get("item_id") or "").strip()
+            if item_id:
+                read_items.add(item_id)
+            continue
+        if etype == INBOX_ALL_READ:
+            read_all_at = ts or read_all_at
+            continue
 
         if etype == PLAN_APPROVAL_REQUESTED:
             plan_id = str(payload.get("plan_id") or "")
@@ -178,18 +191,13 @@ def build_operator_inbox(
                 continue
             if etype not in {"runtime.attention.needed", "runtime.attention.unacknowledged", "runtime.attention.escalated"}:
                 continue
-            item = _attention_item(event=event, payload=payload, attention_id=attention_id)
-            item["id"] = key
-            if etype == "runtime.attention.escalated":
-                item["status"] = "escalated"
-            existing = items.get(key)
-            if existing is not None:
-                _merge_duplicate_item(existing, item)
-            else:
-                items[key] = item
+            # Runtime attention is an automation diagnostic, not an operator
+            # inbox item. It remains available in supervisor/dashboard
+            # projections and only enters this inbox after human.escalate.
+            continue
 
     ordered_all = sorted(
-        (_decorate_item(item) for item in items.values()),
+        (_decorate_item(item, read_items=read_items, read_all_at=read_all_at) for item in items.values()),
         key=lambda item: (item.get("status") != "pending", item.get("created_ts") or ""),
     )
     hidden = [item for item in ordered_all if _hide_from_inbox(item)]
@@ -216,6 +224,7 @@ def build_operator_inbox(
             "attention": sum(1 for item in ordered if item.get("kind") == "runtime_attention"),
             "human_decisions": sum(1 for item in ordered if item.get("kind") == "human_decision"),
             "suppressed_acknowledged": suppressed_acknowledged + len(hidden),
+            "unread": sum(1 for item in ordered if item.get("unread")),
         },
         "items": ordered,
         "pending": pending,
@@ -244,7 +253,12 @@ def _merge_duplicate_item(existing: dict[str, Any], incoming: dict[str, Any]) ->
         existing["status"] = "escalated"
 
 
-def _decorate_item(item: dict[str, Any]) -> dict[str, Any]:
+def _decorate_item(
+    item: dict[str, Any],
+    *,
+    read_items: set[str],
+    read_all_at: str,
+) -> dict[str, Any]:
     decorated = dict(item)
     status = str(decorated.get("status") or "")
     kind = str(decorated.get("kind") or "")
@@ -256,6 +270,11 @@ def _decorate_item(item: dict[str, Any]) -> dict[str, Any]:
     decorated.setdefault("source_role", _source_role_for_item(decorated))
     decorated.setdefault("owner_route", _owner_route_for_item(decorated))
     decorated.setdefault("group_key", _group_key_for_item(decorated))
+    created_ts = str(decorated.get("created_ts") or "")
+    decorated["unread"] = (
+        str(decorated.get("id") or "") not in read_items
+        and not (read_all_at and created_ts and created_ts <= read_all_at)
+    )
 
     if status != "pending":
         decorated["category"] = "resolved"

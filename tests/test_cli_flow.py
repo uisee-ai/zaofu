@@ -394,8 +394,11 @@ def test_flow_intake_refactor_records_adapter_skill_plan(tmp_path, capsys):
         .read_text(encoding="utf-8")
     )
     assert plan["schema_version"] == "skill.adapter.plan.v2"
-    assert plan["status"] == "WARN"
+    # 2026-07-08 controller 同步:zf-dynamic-artifact-gate 入驻 canonical 后
+    # recommended 全解析——旧断言钉的是幽灵缺失导致的 WARN,现应 PASS。
+    assert plan["status"] == "PASS"
     assert plan["missing_required_skills"] == []
+    assert plan["missing_recommended_skills"] == []
     assert "cangjie-hermes-parity-gate" in {
         item["name"] for item in plan["discovered_project_skills"]
     }
@@ -794,6 +797,138 @@ spec:
     assert invoke.payload["workflow_prompt_ref"].endswith("artifacts/intake/wfint-apply.json")
 
 
+def test_flow_intake_feat_aliases_to_prd(tmp_path, capsys):
+    source = tmp_path / "feat.md"
+    source.write_text("新增导出按钮\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "feat.md"
+
+    rc = main([
+        "flow", "intake", "--kind", "feat", "--from", str(source),
+        "--request-id", "wfint-feat", "--output", str(intake), "--json",
+        "--objective", "新增导出按钮", "--target-root", "app",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["request_kind"] == "feat"
+    assert result["effective_kind"] == "prd"
+    manifest = json.loads(
+        (tmp_path / "artifacts" / "workflow" / "wfint-feat" / "workflow-input-manifest.json")
+        .read_text(encoding="utf-8")
+    )
+    assert manifest["request_kind"] == "feat"
+    assert manifest["kind"] == "prd"
+
+
+def test_flow_submit_routes_multiple_kinds_in_one_canonical_config(tmp_path, capsys):
+    config = _write_multi_kind_route_config(tmp_path, with_routes=True)
+    cases = [
+        ("issue", "wfint-issue", "issue-triage"),
+        ("prd", "wfint-prd", "prd-scan"),
+        ("refactor", "wfint-refactor", "refactor-scan"),
+        ("feat", "wfint-feat-route", "prd-scan"),
+    ]
+
+    for kind, request_id, expected_pattern in cases:
+        intake = tmp_path / "docs" / "intake" / f"{request_id}.md"
+        args = [
+            "flow", "intake", "--kind", kind, "--from", str(tmp_path / f"{kind}.md"),
+            "--request-id", request_id, "--output", str(intake),
+            "--objective", f"{kind} objective", "--target-root", "app",
+        ]
+        if kind == "refactor":
+            args.extend(["--source-root", "src"])
+        assert main(args) == 0
+        capsys.readouterr()
+
+        rc = main([
+            "flow", "submit", "--dry-run", "--config", str(config),
+            "--intake", str(intake), "--kind", kind, "--task-id", f"TASK-{request_id}",
+            "--allow-missing-env", "--json",
+        ])
+
+        assert rc == 1
+        result = json.loads(capsys.readouterr().out)
+        assert result["payload"]["pattern_id"] == expected_pattern
+        assert result["payload"]["request_id"] == request_id
+        assert result["payload"]["run_id"] == request_id
+        assert result["payload"]["kind"] == ("prd" if kind == "feat" else kind)
+        assert not any(
+            item["kind"] == "workflow_route_unresolved"
+            for item in result["blockers"]
+        )
+
+
+def test_flow_submit_multi_stage_without_route_fails_closed(tmp_path, capsys):
+    source = tmp_path / "bug.md"
+    source.write_text("修复登录错误\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "bug.md"
+    assert main([
+        "flow", "intake", "--kind", "issue", "--from", str(source),
+        "--request-id", "wfint-no-route", "--output", str(intake),
+    ]) == 0
+    capsys.readouterr()
+    config = _write_multi_kind_route_config(tmp_path, with_routes=False)
+
+    rc = main([
+        "flow", "submit", "--dry-run", "--config", str(config),
+        "--intake", str(intake), "--kind", "issue", "--json",
+    ])
+
+    assert rc == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "STOP"
+    assert result["payload"]["pattern_id"] == ""
+    assert any(item["kind"] == "workflow_route_unresolved" for item in result["blockers"])
+
+
+def _write_multi_kind_route_config(tmp_path: Path, *, with_routes: bool) -> Path:
+    route_block = """\
+  kind_routes:
+    issue:
+      pattern_id: issue-triage
+    prd:
+      pattern_id: prd-scan
+    refactor:
+      pattern_id: refactor-scan
+    feat:
+      alias: prd
+"""
+    config = tmp_path / ("zf-routes.yaml" if with_routes else "zf-no-routes.yaml")
+    config.write_text(f"""\
+version: "1.0"
+project:
+  name: multikind
+  state_dir: .zf-multikind
+roles:
+  - name: issue-reader
+    backend: mock
+    role_kind: reader
+  - name: prd-reader
+    backend: mock
+    role_kind: reader
+  - name: refactor-reader
+    backend: mock
+    role_kind: reader
+workflow:
+{route_block if with_routes else ""}
+  stages:
+    - id: issue-triage
+      trigger: issue.requested
+      topology: fanout_reader
+      roles: [issue-reader]
+    - id: prd-scan
+      trigger: prd.requested
+      topology: fanout_reader
+      roles: [prd-reader]
+    - id: refactor-scan
+      trigger: refactor.requested
+      topology: fanout_reader
+      roles: [refactor-reader]
+""", encoding="utf-8")
+    return config
+
+
 def test_flow_submit_apply_light_topology_skips_invoke(tmp_path, capsys):
     """LB-2: light submit must NOT emit the bootstrap invoke — it would
     direct-dispatch the whole objective to the judge role (dead path)."""
@@ -842,6 +977,61 @@ spec:
     assert result["workflow_invoke_status"] == "skipped_light"
     assert "prd.requested" in result["next_action"]
     types = [e.type for e in EventLog(tmp_path / ".zf-light-apply" / "events.jsonl").read_all()]
+    assert "workflow.submit.accepted" in types
+    assert "workflow.invoke.requested" not in types
+
+
+def test_flow_submit_apply_issue_light_uses_issue_entry_trigger(tmp_path, capsys):
+    source = tmp_path / "bug.md"
+    source.write_text("登录按钮请求返回 500，需要回归测试。\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "bug.md"
+    assert main([
+        "flow", "intake", "--kind", "issue", "--from", str(source),
+        "--request-id", "wfint-issue-light", "--output", str(intake),
+        "--objective", "修复登录按钮 500",
+        "--target-root", "app",
+    ]) == 0
+    capsys.readouterr()
+    config = tmp_path / "zf.yaml"
+    config.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata: {name: issue-light-demo}
+spec:
+  topology: light
+  lanes: 1
+  backend: mock
+  issueRef: docs/intake/bug.md
+  targetRoot: app
+  roleSkillBundles:
+    impl: []
+    verify: []
+    judge-issue: []
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo, state_dir: .zf-issue-light-apply}
+""")
+
+    rc = main([
+        "flow", "submit", "--apply", "--config", str(config),
+        "--intake", str(intake), "--kind", "issue",
+        "--task-id", "TASK-ISSUE-LIGHT",
+        "--pattern-id", "issue-lanes-impl", "--json",
+    ])
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "accepted"
+    assert result["workflow_invoke_status"] == "skipped_light"
+    assert "issue.requested" in result["next_action"]
+    assert "prd.requested" not in result["next_action"]
+    types = [
+        e.type
+        for e in EventLog(tmp_path / ".zf-issue-light-apply" / "events.jsonl").read_all()
+    ]
     assert "workflow.submit.accepted" in types
     assert "workflow.invoke.requested" not in types
 

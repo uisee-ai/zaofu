@@ -65,7 +65,9 @@ def materialize_zf_yaml(
     if is_flow_id(archetype):
         text = read_flow_yaml(archetype)
         if text is not None:
-            return text  # validated prod flow — copy as-is
+            return _flow_yaml_with_required_checks(
+                text, recommendation.required_checks,
+            )
         archetype = "minimal"  # flow yaml unavailable → safe fallback
     preset = copy.deepcopy(get_preset(archetype))
     qg = preset.setdefault("quality_gates", {}).setdefault("static", {})
@@ -75,6 +77,49 @@ def materialize_zf_yaml(
         preset.setdefault("workflow", {})["harness_profile"] = recommendation.harness_profile
     text = yaml.dump(preset, default_flow_style=False, allow_unicode=True, sort_keys=False)
     return text.replace("{project_name}", project_name)
+
+
+def _flow_yaml_with_required_checks(text: str, checks) -> str:
+    """Inject detected static checks into a freshly materialized flow YAML.
+
+    Prod controller examples intentionally keep multi-lane gates as operator
+    TODOs.  Bootstrap, however, already has a deterministic project profile; if
+    that profile yields gate commands, the generated project YAML should be
+    runnable without immediately failing the combined-candidate gate.
+    """
+    proposed = [str(check).strip() for check in checks or [] if str(check).strip()]
+    if not proposed:
+        return text
+    try:
+        docs = list(yaml.safe_load_all(text))
+    except yaml.YAMLError:
+        return text
+    changed = False
+    for doc in docs:
+        if not isinstance(doc, dict) or str(doc.get("kind") or "") != "ZfConfig":
+            continue
+        spec = doc.setdefault("spec", {})
+        if not isinstance(spec, dict):
+            continue
+        qg = spec.setdefault("quality_gates", {}).setdefault("static", {})
+        if not isinstance(qg, dict):
+            continue
+        existing = [
+            str(check).strip()
+            for check in qg.get("required_checks") or []
+            if str(check).strip()
+        ]
+        if existing:
+            continue
+        qg["required_checks"] = list(proposed)
+        qg.setdefault(
+            "on_fail",
+            "combined candidate tree failed static gate — 修复后重触发集成",
+        )
+        changed = True
+    if not changed:
+        return text
+    return yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True)
 
 
 def materialize_flow_assets(
@@ -100,10 +145,15 @@ def materialize_flow_assets(
     copied_profiles = _copy_flow_profile_sources(source_path, cfg_path, root)
     rewrote = _rewrite_flow_skill_sources_to_local(cfg_path)
     copied_skills = _copy_flow_skills(source_path, cfg_path, root)
+    # fb9aa16a 起 profile 自带绝对 skill_sources;vendor 完启用技能后把
+    # 拷贝件里的源统一重写为项目本地 `skills`,bootstrap 目标保持自包含。
+    rewrote_profiles = _rewrite_copied_profile_skill_sources(
+        root, copied_profiles,
+    )
     return {
         "profile_sources": copied_profiles,
         "skills": copied_skills,
-        "rewrote_skill_sources": rewrote,
+        "rewrote_skill_sources": rewrote or rewrote_profiles,
     }
 
 
@@ -202,9 +252,40 @@ def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -
     if not skill_names:
         return []
     source_roots = _source_skill_roots(source_path)
+    # profile 声明的 skill_sources(fb9aa16a 起为绝对路径)也是 vendor
+    # 来源——启用技能一并拷进项目本地,拷贝件的源随后统一重写为 `skills`。
+    for source in list(getattr(config, "skill_sources", []) or []):
+        raw = str(getattr(source, "path", "") or "").strip()
+        if not raw:
+            continue
+        root = Path(raw).expanduser()
+        if root.is_dir():
+            source_roots.append(root.resolve())
+    # bundle 直挂的裸 yoke 方法论技能(2026-07-08 agent-skills 退役后)
+    # 从各 skills 根的兄弟 yoke/ 目录 vendor,保持 bootstrap 自包含契约。
+    for root in list(source_roots):
+        yoke_root = root.parent / "yoke"
+        if yoke_root.is_dir():
+            source_roots.append(yoke_root.resolve())
+    from zf.core.skills.provenance import read_skill_metadata
+
     copied: list[str] = []
     target_skills = target_root / "skills"
-    for skill in skill_names:
+    # Vendor the transitive dependency closure, not just directly-enabled
+    # skills: a `zf-yoke-*-role-context` wrapper declares `dependencies:`
+    # (tdd-evidence, source-verification, ...) that are materialized on demand
+    # at runtime. If bootstrap copies only the wrapper, those method skills
+    # resolve at runtime via the zaofu repo `yoke/` — the project is NOT
+    # self-contained and breaks on another host or a stale repo checkout
+    # (2026-07-08 E2E finding). Closure-vendor so the project carries every
+    # skill it can enable.
+    queue: list[str] = list(skill_names)
+    seen: set[str] = set()
+    while queue:
+        skill = queue.pop(0)
+        if skill in seen:
+            continue
+        seen.add(skill)
         source_dir = next(
             (root / skill for root in source_roots if (root / skill / "SKILL.md").is_file()),
             None,
@@ -216,12 +297,58 @@ def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -
             shutil.rmtree(dest)
         shutil.copytree(source_dir, dest)
         copied.append(str(dest.relative_to(target_root)))
+        try:
+            meta = read_skill_metadata(source_dir / "SKILL.md", expected_name=skill)
+        except Exception:
+            continue
+        for dep in meta.dependencies:
+            dep_name = str(dep).strip()
+            if dep_name and dep_name not in seen:
+                queue.append(dep_name)
     return copied
 
 
 def _source_skill_roots(source_path: Path) -> list[Path]:
     roots = [source_path.parent / "../../../skills", source_path.parent / "../../skills"]
     return [root.resolve() for root in roots if root.exists()]
+
+
+def _rewrite_copied_profile_skill_sources(
+    target_root: Path,
+    copied_profiles: list[str],
+) -> bool:
+    """拷贝进项目的 ConfigProfile 里,skill_sources 的机器绝对路径重写为
+    项目本地 `skills`。启用技能已由 `_copy_flow_skills` vendor;留绝对
+    路径 = bootstrap 目标在别的机器上悬挂 + strict 模式必炸。"""
+    changed = False
+    for rel in copied_profiles:
+        path = target_root / rel
+        try:
+            docs = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+        except (OSError, yaml.YAMLError):
+            continue
+        doc_changed = False
+        for doc in docs:
+            if not isinstance(doc, dict) or str(doc.get("kind") or "") != "ConfigProfile":
+                continue
+            spec = doc.get("spec") or {}
+            sources = spec.get("skill_sources") if isinstance(spec, dict) else None
+            if not isinstance(sources, list):
+                continue
+            for source in sources:
+                if (
+                    isinstance(source, dict)
+                    and str(source.get("path") or "").strip() not in ("", "skills")
+                ):
+                    source["path"] = "skills"
+                    doc_changed = True
+        if doc_changed:
+            path.write_text(
+                yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+                encoding="utf-8",
+            )
+            changed = True
+    return changed
 
 
 def fill_required_checks(config_path: str | Path, checks, *, write: bool = False) -> dict:

@@ -59,6 +59,7 @@ _COMMAND_AUTH: dict[str, AuthLevel] = {
     # approver authority; diagnose/halt are operator-safe but still gated.
     "human-decision-approve": AuthLevel.APPROVER,
     "human-decision-diagnose": AuthLevel.OPERATOR,
+    "human-decision-explain": AuthLevel.VIEWER,
     "human-decision-halt": AuthLevel.OPERATOR,
     "human-decision-reject": AuthLevel.OPERATOR,
     # Channel discussion owner-question callbacks. They resolve open

@@ -73,6 +73,7 @@ class TickServiceResult:
     failure_closeout_materialized: int = 0
     channel_discussion_sweep: int = 0
     invoke_backlog_replayed: int = 0
+    runtime_liveness_reconciled: bool = False
 
 
 def run_autoresearch_trigger_scan(
@@ -160,6 +161,11 @@ def run_standard_tick_services(
 
     if now - state.last_heartbeat_sweep_at >= intervals.heartbeat_sweep_s:
         state.last_heartbeat_sweep_at = now
+        runtime_liveness_reconciled = _emit_runtime_liveness_stale_if_needed(
+            state_dir=state_dir,
+            event_log=event_log,
+            writer=event_writer,
+        )
         _safe_housekeeping(orchestrator, "heartbeat_sweep", "_run_heartbeat_sweep")
         _safe_housekeeping(orchestrator, "dispatch_sweep", "_run_dispatch_sweep")
         try:
@@ -220,16 +226,16 @@ def run_standard_tick_services(
 
     if now - state.last_supervisor_inspection_at >= intervals.supervisor_inspection_s:
         state.last_supervisor_inspection_at = now
+        supervisor_inspection = _run_supervisor(
+            state_dir=state_dir,
+            config=config,
+            project_root=project_root,
+        )
         stale_supervisor_projection = emit_stale_supervisor_projection_if_needed(
             state_dir=state_dir,
             writer=event_writer,
             max_stale_seconds=intervals.stale_supervisor_projection_s,
             event_log=event_log,
-        )
-        supervisor_inspection = _run_supervisor(
-            state_dir=state_dir,
-            config=config,
-            project_root=project_root,
         )
         autoresearch_trigger_scan = run_autoresearch_trigger_scan(
             state_dir,
@@ -319,7 +325,67 @@ def run_standard_tick_services(
         failure_closeout_materialized=failure_closeout_materialized,
         channel_discussion_sweep=channel_discussion_sweep if "channel_discussion_sweep" in locals() else 0,
         invoke_backlog_replayed=invoke_backlog_replayed if "invoke_backlog_replayed" in locals() else 0,
+        runtime_liveness_reconciled=runtime_liveness_reconciled if "runtime_liveness_reconciled" in locals() else False,
     )
+
+
+def _emit_runtime_liveness_stale_if_needed(
+    *,
+    state_dir: Path,
+    event_log: Any,
+    writer: Any,
+) -> bool:
+    try:
+        import json
+        import yaml
+
+        session_path = state_dir / "session.yaml"
+        data = yaml.safe_load(session_path.read_text(encoding="utf-8")) or {}
+        if str(data.get("runtime_state") or "") != "active":
+            return False
+        lock_path = state_dir / "processes" / "watcher.pid.json"
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+        owner_pid = int(lock.get("owner_pid") or 0)
+        if owner_pid > 1 and _pid_alive(owner_pid):
+            return False
+        events = event_log.read_all()
+        fingerprint = f"runtime-liveness-stale:{lock_path}:{owner_pid}"
+        for event in reversed(events[-200:]):
+            if event.type != "runtime.liveness.stale":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("fingerprint") or "") == fingerprint:
+                return False
+        writer.append(ZfEvent(
+            type="runtime.liveness.stale",
+            actor="zf-runtime",
+            payload={
+                "schema_version": "runtime.liveness-stale.v1",
+                "fingerprint": fingerprint,
+                "runtime_state": "active",
+                "lock_path": str(lock_path),
+                "owner_pid": owner_pid,
+                "reason": "active_session_watcher_pid_not_alive",
+                "recommended_route": "run_manager",
+            },
+        ))
+        return True
+    except FileNotFoundError:
+        return False
+    except Exception:
+        return False
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 1:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def emit_stale_supervisor_projection_if_needed(
@@ -492,7 +558,7 @@ def _sweep_channel_discussions(
 def _deliver_run_manager_cards(state_dir: Path, config: Any) -> bool:
     try:
         from zf.integrations.feishu.run_manager_card import push_run_manager_cards_once
-        from zf.integrations.feishu.transport import FeishuHttpTransport
+        from zf.integrations.feishu.bot_credentials import transport_for_purpose
         from zf.runtime.owner_visible_autodeliver import _owner_visible_routing_from_env
 
         routing = _owner_visible_routing_from_env(os.environ)
@@ -517,9 +583,12 @@ def _deliver_run_manager_cards(state_dir: Path, config: Any) -> bool:
             action_secret = secret.encode("utf-8") if secret else None
             action_ttl_seconds = int(getattr(identity, "action_token_ttl_seconds", 86400) or 86400)
             action_key_version = str(getattr(identity, "action_token_key_version", "1") or "1")
+        transport = transport_for_purpose("run_manager")
+        if transport is None:
+            return False
         result = push_run_manager_cards_once(
             state_dir,
-            FeishuHttpTransport(),
+            transport,
             receive_id=str(receive_id),
             receive_id_type=routing.receive_id_type_for(receive_role),
             action_secret=action_secret,

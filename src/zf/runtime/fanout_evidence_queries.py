@@ -492,13 +492,19 @@ class FanoutEvidenceQueriesMixin:
         event: ZfEvent,
         success: bool,
     ):
-        from zf.runtime.fanout import REPORT_AUDIT_FIELD_KEYS, validate_fanout_report
+        from zf.runtime.fanout import report_audit_field_keys, validate_fanout_report
 
         payload = event.payload if isinstance(event.payload, dict) else {}
+        # P1-5: derive the promotion set from the event schema (superset of the
+        # static keys) so a new top-level contract field flows into the report
+        # projection automatically, matching the briefing education side.
+        audit_keys = report_audit_field_keys(
+            getattr(self, "config", None), event.type,
+        )
         raw_report = payload.get("report")
         if isinstance(raw_report, dict):
             raw_report = dict(raw_report)
-            for key in REPORT_AUDIT_FIELD_KEYS:
+            for key in audit_keys:
                 if key not in raw_report and key in payload:
                     raw_report[key] = payload[key]
         else:
@@ -510,7 +516,7 @@ class FanoutEvidenceQueriesMixin:
             default_recommendation="approve" if success else "reject",
             default_summary=str(payload.get("summary") or payload.get("reason") or ""),
         )
-        for key in REPORT_AUDIT_FIELD_KEYS:
+        for key in audit_keys:
             if key not in result.report and key in payload:
                 result.report[key] = payload[key]
         if "evidence_refs" not in result.report:

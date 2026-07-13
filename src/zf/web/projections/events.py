@@ -893,7 +893,17 @@ async def _tail_events(
         if cursor is not None and cursor > last_seq:
             yield _sse_gap(cursor=cursor, current=last_seq)
         else:
-            for seq, event in _read_events_with_seq(path, event_log):
+            # P1-8 (2026-07-09): the replay read (_read_events_with_seq) does a
+            # full read_text() + per-line decode (incl. signature verify) with no
+            # cache. Running it inline on the asyncio event loop froze *every*
+            # SSE/HTTP client for its duration on a large log — and a
+            # reconnecting EventSource re-triggered it every ~3s. Offload to a
+            # thread so a heavy replay only delays the connecting client, not the
+            # shared event loop.
+            replay = await asyncio.get_running_loop().run_in_executor(
+                None, _read_events_with_seq, path, event_log
+            )
+            for seq, event in replay:
                 if seq <= replay_from:
                     continue
                 yield _sse_event(seq, event)

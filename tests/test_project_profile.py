@@ -15,6 +15,7 @@ from zf.core.profile import PROJECT_TYPES
 from zf.core.profile.apply import (
     apply_agents_md_stack,
     fill_required_checks,
+    materialize_flow_assets,
     materialize_zf_yaml,
 )
 from zf.core.profile.detector import detect
@@ -137,7 +138,7 @@ def test_recommend_build_maps_to_prd_flow(tmp_path):
     web.mkdir()
     _node_pkg(web, deps={"react": "^18"}, scripts={"test": "vitest"})
     r = recommend(detect(tmp_path), "build")
-    assert r.archetype == "prd-fanout-claude"  # validated prod flow, not synthetic
+    assert r.archetype == "prd-fanout-v3-claude"  # controller v3 flow (claude default)
     assert r.catalog == "flow" and r.backend == "claude"
     assert r.harness_profile == "strict"
     assert "ruff check ." in r.required_checks and "npm test" in r.required_checks
@@ -162,13 +163,13 @@ def test_recommend_hobby_lightweight_minimal(tmp_path):
 
 def test_recommend_intent_review_issue_flow(tmp_path):
     _py_repo(tmp_path)
-    assert recommend(detect(tmp_path), "review").archetype == "issue-fanout-claude"
+    assert recommend(detect(tmp_path), "review").archetype == "issue-fanout-v3-claude"
 
 
 def test_recommend_intent_refactor_flow_strict(tmp_path):
     _py_repo(tmp_path)
     r = recommend(detect(tmp_path), "refactor")
-    assert r.archetype == "refactor-flow-claude"
+    assert r.archetype == "refactor-lane-v3-claude"
     assert r.catalog == "flow"
     assert r.harness_profile == "strict"
 
@@ -287,12 +288,37 @@ spec:
 
 
 def test_materialize_flow_copies_prod_yaml(tmp_path):
-    # build → prd flow → materialize copies the validated prod yaml verbatim
+    # build → prd flow → materialize uses the validated prod yaml shape
     _py_repo(tmp_path)
     r = recommend(detect(tmp_path), "build")
     assert r.catalog == "flow"
     text = materialize_zf_yaml(r.archetype, "demo", r)
     assert "kind:" in text  # k8s-style prod flow, not a flat preset
+
+
+def test_materialize_flow_injects_detected_required_checks(tmp_path):
+    from zf.core.config.candidate_gate import combined_candidate_gate_gap
+    from zf.core.config.loader import load_config
+
+    _py_repo(tmp_path)
+    r = recommend(
+        detect(tmp_path),
+        "build",
+        backend="codex",
+        scale="internal",
+    )
+    text = materialize_zf_yaml(r.archetype, "demo", r)
+
+    docs = list(yaml.safe_load_all(text))
+    zf_doc = next(doc for doc in docs if doc.get("kind") == "ZfConfig")
+    checks = zf_doc["spec"]["quality_gates"]["static"]["required_checks"]
+    assert checks == ["ruff check .", "pytest"]
+
+    path = tmp_path / "zf.yaml"
+    path.write_text(text, encoding="utf-8")
+    materialize_flow_assets(r.archetype, tmp_path, config_path=path)
+    cfg = load_config(path)
+    assert combined_candidate_gate_gap(cfg) == ""
 
 
 def test_materialize_preset_injects_checks(tmp_path):

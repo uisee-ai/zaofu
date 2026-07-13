@@ -40,7 +40,7 @@ Inspect:
 
 ## Decision Rules
 
-`safe_resume_action` is the enum the kernel writes on each checkpoint. Map the value to the guidance below. The "expected downstream" column is what a successful `--resume-pending` must produce (see `src/zf/runtime/run_manager_router.py:818-830`); if you do not see those events after applying, treat the resume as not landed.
+`safe_resume_action` is the enum the kernel writes on each checkpoint. Map the value to the guidance below. The "expected downstream" column is what a successful `--resume-pending` must produce (see `src/zf/runtime/run_manager_router.py` `expected_downstream_events`); if you do not see those events after applying, treat the resume as not landed.
 
 | `safe_resume_action` | level | expected downstream after apply | operator guidance |
 |---|---|---|---|
@@ -48,23 +48,23 @@ Inspect:
 | `needs_stage_dispatch` | task | `task.dispatched` + `workflow.resume.applied` | Apply single checkpoint by id, then dry-run again. |
 | `needs_rework_dispatch` | task | `task.rework.requested` + `workflow.resume.applied` | Apply single checkpoint by id, then dry-run again. |
 | `needs_gate_dispatch` | task | `stage.transition.stalled` + `workflow.resume.applied` | Apply single checkpoint; confirm the stalled marker landed. |
-| `needs_terminal_closeout` | task | `stage.transition.stalled` + `workflow.resume.applied` (same group as `needs_gate_dispatch`, router:824-825) | Terminal-stage closeout. Before manual apply, check the Tier-2 diagnosis channel (below) — a blocked terminal often means the kernel already opened a diagnosis loop. |
+| `needs_terminal_closeout` | task | `stage.transition.stalled` + `workflow.resume.applied` (same group as `needs_gate_dispatch` in router `expected_downstream_events`) | Terminal-stage closeout. Before manual apply, check the Tier-2 diagnosis channel (below) — a blocked terminal often means the kernel already opened a diagnosis loop. |
 | `blocked_external_gate` | task | `stage.transition.stalled` + `workflow.resume.applied` | Do not guess approval. Check whether a route or gate event is genuinely missing, and check the diagnosis channel first. |
 | `repair_failed_children` | batch | `task_map.ready` + `workflow.resume.applied` | Triage superseded first (see Batch Checkpoint Triage). Only resume `current` batches. |
-| `reemit_candidate_ready` | batch | `candidate.ready` + `workflow.resume.applied` (router:826-827; classifier in `workflow_resume.py:630`) | The batch has a completed candidate ref+head but no `candidate.ready` emission. Re-emit only if no later equivalent patch already landed the candidate (patch-id check below). |
+| `reemit_candidate_ready` | batch | `candidate.ready` + `workflow.resume.applied` (router `expected_downstream_events`; classifier in `workflow_resume.py` `_batch_safe_action`) | The batch has a completed candidate ref+head but no `candidate.ready` emission. Re-emit only if no later equivalent patch already landed the candidate (patch-id check below). |
 
 Additional rules that do not fit a single row:
 
 - If `pending=0` and `batch_pending=0`, do not resume anything.
 - If `pending=0` but `batch_pending>0`, say the active task path is clear but historical or batch checkpoints remain. Do not call the whole run done.
 - If the checkpoint source was rejected earlier, remember that `workflow.resume.rejected` is not success. Fix the rejection cause and retry the same checkpoint.
-- `SAFE_BATCH_ACTIONS` in the kernel is exactly `{repair_failed_children, reemit_candidate_ready}` (`src/zf/runtime/run_manager_router.py:11`). A batch checkpoint outside that set is not auto-safe; inspect before acting.
+- `SAFE_BATCH_ACTIONS` in the kernel is exactly `{repair_failed_children, reemit_candidate_ready}` (`src/zf/runtime/run_manager_router.py`). A batch checkpoint outside that set is not auto-safe; inspect before acting.
 
 ## Tier-2 Diagnosis First
 
 Before you manually recover any `blocked_external_gate` / `needs_terminal_closeout` checkpoint, or any run that looks stuck because a judge is not converging or a rework quota is exhausted, look at the Tier-2 diagnosis channel. The kernel opens it automatically; a manual resume that races it will duplicate work the kernel already suppressed.
 
-How it works (`src/zf/runtime/diagnosis.py`, wired in `src/zf/runtime/orchestrator.py:1661-1693`):
+How it works (`src/zf/runtime/diagnosis.py`, wired in `src/zf/runtime/orchestrator.py` `Orchestrator._run_diagnosis_sweep`):
 
 - On a non-convergence / rework-exhausted escalation, the orchestrator sweep mints `diagnosis.requested` keyed by the **stall fingerprint** — one diagnosis per fingerprint, so a recurring failure does not loop the diagnostician.
 - A configured diagnostician stage (`trigger: diagnosis.requested`) attaches to the scene (logs / event window / worktree) and emits a structured `diagnosis.completed`. The report's `next_action` is one of `route_to_lane`, `fix_target`, or `needs_owner` (`NEXT_ACTIONS` in `diagnosis.py`).
@@ -104,12 +104,12 @@ Classify it as (these labels are skill-owned triage vocabulary, not a kernel enu
 - `historical-noise`: the projection still shows it but it should not drive action.
 - `needs-runtime-fix`: the projection cannot distinguish old and current evidence.
 
-**Superseded judgement is patch-id equivalence, not commit-hash equality.** Candidate integration is idempotent by patch-id: the kernel selects new commits with `git rev-list --cherry-pick --right-only` (`src/zf/runtime/candidates.py:1373-1382`), so an equivalent patch that already landed on the base side carries a *different* commit hash. Comparing the checkpoint's candidate commits by hash against later events will mis-flag a batch as `current` when an equivalent patch has already been cherry-picked in. Use patch-id equivalence (`git rev-list --cherry-pick` semantics): if the failed batch's changes already exist on the current head as an equivalent patch, treat it as `superseded`.
+**Superseded judgement is patch-id equivalence, not commit-hash equality.** Candidate integration is idempotent by patch-id: the kernel selects new commits with `git rev-list --cherry-pick --right-only` (`src/zf/runtime/candidates.py` `CandidateRebuilder._task_commits`), so an equivalent patch that already landed on the base side carries a *different* commit hash. Comparing the checkpoint's candidate commits by hash against later events will mis-flag a batch as `current` when an equivalent patch has already been cherry-picked in. Use patch-id equivalence (`git rev-list --cherry-pick` semantics): if the failed batch's changes already exist on the current head as an equivalent patch, treat it as `superseded`.
 
 **Expected-suppression evidence.** Two kernel events are deliberate no-op decisions as of the 2026-07-06 kernel, not stalls to resume — classify them as "expected suppression", never as work to re-drive:
 
-- `fanout.retrigger.suppressed` with reason `no_delta_since_failure` (`src/zf/runtime/orchestrator_fanout.py:6492-6499`): the fanout was not retriggered because there is no new delta since the last failure. This is the intended guard, not a dropped retry.
-- `plan.minting.suppressed` with reason `pending_plan_same_fingerprint` (`src/zf/runtime/orchestrator_fanout.py:3086-3093`): a new plan was not minted because a pending plan with the same fingerprint already exists.
+- `fanout.retrigger.suppressed` with reason `no_delta_since_failure` (`src/zf/runtime/orchestrator_fanout.py` `_delta_gate_allows`): the fanout was not retriggered because there is no new delta since the last failure. This is the intended guard, not a dropped retry.
+- `plan.minting.suppressed` with reason `pending_plan_same_fingerprint` (`src/zf/runtime/orchestrator_fanout.py` `_plan_approval_satisfied`): a new plan was not minted because a pending plan with the same fingerprint already exists.
 
 Only resume `current` checkpoints. For `superseded` or `historical-noise`, record the evidence and update runtime projection logic if the noise is repeatable.
 

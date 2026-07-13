@@ -32,11 +32,32 @@ spec:
   version: "1.0"
   project:
     name: prd-fanout-v3
+  # 合并候选树质量门(多 lane 必配,r4 F10:跨 lane 偏斜只有它能拦)。
+  # 用项目真实命令替换 TODO 后取消注释;多 lane 无 gates 时
+  # `zf start`/`zf validate` 会 fail-closed 拒绝(观测型运行的显式豁免:
+  # workflow.allow_unverified_candidate: true)。
+  # quality_gates:
+  #   static:
+  #     required_checks:
+  #       - "TODO: typecheck 命令(如 cd app && npx tsc --noEmit / mypy src)"
+  #       - "TODO: 单测命令(如 cd app && python -m pytest -q)"
+  #     on_fail: "combined candidate tree failed static gate — 修复后重触发集成"
+  runtime:
+    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
+    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
+    # (默认 main;master 基线仓请 override 为 master)。
+    git:
+      auto_ship_on_judge_passed: true
   workflow:
     dag:
       external_triggers: [prd.requested]
+    admission_replan:
+      enabled: true
+      # admission 失败时回到 plan synth，而不是重新启动整个 PRD flow。
+      resynth_trigger: prd.scan.completed
     rework_routing:
       prd.scan.failed: planner
       prd.plan.failed: planner
       integration.failed: planner
+      static_gate.failed: dev-lane-0
       test.failed: dev-lane-0

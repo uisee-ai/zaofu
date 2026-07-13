@@ -416,3 +416,39 @@ def test_automation_run_controlled_action_emits_runtime_events(tmp_path: Path) -
     assert daily_item["last_run"]["run_id"] == response["run_id"]
     assert daily_item["run_counts_summary"]["started"] == 1
     assert daily_item["run_counts_summary"]["completed"] == 1
+
+
+def test_event_ref_carries_content_based_problem_fingerprint() -> None:
+    """ZF-E2E-MINI-P3: alert refs carry a registry-dedupe-key fingerprint so
+    the attention layer folds repeats of one problem (per-event ids never
+    fold)."""
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.automation_projection import _event_ref
+
+    a = _event_ref(ZfEvent(
+        type="cost.budget.exceeded",
+        id="evt-a",
+        actor="zf-cli",
+        payload={"scope": "global", "role": None, "budget_usd": 6.0,
+                 "current_usd": 6.7},
+    ))
+    b = _event_ref(ZfEvent(
+        type="cost.budget.exceeded",
+        id="evt-b",
+        actor="zf-cli",
+        payload={"scope": "global", "role": None, "budget_usd": 6.0,
+                 "current_usd": 9.9},
+    ))
+    assert a["problem_fingerprint"] == b["problem_fingerprint"]
+    assert "evt-" not in a["problem_fingerprint"]
+    assert a["problem_fingerprint"].startswith("cost.budget.exceeded:")
+
+    unregistered = _event_ref(ZfEvent(
+        type="totally.unregistered.event",
+        id="evt-c",
+        task_id="TASK-9",
+        payload={},
+    ))
+    assert unregistered["problem_fingerprint"] == (
+        "totally.unregistered.event:TASK-9"
+    )

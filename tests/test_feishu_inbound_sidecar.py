@@ -142,3 +142,65 @@ def test_feishu_inbound_sidecar_starts_and_stops(
     assert sidecar.process.terminated is True
     assert not sidecar.pid_path.exists()
     assert events.events[-1].type == "feishu.inbound_bridge.stopped"
+
+
+def test_feishu_inbound_sidecar_starts_one_bridge_per_bot(
+    tmp_path: Path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
+    monkeypatch.setenv("FEISHU_RUNM", "cli_arch")
+    monkeypatch.setenv("FEISHU_RUNM_SECRET", "secret_arch")
+    monkeypatch.setenv("FEISHU_KANBAN", "cli_pm")
+    monkeypatch.setenv("FEISHU_KANBAN_SECRET", "secret_pm")
+    started = []
+
+    def fake_popen(command, **kwargs):
+        started.append({
+            "command": command,
+            "env": kwargs.get("env") or {},
+            "cwd": kwargs.get("cwd"),
+        })
+        return FakeProcess(pid=4242 + len(started))
+
+    monkeypatch.setattr(
+        "zf.runtime.feishu_inbound_sidecar.subprocess.Popen",
+        fake_popen,
+    )
+    cfg = ZfConfig(
+        runtime=RuntimeConfig(
+            feishu_inbound=RuntimeFeishuInboundConfig(enabled=True),
+        ),
+        integrations=IntegrationsConfig(
+            feishu_routing={
+                "cli_arch:oc_group": FeishuRouteConfig(target="run_manager"),
+                "cli_pm:oc_group": FeishuRouteConfig(target="kanban_agent"),
+            },
+        ),
+    )
+    events = EventSink()
+
+    sidecar = start_feishu_inbound_sidecar(
+        config=cfg,
+        state_dir=tmp_path / ".zf",
+        project_root=tmp_path,
+        event_log=events,
+    )
+
+    assert sidecar is not None
+    assert len(started) == 2
+    assert [item["env"]["FEISHU_APP_ID"] for item in started] == [
+        "cli_arch",
+        "cli_pm",
+    ]
+    assert [
+        event.payload["bot_purpose"]
+        for event in events.events
+        if event.type == "feishu.inbound_bridge.started"
+    ] == ["run_manager", "kanban_agent"]
+
+    stop_feishu_inbound_sidecar(sidecar, event_log=events)
+    assert len([
+        event for event in events.events
+        if event.type == "feishu.inbound_bridge.stopped"
+    ]) == 2

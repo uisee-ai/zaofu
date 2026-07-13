@@ -1,6 +1,10 @@
 ---
 name: zf-plan-task-map-contract
 description: "Use in ZaoFu plan/task-map synthesis roles. Defines the fixed machine contract that downstream writer fanout, Kanban, verify, and judge stages consume. Customer/domain skills may be added, but they do not replace this contract."
+stages: [plan, replan]
+tags: [contract, task-map, artifact]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Plan Task-Map Contract
@@ -183,6 +187,15 @@ are rejected by admission. If a command changes directory, still keep
 is valid only when the task owns `app/tests/...` and the map declares
 `target_root: "app"`.
 
+**Verification execution-context rule (ZF-E2E-RACING-P2, 2026-07-11)**: the
+structured `verification` command is machine-executed from the repository
+root (ContractD). It must run as-is from there — if it depends on a
+subdirectory, embed the directory in the command itself (`cd <subdir> && …`
+or an equivalent flag such as `--prefix`). A bare `npm test` whose
+package.json lives in `app/` fails from the root and burns rework rounds.
+The structured command and the acceptance-criteria text must state the same
+command — re-check them against each other before emitting.
+
 ## Decomposition Rule: Vertical Slices, Not Horizontal Layers
 
 Decompose by **vertical slice** — a behavior together with the production code
@@ -214,7 +227,14 @@ parallel-bundle heuristic:
 - `assembly_policy: "declared_task"` means the task map must include
   `assembly_task_id` exactly or include one task with
   `root_owner_class: "assembly"`.
-- `assembly_policy: "none"` means a single serial plan may omit assembly.
+- `assembly_policy: "none"` means the plan is a single serial bundle and MUST
+  omit an assembly task. Do not create an `ASM-*` task or
+  `root_owner_class: "assembly"` under this policy. If the plan needs two or
+  more parallel bundles, first change the contract to
+  `assembly_policy: "declared_task"` and reserve a distinct assembly owner,
+  or coarsen the work into one serial bundle. Never emit a parallel map plus
+  an assembly task while the contract remains `none`, because that creates an
+  owner collision/self-lock.
 - Existing-project / 局部 refactor of an already imported project: declare
   `refactor_contract.workspace_root_owner_required: false` (or a top-level
   `workspace_root_owner_required: false` on the task map) to skip the
@@ -227,6 +247,17 @@ parallel-bundle heuristic:
   validation.
 - Do not emit success when a declared workflow assembly task is missing. Emit
   the configured failure event with the missing id and the proposed fix.
+
+### Gate rejection feedback (mandatory)
+
+If artifact/admission validation rejects a candidate plan, the next plan
+attempt MUST read `artifact-gate-diagnostics.json` (or the equivalent
+`diagnostics_ref`) and make a concrete delta addressing every reported
+contract violation. An `assembly_policy=none` rejection must be repaired by
+removing the assembly task and serializing the map, or by changing the
+contract and assigning assembly to a distinct role. Re-emitting the same
+invalid map, or triggering a fresh scan without carrying the diagnostics into
+plan context, is not recovery and must not be reported as plan progress.
 
 ## Assembly Task: Required When the Plan Has >1 Parallel Bundle
 

@@ -58,6 +58,7 @@ class TestExpansion:
             "Synthesize the scan reports" in item
             for item in plan.criteria.instructions
         )
+
         assert any(
             "schema_version` exactly `task-map.v1" in item
             for item in plan.criteria.instructions
@@ -78,6 +79,52 @@ class TestExpansion:
         stops = [d for d in compile_workflow_graph(cfg).diagnostics
                  if d.get("severity") == "STOP"]
         assert stops == []
+
+    def test_kind_routes_validate_stage_ids(self, tmp_path):
+        path = tmp_path / "zf.yaml"
+        path.write_text("""\
+version: "1.0"
+project: {name: demo}
+roles:
+  - name: reader
+    backend: mock
+    role_kind: reader
+workflow:
+  kind_routes:
+    issue:
+      pattern_id: missing-stage
+  stages:
+    - id: issue-triage
+      trigger: issue.requested
+      topology: fanout_reader
+      roles: [reader]
+""", encoding="utf-8")
+
+        with pytest.raises(ConfigError, match="unknown workflow stage"):
+            load_config(path)
+
+    def test_kind_routes_validate_alias_targets(self, tmp_path):
+        path = tmp_path / "zf.yaml"
+        path.write_text("""\
+version: "1.0"
+project: {name: demo}
+roles:
+  - name: reader
+    backend: mock
+    role_kind: reader
+workflow:
+  kind_routes:
+    feat:
+      alias: prd
+  stages:
+    - id: prd-scan
+      trigger: prd.requested
+      topology: fanout_reader
+      roles: [reader]
+""", encoding="utf-8")
+
+        with pytest.raises(ConfigError, match="alias references missing route"):
+            load_config(path)
 
     def test_assembly_required(self, tmp_path):
         p = tmp_path / "zf.yaml"
@@ -168,9 +215,18 @@ spec:
         assert "flow-lanes-review" not in ids
         assert "flow-lanes-impl" in ids
         assert "flow-lanes-verify" in ids
+        assert "flow-lanes-final" not in ids
         assert "flow-verify-bridge" in ids
         assert "flow-module-parity-scan" in ids
         assert "flow-final-judge" in ids
+        assert ids.count("flow-final-judge") == 1
+        verify_bridge = next(
+            s for s in cfg.workflow.stages if s.id == "flow-verify-bridge"
+        )
+        assert any(
+            "evidence_refs" in instruction
+            for instruction in verify_bridge.criteria.instructions
+        )
         scan = next(s for s in cfg.workflow.stages if s.id == "flow-scan")
         assert scan.target_ref == ""
         plan = next(s for s in cfg.workflow.stages if s.id == "flow-plan")
@@ -406,7 +462,7 @@ spec:
         assert cfg.workflow.flow_metadata["quality_floor"] == "issue-regression"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "regression_impact"
         assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v2"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v3"
 
     def test_prd_flow_generates_canonical_build_chain(self, tmp_path):
         path = tmp_path / "zf.yaml"
@@ -494,7 +550,7 @@ spec:
         assert cfg.workflow.flow_metadata["delivery_policy"] == "report_and_demo"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "product_completeness"
         assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v2"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v3"
 
     def test_prd_flow_role_skill_bundles_override_defaults(self, tmp_path):
         path = tmp_path / "zf.yaml"
@@ -527,6 +583,22 @@ spec:
         assert verify.skills == ["custom-verify"]
         assert judge.skills == []
 
+    # 2026-07-08 agent-skills 退役:controller bundle 只允许仓内
+    # skills/(zf-*)与 yoke/ 名。外部基线名回流即红。
+    _RETIRED_AGENT_SKILLS = {
+        "using-agent-skills",
+        "test-driven-development",
+        "incremental-implementation",
+        "debugging-and-error-recovery",
+        "source-driven-development",
+        "code-review-and-quality",
+        "spec-driven-development",
+        "context-engineering",
+        "planning-and-task-breakdown",
+        "shipping-and-launch",
+        "code-simplification",
+    }
+
     def test_prod_controller_flows_enable_writer_workdirs(self):
         root = Path(__file__).parent.parent
         for relative in (
@@ -538,26 +610,40 @@ spec:
             assert cfg.runtime.workdirs.enabled is True, relative
             assert cfg.runtime.workdirs.mode == "worktree", relative
             assert any(
-                source.name == "agent-skills"
-                and source.path == "/home/user/workspace/agent-skills/skills"
+                source.name == "zaofu-skills"
+                and source.path == "../../../skills"
                 for source in cfg.skill_sources
             ), relative
+            assert not any(
+                source.name == "agent-skills" for source in cfg.skill_sources
+            ), f"{relative}: agent-skills 外部基线已退役,不应再声明为 source"
+            for role in cfg.roles:
+                leaked = self._RETIRED_AGENT_SKILLS & set(role.skills or [])
+                assert not leaked, (
+                    f"{relative}:{role.name} 仍引用已退役 agent-skills 名 {sorted(leaked)}"
+                )
             if relative == "examples/prod/controller/issue-fanout-v3.yaml":
                 triage = next(role for role in cfg.roles if role.name == "issue-triage")
                 fix = next(role for role in cfg.roles if role.name == "fix-lane-0")
                 verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
                 assert "zf-issue-plan-synth" in triage.skills
-                assert "test-driven-development" in fix.skills
+                assert "debugging-triage" in triage.skills
+                assert "zf-yoke-dev-worker-role-context" in fix.skills
                 assert "zf-harness-done-contract" in fix.skills
                 assert "zf-verify-gap-producer-contract" in verify.skills
+                assert "zf-yoke-test-evaluator-role-context" in verify.skills
             if relative == "examples/prod/controller/prd-fanout-v3.yaml":
                 scan = next(role for role in cfg.roles if role.name == "product-scan")
                 planner = next(role for role in cfg.roles if role.name == "planner")
                 dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
                 verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
                 assert "zf-prd-plan-synth" in scan.skills
+                assert "grill" in scan.skills
+                assert "source-verification" in scan.skills
+                assert "context-hygiene" in scan.skills
                 assert "zf-plan-task-map-contract" in planner.skills
-                assert "test-driven-development" in dev.skills
+                assert "zf-yoke-planner-role-context" in planner.skills
+                assert "zf-yoke-dev-worker-role-context" in dev.skills
                 assert "zf-verify-gap-producer-contract" in verify.skills
             if relative == "examples/prod/controller/refactor-lane-v3.yaml":
                 scan = next(role for role in cfg.roles if role.name == "scan-contract")
@@ -566,11 +652,13 @@ spec:
                 verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
                 module = next(role for role in cfg.roles if role.name == "module-parity-scan")
                 assert "zf-refactor-plan-synth" in scan.skills
+                assert "source-verification" in scan.skills
                 assert "zf-plan-task-map-contract" in plan.skills
-                assert "test-driven-development" in dev.skills
-                assert "code-simplification" in dev.skills
-                assert "code-review-and-quality" in verify.skills
+                assert "zf-yoke-dev-worker-role-context" in dev.skills
+                assert "zf-harness-done-contract" in dev.skills
                 assert "zf-verify-rescan-replan" in verify.skills
+                assert "zf-yoke-test-evaluator-role-context" in verify.skills
+                assert "verify-review" in module.skills
                 assert "zf-provider-contract-parity" in module.skills
 
     def test_issue_prd_flow_unknown_params_fail_closed(self, tmp_path):

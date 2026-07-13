@@ -9,7 +9,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import type { LiveState, PageId, ParsedEventFilter, ProjectionKind, ProjectionMetricSpec, UiTone } from "../../app/sharedTypes";
 import { EventTable, KeyValuePanel, PreBlock, ProjectionEmptyState, ProjectionList, ProjectionMetricGrid, TablePage, TraceDetailPanel, TraceIndexList, asRecord, asStringArray, eventChannelId, eventFamily, eventKey, eventPayload, eventSummary, formatUsd, parseEventFilter, stringify, textValue, truncateInline } from "../../app/shared";
 
-type ObservabilityTab = "traces" | "events" | "logs" | "runs" | "fanouts" | "candidates" | "integration" | "repair" | "resources" | "tokens" | "feedback" | "raw";
+type ObservabilityTab = "traces" | "events" | "logs" | "runs" | "fanouts" | "candidates" | "integration" | "repair" | "raw";
 
 type TraceStatusFilter = "all" | "running" | "completed" | "failed" | "blocked" | "observed";
 
@@ -28,7 +28,9 @@ function observabilityTabForPage(page: PageId): ObservabilityTab {
   if (page === "runs") return "runs";
   if (page === "fanouts") return "fanouts";
   if (page === "candidates") return "candidates";
-  if (page === "workdirs" || page === "skills" || page === "archives") return "resources";
+  // Resources tab 已退役(operator 2026-07-11 整删):旧 workdirs/skills/
+  // archives 深链落默认 traces。取证走 CLI(zf status/skills)或 Raw。
+  if (page === "workdirs" || page === "skills" || page === "archives") return "traces";
   return "traces";
 }
 
@@ -181,13 +183,6 @@ export function ObservabilityPage({
   const runs = [...(snapshot?.active_runs ?? []), ...(snapshot?.runs ?? [])];
   const fanouts = snapshot?.fanouts ?? [];
   const candidates = snapshot?.candidates ?? [];
-  const workdirs = snapshot?.workdirs ?? [];
-  const loadedSkills = snapshot?.skills.loaded ?? [];
-  const archives = snapshot?.archive_tasks ?? [];
-  const runtimeResources = snapshot?.runtime.resources;
-  const providerSessionRows = runtimeResources?.provider_sessions ?? [];
-  const terminalExcerptRows = runtimeResources?.terminal_excerpts ?? [];
-  const tmuxRows = runtimeResources?.host?.tmux?.sessions ?? [];
   const totalTokens = Object.values(snapshot?.cost.per_role ?? {}).reduce(
     (total, role) => total + role.input_tokens + role.output_tokens,
     0,
@@ -319,9 +314,9 @@ export function ObservabilityPage({
     { id: "candidates", label: "Candidates", count: candidates.length },
     { id: "integration", label: "Integration", count: integrationQueue?.summary.total ?? 0 },
     { id: "repair", label: "Repair", count: repairActions?.summary.total ?? 0 },
-    { id: "resources", label: "Resources", count: workdirs.length + loadedSkills.length + archives.length + providerSessionRows.length + tmuxRows.length },
-    { id: "tokens", label: "Tokens/Context" },
-    { id: "feedback", label: "Feedback" },
+    // Tokens/Context 与 Feedback tab 已退役(operator 2026-07-11):前者三重复
+    // (顶部卡片 + Agents 页 FLEET 逐行同数据),后者的家是 Inbox(可行动)与
+    // Agents Attention Queue。同数据不二渲染。
     { id: "raw", label: "Raw" },
   ];
 
@@ -370,24 +365,6 @@ export function ObservabilityPage({
     setReplayIndex(Math.max(0, replayEvents.length - 1));
   }, [replayEvents.length, replayIndex]);
 
-  const roleTokenRows = Object.entries(snapshot?.cost.per_role ?? {}).map(([role, cost]) => ({
-    role,
-    total_tokens: formatTokens(cost.input_tokens + cost.output_tokens),
-    input_tokens: formatTokens(cost.input_tokens),
-    output_tokens: formatTokens(cost.output_tokens),
-    usd: formatUsd(cost.usd),
-    entries: cost.entries,
-  }));
-  const contextRows = (snapshot?.agents ?? []).map((agent) => ({
-    agent: agent.instance_id,
-    role: agent.parent_role || agent.role_type || "-",
-    backend: agent.backend || "-",
-    task: agent.task_id || agent.active_task || "-",
-    context: agent.context_usage_ratio == null ? "unknown" : `${Math.round(agent.context_usage_ratio * 100)}%`,
-    tokens: formatTokens((agent.cost?.input_tokens ?? 0) + (agent.cost?.output_tokens ?? 0)),
-    attention: agent.attention_state || "idle",
-  }));
-  const feedbackRows = buildFeedbackRows(snapshot);
   const renderedSelectedEventKey =
     selectedEvent && renderedEventItems.includes(selectedEvent)
       ? eventKey(selectedEvent, renderedEventItems.indexOf(selectedEvent))
@@ -605,32 +582,8 @@ export function ObservabilityPage({
       {tab === "repair" ? (
         <RepairActionsPanel projection={repairActions} />
       ) : null}
-      {tab === "resources" ? (
-        <div className="observability-resource-grid">
-          <TablePage title="Provider Sessions" rows={providerSessionRows} embedded emptyState={{ title: "No provider sessions", description: "Role session mirrors appear after runtime workers spawn or provider hooks report sessions.", icon: Radio, compact: true }} />
-          <TablePage title="Terminal Excerpts" rows={terminalExcerptRows} embedded emptyState={{ title: "No terminal excerpts", description: "Read-only redacted terminal windows appear when session transcript paths are known.", icon: Boxes, compact: true }} />
-          <TablePage title="Host tmux" rows={tmuxRows} embedded emptyState={{ title: "No tmux sessions", description: "Host tmux sessions appear when a read-only host probe is available.", icon: Radio, compact: true }} />
-          <TablePage title="Workdirs" rows={workdirs} embedded emptyState={{ title: "No workdirs yet", description: "Worker workdirs appear after runtime roles spawn.", icon: FolderGit2, compact: true }} />
-          <TablePage title="Loaded Skills" rows={loadedSkills} embedded emptyState={{ title: "No loaded skills", description: "Skill lock projections appear after runtime refresh.", icon: Wrench, compact: true }} />
-          <TablePage title="Archives" rows={archives} embedded emptyState={{ title: "No archived tasks", description: "Closed tasks appear after task closeout.", icon: Archive, compact: true }} />
-        </div>
-      ) : null}
       {tab === "logs" ? (
         <LogsPanel projectId={activeProjectId || snapshot?.project.project_id} />
-      ) : null}
-      {tab === "tokens" ? (
-        <div className="observability-resource-grid">
-          <TablePage title="Role Token Usage" rows={roleTokenRows} embedded emptyState={{ title: "No token usage yet", description: "Provider usage records are projected when workers report cost or token usage.", icon: Boxes, compact: true }} />
-          <TablePage title="Worker Context" rows={contextRows} embedded emptyState={{ title: "No context telemetry yet", description: "Context pressure appears after worker telemetry includes context usage.", icon: Gauge, compact: true }} />
-        </div>
-      ) : null}
-      {tab === "feedback" ? (
-        <TablePage
-          title="Feedback / Score / Attention"
-          rows={feedbackRows}
-          embedded
-          emptyState={{ title: "No feedback or attention signal", description: "Autoresearch score, supervisor attention, and channel attention projections will appear here.", icon: Bell, compact: true }}
-        />
       ) : null}
       {tab === "raw" ? (
         <div className="observability-resource-grid">
@@ -922,67 +875,6 @@ function repairActionStatusClass(status: string): string {
 }
 
 
-function buildFeedbackRows(snapshot: Snapshot | null): Record<string, unknown>[] {
-  if (!snapshot) return [];
-  const rows: Record<string, unknown>[] = [];
-  const cockpitWorkers = Array.isArray(snapshot.agent_cockpit?.workers)
-    ? snapshot.agent_cockpit.workers
-    : [];
-  for (const item of cockpitWorkers) {
-    const row = asRecord(item);
-    const status = textValue(row.status || row.attention_state);
-    if (!status || status === "ok" || status === "idle") continue;
-    rows.push({
-      source: "agent_cockpit",
-      status,
-      target: textValue(row.instance_id) || textValue(row.role) || "-",
-      task_id: textValue(row.task_id) || "-",
-      signal_count: row.signal_count ?? "-",
-      reason: asStringArray(row.reasons).slice(0, 2).join(" | ") || textValue(row.reason) || "-",
-    });
-  }
-  const channels = snapshot.channels ?? [];
-  for (const channel of channels) {
-    for (const item of channel.attention ?? []) {
-      const row = asRecord(item);
-      rows.push({
-        source: "channel",
-        status: textValue(row.status) || "open",
-        target: channel.name || channel.channel_id,
-        task_id: textValue(row.task_id) || "-",
-        signal_count: "-",
-        reason: textValue(row.reason || row.message || row.kind) || "channel attention",
-      });
-    }
-  }
-  const spine = asRecord(snapshot.spine_review);
-  const verdict = textValue(spine.verdict);
-  if (textValue(spine.status) === "ready" && verdict && verdict !== "continue") {
-    rows.push({
-      source: "spine_review",
-      status: verdict,
-      target: textValue(spine.review_id) || "project",
-      task_id: "-",
-      signal_count: asStringArray(spine.top_findings).length,
-      reason: textValue(spine.better_solution) || "spine review recommends action",
-    });
-  }
-  const recoverySuggestions = Array.isArray(snapshot.recovery?.suggestions)
-    ? snapshot.recovery.suggestions
-    : [];
-  for (const item of recoverySuggestions) {
-    const row = asRecord(item);
-    rows.push({
-      source: "recovery",
-      status: textValue(row.recommended_recovery) || "suggested",
-      target: textValue(row.instance_id) || "-",
-      task_id: textValue(row.task_id) || "-",
-      signal_count: "-",
-      reason: textValue(row.reason) || "-",
-    });
-  }
-  return rows;
-}
 
 
 function TraceFilterBar({
@@ -1213,9 +1105,6 @@ function isObservabilityTab(value: string | null): value is ObservabilityTab {
     "candidates",
     "integration",
     "repair",
-    "resources",
-    "tokens",
-    "feedback",
     "raw",
   ].includes(value));
 }

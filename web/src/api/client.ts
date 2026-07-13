@@ -110,6 +110,7 @@ export interface BootstrapInspect {
   stack: string;
   layout: string;
   recommended_flow: string;
+  has_config?: boolean;
   candidates: Array<{
     kind: "setup" | "gate" | "doc_fact" | "flow";
     label: string;

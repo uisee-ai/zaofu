@@ -204,6 +204,44 @@ def test_validate_strict_skills_flag_fails_for_missing_enabled_skill(
     assert "missing" in captured.err
 
 
+def test_validate_strict_skills_fails_for_missing_skill_dependency(
+    tmp_path: Path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    skill_dir = tmp_path / "skills" / "contract"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: contract\n"
+        "description: Contract skill.\n"
+        "dependencies: [missing-method]\n"
+        "---\n\n"
+        "# Contract\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "zf.yaml").write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "runtime:\n"
+        "  skills:\n"
+        "    strict: true\n"
+        "roles:\n"
+        "  - name: dev\n"
+        "    backend: python\n"
+        "    skills: [contract]\n",
+        encoding="utf-8",
+    )
+
+    result = main(["validate"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "skill validation errors" in captured.err.lower()
+    assert "missing dependency" in captured.err
+    assert "missing-method" in captured.err
+
+
 def test_validate_strict_contracts_fails_for_incomplete_task(
     tmp_path: Path,
     monkeypatch,
@@ -294,3 +332,48 @@ def test_validate_cold_start_failing(tmp_path: Path, monkeypatch, capsys):
     assert result == 1
     captured = capsys.readouterr()
     assert "FAIL" in captured.out
+
+
+def test_dead_letter_channel_warnings_pairs():
+    """ZF-E2E-PRDCTL-P1-6:请求方开/执行方关 → WARN;执行方开 → 对应 WARN 消失。"""
+    from zf.cli.validate import _dead_letter_channel_warnings
+    from zf.core.config.schema import ZfConfig
+
+    default_config = ZfConfig()
+    warnings = _dead_letter_channel_warnings(default_config)
+    assert len(warnings) == 4
+    assert any("autoresearch_resident" in w for w in warnings)
+
+    config = ZfConfig()
+    config.runtime.autoresearch_resident.enabled = True
+    warnings2 = _dead_letter_channel_warnings(config)
+    assert len(warnings2) == 3
+    assert not any("autoresearch_resident" in w for w in warnings2)
+
+
+def test_stage_failure_event_collision_detected():
+    """ZF-E2E-PRDCTL-P2-7-1:两 stage 共用 failure_event → FAIL 项。"""
+    from zf.cli.validate import _stage_failure_event_collisions
+    from zf.core.config.schema import (
+        FanoutAggregateConfig,
+        WorkflowStageConfig,
+        ZfConfig,
+    )
+
+    config = ZfConfig()
+    config.workflow.stages = [
+        WorkflowStageConfig(
+            id="critique",
+            aggregate=FanoutAggregateConfig(failure_event="product.design.blocked"),
+        ),
+        WorkflowStageConfig(
+            id="task-map",
+            aggregate=FanoutAggregateConfig(failure_event="product.design.blocked"),
+        ),
+    ]
+    collisions = _stage_failure_event_collisions(config)
+    assert len(collisions) == 1
+    assert "critique" in collisions[0] and "task-map" in collisions[0]
+
+    config.workflow.stages[1].aggregate.failure_event = "task_map.blocked"
+    assert _stage_failure_event_collisions(config) == []

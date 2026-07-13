@@ -315,6 +315,11 @@ quality_gates:
     required_checks: []
 
 verification:
+  # ZF-E2E-PRDCTL-P2-7-5:verify 证据契约硬门(deepwater judge 拒收根之一:
+  # evidence_missing 只软警告,child 缺 requirement_coverage_matrix/
+  # evidence_refs 照样 completed,判决时才暴雷)。prod-runtime/v1 已默认
+  # fail_closed,本族不走 profile,显式对齐。
+  report_evidence_gate: fail_closed
   contract:
     required: true
     quality_required: true

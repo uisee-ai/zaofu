@@ -61,8 +61,11 @@ def test_invalid_action_rejected() -> None:
         apply_action("bogus")
 
 
-def test_detect_backends_mock_always_available() -> None:
+def test_detect_backends_no_mock_and_mixed_gated() -> None:
     backends = {b["id"]: b for b in detect_backends()}
-    assert backends["mock"]["always_available"] is True
-    assert backends["mock"]["detected"] is True
+    # mock 已从欢迎向导后端目录移除(不再作为 onboarding 选项)。
+    assert "mock" not in backends
     assert "claude-code" in backends and "codex" in backends
+    # mixed(codex+claude)仅在两者都探测到时出现。
+    both = backends["claude-code"]["detected"] and backends["codex"]["detected"]
+    assert ("mixed" in backends) == both

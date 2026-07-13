@@ -1136,13 +1136,26 @@ def _no_progress_alerts(
 
 def _event_ref(event: ZfEvent) -> dict[str, Any]:
     payload = event.payload if isinstance(event.payload, dict) else {}
+    # ZF-E2E-MINI-P3 (2026-07-11): carry a content-based problem fingerprint
+    # (registry dedupe_key_fields via abnormal_event_projection) so downstream
+    # attention items fold repeats of the same problem. The per-event
+    # automation:alerts:evt-<id> fingerprint made every repeat "new" — one
+    # frozen budget produced 13 inbox rows.
+    from zf.runtime.problem_taxonomy import abnormal_event_projection
+
+    task_id = event.task_id or str(payload.get("task_id") or "")
+    projection = abnormal_event_projection(event)
+    problem_fingerprint = (
+        str(projection.get("fingerprint") or "") if projection else ""
+    ) or f"{event.type}:{task_id or event.actor or ''}"
     return redact_obj({
         "event_id": event.id,
         "type": event.type,
-        "task_id": event.task_id or str(payload.get("task_id") or ""),
+        "task_id": task_id,
         "actor": event.actor or "",
         "ts": event.ts,
         "reason": str(payload.get("reason") or payload.get("summary") or ""),
+        "problem_fingerprint": problem_fingerprint,
     })
 
 

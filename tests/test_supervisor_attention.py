@@ -103,13 +103,13 @@ def test_repeated_expected_negative_event_creates_diagnostic_attention() -> None
                 type="test.failed",
                 id="evt-test-failed-1",
                 task_id="TASK-TEST",
-                payload={"reason": "unit failure"},
+                payload={"fanout_id": "verify-attempt-1", "reason": "unit failure"},
             ),
             ZfEvent(
                 type="test.failed",
                 id="evt-test-failed-2",
                 task_id="TASK-TEST",
-                payload={"reason": "unit failure"},
+                payload={"fanout_id": "verify-attempt-2", "reason": "unit failure"},
             ),
         ],
         automation={},
@@ -118,8 +118,9 @@ def test_repeated_expected_negative_event_creates_diagnostic_attention() -> None
     )
 
     assert len(items) == 1
-    assert items[0]["suggested_route"] == "autoresearch_trigger"
+    assert items[0]["suggested_route"] == "run_manager_recovery"
     assert items[0]["problem_envelope"]["problem_class"] == "candidate_quality"
+    assert items[0]["problem_envelope"]["owner_route"] == "run_manager"
     assert items[0]["source_event_ids"] == ["evt-test-failed-1", "evt-test-failed-2"]
 
 
@@ -234,3 +235,75 @@ def test_every_attention_item_carries_problem_envelope() -> None:
         assert isinstance(envelope, dict), f"item {item.get('fingerprint')} 缺 envelope"
         assert envelope.get("schema_version"), f"item {item.get('fingerprint')} envelope 无 schema"
         assert envelope.get("problem_class"), f"item {item.get('fingerprint')} envelope 无 problem_class"
+
+
+def test_automation_alerts_fold_by_problem_fingerprint() -> None:
+    """ZF-E2E-MINI-P3 (2026-07-11): repeats of the same problem through the
+    project-monitor alerts channel must share one fingerprint (registry
+    dedupe keys), not one per event id — a single frozen budget produced 13
+    owner-inbox rows because automation:alerts:evt-<id> never folds."""
+    def _alert_ref(evt_id: str) -> dict:
+        return {
+            "event_id": evt_id,
+            "type": "cost.budget.exceeded",
+            "task_id": "",
+            "actor": "zf-cli",
+            "reason": "budget exceeded",
+            "problem_fingerprint": (
+                "cost.budget.exceeded:scope=global:budget_usd=6.0"
+            ),
+        }
+
+    automation = {
+        "items": [
+            {
+                "automation_id": "project-monitor",
+                "outputs": [{
+                    "alerts": [_alert_ref(f"evt-{i}") for i in range(5)],
+                }],
+            },
+        ],
+    }
+    items = build_attention_items(
+        events=[],
+        automation=automation,
+        failure_signals=[],
+        plan_integrity={},
+    )
+    fingerprints = {
+        str(item["fingerprint"]) for item in items
+        if str(item["source"]) == "automation"
+    }
+    assert fingerprints == {
+        "automation:alerts:cost.budget.exceeded:scope=global:budget_usd=6.0"
+    }
+
+
+def test_automation_alerts_without_problem_fingerprint_keep_event_id() -> None:
+    # Old-shape refs (no problem_fingerprint) keep the per-event fallback —
+    # no silent behavior change for projections built by older code.
+    automation = {
+        "items": [
+            {
+                "automation_id": "project-monitor",
+                "outputs": [{
+                    "alerts": [{
+                        "event_id": "evt-legacy",
+                        "type": "dispatch.silent_stall",
+                        "reason": "no matching task",
+                    }],
+                }],
+            },
+        ],
+    }
+    items = build_attention_items(
+        events=[],
+        automation=automation,
+        failure_signals=[],
+        plan_integrity={},
+    )
+    automation_items = [
+        item for item in items if str(item["source"]) == "automation"
+    ]
+    assert len(automation_items) == 1
+    assert automation_items[0]["fingerprint"] == "automation:alerts:evt-legacy"

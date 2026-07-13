@@ -1698,6 +1698,31 @@ class TestApiChannels:
         assert detail["handoffs"][1]["status"] == "accepted"
         assert detail["reply_requests"][0]["status"] == "completed"
 
+    def test_channel_discussion_mode_forwards_relay_depth_and_deadlines(self, state_dir, monkeypatch):
+        # D1 regression: the projection folds max_relay_depth / participants /
+        # synthesizer / phase_deadline_seconds, but the controlled action used
+        # to drop them, so the operator could never tune the mention_relay depth
+        # cap or phase deadlines through channel-discussion-mode.
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        local_client = TestClient(create_app(state_dir))
+        resp = local_client.post(
+            "/api/actions/channel-discussion-mode",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "channel_id": "ch-relay",
+                "mode": "mention_relay",
+                "max_relay_depth": 2,
+                "phase_deadline_seconds": {"phase1_blind": 120},
+                "synthesizer": "arch-1",
+            },
+        )
+        assert resp.status_code == 202
+        discussion = local_client.get("/api/channels/ch-relay").json()["discussion"]
+        assert discussion["mode"] == "mention_relay"
+        assert discussion["max_relay_depth"] == 2
+        assert discussion["phase_deadline_seconds"] == {"phase1_blind": 120}
+        assert discussion["synthesizer"] == "arch-1"
+
     def test_channel_owner_report_action_generates_projection_without_task_mutation(
         self,
         state_dir,

@@ -141,7 +141,7 @@ workflow:
     dev.failed: issue-plan
     dispatch.silent_stall: orchestrator
   strict_triggers:
-    rework_attempts_gte: 1
+    rework_attempts_gte: 3
     context_usage_gte: 0.80
     file_globs: [src/**, tests/**, web/**, docs/**]
   stages:
@@ -207,7 +207,7 @@ workflow:
     timeout_seconds: 1800
 
 roles:
-- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
+- {name: orchestrator, instance_id: orchestrator, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested], publishes: [orchestrator.rework.triage.recorded], skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]}
 - {name: issue-plan, instance_id: issue-plan, role_kind: reader, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, skills: [zf-issue-plan-synth, zf-plan-task-map-contract, planning-and-task-breakdown]}
 - {name: dev-core, instance_id: dev-core, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [incremental-implementation, test-driven-development, git-workflow-and-versioning, zf-harness-done-contract]}
 - {name: dev-web, instance_id: dev-web, role_kind: writer, backend: ${ZF_AGENT_BACKEND:-codex}, permission_mode: bypass, transport: tmux, stuck_threshold_seconds: 1800, skills: [frontend-ui-engineering, incremental-implementation, git-workflow-and-versioning, zf-harness-done-contract]}

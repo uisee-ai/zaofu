@@ -26,6 +26,7 @@ from zf.runtime.tick_services import (
     TickServiceState,
     _configured_run_manager_backend,
     _emit_cost_blackout_if_needed,
+    _emit_runtime_liveness_stale_if_needed,
     emit_stale_supervisor_projection_if_needed,
     run_standard_tick_services,
 )
@@ -99,6 +100,38 @@ class _TickRestartTransport:
 
     def send_task(self, role_name: str, briefing_path: Path, prompt: str, *, context=None) -> None:
         self.sent.append((role_name, briefing_path, prompt, context))
+
+
+def test_runtime_liveness_reconcile_emits_when_active_watcher_pid_is_dead(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    (state_dir / "processes").mkdir(parents=True)
+    (state_dir / "session.yaml").write_text(
+        "runtime_state: active\nproject_root: /tmp/project\n",
+        encoding="utf-8",
+    )
+    (state_dir / "processes" / "watcher.pid.json").write_text(
+        json.dumps({"owner_pid": 99999999}),
+        encoding="utf-8",
+    )
+    event_log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(event_log)
+
+    assert _emit_runtime_liveness_stale_if_needed(
+        state_dir=state_dir,
+        event_log=event_log,
+        writer=writer,
+    ) is True
+    assert _emit_runtime_liveness_stale_if_needed(
+        state_dir=state_dir,
+        event_log=event_log,
+        writer=writer,
+    ) is False
+
+    events = event_log.read_all()
+    assert events[-1].type == "runtime.liveness.stale"
+    assert events[-1].payload["recommended_route"] == "run_manager"
 
 
 def _state(tmp_path: Path) -> Path:
@@ -188,11 +221,13 @@ def test_standard_tick_services_materializes_failure_candidates(tmp_path: Path) 
     state_dir = _state(tmp_path)
     config = ZfConfig()
     orch = _FakeOrchestrator(state_dir, config)
+    # ZF-E2E-PRDCTL-P0-3: RM self events no longer materialize; seed a real
+    # failure to exercise the materialization pipeline.
     orch.event_log.append(ZfEvent(
-        type="run.manager.action.failed",
-        actor="run-manager",
+        type="gate.failed",
+        actor="zf-cli",
         task_id="TASK-RM",
-        payload={"reason": "resume command failed"},
+        payload={"reason": "static gate red"},
     ))
 
     result = run_standard_tick_services(
@@ -211,7 +246,7 @@ def test_standard_tick_services_materializes_failure_candidates(tmp_path: Path) 
     assert result.failure_closeout_materialized == 1
     assert len(candidates) == 1
     data = json.loads(candidates[0].read_text(encoding="utf-8"))
-    assert data["event"]["type"] == "run.manager.action.failed"
+    assert data["event"]["type"] == "gate.failed"
     assert data["event"]["task_id"] == "TASK-RM"
     closeout = state_dir / "failure-closeout" / "failure-closeout-manifest.json"
     assert closeout.exists()
@@ -294,6 +329,56 @@ def test_stale_supervisor_projection_ignores_run_manager_tick_only(
     assert emitted is False
     assert not [
         event for event in log.read_all()
+        if event.type == "supervisor.projection.stale"
+    ]
+
+
+def test_standard_tick_refreshes_supervisor_before_stale_check(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    supervisor_dir = state_dir / "projections" / "supervisor"
+    supervisor_dir.mkdir(parents=True)
+    snapshot_path = supervisor_dir / "snapshot.json"
+    snapshot_path.write_text(json.dumps({
+        "generated_at": "2026-06-21T10:00:00+00:00",
+    }), encoding="utf-8")
+    orch = _FakeOrchestrator(state_dir, ZfConfig())
+    orch.event_log.append(ZfEvent(
+        id="evt-progress",
+        type="integration.failed",
+        actor="zf-cli",
+        ts="2026-06-21T10:20:00+00:00",
+    ))
+
+    def refresh_supervisor(**_kwargs) -> bool:
+        snapshot_path.write_text(json.dumps({
+            "generated_at": "2026-06-21T10:20:00+00:00",
+        }), encoding="utf-8")
+        return True
+
+    with patch(
+        "zf.runtime.tick_services._run_supervisor",
+        side_effect=refresh_supervisor,
+    ):
+        result = run_standard_tick_services(
+            orch,
+            state=TickServiceState(),
+            now=100.0,
+            intervals=TickServiceIntervals(
+                heartbeat_sweep_s=999,
+                bug_scan_s=999,
+                supervisor_inspection_s=0,
+                stale_supervisor_projection_s=60,
+                spine_projection_s=999,
+                cost_blackout_check_s=999,
+            ),
+        )
+
+    assert result.supervisor_inspection is True
+    assert result.stale_supervisor_projection is False
+    assert not [
+        event for event in orch.event_log.read_all()
         if event.type == "supervisor.projection.stale"
     ]
 
@@ -516,9 +601,11 @@ def test_standard_tick_services_pushes_run_manager_human_decision_card(
     ))
     monkeypatch.setenv("ZF_OWNER_VISIBLE_CHAT", "oc_rm")
     monkeypatch.setenv("ZF_OWNER_VISIBLE_RECEIVE_ID_TYPE", "chat_id")
+    monkeypatch.setenv("FEISHU_RUNM", "cli_arch")
+    monkeypatch.setenv("FEISHU_RUNM_SECRET", "secret_arch")
 
     with patch(
-        "zf.integrations.feishu.transport.FeishuHttpTransport",
+        "zf.integrations.feishu.bot_credentials.FeishuHttpTransport",
         return_value=transport,
     ):
         result = run_standard_tick_services(

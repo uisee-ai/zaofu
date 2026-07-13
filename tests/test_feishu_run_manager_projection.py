@@ -19,15 +19,42 @@ def _router(tmp_path):
     return router, transport
 
 
-def test_escalation_sent_routes_to_approval(tmp_path):
+def test_escalation_sent_suppressed_when_card_first_enabled(tmp_path, monkeypatch):
+    monkeypatch.delenv("ZF_RUN_MANAGER_CARD_FIRST", raising=False)
+    router, t = _router(tmp_path)
+    ev = ZfEvent(type="human.escalation.sent", actor="run-manager",
+                 payload={"run_id": "R1", "failure_class": "worker_stuck"})
+    assert router.route_event(ev) is False
+    assert not t.sent_messages
+
+
+def test_escalation_sent_routes_to_approval_when_projection_fallback_enabled(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_RUN_MANAGER_CARD_FIRST", "0")
     router, t = _router(tmp_path)
     ev = ZfEvent(type="human.escalation.sent", actor="run-manager",
                  payload={"run_id": "R1", "failure_class": "worker_stuck"})
     assert router.route_event(ev) is True
-    assert t.sent_messages[-1].chat_id == "oc_appr"   # needs-human → approval channel
+    assert t.sent_messages[-1].chat_id == "oc_appr"
 
 
 def test_escalation_sent_falls_back_to_owner_channel(tmp_path):
+    import os
+
+    old = os.environ.get("ZF_RUN_MANAGER_CARD_FIRST")
+    os.environ["ZF_RUN_MANAGER_CARD_FIRST"] = "0"
+    try:
+        _assert_escalation_owner_fallback(tmp_path)
+    finally:
+        if old is None:
+            os.environ.pop("ZF_RUN_MANAGER_CARD_FIRST", None)
+        else:
+            os.environ["ZF_RUN_MANAGER_CARD_FIRST"] = old
+
+
+def _assert_escalation_owner_fallback(tmp_path):
     (tmp_path / "kanban.json").write_text("[]\n")
     transport = MockFeishuTransport()
     router = ProjectionRouter(

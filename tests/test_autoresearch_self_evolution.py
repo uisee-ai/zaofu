@@ -27,6 +27,7 @@ from zf.autoresearch.loop import (
 )
 from zf.autoresearch.loop_requests import (
     LOOP_COMPLETED,
+    LOOP_FAILED,
     LOOP_REQUESTED,
     build_loop_request_payload,
     project_loop_requests,
@@ -42,7 +43,7 @@ from zf.autoresearch.resident import (
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.cli.main import main
-from zf.runtime.repair_dispatch import DISPATCH_REQUESTED
+from zf.runtime.repair_dispatch import DISPATCH_REQUESTED, RUN_MANAGER_ACCEPTED
 
 
 def _eval(
@@ -618,8 +619,8 @@ def test_resident_self_repair_consumer_calls_authorized_dispatch(tmp_path):
     state_dir = tmp_path / ".zf"
     log = EventLog(state_dir / "events.jsonl")
     log.append(ZfEvent(
-        type=DISPATCH_REQUESTED,
-        actor="test",
+        type=RUN_MANAGER_ACCEPTED,
+        actor="run-manager",
         payload={
             "fingerprint": "failure:fatal:worker.respawn.failed:dev-1",
             "attempt": 1,
@@ -676,6 +677,31 @@ def test_resident_self_repair_consumer_calls_authorized_dispatch(tmp_path):
     assert "codex" in calls[0]
 
 
+def test_resident_self_repair_consumer_waits_for_run_manager_acceptance(tmp_path):
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type=DISPATCH_REQUESTED,
+        actor="zf-autoresearch",
+        payload={
+            "fingerprint": "failure:fatal:worker.respawn.failed:dev-1",
+            "attempt": 1,
+            "candidate_id": "HIC-1",
+            "candidate_path": str(tmp_path / "HIC-1.json"),
+        },
+    ))
+
+    actions = run_resident_once(
+        state_dir=state_dir,
+        worktree_root=tmp_path / "worktrees",
+        output_root=tmp_path / "out",
+        execute=False,
+        self_repair_consumer=True,
+    )
+
+    assert actions == []
+
+
 def test_run_loop_writes_eval_result_experiment_and_artifacts(tmp_path: Path):
     state_dir = tmp_path / ".zf"
     output_dir = tmp_path / "loop"
@@ -730,3 +756,88 @@ def test_autoresearch_projection_includes_loop_and_eval_results(tmp_path):
 
     assert projection["loop_requests"]["summary"]["pending"] == 1
     assert projection["eval_results"][0]["result_id"] == "projection-eval"
+
+
+def test_resident_bounds_hung_loop_by_declared_budget(tmp_path):
+    """2026-07-10 R4: the resident consumes requests single-file with a
+    synchronous runner — one unbounded loop (inner 2h test runner) starved 11
+    pending requests of any lifecycle. The runner is now bounded by the loop's
+    own declared budget (budget_cap.max_minutes, 2x grace) and a timeout
+    surfaces as LOOP_FAILED rc=124 so the resident moves on."""
+    state_dir = tmp_path / ".zf"
+    payload = build_loop_request_payload(
+        {"trigger_id": "t-hang", "mode": "predict"},  # predict: max_minutes=10
+        source_event_id="evt-hang",
+    )
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(type=LOOP_REQUESTED, actor="test", payload=payload))
+    seen_timeouts = []
+
+    def _hung_runner(command, **kwargs):
+        seen_timeouts.append(kwargs.get("timeout"))
+        raise subprocess.TimeoutExpired(cmd=command, timeout=kwargs.get("timeout"))
+
+    run_resident_once(
+        state_dir=state_dir,
+        worktree_root=tmp_path / "worktrees",
+        output_root=tmp_path / "out",
+        execute=True,
+        env={"ZF_AUTORESEARCH_RESIDENT": "authorized"},
+        runner=_hung_runner,
+    )
+
+    assert seen_timeouts == [1200]  # 10 min declared * 60 * 2x grace
+    failed = [event for event in log.read_all() if event.type == LOOP_FAILED]
+    assert failed
+    assert failed[-1].payload["returncode"] == 124
+    assert "bounded loop" in failed[-1].payload["stderr_tail"]
+
+
+def test_loop_runner_timeout_from_budget_or_fallback():
+    from zf.autoresearch.resident import _loop_runner_timeout_s
+
+    assert _loop_runner_timeout_s({"max_minutes": 10}) == 1200
+    assert _loop_runner_timeout_s({}) == 1800
+    assert _loop_runner_timeout_s(None) == 1800
+    assert _loop_runner_timeout_s({"max_minutes": "junk"}) == 1800
+
+
+def test_resident_queue_acks_all_pending_and_executes_capped(tmp_path):
+    """2026-07-10 R5: queued requests had zero lifecycle until executed, so
+    the requester staled them while they waited behind a long bounded loop.
+    Every pending run_loop request now gets ACCEPTED (queue ack) before the
+    per-tick cap, stays pending until STARTED, and is never re-acked."""
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    for i in range(3):
+        payload = build_loop_request_payload(
+            {"trigger_id": f"t-q{i}", "request_id": f"rmar-q{i}"},
+            source_event_id=f"evt-q{i}",
+        )
+        log.append(ZfEvent(type=LOOP_REQUESTED, actor="test", payload=payload))
+
+    def _quick_runner(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
+
+    for _ in range(2):  # two ticks, 1 action per tick
+        run_resident_once(
+            state_dir=state_dir,
+            worktree_root=tmp_path / "worktrees",
+            output_root=tmp_path / "out",
+            execute=True,
+            max_actions_per_tick=1,
+            env={"ZF_AUTORESEARCH_RESIDENT": "authorized"},
+            runner=_quick_runner,
+        )
+
+    events = log.read_all()
+    accepted = [e for e in events if e.type == "autoresearch.loop.accepted"]
+    started = [e for e in events if e.type == "autoresearch.loop.started"]
+    completed = [e for e in events if e.type == LOOP_COMPLETED]
+    # tick1 acks all 3 queued requests; no re-acks on tick2
+    assert len(accepted) == 3
+    # cap=1 per tick, two ticks -> exactly 2 executed; accepted-only stayed pending
+    assert len(started) == 2
+    assert len(completed) == 2
+    started_ids = {e.payload["loop_request_id"] for e in started}
+    assert len(started_ids) == 2

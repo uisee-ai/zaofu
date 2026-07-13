@@ -47,6 +47,10 @@ def merge_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
         "type": "message",
         "payload": {"text": "\n".join(texts),
                     "message_id": str(last.get("message_id") or ""),
+                    "parent_message_id": str(last.get("parent_message_id") or ""),
+                    "root_message_id": str(last.get("root_message_id") or ""),
+                    "quote_message_id": str(last.get("quote_message_id") or ""),
+                    "thread_id": str(last.get("thread_id") or ""),
                     "create_time": str(last.get("create_time") or ""),
                     "bot_open_id": str(last.get("bot_open_id") or ""),
                     "app_id": str(last.get("app_id") or ""),
@@ -267,6 +271,13 @@ def run_bridge_watch(args) -> int:
             queued = bridge.on_message({
                 "text": text, "message_id": message.message_id,
                 "user_id": user_id, "chat_id": message.chat_id,
+                "parent_message_id": _message_ref(
+                    message, "parent_message_id", "parent_id"),
+                "root_message_id": _message_ref(
+                    message, "root_message_id", "root_id"),
+                "quote_message_id": _message_ref(
+                    message, "quote_message_id", "quote_id", "quote_message_id"),
+                "thread_id": _message_ref(message, "thread_id"),
                 "create_time": getattr(message, "create_time", "") or "",
                 "bot_open_id": bot_open_id,
                 "app_id": app_id,
@@ -294,13 +305,16 @@ def run_bridge_watch(args) -> int:
             open_id = getattr(operator, "open_id", "") or ""
             ctx = getattr(ev, "context", None)
             chat_id = getattr(ctx, "open_chat_id", "") or ""
+            message_id = getattr(ctx, "open_message_id", "") or ""
             raw = {
                 "header": {"event_type": "card.action.trigger"},
                 "event": {
                     "action": {"value": value, "tag": getattr(action, "tag", "")},
                     "operator": {"operator_id": {"open_id": open_id}},
+                    "open_chat_id": chat_id,
+                    "open_message_id": message_id,
                     "context": {"open_chat_id": chat_id,
-                                "open_message_id": getattr(ctx, "open_message_id", "")},
+                                "open_message_id": message_id},
                 },
             }
             result = ingest_feishu_event(raw, context=context)
@@ -340,3 +354,13 @@ def run_bridge_watch(args) -> int:
         lock.release()
         print("[bridge] stopped.", flush=True)
     return 0
+
+
+def _message_ref(message: Any, *names: str) -> str:
+    """Best-effort read Feishu reply/thread refs across SDK versions."""
+
+    for name in names:
+        value = getattr(message, name, "") or ""
+        if value:
+            return str(value)
+    return ""

@@ -119,15 +119,16 @@ def detect_backends() -> list[dict]:
     catalog = [
         ("claude-code", "claude", "推荐 · 默认"),
         ("codex", "codex", ""),
-        ("mock", "", "先跑通流程不烧 token"),
     ]
     out: list[dict] = []
     for backend_id, binary, note in catalog:
-        if backend_id == "mock":
-            out.append({"id": backend_id, "detected": True, "path": "", "note": note,
-                        "always_available": True})
-            continue
         path = shutil.which(binary)
         out.append({"id": backend_id, "detected": bool(path), "path": path or "",
                     "note": note, "always_available": False})
+    # 混合团队:claude+codex 都在 PATH 时才提供;真正的 per-role 分配在 New Project 里做。
+    detected = {b["id"] for b in out if b["detected"]}
+    if {"claude-code", "codex"} <= detected:
+        out.append({"id": "mixed", "detected": True, "path": "",
+                    "note": "codex + claude 混合团队(New Project 里按角色分配)",
+                    "always_available": False})
     return out

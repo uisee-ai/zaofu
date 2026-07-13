@@ -65,7 +65,7 @@ def test_operator_inbox_projects_pending_and_resolved_plan(tmp_path: Path) -> No
     inbox = build_operator_inbox(state_dir, log.read_all(), project_root=tmp_path)
     item = inbox["pending"][0]
 
-    assert inbox["schema_version"] == "operator-inbox.v1"
+    assert inbox["schema_version"] == "operator-inbox.v2"
     assert item["kind"] == "plan_approval"
     assert item["plan_id"] == "evt-plan-1"
     assert item["preview"]["available"] is True
@@ -244,7 +244,7 @@ def test_operator_inbox_projects_run_manager_human_decision(tmp_path: Path) -> N
     assert resolved["items"][0]["status"] == "applied"
 
 
-def test_operator_inbox_suppresses_attention_acknowledgements(tmp_path: Path) -> None:
+def test_operator_inbox_excludes_automation_attention(tmp_path: Path) -> None:
     state_dir, log = _state(tmp_path)
     log.append(ZfEvent(
         type="runtime.attention.needed",
@@ -258,8 +258,8 @@ def test_operator_inbox_suppresses_attention_acknowledgements(tmp_path: Path) ->
     ))
 
     pending = build_operator_inbox(state_dir, log.read_all())
-    assert pending["summary"]["pending"] == 1
-    assert pending["pending"][0]["kind"] == "runtime_attention"
+    assert pending["summary"]["pending"] == 0
+    assert pending["summary"]["unread"] == 0
 
     log.append(ZfEvent(
         type="runtime.attention.acknowledged",
@@ -305,24 +305,33 @@ def test_operator_inbox_classifies_and_dedupes_runtime_noise(tmp_path: Path) -> 
 
     inbox = build_operator_inbox(state_dir, log.read_all())
 
-    assert inbox["summary"]["pending"] == 2
+    assert inbox["summary"]["pending"] == 1
     assert inbox["summary"]["action_required_pending"] == 1
-    assert inbox["summary"]["noise_pending"] == 1
+    assert inbox["summary"]["noise_pending"] == 0
     assert inbox["views"]["action_required"]["count"] == 1
-    assert inbox["views"]["automation"]["count"] == 1
+    assert inbox["views"]["automation"]["count"] == 0
 
     human_item = next(item for item in inbox["items"] if item["kind"] == "human_decision")
     assert human_item["category"] == "action_required"
     assert human_item["actionability"] == "human_required"
     assert human_item["owner_route"] == "human"
 
-    attention_item = next(item for item in inbox["items"] if item["kind"] == "runtime_attention")
-    assert attention_item["category"] == "automation_diagnostic"
-    assert attention_item["actionability"] == "automation_owned"
-    assert attention_item["source_role"] == "supervisor"
-    assert attention_item["group_key"] == "fingerprint:fanout:child:pending"
-    assert attention_item["dedupe_count"] == 30
-    assert attention_item["latest_event_id"] == "evt-attn-29"
+
+
+def test_operator_inbox_tracks_read_state_without_removing_history(tmp_path: Path) -> None:
+    state_dir, log = _state(tmp_path)
+    log.append(ZfEvent(id="evt-human", type="human.escalate", actor="run-manager", payload={
+        "decision_token": "hdec-read", "reason": "needs operator decision",
+    }))
+    unread = build_operator_inbox(state_dir, log.read_all())
+    assert unread["summary"]["unread"] == 1
+    item_id = unread["items"][0]["id"]
+
+    log.append(ZfEvent(type="inbox.item.read", actor="web", payload={"item_id": item_id}))
+    read = build_operator_inbox(state_dir, log.read_all())
+    assert read["summary"]["unread"] == 0
+    assert read["items"][0]["unread"] is False
+    assert read["items"][0]["status"] == "pending"
 
 
 def test_operator_inbox_does_not_create_ack_only_items(tmp_path: Path) -> None:

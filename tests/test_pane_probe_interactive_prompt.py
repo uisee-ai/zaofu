@@ -55,7 +55,7 @@ def _state_dir(tmp_path: Path, instances: list[str]) -> Path:
 
 def _config(instances: list[str]) -> ZfConfig:
     return ZfConfig(
-        session=SessionConfig(tmux_session="zf-test"),
+        session=SessionConfig(tmux_session="zf-test", tmux_layout="window_per_role"),
         roles=[
             RoleConfig(name=name, backend="codex", instance_id=name)
             for name in instances

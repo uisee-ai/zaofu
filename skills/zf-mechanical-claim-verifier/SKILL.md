@@ -93,13 +93,15 @@ Ignore `not_applicable` claims in the denominator.
 
 claim 裁决只有落进 kernel 现行 verify report 合约才进机器。verify/review
 reader 完成时经 `verify.child.completed` / `verify.child.failed`
-(orchestrator_fanout.py:1229-1230)的 event schema 校验;报告字段见
-orchestrator_fanout.py:6511-6520 的 schema 教育占位。映射规则:
+(schema gate 在 `core/events/writer.py` `EventWriter.append`)的 event schema
+校验;报告字段见 orchestrator_fanout.py `_SCHEMA_EDU_PLACEHOLDERS` 的 schema
+教育占位。映射规则:
 
 - **每条 claim verdict → `requirement_coverage_matrix` 一行**:
   `requirement_id` 取 task contract/PRD 验收条款(**不是** CLM-xxx 编号),
   `status` covered/partial,`evidence_refs` 给可复跑路径。矩阵有
-  `non_empty` 档位(FIX-14,event_schema.py:87-89;r4 全轮 9/9 份报告矩阵
+  `non_empty` 档位(FIX-14,event_schema.py `EventSchemaRule.non_empty`;r4
+  全轮 9/9 份报告矩阵
   0 行的实锚),**空矩阵直接 schema 拒收**——只装载本 skill 的 reader 若
   只交 passRate/regenPlan 而不落矩阵,报告会被拒或交出 0 信号。
 - **failed / unknown claim → `gap_findings` 条目 + `replan_recommendation`**:
@@ -113,8 +115,8 @@ orchestrator_fanout.py:6511-6520 的 schema 教育占位。映射规则:
 ## 证据锚定 pinned commit
 
 reader child 派发时 `target_commit` 被写进 child payload(FIX-9,
-orchestrator_fanout.py:6560 `_pin_reader_target_or_reject`),判审收敛门
-按该 commit 判重(FIX-15,orchestrator_fanout.py:6390-6505
+orchestrator_fanout.py `_pin_reader_target_or_reject`),判审收敛门
+按该 commit 判重(FIX-15,orchestrator_fanout.py `_delta_gate_allows` 的
 `fanout.retrigger.suppressed`)。所以:
 
 - claim 的 evidence **必须锚定 pinned `target_commit`**:取证前

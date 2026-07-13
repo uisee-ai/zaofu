@@ -73,8 +73,8 @@ def write_failure_backlog(
         title=title,
         priority=2,
         skills_required=[
-            "test-driven-development",
-            "debugging-and-error-recovery",
+            "tdd-evidence",
+            "debugging-triage",
         ],
         contract=task_contract,
         evidence=evidence,

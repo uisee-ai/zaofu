@@ -297,6 +297,22 @@ LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
 })
 
 
+# ZF-E2E-MINI-P2 (2026-07-11): stall/attention triggers a budget-frozen
+# control loop cannot act on — its own paid dispatch is blocked at the
+# charging primitive, so each wake only builds a briefing and raises
+# dispatch_failed (mini e2e: one wake per ~5min sweep re-emit for ~40min).
+# During a freeze the first such wake passes as the observability anchor;
+# the rest are silenced until the freeze lifts. Progress events stay out of
+# this set — a frozen budget must not starve completion handling.
+LAYER2_FREEZE_SILENCED_EVENTS: frozenset[str] = frozenset({
+    "dispatch.silent_stall",
+    "runtime.attention.needed",
+    "worker.stuck",
+    "worker.probe.silent",
+    "dispatch.blocked",
+})
+
+
 def reactor_handler_events() -> set[str]:
     """Return the set of event types the orchestrator reactor has
     built-in handlers for.

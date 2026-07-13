@@ -37,6 +37,9 @@ _VALID_AUTOPILOT_ACTIONS = ("triage",)
 _VALID_OPENCLAW_BINDING_MODES = ("remote_gateway",)
 _VALID_OPENCLAW_WORKSPACE_POLICIES = ("isolated",)
 _VALID_OPENCLAW_TOOL_PROFILES = ("safe", "readonly", "reviewer", "coding")
+_VALID_WORKFLOW_ROUTE_KINDS = ("issue", "prd", "refactor", "feat")
+_VALID_WORKFLOW_ROUTE_ALIAS_TARGETS = ("issue", "prd", "refactor")
+_VALID_WORKFLOW_TIERS = ("micro", "light", "standard", "full")
 _DESIGN_ROLE_NAMES = frozenset({"arch", "critic"})
 _DESIGN_STAGE_NAMES = frozenset({"design", "design_critique"})
 _LANE_RUNTIME_REWORK_EVENTS = frozenset(
@@ -77,6 +80,7 @@ from zf.core.config.schema import (  # noqa: E402
     WakeExtensionsConfig,
     WorkflowConfig,
     WorkflowDagConfig,
+    WorkflowKindRouteConfig,
     WorkflowWorkUnitsConfig,
     WorkflowSplitQualityConfig,
     WorkflowAdmissionReplanConfig,
@@ -182,7 +186,33 @@ def _load_dotenv(path: Path) -> dict[str, str]:
 def _config_env_map(config_path: Path) -> dict[str, str]:
     env = _load_dotenv(config_path.parent / ".env")
     env.update(os.environ)
+    _apply_feishu_env_aliases(env)
     return env
+
+
+def _apply_feishu_env_aliases(env: dict[str, str]) -> None:
+    aliases = {
+        "ZF_LEADER_FEISHU_OPENID": ("FEISHU_OPENID", "FEISHU_USER_OPENID"),
+        "ZF_PM_FEISHU_OPENID": ("FEISHU_PM_OPENID",),
+        "FEISHU_RUNM": ("FEISHU_RUN_MANAGER_APP_ID", "FEISHU_ARCHITECT_APP_ID"),
+        "FEISHU_RUNM_SECRET": (
+            "FEISHU_RUN_MANAGER_APP_SECRET",
+            "FEISHU_ARCHITECT_APP_SECRET",
+        ),
+        "FEISHU_KANBAN": ("FEISHU_KANBAN_APP_ID", "FEISHU_PRODUCT_MANAGER_APP_ID"),
+        "FEISHU_KANBAN_SECRET": (
+            "FEISHU_KANBAN_APP_SECRET",
+            "FEISHU_PRODUCT_MANAGER_APP_SECRET",
+        ),
+    }
+    for canonical, candidates in aliases.items():
+        if env.get(canonical):
+            continue
+        for candidate in candidates:
+            value = env.get(candidate)
+            if value:
+                env[canonical] = value
+                break
 
 
 def _expand_env_vars(text: str, env: dict[str, str]) -> str:
@@ -241,6 +271,8 @@ _KNOWN_WORKFLOW_KEYS = frozenset({
     "inline_overrides", "work_units", "completion_audit", "resume_packet",
     "integration", "strict_triggers", "fast_path", "replan_eval",
     "pipelines", "admission_replan", "plan_approval", "_flow_metadata",
+    "kind_routes",
+    "allow_unverified_candidate",  # ⑤c 合并候选树门显式豁免(2026-07-08)
 })
 _KNOWN_ROLE_KEYS = frozenset({
     "name", "backend", "backends", "role_kind", "model", "allowed_tools",
@@ -332,7 +364,9 @@ def _build_session(data: dict | None) -> SessionConfig:
     1206 Phase A: validate ``tmux_layout`` against the allowed set.
     """
     data = data or {}
-    layout = data.get("tmux_layout", "window_per_role")
+    # Default pane_grid (2026-07-09); still overridable per config/profile with
+    # an explicit session.tmux_layout (e.g. window_per_role for legacy).
+    layout = data.get("tmux_layout", "pane_grid")
     if layout not in _VALID_TMUX_LAYOUTS:
         raise ConfigError(
             f"Invalid session.tmux_layout {layout!r}: "
@@ -445,6 +479,82 @@ def _build_admission_replan(data) -> WorkflowAdmissionReplanConfig:
         enabled=bool(data.get("enabled", False)),
         resynth_trigger=str(data.get("resynth_trigger", "") or "").strip(),
     )
+
+
+def _build_workflow_kind_routes(
+    data: object,
+    *,
+    stage_ids: set[str],
+) -> dict[str, WorkflowKindRouteConfig]:
+    """doc133: parse deterministic request kind -> workflow stage routes."""
+    if data in (None, ""):
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError("workflow.kind_routes must be a mapping")
+    routes: dict[str, WorkflowKindRouteConfig] = {}
+    for raw_kind, raw_route in data.items():
+        kind = str(raw_kind or "").strip().lower()
+        if kind not in _VALID_WORKFLOW_ROUTE_KINDS:
+            raise ConfigError(
+                "workflow.kind_routes keys must be one of "
+                + ", ".join(_VALID_WORKFLOW_ROUTE_KINDS)
+                + f"; got {kind!r}"
+            )
+        if not isinstance(raw_route, dict):
+            raise ConfigError(f"workflow.kind_routes.{kind} must be a mapping")
+        alias = str(raw_route.get("alias") or "").strip().lower()
+        pattern_id = str(raw_route.get("pattern_id") or "").strip()
+        if alias:
+            if alias not in _VALID_WORKFLOW_ROUTE_ALIAS_TARGETS:
+                raise ConfigError(
+                    f"workflow.kind_routes.{kind}.alias must be one of "
+                    + ", ".join(_VALID_WORKFLOW_ROUTE_ALIAS_TARGETS)
+                )
+            if pattern_id:
+                raise ConfigError(
+                    f"workflow.kind_routes.{kind} cannot set both alias and pattern_id"
+                )
+        tiers_raw = raw_route.get("tier_routes")
+        if tiers_raw is None:
+            tiers_raw = raw_route.get("tiers")
+        if tiers_raw in (None, ""):
+            tiers_raw = {}
+        if not isinstance(tiers_raw, dict):
+            raise ConfigError(
+                f"workflow.kind_routes.{kind}.tier_routes must be a mapping"
+            )
+        tier_routes = {
+            str(tier or "").strip().lower(): str(target or "").strip()
+            for tier, target in tiers_raw.items()
+            if str(tier or "").strip() or str(target or "").strip()
+        }
+        default_tier = str(raw_route.get("default_tier") or "").strip().lower()
+        try:
+            route = WorkflowKindRouteConfig(
+                pattern_id=pattern_id,
+                alias=alias,
+                default_tier=default_tier,
+                tier_routes=tier_routes,
+            )
+        except ValueError as exc:
+            raise ConfigError(f"Invalid workflow.kind_routes.{kind}: {exc}") from exc
+        for field_name, target in [
+            ("pattern_id", route.pattern_id),
+            *[(f"tier_routes.{tier}", target) for tier, target in route.tier_routes.items()],
+        ]:
+            if target and target not in stage_ids:
+                raise ConfigError(
+                    f"workflow.kind_routes.{kind}.{field_name} references "
+                    f"unknown workflow stage {target!r}"
+                )
+        routes[kind] = route
+    for kind, route in routes.items():
+        if route.alias and route.alias not in routes:
+            raise ConfigError(
+                f"workflow.kind_routes.{kind}.alias references missing "
+                f"route {route.alias!r}"
+            )
+    return routes
 
 
 def _build_workflow_work_units(data: dict | None) -> WorkflowWorkUnitsConfig:
@@ -1810,6 +1920,10 @@ def load_config(path: Path) -> ZfConfig:
         roles,
         affinity_lanes,
     )
+    workflow_kind_routes = _build_workflow_kind_routes(
+        workflow_data.get("kind_routes"),
+        stage_ids={stage.id for stage in workflow_stages if stage.id},
+    )
     _validate_stage_criteria_config_refs(
         config_path=path,
         stages=workflow_stages,
@@ -1856,12 +1970,17 @@ def load_config(path: Path) -> ZfConfig:
                 workflow_data.get("plan_approval"),
                 default=harness_profile in ("strict", "release"),
             ),
+            # ⑤c:合并候选树门的显式豁免出口(观测型运行)。
+            allow_unverified_candidate=bool(
+                workflow_data.get("allow_unverified_candidate", False)
+            ),
             event_actions=workflow_data.get("event_actions", []) or [],
             # 131-P2-3:lease 宽限可配置(F15 实证出厂 900s)。
             attempt_lease_grace_s=float(
                 workflow_data.get("attempt_lease_grace_s", 900.0) or 900.0
             ),
             rework_routing=rework_routing,
+            kind_routes=workflow_kind_routes,
             # R28 (doc 93 §1/§5): admission/W1 机械拒 → 自动回 synth。缺省关。
             admission_replan=_build_admission_replan(
                 workflow_data.get("admission_replan")
@@ -1935,6 +2054,24 @@ def load_config(path: Path) -> ZfConfig:
         ),
         goal=_build_goal(raw.get("goal")),
     )
+    # ⑤ 续(2026-07-08):policy 字段执法化——`evidencePolicy: strict_refs`
+    # 从 advisory 旋钮升为执法开关的**驱动源**(单一控制点),终结与
+    # verification.* 的平行重复声明:未显式配置时派生
+    # event_schema.mode=blocking + report_evidence_gate=fail_closed;
+    # 显式配置(项目 yaml 或 uses profile 合并进 raw)优先,是逃生门。
+    if str(
+        (cfg.workflow.flow_metadata or {}).get("evidence_policy") or ""
+    ).strip() == "strict_refs":
+        verification_raw = raw.get("verification")
+        if not isinstance(verification_raw, dict):
+            verification_raw = {}
+        event_schema_raw = verification_raw.get("event_schema")
+        if not isinstance(event_schema_raw, dict):
+            event_schema_raw = {}
+        if "mode" not in event_schema_raw:
+            cfg.verification.event_schema.mode = "blocking"
+        if "report_evidence_gate" not in verification_raw:
+            cfg.verification.report_evidence_gate = "fail_closed"
     # doc 90 增补:dag 顶层 schema_profile(不依赖 lane_pipeline 的引用位)。
     if cfg.workflow.dag.schema_profile:
         from zf.core.config.schema_profiles import (
@@ -2041,10 +2178,44 @@ def load_config(path: Path) -> ZfConfig:
     return cfg
 
 
+# P1-3 (2026-07-09): fail-closed key sets for the security-relevant config
+# sections. A typo'd sub-key (e.g. `event_signing.enable` missing the 'd')
+# previously fell back to its default, silently disabling a gate while
+# `zf validate` stayed green (the ⑤ "opt-in default-off, invisibly off"
+# amplifier). Reject unknown keys so the typo surfaces instead of degrading a
+# security/verification gate. Value validation (enum checks) already existed;
+# this adds key-name validation, which was the gap.
+_KNOWN_SECURITY_KEYS = frozenset({"event_signing"})
+_KNOWN_EVENT_SIGNING_KEYS = frozenset(
+    {"enabled", "secret_env", "allow_unsigned_fallback"}
+)
+_KNOWN_SAFETY_KEYS = frozenset({"tool_closure"})
+_KNOWN_TOOL_CLOSURE_KEYS = frozenset({"enabled"})
+_KNOWN_VERIFICATION_KEYS = frozenset({
+    "contract", "semantic", "scope", "architecture", "promoted",
+    "event_schema", "snapshot_gate", "report_evidence_gate",
+})
+_KNOWN_CONTRACT_KEYS = frozenset({
+    "required", "quality_required", "rework_delta_required",
+    "dispatch_token_required",
+})
+_KNOWN_ENABLED_ONLY_KEYS = frozenset({"enabled"})
+_KNOWN_SCOPE_KEYS = frozenset({"fail_closed"})
+_KNOWN_EVENT_SCHEMA_KEYS = frozenset({"mode"})
+
+
 def _build_security(data: dict | None) -> SecurityConfig:
     if not data:
         return SecurityConfig()
+    if not isinstance(data, dict):
+        raise ConfigError("security must be a mapping")
+    _reject_unknown_keys(data, _KNOWN_SECURITY_KEYS, "security")
     es_data = data.get("event_signing") or {}
+    if not isinstance(es_data, dict):
+        raise ConfigError("security.event_signing must be a mapping")
+    _reject_unknown_keys(
+        es_data, _KNOWN_EVENT_SIGNING_KEYS, "security.event_signing"
+    )
     return SecurityConfig(
         event_signing=EventSigningConfig(
             enabled=bool(es_data.get("enabled", False)),
@@ -2061,9 +2232,13 @@ def _build_safety(data: dict | None) -> SafetyConfig:
         return SafetyConfig()
     if not isinstance(data, dict):
         raise ConfigError("safety must be a mapping")
+    _reject_unknown_keys(data, _KNOWN_SAFETY_KEYS, "safety")
     tool_closure = data.get("tool_closure") or {}
     if not isinstance(tool_closure, dict):
         raise ConfigError("safety.tool_closure must be a mapping")
+    _reject_unknown_keys(
+        tool_closure, _KNOWN_TOOL_CLOSURE_KEYS, "safety.tool_closure"
+    )
     return SafetyConfig(
         tool_closure_enabled=bool(tool_closure.get("enabled", True)),
     )
@@ -2084,6 +2259,7 @@ def _build_verification(
         )
     if not isinstance(data, dict):
         raise ConfigError("verification must be a mapping")
+    _reject_unknown_keys(data, _KNOWN_VERIFICATION_KEYS, "verification")
     contract = data.get("contract") or {}
     semantic = data.get("semantic") or {}
     scope = data.get("scope") or {}
@@ -2102,6 +2278,20 @@ def _build_verification(
         raise ConfigError("verification.promoted must be a mapping")
     if not isinstance(event_schema, dict):
         raise ConfigError("verification.event_schema must be a mapping")
+    _reject_unknown_keys(contract, _KNOWN_CONTRACT_KEYS, "verification.contract")
+    _reject_unknown_keys(
+        semantic, _KNOWN_ENABLED_ONLY_KEYS, "verification.semantic"
+    )
+    _reject_unknown_keys(scope, _KNOWN_SCOPE_KEYS, "verification.scope")
+    _reject_unknown_keys(
+        architecture, _KNOWN_ENABLED_ONLY_KEYS, "verification.architecture"
+    )
+    _reject_unknown_keys(
+        promoted, _KNOWN_ENABLED_ONLY_KEYS, "verification.promoted"
+    )
+    _reject_unknown_keys(
+        event_schema, _KNOWN_EVENT_SCHEMA_KEYS, "verification.event_schema"
+    )
     # TR-EVENT-SCHEMA-LOCK-001 step 2/3 (doc 42 §11.3 A): event_schema.mode
     # is one of {disabled, warning, blocking}. Unknown values raise — surface
     # operator typos rather than silently degrading.
@@ -2118,6 +2308,13 @@ def _build_verification(
         raise ConfigError(
             f"verification.snapshot_gate must be one of "
             f"off / shadow / enforced; got {snapshot_gate!r}"
+        )
+    # U20 → LB-4: 审角色报告证据门的 fail-closed 开关。
+    report_evidence_gate = str(data.get("report_evidence_gate", "signal"))
+    if report_evidence_gate not in {"signal", "fail_closed"}:
+        raise ConfigError(
+            f"verification.report_evidence_gate must be one of "
+            f"signal / fail_closed; got {report_evidence_gate!r}"
         )
     return VerificationConfig(
         contract=ContractDConfig(
@@ -2148,6 +2345,7 @@ def _build_verification(
             mode=event_schema_mode,
         ),
         snapshot_gate=snapshot_gate,
+        report_evidence_gate=report_evidence_gate,
     )
 
 

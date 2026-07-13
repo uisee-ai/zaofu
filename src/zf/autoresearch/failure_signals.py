@@ -807,6 +807,7 @@ def _fanout_child_pending_grace_expired(
 ) -> bool:
     dispatch_ts: datetime | None = None
     latest_ts: datetime | None = None
+    role_instance = ""
     for event in events:
         event_ts = _parse_event_ts(event)
         if event_ts is not None:
@@ -818,9 +819,22 @@ def _fanout_child_pending_grace_expired(
             and str(payload.get("child_id") or payload.get("child_run") or "") == child_id
         ):
             dispatch_ts = event_ts
+            role_instance = str(payload.get("role_instance") or "")
     if dispatch_ts is None or latest_ts is None:
         return True
-    return (latest_ts - dispatch_ts).total_seconds() >= grace_seconds
+    # 2026-07-08 live 三轮实锚:verify/judge 子任务健康跑 3-6 分钟,纯按
+    # 派发时长判停滞每轮必产假候选(→ proposal → escalate 噪音)。宽限从
+    # "该 worker 最后一次可见活动"起算——agent.usage / codex.hook.* /
+    # worker.* 都是它 actor 发的;静默超宽限才是真停滞。
+    last_seen = dispatch_ts
+    if role_instance:
+        for event in events:
+            if str(getattr(event, "actor", "") or "") != role_instance:
+                continue
+            event_ts = _parse_event_ts(event)
+            if event_ts is not None and event_ts > last_seen:
+                last_seen = event_ts
+    return (latest_ts - last_seen).total_seconds() >= grace_seconds
 
 
 def _parse_event_ts(event: ZfEvent) -> datetime | None:

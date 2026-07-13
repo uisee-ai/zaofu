@@ -88,7 +88,7 @@ skill; send the branch back to `zf-self-repair` or a human reviewer.
    - Idempotency check (optional but preferred): confirm the repair commit is
      not already present as an equivalent patch before applying. Use patch-id,
      not hash equality (FIX-10 semantics — see `yoke/git-evidence` and
-     `src/zf/runtime/candidates.py:1373`):
+     `src/zf/runtime/candidates.py` `_task_commits`):
      `git rev-list --cherry-pick --right-only --count <target>...<source_commit>`.
      If the source side reports `0`, the fix already landed — skip apply and go
      to cleanup + report so you do not re-apply a duplicate series.

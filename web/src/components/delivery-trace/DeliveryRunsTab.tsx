@@ -149,7 +149,16 @@ function AttemptItem({
             </div>
           )}
           <div className="dt-attempt-artifacts">
-            {row.artifacts.map((ref) => <code key={ref} title={ref}>{ref}</code>)}
+            {/* A3(racing 评审):失败 attempt 的 12+ 文件清单原始平铺占半屏,
+                且相邻 attempt 各 dump 一份 —— >6 refs 折叠。 */}
+            {row.artifacts.length > 6 ? (
+              <details>
+                <summary className="muted">{row.artifacts.length} artifact / evidence refs</summary>
+                {row.artifacts.map((ref) => <code key={ref} title={ref}>{ref}</code>)}
+              </details>
+            ) : (
+              row.artifacts.map((ref) => <code key={ref} title={ref}>{ref}</code>)
+            )}
             {!row.artifacts.length && <span className="muted">No artifact / evidence refs.</span>}
           </div>
         </div>

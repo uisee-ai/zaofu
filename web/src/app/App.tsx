@@ -61,6 +61,7 @@ import {
   getChannels,
   getCandidateDetail,
   getDeliveryFeatures,
+  getKanbanPendingProposals,
   getEventsPage,
   getFanoutDetail,
   getAgentCockpit,
@@ -89,6 +90,8 @@ import {
   registerWorkspaceProject,
   listPresets,
   type PresetInfo,
+  inspectBootstrap,
+  type BootstrapInspect,
   recommendProfile,
   removeWorkspaceProject,
   search,
@@ -97,6 +100,9 @@ import {
   unlockWebSession,
   validateWorkspaceProjectPath,
 } from "../api/client";
+import type { PendingKanbanProposal } from "../api/client";
+import { mergeAutopilotDescriptors } from "./triageProposals";
+import type { AutopilotProposalDescriptor } from "./triageProposals";
 import { AgentSessionTimeline } from "../components/agent-session/AgentSessionTimeline";
 import { buildChannelConversation, buildKanbanConversation } from "../components/agent-session/projection";
 import type { AgentConversation, AgentProviderCapability, AgentSessionActionProposal, AgentSessionCard, AgentSessionThreadRef } from "../components/agent-session/types";
@@ -183,10 +189,9 @@ import { RuntimePanel } from "../components/runtime/RuntimePanel";
 import { ProjectInitOnboarding } from "../components/workspace/ProjectInitOnboarding";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
-import { NewTaskModal } from "../components/modals/NewTaskModal";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
-import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, NewTaskDraft, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
-import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, emptyNewTaskDraft, formatAge, isObservabilityPage, parseEventFilter, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
+import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
+import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, parseEventFilter, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
 
 const REFRESH_EVENT_TYPES = new Set(["stream.gap"]);
 const LOCAL_AGENT_STREAM_EVENTS = new Set([
@@ -417,16 +422,6 @@ function emptyProjectWizardDraft(): ProjectWizardDraft {
     description: "",
     backend: "claude",
   };
-}
-
-function storedNewTaskDraft(): NewTaskDraft {
-  if (typeof window === "undefined") return emptyNewTaskDraft();
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem("zf.newTaskDraft") || "{}") as Partial<NewTaskDraft>;
-    return { ...emptyNewTaskDraft(), ...parsed };
-  } catch {
-    return emptyNewTaskDraft();
-  }
 }
 
 function storedThemeMode(): ThemeMode {
@@ -660,6 +655,12 @@ export function App() {
   const [events, setEvents] = useState<RecentEvent[]>([]);
   const [eventsPage, setEventsPage] = useState<EventsPage | null>(null);
   const [channelsPage, setChannelsPage] = useState<ChannelsPage | null>(null);
+  // Triage proposal-only queue: pending kanban-agent proposals are ledger
+  // truth (see OrchestratorPanel), not live-session state. Sourcing the
+  // Autopilot queue only from the bounded recent-events slice dropped
+  // still-pending proposals once they aged past the event window, silently
+  // removing the operator's Accept entry point. Fetch the durable projection.
+  const [kanbanPendingProposals, setKanbanPendingProposals] = useState<PendingKanbanProposal[]>([]);
   const [inboxPendingCount, setInboxPendingCount] = useState(0);
   const [selectedChannelId, setSelectedChannelId] = useState(initial.channel);
   const [channelDetail, setChannelDetail] = useState<ChannelDetail | null>(null);
@@ -697,9 +698,7 @@ export function App() {
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => storedThemeMode());
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>("collapsed");
   const [agentPanelHasOpened, setAgentPanelHasOpened] = useState(false);
-  const [newTaskOpen, setNewTaskOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
-  const [newTaskDraft, setNewTaskDraft] = useState<NewTaskDraft>(() => storedNewTaskDraft());
   const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [newChannelDraft, setNewChannelDraft] = useState<NewChannelDraft>(() => emptyNewChannelDraft());
   const [addAgentOpen, setAddAgentOpen] = useState(false);
@@ -802,6 +801,15 @@ export function App() {
     return next;
   }, [activeProjectId, selectedChannelId]);
 
+  const loadKanbanProposals = useCallback(async () => {
+    try {
+      const page = await getKanbanPendingProposals(activeProjectId || undefined);
+      setKanbanPendingProposals(page.items ?? []);
+    } catch {
+      setKanbanPendingProposals([]);
+    }
+  }, [activeProjectId]);
+
   const refresh = useCallback(async () => {
     if (!activeProjectId || (activeProject && !activeProjectReady)) {
       eventBusRef.current?.close();
@@ -824,6 +832,18 @@ export function App() {
       setLiveState("degraded");
     }
   }, [activeProject, activeProjectId, activeProjectReady, loadChannels, loadDeliveryFeatures, loadSnapshot, page]);
+
+  // Triage proposal-only queue: load the durable pending-proposals projection
+  // whenever the operator is on the Triage page. Kept independent of the
+  // snapshot-readiness gate above so aged-out-but-pending proposals always
+  // resurface their Accept entry point.
+  useEffect(() => {
+    if (page !== "triage" || !activeProjectId) {
+      setKanbanPendingProposals([]);
+      return;
+    }
+    void loadKanbanProposals();
+  }, [page, activeProjectId, loadKanbanProposals]);
 
   useEffect(() => {
     refreshRef.current = refresh;
@@ -848,6 +868,14 @@ export function App() {
       }
       const eventType = event.type || "";
       const payload = asRecord(event.payload);
+      if (
+        page === "triage"
+        && (eventType === "kanban.agent.action.proposed"
+          || eventType === "kanban.agent.proposal.resolved"
+          || eventType === "task.created")
+      ) {
+        scheduleSlice("kanban-proposals", () => void loadKanbanProposals());
+      }
       if (eventType.startsWith("channel.")) {
         scheduleSlice("channels", () => void loadChannels());
         if (page === "channels") {
@@ -898,7 +926,7 @@ export function App() {
         scheduleSlice("snapshot", () => void loadSnapshot());
       }
     };
-  }, [activeProjectId, loadChannels, loadDeliveryFeatures, loadSnapshot, page]);
+  }, [activeProjectId, loadChannels, loadDeliveryFeatures, loadKanbanProposals, loadSnapshot, page]);
 
   // Unified header source (doc116 §5/§11.1): cheap canonical health, never
   // the snapshot bundle — pages that skip the snapshot still get a truthful
@@ -1220,10 +1248,6 @@ export function App() {
   }, [activeProjectId, page, selectedChannelId, channelsPage?.seq]);
 
   useEffect(() => {
-    window.localStorage.setItem("zf.newTaskDraft", JSON.stringify(newTaskDraft));
-  }, [newTaskDraft]);
-
-  useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
     window.localStorage.setItem("zf.themeMode", themeMode);
   }, [themeMode]);
@@ -1352,50 +1376,6 @@ export function App() {
 
   async function moveBoardTaskStatus(taskId: string, status: BoardColumnId) {
     await submitAction("update-task", { task_id: taskId, status });
-  }
-
-  async function createTaskFromDraft() {
-    const title = newTaskDraft.title.trim();
-    if (!title) return;
-    const assigneeType = newTaskDraft.assigneeType === "agent" || newTaskDraft.assigneeType === "squad"
-      ? newTaskDraft.assigneeType
-      : "none";
-    const assigneeId = newTaskDraft.assigneeId.trim();
-    const hasAssignee = assigneeType !== "none" && Boolean(assigneeId);
-    const payload = {
-      title,
-      priority: Number(newTaskDraft.priority || 3),
-      assigned_to: assigneeType === "agent" && assigneeId ? assigneeId : newTaskDraft.assignedTo.trim() || undefined,
-      assignee_type: hasAssignee ? assigneeType : undefined,
-      assignee_id: hasAssignee ? assigneeId : undefined,
-      assignee_label: hasAssignee ? newTaskDraft.assigneeLabel.trim() || assigneeId : undefined,
-      skills_required: csvList(newTaskDraft.skills),
-      blocked_by: csvList(newTaskDraft.blockedBy),
-      contract: {
-        behavior: newTaskDraft.behavior.trim(),
-        verification: newTaskDraft.verification.trim(),
-      },
-      source: "web-new-task-draft",
-    };
-    const created = await submitAction("create-task", payload);
-    if (hasAssignee && created.ok !== false && created.task_id) {
-      await submitAction("assignment-propose", {
-        task_id: created.task_id,
-        assignee_type: assigneeType,
-        assignee_id: assigneeId,
-        assignee_label: newTaskDraft.assigneeLabel.trim() || assigneeId,
-        role: assigneeType === "agent" ? assigneeId : undefined,
-        backend: assigneeType === "agent" ? newTaskDraft.assigneeBackend.trim() || undefined : undefined,
-        channel_id: assigneeType === "squad" ? assigneeId : undefined,
-        supervisor: newTaskDraft.assigneeSupervisor.trim() || undefined,
-        reason: `new task assignee intent: ${newTaskDraft.assigneeLabel.trim() || assigneeId}`,
-        source: "web-new-task-draft",
-      });
-    }
-    setNewTaskDraft(emptyNewTaskDraft());
-    window.localStorage.removeItem("zf.newTaskDraft");
-    setNewTaskOpen(false);
-    setPage("board");
   }
 
   async function createChannelFromDraft() {
@@ -1879,11 +1859,11 @@ export function App() {
       <WelcomeWizard
         hasProject={workspaceProjects.length > 0}
         onOpenProjectWizard={(prefill) => {
-          if (prefill?.root || prefill?.preset) {
+          if (prefill?.root || prefill?.preset || prefill?.stack || prefill?.description) {
             setProjectWizardDraft((d) => ({
               ...d,
-              root: prefill.root ?? d.root,
-              preset: prefill.preset ?? d.preset,
+              root: prefill.root ?? d.root, preset: prefill.preset ?? d.preset,
+              stack: prefill.stack ?? d.stack, description: prefill.description ?? d.description,
               applyProfile: true,
             }));
           }
@@ -1998,6 +1978,7 @@ export function App() {
             <TriagePage
               actionResult={actionResult}
               events={events}
+              pendingProposals={kanbanPendingProposals}
               onAction={(action, payload) => void submitAction(action, payload)}
               onOpenTask={openTask}
               tasks={snapshot ? allBoardTasks(snapshot) : []}
@@ -2020,7 +2001,6 @@ export function App() {
               assigneeFilter={assigneeFilter}
               filteredTasks={filteredTasks}
               mutationEnabled={actionGate.mutationEnabled}
-              newTaskDraftDirty={Boolean(newTaskDraft.title.trim() || newTaskDraft.behavior.trim() || newTaskDraft.verification.trim())}
               quickFilter={quickFilter}
               skillFilter={skillFilter}
               skills={skills}
@@ -2031,7 +2011,6 @@ export function App() {
               setPriorityFilter={setPriorityFilter}
               setQuickFilter={setQuickFilter}
               showTokenRow={actionGate.showTokenRow}
-              onNewTask={() => setNewTaskOpen(true)}
               onOpenTask={openTask}
               onSaveToken={saveWebActionToken}
               setStatusFilter={setStatusFilter}
@@ -2155,19 +2134,6 @@ export function App() {
           />
         </div>
       ) : null}
-      {newTaskOpen ? (
-        <NewTaskModal
-          actionReady={actionGate.actionReady}
-          agents={snapshot?.agents ?? []}
-          channels={channelsPage?.channels ?? snapshot?.channels ?? []}
-          draft={newTaskDraft}
-          hasActiveProject={Boolean(activeProjectId)}
-          onClose={() => setNewTaskOpen(false)}
-          onDraftChange={setNewTaskDraft}
-          onSubmit={() => void createTaskFromDraft()}
-          projectLabel={snapshot?.project.name || activeProjectId || "No active project"}
-        />
-      ) : null}
       {newChannelOpen ? (
         <NewChannelModal
           actionReady={actionGate.actionReady}
@@ -2208,10 +2174,6 @@ export function App() {
           events={events}
           onAction={(action, payload) => void submitAction(action, payload)}
           onClose={() => setCommandOpen(false)}
-          onNewTask={() => {
-            setCommandOpen(false);
-            setNewTaskOpen(true);
-          }}
           onOpenAgent={() => {
             setCommandOpen(false);
             openTaskAgent();
@@ -2825,12 +2787,14 @@ function projectRunSummary(run: RunSummary): string {
 function TriagePage({
   actionResult,
   events,
+  pendingProposals,
   onAction,
   onOpenTask,
   tasks,
 }: {
   actionResult: ActionResponse | null;
   events: RecentEvent[];
+  pendingProposals: PendingKanbanProposal[];
   onAction: (action: string, payload: Record<string, unknown>) => void;
   onOpenTask: (taskId: string) => void;
   tasks: Task[];
@@ -2862,6 +2826,61 @@ function TriagePage({
     return next;
   });
 
+  const buildAutopilotItem = (opts: {
+    proposalId: string;
+    action: string;
+    valid: boolean;
+    actionPayload: Record<string, unknown> | null;
+    title: string;
+    metaKind: string;
+    metaSeverity: string;
+    taskId: string;
+  }) => {
+    const dismissId = `autopilot:${opts.proposalId}`;
+    const actions: Array<{ label: string; run: () => void }> = [];
+    if (opts.valid && opts.action && opts.actionPayload) {
+      actions.push({
+        label: "Accept",
+        run: () => onAction(opts.action, {
+          ...opts.actionPayload,
+          proposal_id: opts.proposalId,
+          source: "autopilot-proposal",
+        }),
+      });
+    }
+    if (opts.taskId) actions.push({ label: "Edit", run: () => onOpenTask(opts.taskId) });
+    actions.push({ label: "Dismiss", run: () => dismiss(dismissId) });
+    return {
+      id: dismissId,
+      title: opts.title || opts.action,
+      meta: `${opts.metaKind} · ${opts.metaSeverity}`,
+      hidden: !isVisible(dismissId),
+      actions,
+    };
+  };
+
+  // Durable pending-proposals projection is the source of truth (survives the
+  // event window and browser session); live autopilot events only add
+  // freshly-arrived / non-kanban (autopilot.proposal.created) proposals not yet
+  // reflected in the durable list. See ./triageProposals.
+  const liveAutopilotDescriptors: AutopilotProposalDescriptor[] = autopilotEvents.map((event) => {
+    const payload = recordValue(event.payload) ?? {};
+    const proposal = headlessActionProposal(payload);
+    const proposalTitle = proposal ? textValue(proposal.payload.title || proposal.action) : "";
+    return {
+      proposalId: textValue(payload.proposal_id || event.id || event.seq),
+      action: proposal?.action ?? "",
+      valid: Boolean(proposal?.valid),
+      actionPayload: proposal?.payload ?? null,
+      title: textValue(payload.title) || proposalTitle || event.type,
+      metaKind: textValue(payload.kind || payload.source || "proposal"),
+      metaSeverity: textValue(payload.severity || "medium"),
+      taskId: textValue(payload.task_id || event.task_id),
+    };
+  });
+  const autopilotItems = mergeAutopilotDescriptors(pendingProposals, liveAutopilotDescriptors)
+    .map(buildAutopilotItem);
+
   return (
     <section className="triage-page">
       <div className="section-heading">
@@ -2882,36 +2901,7 @@ function TriagePage({
         <TriageList
           title="Autopilot"
           empty="No autopilot proposals."
-          items={autopilotEvents.map((event) => {
-            const payload = recordValue(event.payload) ?? {};
-            const proposal = headlessActionProposal(payload);
-            const proposalId = textValue(payload.proposal_id || event.id || event.seq);
-            const taskId = textValue(payload.task_id || event.task_id);
-            const dismissId = `autopilot:${proposalId}`;
-            const actions: Array<{ label: string; run: () => void }> = [];
-            if (proposal?.valid && proposal.action && proposal.payload) {
-              actions.push({
-                label: "Accept",
-                run: () => onAction(proposal.action, {
-                  ...proposal.payload,
-                  proposal_id: proposalId,
-                  source: "autopilot-proposal",
-                }),
-              });
-            }
-            if (taskId) actions.push({ label: "Edit", run: () => onOpenTask(taskId) });
-            actions.push({ label: "Dismiss", run: () => dismiss(dismissId) });
-            const proposalTitle = proposal
-              ? textValue(proposal.payload.title || proposal.action)
-              : "";
-            return {
-              id: dismissId,
-              title: textValue(payload.title) || proposalTitle || event.type,
-              meta: `${textValue(payload.kind || payload.source || "proposal")} · ${textValue(payload.severity || "medium")}`,
-              hidden: !isVisible(dismissId),
-              actions,
-            };
-          })}
+          items={autopilotItems}
         />
         <TriageList
           title="Blocked"
@@ -3000,7 +2990,6 @@ function CommandPalette({
   events,
   onAction,
   onClose,
-  onNewTask,
   onOpenAgent,
   onOpenPage,
   onOpenProjection,
@@ -3011,7 +3000,6 @@ function CommandPalette({
   events: RecentEvent[];
   onAction: (action: string, payload: Record<string, unknown>) => void;
   onClose: () => void;
-  onNewTask: () => void;
   onOpenAgent: () => void;
   onOpenPage: (page: PageId) => void;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
@@ -3056,7 +3044,6 @@ function CommandPalette({
             onChange={(event) => setQuery(event.target.value)}
           />
           <div className="command-actions">
-            <button className="icon-button primary" type="button" onClick={onNewTask}>New Task</button>
             <button className="icon-button" type="button" onClick={onOpenAgent}>Kanban Agent</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("triage")}>Triage</button>
             <button className="icon-button" type="button" onClick={() => onOpenPage("board")}>Board</button>
@@ -3230,6 +3217,7 @@ function ProjectWizardModal({
   const [tokenInput, setTokenInput] = useState("");
   const [presets, setPresets] = useState<PresetInfo[]>([]);
   const [reco, setReco] = useState<Record<string, unknown> | null>(null);
+  const [inspect, setInspect] = useState<BootstrapInspect | null>(null);
   const [detecting, setDetecting] = useState(false);
   useEffect(() => {
     let active = true;
@@ -3252,9 +3240,19 @@ function ProjectWizardModal({
       const recommendation = (res.recommendation ?? {}) as Record<string, unknown>;
       const archetype = String(recommendation.archetype ?? "");
       if (archetype) update({ preset: archetype });
+      // BootstrapInspector: surface the concrete setup/gate/doc/flow candidates
+      // apply_profile would write, so the operator sees them before Initialize.
+      if (validRoot) inspectBootstrap(validRoot, draft.backend).then(setInspect).catch(() => setInspect(null));
     } finally {
       setDetecting(false);
     }
+  }
+  async function inspectExisting() {
+    if (!validRoot) return;
+    setDetecting(true);
+    try { setInspect(await inspectBootstrap(validRoot, draft.backend)); }
+    catch { setInspect(null); }
+    finally { setDetecting(false); }
   }
   function saveToken() {
     onSaveToken(tokenInput);
@@ -3274,6 +3272,28 @@ function ProjectWizardModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presets.length]);
   const selectedPreset = presetOptions.find((p) => p.name === draft.preset);
+  const candidatePanel = inspect ? (
+    <div className="card" data-testid="wizard-candidates">
+      {inspect.confidence === "low" || !inspect.candidates.length ? (
+        <div className="muted">置信度低(空/新仓)—— 代码落地后再探,先用空模板创建。</div>
+      ) : (
+        <>
+          <div className="muted">
+            探到 <b>{inspect.stack}</b> · {inspect.layout} · 候选(勾选项由 apply profile 写入):
+          </div>
+          {inspect.candidates.map((c) => (
+            <div key={c.kind} data-testid={`wizard-cand-${c.kind}`}>
+              ☑ <b>{c.label}</b>{" "}
+              <span className="mono">
+                {c.value ?? (c.values ? c.values.join(" · ") : Object.entries(c.facts ?? {}).map(([k, v]) => `${k}=${v}`).join(" · "))}
+              </span>
+              <div className="muted">{c.note}</div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  ) : null;
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="modal-panel" role="dialog" aria-modal="true" aria-label="Workspace Project">
@@ -3343,6 +3363,39 @@ function ProjectWizardModal({
               </select>
             ) : null}
           </div>
+          {draft.mode === "existing" ? (
+            <>
+              <div className="field-row">
+                <button
+                  className="icon-button"
+                  type="button"
+                  data-testid="wizard-inspect-existing"
+                  disabled={!validRoot || detecting}
+                  onClick={inspectExisting}
+                >
+                  {detecting ? "探测中…" : "探测项目 (Bootstrap Inspect)"}
+                </button>
+              </div>
+              {candidatePanel}
+              {inspect && inspect.has_config === false ? (
+                <div className="warn" data-testid="wizard-bare-repo">
+                  该目录尚未初始化(无 zf.yaml)—— Register 会失败。
+                  <button
+                    className="icon-button"
+                    type="button"
+                    data-testid="wizard-bootstrap-init"
+                    onClick={() => update({
+                      mode: "create",
+                      preset: inspect.recommended_flow || draft.preset,
+                      applyProfile: true,
+                    })}
+                  >
+                    → 用探测结果初始化 (转 Create)
+                  </button>
+                </div>
+              ) : null}
+            </>
+          ) : null}
           {draft.mode === "create" && draft.kind === "refactor" ? (
             <input
               className="filter-input"
@@ -3419,6 +3472,7 @@ function ProjectWizardModal({
             </div>
           ) : null}
           {draft.mode === "create" && reco ? <ProfileRecommendation data={reco} /> : null}
+          {draft.mode === "create" ? candidatePanel : null}
           {draft.mode === "create" ? (
             <>
               <label className="checkbox-row">

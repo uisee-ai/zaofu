@@ -73,9 +73,11 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "postVerifyDiscovery", "post_verify_discovery",
 })
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
+    "topology",  # fanout(default) | light(single lane goal loop)
     "issueRef", "issue_ref",
     "triageRole", "triage_role",
     "fixRolePattern", "fix_role_pattern",
+    "targetRoot", "target_root",
     "verifyRolePattern", "verify_role_pattern",
     "discoveryRole", "discovery_role",
     "judgeRole", "judge_role",
@@ -162,6 +164,7 @@ _REFACTOR_PLAN_INSTRUCTIONS = [
 _REFACTOR_VERIFY_BRIDGE_INSTRUCTIONS = [
     "This bridge runs after candidate tests pass; inspect whether enough evidence exists to trigger post-verify parity scanning.",
     "Do not reject merely because parity scan has not run yet; request/enable the configured parity scan unless tests or candidate evidence are invalid.",
+    "A passing report must include a non-empty top-level `evidence_refs` list pointing to the candidate commit/ref and concrete test event, report, or command artifact; findings and prose summaries do not substitute for evidence refs.",
 ]
 
 _REFACTOR_PARITY_SCAN_INSTRUCTIONS = [
@@ -288,7 +291,10 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.review.ready",
-                "failure_event": "zaofu.refactor.plan.blocked",
+                # ZF-E2E-PRDCTL-P2-7-1:scan 与 plan 曾共用 plan.blocked——
+                # kernel failure→stage 先到先得,scan 失败会被 replan 成
+                # 重跑 plan(深水无界环同族)。
+                "failure_event": "zaofu.refactor.scan.blocked",
             },
         },
         {
@@ -459,7 +465,10 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "aggregate": {
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.review.ready",
-                "failure_event": "zaofu.refactor.plan.blocked",
+                # ZF-E2E-PRDCTL-P2-7-1:scan 与 plan 曾共用 plan.blocked——
+                # kernel failure→stage 先到先得,scan 失败会被 replan 成
+                # 重跑 plan(深水无界环同族)。
+                "failure_event": "zaofu.refactor.scan.blocked",
             },
         },
         {
@@ -552,12 +561,11 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         assembly=assembly,
         max_rework_attempts=max_rework,
         trace_budget=trace_budget,
-        final={
-            "when": "all_tasks_verified",
-            "role": judge_role,
-            "success": "judge.passed",
-            "failure": "judge.failed",
-        },
+        # Refactor v3 must judge only after the module-parity loop closes.
+        # A lane-pipeline final here would also mint flow-lanes-final on
+        # test.passed, causing two judge.passed events and a second auto-ship
+        # attempt before/after flow-final-judge.
+        final={},
     )
 
     def _generated_role(name: str) -> dict[str, Any]:
@@ -832,9 +840,28 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
     if unknown:
         raise WorkflowProfileError(
             f"IssueFlow: unknown param(s) {unknown} (fail-closed)"
-        )
+    )
     lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
     backend = str(_pick(params, "backend", default="codex"))
+    topology = str(_pick(params, "topology", default="fanout")).strip() or "fanout"
+    if topology not in {"fanout", "light"}:
+        raise WorkflowProfileError(
+            f"IssueFlow: unknown topology {topology!r} (fanout|light)"
+        )
+    if topology == "light":
+        return _expand_product_flow_light(
+            params,
+            backend=backend,
+            flow_kind="issue",
+            entry_default="issue.requested",
+            pipeline_id="issue-lanes",
+            judge_role_default="judge-issue",
+            impl_pattern_keys=("fixRolePattern", "fix_role_pattern"),
+            impl_pattern_default="fix-lane-{lane}",
+            objective_ref_keys=("issueRef", "issue_ref"),
+            default_quality="issue-regression",
+            default_delivery="report_only",
+        )
     entry = str(_pick(
         params, "entryTrigger", "entry_trigger",
         default="issue.requested",
@@ -931,7 +958,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         impl_pattern=fix_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v2",
+        schema_profile="canonical-dag/v3",
         task_map_ref=task_map_ref,
         final={
             "when": "all_tasks_verified",
@@ -961,7 +988,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v2",
+        "schema_profile": "canonical-dag/v3",
         "metadata": metadata,
     }
 
@@ -976,17 +1003,46 @@ def _expand_prd_flow_light(params: dict, *, backend: str) -> dict[str, Any]:
     机械验收门(admission/F7/树哈希/judge)一个不拆。错判可免费
     升级全拓扑(topology: fanout)。
     """
+    return _expand_product_flow_light(
+        params,
+        backend=backend,
+        flow_kind="prd",
+        entry_default="prd.requested",
+        pipeline_id="prd-lanes",
+        judge_role_default="judge-prd",
+        impl_pattern_keys=("implRolePattern", "impl_role_pattern"),
+        impl_pattern_default="dev-lane-{lane}",
+        objective_ref_keys=("prdRef", "prd_ref"),
+        default_quality="product-demo",
+        default_delivery="report_and_demo",
+    )
+
+
+def _expand_product_flow_light(
+    params: dict,
+    *,
+    backend: str,
+    flow_kind: str,
+    entry_default: str,
+    pipeline_id: str,
+    judge_role_default: str,
+    impl_pattern_keys: tuple[str, ...],
+    impl_pattern_default: str,
+    objective_ref_keys: tuple[str, ...],
+    default_quality: str,
+    default_delivery: str,
+) -> dict[str, Any]:
     entry = str(_pick(
-        params, "entryTrigger", "entry_trigger", default="prd.requested",
+        params, "entryTrigger", "entry_trigger", default=entry_default,
     ))
-    judge_role = str(_pick(params, "judgeRole", "judge_role", default="judge-prd"))
+    judge_role = str(_pick(params, "judgeRole", "judge_role", default=judge_role_default))
     role_defaults = _mapping_param(
         _pick(params, "roleDefaults", "role_defaults"),
-        name="PrdFlow.roleDefaults",
+        name=f"{flow_kind}.roleDefaults",
     )
     bundles = _mapping_param(
         _pick(params, "roleSkillBundles", "role_skill_bundles"),
-        name="PrdFlow.roleSkillBundles",
+        name=f"{flow_kind}.roleSkillBundles",
     )
     roles = [
         _controller_role(
@@ -1007,18 +1063,18 @@ def _expand_prd_flow_light(params: dict, *, backend: str) -> dict[str, Any]:
     if _role_skills(bundles, "verify"):
         lane_template["skills_by_stage"]["verify"] = _role_skills(bundles, "verify")
     pipeline = _flow_kernel_lane_pipeline(
-        pipeline_id="prd-lanes",
+        pipeline_id=pipeline_id,
         lanes=1,
         impl_pattern=str(_pick(
-            params, "implRolePattern", "impl_role_pattern",
-            default="dev-lane-{lane}",
+            params, *impl_pattern_keys,
+            default=impl_pattern_default,
         )),
         verify_pattern=str(_pick(
             params, "verifyRolePattern", "verify_role_pattern",
             default="verify-lane-{lane}",
         )),
         lane_template=lane_template,
-        schema_profile="canonical-dag/v2",
+        schema_profile="canonical-dag/v3",
         task_map_ref=str(_pick(
             params, "taskMapRef", "task_map_ref", default="${task_map_ref}",
         )),
@@ -1031,22 +1087,24 @@ def _expand_prd_flow_light(params: dict, *, backend: str) -> dict[str, Any]:
         },
     )
     metadata = _controller_metadata(
-        kind="prd",
+        kind=flow_kind,
         params=params,
-        default_quality="product-demo",
-        default_delivery="report_and_demo",
+        default_quality=default_quality,
+        default_delivery=default_delivery,
         default_discovery="",
     )
     metadata["topology"] = "light"
     metadata["light_entry_trigger"] = entry
-    metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
+    objective_ref = str(_pick(params, *objective_ref_keys, default=""))
+    metadata["objective_ref"] = objective_ref
+    metadata[f"{flow_kind}_ref"] = objective_ref
     metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))
     return {
         "roles": roles,
         "stages": [],
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "canonical-dag/v2",
+        "schema_profile": "canonical-dag/v3",
         "metadata": metadata,
     }
 
@@ -1185,7 +1243,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         impl_pattern=impl_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v2",
+        schema_profile="canonical-dag/v3",
         task_map_ref=task_map_ref,
         final={
             "when": "all_tasks_verified",
@@ -1217,7 +1275,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v2",
+        "schema_profile": "canonical-dag/v3",
         "metadata": metadata,
     }
 

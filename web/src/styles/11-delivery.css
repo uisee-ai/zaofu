@@ -979,23 +979,6 @@
 .plan-approval-error {
   margin: 0;
 }
-.plan-contract-health {
-  min-width: 0;
-}
-.plan-contract-health table {
-  width: 100%;
-  max-width: 100%;
-  margin-top: 8px;
-  table-layout: fixed;
-  border-collapse: collapse;
-}
-.plan-contract-health th,
-.plan-contract-health td {
-  min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  vertical-align: top;
-}
 .plan-preview-overlay {
   position: fixed;
   inset: 0;
@@ -1200,11 +1183,35 @@
     min-width: 0;
     flex-basis: 100%;
   }
-  .plan-contract-health table {
-    font-size: var(--text-11);
-  }
-  .plan-contract-health th,
-  .plan-contract-health td {
-    padding-inline: 4px;
-  }
 }
+
+/* racing 评审:feature 选择器溢出下拉(fallback:trace-ref 升格的运维/子流 trace) */
+.dt-feature-selector { position: relative; align-items: center; }
+.dt-trace-overflow { position: relative; margin-left: auto; }
+.dt-trace-overflow > summary {
+  list-style: none; cursor: pointer; font-size: var(--text-12, 12px);
+  color: var(--text-secondary); padding: 4px 10px; border: 1px solid var(--line);
+  border-radius: 6px; white-space: nowrap;
+}
+.dt-trace-overflow > summary::-webkit-details-marker { display: none; }
+.dt-trace-overflow > summary.active { color: var(--text-primary); border-color: var(--brand, #47d); }
+.dt-trace-overflow[open] > summary { border-color: var(--brand, #47d); }
+.dt-trace-overflow-panel {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 30;
+  min-width: 260px; max-height: 320px; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+}
+.dt-trace-overflow-group { font-size: var(--text-11, 11px); padding: 6px 8px 2px; text-transform: uppercase; letter-spacing: .04em; }
+.dt-trace-overflow-item {
+  display: block; width: 100%; text-align: left; font: inherit;
+  font-size: var(--text-12, 12px); font-family: var(--font-mono, monospace);
+  padding: 4px 8px; border: 0; border-radius: 5px; background: none;
+  color: var(--text-secondary); cursor: pointer;
+}
+.dt-trace-overflow-item:hover { background: var(--bg); color: var(--text-primary); }
+.dt-trace-overflow-item.active { background: var(--bg); color: var(--brand, #47d); }
+
+/* PM 后批:Graph 邻居高亮 + 选中边 */
+.dt-thick-node.neighbor { border-color: var(--brand, #47d); border-style: dashed; }
+.dt-thick-edge.active { color: var(--brand, #47d); border-color: var(--brand, #47d); font-weight: 600; }

@@ -1310,7 +1310,10 @@ def _dirty_files_from_git_status(status: str) -> list[str]:
         line = raw_line.rstrip()
         if not line:
             continue
-        path = line[3:] if len(line) > 3 else line
+        # Callers .strip() the whole porcelain blob, so the first unstaged
+        # line (" M path") lands as "M path"; slice from col 2 (not 3) so its
+        # path parses whole (else ".zf/x" -> "zf/x" defeats runtime ignore).
+        path = line[2:].strip()
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
         normalized = TaskRefManager._normalize_artifact_path(path)

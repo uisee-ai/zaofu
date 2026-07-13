@@ -24,7 +24,7 @@ from zf.core.state.session import SessionStore
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.config.loader import load_config
-from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.orchestrator import BudgetExceededError, Orchestrator
 from zf.runtime.tmux import TmuxSession
 from zf.runtime.transport import TmuxTransport
 
@@ -303,3 +303,78 @@ class TestEventDedup:
         ]
         # Dedup: at most one within the cooldown window
         assert len(global_events) <= 2  # a touch of slack for race
+
+
+class TestChargingPrimitiveGate:
+    """P0-1 (RB1): the budget gate lives in the charging primitive
+    (_send_transport_task), not only in _dispatch_ready. The fanout
+    child / synth / writer-rework / reader-rebind paths call the primitive
+    directly, so without this they burned past the cap in-flight."""
+
+    def _spy_transport(self, sends: list):
+        class SpyTransport(TmuxTransport):
+            def send_task(self, *args, **kwargs):
+                sends.append(args)
+
+        return SpyTransport(TmuxSession(session_name="t", dry_run=True))
+
+    def test_primitive_blocks_over_budget_before_send(self, state_dir):
+        cfg = ZfConfig(
+            project=ProjectConfig(name="t"),
+            session=SessionConfig(tmux_session="t"),
+            global_budget_usd=0.01,  # tiny
+            roles=[RoleConfig(name="dev", backend="mock")],
+        )
+        tracker = CostTracker(state_dir / "cost.jsonl")
+        tracker.record_usage("dev", 100_000, 50_000)  # blow the $0.01 cap
+        sends: list = []
+        orch = Orchestrator(state_dir, cfg, self._spy_transport(sends))
+        role = orch._find_role_by_name("dev")
+
+        # The fanout paths call the primitive exactly like this.
+        with pytest.raises(BudgetExceededError):
+            orch._send_transport_task(
+                role.instance_id, state_dir / "briefing.md", "prompt", None
+            )
+
+        # The actual money call (transport.send_task) never fired.
+        assert sends == []
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        assert any(e.type == "cost.budget.exceeded" for e in events)
+
+    def test_primitive_sends_when_under_budget(self, state_dir):
+        cfg = ZfConfig(
+            project=ProjectConfig(name="t"),
+            session=SessionConfig(tmux_session="t"),
+            global_budget_usd=100.0,
+            roles=[RoleConfig(name="dev", backend="mock")],
+        )
+        tracker = CostTracker(state_dir / "cost.jsonl")
+        tracker.record_usage("dev", 100, 50)  # tiny, well under cap
+        sends: list = []
+        orch = Orchestrator(state_dir, cfg, self._spy_transport(sends))
+        role = orch._find_role_by_name("dev")
+
+        orch._send_transport_task(
+            role.instance_id, state_dir / "briefing.md", "prompt", None
+        )
+
+        # Under budget → the money call went through unchanged.
+        assert len(sends) == 1
+
+    def test_no_budget_configured_never_blocks_primitive(self, state_dir):
+        cfg = ZfConfig(
+            project=ProjectConfig(name="t"),
+            session=SessionConfig(tmux_session="t"),
+            roles=[RoleConfig(name="dev", backend="mock")],
+        )
+        tracker = CostTracker(state_dir / "cost.jsonl")
+        tracker.record_usage("dev", 100_000, 50_000)  # spend, but no cap set
+        sends: list = []
+        orch = Orchestrator(state_dir, cfg, self._spy_transport(sends))
+        role = orch._find_role_by_name("dev")
+
+        orch._send_transport_task(
+            role.instance_id, state_dir / "briefing.md", "prompt", None
+        )
+        assert len(sends) == 1

@@ -172,10 +172,24 @@ class CandidateRebuilder:
             )
 
         if event_writer is not None:
+            # canonical-dag v1/v2/v3 require fanout_id on candidate.conflict,
+            # but manifest-derived payloads never carried it — under a blocking
+            # discriminator the real conflict signal would be rejected (same
+            # wedge class as refactor.scan.failed, 2026-07-10 audit). Enrich
+            # from the trigger event when the manifest payload lacks it.
+            result_payload = dict(result.payload)
+            if not result_payload.get("fanout_id") and trigger_event is not None:
+                trigger_payload = (
+                    trigger_event.payload
+                    if isinstance(trigger_event.payload, dict) else {}
+                )
+                trigger_fanout_id = str(trigger_payload.get("fanout_id") or "")
+                if trigger_fanout_id:
+                    result_payload["fanout_id"] = trigger_fanout_id
             final = event_writer.append(ZfEvent(
                 type=result.event_type,
                 actor="zf-cli",
-                payload=result.payload,
+                payload=result_payload,
                 causation_id=started.id if started else (
                     trigger_event.id if trigger_event else None
                 ),
@@ -2095,63 +2109,29 @@ def _quality_candidate_diff_evidence(
 
 
 def _candidate_reportable_status(status: str) -> str:
+    """Reduce ``git status --porcelain`` to lines that gate candidate cleanliness.
+
+    Parity with ship.py ``_dirty_files`` (B-NEW-13, commit 96ba665): untracked
+    files (porcelain ``??``) never affect what ``git merge candidate/<id>``
+    ships — they were never committed, so they cannot violate the
+    "candidate == verified tree" invariant. Quality-gate commands routinely
+    leave untracked byproducts (``npm install`` → ``package-lock.json``,
+    build caches, ``.venv``/``node_modules``); gating the candidate clean
+    check on them fails legitimate dependency-installing gates even though the
+    shipped tree is unaffected. Only tracked modifications/deletions/renames
+    (``M``/``A``/``D``/``R``/``C``) count — those change committed content and
+    therefore what ships. This mirrors the ship-side guard so the two clean
+    checks cannot drift (the drift that let this pass ship.py but fail here).
+    """
     lines = [
         line
         for line in str(status or "").splitlines()
-        if not _is_compiled_python_artifact_status(line)
-        and not _is_runtime_quality_artifact_status(line)
+        if line.strip() and line[:2] != "??"
     ]
     if not lines:
         return ""
     suffix = "\n" if str(status or "").endswith("\n") else ""
     return "\n".join(lines) + suffix
-
-
-def _is_compiled_python_artifact_status(line: str) -> bool:
-    if len(line) < 4:
-        return False
-    path = line[3:].strip()
-    if not path:
-        return False
-    parts = [part.strip() for part in path.split(" -> ")] if " -> " in path else [path]
-
-    def _is_pyc(candidate: str) -> bool:
-        return (
-            candidate.endswith((".pyc", ".pyo"))
-            or candidate == "__pycache__/"
-            or candidate.endswith("/__pycache__")
-            or candidate.endswith("/__pycache__/")
-            or "__pycache__/" in candidate
-        )
-
-    return bool(parts) and all(_is_pyc(part) for part in parts)
-
-
-def _is_runtime_quality_artifact_status(line: str) -> bool:
-    if len(line) < 4:
-        return False
-    path = line[3:].strip()
-    if not path:
-        return False
-    parts = [part.strip() for part in path.split(" -> ")] if " -> " in path else [path]
-
-    def _is_tooling(candidate: str) -> bool:
-        normalized = candidate.strip().strip("/")
-        components = [part for part in normalized.split("/") if part]
-        tooling_dirs = {".pytest_cache", ".venv", "node_modules"}
-        return (
-            normalized == ".pytest_cache"
-            or normalized.startswith(".pytest_cache/")
-            or normalized == ".coverage"
-            or normalized.startswith(".coverage.")
-            or normalized == ".venv"
-            or normalized.startswith(".venv/")
-            or normalized == "node_modules"
-            or normalized.startswith("node_modules/")
-            or any(part in tooling_dirs for part in components)
-        )
-
-    return bool(parts) and all(_is_tooling(part) for part in parts)
 
 
 def _parse_diff_check_issues(evidence: dict[str, Any]) -> list[dict[str, Any]]:

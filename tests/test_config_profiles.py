@@ -284,3 +284,90 @@ spec:
 
     with pytest.raises(ConfigError, match="did not match any files"):
         load_config(path)
+
+
+def test_config_profile_merges_verification_and_skills_strict(tmp_path):
+    """2026-07-08 LB-4:verification 执法档与 runtime.skills.strict 经
+    uses: 深合并进项目配置(prod controller 预设的接线路径)。"""
+    text = """\
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata: {name: enforce/v1}
+spec:
+  runtime:
+    skills:
+      strict: true
+  verification:
+    event_schema:
+      mode: blocking
+    report_evidence_gate: fail_closed
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  uses: [enforce/v1]
+  version: "1.0"
+  project: {name: demo}
+"""
+    path = tmp_path / "zf.yaml"
+    path.write_text(text)
+    cfg = load_config(path)
+    assert cfg.runtime.skills.strict is True
+    assert cfg.verification.event_schema.mode == "blocking"
+    assert cfg.verification.report_evidence_gate == "fail_closed"
+
+
+def test_prod_controller_profiles_wire_yoke_and_enforcement():
+    """内容钉:examples/prod/controller/common/profiles.yaml 的两个 prod
+    预设必须携带 yoke wrapper bundles + strict + blocking + fail_closed
+    (2026-07-08 skills+yoke 评估第一、二批;漂移即红)。"""
+    import yaml
+    from pathlib import Path as _Path
+
+    profiles_path = (
+        _Path(__file__).resolve().parents[1]
+        / "examples" / "prod" / "controller" / "common" / "profiles.yaml"
+    )
+    docs = list(yaml.safe_load_all(profiles_path.read_text(encoding="utf-8")))
+    by_name = {
+        doc["metadata"]["name"]: doc["spec"]
+        for doc in docs
+        if isinstance(doc, dict) and doc.get("kind") == "ConfigProfile"
+    }
+
+    prod = by_name["prod-runtime/v1"]
+    prd_bundles = prod["flow_defaults"]["prd"]["roleSkillBundles"]
+    issue_bundles = prod["flow_defaults"]["issue"]["roleSkillBundles"]
+    assert "zf-yoke-dev-worker-role-context" in prd_bundles["impl"]
+    assert "zf-yoke-test-evaluator-role-context" in prd_bundles["verify"]
+    assert "zf-yoke-quality-gate-role-context" in prd_bundles["judge-prd"]
+    assert "zf-yoke-dev-worker-role-context" in issue_bundles["fix"]
+    assert "zf-yoke-test-evaluator-role-context" in issue_bundles["verify"]
+    assert "zf-yoke-quality-gate-role-context" in issue_bundles["judge-issue"]
+
+    refactor = by_name["refactor-controller-runtime/v3"]
+    ref_bundles = refactor["flow_defaults"]["refactor"]["roleSkillBundles"]
+    assert "zf-yoke-dev-worker-role-context" in ref_bundles["impl"]
+    assert "zf-yoke-test-evaluator-role-context" in ref_bundles["verify"]
+    assert "zf-yoke-quality-gate-role-context" in ref_bundles["judge-refactor"]
+
+    for spec in (prod, refactor):
+        assert spec["runtime"]["skills"]["strict"] is True
+        assert spec["verification"]["event_schema"]["mode"] == "blocking"
+        assert spec["verification"]["report_evidence_gate"] == "fail_closed"
+
+
+def test_controller_entries_all_ship_on_judge_passed():
+    """auto-ship parity(2026-07-08):8 个 controller 入口(codex+claude ×
+    light/prd-fanout/issue/refactor)judge 终局后一键到 ship,行为一致。"""
+    from pathlib import Path as _Path
+
+    from zf.core.config.loader import load_config as _load
+
+    controller = _Path(__file__).resolve().parents[1] / "examples" / "prod" / "controller"
+    yamls = sorted(controller.glob("*-v3*.yaml"))
+    assert len(yamls) >= 8, [p.name for p in yamls]
+    for path in yamls:
+        cfg = _load(path)
+        assert cfg.runtime.git.auto_ship_on_judge_passed is True, path.name

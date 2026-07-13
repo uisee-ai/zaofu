@@ -208,9 +208,10 @@ def test_autoresearch_trigger_accepted_creates_single_maintenance_proposal(
         type="autoresearch.trigger.accepted",
         actor="zf-autoresearch",
         task_id="TASK-BUG",
-        payload={
-            "trigger_id": "ar-001",
-            "severity": "critical",
+            payload={
+                "trigger_id": "ar-001",
+                "source": "autoresearch.invocation.accepted",
+                "severity": "critical",
             "reason": "zaofu bug reproduced",
             "fingerprint": "bug:dispatch-loop",
             "evidence_paths": ["records/ar-001.md"],
@@ -248,6 +249,37 @@ def test_autoresearch_trigger_accepted_creates_single_maintenance_proposal(
     assert Path(payload["candidate_path"]).exists()
     assert loop_requests[0].payload["apply_policy"] == "proposal_only"
     assert loop_requests[0].payload["scenarios"] == ["controlled-stuck-recovery"]
+
+
+def test_raw_autoresearch_trigger_waits_for_run_manager_intake(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state_dir(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    event = ZfEvent(
+        type="autoresearch.trigger.accepted",
+        actor="zf-autoresearch",
+        task_id="TASK-BUG",
+        payload={
+            "trigger_id": "raw-ar-trigger",
+            "fingerprint": "bug:dispatch-loop",
+            "reason": "raw trigger scan candidate",
+        },
+    )
+    log.append(event)
+    orch = _orchestrator(state_dir)
+
+    decision = orch._on_autoresearch_trigger_accepted(event)
+
+    assert decision is not None and decision.role == "run_manager"
+    assert not any(
+        item.type in {
+            "autoresearch.loop.requested",
+            "autoresearch.repair.dispatch_requested",
+            "automation.proposal.created",
+        }
+        for item in log.read_all()
+    )
 
 
 def test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger(

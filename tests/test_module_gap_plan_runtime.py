@@ -13,6 +13,7 @@ from zf.core.config.schema import (
 )
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 
@@ -544,6 +545,109 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
     assert transport.sent and transport.sent[0][0] == "dev-lane-0"
 
 
+def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    (state_dir / "feature_list.json").write_text("[]\n", encoding="utf-8")
+    config = _config(state_dir)
+    config.roles.append(RoleConfig(
+        name="flow-discovery",
+        backend="mock",
+        role_kind="reader",
+    ))
+    config.workflow.stages.insert(0, WorkflowStageConfig(
+        id="issue-post-verify-discovery",
+        trigger="flow.discovery.requested",
+        topology="fanout_reader",
+        roles=["flow-discovery"],
+        aggregate=FanoutAggregateConfig(
+            mode="wait_for_all",
+            child_success_event="flow.discovery.child.completed",
+            child_failure_event="flow.discovery.child.failed",
+            success_event="flow.discovery.completed",
+            failure_event="flow.discovery.failed",
+        ),
+    ))
+    log = EventLog(state_dir / "events.jsonl")
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
+    task_map_ref = _write_base_task_map(state_dir)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="CANGJIE-WEB-001",
+        title="Web baseline",
+        status="review",
+        assigned_to="dev-lane-0",
+    ))
+    request = ZfEvent(
+        id="flow-discovery-request-fanout",
+        type="flow.discovery.requested",
+        actor="run-manager",
+        correlation_id="trace-flow-fanout",
+        payload={
+            "pdd_id": "CANGJIE",
+            "feature_id": "CANGJIE",
+            "goal_kind": "issue",
+            "flow_kind": "issue",
+            "gap_category": "issue_gap",
+            "trace_id": "trace-flow-fanout",
+            "task_map_ref": task_map_ref,
+            "supersedes_task_ids": ["CANGJIE-WEB-001"],
+        },
+    )
+    orch.run_once(events=[request])
+    dispatched = next(
+        event for event in log.read_all()
+        if event.type == "fanout.child.dispatched"
+    )
+    child = ZfEvent(
+        id="flow-discovery-child-result",
+        type="flow.discovery.child.completed",
+        actor="flow-discovery",
+        correlation_id="trace-flow-fanout",
+        payload={
+            "fanout_id": dispatched.payload["fanout_id"],
+            "child_id": dispatched.payload["child_id"],
+            "run_id": dispatched.payload["run_id"],
+            "role_instance": "flow-discovery",
+            "status": "completed",
+            "report": {
+                "status": "passed",
+                "summary": "one bounded replacement remains",
+                "findings": [],
+                "recommendation": "approve",
+                "gap_tasks": [{
+                    "task_id": "CANGJIE-WEB-CORE-001",
+                    "parent_task_id": "CANGJIE-WEB-001",
+                    "owner_role": "dev",
+                    "claim_paths": ["web/src/core/**", "tests/test_web_core.py"],
+                    "acceptance": ["web core behavior is covered"],
+                    "verify_commands": ["uv run pytest tests/test_web_core.py"],
+                    "source_refs": ["reports/CANGJIE/issue-gap.json"],
+                }],
+            },
+        },
+    )
+    orch.run_once(events=[child])
+    completed = next(
+        event for event in log.read_all()
+        if event.type == "flow.discovery.completed"
+    )
+
+    assert completed.payload["gap_tasks"][0]["task_id"] == "CANGJIE-WEB-CORE-001"
+    assert completed.payload["supersedes_task_ids"] == ["CANGJIE-WEB-001"]
+
+    orch.run_once(events=[completed])
+
+    events = log.read_all()
+    store = TaskStore(state_dir / "kanban.json")
+    assert any(event.type == "task_map.amended" for event in events)
+    assert store.get("CANGJIE-WEB-001").status == "cancelled"
+    assert store.get("CANGJIE-WEB-CORE-001").status == "in_progress"
+
+
 def test_flow_discovery_completed_without_gaps_closes_goal(
     tmp_path: Path,
 ) -> None:
@@ -692,6 +796,33 @@ def test_verify_passed_requests_module_parity_scan(tmp_path: Path) -> None:
     ]
 
 
+def test_test_passed_does_not_request_module_parity_scan(tmp_path: Path) -> None:
+    _state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+
+    decisions = orch.run_once(events=[ZfEvent(
+        id="test-passed-before-verify-1",
+        type="test.passed",
+        actor="zf-cli",
+        correlation_id="trace-verify",
+        payload={
+            "pdd_id": "CANGJIE",
+            "feature_id": "CANGJIE",
+            "trace_id": "trace-verify",
+            "task_map_ref": ".zf/artifacts/CANGJIE/task_map.json",
+            "candidate_ref": "cand/CANGJIE",
+        },
+    )])
+
+    events = log.read_all()
+    assert not any(
+        event.type == "verify.parity_scan.requested"
+        for event in events
+    )
+    assert not any(event.type == "fanout.started" for event in events)
+    assert not any(decision.action == "bridge" for decision in decisions)
+    assert transport.sent == []
+
+
 def test_verify_fanout_success_immediately_requests_module_parity_scan(
     tmp_path: Path,
 ) -> None:
@@ -771,6 +902,12 @@ def test_module_parity_scan_completed_with_gaps_amends_task_map(
 ) -> None:
     state_dir, log, transport, orch = _state(tmp_path)
     task_map_ref = _write_base_task_map(state_dir)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="CANGJIE-WEB-001",
+        title="Web baseline",
+        status="review",
+        assigned_to="dev-lane-0",
+    ))
 
     decisions = orch.run_once(events=[ZfEvent(
         id="parity-scan-completed-gaps",
@@ -783,6 +920,7 @@ def test_module_parity_scan_completed_with_gaps_amends_task_map(
             "trace_id": "trace-parity-gaps",
             "task_map_ref": task_map_ref,
             "candidate_ref": "cand/CANGJIE",
+            "supersedes_task_ids": ["CANGJIE-WEB-001"],
             "gap_tasks": [{
                 "task_id": "CANGJIE-WEB-GAP-001",
                 "module_id": "web-dashboard",
@@ -803,11 +941,16 @@ def test_module_parity_scan_completed_with_gaps_amends_task_map(
     amended = next(event for event in events if event.type == "task_map.amended")
     ready = next(event for event in events if event.type == "task_map.ready")
     assert amended.payload["gap_task_ids"] == ["CANGJIE-WEB-GAP-001"]
+    assert amended.payload["superseded_task_ids"] == ["CANGJIE-WEB-001"]
     assert ready.payload["resume_scope"] == "gap_tasks_only"
     assert ready.payload["task_ids"] == ["CANGJIE-WEB-GAP-001"]
     task = TaskStore(state_dir / "kanban.json").get("CANGJIE-WEB-GAP-001")
+    superseded = TaskStore(state_dir / "kanban.json").get("CANGJIE-WEB-001")
     assert task is not None
     assert task.status == "in_progress"
+    assert superseded is not None
+    assert superseded.status == "cancelled"
+    assert any(event.type == "task.superseded" for event in events)
     assert transport.sent and transport.sent[0][0] == "dev-lane-0"
 
 

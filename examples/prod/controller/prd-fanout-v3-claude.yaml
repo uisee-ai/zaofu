@@ -1,0 +1,56 @@
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: prd-fanout/v3-claude
+spec:
+  lanes: 2
+  backend: claude-code
+  prdRef: docs/prd/TODO.md
+  targetRoot: app
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_and_demo
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: prd-fanout-v3-claude
+  zaofu:
+    catalog:
+      id: prd-fanout-v3-claude
+      label: PRD Fanout v3 (claude)
+      description: Short controller PRD workflow with scan, plan, impl, verify.
+      intent: build
+      backend: claude
+      roles: 9
+      recommended_for: [build]
+      preferred: true
+      order: 31
+spec:
+  profile_sources: [common/profiles.yaml]
+  uses: [prod-runtime/v1]
+  version: "1.0"
+  project:
+    name: prd-fanout-v3-claude
+  runtime:
+    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
+    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
+    # (默认 main;master 基线仓请 override 为 master)。
+    git:
+      auto_ship_on_judge_passed: true
+    # override prod-runtime/v1 codex run_manager: claude lanes need a claude
+    # resident manager (else start fails on a claude-only host).
+    run_manager:
+      backend: claude-code
+  workflow:
+    dag:
+      external_triggers: [prd.requested]
+    admission_replan:
+      enabled: true
+      resynth_trigger: prd.scan.completed
+    rework_routing:
+      prd.scan.failed: planner
+      prd.plan.failed: planner
+      integration.failed: planner
+      static_gate.failed: dev-lane-0
+      test.failed: dev-lane-0

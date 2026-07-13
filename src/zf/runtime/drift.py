@@ -33,7 +33,23 @@ _OBSERVATION_EVENT_TYPES = {
 }
 
 _INFRA_ACTORS = {
+    # Drift `repeat_decisions` means an *agent* repeatedly making the same
+    # decision. Infrastructure actors emit periodic/loop events by design
+    # (run-manager ticks, supervisor attention, autoresearch loops, stall
+    # redispatch) that legitimately repeat every few events — counting them
+    # floods `worker.drift.detected` (2026-07-08 E2E: 80-120 false drifts per
+    # fanout run, all "run.manager.tick.started by run-manager repeated 3x",
+    # each waking the orchestrator + feeding supervisor/autoresearch noise).
+    # Only zf-cli was excluded historically; the runtime grew more infra
+    # actors that must all be excluded. Role-instance workers are NOT here —
+    # their genuine repeat-decision loops are still detected.
     "zf-cli",
+    "run-manager",
+    "zf-supervisor",
+    "zf-runtime",
+    "zf-autoresearch",
+    "zf-stall-redispatch",
+    "operator",
 }
 
 

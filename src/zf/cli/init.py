@@ -55,6 +55,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Do not create or refresh project AGENTS.md / CLAUDE.md during init",
     )
     parser.add_argument(
+        "--notes",
+        default="",
+        help="Operator notes / conventions to append into project CLAUDE.md "
+             "(same path as Web New Project 'description').",
+    )
+    parser.add_argument(
         "--no-git-hooks",
         action="store_true",
         help="Do not install the ZaoFu pre-commit hook into .git/hooks",
@@ -90,6 +96,7 @@ def run(args: argparse.Namespace) -> int:
             with_git_hooks=not bool(getattr(args, "no_git_hooks", False)),
             create_root=bool(getattr(args, "create", False)),
             workspace_register=workspace_register,
+            notes=str(getattr(args, "notes", "") or ""),
         )
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -120,6 +127,8 @@ def run(args: argparse.Namespace) -> int:
             "  + instruction docs updated: "
             f"{', '.join(result.instruction_docs.updated)}"
         )
+    if result.notes_applied:
+        print(f"  + operator notes {result.notes_applied} → CLAUDE.md")
     if result.feishu_channel_binding:
         print(
             "  + feishu channel binding "

@@ -49,6 +49,9 @@ _LLM_ENV_KEYS = (
     "ZHIPUAI_API_KEY",
 )
 
+_REQUEST_KIND_CHOICES = ["issue", "prd", "refactor", "feat", "auto"]
+_FLOW_KIND_CHOICES = ["issue", "prd", "refactor", "feat"]
+
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
@@ -58,7 +61,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sub = parser.add_subparsers(dest="flow_cmd")
 
     intake = sub.add_parser("intake", help="Create a workflow intake artifact")
-    intake.add_argument("--kind", required=True, choices=["issue", "prd", "refactor", "auto"])
+    intake.add_argument("--kind", required=True, choices=_REQUEST_KIND_CHOICES)
     intake.add_argument("--from", dest="source_ref", default="")
     intake.add_argument("--objective", default="")
     intake.add_argument("--source-root", default="")
@@ -76,13 +79,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     classify = sub.add_parser("classify", help="Classify a workflow intake artifact")
     classify.add_argument("--intake", type=Path, required=True)
-    classify.add_argument("--kind", choices=["issue", "prd", "refactor", "auto"], default="auto")
+    classify.add_argument("--kind", choices=_REQUEST_KIND_CHOICES, default="auto")
     classify.add_argument("--output", type=Path, default=None)
     classify.add_argument("--json", action="store_true")
     classify.set_defaults(func=run_classify)
 
     draft = sub.add_parser("draft", help="Draft a short controller flow YAML")
-    draft.add_argument("--kind", required=True, choices=["issue", "prd", "refactor"])
+    draft.add_argument("--kind", required=True, choices=_FLOW_KIND_CHOICES)
     draft.add_argument("--from", dest="source_ref", default="")
     draft.add_argument("--source-root", default="")
     draft.add_argument("--target", "--target-root", dest="target_root", default="")
@@ -97,7 +100,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     preflight = sub.add_parser("preflight", help="Check start readiness")
     preflight.add_argument("--config", type=Path, default=Path("zf.yaml"))
-    preflight.add_argument("--kind", choices=["issue", "prd", "refactor"], default="")
+    preflight.add_argument("--kind", choices=_FLOW_KIND_CHOICES, default="")
     preflight.add_argument("--intake", type=Path, default=None)
     preflight.add_argument("--json", action="store_true")
     preflight.add_argument(
@@ -111,7 +114,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "start",
         help="Build a safe flow-start proposal; use --dry-run for now",
     )
-    start.add_argument("--kind", required=True, choices=["issue", "prd", "refactor"])
+    start.add_argument("--kind", required=True, choices=_FLOW_KIND_CHOICES)
     start.add_argument("--from", dest="source_ref", default="")
     start.add_argument("--source-root", default="")
     start.add_argument("--target", "--target-root", dest="target_root", default="")
@@ -137,7 +140,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     submit.add_argument("--config", type=Path, required=True)
     submit.add_argument("--intake", type=Path, required=True)
-    submit.add_argument("--kind", choices=["issue", "prd", "refactor"], default="")
+    submit.add_argument("--kind", choices=_FLOW_KIND_CHOICES, default="")
     submit.add_argument("--task-id", default="")
     submit.add_argument("--pattern-id", default="")
     submit.add_argument("--requested-by", default="zf-cli")
@@ -235,10 +238,14 @@ def build_flow_intake(
 
     source_text = _read_text_ref(source_ref)
     objective_text = _compact_text(objective or source_text or source_ref)
+    requested_kind = str(kind or "").strip().lower()
     inferred_kind = _infer_request_kind(
         " ".join([kind, objective_text, source_ref, source_root, target_root])
     )
-    effective_kind = inferred_kind if kind == "auto" else kind
+    effective_kind = (
+        inferred_kind if requested_kind == "auto"
+        else _normalize_request_kind(requested_kind)
+    )
     missing = _missing_required_fields(
         effective_kind,
         objective=objective_text,
@@ -252,7 +259,7 @@ def build_flow_intake(
         "request_id": request_id,
         "source": source,
         "project_id": project_id or project_name,
-        "request_kind": kind,
+        "request_kind": requested_kind,
         "inferred_kind": inferred_kind,
         "effective_kind": effective_kind,
         "objective": objective_text,
@@ -311,7 +318,7 @@ def build_flow_intake(
         "schema_version": "workflow.input_manifest.v1",
         "request_id": request_id,
         "kind": effective_kind,
-        "request_kind": kind,
+        "request_kind": requested_kind,
         "source": source,
         "project_id": project_id or project_name,
         "objective": objective_text,
@@ -342,7 +349,7 @@ def build_flow_intake(
     return {
         "schema_version": "workflow.intake.result.v1",
         "request_id": request_id,
-        "request_kind": kind,
+        "request_kind": requested_kind,
         "effective_kind": effective_kind,
         "intake_ref": str(output_path),
         "intake_json_ref": str(intake_json_path),
@@ -385,8 +392,9 @@ def build_flow_intent(
     manifest_path, manifest = _load_manifest_for_intake(intake_path)
     manifest = dict(manifest or {})
     request_id = str(manifest.get("request_id") or _request_id_from_path(intake_path))
-    kind = explicit_kind if explicit_kind != "auto" else _infer_request_kind(text)
-    if explicit_kind == "auto" and manifest.get("kind") in {"issue", "prd", "refactor"}:
+    explicit = str(explicit_kind or "auto").strip().lower()
+    kind = _normalize_request_kind(explicit) if explicit != "auto" else _infer_request_kind(text)
+    if explicit == "auto" and manifest.get("kind") in {"issue", "prd", "refactor"}:
         kind = str(manifest["kind"])
     confidence = "high" if explicit_kind != "auto" or manifest.get("kind") else "medium"
     missing = _missing_required_fields(
@@ -474,6 +482,7 @@ def draft_flow_spec(
     strictness: str = "standard",
     parity_scope: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
+    kind = _normalize_request_kind(kind)
     project = project_name or f"{kind}-flow"
     state = state_dir or f".zf-{project}"
     adapter_plan = _build_skill_adapter_plan(
@@ -701,6 +710,7 @@ def build_flow_start_proposal(
     output: Path | None = None,
     allow_missing_env: bool = False,
 ) -> dict[str, Any]:
+    kind = _normalize_request_kind(kind)
     project = project_name or _unique_project_name(kind)
     state = state_dir or f".zf-{project}"
     config_path = output or Path.cwd() / f"zf-{project}.yaml"
@@ -754,6 +764,7 @@ def build_flow_start_proposal(
 
 
 def _default_lanes(kind: str) -> int:
+    kind = _normalize_request_kind(kind)
     if kind == "refactor":
         return 5
     return 2
@@ -776,6 +787,13 @@ def _flow_metadata_from_report(report: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_csv(value: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in str(value or "").split(",") if item.strip())
+
+
+def _normalize_request_kind(kind: str) -> str:
+    value = str(kind or "").strip().lower()
+    if value == "feat":
+        return "prd"
+    return value
 
 
 def _string_list(value: Any) -> list[str]:
@@ -914,12 +932,40 @@ def build_flow_submit_preview(
         intake_path=intake_path,
         allow_missing_env=allow_missing_env,
     )
-    resolved_kind = flow_kind or str(manifest.get("kind") or report.get("flow_kind") or "")
-    resolved_task_id = _resolve_submit_task_id(task_id, request_id=request_id, kind=resolved_kind)
-    resolved_pattern_id = _resolve_submit_pattern_id(
-        config_path=config_path,
-        pattern_id=pattern_id,
+    resolved_kind = _normalize_request_kind(
+        flow_kind or str(manifest.get("kind") or report.get("flow_kind") or "")
     )
+    resolved_task_id = _resolve_submit_task_id(task_id, request_id=request_id, kind=resolved_kind)
+    workflow_tier = str(
+        manifest.get("workflow_tier")
+        or manifest.get("tier")
+        or ""
+    ).strip().lower()
+    route_blockers: list[dict[str, Any]] = []
+    try:
+        resolved_pattern_id = _resolve_submit_pattern_id(
+            config_path=config_path,
+            pattern_id=pattern_id,
+            kind=resolved_kind,
+            workflow_tier=workflow_tier,
+        )
+    except ConfigError as exc:
+        resolved_pattern_id = ""
+        route_blockers.append({
+            "severity": "STOP",
+            "kind": "workflow_route_unresolved",
+            "title": "workflow route 无法确定",
+            "message": str(exc),
+            "why_it_matters": (
+                "同一 canonical zf.yaml 承载多个 request kind 时,submit "
+                "必须确定性选择 stage,不能猜第一个 stage。"
+            ),
+            "fix_it": (
+                "在 workflow.kind_routes 中声明 kind -> pattern_id,或显式传 "
+                "--pattern-id。"
+            ),
+            "safe_auto_fix": False,
+        })
     preflight_path.write_text(
         json.dumps(_public_preflight_report(report), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
@@ -944,7 +990,10 @@ def build_flow_submit_preview(
     submit_payload = {
         "schema_version": "workflow.submit.requested.v1",
         "request_id": request_id,
+        "run_id": request_id,
         "kind": resolved_kind,
+        "request_kind": str(manifest.get("request_kind") or resolved_kind),
+        "workflow_tier": workflow_tier,
         "task_id": resolved_task_id,
         "pattern_id": resolved_pattern_id,
         "config_ref": str(config_path),
@@ -968,15 +1017,17 @@ def build_flow_submit_preview(
         },
         "artifact_refs": manifest_artifact_refs,
     }
+    blockers = [*(report.get("blockers") or []), *route_blockers]
+    status = "STOP" if route_blockers else report["status"]
     result = {
         "schema_version": "workflow.submit.preview.v1",
-        "status": report["status"],
+        "status": status,
         "dry_run": True,
         "event_type": "workflow.submit.requested",
         "payload": submit_payload,
         "submit_preview_ref": str(preview_path),
         "preflight_ref": str(preflight_path),
-        "blockers": report.get("blockers") or [],
+        "blockers": blockers,
         "next": {
             "apply": "run `zf flow submit --apply ...` after operator approval",
         },
@@ -1095,6 +1146,10 @@ def apply_flow_submit(
         correlation_id=correlation_id,
         payload={
             "request_id": correlation_id,
+            "run_id": str(payload.get("run_id") or correlation_id),
+            "kind": str(payload.get("kind") or ""),
+            "request_kind": str(payload.get("request_kind") or payload.get("kind") or ""),
+            "workflow_tier": str(payload.get("workflow_tier") or ""),
             "source_event_id": submit_requested.id,
             "workflow_preflight_ref": payload.get("workflow_preflight_ref", ""),
             "workflow_input_manifest_ref": payload.get("workflow_input_manifest_ref", ""),
@@ -1137,7 +1192,9 @@ def apply_flow_submit(
     # (light has no impl/review path for it), creating a zombie the operator
     # must cancel by hand. Skip it; the operator emits `prd.requested` to start.
     from zf.runtime.light_flow import light_flow_metadata
-    if light_flow_metadata(config) is not None:
+    light_metadata = light_flow_metadata(config)
+    if light_metadata is not None:
+        entry_trigger = str(light_metadata.get("light_entry_trigger") or "prd.requested")
         return {
             **preview,
             "schema_version": "workflow.submit.apply.v1",
@@ -1146,7 +1203,7 @@ def apply_flow_submit(
             "event_type": "workflow.submit.accepted",
             "workflow_invoke_status": "skipped_light",
             "next_action": (
-                "light topology: emit `prd.requested` to start the flow "
+                f"light topology: emit `{entry_trigger}` to start the flow "
                 "(kernel synthesizes task_map)"
             ),
             "event_ids": event_ids,
@@ -2404,15 +2461,42 @@ def _resolve_submit_task_id(task_id: str, *, request_id: str, kind: str) -> str:
     return f"{prefix}-{safe or 'REQUEST'}"
 
 
-def _resolve_submit_pattern_id(*, config_path: Path, pattern_id: str) -> str:
+def _resolve_submit_pattern_id(
+    *,
+    config_path: Path,
+    pattern_id: str,
+    kind: str = "",
+    workflow_tier: str = "",
+) -> str:
     value = str(pattern_id or "").strip()
     if value:
         return value
-    try:
-        config = load_config(config_path)
-    except ConfigError:
-        return ""
+    config = load_config(config_path)
     stages = list(getattr(getattr(config, "workflow", None), "stages", []) or [])
+    stage_ids = [str(getattr(stage, "id", "") or "").strip() for stage in stages]
+    stage_ids = [sid for sid in stage_ids if sid]
+    route = _workflow_kind_route(config, kind)
+    if route is not None:
+        tier = str(workflow_tier or getattr(route, "default_tier", "") or "").strip().lower()
+        tier_routes = dict(getattr(route, "tier_routes", {}) or {})
+        if tier and tier in tier_routes and str(tier_routes[tier] or "").strip():
+            return str(tier_routes[tier]).strip()
+        if str(getattr(route, "pattern_id", "") or "").strip():
+            return str(route.pattern_id).strip()
+        raise ConfigError(
+            f"workflow.kind_routes.{kind or 'unknown'} resolved but has no pattern_id"
+        )
+    metadata_kind = _normalize_request_kind(_flow_kind(config))
+    requested_kind = _normalize_request_kind(kind)
+    if stage_ids and metadata_kind and (
+        not requested_kind or requested_kind == metadata_kind
+    ):
+        return stage_ids[0]
+    if len(stage_ids) > 1:
+        raise ConfigError(
+            f"multiple workflow stages declared ({', '.join(stage_ids[:8])}); "
+            "submit requires workflow.kind_routes or explicit --pattern-id"
+        )
     for stage in stages:
         sid = str(getattr(stage, "id", "") or "").strip()
         if sid:
@@ -2420,11 +2504,30 @@ def _resolve_submit_pattern_id(*, config_path: Path, pattern_id: str) -> str:
     return ""
 
 
+def _workflow_kind_route(config: Any, kind: str) -> Any | None:
+    routes = dict(getattr(getattr(config, "workflow", None), "kind_routes", {}) or {})
+    requested = _normalize_request_kind(kind)
+    route = routes.get(requested)
+    seen: set[str] = set()
+    while route is not None and str(getattr(route, "alias", "") or "").strip():
+        if requested in seen:
+            raise ConfigError(f"workflow.kind_routes alias cycle at {requested!r}")
+        seen.add(requested)
+        requested = _normalize_request_kind(str(route.alias))
+        route = routes.get(requested)
+    return route
+
+
 def _submit_payload_to_workflow_invoke(payload: dict[str, Any]) -> dict[str, Any]:
     source_refs = payload.get("source_refs") if isinstance(payload.get("source_refs"), dict) else {}
     artifact_refs = payload.get("artifact_refs") if isinstance(payload.get("artifact_refs"), list) else []
     return {
         "task_id": str(payload.get("task_id") or ""),
+        "request_id": str(payload.get("request_id") or ""),
+        "run_id": str(payload.get("run_id") or payload.get("request_id") or ""),
+        "kind": str(payload.get("kind") or ""),
+        "request_kind": str(payload.get("request_kind") or payload.get("kind") or ""),
+        "workflow_tier": str(payload.get("workflow_tier") or ""),
         "pattern_id": str(payload.get("pattern_id") or ""),
         "requested_by": str(payload.get("requested_by") or "zf-cli"),
         "reason": str(payload.get("reason") or "workflow submit accepted"),

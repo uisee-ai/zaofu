@@ -435,7 +435,7 @@ def _attention_from_repeated_runtime_failures(
     for event in events:
         if event.type not in EXPECTED_NEGATIVE_EVENT_TYPES:
             continue
-        grouped.setdefault((event.type, _runtime_scope_key(event)), []).append(event)
+        grouped.setdefault((event.type, _runtime_scope_key(event, prefer_task=True)), []).append(event)
 
     rows: list[dict[str, Any]] = []
     for (event_type, scope), refs in grouped.items():
@@ -576,8 +576,12 @@ def _attention_from_missing_parity_scan_fanout(
     return rows
 
 
-def _runtime_scope_key(event: ZfEvent) -> str:
+def _runtime_scope_key(event: ZfEvent, *, prefer_task: bool = False) -> str:
     payload = event.payload if isinstance(event.payload, dict) else {}
+    if prefer_task:
+        task_id = str(event.task_id or payload.get("task_id") or "").strip()
+        if task_id:
+            return task_id
     for key in (
         "pdd_id",
         "target_ref",
@@ -669,9 +673,18 @@ def _attention_from_automation(automation: dict[str, Any]) -> list[dict[str, Any
                 if not isinstance(ref, dict):
                     continue
                 event_id = str(ref.get("event_id") or ref.get("request_event_id") or "")
+                # ZF-E2E-MINI-P3 (2026-07-11): fold by the content-based
+                # problem fingerprint carried by _event_ref — a per-event id
+                # here made every repeat of the same frozen-budget alert a
+                # "new" owner message (13 inbox rows in one freeze).
+                dedupe_key = (
+                    str(ref.get("problem_fingerprint") or "")
+                    or event_id
+                    or str(ref.get("proposal_id") or "")
+                )
                 rows.append(_attention_item(
                     source="automation",
-                    fingerprint=f"automation:{key}:{event_id or ref.get('proposal_id')}",
+                    fingerprint=f"automation:{key}:{dedupe_key}",
                     severity=severity,
                     title=str(ref.get("type") or key),
                     summary=str(ref.get("reason") or ref.get("summary") or ""),

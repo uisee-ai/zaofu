@@ -43,8 +43,12 @@ def test_refactor_adapter_plan_discovers_project_skills_and_hashes(tmp_path: Pat
     ))
 
     assert plan["schema_version"] == "skill.adapter.plan.v2"
-    assert plan["status"] == "WARN"
+    # 2026-07-08 controller 同步:zf-dynamic-artifact-gate 从 .codex 本地
+    # 幽灵入驻 canonical 后,recommended 全解析——旧断言把该缺失导致的
+    # WARN 钉为预期,现在名实一致应为 PASS。
+    assert plan["status"] == "PASS"
     assert plan["missing_required_skills"] == []
+    assert plan["missing_recommended_skills"] == []
     project_names = {
         item["name"] for item in plan["discovered_project_skills"]
     }
@@ -141,3 +145,29 @@ def test_standard_strictness_warns_without_project_adapter_skill(tmp_path: Path)
         and item["severity"] == "WARN"
         for item in plan["diagnostics"]
     )
+
+
+def test_yoke_role_context_wrappers_required_and_bundled(tmp_path: Path) -> None:
+    """2026-07-08:yoke 角色边界 wrapper 进 required 集与三流 stage bundles
+    (方法论技能经 frontmatter dependencies 闭包物化,不在 bundle 列名)。"""
+    for kind, impl_bundle, judge_bundle in (
+        ("prd", "impl", "judge-prd"),
+        ("issue", "fix", "judge-issue"),
+        ("refactor", "impl", "judge-refactor"),
+    ):
+        plan = build_project_adapter_skill_plan(AdapterSkillResolverInput(
+            kind=kind,
+            project_root=tmp_path,
+            project_id="demo",
+        ))
+        for wrapper in (
+            "zf-yoke-dev-worker-role-context",
+            "zf-yoke-test-evaluator-role-context",
+            "zf-yoke-quality-gate-role-context",
+        ):
+            assert wrapper in plan["required_skills"], (kind, wrapper)
+            assert wrapper not in plan["missing_required_skills"], (kind, wrapper)
+        bundles = plan["roleSkillBundles"]
+        assert "zf-yoke-dev-worker-role-context" in bundles[impl_bundle], kind
+        assert "zf-yoke-test-evaluator-role-context" in bundles["verify"], kind
+        assert "zf-yoke-quality-gate-role-context" in bundles[judge_bundle], kind

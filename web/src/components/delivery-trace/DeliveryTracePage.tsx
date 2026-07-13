@@ -6,25 +6,80 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ListTodo, PlayCircle, Radio, Route } from "lucide-react";
 
 import { getDeliveryTrace, getWorkflowGraph } from "../../api/client";
-import type { WorkflowGraph } from "../../api/types";
 import type {
   DeliveryFlowMetrics,
   DeliveryTrace,
   DeliveryTraceCycle,
   DeliveryTracePhase,
+  Feature,
   RecentEvent,
 } from "../../api/types";
 import type { PageId } from "../../app/sharedTypes";
 import { DeliveryOverview } from "./DeliveryOverview";
 import { DeliveryThickGraphView } from "./DeliveryThickGraphView";
-import { DeliveryTraceTabs, StageHeatmap } from "./DeliveryTraceTabs";
+import { DeliveryTraceTabs } from "./DeliveryTraceTabs";
 
 interface DeliveryTracePageProps {
   onOpenPage?: (page: PageId) => void;
   projectId: string;
-  featureIds: string[];
+  features: Feature[];
   liveEvents?: RecentEvent[];
   mode?: "overview" | "trace" | "graph";
+  totalUsd?: number;
+}
+
+// PM 快赢(2026-07-11):hero 需要一眼判决 + 时长 + 成本。
+function heroVerdict(trace: DeliveryTrace): { label: string; tone: "ok" | "err" | "info" | "warn" } {
+  const ship = trace.ship.status;
+  if (["blocked", "failed", "error"].includes(ship)) return { label: "🔴 Blocked", tone: "err" };
+  if (["done", "shipped"].includes(trace.status) && ["ready", "shipped"].includes(ship)) {
+    return { label: ship === "shipped" ? "✅ Shipped" : "✅ Ready to ship", tone: "ok" };
+  }
+  if (["in_progress", "running"].includes(trace.status)) return { label: "▶ Running", tone: "info" };
+  return { label: trace.status || "unknown", tone: "warn" };
+}
+
+function heroDuration(trace: DeliveryTrace): string {
+  const groups = trace.run_groups ?? [];
+  const starts = groups.map((g) => Date.parse(g.started_at || "")).filter(Number.isFinite);
+  const ends = groups.map((g) => Date.parse(g.ended_at || "")).filter(Number.isFinite);
+  if (!starts.length) return "";
+  const ms = (ends.length ? Math.max(...ends) : Date.now()) - Math.min(...starts);
+  if (!(ms > 0)) return "";
+  const minutes = Math.round(ms / 60000);
+  return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h${minutes % 60 ? `${minutes % 60}m` : ""}`;
+}
+
+// racing 评审:feature_list 为空时投影把每个 trace/fanout id 升格成伪
+// feature(fallback:trace-ref / fallback:fanout-ref,11 个 rmar-* 淹没
+// 1 个真 feature)。选择器按 source 分区:真 feature(task-contract /
+// feature-list)主 chip,升格 trace 收进溢出下拉并翻译成人话。
+const AUX_SOURCES = new Set(["fallback:trace-ref", "fallback:fanout-ref", "fallback:candidate-ref"]);
+
+// rmar-*(Run Manager 修复请求)连溢出都不进:选中它 = 空驾驶舱
+// (STATUS empty / SHIP unknown / 0 任务),Delivery 对它无话可说。
+// 取证家在 Observability Trace Index / Loop 的 Run recovery 环;
+// Overview 的 Latest Run 卡显示介入次数(operator 2026-07-11 决定)。
+function isRepairTrace(id: string): boolean {
+  return id.startsWith("rmar-");
+}
+
+function auxTraceGroup(id: string): string {
+  if (/^fanout-flow-/.test(id)) return "Fanout 子流";
+  if (id.startsWith("HIC-")) return "改进候选";
+  return "其他";
+}
+
+function auxTraceLabel(id: string): string {
+  const fanout = id.match(/^fanout-flow-(.+)-evt-[0-9a-f]+$/i);
+  if (fanout) return `fanout: ${fanout[1]}`;
+  return id;
+}
+
+function featureChipLabel(feature: Feature): string {
+  const title = (feature.title || "").trim();
+  if (!title || title === `Trace ${feature.id}`) return feature.id;
+  return title.length > 48 ? `${title.slice(0, 47)}…` : title;
 }
 
 function dtTone(status: string): "ok" | "warn" | "err" | "info" | "muted" {
@@ -84,7 +139,10 @@ function formatScoreDelta(delta: number | null | undefined): string {
 }
 
 function cycleName(cycle: DeliveryTraceCycle): string {
-  return String(cycle.phase || cycle.cycle_id || cycle.kind || "cycle");
+  // A4(racing 评审):phase 可能携带原始事件 id("rework:evt-72813b16a831"),
+  // 操作员不可读 —— 去掉 :evt-* 尾缀,完整值在 Raw tab。
+  const raw = String(cycle.phase || cycle.cycle_id || cycle.kind || "cycle");
+  return raw.replace(/:evt-[0-9a-f]+$/i, "");
 }
 
 // 2026-06-10 slice 1 — KPI rollup over flow_metrics.tasks (defensive: absent
@@ -120,22 +178,37 @@ function flowRollup(metrics: DeliveryFlowMetrics | undefined): {
   return { backedges, reworkRatio: total > 0 ? rework / total : null, hasData: true };
 }
 
-export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvents = [], mode = "overview" }: DeliveryTracePageProps) {
-  const [selected, setSelected] = useState<string>(featureIds[0] ?? "");
+export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents = [], mode = "overview", totalUsd = 0 }: DeliveryTracePageProps) {
+  const primaryFeatures = features.filter((f) => !AUX_SOURCES.has(f.source || ""));
+  const auxAll = features.filter((f) => AUX_SOURCES.has(f.source || ""));
+  const auxTraces = auxAll.filter((f) => !isRepairTrace(f.id));
+  const repairCount = auxAll.length - auxTraces.length;
+  const [selected, setSelected] = useState<string>(primaryFeatures[0]?.id ?? features[0]?.id ?? "");
+  const selectedFeature = features.find((f) => f.id === selected) ?? null;
+  const selectedIsAux = AUX_SOURCES.has(selectedFeature?.source || "");
   const [trace, setTrace] = useState<DeliveryTrace | null>(null);
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [cursorStatus, setCursorStatus] = useState("snapshot");
-  // I5a: read-only per-role health heatmap on the Graph page too.
-  const [graphAgg, setGraphAgg] = useState<WorkflowGraph | null>(null);
+  // hero Cost:delivery 页是 light snapshot(无 agent_live),totalUsd 缺时
+  // 回落 workflow_graph 聚合(per-role cost_usd 求和,与 Stage Heatmap 同源)。
+  const [fallbackUsd, setFallbackUsd] = useState(0);
   useEffect(() => {
-    if (mode !== "graph") return;
+    if (totalUsd > 0 || !projectId) return;
     let cancelled = false;
-    getWorkflowGraph(projectId || "")
-      .then((d) => { if (!cancelled) setGraphAgg(d); })
-      .catch(() => { if (!cancelled) setGraphAgg(null); });
+    getWorkflowGraph(projectId)
+      .then((g) => {
+        if (cancelled) return;
+        const sum = (g?.nodes ?? []).reduce((acc, node) => {
+          const cost = (node as { cost_usd?: number | null }).cost_usd;
+          return acc + (typeof cost === "number" ? cost : 0);
+        }, 0);
+        setFallbackUsd(sum);
+      })
+      .catch(() => { if (!cancelled) setFallbackUsd(0); });
     return () => { cancelled = true; };
-  }, [mode, projectId]);
+  }, [projectId, totalUsd]);
+  const heroUsd = totalUsd > 0 ? totalUsd : fallbackUsd;
   const lastEventIdRef = useRef("");
   const lastLiveSeqRef = useRef(0);
   const traceTaskIds = useMemo(() => new Set((trace?.execution_graph?.nodes ?? []).map((node) => node.task_id).filter(Boolean)), [trace]);
@@ -157,10 +230,10 @@ export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvent
   };
 
   useEffect(() => {
-    if (featureIds.length && !featureIds.includes(selected)) {
-      setSelected(featureIds[0]);
+    if (features.length && !features.some((f) => f.id === selected)) {
+      setSelected(primaryFeatures[0]?.id ?? features[0].id);
     }
-  }, [featureIds, selected]);
+  }, [features, primaryFeatures, selected]);
 
   useEffect(() => {
     if (!selected) {
@@ -227,25 +300,47 @@ export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvent
         </div>
       </div>
 
-      {featureIds.length === 0 ? (
+      {features.length === 0 ? (
         <DeliveryEmptyCockpit onOpenPage={onOpenPage} />
-      ) : (
-        <div className="tab-row compact-tabs" aria-label="Feature selector">
-          {featureIds.map((fid) => (
+      ) : (primaryFeatures.length >= 2 || selectedIsAux || auxTraces.length > 0) && (
+        <div className="tab-row compact-tabs dt-feature-selector" aria-label="Feature selector">
+          {/* 单 feature 且未落在辅助 trace 上时不渲染 chip(标题在 hero);
+              多 feature 或当前选中辅助 trace 时渲染,保证有路回真 feature。 */}
+          {(primaryFeatures.length >= 2 || selectedIsAux) && primaryFeatures.map((feature) => (
             <button
-              key={fid}
+              key={feature.id}
               type="button"
-              className={`tab-button ${fid === selected ? "active" : ""}`}
-              onClick={() => setSelected(fid)}
+              className={`tab-button ${feature.id === selected ? "active" : ""}`}
+              title={feature.id}
+              onClick={() => setSelected(feature.id)}
             >
-              {fid}
-              {fid === selected && trace?.feature_id === fid && trace.workflow_archetype ? (
-                <span className="badge dt-archetype-badge" title={`workflow archetype: ${trace.workflow_archetype}`}>
-                  [{trace.workflow_archetype}]
-                </span>
-              ) : null}
+              {featureChipLabel(feature)}
             </button>
           ))}
+          {auxTraces.length > 0 && (
+            <details className="dt-trace-overflow" data-testid="dt-trace-overflow">
+              <summary className={selectedIsAux ? "active" : ""}>
+                {selectedIsAux ? `${auxTraceLabel(selected)} · ` : ""}其他 trace ({auxTraces.length})
+              </summary>
+              <div className="dt-trace-overflow-panel">
+                {[...new Set(auxTraces.map((f) => auxTraceGroup(f.id)))].map((group) => (
+                  <div key={group}>
+                    <div className="dt-trace-overflow-group muted">{group}</div>
+                    {auxTraces.filter((f) => auxTraceGroup(f.id) === group).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        className={`dt-trace-overflow-item ${f.id === selected ? "active" : ""}`}
+                        onClick={() => setSelected(f.id)}
+                      >
+                        {auxTraceLabel(f.id)}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
         </div>
       )}
 
@@ -279,7 +374,13 @@ export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvent
                 三行标题压一行,trace id 改 copy chip 消除 "trace trace-" 结巴。 */}
             <div className="delivery-cockpit-title">
               <div className="dt-archetype-row">
-                <h3 title={trace.feature_id}>{trace.feature_id}</h3>
+                {/* 有真标题时显标题(F-db467ab6 → "core: vehicle/track/…"),
+                    id 留 tooltip;fallback 伪 feature 仍显 id。 */}
+                <h3 title={trace.feature_id}>
+                  {selectedFeature && featureChipLabel(selectedFeature) !== selectedFeature.id
+                    ? featureChipLabel(selectedFeature)
+                    : trace.feature_id}
+                </h3>
                 {trace.workflow_archetype && (
                   <span className="badge dt-archetype-badge" data-testid="dt-archetype" title={`workflow archetype: ${trace.workflow_archetype}`}>
                     [{trace.workflow_archetype}]
@@ -296,22 +397,41 @@ export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvent
               </div>
             </div>
             <div className="delivery-cockpit-metrics" aria-label="Delivery status summary">
+              {(() => { const v = heroVerdict(trace); return (
+                <div className={`dt-verdict tone-${v.tone}`} data-testid="dt-verdict">{v.label}</div>
+              ); })()}
               <div className="delivery-cockpit-metric">
                 <span>Status</span>
                 {metricValue(trace.status, dtTone(trace.status))}
               </div>
               <div className="delivery-cockpit-metric">
-                <span>Cycle</span>
+                <span>{["done", "shipped"].includes(trace.status) ? "Last cycle" : "Cycle"}</span>
                 <strong>{cycle ? cycleName(cycle) : (totalCycles ? `${totalCycles} cycles` : "trace")}</strong>
               </div>
-              <div className="delivery-cockpit-metric">
-                <span>Gate</span>
-                {metricValue(activeGate, dtTone(activeGate))}
-              </div>
+              {/* Gate 与 Ship 同值时只渲染 Ship(GATE ship:blocked + SHIP blocked
+                  一屏两报,2026-07-11 Playwright 评审;同数据不二渲染)。 */}
+              {activeGate !== `ship:${trace.ship.status}` && (
+                <div className="delivery-cockpit-metric">
+                  <span>Gate</span>
+                  {metricValue(activeGate, dtTone(activeGate))}
+                </div>
+              )}
               <div className="delivery-cockpit-metric">
                 <span>Ship</span>
                 {metricValue(trace.ship.status, dtTone(trace.ship.status))}
               </div>
+              {heroDuration(trace) && (
+                <div className="delivery-cockpit-metric" data-testid="dt-duration">
+                  <span>Duration</span>
+                  <strong>{heroDuration(trace)}</strong>
+                </div>
+              )}
+              {heroUsd > 0 && (
+                <div className="delivery-cockpit-metric" data-testid="dt-cost">
+                  <span title="project run cost (usage_by_role / workflow_graph total)">Cost</span>
+                  <strong>${heroUsd.toFixed(2)}</strong>
+                </div>
+              )}
               <div className="delivery-cockpit-metric">
                 <span title="operator-actionable (err) vs developer-info (info)">Drift</span>
                 {metricValue(driftLabel, driftTone)}
@@ -358,15 +478,28 @@ export function DeliveryTracePage({ onOpenPage, projectId, featureIds, liveEvent
           </section>
 
           {/* 2026-06-12 用户反馈:原 dt-summary 条整体删除 —— 左三 chip 复读
-              cockpit-metrics 的 Status/Ship/Drift,右四计数在 Run Graph 组节点
-              摘要与 Tasks tab 各有更好的家;同数据不二渲染。 */}
+              cockpit-metrics 的 Status/Ship/Drift,同数据不二渲染。 */}
+          {/* 2026-07-11 operator 决定(A 案):三导航项收敛为页内 mode tab。
+              tab 切换走 onOpenPage 保留 page id 路由与深链。 */}
+          <div className="tab-row compact-tabs" aria-label="Delivery mode" data-testid="dt-mode-tabs">
+            {([["delivery", "overview", "Overview"], ["delivery-trace", "trace", "Trace"], ["delivery-graph", "graph", "Graph"]] as const).map(([pid, m, label]) => (
+              <button
+                key={m}
+                type="button"
+                className={`tab-button ${mode === m ? "active" : ""}`}
+                data-testid={`dt-mode-tab-${m}`}
+                onClick={() => onOpenPage?.(pid)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {mode === "overview" ? (
-            <DeliveryOverview onOpenPage={onOpenPage} trace={trace} />
+            <DeliveryOverview trace={trace} repairCount={repairCount} onOpenPage={onOpenPage} />
           ) : mode === "graph" ? (
-            <>
-              <StageHeatmap graph={graphAgg} />
-              <DeliveryThickGraphView onOpenPage={onOpenPage} trace={trace} />
-            </>
+            // I5a 的 Graph 页只读 StageHeatmap 副本已删:tab 化后与 Trace tab
+            // 的交互版一键之隔,双渲染不再必要(2026-07-11 Playwright 评审)。
+            <DeliveryThickGraphView onOpenPage={onOpenPage} trace={trace} />
           ) : (
             <DeliveryTraceTabs projectId={projectId} trace={trace} />
           )}

@@ -72,9 +72,7 @@ export function BoardWorkbench({
   assigneeFilter,
   filteredTasks,
   mutationEnabled,
-  newTaskDraftDirty,
   onMoveTaskStatus,
-  onNewTask,
   onOpenFanout,
   onOpenTask,
   onSaveToken,
@@ -108,9 +106,7 @@ export function BoardWorkbench({
   assigneeFilter: string;
   filteredTasks: Task[];
   mutationEnabled: boolean;
-  newTaskDraftDirty: boolean;
   onMoveTaskStatus: (taskId: string, status: BoardColumnId) => void;
-  onNewTask: () => void;
   onOpenFanout: (fanoutId: string) => void;
   onOpenTask: (taskId: string) => void;
   onSaveToken: (token: string) => void;
@@ -238,11 +234,6 @@ export function BoardWorkbench({
         <div>
           <h2>Tasks</h2>
           <span className="muted">{filteredTasks.length} visible tasks</span>
-        </div>
-        <div className="task-primary-actions">
-          <button className="icon-button primary" type="button" onClick={onNewTask}>
-            New Task{newTaskDraftDirty ? " *" : ""}
-          </button>
         </div>
       </div>
       <div className="task-toolbar">

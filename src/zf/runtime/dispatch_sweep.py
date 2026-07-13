@@ -37,6 +37,23 @@ from zf.core.events.model import ZfEvent
 
 
 _DEFAULT_SILENT_STALL_THRESHOLD_S = 30.0
+_DEFAULT_DEAD_DISPATCH_THRESHOLD_S = 180.0
+
+
+@dataclass(frozen=True)
+class DeadDispatchSweepResult:
+    """Outcome of one dead-dispatch sweep pass (ZF-E2E-RACING-P1).
+
+    dead_dispatches: list of (task_id, assignee, dispatch_id,
+    silent_age_seconds) for in-flight tasks whose assignee shows zero
+    event activity for the threshold window — task.dispatched exists but
+    the worker session died (process restart / pane reset), the one shape
+    sweep_silent_dispatches cannot see.
+    """
+
+    dead_dispatches: list[tuple[str, str, str, float]] = field(
+        default_factory=list
+    )
 
 
 @dataclass(frozen=True)
@@ -176,3 +193,84 @@ def sweep_silent_dispatches(
 
     silent_stalls.sort()
     return DispatchSweepResult(silent_stalls=silent_stalls)
+
+
+def sweep_dead_dispatches(
+    *,
+    inflight: Iterable[tuple[str, str, str]],
+    events: Iterable[ZfEvent],
+    now: datetime | None = None,
+    dead_threshold_s: float = _DEFAULT_DEAD_DISPATCH_THRESHOLD_S,
+    progressed_task_ids: set[str] | None = None,
+) -> DeadDispatchSweepResult:
+    """ZF-E2E-RACING-P1 (2026-07-11): find in-flight dispatches whose worker
+    went silent — the shape sweep_silent_dispatches cannot see.
+
+    inflight: (task_id, assignee, active_dispatch_id) triples from the task
+    store (status=in_progress with a non-empty active_dispatch_id). For each,
+    the latest event either referencing the task or emitted by the assignee
+    actor (instance or its role prefix) counts as life. No life for
+    dead_threshold_s → dead. If the pair never appears in the window, age is
+    floored at the window's earliest event, and short windows (< threshold)
+    are skipped to avoid false positives.
+
+    Racing e2e evidence: review dispatched 06:16:39, runtime restart 06:23
+    reset the pane; drift refresh spun no-op every 30s and nothing redrove
+    the dispatch until an operator re-assign at 06:29.
+    """
+    sweep_now = now or datetime.now(timezone.utc)
+
+    earliest_ts: datetime | None = None
+    last_task_activity: dict[str, datetime] = {}
+    last_actor_activity: dict[str, datetime] = {}
+    for ev in events:
+        ts = _parse_ts(ev.ts)
+        if ts is None:
+            continue
+        if earliest_ts is None or ts < earliest_ts:
+            earliest_ts = ts
+        task_id = (ev.task_id or "").strip()
+        if task_id:
+            prev = last_task_activity.get(task_id)
+            if prev is None or ts > prev:
+                last_task_activity[task_id] = ts
+        actor = (ev.actor or "").strip()
+        if actor:
+            prev = last_actor_activity.get(actor)
+            if prev is None or ts > prev:
+                last_actor_activity[actor] = ts
+
+    dead: list[tuple[str, str, str, float]] = []
+    progressed = progressed_task_ids or set()
+    for task_id, assignee, dispatch_id in inflight:
+        if not task_id or not assignee or not dispatch_id:
+            continue
+        # PRD e2e calibration (2026-07-11): fanout-lane tasks legitimately
+        # stay in-flight AFTER completing their build while the flow waits
+        # for verify/judge. The wedge shape is dispatched-but-NEVER-
+        # progressed; completion evidence excludes a task from dead
+        # judgment (false stalls here fed RM workflow_resume, which
+        # re-reworked three healthy, candidate-assembled tasks).
+        if task_id in progressed:
+            continue
+        candidates = [last_task_activity.get(task_id)]
+        for actor, ts in last_actor_activity.items():
+            if actor == assignee or actor.startswith(f"{assignee}-"):
+                candidates.append(ts)
+        alive = [ts for ts in candidates if ts is not None]
+        if alive:
+            last_seen = max(alive)
+        elif earliest_ts is not None:
+            # Pair absent from the window entirely: only judge when the
+            # window itself spans the threshold.
+            if (sweep_now - earliest_ts).total_seconds() < dead_threshold_s:
+                continue
+            last_seen = earliest_ts
+        else:
+            continue
+        age = (sweep_now - last_seen).total_seconds()
+        if age >= dead_threshold_s:
+            dead.append((task_id, assignee, dispatch_id, age))
+
+    dead.sort()
+    return DeadDispatchSweepResult(dead_dispatches=dead)

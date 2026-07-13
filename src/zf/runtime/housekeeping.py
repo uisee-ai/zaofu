@@ -296,6 +296,87 @@ def apply_task_dispatched_heartbeat_seed(
         pass
 
 
+# Universal worker-activity liveness (2026-07-09). Backend-agnostic:
+# ``agent.usage`` is emitted by both codex and claude-code; ``codex.hook.*`` /
+# ``claude.hook.*`` (prefix, not enumerated — future hook types auto-covered)
+# are per-tool-call activity. Any of these proves the worker is alive.
+_ACTIVITY_LIVENESS_MIN_GAP_S = 60.0
+_ACTIVITY_LIVENESS_INFRA_ACTORS = frozenset({
+    "zf-cli", "run-manager", "zf-supervisor", "zf-runtime",
+    "zf-autoresearch", "zf-stall-redispatch", "operator", "",
+})
+
+
+def _is_worker_activity_event(event_type: str) -> bool:
+    return (
+        event_type == "agent.usage"
+        or event_type.startswith("codex.hook.")
+        or event_type.startswith("claude.hook.")
+    )
+
+
+def apply_worker_activity_heartbeat(
+    registry,  # RoleSessionRegistry — imported lazily to avoid circular dep
+    event: ZfEvent,
+) -> None:
+    """Refresh worker liveness from OBSERVED activity, not just voluntary
+    ``worker.heartbeat``.
+
+    A worker mid-long-turn (esp. gpt-5.5 xhigh, minutes per turn) emits many
+    tool-call hooks + ``agent.usage`` but may not self-heartbeat. The sweep only
+    refreshed ``last_heartbeat_at`` on ``worker.heartbeat`` / dispatch, so a
+    demonstrably-active worker looked silent past ``stuck_threshold`` and got
+    respawned mid-work (2026-07-09 E2E: xhigh scan worker with ~1000 activity
+    events respawned 11x → ``prd.scan.failed:timeout`` → cascade). Activity is
+    kernel-observed truth of liveness; refresh from it so an active worker is
+    never falsely stuck, while a genuinely-silent (dead/hung) worker with NO
+    activity still trips the sweep.
+
+    Universal module: backend-agnostic (codex + claude hooks + agent.usage) and
+    workflow-agnostic (all stuck/timeout paths read ``last_heartbeat_at``, so
+    prd / issue / light / refactor all benefit). Throttled to at most one
+    registry write per ``_ACTIVITY_LIVENESS_MIN_GAP_S`` per instance to bound
+    ``role_sessions.yaml`` churn under high-frequency hook traffic.
+    """
+    if not _is_worker_activity_event(event.type):
+        return
+    instance_id = (event.actor or "").strip()
+    if not instance_id or instance_id in _ACTIVITY_LIVENESS_INFRA_ACTORS:
+        return
+    try:
+        kernel_ts, payload = registry.get_last_heartbeat(instance_id)
+    except Exception:
+        return
+    # Only refresh a dispatched, busy/blocked worker — the states the stuck
+    # sweep gates on. Never invent liveness for an undispatched or idle
+    # instance (idle silence is expected; a missing seed means no real work).
+    if not kernel_ts:
+        return
+    state = ""
+    if isinstance(payload, dict):
+        state = str(payload.get("state") or "").strip().lower()
+    if state not in {"busy", "blocked"}:
+        return
+    from datetime import datetime, timezone
+    try:
+        stored = datetime.fromisoformat(str(kernel_ts).replace("Z", "+00:00"))
+        if stored.tzinfo is None:
+            stored = stored.replace(tzinfo=timezone.utc)
+        gap = (datetime.now(timezone.utc) - stored).total_seconds()
+        if gap < _ACTIVITY_LIVENESS_MIN_GAP_S:
+            return  # throttle: liveness already fresh
+    except Exception:
+        pass  # unparseable stored ts → refresh anyway (fail open to liveness)
+    refreshed = dict(payload) if isinstance(payload, dict) else {}
+    refreshed["instance_id"] = instance_id
+    refreshed["last_action_ts"] = event.ts or refreshed.get("last_action_ts") or ""
+    refreshed["source"] = "activity_liveness"
+    try:
+        registry.record_heartbeat(instance_id, refreshed)
+    except Exception:
+        pass
+
+
 def apply_worker_state_changed_event(
     registry,  # RoleSessionRegistry — imported lazily to avoid circular dep
     event: ZfEvent,
@@ -396,27 +477,34 @@ _REWORK_FAILURE_TYPES = (
 
 
 def apply_circuit_breaker_failure(
-    event: ZfEvent, store_path,
+    event: ZfEvent, store_path, *, role_name: str | None = None,
 ) -> None:
-    """LH-4.T3: register a failure against the (role_from_event, task)
-    circuit breaker. Called alongside apply_rework_failure_event so the
-    breaker + rework counter stay consistent.
+    """LH-4.T3: register a failure against the (role, task) circuit breaker.
+    Called alongside apply_rework_failure_event so the breaker + rework counter
+    stay consistent.
 
-    The breaker key is (role_name, task_id). Role is inferred from the
-    event actor (e.g. review.rejected actor=review → role=review).
+    P1-7 (2026-07-09): the breaker key MUST be the role that will be
+    re-dispatched for rework (the producer whose work failed), because the
+    dispatch-time check (`_circuit_for`) keys on the dispatched role. The old
+    code keyed on `event.actor` — the *gate* that emitted the failure (e.g.
+    review.rejected actor=review) — so failures were recorded against "review"
+    while the dispatch loop checked "dev": the breaker never tripped on the
+    productive review→dev rework loop. Callers with config must pass the
+    resolved role_name; the event.actor fallback stays only for callers that
+    cannot resolve the rework target.
     """
     if event.type not in _REWORK_FAILURE_TYPES or not event.task_id:
         return
     from zf.core.errors.circuit_breaker import CircuitBreaker
 
-    role_name = event.actor or "unknown"
+    resolved = role_name or event.actor or "unknown"
     # Strip the -N suffix for instance_id like "dev-1".
-    if "-" in role_name:
-        prefix, suffix = role_name.rsplit("-", 1)
+    if "-" in resolved:
+        prefix, suffix = resolved.rsplit("-", 1)
         if suffix.isdigit():
-            role_name = prefix
+            resolved = prefix
     breaker = CircuitBreaker(
-        key=(role_name, event.task_id),
+        key=(resolved, event.task_id),
         max_failures=5,
         window_seconds=1800.0,
         store_path=store_path,

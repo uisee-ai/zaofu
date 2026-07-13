@@ -25,6 +25,7 @@ class SkillMetadata:
     roles: tuple[str, ...] = ()
     backends: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    dependencies: tuple[str, ...] = ()
     auto_inject: bool = False
     load_on_demand: bool = True
     warnings: tuple[str, ...] = ()
@@ -50,6 +51,8 @@ class SkillLockEntry:
     roles: tuple[str, ...] = field(default_factory=tuple)
     backends: tuple[str, ...] = field(default_factory=tuple)
     tags: tuple[str, ...] = field(default_factory=tuple)
+    dependencies: tuple[str, ...] = field(default_factory=tuple)
+    dependency_of: tuple[str, ...] = field(default_factory=tuple)
     auto_inject: bool = False
     load_on_demand: bool = True
     status: str = "resolved"
@@ -100,6 +103,7 @@ def resolve_skill(
     name: str,
     config: ZfConfig | None = None,
 ) -> SkillResolution:
+    name = _normalize_dependency_name(name)
     candidates = find_skill_candidates(
         project_root=project_root,
         state_dir=state_dir,
@@ -130,6 +134,7 @@ def find_skill_candidates(
     matches the resolver's contract and avoids accidentally reactivating
     archived or nested upstream skill copies.
     """
+    name = _normalize_dependency_name(name)
     candidate_paths: list[tuple[str, Path]] = [
         ("state", state_dir / "skills" / name / "SKILL.md"),
         ("project", project_root / "skills" / name / "SKILL.md"),
@@ -143,10 +148,15 @@ def find_skill_candidates(
                 source.name,
                 root / name / "SKILL.md",
             ))
-    candidate_paths.append((
-        "zaofu",
-        Path(__file__).resolve().parents[4] / "skills" / name / "SKILL.md",
-    ))
+    candidates = _existing_skill_candidates(candidate_paths)
+    if candidates:
+        return tuple(candidates)
+    return tuple(_existing_skill_candidates(_repo_local_yoke_candidates(project_root, name)))
+
+
+def _existing_skill_candidates(
+    candidate_paths: list[tuple[str, Path]],
+) -> list[SkillCandidate]:
     candidates: list[SkillCandidate] = []
     seen: set[Path] = set()
     for source_name, path in candidate_paths:
@@ -156,7 +166,37 @@ def find_skill_candidates(
                 continue
             seen.add(resolved)
             candidates.append(SkillCandidate(source_name=source_name, path=path))
-    return tuple(candidates)
+    return candidates
+
+
+def _repo_local_yoke_candidates(project_root: Path, name: str) -> list[tuple[str, Path]]:
+    """Return explicit yoke overlay candidates for configured/dependent skills.
+
+    Yoke is not a second control plane: these candidates are considered only
+    when a role explicitly enables a yoke skill name or a configured skill
+    declares it as a dependency. They let role workdirs receive the companion
+    method skills referenced by ``zf-yoke-*`` context skills without requiring
+    every project zf.yaml to declare another absolute skill source.
+    """
+    normalized = _normalize_dependency_name(name)
+    roots = [
+        project_root / "yoke",
+        _zaofu_repo_root() / "yoke",
+    ]
+    candidates: list[tuple[str, Path]] = []
+    seen: set[Path] = set()
+    for root in roots:
+        path = root / normalized / "SKILL.md"
+        resolved = path.resolve(strict=False)
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        candidates.append(("yoke", path))
+    return candidates
+
+
+def _zaofu_repo_root() -> Path:
+    return Path(__file__).resolve().parents[4]
 
 
 def read_skill_metadata(path: Path, *, expected_name: str) -> SkillMetadata:
@@ -187,6 +227,7 @@ def read_skill_metadata(path: Path, *, expected_name: str) -> SkillMetadata:
         roles=_string_tuple(frontmatter.get("roles") or frontmatter.get("hats")),
         backends=_string_tuple(frontmatter.get("backends")),
         tags=_string_tuple(frontmatter.get("tags")),
+        dependencies=_dependency_tuple(frontmatter),
         auto_inject=_bool_value(frontmatter.get("auto_inject"), default=False),
         load_on_demand=_bool_value(frontmatter.get("load_on_demand"), default=True),
         warnings=tuple(warnings),
@@ -204,7 +245,12 @@ def build_skill_lock_entries(
     materialized_paths: dict[str, Path] | None = None,
 ) -> list[SkillLockEntry]:
     entries: list[SkillLockEntry] = []
-    for skill in role.skills:
+    for skill, dependency_of in _expanded_role_skill_requests(
+        project_root=project_root,
+        state_dir=state_dir,
+        role=role,
+        config=config,
+    ):
         resolution = resolve_skill(
             project_root=project_root,
             state_dir=state_dir,
@@ -223,6 +269,7 @@ def build_skill_lock_entries(
                 source=None,
                 sha256=None,
                 source_name=None,
+                dependency_of=tuple(dependency_of),
                 status="missing",
             ))
             continue
@@ -254,6 +301,8 @@ def build_skill_lock_entries(
             roles=metadata.roles,
             backends=metadata.backends,
             tags=metadata.tags,
+            dependencies=metadata.dependencies,
+            dependency_of=tuple(dependency_of),
             auto_inject=metadata.auto_inject,
             load_on_demand=metadata.load_on_demand,
             status=status,
@@ -301,39 +350,129 @@ def validate_skill_sources(
     state_dir = project_root / config.project.state_dir
     warnings: list[str] = []
     for role in config.roles:
+        checked: set[str] = set()
         for skill in role.skills:
-            resolution = resolve_skill(
+            _validate_skill_recursive(
+                warnings=warnings,
+                checked=checked,
+                config=config,
                 project_root=project_root,
                 state_dir=state_dir,
-                name=skill,
-                config=config,
+                role=role,
+                skill=skill,
+                dependency_of=(),
             )
-            source = resolution.path
-            if source is None:
-                warnings.append(
-                    f"role {role.instance_id!r} enables missing skill {skill!r}"
-                )
-                continue
-            collision_candidates = _format_collision_candidates(
-                resolution=resolution,
-                project_root=project_root,
-            )
-            if collision_candidates:
-                warnings.append(
-                    f"role {role.instance_id!r} skill {skill!r} has multiple "
-                    f"candidates; resolved source {resolution.source_name!r}; "
-                    f"candidates: {', '.join(collision_candidates)}"
-                )
-            metadata = read_skill_metadata(source, expected_name=skill)
-            for warning in metadata.warnings:
-                warnings.append(
-                    f"role {role.instance_id!r} skill {skill!r}: {warning}"
-                )
-            for warning in _skill_routing_warnings(metadata=metadata, role=role):
-                warnings.append(
-                    f"role {role.instance_id!r} skill {skill!r}: {warning}"
-                )
     return warnings
+
+
+def _validate_skill_recursive(
+    *,
+    warnings: list[str],
+    checked: set[str],
+    config: ZfConfig,
+    project_root: Path,
+    state_dir: Path,
+    role: RoleConfig,
+    skill: str,
+    dependency_of: tuple[str, ...],
+) -> None:
+    skill = _normalize_dependency_name(skill)
+    if skill in checked:
+        return
+    checked.add(skill)
+    resolution = resolve_skill(
+        project_root=project_root,
+        state_dir=state_dir,
+        name=skill,
+        config=config,
+    )
+    source = resolution.path
+    prefix = (
+        f"role {role.instance_id!r} dependency {skill!r} "
+        f"(required by {', '.join(dependency_of)!r})"
+        if dependency_of
+        else f"role {role.instance_id!r} skill {skill!r}"
+    )
+    if source is None:
+        if dependency_of:
+            warnings.append(
+                f"role {role.instance_id!r} enables missing dependency {skill!r} "
+                f"required by {', '.join(dependency_of)}"
+            )
+        else:
+            warnings.append(
+                f"role {role.instance_id!r} enables missing skill {skill!r}"
+            )
+        return
+    collision_candidates = _format_collision_candidates(
+        resolution=resolution,
+        project_root=project_root,
+    )
+    if collision_candidates:
+        warnings.append(
+            f"{prefix} has multiple candidates; resolved source "
+            f"{resolution.source_name!r}; candidates: {', '.join(collision_candidates)}"
+        )
+    metadata = read_skill_metadata(source, expected_name=skill)
+    for warning in metadata.warnings:
+        warnings.append(f"{prefix}: {warning}")
+    for warning in _skill_routing_warnings(metadata=metadata, role=role):
+        warnings.append(f"{prefix}: {warning}")
+    for dependency in metadata.dependencies:
+        _validate_skill_recursive(
+            warnings=warnings,
+            checked=checked,
+            config=config,
+            project_root=project_root,
+            state_dir=state_dir,
+            role=role,
+            skill=dependency,
+            dependency_of=(*dependency_of, skill),
+        )
+
+
+def _expanded_role_skill_requests(
+    *,
+    project_root: Path,
+    state_dir: Path,
+    role: RoleConfig,
+    config: ZfConfig | None,
+) -> list[tuple[str, tuple[str, ...]]]:
+    """Return explicit role skills plus declared companion dependencies.
+
+    The first tuple item is the skill name to resolve. The second is the chain
+    of parent skills that made it visible. Dependencies are visible to the
+    worker because an explicitly enabled skill asked for them; they do not make
+    all repo skills globally available.
+    """
+    requests: list[tuple[str, tuple[str, ...]]] = []
+    queue: list[tuple[str, tuple[str, ...]]] = [
+        (_normalize_dependency_name(skill), ())
+        for skill in role.skills
+        if str(skill).strip()
+    ]
+    seen: set[str] = set()
+    while queue:
+        skill, dependency_of = queue.pop(0)
+        if skill in seen:
+            continue
+        seen.add(skill)
+        requests.append((skill, dependency_of))
+        resolution = resolve_skill(
+            project_root=project_root,
+            state_dir=state_dir,
+            name=skill,
+            config=config,
+        )
+        if resolution.path is None:
+            continue
+        metadata = read_skill_metadata(resolution.path, expected_name=skill)
+        for dependency in metadata.dependencies:
+            queue.append((
+                _normalize_dependency_name(dependency),
+                (*dependency_of, skill),
+            ))
+    return requests
 
 
 def instruction_entries_for_role(
@@ -404,6 +543,35 @@ def _read_frontmatter(text: str) -> dict | None:
     if not isinstance(data, dict):
         return {}
     return data
+
+
+def _dependency_tuple(frontmatter: dict) -> tuple[str, ...]:
+    raw = (
+        frontmatter.get("dependencies")
+        or frontmatter.get("depends_on")
+        or frontmatter.get("companion_skills")
+        or frontmatter.get("requires")
+    )
+    names = []
+    seen: set[str] = set()
+    for item in _string_tuple(raw):
+        name = _normalize_dependency_name(item)
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return tuple(names)
+
+
+def _normalize_dependency_name(value: str) -> str:
+    text = str(value or "").strip()
+    if text.endswith("/SKILL.md"):
+        text = str(Path(text).parent)
+    if text.startswith("skills/"):
+        text = text[len("skills/"):]
+    if text.startswith("yoke/"):
+        text = text[len("yoke/"):]
+    return Path(text).name if "/" in text else text
 
 
 def _skill_routing_warnings(

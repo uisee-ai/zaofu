@@ -70,6 +70,7 @@ _GLOBAL_FAILURE_EVENTS = {
     "verify.failed",
     "judge.failed",
     "zaofu.refactor.plan.blocked",
+    "zaofu.refactor.scan.blocked",
 }
 _PLAN_FAILURE_EVENTS = {
     "plan.rejected",
@@ -78,6 +79,7 @@ _PLAN_FAILURE_EVENTS = {
     "refactor.plan.blocked",
     "task.contract.invalid",
     "zaofu.refactor.plan.blocked",
+    "zaofu.refactor.scan.blocked",
 }
 _PLAN_FAILURE_SUPERSEDING_EVENTS = {
     "plan.ready",

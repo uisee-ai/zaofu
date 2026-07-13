@@ -4,7 +4,7 @@ Rules:
   - review.rejected / test.failed / verify.failed / judge.failed increment
     task.retry_count
   - When retry_count > role.max_rework_attempts, dispatch is refused and
-    task.rework.capped + human.escalate are emitted instead.
+    task.rework.capped is emitted for Run Manager-owned recovery.
   - Default max_rework_attempts is 3; per-role override via RoleConfig.
 
 Covers orchestrator_reactor (Layer 1 legacy rework path) and
@@ -145,7 +145,7 @@ class TestCapBlocksRework:
         self, state_dir, legacy_config, transport
     ):
         """Task already at retry_count=3 (max default): the 4th rework
-        attempt must be refused and produce task.rework.capped + escalate."""
+        attempt must be refused and produce a Run Manager-owned cap fact."""
         store = TaskStore(state_dir / "kanban.json")
         store.add(Task(
             id="T1", title="x", status="review",
@@ -162,8 +162,8 @@ class TestCapBlocksRework:
         capped = [e for e in events if e.type == "task.rework.capped"]
         assert len(capped) == 1
         assert capped[0].task_id == "T1"
-        # Human must be in the loop
-        assert any(e.type == "human.escalate" for e in events)
+        assert capped[0].payload["recovery_owner"] == "run_manager"
+        assert not any(e.type == "human.escalate" for e in events)
 
     def test_per_role_override_allows_more_attempts(self, state_dir, transport):
         """dev role with max_rework_attempts=5: still allowed at
@@ -212,6 +212,8 @@ class TestCapBlocksRework:
         assert capped.payload.get("retry_count") == 4
         assert capped.payload.get("max_attempts") == 3
         assert "bad code" in (capped.payload.get("last_reason") or "")
+        assert capped.payload.get("failure_count") == 1
+        assert capped.payload.get("semantic_triage_required") is False
 
 
 class TestWireUpProof:

@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,6 +76,126 @@ def _failure_signature(event: ZfEvent) -> str:
     spec = EVENT_PROBLEM_SPECS.get(event.type)
     base = spec.failure_class if spec else event.type.replace(".", "_")
     return base
+
+
+def failure_fingerprint(event: ZfEvent) -> str:
+    """Return the stable semantic fingerprint for one task failure.
+
+    Producers may provide an explicit fingerprint.  Older events do not, so
+    the compatibility path hashes only stable failure facts and deliberately
+    excludes timestamps, attempt ids, refs, and other replay-varying fields.
+    """
+
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    explicit = str(
+        payload.get("failure_fingerprint")
+        or payload.get("fingerprint")
+        or ""
+    ).strip()
+    if explicit:
+        return explicit
+    details = _stable_failure_details(
+        payload.get("findings")
+        or payload.get("failed_d")
+        or payload.get("errors")
+        or []
+    )
+    stable = {
+        "event_type": event.type,
+        "stage": str(payload.get("stage_id") or payload.get("stage") or ""),
+        "reason": str(
+            payload.get("reason")
+            or payload.get("summary")
+            or payload.get("error")
+            or ""
+        ).strip().lower(),
+        "details": details,
+    }
+    raw = json.dumps(stable, ensure_ascii=False, sort_keys=True, default=str)
+    return "task-failure-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def _stable_failure_details(value: Any) -> Any:
+    if isinstance(value, dict):
+        semantic_keys = {
+            "actual",
+            "category",
+            "code",
+            "expected",
+            "failure_class",
+            "message",
+            "reason",
+            "severity",
+            "summary",
+            "type",
+        }
+        return {
+            str(key): _stable_failure_details(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            if str(key) in semantic_keys
+        }
+    if isinstance(value, (list, tuple, set)):
+        normalized = [_stable_failure_details(item) for item in value]
+        return sorted(
+            normalized,
+            key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True),
+        )
+    return value
+
+
+def counted_failure_events(
+    events: list[ZfEvent],
+    task_id: str,
+    *,
+    fingerprint: str | None = None,
+) -> list[ZfEvent]:
+    """Return valid rework failures after replay/supersede filtering."""
+
+    superseded_fanouts: set[str] = set()
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type == "fanout.cancelled" and "supersede" in str(
+            payload.get("reason") or ""
+        ):
+            fanout_id = str(payload.get("fanout_id") or "")
+            if fanout_id:
+                superseded_fanouts.add(fanout_id)
+        elif event.type == "fanout.child.stale_completion":
+            fanout_id = str(payload.get("fanout_id") or "")
+            if fanout_id:
+                superseded_fanouts.add(fanout_id)
+
+    out: list[ZfEvent] = []
+    seen: set[tuple[str, str, str]] = set()
+    seen_event_ids: set[str] = set()
+    for event in events:
+        if event.type not in _REWORK_FAILURE_TYPES:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.id and event.id in seen_event_ids:
+            continue
+        if event.id:
+            seen_event_ids.add(event.id)
+        if bool(payload.get("replay") or payload.get("stale")):
+            continue
+        if str(payload.get("superseded_by") or "").strip():
+            continue
+        event_task = str(event.task_id or payload.get("task_id") or "")
+        if event_task != task_id:
+            continue
+        current_fingerprint = failure_fingerprint(event)
+        if fingerprint is not None and current_fingerprint != fingerprint:
+            continue
+        fanout_id = str(payload.get("fanout_id") or "")
+        if fanout_id and fanout_id in superseded_fanouts:
+            continue
+        replay_key = (fanout_id, event.type, current_fingerprint)
+        if fanout_id and replay_key in seen:
+            continue
+        if fanout_id:
+            seen.add(replay_key)
+        out.append(event)
+    return out
 
 
 def non_retryable_reason(event: ZfEvent) -> str | None:

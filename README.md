@@ -5,19 +5,20 @@
 [中文说明](README.zh-CN.md)
 
 ZaoFu turns AI coding agents from isolated chat sessions into a governed
-delivery team. It does not replace Claude Code, Codex, OpenClaw, or other
-coding agents. It gives them roles, task contracts, runtime context, evidence
-requirements, recovery paths, and an event-sourced control plane.
+delivery team. It does not replace Claude Code, Codex, or other provider CLIs.
+It gives them roles, task contracts, runtime context, evidence requirements,
+recovery paths, and an event-sourced control plane.
 
 ```text
 普通 coding agent:
   prompt -> agent writes code -> agent says done
 
 ZaoFu:
-  idea / issue / refactor
-    -> plan / task-map
+  idea / PRD / issue / refactor
+    -> workflow request / run
+    -> scan / plan / task-map
     -> role workers
-    -> evidence / review / verify
+    -> evidence / verify / judge
     -> deterministic gates
     -> done / rework / escalation
 ```
@@ -62,15 +63,19 @@ single-agent coding assistant.
 ## Core Capabilities
 
 - **`zf.yaml` control plane**: roles, stages, triggers, providers, gates,
-  budgets, recovery policy, and workflow topology.
-- **Multi-agent execution**: orchestrator, architect, critic, dev, review,
-  test, judge, Kanban Agent, Channel members, and provider-backed workers.
+  budgets, recovery policy, workflow topology, and typed PRD / issue /
+  refactor controller flows.
+- **Profile composition**: short product YAMLs expand through profiles into
+  canonical roles, stages, pipelines, schema policy, and skill bundles.
+- **Multi-agent execution**: orchestrator, supervisor, run manager,
+  autoresearch, architect, critic, dev, verifier, judge, Kanban Agent,
+  Channel members, and provider-backed workers.
 - **Event-sourced runtime truth**: `events.jsonl`, `kanban.json`,
   `session.yaml`, `feature_list.json`, and `role_sessions.yaml`.
-- **Evidence-gated completion**: TaskContract, static gates, review/test/judge
-  signals, discriminator checks, and artifact refs.
+- **Evidence-gated completion**: TaskContract, static gates, verify/judge
+  signals, discriminator checks, report evidence gates, and artifact refs.
 - **Long-horizon recovery**: heartbeat, stuck detection, context recovery,
-  bounded rework, run manager, and delivery trace.
+  bounded rework, run manager controlled actions, and delivery trace.
 - **Operator cockpit**: Web dashboard, Kanban, Agent sessions, Delivery Trace,
   Inbox, Channel, Feishu, and projection-based observability.
 - **Self-improvement loops**: Supervisor, Autoresearch, run recovery,
@@ -91,15 +96,15 @@ single-agent coding assistant.
                         |
                         v
 ┌────────────────────────────────────────────────────────────┐
-│ Layer 2: orchestrator brain                                │
-│ plans, splits, routes, replans, escalates                  │
-│ writes truth only through zf CLI or controlled actions     │
+│ Layer 2: runtime controllers                               │
+│ orchestrator dispatch / supervisor sensors / run manager   │
+│ autoresearch diagnosis / controlled recovery actions       │
 └───────────────────────┬────────────────────────────────────┘
                         |
                         v
 ┌────────────────────────────────────────────────────────────┐
 │ Layer 3: hands / workers                                   │
-│ arch / critic / dev / review / test / judge / providers    │
+│ arch / critic / dev / verifier / judge / provider CLIs     │
 │ work from briefings and emit structured evidence events    │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -115,13 +120,15 @@ ZaoFu is a set of business and runtime loops, not one giant loop:
 
 | Loop | Shape |
 |---|---|
-| Delivery | `idea -> plan -> task-map -> impl -> verify -> ship` |
+| Workflow request | `project -> intake -> kind route -> run_id -> stage graph` |
+| Delivery | `scan -> plan -> task-map -> impl -> verify -> judge -> ship` |
 | Quality | `evidence -> gate -> pass or bounded rework` |
 | Human approval | `plan hold -> Web/Feishu approve -> fanout unlock` |
 | Channel collaboration | `discussion -> synthesis -> workflow intent` |
 | Kanban Agent | `operator request -> proposal/action -> projection` |
+| Supervisor | `runtime signal -> attention candidate -> triage policy` |
 | Run recovery | `observe -> decide -> controlled action -> post-verify` |
-| Autoresearch | `failure -> diagnosis/proposal -> gate -> repair path` |
+| Autoresearch | `failure pattern -> diagnosis/proposal -> repair path` |
 | Replan | `drift/insight -> proposal -> contract eval -> adoption` |
 | Module parity | `verify -> parity scan -> gap plan -> task-map amend` |
 | Observability | `events -> projections -> Web/CLI -> controlled action` |
@@ -138,8 +145,10 @@ src/zf/
   web/                 FastAPI app and read projections
 
 web/                   React dashboard
-examples/              workflow and provider configuration examples
+examples/              workflow, controller, and provider examples
 docs/manual/           user-facing manuals
+skills/                repository-owned workflow and role skills
+yoke/                  reusable harness engineering method skills
 tests/                 deterministic and E2E tests
 tools/                 local operation scripts
 ```
@@ -183,12 +192,12 @@ uv run zf --help
 
 ## Quick Start
 
-Create or inspect `zf.yaml`, initialize runtime state, validate, dry-run, then
-start:
+For the local harness itself, create or inspect `zf.yaml`, initialize runtime
+state, validate, dry-run, then start:
 
 ```bash
 uv run zf presets
-uv run zf init --preset safe-team --workspace-register
+uv run zf init --preset safe-team --workspace-register --with-bootstrap
 
 uv run zf validate --cold-start
 uv run zf start --dry-run --no-watch
@@ -236,6 +245,46 @@ tools/init-project.sh \
 
 More detail: [docs/manual/01-quickstart.md](docs/manual/01-quickstart.md).
 
+## Product Workflow Entry Points
+
+For product work, prefer project-scoped PRD / issue / refactor flows rather
+than hand-writing a large `zf.yaml`.
+
+Create a project container:
+
+```bash
+uv run zf project init \
+  --kind prd \
+  --name my-product \
+  --root /path/to/my-product \
+  --backend codex \
+  --lanes 2 \
+  --workspace-register
+```
+
+Submit later work into the same project through workflow requests:
+
+```bash
+uv run zf flow intake \
+  --kind issue \
+  --from docs/issues/login-expiry.md \
+  --request-id issue-login-expiry \
+  --output docs/intake/issue-login-expiry.md
+
+uv run zf flow submit \
+  --dry-run \
+  --config zf.yaml \
+  --intake docs/intake/issue-login-expiry.md \
+  --kind issue \
+  --allow-missing-env \
+  --json
+```
+
+The current project model is one canonical `zf.yaml` and one
+`project.state_dir` per project, with multiple workflow `request_id` / `run_id`
+instances routed by kind. Template YAMLs are catalog entries; they are not meant
+to become competing active control planes for the same project.
+
 ## Web Dashboard
 
 For local development, use the helper script. It builds `web/dist`, starts the
@@ -273,6 +322,7 @@ More detail:
 # Config and startup
 uv run zf validate --path zf.yaml
 uv run zf validate --cold-start
+uv run zf config render --config zf.yaml --output /tmp/zf.rendered.yaml
 uv run zf start --dry-run --no-watch
 uv run zf start
 uv run zf stop
@@ -285,12 +335,15 @@ uv run zf watch --follow
 uv run zf trace show <trace_id>
 
 # Tasks and evidence
-uv run zf kanban add "Fix login expiry bug"
+uv run zf kanban add "Add regression test for expired login sessions"
 uv run zf task trace <task_id>
 uv run zf runs for-task <task_id>
 uv run zf gate list
 
 # Workspace and Web
+uv run zf project init --kind prd --name demo --workspace-register
+uv run zf flow intake --kind issue --from docs/issues/bug.md
+uv run zf flow submit --dry-run --config zf.yaml --intake docs/intake/bug.md
 tools/start-webkanban.sh --status
 uv run zf web --host 127.0.0.1 --port 8001
 ```
@@ -307,17 +360,27 @@ Representative examples:
 | `examples/safe-team.yaml` | standard multi-role local team |
 | `examples/design-first.yaml` | design-first delivery flow |
 | `examples/dev-codex-backends.yaml` | all-Codex development smoke topology |
+| `examples/dev-claude-backends.yaml` | all-Claude development smoke topology |
 | `examples/dev-mixed-backends.yaml` | mixed-backend stress topology |
 | `examples/zf-full-codex.yaml` | full Codex delivery DAG |
-| `examples/prod/prd-fanout-codex.yaml` | PRD fanout product delivery |
-| `examples/prod/issue-fanout-codex.yaml` | issue/bug fanout delivery |
-| `examples/prod/refactor-flow-codex.yaml` | refactor delivery flow |
+| `examples/prod/controller/prd-fanout-v3.yaml` | recommended PRD fanout controller |
+| `examples/prod/controller/prd-light-v3.yaml` | small PRD / single-context controller |
+| `examples/prod/controller/issue-fanout-v3.yaml` | recommended issue/bug controller |
+| `examples/prod/controller/refactor-lane-v3.yaml` | recommended refactor controller |
+| `examples/prod/controller/*-claude.yaml` | Claude Code variants of the production controllers |
 
 Validate any example before use:
 
 ```bash
 uv run zf validate --path examples/safe-team.yaml
+uv run zf config render \
+  --config examples/prod/controller/prd-fanout-v3.yaml \
+  --output /tmp/prd.rendered.yaml
 ```
+
+`examples/prod/new/*.yaml` are expanded E2E/LKG fixtures. Keep them for
+regression comparison; do not use them as the default operator-authored
+starting point.
 
 ## Feishu / ChatOps
 
@@ -435,12 +498,14 @@ Start here:
 ## Current Status
 
 ZaoFu is implementation-active. The deterministic kernel, CLI, runtime,
-Web dashboard, workflow examples, Feishu bridge, Channel, Run Manager, and
-Autoresearch paths exist in this repository. APIs and workflow presets are
-still evolving, so validate `zf.yaml` and run dry-runs before relying on a new
+Web dashboard, controller workflow examples, Feishu direct bridge, Channel,
+Run Manager, Supervisor, and Autoresearch paths exist in this repository.
+APIs and workflow presets are still evolving, so validate `zf.yaml`, render
+profile-composed configs, and run dry-runs before relying on a new
 configuration.
 
 ```bash
 uv run zf validate --cold-start
+uv run zf config render --config zf.yaml --output /tmp/zf.rendered.yaml
 uv run zf start --dry-run --no-watch
 ```

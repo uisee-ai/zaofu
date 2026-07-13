@@ -82,7 +82,10 @@ def plan_reader_stage_replan(
             if event.type == success_event:
                 last_success_index = index
     prior_failures = 0
+    failure_index = -1
     for index, event in enumerate(events):
+        if event.id == failure_event.id:
+            failure_index = index
         if index <= last_success_index:
             continue
         if event.type != failure_event.type:
@@ -90,6 +93,11 @@ def plan_reader_stage_replan(
         if event.id == failure_event.id:
             continue
         prior_failures += 1
+    # ZF-E2E-PRDCTL-P2-7-2:trigger 资格判定——早于最近一次 stage 成功的
+    # 失败事件是陈旧的,不得复活 replan(深水轮 12:34 复活 46 分钟前的
+    # 旧失败实证;cap 计数窗已按成功翻篇,但 trigger 侧此前不设防)。
+    if 0 <= failure_index <= last_success_index:
+        return None, "stale_failure"
         # 本失败已 replan 过?(replay/echo 安全)
     for event in events:
         if (

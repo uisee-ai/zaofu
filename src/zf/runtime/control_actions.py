@@ -63,6 +63,7 @@ from zf.runtime.control_actions_channel_admin import ChannelAdminActionsMixin
 from zf.runtime.control_actions_plan import PlanApprovalActionsMixin
 from zf.runtime.control_actions_product import ProductActionsMixin
 from zf.runtime.control_actions_ops import OpsActionsMixin
+from zf.runtime.control_actions_surgery import SurgeryActionsMixin
 from zf.runtime.control_actions_emit import ActionEmitMixin
 from zf.runtime.control_actions_workflow_resume import WorkflowResumeActionsMixin
 from zf.runtime.control_actions_candidate_rework import CandidateReworkActionsMixin
@@ -103,6 +104,7 @@ class ControlledActionService(
     OpsActionsMixin,
     WorkflowResumeActionsMixin,
     CandidateReworkActionsMixin,
+    SurgeryActionsMixin,
     ActionEmitMixin,
 ):
     """Execute deterministic action requests from trusted control surfaces."""
@@ -330,6 +332,8 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
+        if action.startswith("inbox-"):
+            return self._inbox_read(requested=requested, action=action, requested_action=requested_action, payload=payload)
         if action in {
             "attention-ack",
             "attention-snooze",
@@ -414,6 +418,26 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
+        if action == "payload-repair-reemit":
+            return self._payload_repair_reemit_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "briefing-redeliver":
+            return self._briefing_redeliver_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "human-decision-dismiss":
+            return self._human_decision_dismiss_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "ship-retry":
+            return self._ship_retry_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
         if action == "real-e2e-run":
             return self._real_e2e_run_action(
                 requested=requested,
@@ -451,8 +475,6 @@ class ControlledActionService(
             status_code=501,
             status="not_implemented",
         )
-
-
 
 
 

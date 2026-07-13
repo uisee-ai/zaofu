@@ -26,6 +26,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "runtime.maintenance.entered", "runtime.maintenance.exited",
     "runtime.snapshot.recorded", "runtime.snapshot.superseded",
     "runtime.snapshot.rehydrated", "runtime.snapshot.invalid",
+    "runtime.liveness.stale",
     "runtime.attention.needed", "runtime.attention.acknowledged",
     "runtime.attention.snoozed", "runtime.attention.resolved",
     "runtime.attention.escalated", "runtime.attention.unacknowledged",
@@ -90,6 +91,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "task.dispatch_context.bound", "task.completion.stale_rejected",
     "task.graph.updated",
     "dispatch.notification.raised", "dispatch.blocked", "dispatch.unblocked",
+    "dispatch.skills_unmatched",
     "dispatch.pull.requested", "runtime.loop.stale",
     "workflow.profile.selected", "workflow.stage.required",
     "workflow.stage.skipped", "workflow.stage.policy_violation",
@@ -193,6 +195,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "worker.state.changed", "worker.stuck", "worker.stuck.recovered",
     "worker.stuck.recovery_failed", "worker.spawn_warning",
     "worker.completed", "worker.runtime_write.rejected",
+    "worker.scope_write.rejected",
     "worker.checkpointed", "worker.launch_artifact.written",
     "worker.policy.applied",
     "worker.refresh.triggered", "worker.recycled", "worker.recycling",
@@ -398,6 +401,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "zaofu.refactor.review.requested", "zaofu.refactor.review.ready",
     "zaofu.refactor.review.blocked", "zaofu.refactor.plan.requested",
     "zaofu.refactor.plan.ready", "zaofu.refactor.plan.blocked",
+    "zaofu.refactor.scan.blocked",
     # α-1 (2026-05-17): emitted when _check_fanout_independence detects
     # file overlap between proposed fanout children; signals that the
     # affected tasks must be dispatched serially via backlog scheduler
@@ -472,6 +476,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "orchestrator.dispatch.retry_requested",
     "orchestrator.round.complete",  # Run 6: tmux orchestrator round-end signal
     "orchestrator.idle", "orchestrator.evidence_rework.requested",
+    "orchestrator.rework.triage.requested",
+    "orchestrator.rework.triage.recorded",
     # r-next backlog B-2: surface watcher tick failures instead of swallowing.
     "orchestrator.tick.failed",
     # doc 78 W2: candidate-rework sweep asks the orchestrator to re-decompose
@@ -488,6 +494,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "autoresearch.repair.dispatched",
     # Consumer-level failure to prepare/spawn a bounded self-repair worker.
     "autoresearch.repair.dispatch_blocked",
+    "autoresearch.repair.escalation.requested",
     # closeout bridge: isolated self-repair branch has commits and needs an
     # operator merge/restart decision; never auto-merged by the tick.
     "autoresearch.repair.closeout.required",
@@ -515,6 +522,10 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "run.manager.reflect.requested",
     "run.manager.reflect.completed",
     "run.manager.inbound.received",
+    "run.manager.context.resolved",
+    "run.manager.explanation.requested",
+    "run.manager.explanation.generated",
+    "run.manager.inbound.handoff.requested",
     "run.manager.human_decision.applied",
     "run.manager.human_decision.rejected",
     "run.manager.resident.spawned",

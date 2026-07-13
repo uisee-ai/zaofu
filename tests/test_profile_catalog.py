@@ -24,4 +24,8 @@ def test_codex_prefers_controller_v3_flows():
     assert flow_id_for_intent("refactor", "codex") == "refactor-lane-v3-codex"
     assert flow_id_for_intent("maintain", "codex") == "issue-fanout-v3-codex"
     assert flow_id_for_intent("review", "codex") == "issue-fanout-v3-codex"
-    assert flow_id_for_intent("refactor", "claude") == "refactor-flow-claude"
+    # claude now has symmetric controller v3 variants (was flat-flow fallback).
+    assert flow_id_for_intent("build", "claude") == "prd-fanout-v3-claude"
+    assert flow_id_for_intent("refactor", "claude") == "refactor-lane-v3-claude"
+    assert flow_id_for_intent("maintain", "claude") == "issue-fanout-v3-claude"
+    assert flow_id_for_intent("review", "claude") == "issue-fanout-v3-claude"

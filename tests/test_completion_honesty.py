@@ -92,3 +92,46 @@ def test_reactor_emits_unverified_event(tmp_path: Path) -> None:
     Orchestrator(sd, config, TmuxTransport(TmuxSession(session_name="t", dry_run=True))).run_once()
     types = [e.type for e in log.read_all()]
     assert "dev.completion.claims_unverified" in types
+
+
+def test_reference_schemes_are_not_disk_paths(tmp_path):
+    """live 轮假阳性回归:`<scheme>:<值>` 结构化引用不是磁盘路径,不得按
+    相对路径查盘误报 claims_unverified。硬编码 scheme 白名单是打地鼠
+    (2026-07-08 #1 修 branch:/cmd:/tag: 后,#2 轮又暴露 base:/task_map:/
+    test: 三连假阳性)——改用 scheme 前缀模式;本例锚定 live 轮实测的
+    完整 evidence_refs 组合,任一 scheme 被当路径即红。"""
+    from zf.runtime.completion_honesty import unverified_completion_claims
+
+    payload = {
+        "workdir": str(tmp_path),
+        "evidence_refs": [
+            "git:c240a2528241ae10b8dfbd330b59ed0c14d473e3",
+            "branch:worker/dev-lane-0",
+            "base:50c3aedc566f480d68b19ec03cc7cf56953a11a5",
+            "task_map:.zf/artifacts/default/task_map.json",
+            "task-map:.zf/artifacts/default/task_map.json",
+            "test:python -m pytest app",
+            "cmd:python -m pytest app/tests -> 7 passed",
+            "tag:pdd/default-final",
+        ],
+    }
+    assert unverified_completion_claims(
+        payload, project_root=tmp_path,
+    ) == []
+
+
+def test_bare_relative_path_still_flagged_when_missing(tmp_path):
+    """scheme 跳过不得放过真裸路径:混入 scheme 引用时,不存在的裸相对
+    路径仍必须被 flag(否则幻觉完成家族 r6-F7 漏网)。"""
+    from zf.runtime.completion_honesty import unverified_completion_claims
+
+    problems = unverified_completion_claims({
+        "workdir": str(tmp_path),
+        "evidence_refs": [
+            "git:abc1234",
+            "base:def5678",
+            "docs/validation/missing-scene.png",
+        ],
+    }, project_root=tmp_path)
+    assert len(problems) == 1
+    assert "missing-scene.png" in problems[0]

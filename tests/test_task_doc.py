@@ -194,6 +194,35 @@ def test_write_task_doc_projects_progress_and_evidence_from_events(tmp_path: Pat
     assert "abc123" in evidence
 
 
+def test_task_doc_projects_candidate_terminal_event_by_completed_task_ids(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task = Task(
+        id="TASK-CANDIDATE-1",
+        title="candidate projection",
+        status="done",
+        contract=TaskContract(behavior="x", verification="true"),
+    )
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        id="evt-candidate-judge",
+        type="judge.passed",
+        actor="judge",
+        payload={
+            "completed_task_ids": [task.id],
+            "evidence_refs": ["reports/judge.json"],
+            "test_refs": ["pytest -q"],
+        },
+    ))
+
+    result = write_task_doc(state_dir, task)
+    evidence_text = result.evidence_path.read_text(encoding="utf-8")
+
+    assert "judge.passed" in evidence_text
+    assert "reports/judge.json" in evidence_text
+
+
 def test_source_doc_prefers_source_index_excerpt(tmp_path: Path) -> None:
     result = write_task_doc(tmp_path / ".zf", _task())
 

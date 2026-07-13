@@ -20,17 +20,6 @@ import { getOperatorInbox, getPlanPreview, postAction } from "../../api/client";
 import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 
-interface ContractHealth {
-  tasks: Array<{
-    task_id: string;
-    status: string;
-    source_anchor: string;
-    rework_attempts: number;
-    signals: string[];
-  }>;
-  summary: { total: number; flagged: number; awaiting_approval: number };
-}
-
 type InboxView = "action_required" | "runtime_attention" | "automation" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "runtime_attention" | "approval";
 
@@ -54,12 +43,10 @@ export function PlanApprovalPanel(
   { projectId, autoOpenPlanId }: { projectId: string; autoOpenPlanId?: string | null },
 ) {
   const [inbox, setInbox] = useState<OperatorInboxProjection | null>(null);
-  const [health, setHealth] = useState<ContractHealth | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [hasLoadedInbox, setHasLoadedInbox] = useState(false);
   const [inboxRefreshing, setInboxRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
-  const [healthError, setHealthError] = useState("");
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<PlanPreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -70,7 +57,6 @@ export function PlanApprovalPanel(
   const [selectedId, setSelectedId] = useState("");
   const projectIdRef = useRef(projectId);
   const inboxRefreshInFlight = useRef(false);
-  const healthRefreshInFlight = useRef(false);
 
   const baseItems = useMemo(() => inboxItemsForView(inbox, view), [inbox, view]);
   const filteredItems = useMemo(() => {
@@ -99,12 +85,9 @@ export function PlanApprovalPanel(
   useEffect(() => {
     projectIdRef.current = projectId;
     setInbox(null);
-    setHealth(null);
     setHasLoadedInbox(false);
     setLoadError("");
-    setHealthError("");
     inboxRefreshInFlight.current = false;
-    healthRefreshInFlight.current = false;
   }, [projectId]);
 
   const refreshInbox = useCallback(async () => {
@@ -131,46 +114,17 @@ export function PlanApprovalPanel(
     }
   }, [projectId]);
 
-  const refreshHealth = useCallback(async () => {
-    if (healthRefreshInFlight.current) return;
-    healthRefreshInFlight.current = true;
-    setHealthError("");
-    const requestProjectId = projectId;
-    try {
-      const base = `/api/projects/${encodeURIComponent(projectId)}`;
-      const healthRes = await fetch(`${base}/contract-health`);
-      if (projectIdRef.current !== requestProjectId) {
-        return;
-      }
-      if (healthRes.ok) {
-        setHealth(await healthRes.json());
-      } else {
-        setHealthError(`contract-health returned ${healthRes.status}`);
-      }
-    } catch (error) {
-      if (projectIdRef.current === requestProjectId) {
-        setHealthError(error instanceof Error ? error.message : String(error));
-      }
-    } finally {
-      healthRefreshInFlight.current = false;
-    }
-  }, [projectId]);
-
   const refresh = useCallback(async () => {
-    void refreshHealth();
     await refreshInbox();
-  }, [refreshHealth, refreshInbox]);
+  }, [refreshInbox]);
 
   useEffect(() => {
     void refreshInbox();
-    void refreshHealth();
     const inboxTimer = setInterval(() => void refreshInbox(), 15000);
-    const healthTimer = setInterval(() => void refreshHealth(), 60000);
     return () => {
       clearInterval(inboxTimer);
-      clearInterval(healthTimer);
     };
-  }, [refreshHealth, refreshInbox]);
+  }, [refreshInbox]);
 
   const openPreview = async (planId: string) => {
     setPreviewLoading(true);
@@ -334,7 +288,6 @@ export function PlanApprovalPanel(
 
       {actionError ? <p className="error plan-approval-error">{actionError}</p> : null}
       {loadError ? <p className="error plan-approval-error">Inbox refresh failed: {loadError}</p> : null}
-      {healthError ? <p className="muted plan-approval-error">Contract health refresh failed: {healthError}</p> : null}
 
       {initialLoading ? (
         <p className="muted plan-approval-empty operator-inbox-empty">Loading inbox...</p>
@@ -427,39 +380,6 @@ export function PlanApprovalPanel(
           })()}
         </div>
       )}
-
-      {/* Zero flagged contracts is silence, not information — render only
-          when something needs an operator (flagged / awaiting approval). */}
-      {health && (health.summary.flagged > 0 || (health.summary.awaiting_approval ?? 0) > 0) ? (
-        <details className="plan-contract-health operator-inbox-health" open>
-          <summary>
-            Contract health: {health.summary.flagged}/{health.summary.total}
-            {health.summary.awaiting_approval ? `, ${health.summary.awaiting_approval} awaiting` : ""}
-          </summary>
-          <table>
-            <thead>
-              <tr>
-                <th>task</th>
-                <th>status</th>
-                <th>source</th>
-                <th>rework</th>
-                <th>signals</th>
-              </tr>
-            </thead>
-            <tbody>
-              {health.tasks.map((task) => (
-                <tr key={task.task_id}>
-                  <td>{task.task_id}</td>
-                  <td>{task.status}</td>
-                  <td>{task.source_anchor}</td>
-                  <td>{task.rework_attempts}</td>
-                  <td>{task.signals.join(", ") || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      ) : null}
 
       {preview || previewLoading ? (
         <PlanPreviewOverlay

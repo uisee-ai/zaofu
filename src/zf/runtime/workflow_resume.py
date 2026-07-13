@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -160,6 +160,7 @@ def build_workflow_resume_checkpoints(
     progress_events = set(graph.event_sets.stage_progress_events)
     progress_events.update(graph.event_sets.terminal_success_events)
     reconciler = WorkflowGraphReconciler()
+    inflight_fanouts, unroutable_keys = _filing_guard_indexes(event_list)
     checkpoints: list[WorkflowResumeCheckpoint] = []
     checkpoints.extend(_reader_stage_replan_checkpoints(event_list, task_list, config))
     for task in task_list:
@@ -198,11 +199,35 @@ def build_workflow_resume_checkpoints(
                     action="needs_gate_dispatch",
                     target_role="",
                 )
-                checkpoints.append(
+                checkpoint = (
                     _no_action_checkpoint(task, progress, decisions)
                     if already_done
                     else _stalled_checkpoint(task, progress, decisions)
                 )
+                # ZF-E2E-PRDCTL-P1-4: same filing guards as the ready path.
+                if checkpoint.safe_resume_action != "no_action":
+                    stall_suppression = _filing_suppression_reason(
+                        task_events=task_events,
+                        progress=progress,
+                        event_sets=graph.event_sets,
+                        inflight_fanouts=inflight_fanouts,
+                    )
+                    if (
+                        not stall_suppression
+                        and checkpoint.idempotency_key in unroutable_keys
+                    ):
+                        stall_suppression = (
+                            "checkpoint previously proved gate-unroutable; "
+                            "re-filing cannot succeed"
+                        )
+                    if stall_suppression:
+                        checkpoint = replace(
+                            checkpoint,
+                            safe_resume_action="no_action",
+                            blocking_event_id="",
+                            reason=stall_suppression,
+                        )
+                checkpoints.append(checkpoint)
             continue
         ready.sort(key=lambda item: _action_priority(
             item.action_plan.action_type if item.action_plan else ""
@@ -238,6 +263,36 @@ def build_workflow_resume_checkpoints(
             task_events, task.id,
         ):
             action = "no_action"
+        # ZF-E2E-PRDCTL-P1-4:立案前三连守卫(2026-07-12)。凡 stall 类
+        # 信号消费者必先核完成证据——RM 侧此前只有 order-scoped 检查,
+        # 完成证据早于假 stall 信号时照样立案(深水轮重跑 3 个健康任务、
+        # csvstats 轮 4 次 gate_unroutable no-op 的共同根)。
+        suppression = ""
+        if action not in {"no_action", ""}:
+            suppression = _filing_suppression_reason(
+                task_events=task_events,
+                progress=progress,
+                event_sets=graph.event_sets,
+                inflight_fanouts=inflight_fanouts,
+            )
+            if not suppression:
+                candidate_key = _idempotency_key(
+                    task.id,
+                    progress.id,
+                    action,
+                    (
+                        f"{target_role or decision.stage_id}:invalid-existing-action"
+                        if invalid_existing_action
+                        else target_role or decision.stage_id
+                    ),
+                )
+                if candidate_key in unroutable_keys:
+                    suppression = (
+                        "checkpoint previously proved gate-unroutable; "
+                        "re-filing cannot succeed"
+                    )
+        if suppression:
+            action = "no_action"
         checkpoints.append(WorkflowResumeCheckpoint(
             task_id=task.id,
             last_trusted_event_id=progress.id,
@@ -258,6 +313,8 @@ def build_workflow_resume_checkpoints(
             ),
             evidence_event_ids=[progress.id],
             reason=(
+                suppression
+                if suppression else
                 "existing next action targets non-runnable lane role"
                 if invalid_existing_action else
                 "next action already exists after checkpoint"
@@ -266,6 +323,71 @@ def build_workflow_resume_checkpoints(
             source_event_type=progress.type,
         ))
     return checkpoints
+
+
+_FANOUT_TERMINAL_EVENTS = frozenset({
+    "fanout.aggregate.completed", "fanout.timed_out", "fanout.cancelled",
+})
+
+
+def _filing_guard_indexes(events: list[ZfEvent]) -> tuple[dict[str, dict], set[str]]:
+    """One pass over the log for the P1-4 filing guards: in-flight fanouts
+    (started without a terminal) and checkpoint keys that already proved
+    gate-unroutable."""
+    inflight: dict[str, dict] = {}
+    unroutable_keys: set[str] = set()
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type == "workflow.resume.gate_unroutable":
+            key = str(payload.get("checkpoint_idempotency_key") or "")
+            if key:
+                unroutable_keys.add(key)
+            continue
+        fanout_id = str(payload.get("fanout_id") or "")
+        if not fanout_id:
+            continue
+        if event.type == "fanout.started":
+            inflight[fanout_id] = payload
+        elif event.type in _FANOUT_TERMINAL_EVENTS:
+            inflight.pop(fanout_id, None)
+    return inflight, unroutable_keys
+
+
+def _filing_suppression_reason(
+    *,
+    task_events: list[ZfEvent],
+    progress: ZfEvent,
+    event_sets: object,
+    inflight_fanouts: dict[str, dict],
+) -> str:
+    """Suppress actionable checkpoints when the task itself is fine.
+
+    ① closeout evidence: the task has a terminal-success event with no
+    later task-scoped failure — a stall signal arriving *after* completion
+    is a false positive regardless of ordering vs. the signal.
+    ② sibling wait: the task's stage fanout is still aggregating; the
+    aggregate owns the stage and per-task gate proposals cannot route.
+    """
+    terminal_success = set(getattr(event_sets, "terminal_success_events", ()) or ())
+    failure_events = set(getattr(event_sets, "rework_trigger_events", ()) or ())
+    failure_events.update(getattr(event_sets, "rework_triage_trigger_events", ()) or ())
+    last_success_idx = -1
+    last_failure_idx = -1
+    for idx, event in enumerate(task_events):
+        if event.type in terminal_success:
+            last_success_idx = idx
+        elif event.type in failure_events or event.type.endswith(".failed"):
+            last_failure_idx = idx
+    if last_success_idx >= 0 and last_failure_idx <= last_success_idx:
+        return (
+            "task closeout evidence present with no later failure; "
+            "stall signal is a false positive"
+        )
+    payload = progress.payload if isinstance(progress.payload, dict) else {}
+    fanout_id = str(payload.get("fanout_id") or "")
+    if fanout_id and fanout_id in inflight_fanouts:
+        return f"waiting_for_sibling: fanout {fanout_id} still aggregating"
+    return ""
 
 
 def build_workflow_batch_resume_checkpoints(

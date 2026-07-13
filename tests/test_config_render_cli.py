@@ -125,6 +125,25 @@ def test_config_rendered_controller_yaml_is_reloadable(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["summary"]["pipelines"] == 1
 
 
+def test_rendered_safety_section_is_nested_and_reloadable(tmp_path):
+    # P1-3 follow-up: render must emit safety.tool_closure.enabled (nested), not
+    # the flat SafetyConfig.tool_closure_enabled, so the rendered YAML round-trips
+    # through the loader's fail-closed key check instead of tripping it.
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n  name: t\n"
+        "safety:\n  tool_closure:\n    enabled: false\n"
+    )
+    cfg = load_config(p)
+    prim = renderable_config_to_primitive(cfg)
+    assert prim["safety"] == {"tool_closure": {"enabled": False}}
+    out = tmp_path / "rendered.yaml"
+    out.write_text(yaml.safe_dump(prim, sort_keys=False), encoding="utf-8")
+    reloaded = load_config(out)  # must not trip the unknown-key guard
+    assert reloaded.safety.tool_closure_enabled is False
+
+
 def test_config_rendered_controller_yaml_uses_single_execution_representation(
     tmp_path,
 ):
@@ -489,9 +508,19 @@ spec:
     by_field = {item["field"]: item for item in policy}
     assert by_field["quality_floor"]["detail"]["enforcement_status"] == "planned_consumer"
     assert "final judge gate" in by_field["quality_floor"]["detail"]["target_gates"]
-    assert "terminal evidence gate" in by_field["evidence_policy"]["detail"]["target_gates"]
     assert "verify env readiness" in by_field["environment_policy"]["detail"]["target_gates"]
     assert "deterministic consumer" in by_field["quality_floor"]["fix_it"]
+    # ⑤ 续(2026-07-08)执法化:evidence_policy 已迁入 wired 消费者集
+    # (loader 派生 blocking + fail_closed),不再是 metadata_only。
+    assert "evidence_policy" not in by_field
+    wired = {
+        item["field"]: item for item in report["diagnostics"]
+        if item["kind"] == "flow_policy_consumer"
+    }
+    assert wired["evidence_policy"]["detail"]["enforcement_status"] == "wired"
+    assert "report_evidence_gate fail_closed" in (
+        wired["evidence_policy"]["detail"]["target_gates"]
+    )
 
 
 def test_config_inspect_json_alias_and_humanized_fixit(tmp_path, capsys):

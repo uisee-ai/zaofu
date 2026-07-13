@@ -37,6 +37,9 @@ spec:
   project:
     name: prd-light-v3
   goal:
+    # goal.enabled 下 light 入口合成 task_map 时同点补发 run.goal.started
+    # (run_id=run-light-<pdd>-<trigger id>),judge.passed 后 kernel 自动
+    # run.goal.completed——goal 生命周期全程免手工(2026-07-08)。
     enabled: true
   runtime:
     # light 拓扑目标是全程一键到 ship:judge.passed(终局门)后 kernel 自动把

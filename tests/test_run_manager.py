@@ -10,6 +10,7 @@ from zf.core.config.schema import (
     ProjectConfig,
     QualityGateConfig,
     RoleConfig,
+    RuntimeAutoresearchResidentConfig,
     RuntimeConfig,
     RuntimeRunManagerConfig,
     RuntimeRunManagerReflectConfig,
@@ -30,7 +31,6 @@ from zf.core.task.store import TaskStore
 from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_types import OrchestratorDecision
-from zf.runtime.owner_visible_autodeliver import deliver_owner_visible_to_feishu
 from zf.runtime.run_manager import (
     HUMAN_ESCALATION_SENT,
     RUN_MANAGER_ACTION_APPLIED,
@@ -61,7 +61,6 @@ from zf.runtime.run_manager import (
 )
 from zf.autoresearch.loop_types import ReflectionResult
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
-from zf.runtime.supervisor_inspection import run_supervisor_inspection
 from zf.runtime.workflow_resume import build_workflow_resume_projection
 from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor
 
@@ -974,13 +973,16 @@ def test_run_manager_fails_post_verify_when_gate_resume_checkpoint_remains(
         if event.type == RUN_MANAGER_ACTION_VERIFY_FAILED
     ]
     assert verify_failed
-    assert "checkpoint still pending" in verify_failed[-1].payload["reason"]
+    # ZF-E2E-PRDCTL-P1-4: the honest failure reason is now the unroutable
+    # gate itself, and the filing guard stops re-filing the dead checkpoint
+    # (pending drops to 0 instead of looping verify.failed forever).
+    assert "gate unroutable" in verify_failed[-1].payload["reason"]
     projection = build_workflow_resume_projection(
         state_dir,
         _lane_resume_config(),
         events=events,
     )
-    assert projection["summary"]["pending"] == 1
+    assert projection["summary"]["pending"] == 0
 
 
 def test_run_manager_post_verify_reads_checkpoint_matched_downstream_events(
@@ -1955,6 +1957,186 @@ def test_run_manager_does_not_fail_stale_diagnosis_after_run_completed(
     assert failed == []
 
 
+def _stale_diagnosis_request(log, pending, request_id: str) -> None:
+    log.append(ZfEvent(
+        id=f"evt-{request_id}",
+        type=RUN_MANAGER_AUTORESEARCH_REQUESTED,
+        ts="2026-06-01T00:00:00+00:00",
+        actor="run-manager",
+        payload={
+            "request_id": request_id,
+            "checkpoint_id": pending["checkpoint_id"],
+            "fingerprint": pending["fingerprint"],
+            "safe_resume_action": "diagnose_attention",
+        },
+    ))
+
+
+def test_stale_diagnosis_resolved_by_loop_skipped(tmp_path: Path) -> None:
+    """2026-07-10 E2E: a resident dedupe-skip (autoresearch.loop.skipped) is a
+    terminal answer — the request must not burn the stale window and fail
+    (PRD: 8 stale action.failed with 1 real loop run)."""
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    _stale_diagnosis_request(log, pending, "rmar-skip-1")
+    log.append(ZfEvent(
+        id="evt-loop-skip",
+        type="autoresearch.loop.skipped",
+        ts="2026-06-01T00:00:05+00:00",
+        actor="zf-autoresearch-resident",
+        payload={"loop_request_id": "rmar-skip-1"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        event_log=log, spawn_repairs=False,
+    )
+
+    assert result.actions_failed == 0
+
+
+def test_stale_diagnosis_age_anchored_to_running_loop(tmp_path: Path) -> None:
+    """2026-07-10 E2E: a matching loop.started re-anchors the stale clock —
+    a loop legitimately running past the window is not stale mid-flight."""
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    _stale_diagnosis_request(log, pending, "rmar-run-1")
+    # emitted via writer → current timestamp → recent liveness
+    writer.emit(
+        "autoresearch.loop.started",
+        actor="zf-autoresearch-resident",
+        payload={"loop_request_id": "rmar-run-1"},
+    )
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        event_log=log, spawn_repairs=False,
+    )
+
+    assert result.actions_failed == 0
+
+
+def test_stale_diagnosis_still_fails_when_started_loop_hangs(tmp_path: Path) -> None:
+    """Counterpart: a loop that STARTED long ago and never reached a terminal
+    event still goes stale — hang detection survives the liveness anchor."""
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    _stale_diagnosis_request(log, pending, "rmar-hang-1")
+    log.append(ZfEvent(
+        id="evt-loop-hang",
+        type="autoresearch.loop.started",
+        ts="2026-06-01T00:01:00+00:00",
+        actor="zf-autoresearch-resident",
+        payload={"loop_request_id": "rmar-hang-1"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        event_log=log, spawn_repairs=False,
+    )
+
+    assert result.actions_failed == 1
+
+
+def test_stale_diagnosis_anchored_window_tolerates_queue_wait(
+    tmp_path: Path,
+) -> None:
+    """2026-07-10 R5: a request the resident has ACKed (queued) is not dead,
+    just waiting behind a bounded loop — past the tight 300s window it must
+    NOT stale; the wide anchored window (resident-died backstop) governs."""
+    from datetime import datetime, timedelta, timezone
+
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    _stale_diagnosis_request(log, pending, "rmar-queued-1")
+    ten_minutes_ago = (
+        datetime.now(timezone.utc) - timedelta(seconds=600)
+    ).isoformat()
+    log.append(ZfEvent(
+        id="evt-loop-queued",
+        type="autoresearch.loop.accepted",
+        ts=ten_minutes_ago,
+        actor="zf-autoresearch-resident",
+        payload={"loop_request_id": "rmar-queued-1", "queued": True},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        event_log=log, spawn_repairs=False,
+    )
+
+    # 600s > 300s tight window, but well inside the 3600s anchored window
+    assert result.actions_failed == 0
+
+
+def test_failure_closeout_activation_skipped_after_ship_completed(
+    tmp_path: Path,
+) -> None:
+    """2026-07-10 E2E: a ship.completed later than the materialized manifest
+    means the run has delivered — the stale failure closeout must not escalate
+    to the owner (PRD shipped yet human.escalate on closeout approval)."""
+    state_dir, log, writer = _state(tmp_path)
+    manifest = _write_failure_closeout_manifest(tmp_path)
+    writer.emit(
+        "failure.closeout.materialized",
+        actor="run-manager",
+        payload={
+            "schema_version": "failure-closeout.event.v1",
+            "manifest_ref": str(manifest),
+            "materialized_count": 1,
+        },
+    )
+    writer.emit(
+        "ship.completed",
+        actor="zf-cli",
+        payload={"pdd_id": "F-1", "target_branch": "main"},
+    )
+
+    projection = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(), project_root=tmp_path,
+    )
+    assert not any(
+        action.get("action") == "failure-closeout-activate"
+        for action in projection["pending_actions"]
+    )
+
+    # a manifest materialized AFTER the ship still escalates
+    post_ship = manifest.parent / "2026-07-10-0001-post-ship.md"
+    post_ship.write_text(manifest.read_text(encoding="utf-8"), encoding="utf-8")
+    writer.emit(
+        "failure.closeout.materialized",
+        actor="run-manager",
+        payload={
+            "schema_version": "failure-closeout.event.v1",
+            "manifest_ref": str(post_ship),
+            "materialized_count": 1,
+        },
+    )
+    projection = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(), project_root=tmp_path,
+    )
+    assert any(
+        action.get("action") == "failure-closeout-activate"
+        for action in projection["pending_actions"]
+    )
+
+
 def test_run_manager_monitor_does_not_report_healthy_when_diagnosis_pending() -> None:
     projection = build_run_manager_monitor_projection(
         completion_profile={"status": "running"},
@@ -2514,7 +2696,9 @@ def test_run_manager_autonomous_recovery_drill_covers_task_resume_and_worker_rec
     assert not [event for event in events if event.type == "human.escalate"]
 
 
-def test_run_manager_blocks_trigger_rework_without_mutation_support(tmp_path: Path) -> None:
+def test_run_manager_diagnoses_trigger_rework_without_mutation_support(
+    tmp_path: Path,
+) -> None:
     state_dir, log, writer = _state(tmp_path)
     _append_trigger_rework_fixture(log)
     projection = build_run_manager_projection(
@@ -2524,8 +2708,8 @@ def test_run_manager_blocks_trigger_rework_without_mutation_support(tmp_path: Pa
     )
     pending = projection["pending_actions"][0]
     assert pending["failure_class"] == "task_map_drift"
-    assert pending["owner_route"] == "orchestrator_replan"
-    assert pending["action_policy"] == "human_escalate"
+    assert pending["owner_route"] == "run_manager"
+    assert pending["action_policy"] == "needs_diagnosis"
     assert pending["intervention_class"] == "semantic_replan"
     assert pending["task_map_ref"] == ".zf/artifacts/CJMIN-RM/task_map.json"
     assert pending["source_commit"] == "base123"
@@ -2533,9 +2717,9 @@ def test_run_manager_blocks_trigger_rework_without_mutation_support(tmp_path: Pa
     assert pending["source_event_id"]
     assert pending["source_event_type"] == "fanout.aggregate.completed"
     assert pending["preflight"]["mutating_resume_supported"] is False
-    assert pending["policy_decision"]["intervention_class"] == "human_decision"
-    assert projection["status_explain"]["intervention_class"] == "human_decision"
-    assert projection["status_explain"]["wait_reason"] == "human_decision_required"
+    assert pending["policy_decision"]["intervention_class"] == "diagnose"
+    assert projection["status_explain"]["intervention_class"] == "diagnose"
+    assert projection["status_explain"]["wait_reason"] == "diagnosis_required"
 
     decision = decide_action_policy(
         action="workflow-batch-resume",
@@ -2551,13 +2735,13 @@ def test_run_manager_blocks_trigger_rework_without_mutation_support(tmp_path: Pa
     )
 
     events = log.read_all()
-    assert decision["decision"] == "human_escalate"
-    assert result.actions_blocked == 1
-    assert any(event.type == RUN_MANAGER_ACTION_BLOCKED for event in events)
-    assert any(event.type == HUMAN_ESCALATION_SENT for event in events)
+    assert decision["decision"] == "needs_diagnosis"
+    assert result.autoresearch_requested == 1
+    assert not any(event.type == RUN_MANAGER_ACTION_BLOCKED for event in events)
+    assert not any(event.type == HUMAN_ESCALATION_SENT for event in events)
 
 
-def test_run_manager_human_escalation_reaches_inbox_and_owner_visible_delivery(
+def test_run_manager_diagnosis_does_not_notify_owner_before_exhaustion(
     tmp_path: Path,
 ) -> None:
     state_dir, log, writer = _state(tmp_path)
@@ -2572,46 +2756,16 @@ def test_run_manager_human_escalation_reaches_inbox_and_owner_visible_delivery(
     )
 
     events = log.read_all()
-    assert result.actions_blocked == 1
+    assert result.autoresearch_requested == 1
     assert any(
-        event.type == "human.escalate" and event.actor == "run-manager"
+        event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+        and event.actor == "run-manager"
         for event in events
     )
-    assert any(
-        event.type == HUMAN_ESCALATION_SENT
-        and event.payload.get("delivery_target") == "web"
-        for event in events
+    assert not any(event.type == "human.escalate" for event in events)
+    assert not any(
+        event.type == "owner.visible_message.requested" for event in events
     )
-
-    supervisor = run_supervisor_inspection(
-        state_dir,
-        config=_config(),
-        project_root=tmp_path,
-        project_id="run-manager-test",
-        emit_attention_events=True,
-    )
-    assert supervisor["attention_events_emitted"] >= 1
-
-    events = log.read_all()
-    types = [event.type for event in events]
-    assert "runtime.attention.needed" in types
-    assert "owner.visible_message.requested" in types
-    assert any(
-        event.type == "owner.visible_message.requested"
-        and event.payload.get("title") == "Runtime escalated to human"
-        for event in events
-    )
-
-    delivery = deliver_owner_visible_to_feishu(
-        state_dir=state_dir,
-        config=_config(),
-        env={},
-    )
-    assert delivery is not None
-
-    types = [event.type for event in log.read_all()]
-    assert "owner.visible_message.delivery_attempted" in types
-    assert "owner.visible_message.failed" in types
 
 
 def test_run_manager_side_human_escalation_is_not_run_blocker(
@@ -2678,7 +2832,7 @@ def test_run_completed_supersedes_side_human_escalation(
     assert projection["status_explain"]["wait_reason"] == "complete"
 
 
-def test_run_manager_consumes_human_approval_and_applies_controlled_action(
+def test_run_manager_diagnosis_request_is_idempotent(
     tmp_path: Path,
 ) -> None:
     state_dir, log, writer = _state(tmp_path)
@@ -2690,21 +2844,7 @@ def test_run_manager_consumes_human_approval_and_applies_controlled_action(
         event_log=log,
         spawn_repairs=False,
     )
-    assert first.actions_blocked == 1
-    escalation = [
-        event for event in log.read_all()
-        if event.type == "human.escalate"
-    ][-1]
-    token = escalation.payload["decision_token"]
-
-    ack = writer.emit(
-        "human.escalation.acknowledged",
-        actor="operator",
-        payload={
-            "decision_token": token,
-            "decision": "approve_controlled_action",
-        },
-    )
+    assert first.autoresearch_requested == 1
     second = run_manager_tick(
         state_dir=state_dir,
         writer=writer,
@@ -2713,29 +2853,73 @@ def test_run_manager_consumes_human_approval_and_applies_controlled_action(
         spawn_repairs=False,
     )
 
-    events = log.read_all()
-    assert ack.payload["decision"] == "approve_controlled_action"
-    assert second.human_decisions_applied == 1
-    assert any(event.type == RUN_MANAGER_HUMAN_DECISION_APPLIED for event in events)
-    assert any(
-        event.type == RUN_MANAGER_ACTION_APPLIED
-        and event.payload.get("safe_resume_action") == "trigger_rework"
-        for event in events
-    )
-    assert any(
-        event.type == "task_map.ready"
-        and event.payload.get("source") == "workflow_resume_batch"
-        for event in events
-    )
+    requests = [
+        event for event in log.read_all()
+        if event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+    ]
+    assert second.autoresearch_requested == 0
+    assert len(requests) == 1
+    assert not any(event.type == "human.escalate" for event in log.read_all())
 
-    third = run_manager_tick(
-        state_dir=state_dir,
-        writer=writer,
-        config=_config(),
-        event_log=log,
-        spawn_repairs=False,
+
+def test_run_has_recent_worker_activity_gates_on_idleness() -> None:
+    """T1 (2026-07-08 E2E): only silence past the grace window counts as
+    stalled — recent worker activity means the run is progressing and
+    failure-closeout escalation must defer."""
+    from zf.runtime.run_manager import _run_has_recent_worker_activity
+    from zf.core.events.model import ZfEvent
+
+    # worker active 30s before the latest event → progressing → defer
+    progressing = [
+        ZfEvent(type="failure.closeout.materialized", actor="run-manager", ts="2026-07-08T23:00:00Z"),
+        ZfEvent(type="agent.usage", actor="dev-lane-0", ts="2026-07-08T23:04:30Z"),
+        ZfEvent(type="run.manager.tick.completed", actor="run-manager", ts="2026-07-08T23:05:00Z"),
+    ]
+    assert _run_has_recent_worker_activity(progressing) is True
+
+    # worker silent 10min while only infra churns → genuinely idle → escalate
+    idle = [
+        ZfEvent(type="agent.usage", actor="dev-lane-0", ts="2026-07-08T23:00:00Z"),
+        ZfEvent(type="run.manager.tick.completed", actor="run-manager", ts="2026-07-08T23:10:00Z"),
+    ]
+    assert _run_has_recent_worker_activity(idle) is False
+
+    # no worker events at all → do not block escalation
+    infra_only = [
+        ZfEvent(type="failure.closeout.materialized", actor="run-manager", ts="2026-07-08T23:00:00Z"),
+    ]
+    assert _run_has_recent_worker_activity(infra_only) is False
+
+
+def test_failure_closeout_activation_deferred_while_worker_active(
+    tmp_path: Path,
+) -> None:
+    """A worker emitting events (mid-turn) must defer the owner escalation —
+    the run is alive, not stalled (E2E false-escalation regression)."""
+    state_dir, log, writer = _state(tmp_path)
+    manifest = _write_failure_closeout_manifest(tmp_path)
+    writer.emit(
+        "failure.closeout.materialized",
+        actor="run-manager",
+        payload={
+            "schema_version": "failure-closeout.event.v1",
+            "manifest_ref": str(manifest),
+            "materialized_count": 1,
+        },
     )
-    assert third.human_decisions_applied == 0
+    # a lane worker is actively producing (same tick window) → not stalled
+    writer.emit("agent.usage", actor="dev-lane-0", payload={"instance_id": "dev-lane-0"})
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+        project_root=tmp_path,
+    )
+    assert not any(
+        action.get("action") == "failure-closeout-activate"
+        for action in projection["pending_actions"]
+    )
 
 
 def test_run_manager_projects_failure_closeout_activation_for_owner_approval(
@@ -2926,13 +3110,15 @@ def test_completion_profile_blocks_terminal_success_on_pending_human_decision(
     tmp_path: Path,
 ) -> None:
     state_dir, log, writer = _state(tmp_path)
-    _append_trigger_rework_fixture(log)
-    run_manager_tick(
-        state_dir=state_dir,
-        writer=writer,
-        config=_config(),
-        event_log=log,
-        spawn_repairs=False,
+    writer.emit(
+        "human.escalate",
+        actor="run-manager",
+        payload={
+            "decision_token": "blocking-decision",
+            "reason": "owner approval required for destructive action",
+            "blocking_scope": "run",
+            "action": "destructive-controlled-action",
+        },
     )
     log.append(ZfEvent(type="run.goal.completed", payload={"run_id": "R-COMP"}))
 
@@ -3887,6 +4073,47 @@ def test_run_manager_repair_intake_dispatches_through_executor(tmp_path: Path) -
     mpopen.assert_called_once()
 
 
+def test_run_manager_delegates_repair_execution_to_enabled_resident(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="autoresearch.repair.dispatch_requested",
+        payload={
+            "fingerprint": "stall:resident",
+            "attempt": 1,
+            "candidate_id": "C-RESIDENT",
+            "candidate_path": "/tmp/candidate.md",
+        },
+    ))
+    config = _config()
+    config.runtime = RuntimeConfig(
+        autoresearch_resident=RuntimeAutoresearchResidentConfig(
+            enabled=True,
+            self_repair_consumer=True,
+        ),
+    )
+
+    with patch("zf.runtime.self_repair_runner.subprocess.Popen") as mpopen:
+        result = run_manager_tick(
+            state_dir=state_dir,
+            writer=writer,
+            config=config,
+            event_log=log,
+            spawn_repairs=True,
+            repair_backend="codex",
+        )
+
+    events = log.read_all()
+    assert result.repairs_accepted == 1
+    assert result.repairs_dispatched == 0
+    assert any(event.type == RUN_MANAGER_REPAIR_ACCEPTED for event in events)
+    assert not any(
+        event.type == "autoresearch.repair.dispatched" for event in events
+    )
+    mpopen.assert_not_called()
+
+
 def test_run_manager_resident_recommendation_can_dispatch_repair_worker(
     tmp_path: Path,
 ) -> None:
@@ -4030,6 +4257,76 @@ def test_run_manager_consumes_autoresearch_diagnosis_result(tmp_path: Path) -> N
     assert consumed[0].payload["next_route"] == "proposal_review"
 
 
+def test_run_manager_owns_autoresearch_repair_exhaustion_escalation(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        id="ar-repair-exhausted",
+        type="autoresearch.repair.escalation.requested",
+        actor="zf-autoresearch",
+        task_id="TASK-1",
+        payload={
+            "fingerprint": "task-ref-rejected:cap",
+            "reason": "repair attempt cap reached",
+            "attempt": 3,
+            "owner_route": "run_manager",
+        },
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    assert result.autoresearch_requested == 1
+    assert any(
+        event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+        and event.payload["failure_class"] == "autoresearch_repair_attempts_exhausted"
+        for event in log.read_all()
+    )
+    assert not any(event.type == "human.escalate" for event in log.read_all())
+
+
+def test_raw_autoresearch_trigger_requires_run_manager_intake(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        id="raw-ar-trigger",
+        type="autoresearch.trigger.accepted",
+        actor="zf-autoresearch",
+        task_id="TASK-1",
+        payload={
+            "trigger_id": "raw-ar-trigger",
+            "fingerprint": "worker-stuck:TASK-1",
+            "reason": "worker made no progress",
+            "severity": "high",
+        },
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    assert result.autoresearch_requested == 1
+    assert any(
+        event.type == RUN_MANAGER_AUTORESEARCH_REQUESTED
+        and event.payload["failure_class"] == "autoresearch_trigger_candidate"
+        for event in log.read_all()
+    )
+    assert not any(
+        event.type == "autoresearch.loop.requested" for event in log.read_all()
+    )
+
+
 def test_every_pending_action_carries_problem_envelope(tmp_path: Path) -> None:
     """131-P1-3 forcing:RM pending action 必带 problem_envelope,缺失即红。"""
     state_dir, log, _writer = _state(tmp_path)
@@ -4045,3 +4342,38 @@ def test_every_pending_action_carries_problem_envelope(tmp_path: Path) -> None:
         envelope = action.get("problem_envelope")
         assert isinstance(envelope, dict), f"action {action.get('action')} 缺 envelope"
         assert envelope.get("schema_version"), f"action {action.get('action')} envelope 无 schema"
+
+
+def test_stale_diagnosis_forwarded_request_gets_anchored_window(
+    tmp_path: Path,
+) -> None:
+    """R6: requests arriving while the resident is synchronously inside a
+    bounded loop get no ack until that loop ends — the reactor's
+    loop.requested forward is the only timely receipt, and it must count as
+    an anchor (else a whole burst stales at 300s while queued)."""
+    from datetime import datetime, timedelta, timezone
+
+    state_dir, log, writer = _state(tmp_path)
+    _write_supervisor_attention(state_dir)
+    initial = build_run_manager_projection(
+        state_dir, events=log.read_all(), config=_config(),
+    )
+    pending = initial["pending_actions"][0]
+    _stale_diagnosis_request(log, pending, "rmar-fwd-1")
+    ten_minutes_ago = (
+        datetime.now(timezone.utc) - timedelta(seconds=600)
+    ).isoformat()
+    log.append(ZfEvent(
+        id="evt-loop-fwd",
+        type="autoresearch.loop.requested",
+        ts=ten_minutes_ago,
+        actor="zf-autoresearch",
+        payload={"loop_request_id": "rmar-fwd-1"},
+    ))
+
+    result = run_manager_tick(
+        state_dir=state_dir, writer=writer, config=_config(),
+        event_log=log, spawn_repairs=False,
+    )
+
+    assert result.actions_failed == 0

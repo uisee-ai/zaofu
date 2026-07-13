@@ -32,7 +32,7 @@ def test_flow_semantic_failure_events_have_consumer_contracts() -> None:
         spec = spec_for_event(event_type)
         assert spec is not None
         assert spec.event_class == "expected_negative"
-        assert spec.owner_route in {"run_manager", "orchestrator_replan", "human"}
+        assert spec.owner_route in {"run_manager", "human"}
         assert (
             "pending_action" in spec.run_manager_semantics
             or spec.autoresearch_eligible

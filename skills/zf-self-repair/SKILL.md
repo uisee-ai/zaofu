@@ -35,7 +35,7 @@ Default repository-facing output is Chinese unless the operator asks otherwise.
 
 1. **Authorization on (dual gate).** The kernel opens auto-repair dispatch when
    EITHER gate is set (`repair_authorization.auto_repair_consumer_enabled`,
-   `src/zf/runtime/repair_authorization.py:81-98`):
+   `src/zf/runtime/repair_authorization.py`):
    - **env override**: `ZF_AUTORESEARCH_AUTO_REPAIR=authorized` — the deliberate
      override for legacy/manual runs that have not encoded policy in config; or
    - **control-plane authorization**: `zf.yaml`
@@ -62,7 +62,8 @@ Read the candidate's `hypothesis`, `contract.scope`, `success_criteria`
 (usually `event_exists` + a focused `pytest` target), evidence event ids, and
 `fingerprint`. **Before repro-from-scratch, check for a Tier-2 diagnosis
 product.** Tier-2 diagnosis is productized (`diagnosis.requested` /
-`diagnosis.completed`, `src/zf/core/events/known_types.py:381`;
+`diagnosis.completed`, registered in `src/zf/core/events/known_types.py`
+`KNOWN_EVENT_TYPES`;
 `src/zf/runtime/diagnosis.py`, doc131 §5): a dispatch/stall-class candidate may
 already carry a `diagnosis.completed` conclusion (root-cause layer, event
 window, worktree evidence). Prefer that structured conclusion over re-deriving.
@@ -114,10 +115,11 @@ relevant regression. It MUST be green. If RED:
   hand".** After the green commit lands on the isolated worktree branch, the
   kernel runner scans the worktree and mints
   `autoresearch.repair.closeout.required`
-  (`src/zf/runtime/self_repair_runner.py:34,233-269`), carrying
+  (`src/zf/runtime/self_repair_runner.py` `CLOSEOUT_REQUIRED` /
+  `emit_self_repair_closeouts`), carrying
   `risk_classification`, `verification_plan`, and a `continuation` block
   (restart/resume policy). The Feishu projection maps this event to an
-  **approval** card (`src/zf/integrations/feishu/projection.py:97`). That is the
+  **approval** card (`src/zf/integrations/feishu/projection.py` `_ROUTING`). That is the
   human apply gate. The operator then runs **`[[zf-self-repair-apply-closeout]]`**
   to review the branch + backlog trail, merge / cherry-pick, and tear down the
   isolated worktree/branch. This skill (`zf-self-repair`) NEVER applies the

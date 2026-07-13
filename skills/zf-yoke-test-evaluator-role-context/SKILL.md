@@ -1,6 +1,11 @@
 ---
 name: zf-yoke-test-evaluator-role-context
 description: "Use for ZaoFu test roles that need yoke-style independent verification and evaluator scoring discipline."
+stages: [verify, test, judge]
+tags: [yoke, role-context, verification]
+dependencies: [verify-review]
+auto_inject: true
+load_on_demand: false
 ---
 
 # ZaoFu Yoke Test Evaluator Role Context
@@ -39,7 +44,9 @@ Local adaptation of yoke test-evaluator discipline for ZaoFu.
 ## 报告合约(verify.child.completed)
 
 报告经 `verify.child.completed` / `verify.child.failed` 的 event schema 校验
-(required + non_empty 档位;逐字段方法与评审次序见 `yoke/verify-review`,此处不
+(`canonical-dag/v3` 契约,required + non_empty 档位;`verification.
+event_schema.mode: blocking` 下拒收,warning 档只告警——prod controller
+预设已开 blocking。逐字段方法与评审次序见 `yoke/verify-review`,此处不
 复述)。硬性字段:
 
 - `summary` / `evidence_refs` / `git_refs`:required;`evidence_refs` 须非空且

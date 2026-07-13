@@ -221,4 +221,4 @@ fabricating values.
 - `zf-yoke-orchestrator-role-context` — Stage Routing table including ④ backlog
 - `yoke/verify-review` — 五轴评审 + 分级发现措辞(critic `findings` 形状的措辞来源)
 - `yoke/grill` — owner 意图忠实度轴(收窄立决策项)
-- `spec-driven-development` — 外部技能引用(agent-skills 生态,本仓不提供);arch 从 spec 建 proposal 的方法
+- `yoke/vertical-slicing` — arch 从 spec 建 proposal 时的切片法(判据前置、step→verify;外部 spec-driven-development 已退役,由本条+grill 覆盖)

@@ -22,7 +22,9 @@ force every research task to use the network.
 
 ## Research Preflight
 
-Record this before research synthesis:
+Record this before research synthesis(下两个 `zf.*.v1` 封套均为
+**skill-owned 记录约定,无内核校验**——`src/zf` 无解析/拒收方,形状只为
+人与 reviewer 的一致性,不要暗示 kernel 会验它):
 
 ```json
 {

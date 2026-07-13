@@ -1,5 +1,5 @@
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, Task, TraceSummary, WorkdirSummary } from "../../api/types";
+import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, Task, TraceSummary, WorkdirSummary } from "../../api/types";
 import { BehaviorLoopPage } from "../../components/delivery-trace/BehaviorLoopPage";
 import { LoopPageV2 } from "../../components/delivery-trace/LoopPageV2";
 
@@ -126,19 +126,33 @@ export function ProjectionPage({
     return () => { cancelled = true; };
   }, [activeProjectId, page]);
 
-  const deliveryFeatureIds = Array.from(new Set([
-    ...((deliveryFeaturesPage?.delivery_features ?? []).map((feature) => feature.id)),
-    ...((deliveryFeaturesPage?.features ?? []).map((feature) => feature.id)),
-    ...((snapshot?.delivery_features ?? []).map((feature) => feature.id)),
-    ...((snapshot?.features ?? []).map((feature) => feature.id)),
-  ]));
+  // 保留完整 Feature 对象(含 title/source):选择器要按 source 区分真
+  // feature 与 fallback:trace-ref 升格的运维/子流 trace(racing 评审)。
+  const deliveryFeatureById = new Map<string, Feature>();
+  for (const feature of [
+    ...(deliveryFeaturesPage?.delivery_features ?? []),
+    ...(deliveryFeaturesPage?.features ?? []),
+    ...(snapshot?.delivery_features ?? []),
+    ...(snapshot?.features ?? []),
+  ]) {
+    if (!deliveryFeatureById.has(feature.id)) deliveryFeatureById.set(feature.id, feature);
+  }
+  const deliveryFeatures = [...deliveryFeatureById.values()];
+  const deliveryFeatureIds = deliveryFeatures.map((feature) => feature.id);
+
+  // PM 快赢:总成本进 hero(snapshot 已在手,零额外请求)。
+  const usageByRole = (snapshot?.agent_live as Record<string, unknown> | undefined)?.usage_by_role;
+  const deliveryTotalUsd = Object.values(
+    (usageByRole && typeof usageByRole === "object" ? usageByRole : {}) as Record<string, { usd?: number }>,
+  ).reduce((sum, role) => sum + (typeof role?.usd === "number" ? role.usd : 0), 0);
 
   if (page === "delivery" || page === "delivery-trace" || page === "delivery-graph") {
     return (
       <DeliveryTracePage
           onOpenPage={onOpenPage}
           projectId={activeProjectId}
-          featureIds={deliveryFeatureIds}
+          totalUsd={deliveryTotalUsd}
+          features={deliveryFeatures}
           liveEvents={recentEvents}
           mode={page === "delivery-trace" ? "trace" : page === "delivery-graph" ? "graph" : "overview"}
         />
