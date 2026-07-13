@@ -66,13 +66,13 @@
 
 ## yoke/(方法论技能族,经 role-context wrapper 的 dependencies 闭包物化)
 
-- `yoke/context-hygiene` — 上下文卫生:长任务 worker 的读取纪律、混乱处理、水位管理与 recycle/resume 语义(I32/I33)。所有长期会话角色使用;与 worker.context.* 事件、briefing scope 约束与恢复机械配对。
-- `yoke/debugging-triage` — worker 级系统化排错:任务途中测试挂/构建断/行为不符时的 Stop-the-Line 分诊流程。writer/dev 角色日常使用;与完成诚实文化、rework 证据链、拒单反证机械配对。不收敛的停滞诊断归 diagnosis(Tier-2 角色)。
-- `yoke/diagnosis` — Tier-2 诊断角色(diagnostician)的 attach 诊断方法:读现场→根因假设→结构化 next_action。消费 diagnosis.requested,产出经 schema 校验的 diagnosis.completed,与 Tier-2 诊断合约(doc 131 §5...
-- `yoke/git-evidence` — ZaoFu 化的 git 纪律:分支/引用模型即证据链——task_ref、candidate、source_commit 绑定、remote_policy 守卫、多驾驶员规则,与 kernel git 合约机械配对。
-- `yoke/grill` — owner 意图逐条确认纪律:PRD/plan/共识收窄任何 owner 给定的目标或参考时,必须转化为显式决策项并获确认,禁止静默转译。prd-refine/critic/synthesizer 角色使用。
-- `yoke/incremental-delivery` — 增量交付纪律:薄切片实现→测试→验证→提交循环,每个增量保持系统可用。writer 在 lane/worktree 语义下使用;与 candidate patch-id 幂等集成、attempt 绑定、allowed_paths scope gate 机械配对。
-- `yoke/source-verification` — 写码/扫描前的来源验证纪律:栈版本从依赖清单读、外部 API 查权威来源、目标仓现有能力先 grep、宣称附出处、查不到标 UNVERIFIED。dev/scan 角色使用;与 done-contract 的 evidence_refs 语法、grill 的冲突上报机械配对。
-- `yoke/tdd-evidence` — 测试驱动开发 + 完成证据纪律:测试先行、bug 先复现、测试即证据。writer/dev 角色实现任何逻辑、修任何 bug、改任何行为时使用;完成证据与 kernel 完成审计机械配对。
-- `yoke/verify-review` — 多轴验收评审:verify/review reader 角色对候选变更做五轴评审并产出 schema 合规的结构化报告(覆盖矩阵非空、发现分级、runner/product 失败分类、证据可复跑),与 verify.child.completed 报告合约机械配对。
-- `yoke/vertical-slicing` — tracer-bullet 垂直切片的 task_map 拆分法:每个 task 纵切全部集成层、独立可验收,替代按技术层横切。task-map-synth/plan 角色使用,配对 task_map 契约与 lane 亲和语义。
+- `yoke/context-hygiene` — Keep long-running worker context compact, scoped, and recoverable.
+- `yoke/debugging-triage` — Triage failing tests, builds, and runtime behavior before changing code.
+- `yoke/diagnosis` — Diagnose stuck or failed ZaoFu runs and produce structured next actions.
+- `yoke/git-evidence` — Preserve Git refs, diffs, task refs, and evidence for ZaoFu work.
+- `yoke/grill` — Convert owner intent into explicit decision items before narrowing scope.
+- `yoke/incremental-delivery` — Deliver thin, verifiable implementation slices without widening scope.
+- `yoke/source-verification` — Verify claims against repository source, dependencies, or authoritative docs.
+- `yoke/tdd-evidence` — Use tests and reproducible checks as evidence for behavior changes.
+- `yoke/verify-review` — Review completed work across correctness, evidence, and regression risk.
+- `yoke/vertical-slicing` — Split plans into vertical task slices that can be implemented and verified.
