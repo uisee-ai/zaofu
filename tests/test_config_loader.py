@@ -1032,7 +1032,7 @@ def test_role_permission_mode_invalid_value_rejected(tmp_path: Path):
         load_config(p)
 
 
-def test_load_real_zf_yaml_expands_thin_issue_controller():
+def test_load_real_zf_yaml_expands_thin_prd_controller():
     """The repository config stays thin while profiles provide the runtime contract."""
     root = Path(__file__).parent.parent / "zf.yaml"
     cfg = load_config(root)
@@ -1055,20 +1055,23 @@ def test_load_real_zf_yaml_expands_thin_issue_controller():
     assert cfg.runtime.git.candidate_base_ref == "dev"
     assert cfg.runtime.git.ship_target_branch == "dev"
     assert {role.name for role in cfg.roles} == {
-        "issue-triage",
+        "product-scan",
+        "tech-scan",
+        "planner",
         "flow-discovery",
-        "judge-issue",
-        "fix-lane-0",
-        "fix-lane-1",
+        "judge-prd",
+        "dev-lane-0",
+        "dev-lane-1",
         "verify-lane-0",
         "verify-lane-1",
     }
     assert [stage.id for stage in cfg.workflow.stages] == [
-        "issue-triage",
-        "issue-post-verify-discovery",
-        "issue-lanes-impl",
-        "issue-lanes-verify",
-        "issue-lanes-final",
+        "prd-scan",
+        "prd-plan",
+        "prd-post-verify-discovery",
+        "prd-lanes-impl",
+        "prd-lanes-verify",
+        "prd-lanes-final",
     ]
 
 

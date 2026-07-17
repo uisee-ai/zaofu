@@ -1,0 +1,75 @@
+# ZaoFu repository default workflow.
+#
+# Keep this file project-thin. The shared controller profile owns runtime,
+# skill bundles, evidence gates, durable call results, and Goal closure. This
+# root config defaults to the standard PRD product-delivery workflow; use the
+# sibling issue/refactor controller YAMLs for focused fixes or parity work.
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: zaofu-prd/v3
+spec:
+  lanes: 2
+  backend: claude-code
+  prdRef: ${ZF_PRD_REF:-docs/prd/TODO.md}
+  targetRoot: .
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: ship_candidate
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: zaofu
+spec:
+  profile_sources:
+    - examples/prod/controller/common/profiles.yaml
+  uses:
+    - prod-runtime/v1
+  version: "1.0"
+  project:
+    name: zaofu
+    state_dir: .zf
+  # Resolve the portable profile's named source from the repository root.
+  skill_sources:
+    - name: zaofu-skills
+      path: skills
+      mode: readonly
+  quality_gates:
+    static:
+      enabled: true
+      required_checks:
+        - python3 -m compileall -q src tests
+        - npm --prefix web run typecheck
+  runtime:
+    workdirs:
+      provision_paths: [.venv, web/node_modules]
+    run_manager:
+      backend: claude-code
+    git:
+      candidate_base_ref: dev
+      ship_target_branch: dev
+  workflow:
+    harness_profile: strict
+    plan_approval: false
+    kind_routes:
+      prd:
+        default_tier: standard
+    dag:
+      external_triggers: [prd.requested]
+    admission_replan:
+      enabled: true
+      resynth_trigger: prd.scan.completed
+    completion_audit:
+      enabled: true
+      provider_completed_state: completed_unverified
+    resume_packet:
+      enabled: true
+      max_tokens: 1600
+      generate_on: [dispatch, retry, context_recovery, worker.context.warning, worker.context.critical, worker.stuck]
+    rework_routing:
+      prd.scan.failed: planner
+      prd.plan.failed: planner
+      integration.failed: planner
+      static_gate.failed: dev-lane-0
+      test.failed: dev-lane-0
