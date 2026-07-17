@@ -236,7 +236,7 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     const runId = recordString(request, "run_id") || recordString(request, "provider_run_id") || requestId;
     const thread = ensureThread(threads, threadId);
     const turn = ensureTurn(thread, recordString(request, "message_id") || requestId, recordString(request, "created_at"));
-    const status = channelRunStatus(recordString(request, "status", "pending"));
+    const status = channelWorkingStatus(recordString(request, "status", "pending"));
     const run = ensureRun(turn, runId, {
       provider: recordString(request, "provider") || recordString(request, "backend"),
       memberId: recordString(request, "target_member_id"),
@@ -268,30 +268,22 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     const messageId = recordString(route, "message_id");
     if (!messageId) continue;
     const threadId = recordString(route, "thread_id", "main");
-    const thread = ensureThread(threads, threadId);
-    const turn = ensureTurn(thread, messageId, recordString(route, "ts"));
     const reason = recordString(route, "reason");
     // bizsim r4:auto_route_not_allowed 是 agent 回帖的防风暴守卫
     // (doc 64 §5,by design)——渲染为中性说明而非 error;红色告警留给
     // 真正无人应答的人类消息。
     const byDesignGuard = reason === "auto_route_not_allowed";
-    const run = ensureRun(turn, `route-blocked-${messageId}`, {
-      provider: "",
-      memberId: "",
-      status: "completed",
-      updatedAt: recordString(route, "ts"),
-    });
-    upsertPart(run, {
-      id: `route-blocked-${messageId}`,
-      runId: run.id,
+    const noticePart = (runId: string, id: string) => ({
+      id,
+      runId,
       // chat mode filters `status` parts out of completed runs; `error`
       // renders — and an unroutable message is a delivery failure anyway.
-      kind: byDesignGuard ? "status" : "error",
-      state: "completed",
+      kind: (byDesignGuard ? "status" : "error") as AgentPartKind,
+      state: "completed" as const,
       title: byDesignGuard ? "未自动扇出(防风暴)" : "Not routed",
       summary: byDesignGuard
-        ? "Agent 回帖不自动扇出(by design)。需要成员间 @mention 定向转发时,"
-          + "用 channel-discussion-mode 动作把频道 discussion.mode 设为 "
+        ? "Agent 回帖里的 @mention 未转发(防风暴,by design)。需要成员间定向"
+          + "转发时,用 channel-discussion-mode 动作把频道 discussion.mode 设为 "
           + "mention_relay 或 fanout_then_synthesis。"
         : reason === "no_target"
           ? "Not routed to any member — mention someone with @, or configure a default responder for this channel."
@@ -300,6 +292,30 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
             : `Routing blocked: ${reason || "unknown reason"}`,
       updatedAt: recordString(route, "ts"),
     });
+    if (byDesignGuard) {
+      // operator review 2026-07-16: the router emits this for EVERY agent
+      // reply in manual_mention mode, mention or not, and the old fold keyed
+      // a NEW turn by the reply's message id — an orphan block trailing the
+      // whole timeline. Only surface it when the reply actually @mentions
+      // someone (relay intent got guarded), and attach it to the reply's own
+      // run so it reads in place.
+      const source = messages.find((item) => recordString(item, "message_id") === messageId);
+      if (!agentReplyMentionsAnother(source)) continue;
+      const replyRun = findRunByMessagePart(threads, messageId);
+      if (replyRun) {
+        upsertPart(replyRun, noticePart(replyRun.id, `route-blocked-${messageId}`));
+        continue;
+      }
+    }
+    const thread = ensureThread(threads, threadId);
+    const turn = ensureTurn(thread, messageId, recordString(route, "ts"));
+    const run = ensureRun(turn, `route-blocked-${messageId}`, {
+      provider: "",
+      memberId: "",
+      status: "completed",
+      updatedAt: recordString(route, "ts"),
+    });
+    upsertPart(run, noticePart(run.id, `route-blocked-${messageId}`));
   }
 
   for (const providerRun of providerRuns) {
@@ -313,7 +329,7 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
       recordString(providerRun, "message_id") || requestId,
       recordString(providerRun, "created_at") || recordString(providerRun, "started_at"),
     );
-    const status = channelRunStatus(recordString(providerRun, "live_status") || recordString(providerRun, "status", "pending"));
+    const status = channelWorkingStatus(recordString(providerRun, "live_status") || recordString(providerRun, "status", "pending"));
     const run = ensureRun(turn, runId, {
       provider: recordString(providerRun, "provider") || recordString(providerRun, "backend"),
       memberId: recordString(providerRun, "target_member_id") || recordString(providerRun, "member_id"),
@@ -369,8 +385,48 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
   return { id: `channel:${selectedChannelId}`, surface: "channel_group", activeThreadId, threads: finalizeThreads(threads, activeThreadId) };
 }
 
+// A blocked agent reply only warrants the anti-storm notice when it actually
+// tried to reach someone: an explicit mentions array or an @token in the text
+// that is not the sender itself ("@all" counts — the intent was a broadcast).
+function agentReplyMentionsAnother(message: Record<string, unknown> | undefined): boolean {
+  if (!message) return false;
+  const sender = recordString(message, "member_id");
+  const text = recordString(message, "text") || recordString(message, "message") || "";
+  const tokens = new Set<string>(
+    Array.isArray(message.mentions) ? message.mentions.map((item) => String(item ?? "").trim()) : [],
+  );
+  for (const match of text.matchAll(/@([A-Za-z0-9._-]+)/g)) tokens.add(match[1] ?? "");
+  for (const token of tokens) {
+    if (token && token !== sender) return true;
+  }
+  return false;
+}
+
+// Locate the run that rendered a channel message (its reply part id is
+// message-<message_id>) so a routing notice can sit under the reply itself.
+function findRunByMessagePart(threads: Map<string, AgentSessionThread>, messageId: string): AgentSessionRun | null {
+  const partId = `message-${messageId}`;
+  for (const thread of threads.values()) {
+    for (const turn of thread.turns) {
+      for (const run of turn.runs) {
+        if (run.parts.some((part) => part.id === partId)) return run;
+      }
+    }
+  }
+  return null;
+}
+
 function channelRunStatus(value: string): AgentSessionStatus {
   return agentRunStatus(value);
+}
+
+// pending/queued on a reply-request or provider-run row means the member is
+// EXPECTED to answer — from the operator's seat that is the working state
+// (green dot + ticking indicator), not a yellow queued dot parked for the
+// provider cold start (operator report 2026-07-16; the provider_runs pass
+// previously overwrote the request pass back to queued for ~9s).
+function channelWorkingStatus(raw: string): AgentSessionStatus {
+  return channelRunStatus(raw === "pending" || raw === "queued" ? "submitted" : raw);
 }
 
 function channelStatusTitle(status: AgentSessionStatus): string {

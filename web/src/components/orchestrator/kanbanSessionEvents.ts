@@ -7,17 +7,6 @@ function textValue(value: unknown): string {
   return String(value);
 }
 
-function canonicalBackend(value: unknown): string {
-  const raw = textValue(value).trim();
-  if (raw === "claude" || raw === "claude-code" || raw === "claude-code-headless" || raw === "claude_headless") {
-    return "claude-headless";
-  }
-  if (raw === "codex" || raw === "codex-cli" || raw === "codex-app-server" || raw === "codex_headless") {
-    return "codex-headless";
-  }
-  return raw;
-}
-
 export function mergeEventsByIdentity(...groups: RecentEvent[][]): RecentEvent[] {
   const byKey = new Map<string, RecentEvent>();
   for (const group of groups) {
@@ -67,9 +56,14 @@ export function isKanbanAgentSessionEvent(
   const payloadConversationId = textValue(payload.conversation_id).trim();
   if (args.conversationId && payloadConversationId && payloadConversationId !== args.conversationId) return false;
 
-  const payloadBackend = canonicalBackend(payload.backend || payload.provider);
-  const wantedBackend = canonicalBackend(args.backend);
-  if (wantedBackend && payloadBackend && payloadBackend !== wantedBackend) return false;
+  // Backend is ADVISORY, not an exclusion (consistent with b7eebff4's
+  // backend-agnostic history fold): a kanban thread is one durable
+  // conversation that can span backends (codex + claude-code kanban agent).
+  // Excluding a live delta because its payload.backend canonicalizes
+  // differently from the current selector re-introduces the same live-stream
+  // drop the SSE seq fix removes — a codex reply must still fold while the
+  // selector reads claude. `args.backend` is retained for callers that scope
+  // history fetches, but never gates the live fold.
 
   const eventTaskId = textValue(event.task_id).trim();
   if (args.taskId && eventTaskId && eventTaskId !== args.taskId) return false;

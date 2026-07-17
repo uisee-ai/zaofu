@@ -28,7 +28,6 @@ from zf.core.events.writer import EventWriter
 from zf.core.reactor.registry import EventActionRegistry
 from zf.core.statemachine.task import InvalidTransition
 from zf.core.task.schema import Task, TaskEvidence
-from zf.runtime.workstream_scope_guard import check_workstream_scope
 from zf.core.verification.evidence import (
     build_done_evidence_payload,
     validate_terminal_done_evidence,
@@ -36,6 +35,7 @@ from zf.core.verification.evidence import (
 from zf.runtime.channel_adapter import dispatch_reply_request
 from zf.runtime.channel_router import route_channel_message
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.durable_call_workflow import DurableCallWorkflowMixin
 from zf.runtime.feature_completion import close_feature_if_all_tasks_done
 from zf.runtime.artifact_manifest import (
     is_taskless_workflow_manifest_payload,
@@ -44,7 +44,6 @@ from zf.runtime.artifact_manifest import (
 )
 from zf.autoresearch.self_repair import (
     candidate_from_trigger_event,
-    repair_task_payload_from_candidate,
     write_candidate_artifact,
 )
 from zf.autoresearch.loop_requests import (
@@ -58,6 +57,7 @@ from zf.runtime.autoresearch_invocation import (
     acceptance_payload,
     build_invocation_request_from_run_manager_event,
     invocation_id_from_payload,
+    recovery_case_id_from_payload,
     rejection_payload,
     trigger_payload_from_invocation,
     validate_invocation_request,
@@ -153,6 +153,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
     ("channel.consensus.blocked", "_on_channel_discussion_event"),
     ("cost.budget.exceeded", "_on_cost_budget_exceeded"),
     ("autoresearch.trigger.accepted", "_on_autoresearch_trigger_accepted"),
+    ("autoresearch.bug_candidate.confirmed", "_on_autoresearch_bug_candidate_confirmed"),
     ("autoresearch.invocation.requested", "_on_autoresearch_invocation_requested"),
     ("run.manager.autoresearch.requested", "_on_run_manager_autoresearch_requested"),
     ("autoresearch.inject.worker_stuck", "_on_autoresearch_worker_stuck_inject"),
@@ -201,6 +202,9 @@ _TASKLESS_RUNTIME_CONTROL_EVENTS = frozenset({
     "autoresearch.loop.completed",
     "autoresearch.loop.failed",
     "autoresearch.bug_candidate.created",
+    "autoresearch.bug_candidate.confirmed",
+    "autoresearch.bug_candidate.dismissed",
+    "autoresearch.bug_candidate.superseded",
     "automation.proposal.created",
     "replan.proposal.created",
     "replan.contract_eval.requested",
@@ -297,7 +301,7 @@ def _autoresearch_failure_class(fingerprint: str) -> str:
     return ""
 
 
-class EventReactorMixin:
+class EventReactorMixin(DurableCallWorkflowMixin):
     """Event handlers + state-machine transitions of Orchestrator.
     Mixin contract: relies on host Orchestrator's instance fields. Do
     not instantiate standalone."""
@@ -1143,7 +1147,7 @@ class EventReactorMixin:
             # the task. Their state transitions from busy → awaiting_review.
             if task.assigned_to:
                 self._set_worker_state(
-                    task.assigned_to, "awaiting_review",
+                    task.assigned_to, "awaiting_review", task_id=task.id,
                     reason=f"{event.type} for task {task.id}",
                 )
             return OrchestratorDecision(
@@ -3321,6 +3325,22 @@ class EventReactorMixin:
             ))
         except Exception:
             pass
+        # Doc 140 shadow adapter: observe legacy terminal payload parity only.
+        # Selected fanout paths opt into warning/blocking in their own result
+        # handlers; this hook must never change ordinary lane routing.
+        try:
+            from zf.runtime.call_result_adapters import is_supported_call_result_event
+            from zf.runtime.call_result_runtime import admit_runtime_call_result
+
+            if is_supported_call_result_event(event):
+                admit_runtime_call_result(
+                    self,
+                    event,
+                    mode="shadow",
+                    dispatch_correction=False,
+                )
+        except Exception:
+            pass
 
     def _emit_terminal_replayed(
         self,
@@ -4270,6 +4290,11 @@ class EventReactorMixin:
         return self._on_test_failed(event)
 
     def _on_judge_passed(self, event: ZfEvent) -> OrchestratorDecision | None:
+        if (
+            isinstance(event.payload, dict)
+            and str(event.payload.get("authority") or "") == "compat_projection"
+        ):
+            return None
         graph_decision = self._workflow_graph_reconcile_bridge(event)
         if graph_decision is not None:
             return graph_decision
@@ -4327,6 +4352,11 @@ class EventReactorMixin:
         if str(event.task_id or "").strip():
             return None
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            event.type in {"judge.passed", "judge.failed"}
+            and str(payload.get("authority") or "") == "compat_projection"
+        ):
+            return None
         pdd_id = str(payload.get("pdd_id") or "").strip()
         feature_id = str(payload.get("feature_id") or "").strip()
         if not pdd_id or not feature_id:
@@ -4358,6 +4388,7 @@ class EventReactorMixin:
                 continue
             if self._move_task(task.id, "done", trigger_event=event.type):
                 moved.append(task.id)
+                self._emit_spec_promote_decision(event, task)
                 self._settle_task_chain_workers_idle(
                     task.id,
                     fallback_assignee=task.assigned_to or "",
@@ -4462,7 +4493,7 @@ class EventReactorMixin:
 
         for assignee in task_assignees:
             if assignee not in active_assignees:
-                self._set_worker_state(assignee, "idle", reason=reason)
+                self._set_worker_state(assignee, "idle", reason=reason, task_id=task_id)
 
     def _on_judge_failed(self, event: ZfEvent) -> OrchestratorDecision | None:
         task = self.task_store.get(event.task_id)
@@ -4527,7 +4558,7 @@ class EventReactorMixin:
             # B3: worker is now waiting for human steer
             if task.assigned_to:
                 self._set_worker_state(
-                    task.assigned_to, "blocked_human",
+                    task.assigned_to, "blocked_human", task_id=event.task_id or "",
                     reason=f"dev.blocked on {event.task_id}: {reason or 'no reason'}",
                 )
             return OrchestratorDecision(
@@ -4994,8 +5025,7 @@ class EventReactorMixin:
         registry.add(key)
 
         self._set_worker_state(
-            role.instance_id,
-            "completion_pending",
+            role.instance_id, "completion_pending", task_id=task.id,
             reason=(
                 f"green verification already recorded for task {task.id}; "
                 f"waiting for {expected_event}"
@@ -5670,154 +5700,6 @@ class EventReactorMixin:
             ),
         )
 
-    def _on_workflow_invoke_requested(self, event: ZfEvent) -> OrchestratorDecision | None:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        task_id = event.task_id or str(payload.get("task_id") or "")
-        pattern_id = str(payload.get("pattern_id") or payload.get("stage_id") or "")
-        task = self.task_store.get(task_id) if task_id else None
-        if task is None:
-            # E1(prd-goal e2e finding:统一入口无冷启路径):flow submit
-            # 的 invoke 曾因 kanban 无预置任务被拒("task missing"),
-            # 而 flow start 仅 dry-run——入口死路。凡载荷携带 submit 链
-            # 凭证(input manifest),kernel 直接自举任务(id 保留)。
-            task = self._bootstrap_invoke_task(event, payload, task_id)
-        if task is None:
-            self._emit_workflow_invoke_rejected(event, "task missing", task_id=task_id, pattern_id=pattern_id)
-            return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: task missing")
-        if _string_list(payload.get("open_questions")):
-            self._emit_workflow_invoke_rejected(
-                event,
-                "blocking open questions",
-                task_id=task_id,
-                pattern_id=pattern_id,
-            )
-            return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: open questions")
-        stage = self._workflow_stage_by_id(pattern_id)
-        if stage is None:
-            self._emit_workflow_invoke_rejected(event, "pattern not declared", task_id=task_id, pattern_id=pattern_id)
-            return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: unknown pattern")
-        topology = str(getattr(stage, "topology", "") or "")
-        if not topology.startswith("fanout_"):
-            self._emit_workflow_invoke_rejected(event, "pattern is not a fanout topology", task_id=task_id, pattern_id=pattern_id)
-            return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: unsupported topology")
-        dispatch_id = str(payload.get("dispatch_id") or getattr(task, "active_dispatch_id", "") or "")
-        active_dispatch = getattr(task, "active_dispatch_id", "") or ""
-        if active_dispatch and dispatch_id != active_dispatch:
-            self._emit_workflow_invoke_rejected(event, "dispatch_id mismatch", task_id=task_id, pattern_id=pattern_id)
-            return OrchestratorDecision(action="block", task_id=task_id, reason="workflow invoke rejected: stale dispatch")
-        # doc 64 §6 — WorkstreamScopeGuard: refuse the invocation when the
-        # declared paths overlap an in-flight task's exclusive_files claim.
-        proposed_paths = _string_list(payload.get("paths")) + _string_list(payload.get("scope"))
-        scope_check = check_workstream_scope(
-            self.state_dir,
-            proposed_paths,
-            proposed_task_id=task_id,
-        )
-        if not scope_check.allowed:
-            self._emit_workflow_invoke_rejected(
-                event,
-                f"workstream_scope_overlap: {scope_check.reason}",
-                task_id=task_id,
-                pattern_id=pattern_id,
-            )
-            channel_id = str(payload.get("channel_id") or "")
-            if channel_id:
-                self.event_writer.append(ZfEvent(
-                    type="channel.workflow.rejected",
-                    actor="zf-cli",
-                    task_id=task_id,
-                    payload={
-                        "channel_id": channel_id,
-                        "thread_id": str(payload.get("thread_id") or ""),
-                        "task_id": task_id,
-                        "pattern_id": pattern_id,
-                        "reason": "workstream_scope_overlap",
-                        "overlaps": [
-                            {"task_id": o.task_id, "paths": list(o.paths)}
-                            for o in scope_check.overlaps
-                        ],
-                        "source_event_id": event.id,
-                    },
-                    causation_id=event.id,
-                    correlation_id=event.correlation_id,
-                ))
-            return OrchestratorDecision(
-                action="block",
-                task_id=task_id,
-                reason="workflow invoke rejected: workstream scope overlap",
-            )
-        accepted_event = ZfEvent(
-            type="workflow.invoke.accepted",
-            actor="zf-cli",
-            task_id=task_id,
-            payload={
-                "task_id": task_id,
-                "pattern_id": pattern_id,
-                "channel_id": str(payload.get("channel_id") or ""),
-                "thread_id": str(payload.get("thread_id") or ""),
-                "source_event_id": event.id,
-                "topology": topology,
-                "source_refs": dict(payload.get("source_refs") or {})
-                if isinstance(payload.get("source_refs"), dict)
-                else {},
-                "workflow_run_id": str(payload.get("workflow_run_id") or ""),
-                "workflow_input_manifest_ref": str(payload.get("workflow_input_manifest_ref") or ""),
-                "workflow_prompt_ref": str(payload.get("workflow_prompt_ref") or ""),
-                "prompt_kind": str(payload.get("prompt_kind") or payload.get("kind") or ""),
-                "artifact_refs": payload.get("artifact_refs")
-                if isinstance(payload.get("artifact_refs"), list)
-                else [],
-            },
-            causation_id=event.id,
-            correlation_id=event.correlation_id,
-        )
-        roles = list(getattr(stage, "roles", []) or [])
-        target_ref = _workflow_invoke_target_ref(
-            payload,
-            str(getattr(stage, "target_ref", "") or ""),
-        )
-        fanout_request = ZfEvent(
-            type="task.fanout.requested",
-            actor="zf-cli",
-            task_id=task_id,
-            payload={
-                "task_id": task_id,
-                "dispatch_id": dispatch_id,
-                "requested_by": str(payload.get("requested_by") or event.actor or "channel"),
-                "reason": str(payload.get("reason") or "workflow invoke accepted"),
-                "scope": _string_list(payload.get("scope")),
-                "requested_specialists": _string_list(payload.get("requested_specialists")) or [str(role) for role in roles],
-                "expected_output": str(payload.get("expected_output") or f"run execution pattern {pattern_id}"),
-                "risk": str(payload.get("risk") or ""),
-                "target_ref": target_ref,
-                "source_event_id": event.id,
-                "source_intent_event_id": accepted_event.id,
-                "pattern_id": pattern_id,
-                "channel_id": str(payload.get("channel_id") or ""),
-                "thread_id": str(payload.get("thread_id") or ""),
-                "source_refs": dict(payload.get("source_refs") or {})
-                if isinstance(payload.get("source_refs"), dict)
-                else {},
-                "workflow_run_id": str(payload.get("workflow_run_id") or ""),
-                "workflow_input_manifest_ref": str(payload.get("workflow_input_manifest_ref") or ""),
-                "workflow_prompt_ref": str(payload.get("workflow_prompt_ref") or ""),
-                "prompt_kind": str(payload.get("prompt_kind") or payload.get("kind") or ""),
-                "artifact_refs": payload.get("artifact_refs")
-                if isinstance(payload.get("artifact_refs"), list)
-                else [],
-            },
-            causation_id=accepted_event.id,
-            correlation_id=event.correlation_id,
-        )
-        accepted_event.payload["fanout_request_event_id"] = fanout_request.id
-        self.event_writer.append(accepted_event)
-        self.event_writer.append(fanout_request)
-        return OrchestratorDecision(
-            action="workflow_invoke",
-            task_id=task_id,
-            reason=f"workflow invoke accepted: {pattern_id}",
-        )
-
     def _workflow_stage_by_id(self, stage_id: str):
         for stage in getattr(self.config.workflow, "stages", []) or []:
             if str(getattr(stage, "id", "") or "") == stage_id:
@@ -6301,8 +6183,9 @@ class EventReactorMixin:
         trigger_id = str(payload.get("trigger_id") or event.id or "").strip()
         if not trigger_id:
             return None
+        recovery_case_id = recovery_case_id_from_payload(payload, fallback=trigger_id)
         proposal_id = "autoresearch-maint-" + hashlib.sha1(
-            trigger_id.encode("utf-8")
+            recovery_case_id.encode("utf-8")
         ).hexdigest()[:12]
         if self._automation_proposal_exists(proposal_id):
             return OrchestratorDecision(
@@ -6319,6 +6202,7 @@ class EventReactorMixin:
             "source_event_type": event.type,
             "severity": str(payload.get("severity") or ""),
             "fingerprint": str(payload.get("fingerprint") or ""),
+            "recovery_case_id": recovery_case_id,
             "evidence_paths": (
                 payload.get("evidence_paths")
                 if isinstance(payload.get("evidence_paths"), list) else []
@@ -6328,10 +6212,6 @@ class EventReactorMixin:
             action_payload["task_id"] = task_id
         candidate = candidate_from_trigger_event(event)
         candidate_path = write_candidate_artifact(self.state_dir, candidate)
-        repair_task_payload = repair_task_payload_from_candidate(
-            candidate,
-            candidate_path=candidate_path,
-        )
         self.event_writer.append(ZfEvent(
             type="autoresearch.bug_candidate.created",
             actor="zf-autoresearch",
@@ -6339,7 +6219,10 @@ class EventReactorMixin:
             payload={
                 "candidate": candidate.to_dict(),
                 "candidate_path": str(candidate_path),
-                "repair_task_payload": repair_task_payload,
+                # A trigger is a hypothesis only.  The Run Manager appends a
+                # candidate status event after diagnosis has provided a
+                # reproduction, evidence refs, and a narrow repair scope.
+                "repair_task_payload": None,
             },
             causation_id=event.id,
             correlation_id=event.correlation_id,
@@ -6362,17 +6245,10 @@ class EventReactorMixin:
                     "payload": action_payload,
                     "reason": reason,
                 },
-                "repair_task_proposal": {
-                    "action": "create-task",
-                    "payload": repair_task_payload,
-                    "reason": (
-                        "create a normal ZaoFu repair task after maintenance "
-                        "preparation is accepted"
-                    ),
-                },
                 "candidate_id": candidate.candidate_id,
                 "candidate_path": str(candidate_path),
                 "trigger_id": trigger_id,
+                "recovery_case_id": recovery_case_id,
                 "severity": str(payload.get("severity") or ""),
                 "fingerprint": str(payload.get("fingerprint") or ""),
             },
@@ -6400,51 +6276,62 @@ class EventReactorMixin:
                 causation_id=event.id,
                 correlation_id=event.correlation_id,
             ))
-        # doc 78 O-2 (safe half): opt-in (ZF_AUTORESEARCH_AUTO_PREPARE) — elevate
-        # the repair candidate into a first-class prepared-for-approval record
-        # and surface it to the owner (Feishu via O-7). This NEVER applies or
-        # merges anything: the repair scope is the harness's own kernel
-        # (src/zf/**), and auto-applying an agent-generated kernel patch is a
-        # safety boundary we keep — a human reviews the verified fix and merges.
-        try:
-            from zf.autoresearch.repair_preparation import (
-                REPAIR_PREPARED_EVENT,
-                auto_prepare_enabled,
-                build_repair_preparation,
-                owner_message_for_prepared_repair,
-                repair_prepared_payload,
+        return OrchestratorDecision(
+            action="notify",
+            task_id=task_id or None,
+            role="operator",
+            reason="autoresearch.trigger.accepted → maintenance-prepare proposal",
+        )
+
+    def _on_autoresearch_bug_candidate_confirmed(
+        self,
+        event: ZfEvent,
+    ) -> OrchestratorDecision | None:
+        """Apply the bounded source-repair policy after, never before, diagnosis."""
+
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        candidate = payload.get("candidate") if isinstance(payload.get("candidate"), dict) else {}
+        repair_task_payload = (
+            payload.get("repair_task_payload")
+            if isinstance(payload.get("repair_task_payload"), dict)
+            else None
+        )
+        if (
+            not candidate
+            or str(candidate.get("status") or "") != "confirmed"
+            or repair_task_payload is None
+        ):
+            return OrchestratorDecision(
+                action="skip",
+                task_id=event.task_id,
+                reason="confirmed candidate lacks bounded repair contract",
             )
-
-            if auto_prepare_enabled():
-                prep = build_repair_preparation({
-                    "candidate": candidate.to_dict(),
-                    "candidate_path": str(candidate_path),
-                    "repair_task_payload": repair_task_payload,
-                })
-                if prep is not None:
-                    self.event_writer.append(ZfEvent(
-                        type=REPAIR_PREPARED_EVENT,
-                        actor="zf-autoresearch",
-                        task_id=task_id or None,
-                        payload=repair_prepared_payload(prep),
-                        causation_id=event.id,
-                        correlation_id=event.correlation_id,
-                    ))
-                    self.event_writer.append(ZfEvent(
-                        type="owner.visible_message.requested",
-                        actor="zf-autoresearch",
-                        payload=owner_message_for_prepared_repair(prep),
-                        causation_id=event.id,
-                        correlation_id=event.correlation_id,
-                    ))
-        except Exception:
-            pass
-
-        # Authorized auto-repair is default-off and bounded per fingerprint.
-        # Autoresearch proposes dispatch; Run Manager accepts before execution.
-        # Exhaustion returns an escalation request to Run Manager, not human.
-        # The isolated worker follows zf-self-repair (fix, verify, close out).
+        if bool(candidate.get("expected_fault")) or str(
+            candidate.get("failure_scope") or ""
+        ) == "plan_admission":
+            return OrchestratorDecision(
+                action="skip",
+                task_id=event.task_id,
+                reason="expected planner fault cannot dispatch source repair",
+            )
+        candidate_id = str(candidate.get("candidate_id") or "")
         try:
+            existing = self.event_log.read_all()
+        except Exception:
+            existing = []
+        if any(
+            item.type == "autoresearch.repair.dispatch_requested"
+            and isinstance(item.payload, dict)
+            and str(item.payload.get("candidate_id") or "") == candidate_id
+            for item in existing
+        ):
+            return OrchestratorDecision(
+                action="skip",
+                task_id=event.task_id,
+                reason="confirmed candidate repair dispatch already exists",
+            )
+        try:
+            from zf.runtime.event_window import read_runtime_events
             from zf.runtime.repair_authorization import (
                 AUTO_REPAIR_ENV,
                 REPAIR_DISPATCH_EVENT,
@@ -6452,75 +6339,74 @@ class EventReactorMixin:
                 decide_repair,
             )
 
-            candidate_payload = {
-                "candidate": candidate.to_dict(),
-                "candidate_path": str(candidate_path),
-                "repair_task_payload": repair_task_payload,
-            }
             repair_mode = _autoresearch_repair_mode(self.config)
-            repair_env = (
-                {AUTO_REPAIR_ENV: "authorized"}
-                if repair_mode == "bounded_repair" else None
-            )
-            from zf.runtime.event_window import read_runtime_events
-
             decision = decide_repair(
-                candidate_payload,
+                {
+                    "candidate": candidate,
+                    "candidate_path": str(payload.get("candidate_path") or ""),
+                    "repair_task_payload": repair_task_payload,
+                },
                 read_runtime_events(self.event_log, self.state_dir),
-                env=repair_env,
+                env={AUTO_REPAIR_ENV: "authorized"}
+                if repair_mode == "bounded_repair" else None,
             )
-            if decision.action == "dispatch":
-                self.event_writer.append(ZfEvent(
-                    type=REPAIR_DISPATCH_EVENT,
-                    actor="zf-autoresearch",
-                    task_id=task_id or None,
-                    payload={
-                        "fingerprint": decision.fingerprint,
-                        "attempt": decision.attempt,
-                        "skill": SELF_REPAIR_SKILL,
-                        "candidate_id": candidate.candidate_id,
-                        "candidate_path": str(candidate_path),
-                        "repair_task_payload": repair_task_payload,
-                        "apply_policy": repair_mode,
-                        "repair_mode": repair_mode,
-                        "failure_class": _autoresearch_failure_class(decision.fingerprint),
-                        "repair_bucket": decision.bucket,
-                        "source_event_id": event.id,
-                        "resume_checkpoint_ref": str(
-                            payload.get("source_event_id")
-                            or payload.get("trigger_id")
-                            or event.id
-                        ),
-                    },
-                    causation_id=event.id,
-                    correlation_id=event.correlation_id,
-                ))
-            elif decision.action == "escalate":
-                self.event_writer.append(ZfEvent(
-                    type="autoresearch.repair.escalation.requested",
-                    actor="zf-autoresearch",
-                    task_id=task_id or None,
-                    payload={
-                        "reason": decision.reason,
-                        "fingerprint": decision.fingerprint,
-                        "attempt": decision.attempt,
-                        "failure_class": _autoresearch_failure_class(
-                            decision.fingerprint
-                        ),
-                        "owner_route": "run_manager",
-                        "source_event_id": event.id,
-                    },
-                    causation_id=event.id,
-                    correlation_id=event.correlation_id,
-                ))
-        except Exception:
-            pass
-
+        except Exception as exc:
+            return OrchestratorDecision(
+                action="notify",
+                task_id=event.task_id,
+                role="run_manager",
+                reason=f"confirmed candidate authorization unavailable: {exc}",
+            )
+        if decision.action == "dispatch":
+            self.event_writer.append(ZfEvent(
+                type=REPAIR_DISPATCH_EVENT,
+                actor="zf-autoresearch",
+                task_id=event.task_id,
+                payload={
+                    "fingerprint": decision.fingerprint,
+                    "attempt": decision.attempt,
+                    "skill": SELF_REPAIR_SKILL,
+                    "candidate_id": candidate_id,
+                    "candidate_path": str(payload.get("candidate_path") or ""),
+                    "repair_task_payload": repair_task_payload,
+                    "apply_policy": repair_mode,
+                    "repair_mode": repair_mode,
+                    "failure_class": _autoresearch_failure_class(decision.fingerprint),
+                    "repair_bucket": decision.bucket,
+                    "recovery_case_id": str(payload.get("recovery_case_id") or ""),
+                    "source_event_id": event.id,
+                    "resume_checkpoint_ref": str(payload.get("source_event_id") or event.id),
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+            return OrchestratorDecision(
+                action="notify",
+                task_id=event.task_id,
+                role="run_manager",
+                reason="confirmed candidate dispatched to bounded self-repair",
+            )
+        if decision.action == "escalate":
+            self.event_writer.append(ZfEvent(
+                type="autoresearch.repair.escalation.requested",
+                actor="zf-autoresearch",
+                task_id=event.task_id,
+                payload={
+                    "reason": decision.reason,
+                    "fingerprint": decision.fingerprint,
+                    "attempt": decision.attempt,
+                    "candidate_id": candidate_id,
+                    "owner_route": "run_manager",
+                    "source_event_id": event.id,
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
         return OrchestratorDecision(
             action="notify",
-            task_id=task_id or None,
-            role="operator",
-            reason="autoresearch.trigger.accepted → maintenance-prepare proposal",
+            task_id=event.task_id,
+            role="run_manager",
+            reason=f"confirmed candidate retained as proposal: {decision.reason}",
         )
 
     def _on_autoresearch_invocation_requested(
@@ -6808,6 +6694,14 @@ class EventReactorMixin:
             and to_status == "done"
             and trigger_event == "artifact.manifest.published"
         )
+        run_goal_terminal_success = (
+            task.status in {
+                "backlog", "in_progress", "review", "verify", "testing",
+                "test", "judge",
+            }
+            and to_status == "done"
+            and trigger_event == "run.goal.completed"
+        )
         try:
             if not (
                 (
@@ -6818,6 +6712,7 @@ class EventReactorMixin:
                 or configured_terminal_success
                 or late_terminal_success
                 or plan_only_terminal_success
+                or run_goal_terminal_success
             ):
                 self.sm.transition(task.status, to_status)
             updated_task = self.task_store.update(task_id, status=to_status)

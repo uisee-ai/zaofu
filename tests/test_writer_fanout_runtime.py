@@ -5,6 +5,7 @@ import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from zf.core.config.schema import (
     FanoutAggregateConfig,
@@ -368,6 +369,23 @@ def test_writer_fanout_missing_kanban_tasks_fail_closed(tmp_path: Path):
     assert not [event for event in events if event.type == "fanout.child.dispatched"]
 
 
+def test_writer_fanout_records_task_map_admission_before_start(tmp_path: Path):
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _seed_tasks(state_dir)
+
+    _start(orch)
+
+    events = log.read_all()
+    admitted = next(event for event in events if event.type == "task_map.admitted")
+    started = next(event for event in events if event.type == "fanout.started")
+    assert admitted.payload["trigger_event_id"] == started.payload["trigger_event_id"]
+    assert started.payload["task_map_admitted_event_id"] == admitted.id
+    assert (
+        started.payload["plan_admission_incident_id"]
+        == admitted.payload["plan_admission_incident_id"]
+    )
+
+
 def test_writer_fanout_synthesize_canonical_tasks_admits_unseeded(tmp_path: Path):
     # Opt-in: a refactor-style writer stage (synthesize_canonical_tasks) makes
     # its task_map tasks canonical in the kanban so the admission gate passes
@@ -479,6 +497,7 @@ def test_plan_contract_requires_assembly_task_for_multi_bundle():
     contract = "\n".join(WriterFanoutDataMixin._plan_artifact_contract_lines())
     assert 'root_owner_class: "assembly"' in contract
     assert "more than one parallel bundle" in contract
+    assert "workspace_root_owner_required=true" in contract
 
 
 def test_writer_briefing_forbids_out_of_scope_layout(tmp_path: Path):
@@ -1219,6 +1238,36 @@ def test_candidate_rework_sweep_drives_writer_fanout_immediately(tmp_path: Path)
     assert rework[-1].payload["resume_scope"] == "failed_children_only"
 
 
+def test_candidate_rework_sweep_does_not_tick_run_manager_without_pending_action(
+    tmp_path: Path,
+):
+    """Idle orchestration must not turn a healthy sweep into an RM loop."""
+    state_dir, log, _transport, orch = _state(tmp_path)
+    log.append(ZfEvent(
+        type="orchestrator.decision.recorded",
+        actor="zf-cli",
+        payload={"outcome_reason": "idle"},
+    ))
+
+    with patch("zf.runtime.run_manager.run_manager_tick") as run_manager_tick:
+        orch._run_candidate_rework_sweep()
+
+    run_manager_tick.assert_not_called()
+
+
+def test_idle_orchestrator_cycles_do_not_tick_run_manager_without_rework(
+    tmp_path: Path,
+):
+    """The five-second watcher idle loop must preserve RM coalescing."""
+    _state_dir, _log, _transport, orch = _state(tmp_path)
+
+    with patch("zf.runtime.run_manager.run_manager_tick") as run_manager_tick:
+        orch.run_once()
+        orch.run_once()
+
+    run_manager_tick.assert_not_called()
+
+
 def test_run_once_reacts_to_candidate_verify_failed_with_rework(tmp_path: Path):
     state_dir, log, transport, orch = _state(
         tmp_path,
@@ -1800,6 +1849,99 @@ def test_writer_fanout_completion_keeps_canonical_task_active_for_verify(
     )
 
 
+def test_selected_writer_call_settles_with_admitted_implementation_result(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch = _state(tmp_path)
+    _seed_tasks(state_dir)
+    orch.config.workflow.flow_metadata = {
+        "result_protocol": {"mode": "blocking"},
+    }
+    _start(orch)
+    dispatch_events = log.read_all()
+    operation_requests = [
+        event for event in dispatch_events
+        if event.type == "workflow.operation.requested"
+        and event.payload.get("operation_type") == "fanout_writer_child"
+    ]
+    operation_started = [
+        event for event in dispatch_events
+        if event.type == "workflow.operation.started"
+        and any(
+            request.payload["operation_id"] == event.payload["operation_id"]
+            for request in operation_requests
+        )
+    ]
+    positions = {
+        event.id: index for index, event in enumerate(dispatch_events)
+    }
+    assert len(operation_requests) == 2
+    assert max(positions[event.id] for event in operation_requests) < min(
+        positions[event.id] for event in operation_started
+    )
+    fanout_id = _fanout_id(log)
+    task1 = _child(_manifest(state_dir, fanout_id), "TASK-1")
+    commit1 = _commit(Path(task1["workdir"]), "a.txt", "TASK-1\n", "TASK-1")
+    progress = ZfEvent(
+        type="dev.build.done",
+        actor=task1["role_instance"],
+        task_id="TASK-1",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": task1["child_id"],
+            "run_id": task1["run_id"],
+            "role_instance": task1["role_instance"],
+            "pdd_id": "F-11111111",
+            "source_commit": commit1,
+            "source_branch": task1["source_branch"],
+            "workdir": task1["workdir"],
+            "summary": "implemented task one",
+            **{
+                key: value
+                for key, value in dict(task1.get("payload") or {}).items()
+                if key in {
+                    "workflow_run_id",
+                    "operation_id",
+                    "request_hash",
+                    "attempt_id",
+                    "result_protocol_mode",
+                    "attempt_source_manifest_ref",
+                    "attempt_source_manifest_digest",
+                    "attempt_source_manifest",
+                }
+            },
+        },
+    )
+
+    orch.run_once(events=[progress])
+
+    events = log.read_all()
+    admitted = next(
+        event for event in events
+        if event.type == "workflow.call.result.admitted"
+        and event.task_id == "TASK-1"
+    )
+    settled = next(
+        event for event in events
+        if event.type == "workflow.operation.settled"
+        and event.task_id == "TASK-1"
+    )
+    completed = next(
+        event for event in events
+        if event.type == "fanout.child.completed"
+        and event.payload.get("task_id") == "TASK-1"
+    )
+    assert admitted.payload["control_result_schema"] == "implementation-result.v1"
+    assert settled.payload["admitted_call_result_ref"]["ref"] == (
+        admitted.payload["envelope_ref"]["ref"]
+    )
+    assert completed.payload["admitted_call_result_ref"]["ref"] == (
+        admitted.payload["envelope_ref"]["ref"]
+    )
+    assert not any("rework" in event.type for event in events)
+
+
 def test_run_once_recovers_overwritten_writer_fanout_dispatch(tmp_path: Path):
     state_dir, log, transport, orch = _state(
         tmp_path,
@@ -1952,6 +2094,13 @@ def test_run_once_recovers_stale_writer_fanout_task_binding(tmp_path: Path):
     ]
     assert len(bound) == 1
     assert bound[0].payload["dispatch_id"] == child["run_id"]
+    worker_states = [
+        event for event in log.read_all()
+        if event.type == "worker.state.changed"
+        and event.actor == child["role_instance"]
+    ]
+    assert worker_states[-1].payload["to"] == "busy"
+    assert worker_states[-1].task_id == "TASK-1"
     assert not [
         event for event in log.read_all()
         if event.type == "task.dispatched"
@@ -2839,6 +2988,91 @@ def test_late_task_ref_updated_closes_failed_writer_child(tmp_path: Path):
     )
     assert completed[-1].payload["recovery_source_event_id"] == ref_updated.id
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "completed"
+
+
+def test_writer_completion_rejects_stale_task_ref_from_prior_attempt(
+    tmp_path: Path,
+):
+    state_dir, log, _transport, orch = _state(
+        tmp_path,
+        include_orchestrator=True,
+    )
+    _seed_tasks(state_dir)
+    _start(orch)
+    fanout_id = _fanout_id(log)
+    task1 = _child(_manifest(state_dir, fanout_id), "TASK-1")
+    workdir = Path(task1["workdir"])
+    old_commit = _commit(workdir, "a.txt", "old\n", "old attempt")
+    old_progress = ZfEvent(
+        type="dev.build.done",
+        actor=task1["role_instance"],
+        task_id="TASK-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": task1["child_id"],
+            "run_id": task1["run_id"],
+            "source_commit": old_commit,
+            "source_branch": task1["source_branch"],
+            "workdir": task1["workdir"],
+        },
+    )
+    old_ref = TaskRefManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=orch.config,
+    ).process_dev_build_done(old_progress)
+    assert old_ref is not None and old_ref.status == "updated"
+
+    new_commit = _commit(workdir, "a.txt", "new\n", "new attempt")
+    new_progress = ZfEvent(
+        type="dev.build.done",
+        actor=task1["role_instance"],
+        task_id="TASK-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": task1["child_id"],
+            "run_id": task1["run_id"],
+            "source_commit": new_commit,
+            "source_branch": task1["source_branch"],
+            "workdir": task1["workdir"],
+        },
+    )
+    orch._maybe_update_writer_fanout(new_progress)  # type: ignore[attr-defined]
+
+    failed = [
+        event for event in log.read_all()
+        if event.type == "fanout.child.failed"
+        and event.payload.get("child_id") == task1["child_id"]
+    ]
+    assert failed[-1].payload["reason"] == "missing task ref after dev.build.done"
+    assert not [
+        event for event in log.read_all()
+        if event.type == "fanout.child.completed"
+        and event.payload.get("result_event_id") == new_progress.id
+    ]
+
+    new_ref = TaskRefManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=orch.config,
+    ).process_dev_build_done(new_progress)
+    assert new_ref is not None and new_ref.status == "updated"
+    ref_updated = ZfEvent(
+        type="task.ref.updated",
+        actor="zf-cli",
+        task_id="TASK-1",
+        payload=new_ref.payload,
+        causation_id=new_progress.id,
+    )
+    log.append(ref_updated)
+    orch._maybe_update_writer_fanout(ref_updated)  # type: ignore[attr-defined]
+
+    completed = [
+        event for event in log.read_all()
+        if event.type == "fanout.child.completed"
+        and event.payload.get("child_id") == task1["child_id"]
+    ]
+    assert completed[-1].payload["source_commit"] == new_commit
 
 
 def test_late_task_ref_repair_replaces_completed_writer_child_without_identity(

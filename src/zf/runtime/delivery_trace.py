@@ -31,6 +31,7 @@ from zf.runtime.delivery_summaries import (
     build_score_summary,
 )
 from zf.runtime.execution_graph import build_execution_graph, build_superseded_nodes
+from zf.runtime.goal_closure_projection import build_goal_closure_loop
 from zf.runtime.observability_projection import build_delivery_closed_loop
 from zf.runtime.delivery_flow_metrics import build_delivery_flow_metrics
 from zf.runtime.task_lifecycle_trace import build_task_lifecycle
@@ -126,7 +127,11 @@ def build_delivery_trace(
         task_ids=set(tasks.keys()),
         task_map_ref=task_map_ref,
     )
-    goal_closure_loop = _goal_closure_loop(module_parity_loop)
+    goal_closure_loop = build_goal_closure_loop(
+        module_parity_loop,
+        events=events,
+        feature_id=feature_id,
+    )
     control_room = _control_room_projection(
         events=events,
         tasks=tasks,
@@ -705,13 +710,6 @@ def _module_parity_loop(
     }
 
 
-def _goal_closure_loop(module_parity_loop: dict[str, Any]) -> dict[str, Any]:
-    loop = dict(module_parity_loop)
-    loop["schema_version"] = "goal-closure-loop.v1"
-    loop["compatibility_projection"] = "module_parity_loop"
-    return loop
-
-
 def _module_parity_event_linked(
     *,
     event: ZfEvent,
@@ -838,6 +836,22 @@ def _workflow_node_kind(
         return "kanban_task"
     if event_type.startswith("candidate."):
         return "candidate_gate"
+    if event_type in {
+        "flow.goal.closed", "module.parity.closed",
+    }:
+        return "goal_execution_closed"
+    if event_type == "workflow.call.result.admitted" and str(
+        payload.get("control_result_schema") or ""
+    ) == "goal-closure-result.v1":
+        return "goal_result_admitted"
+    if event_type.startswith("goal.closure."):
+        return "goal_closure_judge"
+    if event_type.startswith("run.goal.completion."):
+        return "goal_completion_gate"
+    if event_type.startswith("run.delivery."):
+        return "goal_delivery"
+    if event_type == "run.goal.completed":
+        return "goal_completed"
     if event_type in {"fanout.aggregate.completed", "fanout.cancelled", "fanout.timed_out"}:
         return "fanout_barrier"
     return ""

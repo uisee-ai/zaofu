@@ -1,0 +1,30 @@
+apiVersion: zaofu.dev/v1
+kind: SkillAdapterPolicy
+metadata:
+  name: workflow-adapter/v1
+spec:
+  # Direct role bundles have one owner. The resolver reads this profile source
+  # and follows SKILL.md dependencies; it must not duplicate skill names in
+  # Python.
+  profile_source: profiles.yaml
+  recommended_skills:
+    common: [zf-dynamic-artifact-gate]
+    flows:
+      issue: []
+      prd: []
+      refactor: [zf-refactor-generalization-audit, zf-research-preflight-law]
+  parity:
+    default_scopes:
+      refactor: [core, cli, api, web, runtime]
+    skills:
+      provider: zf-provider-contract-parity
+      tools: zf-tool-skill-parity
+      skills: zf-tool-skill-parity
+      webui: zf-webui-tui-parity
+      tui: zf-webui-tui-parity
+      memory: zf-memory-context-parity
+      context: zf-memory-context-parity
+  project_adapter:
+    strictness_stop_values: [full-parity, release, strict]
+    backlog_suffixes:
+      refactor: [scan-inventory, parity-contract, verify-rescan]

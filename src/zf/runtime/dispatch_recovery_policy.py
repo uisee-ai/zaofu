@@ -6,6 +6,10 @@ from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
 from zf.runtime.attempt_ledger import counted_failure_events, failure_fingerprint
+from zf.runtime.canonical_recovery import (
+    build_rework_cap_payload,
+    recovery_series_from_event,
+)
 from zf.runtime.event_window import read_runtime_events
 
 
@@ -66,7 +70,6 @@ class DispatchRecoveryPolicyMixin:
             if max_attempts is not None
             else int(role.max_rework_attempts)
         )
-        payload = trigger_event.payload if isinstance(trigger_event.payload, dict) else {}
         try:
             fingerprint = failure_fingerprint(trigger_event)
         except Exception:
@@ -87,25 +90,24 @@ class DispatchRecoveryPolicyMixin:
         semantic_required = bool(
             semantic_threshold > 0 and len(failures) >= semantic_threshold
         )
+        cap_payload = build_rework_cap_payload(
+            series=recovery_series_from_event(trigger_event),
+            failures=failures,
+            max_attempts=effective_max_attempts,
+            trigger_event=trigger_event,
+            role=role.name,
+            extra={
+                "retry_count": task.retry_count,
+                "max_attempts_source": max_attempts_source,
+                "semantic_triage_required": semantic_required,
+            },
+        )
         try:
             self.event_writer.append(ZfEvent(
                 type="task.rework.capped",
                 actor="zf-cli",
                 task_id=task.id,
-                payload={
-                    "role": role.name,
-                    "retry_count": task.retry_count,
-                    "max_attempts": effective_max_attempts,
-                    "max_attempts_source": max_attempts_source,
-                    "last_reason": str(payload.get("reason") or trigger_event.type),
-                    "trigger_event_type": trigger_event.type,
-                    "trigger_event_id": trigger_event.id,
-                    "failure_fingerprint": fingerprint,
-                    "failure_count": len(failures),
-                    "failure_event_ids": [event.id for event in failures],
-                    "semantic_triage_required": semantic_required,
-                    "recovery_owner": "run_manager",
-                },
+                payload=cap_payload,
                 causation_id=trigger_event.id,
                 correlation_id=trigger_event.correlation_id,
             ))
@@ -148,28 +150,23 @@ class DispatchRecoveryPolicyMixin:
                 and str(payload.get("failure_fingerprint") or "") == fingerprint
             ):
                 return True
+        cap_payload = build_rework_cap_payload(
+            series=recovery_series_from_event(trigger_event),
+            failures=failures,
+            max_attempts=role.max_rework_attempts,
+            trigger_event=trigger_event,
+            role=role.name,
+            extra={
+                "retry_count": task.retry_count,
+                "max_attempts_source": "semantic_triage_threshold",
+                "semantic_triage_required": True,
+            },
+        )
         self.event_writer.append(ZfEvent(
             type="task.rework.capped",
             actor="zf-cli",
             task_id=task.id,
-            payload={
-                "role": role.name,
-                "retry_count": task.retry_count,
-                "max_attempts": role.max_rework_attempts,
-                "max_attempts_source": "semantic_triage_threshold",
-                "last_reason": str(
-                    (trigger_event.payload or {}).get("reason")
-                    if isinstance(trigger_event.payload, dict)
-                    else trigger_event.type
-                ),
-                "trigger_event_type": trigger_event.type,
-                "trigger_event_id": trigger_event.id,
-                "failure_fingerprint": fingerprint,
-                "failure_count": len(failures),
-                "failure_event_ids": [event.id for event in failures],
-                "semantic_triage_required": True,
-                "recovery_owner": "run_manager",
-            },
+            payload=cap_payload,
             causation_id=trigger_event.id,
             correlation_id=trigger_event.correlation_id,
         ))

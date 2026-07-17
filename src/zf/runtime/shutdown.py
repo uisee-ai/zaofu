@@ -394,29 +394,48 @@ class GracefulShutdown:
             return set()
 
     def _kill_watcher(self) -> None:
-        """Read the lock file pid and escalate SIGTERM → SIGKILL.
+        """Signal every recorded watcher pid, SIGTERM → SIGKILL each.
 
-        Skips if lock is missing (already stopped), pid is own process,
-        or OS signalling fails (process already dead).
+        ZF-STOP-TAIL-01: the loop.lock pid can drift from the live watcher
+        (boot race / stale lock); signalling only it misses the real
+        process, which then drains its backlog for minutes while probing
+        already-killed panes. Also read processes/watcher.pid.json (the
+        SingleOwnerProcessGuard record) and signal that owner too.
         """
+        import os
+
+        pids: set[int] = set()
+        lock_path = self.state_dir / "loop.lock"
+        try:
+            pids.add(int(lock_path.read_text().strip()))
+        except (OSError, ValueError):
+            pass
+        guard_path = self.state_dir / "processes" / "watcher.pid.json"
+        try:
+            import json as _json
+
+            guard_pid = int(
+                _json.loads(guard_path.read_text()).get("owner_pid") or 0
+            )
+            if guard_pid:
+                pids.add(guard_pid)
+        except (OSError, ValueError):
+            pass
+        for pid in pids:
+            if pid == os.getpid():
+                continue  # calling ourselves; caller will release lock
+            self._terminate_pid(pid)
+
+    @staticmethod
+    def _terminate_pid(pid: int) -> None:
         import os
         import signal
         import time as _time
-        lock_path = self.state_dir / "loop.lock"
-        if not lock_path.exists():
-            return
-        try:
-            pid = int(lock_path.read_text().strip())
-        except (OSError, ValueError):
-            return
-        if pid == os.getpid():
-            return  # calling ourselves; caller will release lock
+
         # Gentle: SIGTERM + 2s grace
         try:
             os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            return
-        except PermissionError:
+        except (ProcessLookupError, PermissionError):
             return
         for _ in range(20):
             _time.sleep(0.1)

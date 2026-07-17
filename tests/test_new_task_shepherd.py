@@ -6,6 +6,7 @@ import time
 from types import SimpleNamespace
 
 from zf.core.events.model import ZfEvent
+from zf.core.task.schema import Task, TaskContract
 from zf.runtime.new_task_shepherd import (
     route_new_task,
     unclaimed_warnings,
@@ -68,3 +69,24 @@ def test_unclaimed_sla_warning_and_idempotency():
         type="task.dispatched", actor="zf-cli", task_id="T-1", payload={},
     )
     assert unclaimed_warnings(tasks, [created, dispatched], now_ts=now) == []
+
+
+def test_unclaimed_sla_skips_workflow_fanout_anchor():
+    now = time.time()
+    from datetime import datetime, timezone
+
+    anchor = Task(
+        id="ROOT-1",
+        title="workflow root",
+        status="backlog",
+        contract=TaskContract(
+            evidence_contract={
+                "source": "workflow_invoke_bootstrap",
+                "workflow_fanout_anchor": True,
+            },
+        ),
+    )
+    created = ZfEvent(type="task.created", actor="zf-cli", task_id=anchor.id)
+    created.ts = datetime.fromtimestamp(now - 700, tz=timezone.utc).isoformat()
+
+    assert unclaimed_warnings([anchor], [created], now_ts=now) == []

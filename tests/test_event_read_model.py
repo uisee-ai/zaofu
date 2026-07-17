@@ -258,6 +258,59 @@ def test_agent_session_history_pages_full_kanban_thread_past_recent_window(tmp_p
     assert older["items"][0]["payload"]["message"] == "question 0"
 
 
+def test_agent_session_history_is_backend_agnostic_for_thread(tmp_path: Path) -> None:
+    """Frontend-stress S9/S10 regression: a kanban-agent thread is one durable
+    conversation per (project, thread_id) that may span backends. Querying with
+    a different backend than the one that produced the turns (fresh browser
+    session defaults to Claude; user switched codex<->claude mid conversation)
+    must still return the existing transcript — otherwise the panel shows an
+    empty chat even though the durable turns exist (cousin of e812d7d2)."""
+    state_dir = tmp_path / ".zf"
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="user.message",
+        id="evt-user-codex",
+        task_id="TASK-BE",
+        payload={
+            "target": "kanban-agent",
+            "runtime_delivery": "headless",
+            "message": "create a todo add task",
+            "project_id": "proj-be",
+            "conversation_id": "kanban:proj-be",
+            "thread_key": "kanban:proj-be",
+            "backend": "codex-headless",
+        },
+    ))
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="kanban.agent.turn.completed",
+        id="evt-turn-codex",
+        task_id="TASK-BE",
+        payload={
+            "answer": "proposal ready",
+            "project_id": "proj-be",
+            "conversation_id": "kanban:proj-be",
+            "thread_key": "kanban:proj-be",
+            "turn_id": "evt-user-codex",
+            "backend": "codex-headless",
+        },
+    ))
+    read_model.rebuild(state_dir)
+
+    # Query with the DIFFERENT (default) backend a fresh session would use.
+    page = read_model.agent_session_history(
+        state_dir,
+        surface="kanban_agent",
+        thread_id="kanban:proj-be",
+        project_id="proj-be",
+        conversation_id="kanban:proj-be",
+        backend="claude-headless",
+        limit=120,
+    )
+    assert page is not None
+    types = [item["type"] for item in page["items"]]
+    assert "user.message" in types, "codex turn must be visible under claude-headless query"
+    assert "kanban.agent.turn.completed" in types
+
+
 def test_agent_session_history_includes_user_prompt_for_long_kanban_turn(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     _write_line(state_dir / "events.jsonl", ZfEvent(
@@ -416,3 +469,17 @@ def test_payload_slim_keeps_proposal_object() -> None:
     })
     assert slim["proposal"]["action"] == "create-task"
     assert slim["proposal"]["payload"]["title"] == "赛车 MVP"
+
+
+def test_payload_slim_keeps_message_event_id() -> None:
+    """kanban.agent.turn.* rows link to their user.message via
+    message_event_id; slimming it away split the question and answer into
+    two separate turns in the web timeline (operator report 2026-07-16)."""
+    from zf.web.projections.read_model import _payload_slim
+
+    slim = _payload_slim({
+        "turn_id": "turn-1",
+        "thread_key": "kanban:proj-x",
+        "message_event_id": "evt-user-msg",
+    })
+    assert slim["message_event_id"] == "evt-user-msg"

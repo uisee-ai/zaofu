@@ -162,6 +162,7 @@ class AgentSessionStreamEmitter:
                         "project_id": self.identity.project_id,
                     },
                 )
+        self._discard_live_scratch()
         return self.writer.emit(
             "agent.session.run.completed",
             actor=self.identity.actor,
@@ -182,6 +183,7 @@ class AgentSessionStreamEmitter:
         permission_drift: dict[str, Any] | None = None,
     ) -> ZfEvent:
         self.flush()
+        self._discard_live_scratch()
         return self.writer.emit(
             "agent.session.run.failed",
             actor=self.identity.actor,
@@ -294,6 +296,13 @@ class AgentSessionStreamEmitter:
             correlation_id=self.identity.correlation_id,
             payload=redact_obj(payload),
         )
+
+    def _discard_live_scratch(self) -> None:
+        """Terminal state: the ephemeral delta scratch for this run is done —
+        drop it so new SSE subscribers never replay a finished turn."""
+        bus = live_delta_bus_for_writer(self.writer)
+        if bus is not None:
+            bus.discard(self.identity.run_id or self.identity.thread_id or "run")
 
     def _base_payload(self, *, provider_session_id: str = "") -> dict[str, Any]:
         session_id = provider_session_id or self.identity.provider_session_id

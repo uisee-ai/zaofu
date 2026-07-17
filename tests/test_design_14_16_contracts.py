@@ -1,9 +1,8 @@
-"""Design contract tests — TDD verification of docs/design/14/15/16.
+"""Legacy safe-team compatibility tests for designs 14/15/16.
 
 Each test encodes a specific claim from the design docs. If a test fails,
-either the code drifted from the design or the design was aspirational.
-Running this file is the fastest audit of whether the three-layer
-architecture is actually implemented.
+the legacy compatibility surface drifted. Passing this module does not prove
+Product Flow dispatch ownership or the layered authority model; see design 142.
 
 Organized by design doc section. Each test docstring cites the design doc
 and quotes the claim being checked.
@@ -25,7 +24,7 @@ import pytest
 class TestLayer1NoLLM:
     """Design 14: Layer 1 is 'deterministic, 零 LLM 调用'.
 
-    Claim: Layer 1 modules (zf.runtime.orchestrator + helpers) do NOT import
+    Legacy-compatible claim: Layer 1 modules do NOT import
     any LLM SDK or call any LLM API. Integration with Layer 2 goes through
     the TransportAdapter seam, not through a direct SDK import.
     """

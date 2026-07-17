@@ -404,10 +404,14 @@ export function LoopPageV2({ projectId }: Props) {
                 border: `2px solid ${s.warn ? TONE.warn : TONE.ok}`,
                 color: s.warn ? TONE.warn : TONE.ok,
               }}>{s.rounds}r</div>
-              <div style={{ fontSize: 11.5, fontWeight: 650, marginTop: 4 }}>
+              {/* 长阶段名(assignment_correction / impl_exit_gate)会溢出 90px
+                  节点格、压到相邻标签("ASSIGNMENT_CORRDIAGNOSIS")—— 截断 + title
+                  hover 看全名(2026-07-13 cangjie-r14 实测叠加)。 */}
+              <div style={{ fontSize: 11.5, fontWeight: 650, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                title={s.id.split("-").slice(-1)[0].toUpperCase()}>
                 {s.id.split("-").slice(-1)[0].toUpperCase()}
               </div>
-              <div style={{ fontSize: 10.5, color: s.warn ? TONE.warn : TONE.muted, fontFamily: "var(--font-mono, monospace)" }}>
+              <div style={{ fontSize: 10.5, color: s.warn ? TONE.warn : TONE.muted, fontFamily: "var(--font-mono, monospace)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {s.rounds} rounds{s.last_status ? ` · ${s.last_status.split(".").pop()}` : ""}
               </div>
               <div className="loopv2-stagecard" style={{
@@ -598,12 +602,23 @@ export function LoopPageV2({ projectId }: Props) {
         {timeline ? (
           <div style={{ marginTop: 10 }}>
             <div style={{ position: "relative", height: 14, fontSize: 10, color: TONE.faint, fontFamily: "var(--font-mono, monospace)" }}>
-              {timeline.spans.map((s) => (
-                <span key={s.xa} style={{ position: "absolute", left: `${s.xa}%` }}>
-                  {new Date(s.a).toISOString().slice(11, 16)}
-                </span>
-              ))}
-              <span style={{ position: "absolute", right: 0 }}>
+              {/* gap 压缩后刻度挤在右端、和右对齐的 now/end 标签叠成一坨
+                  (2026-07-13 cangjie-r14 实测)。按最小间距去重 + 右端留白给
+                  now 标签,只渲染读得清的一组。 */}
+              {(() => {
+                const MIN_GAP = 6;        // % — 相邻刻度最小间距(标签 ~30px/轴 ~1000px)
+                const RIGHT_RESERVE = 12; // % — 右端留给 now/end 标签
+                let lastX = -Infinity;
+                return timeline.spans
+                  .filter((s) => s.xa <= 100 - RIGHT_RESERVE)
+                  .filter((s) => { if (s.xa - lastX >= MIN_GAP) { lastX = s.xa; return true; } return false; })
+                  .map((s) => (
+                    <span key={s.xa} style={{ position: "absolute", left: `${s.xa}%`, whiteSpace: "nowrap" }}>
+                      {new Date(s.a).toISOString().slice(11, 16)}
+                    </span>
+                  ));
+              })()}
+              <span style={{ position: "absolute", right: 0, whiteSpace: "nowrap" }}>
                 {run.latched ? "end" : "now"} {new Date(timeline.endT).toISOString().slice(11, 16)} UTC
               </span>
             </div>

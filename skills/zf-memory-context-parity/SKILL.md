@@ -1,6 +1,8 @@
 ---
 name: zf-memory-context-parity
 description: "Memory, context engine, prompt builder, compression, background review, and curator parity checks for agent refactors. Use when a replacement agent must preserve long-horizon context and memory behavior."
+stages: [impl, verify]
+tags: [parity, "parity:memory", "parity:context"]
 ---
 
 # Memory And Context Parity

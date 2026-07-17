@@ -1,13 +1,18 @@
 ---
 name: zf-verify-rescan-replan
-description: "Use in verify or judge stages when completed work must be rescanned against the original goal and any remaining gaps must be converted into bounded replan work."
+description: "Use in discovery, module-parity, verify-bridge, or replan roles when completed work must be rescanned against the original goal and remaining gaps converted into bounded incremental work; not for ordinary task Verify or Thin Judge."
+stages: [verify, discovery, replan]
+tags: [verification, parity, rescan, replan]
+auto_inject: false
+load_on_demand: true
 ---
 
 # ZaoFu Verify Rescan Replan
 
 ## When To Trigger
 
-Trigger this skill when verify/judge evidence shows any of these:
+Trigger this skill when global discovery, parity, or bridge evidence shows any
+of these:
 
 - required P0/P1 behavior is missing or only partially implemented;
 - implementation passed local tests but does not satisfy the original issue,
@@ -15,6 +20,10 @@ Trigger this skill when verify/judge evidence shows any of these:
 - the produced UI/API/CLI is a stub or talks to the wrong backend;
 - source comparison finds uncovered original capability, tool, provider,
   memory, context, gateway, or dashboard behavior.
+
+Do not activate it for an ordinary task-slice Verify verdict or the final Thin
+Judge. Task Verify returns its typed result; the semantic router dispatches a
+separate discovery/replan owner when the admitted result exposes a wider gap.
 
 ## Bind The Audit Object First
 

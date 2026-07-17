@@ -41,7 +41,7 @@ def test_no_stall_when_stage_started_even_if_slow():
         _ev("fanout.started", {"stage_id": "cj-min-refactor-scan"}),
         *_pad(20),
     ]
-    assert detect_structural_stalls(events, stages=STAGES) == []
+    assert detect_structural_stalls(events, stages=STAGES[:3]) == []
 
 
 def test_stall_when_stage_never_started():
@@ -66,7 +66,7 @@ def test_no_stall_when_stage_cancelled():
         _ev("fanout.cancelled", {"stage_id": "cj-min-candidate-verification"}),
         *_pad(20),
     ]
-    assert detect_structural_stalls(events, stages=STAGES) == []
+    assert detect_structural_stalls(events, stages=STAGES[:3]) == []
 
 
 def test_no_stall_when_pipeline_completes():
@@ -93,12 +93,58 @@ def test_no_stall_within_grace():
     assert detect_structural_stalls(events, stages=STAGES, min_events_after=5) == []
 
 
-def test_emit_requests_invocation_for_structural_stall():
+def test_emit_reports_structural_stall_to_run_manager_owner():
     events = [_ev("candidate.ready"), *_pad(20)]
     captured = []
     writer = SimpleNamespace(append=lambda e: captured.append(e) or e)
     n = emit_stall_invocations(events, writer, stages=STAGES)
     assert n == 1
-    assert captured[0].type == "autoresearch.invocation.requested"
-    assert captured[0].payload.get("level") == "diagnose"
-    assert "candidate.ready" in captured[0].payload.get("trigger_reason", "")
+    assert captured[0].type == "dispatch.silent_stall"
+    assert captured[0].actor == "zf-stall-detector"
+    assert captured[0].payload["original_trigger_event_id"].startswith("index-")
+    assert "candidate.ready" in captured[0].payload["summary"]
+
+
+def test_verify_success_closes_original_trigger_despite_redispatch_tail():
+    events = [
+        _ev("candidate.ready"),
+        _ev("test.passed"),
+        _ev(
+            "candidate.ready",
+            {
+                "feature_id": "CJMIN-R11",
+                "redispatch_fingerprint": "legacy-stall",
+                "original_trigger_event_id": "legacy",
+            },
+        ),
+        *_pad(20),
+    ]
+    assert detect_structural_stalls(events, stages=STAGES[:3]) == []
+
+
+def test_lane_handoff_terminal_is_not_reused_as_its_own_verify_trigger():
+    """R15: a final lane handoff must not renew the verify stage's stall clock."""
+    stages = [("prd-lanes-verify", "lane.stage.completed", "lane.stage.completed")]
+    events = [
+        _ev("lane.stage.completed", {
+            "stage_id": "prd-lanes-impl",
+            "stage_slot": "impl",
+            "next_stage_slot": "verify",
+            "workflow_run_id": "run-1",
+            "task_id": "TASK-1",
+        }),
+        _ev("fanout.started", {
+            "stage_id": "prd-lanes-verify",
+            "workflow_run_id": "run-1",
+        }),
+        _ev("lane.stage.completed", {
+            "stage_id": "prd-lanes-verify",
+            "stage_slot": "verify",
+            "next_stage_slot": "",
+            "workflow_run_id": "run-1",
+            "task_id": "TASK-1",
+        }),
+        *_pad(8),
+    ]
+
+    assert detect_structural_stalls(events, stages=stages) == []

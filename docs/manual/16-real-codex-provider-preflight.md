@@ -71,12 +71,13 @@ Codex could not find bubblewrap on PATH ... Codex will use the bundled bubblewra
 
 这条本身是非致命 warning,不应被当作失败根因。若 channel 显示
 `timeout`,优先判断是否是 Codex app-server 在 channel provider budget 内
-没有继续输出事件。默认 channel headless timeout 是 300 秒 idle budget:
-在 Codex turn 已经开始后,持续有 token / tool / status 流式事件就会续期,
-不会因为总耗时超过 300 秒被切断。可按本地场景显式覆盖:
+没有继续输出事件。Codex turn 没有总时长上限:持续有 token / tool /
+status 流式事件就会续期。默认普通静默预算为 1800 秒;检测到工具调用
+尚未完成时,静默预算切换为 7200 秒。可按本地场景显式覆盖:
 
 ```bash
-export ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S=600
+export ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S=3600
+export ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S=14400
 ```
 
 旧的 `ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S` 仍会被兼容读取,但 channel 场景

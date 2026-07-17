@@ -463,6 +463,17 @@ def _apply_stage_replan(
         )
     replan = writer.append(replan_event)
     emitted.append(replan.id)
+    if replan.type != replan_event.type:
+        reason = (
+            "stage replan trigger rejected as "
+            f"{replan.type}; expected {replan_event.type}"
+        )
+        return WorkflowResumeApplyResult(
+            checkpoint,
+            False,
+            reason,
+            _append_rejected(writer, checkpoint, emitted, reason),
+        )
     applied = writer.append(ZfEvent(
         type=WORKFLOW_RESUME_APPLIED_EVENT,
         actor="zf-cli",

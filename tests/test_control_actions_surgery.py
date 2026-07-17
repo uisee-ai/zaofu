@@ -13,7 +13,11 @@ from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.run_manager_router import decide_action_policy
 
 
-def _service(tmp_path: Path) -> tuple[ControlledActionService, EventLog]:
+def _service(
+    tmp_path: Path,
+    *,
+    project_root: Path | None = None,
+) -> tuple[ControlledActionService, EventLog]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir(exist_ok=True)
     log = EventLog(state_dir / "events.jsonl")
@@ -21,6 +25,7 @@ def _service(tmp_path: Path) -> tuple[ControlledActionService, EventLog]:
         state_dir,
         EventWriter(log),
         config=ZfConfig(project=ProjectConfig(name="t")),
+        project_root=project_root,
     )
     return service, log
 
@@ -119,3 +124,69 @@ def test_surgery_actions_policy_is_needs_approval():
         decision = decide_action_policy(action=action, payload={})
         assert decision["decision"] == "needs_approval"
         assert decision["executable"] is False
+
+
+def test_scoped_ship_retry_cannot_cross_run_operation_or_target(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    from zf.runtime.ship import ShipResult, ShipService
+
+    service, log = _service(tmp_path, project_root=tmp_path)
+    for run_id, claim_id, candidate in (
+        ("run-a", "claim-a", "candidate/A"),
+        ("run-b", "claim-b", "candidate/B"),
+    ):
+        log.append(ZfEvent(
+            type="run.goal.completion.claimed",
+            correlation_id=run_id,
+            payload={
+                "run_id": run_id,
+                "goal_id": f"goal-{run_id}",
+                "claim_id": claim_id,
+                "candidate_ref": candidate,
+                "target_commit": run_id[-1] * 40,
+            },
+        ))
+        log.append(ZfEvent(
+            type="run.delivery.failed",
+            correlation_id=run_id,
+            payload={
+                "run_id": run_id,
+                "claim_id": claim_id,
+                "delivery_operation_id": f"delivery-{claim_id}",
+                "candidate_ref": candidate,
+            },
+        ))
+
+    crossed = _exec(service, "ship-retry", {
+        "run_id": "run-a",
+        "claim_id": "claim-a",
+        "delivery_operation_id": "delivery-claim-b",
+        "target_ref": "candidate/B",
+    })
+    assert crossed.get("ok") is not True
+
+    monkeypatch.setattr(
+        ShipService,
+        "ship",
+        lambda self, **kwargs: ShipResult(
+            status="completed",
+            ok=True,
+            event_type="ship.completed",
+            payload={"final_commit": "a" * 40},
+        ),
+    )
+    result = _exec(service, "ship-retry", {
+        "run_id": "run-a",
+        "claim_id": "claim-a",
+        "delivery_operation_id": "delivery-claim-a",
+        "target_ref": "candidate/A",
+    })
+
+    assert result["ok"] is True
+    settled = [event for event in log.read_all() if event.type == "run.delivery.settled"]
+    assert len(settled) == 1
+    assert settled[0].payload["run_id"] == "run-a"
+    assert settled[0].payload["claim_id"] == "claim-a"
+    assert settled[0].payload["candidate_ref"] == "candidate/A"

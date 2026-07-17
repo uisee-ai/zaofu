@@ -61,3 +61,13 @@ export function mergeAutopilotDescriptors(
   const live = liveDescriptors.filter((item) => !seen.has(item.proposalId));
   return [...durable, ...live];
 }
+
+// A task_id in the result does not mean a task was CREATED — update-task also
+// returns the task_id it mutated. Only the create actions "create"; every other
+// executed proposal "executed" (frontend-stress 2026-07-15).
+export function proposalRunNotice(action: string, label: string, taskId: string): string {
+  const created = action === "create-task" || action === "idea-to-product";
+  if (created && taskId) return `✓ ${taskId} created from “${label}”`;
+  if (taskId) return `✓ executed “${label}” (${taskId})`;
+  return `✓ executed “${label}”`;
+}

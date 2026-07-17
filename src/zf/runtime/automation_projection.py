@@ -659,11 +659,17 @@ def _project_monitor(
         if _is_project_monitor_alert(event, alert_types)
     ][-30:]
     progress_alerts = _no_progress_alerts(recent_events)
+    # 2026-07-16 operator review: an in-flight channel reply (started seconds
+    # ago) is normal work, not an open attention item — without a grace window
+    # the monitor alerted on it and run_manager spun up autoresearch. Pending
+    # rows only alert once they are older than the grace; terminal rows
+    # (failed / rejected / delivery failure) alert immediately.
+    monitor_now = datetime.now(timezone.utc)
     channel_alerts = (
         channel_attention["failed_replies"]
-        + channel_attention["pending_replies"]
+        + _stale_pending_rows(channel_attention["pending_replies"], now=monitor_now)
         + channel_attention["rejected_workflows"]
-        + channel_attention["pending_workflows"]
+        + _stale_pending_rows(channel_attention["pending_workflows"], now=monitor_now)
         + channel_attention["delivery_failures"]
     )[-30:]
     open_proposals = _pending_proposals(recent_events, project_id=project_id)
@@ -1028,6 +1034,27 @@ def _channel_attention_event_ids(channel_attention: dict[str, Any]) -> list[str]
     return [value for value in refs if value]
 
 
+# Pending channel work younger than this is in-flight, not attention-worthy.
+PENDING_CHANNEL_ALERT_GRACE_SECONDS = 900
+
+
+def _stale_pending_rows(
+    rows: list[dict[str, Any]],
+    *,
+    now: datetime,
+    grace_seconds: int = PENDING_CHANNEL_ALERT_GRACE_SECONDS,
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ts = _parse_ts(str(row.get("ts") or ""))
+        # Unknown age keeps alerting — fail toward attention, not silence.
+        if ts is None or (now - ts).total_seconds() >= grace_seconds:
+            out.append(row)
+    return out
+
+
 def _parse_ts(raw: str | None) -> datetime | None:
     if not raw:
         return None
@@ -1314,6 +1341,7 @@ def _channel_attention(events: list[ZfEvent]) -> dict[str, Any]:
                 row["event_id"] = event.id
                 row["status"] = event.type.rsplit(".", 1)[-1]
                 row["reason"] = str(payload.get("reason") or row.get("reason") or "")
+                row["ts"] = event.ts
         elif event.type == "channel.message.failed":
             delivery_failures.append(_event_ref(event))
         elif event.type == "workflow.invoke.requested":
@@ -1325,6 +1353,7 @@ def _channel_attention(events: list[ZfEvent]) -> dict[str, Any]:
                 "pattern_id": str(payload.get("pattern_id") or ""),
                 "channel_id": str(payload.get("channel_id") or ""),
                 "reason": str(payload.get("reason") or ""),
+                "ts": event.ts,
             }
         elif event.type in {"workflow.invoke.accepted", "workflow.invoke.rejected"}:
             source_event_id = str(payload.get("source_event_id") or "")
@@ -1340,6 +1369,7 @@ def _channel_attention(events: list[ZfEvent]) -> dict[str, Any]:
             row["status"] = event.type.rsplit(".", 1)[-1]
             row["event_id"] = event.id
             row["reason"] = str(payload.get("reason") or row.get("reason") or "")
+            row["ts"] = event.ts
     failed_replies = [
         redact_obj(row) for row in replies.values()
         if row.get("status") == "failed"

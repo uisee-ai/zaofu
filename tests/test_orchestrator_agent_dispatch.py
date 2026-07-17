@@ -271,6 +271,9 @@ def test_orchestrator_briefing_uses_portable_payload_files(
     assert "--payload-file" in briefing
     assert "python3 - <<'PY'" in briefing
     assert "不要依赖 `jq`" in briefing
+    assert '${ZF_STATE_DIR:-.zf}/tmp' in briefing
+    assert 'STATE_TMP="$state_tmp" python3' in briefing
+    assert ".zf/tmp" not in briefing
 
 
 def test_transport_provider_events_append_through_event_writer(

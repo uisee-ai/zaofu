@@ -74,6 +74,20 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     operation.set_defaults(func=run_operation)
 
+    workflow_operation = sub.add_parser(
+        "workflow-operation",
+        help="Show stable workflow-operation and call-result timeline",
+    )
+    workflow_operation.add_argument("operation_id")
+    workflow_operation.add_argument("--format", choices=["table", "json"], default="json")
+    workflow_operation.add_argument(
+        "--state-dir",
+        type=str,
+        default=None,
+        help="Path to runtime state dir (default: project.state_dir)",
+    )
+    workflow_operation.set_defaults(func=run_workflow_operation)
+
     # #V (TR-TRACE-GANTT-001, cangjie 2026-05-22 r4 operator UX):
     # per-dev swim-lane Gantt + dep DAG as Mermaid markdown / JSON.
     # Productizes /tmp/dag_gantt.py prototype into kernel CLI for
@@ -453,6 +467,34 @@ def run_operation(args: argparse.Namespace) -> int:
             f"{item.get('type', '')} actor={item.get('actor', '') or '-'} "
             f"phase={item.get('phase', '') or '-'}"
         )
+    return 0
+
+
+def run_workflow_operation(args: argparse.Namespace) -> int:
+    try:
+        context = resolve_project_context(
+            explicit_state_dir=getattr(args, "state_dir", None),
+        )
+    except ConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if not context.state_dir.exists():
+        print("Error: not initialized. Run 'zf init' first.", file=sys.stderr)
+        return 1
+
+    from zf.runtime.operation_projection import project_workflow_operation
+
+    result = project_workflow_operation(context.state_dir, args.operation_id)
+    if getattr(args, "format", "json") == "json":
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+    print(
+        f"Workflow operation {result.get('operation_id', '')} "
+        f"status={result.get('status', '') or '-'} "
+        f"task={result.get('task_id', '') or '-'}"
+    )
+    for item in result.get("timeline") or []:
+        print(f"[{item.get('ts', '')}] {item.get('type', '')} {item.get('event_id', '')}")
     return 0
 
 

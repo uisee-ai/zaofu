@@ -360,8 +360,8 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
                 ),
             ),
             "raw_verification_tiers": raw_verification_tiers,
-            "acceptance_criteria": _source_refs_list(
-                raw.get("acceptance_criteria")
+            "acceptance_criteria": _acceptance_criteria_list(
+                raw.get("acceptance_criteria") or raw.get("acceptance")
             ),
             "source_key": str(raw.get("source_key") or "").strip(),
             "source_keys": _source_refs_list(raw.get("source_keys")),
@@ -400,6 +400,20 @@ def _normalize_writer_task_items(items: list[dict[str, Any]]) -> list[dict[str, 
             if _is_placeholder_path(path):
                 norm = _normalize_path_prefix(path)
                 if any(_prefix_contains(prefix, norm) for prefix in subtree_prefixes):
+                    contract_text = json.dumps(
+                        {
+                            "acceptance_criteria": item.get("acceptance_criteria") or [],
+                            "verification": item.get("verification") or [],
+                        },
+                        ensure_ascii=False,
+                    )
+                    if path in contract_text:
+                        raise RuntimeError(
+                            "writer fanout task "
+                            f"{item.get('task_id')!r} has delegated placeholder "
+                            f"{path!r} to a sibling subtree owner but still "
+                            "requires it in acceptance/verification"
+                        )
                     continue
             normalized.append(path)
         normalized = _dedupe_redundant_task_paths(normalized)
@@ -632,6 +646,26 @@ def _source_refs_list(value: Any) -> list[str]:
                     refs.append(f"{key_text}:{text}")
         return refs
     return _string_list(value)
+
+
+def _acceptance_criteria_list(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return _string_list(value)
+    out: list[Any] = []
+    for item in value:
+        if isinstance(item, dict):
+            text = str(
+                item.get("text")
+                or item.get("criterion")
+                or item.get("description")
+                or item.get("acceptance")
+                or ""
+            ).strip()
+            if text:
+                out.append(dict(item))
+        elif str(item).strip():
+            out.append(str(item).strip())
+    return out
 
 
 def _optional_int(value: Any) -> int | None:

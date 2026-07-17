@@ -208,6 +208,38 @@ class TestBlockingMode:
         assert payload["blocked_event_payload"] == {"feature_id": "F-1"}
         assert "EventSchemaD" in payload["failed_d"]
 
+    def test_blocking_replacement_preserves_dispatch_identity(
+        self, state_dir, event_log
+    ):
+        registry = EventSchemaRegistry.from_dict(FIXTURE)
+        writer = EventWriter(
+            event_log,
+            schema_registry=registry,
+            schema_mode="blocking",
+        )
+        original = ZfEvent(
+            type="arch.proposal.done",
+            task_id="T-1",
+            payload={
+                "fanout_id": "fanout-1",
+                "child_id": "child-1",
+                "run_id": "run-1",
+                "workflow_run_id": "workflow-1",
+                "task_map_generation": "generation-2",
+            },
+        )
+
+        failure = writer.append(original)
+
+        assert failure.type == "discriminator.failed"
+        assert failure.task_id == "T-1"
+        assert failure.payload["blocked_event_id"] == original.id
+        assert failure.payload["fanout_id"] == "fanout-1"
+        assert failure.payload["child_id"] == "child-1"
+        assert failure.payload["run_id"] == "run-1"
+        assert failure.payload["workflow_run_id"] == "workflow-1"
+        assert failure.payload["task_map_generation"] == "generation-2"
+
     def test_valid_event_passes_in_blocking_mode(self, state_dir, event_log):
         registry = EventSchemaRegistry.from_dict(FIXTURE)
         writer = EventWriter(

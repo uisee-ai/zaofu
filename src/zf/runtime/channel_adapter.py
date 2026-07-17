@@ -49,7 +49,7 @@ HEADLESS_BACKENDS = {
     "claude_headless": "claude-headless",
 }
 DISPATCHABLE_STATUSES = {"pending", "queued"}
-DEFAULT_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S = 300.0
+DEFAULT_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S = 30 * 60.0
 
 
 @dataclass(frozen=True)

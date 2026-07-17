@@ -10,7 +10,11 @@ from zf.runtime.orchestrator_types import OrchestratorDecision
 
 
 class _RecordingTransport:
+    def __init__(self):
+        self.sent: list[tuple[str, Path]] = []
+
     def send_task(self, role_name, briefing_path, prompt, *, context=None):  # noqa: ANN001
+        self.sent.append((role_name, Path(briefing_path)))
         return None
 
     def is_alive(self, role_name):  # noqa: ANN001
@@ -32,7 +36,8 @@ def _state(tmp_path: Path):
         project=ProjectConfig(name="test"),
         roles=[RoleConfig(name="dev", backend="mock", instance_id="dev")],
     )
-    orch = Orchestrator(state_dir, config, _RecordingTransport())  # type: ignore[arg-type]
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
     return state_dir, log, orch
 
 
@@ -129,3 +134,55 @@ def test_worker_respawn_request_permanent_failure_after_retry_cap(tmp_path: Path
     assert permanent[0].causation_id == req.id
     assert permanent[0].payload["retries"] == 2
     assert "respawn failed" in permanent[0].payload["last_error"]
+
+
+def test_worker_respawn_delivers_exact_rework_continuation(tmp_path: Path):
+    state_dir, log, orch = _state(tmp_path)
+    briefing = state_dir / "briefings" / "dev-continuation-T-1.md"
+    briefing.parent.mkdir(parents=True)
+    briefing.write_text("# exact continuation\n", encoding="utf-8")
+    request = ZfEvent(
+        id="req-continuation",
+        type="worker.respawn.requested",
+        actor="zf-cli",
+        task_id="T-1",
+        correlation_id="trace-continuation",
+        payload={
+            "instance_id": "dev",
+            "task_id": "T-1",
+            "continuation_briefing_ref": str(briefing),
+            "rework_request_event_id": "rework-1",
+            "dispatch_id": "rework-1",
+            "rework_feedback_ref": "artifacts/rework-feedback/T-1/f.json",
+            "rework_feedback_digest": "abc123",
+            "workflow_run_id": "run-1",
+            "contract_revision": "rev-1",
+            "stage_slot": "verify",
+            "target_stage_slot": "impl",
+            "failure_fingerprint": "fp-1",
+            "attempt": 2,
+            "feedback_id": "feedback-1",
+            "finding_ids": ["finding-1"],
+        },
+    )
+    log.append(request)
+    orch._respawn_instance = lambda role: OrchestratorDecision(  # type: ignore[method-assign]
+        action="respawn", role=role.instance_id, reason="resumed",
+    )
+
+    orch.run_once(events=[])
+
+    assert orch.transport.sent == [("dev", briefing)]
+    events = log.read_all()
+    dispatched = [event for event in events if event.type == "task.dispatched"]
+    assert len(dispatched) == 1
+    assert dispatched[0].payload["delivery_mode"] == "resume_session"
+    assert dispatched[0].payload["rework_request_event_id"] == "rework-1"
+    assert dispatched[0].payload["workflow_run_id"] == "run-1"
+    assert dispatched[0].payload["attempt"] == 2
+    assert dispatched[0].payload["finding_ids"] == ["finding-1"]
+    assert [event.type for event in events].count(
+        "task.rework.continuation_injected"
+    ) == 1
+    completed = [event for event in events if event.type == "worker.respawn.completed"]
+    assert completed[0].payload["continuation_delivered"] is True

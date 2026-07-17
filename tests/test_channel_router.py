@@ -85,7 +85,7 @@ class _FailingHeadlessBackend(_FakeHeadlessBackend):
 def test_channel_provider_headless_timeout_defaults_to_long_channel_turn(monkeypatch) -> None:
     monkeypatch.delenv("ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S", raising=False)
     monkeypatch.delenv("ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S", raising=False)
-    assert channel_adapter._channel_provider_headless_timeout_s() == 300.0
+    assert channel_adapter._channel_provider_headless_timeout_s() == 1800.0
 
     monkeypatch.setenv("ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S", "180")
     assert channel_adapter._channel_provider_headless_timeout_s() == 180.0
@@ -94,7 +94,7 @@ def test_channel_provider_headless_timeout_defaults_to_long_channel_turn(monkeyp
     assert channel_adapter._channel_provider_headless_timeout_s() == 420.0
 
     monkeypatch.setenv("ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S", "bad")
-    assert channel_adapter._channel_provider_headless_timeout_s() == 300.0
+    assert channel_adapter._channel_provider_headless_timeout_s() == 1800.0
 
 
 def test_channel_role_context_ref_is_repo_local_and_loads_excerpt() -> None:

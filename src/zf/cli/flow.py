@@ -920,12 +920,17 @@ def build_flow_submit_preview(
             "artifact_refs": [str(intake_path)],
         }
     request_id = str(manifest.get("request_id") or _request_id_from_path(intake_path))
-    workflow_dir = Path(str(manifest.get("workflow_dir") or "") or (
-        _project_root_from_intake_path(intake_path) / "artifacts" / "workflow" / request_id
-    ))
-    workflow_dir.mkdir(parents=True, exist_ok=True)
-    preflight_path = workflow_dir / "workflow-preflight.json"
-    preview_path = (output or workflow_dir / "workflow-submit-preview.json").expanduser()
+    # Intake/matrix artifacts are durable request inputs and may intentionally
+    # live in the project tree.  Submit preflight and preview are runtime
+    # projections: rewriting them on every submit must not dirty a project and
+    # block its subsequent ship.  Keep explicit --output as the caller's
+    # deliberate escape hatch, otherwise place them under the configured state.
+    config = load_config(config_path)
+    state_dir = _state_dir_for_config(config_path, config)
+    projection_dir = state_dir / "artifacts" / "workflow" / request_id
+    projection_dir.mkdir(parents=True, exist_ok=True)
+    preflight_path = projection_dir / "workflow-preflight.json"
+    preview_path = (output or projection_dir / "workflow-submit-preview.json").expanduser()
     report = build_flow_preflight_report(
         config_path.resolve(),
         flow_kind=flow_kind or str(manifest.get("kind") or ""),

@@ -244,8 +244,9 @@ def test_autoresearch_trigger_accepted_creates_single_maintenance_proposal(
     assert payload["automation_id"] == "autoresearch-self-repair"
     assert payload["action"] == "maintenance-prepare"
     assert payload["action_proposal"]["payload"]["trigger_id"] == "ar-001"
-    assert payload["repair_task_proposal"]["action"] == "create-task"
-    assert payload["repair_task_proposal"]["payload"]["contract"]["phase"] == "zaofu_self_repair"
+    assert "repair_task_proposal" not in payload
+    assert candidates[0].payload["candidate"]["status"] == "unverified"
+    assert candidates[0].payload["repair_task_payload"] is None
     assert Path(payload["candidate_path"]).exists()
     assert loop_requests[0].payload["apply_policy"] == "proposal_only"
     assert loop_requests[0].payload["scenarios"] == ["controlled-stuck-recovery"]

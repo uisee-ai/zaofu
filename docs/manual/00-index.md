@@ -7,8 +7,8 @@ English documentation is available through the topic-by-topic
 [English manual index](00-index.en.md) or the consolidated
 [ZaoFu Operator Manual](zaofu-operator-manual.en.md).
 
-新用户建议先读 [架构总览](architecture.md) 建立整体模型,再从
-[01 快速开始](01-quickstart.md) 上手。
+首次运行从 [01 快速开始](01-quickstart.md) 进入 production Controller 主路径；
+需要理解 kernel、运行真相和任务生命周期时再读[架构总览](architecture.md)。
 
 ## 0. 架构总览
 
@@ -16,7 +16,8 @@ English documentation is available through the topic-by-topic
 
 ## 1. 入门
 
-- [01 快速开始](01-quickstart.md) — 安装、`zf init` preset、preflight 与 `zf start --dry-run`
+- [01 快速开始](01-quickstart.md) — Controller 推荐/审批/物化、项目初始化、
+  cold-start、dry-run 与首个 workflow request
 
 ## 2. 核心使用
 

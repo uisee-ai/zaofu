@@ -199,6 +199,40 @@ def test_role_assignment_fulfilled_by_instance_dispatch():
     assert result.silent_stalls == []
 
 
+def test_fanout_child_dispatch_fulfills_lane_assignment():
+    """Lane fanout dispatch is the real task dispatch for writer fanout runs."""
+    from zf.runtime.dispatch_sweep import sweep_silent_dispatches
+
+    now = datetime.now(timezone.utc)
+    events = [
+        _evt(
+            "task.assigned",
+            now - timedelta(seconds=90),
+            "TASK-X",
+            {"assignee": "dev-lane-0"},
+        ),
+        _evt(
+            "fanout.child.dispatched",
+            now - timedelta(seconds=85),
+            "",
+            {
+                "task_id": "TASK-X",
+                "role_instance": "dev-lane-0",
+                "child_id": "dev-lane-0-TASK-X",
+                "fanout_id": "fanout-impl-1",
+            },
+        ),
+    ]
+
+    result = sweep_silent_dispatches(
+        events=events,
+        now=now,
+        silent_stall_threshold_s=30.0,
+    )
+
+    assert result.silent_stalls == []
+
+
 def test_instance_assignment_not_fulfilled_by_different_role_replica_dispatch():
     """Explicit dev-2 assignment is not covered by a dev-1 dispatch."""
     from zf.runtime.dispatch_sweep import sweep_silent_dispatches

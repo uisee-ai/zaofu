@@ -136,6 +136,114 @@ def test_plan_integrity_accepts_existing_contract_refs(tmp_path: Path) -> None:
     assert projection["summary"]["weak_acceptance"] == 0
 
 
+def test_plan_integrity_ignores_workflow_fanout_anchor(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    root = Task(
+        id="ROOT-1",
+        title="workflow root",
+        status="backlog",
+        contract=TaskContract(
+            evidence_contract={
+                "source": "workflow_invoke_bootstrap",
+                "workflow_fanout_anchor": True,
+            },
+        ),
+    )
+
+    projection = build_plan_integrity_projection(
+        state_dir,
+        project_root=tmp_path,
+        tasks=[root],
+        events=[],
+    )
+
+    assert projection["summary"]["active_tasks"] == 0
+    assert projection["summary"]["missing_plan_refs"] == 0
+
+
+def test_plan_integrity_accepts_executable_verification_contract(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task = Task(
+        id="TASK-EXEC",
+        title="executable verification",
+        status="in_progress",
+        contract=TaskContract(
+            plan_ref="docs/design/01-plan.md",
+            acceptance="API returns the planned payload",
+            verification="python -m unittest discover -s tests -v",
+        ),
+    )
+
+    projection = build_plan_integrity_projection(
+        state_dir,
+        project_root=tmp_path,
+        tasks=[task],
+        events=[],
+    )
+
+    assert projection["summary"]["weak_acceptance"] == 0
+
+
+def test_plan_integrity_waits_for_implementation_before_requiring_evidence(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task = Task(
+        id="TASK-PLANNED",
+        title="planned but not implemented",
+        status="in_progress",
+        contract=TaskContract(
+            acceptance_criteria=["TASK-PLANNED-AC1: behavior works"],
+            product_contract_ref=".zf/artifacts/default/task_map.json",
+        ),
+    )
+
+    projection = build_plan_integrity_projection(
+        state_dir,
+        project_root=tmp_path,
+        tasks=[task],
+        events=[],
+    )
+
+    kinds = {finding["kind"] for finding in projection["findings"]}
+    assert "acceptance-without-evidence" not in kinds
+
+
+def test_plan_integrity_requires_evidence_after_implementation(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task = Task(
+        id="TASK-BUILT",
+        title="implemented without acceptance evidence",
+        status="in_progress",
+        contract=TaskContract(
+            acceptance_criteria=["TASK-BUILT-AC1: behavior works"],
+            product_contract_ref=".zf/artifacts/default/task_map.json",
+        ),
+    )
+
+    projection = build_plan_integrity_projection(
+        state_dir,
+        project_root=tmp_path,
+        tasks=[task],
+        events=[ZfEvent(
+            type="dev.build.done",
+            task_id=task.id,
+            payload={"task_id": task.id},
+        )],
+    )
+
+    kinds = {finding["kind"] for finding in projection["findings"]}
+    assert "acceptance-without-evidence" in kinds
+
+
 def test_plan_integrity_accepts_generated_task_source_refs(
     tmp_path: Path,
 ) -> None:
@@ -362,15 +470,12 @@ def test_supervisor_inspection_requests_autoresearch_for_runtime_bug(
         event for event in log.read_all()
         if event.type == "autoresearch.invocation.requested"
     ]
-    assert first["control_loop_events_emitted"] == 3
+    assert first["control_loop_events_emitted"] == 2
     assert second["control_loop_events_emitted"] == 0
     assert types.count("runtime.attention.needed") == 1
     assert types.count("supervisor.decision.recorded") == 1
     assert types.count("owner.visible_message.requested") == 1
-    assert len(invocations) == 1
-    assert invocations[0].payload["level"] == "diagnose"
-    assert invocations[0].payload["apply_policy"] == "proposal_only"
-    assert invocations[0].payload["sandbox_required"] is True
+    assert invocations == []
 
 
 def test_supervisor_routes_workflow_batch_resume_to_run_manager(
@@ -501,14 +606,13 @@ def test_supervisor_requests_autoresearch_for_human_escalate(
 
     events = log.read_all()
     assert result["attention_events_emitted"] == 1
-    assert result["control_loop_events_emitted"] == 3
+    assert result["control_loop_events_emitted"] == 2
     assert any(event.type == "owner.visible_message.requested" for event in events)
     invocations = [
         event for event in events
         if event.type == "autoresearch.invocation.requested"
     ]
-    assert len(invocations) == 1
-    assert invocations[0].payload["fingerprint"] == "human_escalate:CJMIN-R37"
+    assert invocations == []
 
 
 def test_supervisor_requests_autoresearch_for_dispatch_failed_signal(
@@ -546,8 +650,7 @@ def test_supervisor_requests_autoresearch_for_dispatch_failed_signal(
         event for event in events
         if event.type == "autoresearch.invocation.requested"
     ]
-    assert len(invocations) == 1
-    assert "orchestrator.dispatch_failed" in invocations[0].payload["fingerprint"]
+    assert invocations == []
 
 
 def test_supervisor_attention_ack_prevents_reemit_and_updates_summary(

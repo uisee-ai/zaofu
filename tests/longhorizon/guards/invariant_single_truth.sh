@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# LH-6.T4: I1 invariant — events.jsonl is the single source of truth.
+# LH-6.T4 legacy guard: reject known rogue parallel control stores.
 #
-# Fail if a competing truth store appears (state.json / truth.json).
+# This does not prove EventLog-only rebuild or classify canonical ZaoFu stores.
+# Fail if a known undeclared store appears (state.json / truth.json / world.json).
 # Exit 0 when clean, 1 on violation.
 set -euo pipefail
 

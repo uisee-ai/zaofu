@@ -152,7 +152,11 @@ def test_bus_for_writer_derives_state_dir(tmp_path: Path):
 # ------------------------------------------------- SSE merge
 
 
-def test_sse_tail_merges_live_rows(tmp_path: Path):
+def test_sse_tail_merges_live_rows_and_skips_backlog(tmp_path: Path):
+    """2026-07-16 P1: a fresh SSE subscriber starts at the current end of the
+    delta scratch — the backlog of already-finished turns must NOT replay
+    (it resurrected live streaming UI on completed runs). Rows published
+    AFTER the connect still ride the wire."""
     import asyncio
 
     from zf.web.projections.events import _tail_events
@@ -161,7 +165,7 @@ def test_sse_tail_merges_live_rows(tmp_path: Path):
     from zf.core.events.model import ZfEvent
     log.append(ZfEvent(type="loop.started", actor="zf-cli"))
     bus = LiveDeltaBus(tmp_path)
-    bus.publish("kanban.agent.turn.delta", {"delta": "streaming!"}, key="t1")
+    bus.publish("kanban.agent.turn.delta", {"delta": "stale-backlog!"}, key="t0")
 
     class _Req:
         def __init__(self) -> None:
@@ -169,7 +173,9 @@ def test_sse_tail_merges_live_rows(tmp_path: Path):
 
         async def is_disconnected(self) -> bool:
             self.calls += 1
-            return self.calls > 3
+            if self.calls == 2:
+                bus.publish("kanban.agent.turn.delta", {"delta": "streaming!"}, key="t1")
+            return self.calls > 4
 
     async def _collect() -> list[str]:
         chunks: list[str] = []
@@ -180,8 +186,37 @@ def test_sse_tail_merges_live_rows(tmp_path: Path):
     chunks = asyncio.run(_collect())
     joined = "".join(chunks)
     assert "loop.started" in joined, "committed events still flow"
-    assert "streaming!" in joined, "live bus rows must ride the same SSE wire"
-    payloads = [c for c in chunks if "kanban.agent.turn.delta" in c]
+    assert "stale-backlog!" not in joined, "pre-connect delta backlog must not replay"
+    assert "streaming!" in joined, "post-connect live rows still ride the SSE wire"
+    payloads = [c for c in chunks if "streaming!" in c]
     assert payloads and json.loads(
         payloads[0].split("data: ", 1)[1].split("\n")[0]
     )["payload"]["delta"] == "streaming!"
+
+
+def test_bus_current_cursors_and_discard(tmp_path: Path):
+    bus = LiveDeltaBus(tmp_path)
+    bus.publish("agent.session.part.delta", {"delta": "old"}, key="run-1")
+    cursors = bus.current_cursors()
+    rows, cursors = bus.read_since(cursors)
+    assert rows == [], "current_cursors starts past the existing backlog"
+    bus.publish("agent.session.part.delta", {"delta": "new"}, key="run-1")
+    rows, _ = bus.read_since(cursors)
+    assert [r.payload["delta"] for r in rows] == ["new"]
+
+    bus.discard("run-1")
+    assert not list((tmp_path / "live" / "deltas").glob("*.jsonl"))
+    fresh, _ = LiveDeltaBus(tmp_path).read_since()
+    assert fresh == []
+
+
+def test_complete_discards_live_scratch(tmp_path: Path):
+    """Terminal runs drop their delta scratch so new subscribers can never
+    replay a finished turn even within the TTL window."""
+    emitter, _log = _emitter(tmp_path)
+    emitter.start()
+    emitter.emit_message(_Msg("text", "hello"))
+    emitter.flush()
+    assert list((tmp_path / "live" / "deltas").glob("*.jsonl"))
+    emitter.complete(status="completed")
+    assert not list((tmp_path / "live" / "deltas").glob("*.jsonl"))

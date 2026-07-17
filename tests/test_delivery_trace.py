@@ -280,7 +280,7 @@ def test_delivery_trace_projects_module_parity_gap_amend_loop():
     assert loop["latest_task_map_ref"] == amended_task_map_ref
     assert loop["source_event_ids"] == ["psr1", "psc1", "gpr1", "tma1", "tmr1"]
     goal_loop = trace["goal_closure_loop"]
-    assert goal_loop["schema_version"] == "goal-closure-loop.v1"
+    assert goal_loop["schema_version"] == "goal-closure-loop.v2"
     assert goal_loop["compatibility_projection"] == "module_parity_loop"
     assert goal_loop["status"] == "gap_tasks_dispatched"
     assert goal_loop["gap_task_ids"] == ["T3-GAP"]
@@ -412,7 +412,7 @@ def test_delivery_trace_projects_generic_goal_closure_gap_loop():
     )
 
     loop = trace["goal_closure_loop"]
-    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["schema_version"] == "goal-closure-loop.v2"
     assert loop["status"] == "gap_tasks_dispatched"
     assert loop["scan_request_count"] == 1
     assert loop["scan_result_count"] == 1
@@ -503,7 +503,7 @@ def test_delivery_trace_projects_flow_neutral_goal_closure_gap_loop():
     )
 
     loop = trace["goal_closure_loop"]
-    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["schema_version"] == "goal-closure-loop.v2"
     assert loop["status"] == "gap_tasks_dispatched"
     assert loop["scan_request_count"] == 1
     assert loop["scan_result_count"] == 1
@@ -512,6 +512,62 @@ def test_delivery_trace_projects_flow_neutral_goal_closure_gap_loop():
     assert loop["gap_task_ids"] == ["PRD-1-GAP-001"]
     assert loop["latest_gap_plan_ref"] == gap_plan_ref
     assert loop["latest_task_map_ref"] == amended_task_map_ref
+
+
+def test_goal_closure_lifecycle_does_not_mix_another_run() -> None:
+    events = list(enumerate([
+        ZfEvent(
+            type="flow.goal.closed",
+            id="closed-a",
+            correlation_id="run-a",
+            payload={
+                "workflow_run_id": "run-a",
+                "feature_id": "F-1",
+                "goal_id": "F-1",
+            },
+        ),
+        ZfEvent(
+            type="run.goal.completion.claimed",
+            id="claim-b",
+            correlation_id="run-b",
+            payload={
+                "workflow_run_id": "run-b",
+                "claim_id": "claim-b",
+            },
+        ),
+        ZfEvent(
+            type="run.goal.completion.claimed",
+            id="claim-a",
+            correlation_id="run-a",
+            payload={
+                "workflow_run_id": "run-a",
+                "claim_id": "claim-a",
+            },
+        ),
+        ZfEvent(
+            type="run.goal.completed",
+            id="complete-a",
+            correlation_id="run-a",
+            payload={
+                "workflow_run_id": "run-a",
+                "claim_id": "claim-a",
+            },
+        ),
+    ]))
+
+    trace = build_delivery_trace(
+        feature_id="F-1",
+        generated_at=_NOW,
+        tasks={},
+        events=events,
+    )
+
+    loop = trace["goal_closure_loop"]
+    assert loop["status"] == "goal_completed"
+    assert [row["event_id"] for row in loop["lifecycle"]] == [
+        "closed-a", "claim-a", "complete-a",
+    ]
+    assert loop["completion_event_id"] == "complete-a"
 
 
 def test_ship_consumes_real_ship_event():

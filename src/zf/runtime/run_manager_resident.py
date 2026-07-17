@@ -77,6 +77,7 @@ def build_resident_run_manager_role(config: ZfConfig) -> RoleConfig | None:
         stages=["run-monitor"],
         triggers=[
             "run.manager.tick.completed",
+            "run.manager.transition",
             "supervisor.decision.recorded",
             "autoresearch.loop.completed",
             "human.escalate",

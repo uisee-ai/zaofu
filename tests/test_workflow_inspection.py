@@ -241,6 +241,80 @@ def test_workflow_inspection_warns_for_skill_routing_and_duplicate_owner(
     assert skill_entry["stages"] == ("review",)
 
 
+def test_workflow_inspection_normalizes_verify_lane_skill_owners(
+    tmp_path: Path,
+) -> None:
+    skill_dir = tmp_path / "skills" / "task-verifier"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: task-verifier\ndescription: Verify a task.\n"
+        "stages: [verify]\n---\n\n# Verify\n",
+        encoding="utf-8",
+    )
+    cfg = ZfConfig(
+        project=ProjectConfig(name="lane-skill-owner"),
+        roles=[
+            RoleConfig(
+                name=f"verify-lane-{lane}",
+                instance_id=f"verify-lane-{lane}",
+                stages=["verify"],
+                skills=["task-verifier"],
+            )
+            for lane in range(2)
+        ],
+    )
+
+    report = build_workflow_inspection_report(cfg, project_root=tmp_path)
+    assert not any(
+        item["kind"] == "skill_duplicate_verification_owner"
+        for item in report["diagnostics"]
+    )
+    cost = report["skills"]["activation_cost"]
+    assert cost["indexed_count"] == 2
+    assert cost["invoked_count"] is None
+    assert cost["full_skill_body_bytes_charged"] == 0
+
+
+def test_workflow_inspection_reports_pipeline_final_thin_judge_policy(
+    tmp_path: Path,
+) -> None:
+    pipeline = parse_lane_pipeline({
+        "id": "prd-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "task_source": {"task_map_ref": "artifacts/task-map.json"},
+        "affinity_key": "lane_affinity",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{"id": "impl"}],
+        "final": {
+            "when": "all_tasks_verified",
+            "role": "judge-prd",
+            "success": "goal.closure.synthesized",
+            "failure": "goal.closure.synthesis.failed",
+        },
+    })
+    cfg = ZfConfig(
+        project=ProjectConfig(name="thin-judge-inspection"),
+        workflow=WorkflowConfig(pipelines=[pipeline]),
+        roles=[RoleConfig(
+            name="judge-prd",
+            instance_id="judge-prd",
+            backend="codex",
+            role_kind="reader",
+            permission_mode="bypass",
+        )],
+    )
+
+    report = build_workflow_inspection_report(cfg, project_root=tmp_path)
+    policy = next(
+        item for item in report["diagnostics"]
+        if item["kind"] == "goal_closure_judge_runner_policy_applied"
+    )
+    assert policy["detail"]["policy_id"] == "goal_closure_judge_readonly.v1"
+    assert policy["detail"]["changes"]["permission_mode"]["to"] == "restricted"
+
+
 def test_workflow_inspection_reports_pure_aggregator_runner_policy(
     tmp_path: Path,
 ) -> None:

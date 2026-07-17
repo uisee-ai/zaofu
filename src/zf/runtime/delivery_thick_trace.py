@@ -547,6 +547,7 @@ def _artifacts(trace: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _improvement_candidates(behaviors: list[dict[str, Any]], evals: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
+    by_id: dict[str, dict[str, Any]] = {}
     for item in [*behaviors, *evals]:
         status = str(item.get("status") or "")
         if status not in {"failed", "warn"}:
@@ -554,8 +555,20 @@ def _improvement_candidates(behaviors: list[dict[str, Any]], evals: list[dict[st
         kind = str(item.get("kind") or "unknown")
         task_id = ",".join(item.get("task_ids") or [])
         fingerprint = _stable_id("improve", kind, task_id)
-        candidates.append({
-            "candidate_id": f"improve:{fingerprint}",
+        candidate_id = f"improve:{fingerprint}"
+        existing = by_id.get(candidate_id)
+        if existing is not None:
+            existing["task_ids"] = _unique_strings([
+                *existing["task_ids"],
+                *(item.get("task_ids") or []),
+            ])
+            existing["event_ids"] = _unique_strings([
+                *existing["event_ids"],
+                *(item.get("event_ids") or []),
+            ])
+            continue
+        candidate = {
+            "candidate_id": candidate_id,
             "kind": "backlog_candidate",
             "source_kind": kind,
             "status": "candidate",
@@ -563,7 +576,9 @@ def _improvement_candidates(behaviors: list[dict[str, Any]], evals: list[dict[st
             "task_ids": item.get("task_ids") or [],
             "event_ids": item.get("event_ids") or [],
             "summary": f"Harden delivery flow for {kind}",
-        })
+        }
+        by_id[candidate_id] = candidate
+        candidates.append(candidate)
     return candidates
 
 
@@ -613,6 +628,10 @@ def _float(value: Any) -> float:
 def _stable_id(*parts: object) -> str:
     raw = ":".join(str(part or "") for part in parts)
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+
+
+def _unique_strings(values: list[Any]) -> list[str]:
+    return list(dict.fromkeys(str(value) for value in values if str(value)))
 
 
 def _edge_id(kind: str, source: str, target: str) -> str:

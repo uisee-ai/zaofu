@@ -181,7 +181,20 @@ def counted_failure_events(
         if str(payload.get("superseded_by") or "").strip():
             continue
         event_task = str(event.task_id or payload.get("task_id") or "")
-        if event_task != task_id:
+        aggregate_tasks = payload.get("failed_task_ids")
+        aggregate_task_ids = (
+            {str(item) for item in aggregate_tasks if str(item or "").strip()}
+            if isinstance(aggregate_tasks, list)
+            else set()
+        )
+        if event_task:
+            targets_task = event_task == task_id
+        else:
+            # Aggregate verification may reject several task slices in one
+            # event. The per-task recovery ledger must still count that
+            # failure for every explicitly named failed task.
+            targets_task = task_id in aggregate_task_ids
+        if not targets_task:
             continue
         current_fingerprint = failure_fingerprint(event)
         if fingerprint is not None and current_fingerprint != fingerprint:

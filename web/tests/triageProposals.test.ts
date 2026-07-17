@@ -86,3 +86,17 @@ testDescriptorReadsTaskId();
 
 // eslint-disable-next-line no-console
 console.log("triageProposals.test.ts OK");
+
+// frontend-stress 2026-07-15: notice wording — a task_id in the result does not
+// mean "created"; only create actions create, everything else "executed".
+import { proposalRunNotice } from "../src/app/triageProposals.js";
+{
+  const a = proposalRunNotice("create-task", "建任务甲", "TASK-1");
+  if (!a.includes("created from")) throw new Error("create-task should say created: " + a);
+  const b = proposalRunNotice("update-task", "改优先级", "TASK-1");
+  if (b.includes("created")) throw new Error("update-task must not say created: " + b);
+  if (!b.includes("executed") || !b.includes("TASK-1")) throw new Error("update-task should say executed (TASK-1): " + b);
+  const c = proposalRunNotice("request-fanout", "扇出", "");
+  if (c.includes("created") || !c.includes("executed")) throw new Error("no-taskid action should say executed: " + c);
+  console.log("proposalRunNotice OK");
+}

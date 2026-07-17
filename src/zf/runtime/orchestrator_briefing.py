@@ -193,8 +193,9 @@ def build_orchestrator_briefing(
     sections.append("把一个任务交给 worker 只需要**两步**:")
     sections.append("")
     sections.append("```bash")
+    sections.append('state_tmp="${ZF_STATE_DIR:-.zf}/tmp"')
     sections.append("task_id=$(zf kanban add \"$feature_id\" \"Task title\" --id-only)")
-    sections.append("zf emit task.contract.update --task \"$task_id\" --payload-file .zf/tmp/contract.json")
+    sections.append('zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
     sections.append("zf kanban assign \"$task_id\" <role-name>   # 传 role.name (例如 dev / arch / review), 不要传 instance_id")
     sections.append("```")
     sections.append("")
@@ -202,13 +203,18 @@ def build_orchestrator_briefing(
     sections.append("推荐模式:")
     sections.append("")
     sections.append("```bash")
-    sections.append("mkdir -p .zf/tmp")
-    sections.append("python3 - <<'PY'")
+    sections.append('state_tmp="${ZF_STATE_DIR:-.zf}/tmp"')
+    sections.append('mkdir -p "$state_tmp"')
+    sections.append("STATE_TMP=\"$state_tmp\" python3 - <<'PY'")
     sections.append("import json")
+    sections.append("import os")
+    sections.append("from pathlib import Path")
     sections.append("payload = {\"contract\": {\"behavior\": \"...\", \"verification\": \"...\", \"verification_tiers\": [\"runtime\"], \"owner_role\": \"<role-name>\", \"scope\": [\"src/file.py\"]}}")
-    sections.append("open('.zf/tmp/contract.json', 'w', encoding='utf-8').write(json.dumps(payload, ensure_ascii=False))")
+    sections.append("state_tmp = Path(os.environ['STATE_TMP'])")
+    sections.append("state_tmp.mkdir(parents=True, exist_ok=True)")
+    sections.append("(state_tmp / 'contract.json').write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')")
     sections.append("PY")
-    sections.append("zf emit task.contract.update --task \"$task_id\" --payload-file .zf/tmp/contract.json")
+    sections.append('zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
     sections.append("```")
     sections.append("")
     sections.append("strict contract 必填字段:")
@@ -385,7 +391,8 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
             "zf spec ingest --dry-run \"$plan_path\"",
             "",
             "# 2) 如需登记 artifact refs,用事件记录 refs,但不要派发实现角色",
-            "zf emit task.artifact_refs.updated --task \"$task_id\" --payload-file .zf/tmp/artifact-refs.json",
+            'state_tmp="${ZF_STATE_DIR:-.zf}/tmp"',
+            'zf emit task.artifact_refs.updated --task "$task_id" --payload-file "$state_tmp/artifact-refs.json"',
             "",
             "# 3) 本轮决策结束; 不要 assign dev/review/test/judge",
             "zf emit orchestrator.round.complete",
@@ -396,8 +403,11 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
         f"**合成命令** (目标实现角色来自 zf.yaml: `{target}`; 用 Python 标准库生成 contract.json,**不要**用 jq):",
         "",
         "```bash",
-        "python3 - <<'PY'",
+        'state_tmp="${ZF_STATE_DIR:-.zf}/tmp"',
+        "STATE_TMP=\"$state_tmp\" python3 - <<'PY'",
         "import json",
+        "import os",
+        "from pathlib import Path",
         "contract = {",
         "    \"contract\": {",
         "        # 从 critic-approved candidate artifact refs + arch/critic 摘要合成:",
@@ -418,19 +428,22 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
         "        \"evidence_contract\": {\"static\": \"...\", \"runtime\": \"...\"},",
         "    }",
         "}",
-        "open('.zf/tmp/contract.json','w',encoding='utf-8').write(json.dumps(contract,ensure_ascii=False))",
+        "state_tmp = Path(os.environ['STATE_TMP'])",
+        "state_tmp.mkdir(parents=True, exist_ok=True)",
+        "(state_tmp / 'contract.json').write_text(json.dumps(contract, ensure_ascii=False), encoding='utf-8')",
         "PY",
-        "zf emit task.contract.update --task \"$task_id\" --payload-file .zf/tmp/contract.json",
+        'zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"',
         f"zf kanban assign \"$task_id\" {target}",
         "```",
         "",
         f"**可选 fanout** (scope 大可拆 N 个并发 `{target}` task,避同包 package.json 撞车):",
         "",
         "```bash",
+        'state_tmp="${ZF_STATE_DIR:-.zf}/tmp"',
         "# scope 按包/文件切分:",
         "sub_task=$(zf kanban add \"$feature_id\" \"Subtask: file_A\" --id-only)",
         "# 给每个 sub_task 写自己子集的 contract (scope 不重叠,共享 6 refs)",
-        "zf emit task.contract.update --task \"$sub_task\" --payload-file .zf/tmp/contract-sub.json",
+        'zf emit task.contract.update --task "$sub_task" --payload-file "$state_tmp/contract-sub.json"',
         f"zf kanban assign \"$sub_task\" {target}",
         "```",
     ]

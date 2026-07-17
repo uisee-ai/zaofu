@@ -109,7 +109,9 @@ def _insights_from_plan_integrity(plan_integrity: dict[str, Any]) -> list[dict[s
         task_id = str(finding.get("task_id") or "")
         source_ref = str(finding.get("source_ref") or "")
         insight_type = "verification_gap" if "acceptance" in kind else "plan_gap"
-        route = "correct_task" if insight_type == "verification_gap" else "research_probe"
+        # Missing plan/task-map references are a planner contract defect, not
+        # evidence of a ZaoFu source bug.  Route them to bounded amendment.
+        route = "correct_task" if insight_type == "verification_gap" else "plan_revision"
         rows.append(_row(
             seed=f"plan-integrity:{kind}:{task_id}:{source_ref}",
             insight_type=insight_type,

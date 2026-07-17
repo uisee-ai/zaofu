@@ -69,6 +69,87 @@ def test_single_expected_negative_event_does_not_create_attention() -> None:
     assert items == []
 
 
+def test_pane_observation_and_one_runner_failure_do_not_open_source_diagnosis() -> None:
+    items = build_attention_items(
+        events=[
+            ZfEvent(
+                type="worker.pane.dead_observed",
+                id="evt-pane-dead",
+                actor="dev-lane-0",
+                task_id="TASK-1",
+            ),
+            ZfEvent(
+                type="worker.runner.failed",
+                id="evt-runner-failed",
+                actor="dev-lane-0",
+                task_id="TASK-1",
+            ),
+        ],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    assert items == []
+
+
+def test_repeated_runner_failure_still_opens_one_lifecycle_attention() -> None:
+    items = build_attention_items(
+        events=[
+            ZfEvent(
+                type="worker.runner.failed",
+                id="evt-runner-failed-1",
+                actor="dev-lane-0",
+                task_id="TASK-1",
+                payload={"reason": "respawn pending"},
+            ),
+            ZfEvent(
+                type="worker.runner.failed",
+                id="evt-runner-failed-2",
+                actor="dev-lane-0",
+                task_id="TASK-1",
+                payload={"reason": "respawn pending"},
+            ),
+        ],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    assert len(items) == 1
+    assert items[0]["failure_class"] == "worker_runner_failed"
+
+
+def test_plan_admission_stays_on_bounded_plan_revision_route() -> None:
+    items = build_attention_items(
+        events=[
+            ZfEvent(
+                type="prd.plan.failed",
+                id="evt-plan-admission",
+                correlation_id="trace-plan-admission-fault-001",
+                payload={
+                    "failure_scope": "plan_admission",
+                    "plan_admission_incident_id": "plan-admission-001",
+                    "expected_fault": True,
+                    "reason": "task map lacks source refs",
+                    "workflow_run_id": "run-plan-1",
+                },
+            ),
+        ],
+        automation={},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    assert len(items) == 1
+    item = items[0]
+    assert item["source"] == "plan_admission"
+    assert item["suggested_route"] == "plan_revision"
+    assert item["failure_scope"] == "plan_admission"
+    assert item["expected_fault"] is True
+    assert item["notification_policy"] == "trace_only"
+
+
 def test_run_manager_human_escalate_becomes_run_manager_decision_attention() -> None:
     items = build_attention_items(
         events=[

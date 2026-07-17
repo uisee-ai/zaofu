@@ -104,6 +104,7 @@ def test_build_resident_run_manager_role_uses_claude_code_tmux() -> None:
     assert role.backend == "claude-code"
     assert role.transport == "tmux"
     assert role.role_kind == "reader"
+    assert "run.manager.transition" in role.triggers
     assert "run.manager.agent.observation" in role.publishes
 
 

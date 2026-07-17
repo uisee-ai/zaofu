@@ -12,14 +12,11 @@ spec:
     backend: claude-code
     permission_mode: bypass
   objectiveRef: docs/plans/refactor-goal.md
-  parityScope: [cli, provider, tools, webui, tui, memory, skills]
+  parityScope: [core, cli, api, web, runtime]
   gapLoop: enabled
   verifyRescan: module_parity
   completionThreshold: close_p0_p1
-  roleSkillBundles:
-    module-parity-scan: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
-    impl: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
-    verify: [zf-provider-contract-parity, zf-webui-tui-parity, zf-tool-skill-parity, zf-memory-context-parity]
+  deliveryPolicy: ship_candidate
 ---
 apiVersion: zaofu.dev/v1
 kind: ZfConfig
@@ -43,9 +40,8 @@ spec:
   project:
     name: refactor-lane-v3-claude
   runtime:
-    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
-    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
-    # (默认 main;master 基线仓请 override 为 master)。
+    # Legacy active-run compatibility only. New runs ship through the scoped
+    # Goal Completion Gate delivery operation declared by deliveryPolicy.
     git:
       auto_ship_on_judge_passed: true
     # override refactor-controller-runtime/v3 codex run_manager: claude lanes
@@ -53,6 +49,12 @@ spec:
     run_manager:
       backend: claude-code
   workflow:
+    # 分级声明(doc133 tier;141 §19.5):intake/submit 链路的
+    # workflow_tier 缺省值。micro/light/standard/full 之外的值
+    # 会被 schema fail-closed 拒绝。
+    kind_routes:
+      refactor:
+        default_tier: standard
     dag:
       external_triggers: [refactor.scan.requested]
     rework_routing:

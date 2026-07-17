@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -134,3 +135,35 @@ def test_watchdog_source_repair_dispatch_requires_enablement(tmp_path: Path) -> 
         "tests/**",
         "docs/**",
     ]
+
+
+def test_watchdog_ignores_stale_projection_after_quiescent_ship(tmp_path: Path) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    terminal_at = datetime(2026, 7, 15, 7, 0, tzinfo=timezone.utc)
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-terminal",
+        payload={"workflow_run_id": "run-terminal"},
+    ))
+    log.append(ZfEvent(
+        type="ship.completed",
+        ts=terminal_at.isoformat(),
+        correlation_id="run-terminal",
+        payload={"workflow_run_id": "run-terminal"},
+    ))
+    projection = state_dir / "projections" / "run_manager.json"
+    projection.write_text("{}\n", encoding="utf-8")
+    stale_at = (terminal_at - timedelta(hours=1)).timestamp()
+    os.utime(projection, (stale_at, stale_at))
+
+    result = run_manager_watchdog_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(source_repair=True, resident=True),
+        event_log=log,
+        now=terminal_at + timedelta(hours=1),
+        resident_probe=lambda: {"ok": False, "reason": "pane_missing"},
+    )
+
+    assert result.changed is False
+    assert not [event for event in log.read_all() if event.type == RUN_MANAGER_UNHEALTHY]

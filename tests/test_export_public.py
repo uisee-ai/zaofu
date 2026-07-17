@@ -56,12 +56,16 @@ def _run_export(
 def _init_fixture_repo(root: Path, manual_name: str, manual_text: str) -> Path:
     source = root / "source"
     (source / "tools").mkdir(parents=True)
+    (source / "assets" / "readme").mkdir(parents=True)
     (source / "docs" / "manual").mkdir(parents=True)
     shutil.copy2(SCRIPT, source / "tools" / "export-public.sh")
     (source / "README.md").write_text("# Public fixture\n", encoding="utf-8")
     (source / "README.zh-CN.md").write_text("# Public fixture\n", encoding="utf-8")
     (source / "LICENSE").write_text("fixture license\n", encoding="utf-8")
     (source / "DISCLAIMER.md").write_text("fixture disclaimer\n", encoding="utf-8")
+    (source / "assets" / "readme" / "fixture.txt").write_text(
+        "public readme asset\n", encoding="utf-8"
+    )
     (source / "docs" / "manual" / manual_name).write_text(manual_text, encoding="utf-8")
 
     subprocess.run(["git", "init", "-q"], cwd=source, check=True)
@@ -74,6 +78,7 @@ def _init_fixture_repo(root: Path, manual_name: str, manual_text: str) -> Path:
             "README.zh-CN.md",
             "LICENSE",
             "DISCLAIMER.md",
+            "assets/readme/fixture.txt",
             "tools/export-public.sh",
             f"docs/manual/{manual_name}",
         ],
@@ -110,10 +115,25 @@ def test_export_includes_disclaimer_and_accepts_no_private_matches(tmp_path: Pat
 
         assert result.returncode == 0, result.stdout + result.stderr
         assert (target / "LICENSE").is_file()
-        expected_disclaimer = (ROOT / "DISCLAIMER.md").read_text(encoding="utf-8")
+        expected_disclaimer = subprocess.run(
+            ["git", "show", "HEAD:DISCLAIMER.md"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=True,
+        ).stdout
         assert (target / "DISCLAIMER.md").read_text(
             encoding="utf-8"
         ) == expected_disclaimer
+        for readme in ("README.md", "README.zh-CN.md"):
+            expected_readme = subprocess.run(
+                ["git", "show", f"HEAD:{readme}"],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout
+            assert (target / readme).read_text(encoding="utf-8") == expected_readme
         assert (target / "docs" / "manual" / "00-index.en.md").is_file()
 
 
@@ -135,6 +155,9 @@ def test_grep_fallback_sanitizes_path_with_spaces(tmp_path: Path) -> None:
     )
     assert "/home/user/" not in exported
     assert "/path/to/zaofu" in exported
+    assert (target / "assets" / "readme" / "fixture.txt").read_text(
+        encoding="utf-8"
+    ) == "public readme asset\n"
 
 
 def test_grep_fallback_fails_closed_on_scan_error(tmp_path: Path) -> None:

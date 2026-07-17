@@ -798,7 +798,9 @@ def _contract_from_task_map_item(
     refs: dict[str, str],
     source_entry: dict[str, Any] | None = None,
 ) -> TaskContract:
-    acceptance = _string_list(raw.get("acceptance"))
+    acceptance = _acceptance_criteria_list(
+        raw.get("acceptance_criteria") or raw.get("acceptance")
+    )
     verification = normalize_verification_command(raw.get("verification"))
     validation = raw.get("validation") if isinstance(raw.get("validation"), dict) else {}
     validation = dict(validation)
@@ -852,11 +854,19 @@ def _contract_from_task_map_item(
         refs.get("plan_ref"),
         source_ref,
     )
-    evidence_contract = {
+    evidence_contract = (
+        dict(raw.get("evidence_contract"))
+        if isinstance(raw.get("evidence_contract"), dict)
+        else {}
+    )
+    evidence_contract.update({
         "source": "product_delivery_task_map",
         "source_refs": dict(refs),
-        "success_criteria": [],
-    }
+    })
+    success_criteria = evidence_contract.get("success_criteria")
+    if not isinstance(success_criteria, list):
+        success_criteria = []
+    evidence_contract["success_criteria"] = list(success_criteria)
     if verification:
         evidence_contract["success_criteria"].append({
             "kind": "command_passed",
@@ -881,7 +891,7 @@ def _contract_from_task_map_item(
             _string_list(raw.get("scope")),
             raw,
         ),
-        acceptance="\n".join(acceptance) or verification or "exit_code=0",
+        acceptance="\n".join(_criterion_text(item) for item in acceptance) or verification or "exit_code=0",
         acceptance_criteria=acceptance,
         source_key=source_key,
         source_ref=source_ref,
@@ -1137,6 +1147,28 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
+
+
+def _criterion_text(value: Any) -> str:
+    if isinstance(value, dict):
+        return str(
+            value.get("text")
+            or value.get("criterion")
+            or value.get("description")
+            or value.get("acceptance")
+            or ""
+        ).strip()
+    return str(value or "").strip()
+
+
+def _acceptance_criteria_list(value: Any) -> list[Any]:
+    if not isinstance(value, list):
+        return _string_list(value)
+    return [
+        dict(item) if isinstance(item, dict) else str(item).strip()
+        for item in value
+        if _criterion_text(item)
+    ]
 
 
 def _unique(values: list[str]) -> list[str]:

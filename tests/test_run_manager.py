@@ -4014,7 +4014,8 @@ def test_run_goal_completion_event_on_judge_passed_when_active() -> None:
     assert completion is not None
     assert completion.type == "run.goal.completed"
     assert completion.payload["run_id"] == "R9"
-    assert completion.causation_id == "evt-judge"
+    assert completion.payload["source_event_id"] == "evt-judge"
+    assert completion.causation_id
 
 
 def test_run_goal_completion_event_idempotent_when_already_complete() -> None:
@@ -4035,6 +4036,360 @@ def test_run_goal_completion_event_none_without_real_goal() -> None:
     events = [ZfEvent(type="loop.started", payload={})]
     judge = ZfEvent(type="judge.passed", payload={})
     assert run_goal_completion_event(events, cause=judge) is None
+
+
+def test_run_goal_completion_claim_is_blocked_while_feedback_is_open() -> None:
+    from zf.runtime.run_manager import (
+        RUN_GOAL_COMPLETION_CLAIMED,
+        RUN_GOAL_COMPLETION_BLOCKED,
+        run_goal_completion_claim_event,
+        run_goal_completion_gate_event,
+    )
+
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-GATE"}),
+        ZfEvent(
+            id="rework-open",
+            type="task.rework.requested",
+            task_id="T-1",
+            payload={
+                "task_id": "T-1",
+                "dispatch_id": "dispatch-1",
+                "finding_ids": ["finding-open"],
+            },
+        ),
+    ]
+    judge = ZfEvent(type="judge.passed", id="judge-open", payload={})
+    claim = run_goal_completion_claim_event(events, cause=judge)
+    assert claim is not None and claim.type == RUN_GOAL_COMPLETION_CLAIMED
+    blocked = run_goal_completion_gate_event([*events, claim], claim=claim)
+    assert blocked is not None and blocked.type == RUN_GOAL_COMPLETION_BLOCKED
+    assert blocked.payload["blockers"] == ["open_feedback", "pending_handoff"]
+
+
+def test_run_goal_completion_gate_closes_once_after_independent_verify() -> None:
+    from zf.runtime.run_manager import (
+        run_goal_completion_claim_event,
+        run_goal_completion_gate_event,
+    )
+
+    target = "b" * 40
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-CLOSE"}),
+        ZfEvent(
+            id="rework-1",
+            type="task.rework.requested",
+            task_id="T-1",
+            payload={
+                "task_id": "T-1",
+                "dispatch_id": "dispatch-1",
+                "finding_ids": ["finding-1"],
+            },
+        ),
+        ZfEvent(
+            type="task.dispatched",
+            task_id="T-1",
+            causation_id="rework-1",
+            payload={
+                "task_id": "T-1",
+                "dispatch_id": "dispatch-1",
+                "rework_request_event_id": "rework-1",
+            },
+        ),
+        ZfEvent(
+            type="dev.build.done",
+            task_id="T-1",
+            payload={
+                "task_id": "T-1",
+                "dispatch_id": "dispatch-1",
+                "source_commit": target,
+            },
+        ),
+        ZfEvent(
+            type="verify.passed",
+            task_id="T-1",
+            payload={"task_id": "T-1", "target_commit": target},
+        ),
+    ]
+    judge = ZfEvent(type="judge.passed", id="judge-close", payload={})
+    claim = run_goal_completion_claim_event(events, cause=judge)
+    assert claim is not None
+    completion = run_goal_completion_gate_event([*events, claim], claim=claim)
+    assert completion is not None and completion.type == "run.goal.completed"
+    replay_events = [*events, claim, completion]
+    assert run_goal_completion_gate_event(replay_events, claim=claim) is None
+    projection = build_run_goal_projection(replay_events)
+    assert projection["status"] == "complete"
+    assert projection["delivery_phase"] == "goal_completed"
+    assert projection["open_feedback_count"] == 0
+    assert projection["pending_handoff_count"] == 0
+
+
+def test_run_goal_completion_gate_blocks_on_blocking_human_decision() -> None:
+    from zf.runtime.run_manager import run_goal_completion_event
+
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-HUMAN"}),
+        ZfEvent(
+            id="human-1",
+            type="human.escalate",
+            payload={
+                "decision_token": "decision-1",
+                "blocking_scope": "run",
+                "reason": "owner approval required",
+            },
+        ),
+    ]
+    outcome = run_goal_completion_event(
+        events,
+        cause=ZfEvent(type="judge.passed", id="judge-human", payload={}),
+    )
+    assert outcome is not None
+    assert outcome.type == "run.goal.completion.blocked"
+    assert "pending_human_decision" in outcome.payload["blockers"]
+
+
+def test_run_manager_routes_scoped_delivery_failure_to_approved_ship_retry() -> None:
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    failed = ZfEvent(
+        id="delivery-failed-1",
+        type="run.delivery.failed",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "claim_id": "claim-1",
+            "delivery_operation_id": "delivery-claim-1",
+            "candidate_ref": "candidate/GOAL-1",
+            "target_commit": "a" * 40,
+            "reason": "temporary merge failure",
+        },
+    )
+
+    actions = _pending_semantic_event_actions([failed])
+
+    assert len(actions) == 1
+    action = actions[0]
+    assert action["action"] == "ship-retry"
+    assert action["safe_resume_action"] == "ship-retry"
+    assert action["run_id"] == "run-1"
+    assert action["claim_id"] == "claim-1"
+    assert action["delivery_operation_id"] == "delivery-claim-1"
+    assert action["policy_decision"]["decision"] == "needs_approval"
+
+    settled = ZfEvent(
+        type="run.delivery.settled",
+        correlation_id="run-1",
+        payload={
+            "run_id": "run-1",
+            "claim_id": "claim-1",
+            "delivery_operation_id": "delivery-claim-1",
+        },
+    )
+    assert _pending_semantic_event_actions([failed, settled]) == []
+
+
+def test_run_manager_deduplicates_completion_blocker_fingerprint() -> None:
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    payload = {
+        "run_id": "run-1",
+        "claim_id": "claim-1",
+        "blockers": ["open_feedback"],
+        "blocker_fingerprint": "blocker-fingerprint-1",
+        "reason": "feedback remains open",
+    }
+    events = [
+        ZfEvent(type="run.goal.completion.blocked", payload=payload),
+        ZfEvent(type="run.goal.completion.blocked", payload=payload),
+    ]
+
+    actions = _pending_semantic_event_actions(events)
+
+    assert len(actions) == 1
+    assert actions[0]["safe_resume_action"] == "diagnose_attention"
+    assert actions[0]["suggested_action"]["kind"] == "reconcile_goal_feedback"
+    assert actions[0]["expected_downstream_events"] == [
+        "rework.feedback.verified_closed",
+        "rework.feedback.residual",
+    ]
+
+
+def test_run_manager_classifies_goal_completion_handoff_and_human_blockers() -> None:
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    handoff = _pending_semantic_event_actions([ZfEvent(
+        id="handoff-blocked",
+        type="run.goal.completion.blocked",
+        correlation_id="run-1",
+        payload={
+            "run_id": "run-1",
+            "claim_id": "claim-handoff",
+            "blockers": ["pending_handoff"],
+            "blocker_fingerprint": "handoff-fingerprint",
+        },
+    )])
+    assert handoff[0]["suggested_action"]["kind"] == (
+        "reconcile_goal_attempt_handoff"
+    )
+    assert "attempt.handoff.closed" in handoff[0]["expected_downstream_events"]
+
+    human = _pending_semantic_event_actions([ZfEvent(
+        id="human-blocked",
+        type="run.goal.completion.blocked",
+        correlation_id="run-1",
+        payload={
+            "run_id": "run-1",
+            "claim_id": "claim-human",
+            "blockers": ["pending_human_decision"],
+            "blocker_fingerprint": "human-fingerprint",
+        },
+    )])
+    assert human[0]["suggested_action"]["kind"] == "await_goal_human_decision"
+    assert human[0]["policy_decision"]["decision"] == "needs_approval"
+    assert human[0]["policy_decision"]["executable"] is False
+
+
+def test_run_manager_uses_delivery_failure_as_single_ship_recovery_owner() -> None:
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    shared = {
+        "workflow_run_id": "run-1",
+        "run_id": "run-1",
+        "goal_id": "GOAL-1",
+        "claim_id": "claim-1",
+        "delivery_operation_id": "delivery-claim-1",
+        "candidate_ref": "candidate/GOAL-1",
+        "target_commit": "a" * 40,
+    }
+    events = [
+        ZfEvent(
+            id="delivery-failed-1",
+            type="run.delivery.failed",
+            correlation_id="run-1",
+            payload={**shared, "reason": "temporary merge failure"},
+        ),
+        ZfEvent(
+            id="delivery-gate-blocked-1",
+            type="run.goal.completion.blocked",
+            correlation_id="run-1",
+            payload={
+                **shared,
+                "blockers": ["delivery_failed"],
+                "blocker_fingerprint": "delivery-fingerprint",
+            },
+        ),
+    ]
+
+    actions = _pending_semantic_event_actions(events)
+
+    assert len(actions) == 1
+    assert actions[0]["action"] == "ship-retry"
+
+
+def test_run_goal_completion_gate_rejects_judge_verify_target_mismatch() -> None:
+    from zf.runtime.run_manager import run_goal_completion_event
+
+    verified_target = "a" * 40
+    judge_target = "b" * 40
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-TARGET"}),
+        ZfEvent(
+            type="verify.passed",
+            task_id="T-TARGET",
+            payload={"target_commit": verified_target},
+        ),
+    ]
+    outcome = run_goal_completion_event(
+        events,
+        cause=ZfEvent(
+            type="judge.passed",
+            id="judge-target",
+            payload={"target_commit": judge_target},
+        ),
+    )
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completion.rejected"
+    assert "verification_target_mismatch" in outcome.payload["invalid_reasons"]
+    assert outcome.payload["target_commit"] == judge_target
+    assert outcome.payload["verified_target_commit"] == verified_target
+
+
+def test_run_goal_completion_gate_isolates_interleaved_runs() -> None:
+    from zf.runtime.run_manager import (
+        run_goal_completion_claim_event,
+        run_goal_completion_gate_event,
+    )
+
+    run_a = "RUN-A"
+    run_b = "RUN-B"
+    target_a = "a" * 40
+    target_b = "b" * 40
+    events = [
+        ZfEvent(
+            type="run.goal.started",
+            payload={"run_id": run_a, "objective": "ship A"},
+            correlation_id=run_a,
+        ),
+        ZfEvent(
+            type="run.goal.started",
+            payload={"run_id": run_b, "objective": "ship B"},
+            correlation_id=run_b,
+        ),
+        ZfEvent(
+            type="verify.passed",
+            task_id="TASK-B",
+            correlation_id=run_b,
+            payload={"target_commit": target_b},
+        ),
+        ZfEvent(
+            id="human-b",
+            type="human.escalate",
+            correlation_id=run_b,
+            payload={
+                "decision_token": "decision-b",
+                "blocking_scope": "run",
+                "reason": "B needs approval",
+            },
+        ),
+        ZfEvent(
+            type="verify.passed",
+            task_id="TASK-A",
+            correlation_id=run_a,
+            payload={"target_commit": target_a},
+        ),
+    ]
+    judge_a = ZfEvent(
+        type="judge.passed",
+        id="judge-a",
+        correlation_id=run_a,
+        payload={"target_commit": target_a},
+    )
+
+    claim = run_goal_completion_claim_event(events, cause=judge_a)
+    assert claim is not None and claim.payload["run_id"] == run_a
+    outcome = run_goal_completion_gate_event([*events, claim], claim=claim)
+
+    assert outcome is not None and outcome.type == "run.goal.completed"
+    assert outcome.payload["run_id"] == run_a
+    assert outcome.payload["verified_target_commit"] == target_a
+
+
+def test_run_goal_completion_claim_rejects_ambiguous_unscoped_judge() -> None:
+    from zf.runtime.run_manager import run_goal_completion_claim_event
+
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "RUN-A"}),
+        ZfEvent(type="run.goal.started", payload={"run_id": "RUN-B"}),
+    ]
+
+    assert run_goal_completion_claim_event(
+        events,
+        cause=ZfEvent(type="judge.passed", id="judge-unscoped", payload={}),
+    ) is None
 
 
 def test_run_manager_repair_intake_dispatches_through_executor(tmp_path: Path) -> None:

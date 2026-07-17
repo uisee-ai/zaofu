@@ -304,9 +304,23 @@ class AgentViewRuntimeMixin:
             payload={"reason": "operator_request"},
         ))
         decision = self._respawn_instance(role)
+        continuation_error = ""
+        if decision.action != "respawn_failed":
+            try:
+                from zf.runtime.worker_respawn_continuation import (
+                    deliver_respawn_continuation,
+                )
+
+                deliver_respawn_continuation(
+                    self,
+                    request,
+                    instance_id=instance_id,
+                )
+            except Exception as exc:
+                continuation_error = str(exc)
         event_type = (
             "worker.respawn.completed"
-            if decision.action != "respawn_failed"
+            if decision.action != "respawn_failed" and not continuation_error
             else "worker.respawn.failed"
         )
         self.event_writer.append(ZfEvent(
@@ -315,10 +329,21 @@ class AgentViewRuntimeMixin:
             causation_id=request.id,
             correlation_id=request.correlation_id,
             payload={
-                "reason": decision.reason,
+                "reason": continuation_error or decision.reason,
                 "action": decision.action,
+                "continuation_delivered": bool(
+                    (request.payload or {}).get("continuation_briefing_ref")
+                    and not continuation_error
+                ) if isinstance(request.payload, dict) else False,
             },
         ))
+        if continuation_error:
+            return OrchestratorDecision(
+                action="respawn_failed",
+                task_id=request.task_id,
+                role=instance_id,
+                reason=f"respawned but continuation delivery failed: {continuation_error}",
+            )
         return decision
 
     def _apply_worker_drain_request(

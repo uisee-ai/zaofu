@@ -1,7 +1,5 @@
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import emojiData from "@emoji-mart/data";
-import Picker from "@emoji-mart/react";
 import type { LucideIcon } from "lucide-react";
 import {
   Archive,
@@ -62,16 +60,13 @@ import {
   getCandidateDetail,
   getDeliveryFeatures,
   getKanbanPendingProposals,
-  getEventsPage,
   getFanoutDetail,
   getAgentCockpit,
   getAgentLive,
   getAgents,
-  getIntegrationQueue,
   getOperatorInbox,
   getRecentEvents,
   getRecentEventsPage,
-  getRepairActions,
   getProjectHealth,
   getRunDetail,
   getSnapshot,
@@ -117,9 +112,12 @@ import { taskPriority, taskActorLabel, taskRiskBadge, latestEventAge, routeStatu
 import type { TaskTelemetry } from "../lib/task-display";
 import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../components/kanban/TaskCard";
 import { BoardColumn } from "../components/kanban/BoardColumn";
-import { DeliveryTracePage } from "../components/delivery-trace/DeliveryTracePage";
 import { buildObservabilityEventWindow } from "./observabilityModel";
 import { ProjectEventBus } from "./projectEventBus";
+import { useProjectRequestScope } from "./useProjectRequestScope";
+import { ChannelRoute, OrchestratorRoute, ProjectionRoute } from "./lazyRoutes";
+import { useProjectObservabilityData } from "./useProjectObservabilityData";
+import { useProjectStreamGapRecovery } from "./projectStreamGapRecovery";
 import {
   attentionTone,
   buildAgentAttentionRows,
@@ -175,23 +173,15 @@ import {
   snapshotLoadKindForPage,
 } from "./pageLoadPolicy";
 // P1 frontend split: pages/shared extracted from this file.
-import { ChannelPage } from "../components/channel/ChannelPage";
-import { AgentViewPage } from "../components/agent-view/AgentViewPage";
-import { OrchestratorPanel } from "../components/orchestrator/OrchestratorPanel";
 import { PlanApprovalPanel } from "../components/delivery-trace/PlanApprovalPanel";
-import { ObservabilityPage } from "../components/observability/ObservabilityPage";
 import { BoardWorkbench } from "../components/kanban/BoardWorkbench";
-import { ProjectionPage } from "../components/projection/ProjectionPage";
-import { AutomationsPage } from "../components/automations/AutomationsPage";
 import { TaskDetail } from "../components/kanban/TaskDetail";
-import { SkillsPage } from "../components/skills/SkillsPage";
-import { RuntimePanel } from "../components/runtime/RuntimePanel";
 import { ProjectInitOnboarding } from "../components/workspace/ProjectInitOnboarding";
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
 import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
-import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, parseEventFilter, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
+import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
 
 const REFRESH_EVENT_TYPES = new Set(["stream.gap"]);
 const LOCAL_AGENT_STREAM_EVENTS = new Set([
@@ -650,6 +640,7 @@ export function App() {
   const [activeProjectId, setActiveProjectId] = useState(
     initial.project || window.localStorage.getItem("zf.activeProjectId") || "",
   );
+  const projectRequestScope = useProjectRequestScope(activeProjectId);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [deliveryFeaturesPage, setDeliveryFeaturesPage] = useState<DeliveryFeaturesPage | null>(null);
   const [events, setEvents] = useState<RecentEvent[]>([]);
@@ -723,6 +714,10 @@ export function App() {
   const liveRefreshRef = useRef<((event: RecentEvent, reason: "event" | "gap" | "error") => void) | null>(null);
   const lastSeqRef = useRef(0);
   const selectedChannelIdRef = useRef(selectedChannelId);
+  const recoverStreamGap = useProjectStreamGapRecovery({
+    activeProjectId, page, selectedChannelId, lastSeqRef, setEvents, setSnapshot, setDeliveryFeaturesPage,
+    setChannelsPage, setChannelLoadError, setSelectedChannelId, setChannelDetail, setKanbanPendingProposals, setError,
+  });
 
   const selectedTask = useMemo(() => {
     if (!selectedTaskId) return null;
@@ -760,6 +755,7 @@ export function App() {
     setWorkspaceProjects(page.items ?? page.projects ?? []);
     setServerDefaultProjectId(page.server_default_project_id ?? "");
     if (!activeProjectId && page.active_project_id) {
+      projectRequestScope.activate(page.active_project_id);
       setActiveProjectId(page.active_project_id);
     }
     return page;
@@ -769,6 +765,7 @@ export function App() {
     const snapshotKind = snapshotLoadKindForPage(page);
     if (snapshotKind === "none") return null;
     const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
     const next = snapshotKind === "full"
       ? await getSnapshot(requestedProjectId || undefined)
       : await getSnapshotLight(requestedProjectId || undefined);
@@ -779,6 +776,7 @@ export function App() {
     ) {
       return next;
     }
+    if (!projectRequestScope.isCurrent(ticket)) return next;
     lastSeqRef.current = Math.max(lastSeqRef.current, next.seq);
     setSnapshot(next);
     setError(null);
@@ -786,13 +784,19 @@ export function App() {
   }, [activeProjectId, page]);
 
   const loadDeliveryFeatures = useCallback(async () => {
-    const next = await getDeliveryFeatures(activeProjectId || undefined);
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
+    const next = await getDeliveryFeatures(requestedProjectId || undefined);
+    if (!projectRequestScope.isCurrent(ticket)) return next;
     setDeliveryFeaturesPage(next);
     return next;
   }, [activeProjectId]);
 
   const loadChannels = useCallback(async () => {
-    const next = await getChannels(activeProjectId || undefined);
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
+    const next = await getChannels(requestedProjectId || undefined);
+    if (!projectRequestScope.isCurrent(ticket)) return next;
     setChannelsPage(next);
     setChannelLoadError(null);
     if (!selectedChannelId || !next.channels.some((item) => channelIdOf(item) === selectedChannelId)) {
@@ -802,15 +806,20 @@ export function App() {
   }, [activeProjectId, selectedChannelId]);
 
   const loadKanbanProposals = useCallback(async () => {
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
     try {
-      const page = await getKanbanPendingProposals(activeProjectId || undefined);
+      const page = await getKanbanPendingProposals(requestedProjectId || undefined);
+      if (!projectRequestScope.isCurrent(ticket)) return;
       setKanbanPendingProposals(page.items ?? []);
     } catch {
+      if (!projectRequestScope.isCurrent(ticket)) return;
       setKanbanPendingProposals([]);
     }
   }, [activeProjectId]);
 
   const refresh = useCallback(async () => {
+    const ticket = projectRequestScope.capture(activeProjectId);
     if (!activeProjectId || (activeProject && !activeProjectReady)) {
       eventBusRef.current?.close();
       setSnapshot(null);
@@ -828,6 +837,7 @@ export function App() {
       if (pageLoadsDeliveryFeatures(page)) requests.push(loadDeliveryFeatures());
       await Promise.all(requests);
     } catch (err) {
+      if (!projectRequestScope.isCurrent(ticket)) return;
       setError(err instanceof Error ? err.message : String(err));
       setLiveState("degraded");
     }
@@ -881,8 +891,10 @@ export function App() {
         if (page === "channels") {
           const channelId = textValue(payload.channel_id) || selectedChannelIdRef.current;
           if (!channelId || channelId === selectedChannelIdRef.current) {
+            const ticket = projectRequestScope.capture(activeProjectId);
             void getChannelDetail(selectedChannelIdRef.current || "ch-zaofu", activeProjectId || undefined)
               .then((detail) => {
+                if (!projectRequestScope.isCurrent(ticket)) return;
                 if (selectedChannelIdRef.current === channelId || !channelId) setChannelDetail(detail);
               })
               .catch(() => undefined);
@@ -1024,6 +1036,7 @@ export function App() {
           setServerDefaultProjectId(projectsPage.server_default_project_id ?? "");
         }
         if (!activeProjectId && projectId) {
+          projectRequestScope.activate(projectId);
           setActiveProjectId(projectId);
           return;
         }
@@ -1095,6 +1108,7 @@ export function App() {
 
     function connectStream(cursor: number, projectId: string) {
       eventBusRef.current?.close();
+      const ticket = projectRequestScope.capture(projectId);
       const bus = new ProjectEventBus({
         cursor,
         projectId,
@@ -1102,9 +1116,13 @@ export function App() {
         onRefresh: (event, reason) => {
           liveRefreshRef.current?.(event, reason);
         },
-        onStatusChange: setLiveState,
+        onRecoverGap: (_event, recoveryProjectId) => recoverStreamGap(recoveryProjectId),
+        onStatusChange: (state) => {
+          if (projectRequestScope.isCurrent(ticket)) setLiveState(state);
+        },
       });
       bus.subscribe(({ event, seq }) => {
+        if (!projectRequestScope.isCurrent(ticket)) return;
         if (seq) lastSeqRef.current = Math.max(lastSeqRef.current, seq);
         setEvents((current) => prependEvent(current, event));
       });
@@ -1188,43 +1206,18 @@ export function App() {
     };
   }, [activeProjectId, selectedTaskId]);
 
-  useEffect(() => {
-    if (!isObservabilityPage(page)) return;
-    const params = new URLSearchParams({ limit: "120" });
-    const parsedFilter = parseEventFilter(eventFilter);
-    const taskScope = parsedFilter.task || selectedTaskId || "";
-    if (taskScope) params.set("task_id", taskScope);
-    if (parsedFilter.actor) params.set("actor", parsedFilter.actor);
-    if (parsedFilter.type) params.set("type", parsedFilter.type);
-    else if (parsedFilter.prefix) params.set("prefix", parsedFilter.prefix);
-    else if (parsedFilter.unknown[0]) params.set("type", parsedFilter.unknown[0]);
-    if (parsedFilter.failed) params.set("failed", "true");
-    if (parsedFilter.blocked) params.set("blocked", "true");
-    void getEventsPage(params, activeProjectId || undefined).then(setEventsPage).catch((err) => {
-      setError(err instanceof Error ? err.message : String(err));
-    });
-  }, [activeProjectId, eventFilter, page, selectedTaskId, snapshot?.seq]);
-
-  useEffect(() => {
-    if (!isObservabilityPage(page)) return;
-    let cancelled = false;
-    void Promise.all([
-      getIntegrationQueue(activeProjectId || undefined),
-      getRepairActions(activeProjectId || undefined),
-    ]).then(([queue, actions]) => {
-      if (cancelled) return;
-      setIntegrationQueue(queue);
-      setRepairActions(actions);
-    }).catch((err) => {
-      if (cancelled) return;
-      setIntegrationQueue(null);
-      setRepairActions(null);
-      setError(err instanceof Error ? err.message : String(err));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeProjectId, page, snapshot?.seq]);
+  useProjectObservabilityData({
+    activeProjectId,
+    eventFilter,
+    onError: setError,
+    onEventsPage: setEventsPage,
+    onIntegrationQueue: setIntegrationQueue,
+    onRepairActions: setRepairActions,
+    page,
+    scope: projectRequestScope,
+    selectedTaskId,
+    snapshotSeq: snapshot?.seq,
+  });
 
   useEffect(() => {
     if (page !== "channels") return;
@@ -1342,20 +1335,27 @@ export function App() {
   }, [page, projectionDetail, selectedTask, selectedTaskId, taskDetail]);
 
   async function runSearch() {
-    const result = await search(searchQuery, 80, activeProjectId || undefined);
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
+    const result = await search(searchQuery, 80, requestedProjectId || undefined);
+    if (!projectRequestScope.isCurrent(ticket)) return;
     setSearchResult(result);
     setPage("events");
   }
 
   async function submitAction(action: string, payload: Record<string, unknown>) {
-    const result = await postAction(action, payload, activeProjectId || undefined);
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
+    const result = await postAction(action, payload, requestedProjectId || undefined);
+    if (!projectRequestScope.isCurrent(ticket)) return result;
     if (actionFailed(result) && actionFailureReason(result).includes("missing or invalid web action token/session")) {
       window.localStorage.removeItem("zf.webActionToken");
       setWebActionTokenPresent(false);
     }
     setActionResult(result);
     try {
-      const recent = await getRecentEvents(60, activeProjectId || undefined);
+      const recent = await getRecentEvents(60, requestedProjectId || undefined);
+      if (!projectRequestScope.isCurrent(ticket)) return result;
       setEvents(recent.slice().reverse());
     } catch {
       // SSE remains the primary live path; this fallback only tightens action feedback.
@@ -1472,6 +1472,7 @@ export function App() {
   async function submitChannelMessage(text: string, refs?: Record<string, unknown>) {
     const channelId = selectedChannelId || "ch-zaofu";
     const projectId = activeProjectId || undefined;
+    const ticket = projectRequestScope.capture(projectId || "");
     let refreshTimer: ReturnType<typeof window.setInterval> | null = null;
     let refreshBusy = false;
     async function refreshChannelProjection() {
@@ -1479,6 +1480,7 @@ export function App() {
         getChannelDetail(channelId, projectId),
         getRecentEvents(60, projectId),
       ]);
+      if (!projectRequestScope.isCurrent(ticket)) return;
       if (selectedChannelIdRef.current === channelId) setChannelDetail(detail);
       setEvents(recent.slice().reverse());
     }
@@ -1503,6 +1505,7 @@ export function App() {
         source: "web-channel-composer",
         ...(refs ? { refs } : {}),
       }, projectId);
+      if (!projectRequestScope.isCurrent(ticket)) return;
       setActionResult(result);
       if (!result.ok) {
         throw new Error(result.reason || result.status || "channel message failed");
@@ -1741,6 +1744,8 @@ export function App() {
   }
 
   async function openProjection(kind: ProjectionKind, id: string) {
+    const requestedProjectId = activeProjectId || "";
+    const ticket = projectRequestScope.capture(requestedProjectId);
     const targetPage: Record<ProjectionKind, PageId> = {
       trace: "traces",
       candidate: "candidates",
@@ -1751,17 +1756,19 @@ export function App() {
     setPage(targetPage[kind]);
     const result =
       kind === "trace"
-        ? await getTraceDetail(id, activeProjectId || undefined)
+        ? await getTraceDetail(id, requestedProjectId || undefined)
         : kind === "candidate"
-          ? await getCandidateDetail(id, activeProjectId || undefined)
+          ? await getCandidateDetail(id, requestedProjectId || undefined)
           : kind === "fanout"
-            ? await getFanoutDetail(id, activeProjectId || undefined)
-            : await getRunDetail(id, activeProjectId || undefined);
+            ? await getFanoutDetail(id, requestedProjectId || undefined)
+            : await getRunDetail(id, requestedProjectId || undefined);
+    if (!projectRequestScope.isCurrent(ticket)) return;
     setProjectionDetail(result as unknown as Record<string, unknown>);
   }
 
   function switchProject(projectId: string) {
     if (!projectId || projectId === activeProjectId) return;
+    projectRequestScope.activate(projectId);
     setActiveProjectId(projectId);
     void touchWorkspaceProject(projectId).then(() => loadWorkspaceProjects()).catch(() => {
       // Project selection must not fail just because recent-project metadata
@@ -1811,6 +1818,7 @@ export function App() {
     if (nextProject) {
       switchProject(nextProject.project_id);
     } else {
+      projectRequestScope.activate("");
       setActiveProjectId("");
       setSnapshot(null);
       setDeliveryFeaturesPage(null);
@@ -1858,6 +1866,8 @@ export function App() {
     return (
       <WelcomeWizard
         hasProject={workspaceProjects.length > 0}
+        tokenPresent={webActionTokenPresent}
+        onSaveToken={saveWebActionToken}
         onOpenProjectWizard={(prefill) => {
           if (prefill?.root || prefill?.preset || prefill?.stack || prefill?.description) {
             setProjectWizardDraft((d) => ({
@@ -1950,30 +1960,31 @@ export function App() {
           ) : page === "inbox" ? (
             <PlanApprovalPanel projectId={activeProjectId} autoOpenPlanId={initial.plan} />
           ) : page === "channels" ? (
-            <ChannelPage
-              actionReady={actionGate.actionReady}
-              actionResult={actionResult}
-              channels={channelsPage?.channels ?? []}
-              detail={channelDetail}
-              loadError={channelLoadError}
-              onAddAgent={() => setAddAgentOpen(true)}
-              onNewChannel={() => setNewChannelOpen(true)}
-              onOpenChannel={openChannel}
-              onPostMessage={(text, refs) => submitChannelMessage(text, refs)}
-              onDrainReplies={() => drainChannelReplies()}
-              onGenerateOwnerReport={() => generateChannelOwnerReport()}
-              onClearHistory={() => clearChannelHistory()}
-              onDeleteChannel={() => deleteChannel()}
-              onMarkRead={(threadId) => markChannelRead(threadId)}
-              onSearchHistory={(query, threadId) => runChannelHistorySearch(query, threadId)}
-              onRequestSynthesis={(targetMemberId) => requestChannelSynthesis(targetMemberId)}
-              onSetDiscussionMode={(mode, defaultResponderId) => submitChannelDiscussionMode(mode, defaultResponderId)}
-              onRemoveMember={(memberId) => removeChannelMember(memberId)}
-              onSetMemberPermission={(memberId, permissionProfile) => setChannelMemberPermission(memberId, permissionProfile)}
-              onWorkflowRequest={(patternId, taskId, reason) => submitChannelWorkflowRequest(patternId, taskId, reason)}
-              selectedChannelId={selectedChannelId}
-              workflowRoles={snapshot?.roles ?? []}
-            />
+              <ChannelRoute
+                actionReady={actionGate.actionReady}
+                actionResult={actionResult}
+                channels={channelsPage?.channels ?? []}
+                detail={channelDetail}
+                events={events}
+                loadError={channelLoadError}
+                onAddAgent={() => setAddAgentOpen(true)}
+                onNewChannel={() => setNewChannelOpen(true)}
+                onOpenChannel={openChannel}
+                onPostMessage={(text, refs) => submitChannelMessage(text, refs)}
+                onDrainReplies={() => drainChannelReplies()}
+                onGenerateOwnerReport={() => generateChannelOwnerReport()}
+                onClearHistory={() => clearChannelHistory()}
+                onDeleteChannel={() => deleteChannel()}
+                onMarkRead={(threadId) => markChannelRead(threadId)}
+                onSearchHistory={(query, threadId) => runChannelHistorySearch(query, threadId)}
+                onRequestSynthesis={(targetMemberId) => requestChannelSynthesis(targetMemberId)}
+                onSetDiscussionMode={(mode, defaultResponderId) => submitChannelDiscussionMode(mode, defaultResponderId)}
+                onRemoveMember={(memberId) => removeChannelMember(memberId)}
+                onSetMemberPermission={(memberId, permissionProfile) => setChannelMemberPermission(memberId, permissionProfile)}
+                onWorkflowRequest={(patternId, taskId, reason) => submitChannelWorkflowRequest(patternId, taskId, reason)}
+                selectedChannelId={selectedChannelId}
+                workflowRoles={snapshot?.roles ?? []}
+              />
           ) : page === "triage" ? (
             <TriagePage
               actionResult={actionResult}
@@ -2048,53 +2059,53 @@ export function App() {
             />
           ) : (
             <section className="projection-scroll">
-              <ProjectionPage
-                activeProjectId={activeProjectId}
-                eventsPage={eventsPage}
-                eventFilter={eventFilter}
-                liveState={liveState}
-                recentEvents={events}
-                integrationQueue={integrationQueue}
-                page={page}
-                projectionDetail={projectionDetail}
-                repairActions={repairActions}
-                searchResult={searchResult}
-                selectedTaskId={selectedTaskId}
-                setEventFilter={setEventFilter}
-                channels={channelsPage?.channels ?? []}
-                snapshot={snapshot}
-                deliveryFeaturesPage={deliveryFeaturesPage}
-                themeMode={themeMode}
-                actionReady={actionGate.actionReady}
-                actionState={actionGate.actionState}
-                onOpenChannel={openChannel}
-                onAddAgentToChannel={(agent) => {
-                  setAddAgentDraft({
-                    ...emptyAddAgentDraft(),
-                    memberId: agent.instance_id,
-                    memberType: "provider_agent",
-                    provider: agent.backend.includes("codex")
-                      ? "codex"
-                      : agent.backend === "claude" || agent.backend === "claude-code"
-                        ? "claude-code"
-                        : "runtime-role",
-                    channelRole: agent.role_kind === "reviewer" ? "dev_reviewer" : "tech_leader",
-                    visibilityProfile: agent.role_kind === "reviewer" ? "reviewer" : "planner",
-                    backend: agent.backend || "",
-                    reason: "added from agent roster",
-                  });
-                  setAddAgentOpen(true);
-                }}
-                onThemeModeChange={setThemeMode}
-                onOpenPage={(nextPage) => setPage(nextPage)}
-                onOpenProjection={(kind, id) => void openProjection(kind, id)}
-                onAction={submitAction}
-                onClearTaskScope={() => {
-                  setSelectedTaskId(null);
-                  setEventFilter("");
-                }}
-                onSelectTask={openTask}
-              />
+                <ProjectionRoute
+                  activeProjectId={activeProjectId}
+                  eventsPage={eventsPage}
+                  eventFilter={eventFilter}
+                  liveState={liveState}
+                  recentEvents={events}
+                  integrationQueue={integrationQueue}
+                  page={page}
+                  projectionDetail={projectionDetail}
+                  repairActions={repairActions}
+                  searchResult={searchResult}
+                  selectedTaskId={selectedTaskId}
+                  setEventFilter={setEventFilter}
+                  channels={channelsPage?.channels ?? []}
+                  snapshot={snapshot}
+                  deliveryFeaturesPage={deliveryFeaturesPage}
+                  themeMode={themeMode}
+                  actionReady={actionGate.actionReady}
+                  actionState={actionGate.actionState}
+                  onOpenChannel={openChannel}
+                  onAddAgentToChannel={(agent) => {
+                    setAddAgentDraft({
+                      ...emptyAddAgentDraft(),
+                      memberId: agent.instance_id,
+                      memberType: "provider_agent",
+                      provider: agent.backend.includes("codex")
+                        ? "codex"
+                        : agent.backend === "claude" || agent.backend === "claude-code"
+                          ? "claude-code"
+                          : "runtime-role",
+                      channelRole: agent.role_kind === "reviewer" ? "dev_reviewer" : "tech_leader",
+                      visibilityProfile: agent.role_kind === "reviewer" ? "reviewer" : "planner",
+                      backend: agent.backend || "",
+                      reason: "added from agent roster",
+                    });
+                    setAddAgentOpen(true);
+                  }}
+                  onThemeModeChange={setThemeMode}
+                  onOpenPage={(nextPage) => setPage(nextPage)}
+                  onOpenProjection={(kind, id) => void openProjection(kind, id)}
+                  onAction={submitAction}
+                  onClearTaskScope={() => {
+                    setSelectedTaskId(null);
+                    setEventFilter("");
+                  }}
+                  onSelectTask={openTask}
+                />
             </section>
           )}
         </section>
@@ -2116,22 +2127,22 @@ export function App() {
           hidden={!agentPanelVisible}
           role="presentation"
         >
-          <OrchestratorPanel
-            actionResult={actionResult}
-            activeProjectId={activeProjectId}
-            context={orchestratorContext}
-            events={events}
-            focusSignal={orchestratorFocusSignal}
-            panelMode={renderedAgentPanelMode}
-            visible={agentPanelVisible}
-            onAction={submitAction}
-            onPanelModeChange={setAgentPanelMode}
-            onLockSession={() => void lockSession()}
-            onSaveToken={saveWebActionToken}
-            onUnlockSession={unlockSession}
-            snapshot={snapshot}
-            tokenPresent={webActionTokenPresent}
-          />
+            <OrchestratorRoute
+              actionResult={actionResult}
+              activeProjectId={activeProjectId}
+              context={orchestratorContext}
+              events={events}
+              focusSignal={orchestratorFocusSignal}
+              panelMode={renderedAgentPanelMode}
+              visible={agentPanelVisible}
+              onAction={submitAction}
+              onPanelModeChange={setAgentPanelMode}
+              onLockSession={() => void lockSession()}
+              onSaveToken={saveWebActionToken}
+              onUnlockSession={unlockSession}
+              snapshot={snapshot}
+              tokenPresent={webActionTokenPresent}
+            />
         </div>
       ) : null}
       {newChannelOpen ? (

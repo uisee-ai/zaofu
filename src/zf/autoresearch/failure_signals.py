@@ -18,6 +18,7 @@ from typing import Any, Iterable
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.runtime.event_problem_registry import RUN_MANAGER_PENDING_EVENT_TYPES, spec_for_event
+from zf.runtime.terminal_events import latest_quiescent_run_terminal
 from zf.runtime.fanout_identity import fanout_current_status
 
 
@@ -537,9 +538,15 @@ def detect_semantic_flow_failures(
             continue
         if spec.problem_class not in {"artifact_contract", "product_gap"}:
             continue
+        payload = _payload(event)
+        # Plan admission is a bounded planner/task-map correction, including
+        # fault-injection drills.  It must remain observable to Supervisor but
+        # must never become a source-repair candidate through the generic
+        # semantic-flow scanner.
+        if str(payload.get("failure_scope") or "") == "plan_admission":
+            continue
         if _semantic_event_recovered(events, event_idx=idx, source_event=event):
             continue
-        payload = _payload(event)
         reason = str(
             payload.get("reason")
             or payload.get("error")
@@ -742,6 +749,8 @@ def detect_fanout_failures(
         aggregate_events.discard("")
         if event.type not in aggregate_events:
             continue
+        if event.origin == "kernel" or event.actor in {"zf-cli", "orchestrator"}:
+            continue
         signals.append(_signal(
             state_dir=state_dir,
             source_kind="event_log",
@@ -762,6 +771,12 @@ def detect_fanout_failures(
         if fanout_id in terminal_fanouts:
             continue
         if not _fanout_child_pending_grace_expired(
+            events,
+            fanout_id=fanout_id,
+            child_id=child_id,
+        ):
+            continue
+        if _fanout_child_lifecycle_recovery_active(
             events,
             fanout_id=fanout_id,
             child_id=child_id,
@@ -796,6 +811,76 @@ def detect_fanout_failures(
             metric_impacts={"runtime_reliability": -0.15},
         ))
     return signals
+
+
+def _fanout_child_lifecycle_recovery_active(
+    events: list[ZfEvent],
+    *,
+    fanout_id: str,
+    child_id: str,
+    grace_seconds: int = 120,
+) -> bool:
+    """Return true when the lifecycle watchdog owns this pending child.
+
+    A killed pane naturally leaves ``fanout.child.dispatched`` without a child
+    terminal until the lifecycle watchdog confirms staleness and respawns the
+    worker. During that window, fanout-pending is evidence for lifecycle
+    recovery, not an Autoresearch source-defect candidate.
+    """
+    dispatch_ts: datetime | None = None
+    latest_ts: datetime | None = None
+    role_instance = ""
+    pane_dead_ts: datetime | None = None
+    runner_failed_ts: datetime | None = None
+    recovery_ts: datetime | None = None
+    respawn_ts: datetime | None = None
+
+    for event in events:
+        event_ts = _parse_event_ts(event)
+        if event_ts is not None:
+            latest_ts = event_ts if latest_ts is None else max(latest_ts, event_ts)
+        payload = _payload(event)
+        if (
+            event.type == "fanout.child.dispatched"
+            and str(payload.get("fanout_id") or "") == fanout_id
+            and str(payload.get("child_id") or payload.get("child_run") or "") == child_id
+        ):
+            dispatch_ts = event_ts
+            role_instance = str(payload.get("role_instance") or "").strip()
+
+    if dispatch_ts is None or not role_instance:
+        return False
+
+    for event in events:
+        event_ts = _parse_event_ts(event)
+        if event_ts is None or event_ts < dispatch_ts:
+            continue
+        payload = _payload(event)
+        actor = str(getattr(event, "actor", "") or "").strip()
+        instance = str(payload.get("instance_id") or payload.get("role") or "").strip()
+        same_role = actor == role_instance or instance == role_instance
+        same_child = (
+            str(payload.get("fanout_id") or "") == fanout_id
+            and str(payload.get("child_id") or payload.get("child_run") or "") == child_id
+        )
+        if event.type == "worker.pane.dead_observed" and same_role:
+            pane_dead_ts = event_ts
+        elif event.type == "worker.runner.failed" and same_role:
+            runner_failed_ts = event_ts
+        elif event.type == "worker.recovery.injected" and (same_role or same_child):
+            recovery_ts = event_ts
+        elif event.type == "worker.respawned" and same_role:
+            respawn_ts = event_ts
+
+    if pane_dead_ts is not None and runner_failed_ts is None and respawn_ts is None:
+        return True
+    lifecycle_ts = max(
+        [ts for ts in (runner_failed_ts, recovery_ts, respawn_ts) if ts is not None],
+        default=None,
+    )
+    if lifecycle_ts is None or latest_ts is None:
+        return False
+    return (latest_ts - lifecycle_ts).total_seconds() < grace_seconds
 
 
 def _fanout_child_pending_grace_expired(
@@ -1728,10 +1813,7 @@ def collect_failure_signals(
 
 
 def completed_run_quiesced(events: list[ZfEvent]) -> bool:
-    completed_idx, completed = _latest_completed_run(events)
-    if completed is None:
-        return False
-    return not _run_reopened_after_completion(events, completed_idx, completed)
+    return latest_quiescent_run_terminal(events) is not None
 
 
 def _latest_completed_run(events: list[ZfEvent]) -> tuple[int, ZfEvent | None]:

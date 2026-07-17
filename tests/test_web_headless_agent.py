@@ -284,6 +284,62 @@ def test_claude_headless_timeout_preserves_partial_stream(
     assert [message.type for message in messages] == ["status", "text"]
 
 
+def test_claude_headless_streaming_turn_uses_idle_timeout_not_total_timeout(
+    tmp_path: Path,
+):
+    # A2-1: a create-task turn streams grounding/tool frames for far longer than
+    # timeout_s in total, yet is never silent for timeout_s. It must NOT be
+    # killed by a wall-clock cap (the pre-fix bug returned status:timeout with
+    # zero proposal). Only true silence for timeout_s may trip the deadline.
+    script = tmp_path / "fake_claude_slow_stream.py"
+    script.write_text(
+        "\n".join([
+            "import json, sys, time",
+            "sys.stdin.readline()",
+            "print(json.dumps({'type':'system','session_id':'claude-slow-1'}), flush=True)",
+            "for part in ['reading ', 'grounding ', 'contract']:",
+            "    time.sleep(0.12)",
+            "    print(json.dumps({'type':'assistant','message':{'content':[{'type':'text','text':part}]}}), flush=True)",
+            "print(json.dumps({'type':'result','session_id':'claude-slow-1','result':'proposal ready'}), flush=True)",
+        ]),
+        encoding="utf-8",
+    )
+    backend = ClaudeHeadlessBackend(command=f"{sys.executable} {script}")
+    messages: list[HeadlessMessage] = []
+
+    result = backend.run_turn(
+        prompt="slow grounding turn",
+        cwd=tmp_path,
+        system_prompt="system",
+        thread_id="zf-thread",
+        provider_session_id="",
+        on_session_id=lambda _: None,
+        on_message=messages.append,
+        timeout_s=0.2,
+    )
+
+    assert result.ok is True
+    assert result.status != "timeout"
+    assert result.reply == "proposal ready"
+    assert [message.content for message in messages if message.type == "text"] == [
+        "reading ",
+        "grounding ",
+        "contract",
+    ]
+
+
+def test_codex_headless_tool_timeout_uses_env_with_safe_fallback(monkeypatch) -> None:
+    monkeypatch.delenv("ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S", raising=False)
+    assert CodexHeadlessBackend(command="codex").tool_timeout_s == 7200.0
+
+    monkeypatch.setenv("ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S", "14400")
+    assert CodexHeadlessBackend(command="codex").tool_timeout_s == 14400.0
+
+    for raw in ("bad", "0", "-1"):
+        monkeypatch.setenv("ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S", raw)
+        assert CodexHeadlessBackend(command="codex").tool_timeout_s == 7200.0
+
+
 def test_codex_headless_turn_uses_app_server_protocol(
     tmp_path: Path,
 ):
@@ -450,6 +506,55 @@ def test_codex_headless_streaming_turn_uses_idle_timeout_not_total_timeout(
         "stream ",
         "done",
     ]
+
+
+def test_codex_headless_in_flight_tool_uses_longer_idle_budget(
+    tmp_path: Path,
+):
+    script = tmp_path / "fake_codex_slow_tool.py"
+    script.write_text(
+        "\n".join([
+            "import json, sys, time",
+            "for line in sys.stdin:",
+            "    if not line.strip():",
+            "        continue",
+            "    msg = json.loads(line)",
+            "    method = msg.get('method')",
+            "    req_id = msg.get('id')",
+            "    if req_id and method == 'initialize':",
+            "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'serverInfo':{'name':'fake-codex'}}}), flush=True)",
+            "    elif method == 'initialized':",
+            "        pass",
+            "    elif req_id and method == 'thread/start':",
+            "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'threadId':'codex-thread-1'}}), flush=True)",
+            "    elif req_id and method == 'turn/start':",
+            "        print(json.dumps({'jsonrpc':'2.0','id':req_id,'result':{'turn':{'id':'turn-1','status':'inProgress'}}}), flush=True)",
+            "        print(json.dumps({'jsonrpc':'2.0','method':'item/started','params':{'item':{'id':'tool-1','type':'commandExecution','command':'slow-test'}}}), flush=True)",
+            "        time.sleep(0.35)",
+            "        print(json.dumps({'jsonrpc':'2.0','method':'item/completed','params':{'item':{'id':'tool-1','type':'commandExecution','output':'ok'}}}), flush=True)",
+            "        print(json.dumps({'jsonrpc':'2.0','method':'item/agentMessage/delta','params':{'delta':'done'}}), flush=True)",
+            "        print(json.dumps({'jsonrpc':'2.0','method':'turn/completed','params':{'threadId':'codex-thread-1','turn':{'id':'turn-1','status':'completed'}}}), flush=True)",
+        ]),
+        encoding="utf-8",
+    )
+    codex = CodexHeadlessBackend(
+        command=f"{sys.executable} {script}",
+        tool_timeout_s=0.6,
+    )
+
+    result = codex.run_turn(
+        prompt="run slow tool",
+        cwd=tmp_path,
+        system_prompt="system",
+        thread_id="zf-thread",
+        provider_session_id="",
+        on_session_id=lambda _: None,
+        on_message=None,
+        timeout_s=0.2,
+    )
+
+    assert result.ok is True
+    assert result.reply == "done"
 
 
 def test_codex_headless_failed_turn_is_not_reported_completed(

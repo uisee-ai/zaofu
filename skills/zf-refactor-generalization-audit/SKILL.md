@@ -113,12 +113,11 @@ Before starting a long refactor on a new target project:
 
 - `zf validate --cold-start` passes for the target config.
 - Target `project.state_dir` is isolated and not stale from another run.
-- **局部/存量项目 refactor**:若目标是导入的既有工程做局部重构,task_map 可声明
-  `refactor_contract.assembly_policy=none` 和/或 `workspace_root_owner_required=false`
-  (顶层或 `refactor_contract` 内)跳过 workspace-root-owner 启发式
-  (`lane_pipeline.py` `validate_lane_pipeline_admission`/内嵌 `_workspace_root_owner_required`;根标记 pyproject.toml/setup.py/setup.cfg/
-  requirements.txt/uv.lock/poetry.lock/Pipfile)。跳过 root-owner 不放松 task
-  schema/path/evidence 校验。审存量项目 refactor 时确认此开关已按目标形态设置。
+- **根脚手架 ownership**:仅当本轮 delivery 必须修改或验证根级脚手架/entrypoint
+  时，task_map 才声明 `workspace_root_owner_required=true`（顶层或
+  `refactor_contract` 内）并分配对应根路径。局部/存量项目默认省略该字段（等同
+  false），不应虚构 assembly 或根文件所有权。该开关不放松 task schema/path/evidence
+  或并行 bundle assembly 校验；审计时确认其与 source inventory 一致。
 - workflow stages have explicit completion events and next-stage dispatch
   rules.
 - fanout stages have bounded stuck handling and child completion

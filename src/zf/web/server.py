@@ -382,6 +382,7 @@ from zf.web.projections.workspace import (  # noqa: F401
 )
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REACT_DIST_DIR = _REPO_ROOT / "web" / "dist"
+_react_dist_missing_warned = False
 
 _SLOW_REQUEST_WARN_MS = 2000.0
 _SERVER_STARTED_AT = datetime.now(timezone.utc).isoformat()
@@ -933,17 +934,44 @@ def create_app(
         })
 
     @app.get("/api/workspace/bootstrap/inspect")
-    def workspace_bootstrap_inspect(root: str = "", backend: str = "claude") -> JSONResponse:
+    def workspace_bootstrap_inspect(
+        request: Request,
+        root: str = "",
+        backend: str = "claude",
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
         from zf.core.workspace.bootstrap_inspect import inspect_project
 
+        auth_response = _web_mutation_auth_response(
+            "workspace-bootstrap-inspect",
+            request=request,
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+        )
+        if auth_response is not None:
+            return auth_response
         if not root.strip():
             raise HTTPException(status_code=400, detail="root required")
         return JSONResponse(inspect_project(root, backend=backend or "claude"))
 
     @app.post("/api/workspace/onboarding")
-    def workspace_onboarding_update(payload: dict) -> JSONResponse:
+    def workspace_onboarding_update(
+        payload: dict,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
         from zf.core.workspace.onboarding import apply_action
 
+        auth_response = _web_mutation_auth_response(
+            "workspace-onboarding-update",
+            request=request,
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+        )
+        if auth_response is not None:
+            return auth_response
         action = str((payload or {}).get("action") or "")
         if action not in {"step", "complete", "skip", "reset"}:
             raise HTTPException(status_code=400, detail="invalid onboarding action")
@@ -964,7 +992,19 @@ def create_app(
         })
 
     @app.post("/api/workspace/projects/validate-path")
-    async def workspace_validate_path(request: Request) -> JSONResponse:
+    async def workspace_validate_path(
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        auth_response = _web_mutation_auth_response(
+            "workspace-project-validate-path",
+            request=request,
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+        )
+        if auth_response is not None:
+            return auth_response
         payload = await _request_json(request)
         raw_root = str(payload.get("root") or "").strip()
         if not raw_root:
@@ -1284,7 +1324,20 @@ def create_app(
         }, status_code=201)
 
     @app.post("/api/workspace/projects/{project_id}/touch")
-    def workspace_touch_project(project_id: str) -> JSONResponse:
+    def workspace_touch_project(
+        project_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        auth_response = _web_mutation_auth_response(
+            "workspace-project-touch",
+            request=request,
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+        )
+        if auth_response is not None:
+            return auth_response
         touched = WorkspaceRegistry().touch(project_id)
         if touched is None and project_id == default_project_id and default_project_id:
             registry = WorkspaceRegistry()
@@ -2735,7 +2788,14 @@ def create_app(
         envelope = _project_action_envelope(project_id, raw_payload)
         if not envelope["ok"]:
             return JSONResponse(envelope, status_code=int(envelope["_status_code"]))
-        result = _web_action(
+        # OBS-A5-1: _web_action runs the action synchronously — for a sync:true
+        # turn that is the whole headless run (observed 525s), which would block
+        # the uvicorn event loop and freeze every other GET/SSE for its duration.
+        # Offload to a worker thread so the loop stays responsive. Real UI actions
+        # already return fast (async 202 background thread); this covers the
+        # sync:true script path.
+        result = await asyncio.to_thread(
+            _web_action,
             context.state_dir,
             action_name,
             payload=envelope["payload"],
@@ -2923,6 +2983,12 @@ def create_app(
         from zf.runtime.operation_projection import project_operation
 
         return JSONResponse(project_operation(state_dir, dispatch_id))
+
+    @app.get("/api/workflow-operations/{operation_id}")
+    def workflow_operation_detail(operation_id: str) -> JSONResponse:
+        from zf.runtime.operation_projection import project_workflow_operation
+
+        return JSONResponse(project_workflow_operation(state_dir, operation_id))
 
     @app.get("/api/candidates/{pdd_id}")
     def candidate_detail(pdd_id: str) -> JSONResponse:
@@ -3519,7 +3585,10 @@ def create_app(
         x_idempotency_key: str | None = Header(default=None),
     ) -> JSONResponse:
         payload = await _request_json(request)
-        result = _web_action(
+        # OBS-A5-1: offload the synchronous action to a worker thread so a
+        # sync:true turn does not block the event loop (see project_action).
+        result = await asyncio.to_thread(
+            _web_action,
             state_dir,
             action_name,
             payload=payload,
@@ -3758,23 +3827,15 @@ def _react_dist_dir() -> Path | None:
     return _REACT_DIST_DIR if index.exists() else None
 
 
-
-
 def _ui_index() -> Path:
+    global _react_dist_missing_warned
     react_dist = _react_dist_dir()
     if react_dist is not None:
         return react_dist / "index.html"
+    if not _react_dist_missing_warned:
+        print("warning: react dist not found; serving static fallback", file=sys.stderr)
+        _react_dist_missing_warned = True
     return _STATIC_DIR / "index.html"
-
-
-
-
-
-
-
-
-
-
 
 
 def _workspace_overview_payload(
@@ -7748,6 +7809,11 @@ def _run_headless_kanban_agent_turn(
             "has_action_proposal": action_proposal is not None,
         },
     )
+    # Terminal: drop the turn's ephemeral delta scratch so new SSE
+    # subscribers never replay a finished turn (2026-07-16 P1).
+    _bus = live_delta_bus_for_writer(writer)
+    if _bus is not None:
+        _bus.discard(turn_id)
     writer.emit(
         "kanban.agent.message.completed",
         actor="web",
@@ -8820,44 +8886,6 @@ def _handle_archive_task(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _web_action_token_configured() -> bool:
     return bool(os.environ.get("ZF_WEB_ACTION_TOKEN", ""))
 
@@ -9056,6 +9084,27 @@ def _web_mutation_auth_error(
             "reason": "missing or invalid web action token/session",
         }
     return None
+
+
+def _web_mutation_auth_response(
+    action_name: str,
+    *,
+    request: Request,
+    authorization: str | None,
+    x_zf_web_token: str | None,
+) -> JSONResponse | None:
+    auth_error = _web_mutation_auth_error(
+        action_name,
+        authorization=authorization,
+        x_zf_web_token=x_zf_web_token,
+        web_session_token=_web_session_cookie(request),
+    )
+    if auth_error is None:
+        return None
+    return JSONResponse(
+        auth_error,
+        status_code=int(auth_error.pop("_status_code", 403)),
+    )
 
 
 async def _operator_io_socket(

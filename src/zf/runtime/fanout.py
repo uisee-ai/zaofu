@@ -542,6 +542,15 @@ class FanoutManifestProjector:
                     "last_event_id": event.id,
                 })
                 _apply_child_metadata(child, payload)
+                dispatched_payload = payload.get("payload")
+                if isinstance(dispatched_payload, dict):
+                    prior_payload = (
+                        child.get("payload")
+                        if isinstance(child.get("payload"), dict)
+                        else {}
+                    )
+                    child["payload"] = {**prior_payload, **dispatched_payload}
+                    _apply_child_metadata(child, dispatched_payload)
             elif event.type == "fanout.child.completed":
                 child = _child(children, payload)
                 child.update({
@@ -770,34 +779,20 @@ def _apply_report_payload(child: dict, payload: dict) -> None:
 
 def _apply_child_metadata(child: dict, payload: dict) -> None:
     for key in (
-        "task_id",
-        "scope",
-        "workdir",
-        "source_branch",
-        "source_commit",
-        "task_ref",
-        "pdd_id",
-        "feature_id",
-        "task_map_ref",
-        "source_index_ref",
-        "retry_of_run_id",
-        "expected_output",
-        "owner_claim",
-        "risk",
-        "assignment_strategy",
-        "lane_profile",
-        "lane_id",
-        "stage_slot",
-        "affinity_tag",
-        "pipeline_id",
-        "root_fanout_id",
-        "upstream_root_fanout_id",
-        "upstream_fanout_id",
-        "upstream_child_id",
-        "upstream_task_id",
-        "upstream_stage_slot",
-        "queue_order",
-        "briefing_path",
+        "task_id", "scope", "workdir", "source_branch", "source_commit",
+        "task_ref", "pdd_id", "feature_id", "task_map_ref", "source_index_ref",
+        "retry_of_run_id", "expected_output", "owner_claim", "risk",
+        "assignment_strategy", "lane_profile", "lane_id", "stage_slot",
+        "affinity_tag", "pipeline_id", "root_fanout_id",
+        "upstream_root_fanout_id", "upstream_fanout_id", "upstream_child_id",
+        "upstream_task_id", "upstream_stage_slot", "queue_order", "briefing_path",
+        "contract_revision", "task_map_generation", "base_commit",
+        "contract_snapshot_ref", "contract_snapshot_digest", "target_snapshot_ref",
+        "target_commit", "target_snapshot_digest",
+        "operation_id", "parent_operation_id", "request_hash", "attempt_id",
+        "result_protocol_mode", "attempt_source_manifest_ref",
+        "attempt_source_manifest_digest", "input_consumption_policy_digest",
+        "admitted_call_result_digest", "semantic_verdict",
     ):
         value = _payload_str(payload, key)
         if value:
@@ -811,6 +806,15 @@ def _apply_child_metadata(child: dict, payload: dict) -> None:
         values = payload.get(key)
         if isinstance(values, list):
             child[key] = list(values)
+    for key in (
+        "attempt_source_manifest", "input_consumption_policy_ref",
+        "input_consumption_policy", "admitted_call_result_ref", "control_result_ref",
+    ):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            child[key] = dict(value)
+    if isinstance(payload.get("required_reads"), list):
+        child["required_reads"] = list(payload["required_reads"])
     source_refs = payload.get("source_refs")
     if isinstance(source_refs, dict):
         child["source_refs"] = dict(source_refs)
@@ -818,6 +822,9 @@ def _apply_child_metadata(child: dict, payload: dict) -> None:
         value = _payload_str(payload, key)
         if value:
             child[key] = value
+    verification_result = payload.get("verification_result")
+    if isinstance(verification_result, dict):
+        child["verification_result"] = dict(verification_result)
 
 
 def _barrier_projection(manifest: dict) -> dict:

@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from zf.core.config.loader import ConfigError, load_config
 from zf.core.config.project_context import resolve_project_context
@@ -27,6 +27,7 @@ from zf.runtime.gate_projection import project_gate_projection
 from zf.runtime.hook_registry import project_hook_registry
 from zf.runtime.profile_policy import gate_policy_for_task
 from zf.runtime.stage_contract import evaluate_stage_contract
+from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -184,6 +185,102 @@ _DEFAULT_STAGE_ORDER: tuple[str, ...] = (
     "judge.passed",
 )
 
+_LANE_STAGE_ORDER: tuple[str, ...] = (
+    "task.dispatched",
+    "dev.build.done",
+    "static_gate.passed",
+    "verify.passed",
+    "test.passed",
+    "judge.passed",
+)
+
+_FEATURE_LEVEL_AUDIT_EVENTS = frozenset({
+    "candidate.integration.completed",
+    "test.passed",
+    "judge.passed",
+})
+
+
+def _event_payload(event: Any) -> dict[str, Any]:
+    payload = getattr(event, "payload", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _list_contains_task(value: object, task_id: str) -> bool:
+    return isinstance(value, list) and task_id in {
+        str(item) for item in value
+    }
+
+
+def _event_matches_task(event: Any, task_id: str, task: Task | None) -> bool:
+    """Return whether an event is evidence for one concrete task.
+
+    Fanout aggregate events intentionally omit ``event.task_id``.  They still
+    carry a canonical task id in payload, a task-suffixed child id, or a
+    feature/pdd id.  Keep this association local to the read-only audit: it
+    must not alter EventLog truth or task state.
+    """
+    if str(getattr(event, "task_id", "") or "") == task_id:
+        return True
+    payload = _event_payload(event)
+    if str(payload.get("task_id") or "") == task_id:
+        return True
+    if str(payload.get("upstream_task_id") or "") == task_id:
+        return True
+    for key in ("completed_task_ids", "required_task_ids", "task_ids"):
+        if _list_contains_task(payload.get(key), task_id):
+            return True
+    child_id = str(payload.get("child_id") or "")
+    if child_id.endswith(f"-{task_id}"):
+        return True
+
+    # Candidate/test/judge aggregates are feature scoped.  Associate only
+    # known terminal aggregate types to avoid treating unrelated plan/scan
+    # telemetry for the same feature as task evidence.
+    feature_id = str(getattr(getattr(task, "contract", None), "feature_id", "") or "")
+    if feature_id and getattr(event, "type", "") in _FEATURE_LEVEL_AUDIT_EVENTS:
+        return feature_id in {
+            str(payload.get("feature_id") or ""),
+            str(payload.get("pdd_id") or ""),
+        }
+    return False
+
+
+def _lane_pipeline_audit(task_events: list[Any]) -> bool:
+    return any(
+        event.type == "lane.stage.completed"
+        or str(_event_payload(event).get("stage_slot") or "") in {"impl", "verify"}
+        for event in task_events
+    )
+
+
+def _canonical_audit_events(
+    task_events: list[Any],
+    *,
+    lane_pipeline: bool,
+) -> dict[str, Any]:
+    """Map lane aggregate evidence to the canonical audit vocabulary."""
+    seen: dict[str, Any] = {}
+    for event in task_events:
+        seen.setdefault(event.type, event)
+        if not lane_pipeline:
+            continue
+        payload = _event_payload(event)
+        if event.type == "fanout.child.dispatched":
+            seen.setdefault("task.dispatched", event)
+        elif event.type == "lane.stage.completed":
+            slot = str(payload.get("stage_slot") or "")
+            if slot == "impl":
+                seen.setdefault("impl.child.completed", event)
+            elif slot == "verify":
+                seen.setdefault("verify.passed", event)
+        elif (
+            event.type == "candidate.integration.completed"
+            and str(payload.get("quality_status") or "") == "passed"
+        ):
+            seen.setdefault("static_gate.passed", event)
+    return seen
+
 
 def _parse_since(since: str | None) -> datetime | None:
     """Parse '24h' / '7d' / '30m' into a cutoff datetime in UTC."""
@@ -213,8 +310,21 @@ def audit_task(
     project_root: Path | None = None,
 ) -> dict:
     """Audit one task. Returns a dict suitable for both md + json output."""
+    if task is not None and is_workflow_fanout_anchor_task(task):
+        return {
+            "task_id": task_id,
+            "status": "not_applicable",
+            "evidence_completeness": 1.0,
+            "covered_events": [],
+            "missing_events": [],
+            "stage_order_violations": [],
+            "reason": "workflow_fanout_anchor",
+        }
     events_list = list(events)
-    task_events = [e for e in events_list if getattr(e, "task_id", "") == task_id]
+    task_events = [
+        event for event in events_list
+        if _event_matches_task(event, task_id, task)
+    ]
     if not task_events:
         return {
             "task_id": task_id,
@@ -226,12 +336,21 @@ def audit_task(
         }
 
     # Determine which stages this task reached.
-    seen_types = {}
-    for e in task_events:
-        seen_types.setdefault(e.type, e)
+    lane_pipeline = _lane_pipeline_audit(task_events)
+    seen_types = _canonical_audit_events(
+        task_events,
+        lane_pipeline=lane_pipeline,
+    )
 
-    # Required events for a "complete" task — handoff success set.
-    required = list(event_sets.handoff_success_events) + ["task.dispatched"]
+    # Fanout lane workflows have a different, equally canonical evidence
+    # shape: per-task dispatch/build, candidate static gate, verify lane,
+    # aggregate test, and feature-level judge.  Do not require legacy
+    # arch/critic/review events that this configured flow never emits.
+    required = (
+        list(_LANE_STAGE_ORDER)
+        if lane_pipeline
+        else list(event_sets.handoff_success_events) + ["task.dispatched"]
+    )
     covered = []
     missing = []
     for req in required:
@@ -247,8 +366,9 @@ def audit_task(
     # Stage order check — find any event later in _DEFAULT_STAGE_ORDER
     # that has timestamp earlier than an event before it.
     violations = []
+    stage_order = _LANE_STAGE_ORDER if lane_pipeline else _DEFAULT_STAGE_ORDER
     stage_events = [
-        (st, seen_types[st]) for st in _DEFAULT_STAGE_ORDER
+        (st, seen_types[st]) for st in stage_order
         if st in seen_types
     ]
     for i in range(1, len(stage_events)):
@@ -268,6 +388,7 @@ def audit_task(
     report = {
         "task_id": task_id,
         "status": status,
+        "audit_profile": "lane_pipeline" if lane_pipeline else "baseline",
         "evidence_completeness": completeness,
         "covered_events": covered,
         "missing_events": missing,
@@ -357,7 +478,10 @@ def _run_audit(args: argparse.Namespace) -> int:
         )
         for tid in task_ids
     ]
-    has_partial = any(r["status"] != "complete" for r in reports)
+    has_partial = any(
+        r["status"] in {"partial", "no_events"}
+        for r in reports
+    )
 
     if args.format == "json":
         out = {
@@ -365,6 +489,9 @@ def _run_audit(args: argparse.Namespace) -> int:
             "complete": sum(1 for r in reports if r["status"] == "complete"),
             "partial": sum(1 for r in reports if r["status"] == "partial"),
             "no_events": sum(1 for r in reports if r["status"] == "no_events"),
+            "not_applicable": sum(
+                1 for r in reports if r["status"] == "not_applicable"
+            ),
             "tasks": reports,
         }
         print(json.dumps(out, indent=2, ensure_ascii=False))
@@ -376,9 +503,12 @@ def _run_audit(args: argparse.Namespace) -> int:
                 "complete": "✓",
                 "partial": "⚠",
                 "no_events": "—",
+                "not_applicable": "·",
             }.get(r["status"], "?")
             print(f"{r['task_id']}: {status_icon} {r['status']}")
-            if r["status"] == "no_events":
+            if r["status"] in {"no_events", "not_applicable"}:
+                if r["status"] == "not_applicable":
+                    print(f"  reason: {r.get('reason', 'not_applicable')}")
                 continue
             print(f"  evidence_completeness: "
                   f"{len(r['covered_events'])}/"

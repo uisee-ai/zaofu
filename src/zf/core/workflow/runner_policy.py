@@ -9,6 +9,8 @@ from zf.core.config.schema import ConstraintsConfig, RoleConfig, ZfConfig
 
 
 PURE_AGGREGATOR_POLICY_ID = "pure_aggregator.v1"
+GOAL_CLOSURE_JUDGE_POLICY_ID = "goal_closure_judge_readonly.v1"
+GOAL_CLOSURE_SUCCESS_EVENT = "goal.closure.synthesized"
 
 # R23 (synth 6h stall): the aggregator's whole job is READING child reports /
 # briefings / instructions — without read tools in the allowlist every Read
@@ -21,6 +23,8 @@ CLAUDE_AGGREGATOR_ALLOWED_TOOLS: tuple[str, ...] = (
     "Bash(zf emit *)",
     "Bash(zf events *)",
     "Bash(zf trace show *)",
+    "Bash(zf artifact list *)",
+    "Bash(zf artifact read *)",
     "Bash(cat .zf/artifacts/*)",
 )
 
@@ -41,6 +45,8 @@ def claude_aggregator_allowed_tools(config: ZfConfig | None) -> tuple[str, ...]:
         "Bash(zf emit *)",
         "Bash(zf events *)",
         "Bash(zf trace show *)",
+        "Bash(zf artifact list *)",
+        "Bash(zf artifact read *)",
         f"Bash(cat {state_dir}/artifacts/*)",
     )
 
@@ -69,6 +75,35 @@ def fanout_child_role_refs(config: ZfConfig | None) -> set[str]:
             if cleaned:
                 refs.add(cleaned)
     return refs
+
+
+def goal_closure_judge_role_refs(config: ZfConfig | None) -> set[str]:
+    """Roles executing the final Thin Judge boundary."""
+
+    if config is None:
+        return set()
+    refs: set[str] = set()
+    for stage in list(getattr(config.workflow, "stages", []) or []):
+        aggregate = getattr(stage, "aggregate", None)
+        if str(getattr(aggregate, "success_event", "") or "") != GOAL_CLOSURE_SUCCESS_EVENT:
+            continue
+        refs.update(
+            str(item).strip()
+            for item in list(getattr(stage, "roles", []) or [])
+            if str(item).strip()
+        )
+    for pipeline in list(getattr(config.workflow, "pipelines", []) or []):
+        if str(getattr(pipeline, "final_success", "") or "") != GOAL_CLOSURE_SUCCESS_EVENT:
+            continue
+        role = str(getattr(pipeline, "final_role", "") or "").strip()
+        if role:
+            refs.add(role)
+    return refs
+
+
+def is_goal_closure_judge_role(config: ZfConfig | None, role: RoleConfig) -> bool:
+    refs = goal_closure_judge_role_refs(config)
+    return bool(refs and (role.name in refs or role.instance_id in refs))
 
 
 def is_fanout_synth_role(config: ZfConfig | None, role: RoleConfig) -> bool:
@@ -113,6 +148,29 @@ def pure_aggregator_policy_plan(
     }
 
 
+def goal_closure_judge_policy_plan(
+    config: ZfConfig | None,
+    role: RoleConfig,
+    *,
+    state_dir: Any = None,
+) -> dict[str, Any]:
+    if not is_goal_closure_judge_role(config, role):
+        return {"applies": False, "applied": False, "policy_id": ""}
+    effective = _apply_readonly_role_policy(config, role, state_dir=state_dir)
+    changes = _policy_changes(role, effective)
+    return {
+        "applies": True,
+        "applied": bool(changes),
+        "policy_id": GOAL_CLOSURE_JUDGE_POLICY_ID,
+        "role": role.name,
+        "instance_id": role.instance_id,
+        "backend": role.backend,
+        "changes": changes,
+        "original": _role_policy_payload(role),
+        "effective": _role_policy_payload(effective),
+    }
+
+
 def apply_pure_aggregator_policy(
     config: ZfConfig | None,
     role: RoleConfig,
@@ -121,6 +179,40 @@ def apply_pure_aggregator_policy(
 ) -> RoleConfig:
     if not is_fanout_synth_role(config, role):
         return role
+    return _apply_readonly_role_policy(config, role, state_dir=state_dir)
+
+
+def apply_goal_closure_judge_policy(
+    config: ZfConfig | None,
+    role: RoleConfig,
+    *,
+    state_dir: Any = None,
+) -> RoleConfig:
+    if not is_goal_closure_judge_role(config, role):
+        return role
+    if str(role.backend or "") == "codex":
+        # ZF-JUDGE-HEADLESS-01(07-16 实弹):restricted 映射到
+        # `-a untrusted`,headless tmux 里每条命令等待交互确认 → judge
+        # 必超时(judge 判决两次成孤儿完成)。改走 default 档
+        # (`-a never -s workspace-write`):不提问;只读语义由 L0-a
+        # pre_tool_use scope 守卫 + 真相边界承担(judge 工作树的写
+        # 入不进 candidate,事实事件有 actor/dispatch 判官)。
+        if role.permission_mode != "default" or role.allowed_tools:
+            return replace(
+                role,
+                permission_mode="default",
+                allowed_tools=[],
+            )
+        return role
+    return _apply_readonly_role_policy(config, role, state_dir=state_dir)
+
+
+def _apply_readonly_role_policy(
+    config: ZfConfig | None,
+    role: RoleConfig,
+    *,
+    state_dir: Any = None,
+) -> RoleConfig:
     backend = str(role.backend or "")
     if backend == "codex":
         constraints = role.constraints
@@ -226,4 +318,3 @@ def _role_policy_payload(role: RoleConfig) -> dict[str, Any]:
             "max_steps": constraints.max_steps,
         },
     }
-

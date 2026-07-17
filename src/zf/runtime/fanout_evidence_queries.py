@@ -7,15 +7,11 @@
 
 from __future__ import annotations
 
-import json
-import re
-import time
 from pathlib import Path
 
-from zf.core.events.model import ZfEvent
 from zf.core.config.schema import RoleConfig
+from zf.core.events.model import ZfEvent
 from zf.runtime.transport import DispatchContext
-from zf.core.task.schema import Task
 
 
 def _fanout_report_evidence_fallback(payload: dict[str, object]) -> list[str]:
@@ -525,13 +521,12 @@ class FanoutEvidenceQueriesMixin:
                 result.report["evidence_refs"] = inherited
         return result
 
-    @staticmethod
-    def _fanout_reports(manifest: dict) -> list[dict]:
+    def _fanout_reports(self, manifest: dict) -> list[dict]:
         reports: list[dict] = []
         for child in manifest.get("children", []) or []:
             if not isinstance(child, dict):
                 continue
-            reports.append({
+            row = {
                 "child_id": str(child.get("child_id") or ""),
                 "role_instance": str(child.get("role_instance") or ""),
                 "status": str(child.get("status") or ""),
@@ -542,7 +537,31 @@ class FanoutEvidenceQueriesMixin:
                     if isinstance(child.get("report_diagnostics"), list)
                     else []
                 ),
-            })
+                "operation_id": str(child.get("operation_id") or ""),
+                "request_hash": str(child.get("request_hash") or ""),
+                "result_protocol_mode": str(child.get("result_protocol_mode") or "shadow"),
+                "admitted_call_result_ref": (
+                    dict(child["admitted_call_result_ref"])
+                    if isinstance(child.get("admitted_call_result_ref"), dict)
+                    else {}
+                ),
+                "control_result_ref": (
+                    dict(child["control_result_ref"])
+                    if isinstance(child.get("control_result_ref"), dict)
+                    else {}
+                ),
+            }
+            if (
+                row["result_protocol_mode"] in {"warning", "blocking"}
+                and row["admitted_call_result_ref"]
+            ):
+                from zf.runtime.call_result_runtime import hydrate_admitted_control_result
+
+                row["control_result"] = hydrate_admitted_control_result(
+                    self.state_dir,
+                    row["admitted_call_result_ref"],
+                )
+            reports.append(row)
         return reports
 
     def _fanout_child_idle_grace_active(

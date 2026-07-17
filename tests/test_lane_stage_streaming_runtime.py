@@ -222,7 +222,15 @@ def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
     )
 
 
-def _state(tmp_path: Path, *, task_count: int = 2, lane_count: int = 2):
+def _state(
+    tmp_path: Path,
+    *,
+    task_count: int = 2,
+    lane_count: int = 2,
+    event_schemas: dict[str, dict] | None = None,
+    schema_profile: str = "",
+    schema_mode: str = "disabled",
+):
     _init_repo(tmp_path)
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -249,7 +257,11 @@ def _state(tmp_path: Path, *, task_count: int = 2, lane_count: int = 2):
         ))
     log = EventLog(state_dir / "events.jsonl")
     transport = _RecordingTransport()
-    orch = Orchestrator(state_dir, _config(state_dir, lane_count=lane_count), transport)
+    config = _config(state_dir, lane_count=lane_count)
+    config.workflow.dag.event_schemas = dict(event_schemas or {})
+    config.workflow.dag.schema_profile = schema_profile
+    config.verification.event_schema.mode = schema_mode
+    orch = Orchestrator(state_dir, config, transport)
     return state_dir, log, transport, orch
 
 

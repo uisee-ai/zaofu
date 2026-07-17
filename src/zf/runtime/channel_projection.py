@@ -2157,6 +2157,17 @@ def _resolve_channel_key(channels: dict[str, dict[str, Any]], channel_id: str) -
     for key in channels:
         if _public_channel_id(key) == normalized:
             return key
+    # Writes canonicalize channel ids with a `ch-` prefix (_normal_channel_id),
+    # so a read for the bare human slug ("streamval-review") must resolve to the
+    # created canonical id ("ch-streamval-review"). Match on the canonical form
+    # as a fallback (lazy import avoids a module-load cycle).
+    from zf.runtime.control_actions_helpers import _normal_channel_id
+
+    canonical = _normal_channel_id(channel_id)
+    if canonical:
+        for key in channels:
+            if _normal_channel_id(key) == canonical:
+                return key
     return channel_id
 
 

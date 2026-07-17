@@ -147,7 +147,6 @@ def test_flow_semantic_events_project_to_product_gap_envelopes() -> None:
         "module.parity.scan.failed": "flow_discovery_failed",
         "cangjie.module.parity.scan.failed": "flow_discovery_failed",
         "flow.goal.blocked": "flow_goal_blocked",
-        "goal.closure.blocked": "flow_goal_blocked",
         "module.parity.blocked": "flow_goal_blocked",
     }.items():
         envelope = problem_envelope_from_event(ZfEvent(
@@ -161,6 +160,17 @@ def test_flow_semantic_events_project_to_product_gap_envelopes() -> None:
         assert envelope["failure_class"] == failure_class
         assert envelope["owner_route"] == "run_manager"
         assert envelope["suggested_route"] == "run_manager_recovery"
+
+    blocked = problem_envelope_from_event(ZfEvent(
+        type="goal.closure.blocked",
+        id="evt-goal.closure.blocked",
+        payload={"workflow_run_id": "run-1", "goal_id": "GOAL-1"},
+    ))
+
+    assert blocked is not None
+    assert blocked["problem_class"] == "external_gate"
+    assert blocked["failure_class"] == "goal_closure_blocked"
+    assert blocked["owner_route"] == "run_manager"
 
 
 def test_refactor_plan_blocked_projects_to_artifact_contract_envelope() -> None:

@@ -9,6 +9,20 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
+from zf.runtime.plan_admission import (
+    emit_plan_admission_cancel,
+    emit_upstream_failure_for_bad_task_map,
+)
+
+
+def _fanout_runtime_source() -> str:
+    return "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "src/zf/runtime/orchestrator_fanout.py",
+            "src/zf/runtime/fanout_briefing_runtime.py",
+        )
+    )
 
 
 class _Probe(FanoutCoordinationMixin):
@@ -32,7 +46,8 @@ def _plan_stage(success: str, failure: str):
 def test_bad_task_map_emits_upstream_failure(tmp_path: Path) -> None:
     probe = _Probe(tmp_path, [_plan_stage("task_map.ready", "prd.plan.failed")])
     trigger = ZfEvent(type="task_map.ready", payload={"task_map_ref": "docs/p.md"})
-    probe._emit_upstream_failure_for_bad_task_map(
+    emit_upstream_failure_for_bad_task_map(
+        probe,
         trigger_event=trigger, trace_id="t1", pdd_id="default",
         reason="invalid JSON: docs/p.md",
     )
@@ -44,15 +59,48 @@ def test_bad_task_map_emits_upstream_failure(tmp_path: Path) -> None:
     assert payload["findings"][0]["severity"] == "high"
 
     # 幂等:同 trigger 不重发
-    probe._emit_upstream_failure_for_bad_task_map(
+    emit_upstream_failure_for_bad_task_map(
+        probe,
         trigger_event=trigger, trace_id="t1", pdd_id="default", reason="again",
     )
     assert len(probe.event_log.read_all()) == 1
 
 
+def test_plan_admission_failure_emits_canonical_failure_before_raw_cancel(
+    tmp_path: Path,
+) -> None:
+    probe = _Probe(tmp_path, [_plan_stage("task_map.ready", "prd.plan.failed")])
+    trigger = ZfEvent(
+        type="task_map.ready",
+        payload={"task_map_ref": "docs/p.md"},
+    )
+
+    emit_plan_admission_cancel(
+        probe,
+        trigger_event=trigger,
+        stage_id="impl",
+        trace_id="trace-1",
+        pdd_id="P-1",
+        feature_id="P-1",
+        task_map_ref="docs/p.md",
+        reason="missing root owner",
+    )
+
+    failure, cancelled = probe.event_log.read_all()
+    assert [failure.type, cancelled.type] == ["prd.plan.failed", "fanout.cancelled"]
+    assert failure.payload["failure_scope"] == "plan_admission"
+    assert cancelled.payload["failure_scope"] == "plan_admission"
+    assert (
+        failure.payload["plan_admission_incident_id"]
+        == cancelled.payload["plan_admission_incident_id"]
+    )
+    assert cancelled.payload["canonical_failure_event_id"] == failure.id
+
+
 def test_no_upstream_stage_no_emit(tmp_path: Path) -> None:
     probe = _Probe(tmp_path, [_plan_stage("other.event", "other.failed")])
-    probe._emit_upstream_failure_for_bad_task_map(
+    emit_upstream_failure_for_bad_task_map(
+        probe,
         trigger_event=ZfEvent(type="task_map.ready", payload={}),
         trace_id="t1", pdd_id="default", reason="x",
     )
@@ -63,9 +111,7 @@ def test_plan_briefing_contract_lines_exist() -> None:
     """briefing 合同与 admission 合同对齐的守卫:task_map.ready 家族的
     plan briefing 指南必须出现 JSON task map 强制条款(源码级断言,
     防止模板回退到只讲 markdown 的旧文案)。"""
-    from pathlib import Path
-
-    source = Path("src/zf/runtime/orchestrator_fanout.py").read_text(encoding="utf-8")
+    source = _fanout_runtime_source()
     assert "you MUST also" in source and "task_map.json" in source
     assert "task_map_ref_prefill" in source  # 预填走变量,不再是硬编码空串
 
@@ -93,9 +139,7 @@ def test_affinity_tag_falls_back_to_task_id() -> None:
 def test_fanout_briefing_carries_active_waivers(tmp_path) -> None:
     """r6-F4:fanout child briefing 必须携带活跃 waiver(F6 只盖了
     injection 路径,verify 审角色看不见豁免令 → waive 对 fanout 无效)。"""
-    from pathlib import Path
-
-    source = Path("src/zf/runtime/orchestrator_fanout.py").read_text(encoding="utf-8")
+    source = _fanout_runtime_source()
     assert "Active Operator Waivers" in source
     assert "load_active_waivers" in source
 

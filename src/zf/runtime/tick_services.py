@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.run_scope import known_run_ids
+from zf.runtime.terminal_events import (
+    event_run_scope,
+    latest_quiescent_run_terminal,
+    terminal_after_event,
+)
 
 
 _SUPERVISOR_STALENESS_OBSERVER_EVENTS = frozenset({
@@ -18,6 +24,37 @@ _SUPERVISOR_STALENESS_OBSERVER_EVENTS = frozenset({
     "run.manager.agent.recommendation.consumed",
     "agent.usage",
     "worker.heartbeat",
+})
+
+# ``run_manager_tick`` is an observe/decide/act transaction.  Its own
+# bookkeeping events, worker proof-of-life, and provider accounting are not
+# new recovery input.  Treating them as input creates a feedback loop where a
+# healthy tick schedules another healthy tick forever.  Unknown event types
+# intentionally remain inputs: new workflow behavior must be observed rather
+# than silently filtered out.
+_RUN_MANAGER_NOOP_INPUT_EVENTS = frozenset({
+    # Provider transcript and orchestration bookkeeping are evidence for
+    # diagnostics, not new recovery facts.  The underlying lifecycle/failure
+    # event remains observable and is the only event allowed to wake RM.
+    "agent.text",
+    "agent.usage",
+    "agent.tool.use",
+    "agent.tool.result",
+    "hook.orphan_event",
+    "orchestrator.decision.recorded",
+    "orchestrator.round.complete",
+    "worker.heartbeat",
+    "provider.stop.check",
+    "runtime.snapshot.recorded",
+    "failure.candidates.materialized",
+    "failure.closeout.materialized",
+    "owner.visible_message.delivery_attempted",
+    "owner.visible_message.delivered",
+    "owner.visible_message.suppressed",
+    "owner.visible_message.failed",
+})
+_RUN_MANAGER_REACTIVE_SELF_EVENTS = frozenset({
+    "run.manager.agent.recommendation",
 })
 
 
@@ -30,6 +67,10 @@ class TickServiceState:
     last_blackout_check_at: float = 0.0
     last_blackout_emit_at: float = 0.0
     last_blocked_burn_emit_at: float = 0.0
+    # The last event that was eligible to wake Run Manager.  This is in-memory
+    # scheduling state only; EventLog remains the recovery truth after restart.
+    last_run_manager_tick_at: float = 0.0
+    last_run_manager_input_event_id: str = ""
     # G1 idle 驱动器计数(goal.enabled 灰度)
     goal_idle_ticks: int = 0
     goal_last_progress_event_id: str = ""
@@ -51,6 +92,10 @@ class TickServiceIntervals:
     # blocked 角色烧钱看门狗(r5:dev-flow blocked_human 冷却期烧 30M)
     blocked_burn_tokens: int = 250_000
     blocked_burn_cooldown_s: float = 1800.0
+    # A quiet run is still revisited periodically for time-based recovery
+    # checks, but no longer creates a started/completed pair every supervisor
+    # inspection tick.
+    run_manager_idle_refresh_s: float = 900.0
 
 
 @dataclass(frozen=True)
@@ -74,6 +119,7 @@ class TickServiceResult:
     channel_discussion_sweep: int = 0
     invoke_backlog_replayed: int = 0
     runtime_liveness_reconciled: bool = False
+    control_plane_health: bool = False
 
 
 def run_autoresearch_trigger_scan(
@@ -125,6 +171,13 @@ def run_standard_tick_services(
     config = orchestrator.config
     project_root = Path(orchestrator.project_root)
 
+    # ZF-STOP-TAIL-01:停机排空窗内探针/RM 立案全体跳过。`zf stop` 第一步
+    # 写入标记,watcher 拖尾期间 pane 已被杀,继续探测只会制造
+    # stall/stuck/autoresearch 立案风暴(07-16 实弹:一秒 8 连发立案,
+    # 重启后 sidecar 真接了 15 个 loop)。
+    if (state_dir / "shutdown-requested").exists():
+        return TickServiceResult()
+
     # U3/G3(灰度,goal.enabled 默认关):终局 escalate 未获处置时全体
     # tick 服务静默——escalate = 干净地等人,不是每 5s 空烧(r6.1 4h
     # 6.4M 实弹)。唤醒(操作员动作/新进展)后自动恢复。
@@ -158,6 +211,7 @@ def run_standard_tick_services(
     stale_supervisor_projection = False
     failure_candidates_materialized = 0
     failure_closeout_materialized = 0
+    control_plane_health = False
 
     if now - state.last_heartbeat_sweep_at >= intervals.heartbeat_sweep_s:
         state.last_heartbeat_sweep_at = now
@@ -271,14 +325,27 @@ def run_standard_tick_services(
             config=config,
             project_root=project_root,
         )
-        run_manager_result = _run_run_manager(
-            orchestrator=orchestrator,
-            event_log=event_log,
-            writer=event_writer,
-            state_dir=state_dir,
-            config=config,
-            project_root=project_root,
-        )
+        run_manager_inputs = event_log.read_all()
+        if _run_manager_tick_due(
+            state=state,
+            events=run_manager_inputs,
+            now=now,
+            idle_refresh_s=intervals.run_manager_idle_refresh_s,
+        ):
+            run_manager_result = _run_run_manager(
+                orchestrator=orchestrator,
+                event_log=event_log,
+                writer=event_writer,
+                state_dir=state_dir,
+                config=config,
+                project_root=project_root,
+            )
+            state.last_run_manager_tick_at = now
+            state.last_run_manager_input_event_id = _latest_run_manager_input_id(
+                run_manager_inputs,
+            )
+        else:
+            run_manager_result = _empty_run_manager_result()
         run_manager_card_delivery = _deliver_run_manager_cards(state_dir, config)
         failure_candidates_materialized = _materialize_failure_candidates(
             event_log=event_log,
@@ -306,6 +373,11 @@ def run_standard_tick_services(
             or source_repair_dispatched
         )
 
+    control_plane_health = _write_control_plane_health(
+        state_dir=state_dir,
+        event_log=event_log,
+    )
+
     return TickServiceResult(
         heartbeat_sweep=heartbeat_sweep,
         bug_scan=bug_scan,
@@ -326,6 +398,7 @@ def run_standard_tick_services(
         channel_discussion_sweep=channel_discussion_sweep if "channel_discussion_sweep" in locals() else 0,
         invoke_backlog_replayed=invoke_backlog_replayed if "invoke_backlog_replayed" in locals() else 0,
         runtime_liveness_reconciled=runtime_liveness_reconciled if "runtime_liveness_reconciled" in locals() else False,
+        control_plane_health=control_plane_health,
     )
 
 
@@ -374,6 +447,71 @@ def _emit_runtime_liveness_stale_if_needed(
         return False
     except Exception:
         return False
+
+
+def _write_control_plane_health(*, state_dir: Path, event_log: Any) -> bool:
+    try:
+        from zf.runtime.control_plane_health import (
+            write_control_plane_health_projection,
+        )
+
+        write_control_plane_health_projection(state_dir, event_log.read_all())
+        return True
+    except Exception:
+        return False
+
+
+def _run_manager_tick_due(
+    *,
+    state: TickServiceState,
+    events: list[ZfEvent],
+    now: float,
+    idle_refresh_s: float,
+) -> bool:
+    """Return whether Run Manager has new recovery input or needs a refresh."""
+
+    # Do not keep a completed run alive merely to refresh its projections.  The
+    # terminal predicate is run-scoped and reopens only on later mechanical
+    # work, so this preserves recovery when a real same-run regression arrives.
+    if latest_quiescent_run_terminal(events) is not None:
+        return False
+    latest_input_id = _latest_run_manager_input_id(events)
+    if not state.last_run_manager_tick_at:
+        return True
+    if latest_input_id != state.last_run_manager_input_event_id:
+        return True
+    return now - state.last_run_manager_tick_at >= max(1.0, idle_refresh_s)
+
+
+def _latest_run_manager_input_id(events: list[ZfEvent]) -> str:
+    for event in reversed(events):
+        if not _is_run_manager_noop_input(event):
+            return str(getattr(event, "id", "") or "")
+    return ""
+
+
+def _is_run_manager_noop_input(event: ZfEvent) -> bool:
+    event_type = str(getattr(event, "type", "") or "")
+    if event_type in _RUN_MANAGER_NOOP_INPUT_EVENTS:
+        return True
+    if event_type.startswith("run.manager."):
+        return event_type not in _RUN_MANAGER_REACTIVE_SELF_EVENTS
+    return False
+
+
+def _empty_run_manager_result():
+    """Construct a zero result without importing Run Manager on idle ticks."""
+
+    try:
+        from zf.runtime.run_manager import RunManagerTickResult
+
+        return RunManagerTickResult()
+    except Exception:
+        class _Empty:
+            changed = False
+            repairs_dispatched = 0
+
+        return _Empty()
 
 
 def _pid_alive(pid: int) -> bool:
@@ -1127,13 +1265,30 @@ def _emit_cost_blackout_if_needed(
     if now_wall - state.last_blackout_emit_at < intervals.cost_blackout_cooldown_s:
         return False
     events = read_runtime_events(event_log, state_dir)
-    last_dispatch_ts = None
+    last_dispatch = next(
+        (
+            event for event in reversed(events)
+            if event.type in ("task.dispatched", "fanout.child.dispatched")
+        ),
+        None,
+    )
+    if last_dispatch is None:
+        return False
+    # A terminal from the same run closes the accounting surface.  Do not let
+    # a completed run's historical dispatch/usage window poison a later run.
+    if terminal_after_event(events, last_dispatch) is not None:
+        return False
+    dispatch_scope = event_run_scope(events, last_dispatch)
+    if not dispatch_scope and len(known_run_ids(events)) > 1:
+        return False
+    last_dispatch_ts = last_dispatch.ts
     last_usage_ts = None
     for event in events:
-        if event.type in ("task.dispatched", "fanout.child.dispatched"):
-            last_dispatch_ts = event.ts
-        elif event.type == "agent.usage":
-            last_usage_ts = event.ts
+        if event.type != "agent.usage":
+            continue
+        if dispatch_scope and event_run_scope(events, event) != dispatch_scope:
+            continue
+        last_usage_ts = event.ts
 
     def _epoch(ts: str | None) -> float | None:
         if not ts:
@@ -1167,6 +1322,7 @@ def _emit_cost_blackout_if_needed(
         payload={
             "last_dispatch_ts": last_dispatch_ts,
             "last_usage_ts": last_usage_ts,
+            "run_id": dispatch_scope,
             "stale_threshold_s": stale_s,
             "problem_class": "harness",
             "reason": (

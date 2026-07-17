@@ -1,7 +1,8 @@
-"""End-to-end integration test for the three-layer architecture (E6).
+"""Scripted legacy Layer 2 compatibility integration test (E6).
 
 Uses a scripted fake transport to simulate the Claude Code Orchestrator
-(Layer 2) responding to events. Verifies the full chain:
+(Layer 2) responding to events. It does not exercise a real provider and does
+not prove Product Flow ownership. It verifies this legacy compatibility chain:
 
     user → zf chat → user.message event
         → Layer 1 EventWatcher catches
@@ -38,10 +39,11 @@ from zf.runtime.transport import TmuxTransport
 
 
 class _ScriptedLayer2Transport(TmuxTransport):
-    """Fake transport that simulates the Claude Code Orchestrator (Layer 2)
-    making tool calls. When send_task('orchestrator', ...) is called, it runs
-    the configured `script` callable which is given the briefing + state_dir
-    and can mutate state directly (pretending to be tool_use calls)."""
+    """Test double for the legacy Layer 2 tool-call surface.
+
+    The script uses stores directly to avoid launching a provider. That is a
+    harness shortcut, not a sanctioned production Agent write path.
+    """
 
     def __init__(self, state_dir: Path, script):
         super().__init__(TmuxSession(session_name="fake", dry_run=True))

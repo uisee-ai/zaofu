@@ -15,10 +15,13 @@ from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.skills import build_skill_lock_entries
 from zf.core.workflow.graph import FAILURE_SUFFIXES, compile_workflow_graph
 from zf.core.workflow.lane_pipeline import lane_pipeline_rework_events
-from zf.core.workflow.runner_policy import pure_aggregator_policy_plan
+from zf.core.workflow.runner_policy import (
+    goal_closure_judge_policy_plan,
+    pure_aggregator_policy_plan,
+)
 from zf.core.workflow.topology import (
     EXTERNAL_EVENTS,
-    KERNEL_SWEPT_FAILURE_EVENTS,
+    KERNEL_SWEPT_FAILURE_EVENTS as KERNEL_SWEPT_FAILURE_EVENTS,
     derive_kernel_swept_events,
 )
 
@@ -64,6 +67,10 @@ def build_workflow_inspection_report(
     diagnostics.extend(_terminal_policy_diagnostics(config, graph))
     diagnostics.extend(_explicit_rework_route_diagnostics(config, graph))
     diagnostics.extend(_pure_aggregator_policy_diagnostics(config))
+    diagnostics.extend(_goal_closure_judge_policy_diagnostics(
+        config,
+        state_dir=state_dir,
+    ))
     diagnostics.extend(_external_trigger_producer_diagnostics(config))
     lane_contracts: list[dict[str, Any]] = []
     if getattr(config.workflow, "pipelines", None):
@@ -135,6 +142,7 @@ def build_workflow_inspection_report(
                 for source in config.skill_sources
             ],
             "enabled": skill_entries,
+            "activation_cost": _skill_activation_cost(skill_entries),
         },
         "graph": {
             "nodes": len(graph.nodes),
@@ -355,6 +363,7 @@ _KERNEL_PRODUCED_EXTERNAL_TRIGGERS = frozenset({
     "task_map.ready",
     "test.passed",
     "verify.parity_scan.requested",
+    "flow.goal.closed",
     "module.parity.closed",
 })
 
@@ -472,6 +481,50 @@ def _pure_aggregator_policy_diagnostics(config: ZfConfig) -> list[dict[str, Any]
     return diagnostics
 
 
+def _goal_closure_judge_policy_diagnostics(
+    config: ZfConfig,
+    *,
+    state_dir: Path,
+) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for role in config.roles:
+        plan = goal_closure_judge_policy_plan(
+            config,
+            role,
+            state_dir=state_dir,
+        )
+        if not plan.get("applies"):
+            continue
+        role_ref = _role_ref(role)
+        if role.role_kind == "writer":
+            diagnostics.append(_diag(
+                severity="STOP",
+                kind="goal_closure_judge_role_is_writer",
+                message=(
+                    f"Thin Judge role `{role_ref}` 是 writer；"
+                    "Goal closure synthesis 必须使用只读 reader role"
+                ),
+                role=role_ref,
+                detail={"policy_id": plan.get("policy_id", "")},
+            ))
+            continue
+        diagnostics.append(_diag(
+            severity="INFO",
+            kind="goal_closure_judge_runner_policy_applied",
+            message=(
+                f"Thin Judge role `{role_ref}` 将在 runner spawn 时应用只读策略"
+            ),
+            role=role_ref,
+            detail={
+                "policy_id": plan.get("policy_id", ""),
+                "backend": plan.get("backend", ""),
+                "changes": dict(plan.get("changes") or {}),
+                "effective": dict(plan.get("effective") or {}),
+            },
+        ))
+    return diagnostics
+
+
 def _skill_report(
     *,
     config: ZfConfig,
@@ -549,6 +602,49 @@ def _skill_report(
     return entries, diagnostics
 
 
+def _skill_activation_cost(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Separate discovery/materialization from actual prompt-body cost.
+
+    Workflow inspection cannot observe provider-native skill invocation. It
+    therefore reports invocation as unknown instead of charging every indexed
+    load-on-demand skill as if its full body had entered the context.
+    """
+
+    indexed = [item for item in entries if item.get("status") == "resolved"]
+    auto_injected = [item for item in indexed if bool(item.get("auto_inject"))]
+    load_on_demand = [
+        item
+        for item in indexed
+        if bool(item.get("load_on_demand", True))
+        and not bool(item.get("auto_inject"))
+    ]
+    materialized = [item for item in indexed if item.get("materialized_to")]
+    briefing_bytes = sum(
+        len(
+            (
+                f"/{item.get('name', '')} "
+                f"{item.get('description') or 'No description available.'}"
+            ).encode("utf-8")
+        )
+        for item in indexed
+    )
+    return {
+        "schema_version": "skill-activation-cost.v1",
+        "indexed_count": len(indexed),
+        "materialized_count": len(materialized),
+        "auto_injected_count": len(auto_injected),
+        "load_on_demand_count": len(load_on_demand),
+        "invoked_count": None,
+        "invocation_observability": "provider_telemetry_unavailable",
+        "briefing_index_bytes": briefing_bytes,
+        "full_skill_body_bytes_charged": 0,
+        "cost_rule": (
+            "indexed/load-on-demand skills contribute only index metadata; "
+            "full body cost is charged only when provider invocation telemetry exists"
+        ),
+    }
+
+
 def _duplicate_skill_owner_diagnostics(config: ZfConfig) -> list[dict[str, Any]]:
     owners_by_skill: dict[str, dict[str, RoleConfig]] = {}
     for role in config.roles:
@@ -563,6 +659,12 @@ def _duplicate_skill_owner_diagnostics(config: ZfConfig) -> list[dict[str, Any]]
             if _verification_like_role(role)
         ]
         if len(verification_owners) < 2:
+            continue
+        families = {
+            _verification_owner_family(role)
+            for role in verification_owners
+        }
+        if len(families) < 2:
             continue
         diagnostics.append(_diag(
             severity="WARN",
@@ -579,6 +681,7 @@ def _duplicate_skill_owner_diagnostics(config: ZfConfig) -> list[dict[str, Any]]
                         "instance_id": role.instance_id or role.name,
                         "backend": role.backend,
                         "stages": list(role.stages),
+                        "logical_owner_family": _verification_owner_family(role),
                     }
                     for role in verification_owners
                 ],
@@ -590,6 +693,20 @@ def _duplicate_skill_owner_diagnostics(config: ZfConfig) -> list[dict[str, Any]]
 def _verification_like_role(role: RoleConfig) -> bool:
     haystack = " ".join([role.name, role.instance_id or "", *role.stages]).lower()
     return any(token in haystack for token in ("review", "verify", "test", "judge", "qa"))
+
+
+def _verification_owner_family(role: RoleConfig) -> str:
+    tokens = ("review", "verify", "test", "judge", "qa")
+    for stage in role.stages:
+        lowered = str(stage or "").lower()
+        for token in tokens:
+            if token in lowered:
+                return token
+    lowered = " ".join([role.name, role.instance_id or ""]).lower()
+    for token in tokens:
+        if token in lowered:
+            return token
+    return role.name.lower()
 
 
 def _role_summary(role: RoleConfig) -> dict[str, Any]:

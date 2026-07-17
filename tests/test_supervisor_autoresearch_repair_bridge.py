@@ -14,6 +14,12 @@ from zf.core.config.schema import (
 )
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.autoresearch.self_repair import (
+    candidate_from_trigger_event,
+    candidate_with_diagnosis,
+    repair_task_payload_from_candidate,
+    write_candidate_artifact,
+)
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.repair_authorization import (
     auto_repair_consumer_enabled,
@@ -76,6 +82,36 @@ def _task_ref_trigger() -> ZfEvent:
     )
 
 
+def _confirmed_task_ref_candidate(state_dir: Path) -> ZfEvent:
+    trigger = _task_ref_trigger()
+    candidate = candidate_with_diagnosis(
+        candidate_from_trigger_event(trigger),
+        status="confirmed",
+        diagnosis_evidence_paths=["records/task-ref-reproduction.md"],
+        repair_scope=[
+            "src/zf/runtime/task_refs.py",
+            "tests/test_task_refs.py",
+        ],
+        resolution_reason="focused regression reproduces task-ref handoff rejection",
+    )
+    path = write_candidate_artifact(state_dir, candidate)
+    repair_task_payload = repair_task_payload_from_candidate(candidate, candidate_path=path)
+    assert repair_task_payload is not None
+    return ZfEvent(
+        type="autoresearch.bug_candidate.confirmed",
+        actor="run-manager",
+        task_id=trigger.task_id,
+        payload={
+            "candidate": candidate.to_dict(),
+            "candidate_id": candidate.candidate_id,
+            "candidate_path": str(path),
+            "repair_task_payload": repair_task_payload,
+            "recovery_case_id": candidate.recovery_case_id,
+            "source_event_id": "evt-diagnosis",
+        },
+    )
+
+
 def test_bounded_repair_emits_consumable_repair_dispatch(
     tmp_path: Path,
     monkeypatch,
@@ -89,6 +125,9 @@ def test_bounded_repair_emits_consumable_repair_dispatch(
 
     first = orch._on_autoresearch_trigger_accepted(event)
     second = orch._on_autoresearch_trigger_accepted(event)
+    confirmed = _confirmed_task_ref_candidate(state_dir)
+    log.append(confirmed)
+    dispatch = orch._on_autoresearch_bug_candidate_confirmed(confirmed)
 
     events = log.read_all()
     dispatches = [
@@ -97,6 +136,7 @@ def test_bounded_repair_emits_consumable_repair_dispatch(
     ]
     assert first is not None and first.action == "notify"
     assert second is not None and second.action == "skip"
+    assert dispatch is not None and dispatch.action == "notify"
     assert len(dispatches) == 1
     payload = dispatches[0].payload
     assert payload["fingerprint"].startswith("task_ref_rejected:")
@@ -106,8 +146,8 @@ def test_bounded_repair_emits_consumable_repair_dispatch(
     assert payload["repair_task_payload"]["contract"]["phase"] == "zaofu_self_repair"
     assert payload["apply_policy"] == "bounded_repair"
     assert payload["failure_class"] == "task_ref_rejected"
-    assert payload["source_event_id"] == event.id
-    assert payload["resume_checkpoint_ref"] == "evt-ref-rejected"
+    assert payload["source_event_id"] == confirmed.id
+    assert payload["resume_checkpoint_ref"] == "evt-diagnosis"
 
 
 def test_proposal_only_does_not_dispatch_repair_without_env_authorization(
@@ -151,6 +191,9 @@ def test_repair_attempt_exhaustion_returns_request_to_run_manager(
         ),
     ):
         orch._on_autoresearch_trigger_accepted(event)
+        confirmed = _confirmed_task_ref_candidate(state_dir)
+        log.append(confirmed)
+        orch._on_autoresearch_bug_candidate_confirmed(confirmed)
 
     events = log.read_all()
     requests = [

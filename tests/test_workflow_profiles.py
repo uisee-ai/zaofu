@@ -238,7 +238,7 @@ spec:
         assert contract["lane_count"] == 2
         pipeline = cfg.workflow.pipelines[0]
         assert pipeline.stage_transition == "per_lane"
-        assert pipeline.schema_profile == "refactor-flow/v2"
+        assert pipeline.schema_profile == "refactor-flow/v3"
 
     def test_v3_target_ref_is_explicit_and_not_objective_ref(self, tmp_path):
         text = """\
@@ -438,7 +438,9 @@ spec:
             if stage.id == "issue-lanes-final"
         )
         assert discovery.trigger == "flow.discovery.requested"
-        assert final.trigger == "flow.discovery.completed"
+        assert final.trigger == "flow.goal.closed"
+        assert final.aggregate.success_event == "goal.closure.synthesized"
+        assert final.aggregate.failure_event == "goal.closure.synthesis.failed"
         assert any(
             "issue triage" in item
             for item in cfg.workflow.stages[0].criteria.instructions
@@ -462,7 +464,8 @@ spec:
         assert cfg.workflow.flow_metadata["quality_floor"] == "issue-regression"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "regression_impact"
         assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v3"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v6"
+        assert cfg.goal.enabled is True
 
     def test_prd_flow_generates_canonical_build_chain(self, tmp_path):
         path = tmp_path / "zf.yaml"
@@ -518,7 +521,9 @@ spec:
             if stage.id == "prd-lanes-final"
         )
         assert discovery.trigger == "flow.discovery.requested"
-        assert final.trigger == "flow.discovery.completed"
+        assert final.trigger == "flow.goal.closed"
+        assert final.aggregate.success_event == "goal.closure.synthesized"
+        assert final.aggregate.failure_event == "goal.closure.synthesis.failed"
         scan = next(stage for stage in cfg.workflow.stages if stage.id == "prd-scan")
         assert any(
             "initial PRD scan" in item
@@ -550,7 +555,8 @@ spec:
         assert cfg.workflow.flow_metadata["delivery_policy"] == "report_and_demo"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "product_completeness"
         assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v3"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v6"
+        assert cfg.goal.enabled is True
 
     def test_prd_flow_role_skill_bundles_override_defaults(self, tmp_path):
         path = tmp_path / "zf.yaml"
@@ -629,8 +635,8 @@ spec:
                 assert "zf-issue-plan-synth" in triage.skills
                 assert "debugging-triage" in triage.skills
                 assert "zf-yoke-dev-worker-role-context" in fix.skills
-                assert "zf-harness-done-contract" in fix.skills
-                assert "zf-verify-gap-producer-contract" in verify.skills
+                assert "zf-harness-done-contract" not in fix.skills
+                assert "zf-verify-gap-producer-contract" not in verify.skills
                 assert "zf-yoke-test-evaluator-role-context" in verify.skills
             if relative == "examples/prod/controller/prd-fanout-v3.yaml":
                 scan = next(role for role in cfg.roles if role.name == "product-scan")
@@ -638,13 +644,14 @@ spec:
                 dev = next(role for role in cfg.roles if role.name == "dev-lane-0")
                 verify = next(role for role in cfg.roles if role.name == "verify-lane-0")
                 assert "zf-prd-plan-synth" in scan.skills
-                assert "grill" in scan.skills
+                assert "zf-yoke-planner-role-context" in scan.skills
+                assert "grill" not in scan.skills
                 assert "source-verification" in scan.skills
                 assert "context-hygiene" in scan.skills
-                assert "zf-plan-task-map-contract" in planner.skills
                 assert "zf-yoke-planner-role-context" in planner.skills
+                assert "zf-plan-task-map-contract" not in planner.skills
                 assert "zf-yoke-dev-worker-role-context" in dev.skills
-                assert "zf-verify-gap-producer-contract" in verify.skills
+                assert "zf-verify-gap-producer-contract" not in verify.skills
             if relative == "examples/prod/controller/refactor-lane-v3.yaml":
                 scan = next(role for role in cfg.roles if role.name == "scan-contract")
                 plan = next(role for role in cfg.roles if role.name == "refactor-plan-synth")
@@ -653,13 +660,19 @@ spec:
                 module = next(role for role in cfg.roles if role.name == "module-parity-scan")
                 assert "zf-refactor-plan-synth" in scan.skills
                 assert "source-verification" in scan.skills
-                assert "zf-plan-task-map-contract" in plan.skills
+                assert "zf-plan-task-map-contract" not in plan.skills
+                assert "zf-yoke-planner-role-context" in plan.skills
                 assert "zf-yoke-dev-worker-role-context" in dev.skills
-                assert "zf-harness-done-contract" in dev.skills
-                assert "zf-verify-rescan-replan" in verify.skills
+                assert "zf-harness-done-contract" not in dev.skills
+                assert "zf-verify-rescan-replan" not in verify.skills
+                assert "zf-verify-gap-producer-contract" not in verify.skills
                 assert "zf-yoke-test-evaluator-role-context" in verify.skills
-                assert "verify-review" in module.skills
-                assert "zf-provider-contract-parity" in module.skills
+                assert "zf-yoke-test-evaluator-role-context" in module.skills
+                assert "verify-review" not in module.skills
+                assert "zf-verify-rescan-replan" in module.skills
+                assert "zf-goal-closure-replan-contract" in module.skills
+                assert "zf-verify-gap-producer-contract" not in module.skills
+                assert "zf-provider-contract-parity" not in module.skills
 
     def test_issue_prd_flow_unknown_params_fail_closed(self, tmp_path):
         issue = tmp_path / "issue.yaml"

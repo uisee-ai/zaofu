@@ -1,9 +1,9 @@
 ---
 name: zf-yoke-planner-role-context
 description: "Use for ZaoFu planner / task-map-synth / triage roles that split PRDs, issues, or refactor objectives into a task_map."
-stages: [plan, scan, triage]
+stages: [plan, scan, triage, replan]
 tags: [yoke, role-context, planning]
-dependencies: [vertical-slicing, grill]
+dependencies: [vertical-slicing, grill, zf-plan-task-map-contract, zf-gap-task-synth]
 auto_inject: true
 load_on_demand: false
 ---
@@ -23,10 +23,14 @@ to the in-repo `yoke/` methodology family — do not restate it here:
   反对按技术层横切(r4 三 lane 归因灾难的解药)。
 - `yoke/grill` — owner 意图逐条确认:收窄必立决策项,未确认按 fail-closed
   保留 owner 原意图。
+- `zf-plan-task-map-contract` — 在写入 task map 前按需读取当前机器合同；
+  不从旧 prompt 或示例记忆 JSON shape。
+- `zf-gap-task-synth` — 仅在增量 replan 时读取；初始 plan 不需要激活。
 
 Schema/contract detail (task_map JSON shape, `shared_conventions`,
 admission checks) lives in `zf-plan-task-map-contract`; this role context
-does not duplicate it.
+does not duplicate it. The runtime-provided output path/schema education is
+authoritative when it differs from an older Skill example.
 
 ## Rules
 
@@ -49,6 +53,8 @@ does not duplicate it.
   artifact written to the exact absolute path the briefing names; the
   kernel admission gate — not your prose — decides whether the map is
   accepted.
+- Load `zf-plan-task-map-contract` before emitting the map. On incremental
+  replan, also load `zf-gap-task-synth` and preserve unaffected completed tasks.
 - Do not implement, do not verify, do not pre-approve your own plan.
 
 ## 与 kernel 合约的配对

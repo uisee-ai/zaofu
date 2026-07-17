@@ -6,6 +6,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from zf.runtime.task_contract_snapshot import criterion_text
+
 from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.core.events.module_parity import is_module_parity_scan_completed_event
@@ -30,6 +32,25 @@ _FANOUT_AFFINITY_METADATA_KEYS = (
 
 class WriterFanoutDataMixin:
     @staticmethod
+    def _writer_current_task_ref(
+        task_ref: dict,
+        *,
+        event: ZfEvent,
+        payload: dict,
+    ) -> dict:
+        """Return only the task ref produced for this completion attempt."""
+        if event.type == "task.ref.updated":
+            return payload
+        if not task_ref:
+            return {}
+        if str(task_ref.get("trigger_event_id") or "") != event.id:
+            return {}
+        source_commit = str(payload.get("source_commit") or "")
+        if source_commit and str(task_ref.get("source_commit") or "") != source_commit:
+            return {}
+        return task_ref
+
+    @staticmethod
     def _first_nonempty(*values) -> str:
         for value in values:
             text = str(value or "").strip()
@@ -44,6 +65,30 @@ class WriterFanoutDataMixin:
         if isinstance(value, str) and value.strip():
             return [value.strip()]
         return []
+
+    @staticmethod
+    def _writer_acceptance_criteria(value) -> list:
+        if not isinstance(value, list):
+            return [value.strip()] if isinstance(value, str) and value.strip() else []
+        out: list = []
+        for item in value:
+            if isinstance(item, dict):
+                text = str(
+                    item.get("text")
+                    or item.get("criterion")
+                    or item.get("description")
+                    or item.get("acceptance")
+                    or ""
+                ).strip()
+                if text:
+                    out.append(dict(item))
+            elif str(item).strip():
+                out.append(str(item).strip())
+        return out
+
+    @staticmethod
+    def _writer_acceptance_text(value) -> str:
+        return criterion_text(value)
 
     @staticmethod
     def _fanout_config_value(source: object, key: str) -> str:
@@ -110,6 +155,7 @@ class WriterFanoutDataMixin:
             "Include `plan_artifact_ref` or `plan_ref` in the result payload, and include the same path in `artifact_refs`.",
             "When a task map is produced, include `task_map_ref`; when source coverage is available, include `source_index_ref`.",
             "If the plan splits work across more than one parallel bundle (distinct `owner_role` bundles running concurrently), it MUST include one separate task with `root_owner_class: \"assembly\"` that owns the shared entrypoint/wiring and merges the bundles. The writer fanout admission rejects a multi-bundle task_map lacking it and forces a replan — declare the assembly task up front.",
+            "Set task_map.workspace_root_owner_required=true only when this delivery must change or validate a root-level scaffold/entrypoint; then assign that root path to one task. Do not infer it from a local leaf patch.",
             "For refactor plan handoff, include `scan_quality_audit_ref` and list that audit artifact in `artifact_refs`.",
             "If the workflow asks for a full manifest, emit `artifact.manifest.published` with `kind=implementation_plan` and `kind=task_map` refs before the terminal success event.",
         ]
@@ -137,6 +183,19 @@ class WriterFanoutDataMixin:
                 return str(value)
         value = manifest.get(key)
         return str(value) if value not in (None, "") else ""
+
+    @staticmethod
+    def _first_child_mapping(
+        manifest: dict,
+        payloads: list[dict],
+        key: str,
+    ) -> dict:
+        for payload in payloads:
+            value = WriterFanoutDataMixin._payload_or_report_value(payload, key)
+            if isinstance(value, dict):
+                return dict(value)
+        value = manifest.get(key)
+        return dict(value) if isinstance(value, dict) else {}
 
     @staticmethod
     def _payload_or_report_value(payload: dict, key: str):
@@ -320,6 +379,60 @@ class WriterFanoutDataMixin:
                 "source_commit": source_commit,
                 "candidate_base_commit": base_commit,
             })
+            trigger_payload = (
+                manifest.get("trigger_payload")
+                if isinstance(manifest.get("trigger_payload"), dict)
+                else {}
+            )
+            for key in (
+                "plan_admission_incident_id",
+                "task_map_digest",
+            ):
+                value = trigger_payload.get(key)
+                if value not in (None, ""):
+                    payload[key] = value
+        if success_event == "goal.closure.synthesized":
+            result = self._first_child_mapping(
+                manifest, payloads, "goal_closure_result",
+            )
+            envelope_ref = self._first_child_mapping(
+                manifest, payloads, "admitted_call_result_ref",
+            )
+            control_ref = self._first_child_mapping(
+                manifest, payloads, "control_result_ref",
+            )
+            trigger_payload = (
+                manifest.get("trigger_payload")
+                if isinstance(manifest.get("trigger_payload"), dict)
+                else {}
+            )
+            payload.update({
+                "goal_closure_result": result,
+                "admitted_call_result_ref": envelope_ref,
+                "control_result_ref": control_ref,
+            })
+            for key in (
+                "workflow_run_id", "goal_id", "flow_kind",
+                "task_map_generation", "candidate_head_commit",
+                "closure_identity", "closure_fact_ref",
+                "closure_fact_digest", "goal_claim_set_ref",
+                "goal_claim_set_digest", "candidate_ref", "target_ref",
+                "pdd_id", "feature_id", "operation_id", "request_hash",
+                "contract_snapshot_ref", "contract_snapshot_digest",
+                "target_snapshot_ref", "target_snapshot_digest",
+            ):
+                value = self._first_child_value(manifest, payloads, key)
+                if value in (None, ""):
+                    value = result.get(key)
+                if value in (None, ""):
+                    value = trigger_payload.get(key)
+                if value not in (None, ""):
+                    payload[key] = value
+            payload.setdefault("pdd_id", str(payload.get("goal_id") or ""))
+            payload.setdefault(
+                "feature_id",
+                str(payload.get("pdd_id") or payload.get("goal_id") or ""),
+            )
         if success_event == "flow.discovery.completed":
             trigger_payload = (
                 manifest.get("trigger_payload")
@@ -342,6 +455,7 @@ class WriterFanoutDataMixin:
                 payload["gap_task_count"] = len(gap_tasks)
                 payload.setdefault("open_p0_p1_gap_count", len(gap_tasks))
             for key in (
+                "workflow_run_id",
                 "pdd_id",
                 "feature_id",
                 "goal_id",
@@ -351,10 +465,12 @@ class WriterFanoutDataMixin:
                 "discovery_profile",
                 "trace_id",
                 "task_map_ref",
+                "task_map_generation",
                 "source_index_ref",
                 "source_commit",
                 "candidate_base_commit",
                 "candidate_ref",
+                "candidate_head_commit",
                 "target_ref",
                 "gap_plan_ref",
                 "open_p0_p1_gap_count",
@@ -406,14 +522,18 @@ class WriterFanoutDataMixin:
                 payload["gap_task_count"] = len(gap_tasks)
                 payload.setdefault("open_p0_p1_gap_count", len(gap_tasks))
             for key in (
+                "workflow_run_id",
                 "pdd_id",
                 "feature_id",
+                "goal_id",
                 "trace_id",
                 "task_map_ref",
+                "task_map_generation",
                 "source_index_ref",
                 "source_commit",
                 "candidate_base_commit",
                 "candidate_ref",
+                "candidate_head_commit",
                 "target_ref",
             ):
                 value = (

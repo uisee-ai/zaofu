@@ -3,6 +3,8 @@ kind: ConfigProfile
 metadata:
   name: prod-runtime/v1
 spec:
+  goal:
+    enabled: true
   # 2026-07-08 起只用仓内两目录:skills/(zf-* 边界/合约技能,本 source)
   # + yoke/(方法论族,经 wrapper dependencies 闭包或 bundle 直名走
   # yoke overlay 解析,无需声明 source)。外部 agent-skills 基线已 1v1
@@ -10,24 +12,23 @@ spec:
   skill_sources:
   - {name: zaofu-skills, path: ../../../skills, mode: readonly}
   flow_defaults:
-    # bundle 组成(2026-07-08 1v1 切换后):zf-* 边界/合约技能 + zf-yoke-*
-    # 角色 wrapper(方法论经 dependencies 闭包物化)+ 少量 yoke 直名
-    # (该 stage 无 wrapper 时按需直挂,经 yoke overlay 解析)。
+    # bundle 只声明角色 wrapper + flow/project delta。机械合同经 wrapper
+    # dependencies 物化为 load-on-demand reference；Judge 保持单一 Thin Judge。
     issue:
       roleSkillBundles:
-        issue-triage: [debugging-triage, source-verification, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-issue-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth, zf-yoke-planner-role-context]
-        discovery: [verify-review, zf-verify-rescan-replan, zf-gap-task-synth, zf-harness-verification-checklist, zf-verify-gap-producer-contract]
-        judge-issue: [zf-harness-gate-evaluator, zf-goal-closure-replan-contract, zf-yoke-quality-gate-role-context]
-        fix: [zf-harness-done-contract, zf-yoke-dev-worker-role-context]
-        verify: [zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        issue-triage: [debugging-triage, source-verification, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-issue-plan-synth, zf-yoke-planner-role-context]
+        discovery: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        judge-issue: [zf-goal-closure-judge-contract]
+        fix: [zf-yoke-dev-worker-role-context]
+        verify: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-yoke-test-evaluator-role-context]
     prd:
       roleSkillBundles:
-        scan: [grill, source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-plan-task-map-contract]
-        planner: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth, zf-yoke-planner-role-context]
-        discovery: [verify-review, zf-verify-rescan-replan, zf-gap-task-synth, zf-harness-verification-checklist, zf-verify-gap-producer-contract]
-        judge-prd: [zf-harness-gate-evaluator, zf-goal-closure-replan-contract, zf-yoke-quality-gate-role-context]
-        impl: [zf-harness-done-contract, zf-yoke-dev-worker-role-context]
-        verify: [zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        scan: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
+        planner: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
+        discovery: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        judge-prd: [zf-goal-closure-judge-contract]
+        impl: [zf-yoke-dev-worker-role-context]
+        verify: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-yoke-test-evaluator-role-context]
   runtime:
     skills:
       # 2026-07-08:prod 预设 fail-closed——启用技能缺失/依赖断裂在
@@ -46,7 +47,7 @@ spec:
       enabled: true
       interval_seconds: 10
       max_actions_per_tick: 1
-  # 2026-07-08 LB-4 执法档:flowProfile 展开默认 canonical-dag/v3(读者子
+  # 执法档:flowProfile 展开默认 canonical-dag/v6(读者子
   # 报告证据档位);blocking 让空 evidence_refs / 空覆盖矩阵在落盘时被
   # discriminator.failed 替换并走返工,report_evidence_gate 兜住 schema
   # 之外的报告内容缺证据面。
@@ -67,6 +68,8 @@ kind: ConfigProfile
 metadata:
   name: refactor-controller-runtime/v3
 spec:
+  goal:
+    enabled: true
   # 2026-07-08 起只用仓内两目录:skills/(zf-* 边界/合约技能,本 source)
   # + yoke/(方法论族,经 wrapper dependencies 闭包或 bundle 直名走
   # yoke overlay 解析,无需声明 source)。外部 agent-skills 基线已 1v1
@@ -75,18 +78,18 @@ spec:
   - {name: zaofu-skills, path: ../../../skills, mode: readonly}
   flow_defaults:
     # bundle 组成同 prod-runtime/v1(2026-07-08 1v1 切换后):zf-* +
-    # wrapper 闭包 + 无 wrapper stage 的 yoke 直名。
+    # 角色 wrapper + flow/project delta；机械合同经 dependency closure 按需加载。
     refactor:
       roleSkillBundles:
-        scan-contract: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-plan-task-map-contract, zf-refactor-plan-synth, zf-harness-spec-freeze-contract, zf-harness-evidence-collection]
+        scan-contract: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-harness-spec-freeze-contract, zf-harness-evidence-collection, zf-yoke-planner-role-context]
         scan-runtime: [source-verification, context-hygiene, zf-harness-evidence-collection]
-        scan-verification: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier]
-        refactor-plan-synth: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-plan-task-map-contract, zf-gap-task-synth, zf-yoke-planner-role-context]
-        refactor-verify-bridge: [zf-verify-gap-producer-contract, zf-verify-rescan-replan, zf-gap-task-synth]
-        module-parity-scan: [source-verification, verify-review, zf-verify-rescan-replan, zf-verify-gap-producer-contract]
-        judge-refactor: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-harness-gate-evaluator, zf-goal-closure-replan-contract, zf-mechanical-claim-verifier, zf-yoke-quality-gate-role-context]
-        impl: [zf-harness-done-contract, zf-yoke-dev-worker-role-context]
-        verify: [zf-harness-verification-checklist, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-verify-gap-producer-contract, zf-verify-rescan-replan, zf-mechanical-claim-verifier, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        scan-verification: [zf-yoke-test-evaluator-role-context]
+        refactor-plan-synth: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-yoke-planner-role-context]
+        refactor-verify-bridge: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        module-parity-scan: [source-verification, zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
+        judge-refactor: [zf-goal-closure-judge-contract]
+        impl: [zf-yoke-dev-worker-role-context]
+        verify: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-yoke-test-evaluator-role-context]
   runtime:
     skills:
       # 2026-07-08:同 prod-runtime/v1——prod 预设 fail-closed。

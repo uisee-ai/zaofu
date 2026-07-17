@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from zf.runtime.task_map import (
     validate_source_index_payload,
     validate_task_map_payload,
@@ -599,3 +601,32 @@ def test_task_map_validation_allows_single_owner_serial_plan_without_assembly() 
     })
 
     assert result.passed is True
+
+
+@pytest.mark.parametrize(
+    ("task_map", "field"),
+    [
+        (
+            {"workspace_root_owner_required": "true"},
+            "workspace_root_owner_required",
+        ),
+        (
+            {"refactor_contract": {"workspace_root_owner_required": 1}},
+            "refactor_contract.workspace_root_owner_required",
+        ),
+    ],
+)
+def test_task_map_validation_requires_boolean_root_owner_requirement(
+    task_map: dict,
+    field: str,
+) -> None:
+    payload = {
+        "schema_version": "task-map.v1",
+        "tasks": [_task("TASK-A", "dev-core")],
+        **task_map,
+    }
+
+    result = validate_task_map_payload(payload)
+
+    assert result.passed is False
+    assert any(f"{field} must be a boolean" in error for error in result.errors)

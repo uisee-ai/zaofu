@@ -117,6 +117,12 @@ def _dispatch_assignee_keys(payload: dict) -> set[str]:
     role = payload.get("role")
     if isinstance(role, str) and role.strip():
         keys.add(role.strip())
+    role_instance = payload.get("role_instance")
+    if isinstance(role_instance, str) and role_instance.strip():
+        keys.add(role_instance.strip())
+    assigned_to = payload.get("assigned_to")
+    if isinstance(assigned_to, str) and assigned_to.strip():
+        keys.add(assigned_to.strip())
     return keys
 
 
@@ -143,7 +149,8 @@ def sweep_silent_dispatches(
 
     # latest_assigned: (task_id, assignee) -> latest task.assigned ts
     latest_assigned: dict[tuple[str, str], datetime] = {}
-    # dispatched_seen: (task_id, assignee) for which task.dispatched
+    # dispatched_seen: (task_id, assignee) for which task.dispatched or
+    # fanout.child.dispatched
     # has been observed AFTER the latest task.assigned.
     dispatched_seen: set[tuple[str, str]] = set()
     # Any prior dispatch for the same task/assignee. A duplicate manual
@@ -153,18 +160,19 @@ def sweep_silent_dispatches(
     ever_dispatched: set[tuple[str, str]] = set()
 
     for ev in events:
-        if ev.type not in {"task.assigned", "task.dispatched"}:
+        if ev.type not in {"task.assigned", "task.dispatched", "fanout.child.dispatched"}:
             continue
-        task_id = (ev.task_id or "").strip()
+        payload = ev.payload if isinstance(ev.payload, dict) else {}
+        task_id = (ev.task_id or str(payload.get("task_id") or "")).strip()
         if not task_id:
-            continue
-        assignee = _assignee_of(ev.payload or {})
-        if not assignee:
             continue
         ts = _parse_ts(ev.ts)
         if ts is None:
             continue
         if ev.type == "task.assigned":
+            assignee = _assignee_of(payload)
+            if not assignee:
+                continue
             key = (task_id, assignee)
             prev = latest_assigned.get(key)
             if prev is None or ts > prev:
@@ -175,8 +183,8 @@ def sweep_silent_dispatches(
                     # Reset dispatched flag — caller must see a new
                     # task.dispatched AFTER this reassignment to clear.
                     dispatched_seen.discard(key)
-        else:  # task.dispatched
-            for dispatched_assignee in _dispatch_assignee_keys(ev.payload or {}):
+        else:  # task.dispatched / fanout.child.dispatched
+            for dispatched_assignee in _dispatch_assignee_keys(payload):
                 key = (task_id, dispatched_assignee)
                 ever_dispatched.add(key)
                 assigned_ts = latest_assigned.get(key)

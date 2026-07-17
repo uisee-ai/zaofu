@@ -13,6 +13,7 @@ import type {
 } from "./types";
 import { getAgentSessionRawOutput } from "../../api/client";
 import { MarkdownText } from "./MarkdownText";
+import { completedRunNotices } from "./notices";
 import { actionImpactRows, previewItemsFromRefs, type PreviewItem } from "./previewRegistry";
 import { formatOutputStats, formatToolDuration, getOutputPreview, prettyPrintIfJson, rawOutputLabel, rawOutputRefFromRefs, type RawOutputRef } from "./toolOutput";
 
@@ -21,6 +22,8 @@ import { formatOutputStats, formatToolDuration, getOutputPreview, prettyPrintIfJ
 const PreviewOpenContext = createContext<((part: AgentSessionPart) => void) | null>(null);
 import { segmentRunParts, type ToolRunSegment } from "./toolGrouping";
 import { cleanToolTitle, iconForToolName } from "./toolIcon";
+import { ThinkingIndicator } from "./ThinkingIndicator";
+import { runStartTimestamp, toolCallCount } from "./liveRunIndicator";
 
 interface AgentSessionTimelineProps {
   conversation: AgentConversation;
@@ -328,6 +331,17 @@ function RunBlock({
   const replyParts = visibleParts.filter(isReplyPart);
   const detailParts = visibleParts.filter((part) => !isReplyPart(part));
   const thinkingParts = detailParts.filter((part) => part.kind === "thinking");
+  // stream-ux axis 2: while the run works and no reply text has arrived, the
+  // header renders the live indicator (pulsing dots + member + elapsed) as a
+  // SINGLE line instead of a bare dot over blank space. Suppressed only when
+  // a live ThinkingPart already shows its own "Thinking · Ns" line (kanban
+  // thinking stream — channel hides those).
+  const chatToolParts = detailParts.filter((part) => part.kind !== "thinking" && part.kind !== "status");
+  const chatVisibleThinking = channelChatMode ? [] : thinkingParts;
+  const showThinkingIndicator = chatMode && runWorking && !replyParts.length && !chatVisibleThinking.length;
+  // A kanban chat header with no member, no indicator, and no cancel action
+  // would render a lone status dot on its own line — drop the row entirely.
+  const showChatHeader = showThinkingIndicator || Boolean(run.memberId) || Boolean(canCancel);
   const headerStatusLabel = channelChatMode && thinkingParts.length && (run.status === "streaming" || run.status === "submitted")
     ? `${statusLabel(run.status)} · Thinking`
     : statusLabel(run.status);
@@ -361,10 +375,16 @@ function RunBlock({
     // only while a run is working. Dropping them left a bare presence dot:
     // four mystery bubbles in one racing-channel discussion. Render them as
     // muted system lines instead.
-    const notices = run.status === "completed"
-      ? parts.filter((part) => part.kind === "status" && Boolean(part.summary || part.title))
-      : [];
-    const tools = parts.filter((part) => part.kind !== "thinking" && part.kind !== "status");
+    // frontend-stress OBS-1 (2026-07-15): keep only real notices on a completed
+    // run; progress placeholders collapse (see notices.ts).
+    const notices = completedRunNotices(parts, run.status);
+    // Tool trail is working-state only (operator decision 2026-07-16): live
+    // activity (current tool + "Tool call N" + folded earlier steps) stays
+    // visible while the run works; once the reply lands the trail is dropped
+    // on BOTH chat surfaces — the conversation reads prose-first, and deep
+    // audit lives in trace/events, not the chat bubble.
+    const showTools = runWorking;
+    const tools = showTools ? parts.filter((part) => part.kind !== "thinking" && part.kind !== "status") : [];
     if (!thinking.length && !tools.length && !notices.length) return null;
     return (
       <div className="agent-chat-details">
@@ -384,14 +404,23 @@ function RunBlock({
   });
   return (
     <div className={`agent-run-block ${statusClass(run.status)} ${channelChatMode ? "channel-run-block" : ""}`.trim()}>
+      {!chatMode || showChatHeader ? (
       <div className={`agent-run-header ${chatMode ? "agent-run-header-min" : ""}`.trim()}>
         {chatMode ? (
           <div className="agent-run-title agent-run-title-min">
-            <span className={`agent-thread-dot ${statusClass(run.status)}`} />
-            {run.memberId ? <span className="agent-run-who">@{run.memberId}</span> : null}
-            {runWorking && !replyParts.length ? (
-              <span className="agent-shimmer agent-run-mini-status">{statusLabel(run.status)}</span>
-            ) : null}
+            {showThinkingIndicator ? (
+              // Single status line: pulse dots + @member + "Thinking · 12s".
+              <ThinkingIndicator
+                label={chatToolParts.length ? "Working" : "Thinking"}
+                startedAt={runStartTimestamp(run)}
+                who={run.memberId}
+              />
+            ) : (
+              <>
+                <span className={`agent-thread-dot ${statusClass(run.status)}`} />
+                {run.memberId ? <span className="agent-run-who">@{run.memberId}</span> : null}
+              </>
+            )}
           </div>
         ) : (
           <div className="agent-run-title">
@@ -413,14 +442,25 @@ function RunBlock({
           </div>
         ) : null}
       </div>
+      ) : null}
       {!hideQueuedStatusOnly ? (
         chatMode ? (
-          // Prose-first: reply leads, then a clean Thought / See-N-steps detail
-          // block. Empty run renders nothing — the header shimmer shows "Working".
-          <>
-            {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
-            {renderChatDetails(detailParts)}
-          </>
+          // WHILE STREAMING the block reads in wall-clock order — thinking /
+          // live activity first, the growing reply below it (operator report
+          // 2026-07-16: the reply above a still-ticking "Thinking" read
+          // backwards). Once the run completes, prose-first: reply leads and
+          // the details fold underneath.
+          runWorking ? (
+            <>
+              {renderChatDetails(detailParts)}
+              {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
+            </>
+          ) : (
+            <>
+              {replyParts.length ? renderPartList(replyParts, "agent-reply-list") : null}
+              {renderChatDetails(detailParts)}
+            </>
+          )
         ) : visibleParts.length ? (
           renderPartList(visibleParts, "", true)
         ) : (
@@ -709,7 +749,14 @@ function ToolStepsSegment({
     parts.map((part) => (
       <PartRenderer channelChatMode={channelChatMode} key={part.id} part={part} runStatus={runStatus} />
     ));
-  if (segment.grouped.length === 0) return <>{renderParts(segment.standalone)}</>;
+  // stream-ux axis 3: the live run labels its visible tail with a tool-call
+  // ordinal ("Tool call 5"), so a long grounding turn shows progress instead
+  // of a black box. Completed runs keep the plain "See N steps" fold.
+  const liveCallCount = segment.live ? toolCallCount([...segment.grouped, ...segment.standalone]) : 0;
+  const liveCountLine = liveCallCount > 0 ? (
+    <div className="agent-tool-live-count mono">Tool call {liveCallCount}</div>
+  ) : null;
+  if (segment.grouped.length === 0) return <>{liveCountLine}{renderParts(segment.standalone)}</>;
   const n = segment.total;
   return (
     <>
@@ -720,6 +767,7 @@ function ToolStepsSegment({
         </summary>
         <div className="agent-tool-steps-body">{renderParts(segment.grouped)}</div>
       </details>
+      {liveCountLine}
       {renderParts(segment.standalone)}
     </>
   );

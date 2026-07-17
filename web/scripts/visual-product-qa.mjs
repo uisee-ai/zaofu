@@ -7,7 +7,8 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`ZaoFu Web Visual Product QA
 Usage: npm --prefix web run qa:visual
 Env: ZF_WEB_URL, ZF_WEB_PROJECT, ZF_WEB_PROJECT_NAME, ZF_VISUAL_QA_OUT,
-     ZF_VISUAL_QA_FAIL_ON=P0|P1|P2|none, ZF_VISUAL_QA_PAGES
+     ZF_VISUAL_QA_FAIL_ON=P0|P1|P2|none, ZF_VISUAL_QA_PAGES,
+     ZF_PLAYWRIGHT_EXECUTABLE_PATH
 `);
   process.exit(0);
 }
@@ -18,7 +19,8 @@ const PROJECT_NAME = process.env.ZF_WEB_PROJECT_NAME || "";
 const OUT_DIR = process.env.ZF_VISUAL_QA_OUT
   || `/tmp/zf-visual-product-qa-${new Date().toISOString().replace(/[:.]/g, "-")}`;
 const FAIL_ON = process.env.ZF_VISUAL_QA_FAIL_ON || "P1";
-const DEFAULT_PAGES = ["project", "board", "delivery", "agents", "automations", "runtime", "events", "backlogs", "settings"];
+const PLAYWRIGHT_EXECUTABLE_PATH = process.env.ZF_PLAYWRIGHT_EXECUTABLE_PATH || "";
+const DEFAULT_PAGES = ["project", "inbox", "board", "agents", "automations", "delivery", "behavior-loop", "observability", "channels", "settings"];
 const PAGES = (process.env.ZF_VISUAL_QA_PAGES || DEFAULT_PAGES.join(","))
   .split(",")
   .map((item) => item.trim())
@@ -26,6 +28,11 @@ const PAGES = (process.env.ZF_VISUAL_QA_PAGES || DEFAULT_PAGES.join(","))
 const VIEWPORTS = [{ name: "desktop", width: 1440, height: 900 }, { name: "mobile", width: 390, height: 844 }];
 const SEVERITY_RANK = { P0: 3, P1: 2, P2: 1, info: 0 };
 const FAIL_RANK = FAIL_ON === "none" ? Number.POSITIVE_INFINITY : (SEVERITY_RANK[FAIL_ON] ?? SEVERITY_RANK.P1);
+const SNAPSHOT_PAGES = new Set([
+  "project", "board", "task", "triage", "traces", "runtime", "settings",
+  "diagnostics", "observability", "events", "runs", "fanouts",
+  "candidates", "workdirs", "skills", "archives",
+]);
 function pageUrl(page) {
   const url = new URL(BASE_URL);
   if (PROJECT_ID) url.searchParams.set("project", PROJECT_ID);
@@ -68,27 +75,55 @@ function shouldFail(issues) {
 }
 async function clickReadOnlyTabs(page) {
   const results = [];
-  const selector = ".tab-row button, .compact-tabs button, .delivery-main-tab, [role=tab], .tab-chip";
-  const candidates = await page.locator(selector).evaluateAll((nodes) =>
-    nodes.map((node, index) => ({
-      index,
-      text: String(node.textContent || node.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim(),
-      visible: !!(node.offsetWidth || node.offsetHeight || node.getClientRects().length),
-    }))
-  ).catch(() => []);
-  for (const candidate of candidates.filter((item) => item.visible).slice(0, 32)) {
+  const selector = ".tab-row button, .compact-tabs button, .delivery-main-tab, [role=tab]";
+  const visited = new Set();
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const candidates = await page.locator(selector).evaluateAll((nodes) => {
+      const occurrences = new Map();
+      return nodes.map((node) => {
+        const text = String(node.textContent || node.getAttribute("aria-label") || "").replace(/\s+/g, " ").trim();
+        const signature = [
+          node.getAttribute("data-testid") || "",
+          node.getAttribute("aria-controls") || "",
+          node.getAttribute("role") || "",
+          node.parentElement?.className || "",
+          text,
+        ].join("|");
+        const occurrence = occurrences.get(signature) || 0;
+        occurrences.set(signature, occurrence + 1);
+        return {
+          key: `${signature}|${occurrence}`,
+          text,
+          visible: !!(node.offsetWidth || node.offsetHeight || node.getClientRects().length),
+          disabled: node.matches(":disabled, [aria-disabled='true']"),
+          ignored: !!node.closest(".dt-feature-selector"),
+        };
+      });
+    }).catch(() => []);
+    const candidate = candidates.find((item) => (
+      item.visible && !item.disabled && !item.ignored && !visited.has(item.key)
+    ));
+    if (!candidate) break;
+    visited.add(candidate.key);
     try {
-      await page.locator(selector).nth(candidate.index).click({ timeout: 2500 });
+      const targetIndex = candidates.findIndex((item) => item.key === candidate.key);
+      await page.locator(selector).nth(targetIndex).click({ timeout: 2500 });
       await page.waitForTimeout(350);
-      results.push({ text: candidate.text, ok: true });
+      results.push({ key: candidate.key, text: candidate.text, ok: true });
     } catch (error) {
-      results.push({ text: candidate.text, ok: false, error: String(error).slice(0, 220) });
+      results.push({ key: candidate.key, text: candidate.text, ok: false, error: String(error).slice(0, 220) });
     }
   }
   return results;
 }
-async function waitForSnapshotReady(page) {
+async function waitForPageReady(page, pageId) {
   if (!PROJECT_ID) return { required: false, ok: true };
+  await page.locator(".route-loading[aria-busy='true']").waitFor({
+    state: "hidden",
+    timeout: 12000,
+  }).catch(() => undefined);
+  const required = SNAPSHOT_PAGES.has(pageId);
+  if (!required) return { required: false, ok: true };
   try {
     await page.waitForFunction(() => {
       const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim();
@@ -103,7 +138,7 @@ async function waitForSnapshotReady(page) {
     return {
       error: String(error).slice(0, 500),
       ok: false,
-      required: true,
+      required,
     };
   }
 }
@@ -268,7 +303,7 @@ async function collectPageModel(page, pageId) {
       taskFlowAscii,
       taskFlowNodeCount,
       textOverflow,
-      title: text(document.querySelector("main h2, h2")),
+      title: text(document.querySelector(".board-panel h1, .board-panel h2")),
       topbarText,
       visibleButtonTexts: Array.from(document.querySelectorAll("button")).filter(visible).map(text).filter(Boolean).slice(0, 80),
     };
@@ -286,7 +321,7 @@ function evaluateModel(model, context) {
       bodyTextSample: model.bodyTextSample,
     });
   }
-  if (PROJECT_ID && !model.snapshotReady) {
+  if (PROJECT_ID && context.snapshotRequired && !model.snapshotReady) {
     add("P1", "PROJECT_SNAPSHOT_NOT_READY", "target project snapshot did not load before visual QA", {
       expectedProjectId: PROJECT_ID,
       snapshotLabel: model.snapshotLabel,
@@ -403,7 +438,11 @@ async function runPage(browser, viewport, pageId) {
   page.on("requestfailed", (request) => {
     const url = request.url();
     if (url.startsWith("data:")) return;
-    failedRequests.push({ url: url.slice(0, 240), error: request.failure()?.errorText || "failed" });
+    const error = request.failure()?.errorText || "failed";
+    const normalSseAbort = /\/api\/(?:projects\/[^/]+\/)?stream(?:\?|$)/.test(url)
+      && /ERR_ABORTED|NS_BINDING_ABORTED|cancelled/i.test(error);
+    if (normalSseAbort) return;
+    failedRequests.push({ url: url.slice(0, 240), error });
   });
   const url = pageUrl(pageId);
   const result = {
@@ -417,7 +456,7 @@ async function runPage(browser, viewport, pageId) {
   try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
     await page.waitForTimeout(1800);
-    result.snapshotReadyWait = await waitForSnapshotReady(page);
+    result.snapshotReadyWait = await waitForPageReady(page, pageId);
     result.tabClicks = await clickReadOnlyTabs(page);
     result.model = await collectPageModel(page, pageId);
     const screenshot = join(OUT_DIR, `${viewport.name}-${pageId}.png`);
@@ -433,7 +472,10 @@ async function runPage(browser, viewport, pageId) {
 async function main() {
   await resolveProjectId();
   mkdirSync(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: PLAYWRIGHT_EXECUTABLE_PATH } : {}),
+  });
   const results = [];
   for (const viewport of VIEWPORTS) {
     for (const pageId of PAGES) {
@@ -458,7 +500,11 @@ async function main() {
       issues.push(issue("P1", "TAB_CLICK_FAILED", `${where}: tab click failed`, tab));
     }
     if (result.model) {
-      issues.push(...evaluateModel(result.model, { pageId: result.pageId, viewport: result.viewport }));
+      issues.push(...evaluateModel(result.model, {
+        pageId: result.pageId,
+        snapshotRequired: SNAPSHOT_PAGES.has(result.pageId),
+        viewport: result.viewport,
+      }));
     }
   }
   const report = {

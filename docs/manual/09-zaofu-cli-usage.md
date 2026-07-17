@@ -346,6 +346,17 @@ tools/start-webkanban.sh --no-build
 如需固定本地 Web/Kanban Agent action token,在仓库 `.env` 写入
 `ZF_WEB_ACTION_TOKEN=...`。不要提交 `.env`。
 
+该 gate 不只覆盖任务 action。以下会探测主机路径或修改 host-global
+Workspace 状态的入口同样需要 token/passcode/trusted session:
+
+- Bootstrap Inspect、Project Validate Path。
+- Onboarding 的 step/complete/skip/reset。
+- Project Touch（最近访问项目）。
+- Project register/init/remove。
+
+首次打开 Welcome Wizard 时可在向导顶部保存 action token；无效 token 会
+显示 403 原因，不会静默跳过向导。
+
 ## 11. Spec、Backlog 与 Operator 辅助
 
 | 命令 | 用途 |

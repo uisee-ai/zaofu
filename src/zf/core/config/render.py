@@ -148,6 +148,7 @@ _EXPECTED_FLOW_EVENT_SINKS = {
 }
 _EXPECTED_FLOW_TRIGGER_SOURCES = {
     "flow.discovery.requested": "verify.passed post-verify discovery bridge",
+    "flow.goal.closed": "flow discovery closeout bridge",
     "verify.parity_scan.requested": "verify.passed module parity bridge",
     "module.parity.closed": "module parity closeout bridge",
 }

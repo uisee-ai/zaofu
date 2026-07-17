@@ -3,7 +3,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from zf.autoresearch.failure_signals import collect_failure_signals
+from zf.autoresearch.failure_signals import (
+    collect_failure_signals,
+    completed_run_quiesced,
+    detect_semantic_flow_failures,
+)
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 
@@ -30,6 +34,120 @@ def test_collect_failure_signals_flags_readonly_gate_mutation(tmp_path: Path) ->
     assert signal.severity == "high"
     assert signal.event_ids
     assert "proof.txt" in signal.actual
+
+
+def test_ship_terminal_quiesces_only_until_same_run_reopens() -> None:
+    events = [
+        ZfEvent(
+            type="run.goal.started",
+            correlation_id="run-a",
+            payload={"run_id": "run-a"},
+        ),
+        ZfEvent(
+            type="ship.completed",
+            correlation_id="run-a",
+            payload={"run_id": "run-a"},
+        ),
+    ]
+    assert completed_run_quiesced(events) is True
+    events.append(ZfEvent(
+        type="verify.failed",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    assert completed_run_quiesced(events) is False
+
+
+def test_plan_admission_failure_does_not_become_semantic_source_repair_signal(
+    tmp_path: Path,
+) -> None:
+    event = ZfEvent(
+        type="prd.plan.failed",
+        correlation_id="run-plan",
+        payload={
+            "workflow_run_id": "run-plan",
+            "failure_scope": "plan_admission",
+            "plan_admission_incident_id": "plan-admission-1",
+            "expected_fault": True,
+            "reason": "task map intentionally omitted a required ref",
+        },
+    )
+
+    assert detect_semantic_flow_failures([event], state_dir=tmp_path / ".zf") == []
+
+
+def test_fanout_pending_without_lifecycle_becomes_signal(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    base = datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
+    log.append(ZfEvent(
+        id="evt-dispatch",
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        ts=base.isoformat(),
+        payload={
+            "fanout_id": "fanout-impl-1",
+            "child_id": "dev-lane-0-TASK-X",
+            "role_instance": "dev-lane-0",
+            "stage_id": "impl",
+        },
+    ))
+    log.append(ZfEvent(
+        id="evt-later",
+        type="orchestrator.round.complete",
+        actor="zf-cli",
+        ts=(base + timedelta(minutes=5)).isoformat(),
+        payload={},
+    ))
+
+    signals = collect_failure_signals(state_dir)
+
+    assert any(signal.fingerprint == "fanout_child_pending:fanout-impl-1:dev-lane-0-TASK-X" for signal in signals)
+
+
+def test_fanout_pending_with_pane_lifecycle_recovery_is_suppressed(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    base = datetime(2026, 7, 15, 8, 0, tzinfo=timezone.utc)
+    log.append(ZfEvent(
+        id="evt-dispatch",
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        task_id="TASK-X",
+        ts=base.isoformat(),
+        payload={
+            "fanout_id": "fanout-impl-1",
+            "child_id": "dev-lane-0-TASK-X",
+            "role_instance": "dev-lane-0",
+            "stage_id": "impl",
+        },
+    ))
+    log.append(ZfEvent(
+        id="evt-pane-dead",
+        type="worker.pane.dead_observed",
+        actor="dev-lane-0",
+        task_id="TASK-X",
+        ts=(base + timedelta(minutes=3)).isoformat(),
+        payload={
+            "instance_id": "dev-lane-0",
+            "role": "dev-lane-0",
+            "source": "dead_watchdog",
+        },
+    ))
+    log.append(ZfEvent(
+        id="evt-later",
+        type="orchestrator.round.complete",
+        actor="zf-cli",
+        ts=(base + timedelta(minutes=5)).isoformat(),
+        payload={},
+    ))
+
+    signals = collect_failure_signals(state_dir)
+
+    assert not any(
+        signal.fingerprint == "fanout_child_pending:fanout-impl-1:dev-lane-0-TASK-X"
+        for signal in signals
+    )
 
 
 def test_collect_failure_signals_flags_terminal_without_gate(tmp_path: Path) -> None:
@@ -170,6 +288,44 @@ def test_collect_failure_signals_flags_child_emitted_aggregate_event(tmp_path: P
     assert signals[0].category == "fanout_event_contract"
     assert signals[0].fingerprint == (
         "fanout_child_emitted_aggregate:F1:review-a:review.approved"
+    )
+
+
+def test_collect_failure_signals_allows_kernel_aggregate_with_child_identity(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="fanout.started",
+        actor="zf-cli",
+        origin="kernel",
+        payload={
+            "fanout_id": "F1",
+            "aggregate": {
+                "success_event": "lane.stage.completed",
+                "failure_event": "lane.stage.failed",
+                "child_success_event": "impl.child.completed",
+                "child_failure_event": "impl.child.failed",
+            },
+        },
+    ))
+    log.append(ZfEvent(
+        type="lane.stage.completed",
+        actor="zf-cli",
+        origin="kernel",
+        payload={
+            "fanout_id": "F1",
+            "child_id": "dev-lane-0-T1",
+            "status": "completed",
+        },
+    ))
+
+    signals = collect_failure_signals(state_dir)
+
+    assert not any(
+        signal.fingerprint.startswith("fanout_child_emitted_aggregate:")
+        for signal in signals
     )
 
 

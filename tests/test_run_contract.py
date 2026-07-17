@@ -94,3 +94,42 @@ spec:
     assert contract["workflow"]["strictness"] == "full-parity"
     assert "workflow_input_manifest[0]" in contract["digests"]
     assert "skill_adapter_plan[0]" in contract["digests"]
+
+
+def test_run_contract_pins_durable_result_protocol(tmp_path):
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text("""\
+version: "1.0"
+project: {name: demo, state_dir: .zf-demo}
+roles: []
+workflow:
+  dag:
+    schema_profile: canonical-dag/v5
+  _flow_metadata:
+    result_protocol:
+      mode: blocking
+      required_operation_ids: [wop-verify-TASK-1]
+      read_policy_ref: artifacts/attempts/read-policies/policy.json
+      read_policy_digest: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+""", encoding="utf-8")
+
+    contract = build_run_contract(
+        load_config(config_path),
+        config_path=config_path,
+        project_root=tmp_path,
+    )
+
+    result_protocol = contract["protocols"]["result_protocol"]
+    operation = contract["protocols"]["workflow_operation"]
+    read_policy = contract["protocols"]["required_read"]
+    assert result_protocol["schema_version"] == "call-result-envelope.v1"
+    assert result_protocol["mode"] == "blocking"
+    assert result_protocol["adapter_version"]
+    assert result_protocol["canonicalization_version"]
+    assert operation["canonicalization_version"]
+    assert operation["required_operation_ids"] == ["wop-verify-TASK-1"]
+    assert read_policy == {
+        "schema_version": "input-consumption-policy.v1",
+        "policy_ref": "artifacts/attempts/read-policies/policy.json",
+        "policy_digest": "a" * 64,
+    }

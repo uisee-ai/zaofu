@@ -100,7 +100,50 @@ def project_task_operations(
             project_operation(state_dir, dispatch_id, events=events)
             for dispatch_id in dispatch_ids
         ],
+        "workflow_operations": [
+            project_workflow_operation(state_dir, operation_id, events=events)
+            for operation_id, row in _workflow_operation_rows(events).items()
+            if str(row.get("task_id") or "") == task_id
+        ],
     }
+
+
+def project_workflow_operation(
+    state_dir: Path,
+    operation_id: str,
+    *,
+    events: list[ZfEvent] | None = None,
+) -> dict[str, Any]:
+    events = events if events is not None else EventLog(state_dir / "events.jsonl").read_all()
+    row = dict(_workflow_operation_rows(events).get(operation_id) or {})
+    timeline = []
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("operation_id") or "") != operation_id:
+            continue
+        timeline.append(_timeline_item(event))
+    status = str(row.get("status") or "unknown")
+    blockers = []
+    if status in {"failed", "blocked"}:
+        blockers.append(str(row.get("reason") or status))
+    return {
+        "schema_version": "workflow-operation-projection.v1",
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        **row,
+        "operation_id": operation_id,
+        "blockers": blockers,
+        "timeline": redact_obj(timeline),
+        "freshness": {
+            "last_event_at": str(row.get("last_event_at") or ""),
+            "event_count": len(timeline),
+        },
+    }
+
+
+def _workflow_operation_rows(events: list[ZfEvent]) -> dict[str, dict[str, Any]]:
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    return reduce_workflow_operations(events)
 
 
 def write_operation_projection(

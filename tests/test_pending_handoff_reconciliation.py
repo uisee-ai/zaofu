@@ -2385,6 +2385,65 @@ def test_rework_dispatch_skips_when_target_worker_has_other_inflight_task(
     assert skipped[0].payload["reason"] == "rework_target_busy:TASK-BUSY"
 
 
+def test_rework_dispatch_sees_active_writer_fanout_child_on_target_lane(
+    tmp_path: Path,
+) -> None:
+    """R14: writer fanout dispatches are lane occupancy, not invisible work."""
+    orch, store, log = _make_orchestrator(tmp_path)
+    store.add(Task(
+        id="TASK-ASSEMBLY",
+        title="active assembly",
+        status="in_progress",
+        assigned_to="dev",
+    ))
+    log.append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        payload={
+            "fanout_id": "fanout-impl",
+            "child_id": "dev-TASK-ASSEMBLY",
+            "run_id": "run-assembly",
+            "task_id": "TASK-ASSEMBLY",
+            "role": "dev",
+            "role_instance": "dev",
+        },
+    ))
+    store.add(Task(
+        id="TASK-REWORK",
+        title="needs rework",
+        status="in_progress",
+        assigned_to="review",
+        retry_count=1,
+    ))
+    trigger = ZfEvent(
+        type="review.rejected",
+        actor="review",
+        task_id="TASK-REWORK",
+        payload={"reason": "semantic API mismatch"},
+    )
+
+    result = orch._dispatch_rework(  # type: ignore[attr-defined]
+        store.get("TASK-REWORK"),
+        trigger,
+    )
+
+    assert result is None
+    skipped = [
+        event for event in _events(log)
+        if event.type == "orchestrator.dispatch_skipped"
+        and event.task_id == "TASK-REWORK"
+    ]
+    assert skipped
+    assert skipped[-1].payload["reason"] == (
+        "rework_target_busy:TASK-ASSEMBLY"
+    )
+    assert not [
+        event for event in _events(log)
+        if event.type == "task.dispatched"
+        and event.task_id == "TASK-REWORK"
+    ]
+
+
 def test_task_ref_repair_waits_when_owner_lane_is_busy(
     tmp_path: Path,
 ) -> None:

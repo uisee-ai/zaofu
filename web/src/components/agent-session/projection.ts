@@ -1,15 +1,15 @@
-import type { EventRecord } from "../../api/types";
+import type { EventRecord } from "../../api/types.js";
 import type {
   AgentConversation, AgentSessionCard, AgentSessionPart, AgentSessionRun,
   AgentSessionThread, AgentSessionThreadRef, AgentSessionTurn,
-} from "./types";
+} from "./types.js";
 import {
   agentDeltaContent as uiDeltaContent,
   agentDeltaKind as uiDeltaKind,
   agentToolTitle,
   eventSourceRefs,
   parseActionProposal,
-} from "./agentUiEvent";
+} from "./agentUiEvent.js";
 
 function textValue(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -73,9 +73,23 @@ function ensureRun(
   const existing = turn.runs.find((item) => item.id === runId);
   if (existing) {
     const nextPatch = { ...patch, parts: existing.parts };
+    // Only *.started events carry startedAt; later deltas pass undefined and
+    // Object.assign would clobber the recorded start, breaking the live
+    // elapsed timer (stream-ux axis 2). Preserve the first value.
+    if (nextPatch.startedAt === undefined) delete nextPatch.startedAt;
     if (existing.status === "cancelled" && patch.status !== "cancelled") {
       nextPatch.status = "cancelled";
       nextPatch.stale = true;
+    }
+    // Terminal guard (stream-ux axis 3 verification finding): the SSE bus
+    // replays ephemeral turn deltas of already-finished turns to fresh
+    // subscribers. A stale delta must not flip a completed/failed run back to
+    // "streaming" — that resurrected the live tool UI on a finished run.
+    if (
+      (existing.status === "completed" || existing.status === "failed")
+      && (nextPatch.status === "streaming" || nextPatch.status === "submitted")
+    ) {
+      nextPatch.status = existing.status;
     }
     Object.assign(existing, nextPatch);
     return existing;
@@ -277,13 +291,30 @@ export function buildKanbanConversation(args: {
   }
   ensureThread(threads, args.activeThreadId || "main", "main");
   const backendFilter = canonicalBackend(args.backend);
-  const accepted = args.events.slice().sort((left, right) => (left.seq ?? 0) - (right.seq ?? 0));
+  // Committed events (with seq) fold in log order; seq-less ephemeral live
+  // deltas fold AFTER them, ordered by ts. Sorting deltas to the front
+  // (`seq ?? 0`) made the first delta create the run's turn BEFORE the
+  // user.message turn existed, so the question rendered below the answer
+  // (operator report 2026-07-16).
+  const accepted = args.events.slice().sort((left, right) => {
+    const leftSeq = left.seq ?? Number.MAX_SAFE_INTEGER;
+    const rightSeq = right.seq ?? Number.MAX_SAFE_INTEGER;
+    if (leftSeq !== rightSeq) return leftSeq - rightSeq;
+    return String(left.ts || "").localeCompare(String(right.ts || ""));
+  });
   for (const event of accepted) {
     const payload = event.payload ?? {};
     const payloadBackend = canonicalBackend(payload.backend);
     const payloadProjectId = textValue(payload.project_id).trim();
     if (args.projectId && payloadProjectId && payloadProjectId !== args.projectId) continue;
-    if (backendFilter && payloadBackend && payloadBackend !== backendFilter) continue;
+    // Frontend-stress S9/S10 (2026-07-15): do NOT drop turns whose backend
+    // differs from the currently-selected one. A kanban-agent thread is one
+    // durable conversation per (project, thread) that legitimately spans
+    // backends — switching codex<->claude mid conversation (runbook D4) or a
+    // fresh session defaulting to Claude over a Codex-produced transcript must
+    // still render the existing turns. `backendFilter` remains the per-run
+    // provider fallback below; it is no longer an exclusion filter (mirrors the
+    // read_model server fix so both sources stay backend-agnostic).
     if (args.taskId && event.task_id && event.task_id !== args.taskId) continue;
     const threadId = textValue(payload.thread_key || payload.thread_id || args.activeThreadId || "main") || "main";
     if (event.type === "user.message") {
@@ -305,7 +336,13 @@ export function buildKanbanConversation(args: {
       continue;
     }
     const turnId = textValue(payload.turn_id || payload.run_id || event.id || event.seq);
-    const messageEventId = textValue(payload.message_event_id);
+    // turn.created is emitted with causation_id = the user.message event id
+    // (server.py chat-orchestrator path). Slim-indexed rows in existing read
+    // models dropped payload.message_event_id, orphaning the run from its
+    // question turn — fall back to causation so the answer folds under the
+    // question instead of above it.
+    const messageEventId = textValue(payload.message_event_id)
+      || (event.type === "kanban.agent.turn.created" ? textValue(event.causation_id) : "");
     if (messageEventId) turnToMessage.set(turnId, messageEventId);
     const thread = ensureThread(threads, threadId);
     const turn = ensureTurn(thread, turnToMessage.get(turnId) || `turn-${turnId}`, event.ts);
@@ -330,6 +367,13 @@ export function buildKanbanConversation(args: {
         sourceEvent: event,
       });
     } else if (event.type === "kanban.agent.turn.delta") {
+      if (run.status === "completed" || run.status === "failed") {
+        // Deltas sort after committed events now, so a delta reaching a
+        // terminal run is stale (SSE backlog replay, or the tail of a turn
+        // whose final reply already folded). Applying it would append
+        // streamed fragments after the final reply text. Drop it.
+        continue;
+      }
       if (run.status === "cancelled") {
         upsertPart(run, {
           id: `stale-${event.seq ?? run.parts.length + 1}`,
@@ -424,4 +468,4 @@ export function buildKanbanConversation(args: {
   };
 }
 
-export { buildChannelConversation } from "./channelProjection";
+export { buildChannelConversation } from "./channelProjection.js";

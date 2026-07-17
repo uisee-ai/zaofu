@@ -1,7 +1,8 @@
-"""Tests for B3: per-worker state tracking via worker.state.changed events.
+"""Tests for B3: event-derived per-worker health tracking.
 
-The state is persisted in events.jsonl (single source of truth). The
-orchestrator emits worker.state.changed on every transition at hook
+The worker-health read model folds worker.state.changed events; it is not a
+claim that all worker/runtime state lives only in the event ledger. The
+orchestrator emits worker.state.changed at hook
 points in _dispatch_task / _on_build_done / _on_test_passed /
 _on_dev_blocked / _report_stuck_worker / _respawn_instance /
 _check_context_thresholds / _check_pending_recycles / _start_recycle.
@@ -12,7 +13,6 @@ instance. zf status --workers renders the same as a table.
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 
 import pytest
@@ -91,6 +91,82 @@ class TestSetWorkerStateIdempotent:
         assert events[1].payload.get("from") == "busy"
         assert events[1].payload.get("to") == "idle"
 
+    def test_busy_task_handoff_emits_new_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state("dev", "busy", reason="task one", task_id="T1")
+        orch._set_worker_state("dev", "busy", reason="task two", task_id="T2")
+
+        events = [
+            event
+            for event in EventLog(state_dir / "events.jsonl").read_all()
+            if event.type == "worker.state.changed" and event.actor == "dev"
+        ]
+        assert len(events) == 2
+        assert events[-1].payload.get("from") == "busy"
+        assert events[-1].payload.get("to") == "busy"
+        assert events[-1].task_id == "T2"
+
+    def test_taskless_release_cannot_retire_active_task_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state("dev", "busy", reason="task two", task_id="T2")
+        before = len(EventLog(state_dir / "events.jsonl").read_all())
+
+        orch._set_worker_state("dev", "awaiting_review", reason="late task one")
+
+        assert len(EventLog(state_dir / "events.jsonl").read_all()) == before
+        assert orch.worker_health()["dev"] == "busy"
+        assert orch._last_worker_task_id["dev"] == "T2"
+
+    def test_matching_release_retires_active_task_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state("dev", "busy", reason="task two", task_id="T2")
+
+        orch._set_worker_state(
+            "dev",
+            "awaiting_review",
+            reason="task two complete",
+            task_id="T2",
+        )
+
+        assert orch.worker_health()["dev"] == "awaiting_review"
+        assert "dev" not in orch._last_worker_task_id
+
+    def test_equivalent_task_releases_are_idempotent_without_active_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state(
+            "dev", "awaiting_review", reason="task one complete", task_id="T1",
+        )
+        before = len(EventLog(state_dir / "events.jsonl").read_all())
+
+        orch._set_worker_state(
+            "dev", "awaiting_review", reason="task two already complete", task_id="T2",
+        )
+
+        assert len(EventLog(state_dir / "events.jsonl").read_all()) == before
+
+    def test_busy_state_restores_missing_task_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._last_worker_state["dev"] = "busy"
+        orch._last_worker_task_id.pop("dev", None)
+
+        orch._set_worker_state(
+            "dev", "busy", reason="restore active binding", task_id="T2",
+        )
+
+        assert orch._last_worker_task_id["dev"] == "T2"
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        assert events[-1].task_id == "T2"
+
 
 class TestWorkerHealthFoldsEvents:
     def test_default_state_is_idle(self, state_dir, config, transport):
@@ -126,6 +202,27 @@ class TestWorkerHealthFoldsEvents:
         health = orch2.worker_health()
         assert health["dev"] == "busy"
         assert health["review"] == "busy"
+
+    def test_restart_ignores_taskless_stale_release(
+        self, state_dir, config, transport
+    ):
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="worker.state.changed",
+            actor="dev",
+            task_id="T2",
+            payload={"from": "idle", "to": "busy", "task_id": "T2"},
+        ))
+        log.append(ZfEvent(
+            type="worker.state.changed",
+            actor="dev",
+            payload={"from": "busy", "to": "awaiting_review"},
+        ))
+
+        orch = Orchestrator(state_dir, config, transport)
+
+        assert orch.worker_health()["dev"] == "busy"
+        assert orch._last_worker_task_id["dev"] == "T2"
 
 
 class TestDispatchHookSetsWorkerBusy:
@@ -168,6 +265,62 @@ class TestOnBuildDoneHookSetsAwaitingReview:
         assert any(
             e.payload.get("to") == "awaiting_review" for e in state_events
         )
+
+    def test_old_completion_does_not_overwrite_new_task_dispatch(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state(
+            "dev", "busy", reason="new fanout child", task_id="T2",
+        )
+
+        orch._release_stage_actor_liveness(ZfEvent(
+            type="dev.build.done",
+            actor="dev",
+            task_id="T1",
+        ))
+
+        assert orch.worker_health()["dev"] == "busy"
+
+    def test_taskless_completion_does_not_overwrite_active_generation(
+        self, state_dir, config, transport
+    ):
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state(
+            "dev", "busy", reason="new fanout child", task_id="T2",
+        )
+
+        orch._release_stage_actor_liveness(ZfEvent(
+            type="dev.build.done",
+            actor="dev",
+        ))
+
+        assert orch.worker_health()["dev"] == "busy"
+
+    def test_old_attempt_completion_does_not_release_same_task_rework(
+        self, state_dir, config, transport
+    ):
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(
+            id="T1",
+            title="x",
+            status="in_progress",
+            assigned_to="dev",
+            active_dispatch_id="dispatch-new",
+        ))
+        orch = Orchestrator(state_dir, config, transport)
+        orch._set_worker_state(
+            "dev", "busy", reason="same task rework", task_id="T1",
+        )
+
+        orch._settle_progress_actor(ZfEvent(
+            type="dev.build.done",
+            actor="dev",
+            task_id="T1",
+            payload={"dispatch_id": "dispatch-old"},
+        ), "T1")
+
+        assert orch.worker_health()["dev"] == "busy"
 
 
 class TestOnTestPassedHookSetsIdle:
@@ -226,12 +379,12 @@ class TestDevBlockedHookSetsBlockedHuman:
 
 class TestOrchestratorImportProof:
     def test_set_worker_state_referenced_in_orchestrator(self):
-        from zf.runtime import orchestrator as orch_module
-        src = inspect.getsource(orch_module)
-        # Must define the method
-        assert "_set_worker_state" in src
-        # Must define worker_health
-        assert "def worker_health" in src
+        assert Orchestrator._set_worker_state.__module__ == (
+            "zf.runtime.worker_state_runtime"
+        )
+        assert Orchestrator.worker_health.__module__ == (
+            "zf.runtime.worker_state_runtime"
+        )
 
 
 class TestWakePatternIncludesWorkerStateChanged:

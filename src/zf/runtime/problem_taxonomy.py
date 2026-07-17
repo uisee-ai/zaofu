@@ -49,6 +49,7 @@ _ABNORMAL_EVENT_RULES: dict[str, dict[str, Any]] = {
         "action_kind": spec.suggested_action_kind,
         "notification_policy": spec.effective_notification_policy,
         "recovery_policy": spec.effective_recovery_policy,
+        "supervisor_attention": spec.supervisor_attention,
         "dedupe_key_fields": spec.dedupe_key_fields,
         "human_required_when": spec.human_required_when,
     }
@@ -273,6 +274,7 @@ def abnormal_event_projection(event: Any) -> dict[str, Any] | None:
         "intervention_class": str(rule.get("intervention_class") or ""),
         "notification_policy": str(rule.get("notification_policy") or ""),
         "recovery_policy": str(rule.get("recovery_policy") or ""),
+        "supervisor_attention": str(rule.get("supervisor_attention") or ""),
         "dedupe_key_fields": _string_list(rule.get("dedupe_key_fields")),
         "human_required_when": _string_list(rule.get("human_required_when")),
         "problem_envelope": envelope,

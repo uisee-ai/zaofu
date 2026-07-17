@@ -42,6 +42,9 @@ class _FakeTmux:
     def capture_pane(self, role_name: str, *, lines: int = 120) -> str:
         return ""
 
+    def wait_for_prompt(self, role_name: str, pattern: str, *, timeout: float) -> bool:
+        return True
+
     def pane_process_probe(self, role_name: str) -> dict:
         if self._process_probe is not None:
             return self._process_probe
@@ -86,6 +89,36 @@ def test_tmux_transport_lifecycle_snapshot_marks_shell_as_not_agent() -> None:
 
     assert snapshot.alive is False
     assert snapshot.current_command == "bash"
+
+
+def test_tmux_transport_wait_ready_rejects_shell_even_if_prompt_matches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale prompt must not turn a failed provider launch into ready."""
+    monkeypatch.setattr(TmuxTransport, "_AGENT_LAUNCH_GRACE_SECONDS", 0.0)
+    transport = TmuxTransport(
+        _FakeTmux(pid="4242", command="bash", path="/workspace/project")  # type: ignore[arg-type]
+    )
+
+    assert transport.wait_ready("dev-1", r"[❯>]", timeout=1.0) is False
+
+
+def test_tmux_transport_wait_ready_allows_brief_shell_to_provider_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _BootingTmux(_FakeTmux):
+        def __init__(self) -> None:
+            super().__init__(pid="4242", command="bash", path="/workspace/project")
+            self.command_reads = 0
+
+        def pane_current_command(self, role_name: str) -> str:
+            self.command_reads += 1
+            return "bash" if self.command_reads == 1 else "claude"
+
+    monkeypatch.setattr(TmuxTransport, "_READY_POLL_INTERVAL_SECONDS", 0.0)
+    transport = TmuxTransport(_BootingTmux())  # type: ignore[arg-type]
+
+    assert transport.wait_ready("dev-1", r"[❯>]", timeout=1.0) is True
 
 
 def test_tmux_transport_send_task_allows_normal_node_tui(tmp_path) -> None:

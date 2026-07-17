@@ -28,6 +28,7 @@ from zf.core.state.session import SessionStore
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.session_mutex import SessionLock
 from zf.runtime.transport import TransportAdapter, AttachHandle
 
 
@@ -172,6 +173,70 @@ def codex_review_config() -> ZfConfig:
 
 
 class TestClaudeCrashRecoveryInvariantX:
+    def test_concurrent_role_respawn_is_deferred_by_state_dir_lease(
+        self, state_dir: Path, claude_dev_config
+    ):
+        """A CLI restart must not race the resident watchdog's respawn."""
+        transport = _FakeTransport()
+        transport.alive_flags["dev"] = False
+        orch = Orchestrator(state_dir, claude_dev_config, transport)
+
+        with SessionLock(state_dir / "locks" / "respawns", "dev"):
+            decision = orch.restart_role_instance(claude_dev_config.roles[0])
+
+        assert decision.action == "respawn_in_progress"
+        assert transport.spawn_calls == []
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        deferred = [event for event in events if event.type == "worker.respawn.deferred"]
+        assert len(deferred) == 1
+        assert deferred[0].payload["reason"] == "recovery_lease_held"
+
+    def test_respawn_reinjects_active_fanout_contract(
+        self, state_dir: Path, claude_dev_config
+    ):
+        """A fanout child may be active before it becomes a kanban task."""
+        transport = _FakeTransport()
+        transport.alive_flags["dev"] = True
+        transport.spawn_calls.append(("dev", []))
+        briefing = state_dir / "briefings" / "dev-fanout-impl-child.md"
+        briefing.parent.mkdir(parents=True, exist_ok=True)
+        briefing.write_text("Active task: TASK-FANOUT\n", encoding="utf-8")
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="fanout.child.dispatched",
+            actor="zf-cli",
+            task_id="TASK-FANOUT",
+            payload={
+                "fanout_id": "fanout-impl",
+                "stage_id": "impl",
+                "child_id": "dev-TASK-FANOUT",
+                "run_id": "run-fanout-impl-dev",
+                "role_instance": "dev",
+                "task_id": "TASK-FANOUT",
+                "briefing_path": str(briefing),
+            },
+        ))
+        orch = Orchestrator(state_dir, claude_dev_config, transport)
+
+        transport.alive_flags["dev"] = False
+        decision = orch._respawn_instance(claude_dev_config.roles[0])
+
+        assert decision.action == "respawn"
+        assert decision.task_id == "TASK-FANOUT"
+        assert ("dev", str(briefing)) in transport.send_task_calls
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        assert any(
+            event.type == "worker.recovery.injected"
+            and event.payload.get("reason") == "active_fanout_after_watchdog"
+            for event in events
+        )
+        states = [
+            event for event in events
+            if event.type == "worker.state.changed" and event.actor == "dev"
+        ]
+        assert states[-1].payload["to"] == "busy"
+        assert states[-1].task_id == "TASK-FANOUT"
+
     def test_crash_respawns_with_same_session_id_via_resume(
         self, state_dir: Path, claude_dev_config, tmp_path, monkeypatch,
     ):
@@ -243,6 +308,12 @@ class TestClaudeCrashRecoveryInvariantX:
         events = EventLog(state_dir / "events.jsonl").read_all()
         types = [e.type for e in events]
         assert "worker.respawned" in types
+        states = [
+            event for event in events
+            if event.type == "worker.state.changed" and event.actor == "dev"
+        ]
+        assert states[-1].payload["to"] == "busy"
+        assert states[-1].task_id == "TASK-LIVENESS-DEV"
 
     def test_crash_injects_recovery_briefing(
         self, state_dir: Path, claude_dev_config

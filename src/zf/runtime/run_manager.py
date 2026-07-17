@@ -16,7 +16,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import yaml
 
@@ -38,6 +38,13 @@ from zf.runtime.event_problem_registry import (
     spec_for_event,
 )
 from zf.runtime.channel_reply_remediation import pending_channel_reply_exhausted_actions
+from zf.runtime.autoresearch_invocation import recovery_case_id_from_payload
+from zf.autoresearch.self_repair import (
+    candidate_from_dict,
+    candidate_with_diagnosis,
+    repair_task_payload_from_candidate,
+    write_candidate_artifact,
+)
 from zf.runtime.repair_dispatch import pending_repair_dispatches
 from zf.runtime.pane_probe import build_runtime_pane_probe
 from zf.runtime.problem_taxonomy import problem_envelope_from_action
@@ -76,6 +83,7 @@ from zf.runtime.run_manager_wait_hint import (
 )
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.runtime.task_attempt_recovery import pending_task_attempt_recovery_actions
+from zf.runtime.terminal_events import latest_quiescent_run_terminal
 from zf.runtime.workflow_resume import build_workflow_resume_projection
 
 
@@ -84,6 +92,9 @@ RUN_CONTEXT_BUNDLE_SCHEMA_VERSION = "run-context-bundle.v1"
 RUN_MANAGER_CONTEXT_SIDECAR_SCHEMA_VERSION = "run-manager.context-bundle.v1"
 RUN_MANAGER_READ_SET_SCHEMA_VERSION = "run-manager.read-set.v1"
 RUN_GOAL_SCHEMA_VERSION = "run-goal.v1"
+RUN_GOAL_COMPLETION_CLAIMED = "run.goal.completion.claimed"
+RUN_GOAL_COMPLETION_BLOCKED = "run.goal.completion.blocked"
+RUN_GOAL_COMPLETION_REJECTED = "run.goal.completion.rejected"
 REPAIR_LEDGER_SCHEMA_VERSION = "repair-ledger.v1"
 REPAIR_MERGE_QUEUE_SCHEMA_VERSION = "repair-merge-queue.v1"
 RUN_COMPLETION_PROFILE_SCHEMA_VERSION = "run-completion-profile.v1"
@@ -305,7 +316,7 @@ def run_manager_tick(
     repairs_accepted = _accept_autoresearch_repairs(events, writer)
     if repairs_accepted:
         events = _read_events(state_dir, event_log=event_log)
-    autoresearch_consumed = _consume_autoresearch_results(events, writer)
+    autoresearch_consumed = _consume_autoresearch_results(state_dir, events, writer)
     if autoresearch_consumed:
         events = _read_events(state_dir, event_log=event_log)
     human_decisions_applied, human_decisions_rejected = _consume_human_decisions(
@@ -1775,32 +1786,74 @@ def build_run_goal_projection(
     events: list[ZfEvent],
     *,
     blocker_threshold: int = 3,
+    run_id: str = "",
 ) -> dict[str, Any]:
+    """Build one run's goal projection from a shared runtime event stream.
+
+    ``state_dir`` can contain sequential or concurrent workflow requests.
+    Legacy unscoped facts remain valid only when the log has exactly one known
+    run; in multi-run histories the caller must supply or derive a run identity.
+    """
+
+    from zf.runtime.run_scope import (
+        events_for_run,
+        known_run_ids,
+        resolve_run_for_event,
+        resolve_run_id,
+    )
+
+    all_events = list(events)
+    requested_run_id = str(run_id or "").strip()
+    selected_run_id = resolve_run_id(all_events, requested_run_id)
+    if not selected_run_id and not requested_run_id:
+        for event in reversed(all_events):
+            if event.type not in {
+                "run.goal.started",
+                "run.goal.updated",
+                "run.goal.completed",
+                "run.goal.blocked",
+            }:
+                continue
+            selected_run_id = resolve_run_for_event(all_events, event)
+            if selected_run_id:
+                break
+    if not selected_run_id and not requested_run_id:
+        known = known_run_ids(all_events)
+        if len(known) == 1:
+            selected_run_id = next(iter(known))
+    scoped_events = (
+        events_for_run(all_events, run_id=selected_run_id)
+        if selected_run_id
+        else ([] if requested_run_id else all_events)
+    )
+
     status = "unknown"
     objective = ""
-    run_id = ""
+    active_run_id = ""
     source_event_id = ""
     blockers: Counter[str] = Counter()
     last_blocker: dict[str, Any] = {}
-    for event in events:
+    for event in scoped_events:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if event.type == "run.goal.started":
             status = "active"
-            run_id = str(payload.get("run_id") or event.correlation_id or event.id)
+            active_run_id = str(
+                payload.get("run_id") or event.correlation_id or event.id
+            )
             objective = str(payload.get("objective") or "")
             source_event_id = event.id
         elif event.type == "run.goal.updated":
             status = str(payload.get("status") or status or "active")
             objective = str(payload.get("objective") or objective)
-            run_id = str(payload.get("run_id") or run_id)
+            active_run_id = str(payload.get("run_id") or active_run_id)
             source_event_id = event.id
         elif event.type == "run.goal.completed":
             status = "complete"
-            run_id = str(payload.get("run_id") or run_id)
+            active_run_id = str(payload.get("run_id") or active_run_id)
             source_event_id = event.id
         elif event.type == "run.goal.blocked":
             status = "blocked"
-            run_id = str(payload.get("run_id") or run_id)
+            active_run_id = str(payload.get("run_id") or active_run_id)
             source_event_id = event.id
         if event.type in {
             RUN_MANAGER_ACTION_VERIFY_FAILED,
@@ -1815,55 +1868,485 @@ def build_run_goal_projection(
                 "event_id": event.id,
                 "event_type": event.type,
             }
-    if status == "unknown" and any(event.type == "loop.started" for event in events):
+    if status == "unknown" and any(
+        event.type == "loop.started" for event in scoped_events
+    ):
         status = "active"
     blocked_ready = bool(
         status != "complete"
         and blockers
         and max(blockers.values()) >= blocker_threshold
     )
+    from zf.runtime.attempt_handoff_reducer import reduce_attempt_handoffs
+
+    handoff = reduce_attempt_handoffs(
+        scoped_events,
+        workflow_run_id=selected_run_id,
+    )
+    completion_gate_status = "not_claimed"
+    for event in scoped_events:
+        if event.type == RUN_GOAL_COMPLETION_CLAIMED:
+            completion_gate_status = "claimed"
+        elif event.type == RUN_GOAL_COMPLETION_BLOCKED:
+            completion_gate_status = "blocked"
+        elif event.type == RUN_GOAL_COMPLETION_REJECTED:
+            completion_gate_status = "rejected"
+        elif event.type == "run.goal.completed":
+            completion_gate_status = "passed"
     return {
         "schema_version": RUN_GOAL_SCHEMA_VERSION,
         "is_derived_projection": True,
-        "run_id": run_id,
+        "run_id": selected_run_id or active_run_id,
         "objective": objective,
         "status": status,
         "blocked_ready": blocked_ready,
         "blocker_threshold": blocker_threshold,
         "last_blocker": last_blocker,
         "source_event_id": source_event_id,
+        "delivery_phase": handoff["delivery_phase"],
+        "open_feedback_count": handoff["open_feedback_count"],
+        "pending_handoff_count": handoff["pending_handoff_count"],
+        "completion_gate_status": completion_gate_status,
+        "attempt_handoff_schema_version": handoff["schema_version"],
     }
 
 
-def run_goal_completion_event(
+def run_goal_completion_claim_event(
     events: list[ZfEvent], *, cause: ZfEvent
 ) -> ZfEvent | None:
-    """LB-1: emit run.goal.completed when a terminal success (judge.passed)
-    lands while a real goal is still active.
+    """Turn a semantic Judge verdict into a non-terminal completion claim."""
 
-    Without this the goal projection never reaches ``complete``, so the
-    run-manager keeps escalating/autoresearching after the deliverable already
-    passed (light baseline 2026-07-06: ~50min of tick/autoresearch churn after
-    judge.passed). Requires a genuine ``run.goal.started`` (non-empty run_id) so
-    the ``loop.started``→active fallback alone does not synthesize a completion.
-    Idempotent: returns None once the goal is already complete.
-    """
-    proj = build_run_goal_projection(events)
-    run_id = str(proj.get("run_id") or "")
+    from zf.runtime.run_scope import resolve_run_for_event
+
+    payload = cause.payload if isinstance(cause.payload, dict) else {}
+    result = (
+        payload.get("goal_closure_result")
+        if isinstance(payload.get("goal_closure_result"), dict)
+        else {}
+    )
+    run_id = str(result.get("workflow_run_id") or payload.get("workflow_run_id") or "")
+    run_id = run_id or resolve_run_for_event(events, cause)
+    if not run_id:
+        # Several concurrent runs plus an unscoped Judge is ambiguous. Do not
+        # let it close whichever run happened to be most recently projected.
+        return None
+    proj = build_run_goal_projection(events, run_id=run_id)
+    run_id = str(proj.get("run_id") or run_id)
     if proj.get("status") != "active" or not run_id:
         return None
+    goal_id = str(
+        result.get("goal_id")
+        or payload.get("goal_id")
+        or payload.get("feature_id")
+        or payload.get("pdd_id")
+        or ""
+    )
+    target_commit = str(
+        result.get("target_commit")
+        or payload.get("target_commit")
+        or payload.get("candidate_head_commit")
+        or payload.get("source_commit")
+        or ""
+    )
+    task_map_generation = str(
+        result.get("task_map_generation")
+        or payload.get("task_map_generation")
+        or ""
+    )
+    admitted_ref = payload.get("admitted_call_result_ref")
+    admitted_ref = dict(admitted_ref) if isinstance(admitted_ref, Mapping) else {}
+    control_ref = payload.get("control_result_ref")
+    control_ref = dict(control_ref) if isinstance(control_ref, Mapping) else {}
+    claim_semantics = {
+        "run_id": run_id,
+        "goal_id": goal_id,
+        "task_map_generation": task_map_generation,
+        "target_commit": target_commit,
+        "goal_claim_set_digest": str(result.get("goal_claim_set_digest") or ""),
+        "closure_fact_digest": str(result.get("closure_fact_digest") or ""),
+        "admitted_call_result_digest": str(admitted_ref.get("sha256") or ""),
+    }
+    claim_id = "goal-claim-" + hashlib.sha256(
+        json.dumps(
+            claim_semantics,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()[:20]
+    if any(
+        event.type == RUN_GOAL_COMPLETION_CLAIMED
+        and isinstance(event.payload, dict)
+        and str(event.payload.get("claim_id") or "") == claim_id
+        for event in events
+    ):
+        return None
     return ZfEvent(
-        type="run.goal.completed",
+        type=RUN_GOAL_COMPLETION_CLAIMED,
         actor="zf-cli",
         causation_id=cause.id,
         correlation_id=cause.correlation_id or run_id,
         payload={
             "run_id": run_id,
+            "workflow_run_id": run_id,
+            "goal_id": goal_id,
+            "pdd_id": str(payload.get("pdd_id") or goal_id),
+            "feature_id": str(
+                payload.get("feature_id") or payload.get("pdd_id") or goal_id
+            ),
+            "claim_id": claim_id,
             "objective": str(proj.get("objective") or ""),
-            "reason": f"terminal success: {cause.type}",
+            "claim_type": (
+                "admitted_goal_closure_result"
+                if result else "legacy_semantic_judge_verdict"
+            ),
+            "reason": f"semantic completion claim: {cause.type}",
             "source_event_id": cause.id,
+            "source_event_type": cause.type,
+            "task_id": str(cause.task_id or payload.get("task_id") or ""),
+            "task_map_generation": task_map_generation,
+            "target_commit": target_commit,
+            "candidate_ref": str(result.get("candidate_ref") or payload.get("candidate_ref") or ""),
+            "goal_claim_set_ref": str(result.get("goal_claim_set_ref") or ""),
+            "goal_claim_set_digest": str(result.get("goal_claim_set_digest") or ""),
+            "closure_fact_ref": str(result.get("closure_fact_ref") or ""),
+            "closure_fact_digest": str(result.get("closure_fact_digest") or ""),
+            "admitted_call_result_ref": admitted_ref,
+            "control_result_ref": control_ref,
+            "operation_id": str(payload.get("operation_id") or ""),
         },
     )
+
+
+def run_goal_completion_gate_event(
+    events: list[ZfEvent],
+    *,
+    claim: ZfEvent,
+    required_operation_ids: list[str] | tuple[str, ...] = (),
+    delivery_policy: str = "report_only",
+) -> ZfEvent | None:
+    """Evaluate one active claim against current mechanical truth.
+
+    ``run.goal.completed`` remains the only successful run truth.  The gate is
+    replay-safe and never lets a worker resolution claim close verifier
+    feedback by itself.
+    """
+
+    if claim.type != RUN_GOAL_COMPLETION_CLAIMED:
+        return None
+    claim_payload = claim.payload if isinstance(claim.payload, dict) else {}
+    claim_id = str(claim_payload.get("claim_id") or claim.id)
+    if any(
+        event.type in {"run.goal.completed", RUN_GOAL_COMPLETION_REJECTED}
+        and isinstance(event.payload, dict)
+        and str(event.payload.get("claim_id") or "") == claim_id
+        for event in events
+    ):
+        return None
+    from zf.runtime.run_scope import events_for_run, resolve_run_id
+
+    run_id = resolve_run_id(events, str(claim_payload.get("run_id") or ""))
+    if not run_id:
+        return None
+    scoped_events = events_for_run(events, run_id=run_id)
+    proj = build_run_goal_projection(scoped_events, run_id=run_id)
+    if proj.get("status") != "active" or not run_id:
+        return None
+
+    from zf.runtime.attempt_handoff_reducer import reduce_attempt_handoffs
+
+    handoff = reduce_attempt_handoffs(
+        scoped_events,
+        workflow_run_id=run_id,
+    )
+    blockers: list[str] = []
+    if int(handoff.get("open_feedback_count") or 0):
+        blockers.append("open_feedback")
+    if int(handoff.get("pending_handoff_count") or 0):
+        blockers.append("pending_handoff")
+    blocking_human = _blocking_human_decisions(scoped_events)
+    if blocking_human:
+        blockers.append("pending_human_decision")
+    active_attempts = [
+        item
+        for item in handoff.get("active_attempts") or []
+        if isinstance(item, dict) and item.get("status") == "active"
+    ]
+    if active_attempts:
+        blockers.append("active_attempt")
+    claim_target = str((claim.payload or {}).get("target_commit") or "").strip()
+    verified_target = _latest_independent_verify_target(scoped_events)
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    operation_views = reduce_workflow_operations(scoped_events)
+    unsettled_required_operations = [
+        operation_id
+        for operation_id in dict.fromkeys(
+            str(item).strip() for item in required_operation_ids if str(item).strip()
+        )
+        if str((operation_views.get(operation_id) or {}).get("status") or "")
+        != "settled"
+    ]
+    if unsettled_required_operations:
+        blockers.append("unsettled_required_operation")
+
+    invalid_reasons = _completion_claim_invalid_reasons(
+        scoped_events,
+        claim_payload=claim_payload,
+    )
+    if claim_target and verified_target and claim_target != verified_target:
+        invalid_reasons.append("verification_target_mismatch")
+    invalid_reasons = list(dict.fromkeys(invalid_reasons))
+
+    shared = {
+        "run_id": run_id,
+        "workflow_run_id": run_id,
+        "goal_id": str(claim_payload.get("goal_id") or ""),
+        "pdd_id": str(
+            claim_payload.get("pdd_id") or claim_payload.get("goal_id") or ""
+        ),
+        "feature_id": str(
+            claim_payload.get("feature_id") or claim_payload.get("pdd_id")
+            or claim_payload.get("goal_id") or ""
+        ),
+        "claim_id": claim_id,
+        "objective": str((claim.payload or {}).get("objective") or proj.get("objective") or ""),
+        "claim_event_id": claim.id,
+        "source_event_id": str((claim.payload or {}).get("source_event_id") or ""),
+        "target_commit": claim_target,
+        "verified_target_commit": verified_target,
+        "delivery_phase": str(handoff.get("delivery_phase") or ""),
+        "open_feedback_count": int(handoff.get("open_feedback_count") or 0),
+        "pending_handoff_count": int(handoff.get("pending_handoff_count") or 0),
+        "required_operation_ids": list(dict.fromkeys(required_operation_ids)),
+        "unsettled_required_operation_ids": unsettled_required_operations,
+        "task_map_generation": str(claim_payload.get("task_map_generation") or ""),
+        "goal_claim_set_ref": str(claim_payload.get("goal_claim_set_ref") or ""),
+        "goal_claim_set_digest": str(claim_payload.get("goal_claim_set_digest") or ""),
+        "admitted_call_result_ref": dict(
+            claim_payload.get("admitted_call_result_ref") or {}
+        ) if isinstance(claim_payload.get("admitted_call_result_ref"), Mapping) else {},
+        "delivery_policy": str(delivery_policy or "report_only"),
+    }
+    if invalid_reasons:
+        return ZfEvent(
+            type=RUN_GOAL_COMPLETION_REJECTED,
+            actor="zf-cli",
+            causation_id=claim.id,
+            correlation_id=claim.correlation_id or run_id,
+            payload={
+                **shared,
+                "invalid_reasons": invalid_reasons,
+                "reason": "completion claim identity is stale or invalid",
+            },
+        )
+    if blockers:
+        fingerprint = _completion_blocker_fingerprint(claim_id, blockers, shared)
+        if any(
+            event.type == RUN_GOAL_COMPLETION_BLOCKED
+            and isinstance(event.payload, dict)
+            and str(event.payload.get("claim_id") or "") == claim_id
+            and str(event.payload.get("blocker_fingerprint") or "") == fingerprint
+            for event in scoped_events
+        ):
+            return None
+        return ZfEvent(
+            type=RUN_GOAL_COMPLETION_BLOCKED,
+            actor="zf-cli",
+            causation_id=claim.id,
+            correlation_id=claim.correlation_id or run_id,
+            payload={
+                **shared,
+                "blockers": blockers,
+                "blocker_fingerprint": fingerprint,
+                "blocking_human_decision_count": len(blocking_human),
+                "active_attempt_count": len(active_attempts),
+                "reason": "completion claim has recoverable blockers",
+            },
+        )
+
+    if _delivery_requires_ship(delivery_policy):
+        delivery = _delivery_status(scoped_events, claim_id=claim_id)
+        if delivery == "settled":
+            pass
+        elif delivery == "not_requested":
+            operation_id = f"delivery-{claim_id}"
+            return ZfEvent(
+                type="run.delivery.requested",
+                actor="zf-cli",
+                causation_id=claim.id,
+                correlation_id=claim.correlation_id or run_id,
+                payload={
+                    **shared,
+                    "delivery_operation_id": operation_id,
+                    "candidate_ref": str(claim_payload.get("candidate_ref") or ""),
+                    "reason": "completion gate requires candidate delivery",
+                },
+            )
+        else:
+            delivery_blockers = [
+                "delivery_failed" if delivery == "failed" else "delivery_pending"
+            ]
+            fingerprint = _completion_blocker_fingerprint(
+                claim_id, delivery_blockers, shared,
+            )
+            if any(
+                event.type == RUN_GOAL_COMPLETION_BLOCKED
+                and isinstance(event.payload, dict)
+                and str(event.payload.get("claim_id") or "") == claim_id
+                and str(event.payload.get("blocker_fingerprint") or "") == fingerprint
+                for event in scoped_events
+            ):
+                return None
+            return ZfEvent(
+                type=RUN_GOAL_COMPLETION_BLOCKED,
+                actor="zf-cli",
+                causation_id=claim.id,
+                correlation_id=claim.correlation_id or run_id,
+                payload={
+                    **shared,
+                    "blockers": delivery_blockers,
+                    "blocker_fingerprint": fingerprint,
+                    "reason": "completion claim is waiting for delivery",
+                },
+            )
+    return ZfEvent(
+        type="run.goal.completed",
+        actor="zf-cli",
+        causation_id=claim.id,
+        correlation_id=claim.correlation_id or run_id,
+        payload={
+            **shared,
+            "reason": "completion claim passed deterministic gate",
+        },
+    )
+
+
+def _completion_claim_invalid_reasons(
+    events: list[ZfEvent],
+    *,
+    claim_payload: Mapping[str, Any],
+) -> list[str]:
+    if str(claim_payload.get("claim_type") or "") != "admitted_goal_closure_result":
+        return []
+    required = (
+        "run_id", "goal_id", "claim_id", "task_map_generation",
+        "target_commit", "goal_claim_set_ref", "goal_claim_set_digest",
+        "closure_fact_ref", "closure_fact_digest",
+    )
+    invalid = [
+        f"missing_{field}"
+        for field in required
+        if not str(claim_payload.get(field) or "").strip()
+    ]
+    admitted_ref = claim_payload.get("admitted_call_result_ref")
+    if not isinstance(admitted_ref, Mapping) or not str(admitted_ref.get("ref") or ""):
+        invalid.append("missing_admitted_call_result_ref")
+    current = None
+    for event in reversed(events):
+        if event.type not in {"flow.goal.closed", "module.parity.closed"}:
+            continue
+        body = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            str(body.get("workflow_run_id") or "") == str(claim_payload.get("run_id") or "")
+            and str(body.get("goal_id") or "") == str(claim_payload.get("goal_id") or "")
+        ):
+            current = body
+            break
+    if current is None:
+        invalid.append("closure_fact_missing")
+        return invalid
+    for claim_key, closure_key in (
+        ("task_map_generation", "task_map_generation"),
+        ("target_commit", "candidate_head_commit"),
+        ("goal_claim_set_digest", "goal_claim_set_digest"),
+        ("closure_fact_digest", "closure_fact_digest"),
+    ):
+        if str(claim_payload.get(claim_key) or "") != str(current.get(closure_key) or ""):
+            invalid.append(f"stale_{claim_key}")
+    return list(dict.fromkeys(invalid))
+
+
+def _completion_blocker_fingerprint(
+    claim_id: str,
+    blockers: list[str],
+    shared: Mapping[str, Any],
+) -> str:
+    body = {
+        "claim_id": claim_id,
+        "blockers": sorted(set(blockers)),
+        "open_feedback_count": int(shared.get("open_feedback_count") or 0),
+        "pending_handoff_count": int(shared.get("pending_handoff_count") or 0),
+        "unsettled_required_operation_ids": sorted(
+            str(item) for item in shared.get("unsettled_required_operation_ids", [])
+        ),
+    }
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _delivery_requires_ship(policy: str) -> bool:
+    return str(policy or "").strip().lower() in {
+        "ship", "ship_candidate", "candidate_ship", "code_merge", "merge",
+    }
+
+
+def _delivery_status(events: list[ZfEvent], *, claim_id: str) -> str:
+    status = "not_requested"
+    for event in events:
+        if event.type not in {
+            "run.delivery.requested", "run.delivery.settled",
+            "run.delivery.failed", "run.delivery.blocked",
+        }:
+            continue
+        body = event.payload if isinstance(event.payload, dict) else {}
+        if str(body.get("claim_id") or "") != claim_id:
+            continue
+        if event.type == "run.delivery.requested":
+            status = "pending"
+        elif event.type == "run.delivery.settled":
+            status = "settled"
+        else:
+            status = "failed"
+    return status
+
+
+def _latest_independent_verify_target(events: list[ZfEvent]) -> str:
+    """Return the latest explicit target accepted by an independent verifier.
+
+    Empty targets are ignored for legacy/light flows.  The gate compares only
+    when both Judge and Verify bind an immutable target, avoiding a semantic
+    guess for workflows that do not produce candidate commits.
+    """
+
+    for event in reversed(events):
+        if event.type not in {
+            "verify.passed",
+            "test.passed",
+            "review.approved",
+        }:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        target = str(
+            payload.get("target_commit")
+            or payload.get("candidate_head_commit")
+            or payload.get("source_commit")
+            or ""
+        ).strip()
+        if target:
+            return target
+    return ""
+
+
+def run_goal_completion_event(
+    events: list[ZfEvent], *, cause: ZfEvent
+) -> ZfEvent | None:
+    """Compatibility helper returning the gated outcome for one Judge event."""
+
+    claim = run_goal_completion_claim_event(events, cause=cause)
+    if claim is None:
+        return None
+    return run_goal_completion_gate_event([*events, claim], claim=claim)
 
 
 def build_repair_ledger(events: list[ZfEvent]) -> dict[str, Any]:
@@ -3116,6 +3599,7 @@ def _emit_autoresearch_request(
     project_root: Path | None,
     causation_id: str,
 ) -> bool:
+    recovery_case_id = recovery_case_id_from_payload(action)
     request_id = _run_manager_autoresearch_request_id(action)
     if _request_id_seen(writer.event_log, RUN_MANAGER_AUTORESEARCH_REQUESTED, request_id):
         return False
@@ -3140,6 +3624,7 @@ def _emit_autoresearch_request(
     payload = {
         "schema_version": "run-manager.autoresearch-request.v2",
         "request_id": request_id,
+        "recovery_case_id": recovery_case_id,
         "fingerprint": _fingerprint(action, fallback=request_id),
         "failure_class": str(action.get("failure_class") or "unknown_complex"),
         "owner_route": str(action.get("owner_route") or "run_manager"),
@@ -3152,6 +3637,13 @@ def _emit_autoresearch_request(
         "fanout_id": str(action.get("fanout_id") or ""),
         "pdd_id": str(action.get("pdd_id") or ""),
         "stage_id": str(action.get("stage_id") or ""),
+        "workflow_run_id": str(action.get("workflow_run_id") or ""),
+        "run_id": str(action.get("run_id") or ""),
+        "trace_id": str(action.get("trace_id") or ""),
+        "failure_scope": str(action.get("failure_scope") or ""),
+        "plan_admission_incident_id": str(action.get("plan_admission_incident_id") or ""),
+        "expected_fault": bool(action.get("expected_fault")),
+        "original_trigger_event_id": str(action.get("original_trigger_event_id") or ""),
         "source_event_ids": [
             str(value) for value in action.get("source_event_ids") or []
             if str(value).strip()
@@ -4925,7 +5417,11 @@ def _accept_autoresearch_repairs(events: list[ZfEvent], writer: EventWriter) -> 
     return count
 
 
-def _consume_autoresearch_results(events: list[ZfEvent], writer: EventWriter) -> int:
+def _consume_autoresearch_results(
+    state_dir: Path,
+    events: list[ZfEvent],
+    writer: EventWriter,
+) -> int:
     requests: dict[str, ZfEvent] = {}
     for event in events:
         if event.type != RUN_MANAGER_AUTORESEARCH_REQUESTED:
@@ -4959,6 +5455,15 @@ def _consume_autoresearch_results(events: list[ZfEvent], writer: EventWriter) ->
         if not request_id or request_id not in requests or request_id in consumed_request_ids:
             continue
         status = "failed" if event.type.endswith(".failed") else "completed"
+        count += _consume_autoresearch_candidate_result(
+            state_dir=state_dir,
+            events=events,
+            writer=writer,
+            request_event=requests[request_id],
+            result_event=event,
+            request_id=request_id,
+            status=status,
+        )
         writer.emit(
             RUN_MANAGER_AUTORESEARCH_CONSUMED,
             actor="run-manager",
@@ -4979,6 +5484,161 @@ def _consume_autoresearch_results(events: list[ZfEvent], writer: EventWriter) ->
         consumed_request_ids.add(request_id)
         count += 1
     return count
+
+
+def _consume_autoresearch_candidate_result(
+    *,
+    state_dir: Path,
+    events: list[ZfEvent],
+    writer: EventWriter,
+    request_event: ZfEvent,
+    result_event: ZfEvent,
+    request_id: str,
+    status: str,
+) -> int:
+    """Close one unverified candidate only after structured diagnosis facts.
+
+    A loop exit code only tells us that the diagnostic runner exited.  It is
+    not evidence of a reproducible ZaoFu source defect.  The candidate crosses
+    the source-repair boundary only when the loop result explicitly carries a
+    confirmed reproduction, evidence refs, and a narrow repair scope.
+    """
+
+    request_payload = _safe_mapping(request_event.payload)
+    recovery_case_id = recovery_case_id_from_payload(
+        request_payload,
+        fallback=request_id,
+    )
+    candidate_event = _candidate_for_recovery_case(
+        events,
+        request_id=request_id,
+        recovery_case_id=recovery_case_id,
+    )
+    if candidate_event is None:
+        return 0
+    created_payload = _safe_mapping(candidate_event.payload)
+    candidate_data = _safe_mapping(created_payload.get("candidate"))
+    if not candidate_data:
+        return 0
+    candidate_id = str(candidate_data.get("candidate_id") or "")
+    if not candidate_id or _candidate_terminal_exists(events, candidate_id):
+        return 0
+
+    candidate = candidate_from_dict(candidate_data)
+    result_payload = _safe_mapping(result_event.payload)
+    diagnosis = _safe_mapping(result_payload.get("diagnosis"))
+    if not diagnosis:
+        diagnosis = result_payload
+    evidence_paths = _diagnosis_paths(diagnosis)
+    repair_scope = _diagnosis_scope(diagnosis)
+    reproduction = str(
+        diagnosis.get("reproduction_status")
+        or diagnosis.get("reproduction")
+        or diagnosis.get("status")
+        or ""
+    ).strip().lower()
+
+    if candidate.expected_fault or candidate.failure_scope == "plan_admission":
+        candidate_status = "dismissed"
+        reason = "expected plan-admission fault is not a source-repair defect"
+    elif status == "failed":
+        candidate_status = "dismissed"
+        reason = "autoresearch diagnosis failed before reproducing a source defect"
+    elif reproduction in {"confirmed", "reproduced"} and evidence_paths and repair_scope:
+        candidate_status = "confirmed"
+        reason = "diagnosis reproduced the defect with scoped repair evidence"
+    else:
+        candidate_status = "dismissed"
+        reason = (
+            "diagnosis completed without explicit reproduced status, evidence refs, "
+            "and a narrow repair scope"
+        )
+
+    updated = candidate_with_diagnosis(
+        candidate,
+        status=candidate_status,
+        diagnosis_evidence_paths=evidence_paths,
+        repair_scope=repair_scope,
+        resolution_reason=reason,
+    )
+    candidate_path = write_candidate_artifact(state_dir, updated)
+    repair_task_payload = repair_task_payload_from_candidate(
+        updated,
+        candidate_path=candidate_path,
+    )
+    writer.emit(
+        f"autoresearch.bug_candidate.{candidate_status}",
+        actor="run-manager",
+        task_id=result_event.task_id or request_event.task_id,
+        causation_id=result_event.id,
+        correlation_id=result_event.correlation_id or request_event.correlation_id,
+        payload={
+            "schema_version": "autoresearch.bug-candidate-status.v1",
+            "candidate": updated.to_dict(),
+            "candidate_id": updated.candidate_id,
+            "candidate_path": str(candidate_path),
+            "recovery_case_id": updated.recovery_case_id,
+            "request_id": request_id,
+            "source_event_id": result_event.id,
+            "source_event_type": result_event.type,
+            "status": candidate_status,
+            "reason": reason,
+            "repair_task_payload": repair_task_payload,
+        },
+    )
+    return 1
+
+
+def _candidate_for_recovery_case(
+    events: list[ZfEvent],
+    *,
+    request_id: str,
+    recovery_case_id: str,
+) -> ZfEvent | None:
+    for event in reversed(events):
+        if event.type != "autoresearch.bug_candidate.created":
+            continue
+        payload = _safe_mapping(event.payload)
+        candidate = _safe_mapping(payload.get("candidate"))
+        if str(candidate.get("status") or "unverified") != "unverified":
+            continue
+        if recovery_case_id and str(candidate.get("recovery_case_id") or "") == recovery_case_id:
+            return event
+        if request_id and str(candidate.get("loop_request_id") or "") == request_id:
+            return event
+    return None
+
+
+def _candidate_terminal_exists(events: list[ZfEvent], candidate_id: str) -> bool:
+    for event in events:
+        if event.type not in {
+            "autoresearch.bug_candidate.confirmed",
+            "autoresearch.bug_candidate.dismissed",
+            "autoresearch.bug_candidate.superseded",
+        }:
+            continue
+        payload = _safe_mapping(event.payload)
+        if str(payload.get("candidate_id") or "") == candidate_id:
+            return True
+    return False
+
+
+def _diagnosis_paths(diagnosis: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("evidence_paths", "evidence_refs", "artifact_refs"):
+        values.extend(_string_list(diagnosis.get(key)))
+    for key in ("artifact_ref", "report_ref", "proposal_ref"):
+        value = str(diagnosis.get(key) or "").strip()
+        if value:
+            values.append(value)
+    return list(dict.fromkeys(values))
+
+
+def _diagnosis_scope(diagnosis: dict[str, Any]) -> list[str]:
+    values: list[str] = []
+    for key in ("repair_scope", "affected_paths", "changed_paths", "proposed_files"):
+        values.extend(_string_list(diagnosis.get(key)))
+    return list(dict.fromkeys(values))
 
 
 def _consume_human_decisions(
@@ -5939,6 +6599,18 @@ def _pending_semantic_event_actions(
             # threshold emits task.rework.capped. Candidate-level failures
             # (without task_id) still enter Run Manager immediately.
             continue
+        if event.type == "run.goal.completion.blocked":
+            blockers = {
+                str(item)
+                for item in event_payload.get("blockers", [])
+                if str(item).strip()
+            }
+            if blockers and blockers <= {"active_attempt", "delivery_pending"}:
+                continue
+            if "delivery_failed" in blockers and _matching_delivery_failure_exists(
+                events, event,
+            ):
+                continue
         spec = spec_for_event(event.type)
         if event.type in RUN_MANAGER_PENDING_EVENT_TYPES:
             if spec is None or spec.event_class != "expected_negative":
@@ -6055,6 +6727,7 @@ def _semantic_event_diagnostic_action(
     payload = event.payload if isinstance(event.payload, dict) else {}
     fingerprint = str(
         payload.get("fingerprint")
+        or payload.get("blocker_fingerprint")
         or f"semantic:{event.type}:{_semantic_event_scope(event, payload)}"
     )
     checkpoint_id = "semantic-diagnosis-" + hashlib.sha1(
@@ -6067,28 +6740,55 @@ def _semantic_event_diagnostic_action(
         or spec.title
         or event.type
     )
-    action = {
-        "schema_version": "run-manager.pending-action.v1",
-        "action": "diagnose-attention",
-        "checkpoint_id": checkpoint_id,
-        "safe_resume_action": "diagnose_attention",
-        "fingerprint": fingerprint,
-        "failure_class": spec.failure_class,
-        "owner_route": spec.owner_route or "run_manager",
-        "action_policy": spec.action_policy or "needs_diagnosis",
-        "intervention_class": spec.intervention_class or "semantic_replan",
-        "verify_condition": (
-            "expected_downstream_event:"
-            "run.manager.autoresearch.requested,run.manager.resident.prompted,"
-            "flow.gap_plan.ready,goal.gap_plan.ready,flow.goal.closed"
-        ),
-        "expected_downstream_events": [
+    blocker_recovery = (
+        _goal_completion_blocker_recovery(payload)
+        if event.type == "run.goal.completion.blocked"
+        else {}
+    )
+    suggested_action_kind = str(
+        blocker_recovery.get("suggested_action_kind")
+        or spec.suggested_action_kind
+        or "diagnose_semantic_event"
+    )
+    direct_controlled_action = (
+        suggested_action_kind
+        if suggested_action_kind in {"ship-retry"}
+        else ""
+    )
+    safe_resume_action = direct_controlled_action or "diagnose_attention"
+    expected_downstream = list(blocker_recovery.get("expected_downstream_events") or [])
+    if not expected_downstream:
+        expected_downstream = sorted(
+            router_expected_downstream_events(safe_resume_action)
+        ) if direct_controlled_action else [
             "run.manager.autoresearch.requested",
             "run.manager.resident.prompted",
             "flow.gap_plan.ready",
             "goal.gap_plan.ready",
             "flow.goal.closed",
-        ],
+        ]
+    action = {
+        "schema_version": "run-manager.pending-action.v1",
+        "action": direct_controlled_action or "diagnose-attention",
+        "checkpoint_id": checkpoint_id,
+        "safe_resume_action": safe_resume_action,
+        "fingerprint": fingerprint,
+        "failure_class": spec.failure_class,
+        "owner_route": spec.owner_route or "run_manager",
+        "action_policy": str(
+            blocker_recovery.get("action_policy")
+            or spec.action_policy
+            or "needs_diagnosis"
+        ),
+        "intervention_class": str(
+            blocker_recovery.get("intervention_class")
+            or spec.intervention_class
+            or "semantic_replan"
+        ),
+        "verify_condition": "expected_downstream_event:" + ",".join(
+            expected_downstream
+        ),
+        "expected_downstream_events": expected_downstream,
         "severity": spec.severity or "high",
         "title": spec.title or event.type,
         "summary": reason,
@@ -6098,16 +6798,18 @@ def _semantic_event_diagnostic_action(
         "source": spec.source,
         "suggested_route": spec.suggested_route,
         "suggested_action": {
-            "kind": spec.suggested_action_kind or "diagnose_semantic_event",
+            "kind": suggested_action_kind,
             "event_type": event.type,
             "scope": _semantic_event_scope(event, payload),
         },
-        "recommended_actions": [
-            "inspect_semantic_failure_event",
-            "compare_goal_or_parity_gap_evidence",
-            "request_gap_plan_or_semantic_replan",
-            "ask_autoresearch_if_recovery_is_not_mechanical",
-        ],
+        "recommended_actions": list(
+            blocker_recovery.get("recommended_actions") or [
+                "inspect_semantic_failure_event",
+                "compare_goal_or_parity_gap_evidence",
+                "request_gap_plan_or_semantic_replan",
+                "ask_autoresearch_if_recovery_is_not_mechanical",
+            ]
+        ),
         "expected_output": [
             "diagnosis_report",
             "gap_or_no_gap_decision",
@@ -6116,7 +6818,118 @@ def _semantic_event_diagnostic_action(
         ],
         "route_registry": "event-problem-registry.v1",
     }
+    if direct_controlled_action:
+        for key in (
+            "workflow_run_id", "run_id", "goal_id", "claim_id",
+            "delivery_operation_id", "candidate_ref", "target_ref",
+            "target_commit",
+        ):
+            value = payload.get(key)
+            if value not in (None, "", [], {}):
+                action[key] = value
     return action
+
+
+def _goal_completion_blocker_recovery(payload: dict[str, Any]) -> dict[str, Any]:
+    blockers = {
+        str(item)
+        for item in payload.get("blockers", [])
+        if str(item).strip()
+    }
+    if "pending_human_decision" in blockers:
+        return {
+            "suggested_action_kind": "await_goal_human_decision",
+            "action_policy": "needs_approval",
+            "intervention_class": "human_decision",
+            "expected_downstream_events": [
+                "human.decision.resolved",
+                "run.manager.human_decision.applied",
+            ],
+            "recommended_actions": [
+                "project_the_pending_decision_to_the_owner",
+                "apply_only_an_explicit_approved_decision",
+                "re_evaluate_the_same_completion_claim",
+            ],
+        }
+    if {"open_feedback", "pending_handoff"} <= blockers:
+        return {
+            "suggested_action_kind": "reconcile_goal_feedback_and_handoff",
+            "expected_downstream_events": [
+                "rework.feedback.verified_closed",
+                "attempt.handoff.closed",
+            ],
+            "recommended_actions": [
+                "resume_the_feedback_owner",
+                "verify_feedback_closure",
+                "close_the_attempt_handoff",
+                "re_evaluate_the_same_completion_claim",
+            ],
+        }
+    if "open_feedback" in blockers:
+        return {
+            "suggested_action_kind": "reconcile_goal_feedback",
+            "expected_downstream_events": [
+                "rework.feedback.verified_closed",
+                "rework.feedback.residual",
+            ],
+            "recommended_actions": [
+                "resume_the_feedback_owner",
+                "verify_feedback_closure",
+                "re_evaluate_the_same_completion_claim",
+            ],
+        }
+    if "pending_handoff" in blockers:
+        return {
+            "suggested_action_kind": "reconcile_goal_attempt_handoff",
+            "expected_downstream_events": [
+                "attempt.handoff.acknowledged",
+                "attempt.handoff.closed",
+            ],
+            "recommended_actions": [
+                "reconcile_the_current_attempt_handoff",
+                "preserve_the_original_lane_affinity",
+                "re_evaluate_the_same_completion_claim",
+            ],
+        }
+    if "unsettled_required_operation" in blockers:
+        return {
+            "suggested_action_kind": "await_required_workflow_operation",
+            "expected_downstream_events": [
+                "workflow.operation.settled",
+                "workflow.operation.failed",
+                "workflow.operation.blocked",
+            ],
+            "recommended_actions": [
+                "inspect_the_required_operation",
+                "resume_or_repair_its_current_attempt",
+                "re_evaluate_the_same_completion_claim",
+            ],
+        }
+    return {}
+
+
+def _matching_delivery_failure_exists(
+    events: list[ZfEvent],
+    blocked: ZfEvent,
+) -> bool:
+    payload = blocked.payload if isinstance(blocked.payload, dict) else {}
+    claim_id = str(payload.get("claim_id") or "")
+    run_id = str(payload.get("run_id") or payload.get("workflow_run_id") or "")
+    return any(
+        event.type in {"run.delivery.failed", "run.delivery.blocked"}
+        and isinstance(event.payload, dict)
+        and str(event.payload.get("claim_id") or "") == claim_id
+        and (
+            not run_id
+            or str(
+                event.payload.get("run_id")
+                or event.payload.get("workflow_run_id")
+                or event.correlation_id
+                or ""
+            ) == run_id
+        )
+        for event in events
+    )
 
 
 def _semantic_event_scope(event: ZfEvent, payload: dict[str, Any]) -> str:
@@ -6408,6 +7221,13 @@ def _pending_attention_diagnostic_actions(
             continue
         if str(item.get("status") or "open") not in {"", "open", "unacknowledged"}:
             continue
+        route = str(item.get("suggested_route") or item.get("recommended_route") or "")
+        if route in {"plan_revision", "l2_orchestrator"} or str(
+            item.get("failure_scope") or ""
+        ) == "plan_admission":
+            # Planner/task-map remediation is handled by the workflow replan
+            # route; Run Manager must not turn it into a source diagnosis.
+            continue
         action = _attention_diagnostic_action(item, resident_agent=resident_agent)
         fingerprint = str(action.get("fingerprint") or "")
         if fingerprint in seen:
@@ -6492,6 +7312,21 @@ def _attention_diagnostic_action(
         ],
         "route_registry": "run-manager-router.v1",
     }
+    suggested_action = action["suggested_action"]
+    for key in (
+        "workflow_run_id",
+        "run_id",
+        "trace_id",
+        "failure_scope",
+        "plan_admission_incident_id",
+        "expected_fault",
+        "original_trigger_event_id",
+    ):
+        value = item.get(key)
+        if value in (None, "", [], {}):
+            value = suggested_action.get(key)
+        if value not in (None, "", [], {}):
+            action[key] = value
     return action
 
 
@@ -6927,7 +7762,6 @@ def _action_payload(action: dict[str, Any]) -> dict[str, Any]:
         "candidate_id": str(action.get("candidate_id") or ""),
         "branch": str(action.get("branch") or ""),
         "worktree_path": str(action.get("worktree_path") or action.get("worktree") or ""),
-        "source_commit": str(action.get("source_commit") or ""),
         "source_title": str(action.get("source_title") or ""),
         "verification_plan": action.get("verification_plan")
         if isinstance(action.get("verification_plan"), list) else [],
@@ -7177,6 +8011,12 @@ _PROGRESS_SUCCESS_EVENTS = frozenset({
     "module.parity.closed",
     "judge.passed",
     "candidate.promoted",
+    "rework.feedback.verified_closed",
+    "attempt.handoff.closed",
+    "human.decision.resolved",
+    "run.manager.human_decision.applied",
+    "run.delivery.settled",
+    "run.goal.completed",
 })
 
 
@@ -7220,6 +8060,16 @@ def _progress_success_matches_source(
 ) -> bool:
     source_scope = _progress_scope(source_payload)
     success_scope = _progress_scope(success_payload)
+    if source_event.type in {
+        "run.goal.completion.blocked",
+        "run.goal.completion.rejected",
+        "run.delivery.failed",
+        "run.delivery.blocked",
+    }:
+        source_claim = str(source_payload.get("claim_id") or "")
+        success_claim = str(success_payload.get("claim_id") or "")
+        if source_claim and success_claim:
+            return source_claim == success_claim
     if source_scope and success_scope:
         return any(
             value and success_scope.get(key) == value
@@ -7247,6 +8097,7 @@ def _progress_scope(payload: dict[str, Any]) -> dict[str, str]:
         "trace_id",
         "candidate_ref",
         "target_ref",
+        "claim_id",
     ):
         value = str(payload.get(key) or "")
         if value:
@@ -7374,20 +8225,7 @@ def _repair_merge_key(payload: dict[str, Any], *, fallback: str) -> str:
 
 
 def _current_terminal_signal(events: list[ZfEvent]) -> ZfEvent | None:
-    terminal = _last_event(events, _TERMINAL_SIGNAL_EVENTS)
-    if terminal is None:
-        return None
-    try:
-        terminal_index = next(
-            idx for idx, event in enumerate(events)
-            if event.id == terminal.id
-        )
-    except StopIteration:
-        return terminal
-    for event in events[terminal_index + 1:]:
-        if event.type in _POST_TERMINAL_WORK_EVENTS:
-            return None
-    return terminal
+    return latest_quiescent_run_terminal(events)
 
 
 def _current_run_completed_closeout(events: list[ZfEvent]) -> ZfEvent | None:
@@ -7537,7 +8375,7 @@ def _diagnosis_action_request_stalled(
         request_id = _autoresearch_request_id(event, payload)
     if request_event is None:
         return False
-    if _current_run_completed_closeout(events) is not None:
+    if _current_terminal_signal(events) is not None:
         return False
     # 2026-07-10 E2E retest: anchor staleness age to the latest matching loop
     # lifecycle event, not the request. A loop legitimately running past the
@@ -8086,12 +8924,8 @@ def _autoresearch_request_id(event: ZfEvent, payload: dict[str, Any]) -> str:
 
 
 def _run_manager_autoresearch_request_id(action: dict[str, Any]) -> str:
-    raw = "|".join([
-        str(action.get("checkpoint_id") or ""),
-        str(action.get("safe_resume_action") or ""),
-        _fingerprint(action, fallback=""),
-    ])
-    return "rmar-" + hashlib.sha1(raw.encode("utf-8")).hexdigest()[:12]
+    recovery_case_id = recovery_case_id_from_payload(action)
+    return "rmar-" + hashlib.sha1(recovery_case_id.encode("utf-8")).hexdigest()[:12]
 
 
 def _request_id_seen(event_log: EventLog, event_type: str, request_id: str) -> bool:

@@ -8,6 +8,7 @@ import { ComposerSubmitButton } from "../../components/agent-session/ComposerSub
 import { deriveComposerStatus } from "../../components/agent-session/workState";
 import { useWorkingTitle } from "../../components/agent-session/useWorkingTitle";
 import { buildKanbanConversation } from "../../components/agent-session/projection";
+import { proposalRunNotice } from "../../app/triageProposals";
 import {
   defaultKanbanThreadKey,
   kanbanAgentConversationId,
@@ -362,6 +363,9 @@ export function OrchestratorPanel({
   const [headlessSplitThreadKey, setHeadlessSplitThreadKey] = useState("");
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
   const headlessInputRef = useRef<HTMLTextAreaElement | null>(null);
+  // Message typed before the first snapshot resolved the action gate — sent
+  // automatically once the gate is known (2026-07-16 first-message race).
+  const [pendingGateMessage, setPendingGateMessage] = useState<string | null>(null);
   const headlessThreadRef = useRef<HTMLDivElement | null>(null);
   const [headlessPinnedToBottom, setHeadlessPinnedToBottom] = useState(true);
   const [headlessHasNewBelow, setHeadlessHasNewBelow] = useState(false);
@@ -385,6 +389,42 @@ export function OrchestratorPanel({
       ? (passcodeRequired ? "passcode needed" : tokenRequired ? "token needed" : "locked")
       : "read only";
   const canUseAction = (action: string) => actionReady && allowedActions.includes(action);
+  useEffect(() => {
+    if (pendingGateMessage === null || !snapshot) return;
+    const message = pendingGateMessage;
+    setPendingGateMessage(null);
+    if (actionReady && allowedActions.includes("chat-orchestrator")) {
+      void submitHeadlessMessage(message);
+    } else {
+      setHeadlessMessage(message);
+      setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingGateMessage, snapshot, actionReady]);
+  // 8001 regression (operator report 2026-07-16): when the selected project is
+  // dead (root deleted -> snapshot 404s forever) the parked message became a
+  // black hole — cleared textarea, never sent, no feedback. Bound the park:
+  // if the snapshot still hasn't arrived after 6s, restore the message and
+  // say why instead of silently eating it.
+  useEffect(() => {
+    if (pendingGateMessage === null || snapshot) return;
+    const parked = pendingGateMessage;
+    const timer = window.setTimeout(() => {
+      setPendingGateMessage((current) => {
+        if (current === parked) {
+          setHeadlessMessage(parked);
+          setOperatorError(
+            "Runtime snapshot unavailable for this project — message not sent. "
+            + "Check the project selection (its root may be missing).",
+          );
+          return null;
+        }
+        return current;
+      });
+    }, 6000);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingGateMessage, snapshot]);
   const desiredOperatorScope = "project";
   const operatorBackendOptions = useMemo<OperatorBackendOption[]>(() => {
     const projected: OperatorBackendOption[] = [];
@@ -608,6 +648,16 @@ export function OrchestratorPanel({
       return;
     }
     if (!canUseAction("chat-orchestrator")) {
+      // First-message race (operator report 2026-07-16): before the snapshot
+      // arrives the gate reads "read only" and the send silently bounced.
+      // Park the message and let the snapshot effect below flush it instead
+      // of erroring on a gate that is merely unknown.
+      if (!snapshot) {
+        setPendingGateMessage(message);
+        setHeadlessMessage("");
+        setOperatorError("");
+        return;
+      }
       setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
       headlessInputRef.current?.focus();
       return;
@@ -741,9 +791,7 @@ export function OrchestratorPanel({
         }));
       } else {
         const taskId = textValue((result as Record<string, unknown> | undefined)?.task_id);
-        setPendingProposalNotice(taskId
-          ? `✓ ${taskId} created from “${item.title || item.action}”`
-          : `✓ executed “${item.title || item.action}”`);
+        setPendingProposalNotice(proposalRunNotice(item.action, item.title || item.action, taskId));
       }
     } catch (err) {
       setPendingProposalErrors((current) => ({
@@ -1289,7 +1337,12 @@ export function OrchestratorPanel({
               // operatorError but the input had no visible block, and the
               // experience read as "first message hangs, refresh fixes it".
               <div className="headless-composer-alert" role="alert">
-                {activeBackendTitle} is {actionState}. Save a valid action token to send messages.
+                {snapshot
+                  ? `${activeBackendTitle} is ${actionState}. Save a valid action token to send messages.`
+                  // Gate not resolved yet (first snapshot in flight): saying
+                  // "read only, save a token" here was a lie that flashed on
+                  // every panel open. Messages typed now park and auto-send.
+                  : "Connecting — messages send automatically once ready."}
               </div>
             ) : null}
             <textarea

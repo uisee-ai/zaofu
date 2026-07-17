@@ -63,12 +63,27 @@ def _workflow_judge_configured(config: ZfConfig | None) -> bool:
             return True
         if str(getattr(role, "name", "") or "").strip().lower() == "judge":
             return True
+    for stage in getattr(config.workflow, "stages", []) or []:
+        aggregate = getattr(stage, "aggregate", None)
+        if str(getattr(aggregate, "success_event", "") or "") == "goal.closure.synthesized":
+            return True
+    for pipeline in getattr(config.workflow, "pipelines", []) or []:
+        if str(getattr(pipeline, "final_success", "") or "") == "goal.closure.synthesized":
+            return True
     return False
 
 
 def _workflow_terminal_success_event(config: ZfConfig | None) -> str:
     if config is None:
         return ""
+    for stage in reversed(list(getattr(config.workflow, "stages", []) or [])):
+        aggregate = getattr(stage, "aggregate", None)
+        success = str(getattr(aggregate, "success_event", "") or "")
+        if success == "goal.closure.synthesized":
+            return "run.goal.completed"
+    for pipeline in getattr(config.workflow, "pipelines", []) or []:
+        if str(getattr(pipeline, "final_success", "") or "") == "goal.closure.synthesized":
+            return "run.goal.completed"
     published = {
         event_type
         for role in getattr(config, "roles", []) or []

@@ -10,8 +10,7 @@ from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events import EventLog, ZfEvent
 from zf.runtime.transport import make_transport
-from zf.runtime.backend import get_adapter
-from zf.runtime.injection import generate_role_instructions
+from zf.runtime.orchestrator import Orchestrator
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -139,25 +138,29 @@ def _restart_role(
         print(f"Error: Role '{role_name}' not found. Available: {[r.name for r in config.roles]}", file=sys.stderr)
         return 1
 
-    # Tear down and respawn
-    transport.terminate(role_name)
-    adapter = get_adapter(role.backend)
-    transport.spawn(role, adapter.build_command(role))
-
-    instructions = generate_role_instructions(
+    orchestrator = Orchestrator(
+        state_dir,
         config,
-        role,
-        state_dir_ref=state_dir,
+        transport,
         project_root=project_root,
     )
-    instructions_dir = state_dir / "instructions"
-    instructions_dir.mkdir(parents=True, exist_ok=True)
-    (instructions_dir / f"{role_name}.md").write_text(instructions)
+    decision = orchestrator.restart_role_instance(role)
+    if decision.action == "respawn_in_progress":
+        print(f"Restart already in progress for role: {role_name}")
+        return 0
+    if decision.action != "respawn":
+        print(f"Error: failed to restart role '{role_name}': {decision.reason}", file=sys.stderr)
+        return 1
 
     if event_log:
         event_log.append(ZfEvent(
             type="worker.restarted", actor="zf-cli",
-            payload={"role": role_name},
+            task_id=decision.task_id or None,
+            payload={
+                "role": role_name,
+                "recovery_action": decision.action,
+                "recovery_reason": decision.reason,
+            },
         ))
 
     print(f"Restarted role: {role_name}")

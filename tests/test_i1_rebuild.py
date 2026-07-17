@@ -1,4 +1,9 @@
-"""K4(I1 可执行性补全):投影可丢弃重建的证明测试。"""
+"""Projection-specific rebuild tests.
+
+These checks prove only that cost and the terminal-task index can be rebuilt
+from their declared inputs. They do not prove that EventLog can rebuild every
+canonical runtime store; see design 142.
+"""
 
 from __future__ import annotations
 

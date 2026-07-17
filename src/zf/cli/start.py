@@ -706,7 +706,10 @@ def run(args: argparse.Namespace) -> int:
     if lock_fh is None:
         print("Error: Another harness is running (lock held). To fix: run 'zf stop' first", file=sys.stderr)
         return 1
-    watcher_guard = SingleOwnerProcessGuard(state_dir / "processes" / "watcher.pid.json")
+    watcher_guard = SingleOwnerProcessGuard(
+        state_dir / "processes" / "watcher.pid.json",
+        component="watcher",
+    )
     watcher_guard_result = watcher_guard.acquire()
     if not watcher_guard_result.acquired:
         _release_lock(lock_fh, lock_path)
@@ -1124,6 +1127,7 @@ def run(args: argparse.Namespace) -> int:
             # `orchestrator.tick.failed` events so operators can see them
             # in events.jsonl and the web dashboard.
             try:
+                watcher_guard.heartbeat()
                 _run_orchestrator_idle_tick(orchestrator)
             except Exception as exc:
                 try:
@@ -1154,6 +1158,7 @@ def run(args: argparse.Namespace) -> int:
             on_tick=_on_tick,
             wake_patterns=wake_patterns,
             event_log=event_log,
+            shutdown_marker=state_dir / "shutdown-requested",
         )
         _maybe_run_startup_orchestrator_catchup(
             orchestrator,

@@ -12,7 +12,7 @@ from zf.core.config.schema import ZfConfig
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
-from zf.core.events.segments import iter_event_records
+from zf.core.events.segments import iter_event_records, list_event_segments
 from zf.core.security.redaction import redact_event
 from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
@@ -875,7 +875,10 @@ async def _tail_events(
     path = state_dir / "events.jsonl"
     event_log = event_log or EventLog(path)
     live_bus = LiveDeltaBus(state_dir)
-    live_cursors: dict[str, int] = {}
+    # Start at the current end of the scratch files: a fresh subscriber must
+    # not replay the delta backlog of already-finished turns (2026-07-16 P1 —
+    # one connect replayed 110 stale kanban deltas and resurrected live UI).
+    live_cursors: dict[str, int] = live_bus.current_cursors()
     live_sweep_countdown = 0
     live_bus.sweep()
     # Send initial heartbeat so EventSource onopen fires deterministically
@@ -884,13 +887,20 @@ async def _tail_events(
     last_inode = -1
     last_seq = 0
 
+    active_seq_base, last_seq = await asyncio.get_running_loop().run_in_executor(
+        None,
+        _active_event_seq_window,
+        state_dir,
+        path,
+    )
     try:
         stat = path.stat()
         last_inode = stat.st_ino
         last_size = stat.st_size
-        last_seq = _line_count(path)
-        replay_from = cursor if cursor is not None else 0
-        if cursor is not None and cursor > last_seq:
+        replay_from = cursor if cursor is not None else active_seq_base
+        if cursor is not None and (
+            cursor < active_seq_base or cursor > last_seq
+        ):
             yield _sse_gap(cursor=cursor, current=last_seq)
         else:
             # P1-8 (2026-07-09): the replay read (_read_events_with_seq) does a
@@ -904,12 +914,13 @@ async def _tail_events(
                 None, _read_events_with_seq, path, event_log
             )
             for seq, event in replay:
-                if seq <= replay_from:
+                global_seq = active_seq_base + seq
+                if global_seq <= replay_from:
                     continue
-                yield _sse_event(seq, event)
+                yield _sse_event(global_seq, event)
     except FileNotFoundError:
-        if cursor:
-            yield _sse_gap(cursor=cursor, current=0)
+        if cursor is not None and cursor != last_seq:
+            yield _sse_gap(cursor=cursor, current=last_seq)
 
     while True:
         if await request.is_disconnected():
@@ -919,11 +930,22 @@ async def _tail_events(
         except FileNotFoundError:
             await asyncio.sleep(0.5)
             continue
-        # Detect rotation (new inode) — reopen from start
-        if stat.st_ino != last_inode:
+        # Detect rotation/truncation and rebase the new active file after all
+        # archived segments. SSE ids share the same global sequence space as
+        # /events; resetting to the active-file line count permanently marks
+        # every post-rotation browser cursor as degraded.
+        if stat.st_ino != last_inode or stat.st_size < last_size:
             last_inode = stat.st_ino
             last_size = 0
-            last_seq = 0
+            active_seq_base, _current_seq = (
+                await asyncio.get_running_loop().run_in_executor(
+                    None,
+                    _active_event_seq_window,
+                    state_dir,
+                    path,
+                )
+            )
+            last_seq = active_seq_base
         if stat.st_size > last_size:
             try:
                 with path.open("rb") as f:
@@ -937,10 +959,12 @@ async def _tail_events(
                 line = raw_line.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
+                # Malformed rows still consume a global sequence number, which
+                # keeps SSE ids aligned with the canonical segmented read model.
+                last_seq += 1
                 event = event_log.decode_line(line)
                 if event is None or event.type == "event.malformed":
                     continue
-                last_seq += 1
                 yield _sse_event(last_seq, event)
         else:
             yield b": ping\n\n"  # comment heartbeat keeps connection warm
@@ -958,3 +982,14 @@ async def _tail_events(
             except Exception:
                 pass
         await asyncio.sleep(0.5)
+
+
+def _active_event_seq_window(state_dir: Path, active_path: Path) -> tuple[int, int]:
+    """Return ``(active_base, current_global_seq)`` for the SSE active file."""
+
+    active_base = sum(
+        _line_count(segment.path)
+        for segment in list_event_segments(state_dir)
+        if segment.kind == "archive"
+    )
+    return active_base, active_base + _line_count(active_path)

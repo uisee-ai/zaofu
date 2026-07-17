@@ -55,6 +55,10 @@ function projectPrefix(projectId?: string): string {
   return projectId ? `/api/projects/${encodeURIComponent(projectId)}` : "/api";
 }
 
+export function invalidateProjectReadCache(projectId: string): void {
+  clearGetCache(projectPrefix(projectId));
+}
+
 function normalizeWebActionToken(value: string): string {
   let base = value.trim();
   if (
@@ -124,10 +128,11 @@ export interface BootstrapInspect {
 
 export async function inspectBootstrap(root: string, backend = "claude"): Promise<BootstrapInspect> {
   const response = await fetch(`/api/workspace/bootstrap/inspect?root=${encodeURIComponent(root)}&backend=${encodeURIComponent(backend)}`, {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...webActionAuthHeaders() },
   });
-  if (!response.ok) throw new Error(`inspect failed: ${response.status}`);
-  return response.json();
+  const data = (await response.json()) as BootstrapInspect & { reason?: string };
+  if (!response.ok) throw new Error(data.reason || `inspect failed: ${response.status}`);
+  return data;
 }
 
 export async function updateOnboarding(payload: {
@@ -138,11 +143,18 @@ export async function updateOnboarding(payload: {
 }): Promise<Record<string, unknown>> {
   const response = await fetch("/api/workspace/onboarding", {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...webActionAuthHeaders(),
+    },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`onboarding update failed: ${response.status}`);
-  return response.json();
+  const data = (await response.json()) as Record<string, unknown>;
+  if (!response.ok) {
+    throw new Error(String(data.reason || `onboarding update failed: ${response.status}`));
+  }
+  return data;
 }
 
 export async function validateWorkspaceProjectPath(root: string): Promise<Record<string, unknown>> {
@@ -151,6 +163,7 @@ export async function validateWorkspaceProjectPath(root: string): Promise<Record
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
+      ...webActionAuthHeaders(),
     },
     body: JSON.stringify({ root }),
   });
@@ -280,6 +293,7 @@ export async function touchWorkspaceProject(projectId: string): Promise<Record<s
     method: "POST",
     headers: {
       Accept: "application/json",
+      ...webActionAuthHeaders(),
     },
   });
   const data = (await response.json()) as Record<string, unknown>;

@@ -185,6 +185,45 @@ class TestClaudeRespawn:
         assert new_id in argv
         assert first_id not in argv    # did not collide on the live-held id
 
+    def test_rotation_purges_stale_lock_for_the_rotated_candidate(
+        self, coordinator, transport, registry, tmp_path, monkeypatch,
+    ):
+        """A prior state_dir can have left the first rotated UUID stale.
+
+        The old one-shot rotation only purged the original UUID.  The fresh
+        candidate then inherited a second stale ``lastSessionId`` and Claude
+        exited immediately with "Session ID is already in use".
+        """
+        monkeypatch.setattr(
+            "zf.runtime.spawn_coordinator.Path.home",
+            staticmethod(lambda: tmp_path),
+        )
+        role = RoleConfig(name="dev", backend="claude-code", permission_mode="bypass")
+        coordinator.spawn(role)
+        first_id = str(registry.get("dev"))
+        transport.spawn_calls.clear()
+
+        probe = RoleSessionRegistry(tmp_path / "probe.yaml", project_root="/tmp/zf")
+        probe.get_or_create("dev", backend="claude-code")
+        rotated_id = str(probe.rotate("dev"))
+        claude_config = tmp_path / ".claude.json"
+        claude_config.write_text(json.dumps({
+            "projects": {"/previous-run": {"lastSessionId": rotated_id}},
+        }), encoding="utf-8")
+
+        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid: False)
+        monkeypatch.setattr(
+            "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
+            lambda candidate: candidate == first_id,
+        )
+
+        coordinator.spawn(role)
+
+        _, argv, _ = transport.spawn_calls[0]
+        assert str(registry.get("dev")) == rotated_id
+        assert rotated_id in argv
+        assert json.loads(claude_config.read_text(encoding="utf-8"))["projects"]["/previous-run"]["lastSessionId"] == ""
+
     def test_second_spawn_without_session_file_uses_session_id(
         self, coordinator, transport, registry, monkeypatch,
     ):
@@ -778,12 +817,6 @@ class TestPurgeStaleClaudeSession:
             "zf.runtime.spawn_coordinator.Path.home",
             staticmethod(lambda: tmp_path),
         )
-        # Pretend a live process holds the uuid
-        monkeypatch.setattr(
-            "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
-            lambda uuid: True,
-        )
-
         events_path = state_dir / "events.jsonl"
         event_log = EventLog(events_path)
         coord = SpawnCoordinator(
@@ -792,6 +825,14 @@ class TestPurgeStaleClaudeSession:
         )
         role = RoleConfig(name="dev", backend="claude-code", permission_mode="bypass")
         expected_uuid = str(registry.get_or_create("dev", backend="claude-code"))
+
+        # The old UUID is owned by a live process. A rotated UUID is available,
+        # so the coordinator must leave the live session's lock untouched and
+        # continue with the new candidate.
+        monkeypatch.setattr(
+            "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
+            lambda uuid: uuid == expected_uuid,
+        )
 
         claude_config = tmp_path / ".claude.json"
         claude_config.write_text(json.dumps({
@@ -805,6 +846,7 @@ class TestPurgeStaleClaudeSession:
         # claude.json should NOT have been touched (lastSessionId stays)
         post = json.loads(claude_config.read_text())
         assert post["projects"]["/some/repo"]["lastSessionId"] == expected_uuid
+        assert str(registry.get("dev")) != expected_uuid
 
         # No purge event
         if events_path.exists():

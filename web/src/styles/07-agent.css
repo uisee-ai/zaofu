@@ -153,16 +153,28 @@
   font-weight: 560;
 }
 
-.agent-run-mini-status {
-  color: var(--muted-foreground);
-  font-size: var(--text-12);
-}
-
 .agent-chat-details {
   display: flex;
   flex-direction: column;
   gap: 4px;
   margin-top: 6px;
+}
+
+/* Live turn indicator (stream-ux axis 2): pulsing dots + member + elapsed
+   timer, rendered as the run header's single status line while a run works
+   and no reply text has arrived. */
+.agent-thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: var(--text-13);
+}
+
+/* Live tool-call ordinal (stream-ux axis 3) above the current tool row. */
+.agent-tool-live-count {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
 }
 
 /* Fullscreen split preview pane (chat | preview). */

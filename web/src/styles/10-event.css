@@ -540,19 +540,28 @@
   }
 
   .project-rail {
-    max-height: 260px;
+    max-height: none;
   }
 
   .project-rail-body {
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
+    display: none;
+  }
+
+  .project-rail.mobile-open .project-rail-body {
+    display: grid;
+    max-height: min(70vh, 560px);
+    overflow-y: auto;
+    overflow-x: hidden;
     padding-bottom: 12px;
+  }
+
+  .rail-mobile-toggle {
+    display: grid;
   }
 
   .rail-group,
   .rail-section {
-    flex: 0 0 190px;
+    min-width: 0;
   }
 
   .side-panel {
@@ -822,19 +831,11 @@
   }
 
   .project-rail {
-    max-height: 240px;
+    max-height: none;
   }
 
   .project-rail-body {
-    display: flex;
-    gap: 10px;
-    overflow-x: auto;
-    padding-bottom: 12px;
-  }
-
-  .rail-group,
-  .rail-section {
-    flex: 0 0 176px;
+    display: none;
   }
 
   .task-search-input {

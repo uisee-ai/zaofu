@@ -24,7 +24,11 @@ from zf.runtime.cli_command import zf_cli_cmd
 # mismatching in production (the silent-drift guard the static vectors lack).
 # Removing mechanism 2 (option A) is deferred until the bypass flag is
 # confirmed sufficient across all codex spawn modes.
-CODEX_HASH_VERIFIED_VERSION = "0.142"
+# 0.144 re-verified 2026-07-16 (P3 drill): rendered hooks + pre-seeded trust
+# hashes in a scratch CODEX_HOME, ran codex-cli 0.144.1 headless — all five
+# zaofu hooks fired (codex.hook.session_start/user_prompt_submit/... landed in
+# events.jsonl). A drifted hash would have left the hooks untrusted and silent.
+CODEX_HASH_VERIFIED_VERSION = "0.144"
 
 
 CODEX_HOOK_EVENTS: tuple[tuple[str, str], ...] = (

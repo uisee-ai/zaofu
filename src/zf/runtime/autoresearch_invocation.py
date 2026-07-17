@@ -25,6 +25,46 @@ _SAFE_LEVELS = {"", "diagnose", "l1", "L1"}
 _DIRECT_APPLY_POLICIES = {"direct_apply", "mainline_apply", "auto_apply", "apply_to_main"}
 
 
+def recovery_case_id_from_payload(
+    payload: dict[str, Any],
+    *,
+    fallback: str = "",
+) -> str:
+    """Build the producer-independent identity of one recovery case.
+
+    Invocation request ids are transport details.  Dedupe must instead bind to
+    the run/failure identity so Supervisor, a capped stall, and Run Manager
+    cannot create parallel diagnoses for the same root cause.
+    """
+
+    existing = str(payload.get("recovery_case_id") or "").strip()
+    if existing:
+        return existing
+    source_ids = _string_list(payload.get("source_event_ids"))
+    identity = "|".join([
+        str(
+            payload.get("workflow_run_id")
+            or payload.get("run_id")
+            or payload.get("trace_id")
+            or payload.get("correlation_id")
+            or ""
+        ).strip(),
+        str(payload.get("failure_scope") or payload.get("failure_class") or "").strip(),
+        str(payload.get("plan_admission_incident_id") or "").strip(),
+        str(payload.get("fingerprint") or payload.get("attention_id") or "").strip(),
+        str(payload.get("task_id") or "").strip(),
+        str(payload.get("stage_id") or "").strip(),
+        str(payload.get("fanout_id") or "").strip(),
+        str(
+            payload.get("original_trigger_event_id")
+            or payload.get("source_event_id")
+            or (source_ids[0] if source_ids else "")
+            or fallback
+        ).strip(),
+    ])
+    return "rcase-" + _sha1(identity)[:16]
+
+
 def autoresearch_invocation_projection(events: list[ZfEvent]) -> dict[str, Any]:
     invocations: dict[str, dict[str, Any]] = {}
     by_status: Counter[str] = Counter()
@@ -92,7 +132,8 @@ def build_invocation_request_event(
     if str(decision.get("route") or "") != "supervisor_autoresearch":
         return None
     fingerprint = str(item.get("fingerprint") or item.get("attention_id") or "")
-    invocation_id = "arinv-" + _sha1(fingerprint)[:12]
+    recovery_case_id = recovery_case_id_from_payload(item, fallback=fingerprint)
+    invocation_id = "arinv-" + _sha1(recovery_case_id)[:12]
     if invocation_id in handled_invocation_ids(events):
         return None
     source_event_ids = [
@@ -102,6 +143,7 @@ def build_invocation_request_event(
     payload = {
         "schema_version": AUTORESEARCH_INVOCATION_SCHEMA_VERSION,
         "invocation_id": invocation_id,
+        "recovery_case_id": recovery_case_id,
         "source": "supervisor",
         "level": "diagnose",
         "apply_policy": "proposal_only",
@@ -161,7 +203,8 @@ def build_invocation_request_from_run_manager_event(
     ).strip()
     if not request_id:
         return None
-    invocation_id = str(payload.get("invocation_id") or f"arinv-rm-{_sha1(request_id)[:12]}")
+    recovery_case_id = recovery_case_id_from_payload(payload, fallback=request_id)
+    invocation_id = str(payload.get("invocation_id") or f"arinv-{_sha1(recovery_case_id)[:12]}")
     if invocation_id in handled_invocation_ids(events):
         return None
     source_event_ids = _string_list(payload.get("source_event_ids"))
@@ -179,6 +222,7 @@ def build_invocation_request_from_run_manager_event(
         payload=redact_obj({
             "schema_version": AUTORESEARCH_INVOCATION_SCHEMA_VERSION,
             "invocation_id": invocation_id,
+            "recovery_case_id": recovery_case_id,
             "request_id": request_id,
             "loop_request_id": request_id,
             "run_manager_request_id": request_id,
@@ -383,11 +427,25 @@ def _copy_request_identity(source: dict[str, Any], target: dict[str, Any]) -> No
         or source.get("loop_request_id")
         or ""
     ).strip()
-    if not request_id:
-        return
-    target["request_id"] = request_id
-    target["loop_request_id"] = request_id
-    target["run_manager_request_id"] = request_id
+    if request_id:
+        target["request_id"] = request_id
+        target["loop_request_id"] = request_id
+        target["run_manager_request_id"] = request_id
+    for key in (
+        "recovery_case_id",
+        "workflow_run_id",
+        "run_id",
+        "trace_id",
+        "failure_scope",
+        "plan_admission_incident_id",
+        "expected_fault",
+        "original_trigger_event_id",
+        "stage_id",
+        "fanout_id",
+    ):
+        value = source.get(key)
+        if value not in (None, "", [], {}):
+            target[key] = value
 
 
 __all__ = [
@@ -400,6 +458,7 @@ __all__ = [
     "handled_invocation_ids",
     "invocation_id_from_payload",
     "rejection_payload",
+    "recovery_case_id_from_payload",
     "trigger_payload_from_invocation",
     "validate_invocation_request",
 ]

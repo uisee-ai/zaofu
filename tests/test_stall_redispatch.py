@@ -56,7 +56,7 @@ def test_redispatch_reemits_trigger_with_same_payload_under_cap():
     assert re.type == "candidate.ready"  # re-emits the trigger → bypasses _fanout_started
     assert re.payload["candidate_ref"] == "cand/F1"  # carries the original payload
     assert re.payload["fanout_id"] == "impl-1"
-    assert re.payload["redispatch_fingerprint"] == FP
+    assert re.payload["redispatch_fingerprint"] == finding.fingerprint
     assert re.payload["redispatch_attempt"] == 1
 
 
@@ -88,14 +88,17 @@ def test_emit_stall_recoveries_redispatches_first(tmp_path):
 def test_emit_stall_recoveries_escalates_at_cap(tmp_path):
     log = EventLog(tmp_path / "e.jsonl")
     writer = EventWriter(log)
-    evs = _stalled() + [_ev("candidate.ready", feature_id="F1", redispatch_fingerprint=FP)
-                        for _ in range(3)]
+    evs = _stalled()
+    finding = detect_structural_stalls(evs, stages=STAGES)[0]
+    evs += [_ev("candidate.ready", feature_id="F1", redispatch_fingerprint=finding.fingerprint)
+            for _ in range(3)]
     # latest trigger is a re-dispatch; push it back from the tail so it's still detectable
     evs += [_ev("orchestrator.decision.recorded") for _ in range(6)]
     n = emit_stall_recoveries(evs, writer, stages=STAGES, redispatch_cap=3)
     assert n == 1
     types = [e.type for e in log.read_all()]
-    assert "autoresearch.invocation.requested" in types  # cap reached → escalate
+    assert "dispatch.silent_stall" in types  # cap reached → RM-owned diagnosis
+    assert "autoresearch.invocation.requested" not in types
 
 
 # --- B-FIX-06 (R32 双派发): trigger 已起 active fanout 则抑制重发 ---

@@ -1,7 +1,8 @@
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, MessageSquare, Plus, Radio, Route, Settings, Trash2 } from "lucide-react";
+import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 import type { LiveState, PageId } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
 
@@ -54,6 +55,15 @@ export function WorkspaceRail({
   selectedChannelId: string;
   snapshot: Snapshot | null;
 }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const openPage = (nextPage: PageId) => {
+    onOpenPage(nextPage);
+    setMobileOpen(false);
+  };
+  const openChannel = (channelId: string) => {
+    onOpenChannel(channelId);
+    setMobileOpen(false);
+  };
   const tasks = snapshot ? allBoardTasks(snapshot) : [];
   const activeTasks = tasks.filter((task) => task.status !== "done" && task.status !== "cancelled");
   const inferredProject: WorkspaceProject | null = activeProjectId ? {
@@ -109,15 +119,27 @@ export function WorkspaceRail({
         : activePage;
 
   return (
-    <section className="panel project-rail" aria-label="Navigation rail">
+    <section className={`panel project-rail ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navigation rail">
       <div className="section-heading">
         <div>
           <h2>Control</h2>
           {/* count removed: the unified header is the single count source (doc116 §11.2) */}
         </div>
-        <span className={`status-dot ${liveState === "live" ? "ok" : "warn"}`} />
+        <div className="rail-heading-actions">
+          <span className={`status-dot ${liveState === "live" ? "ok" : "warn"}`} />
+          <button
+            aria-controls="workspace-navigation"
+            aria-expanded={mobileOpen}
+            aria-label={mobileOpen ? "Close navigation" : "Open navigation"}
+            className="rail-mobile-toggle"
+            type="button"
+            onClick={() => setMobileOpen((open) => !open)}
+          >
+            {mobileOpen ? <X aria-hidden="true" size={17} /> : <Menu aria-hidden="true" size={17} />}
+          </button>
+        </div>
       </div>
-      <div className="project-rail-body">
+      <div className="project-rail-body" id="workspace-navigation">
         <div className="rail-group workspace-context-group">
           <span className="rail-nav-title">Workspace</span>
           {projectOptions.length ? (
@@ -127,7 +149,10 @@ export function WorkspaceRail({
                   aria-label="Project"
                   title={selectedProject?.root || selectedProjectValue}
                   value={selectedProjectValue}
-                  onChange={(event) => onSelectProject(event.target.value)}
+                  onChange={(event) => {
+                    onSelectProject(event.target.value);
+                    setMobileOpen(false);
+                  }}
                 >
                   {projectOptions.map((project) => (
                     <option key={project.project_id} value={project.project_id}>
@@ -159,11 +184,11 @@ export function WorkspaceRail({
               </span>
             </button>
           )}
-          <RailNav title="" items={workspaceNav} activePage={railActivePage} onOpenPage={onOpenPage} />
+          <RailNav title="" items={workspaceNav} activePage={railActivePage} onOpenPage={openPage} />
         </div>
         <div className="rail-group">
           <span className="rail-nav-title">Monitoring</span>
-          <RailNav title="" items={monitoringNav} activePage={railActivePage} onOpenPage={onOpenPage} />
+          <RailNav title="" items={monitoringNav} activePage={railActivePage} onOpenPage={openPage} />
         </div>
         <div className="rail-group">
           <span className="rail-nav-title">Channels</span>
@@ -173,7 +198,7 @@ export function WorkspaceRail({
                 className={`rail-nav-button channel-nav-button ${activePage === "channels" && selectedChannelId === channelIdOf(channel) ? "active" : ""}`}
                 key={channelIdOf(channel)}
                 type="button"
-                onClick={() => onOpenChannel(channelIdOf(channel))}
+                onClick={() => openChannel(channelIdOf(channel))}
               >
                 <span className="rail-nav-label">
                   <MessageSquare aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
@@ -197,7 +222,7 @@ export function WorkspaceRail({
             <span>System</span>
             <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
           </summary>
-          <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={onOpenPage} />
+          <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} />
         </details>
         {actionResult && shouldShowRailActionResult(actionResult) ? (
           <p className="empty-text compact-error">{actionResult.status}: {actionResult.reason}</p>

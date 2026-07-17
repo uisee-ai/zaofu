@@ -31,6 +31,21 @@
   }
 
   .agent-attention-cockpit .inline-row {
-    grid-template-columns: max-content minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+    text-align: left;
+  }
+
+  .agent-attention-cockpit .inline-row > span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .agent-attention-cockpit .agent-attention-severity {
+    justify-self: start;
+  }
+
+  .agent-attention-cockpit .agent-attention-target {
+    font-weight: 600;
   }
 }

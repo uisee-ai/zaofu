@@ -14,7 +14,7 @@ spec:
   targetRoot: app
   qualityFloor: product-demo
   evidencePolicy: strict_refs
-  deliveryPolicy: report_and_demo
+  deliveryPolicy: ship_candidate
 ---
 apiVersion: zaofu.dev/v1
 kind: ZfConfig
@@ -37,16 +37,29 @@ spec:
   project:
     name: prd-light-v3
   goal:
-    # goal.enabled 下 light 入口合成 task_map 时同点补发 run.goal.started
-    # (run_id=run-light-<pdd>-<trigger id>),judge.passed 后 kernel 自动
-    # run.goal.completed——goal 生命周期全程免手工(2026-07-08)。
+    # light 入口合成 task_map 时同点补发 run.goal.started；admitted Thin
+    # Judge result 经 Completion Gate 与 delivery operation 产生唯一终态。
     enabled: true
   runtime:
-    # light 拓扑目标是全程一键到 ship:judge.passed(终局门)后 kernel 自动把
-    # candidate 合入 ship_target_branch,操作员不再手工 `git merge candidate/*`。
-    # ship_target_branch 默认 main;master 基线仓请 override 为 master。
+    # Legacy active-run compatibility only. New runs use deliveryPolicy.
     git:
       auto_ship_on_judge_passed: true
+  # 单 lane light 流同样受候选树质量门保护(fanout_writer_scoped 段
+  # 无 gates 时 validate 会 WARN)。用项目真实命令替换 TODO 后取消注释;
+  # light 的 verify 是 LLM 角色,机械门是它的对照组——两者缺一不可
+  # (141 §19.5:轻拓扑 + 零机械门 = 比无分级更糟)。
+  # quality_gates:
+  #   static:
+  #     required_checks:
+  #       - "TODO: typecheck 命令(如 cd app && npx tsc --noEmit / mypy src)"
+  #       - "TODO: 单测命令(如 cd app && python -m pytest -q)"
+  #     on_fail: "candidate tree failed static gate — 修复后重触发集成"
   workflow:
+    # 分级声明(doc133 tier;141 §19.5):intake/submit 链路的
+    # workflow_tier 缺省值。micro/light/standard/full 之外的值
+    # 会被 schema fail-closed 拒绝。
+    kind_routes:
+      prd:
+        default_tier: light
     dag:
       external_triggers: [prd.requested, task_map.ready]

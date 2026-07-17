@@ -75,9 +75,9 @@ time the reviewer would otherwise spend rediscovering structure:
 1. `AGENTS.md` — repository rules at top level
 2. `docs/design/00-index.md` — canonical doc map, lists design docs with
    one-line summaries + status
-3. `docs/design/44-zaofu-self-assessment-multi-agent-long-horizon.md` —
-   recent self-assessment with Multi-Agent / Long-Horizon scoring and
-   change-tracking table; treat it as baseline to verify, not truth to copy
+3. `docs/design/142-layered-runtime-authority-and-orchestration-modes.md` —
+   canonical authority, storage, orchestration-mode, and residual-gap boundary;
+   doc 44 is only a historical scoring snapshot
 4. `.claude/rules/code.md`, `.claude/rules/backlogs.md`,
    `.claude/rules/docs.md` — path-scoped rules and backlog/doc discipline
 
@@ -130,8 +130,8 @@ not biased toward only the files already known to the reviewer:
   -> Web/API/operator surfaces
 - external contracts: provider CLIs, tmux, git worktrees, browser E2E,
   Feishu/OpenClaw integrations, file artifacts
-- state/artifact inventory: source files vs runtime truth vs rebuildable
-  projections vs exported reports
+- state/artifact inventory: source files vs event ledger vs canonical stores vs
+  required artifacts/sidecars vs rebuildable projections and exported reports
 - security boundaries: tokens, permission modes, path guards, read-only vs
   mutation routes, secret redaction
 - compatibility surfaces: examples, runbooks, CLI flags, YAML schema, skill
@@ -153,12 +153,17 @@ not biased toward only the files already known to the reviewer:
 
 ### Step 3 — State Ownership
 
-- Verify kernel-managed runtime truth flows through `EventWriter` /
-  `EventLog`, `TaskStore`, `FeatureStore`, and `SessionStore`.
+- Verify layered authority follows doc 142: event occurrence/causation/verdict
+  refs through `EventWriter` / `EventLog`; current state through `TaskStore`,
+  `FeatureStore`, `SessionStore`, and `RoleSessionRegistry`; complete semantic
+  bodies/evidence through sanctioned artifact/sidecar writers.
 - Flag direct writes to `events.jsonl`, `kanban.json`, `session.yaml`,
   `feature_list.json`, or `role_sessions.yaml` outside allowed helpers.
-- Treat skills, workdirs, lockfiles, progress, cost, diagnostics, traces, and
-  dashboard state as rebuildable projections unless code proves otherwise.
+- Treat `skills/` as source and provider skill trees as synced copies. Do not
+  classify active workdirs/worktrees as disposable while they may contain
+  uncommitted candidates. Classify lockfiles, progress, cost, diagnostics,
+  traces, and dashboard state individually as projections unless code proves a
+  narrower authority.
 - Trace event type -> payload schema -> projector/store update -> Web/API
   projection for the critical workflows under review.
 
@@ -200,7 +205,7 @@ not biased toward only the files already known to the reviewer:
 
 ### Step 5 — Integrations + Web/API
 
-- Verify integrations do not write business truth directly or couple to
+- Verify integrations do not write canonical business state directly or couple to
   orchestrator internals.
 - Verify Web/API projections stay read-oriented unless a deterministic,
   token-gated kernel action path exists.
@@ -208,8 +213,8 @@ not biased toward only the files already known to the reviewer:
   headless provider sessions, token/context telemetry, and runtime metrics for
   project-state leakage.
 - Check UX-backed runtime claims: if the UI shows streaming, progress, token
-  usage, role context, or completion status, verify the backend source of truth
-  and failure state.
+  usage, role context, or completion status, verify the authoritative backend
+  field/ref, its provenance, and failure state.
 
 ### Step 6 — Tests / Docs + Backlog Hygiene
 

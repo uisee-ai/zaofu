@@ -159,6 +159,21 @@ def test_counted_failure_events_ignores_stale_superseded_fanout() -> None:
     ) == []
 
 
+def test_counted_failure_events_binds_aggregate_failed_task_ids() -> None:
+    aggregate = ZfEvent(
+        type="verify.failed",
+        id="verify-aggregate-1",
+        payload={
+            "failed_task_ids": ["T-1", "T-2"],
+            "reason": "same acceptance gap",
+        },
+    )
+
+    assert counted_failure_events([aggregate], "T-1") == [aggregate]
+    assert counted_failure_events([aggregate], "T-2") == [aggregate]
+    assert counted_failure_events([aggregate], "T-3") == []
+
+
 def test_failure_fingerprint_ignores_dynamic_finding_ids_and_order() -> None:
     first = _ev(
         "review.rejected",

@@ -58,6 +58,83 @@ def test_v3_resolves_with_evidence_tier_intact():
     assert "lane.stage.completed" in resolved
 
 
+def test_v4_preserves_typed_result_rules_without_mutating_v3():
+    v3 = resolve_schema_profile("canonical-dag/v3")
+    v4 = resolve_schema_profile("canonical-dag/v4")
+    typed = v4["verify.child.completed"]["nested"]["verification_result"]
+    assert "target_snapshot_ref" in typed["required"]
+    assert typed["enum"]["execution_status"] == ["completed", "failed"]
+    assert typed["list_item"]["requirement_results"]["enum"]["status"] == [
+        "passed", "failed", "blocked", "waived", "not_applicable",
+    ]
+    assert typed["when"]["if"] == {"execution_status": "completed"}
+    assert "verification_result" not in v3["verify.child.completed"]["required"]
+
+
+def test_v6_goal_closure_result_binds_current_target_and_claims() -> None:
+    canonical = resolve_schema_profile("canonical-dag/v6")
+    refactor = resolve_schema_profile("refactor-flow/v3")
+    assert canonical["judge.child.completed"] == refactor["judge.child.completed"]
+    registry = EventSchemaRegistry.from_dict(canonical)
+    result = {
+        "schema_version": "goal-closure-result.v1",
+        "workflow_run_id": "run-1",
+        "goal_id": "GOAL-1",
+        "flow_kind": "prd",
+        "task_map_generation": "generation-1",
+        "target_commit": "a" * 40,
+        "objective_ref": "docs/prd.md",
+        "goal_claim_set_ref": "artifacts/claims.json",
+        "goal_claim_set_digest": "b" * 64,
+        "planning_result_ref": "artifacts/task-map.json",
+        "candidate_ref": "candidate/GOAL-1",
+        "closure_fact_ref": "artifacts/closure.json",
+        "closure_fact_digest": "c" * 64,
+        "input_result_refs": ["artifacts/verify.json"],
+        "goal_coverage": [{
+            "goal_claim_id": "GOAL-AC-1",
+            "status": "closed",
+            "supporting_result_refs": ["artifacts/verify.json"],
+        }],
+        "open_gap_refs": [],
+        "verdict": "passed",
+        "recommended_action": "complete",
+        "summary": "closed",
+    }
+    payload = {
+        "fanout_id": "fanout-judge",
+        "child_id": "judge-prd",
+        "status": "completed",
+        "summary": "closed",
+        "workflow_run_id": "run-1",
+        "operation_id": "op-judge",
+        "request_hash": "request-hash",
+        "task_map_generation": "generation-1",
+        "target_commit": "a" * 40,
+        "contract_snapshot_ref": "artifacts/contract.json",
+        "contract_snapshot_digest": "d" * 64,
+        "target_snapshot_ref": "artifacts/target.json",
+        "target_snapshot_digest": "e" * 64,
+        "goal_closure_result": result,
+    }
+    assert registry.validate(ZfEvent(
+        type="judge.child.completed",
+        payload=payload,
+    )) == []
+
+    invalid = dict(payload)
+    invalid.pop("target_snapshot_digest")
+    violations = registry.validate(ZfEvent(
+        type="judge.child.completed",
+        payload=invalid,
+    ))
+    assert any(
+        item.field_path == "payload.target_snapshot_digest"
+        and item.code == "missing_required"
+        for item in violations
+    )
+
+
 def test_v3_registry_rejects_empty_evidence_and_matrix():
     registry = EventSchemaRegistry.from_dict(
         resolve_schema_profile("canonical-dag/v3"),

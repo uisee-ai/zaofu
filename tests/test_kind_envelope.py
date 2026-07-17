@@ -258,6 +258,53 @@ spec:
             "my.event.done": {"required": ["task_id", "status"]},
         }
 
+    def test_schema_profile_kind_extends_and_preserves_full_rules(self, tmp_path):
+        from zf.core.config.loader import load_config
+        text = """\
+apiVersion: zaofu.dev/v1
+kind: SchemaProfile
+metadata: {name: project-flow/v4}
+spec:
+  extends: canonical-dag/v4
+  events:
+    project.check.completed:
+      required: [result]
+      optional: [note]
+      non_empty: [result]
+      enum: {result: [passed, failed]}
+      nested:
+        detail: {required: [code]}
+      list_item:
+        findings: {required: [message]}
+      when:
+        if: {result: failed}
+        then: {required: [findings]}
+      field_sources: {result: synth}
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: t}
+spec:
+  version: "1.0"
+  project: {name: t}
+  workflow:
+    dag: {schema_profile: project-flow/v4}
+"""
+        path = tmp_path / "zf.yaml"
+        path.write_text(text)
+
+        cfg = load_config(path)
+
+        schemas = cfg.workflow.dag.event_schemas
+        assert "verify.child.completed" in schemas
+        rule = schemas["project.check.completed"]
+        assert rule["optional"] == ["note"]
+        assert rule["enum"] == {"result": ["passed", "failed"]}
+        assert rule["nested"]["detail"]["required"] == ["code"]
+        assert rule["list_item"]["findings"]["required"] == ["message"]
+        assert rule["when"]["then"]["required"] == ["findings"]
+        assert rule["field_sources"] == {"result": "synth"}
+
     def test_unknown_kind_fails_closed(self, tmp_path):
         from zf.core.config.loader import ConfigError, load_config
         p = tmp_path / "zf.yaml"

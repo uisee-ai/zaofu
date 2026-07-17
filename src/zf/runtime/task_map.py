@@ -203,6 +203,9 @@ def validate_task_map_payload(
     source_refs = payload.get("source_refs")
     if source_refs is not None and not isinstance(source_refs, dict):
         errors.append("source_refs must be an object when present")
+    for field, value in _workspace_root_owner_requirement_values(payload):
+        if not isinstance(value, bool):
+            errors.append(f"{field} must be a boolean when present")
 
     errors.extend(_shared_convention_errors(
         payload,
@@ -223,6 +226,25 @@ def validate_task_map_payload(
         "assembly_task_count": len(assembly_owner_roles),
     }
     return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
+
+
+def _workspace_root_owner_requirement_values(payload: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Return every explicit root-owner requirement for schema validation.
+
+    The planner owns whether a delivery needs a root-level scaffold/entrypoint;
+    the kernel owns the representation. Validate both supported locations so a
+    string from a prompt or legacy artifact cannot silently disable admission.
+    """
+    values: list[tuple[str, Any]] = []
+    if "workspace_root_owner_required" in payload:
+        values.append(("workspace_root_owner_required", payload["workspace_root_owner_required"]))
+    contract = payload.get("refactor_contract")
+    if isinstance(contract, dict) and "workspace_root_owner_required" in contract:
+        values.append((
+            "refactor_contract.workspace_root_owner_required",
+            contract["workspace_root_owner_required"],
+        ))
+    return values
 
 
 def _assembly_ownership_errors(

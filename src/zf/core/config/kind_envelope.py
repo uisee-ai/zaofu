@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from typing import Any
 
 
@@ -286,9 +287,17 @@ def assemble_envelope_stream(
                     f"document[{i}]: SchemaProfile spec.events must be a "
                     f"mapping of event -> {{required: [...]}}"
                 )
+            normalized_events: dict[str, dict[str, Any]] = {}
+            for event_type, rule in events.items():
+                if not isinstance(rule, dict):
+                    raise KindEnvelopeError(
+                        f"document[{i}]: SchemaProfile event "
+                        f"{event_type!r} must be a mapping"
+                    )
+                normalized_events[str(event_type)] = deepcopy(rule)
             profiles[name] = {
-                str(e): {"required": list((r or {}).get("required", []))}
-                for e, r in events.items()
+                "extends": str(spec.get("extends") or "").strip(),
+                "events": normalized_events,
             }
         elif kind == "ConfigProfile":
             name = str(metadata.get("name") or "").strip()

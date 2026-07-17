@@ -150,6 +150,19 @@ def test_e2_submit_payload_carries_manifest_objective(tmp_path: Path, monkeypatc
                 "missing_required_fields": []}
     intake = tmp_path / "wfint-x.md"
     intake.write_text("# intake", encoding="utf-8")
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text(
+        "\n".join([
+            "apiVersion: zaofu.dev/v1",
+            "kind: ZfConfig",
+            "metadata: {name: objective-e2e}",
+            "spec:",
+            '  version: "1.0"',
+            "  project: {name: objective-e2e, state_dir: .zf-objective}",
+            "",
+        ]),
+        encoding="utf-8",
+    )
     mpath = tmp_path / "workflow-input-manifest.json"
     mpath.write_text(json.dumps(manifest), encoding="utf-8")
     monkeypatch.setattr(flow_cli, "_load_manifest_for_intake",
@@ -158,7 +171,7 @@ def test_e2_submit_payload_carries_manifest_objective(tmp_path: Path, monkeypatc
                         lambda *a, **kw: {"status": "PASS", "blockers": [],
                                           "flow_kind": "prd"})
     preview = flow_cli.build_flow_submit_preview(
-        config_path=tmp_path / "zf.yaml", intake_path=intake,
+        config_path=config_path, intake_path=intake,
         flow_kind="prd", task_id="T-1", pattern_id="prd-scan",
         requested_by="op", reason="e2e", output=None,
         allow_missing_env=True,

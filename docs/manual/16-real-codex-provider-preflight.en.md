@@ -67,12 +67,14 @@ Codex could not find bubblewrap on PATH ... Codex will use the bundled bubblewra
 ```
 
 For timeouts, determine whether Codex app-server stopped producing events
-within the provider budget. The default headless timeout is a 300-second idle
-budget: token, tool, and status events renew it after a turn starts. Override it
-for a local scenario with:
+within the provider budget. Codex turns have no total wall-clock cap: token,
+tool, and status events renew the budget after a turn starts. The default idle
+budget is 1,800 seconds, increasing to 7,200 seconds while a tool call is in
+flight. Override either budget for a local scenario with:
 
 ```bash
-export ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S=600
+export ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S=3600
+export ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S=14400
 ```
 
 The legacy `ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S` is still read for

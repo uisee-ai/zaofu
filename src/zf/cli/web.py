@@ -143,5 +143,10 @@ def run(args: argparse.Namespace) -> int:
     uvicorn.run(
         app, host=args.host, port=args.port, log_level="warning",
         reload=args.reload,
+        # Long-lived SSE streams never close on their own; without a bound,
+        # graceful shutdown waits on them forever and `zf web` shrugs off
+        # SIGTERM (needed SIGKILL twice on 2026-07-16). Five seconds drains
+        # normal requests, then open streams are forced shut.
+        timeout_graceful_shutdown=5,
     )
     return 0

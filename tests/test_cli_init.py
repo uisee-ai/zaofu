@@ -63,6 +63,9 @@ def test_init_creates_project_instruction_docs(tmp_path: Path, monkeypatch):
     assert "zf update agents-md --check" in agents_text
     assert "verification evidence" in agents_text
     assert "handoff" in agents_text
+    assert "canonical stores" in agents_text
+    assert "required artifact/sidecar" in agents_text
+    assert "runtime truth" not in agents_text
     assert "AGENTS.md" in claude_md.read_text(encoding="utf-8")
 
 

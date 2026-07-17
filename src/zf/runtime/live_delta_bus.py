@@ -104,6 +104,30 @@ class LiveDeltaBus:
                 ))
         return rows, cursors
 
+    def current_cursors(self) -> dict[str, int]:
+        """Byte cursors at the current end of every scratch file. A new SSE
+        subscriber starts here so it only sees deltas published AFTER it
+        connected — replaying the backlog of already-finished turns fed the
+        frontend stale streaming state (2026-07-16 P1). Final text is
+        guaranteed by committed events, so skipping history loses nothing."""
+        cursors: dict[str, int] = {}
+        if not self.root.is_dir():
+            return cursors
+        for path in self.root.glob("*.jsonl"):
+            try:
+                cursors[path.name] = path.stat().st_size
+            except OSError:
+                continue
+        return cursors
+
+    def discard(self, key: str) -> None:
+        """Drop a finished run's scratch file. Ephemeral by contract —
+        the committed terminal event carries the aggregate text."""
+        try:
+            (self.root / f"{_safe_key(key)}.jsonl").unlink(missing_ok=True)
+        except OSError:
+            pass
+
     def sweep(self, *, ttl_seconds: int = LIVE_DELTA_TTL_SECONDS) -> int:
         """Delete scratch files idle past the TTL. Safe at any time."""
         if not self.root.is_dir():

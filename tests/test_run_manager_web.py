@@ -40,7 +40,12 @@ def test_run_manager_and_goal_api_are_read_only_projections(tmp_path: Path) -> N
     assert body["completion_profile"]["schema_version"] == "run-completion-profile.v1"
     assert body["repair_merge_queue"]["schema_version"] == "repair-merge-queue.v1"
     assert body["timeline"]["schema_version"] == "run-manager.timeline.v1"
-    assert goal.json()["objective"] == "refactor hermes"
+    goal_body = goal.json()
+    assert goal_body["objective"] == "refactor hermes"
+    assert goal_body["delivery_phase"] == "not_started"
+    assert goal_body["open_feedback_count"] == 0
+    assert goal_body["pending_handoff_count"] == 0
+    assert goal_body["attempt_handoff_schema_version"] == "attempt-handoff-snapshot.v1"
 
 
 def test_project_scoped_run_manager_api(tmp_path: Path) -> None:

@@ -140,6 +140,36 @@ def test_build_delivery_thick_trace_graph_overlay_and_spans() -> None:
     assert "sk-thisshouldberedacted" not in json.dumps(thick, ensure_ascii=False)
 
 
+def test_improvement_candidates_deduplicate_repeated_findings() -> None:
+    events = _events()
+    events.append((
+        len(events),
+        ZfEvent(
+            type="worker.stuck",
+            id="evt-stuck-repeat",
+            task_id="T1",
+            actor="watchdog",
+        ),
+    ))
+
+    thick = build_delivery_thick_trace(
+        trace=_trace(),
+        events=events,
+        generated_at="2026-06-15T00:00:10+00:00",
+        project_id="proj",
+    )
+
+    candidate_ids = [
+        item["candidate_id"] for item in thick["improvement_candidates"]
+    ]
+    assert len(candidate_ids) == len(set(candidate_ids))
+    stuck = next(
+        item for item in thick["improvement_candidates"]
+        if item["source_kind"] == "worker_stuck"
+    )
+    assert stuck["event_ids"] == ["evt-stuck", "evt-stuck-repeat"]
+
+
 def test_delivery_thick_trace_scopes_project_wide_causation_edges() -> None:
     events = _events()
     for index in range(200):

@@ -327,3 +327,49 @@ def test_step_stale_inflight_cleanup_in_completed_steps(tmp_path: Path):
     idx_wait = steps.index("wait_active_turns")
     idx_save = steps.index("save_transcripts")
     assert idx_wait < idx_cleanup < idx_save
+
+
+def test_kill_watcher_signals_both_lock_and_guard_pids(tmp_path, monkeypatch):
+    """ZF-STOP-TAIL-01: loop.lock pid 与真实 watcher pid 错位时不再打空。"""
+    import json as _json
+
+    from zf.runtime.shutdown import GracefulShutdown
+
+    state_dir = tmp_path / ".zf"
+    (state_dir / "processes").mkdir(parents=True)
+    (state_dir / "loop.lock").write_text("11111")
+    (state_dir / "processes" / "watcher.pid.json").write_text(
+        _json.dumps({"component": "watcher", "owner_pid": 22222})
+    )
+    shutdown = GracefulShutdown.__new__(GracefulShutdown)
+    shutdown.state_dir = state_dir
+    signalled: list[int] = []
+    monkeypatch.setattr(
+        GracefulShutdown, "_terminate_pid",
+        staticmethod(lambda pid: signalled.append(pid)),
+    )
+    shutdown._kill_watcher()
+    assert sorted(signalled) == [11111, 22222]
+
+
+def test_kill_watcher_skips_own_pid(tmp_path, monkeypatch):
+    import json as _json
+    import os
+
+    from zf.runtime.shutdown import GracefulShutdown
+
+    state_dir = tmp_path / ".zf"
+    (state_dir / "processes").mkdir(parents=True)
+    (state_dir / "loop.lock").write_text(str(os.getpid()))
+    (state_dir / "processes" / "watcher.pid.json").write_text(
+        _json.dumps({"component": "watcher", "owner_pid": os.getpid()})
+    )
+    shutdown = GracefulShutdown.__new__(GracefulShutdown)
+    shutdown.state_dir = state_dir
+    signalled: list[int] = []
+    monkeypatch.setattr(
+        GracefulShutdown, "_terminate_pid",
+        staticmethod(lambda pid: signalled.append(pid)),
+    )
+    shutdown._kill_watcher()
+    assert signalled == []

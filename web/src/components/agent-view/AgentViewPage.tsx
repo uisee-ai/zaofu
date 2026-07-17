@@ -441,11 +441,11 @@ export function AgentViewPage({
                 type="button"
                 onClick={() => row.domain === "agent" && setSelectedId(row.target)}
               >
-                <span className={`badge badge-${row.severity}`}>{row.severity}</span>
-                <span className="mono">{row.target}</span>
-                <span>{row.reason}</span>
-                <span className="muted">{row.recommended_action}</span>
-                <span className="muted mono">{row.evidence}</span>
+                <span className={`badge badge-${row.severity} agent-attention-severity`}>{row.severity}</span>
+                <span className="mono agent-attention-target">{row.target}</span>
+                <span className="agent-attention-reason">{row.reason}</span>
+                <span className="muted agent-attention-action">{row.recommended_action}</span>
+                <span className="muted mono agent-attention-evidence">{row.evidence}</span>
               </button>
             ))}
           </div>

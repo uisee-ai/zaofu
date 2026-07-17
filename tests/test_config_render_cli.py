@@ -578,9 +578,10 @@ def test_config_inspect_classifies_refactor_flow_expected_event_sinks(capsys):
     assert any(item["event"] == "candidate.ready" for item in expected)
     assert all(item["severity"] == "INFO" for item in expected)
     matrix = report["coverage"]["skill_matrix"]
-    assert matrix["provider"]["covered"] is True
-    assert matrix["webui"]["covered"] is True
-    assert matrix["memory"]["covered"] is True
+    assert set(matrix) == {"core", "cli", "api", "web", "runtime"}
+    assert "provider" not in matrix
+    assert "webui" not in matrix
+    assert "memory" not in matrix
 
 
 def test_config_inspect_classifies_handwritten_parity_bridge_sinks(tmp_path, capsys):

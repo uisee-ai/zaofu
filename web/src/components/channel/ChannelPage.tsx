@@ -1,18 +1,22 @@
 // ChannelPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { search } from "../../api/client";
-import type { ActionResponse, ChannelDetail, ChannelHistorySearchResult, ChannelSummary, RoleSummary, Task } from "../../api/types";
+import type { ActionResponse, ChannelDetail, ChannelHistorySearchResult, ChannelSummary, RecentEvent, RoleSummary, Task } from "../../api/types";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
 import { buildChannelConversation } from "../../components/agent-session/projection";
+import { channelLiveStreamRows, compactChannelLiveRows, foldChannelLiveStream } from "../agent-session/channelLiveStream";
+import { mergeEventsByIdentity } from "../orchestrator/kanbanSessionEvents";
 import { formatTime } from "../../lib/format";
-import emojiData from "@emoji-mart/data";
-import Picker from "@emoji-mart/react";
 import { Archive, ArrowUp, AtSign, Bell, Bold, Boxes, ChevronDown, Code, FileText, GitFork, Hash, Info, Italic, Link, List, ListOrdered, MessageSquare, MoreHorizontal, PlayCircle, Plus, Quote, Search, Send, Settings, Smile, SquareCode, Strikethrough, Trash2, Type, Underline, Users, Wrench, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { UIEvent as ReactUIEvent } from "react";
 import type { ChannelPermissionProfile } from "../../app/sharedTypes";
 import { TablePage, agentConversationScrollSignature, asRecordArray, asStringArray, channelIdOf, channelNameOf, recordString, recordValue, scrollElementToBottom, textValue } from "../../app/shared";
 import { previewItemsFromRefs } from "../agent-session/previewRegistry";
+
+const ChannelEmojiPicker = lazy(() => import("./ChannelEmojiPicker").then((module) => ({
+  default: module.ChannelEmojiPicker,
+})));
 
 type ChannelTab = "chat" | "workspace";
 
@@ -367,11 +371,13 @@ export function ChannelPage({
   onWorkflowRequest,
   selectedChannelId,
   workflowRoles,
+  events = [],
 }: {
   actionReady: boolean;
   actionResult: ActionResponse | null;
   channels: ChannelSummary[];
   detail: ChannelDetail | null;
+  events?: RecentEvent[];
   loadError: string | null;
   onAddAgent: () => void;
   onClearHistory: () => Promise<void>;
@@ -434,9 +440,31 @@ export function ChannelPage({
   useEffect(() => {
     setPendingChannelMessages((current) => current.filter((item) => !channelDetailHasMessage(detail, item)));
   }, [detail]);
+  // Live-stream fold (operator report 2026-07-16): member replies stream
+  // token deltas over the SSE live bus; buffer this channel's rows (the App
+  // event window is capped at 120 — a long reply outlives it) and fold them
+  // into each rebuilt conversation so text grows while the member types.
+  const [liveStreamBuffer, setLiveStreamBuffer] = useState<RecentEvent[]>([]);
+  useEffect(() => {
+    setLiveStreamBuffer([]);
+  }, [selectedChannelId]);
+  useEffect(() => {
+    const scoped = channelLiveStreamRows(events, selectedChannelId);
+    if (!scoped.length) return;
+    setLiveStreamBuffer((current) => {
+      // Compact instead of dropping oldest: a very long reply must not lose
+      // its opening tokens (delta rows merge per run+kind, tools pass through).
+      const merged = mergeEventsByIdentity(current, scoped);
+      return compactChannelLiveRows(merged, 800);
+    });
+  }, [events, selectedChannelId]);
   const channelConversation = useMemo(
-    () => buildChannelConversation(conversationDetail, selectedChannelId, activeChannelThreadId),
-    [activeChannelThreadId, conversationDetail, selectedChannelId],
+    () => foldChannelLiveStream(
+      buildChannelConversation(conversationDetail, selectedChannelId, activeChannelThreadId),
+      channelLiveStreamRows(liveStreamBuffer, selectedChannelId),
+      selectedChannelId,
+    ),
+    [activeChannelThreadId, conversationDetail, liveStreamBuffer, selectedChannelId],
   );
   // visibility batch #10 (doc 122): the discussion state machine and the
   // open-questions ledger are projection truth — surface them so the
@@ -2318,19 +2346,9 @@ export function ChannelPage({
                       </button>
                       {emojiOpen ? (
                         <span className="channel-popover channel-emoji-popover">
-                          <Picker
-                            data={emojiData}
-                            emojiButtonSize={30}
-                            emojiSize={21}
-                            locale="zh"
-                            maxFrequentRows={2}
-                            navPosition="top"
-                            onEmojiSelect={handleEmojiSelect}
-                            previewPosition="none"
-                            searchPosition="top"
-                            set="native"
-                            theme="light"
-                          />
+                          <Suspense fallback={<span className="muted">Loading emoji…</span>}>
+                            <ChannelEmojiPicker onEmojiSelect={handleEmojiSelect} />
+                          </Suspense>
                         </span>
                       ) : null}
                     </span>

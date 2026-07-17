@@ -141,6 +141,33 @@ def test_judge_passed_ships_candidate_end_to_end(tmp_path: Path):
     assert completed.correlation_id == "trace-judge"
 
 
+def test_replayed_judge_passed_does_not_emit_ship_blocked(tmp_path: Path):
+    """Two watcher deliveries of one judge fact share a single ship result."""
+    from tests.test_ship import _candidate_branch, _candidate_ready, _init_repo
+
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    pdd_id = "CJMIN-REPLAY"
+    _candidate_branch(tmp_path, pdd_id, "feature.txt", "shipped\n")
+    orch, log = _orch(state_dir, judge_flag=True)
+    _candidate_ready(log, pdd_id)
+    judge = ZfEvent(
+        type="judge.passed",
+        actor="zf-cli",
+        payload={"target_ref": f"candidate/{pdd_id}"},
+        correlation_id="trace-judge-replay",
+    )
+
+    orch._maybe_auto_ship(judge)
+    orch._maybe_auto_ship(judge)
+
+    events = list(log.read_all())
+    assert sum(event.type == "ship.completed" for event in events) == 1
+    assert not any(event.type == "ship.blocked" for event in events)
+
+
 def test_judge_passed_ships_through_apply_housekeeping(tmp_path: Path):
     """LB-1: exercise the real dispatch path, not _maybe_auto_ship directly.
 

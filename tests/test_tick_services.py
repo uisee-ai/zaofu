@@ -212,9 +212,133 @@ def test_standard_tick_services_runs_supervisor_and_autoresearch(tmp_path: Path)
     assert "runtime.attention.needed" in types
     assert "supervisor.decision.recorded" in types
     assert "owner.visible_message.requested" in types
-    assert "autoresearch.invocation.requested" in types
+    assert "run.manager.autoresearch.requested" in types
+    assert "autoresearch.invocation.requested" not in types
     assert {"heartbeat_sweep", "dispatch_sweep"} <= set(orch.housekeeping)
     assert "candidate_rework" not in orch.housekeeping
+    assert result.control_plane_health is True
+    assert (state_dir / "projections" / "control_plane_health.json").exists()
+
+
+def test_standard_tick_services_coalesces_healthy_run_manager_ticks(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    orch = _FakeOrchestrator(state_dir, ZfConfig())
+    state = TickServiceState()
+    intervals = TickServiceIntervals(
+        heartbeat_sweep_s=999,
+        bug_scan_s=999,
+        supervisor_inspection_s=0,
+        run_manager_idle_refresh_s=900,
+    )
+
+    with patch("zf.runtime.tick_services._run_supervisor", return_value=False), \
+            patch("zf.runtime.tick_services.run_autoresearch_trigger_scan", return_value=0), \
+            patch("zf.runtime.tick_services._emit_stall_recoveries", return_value=False), \
+            patch("zf.runtime.tick_services._run_remediation_shadow", return_value=False), \
+            patch("zf.runtime.tick_services._redrive_replan_adoptions", return_value=False), \
+            patch("zf.runtime.tick_services._run_run_manager_watchdog", return_value=MagicMock(changed=False)), \
+            patch("zf.runtime.tick_services._apply_run_manager_resident_restarts", return_value=False), \
+            patch("zf.runtime.tick_services._deliver_run_manager_cards", return_value=False), \
+            patch("zf.runtime.tick_services._materialize_failure_candidates", return_value=0), \
+            patch("zf.runtime.tick_services._replay_unconsumed_invokes", return_value=0), \
+            patch("zf.runtime.tick_services._sweep_channel_discussions", return_value=0), \
+            patch("zf.runtime.tick_services._consume_run_manager_source_repairs", return_value=0):
+        run_standard_tick_services(orch, state=state, now=100.0, intervals=intervals)
+        first_types = [event.type for event in orch.event_log.read_all()]
+        run_standard_tick_services(orch, state=state, now=101.0, intervals=intervals)
+        second_types = [event.type for event in orch.event_log.read_all()]
+        run_standard_tick_services(orch, state=state, now=1001.0, intervals=intervals)
+        third_types = [event.type for event in orch.event_log.read_all()]
+
+    assert first_types.count("run.manager.tick.started") == 1
+    assert second_types.count("run.manager.tick.started") == 1
+    assert third_types.count("run.manager.tick.started") == 2
+    assert (state_dir / "projections" / "control_plane_health.json").exists()
+
+
+def test_standard_tick_services_keeps_quiescent_delivery_silent(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    orch = _FakeOrchestrator(state_dir, ZfConfig())
+    orch.event_log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-terminal",
+        payload={"workflow_run_id": "run-terminal"},
+    ))
+    orch.event_log.append(ZfEvent(
+        type="ship.completed",
+        correlation_id="run-terminal",
+        payload={"workflow_run_id": "run-terminal"},
+    ))
+    state = TickServiceState()
+    intervals = TickServiceIntervals(
+        heartbeat_sweep_s=999,
+        bug_scan_s=999,
+        supervisor_inspection_s=0,
+        run_manager_idle_refresh_s=1,
+    )
+
+    with patch("zf.runtime.tick_services._run_supervisor", return_value=False), \
+            patch("zf.runtime.tick_services.run_autoresearch_trigger_scan", return_value=0), \
+            patch("zf.runtime.tick_services._emit_stall_recoveries", return_value=False), \
+            patch("zf.runtime.tick_services._run_remediation_shadow", return_value=False), \
+            patch("zf.runtime.tick_services._redrive_replan_adoptions", return_value=False), \
+            patch("zf.runtime.tick_services._apply_run_manager_resident_restarts", return_value=False), \
+            patch("zf.runtime.tick_services._deliver_run_manager_cards", return_value=False), \
+            patch("zf.runtime.tick_services._materialize_failure_candidates", return_value=0), \
+            patch("zf.runtime.tick_services._replay_unconsumed_invokes", return_value=0), \
+            patch("zf.runtime.tick_services._sweep_channel_discussions", return_value=0), \
+            patch("zf.runtime.tick_services._consume_run_manager_source_repairs", return_value=0):
+        first = run_standard_tick_services(orch, state=state, now=100.0, intervals=intervals)
+        second = run_standard_tick_services(orch, state=state, now=200.0, intervals=intervals)
+
+    assert first.run_manager is False
+    assert second.run_manager is False
+    types = [event.type for event in orch.event_log.read_all()]
+    assert "run.manager.unhealthy" not in types
+    assert "run.manager.tick.started" not in types
+
+
+def test_standard_tick_services_ignores_control_plane_bookkeeping_inputs(
+    tmp_path: Path,
+) -> None:
+    state_dir = _state(tmp_path)
+    orch = _FakeOrchestrator(state_dir, ZfConfig())
+    state = TickServiceState()
+    intervals = TickServiceIntervals(
+        heartbeat_sweep_s=999,
+        bug_scan_s=999,
+        supervisor_inspection_s=0,
+        run_manager_idle_refresh_s=900,
+    )
+
+    with patch("zf.runtime.tick_services._run_supervisor", return_value=False), \
+            patch("zf.runtime.tick_services.run_autoresearch_trigger_scan", return_value=0), \
+            patch("zf.runtime.tick_services._emit_stall_recoveries", return_value=False), \
+            patch("zf.runtime.tick_services._run_remediation_shadow", return_value=False), \
+            patch("zf.runtime.tick_services._redrive_replan_adoptions", return_value=False), \
+            patch("zf.runtime.tick_services._run_run_manager_watchdog", return_value=MagicMock(changed=False)), \
+            patch("zf.runtime.tick_services._apply_run_manager_resident_restarts", return_value=False), \
+            patch("zf.runtime.tick_services._deliver_run_manager_cards", return_value=False), \
+            patch("zf.runtime.tick_services._materialize_failure_candidates", return_value=0), \
+            patch("zf.runtime.tick_services._replay_unconsumed_invokes", return_value=0), \
+            patch("zf.runtime.tick_services._sweep_channel_discussions", return_value=0), \
+            patch("zf.runtime.tick_services._consume_run_manager_source_repairs", return_value=0):
+        run_standard_tick_services(orch, state=state, now=100.0, intervals=intervals)
+        for event_type in (
+            "agent.text",
+            "hook.orphan_event",
+            "orchestrator.decision.recorded",
+            "orchestrator.round.complete",
+        ):
+            orch.event_log.append(ZfEvent(type=event_type, actor="control-plane"))
+        run_standard_tick_services(orch, state=state, now=101.0, intervals=intervals)
+
+    types = [event.type for event in orch.event_log.read_all()]
+    assert types.count("run.manager.tick.started") == 1
 
 
 def test_standard_tick_services_materializes_failure_candidates(tmp_path: Path) -> None:
@@ -574,8 +698,7 @@ def test_standard_tick_services_records_owner_visible_no_target(tmp_path: Path) 
 
     types = [event.type for event in orch.event_log.read_all()]
     assert result.owner_visible_delivery is True
-    assert "owner.visible_message.delivery_attempted" in types
-    assert "owner.visible_message.failed" in types
+    assert "owner.visible_message.suppressed" in types
 
 
 def test_standard_tick_services_pushes_run_manager_human_decision_card(

@@ -9,7 +9,7 @@ spec:
   targetRoot: app
   qualityFloor: product-demo
   evidencePolicy: strict_refs
-  deliveryPolicy: report_and_demo
+  deliveryPolicy: ship_candidate
 ---
 apiVersion: zaofu.dev/v1
 kind: ZfConfig
@@ -33,9 +33,8 @@ spec:
   project:
     name: prd-fanout-v3-claude
   runtime:
-    # 判审终局即交付(与 prd-light 对齐,2026-07-08 auto-ship parity):
-    # judge.passed 后 kernel 自动把 candidate 合入 ship_target_branch
-    # (默认 main;master 基线仓请 override 为 master)。
+    # Legacy active-run compatibility only. New runs ship through the scoped
+    # Goal Completion Gate delivery operation declared by deliveryPolicy.
     git:
       auto_ship_on_judge_passed: true
     # override prod-runtime/v1 codex run_manager: claude lanes need a claude
@@ -43,6 +42,12 @@ spec:
     run_manager:
       backend: claude-code
   workflow:
+    # 分级声明(doc133 tier;141 §19.5):intake/submit 链路的
+    # workflow_tier 缺省值。micro/light/standard/full 之外的值
+    # 会被 schema fail-closed 拒绝。
+    kind_routes:
+      prd:
+        default_tier: standard
     dag:
       external_triggers: [prd.requested]
     admission_replan:

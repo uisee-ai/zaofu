@@ -1,7 +1,7 @@
-"""P0-2 (2026-07-09): workflow_resume_apply must be event-first.
+"""P0-2 (2026-07-09): workflow_resume_apply must persist its event first.
 
-The terminal / dispatch events belong in events.jsonl (the single source of
-truth, I1) *before* the store projection is applied — the projection, for a
+The terminal / dispatch occurrence belongs in the append-only event ledger
+*before* the store mutation is applied — the store mutation, for a
 terminal status, archives + pops the task. The old order projected first, so a
 crash in the window between the two left events.jsonl missing the terminal event
 while the archive already showed the task done; build() iterates active tasks

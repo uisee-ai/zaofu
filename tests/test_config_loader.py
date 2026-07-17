@@ -1032,57 +1032,44 @@ def test_role_permission_mode_invalid_value_rejected(tmp_path: Path):
         load_config(p)
 
 
-def test_load_real_zf_yaml_new_fields():
-    """Verify the real zf.yaml's new fields are parsed."""
+def test_load_real_zf_yaml_expands_thin_issue_controller():
+    """The repository config stays thin while profiles provide the runtime contract."""
     root = Path(__file__).parent.parent / "zf.yaml"
-    if root.exists():
-        cfg = load_config(root)
-        if cfg.preset != "safe-team":
-            pytest.skip("root zf.yaml is an experiment preset")
-        assert cfg.preset == "safe-team"
-        assert "intake" in cfg.stage_labels
-        assert "static" in cfg.quality_gates
-        assert cfg.quality_gates["static"].enabled is True
-        role_names = {r.name for r in cfg.roles}
-        assert "orchestrator" in role_names
-        assert {"arch", "critic", "dev", "review", "test", "judge"}.issubset(role_names)
-        orch = next(r for r in cfg.roles if r.name == "orchestrator")
-        assert orch.transport == "stream-json"
-        assert orch.permission_mode == "allowlist"
-        assert {
-            "user.message",
-            "design.critique.done",
-            "clarification.needed",
-            "dev.blocked",
-            "review.rejected",
-            "test.failed",
-            "judge.failed",
-            "task.contract.invalid",
-            "dispatch.silent_stall",
-            "worker.stuck",
-        }.issubset(set(orch.triggers))
-        for normal_success in {
-            "arch.proposal.done",
-            "review.approved",
-            "test.passed",
-            "judge.passed",
-        }:
-            assert normal_success not in orch.triggers
-        by_name = {r.name: r for r in cfg.roles}
-        assert by_name["critic"].triggers == ["arch.proposal.done"]
-        assert by_name["critic"].publishes == ["design.critique.done", "gate.failed"]
-        assert by_name["review"].triggers == ["static_gate.passed"]
-        assert by_name["review"].stages == ["verify"]
-        assert by_name["dev"].role_kind == "writer"
-        assert all(
-            by_name[name].role_kind == "reader"
-            for name in {"arch", "critic", "review", "test", "judge"}
-        )
-        assert by_name["dev"].autoscale.enabled is True
-        assert by_name["dev"].autoscale.max_replicas <= 6
-        assert cfg.workflow.dag.enabled is True
-        assert cfg.workflow.dag.graph_static_gate_action is True
-        assert cfg.workflow.dag.graph_review_test_judge_reconcile is False
+    cfg = load_config(root)
+
+    assert len(root.read_text(encoding="utf-8").splitlines()) < 90
+    assert cfg.preset == ""
+    assert cfg.project.name == "zaofu"
+    assert cfg.workflow.harness_profile == "strict"
+    assert cfg.workflow.dag.schema_profile == "canonical-dag/v6"
+    assert cfg.goal.enabled is True
+    assert cfg.verification.event_schema.mode == "blocking"
+    assert cfg.verification.report_evidence_gate == "fail_closed"
+    assert cfg.workflow.completion_audit.enabled is True
+    assert cfg.workflow.resume_packet.enabled is True
+    assert cfg.runtime.run_manager.resident_agent.enabled is True
+    assert cfg.runtime.run_manager.resident_agent.session_mode == "dedicated"
+    assert cfg.runtime.autoresearch_resident.enabled is True
+    assert cfg.runtime.workdirs.enabled is True
+    assert cfg.runtime.workdirs.mode == "worktree"
+    assert cfg.runtime.git.candidate_base_ref == "dev"
+    assert cfg.runtime.git.ship_target_branch == "dev"
+    assert {role.name for role in cfg.roles} == {
+        "issue-triage",
+        "flow-discovery",
+        "judge-issue",
+        "fix-lane-0",
+        "fix-lane-1",
+        "verify-lane-0",
+        "verify-lane-1",
+    }
+    assert [stage.id for stage in cfg.workflow.stages] == [
+        "issue-triage",
+        "issue-post-verify-discovery",
+        "issue-lanes-impl",
+        "issue-lanes-verify",
+        "issue-lanes-final",
+    ]
 
 
 def test_load_workflow_dag_graph_static_gate_action(tmp_path: Path):

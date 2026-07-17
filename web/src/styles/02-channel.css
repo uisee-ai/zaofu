@@ -429,7 +429,10 @@
 .channel-scroll-latest {
   position: absolute;
   left: 50%;
-  bottom: 94px;
+  /* frontend-stress OBS-2 (2026-07-15): the pill sat at 94px and grazed the
+     composer's top edge (a centered click landed on the composer). Lift it clear
+     of the composer so the whole pill stays clickable. */
+  bottom: 116px;
   z-index: 4;
   min-height: 32px;
   display: inline-flex;

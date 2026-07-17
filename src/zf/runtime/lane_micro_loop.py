@@ -1,4 +1,4 @@
-"""批B(lane 微环):findings → 活会话续改,不换代不重派。
+"""Lane rework delivery: canonical attempt → live/resumed session.
 
 prd-goal e2e 复盘的结构病根治:findings 精确到行,响应粒度却是"新
 fanout 代际+新身份+完整 briefing 重派"——一次小修正让整套协调机器
@@ -8,22 +8,48 @@ fanout 代际+新身份+完整 briefing 重派"——一次小修正让整套协
     拒收 → findings 注入原 pane(continuation)→ agent 原上下文增量改
     → 重发 dev.build.done → 既有 repair/收编路径接受 → 重集成重审。
 
-只有三种情况回退全价重派:lane 死了、同指纹已注入过一次(停滞,
-该换方案)、开关未开。机械验收门(admission/F7/树哈希/review)不动。
-灰度:goal.micro_loop 默认关 = 现行为零回归。
+The micro-loop does not own a second retry policy. It first records the same
+canonical ``task.rework.requested`` identity used by full dispatch, then
+chooses a delivery mode: inject into a live session or request respawn/resume
+of the deterministic provider session. Mechanical gates and canonical caps
+remain authoritative.
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.attempt_ledger import counted_failure_events
+from zf.runtime.canonical_recovery import (
+    recovery_series_from_event,
+    rework_dispatch_count,
+    build_rework_cap_payload,
+)
+from zf.runtime.rework_feedback import (
+    feedback_briefing_lines,
+    feedback_payload_fields,
+    hydrate_rework_feedback,
+    write_rework_feedback,
+)
 
 CONTINUATION_EVENT = "task.rework.continuation_injected"
 _REJECTION_EVENTS = frozenset({
     "review.rejected", "verify.failed", "test.failed",
 })
+_REWORK_IDENTITY_KEYS = (
+    "workflow_run_id",
+    "contract_revision",
+    "stage_slot",
+    "target_stage_slot",
+    "failure_fingerprint",
+    "attempt",
+    "max_attempts",
+    "feedback_id",
+    "finding_ids",
+)
 
 
 def micro_loop_enabled(config: Any) -> bool:
@@ -92,6 +118,258 @@ def _fingerprint(event: ZfEvent) -> str:
 
     payload = event.payload if isinstance(event.payload, dict) else {}
     return _rejection_fingerprint(payload)
+
+
+def _role_for_lane(config: Any, lane: str) -> Any | None:
+    for role in getattr(config, "roles", []) or []:
+        if lane in {
+            str(getattr(role, "instance_id", "") or ""),
+            str(getattr(role, "name", "") or ""),
+        }:
+            return role
+    return None
+
+
+def _task_scope(task_store: Any, task_id: str) -> list[str]:
+    try:
+        task = task_store.get(task_id)
+        return [
+            str(item)
+            for item in (getattr(getattr(task, "contract", None), "scope", []) or [])
+            if str(item).strip()
+        ]
+    except Exception:
+        return []
+
+
+def _verification_result(payload: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    result = payload.get("verification_result")
+    if isinstance(result, Mapping):
+        return result
+    if isinstance(payload.get("requirement_results"), list):
+        return payload
+    return None
+
+
+def _existing_rework_request(
+    events: list[ZfEvent],
+    *,
+    task_id: str,
+    trigger_event_id: str,
+) -> ZfEvent | None:
+    for prior in reversed(events):
+        if prior.type != "task.rework.requested":
+            continue
+        payload = prior.payload if isinstance(prior.payload, dict) else {}
+        if str(prior.task_id or payload.get("task_id") or "") != task_id:
+            continue
+        if str(payload.get("trigger_event_id") or "") == trigger_event_id:
+            return prior
+    return None
+
+
+def _delivery_already_recorded(
+    events: list[ZfEvent],
+    *,
+    task_id: str,
+    rework_request_id: str,
+) -> bool:
+    for prior in events:
+        payload = prior.payload if isinstance(prior.payload, dict) else {}
+        if str(prior.task_id or payload.get("task_id") or "") != task_id:
+            continue
+        if str(payload.get("rework_request_event_id") or "") != rework_request_id:
+            continue
+        if prior.type in {CONTINUATION_EVENT, "worker.respawn.requested"}:
+            return True
+    return False
+
+
+def _max_rework_attempts(config: Any, lane: str) -> int:
+    role = _role_for_lane(config, lane)
+    try:
+        return max(1, int(getattr(role, "max_rework_attempts", 0) or 2))
+    except (TypeError, ValueError):
+        return 2
+
+
+def _emit_micro_loop_cap_fact(
+    *,
+    event: ZfEvent,
+    events: list[ZfEvent],
+    event_writer: Any,
+    series: Any,
+    task_id: str,
+    lane: str,
+    max_attempts: int,
+) -> None:
+    """Emit the cap fact for a capped task in a mixed rejection (138 §8)."""
+    for existing in events:
+        if (
+            existing.type == "task.rework.capped"
+            and str(existing.causation_id or "") == event.id
+            and str(
+                (existing.payload or {}).get("task_id")
+                or existing.task_id
+                or ""
+            ) == task_id
+        ):
+            return
+    fingerprint = series.failure_fingerprint or _fingerprint(event)
+    failure_events = events
+    if not any(existing.id == event.id for existing in events):
+        failure_events = [*events, event]
+    failures = counted_failure_events(
+        failure_events, task_id, fingerprint=fingerprint,
+    )
+    payload = build_rework_cap_payload(
+        series=series,
+        failures=failures,
+        max_attempts=max_attempts,
+        trigger_event=event,
+        role=lane,
+        extra={
+            "source": "lane_micro_loop",
+            "max_attempts_source": "role",
+            # The aggregate source event is split into one cap fact per child.
+            # Recovery ownership is therefore task-local even when the source
+            # event itself has no event-level task_id.
+            "recovery_scope": "task",
+            # cap 耗尽即需 RM 语义分诊(138 裁决 8)。
+            "semantic_triage_required": True,
+        },
+    )
+    event_writer.append(ZfEvent(
+        type="task.rework.capped",
+        actor="zf-cli",
+        task_id=task_id,
+        payload=payload,
+        causation_id=event.id,
+        correlation_id=event.correlation_id,
+    ))
+
+
+def _record_canonical_request(
+    *,
+    event: ZfEvent,
+    config: Any,
+    state_dir: Path,
+    events: list[ZfEvent],
+    event_writer: Any,
+    task_store: Any,
+    task_id: str,
+    lane: str,
+    delivery_mode: str,
+) -> tuple[ZfEvent, dict[str, Any], dict[str, Any]] | None:
+    existing = _existing_rework_request(
+        events,
+        task_id=task_id,
+        trigger_event_id=event.id,
+    )
+    if existing is not None:
+        payload = existing.payload if isinstance(existing.payload, dict) else {}
+        try:
+            descriptor = {
+                "ref": str(payload.get("rework_feedback_ref") or ""),
+                "sha256": str(payload.get("rework_feedback_digest") or ""),
+                "kind": "rework_feedback",
+                "schema_version": "rework-feedback.v1",
+                "content_type": "application/json",
+                "required": True,
+                "feedback_id": str(payload.get("feedback_id") or ""),
+                "finding_ids": list(payload.get("finding_ids") or []),
+            }
+            body = hydrate_rework_feedback(
+                state_dir,
+                descriptor,
+                expected_task_id=task_id,
+                expected_fingerprint=str(payload.get("failure_fingerprint") or ""),
+            )
+        except Exception:
+            return None
+        return existing, descriptor, body
+
+    # A verifier may report several ``failed_task_ids`` without setting the
+    # event-level task_id.  Canonical recovery identity is still per task, so
+    # bind the selected child before counting requests and applying the cap.
+    series = replace(recovery_series_from_event(event), task_id=task_id)
+    max_attempts = _max_rework_attempts(config, lane)
+    prior_count = rework_dispatch_count(
+        events,
+        series,
+        event_type="task.rework.requested",
+    )
+    if prior_count >= max_attempts:
+        # ZF-REVIEW-137-B1(2026-07-16 评审复现):混合多任务拒收里已 cap
+        # 的任务此前被静默丢弃——caller 只对 handled 任务负责,reactor 又
+        # 因"任一任务已处理"整体抑制全价路径,cap 任务永远拿不到
+        # task.rework.capped、RM 永不接手(违反 138 裁决 8)。cap 即事实,
+        # 在此发出交 RM 分诊;按 causation+task 幂等,重放不重复。
+        _emit_micro_loop_cap_fact(
+            event=event,
+            events=events,
+            event_writer=event_writer,
+            series=series,
+            task_id=task_id,
+            lane=lane,
+            max_attempts=max_attempts,
+        )
+        return None
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    fingerprint = series.failure_fingerprint or _fingerprint(event)
+    descriptor = write_rework_feedback(
+        state_dir,
+        task_id=task_id,
+        failure_fingerprint=fingerprint,
+        source_event=event,
+        source_attempt=prior_count + 1,
+        verification_result=_verification_result(payload),
+        allowed_paths=_task_scope(task_store, task_id),
+        required_actions=[
+            str(item)
+            for item in payload.get("required_actions") or []
+            if str(item).strip()
+        ],
+        summary=str(payload.get("reason") or payload.get("summary") or event.type),
+    )
+    body = hydrate_rework_feedback(
+        state_dir,
+        descriptor,
+        expected_task_id=task_id,
+        expected_fingerprint=fingerprint,
+    )
+    request = ZfEvent(
+        type="task.rework.requested",
+        actor="zf-cli",
+        task_id=task_id,
+        payload={
+            "task_id": task_id,
+            "role": str(getattr(_role_for_lane(config, lane), "name", "") or lane),
+            "assignee": lane,
+            "attempt": prior_count + 1,
+            "max_attempts": max_attempts,
+            "trigger_event_type": event.type,
+            "trigger_event_id": event.id,
+            "failure_fingerprint": fingerprint,
+            "delivery_mode": delivery_mode,
+            **series.to_payload(),
+            **feedback_payload_fields(descriptor),
+        },
+        causation_id=event.id,
+        correlation_id=event.correlation_id,
+    )
+    request.payload["dispatch_id"] = request.id
+    request = event_writer.append(request)
+    return request, descriptor, body
+
+
+def _rework_identity_fields(request: ZfEvent) -> dict[str, Any]:
+    payload = request.payload if isinstance(request.payload, dict) else {}
+    return {
+        key: payload[key]
+        for key in _REWORK_IDENTITY_KEYS
+        if key in payload and payload[key] not in (None, "", [])
+    }
 
 
 def _latest_goal_objective(event: ZfEvent, events: list[ZfEvent]) -> str:
@@ -176,7 +454,7 @@ def maybe_inject_rework_continuation(
     transport: Any,
     task_store: Any,
 ) -> list[str]:
-    """返回成功注入的 task_id 列表(空 = 走原全价路径)。"""
+    """Return task ids whose canonical rework delivery is handled."""
     if not micro_loop_enabled(config):
         return []
     if event.type not in _REJECTION_EVENTS:
@@ -184,33 +462,37 @@ def maybe_inject_rework_continuation(
     task_ids = _failed_task_ids(event)
     if not task_ids:
         return []
-    fingerprint = _fingerprint(event)
-    injected: list[str] = []
+    handled: list[str] = []
     for task_id in task_ids:
-        # 幂等:本拒收已注入过
-        duplicate = False
-        stalled = False
-        for prior in events:
-            if prior.type != CONTINUATION_EVENT:
-                continue
-            payload = prior.payload if isinstance(prior.payload, dict) else {}
-            if str(payload.get("task_id") or "") != task_id:
-                continue
-            if str(payload.get("rework_of") or "") == event.id:
-                duplicate = True
-                break
-            if str(payload.get("fingerprint") or "") == fingerprint:
-                # 同指纹已续改过一次仍拒 → 停滞,回退全价路径(换方案)
-                stalled = True
-        if duplicate or stalled:
-            continue
         lane = _lane_for_task(task_id, task_store=task_store, events=events)
         if not lane:
             continue
         try:
-            if not bool(transport.is_alive(lane)):
-                continue
+            live = bool(transport.is_alive(lane))
         except Exception:
+            live = False
+        delivery_mode = "live_session" if live else "resume_session"
+        recorded = _record_canonical_request(
+            event=event,
+            config=config,
+            state_dir=state_dir,
+            events=events,
+            event_writer=event_writer,
+            task_store=task_store,
+            task_id=task_id,
+            lane=lane,
+            delivery_mode=delivery_mode,
+        )
+        if recorded is None:
+            continue
+        rework_request, feedback_descriptor, feedback_body = recorded
+        rework_identity = _rework_identity_fields(rework_request)
+        if _delivery_already_recorded(
+            events,
+            task_id=task_id,
+            rework_request_id=rework_request.id,
+        ):
+            handled.append(task_id)
             continue
         briefing_path = _write_continuation_briefing(
             state_dir=state_dir,
@@ -219,37 +501,95 @@ def maybe_inject_rework_continuation(
             event=event,
             config=config,
             events=events,
+            feedback_descriptor=feedback_descriptor,
+            feedback_body=feedback_body,
+            rework_identity=rework_identity,
         )
+        dispatch_id = rework_request.id
         try:
-            transport.send_task(
-                lane,
-                briefing_path,
-                f"REWORK CONTINUATION for {task_id} — read {briefing_path}",
+            task_store.update(
+                task_id,
+                status="in_progress",
+                assigned_to=lane,
+                active_dispatch_id=dispatch_id,
             )
         except Exception:
+            pass
+        if live:
+            try:
+                transport.send_task(
+                    lane,
+                    briefing_path,
+                    f"REWORK CONTINUATION for {task_id} — read {briefing_path}",
+                )
+            except Exception:
+                live = False
+                delivery_mode = "resume_session"
+        if live:
+            event_writer.append(ZfEvent(
+                type="task.dispatched",
+                actor="orchestrator",
+                task_id=task_id,
+                payload={
+                    "task_id": task_id,
+                    "assignee": lane,
+                    "source": "rework_continuation",
+                    "dispatch_id": dispatch_id,
+                    "delivery_mode": "live_session",
+                    "rework_request_event_id": rework_request.id,
+                    "briefing": str(briefing_path),
+                    **rework_identity,
+                    **feedback_payload_fields(feedback_descriptor),
+                },
+                causation_id=rework_request.id,
+                correlation_id=event.correlation_id,
+            ))
+            event_writer.append(ZfEvent(
+                type=CONTINUATION_EVENT,
+                actor="zf-cli",
+                task_id=task_id,
+                payload={
+                    "task_id": task_id,
+                    "lane": lane,
+                    "rework_of": event.id,
+                    "rework_source": event.type,
+                    "rework_request_event_id": rework_request.id,
+                    "dispatch_id": dispatch_id,
+                    "delivery_mode": "live_session",
+                    "fingerprint": str(
+                        (rework_request.payload or {}).get("failure_fingerprint") or ""
+                    ),
+                    "briefing_ref": str(briefing_path),
+                    "reason": "canonical rework delivered to live provider session",
+                    **rework_identity,
+                    **feedback_payload_fields(feedback_descriptor),
+                },
+                causation_id=rework_request.id,
+                correlation_id=event.correlation_id,
+            ))
+            handled.append(task_id)
             continue
         event_writer.append(ZfEvent(
-            type=CONTINUATION_EVENT,
+            type="worker.respawn.requested",
             actor="zf-cli",
             task_id=task_id,
             payload={
                 "task_id": task_id,
-                "lane": lane,
-                "rework_of": event.id,
-                "rework_source": event.type,
-                "fingerprint": fingerprint,
-                "briefing_ref": str(briefing_path),
-                "pdd_id": str(
-                    (event.payload or {}).get("pdd_id")
-                    if isinstance(event.payload, dict) else ""
-                ) or "",
-                "reason": "lane micro-loop: findings injected into live session",
+                "role": str(getattr(_role_for_lane(config, lane), "name", "") or lane),
+                "instance_id": lane,
+                "reason": "canonical rework target session is not live",
+                "delivery_mode": "resume_session",
+                "continuation_briefing_ref": str(briefing_path),
+                "rework_request_event_id": rework_request.id,
+                "dispatch_id": dispatch_id,
+                **rework_identity,
+                **feedback_payload_fields(feedback_descriptor),
             },
-            causation_id=event.id,
+            causation_id=rework_request.id,
             correlation_id=event.correlation_id,
         ))
-        injected.append(task_id)
-    return injected
+        handled.append(task_id)
+    return handled
 
 
 def _write_continuation_briefing(
@@ -260,6 +600,9 @@ def _write_continuation_briefing(
     event: ZfEvent,
     config: Any,
     events: list[ZfEvent],
+    feedback_descriptor: Mapping[str, Any] | None = None,
+    feedback_body: Mapping[str, Any] | None = None,
+    rework_identity: Mapping[str, Any] | None = None,
 ) -> Path:
     briefings_dir = Path(state_dir) / "briefings"
     briefings_dir.mkdir(parents=True, exist_ok=True)
@@ -271,6 +614,28 @@ def _write_continuation_briefing(
         goal_lines = goal_briefing_section(events, config=config)
     except Exception:
         goal_lines = []
+    findings = (
+        feedback_briefing_lines(feedback_body)
+        if feedback_body is not None
+        else _findings_lines(event)
+    )
+    feedback_refs: list[str] = []
+    if feedback_descriptor:
+        feedback_refs = [
+            "## Immutable Feedback",
+            f"- rework_feedback_ref: `{feedback_descriptor.get('ref', '')}`",
+            f"- rework_feedback_digest: `{feedback_descriptor.get('sha256', '')}`",
+            "- Treat the verifier failure/reproduction command as RED; fix, rerun, then self-audit.",
+            "",
+        ]
+    identity_lines = [
+        "## Canonical Attempt Identity",
+        *[
+            f"- {key}: `{value}`"
+            for key, value in (rework_identity or {}).items()
+        ],
+        "",
+    ] if rework_identity else []
     lines = [
         f"# REWORK CONTINUATION: {task_id}",
         "",
@@ -283,8 +648,10 @@ def _write_continuation_briefing(
             event=event,
             events=events,
         ),
+        *identity_lines,
+        *feedback_refs,
         "Findings to resolve (address EVERY one):",
-        *[f"- {line}" for line in _findings_lines(event)],
+        *[f"- {line}" for line in findings],
         "",
         "When fixed: commit, regenerate affected runtime evidence, run your",
         "full self-check (prove nothing else broke), then re-emit",

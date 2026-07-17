@@ -9,12 +9,12 @@ split 先例(orchestrator → dispatch/lifecycle/reactor mixin),
 
 from __future__ import annotations
 
-import re
-import time
 from pathlib import Path
 
+from zf.core.config.schema import RoleConfig
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
+from zf.runtime.injection import infer_completion_protocol
 
 
 class LifecycleEvidenceQueriesMixin:
@@ -142,10 +142,19 @@ class LifecycleEvidenceQueriesMixin:
         """
         events = self._fanout_lifecycle_events()
         terminal_children: set[tuple[str, str, str]] = set()
+        terminal_fanouts: set[str] = set()
         for event in reversed(events):
             payload = event.payload if isinstance(event.payload, dict) else {}
             if event.type in {"fanout.child.completed", "fanout.child.failed"}:
                 terminal_children.update(self._fanout_child_terminal_keys(payload))
+                continue
+            if event.type == "fanout.cancelled":
+                # ZF-STOP-TAIL-01 邻居(07-16 实弹):被 supersede 取消的
+                # fanout 其 child 曾被当作 active,recovery 反复给死 child
+                # 重注简报,worker 完成申报在 flow 层永远无人承接。
+                fanout_id = str(payload.get("fanout_id") or "")
+                if fanout_id:
+                    terminal_fanouts.add(fanout_id)
                 continue
             if event.type == "fanout.timed_out":
                 fanout_id = str(payload.get("fanout_id") or "")
@@ -159,6 +168,8 @@ class LifecycleEvidenceQueriesMixin:
             if str(payload.get("role_instance") or "") != instance_id:
                 continue
             key = self._fanout_child_key(payload)
+            if key[0] in terminal_fanouts:
+                continue
             if (
                 key in terminal_children
                 or (key[0], key[1], "") in terminal_children
@@ -185,6 +196,10 @@ class LifecycleEvidenceQueriesMixin:
             "fanout.child.dispatched",
             "fanout.child.completed",
             "fanout.child.failed",
+            # fanout 级终局:cancelled 使全体 child 失效;timed_out 此前
+            # 虽有处理分支但从未被扫描命中(标记过滤先行)——一并补上。
+            "fanout.cancelled",
+            "fanout.timed_out",
         }
         path = getattr(self.event_log, "path", None)
         cache_key = None
@@ -410,3 +425,57 @@ class LifecycleEvidenceQueriesMixin:
             return str(getter(instance_id))
         except Exception:
             return ""
+
+    def _latest_manifest_pending_terminal_event(
+        self,
+        *,
+        task_id: str,
+        dispatch_id: str,
+        role: "RoleConfig",
+        expected_event: str,
+    ) -> ZfEvent | None:
+        try:
+            events = self.event_log.read_all()
+        except Exception:
+            return None
+        rejected_event_ids = self._rejected_origin_event_ids(events, task_id)
+        rejected_event_ids.update(
+            self._rejected_artifact_manifest_event_ids(events, task_id)
+        )
+        dispatch_idx = -1
+        manifest_idx = -1
+        manifest_event: ZfEvent | None = None
+        for idx, event in enumerate(events):
+            if event.task_id != task_id:
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if event.type == "task.dispatched":
+                candidate_dispatch_id = str(payload.get("dispatch_id") or "")
+                if (
+                    not dispatch_id
+                    or not candidate_dispatch_id
+                    or candidate_dispatch_id == dispatch_id
+                ):
+                    dispatch_idx = idx
+                continue
+            if dispatch_idx >= 0 and idx <= dispatch_idx:
+                continue
+            if event.type == "artifact.manifest.published":
+                if event.id in rejected_event_ids:
+                    continue
+                if not self._event_dispatch_matches(payload, dispatch_id):
+                    continue
+                if not self._manifest_role_matches(event, role):
+                    continue
+                manifest_idx = idx
+                manifest_event = event
+                continue
+            if (
+                manifest_event is not None
+                and idx > manifest_idx
+                and event.type == expected_event
+                and event.id not in rejected_event_ids
+                and self._event_dispatch_matches(payload, dispatch_id)
+            ):
+                return None
+        return manifest_event

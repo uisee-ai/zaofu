@@ -12,6 +12,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
+from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
 
 
 PLAN_INTEGRITY_SCHEMA_VERSION = "plan-integrity.v0"
@@ -29,7 +30,15 @@ def build_plan_integrity_projection(
     tasks = tasks if tasks is not None else _read_tasks(state_dir)
     events = events if events is not None else _read_events(state_dir)
     now = now or datetime.now(timezone.utc)
-    active = [t for t in tasks if t.status not in {"done", "cancelled"}]
+    # Workflow fanout anchors are trace roots only.  They deliberately carry
+    # the intake/fanout contract rather than a worker plan; inspecting them as
+    # active implementation tasks generates a false plan-gap attention item.
+    active = [
+        task
+        for task in tasks
+        if task.status not in {"done", "cancelled"}
+        and not is_workflow_fanout_anchor_task(task)
+    ]
     findings: list[dict[str, Any]] = []
     for task in active:
         refs = task_plan_refs(task)
@@ -43,6 +52,7 @@ def build_plan_integrity_projection(
             ))
         if (
             task.contract.acceptance_criteria
+            and _acceptance_evidence_due(task, events)
             and not _has_acceptance_evidence(task, events)
         ):
             findings.append(_finding(
@@ -52,7 +62,10 @@ def build_plan_integrity_projection(
                 "Acceptance criteria have no mapped evidence",
                 "acceptance_criteria is set but acceptance_evidence is empty",
             ))
-        if _weak_acceptance(task.contract.acceptance):
+        if (
+            _weak_acceptance(task.contract.acceptance)
+            and not str(task.contract.verification or "").strip()
+        ):
             findings.append(_finding(
                 "weak-acceptance",
                 "info",
@@ -136,6 +149,34 @@ def _has_acceptance_evidence(task: Task, events: list[ZfEvent]) -> bool:
         if event.type in evidence_events:
             return True
         if payload.get("acceptance_evidence_update"):
+            return True
+    return False
+
+
+def _acceptance_evidence_due(task: Task, events: list[ZfEvent]) -> bool:
+    if str(task.status or "") in {
+        "review",
+        "testing",
+        "verifying",
+        "awaiting_review",
+        "done",
+    }:
+        return True
+    task_id = str(task.id or "")
+    if not task_id:
+        return False
+    for event in events:
+        if event.type not in {
+            "dev.build.done",
+            "workflow.child.completed",
+            "task.ref.updated",
+        }:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if task_id in {
+            str(event.task_id or ""),
+            str(payload.get("task_id") or ""),
+        }:
             return True
     return False
 

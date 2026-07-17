@@ -40,6 +40,7 @@ from zf.runtime.remediation_cascade import (
     decide_cascade,
 )
 from zf.runtime.recovery_sufficiency import run_recovery_sufficiency_gate
+from zf.runtime.session_mutex import SessionLock, SessionLockBusy
 from zf.runtime.orchestrator_types import OrchestratorDecision
 
 if TYPE_CHECKING:
@@ -512,6 +513,7 @@ class LifecycleManagerMixin(
                             f"{progress_event.type} already recorded for task "
                             f"{active_task.id}; skipping stuck detector"
                         ),
+                        task_id=active_task.id,
                     )
                     continue
             detector.update(output)
@@ -527,6 +529,7 @@ class LifecycleManagerMixin(
                             "codex active turn is within provider stuck grace; "
                             "suppressing pane-output stuck detector"
                         ),
+                        task_id=active_task.id,
                     )
                     continue
                 self._stuck_already_reported.add(role.instance_id)
@@ -944,7 +947,65 @@ class LifecycleManagerMixin(
             reason="fanout child rerun dispatched",
         )
 
-    def _respawn_instance(self, role: "RoleConfig") -> "OrchestratorDecision":
+    def restart_role_instance(self, role: "RoleConfig") -> "OrchestratorDecision":
+        """Restart one role through the same recovery path as the watchdog.
+
+        A CLI/operator restart is still a provider-session replacement.  It
+        must therefore preserve the active task or fanout-child contract
+        instead of merely opening a fresh interactive pane.
+        """
+        return self._respawn_instance(role, recovery_reason="manual_restart")
+
+    def _respawn_instance(
+        self,
+        role: "RoleConfig",
+        *,
+        recovery_reason: str = "watchdog",
+    ) -> "OrchestratorDecision":
+        """Serialize replacement of one provider session across processes.
+
+        ``zf restart <role>`` creates a short-lived Orchestrator while the
+        resident watcher may concurrently detect the same dead pane.  Without
+        a state-dir-scoped lease, both processes can spawn a replacement and
+        leave one unbound pane running.  The lease is deliberately per role:
+        unrelated lanes remain independently recoverable.
+        """
+        active_task = self._active_task_for_instance(role.instance_id)
+        lock_dir = self.state_dir / "locks" / "respawns"
+        try:
+            with SessionLock(lock_dir, role.instance_id):
+                return self._respawn_instance_with_lease(
+                    role,
+                    recovery_reason=recovery_reason,
+                )
+        except SessionLockBusy:
+            try:
+                self.event_writer.append(ZfEvent(
+                    type="worker.respawn.deferred",
+                    actor=role.instance_id,
+                    task_id=active_task.id if active_task is not None else None,
+                    payload={
+                        "role": role.name,
+                        "instance_id": role.instance_id,
+                        "reason": "recovery_lease_held",
+                        "requested_by": recovery_reason,
+                    },
+                ))
+            except Exception:
+                pass
+            return OrchestratorDecision(
+                action="respawn_in_progress",
+                role=role.instance_id,
+                task_id=active_task.id if active_task is not None else "",
+                reason="worker respawn already in progress for this role",
+            )
+
+    def _respawn_instance_with_lease(
+        self,
+        role: "RoleConfig",
+        *,
+        recovery_reason: str = "watchdog",
+    ) -> "OrchestratorDecision":
         """G-RESUME-4/5: watchdog-triggered respawn.
 
         Uses SpawnCoordinator so the correct --resume / exec resume
@@ -977,7 +1038,11 @@ class LifecycleManagerMixin(
         # we're now starting the respawn flow.
         self._set_worker_state(
             role.instance_id, "respawning",
-            reason="watchdog is_alive=False",
+            reason=(
+                "watchdog is_alive=False"
+                if recovery_reason == "watchdog"
+                else "operator requested role restart"
+            ),
         )
         coordinator = self._get_spawn_coordinator()
         try:
@@ -1018,7 +1083,10 @@ class LifecycleManagerMixin(
                 pass
             coordinator.spawn(
                 role,
-                cwd=self._role_spawn_cwd(role, source="watchdog_respawn"),
+                cwd=self._role_spawn_cwd(
+                    role,
+                    source=f"{recovery_reason}_respawn",
+                ),
             )
             # G-RESUME-5: inject recovery briefing as first user message
             if not self._wait_role_ready(role):
@@ -1039,14 +1107,26 @@ class LifecycleManagerMixin(
                     coordinator.spawn(
                         role,
                         cwd=self._role_spawn_cwd(
-                            role, source="watchdog_respawn_fresh",
+                            role,
+                            source=f"{recovery_reason}_respawn_fresh",
                         ),
                     )
                 if not self._wait_role_ready(role):
                     raise RuntimeError(
                         f"worker {role.instance_id} did not become ready after spawn"
                     )
-            if not self._inject_recovery_briefing(role):
+            active_fanout = self._active_fanout_child_for_instance(
+                role.instance_id,
+            )
+            if active_fanout is not None:
+                recovered = self._inject_fanout_recovery_briefing(
+                    role,
+                    active_fanout,
+                    recovery_reason=f"active_fanout_after_{recovery_reason}",
+                )
+            else:
+                recovered = self._inject_recovery_briefing(role)
+            if not recovered:
                 raise RuntimeError(
                     f"failed to inject recovery briefing for {role.instance_id}"
                 )
@@ -1056,11 +1136,15 @@ class LifecycleManagerMixin(
                 payload={
                     "role": role.name,
                     "instance_id": role.instance_id,
-                    "reason": "watchdog",
+                    "reason": recovery_reason,
                 },
             ))
             active_task = self._active_task_for_instance(role.instance_id)
-            active_task_id = active_task.id if active_task is not None else ""
+            active_task_id = (
+                str(active_fanout.get("task_id") or "")
+                if active_fanout is not None
+                else active_task.id if active_task is not None else ""
+            )
             if self._maybe_open_respawn_success_circuit(
                 role.instance_id,
                 task_id=active_task_id,
@@ -1073,16 +1157,21 @@ class LifecycleManagerMixin(
                         "worker respawned repeatedly without durable recovery"
                     ),
                 )
-            # B3: respawn succeeded → back to idle + clear failure counter
+            # A recovered active task remains busy; an idle respawn clears any
+            # stale generation left by the terminated provider process.
             self._set_worker_state(
-                role.instance_id, "idle",
+                role.instance_id,
+                "busy" if active_task is not None or active_fanout is not None else "idle",
                 reason="respawn complete",
+                task_id=active_task_id,
+                force=active_task is None and active_fanout is None,
             )
             self._clear_respawn_failure(role.instance_id)
             return OrchestratorDecision(
                 action="respawn",
                 role=role.instance_id,
-                reason="worker.respawned (watchdog)",
+                task_id=active_task_id,
+                reason=f"worker.respawned ({recovery_reason})",
             )
         except Exception as e:
             # Respawn failed — emit diagnostic, record failure (cap)
@@ -1479,6 +1568,7 @@ class LifecycleManagerMixin(
             role.instance_id,
             "busy",
             reason=f"compact complete; resumed task {active_task.id}",
+            task_id=active_task.id,
         )
         return True
 
@@ -1685,6 +1775,8 @@ class LifecycleManagerMixin(
         self,
         role: "RoleConfig",
         fanout_child: dict,
+        *,
+        recovery_reason: str = "active_fanout_after_recycle",
     ) -> bool:
         """Resume a fanout child after context recycle.
 
@@ -1723,7 +1815,7 @@ class LifecycleManagerMixin(
                 actor=role.instance_id,
                 payload={
                     "role": role.name,
-                    "reason": "active_fanout_after_recycle",
+                    "reason": recovery_reason,
                     "fanout_id": str(fanout_child.get("fanout_id") or ""),
                     "stage_id": str(fanout_child.get("stage_id") or ""),
                     "child_id": str(fanout_child.get("child_id") or ""),
@@ -2303,6 +2395,7 @@ class LifecycleManagerMixin(
                 f"{progress_event.type} already recorded for task {task.id}; "
                 "skipping stuck requeue"
             ),
+            task_id=task.id,
         )
         try:
             self.event_writer.append(ZfEvent(
@@ -2626,60 +2719,6 @@ class LifecycleManagerMixin(
         )
         self._send_transport_task(role.instance_id, path, prompt, context)
         return path
-
-    def _latest_manifest_pending_terminal_event(
-        self,
-        *,
-        task_id: str,
-        dispatch_id: str,
-        role: "RoleConfig",
-        expected_event: str,
-    ) -> ZfEvent | None:
-        try:
-            events = self.event_log.read_all()
-        except Exception:
-            return None
-        rejected_event_ids = self._rejected_origin_event_ids(events, task_id)
-        rejected_event_ids.update(
-            self._rejected_artifact_manifest_event_ids(events, task_id)
-        )
-        dispatch_idx = -1
-        manifest_idx = -1
-        manifest_event: ZfEvent | None = None
-        for idx, event in enumerate(events):
-            if event.task_id != task_id:
-                continue
-            payload = event.payload if isinstance(event.payload, dict) else {}
-            if event.type == "task.dispatched":
-                candidate_dispatch_id = str(payload.get("dispatch_id") or "")
-                if (
-                    not dispatch_id
-                    or not candidate_dispatch_id
-                    or candidate_dispatch_id == dispatch_id
-                ):
-                    dispatch_idx = idx
-                continue
-            if dispatch_idx >= 0 and idx <= dispatch_idx:
-                continue
-            if event.type == "artifact.manifest.published":
-                if event.id in rejected_event_ids:
-                    continue
-                if not self._event_dispatch_matches(payload, dispatch_id):
-                    continue
-                if not self._manifest_role_matches(event, role):
-                    continue
-                manifest_idx = idx
-                manifest_event = event
-                continue
-            if (
-                manifest_event is not None
-                and idx > manifest_idx
-                and event.type == expected_event
-                and event.id not in rejected_event_ids
-                and self._event_dispatch_matches(payload, dispatch_id)
-            ):
-                return None
-        return manifest_event
 
     def _rejected_artifact_manifest_event_ids(
         self,

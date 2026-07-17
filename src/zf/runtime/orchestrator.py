@@ -12,7 +12,6 @@ Interaction protocol:
 from __future__ import annotations
 
 import time
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, TYPE_CHECKING
@@ -55,13 +54,10 @@ from zf.runtime.orchestrator_dispatch import DispatchMixin
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 from zf.runtime.orchestrator_module_parity import ModuleParityBridgeMixin
 from zf.runtime.agent_view_runtime import AgentViewRuntimeMixin
+from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
 from zf.runtime.watcher import StuckDetector
-from zf.runtime.injection import (
-    build_task_prompt,
-)
 from zf.runtime.orchestrator_briefing import build_orchestrator_briefing
 from zf.runtime.progress import regenerate_progress
-from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 from zf.runtime.housekeeping import (
     apply_agent_usage_event,
     apply_circuit_breaker_failure,
@@ -84,6 +80,9 @@ from zf.runtime.rework_triage import (
     classify_rework_trigger,
     triage_from_payload,
 )
+from zf.runtime.terminal_events import is_stage_progress_event
+from zf.runtime.worker_state_runtime import WorkerStateRuntimeMixin
+from zf.runtime.writer_fanout_data import WriterFanoutDataMixin
 from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 
@@ -218,12 +217,6 @@ _CANDIDATE_REWORK_TRIGGER_EVENTS = frozenset({
     "workflow.child.failed",
 })
 
-from zf.runtime.writer_fanout_data import (
-    _FANOUT_AFFINITY_METADATA_KEYS,
-)
-from zf.runtime.terminal_events import is_stage_progress_event
-
-
 # EVAL-DECISION-OUTCOME-001: enumerated reasons for orchestrator.decision.recorded.
 # Each set is a closed taxonomy — adding a new reason requires updating the
 # CLI render in zf metrics decision-ratio --by-reason.
@@ -310,10 +303,6 @@ def _parse_event_ts(value: object) -> datetime | None:
     return parsed
 
 
-from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
-from zf.runtime.writer_fanout_data import WriterFanoutDataMixin
-
-
 class Orchestrator(
     FanoutCoordinationMixin,
     
@@ -324,6 +313,7 @@ class Orchestrator(
     AgentViewRuntimeMixin,
     FanoutEvidenceQueriesMixin,
     WriterFanoutDataMixin,
+    WorkerStateRuntimeMixin,
 ):
     """Deterministic orchestrator — reads state, makes dispatch decisions.
 
@@ -528,26 +518,7 @@ class Orchestrator(
         # 纯瞬态节流(重启归零即恢复默认节奏),真相不依赖它。
         self._layer2_streak_type: str = ""
         self._layer2_streak_count: int = 0
-        # B3 (test-plan 2026-04-15-2342): per-worker state tracking.
-        # _last_worker_state is an in-memory dedup cache. Persistent
-        # truth lives in events.jsonl as worker.state.changed events
-        # — restart-safe, reconstructable by folding the event tail.
-        # On init we rebuild the cache from recent events so a fresh
-        # Orchestrator instance knows each worker's last-seen state
-        # (prevents duplicate state-change emissions after restart).
-        self._last_worker_state: dict[str, str] = {}
-        try:
-            from zf.runtime.event_window import read_runtime_events
-
-            for event in read_runtime_events(self.event_log, self.state_dir):
-                if event.type != "worker.state.changed":
-                    continue
-                if event.actor:
-                    self._last_worker_state[event.actor] = (
-                        event.payload.get("to", "idle")
-                    )
-        except Exception:
-            pass
+        self._init_worker_state_tracking()
 
         # B-NEW-6 (2026-05-16): clear blocked_human on fresh Orchestrator
         # init. blocked_human is the "operator escalation required" parking
@@ -760,58 +731,6 @@ class Orchestrator(
         if task is not None and (task.active_dispatch_id or "") == dispatch_id:
             self.task_store.update(task_id, active_dispatch_id="")
 
-    # -- B3: per-worker state tracking (persisted via events.jsonl) --
-
-    def _set_worker_state(
-        self,
-        instance_id: str,
-        new_state: str,
-        reason: str = "",
-        *,
-        task_id: str = "",
-        force: bool = False,
-    ) -> None:
-        """Record a worker state transition.
-
-        Idempotent: no-op if the instance is already at new_state. On
-        transition, emits a ``worker.state.changed`` event so the
-        history is persisted in events.jsonl (truth source) and the
-        latest state can be recovered after a restart by folding
-        recent events.
-
-        States: idle / busy / awaiting_review / stuck / pending_recycle
-        / recycling / respawning / dead / cancelling / blocked_human.
-        """
-        old = self._last_worker_state.get(instance_id, "idle")
-        if old == new_state and not force:
-            return
-        self._last_worker_state[instance_id] = new_state
-        try:
-            payload = {
-                "from": old,
-                "to": new_state,
-                "reason": reason,
-            }
-            if task_id:
-                payload["task_id"] = task_id
-                payload["instance_id"] = instance_id
-            emitted = self.event_writer.append(ZfEvent(
-                type="worker.state.changed",
-                actor=instance_id,
-                task_id=task_id or None,
-                payload=payload,
-            ))
-            try:
-                registry = RoleSessionRegistry(
-                    self.state_dir / "role_sessions.yaml",
-                    project_root=str(self.project_root),
-                )
-                apply_worker_state_changed_event(registry, emitted)
-            except Exception:
-                pass
-        except Exception:
-            pass  # observability, never block the loop
-
     def all_roles(self) -> list[RoleConfig]:
         """Return the union of declared roles and runtime-spawned roles.
 
@@ -827,33 +746,6 @@ class Orchestrator(
                 continue
             out.append(role)
             seen.add(instance_id)
-        return out
-
-    def worker_health(self) -> dict[str, str]:
-        """Return current state per worker instance by folding
-        ``worker.state.changed`` events from the last day.
-
-        Default state for any instance with no events is ``idle``.
-        Restart-safe: after a zf stop/start the same state is
-        recomputed by re-folding the event tail, so state survives
-        orchestrator restarts as long as events.jsonl does.
-        """
-        out: dict[str, str] = {
-            r.instance_id: "idle"
-            for r in self.config.roles
-            if r.name != "orchestrator"
-        }
-        try:
-            from zf.runtime.event_window import read_runtime_events
-
-            events = read_runtime_events(self.event_log, self.state_dir)
-        except Exception:
-            return out
-        for event in events:
-            if event.type != "worker.state.changed":
-                continue
-            if event.actor in out:
-                out[event.actor] = event.payload.get("to", "idle")
         return out
 
     def _safe_housekeeping(self, step: str, fn: Callable[[], None]) -> None:
@@ -1288,6 +1180,12 @@ class Orchestrator(
         git_config = getattr(self.config.runtime, "git", None)
         if git_config is None:
             return
+        if (
+            event.type == "judge.passed"
+            and isinstance(event.payload, dict)
+            and str(event.payload.get("authority") or "") == "compat_projection"
+        ):
+            return
         # Two triggers, two flags:
         #  - judge.passed → auto_ship_on_judge_passed (terminal gate; the cj-min
         #    safe point — fires AFTER candidate-level review→verify→judge)
@@ -1375,20 +1273,9 @@ class Orchestrator(
                 pass
 
     def _maybe_complete_run_goal(self, event: ZfEvent) -> None:
-        """LB-1: terminal judge.passed marks an active run goal complete so the
-        run-manager stops escalating/autoresearching a run that already
-        succeeded. Gated on goal.enabled; idempotent via the goal projection."""
-        if not getattr(getattr(self.config, "goal", None), "enabled", False):
-            return
-        try:
-            from zf.runtime.event_window import read_runtime_events
-            from zf.runtime.run_manager import run_goal_completion_event
-            events = list(read_runtime_events(self.event_log, self.state_dir))
-            completion = run_goal_completion_event(events, cause=event)
-            if completion is not None:
-                self.event_writer.append(completion)
-        except Exception:
-            pass
+        from zf.runtime.goal_completion_gate import maybe_complete_run_goal
+
+        maybe_complete_run_goal(self, event)
 
     def _run_zaofu_bug_scan(self) -> None:
         """β-1 (2026-05-17): periodic scan for known zaofu kernel failure
@@ -1745,22 +1632,40 @@ class Orchestrator(
         """
         try:
             from zf.runtime.event_window import read_runtime_events
-            from zf.runtime.run_manager import run_manager_tick
+            from zf.runtime.run_manager import (
+                _pending_candidate_rework_actions,
+                run_manager_tick,
+            )
 
             events = read_runtime_events(self.event_log, self.state_dir)
             if self._resume_unrecorded_writer_fanout_results(events):
                 events = read_runtime_events(self.event_log, self.state_dir)
             self._resume_unstarted_rework_task_maps(events)
-            run_manager_tick(
-                state_dir=self.state_dir,
-                writer=self.event_writer,
-                config=self.config,
+            events = read_runtime_events(self.event_log, self.state_dir)
+            # ``run_once()`` invokes this sweep from the five-second idle
+            # tick.  Calling the full Run Manager unconditionally here
+            # bypasses TickServiceState coalescing and creates a permanent
+            # run.manager.tick feedback loop even for a healthy run.  The
+            # candidate action builder already deduplicates applied actions;
+            # only enter the bounded Run Manager path while it reports an
+            # unresolved candidate-level recovery action.
+            pending_actions = _pending_candidate_rework_actions(
+                self.state_dir,
+                self.config,
+                events,
                 project_root=self.project_root,
-                event_log=self.event_log,
-                auto_execute=True,
-                action_filter={"candidate-rework-apply"},
-                spawn_repairs=False,
             )
+            if pending_actions:
+                run_manager_tick(
+                    state_dir=self.state_dir,
+                    writer=self.event_writer,
+                    config=self.config,
+                    project_root=self.project_root,
+                    event_log=self.event_log,
+                    auto_execute=True,
+                    action_filter={"candidate-rework-apply"},
+                    spawn_repairs=False,
+                )
             events = read_runtime_events(self.event_log, self.state_dir)
             self._resume_unstarted_rework_task_maps(events)
             return
@@ -2492,12 +2397,25 @@ class Orchestrator(
             # the candidate's tasks here deterministically in both modes. No-op
             # unless the event is candidate-level (no task_id + pdd_id +
             # feature_id), so per-task judge.passed is unaffected.
-            if not event.task_id and event.type == "judge.passed":
+            if (
+                not event.task_id
+                and event.type == "judge.passed"
+                and not (
+                    isinstance(event.payload, dict)
+                    and str(event.payload.get("authority") or "")
+                    == "compat_projection"
+                )
+            ):
                 evidence_gap = self._reject_flow_judge_evidence_gap(event)
                 if evidence_gap is not None:
                     decisions.append(evidence_gap)
                     self._processed_event_ids.add(event.id)
                     continue
+                settle = self._settle_candidate_tasks_done(event)
+                if settle is not None:
+                    decisions.append(settle)
+
+            if not event.task_id and event.type == "run.goal.completed":
                 settle = self._settle_candidate_tasks_done(event)
                 if settle is not None:
                     decisions.append(settle)
@@ -3030,6 +2948,8 @@ class Orchestrator(
                 except Exception:
                     pass
         try:
+            if event.type == "task_map.ready":
+                self._pin_goal_claim_set(event)
             if event.type == "agent.usage":
                 apply_agent_usage_event(
                     self.cost_tracker, event,
@@ -3330,6 +3250,41 @@ class Orchestrator(
             # reaches the auto-ship elif in this chain. Run terminal ship + run-goal
             # completion here as a standalone `if` so both fire regardless of the
             # elif shadow (the reason auto_ship_on_judge_passed had no effect).
+            if event.type == "goal.closure.synthesized":
+                from zf.runtime.goal_closure_runtime import (
+                    process_goal_closure_result,
+                )
+
+                process_goal_closure_result(self, event)
+            elif event.type in {
+                "run.goal.completion.claimed",
+                "workflow.operation.settled",
+                "workflow.operation.failed",
+                "workflow.operation.blocked",
+                "rework.feedback.verified_closed",
+                "rework.feedback.residual",
+                "attempt.handoff.acknowledged",
+                "attempt.handoff.closed",
+                "human.decision.resolved",
+                "run.manager.human_decision.applied",
+                "run.manager.action.applied",
+                "run.manager.action.failed",
+                "task.done",
+                "verify.passed",
+                "test.passed",
+                "review.approved",
+                "lane.stage.completed",
+                "candidate.ready",
+                "candidate.integration.completed",
+                "ship.completed",
+                "ship.failed",
+                "ship.blocked",
+                "ship.conflict",
+                "run.delivery.settled",
+                "run.delivery.failed",
+                "run.delivery.blocked",
+            }:
+                self._maybe_complete_run_goal(event)
             if event.type == "judge.passed":
                 self._maybe_auto_ship(event)
                 self._maybe_complete_run_goal(event)
@@ -3369,33 +3324,6 @@ class Orchestrator(
                 self._hard_cap_exceeded.pop(event.actor, None)
         except Exception:
             pass  # housekeeping never blocks the loop
-
-    def _release_stage_actor_liveness(self, event: ZfEvent) -> None:
-        """Mark the emitting worker no longer busy after a stage event.
-
-        In Layer 2 mode, semantic routing is agent-owned, so built-in
-        ``_on_*`` handlers may not run for events such as
-        ``design.critique.done``. Liveness is still kernel-owned: once a
-        worker has emitted a terminal stage event for its turn, stale usage
-        samples must not keep it ``busy`` until the next sweep reports a
-        false ``worker.stuck``.
-        """
-        actor = str(event.actor or "").strip()
-        if not actor or actor in {"zf-cli", "orchestrator"}:
-            return
-        if event.type == "dev.blocked":
-            target_state = "blocked_human"
-        elif event.type in {"dev.build.done", "arch.proposal.done"}:
-            target_state = "awaiting_review"
-        else:
-            target_state = "idle"
-        self._set_worker_state(
-            actor,
-            target_state,
-            reason=f"{event.type} for task {event.task_id}",
-            task_id=event.task_id or "",
-            force=True,
-        )
 
     def _ensure_rework_triage(self, event: ZfEvent):
         existing = self._rework_triage_for_event(event, existing_only=True)
@@ -3633,10 +3561,10 @@ class Orchestrator(
                 or f"Verify {scope} against the task_map acceptance criteria."
             )
             acceptance_criteria = (
-                self._writer_task_contract_list(raw.get("acceptance_criteria"))
-                or self._writer_task_contract_list(raw.get("acceptance"))
-                or self._writer_task_contract_list(item.get("acceptance_criteria"))
-                or self._writer_task_contract_list(item.get("acceptance"))
+                self._writer_acceptance_criteria(raw.get("acceptance_criteria"))
+                or self._writer_acceptance_criteria(raw.get("acceptance"))
+                or self._writer_acceptance_criteria(item.get("acceptance_criteria"))
+                or self._writer_acceptance_criteria(item.get("acceptance"))
             )
             blocked_by = (
                 self._writer_task_contract_list(raw.get("blocked_by"))
@@ -3713,7 +3641,7 @@ class Orchestrator(
                 owner_role=owner_role,
                 owner_instance=owner_instance,
                 acceptance=(
-                    "; ".join(acceptance_criteria)
+                    "; ".join(map(self._writer_acceptance_text, acceptance_criteria))
                     if acceptance_criteria
                     else "exit_code=0"
                 ),

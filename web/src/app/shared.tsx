@@ -969,7 +969,17 @@ export function TablePage({
               {rows.map((rawRow, index) => {
                 const row = rawRow as Record<string, unknown>;
                 return (
-                  <tr key={index} onClick={() => onOpen?.(row)}>
+                  <tr
+                    className={onOpen ? "interactive-row" : undefined}
+                    key={index}
+                    onClick={() => onOpen?.(row)}
+                    onKeyDown={onOpen ? (event) => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      onOpen(row);
+                    } : undefined}
+                    tabIndex={onOpen ? 0 : undefined}
+                  >
                     {keys.map((key) => {
                       const text = stringify(row[key]);
                       return (

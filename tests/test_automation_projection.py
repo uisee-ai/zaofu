@@ -94,12 +94,29 @@ def test_project_automations_collect_runtime_signals(tmp_path: Path) -> None:
     log.append(ZfEvent(
         type="channel.agent.reply.requested",
         actor="channel",
+        # Pending for >15min: outside the monitor grace window, still alerts.
+        ts=(datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),
         payload={
             "channel_id": "ch-main",
             "thread_id": "main",
             "source": "test",
             "request_id": "reply-pending",
             "message_id": "msg-1",
+            "target_member_id": "architect",
+        },
+    ))
+    log.append(ZfEvent(
+        type="channel.agent.reply.started",
+        actor="channel",
+        # In-flight reply started seconds ago: inside the grace window — must
+        # NOT become a monitor channel_alert (2026-07-16 operator review: it
+        # used to spin up run_manager -> autoresearch on every live reply).
+        payload={
+            "channel_id": "ch-main",
+            "thread_id": "main",
+            "source": "test",
+            "request_id": "reply-fresh",
+            "message_id": "msg-3",
             "target_member_id": "architect",
         },
     ))
@@ -263,7 +280,7 @@ def test_project_automations_collect_runtime_signals(tmp_path: Path) -> None:
     assert daily["cancelled_tasks"] == ["TASK-CANCELLED"]
     assert daily["worker_health"]["context_warnings"][0]["type"] == "worker.context.warning"
     assert daily["channel_attention"]["summary"]["failed_replies"] == 1
-    assert daily["channel_attention"]["summary"]["pending_replies"] == 1
+    assert daily["channel_attention"]["summary"]["pending_replies"] == 2
     assert daily["pending_proposals"][0]["proposal_id"] == "proposal-1"
     assert {p["proposal_id"] for p in daily["pending_proposals"]} == {"proposal-1"}
     assert daily["token_context_cost"]["dev"]["entries"] == 1
@@ -333,6 +350,14 @@ def test_project_automations_collect_runtime_signals(tmp_path: Path) -> None:
         "cost.budget.exceeded",
     }
     assert monitor["channel_alerts"]
+    monitor_alert_requests = {
+        str(row.get("request_id") or "") for row in monitor["channel_alerts"]
+    }
+    assert "reply-pending" in monitor_alert_requests, "stale pending reply still alerts"
+    assert "reply-failed" in monitor_alert_requests, "failed reply alerts immediately"
+    assert "reply-fresh" not in monitor_alert_requests, (
+        "in-flight reply inside the grace window must not alert"
+    )
     assert monitor["open_proposals"][0]["proposal_id"] == "proposal-1"
     assert monitor["refs"]["event_refs"]
     assert monitor["refs"]["preview_refs"][0]["proposal_id"] == "proposal-1"

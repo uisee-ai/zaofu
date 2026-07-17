@@ -24,7 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zf.core.events.model import ZfEvent
-from zf.runtime.autoresearch_invocation import build_invocation_request_event
+from zf.runtime.terminal_events import terminal_after_event
 
 # Events with no stage_id that nonetheless mean "the kernel handled the trigger".
 _FANOUT_START = "fanout.started"
@@ -43,11 +43,64 @@ class StallFinding:
     success_event: str
     feature_id: str
     fingerprint: str
+    trigger_event_id: str = ""
+    workflow_run_id: str = ""
+    trace_id: str = ""
+    fanout_id: str = ""
 
 
 def _payload(event) -> dict:
     p = getattr(event, "payload", {}) or {}
     return p if isinstance(p, dict) else {}
+
+
+def _event_id(event, *, fallback: str) -> str:
+    return str(getattr(event, "id", "") or fallback)
+
+
+def _is_original_trigger(event) -> bool:
+    """Redispatches are recovery attempts, never independent root triggers."""
+
+    if str(getattr(event, "actor", "") or "") == "zf-stall-redispatch":
+        return False
+    payload = _payload(event)
+    return not str(payload.get(_REDISPATCH_FINGERPRINT) or "")
+
+
+def _trigger_targets_stage(event, *, stage_id: str, trigger: str) -> bool:
+    """Whether a shared lane handoff actually enters ``stage_id``.
+
+    ``lane.stage.completed`` is deliberately reused by every lane slot.  A
+    terminal verify handoff therefore has the same event type as the impl ->
+    verify trigger, but it carries an empty ``next_stage_slot``.  Treating the
+    latest event by type as the next trigger creates a self-redispatch loop
+    after a healthy verify completion.
+
+    Ordinary unique trigger events retain their existing semantics.  For a
+    lane handoff, the producer's explicit next slot is the routing contract.
+    """
+
+    if trigger != "lane.stage.completed":
+        return True
+    payload = _payload(event)
+    expected_slot = stage_id.rsplit("-", 1)[-1]
+    return str(payload.get("next_stage_slot") or "") == expected_slot
+
+
+def _matches_trigger_scope(event, trigger_event, *, stage_id: str) -> bool:
+    """Avoid treating another lane/run's terminal fact as this stage's proof."""
+
+    payload = _payload(event)
+    trigger_payload = _payload(trigger_event)
+    observed_stage = str(payload.get("stage_id") or "")
+    if observed_stage and observed_stage != stage_id:
+        return False
+    for key in ("workflow_run_id", "run_id", "trace_id"):
+        expected = str(trigger_payload.get(key) or "")
+        observed = str(payload.get(key) or "")
+        if expected and observed and expected != observed:
+            return False
+    return True
 
 
 def detect_structural_stalls(
@@ -78,24 +131,39 @@ def detect_structural_stalls(
         stage_id, trigger = str(stage_id), str(trigger)
         if not stage_id or not trigger:
             continue
-        # latest trigger occurrence
+        # The latest *upstream* trigger is the active attempt.  A recovery
+        # redispatch must never become a new root and renew its own stall.
         trigger_idx = None
+        trigger_event = None
         for idx, event in seq:
-            if getattr(event, "type", "") == trigger:
+            if (
+                getattr(event, "type", "") == trigger
+                and _is_original_trigger(event)
+                and _trigger_targets_stage(event, stage_id=stage_id, trigger=trigger)
+            ):
                 trigger_idx = idx
+                trigger_event = event
         if trigger_idx is None:
             continue
+        assert trigger_event is not None
         # did the kernel handle it after the trigger?
-        handled = False
+        handled = terminal_after_event([event for _, event in seq], trigger_event) is not None
         for idx, event in seq:
             if idx <= trigger_idx:
                 continue
             etype = getattr(event, "type", "")
-            if etype == success_event and success_event:
+            if (
+                etype == success_event
+                and success_event
+                and _matches_trigger_scope(event, trigger_event, stage_id=stage_id)
+            ):
                 handled = True
                 break
             if etype in (_FANOUT_START, _FANOUT_CANCEL):
-                if str(_payload(event).get("stage_id") or "") == stage_id:
+                if (
+                    str(_payload(event).get("stage_id") or "") == stage_id
+                    and _matches_trigger_scope(event, trigger_event, stage_id=stage_id)
+                ):
                     handled = True
                     break
             # B14-S4 (doc 93 §6): awaiting_approval 是合法 hold 态 —
@@ -106,6 +174,7 @@ def detect_structural_stalls(
             if (
                 etype == "plan.approval.requested"
                 and str(_payload(event).get("stage_id") or "") == stage_id
+                and _matches_trigger_scope(event, trigger_event, stage_id=stage_id)
             ):
                 handled = True
                 break
@@ -113,34 +182,72 @@ def detect_structural_stalls(
             continue
         if (total - 1 - trigger_idx) < min_events_after:
             continue  # trigger just fired; the kernel hasn't had its turn yet
+        trigger_payload = _payload(trigger_event)
+        trigger_event_id = _event_id(trigger_event, fallback=f"index-{trigger_idx}")
+        workflow_run_id = str(
+            trigger_payload.get("workflow_run_id")
+            or trigger_payload.get("run_id")
+            or ""
+        )
+        trace_id = str(
+            trigger_payload.get("trace_id")
+            or getattr(trigger_event, "correlation_id", "")
+            or ""
+        )
+        fanout_id = str(trigger_payload.get("fanout_id") or "")
+        identity_scope = workflow_run_id or trace_id or "legacy"
         findings.append(StallFinding(
             trigger=trigger,
             stage_id=stage_id,
             success_event=str(success_event or ""),
             feature_id=feature_id,
-            fingerprint=f"stall:{trigger}->{stage_id}:{feature_id}",
+            fingerprint=(
+                f"stall:{identity_scope}:{stage_id}:{fanout_id or '-'}:"
+                f"{trigger_event_id}"
+            ),
+            trigger_event_id=trigger_event_id,
+            workflow_run_id=workflow_run_id,
+            trace_id=trace_id,
+            fanout_id=fanout_id,
         ))
     return findings
 
 
 def stall_invocation_event(finding: StallFinding, events) -> ZfEvent | None:
-    """Build an autoresearch.invocation.requested for a structural stall, or None
-    if already requested (dedup lives in build_invocation_request_event)."""
-    item = {
-        "summary": (
-            f"structural stall: trigger {finding.trigger} fired but stage "
-            f"{finding.stage_id} never started/cancelled/succeeded "
-            f"(feature {finding.feature_id or '?'}) — kernel should have "
-            f"dispatched the stage and silently did not"
-        ),
-        "severity": "high",
-        "fingerprint": finding.fingerprint,
-        "attention_id": finding.fingerprint,
-        "task_id": "",
-    }
-    decision = {"route": "supervisor_autoresearch", "decision_id": finding.fingerprint}
-    return build_invocation_request_event(
-        item, decision=decision, events=list(events), projection_ref={},
+    """Report a capped stall to the recovery owner, never directly to L2.
+
+    ``dispatch.silent_stall`` is already a registry-owned abnormal event.  It
+    becomes Supervisor attention and then a Run Manager diagnosis action on
+    the next tick, preserving one mutating/diagnosis owner.
+    """
+
+    if any(
+        getattr(event, "type", "") == "dispatch.silent_stall"
+        and str(_payload(event).get("fingerprint") or "") == finding.fingerprint
+        for event in events
+    ):
+        return None
+    return ZfEvent(
+        type="dispatch.silent_stall",
+        actor="zf-stall-detector",
+        correlation_id=finding.trace_id or finding.workflow_run_id or finding.fingerprint,
+        causation_id=finding.trigger_event_id or None,
+        payload={
+            "fingerprint": finding.fingerprint,
+            "failure_scope": "structural_stall",
+            "workflow_run_id": finding.workflow_run_id,
+            "trace_id": finding.trace_id,
+            "fanout_id": finding.fanout_id,
+            "stage_id": finding.stage_id,
+            "trigger": finding.trigger,
+            "original_trigger_event_id": finding.trigger_event_id,
+            "feature_id": finding.feature_id,
+            "severity": "high",
+            "summary": (
+                f"structural stall: original trigger {finding.trigger} fired but "
+                f"stage {finding.stage_id} never started/cancelled/succeeded"
+            ),
+        },
     )
 
 
@@ -237,7 +344,14 @@ def stall_redispatch_event(
         return None
     latest_trigger = None
     for e in events:
-        if getattr(e, "type", "") == finding.trigger:
+        if (
+            getattr(e, "type", "") == finding.trigger
+            and _is_original_trigger(e)
+            and (
+                not finding.trigger_event_id
+                or str(getattr(e, "id", "") or "") == finding.trigger_event_id
+            )
+        ):
             latest_trigger = e
     if latest_trigger is None:
         return None
@@ -249,6 +363,9 @@ def stall_redispatch_event(
     payload = dict(_payload(latest_trigger))
     payload[_REDISPATCH_FINGERPRINT] = finding.fingerprint
     payload["redispatch_attempt"] = _redispatch_attempts(finding.fingerprint, events) + 1
+    payload["original_trigger_event_id"] = finding.trigger_event_id or str(
+        getattr(latest_trigger, "id", "") or ""
+    )
     return ZfEvent(
         type=finding.trigger,
         actor="zf-stall-redispatch",

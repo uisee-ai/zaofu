@@ -52,10 +52,12 @@ def test_web_detect_missing_path(client):
     assert r.status_code == 404
 
 
-def test_web_validate_path_reports_state_dir_outside_root(client, tmp_path):
+def test_web_validate_path_reports_state_dir_outside_root(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
     root = tmp_path / "project"
     r = client.post(
         "/api/workspace/projects/validate-path",
+        headers={"x-zf-web-token": "test-token"},
         json={"root": str(root), "state_dir": "../outside"},
     )
 
@@ -66,7 +68,8 @@ def test_web_validate_path_reports_state_dir_outside_root(client, tmp_path):
     assert any(item["kind"] == "state_dir_outside_root" for item in body["diagnostics"])
 
 
-def test_web_validate_path_reports_non_empty_state_dir(client, tmp_path):
+def test_web_validate_path_reports_non_empty_state_dir(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
     root = tmp_path / "project"
     state = root / ".zf"
     state.mkdir(parents=True)
@@ -74,6 +77,7 @@ def test_web_validate_path_reports_non_empty_state_dir(client, tmp_path):
 
     r = client.post(
         "/api/workspace/projects/validate-path",
+        headers={"x-zf-web-token": "test-token"},
         json={"root": str(root), "state_dir": ".zf"},
     )
 

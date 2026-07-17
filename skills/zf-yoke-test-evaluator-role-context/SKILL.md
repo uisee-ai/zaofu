@@ -1,73 +1,63 @@
 ---
 name: zf-yoke-test-evaluator-role-context
-description: "Use for ZaoFu test roles that need yoke-style independent verification and evaluator scoring discipline."
-stages: [verify, test, judge]
+description: "Use for ZaoFu Verify, test, discovery, and scan-verification roles that need independent evidence-first evaluation."
+stages: [verify, test, discovery, scan]
 tags: [yoke, role-context, verification]
-dependencies: [verify-review]
+dependencies: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier]
 auto_inject: true
 load_on_demand: false
 ---
 
 # ZaoFu Yoke Test Evaluator Role Context
 
-Local adaptation of yoke test-evaluator discipline for ZaoFu.
+This is the active role boundary for independent Verify/test/discovery work.
+Method detail and task-verification contracts are available through its
+dependencies. Global discovery, parity rescan, gap synthesis, and task-map
+amendment are separate role capabilities supplied by the workflow profile.
 
-## Precedence
+## Dependency Triggers
 
-方法细节委托给 in-repo `yoke/` 方法族——尤其 `yoke/verify-review`(五轴评审、
-覆盖矩阵非空、runner/product 失败分类、证据可复跑,与 `verify.child.completed`
-报告合约机械配对)。本 role-context 只管**角色边界**:独立验收、审计对象绑定、
-结构化证据汇报。冲突时以独立验证与结构化证据优先于实现便利;方法怎么做看
-`yoke/verify-review`,这里不复述其内容。
+- Always use `yoke/verify-review` for independent review order and evidence
+  quality.
+- Load `zf-harness-verification-checklist` before issuing a product verdict.
+- Load `zf-mechanical-claim-verifier` only when narrative or aggregate claims
+  must be mapped to acceptance criteria and evidence.
+- Return a typed, evidence-backed pass/reject/blocked result for the immutable
+  slice. Do not rescan the whole product or amend the task map unless the role
+  briefing separately supplies the global gap/replan capability.
 
-## Rules
+## Evaluation Method
 
-- **审计对象绑定(先做)**:评测前 `git rev-parse HEAD` 对齐 briefing / child
-  payload 的 `target_commit`(FIX-9 后 verify child 的审计对象就是它)。不符先报
-  `fanout.child.workdir_mismatch`,**不出 verdict**——审了错误的树给结论是最贵
-  的假绿。
-- Verify independently; do not trust dev self-report as sufficient evidence.
-- Run concrete commands and record exit codes.
-- Link failures to task id, command, output summary, and suspected owner.
-- **失败分类落到报告字段**:runner/环境失败(下载超时/缺库/无 TTY,r4 Chromium
-  超时实锚)与产品失败在报告结构里分列(runner failure vs product failure)。错分
-  类把基建问题路由成代码返工、烧一轮无效 rework;把产品 bug 报成"我没跑出来"
-  则漏放缺陷。分类标准与词表映射见下。
-- Report coverage gaps even when commands pass.
-- Do not mark runtime truth directly; emit structured evidence for the harness.
-- A recovery evaluator without task id / dispatch context may only report
-  diagnostics; it must not emit `test.passed` or other lifecycle events.
-- When evaluating rework, require concrete delta evidence from the failed
-  attempt before passing.
-- Use the briefing's dispatch id in test lifecycle events when present.
+1. Bind the audit to the immutable target supplied by the briefing. If the
+   worktree does not match, report execution/target failure and do not issue a
+   product verdict.
+2. Read the task contract and admitted implementation handoff rather than
+   relying on the worker's summary.
+3. Re-run declared checks, then add independent acceptance, regression,
+   integration, browser, provider, or packaging checks required by the task's
+   verification tier.
+4. Map every mandatory acceptance criterion to evidence. Passing commands do
+   not close uncovered criteria.
+5. Separate verifier/environment execution failure from a product rejection.
+   Only a successfully executed, evidence-backed rejection enters semantic
+   rework.
+6. Record exact findings, affected criteria, reproducible commands, evidence
+   refs, and the recommended semantic owner.
+7. Submit through the exact result profile and completion command in the
+   briefing. Do not invent terminal events or mutate runtime truth.
 
-## 报告合约(verify.child.completed)
+## Role Boundary
 
-报告经 `verify.child.completed` / `verify.child.failed` 的 event schema 校验
-(`canonical-dag/v3` 契约,required + non_empty 档位;`verification.
-event_schema.mode: blocking` 下拒收,warning 档只告警——prod controller
-预设已开 blocking。逐字段方法与评审次序见 `yoke/verify-review`,此处不
-复述)。硬性字段:
+- Verify independently; do not repair product code or let Impl self-report
+  substitute for evidence.
+- A recovery evaluator without authoritative task/dispatch/target context may
+  report diagnostics only.
+- Rework verification must examine the new delta and the previously failing
+  evidence; a different target cannot silently satisfy the old attempt.
+- Non-blocking suggestions remain findings, not gap tasks.
+- Judge is not this role. Thin Judge consumes admitted results and does not
+  inherit this wrapper.
 
-- `summary` / `evidence_refs` / `git_refs`:required;`evidence_refs` 须非空且
-  可复跑(命令输出/日志/截图路径)。
-- `report.requirement_coverage_matrix`:**至少一行**(non_empty 档,空矩阵 schema
-  直接拒收——r4 全轮 9 份空矩阵 F14 正是本角色产出的报告);每行 `requirement_id`
-  必须来自 task contract / PRD 验收条款,不可自造。
-- reject/fail 时:`report.gap_findings` 给文件级定位 + `report.replan_recommendation`。
-- 失败分类进报告结构:runner failure(环境/基建)与 product failure(代码)分列,
-  决定 rework 路由——见 Rules。
-
-## 汇报词表(约定,kernel 消费的是事件类型 + 字段)
-
-下列 `TEST_*` 是**汇报约定,kernel 不校验这些字符串**——kernel 消费的是事件类型
-+ payload 字段。汇报时映射到真实事件出口:
-
-| 汇报词 | kernel 事件 | 路由后果 |
-|---|---|---|
-| `TEST_PASS` / `TEST_PASS_WITH_GAPS` | `test.passed` | 进 judge / 终态;gaps 落 report 字段 |
-| `TEST_FAIL_REWORK_DEV` | `test.failed` | rework → dev(烧一轮返工) |
-| `TEST_FAIL_ENVIRONMENT` / `TEST_BLOCKED` | `test.suspended` | 不烧 rework:task → blocked + `human.escalate`(`_on_suspended`) |
-
-环境失败误报成 `test.failed` 会把基建问题当代码返工烧真金;这正是词表(与
-runner/product 分类)存在的原因——分类先于选词。
+Runtime owns schema validation, result admission/repair, attempt accounting,
+affinity routing, stale/replay checks, and terminal state. This Skill owns how
+to perform a meaningful independent evaluation.

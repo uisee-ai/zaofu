@@ -20,6 +20,8 @@ class ControlledActionAttempt:
     attempt_id: str
     started_at: str
     event_id: str
+    operation_id: str = ""
+    request_hash: str = ""
 
 
 class ControlledActionOrchestrator:
@@ -116,6 +118,8 @@ class ControlledActionOrchestrator:
                 "requested_action": requested_action,
                 "surface": self.surface,
                 "started_at": started_at,
+                "operation_id": str(payload.get("operation_id") or ""),
+                "request_hash": str(payload.get("request_hash") or ""),
                 "payload": payload,
             }),
         )
@@ -123,6 +127,8 @@ class ControlledActionOrchestrator:
             attempt_id=attempt_id,
             started_at=started_at,
             event_id=event.id,
+            operation_id=str(payload.get("operation_id") or ""),
+            request_hash=str(payload.get("request_hash") or ""),
         )
 
     def _completed(
@@ -148,6 +154,8 @@ class ControlledActionOrchestrator:
                 "action": action,
                 "requested_action": requested_action,
                 "surface": self.surface,
+                "operation_id": attempt.operation_id,
+                "request_hash": attempt.request_hash,
                 "status": status,
                 "reason": reason,
                 "started_at": attempt.started_at,
@@ -180,6 +188,8 @@ class ControlledActionOrchestrator:
                 "action": action,
                 "requested_action": requested_action,
                 "surface": self.surface,
+                "operation_id": attempt.operation_id,
+                "request_hash": attempt.request_hash,
                 "status": status,
                 "reason": reason,
                 "started_at": attempt.started_at,
@@ -204,6 +214,8 @@ class ControlledActionOrchestrator:
             "action": action,
             "requested_action": requested_action,
             "status": status,
+            "operation_id": attempt.operation_id,
+            "request_hash": attempt.request_hash,
             "ok": bool(result.get("ok")),
             "event_id": str(result.get("event_id") or ""),
             "reply_event_id": str(result.get("reply_event_id") or ""),

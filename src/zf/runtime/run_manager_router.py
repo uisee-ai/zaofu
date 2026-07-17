@@ -122,6 +122,20 @@ def route_for_safe_action(safe_resume_action: str) -> ActionRoute:
             attempt_cap=1,
             expected_downstream_events=tuple(sorted(expected_downstream_events(safe_resume_action))),
         )
+    if safe_resume_action == "ship-retry":
+        return ActionRoute(
+            safe_resume_action=safe_resume_action,
+            failure_class="goal_delivery_failed",
+            owner_route="controlled_action",
+            action_policy="needs_approval",
+            intervention_class="human_decision",
+            attempt_cap=2,
+            expected_downstream_events=(
+                "run.delivery.settled",
+                "run.delivery.failed",
+                "run.delivery.blocked",
+            ),
+        )
     return ActionRoute(
         safe_resume_action=safe_resume_action,
         failure_class="unknown_complex",
@@ -201,6 +215,14 @@ def decide_action_policy(
                 payload=payload,
                 preflight=preflight,
                 reason="attention diagnosis action is missing required evidence",
+            )
+        if str(payload.get("action_policy") or "") == "needs_approval":
+            return _decision(
+                "needs_approval",
+                executable=False,
+                payload=payload,
+                preflight=preflight,
+                reason="diagnosis identified a blocker that requires owner approval",
             )
         return _decision(
             "needs_diagnosis",
@@ -803,7 +825,9 @@ def _spec_needs_recovery_closeout(spec: Any) -> bool:
 
 def _safe_action_for_spec(spec: Any) -> str:
     suggested = str(getattr(spec, "suggested_action_kind", "") or "")
-    if suggested in SAFE_BATCH_ACTIONS | SAFE_TASK_ACTIONS | {"trigger_rework"}:
+    if suggested in SAFE_BATCH_ACTIONS | SAFE_TASK_ACTIONS | {
+        "trigger_rework", "ship-retry",
+    }:
         return suggested
     if suggested in {
         "needs_stage_dispatch",

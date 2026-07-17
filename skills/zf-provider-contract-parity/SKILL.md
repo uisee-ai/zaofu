@@ -1,6 +1,8 @@
 ---
 name: zf-provider-contract-parity
 description: "Provider, model adapter, streaming, and function-call parity checks for agent refactors. Use when a refactor/build must prove the new agent preserves LLM provider behavior, model routing, tool-call schemas, retries, and real-provider smoke tests."
+stages: [impl, verify]
+tags: [parity, "parity:provider"]
 ---
 
 # Provider Contract Parity

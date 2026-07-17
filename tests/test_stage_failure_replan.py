@@ -42,6 +42,21 @@ def test_replan_re_emits_trigger_with_feedback() -> None:
     assert replan.causation_id == failure.id
 
 
+def test_replan_preserves_plan_admission_incident_identity() -> None:
+    origin = ZfEvent(type="issue.requested", payload={"issue_ref": "docs/issues/TODO.md"})
+    failure = _failure(findings=[{"severity": "high", "message": "missing root owner"}])
+    failure.payload.update({
+        "plan_admission_incident_id": "plan-admission-123",
+        "task_map_digest": "abc123",
+    })
+
+    replan, _ = plan_reader_stage_replan(_config(), [origin, failure], failure)
+
+    assert replan is not None
+    assert replan.payload["plan_admission_incident_id"] == "plan-admission-123"
+    assert replan.payload["task_map_digest"] == "abc123"
+
+
 def test_replan_preserves_failure_target_ref_without_origin_trigger() -> None:
     failure = ZfEvent(type="issue.triage.failed", payload={
         "reason": "bad task_map",
@@ -82,6 +97,86 @@ def test_unknown_failure_event_ignored() -> None:
     failure = ZfEvent(type="something.else.failed", payload={})
     replan, note = plan_reader_stage_replan(_config(), [failure], failure)
     assert replan is None and note == "no_reader_stage_for_failure"
+
+
+def test_lane_verify_failure_is_not_generic_reader_stage_replan() -> None:
+    """Lane Verify owns its bounded back-edge; reader replan must not race it."""
+    stage = SimpleNamespace(
+        id="prd-lanes-verify",
+        topology="fanout_reader",
+        trigger="lane.stage.completed",
+        failure_event="",
+        aggregate=SimpleNamespace(failure_event="lane.stage.failed"),
+        on_fail=SimpleNamespace(
+            event="verify.child.failed",
+            restart_stage="prd-lanes-impl",
+        ),
+        assignment=SimpleNamespace(strategy="affinity_stage_slots"),
+    )
+    config = SimpleNamespace(workflow=SimpleNamespace(stages=[stage]))
+    failure = ZfEvent(
+        type="lane.stage.failed",
+        task_id="TASK-1",
+        payload={
+            "task_id": "TASK-1",
+            "pipeline_id": "prd-lanes",
+            "lane_id": "lane0",
+            "stage_slot": "verify",
+            "reason": "verification rejected",
+        },
+    )
+
+    replan, note = plan_reader_stage_replan(config, [failure], failure)
+
+    assert replan is None
+    assert note == "no_reader_stage_for_failure"
+
+
+def test_stage_replan_rejects_discriminator_blocked_trigger() -> None:
+    from zf.runtime.workflow_resume import WorkflowResumeCheckpoint
+    from zf.runtime.workflow_resume_apply import _apply_stage_replan
+
+    failure = _failure()
+    checkpoint = WorkflowResumeCheckpoint(
+        task_id="TASK-1",
+        last_trusted_event_id=failure.id,
+        last_completed_stage="issue.triage",
+        expected_next_stage="replan:issue-triage",
+        expected_next_role="",
+        blocking_event_id=failure.id,
+        safe_resume_action="needs_stage_replan",
+        idempotency_key="stage-replan-rejected",
+    )
+
+    class RejectingWriter:
+        def __init__(self) -> None:
+            self.events: list[ZfEvent] = []
+
+        def append(self, event: ZfEvent) -> ZfEvent:
+            if event.type == "issue.requested":
+                event = ZfEvent(
+                    type="discriminator.failed",
+                    payload={
+                        "blocked_event_type": "issue.requested",
+                        "reason": "schema rejected",
+                    },
+                )
+            self.events.append(event)
+            return event
+
+    writer = RejectingWriter()
+    result = _apply_stage_replan(
+        writer,  # type: ignore[arg-type]
+        checkpoint,
+        [],
+        config=_config(),
+        events=[failure],
+    )
+
+    assert result.applied is False
+    assert "discriminator.failed" in result.reason
+    assert not any(event.type == "workflow.resume.applied" for event in writer.events)
+    assert any(event.type == "workflow.resume.rejected" for event in writer.events)
 
 
 def test_layer2_active_reader_stage_failure_replans_in_kernel(tmp_path) -> None:

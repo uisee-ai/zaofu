@@ -201,7 +201,18 @@ def evaluate_final_readiness(
     pipeline_id = str(getattr(pipeline, "pipeline_id", "") or "")
     latest_last_by_task: dict[str, tuple[int, ZfEvent]] = {}
     latest_stage_by_task: dict[str, tuple[int, ZfEvent]] = {}
+    latest_rework_by_task: dict[str, tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
+        if event.type == LANE_STAGE_REWORK_REQUESTED_EVENT:
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if (
+                str(payload.get("pipeline_id") or "") == pipeline_id
+                and str(payload.get("root_fanout_id") or "") == root_fanout_id
+            ):
+                task_id = str(payload.get("task_id") or event.task_id or "")
+                if task_id:
+                    latest_rework_by_task[task_id] = (index, event)
+            continue
         if event.type not in {
             LANE_STAGE_HANDOFF_SUCCESS_EVENT,
             LANE_STAGE_HANDOFF_FAILURE_EVENT,
@@ -236,6 +247,19 @@ def evaluate_final_readiness(
             stale_task_ids.append(task_id)
             continue
         if last_event.type == LANE_STAGE_HANDOFF_FAILURE_EVENT:
+            rework_entry = latest_rework_by_task.get(task_id)
+            if rework_entry is not None and rework_entry[0] > last_index:
+                rework_payload = (
+                    rework_entry[1].payload
+                    if isinstance(rework_entry[1].payload, dict)
+                    else {}
+                )
+                if str(rework_payload.get("lane_stage_event_id") or "") in {
+                    "",
+                    last_event.id,
+                }:
+                    stale_task_ids.append(task_id)
+                    continue
             failed_task_ids.append(task_id)
             lane_stage_event_ids.append(last_event.id)
             continue

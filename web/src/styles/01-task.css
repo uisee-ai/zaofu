@@ -582,6 +582,24 @@
   overflow: auto;
 }
 
+.rail-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rail-mobile-toggle {
+  display: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+}
+
 .wide-button {
   width: 100%;
   justify-content: flex-start;

@@ -31,7 +31,7 @@ controller + profile composition,不是 runtime 执行时的第二控制面。
   示例绑定某台机器的 checkout 路径;`zf profile bootstrap --apply` 会把启用
   的 skill/yoke 依赖闭包 vendor 到目标项目本地 `skills/`,并把拷贝后的
   profile source 重写为 `skills`。
-- **执法档**:flowProfile 展开默认 `schema_profile: canonical-dag/v3`(读者
+- **执法档**:flowProfile 展开默认 `schema_profile: canonical-dag/v6`(读者
   子报告证据档:child 完成事件 `non_empty[summary, evidence_refs]` +
   `report.requirement_coverage_matrix` 至少一行);两个 prod 预设开
   `verification.event_schema.mode: blocking`(违约完成事件落盘即换
@@ -49,12 +49,20 @@ controller + profile composition,不是 runtime 执行时的第二控制面。
   生成新项目时,若探测器已经得到栈级 gate 命令,会自动写入
   `quality_gates.static.required_checks`,避免生成后立刻被 candidate gate
   拒绝。
-- **auto-ship parity**:8 个入口统一 `auto_ship_on_judge_passed: true`
-  ——judge.passed(终局门)后 kernel 自动把 candidate 合入
-  `ship_target_branch`(默认 main),不再手工 `git merge candidate/*`。
+- **Goal delivery parity**:8 个入口统一 `deliveryPolicy: ship_candidate`，
+  admitted Thin Judge result 先形成 completion claim，再由 scoped delivery
+  operation 合入 `ship_target_branch`，成功后产生唯一
+  `run.goal.completed`。`auto_ship_on_judge_passed` 仅供 legacy active run
+  恢复，兼容投影不得触发新运行交付。
 - **evidencePolicy 驱动执法**:`evidencePolicy: strict_refs` 由 loader
   派生 `event_schema.mode: blocking` + `report_evidence_gate: fail_closed`
   (单一控制点;显式 `verification.*` 配置优先,是逃生门)。
+- **Verify/Gap 职责分离**:lane Task Verify 只加载独立验收、checklist 与
+  mechanical claim 方法并返回 typed pass/reject/blocked；全局 rescan、gap
+  synthesis 和 task-map amendment 只挂到 discovery、module-parity 与
+  verify-bridge。Thin Judge 只加载 goal-closure contract。Refactor 入口使用
+  项目中性的 parity scope；provider/webui/tui/memory 等专项能力由 intake
+  adapter 根据显式 scope 或项目 Skill 动态追加。
 
 ## 组合规则
 

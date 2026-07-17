@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from argparse import Namespace
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 
 from zf.cli.workflow import _parse_since, _run_audit, audit_task
+from zf.core.task.schema import Task, TaskContract
 from zf.core.workflow.topology import WorkflowEventSets
 
 
@@ -19,6 +20,7 @@ class _Ev:
     id: str = ""
     ts: str = ""
     task_id: str = ""
+    payload: dict = field(default_factory=dict)
 
 
 def _baseline() -> WorkflowEventSets:
@@ -98,6 +100,52 @@ def test_audit_task_filters_by_task_id() -> None:
     ]
     r = audit_task("TASK-Z", events, _baseline())
     assert r["status"] == "no_events"
+
+
+def test_audit_task_lane_pipeline_accepts_aggregate_feature_evidence() -> None:
+    """A fanout lane task must not be audited as a legacy arch/review flow."""
+    task = Task(
+        id="TASK-LANE-1",
+        contract=TaskContract(feature_id="PDD-LANE-1"),
+    )
+    events = [
+        _Ev(
+            "fanout.child.dispatched", "evt-1", "2026-07-15T10:00:00",
+            payload={
+                "task_id": "TASK-LANE-1", "child_id": "dev-lane-0-TASK-LANE-1",
+                "stage_slot": "impl",
+            },
+        ),
+        _Ev("dev.build.done", "evt-2", "2026-07-15T10:01:00", "TASK-LANE-1"),
+        _Ev(
+            "candidate.integration.completed", "evt-3", "2026-07-15T10:02:00",
+            payload={"pdd_id": "PDD-LANE-1", "quality_status": "passed"},
+        ),
+        _Ev(
+            "lane.stage.completed", "evt-4", "2026-07-15T10:03:00",
+            "TASK-LANE-1", {"stage_slot": "verify"},
+        ),
+        _Ev(
+            "test.passed", "evt-5", "2026-07-15T10:04:00",
+            payload={"completed_task_ids": ["TASK-LANE-1"]},
+        ),
+        _Ev(
+            "judge.passed", "evt-6", "2026-07-15T10:05:00",
+            payload={"feature_id": "PDD-LANE-1"},
+        ),
+    ]
+    report = audit_task("TASK-LANE-1", events, _baseline(), task=task)
+    assert report["status"] == "complete"
+    assert report["audit_profile"] == "lane_pipeline"
+    assert report["missing_events"] == []
+
+
+def test_audit_task_skips_workflow_fanout_anchor() -> None:
+    task = Task(id="ROOT")
+    task.contract.evidence_contract = {"workflow_fanout_anchor": True}
+    report = audit_task("ROOT", [], _baseline(), task=task)
+    assert report["status"] == "not_applicable"
+    assert report["reason"] == "workflow_fanout_anchor"
 
 
 # ---------------------------------------------------------------------------

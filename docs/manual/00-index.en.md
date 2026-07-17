@@ -4,9 +4,10 @@ This directory contains ZaoFu's user-facing documentation. The manuals are
 organized from architecture and onboarding through operations, observability,
 integrations, and evaluation.
 
-For a single self-contained introduction, start with the
-[ZaoFu Operator Manual](zaofu-operator-manual.en.md). For topic-by-topic
-coverage, use the index below.
+For the production Controller onboarding path, start with
+[01 Quick Start](01-quickstart.en.md). Use the
+[ZaoFu Operator Manual](zaofu-operator-manual.en.md) for a consolidated
+reference or the topic index below for focused coverage.
 
 ## 0. Architecture
 
@@ -15,8 +16,8 @@ coverage, use the index below.
 
 ## 1. Getting Started
 
-- [01 Quick Start](01-quickstart.en.md) - installation, presets, preflight,
-  dry-run, and the first real harness run.
+- [01 Quick Start](01-quickstart.en.md) - Controller recommendation, approval,
+  materialization, project validation, dry-run, and the first workflow request.
 
 ## 2. Core Operation
 

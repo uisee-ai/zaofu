@@ -353,9 +353,10 @@ def doctor_sidecar_refs(
 ) -> dict[str, Any]:
     """Validate sidecar refs discoverable from event payloads."""
 
+    event_rows = list(events)
     descriptors: list[dict[str, Any]] = []
     ref_events: dict[tuple[str, str], list[dict[str, str]]] = {}
-    for event in events:
+    for event in event_rows:
         payload = getattr(event, "payload", {})
         event_id = str(getattr(event, "id", "") or "")
         event_type = str(getattr(event, "type", "") or "")
@@ -393,6 +394,12 @@ def doctor_sidecar_refs(
 
     orphans: list[dict[str, Any]] = []
     if include_orphans:
+        from zf.runtime.artifact_read_ledger import (
+            active_ledger_attempt_id,
+            live_attempt_ids,
+        )
+
+        live_attempts = live_attempt_ids(event_rows)
         for rel in _iter_known_sidecar_files(state_dir):
             rel_text = rel.as_posix()
             if rel_text in referenced_paths:
@@ -401,7 +408,17 @@ def doctor_sidecar_refs(
             # not a standalone workflow ref in the legacy contract.
             if rel_text.startswith("artifacts/agent-session-output/") and rel_text.endswith(".json"):
                 continue
-            orphans.append({"ref": rel_text, "code": "orphan_sidecar"})
+            active_attempt = active_ledger_attempt_id(rel_text)
+            if active_attempt and active_attempt in live_attempts:
+                continue
+            orphans.append({
+                "ref": rel_text,
+                "code": (
+                    "stale_active_read_ledger"
+                    if active_attempt
+                    else "orphan_sidecar"
+                ),
+            })
 
     return {
         "schema_version": "sidecar-doctor.v1",
@@ -432,6 +449,11 @@ def _iter_known_sidecar_files(state_dir: Path) -> Iterable[PurePosixPath]:
             continue
         for path in directory.rglob("*"):
             if path.is_file():
+                # ``locked_path`` leaves reusable coordination files beside
+                # immutable sidecars. They contain no workflow evidence and
+                # are neither references nor orphan business artifacts.
+                if path.name.endswith(".lock"):
+                    continue
                 yield PurePosixPath(path.relative_to(root).as_posix())
 
 

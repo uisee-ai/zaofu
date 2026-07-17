@@ -127,6 +127,31 @@ def test_writer_task_items_drops_placeholder_paths_owned_by_subtree_slice():
     validate_writer_task_items(items)
 
 
+def test_writer_task_items_rejects_delegated_placeholder_still_required_by_contract():
+    with pytest.raises(RuntimeError, match="delegated placeholder"):
+        writer_task_items({
+            "tasks": [
+                {
+                    "task_id": "scaffold",
+                    "allowed_paths": [
+                        "app/pyproject.toml",
+                        "app/static/.gitkeep",
+                    ],
+                    "acceptance_criteria": [
+                        "SCAFFOLD-AC1: app/static/.gitkeep exists",
+                    ],
+                    "verification": [
+                        "test -f app/static/.gitkeep",
+                    ],
+                },
+                {
+                    "task_id": "server",
+                    "allowed_paths": ["app/static/**"],
+                },
+            ],
+        })
+
+
 def test_writer_task_items_keeps_real_cross_task_file_subtree_overlap_rejected():
     items = writer_task_items({
         "tasks": [
@@ -248,7 +273,7 @@ def test_writer_task_items_accepts_issue_style_path_field():
     assert items[0]["allowed_paths"] == ["app/src/index.js"]
 
 
-def test_lane_pipeline_admission_rejects_single_nested_bugfix_without_root_owner():
+def test_lane_pipeline_admission_allows_single_nested_bugfix_without_root_owner():
     spec = parse_lane_pipeline({
         "id": "issue-lanes",
         "kind": "lane_pipeline",
@@ -267,8 +292,36 @@ def test_lane_pipeline_admission_rejects_single_nested_bugfix_without_root_owner
         }],
     })
 
-    problems = validate_lane_pipeline_admission(spec, items)
-    assert problems
+    assert validate_lane_pipeline_admission(spec, items) == []
+
+
+def test_lane_pipeline_admission_rejects_nested_bugfix_when_root_owner_is_required():
+    spec = parse_lane_pipeline({
+        "id": "issue-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "affinity_key": "affinity_tag",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{"id": "impl"}, {"id": "verify"}],
+        "final": {"when": "all_tasks_verified", "role": "judge"},
+    })
+    task_map = {
+        "workspace_root_owner_required": True,
+        "tasks": [{
+            "id": "T1",
+            "title": "Fix list command",
+            "path": "app/src/index.js",
+        }],
+    }
+    items = writer_task_items(task_map)
+
+    problems = validate_lane_pipeline_admission(
+        spec,
+        items,
+        task_map_payload=task_map,
+    )
+
     assert "no task in the task_map owns workspace-root paths" in problems[0]
 
 

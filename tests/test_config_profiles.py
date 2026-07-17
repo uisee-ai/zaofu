@@ -341,26 +341,76 @@ def test_prod_controller_profiles_wire_yoke_and_enforcement():
     issue_bundles = prod["flow_defaults"]["issue"]["roleSkillBundles"]
     assert "zf-yoke-dev-worker-role-context" in prd_bundles["impl"]
     assert "zf-yoke-test-evaluator-role-context" in prd_bundles["verify"]
-    assert "zf-yoke-quality-gate-role-context" in prd_bundles["judge-prd"]
+    assert "zf-goal-closure-replan-contract" in prd_bundles["discovery"]
+    assert "zf-yoke-planner-role-context" in prd_bundles["planner"]
+    assert prd_bundles["judge-prd"] == ["zf-goal-closure-judge-contract"]
     assert "zf-yoke-dev-worker-role-context" in issue_bundles["fix"]
     assert "zf-yoke-test-evaluator-role-context" in issue_bundles["verify"]
-    assert "zf-yoke-quality-gate-role-context" in issue_bundles["judge-issue"]
+    assert "zf-goal-closure-replan-contract" in issue_bundles["discovery"]
+    assert "zf-yoke-planner-role-context" in issue_bundles["issue-triage"]
+    assert issue_bundles["judge-issue"] == ["zf-goal-closure-judge-contract"]
 
     refactor = by_name["refactor-controller-runtime/v3"]
     ref_bundles = refactor["flow_defaults"]["refactor"]["roleSkillBundles"]
     assert "zf-yoke-dev-worker-role-context" in ref_bundles["impl"]
     assert "zf-yoke-test-evaluator-role-context" in ref_bundles["verify"]
-    assert "zf-yoke-quality-gate-role-context" in ref_bundles["judge-refactor"]
+    assert "zf-verify-rescan-replan" not in ref_bundles["verify"]
+    assert "zf-goal-closure-replan-contract" in ref_bundles["refactor-verify-bridge"]
+    assert "zf-goal-closure-replan-contract" in ref_bundles["module-parity-scan"]
+    assert "zf-yoke-planner-role-context" in ref_bundles["refactor-plan-synth"]
+    assert ref_bundles["judge-refactor"] == ["zf-goal-closure-judge-contract"]
+
+    # 139: common 声明角色能力 wrapper，底层 TDD 由 dependencies 闭包物化。
+    # Scan/Verify 是独立评估者，不应收到开发型 TDD 方法。
+    for bundles, impl_role in (
+        (prd_bundles, "impl"),
+        (issue_bundles, "fix"),
+        (ref_bundles, "impl"),
+    ):
+        assert "test-driven-development" not in bundles[impl_role]
+        assert "tdd-evidence" not in bundles[impl_role]
+        assert "test-driven-development" not in bundles["verify"]
+        assert "tdd-evidence" not in bundles["verify"]
+        assert "zf-harness-done-contract" not in bundles[impl_role]
+        for contract in (
+            "zf-harness-verification-checklist",
+            "zf-mechanical-claim-verifier",
+            "zf-verify-gap-producer-contract",
+            "zf-goal-closure-replan-contract",
+        ):
+            assert contract not in bundles["verify"]
+
+    wrapper = (
+        _Path(__file__).resolve().parents[1]
+        / "skills" / "zf-yoke-dev-worker-role-context" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    assert "dependencies:" in wrapper
+    assert "tdd-evidence" in wrapper
+    assert "incremental-delivery" in wrapper
 
     for spec in (prod, refactor):
+        assert spec["goal"]["enabled"] is True
         assert spec["runtime"]["skills"]["strict"] is True
         assert spec["verification"]["event_schema"]["mode"] == "blocking"
         assert spec["verification"]["report_evidence_gate"] == "fail_closed"
 
 
-def test_controller_entries_all_ship_on_judge_passed():
-    """auto-ship parity(2026-07-08):8 个 controller 入口(codex+claude ×
-    light/prd-fanout/issue/refactor)judge 终局后一键到 ship,行为一致。"""
+def test_refactor_controller_uses_project_neutral_dynamic_skill_overlay():
+    """Static examples keep project facts out of the reusable controller."""
+    import yaml
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    expected_scope = ["core", "cli", "api", "web", "runtime"]
+    for name in ("refactor-lane-v3.yaml", "refactor-lane-v3-claude.yaml"):
+        path = root / "examples" / "prod" / "controller" / name
+        flow = next(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+        assert flow["spec"]["parityScope"] == expected_scope, name
+        assert "roleSkillBundles" not in flow["spec"], name
+
+
+def test_controller_entries_use_goal_scoped_delivery():
+    """8 个 controller 入口统一走 Goal claim 的 scoped delivery。"""
     from pathlib import Path as _Path
 
     from zf.core.config.loader import load_config as _load
@@ -370,4 +420,7 @@ def test_controller_entries_all_ship_on_judge_passed():
     assert len(yamls) >= 8, [p.name for p in yamls]
     for path in yamls:
         cfg = _load(path)
+        assert cfg.goal.enabled is True, path.name
+        assert cfg.workflow.flow_metadata["delivery_policy"] == "ship_candidate"
+        # Legacy active runs remain resumable during the authority cutover.
         assert cfg.runtime.git.auto_ship_on_judge_passed is True, path.name

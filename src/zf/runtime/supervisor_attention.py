@@ -30,7 +30,10 @@ def build_attention_items(
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for event in events:
-        if event.type == "autopilot.proposal.created":
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("failure_scope") or "") == "plan_admission":
+            items.append(_attention_from_plan_admission(event, payload))
+        elif event.type == "autopilot.proposal.created":
             items.append(_attention_from_autopilot(event))
         elif event.type == "zaofu.bug.detected":
             items.append(_attention_from_zaofu_bug(event))
@@ -144,6 +147,7 @@ def is_actionable_attention(item: dict[str, Any]) -> bool:
         "run_manager_recovery",
         "autoresearch_trigger",
         "l2_orchestrator",
+        "plan_revision",
         "supervisor_autoresearch",
         "research_probe",
         "owner_notify",
@@ -152,6 +156,48 @@ def is_actionable_attention(item: dict[str, Any]) -> bool:
     if source in {"workflow_resume", "autoresearch"}:
         return True
     return severity_rank(item) >= 3
+
+
+def _attention_from_plan_admission(
+    event: ZfEvent,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Keep admission failures on the planner/replan route end-to-end."""
+
+    incident_id = str(payload.get("plan_admission_incident_id") or event.id or "")
+    expected_fault = bool(
+        payload.get("expected_fault")
+        or payload.get("fault_injection")
+        or payload.get("injected")
+    )
+    item = _attention_item(
+        source="plan_admission",
+        fingerprint=f"plan_admission:{incident_id}",
+        severity=str(payload.get("severity") or "medium"),
+        title="Plan admission requires bounded replan",
+        summary=str(payload.get("reason") or "task-map admission rejected"),
+        task_id=str(payload.get("task_id") or event.task_id or ""),
+        source_event_ids=[event.id] if event.id else [],
+        source_ref=f"events.jsonl#{event.id}" if event.id else "",
+        suggested_route="plan_revision",
+        suggested_action={
+            "kind": "plan-admission-replan",
+            "plan_admission_incident_id": incident_id,
+            "expected_fault": expected_fault,
+        },
+        failure_class="plan_admission",
+        owner_route="orchestrator_replan",
+        action_policy="needs_diagnosis",
+        intervention_class="semantic_replan",
+        notification_policy="trace_only",
+        recovery_policy="none",
+    )
+    item["failure_scope"] = "plan_admission"
+    item["plan_admission_incident_id"] = incident_id
+    item["expected_fault"] = expected_fault
+    item["workflow_run_id"] = str(payload.get("workflow_run_id") or payload.get("run_id") or "")
+    item["trace_id"] = str(payload.get("trace_id") or event.correlation_id or "")
+    return item
 
 
 def apply_attention_lifecycle(
@@ -492,6 +538,13 @@ def _attention_from_abnormal_event_registry(
     for event in events:
         projection = abnormal_event_projection(event)
         if not projection:
+            continue
+        # The event registry is the single policy source for whether an
+        # abnormal fact opens Supervisor attention.  Some facts are audit
+        # evidence for an already-owned Layer 1 recovery path; projecting them
+        # here used to bypass the registry's ``supervisor_attention=none``
+        # intent and create duplicate Autoresearch cases.
+        if str(projection.get("supervisor_attention") or "") == "none":
             continue
         rows.append(_attention_item(
             source=str(projection.get("source") or "runtime_event"),

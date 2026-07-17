@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.goal_closure_bridge import GoalClosureBridgeMixin
 from zf.runtime.orchestrator_types import OrchestratorDecision
 
 
-class ModuleParityBridgeMixin:
+class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
     """Deterministic verify -> parity scan -> gap amend bridge."""
 
     def _reject_flow_judge_evidence_gap(
@@ -99,10 +100,47 @@ class ModuleParityBridgeMixin:
         metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
         flow_kind = str(metadata.get("flow_kind") or "").strip()
         discovery_profile = str(metadata.get("post_verify_discovery") or "").strip()
-        if not flow_kind or not discovery_profile:
+        if not flow_kind:
             return None
         if flow_kind == "refactor" or discovery_profile == "module_parity":
             return None
+        if not discovery_profile:
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            context = self._latest_refactor_context(payload)
+            pdd_id = (
+                self._first_payload_text(payload, context, "pdd_id", "feature_id")
+                or str(event.task_id or "")
+            )
+            feature_id = self._first_payload_text(
+                payload, context, "feature_id", "pdd_id",
+            ) or pdd_id
+            trace_id = (
+                self._first_payload_text(payload, context, "trace_id")
+                or str(event.correlation_id or event.id)
+            )
+            closed = self._emit_current_goal_closure(
+                event_type="flow.goal.closed",
+                source_event=event,
+                flow_kind=flow_kind,
+                payload={
+                    **payload,
+                    "schema_version": "flow-goal-closed.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "goal_id": str(payload.get("goal_id") or feature_id or pdd_id),
+                    "trace_id": trace_id,
+                    "flow_kind": flow_kind,
+                    "open_p0_p1_gap_count": 0,
+                    "source": "verified_flow_closure_bridge",
+                },
+            )
+            if closed is None:
+                return None
+            self._maybe_start_reader_fanout(closed)
+            return OrchestratorDecision(
+                action="bridge",
+                reason=f"{event.type} closed {flow_kind} flow without discovery",
+            )
         if self._has_bridge_output(event.id, {"flow.discovery.requested"}):
             return None
 
@@ -184,7 +222,7 @@ class ModuleParityBridgeMixin:
             return None
         if self._has_bridge_output(
             event.id,
-            {"verify.parity_scan.requested"},
+            {"verify.parity_scan.requested", "verify.parity_scan.suppressed"},
         ):
             return None
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -219,6 +257,31 @@ class ModuleParityBridgeMixin:
             "base_task_map_ref",
             "supersedes_task_map_ref",
         )
+        active_gap_task_ids = self._active_gap_task_ids(
+            pdd_id=pdd_id,
+            feature_id=feature_id,
+            candidate_ref=candidate_ref,
+        )
+        if active_gap_task_ids:
+            self.event_writer.append(ZfEvent(
+                type="verify.parity_scan.suppressed",
+                actor="zf-cli",
+                causation_id=event.id,
+                correlation_id=trace_id,
+                payload={
+                    "schema_version": "module-parity-scan-suppressed.v1",
+                    "pdd_id": pdd_id,
+                    "feature_id": feature_id,
+                    "candidate_ref": candidate_ref,
+                    "source_event_id": event.id,
+                    "active_gap_task_ids": active_gap_task_ids,
+                    "reason": "active gap work already owns this candidate scope",
+                },
+            ))
+            return OrchestratorDecision(
+                action="suppress",
+                reason="active gap work suppresses duplicate module parity scan",
+            )
         request_payload = {
             "schema_version": "module-parity-scan-request.v1",
             "pdd_id": pdd_id,
@@ -258,6 +321,49 @@ class ModuleParityBridgeMixin:
             action="bridge",
             reason="verify.passed requested module parity scan",
         )
+
+    def _active_gap_task_ids(
+        self,
+        *,
+        pdd_id: str,
+        feature_id: str,
+        candidate_ref: str,
+    ) -> list[str]:
+        """Return non-terminal gap work already owning this candidate scope."""
+
+        try:
+            tasks = self.task_store.list_all()
+        except Exception:
+            return []
+        expected = {value for value in (pdd_id, feature_id, candidate_ref) if value}
+        active: list[str] = []
+        for task in tasks:
+            if str(getattr(task, "status", "")) in {"done", "cancelled"}:
+                continue
+            contract = getattr(task, "contract", None)
+            evidence = getattr(contract, "evidence_contract", {}) if contract else {}
+            if not isinstance(evidence, dict):
+                continue
+            if not str(
+                evidence.get("gap_kind")
+                or evidence.get("gap_category")
+                or ""
+            ).strip():
+                continue
+            identities = {
+                str(value).strip()
+                for value in (
+                    getattr(contract, "feature_id", ""),
+                    evidence.get("goal_id"),
+                    evidence.get("candidate_ref"),
+                    evidence.get("target_ref"),
+                )
+                if str(value or "").strip()
+            }
+            if expected and not expected.intersection(identities):
+                continue
+            active.append(str(getattr(task, "id", "") or ""))
+        return sorted(task_id for task_id in active if task_id)
 
     def _bridge_flow_discovery_completed(
         self,
@@ -367,24 +473,25 @@ class ModuleParityBridgeMixin:
             )
 
         if open_gap_count == 0 or self._payload_declares_parity_closed(payload):
-            closed = self.event_writer.append(ZfEvent(
-                type="flow.goal.closed",
-                actor="zf-cli",
-                causation_id=event.id,
-                correlation_id=trace_id,
+            closed = self._emit_current_goal_closure(
+                event_type="flow.goal.closed",
+                source_event=event,
+                flow_kind=flow_kind or "flow",
                 payload={
                     "schema_version": "flow-goal-closed.v1",
                     "pdd_id": pdd_id,
                     "feature_id": feature_id,
+                    "goal_id": str(payload.get("goal_id") or feature_id or pdd_id),
                     "trace_id": trace_id,
                     "flow_kind": flow_kind,
                     "task_map_ref": task_map_ref,
                     "open_p0_p1_gap_count": 0,
-                    "source_event_id": event.id,
                     "source": "flow_discovery_bridge",
                     **ref_payload,
                 },
-            ))
+            )
+            if closed is None:
+                return None
             self._maybe_start_reader_fanout(closed)
             return OrchestratorDecision(
                 action="bridge",
@@ -509,15 +616,17 @@ class ModuleParityBridgeMixin:
             )
 
         if open_gap_count == 0 or self._payload_declares_parity_closed(payload):
-            closed = self.event_writer.append(ZfEvent(
-                type="module.parity.closed",
-                actor="zf-cli",
-                causation_id=event.id,
-                correlation_id=trace_id,
+            closed = self._emit_current_goal_closure(
+                event_type="module.parity.closed",
+                source_event=event,
+                flow_kind="refactor",
                 payload={
+                    "schema_version": "module-parity-closed.v1",
                     "pdd_id": pdd_id,
                     "feature_id": feature_id,
+                    "goal_id": str(payload.get("goal_id") or feature_id or pdd_id),
                     "trace_id": trace_id,
+                    "flow_kind": "refactor",
                     "task_map_ref": task_map_ref,
                     "candidate_ref": str(payload.get("candidate_ref") or ""),
                     "target_ref": str(
@@ -526,10 +635,11 @@ class ModuleParityBridgeMixin:
                         or ""
                     ),
                     "open_p0_p1_gap_count": 0,
-                    "source_event_id": event.id,
                     "source": "module_parity_scan_bridge",
                 },
-            ))
+            )
+            if closed is None:
+                return None
             self._maybe_start_reader_fanout(closed)
             return OrchestratorDecision(
                 action="bridge",

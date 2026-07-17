@@ -39,12 +39,14 @@ class EventWatcher:
         quiesce_patterns: list[str] | None = None,
         resume_patterns: list[str] | None = None,
         quiesce_factor: float = DEFAULT_QUIESCE_FACTOR,
+        shutdown_marker: Path | None = None,
     ) -> None:
         self.events_path = events_path
         self.on_event = on_event
         self.on_tick = on_tick
         self.wake_patterns = wake_patterns or []
         self.event_log = event_log or EventLog(events_path)
+        self.shutdown_marker = shutdown_marker
         self.stopped = False
         # Start from end of file (don't replay old events)
         self._file_pos = self._get_file_size()
@@ -122,6 +124,13 @@ class EventWatcher:
             else 0.0
         )
         while not self.stopped:
+            # ZF-STOP-TAIL-01: `zf stop` 的信号杀按 loop.lock pid,与真实
+            # watcher pid 错位时打空,watcher 曾拖 5-6 分钟排空积压并对
+            # 已杀 pane 打出 stall/stuck/RM 立案风暴。标记文件是停机序列
+            # 第一步写入的,这里每轮先看它,1 个 poll 周期内自退。
+            if self.shutdown_marker is not None and self.shutdown_marker.exists():
+                self.stopped = True
+                break
             self.poll_once()
             if self.on_tick is not None and tick_interval > 0:
                 now = time.monotonic()

@@ -31,9 +31,25 @@ from zf.runtime.workflow_node_projection import build_workflow_node_projection
 from zf.runtime.workflow_reconciler import WorkflowGraphReconciler
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 from zf.web.server import create_app
+from zf.web.projections.workflow_graph import (
+    _workflow_judge_configured,
+    _workflow_terminal_success_event,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_controller_profiles_project_thin_judge_and_goal_terminal() -> None:
+    for name in (
+        "issue-fanout-v3.yaml",
+        "prd-fanout-v3.yaml",
+        "refactor-lane-v3.yaml",
+    ):
+        config = load_config(ROOT / "examples" / "prod" / "controller" / name)
+
+        assert _workflow_judge_configured(config) is True, name
+        assert _workflow_terminal_success_event(config) == "run.goal.completed", name
 
 
 def test_all_examples_compile_to_workflow_graph() -> None:

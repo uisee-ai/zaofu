@@ -155,3 +155,50 @@ def test_pending_proposals_endpoint(tmp_path: Path):
     assert page.status_code == 200
     items = page.json()["items"]
     assert len(items) == 1 and items[0]["title"] == "任务甲"
+
+
+def test_executed_non_create_proposal_clears_its_card(tmp_path: Path):
+    """frontend-stress (2026-07-15): a NON-create proposal (update-task) that is
+    Accepted + executed must clear its Triage card, not linger forever. Only
+    create-task cleared before (via task.created) and dismiss (via its own
+    resolved) — every other executed proposal stayed pending. execute() now
+    emits kanban.agent.proposal.resolved for any successful action carrying a
+    proposal_event_id (the Web Accept threads it on every proposal)."""
+    state_dir = _state(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    service = ControlledActionService(
+        state_dir, writer, actor="operator", source="web", surface="web",
+    )
+    requested = writer.emit("web.action.requested", actor="operator", payload={})
+
+    created = service.execute(
+        action="create-task", requested_action="create-task",
+        payload={"title": "可更新的任务",
+                 "contract": {"behavior": "b", "verification": "v", "scope": ["src/**"]}},
+        requested=requested,
+    )
+    assert created["ok"] is True
+    task_id = created["task_id"]
+
+    # a proposed update-task lands as a pending card
+    log.append(_proposed("evt-upd", "改优先级", action="update-task"))
+    assert any(i["proposal_event_id"] == "evt-upd"
+               for i in pending_kanban_proposals(log.read_all())), "update-task card should be pending"
+
+    # Accept + execute the update-task (Web threads proposal_event_id)
+    result = service.execute(
+        action="update-task", requested_action="update-task",
+        payload={"task_id": task_id, "priority": 1, "proposal_event_id": "evt-upd"},
+        requested=requested,
+    )
+    assert result["ok"] is True
+
+    resolved = [e for e in log.read_all()
+                if e.type == "kanban.agent.proposal.resolved"
+                and e.payload.get("proposal_event_id") == "evt-upd"]
+    assert len(resolved) == 1
+    assert resolved[0].payload["resolution"] == "executed"
+    # the Triage card is now cleared
+    assert not any(i["proposal_event_id"] == "evt-upd"
+                   for i in pending_kanban_proposals(log.read_all())), "card must clear after execute"

@@ -1,7 +1,7 @@
 """Self-healing for candidate-level rework (review/verify/judge rejection).
-# K3 互链:任务级失败(event.task_id 非空)走 orchestrator_dispatch.
-# _route_rework_trigger(决策表见其 docstring);本模块只裁候选级
-# (无 task_id)。分界符 = event.task_id。
+
+Task/candidate scope is classified from the recovery envelope. Candidate and
+assembly events may retain a task_id for audit without becoming task-local.
 
 ZaoFu's per-task rework (``_on_review_rejected`` → ``task.contract.rework_to``)
 only fires when the rejection carries a ``task_id``. But in the candidate
@@ -30,6 +30,14 @@ from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
 from zf.runtime.failure_kind import budget_candidate_failure_ids
 from zf.runtime.rework_triage import classify_rework_trigger
+from zf.runtime.canonical_recovery import classify_recovery_scope
+from zf.runtime.candidate_rework_identity import (
+    _candidate_generation_stale,
+    _candidate_scope_ref,
+    _pdd_by_fanout_id,
+    _pdd_from_event,
+    _safe_int,
+)
 
 if TYPE_CHECKING:
     from zf.autoresearch.bug_candidates import BugCandidate
@@ -84,7 +92,6 @@ _INFRA_FAILURE_MARKERS = (
     "dispatch_deferred",
 )
 
-
 def _admission_replan_enabled(config: object) -> bool:
     """R28: 仅当 workflow.admission_replan.enabled 且配了 resynth_trigger 才生效。"""
     workflow = getattr(config, "workflow", None)
@@ -96,6 +103,12 @@ def _admission_replan_enabled(config: object) -> bool:
 
 
 def _is_admission_replan_cancel(payload: dict) -> bool:
+    # New writer admission incidents have a canonical upstream stage failure.
+    # Their raw cancellation remains audit-only and must never consume the
+    # candidate-level rework budget.  Keep the legacy reason marker path below
+    # for historical logs that do not carry this explicit scope.
+    if str(payload.get("failure_scope") or "") == "plan_admission":
+        return False
     reason = str(payload.get("reason") or "").lower()
     return any(marker in reason for marker in _ADMISSION_REPLAN_REASON_MARKERS)
 
@@ -128,29 +141,12 @@ class _CandidateClosure:
     candidate_ref: str
 
 
-def _pdd_from_event(
-    payload: dict,
-    target_ref: str,
-    *,
-    pdd_by_fanout_id: dict[str, str] | None = None,
-) -> str:
-    pdd = str(payload.get("pdd_id") or "").strip()
-    if pdd:
-        return pdd
-    fanout_id = str(payload.get("fanout_id") or "").strip()
-    if fanout_id and pdd_by_fanout_id:
-        fanout_pdd = str(pdd_by_fanout_id.get(fanout_id) or "").strip()
-        if fanout_pdd:
-            return fanout_pdd
-    # candidate target_ref looks like "<candidate-prefix>/<PDD>"; the PDD is
-    # the last path segment.
-    return target_ref.rsplit("/", 1)[-1].strip() if target_ref else ""
 
 
 def _is_stale_task_map_candidate_failure(event: object, payload: dict) -> bool:
     if getattr(event, "type", "") != "fanout.child.failed":
         return False
-    if getattr(event, "task_id", None):
+    if classify_recovery_scope(event) != "candidate":
         return False
     reason = str(payload.get("reason") or "").strip()
     if reason != "stale_task_map":
@@ -316,6 +312,14 @@ def plan_candidate_rework(
             if gap_tasks:
                 gap_tasks_by_trace.setdefault(trace, []).extend(gap_tasks)
             if _is_stale_task_map_candidate_failure(event, payload):
+                if _candidate_generation_stale(
+                    events,
+                    event_idx=event_idx,
+                    event=event,
+                    payload=payload,
+                    pdd_by_fanout_id=pdd_by_fanout_id,
+                ):
+                    continue
                 if _candidate_failure_superseded(
                     event,
                     payload,
@@ -325,8 +329,16 @@ def plan_candidate_rework(
                 ):
                     continue
                 rejections.append(event)
-        elif etype in CANDIDATE_FAIL_EVENTS and not getattr(event, "task_id", None):
+        elif etype in CANDIDATE_FAIL_EVENTS and classify_recovery_scope(event) == "candidate":
             if event_id in infra_failure_ids:
+                continue
+            if _candidate_generation_stale(
+                events,
+                event_idx=event_idx,
+                event=event,
+                payload=payload,
+                pdd_by_fanout_id=pdd_by_fanout_id,
+            ):
                 continue
             if _candidate_failure_superseded(
                 event,
@@ -354,7 +366,7 @@ def plan_candidate_rework(
         elif (
             admission_replan_on
             and etype == "fanout.cancelled"
-            and not getattr(event, "task_id", None)
+            and classify_recovery_scope(event) == "candidate"
             and _is_admission_replan_cancel(payload)
         ):
             # R28 (doc 93 §1/§5): admission/W1 拒了 task_map → synth 必须重拆。
@@ -366,6 +378,14 @@ def plan_candidate_rework(
             reason = str(payload.get("reason") or "").strip()
             if reason:
                 feedback_by_trace.setdefault(trace, []).append(f"admission: {reason}")
+            if _candidate_generation_stale(
+                events,
+                event_idx=event_idx,
+                event=event,
+                payload=payload,
+                pdd_by_fanout_id=pdd_by_fanout_id,
+            ):
+                continue
             if _candidate_failure_superseded(
                 event,
                 payload,
@@ -505,19 +525,8 @@ def plan_candidate_rework(
     return plans
 
 
-def _pdd_by_fanout_id(events: list) -> dict[str, str]:
-    out: dict[str, str] = {}
-    for event in events:
-        if getattr(event, "type", "") != "fanout.started":
-            continue
-        payload = getattr(event, "payload", {}) or {}
-        if not isinstance(payload, dict):
-            continue
-        fanout_id = str(payload.get("fanout_id") or "").strip()
-        fanout_pdd = str(payload.get("pdd_id") or "").strip()
-        if fanout_id and fanout_pdd:
-            out[fanout_id] = fanout_pdd
-    return out
+
+
 
 
 def _candidate_success_closures(
@@ -636,20 +645,8 @@ def _candidate_closure_matches_failure(
     return ref_match and (pdd_match or trace_match)
 
 
-def _candidate_scope_ref(payload: dict[str, Any]) -> str:
-    return str(
-        payload.get("target_ref")
-        or payload.get("candidate_ref")
-        or payload.get("branch")
-        or ""
-    ).strip()
 
 
-def _safe_int(value: object) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        return 0
 
 
 def _infra_only_candidate_failure_ids(events: list) -> set[str]:
@@ -682,7 +679,7 @@ def _infra_only_candidate_failure_ids(events: list) -> set[str]:
         etype = str(getattr(event, "type", "") or "")
         if etype not in CANDIDATE_FAIL_EVENTS:
             continue
-        if getattr(event, "task_id", None):
+        if classify_recovery_scope(event) != "candidate":
             continue
         payload = getattr(event, "payload", {}) or {}
         if not isinstance(payload, dict):

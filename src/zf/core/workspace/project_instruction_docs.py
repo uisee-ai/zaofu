@@ -75,7 +75,9 @@ def render_project_agents_md_shell(*, project_name: str, state_ref: str) -> str:
 - `project.state_dir` 当前解析为 `{state_ref}`;这是运行态目录,不是源码。
 - 不要直接改写 `events.jsonl`、`kanban.json`、`session.yaml`、`feature_list.json`、`role_sessions.yaml`。
 - 状态变更优先走 `zf` CLI、受控事件写入或 kernel helper。
-- Web/API/集成侧只做受控 action 或只读 projection,不要绕过 kernel 写业务 truth。
+- `events.jsonl` 记录 append-only 发生/因果/裁决引用;canonical stores 持有当前状态;
+  required artifact/sidecar 持有完整语义或大证据。不要把三者互相冒充。
+- Web/API/集成侧只做受控 action 或只读 projection,不要绕过 kernel 写业务状态。
 - 开发、review、测试、交付报告默认使用中文,除非项目另有明确约定。
 
 ## Verification
@@ -88,7 +90,7 @@ def render_project_agents_md_shell(*, project_name: str, state_ref: str) -> str:
 - `zf validate --instructions` 通过。
 - `zf update agents-md --check` 通过。
 - 每个 accepted task 都有明确 verification evidence。
-- runtime truth 只能通过 `zf` CLI、受控事件写入或 kernel helper 变更。
+- event ledger、canonical stores 和 required artifacts 只能通过各自受控 writer 变更。
 - long-running work 留下 heartbeat、handoff 或 recovery evidence。
 """
 
@@ -107,6 +109,8 @@ def render_project_claude_md(*, project_name: str, state_ref: str) -> str:
 - `project.state_dir` 当前解析为 `{state_ref}`;不要把运行态文件当作源码维护。
 - 不要直接写 `events.jsonl`、`kanban.json`、`session.yaml`、`feature_list.json`、`role_sessions.yaml`。
 - 状态变更通过 `zf` CLI、受控事件写入或 kernel helper 完成。
+- 普通交互式开发会话没有 `Active task: <task_id>` briefing 时,不要自行 emit
+  task/workflow event 或 heartbeat。
 - 修改代码时保持范围收敛,优先沿用项目现有模式。
 - 交付前运行项目约定的测试;无法运行时说明阻塞项。
 """

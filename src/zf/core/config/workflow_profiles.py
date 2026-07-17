@@ -24,6 +24,10 @@ from zf.core.events.module_parity import (
 )
 
 
+GOAL_CLOSURE_SYNTHESIZED = "goal.closure.synthesized"
+GOAL_CLOSURE_SYNTHESIS_FAILED = "goal.closure.synthesis.failed"
+
+
 class WorkflowProfileError(ValueError):
     """profile 引用/参数错误——envelope/loader 包装为 ConfigError。"""
 
@@ -52,6 +56,7 @@ _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
     "evidencePolicy", "evidence_policy",
     "environmentPolicy", "environment_policy",
     "projectionPolicy", "projection_policy",
+    "deliveryPolicy", "delivery_policy",
     "moduleParityRole", "module_parity_role",
     "verifyBridgeRole", "verify_bridge_role",
     "roleDefaults", "role_defaults",
@@ -141,10 +146,11 @@ _POST_VERIFY_DISCOVERY_INSTRUCTIONS = [
 ]
 
 _FINAL_JUDGE_INSTRUCTIONS = [
-    "This is the final delivery judge. Evaluate the delivered candidate against the original request, task_map, verification evidence, and residual gap reports.",
-    "Emit success only when release evidence is complete enough for the workflow quality floor; otherwise emit failure with actionable findings.",
-    "A passing report must be machine-readable: include concrete `evidence_refs` and the quality-floor refs that justify the pass (`test_refs`, `e2e_refs`, `demo_refs`, `regression_refs`, `parity_refs`, or `provider_refs`).",
-    "Do not rely on natural-language summaries alone; every pass/fail verdict must point to artifacts, commands, or reports that a deterministic gate can verify.",
+    "This is a read-only Thin Judge. Synthesize only the admitted planning, candidate verification, residual-gap, waiver, and closure-fact refs supplied in the briefing.",
+    "Do not edit the product tree, rerun tests/builds, create gap tasks, or mutate workflow truth. Missing or unreadable admitted refs are a blocked result, not permission to inspect the product from scratch.",
+    "Return one machine-readable top-level `goal_closure_result` with schema_version `goal-closure-result.v1`; bind workflow_run_id, goal_id, flow_kind, task_map_generation, target_commit, objective_ref, goal_claim_set ref/digest, planning/candidate refs, closure fact ref/digest, and every canonical goal claim.",
+    "Use verdict passed only when every mandatory claim is closed or explicitly waived with admitted supporting refs. Use rejected for semantic gaps and blocked for external/human or unavailable-input blockers.",
+    "A semantic rejected/blocked verdict is still a successfully executed Judge call: emit the configured child success event so the Kernel semantic router, not fanout retry, owns recovery.",
 ]
 
 _REFACTOR_SCAN_INSTRUCTIONS = [
@@ -216,7 +222,9 @@ def _refactor_contract_payload(*, lanes: int, assembly: Any) -> dict[str, Any]:
             "assembly_task_id or one task with root_owner_class='assembly'. "
             "If assembly_policy=none, a single serial task map may omit "
             "assembly, but tasks still need explicit owned paths and source "
-            "anchors."
+            "anchors. Set workspace_root_owner_required=true only when the "
+            "plan must change or validate a root-level scaffold/entrypoint; "
+            "otherwise omit it or set false."
         ),
     }
 
@@ -528,8 +536,8 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "criteria": {"instructions": _FINAL_JUDGE_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
-                "success_event": "judge.passed",
-                "failure_event": "judge.failed",
+                "success_event": GOAL_CLOSURE_SYNTHESIZED,
+                "failure_event": GOAL_CLOSURE_SYNTHESIS_FAILED,
                 "child_success_event": "judge.child.completed",
                 "child_failure_event": "judge.child.failed",
             },
@@ -556,7 +564,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         lane_template=template,
         schema_profile=str(_pick(
             params, "schemaProfile", "schema_profile",
-            default="refactor-flow/v2",
+            default="refactor-flow/v3",
         )),
         assembly=assembly,
         max_rework_attempts=max_rework,
@@ -655,13 +663,18 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             params, "projectionPolicy", "projection_policy",
             default="",
         )),
+        "delivery_policy": str(_pick(
+            params, "deliveryPolicy", "delivery_policy",
+            default="report_only",
+        )),
+        "result_protocol": {"mode": "blocking"},
     }
     return {
         "roles": roles,
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "refactor-flow/v2",
+        "schema_profile": "refactor-flow/v3",
         "metadata": metadata,
     }
 
@@ -801,6 +814,7 @@ def _controller_metadata(
             params, "postVerifyDiscovery", "post_verify_discovery",
             default=default_discovery,
         )),
+        "result_protocol": {"mode": "blocking"},
     }
 
 
@@ -958,13 +972,14 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         impl_pattern=fix_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v3",
+        schema_profile="canonical-dag/v6",
         task_map_ref=task_map_ref,
         final={
             "when": "all_tasks_verified",
             "role": judge_role,
-            "success": "judge.passed",
-            "failure": "judge.failed",
+            "trigger": "flow.goal.closed",
+            "success": GOAL_CLOSURE_SYNTHESIZED,
+            "failure": GOAL_CLOSURE_SYNTHESIS_FAILED,
         },
     )
     metadata = _controller_metadata(
@@ -980,7 +995,6 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         enabled=bool(str(metadata.get("post_verify_discovery") or "").strip()),
     )
     if discovery_stage:
-        pipeline.setdefault("final", {})["trigger"] = "flow.discovery.completed"
         stages.append(discovery_stage)
     metadata["issue_ref"] = str(_pick(params, "issueRef", "issue_ref", default=""))
     return {
@@ -988,7 +1002,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v3",
+        "schema_profile": "canonical-dag/v6",
         "metadata": metadata,
     }
 
@@ -1074,7 +1088,7 @@ def _expand_product_flow_light(
             default="verify-lane-{lane}",
         )),
         lane_template=lane_template,
-        schema_profile="canonical-dag/v3",
+        schema_profile="canonical-dag/v6",
         task_map_ref=str(_pick(
             params, "taskMapRef", "task_map_ref", default="${task_map_ref}",
         )),
@@ -1082,8 +1096,9 @@ def _expand_product_flow_light(
         final={
             "when": "all_tasks_verified",
             "role": judge_role,
-            "success": "judge.passed",
-            "failure": "judge.failed",
+            "trigger": "flow.goal.closed",
+            "success": GOAL_CLOSURE_SYNTHESIZED,
+            "failure": GOAL_CLOSURE_SYNTHESIS_FAILED,
         },
     )
     metadata = _controller_metadata(
@@ -1104,7 +1119,7 @@ def _expand_product_flow_light(
         "stages": [],
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "canonical-dag/v3",
+        "schema_profile": "canonical-dag/v6",
         "metadata": metadata,
     }
 
@@ -1243,13 +1258,14 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         impl_pattern=impl_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v3",
+        schema_profile="canonical-dag/v6",
         task_map_ref=task_map_ref,
         final={
             "when": "all_tasks_verified",
             "role": judge_role,
-            "success": "judge.passed",
-            "failure": "judge.failed",
+            "trigger": "flow.goal.closed",
+            "success": GOAL_CLOSURE_SYNTHESIZED,
+            "failure": GOAL_CLOSURE_SYNTHESIS_FAILED,
         },
     )
     metadata = _controller_metadata(
@@ -1265,7 +1281,6 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         enabled=bool(str(metadata.get("post_verify_discovery") or "").strip()),
     )
     if discovery_stage:
-        pipeline.setdefault("final", {})["trigger"] = "flow.discovery.completed"
         stages.append(discovery_stage)
     metadata["prd_ref"] = str(_pick(params, "prdRef", "prd_ref", default=""))
     metadata["target_root"] = str(_pick(params, "targetRoot", "target_root", default=""))
@@ -1275,7 +1290,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v3",
+        "schema_profile": "canonical-dag/v6",
         "metadata": metadata,
     }
 
@@ -1342,3 +1357,11 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
         flow_meta = workflow.setdefault("_flow_metadata", {})
         if isinstance(flow_meta, dict):
             flow_meta.update(metadata)
+
+    # canonical-dag/v6 and refactor-flow/v3 terminate through the admitted
+    # Thin Judge -> Completion Gate protocol. Keep hand-written goal settings
+    # authoritative, but make the protocol runnable for a bare Flow document.
+    if expansion.get("schema_profile") in {"canonical-dag/v6", "refactor-flow/v3"}:
+        goal = body.setdefault("goal", {})
+        if isinstance(goal, dict):
+            goal.setdefault("enabled", True)

@@ -128,6 +128,102 @@ async def test_cursor_gap_emits_degraded_signal(state_dir):
 
 
 @pytest.mark.asyncio
+async def test_cursor_replay_uses_global_sequence_across_archive(state_dir):
+    path = state_dir / "events.jsonl"
+    log = EventLog(path)
+    log.append(ZfEvent(type="task.created", task_id="T1"))
+    log.append(ZfEvent(type="task.dispatched", task_id="T1"))
+    archive_dir = state_dir / "events"
+    archive_dir.mkdir()
+    path.rename(archive_dir / "2026-07-12.jsonl")
+    EventLog(path).append(ZfEvent(type="dev.build.done", task_id="T1"))
+    EventLog(path).append(ZfEvent(type="test.passed", task_id="T1"))
+
+    out = await _collect(state_dir, disconnect_after=2, cursor=2)
+
+    text = out.decode("utf-8", errors="replace")
+    assert "event: stream.gap" not in text
+    assert "id: 3" in text
+    assert "id: 4" in text
+    assert '"type":"dev.build.done"' in text
+    assert '"type":"test.passed"' in text
+
+
+@pytest.mark.asyncio
+async def test_segmented_log_current_global_cursor_does_not_degrade(state_dir):
+    archive_dir = state_dir / "events"
+    archive_dir.mkdir()
+    EventLog(archive_dir / "2026-07-12.jsonl").append(
+        ZfEvent(type="task.created", task_id="T1")
+    )
+    EventLog(state_dir / "events.jsonl").append(
+        ZfEvent(type="task.dispatched", task_id="T1")
+    )
+
+    out = await _collect(state_dir, disconnect_after=2, cursor=2)
+
+    text = out.decode("utf-8", errors="replace")
+    assert "event: stream.gap" not in text
+
+
+@pytest.mark.asyncio
+async def test_cursor_before_active_window_emits_gap(state_dir):
+    archive_dir = state_dir / "events"
+    archive_dir.mkdir()
+    archive = EventLog(archive_dir / "2026-07-12.jsonl")
+    archive.append(ZfEvent(type="task.created", task_id="T1"))
+    archive.append(ZfEvent(type="task.dispatched", task_id="T1"))
+    EventLog(state_dir / "events.jsonl").append(
+        ZfEvent(type="dev.build.done", task_id="T1")
+    )
+
+    out = await _collect(state_dir, disconnect_after=2, cursor=1)
+
+    text = out.decode("utf-8", errors="replace")
+    assert "event: stream.gap" in text
+    assert '"current": 3' in text
+
+
+@pytest.mark.asyncio
+async def test_cursor_gap_reports_global_current_after_archive(state_dir):
+    path = state_dir / "events.jsonl"
+    EventLog(path).append(ZfEvent(type="task.created", task_id="T1"))
+    archive_dir = state_dir / "events"
+    archive_dir.mkdir()
+    path.rename(archive_dir / "2026-07-12.jsonl")
+    EventLog(path).append(ZfEvent(type="dev.build.done", task_id="T1"))
+
+    out = await _collect(state_dir, disconnect_after=2, cursor=99)
+
+    text = out.decode("utf-8", errors="replace")
+    assert "event: stream.gap" in text
+    assert '"current": 2' in text
+
+
+@pytest.mark.asyncio
+async def test_live_sequence_does_not_reset_when_active_log_rotates(state_dir):
+    path = state_dir / "events.jsonl"
+    EventLog(path).append(ZfEvent(type="task.created", task_id="T1"))
+    request = _FakeRequest(disconnect_after=20)
+    stream = _tail_events(state_dir, request, cursor=1)
+    try:
+        assert b": connected" in await anext(stream)
+        assert b": ping" in await anext(stream)
+
+        archive_dir = state_dir / "events"
+        archive_dir.mkdir()
+        path.rename(archive_dir / "2026-07-12.jsonl")
+        EventLog(path).append(ZfEvent(type="dev.build.done", task_id="T1"))
+
+        chunk = await asyncio.wait_for(anext(stream), timeout=2)
+        text = chunk.decode("utf-8", errors="replace")
+        assert "id: 2" in text
+        assert '"type":"dev.build.done"' in text
+    finally:
+        await stream.aclose()
+
+
+@pytest.mark.asyncio
 async def test_signed_events_forwarded_as_plain_events(state_dir):
     signer = EventSigner(b"secret")
     log = EventLog(state_dir / "events.jsonl", signer=signer)

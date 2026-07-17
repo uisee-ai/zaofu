@@ -138,7 +138,7 @@ class ControlledActionService(
         payload: dict,
         requested: ZfEvent,
     ) -> dict:
-        return ControlledActionOrchestrator(
+        result = ControlledActionOrchestrator(
             writer=self.writer,
             actor=self.actor,
             surface=self.surface,
@@ -155,6 +155,31 @@ class ControlledActionService(
                 requested=requested,
             ),
         )
+        # frontend-stress (2026-07-15): ANY accepted proposal must clear its
+        # Triage card, not just create-task. The Web Accept threads
+        # proposal_event_id on every proposal action; when the action succeeds,
+        # emit the resolved event so pending_kanban_proposals collapses the card.
+        # create-task already clears via task.created, and the dismiss action
+        # emits its own resolved event — skip those to avoid a redundant event.
+        proposal_event_id = str(payload.get("proposal_event_id") or "").strip()
+        if (
+            proposal_event_id
+            and bool(result.get("ok"))
+            and action not in {"create-task", "kanban-proposal-dismiss"}
+        ):
+            self.writer.emit(
+                "kanban.agent.proposal.resolved",
+                actor=self.actor,
+                causation_id=requested.id,
+                correlation_id=requested.correlation_id,
+                payload={
+                    "proposal_event_id": proposal_event_id,
+                    "resolution": "executed",
+                    "action": action,
+                    "source": self.source,
+                },
+            )
+        return result
 
     def _execute_action(
         self,

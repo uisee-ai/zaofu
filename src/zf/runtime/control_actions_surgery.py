@@ -202,9 +202,23 @@ class SurgeryActionsMixin:
                 requested, action, requested_action,
                 "ship-retry requires config and project_root",
             )
+        events = self.writer.event_log.read_all()
+        run_id = str(payload.get("run_id") or payload.get("workflow_run_id") or "")
+        claim_id = str(payload.get("claim_id") or "")
+        if run_id or claim_id:
+            return self._scoped_goal_delivery_retry(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+                events=events,
+                run_id=run_id,
+                claim_id=claim_id,
+            )
+
         judge_passed = None
         shipped = False
-        for event in self.writer.event_log.read_all():
+        for event in events:
             if event.type == "judge.passed":
                 judge_passed = event
             elif event.type == "ship.completed":
@@ -251,4 +265,155 @@ class SurgeryActionsMixin:
         return self._surgery_ok(requested, requested, action, requested_action, {
             "ship_status": result.status,
             "target_ref": target_ref,
+        })
+
+    def _scoped_goal_delivery_retry(
+        self,
+        *,
+        requested: ZfEvent,
+        action: str,
+        requested_action: str,
+        payload: dict,
+        events: list[ZfEvent],
+        run_id: str,
+        claim_id: str,
+    ) -> dict:
+        claims = [
+            event
+            for event in events
+            if event.type == "run.goal.completion.claimed"
+            and isinstance(event.payload, dict)
+            and (not run_id or str(event.payload.get("run_id") or "") == run_id)
+            and (not claim_id or str(event.payload.get("claim_id") or "") == claim_id)
+        ]
+        if not claims:
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                "ship-retry requires a scoped Goal completion claim",
+                409,
+            )
+        claim = claims[-1]
+        claim_payload = claim.payload if isinstance(claim.payload, dict) else {}
+        run_id = str(claim_payload.get("run_id") or run_id)
+        claim_id = str(claim_payload.get("claim_id") or claim_id)
+        delivery_events = [
+            event
+            for event in events
+            if event.type.startswith("run.delivery.")
+            and isinstance(event.payload, dict)
+            and str(event.payload.get("claim_id") or "") == claim_id
+            and str(event.payload.get("run_id") or event.correlation_id or "") == run_id
+        ]
+        if any(event.type == "run.delivery.settled" for event in delivery_events):
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                f"delivery for claim {claim_id} is already settled",
+                409,
+            )
+        latest_delivery = delivery_events[-1] if delivery_events else None
+        latest_payload = (
+            latest_delivery.payload
+            if latest_delivery is not None and isinstance(latest_delivery.payload, dict)
+            else {}
+        )
+        target_ref = str(
+            latest_payload.get("candidate_ref")
+            or claim_payload.get("candidate_ref")
+            or ""
+        ).strip()
+        requested_target = str(
+            payload.get("target_ref") or payload.get("candidate_ref") or ""
+        ).strip()
+        if requested_target and target_ref and requested_target != target_ref:
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                "ship-retry target does not match the scoped Goal claim",
+                409,
+            )
+        target_ref = target_ref or requested_target
+        operation_id = str(
+            latest_payload.get("delivery_operation_id")
+            or f"delivery-{claim_id}"
+        )
+        requested_operation = str(payload.get("delivery_operation_id") or "")
+        if requested_operation and requested_operation != operation_id:
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                "ship-retry operation does not match the scoped Goal delivery",
+                409,
+            )
+        if not target_ref:
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                "ship-retry could not resolve the scoped candidate_ref",
+            )
+
+        from zf.runtime.ship import ShipService
+
+        result = ShipService(
+            state_dir=self.state_dir,
+            project_root=self.project_root,
+            config=self.config,
+            event_log=self.writer.event_log,
+        ).ship(
+            target_ref=target_ref,
+            pdd_id=str(claim_payload.get("goal_id") or ""),
+            event_writer=self.writer,
+            causation_id=requested.id,
+            correlation_id=run_id,
+        )
+        terminal_type = "run.delivery.settled" if result.ok else (
+            "run.delivery.blocked"
+            if result.event_type in {"ship.blocked", "ship.conflict"}
+            else "run.delivery.failed"
+        )
+        terminal = self.writer.append(ZfEvent(
+            type=terminal_type,
+            actor=self.actor,
+            causation_id=requested.id,
+            correlation_id=run_id,
+            payload={
+                "run_id": run_id,
+                "workflow_run_id": run_id,
+                "goal_id": str(claim_payload.get("goal_id") or ""),
+                "claim_id": claim_id,
+                "delivery_operation_id": operation_id,
+                "candidate_ref": target_ref,
+                "target_commit": str(claim_payload.get("target_commit") or ""),
+                "ship_event_type": result.event_type,
+                "ship_status": result.status,
+                "ship_result": dict(result.payload or {}),
+                "reason": (
+                    "scoped Goal delivery retry settled"
+                    if result.ok
+                    else f"scoped Goal delivery retry {result.status}"
+                ),
+            },
+        ))
+        if not result.ok:
+            return self._surgery_failed(
+                requested,
+                action,
+                requested_action,
+                f"ship-retry {result.status}: "
+                f"{result.payload.get('blockers') or result.payload}",
+                409,
+            )
+        return self._surgery_ok(requested, terminal, action, requested_action, {
+            "run_id": run_id,
+            "claim_id": claim_id,
+            "delivery_operation_id": operation_id,
+            "ship_status": result.status,
+            "target_ref": target_ref,
+            "terminal_event_id": terminal.id,
         })

@@ -721,13 +721,15 @@ class TestAssemblyOwnerGate:
         assert any("not present in the task_map" in p for p in problems)
 
     def test_admission_rejects_unowned_root(self):
-        # R21 失败形状:根 package.json/tsconfig 无主 → 根 tsc -b 永不执行。
+        # R21 失败形状只在计划明确要求根脚手架 owner 时 fail-closed。
         from zf.core.workflow.lane_pipeline import (
             validate_lane_pipeline_admission,
         )
         spec = parse_lane_pipeline(_hermes_raw())
         problems = validate_lane_pipeline_admission(
-            spec, self._items(with_root=False),
+            spec,
+            self._items(with_root=False),
+            task_map_payload={"workspace_root_owner_required": True},
         )
         assert any("workspace-root" in p for p in problems)
 
@@ -751,18 +753,18 @@ class TestAssemblyOwnerGate:
 
         assert validate_lane_pipeline_admission(spec, items) == []
 
-    def test_admission_none_skips_assembly_but_checks_root(self):
+    def test_admission_does_not_infer_root_owner_requirement(self):
         from zf.core.workflow.lane_pipeline import (
             validate_lane_pipeline_admission,
         )
         spec = parse_lane_pipeline(_hermes_raw(assembly="none"))
-        # 无 assembly task,但有人拥有根 → 只剩 root 检查 → 通过
+        # 无 assembly task 的局部 patch 不得因没有根路径被拒绝。
         items = self._items(with_assembly=False)
-        items[0]["allowed_paths"] = ["packages/gateway/**", "package.json"]
         assert validate_lane_pipeline_admission(spec, items) == []
-        # 根也无主 → 仍拒
+        # 只有 plan/task_map 显式要求根 owner 时才拒绝。
         problems = validate_lane_pipeline_admission(
             spec, self._items(with_assembly=False),
+            task_map_payload={"workspace_root_owner_required": True},
         )
         assert any("workspace-root" in p for p in problems)
 
@@ -794,6 +796,27 @@ class TestAssemblyOwnerGate:
             items,
             task_map_payload=task_map,
         ) == []
+
+    def test_admission_honors_refactor_contract_root_owner_requirement(self):
+        from zf.core.workflow.lane_pipeline import (
+            validate_lane_pipeline_admission,
+        )
+        spec = parse_lane_pipeline(_hermes_raw(assembly="none"))
+        items = [{
+            "task_id": "REFACTOR-PRICING-HELPERS",
+            "allowed_paths": ["src/orders/pricing.py"],
+        }]
+
+        problems = validate_lane_pipeline_admission(
+            spec,
+            items,
+            task_map_payload={
+                "refactor_contract": {"workspace_root_owner_required": True},
+                "tasks": items,
+            },
+        )
+
+        assert any("workspace-root" in problem for problem in problems)
 
 
 class TestInstructionRefs:
@@ -1037,12 +1060,16 @@ class TestPayloadProvenanceContract:
 
 # --- B-R28-07 (R27 ISSUE-002 / R29): admission match-by-role + 子目录 scaffold ---
 
-def _admit(items):
+def _admit(items, *, task_map_payload=None):
     from zf.core.workflow.lane_pipeline import (
         parse_lane_pipeline, validate_lane_pipeline_admission,
     )
     spec = parse_lane_pipeline(_hermes_raw())  # 声明 assembly: {task: CJMIN-ASSEMBLY-001}
-    return validate_lane_pipeline_admission(spec, items)
+    return validate_lane_pipeline_admission(
+        spec,
+        items,
+        task_map_payload=task_map_payload,
+    )
 
 
 def test_admission_accepts_role_assembly_named_differently():
@@ -1107,6 +1134,9 @@ def test_admission_still_rejects_truly_unowned_scaffold():
         {"task_id": "CJMIN-X-001", "root_owner_class": "slice",
          "allowed_paths": ["cj-min/packages/x/src/**"]},
     ]
-    problems = _admit(items)
+    problems = _admit(
+        items,
+        task_map_payload={"workspace_root_owner_required": True},
+    )
     assert any("not present" in p for p in problems)      # clause 1
     assert any("workspace-root" in p for p in problems)   # clause 2

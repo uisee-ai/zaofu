@@ -211,3 +211,44 @@ class TestStuckDetector:
         assert detector.is_stuck()
         detector.reset()
         assert not detector.is_stuck()
+
+
+class TestShutdownMarker:
+    """ZF-STOP-TAIL-01: watcher 每轮先看停机标记,1 个 poll 周期内自退。"""
+
+    def test_run_exits_when_marker_exists(self, tmp_path: Path):
+        events_file = tmp_path / "events.jsonl"
+        events_file.write_text("")
+        marker = tmp_path / "shutdown-requested"
+        marker.write_text("")
+        polled: list[int] = []
+        watcher = EventWatcher(
+            events_file,
+            on_event=lambda line: None,
+            shutdown_marker=marker,
+        )
+        watcher.poll_once = lambda: polled.append(1)  # type: ignore[method-assign]
+        watcher.run(poll_interval=0.01)
+        assert watcher.stopped is True
+        assert polled == []  # 标记先于任何 poll 被看见
+
+    def test_run_keeps_polling_without_marker(self, tmp_path: Path):
+        events_file = tmp_path / "events.jsonl"
+        events_file.write_text("")
+        marker = tmp_path / "shutdown-requested"  # 不存在
+        watcher = EventWatcher(
+            events_file,
+            on_event=lambda line: None,
+            shutdown_marker=marker,
+        )
+        calls: list[int] = []
+
+        def _poll() -> None:
+            calls.append(1)
+            if len(calls) >= 3:
+                marker.write_text("")  # 第 3 轮后写标记 → 下一轮自退
+
+        watcher.poll_once = _poll  # type: ignore[method-assign]
+        watcher.run(poll_interval=0.01)
+        assert watcher.stopped is True
+        assert len(calls) == 3

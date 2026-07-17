@@ -44,6 +44,27 @@ from zf.runtime.task_refs import runtime_materialized_dirty_files
 from zf.runtime.transport import transport_error_diagnostics
 from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
+from zf.runtime.canonical_recovery import (
+    classify_recovery_scope,
+    recovery_series_from_event,
+)
+from zf.runtime.attempt_ledger import failure_fingerprint
+from zf.runtime.rework_feedback import (
+    ReworkFeedbackError,
+    descriptor_from_payload as feedback_descriptor_from_payload,
+    feedback_briefing_lines,
+    feedback_payload_fields,
+    hydrate_rework_feedback,
+    write_rework_feedback,
+)
+from zf.runtime.rework_dispatch_context import (
+    TASK_REF_SCOPE_REJECTION_REASON,
+    ReworkDispatchContextMixin,
+    _payload_excerpt,
+    _payload_text,
+    _rework_required_actions,
+    _task_ref_scope_repair_payload,
+)
 
 
 # PREREQ-B (doc 40 §6 I57): single source of truth for pipeline-event
@@ -51,7 +72,6 @@ from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 # WorkflowEventSets.baseline() once.
 _WORKFLOW_EVENT_SETS = WorkflowEventSets.baseline()
 TASK_REF_REPAIR_REQUESTED_EVENT = "task.ref.repair.requested"
-TASK_REF_SCOPE_REJECTION_REASON = "source_commit changes outside task contract scope"
 DESIGN_HANDOFF_EVENTS = {"arch.proposal.done", "design.critique.done"}
 
 
@@ -102,112 +122,6 @@ def _discriminator_failure_hints(evidence: object) -> list[str]:
     return hints
 
 
-def _payload_text(value: object) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        return value.strip()
-    return str(value).strip()
-
-
-def _rework_required_actions(payload: object) -> list[str]:
-    if not isinstance(payload, dict):
-        return []
-    actions: list[str] = []
-
-    def add_action(value: object) -> None:
-        text = _payload_text(value)
-        if text and text not in actions:
-            actions.append(text)
-
-    for key in ("required_action", "action", "next_step", "fix", "fix_hint"):
-        add_action(payload.get(key))
-
-    for key in ("must_fix", "required_actions", "actions", "fixes", "next_steps"):
-        value = payload.get(key)
-        if isinstance(value, list):
-            for item in value:
-                if isinstance(item, dict):
-                    add_action(
-                        item.get("required_action")
-                        or item.get("action")
-                        or item.get("fix")
-                        or item.get("summary")
-                        or item.get("reason")
-                    )
-                else:
-                    add_action(item)
-        else:
-            add_action(value)
-
-    findings = payload.get("findings")
-    if isinstance(findings, list):
-        for item in findings:
-            if not isinstance(item, dict):
-                text = _payload_text(item)
-                if text:
-                    actions.append(text)
-                continue
-            parts: list[str] = []
-            severity = _payload_text(item.get("severity"))
-            evidence = _payload_text(item.get("evidence"))
-            required = _payload_text(item.get("required_action"))
-            summary = _payload_text(item.get("summary") or item.get("reason"))
-            if severity:
-                parts.append(f"{severity}:")
-            if summary:
-                parts.append(summary)
-            if required:
-                parts.append(f"required action: {required}")
-            if evidence:
-                parts.append(f"evidence: {evidence}")
-            if parts:
-                actions.append(" ".join(parts))
-
-    blockers = payload.get("blockers")
-    if isinstance(blockers, list):
-        for item in blockers:
-            text = _payload_text(item)
-            if text:
-                actions.append(f"blocker: {text}")
-
-    if _task_ref_scope_repair_payload(payload):
-        add_action(
-            "Produce a new source_commit whose diff contains only this "
-            "task's allowed contract scope; do not reuse the rejected "
-            "source_commit or emit a metadata-only repair."
-        )
-
-    # Preserve order while deduping repeated gate payload fields.
-    out: list[str] = []
-    seen: set[str] = set()
-    for action in actions:
-        if action in seen:
-            continue
-        seen.add(action)
-        out.append(action)
-    return out
-
-
-def _task_ref_scope_repair_payload(payload: object) -> bool:
-    if not isinstance(payload, dict):
-        return False
-    reason = str(payload.get("reason") or "").strip()
-    expected_action = str(payload.get("expected_action") or "").strip()
-    return (
-        reason == TASK_REF_SCOPE_REJECTION_REASON
-        or expected_action == "split_or_rebase_source_commit_and_reemit_handoff"
-        or bool(payload.get("out_of_scope_files"))
-    )
-
-
-def _payload_excerpt(payload: object, *, limit: int = 3000) -> str:
-    if not isinstance(payload, dict) or not payload:
-        return ""
-    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
-    if len(text) <= limit:
-        return text
-    return text[:limit].rstrip() + "\n... <truncated>"
 
 
 def _new_dispatch_id() -> str:
@@ -559,6 +473,7 @@ from zf.runtime.dispatch_recovery_policy import DispatchRecoveryPolicyMixin
 
 
 class DispatchMixin(
+    ReworkDispatchContextMixin,
     DispatchEvidenceQueriesMixin,
     DispatchRoutingQueriesMixin,
     DispatchRecoveryPolicyMixin,
@@ -1697,6 +1612,20 @@ class DispatchMixin(
         instances = {role.instance_id for role in self.config.roles}
         if actor not in instances:
             return
+        task = self.task_store.get(task_id) if task_id else None
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        event_dispatch_id = str(
+            payload.get("dispatch_id") or payload.get("run_id") or ""
+        )
+        active_dispatch_id = str(
+            getattr(task, "active_dispatch_id", "") or ""
+        )
+        if (
+            active_dispatch_id
+            and event_dispatch_id
+            and event_dispatch_id != active_dispatch_id
+        ):
+            return
         if event.type == "dev.build.done":
             state = "awaiting_review"
         elif event.type in {
@@ -1716,6 +1645,7 @@ class DispatchMixin(
                     f"{event.type} for task {task_id} "
                     "(pending handoff reconcile)"
                 ),
+                task_id=task_id,
             )
         except Exception:
             pass
@@ -2906,6 +2836,7 @@ class DispatchMixin(
         self._set_worker_state(
             role.instance_id, "busy",
             reason=f"dispatched task {task.id}",
+            task_id=task.id,
         )
 
         # 6. G-WIRE-1: snapshot workspace for scope ratchet (only when
@@ -3182,69 +3113,6 @@ class DispatchMixin(
             return ""
         return result.stdout.strip()
 
-    def _rework_context_for_dispatch(self, task: Task, role: RoleConfig) -> str:
-        if getattr(task, "retry_count", 0) <= 0:
-            return ""
-        event = self._latest_rework_trigger_event(task.id)
-        if event is None:
-            return ""
-        actions = _rework_required_actions(event.payload)
-        action_section = ""
-        if actions:
-            action_section = (
-                "\n### Required Rework Items\n"
-                + "\n".join(f"- {item}" for item in actions)
-                + "\n"
-            )
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        trigger_summary = _payload_text(
-            payload.get("summary")
-            or payload.get("verdict")
-            or payload.get("reason")
-        )
-        summary_section = ""
-        if trigger_summary:
-            summary_section = f"\n### Trigger Summary\n{trigger_summary}\n"
-        payload_excerpt = _payload_excerpt(event.payload, limit=2400)
-        payload_section = ""
-        if payload_excerpt:
-            payload_section = (
-                "\n### Trigger Payload Evidence\n"
-                "```json\n"
-                f"{payload_excerpt}\n"
-                "```\n"
-            )
-        feedback_artifact_ref = str(payload.get("feedback_artifact_ref") or "").strip()
-        if not feedback_artifact_ref:
-            rework_request = self._latest_rework_request_event(task.id)
-            rework_payload = (
-                rework_request.payload
-                if rework_request is not None and isinstance(rework_request.payload, dict)
-                else {}
-            )
-            if str(rework_payload.get("trigger_event_id") or "") == event.id:
-                feedback_artifact_ref = str(
-                    rework_payload.get("feedback_artifact_ref") or ""
-                ).strip()
-        feedback_artifact_section = ""
-        if feedback_artifact_ref:
-            feedback_artifact_section = (
-                "\n### Feedback Artifact\n"
-                f"- feedback_artifact_ref: `{feedback_artifact_ref}`\n"
-                "Load this file before editing; it is the durable rejection "
-                "summary for this rework attempt.\n"
-            )
-        return (
-            "\n\n## Rework Context\n"
-            f"- trigger_event: `{event.type}`\n"
-            f"- trigger_event_id: `{event.id}`\n"
-            f"- trigger_actor: `{event.actor or ''}`\n"
-            f"{summary_section}"
-            f"{action_section}"
-            f"{payload_section}"
-            f"{feedback_artifact_section}"
-            "Address the rework evidence above before emitting the success event.\n"
-        )
 
     def _artifact_refs_context_for_dispatch(self, task: Task) -> str:
         entry = self._task_ref_entry(task.id)
@@ -4017,6 +3885,32 @@ class DispatchMixin(
             trigger_event,
             backedge,
         )
+        try:
+            rework_feedback_descriptor = write_rework_feedback(
+                self.state_dir,
+                task_id=task.id,
+                failure_fingerprint=failure_fingerprint(trigger_event),
+                source_event=trigger_event,
+                source_attempt=cap_count + 1,
+                allowed_paths=list(getattr(task.contract, "scope", []) or []),
+                required_actions=required_actions,
+                summary=feedback,
+            )
+        except ReworkFeedbackError as exc:
+            self.event_writer.append(ZfEvent(
+                type="task.rework.feedback_invalid",
+                actor="zf-cli",
+                task_id=task.id,
+                payload={
+                    "task_id": task.id,
+                    "trigger_event_id": trigger_event.id,
+                    "reason": str(exc),
+                    "recovery_owner": "run_manager",
+                },
+                causation_id=trigger_event.id,
+                correlation_id=trigger_event.correlation_id,
+            ))
+            return None
         previous_dispatch_id = getattr(task, "active_dispatch_id", "")
         dispatch_id = _new_dispatch_id()
         self._remember_dispatch_id(task.id, dispatch_id)  # B-STUCK-1
@@ -4064,6 +3958,9 @@ class DispatchMixin(
                 "reason": feedback,
                 "trigger_event_type": trigger_event.type,
                 "trigger_event_id": trigger_event.id,
+                "failure_fingerprint": failure_fingerprint(trigger_event),
+                **recovery_series_from_event(trigger_event).to_payload(),
+                "dispatch_id": dispatch_id,
                 "required_actions": required_actions,
                 "base_git_head": base_git_head,
                 "base_files_touched": (
@@ -4108,6 +4005,7 @@ class DispatchMixin(
                     else ""
                 ),
                 "feedback_artifact_ref": feedback_artifact_ref,
+                **feedback_payload_fields(rework_feedback_descriptor),
                 "backedge_emit": (
                     str(getattr(backedge, "emit", "") or "")
                     if backedge is not None
@@ -4179,6 +4077,7 @@ class DispatchMixin(
                 "role": role.name,
                 "assignee": role.instance_id,
                 "source": "rework",
+                "delivery_mode": "live_session",
                 "trigger_event": trigger_event.type,
                 "rework_request_event_id": rework_request.id,
                 "dispatch_id": dispatch_id,
@@ -4212,12 +4111,30 @@ class DispatchMixin(
                 "```\n"
             )
         feedback_artifact_section = ""
-        if feedback_artifact_ref:
+        if rework_feedback_descriptor:
+            feedback_body = hydrate_rework_feedback(
+                self.state_dir,
+                rework_feedback_descriptor,
+                expected_task_id=task.id,
+                expected_fingerprint=failure_fingerprint(trigger_event),
+            )
+            feedback_lines = feedback_briefing_lines(feedback_body)
             feedback_artifact_section = (
                 "\n## Feedback Artifact\n"
+                f"- rework_feedback_ref: `{rework_feedback_descriptor['ref']}`\n"
+                f"- rework_feedback_digest: `{rework_feedback_descriptor['sha256']}`\n"
+                + (
+                    f"- legacy_feedback_artifact_ref: `{feedback_artifact_ref}`\n"
+                    if feedback_artifact_ref
+                    else ""
+                )
+                + "The kernel verified and hydrated this immutable feedback before dispatch.\n"
+                + "".join(f"- {line}\n" for line in feedback_lines)
+            )
+        elif feedback_artifact_ref:
+            feedback_artifact_section = (
+                "\n## Legacy Feedback Artifact\n"
                 f"- feedback_artifact_ref: `{feedback_artifact_ref}`\n"
-                "Load this file before editing; it contains the durable "
-                "rejection summary for this rework attempt.\n"
             )
         task_ref_repair_section = ""
         if trigger_event.type == "task.ref.repair.requested":
@@ -4336,6 +4253,7 @@ class DispatchMixin(
         self._set_worker_state(
             role.instance_id, "busy",
             reason=f"rework dispatched for task {task.id}",
+            task_id=task.id,
         )
         self._dispatch_epoch[task.id] = self._now()
         self._orphan_warned.discard(task.id)
@@ -4385,7 +4303,10 @@ class DispatchMixin(
                 same_worker = dispatched_to == role.instance_id
             if same_worker:
                 active_others.append(other.id)
-        if len(active_others) >= self.wip.limit:
+        # One role instance maps to one interactive provider turn. Even if a
+        # future global WIP setting exceeds one, a single pane must remain
+        # serial: queue the rework until its current task reaches terminal.
+        if active_others:
             return "rework_target_busy:" + ",".join(sorted(active_others))
         return ""
 
@@ -4395,16 +4316,27 @@ class DispatchMixin(
     ) -> dict[str, tuple[int, str, str]]:
         latest: dict[str, tuple[int, str, str]] = {}
         for idx, event in enumerate(events):
-            if event.type != "task.dispatched" or not event.task_id:
+            if event.type not in {"task.dispatched", "fanout.child.dispatched"}:
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
-            assignee = str(payload.get("assignee") or payload.get("role") or "")
-            if not assignee:
+            task_id = str(event.task_id or payload.get("task_id") or "")
+            assignee = str(
+                payload.get("assignee")
+                or payload.get("role_instance")
+                or payload.get("role")
+                or ""
+            )
+            if not task_id or not assignee:
                 continue
-            latest[event.task_id] = (
+            latest[task_id] = (
                 idx,
                 assignee,
-                str(payload.get("dispatch_id") or ""),
+                str(
+                    payload.get("dispatch_id")
+                    or payload.get("run_id")
+                    or payload.get("child_id")
+                    or ""
+                ),
             )
         return latest
 
@@ -4512,8 +4444,8 @@ class DispatchMixin(
         | infra/respawn 族 | 不进本枢纽 —— lifecycle watchdog 独立路径 | respawn 连败熔断(_consecutive_respawn_failures) |
         | terminal/plan 级 | block / orchestrator.replan_requested | — |
 
-        候选级(无 task_id)失败不进本枢纽 → candidate_rework.plan_candidate_rework
-        (分界符 = event.task_id,见该模块头注互链)。
+        candidate/assembly 失败按 recovery envelope 分类后不进本枢纽，
+        由 candidate_rework.plan_candidate_rework 处理；task_id 仅作审计身份。
         dev.blocked 经 reconcile/generic 路径仍会到达本枢纽(与 _on_dev_blocked
         并存);ZF-E2E-RACING-P2:triage 把 owner 判给非 writer 角色时不走
         REWORK_RETRY 分支,落 block+notify(见 _triage_owner_excludes_lane_rework)。
@@ -4521,6 +4453,12 @@ class DispatchMixin(
         K3 相 3(影子):remediation_pipeline.route 的统一三层决策以
         shadow 事件并行发射,零执行;分歧即 bug 线索,切换前必须零分歧。
         """
+        if classify_recovery_scope(trigger_event) != "task":
+            return OrchestratorDecision(
+                action="ignore",
+                task_id=task.id,
+                reason=f"{reason}: candidate/gap recovery owned by candidate sweep",
+            )
         if not self._rework_trigger_valid_for_task_state(task, trigger_event):
             return OrchestratorDecision(
                 action="ignore",
@@ -4935,6 +4873,7 @@ class DispatchMixin(
             role.instance_id,
             "busy",
             reason=f"evidence reissue dispatched for task {task.id}",
+            task_id=task.id,
         )
         self._dispatch_epoch[task.id] = self._now()
         self._orphan_warned.discard(task.id)

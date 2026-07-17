@@ -16,6 +16,7 @@ from zf.runtime.channel_router import resolve_channel_mentions
 from zf.runtime.channel_router import routable_backing_worker_member
 from zf.runtime.channel_router import route_channel_message
 from zf.runtime.channel_sidecar import channel_message_event_payload
+from zf.runtime.control_actions_helpers import _normal_channel_id
 from zf.runtime.control_actions_helpers import _optional_str
 from zf.runtime.control_actions_helpers import _required_text
 from zf.runtime.control_actions_helpers import _safe_int
@@ -79,7 +80,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         message_id = _optional_str(payload.get("message_id")) or f"msg-{requested.id.removeprefix('evt-')}"
         member_id = _optional_str(payload.get("member_id")) or "operator"
@@ -279,7 +280,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         member_id = _optional_str(payload.get("member_id")) or "operator"
         message_id = _optional_str(payload.get("message_id")) or ""
@@ -349,7 +350,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         owner_id = _required_text(payload, "owner_id")
         member_id = _optional_str(payload.get("member_id")) or ""
@@ -492,7 +493,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         event = self.writer.emit(
             "channel.synthesis.proposed",
@@ -546,7 +547,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         channel = project_channel(self.state_dir, channel_id) or {}
         target_member_id = (
@@ -668,7 +669,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         result = dispatch_pending_replies(
             state_dir=self.state_dir,
             writer=self.writer,
@@ -713,7 +714,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         result = request_channel_handoff(
             state_dir=self.state_dir,
             writer=self.writer,
@@ -762,7 +763,7 @@ class ChannelMessageActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         mode = _required_text(payload, "mode")
         channel = project_channel(self.state_dir, channel_id) or {}
         default_max_rounds = default_debate_max_rounds(len(channel.get("members") or []))

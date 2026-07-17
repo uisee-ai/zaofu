@@ -628,12 +628,13 @@ def validate_lane_pipeline_admission(
 
     校验项(doc 88 §3.2/§5):
     1. 声明的 assembly task 必须存在于 task_map;
-    2. 工作区根文件(根级 file/glob 路径)必须有 owner——R21 教训:
+    2. 当 task_map 明确声明 ``workspace_root_owner_required=true`` 时,
+       工作区根文件(根级 file/glob 路径)必须有 owner——R21 教训:
        package.json/tsconfig 无主,根 `tsc -b` 从未被任何 lane 执行。
-       assembly: none 默认跳过 (1) 但仍要求 (2)。已有项目的局部
-       refactor 可在 task_map 的 refactor_contract 中显式声明
-       assembly_policy=none / workspace_root_owner_required=false,此时
-       只跳过根 owner 启发式,不放宽 task schema/path/evidence 校验。
+       是否需要修改或验证根脚手架是项目/计划语义,不能从 lane pipeline
+       或“没有根路径”反推;未声明时不作此启发式拒绝。该开关只控制根
+       owner 检查,不放宽 task schema/path/evidence 或并行 bundle 的
+       assembly 校验。
     """
     problems: list[str] = []
     ids = {str(item.get("task_id") or "") for item in task_items}
@@ -682,9 +683,10 @@ def validate_lane_pipeline_admission(
         str(item.get("task_id") or "")
         for item in task_items if _has_root_path(item)
     ]
+
     def _workspace_root_owner_required() -> bool:
         if not isinstance(task_map_payload, dict):
-            return True
+            return False
         explicit = task_map_payload.get("workspace_root_owner_required")
         if isinstance(explicit, bool):
             return explicit
@@ -693,28 +695,15 @@ def validate_lane_pipeline_admission(
             explicit = contract.get("workspace_root_owner_required")
             if isinstance(explicit, bool):
                 return explicit
-            policy = str(
-                contract.get("assembly_policy")
-                or contract.get("assembly")
-                or ""
-            ).strip().lower()
-            if policy == "none":
-                return False
-        return True
+        return False
 
-    single_assembly_slice = (
-        len(task_items) == 1
-        and str(task_items[0].get("root_owner_class") or "").strip() == "assembly"
-        and bool(str(task_items[0].get("task_id") or "").strip())
-    )
     if not root_owners and _workspace_root_owner_required():
-        if not single_assembly_slice:
-            problems.append(
-                f"no task in the task_map owns workspace-root paths "
-                f"(scaffolding such as package.json/tsconfig has no owner — "
-                f"the R21 failure shape); give the assembly/scaffold task a "
-                f"root-level allowed_path or split one out"
-            )
+        problems.append(
+            f"no task in the task_map owns workspace-root paths "
+            f"(scaffolding such as package.json/tsconfig has no owner — "
+            f"the R21 failure shape); give the assembly/scaffold task a "
+            f"root-level allowed_path or split one out"
+        )
     return problems
 
 

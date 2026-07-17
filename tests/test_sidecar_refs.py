@@ -22,6 +22,10 @@ from zf.runtime.sidecar_refs import (
 )
 
 
+def _event(event_type: str, **payload: object) -> ZfEvent:
+    return ZfEvent(type=event_type, payload=payload)
+
+
 def test_write_and_hydrate_text_sidecar_descriptor(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
 
@@ -219,3 +223,37 @@ def test_doctor_sidecar_refs_reports_missing_and_orphan(tmp_path: Path) -> None:
     assert report["ok"] is False
     assert {issue["code"] for issue in report["issues"]} == {"ref_missing"}
     assert any(item["ref"] == "diagnostics/run-1/orphan.txt" for item in report["orphans"])
+
+
+def test_doctor_exempts_active_read_ledger_only_while_attempt_is_live(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    ledger = state_dir / "artifacts" / "attempts" / "attempt-1" / "read-ledger.active.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text('{"schema_version":"artifact-read.v1"}\n', encoding="utf-8")
+    ledger.with_name(f"{ledger.name}.lock").touch()
+
+    live_report = doctor_sidecar_refs(
+        state_dir,
+        [_event("fanout.child.dispatched", task_id="TASK-1", run_id="attempt-1")],
+    )
+
+    assert not any(item["ref"] == "artifacts/attempts/attempt-1/read-ledger.active.jsonl" for item in live_report["orphans"])
+    assert not any(item["ref"].endswith(".lock") for item in live_report["orphans"])
+
+    settled_report = doctor_sidecar_refs(
+        state_dir,
+        [
+            _event("fanout.child.dispatched", task_id="TASK-1", run_id="attempt-1"),
+            _event("fanout.child.completed", task_id="TASK-1", run_id="attempt-1"),
+        ],
+    )
+
+    assert {
+        (item["ref"], item["code"])
+        for item in settled_report["orphans"]
+    } >= {
+        (
+            "artifacts/attempts/attempt-1/read-ledger.active.jsonl",
+            "stale_active_read_ledger",
+        )
+    }

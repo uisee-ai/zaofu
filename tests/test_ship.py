@@ -146,6 +146,25 @@ def test_clean_candidate_ship_merges_to_main_and_tags(tmp_path: Path):
     assert any(event.type == "ship.completed" for event in log.read_all())
 
 
+def test_repeated_identical_candidate_ship_is_idempotent(tmp_path: Path):
+    """A replayed terminal trigger must not turn a shipped candidate into an alert."""
+    _init_repo(tmp_path)
+    _state_dir, _config_obj, log, service = _state(tmp_path)
+    _candidate_branch(tmp_path, "F-IDEMPOTENT", "a.txt", "candidate\n")
+    _candidate_ready(log, "F-IDEMPOTENT")
+    writer = EventWriter(log)
+
+    first = service.ship(pdd_id="F-IDEMPOTENT", event_writer=writer)
+    second = service.ship(pdd_id="F-IDEMPOTENT", event_writer=writer)
+
+    assert first.status == "completed"
+    assert second.status == "completed"
+    assert second.payload["idempotent"] is True
+    events = list(log.read_all())
+    assert sum(event.type == "ship.completed" for event in events) == 1
+    assert not any(event.type == "ship.blocked" for event in events)
+
+
 def test_candidate_ship_conflict_aborts_and_leaves_main_unchanged(tmp_path: Path):
     _init_repo(tmp_path)
     _state_dir, _config_obj, log, service = _state(tmp_path)

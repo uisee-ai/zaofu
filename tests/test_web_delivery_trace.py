@@ -142,7 +142,7 @@ def test_delivery_trace_endpoint_includes_goal_closure_loop(
 
     assert r.status_code == 200
     loop = r.json()["goal_closure_loop"]
-    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["schema_version"] == "goal-closure-loop.v2"
     assert loop["status"] == "gap_tasks_dispatched"
     assert loop["gap_task_ids"] == ["ISSUE-GAP-001"]
     assert loop["latest_replan_history_ref"] == "docs/plans/F-1/replan-history.jsonl"
@@ -213,7 +213,7 @@ def test_delivery_trace_endpoint_includes_flow_neutral_goal_closure_loop(
 
     assert r.status_code == 200
     loop = r.json()["goal_closure_loop"]
-    assert loop["schema_version"] == "goal-closure-loop.v1"
+    assert loop["schema_version"] == "goal-closure-loop.v2"
     assert loop["status"] == "gap_tasks_dispatched"
     assert loop["scan_request_count"] == 1
     assert loop["scan_result_count"] == 1

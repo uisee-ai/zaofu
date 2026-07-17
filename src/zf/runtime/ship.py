@@ -97,6 +97,19 @@ class ShipService:
         lock_path = self.state_dir / "locks" / "main.lock"
         try:
             with MainLock(lock_path):
+                completed = self._completed_delivery(target, payload_base)
+                if completed is not None:
+                    # Watchers may replay the same terminal judge event while
+                    # its original owner is still closing projections.  A
+                    # completed identical delivery is a successful no-op, not
+                    # a second ship attempt that should trip the final-tag
+                    # blocker and reopen terminal attention.
+                    return ShipResult(
+                        status="completed",
+                        ok=True,
+                        event_type="ship.completed",
+                        payload={**completed, "idempotent": True},
+                    )
                 self._emit(
                     event_writer,
                     "ship.lock_acquired",
@@ -160,10 +173,16 @@ class ShipService:
         )
         payload_base = {**payload_base, "target_resolved_from": target_resolved_from}
         original_head = self._git(self.project_root, "rev-parse", target_branch)
+        source_commit = self._git(self.project_root, "rev-parse", target_ref)
         self._emit(
             event_writer,
             "ship.started",
-            {**payload_base, "target_branch": target_branch, "original_head": original_head},
+            {
+                **payload_base,
+                "target_branch": target_branch,
+                "original_head": original_head,
+                "source_commit": source_commit,
+            },
             causation_id=causation_id,
             correlation_id=correlation_id,
         )
@@ -202,6 +221,7 @@ class ShipService:
                 **payload_base,
                 "target_branch": target_branch,
                 "original_head": original_head,
+                "source_commit": source_commit,
                 "final_commit": final_commit,
                 "final_tag": final_tag,
                 "completed_at": _now(),
@@ -244,6 +264,65 @@ class ShipService:
                 event_type="ship.conflict",
                 payload=payload,
             )
+
+    def _completed_delivery(
+        self,
+        target_ref: str,
+        payload_base: dict,
+    ) -> dict | None:
+        """Return an existing successful delivery for the same immutable source.
+
+        ``judge.passed`` delivery can be replayed by independent watcher
+        processes.  The candidate/task ref must still resolve to the exact
+        revision recorded by the first ship; a changed source remains a new
+        delivery attempt and is deliberately not hidden by this guard.
+        """
+        if not target_ref or not self._ref_exists(target_ref):
+            return None
+        try:
+            current_source = self._git(self.project_root, "rev-parse", target_ref)
+        except RuntimeError:
+            return None
+        expected_pdd = str(payload_base.get("pdd_id") or "")
+        expected_task = str(payload_base.get("task_id") or "")
+        for event in reversed(self.event_log.read_all()):
+            if event.type != "ship.completed":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("target_ref") or "") != target_ref:
+                continue
+            if expected_pdd and str(payload.get("pdd_id") or "") != expected_pdd:
+                continue
+            if expected_task and str(payload.get("task_id") or "") != expected_task:
+                continue
+            source_commit = str(payload.get("source_commit") or "")
+            if source_commit:
+                if source_commit == current_source:
+                    return dict(payload)
+                continue
+            # Compatibility with deliveries written before source_commit was
+            # added.  Candidate branches are merged, so the old candidate tip
+            # must still be reachable from the recorded target branch.
+            target_branch = str(payload.get("target_branch") or "")
+            if (
+                target_ref.startswith(
+                    f"{self.config.runtime.git.candidate_branch_prefix}/"
+                )
+                and target_branch
+                and self._is_ancestor(current_source, target_branch)
+            ):
+                return dict(payload)
+        return None
+
+    def _is_ancestor(self, ancestor: str, descendant: str) -> bool:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return result.returncode == 0
 
     def _blockers(self, target_ref: str, payload_base: dict) -> list[str]:
         blockers: list[str] = []

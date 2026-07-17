@@ -53,6 +53,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "orchestrator.replan_requested",
     "gate.failed",
     "task.status_changed",
+    "task.done.evidence",
     "task.created",
     "feature.liveness.blocked",
     # Kernel-reactor liveness routes. These handlers mutate runtime state
@@ -60,6 +61,9 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # instead of waiting for an unrelated periodic tick.
     "phase.progressed",
     "task.fanout.requested",
+    # Task-map publication is an external durable edge. Housekeeping pins the
+    # canonical Goal claim set from it, so it cannot wait for a later tick.
+    "task_map.ready",
     "workflow.invoke.requested",
     "workflow.reconcile.requested",
     # Tier-2 诊断(task 2026-07-06-0930):requested 唤醒诊断 stage 派发,
@@ -93,6 +97,23 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "static_gate.skipped",
     "judge.passed",
     "judge.failed",
+    "goal.closure.synthesized",
+    "goal.closure.synthesis.failed",
+    "run.goal.completion.claimed",
+    "run.delivery.requested",
+    "run.delivery.settled",
+    "run.delivery.failed",
+    "run.delivery.blocked",
+    "rework.feedback.verified_closed",
+    "attempt.handoff.acknowledged",
+    "attempt.handoff.closed",
+    "human.decision.resolved",
+    "run.manager.human_decision.applied",
+    "run.manager.action.applied",
+    "run.manager.action.failed",
+    # Completion is also a task/candidate settlement edge and may arrive after
+    # an external delivery action or replay.
+    "run.goal.completed",
     "task.done.blocked",
     "orchestrator.evidence_rework.requested",
     # G-LIFE-3: stuck detector emits when a worker's pane output stops
@@ -246,6 +267,10 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "run.manager.autoresearch.requested",
     "autoresearch.invocation.requested",
     "autoresearch.trigger.accepted",
+    # A Run Manager-confirmed candidate is the only route that may prepare a
+    # bounded source repair.  Wake immediately so the reactor consumes the
+    # confirmation instead of relying on a later unrelated tick.
+    "autoresearch.bug_candidate.confirmed",
     "autoresearch.loop.requested",
     "plan.insight.discovered",
     "research.probe.requested",

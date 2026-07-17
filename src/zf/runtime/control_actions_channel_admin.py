@@ -119,7 +119,7 @@ class ChannelAdminActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         member_id = _required_text(payload, "member_id")
         provider = normalize_provider(payload.get("provider") or payload.get("backend") or payload.get("member_type"))
@@ -304,7 +304,7 @@ class ChannelAdminActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         member_id = _required_text(payload, "member_id")
         channel = project_channel(self.state_dir, channel_id) or {}
@@ -477,7 +477,7 @@ class ChannelAdminActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         member_id = _required_text(payload, "member_id")
         event = self.writer.emit(
@@ -520,7 +520,7 @@ class ChannelAdminActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         event = self.writer.emit(
             "channel.archived",
@@ -560,7 +560,7 @@ class ChannelAdminActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
-        channel_id = _required_text(payload, "channel_id")
+        channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
         event = self.writer.emit(
             "channel.history.cleared",

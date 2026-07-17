@@ -203,9 +203,14 @@ function loopSummary(trace: DeliveryTrace) {
   const failedEvals = (thick?.evals ?? []).filter((item) => ["failed", "error", "blocked"].includes(item.status)).length;
   const replan = trace.deposition_summary?.replan_gate_status || "";
   const replanActive = Boolean(replan && replan !== "none");
+  const candidateIds = new Set(
+    (thick?.improvement_candidates ?? []).map((item) => (
+      String(item.candidate_id ?? item.fingerprint ?? item.source_kind)
+    )),
+  );
   return {
     behaviors: thick?.behaviors.length ?? 0,
-    candidates: thick?.improvement_candidates.length ?? 0,
+    candidates: candidateIds.size,
     evals: thick?.evals.length ?? 0,
     failedEvals,
     related: trace.related_loop_count ?? trace.related_loop_ids?.length ?? 0,

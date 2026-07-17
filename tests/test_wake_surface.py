@@ -40,7 +40,7 @@ def test_kept_events_still_wake():
 def test_wake_list_changes_are_explicit():
     # 快照锁:数量带 ±0 容差——增删唤醒源必须改本测试(显式决策)。
     assert len(WAKE_PATTERNS) == len(set(WAKE_PATTERNS))  # 无重复
-    assert len(WAKE_PATTERNS) == 121, (
+    assert len(WAKE_PATTERNS) == 139, (
         f"WAKE_PATTERNS={len(WAKE_PATTERNS)}; 唤醒面变更需同步本快照"
         f"(K2 基线 103-7=96;B14 plan 审核门显式 +3:plan.approval.requested /"
         f" plan.approved / plan.rejected —— 均 workflow 控制事件需唤醒"
@@ -57,7 +57,11 @@ def test_wake_list_changes_are_explicit():
         f"bizsim-r4 FIX-6 解锁 level 重扫 +1:workflow.reconcile.requested"
         f"(run-manager 批准后发,reactor 补孵化被 wait 掉的 stage 边沿)"
         f"→ 119; Tier-2 诊断 requested/completed +2 → 121(task "
-        f"2026-07-06-0930,诊断派发与结论消费都要唤醒)"
+        f"2026-07-06-0930,诊断派发与结论消费都要唤醒); "
+        f"task.done.evidence +1 → 122(137/138 lane closeout 的事件优先证据需唤醒); "
+        f"workflow.invoke.requested +1 → 123(140 durable operation 必须从入口事件孵化); "
+        f"141 closure/result/gate/delivery truth edges +14 → 137; "
+        f"task_map.ready claim-set pin + run.goal.completed settlement +2 → 139"
     )
 
 

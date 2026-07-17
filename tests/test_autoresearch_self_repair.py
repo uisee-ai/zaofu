@@ -4,6 +4,7 @@ from pathlib import Path
 
 from zf.autoresearch.self_repair import (
     candidate_from_trigger_event,
+    candidate_with_diagnosis,
     repair_task_payload_from_candidate,
     validate_repair_metric_delta,
     write_candidate_artifact,
@@ -39,7 +40,9 @@ def test_scan_trigger_decisions_skips_when_maintenance_active(tmp_path: Path) ->
     assert {decision.skip_reason for decision in decisions} == {"self_repair_active"}
 
 
-def test_trigger_event_builds_candidate_and_repair_task_payload(tmp_path: Path) -> None:
+def test_trigger_event_builds_unverified_candidate_before_repair_payload(
+    tmp_path: Path,
+) -> None:
     event = ZfEvent(
         type="autoresearch.trigger.accepted",
         id="evt-trigger",
@@ -57,10 +60,25 @@ def test_trigger_event_builds_candidate_and_repair_task_payload(tmp_path: Path) 
 
     candidate = candidate_from_trigger_event(event)
     path = write_candidate_artifact(tmp_path / ".zf", candidate)
-    payload = repair_task_payload_from_candidate(candidate, candidate_path=path)
 
     assert path.exists()
     assert candidate.trigger_id == "ar-123"
+    assert candidate.status == "unverified"
+    assert repair_task_payload_from_candidate(candidate, candidate_path=path) is None
+
+    confirmed = candidate_with_diagnosis(
+        candidate,
+        status="confirmed",
+        diagnosis_evidence_paths=["records/ar-123-diagnosis.md"],
+        repair_scope=["src/zf/runtime/dispatch.py", "tests/test_dispatch.py"],
+        resolution_reason="reproduced from deterministic fixture",
+    )
+    payload = repair_task_payload_from_candidate(
+        confirmed,
+        candidate_path=write_candidate_artifact(tmp_path / ".zf", confirmed),
+    )
+
+    assert payload is not None
     assert payload["task_id"].startswith("TASK-AR-")
     assert payload["contract"]["phase"] == "zaofu_self_repair"
     evidence = payload["contract"]["evidence_contract"]
@@ -68,6 +86,10 @@ def test_trigger_event_builds_candidate_and_repair_task_payload(tmp_path: Path) 
     assert evidence["source_signals"] == ["sig-1"]
     assert evidence["target_metrics"] == ["failure_count"]
     assert payload["contract"]["validation"]["requires_baseline_candidate_metrics"] is True
+    assert payload["contract"]["scope"] == [
+        "src/zf/runtime/dispatch.py",
+        "tests/test_dispatch.py",
+    ]
 
 
 def test_repair_metric_delta_requires_baseline_and_candidate_metrics() -> None:

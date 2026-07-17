@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,7 +35,16 @@ class HarnessImprovementCandidate:
     evidence_paths: list[str] = field(default_factory=list)
     target_metrics: list[str] = field(default_factory=list)
     eval_plan: list[str] = field(default_factory=list)
-    status: str = "proposed"
+    # A trigger is only a hypothesis.  No repair task may exist until a
+    # diagnosis produces reproducible evidence and an exact repair scope.
+    status: str = "unverified"
+    recovery_case_id: str = ""
+    loop_request_id: str = ""
+    failure_scope: str = ""
+    expected_fault: bool = False
+    diagnosis_evidence_paths: list[str] = field(default_factory=list)
+    repair_scope: list[str] = field(default_factory=list)
+    resolution_reason: str = ""
     created_at: str = field(default_factory=_now_iso)
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,11 +93,54 @@ def candidate_from_trigger_event(event: ZfEvent) -> HarnessImprovementCandidate:
         source_signals=[str(item) for item in signal_ids if str(item).strip()],
         evidence_paths=[str(item) for item in evidence_paths if str(item).strip()],
         target_metrics=target_metrics,
+        recovery_case_id=str(payload.get("recovery_case_id") or ""),
+        loop_request_id=str(
+            payload.get("loop_request_id")
+            or payload.get("request_id")
+            or payload.get("run_manager_request_id")
+            or ""
+        ),
+        failure_scope=str(payload.get("failure_scope") or ""),
+        expected_fault=bool(
+            payload.get("expected_fault")
+            or payload.get("fault_injection")
+            or payload.get("injected")
+        ),
         eval_plan=[
             "reproduce the captured failure signal from evidence_paths",
             "run focused autoresearch validation for the candidate fix",
             "run the relevant zf pytest target before leaving maintenance",
         ],
+    )
+
+
+def candidate_from_dict(data: dict[str, Any]) -> HarnessImprovementCandidate:
+    """Rehydrate an artifact row while ignoring forward-compatible fields."""
+
+    allowed = {field.name for field in fields(HarnessImprovementCandidate)}
+    return HarnessImprovementCandidate(**{
+        key: value for key, value in data.items() if key in allowed
+    })
+
+
+def candidate_with_diagnosis(
+    candidate: HarnessImprovementCandidate,
+    *,
+    status: str,
+    diagnosis_evidence_paths: list[str],
+    repair_scope: list[str],
+    resolution_reason: str,
+) -> HarnessImprovementCandidate:
+    """Return the auditable post-diagnosis candidate state."""
+
+    return replace(
+        candidate,
+        status=status,
+        diagnosis_evidence_paths=[
+            str(value) for value in diagnosis_evidence_paths if str(value).strip()
+        ],
+        repair_scope=[str(value) for value in repair_scope if str(value).strip()],
+        resolution_reason=resolution_reason,
     )
 
 
@@ -118,7 +170,14 @@ def repair_task_payload_from_candidate(
     candidate: HarnessImprovementCandidate,
     *,
     candidate_path: Path,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if (
+        candidate.status != "confirmed"
+        or candidate.expected_fault
+        or candidate.failure_scope == "plan_admission"
+        or not candidate.repair_scope
+    ):
+        return None
     task_id = _stable_id("TASK-AR", candidate.candidate_id)
     evidence_contract = {
         "source": "autoresearch_self_repair",
@@ -126,11 +185,14 @@ def repair_task_payload_from_candidate(
         "trigger_id": candidate.trigger_id,
         "source_event_id": candidate.source_event_id,
         "fingerprint": candidate.fingerprint,
+        "recovery_case_id": candidate.recovery_case_id,
+        "candidate_status": candidate.status,
         "candidate_path": str(candidate_path),
         "source_signals": list(candidate.source_signals),
         "evidence_paths": list(candidate.evidence_paths),
         "target_metrics": list(candidate.target_metrics),
         "eval_plan": list(candidate.eval_plan),
+        "diagnosis_evidence_paths": list(candidate.diagnosis_evidence_paths),
         "success_criteria": [
             {
                 "kind": "event_exists",
@@ -156,7 +218,7 @@ def repair_task_payload_from_candidate(
             "behavior": candidate.hypothesis,
             "verification": "Run focused autoresearch eval and relevant pytest target.",
             "verification_tiers": ["static", "runtime"],
-            "scope": ["src/zf/**", "tests/**"],
+            "scope": list(candidate.repair_scope),
             "acceptance": "autoresearch validation passes and no regression tests fail",
             "owner_role": "dev",
             "complexity": "complex",
@@ -214,7 +276,9 @@ def validate_repair_metric_delta(
 __all__ = [
     "HarnessImprovementCandidate",
     "RepairMetricValidation",
+    "candidate_from_dict",
     "candidate_from_trigger_event",
+    "candidate_with_diagnosis",
     "candidate_artifact_path",
     "write_candidate_artifact",
     "repair_task_payload_from_candidate",

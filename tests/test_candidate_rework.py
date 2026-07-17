@@ -526,6 +526,56 @@ def test_task_level_rejection_ignored():
     assert plan_candidate_rework(events) == []
 
 
+def test_candidate_assembly_rejection_with_task_id_is_not_task_local():
+    events = [_ev(
+        "integration.failed",
+        {
+            "pdd_id": "CJMIN-1",
+            "candidate_ref": "cand/CJMIN-1",
+            "verification_owner": "assembly",
+            "recovery_action": "replan",
+            "status": "failed",
+        },
+        task_id="CJMIN-ASSEMBLY-001",
+        eid="assembly-failed",
+    )]
+
+    plans = plan_candidate_rework(events)
+
+    assert len(plans) == 1
+    assert plans[0].source_event_id == "assembly-failed"
+    assert plans[0].action in {"retrigger", "replan"}
+
+
+def test_old_candidate_generation_is_audit_only():
+    events = [
+        _ev(
+            "integration.failed",
+            {
+                "pdd_id": "CJMIN-1",
+                "candidate_ref": "cand/CJMIN-1",
+                "workflow_run_id": "run-1",
+                "task_map_generation": "generation-1",
+                "status": "failed",
+            },
+            task_id="CJMIN-ASSEMBLY-001",
+            eid="old-failure",
+        ),
+        _ev(
+            "task_map.ready",
+            {
+                "pdd_id": "CJMIN-1",
+                "workflow_run_id": "run-1",
+                "task_map_generation": "generation-2",
+                "task_map_ref": "artifacts/task-map-v2.json",
+            },
+            eid="new-generation",
+        ),
+    ]
+
+    assert plan_candidate_rework(events) == []
+
+
 def test_multiple_rejections_same_pdd_plan_once():
     # two review.rejected for the same candidate must yield ONE rework,
     # not double-trigger the writer fanout.
@@ -684,6 +734,29 @@ def test_admission_cancel_ignored_when_disabled_default():
     # 缺省(无 config / 开关关)= 现状 no_action,不产 plan(零回归)
     assert plan_candidate_rework(events) == []
     assert plan_candidate_rework(events, config=_replan_config(enabled=False)) == []
+
+
+def test_canonical_plan_admission_cancel_never_consumes_candidate_budget():
+    events = [
+        _ev("fanout.cancelled", {
+            "pdd_id": "CJMIN-1",
+            "trace_id": "t1",
+            "reason": _ADMISSION_REASON,
+            "failure_scope": "plan_admission",
+            "plan_admission_incident_id": "plan-admission-1",
+            "canonical_failure_event_id": "plan-failure-1",
+        }, eid="cx1", corr="t1"),
+        _ev("fanout.cancelled", {
+            "pdd_id": "CJMIN-1",
+            "trace_id": "t1",
+            "reason": _ADMISSION_REASON,
+            "failure_scope": "plan_admission",
+            "plan_admission_incident_id": "plan-admission-1",
+            "canonical_failure_event_id": "plan-failure-1",
+        }, eid="cx2", corr="t1"),
+    ]
+
+    assert plan_candidate_rework(events, config=_replan_config()) == []
 
 
 def test_non_contract_cancel_not_replanned():

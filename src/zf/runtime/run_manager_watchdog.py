@@ -17,6 +17,7 @@ from typing import Any, Callable
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.runtime.terminal_events import latest_quiescent_run_terminal
 
 RUN_MANAGER_UNHEALTHY = "run.manager.unhealthy"
 RUN_MANAGER_RESIDENT_RESTART_REQUESTED = "run.manager.resident.restart_requested"
@@ -56,6 +57,13 @@ def run_manager_watchdog_tick(
     state_dir = Path(state_dir)
     now = now or datetime.now(timezone.utc)
     events = _read_events(state_dir, event_log=event_log)
+    # A quiescent successful run no longer needs a resident control loop.  Its
+    # projection is expected to age after completion, so treating that age as
+    # a health failure would fabricate a watchdog incident and wake the Run
+    # Manager after delivery.  A same-run mechanical reopen fact makes the
+    # canonical predicate return ``None`` again.
+    if latest_quiescent_run_terminal(events) is not None:
+        return RunManagerWatchdogResult()
     emitted_unhealthy = 0
     emitted_restart = 0
     emitted_source_repair = 0

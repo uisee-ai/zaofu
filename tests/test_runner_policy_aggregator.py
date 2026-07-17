@@ -16,9 +16,12 @@ from zf.core.config.schema import (
     ZfConfig,
 )
 from zf.core.workflow.runner_policy import (
+    apply_goal_closure_judge_policy,
     apply_pure_aggregator_policy,
     claude_aggregator_allowed_tools,
+    goal_closure_judge_role_refs,
 )
+from zf.core.workflow.lane_pipeline import parse_lane_pipeline
 
 
 def _config(state_dir: str = ".zf-custom") -> ZfConfig:
@@ -109,3 +112,96 @@ def test_claude_adapter_emits_add_dir_for_allowlist_paths():
     # bypass roles are unaffected (skip-permissions already covers dirs)
     bypass = dc_replace(role, permission_mode="bypass")
     assert "--add-dir" not in ClaudeCodeAdapter().build_command(bypass)
+
+
+def test_lane_pipeline_final_judge_gets_goal_closure_readonly_policy():
+    pipeline = parse_lane_pipeline({
+        "id": "prd-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "task_source": {"task_map_ref": "artifacts/task-map.json"},
+        "affinity_key": "lane_affinity",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{
+            "id": "impl",
+            "role_pattern": "dev-lane-{lane}",
+            "terminal": {
+                "success": "dev.build.done",
+                "failure": "dev.failed",
+            },
+        }],
+        "final": {
+            "when": "all_tasks_verified",
+            "role": "judge-prd",
+            "success": "goal.closure.synthesized",
+            "failure": "goal.closure.synthesis.failed",
+        },
+    })
+    config = ZfConfig(
+        project=ProjectConfig(name="prd"),
+        workflow=WorkflowConfig(pipelines=[pipeline]),
+    )
+    role = RoleConfig(
+        name="judge-prd",
+        instance_id="judge-prd",
+        backend="claude-code",
+        permission_mode="bypass",
+    )
+
+    assert goal_closure_judge_role_refs(config) == {"judge-prd"}
+    effective = apply_goal_closure_judge_policy(config, role)
+    assert effective.permission_mode == "allowlist"
+    assert {"Read", "Glob", "Grep"} <= set(effective.allowed_tools)
+    assert "Edit" not in effective.allowed_tools
+
+
+def test_codex_goal_closure_judge_stays_headless_safe():
+    """ZF-JUDGE-HEADLESS-01:codex judge 不得落入 untrusted 交互档。
+
+    restricted → `-a untrusted` 在 headless tmux 下每命令等待确认,
+    judge 必超时(07-16 实弹判决两次成孤儿)。codex judge 走 default
+    档(-a never -s workspace-write),只读语义由 hook scope 守卫承担。
+    """
+    pipeline = parse_lane_pipeline({
+        "id": "prd-lanes",
+        "kind": "lane_pipeline",
+        "trigger": "task_map.ready",
+        "task_source": {"task_map_ref": "artifacts/task-map.json"},
+        "affinity_key": "lane_affinity",
+        "lane_count": 1,
+        "assembly": "none",
+        "stages": [{
+            "id": "impl",
+            "role_pattern": "dev-lane-{lane}",
+            "terminal": {
+                "success": "dev.build.done",
+                "failure": "dev.failed",
+            },
+        }],
+        "final": {
+            "when": "all_tasks_verified",
+            "role": "judge-prd",
+            "success": "goal.closure.synthesized",
+            "failure": "goal.closure.synthesis.failed",
+        },
+    })
+    config = ZfConfig(
+        project=ProjectConfig(name="prd"),
+        workflow=WorkflowConfig(pipelines=[pipeline]),
+    )
+    role = RoleConfig(
+        name="judge-prd",
+        instance_id="judge-prd",
+        backend="codex",
+        permission_mode="bypass",
+    )
+    effective = apply_goal_closure_judge_policy(config, role)
+    assert effective.permission_mode == "default"  # → -a never,不提问
+    assert effective.allowed_tools == []
+    # claude-code 分支不受影响(仍走 allowlist 只读)
+    cc = RoleConfig(
+        name="judge-prd", instance_id="judge-prd",
+        backend="claude-code", permission_mode="bypass",
+    )
+    assert apply_goal_closure_judge_policy(config, cc).permission_mode == "allowlist"

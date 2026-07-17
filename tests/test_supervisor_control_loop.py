@@ -56,6 +56,48 @@ def test_control_loop_routes_low_severity_actionable_attention() -> None:
     assert decisions[0].payload["outcome"] == "run_manager_triage_first"
 
 
+def test_control_loop_preserves_plan_admission_identity_without_owner_message() -> None:
+    events = build_supervisor_control_loop_events(
+        {"attention_items": [{
+            "attention_id": "attn-plan-admission",
+            "fingerprint": "plan_admission:incident-1",
+            "status": "open",
+            "source": "plan_admission",
+            "severity": "medium",
+            "title": "Plan admission requires bounded replan",
+            "summary": "missing task-map ref",
+            "task_id": "TASK-PLAN",
+            "source_event_ids": ["evt-plan-failed"],
+            "suggested_route": "plan_revision",
+            "workflow_run_id": "run-1",
+            "trace_id": "trace-1",
+            "failure_scope": "plan_admission",
+            "plan_admission_incident_id": "incident-1",
+            "expected_fault": True,
+            "notification_policy": "trace_only",
+        }]},
+        events=[],
+        projection_ref={},
+    )
+
+    decisions = [
+        event for event in events if event.type == "supervisor.decision.recorded"
+    ]
+    messages = [
+        event for event in events if event.type == "owner.visible_message.requested"
+    ]
+    assert len(decisions) == 1
+    payload = decisions[0].payload
+    assert payload["route"] == "orchestrator_review"
+    assert payload["source_event_ids"] == ["evt-plan-failed"]
+    assert payload["workflow_run_id"] == "run-1"
+    assert payload["trace_id"] == "trace-1"
+    assert payload["failure_scope"] == "plan_admission"
+    assert payload["plan_admission_incident_id"] == "incident-1"
+    assert payload["expected_fault"] is True
+    assert messages == []
+
+
 def test_control_loop_suppresses_cost_blackout_until_run_manager_escalates() -> None:
     events = build_supervisor_control_loop_events(
         {

@@ -371,6 +371,17 @@ function Waterfall({ spans }: { spans: DeliveryRunTraceSpan[] }) {
 }
 
 function OverlayPanel({ thick }: { thick: DeliveryThickTrace }) {
+  const candidates = useMemo(() => {
+    const unique = new Map<string, (typeof thick.improvement_candidates)[number]>();
+    thick.improvement_candidates.forEach((item, index) => {
+      const key = String(
+        item.candidate_id ?? item.fingerprint ?? item.source_kind ?? index,
+      );
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    return [...unique.values()];
+  }, [thick.improvement_candidates]);
+
   return (
     <section className="dt-thick-overlay" data-testid="dt-thick-overlay">
       <div className="dt-thick-panel-head">
@@ -381,10 +392,10 @@ function OverlayPanel({ thick }: { thick: DeliveryThickTrace }) {
       </div>
       <OverlayList title="Behavior" items={thick.behaviors} idKey="behavior_id" />
       <OverlayList title="Eval" items={thick.evals} idKey="eval_id" />
-      {thick.improvement_candidates.length ? (
+      {candidates.length ? (
         <div className="dt-thick-candidates">
           <h4>Improvement candidates</h4>
-          {thick.improvement_candidates.slice(0, 6).map((item) => (
+          {candidates.slice(0, 6).map((item) => (
             <div className="dt-thick-candidate" key={String(item.candidate_id ?? item.fingerprint ?? item.source_kind)}>
               <strong>{String(item.source_kind ?? item.kind ?? "candidate")}</strong>
               <small>{String(item.fingerprint ?? "")}</small>

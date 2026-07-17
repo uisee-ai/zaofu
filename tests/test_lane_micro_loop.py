@@ -4,6 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -13,6 +15,7 @@ from zf.runtime.lane_micro_loop import (
     maybe_inject_rescan_continuation,
     maybe_inject_rework_continuation,
 )
+from zf.runtime.run_manager_rework_triage import pending_rework_triage_actions
 
 _TASK = "T-1"
 
@@ -38,6 +41,11 @@ class _TaskStore:
 
     def list_all(self):
         return [self._task]
+
+    def update(self, task_id, **changes):
+        assert task_id == self._task.id
+        for key, value in changes.items():
+            setattr(self._task, key, value)
 
 
 def _cfg(enabled=True, micro=True):
@@ -84,9 +92,13 @@ def test_injects_continuation_into_live_lane(tmp_path: Path) -> None:
     assert "## Next Move" in text
     marks = [e for e in log.read_all() if e.type == CONTINUATION_EVENT]
     assert marks[0].payload["rework_of"] == "rej-1"
+    request = next(e for e in log.read_all() if e.type == "task.rework.requested")
+    assert request.payload["dispatch_id"] == request.id
+    assert marks[0].payload["finding_ids"] == request.payload["finding_ids"]
+    assert "Canonical Attempt Identity" in text
 
 
-def test_same_fingerprint_second_rejection_falls_back(tmp_path: Path) -> None:
+def test_same_fingerprint_uses_canonical_cap_not_one_shot_guard(tmp_path: Path) -> None:
     state_dir, log = _env(tmp_path)
     transport = _Transport()
     first = maybe_inject_rework_continuation(
@@ -95,33 +107,71 @@ def test_same_fingerprint_second_rejection_falls_back(tmp_path: Path) -> None:
         transport=transport, task_store=_TaskStore(),
     )
     assert first == [_TASK]
-    # 同 findings 再拒 → 停滞 → 不再注入(回退全价重派)
+    # 同 findings 再拒仍是同一 canonical series 的第二次 bounded attempt。
     second = maybe_inject_rework_continuation(
         event=_rejection("rej-2"), config=_cfg(), state_dir=state_dir,
         events=log.read_all(), event_writer=EventWriter(log),
         transport=transport, task_store=_TaskStore(),
     )
-    assert second == []
-    # findings 变了 → 新指纹 → 可再注入
+    assert second == [_TASK]
+    # 第三次命中 role cap，micro-loop 不再自行派发。
+    capped = maybe_inject_rework_continuation(
+        event=_rejection("rej-3"), config=_cfg(), state_dir=state_dir,
+        events=log.read_all(), event_writer=EventWriter(log),
+        transport=transport, task_store=_TaskStore(),
+    )
+    assert capped == []
+    # findings 变了 → 新 canonical series → 可再注入。
     third = maybe_inject_rework_continuation(
-        event=_rejection("rej-3", message="different defect"),
+        event=_rejection("rej-4", message="different defect"),
         config=_cfg(), state_dir=state_dir,
         events=log.read_all(), event_writer=EventWriter(log),
         transport=transport, task_store=_TaskStore(),
     )
     assert third == [_TASK]
+    requests = [e for e in log.read_all() if e.type == "task.rework.requested"]
+    assert [event.payload["attempt"] for event in requests] == [1, 2, 1]
 
 
-def test_dead_lane_or_switch_off_no_injection(tmp_path: Path) -> None:
+def test_same_rejection_replay_does_not_redeliver(tmp_path: Path) -> None:
+    state_dir, log = _env(tmp_path)
+    transport = _Transport()
+    rejection = _rejection()
+    first = maybe_inject_rework_continuation(
+        event=rejection, config=_cfg(), state_dir=state_dir,
+        events=[], event_writer=EventWriter(log),
+        transport=transport, task_store=_TaskStore(),
+    )
+    replay = maybe_inject_rework_continuation(
+        event=rejection, config=_cfg(), state_dir=state_dir,
+        events=log.read_all(), event_writer=EventWriter(log),
+        transport=transport, task_store=_TaskStore(),
+    )
+    assert first == replay == [_TASK]
+    assert len(transport.sent) == 1
+    events = log.read_all()
+    assert [e.type for e in events].count("task.rework.requested") == 1
+    assert [e.type for e in events].count(CONTINUATION_EVENT) == 1
+
+
+def test_dead_lane_requests_exact_resume_and_switch_off_does_nothing(tmp_path: Path) -> None:
     state_dir, log = _env(tmp_path)
     assert maybe_inject_rework_continuation(
         event=_rejection(), config=_cfg(), state_dir=state_dir,
         events=[], event_writer=EventWriter(log),
         transport=_Transport(alive=False), task_store=_TaskStore(),
-    ) == []
+    ) == [_TASK]
+    events = log.read_all()
+    requests = [event for event in events if event.type == "worker.respawn.requested"]
+    assert len(requests) == 1
+    assert requests[0].payload["delivery_mode"] == "resume_session"
+    assert requests[0].payload["continuation_briefing_ref"]
+    assert requests[0].payload["attempt"] == 1
+    assert requests[0].payload["finding_ids"]
+    assert [event.type for event in events].count("task.rework.requested") == 1
     assert maybe_inject_rework_continuation(
-        event=_rejection(), config=_cfg(micro=False), state_dir=state_dir,
-        events=[], event_writer=EventWriter(log),
+        event=_rejection("rej-off"), config=_cfg(micro=False), state_dir=state_dir,
+        events=events, event_writer=EventWriter(log),
         transport=_Transport(), task_store=_TaskStore(),
     ) == []
 
@@ -177,3 +227,136 @@ def test_rescan_skips_done_tasks(tmp_path: Path) -> None:
         events=[], event_writer=EventWriter(log),
         transport=_Transport(), task_store=_TaskStore(status="done"),
     ) == []
+
+
+class _TwoTaskStore:
+    def __init__(self):
+        self._tasks = {
+            "T-A": SimpleNamespace(id="T-A", assigned_to="dev-lane-0", status="in_progress"),
+            "T-B": SimpleNamespace(id="T-B", assigned_to="dev-lane-1", status="in_progress"),
+        }
+    def get(self, task_id):
+        return self._tasks.get(task_id)
+    def list_all(self):
+        return list(self._tasks.values())
+    def update(self, task_id, **changes):
+        for key, value in changes.items():
+            setattr(self._tasks[task_id], key, value)
+
+
+def _multi_rejection(eid: str, task_ids: list[str], message: str) -> ZfEvent:
+    return ZfEvent(
+        type="verify.failed", id=eid, actor="zf-cli",
+        payload={"pdd_id": "PDD-1", "failed_task_ids": list(task_ids),
+                 "reason": message,
+                 "findings": [{"severity": "high", "path": "src/x.ts",
+                               "message": message}]},
+    )
+
+
+def test_mixed_rejection_emits_cap_fact_for_capped_task(tmp_path: Path) -> None:
+    """ZF-REVIEW-137-B1:混合拒收中已 cap 任务必须产出 task.rework.capped
+    交 RM(138 裁决 8),不得因兄弟任务被处理而静默丢弃。"""
+    state_dir, log = _env(tmp_path)
+    transport = _Transport()
+    store = _TwoTaskStore()
+    msg = "same fingerprint msg"
+    for eid in ("rej-b1", "rej-b2"):
+        rejection = _multi_rejection(eid, ["T-B"], msg)
+        log.append(rejection)
+        maybe_inject_rework_continuation(
+            event=rejection, config=_cfg(),
+            state_dir=state_dir, events=log.read_all(),
+            event_writer=EventWriter(log), transport=transport, task_store=store,
+        )
+    mixed = _multi_rejection("rej-mixed", ["T-A", "T-B"], msg)
+    log.append(mixed)
+    handled = maybe_inject_rework_continuation(
+        event=mixed,
+        config=_cfg(), state_dir=state_dir, events=log.read_all(),
+        event_writer=EventWriter(log), transport=transport, task_store=store,
+    )
+    assert "T-A" in handled
+    capped = [e for e in log.read_all()
+              if e.type == "task.rework.capped"
+              and (e.payload or {}).get("task_id") == "T-B"]
+    assert len(capped) == 1, "cap 任务必须产出恰一个 cap 事实"
+    assert capped[0].payload["semantic_triage_required"] is True
+    assert capped[0].payload["recovery_scope"] == "task"
+    assert capped[0].payload["failure_count"] >= 2
+    assert len(capped[0].payload["failure_event_ids"]) >= 2
+    actions = pending_rework_triage_actions(
+        log.read_all(),
+        threshold=2,
+        stale_seconds=30,
+    )
+    assert len(actions) == 1
+    assert actions[0]["task_id"] == "T-B"
+    # 重放同一混合事件:cap 事实幂等
+    maybe_inject_rework_continuation(
+        event=_multi_rejection("rej-mixed", ["T-A", "T-B"], msg),
+        config=_cfg(), state_dir=state_dir, events=log.read_all(),
+        event_writer=EventWriter(log), transport=transport, task_store=store,
+    )
+    capped2 = [e for e in log.read_all()
+               if e.type == "task.rework.capped"
+               and (e.payload or {}).get("task_id") == "T-B"]
+    assert len(capped2) == 1, "重放不得重复 cap 事实"
+    replay_actions = pending_rework_triage_actions(
+        log.read_all(),
+        threshold=2,
+        stale_seconds=30,
+    )
+    assert len(replay_actions) == 1
+    assert replay_actions[0]["checkpoint_id"] == actions[0]["checkpoint_id"]
+
+
+def test_capped_fact_append_failure_is_not_silenced(tmp_path: Path) -> None:
+    class _FailingWriter:
+        def append(self, event):
+            raise OSError("event log unavailable")
+
+    state_dir, log = _env(tmp_path)
+    transport = _Transport()
+    store = _TwoTaskStore()
+    msg = "same fingerprint msg"
+    for eid in ("rej-b1", "rej-b2"):
+        rejection = _multi_rejection(eid, ["T-B"], msg)
+        log.append(rejection)
+        maybe_inject_rework_continuation(
+            event=rejection,
+            config=_cfg(),
+            state_dir=state_dir,
+            events=log.read_all(),
+            event_writer=EventWriter(log),
+            transport=transport,
+            task_store=store,
+        )
+
+    capped = _multi_rejection("rej-cap-write-fails", ["T-B"], msg)
+    log.append(capped)
+    with pytest.raises(OSError, match="event log unavailable"):
+        maybe_inject_rework_continuation(
+            event=capped,
+            config=_cfg(),
+            state_dir=state_dir,
+            events=log.read_all(),
+            event_writer=_FailingWriter(),
+            transport=transport,
+            task_store=store,
+        )
+
+
+def test_lane_child_scope_is_task_unique() -> None:
+    """ZF-REVIEW-140-B4:同 lane 串行多任务的 child 键必须含 task。"""
+    from zf.runtime.orchestrator_fanout import _lane_child_scope
+
+    # feature 级 affinity + 不同任务 → 不同 scope
+    a = _lane_child_scope("ai-chat-web", "CHAT-SCAFFOLD-001")
+    b = _lane_child_scope("ai-chat-web", "CHAT-MVP-002")
+    assert a != b
+    assert a == "ai-chat-web-CHAT-SCAFFOLD-001"
+    # 缺 task 退回 affinity;缺 affinity 用 task;两者相同不重复拼接
+    assert _lane_child_scope("ai-chat-web", "") == "ai-chat-web"
+    assert _lane_child_scope("", "CHAT-MVP-002") == "CHAT-MVP-002"
+    assert _lane_child_scope("T1", "T1") == "T1"

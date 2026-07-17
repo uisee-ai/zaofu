@@ -1,255 +1,223 @@
 # ZaoFu 快速开始
 
-> 适用对象: 第一次在一个项目里启动 ZaoFu harness,或需要用最短路径验证当前仓库是否可运行的操作者。
+> 适用对象：首次为已有项目物化 production Controller，并按最短安全路径跑通
+> 端到端流程的操作者。
 
-> **最短可行路径(TL;DR)**
-> ```bash
-> # 0. 前置:后端 CLI + tmux 在 PATH 上(见 §0)
-> command -v claude && command -v tmux        # claude-code 后端
-> # 1. 装环境(safe-team/claude-code 真实运行需要 stream-json extra)
-> uv sync --extra dev --extra stream-json && uv run zf --version
-> # 2. 生成可运行配置(首跑请用 fresh project + 通过 dry-run 的 preset,见 §2)
-> uv run zf init --preset safe-team
-> # 3. 启动前检查
-> uv run zf validate --cold-start && uv run zf start --dry-run --no-watch
-> # 4. 启动 + 投递任务
-> uv run zf start
-> uv run zf chat "实现一个小功能并完成测试、review、judge 全流程"
-> ```
+本手册只使用 `examples/prod/controller/` 下的产品 Controller catalog。
+通用 preset 不是这里描述的产品工作流入口。一个项目保持一份 project-local
+`zf.yaml` 和一个配置的 `project.state_dir`；后续 PRD、issue、feature 或 refactor
+通过新的 workflow request 进入同一个项目控制面。
 
-## 0. 前置检查(Preflight)
+## 0. 开始之前
 
-启动真实 agent **之前**,先确认后端 CLI 与 tmux 已就位。**注意:`zf validate` / `zf preflight` 目前不检查后端二进制是否存在(P0-4),需手动确认** —— 否则 `zf start` 不会报 Python 错误,而是在 tmux pane 里静默变成 `command not found` 死 pane,表现为"任务派下去了但 worker 没动静"。
+必需环境：
 
-```bash
-# 1) 后端 CLI 在 PATH 上(按 zf.yaml 里 orchestrator/roles 用的 backend)
-command -v claude    # backend: claude-code
-command -v codex     # backend: codex
-command -v tmux      # 所有 backend 都需要(harness 跑在 tmux 里)
+- Python 3.11+
+- `uv`
+- Git
+- `tmux`
+- 至少一个已登录的 provider CLI：`codex` 或 `claude`
 
-# 2) 后端已登录 / 真实可用
-uv run zf doctor provider --backend codex   # codex 的真实可用性探测
-claude --version                            # claude-code 自检(应能正常输出)
-claude -p 'Reply with exactly: zaofu-ok' --output-format text --dangerously-skip-permissions
-
-# 3) Python 环境就绪
-uv run zf --version
-```
-
-任一项缺失,先安装 / 登录再继续。装好后端但忘了这一步,是首次运行最常见的"静默挂死"踩坑点。
-
-## 1. 进入仓库
-
-源码 checkout 下推荐用 `uv` 管理 Python 环境和依赖。第一次进入仓库先同步常用开发依赖。
-如果后续要按 `safe-team` 启动真实 Claude Code stream-json 后端,不要只装
-`--extra dev`;必须包含 `--extra stream-json`,否则运行时会报
-`No module named 'claude_code_sdk'`。
+在 ZaoFu 源码 checkout 中安装依赖：
 
 ```bash
 cd /path/to/zaofu
-uv sync --extra dev --extra stream-json
+uv sync --extra dev --extra web --extra stream-json
 uv run zf --version
 ```
 
-需要 Web dashboard 或 Feishu bridge 时,同步对应 optional extras:
+Claude Code stream-json transport 需要 `stream-json`；只有使用本地 Dashboard
+时才需要 `web`。
+
+启动真实 worker 前检查 provider：
 
 ```bash
-uv sync --extra dev --extra web --extra stream-json --extra feishu
+command -v tmux
+command -v codex      # 使用 --backend codex 时
+command -v claude     # 使用 --backend claude 时
+
+uv run zf doctor provider --backend codex
 ```
 
-如果只需要复现锁定环境,使用:
+Provider 登录状态由外部 CLI 管理。二进制缺失或登录失败时，先完成安装和认证。
+
+## 1. 检查 Controller 推荐结果
+
+设置稳定的源码和目标项目路径：
 
 ```bash
-uv run --locked zf --version
+export ZAOFU_ROOT=/path/to/zaofu
+export TARGET_PROJECT=/path/to/my-project
 ```
 
-## 2. 生成或确认 `zf.yaml`
-
-`zf.yaml` 是唯一控制面。已有项目应先查看现有 `zf.yaml`;新项目可以从 preset 生成。
-注意: `zf init --preset ...` 不等于"覆盖当前仓库已有复杂 `zf.yaml`"。如果你在 ZaoFu
-源码 checkout 或任何已有 `zf.yaml` 的目录里验证 quickstart,实际 dry-run 仍以当前
-`zf.yaml` 为准;要验证 preset,请在 fresh project 里运行。
+先只检查推荐，不写入文件：
 
 ```bash
-uv run zf presets
-uv run zf init --preset safe-team
+uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
+  "$TARGET_PROJECT" \
+  --intent build \
+  --backend codex \
+  --scale launch
 ```
 
-常用 preset 及其适用场景(2026-07-07 远端 fresh-project dry-run 实测):
+Intent 对应产品工作流家族：
 
-| Preset | 适用场景 | fresh-project `zf start --dry-run --no-watch` |
-|---|---|---|
-| `safe-team` | orchestrator + arch/dev/review/test/judge 的标准三层架构 | ✅ 通过,首跑推荐 |
-| `design-first` | design -> dev -> review/test/judge 的设计先行流 | ✅ 通过 |
-| `minimal` | 只启动一个 dev worker 的最小 harness | ⚠️ STOP:`terminal_event_without_producer judge.failed` |
-| `code-assist` | dev/review/test 的代码辅助流 | ✅ 通过 |
-| `safe-local` | 本地单 dev,适合快速验证 CLI/runtime | ⚠️ STOP:`missing_rework_route static_gate.failed` + `judge.failed` |
+| Intent | 典型 Controller 家族 |
+|---|---|
+| `build` | PRD 交付（`prd-fanout-v3` 或 light 变体） |
+| `refactor` | lane-based refactor（`refactor-lane-v3`） |
+| `maintain` / `review` | issue 与 regression flow（`issue-fanout-v3`） |
 
-不同 preset 的 topology 会随实现演进。启动前以当前代码的
-`uv run zf start --dry-run --no-watch` 和 `uv run zf workflow inspect`
-输出为准;出现 `STOP` 时先按诊断信息修配置,不要按旧手册假设 preset 固定失败。
+推荐结果是人工审批点。沿用本产品路径时，只有 `archetype` 是
+`examples/prod/controller/` 中的 `[flow]` entry 才继续。标记为 `[preset]`
+的推荐是通用 fallback，不是 production Controller catalog。
 
-当前仓库的真实 Codex 压测配置在 `examples/dev-codex-backends.yaml`,通常用于 E2E 和鲁棒性验证,不建议直接作为普通项目默认配置。
+Greenfield 项目代码信号不足时，使用 Web New Project wizard 显式选择 Controller，
+并补充目标项目真实的 quality checks。
 
-## 3. 完整初始化新项目
+## 2. 物化并审核 Controller
 
-推荐新项目优先使用完整 bootstrap 脚本,而不是手动组合多条命令。脚本会:
-
-- 生成或复制 `zf.yaml`
-- 执行 `zf init`,并缺失时生成项目根 `AGENTS.md` / `CLAUDE.md`
-- 注册 Workspace
-- 将 `project.state_dir` 加入 `.gitignore`
-- 当 `runtime.workdirs.mode=worktree` 时确保项目是 git repo 且有 HEAD
-- 最后执行 `zf start --dry-run --no-watch` 做启动前检查
+确认推荐结果后执行：
 
 ```bash
-cd /path/to/zaofu
-tools/init-project.sh \
-  --project-dir /path/to/project \
-  --preset safe-team \
-  --yes
+uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
+  "$TARGET_PROJECT" \
+  --intent build \
+  --backend codex \
+  --scale launch \
+  --apply
 ```
 
-已有 `zf-codex.yaml` 等配置时:
+物化会把选定 Controller 写成项目本地 `zf.yaml`，并复制所需 profile 和 skill
+assets。`zf.yaml` 始终是唯一有效控制面配置。
+
+如果项目已经存在 `zf.yaml`，bootstrap 会保留它，只补充可探测且未配置的检查，
+不会静默把既有项目切换到另一个 Controller。继续前应显式审核或迁移当前控制面。
+
+启动前审核：
+
+- `prdRef`、`issueRef`、`sourceRoot`、`targetRoot` 等 Controller inputs；
+- `project.state_dir` 与 worktree policy；
+- provider backend 与 permission policy；
+- `quality_gates` 是否是目标项目真实可执行的命令；
+- validation 报告的 placeholder 或缺失环境要求。
+
+Bootstrap 可以填入可探测的检查，但不能虚构产品语义和验收标准。多 lane
+Controller 缺少项目 quality gate 时会 fail closed。
+
+## 3. 初始化、验证与 Dry Run
+
+从目标项目执行命令，确保相对路径基于它的 `zf.yaml` 解析：
 
 ```bash
-tools/init-project.sh \
-  --project-dir /path/to/project \
-  --source-config /path/to/project/zf-codex.yaml \
-  --yes
+cd "$TARGET_PROJECT"
+
+uv run --project "$ZAOFU_ROOT" zf init \
+  --workspace-register \
+  --with-bootstrap
+
+uv run --project "$ZAOFU_ROOT" zf validate --cold-start
+uv run --project "$ZAOFU_ROOT" zf skills doctor
+uv run --project "$ZAOFU_ROOT" zf workflow inspect
+uv run --project "$ZAOFU_ROOT" zf start --dry-run --no-watch
 ```
 
-如果只想初始化 state,暂时不做启动 dry-run,加 `--skip-start-dry-run`。
-当配置启用 `worktree` 且项目还没有 git HEAD 时,`--yes` 会允许脚本初始化 git
-并把当前所有未忽略文件作为初始提交。去掉 `--yes` 时会进入人工确认。
+Validation 仍有 `STOP` 时不要启动真实 provider。先修复缺失 route、skill、gate、
+input 或工具，再重复上述检查。Dry run 只验证确定性启动 wiring，不代表 provider
+已经登录，也不代表产品交付质量已经通过。
 
-## 4. 初始化运行态
+## 4. 启动与观测
 
-初始化会创建 `project.state_dir` 指向的运行态目录,默认是 `.zf/`:
+启动 watcher 和 workers：
 
 ```bash
-uv run zf init
+uv run --project "$ZAOFU_ROOT" zf start
 ```
 
-新项目可直接指定路径并创建目录:
+Watcher 默认在前台运行，需要保持进程存活。另开一个终端：
 
 ```bash
-uv run zf init /path/to/project --create --preset safe-team
+cd "$TARGET_PROJECT"
+uv run --project "$ZAOFU_ROOT" zf status --workers
+uv run --project "$ZAOFU_ROOT" zf kanban --board
+uv run --project "$ZAOFU_ROOT" zf events --last 30
+uv run --project "$ZAOFU_ROOT" zf attach
 ```
 
-默认会尝试注册到 workspace project manager;需要显式控制时使用
-`--workspace-register` / `--no-workspace-register`。需要初始化前环境探测时加
-`--env-check`;不希望写 git hooks 时加 `--no-git-hooks`。
+## 5. 投递工作
 
-`zf init` 默认会创建/刷新项目根指令文件:
-
-- `AGENTS.md`: provider-neutral 的项目规则、短 Harness Health Signals,并包含 ZaoFu managed worker protocol block。
-- `CLAUDE.md`: Claude Code 入口说明,指向 `AGENTS.md`。
-
-如只想初始化 runtime state,可用 `uv run zf init --skip-instruction-docs`。
-
-如果 `zf.yaml` 里配置了非默认 `project.state_dir`,`init` 会优先使用该路径。强制重建时使用:
+首次可以提交自然语言目标：
 
 ```bash
-uv run zf init --force
+uv run --project "$ZAOFU_ROOT" zf chat \
+  "实现一个小功能，并提供测试、review 和交付证据。"
 ```
 
-注意: `--force` 会重新初始化运行态真相文件,包括 `events.jsonl` 和 `kanban.json`。执行前先确认需要保留的 evidence 已归档。
-
-## 5. 启动前检查
-
-启动真实 agent 前先做配置和冷启动检查:
+类型化产品 request 需要先生成 intake artifact。以下是 stock PRD route 示例：
 
 ```bash
-uv run zf validate --path zf.yaml
-uv run zf validate --cold-start
-uv run zf validate --strict-skills
+uv run --project "$ZAOFU_ROOT" zf flow intake \
+  --kind prd \
+  --from docs/prd/account-security.md \
+  --target-root app \
+  --request-id prd-account-security \
+  --output docs/intake/prd-account-security.md
 ```
 
-常用补充检查:
+先预览 admission，不修改 runtime state：
 
 ```bash
-uv run zf doctor
-uv run zf skills doctor
-uv run zf gate list
+uv run --project "$ZAOFU_ROOT" zf flow submit \
+  --dry-run \
+  --config zf.yaml \
+  --intake docs/intake/prd-account-security.md \
+  --kind prd \
+  --pattern-id prd-scan \
+  --allow-missing-env \
+  --json
 ```
 
-## 6. Dry Run
-
-`start --dry-run` 会走启动流程、生成指令/钩子/技能投影并记录命令,但不会真正启动 tmux workers:
+审核 preview 并解决环境要求后再 apply：
 
 ```bash
-uv run zf start --dry-run --no-watch
+uv run --project "$ZAOFU_ROOT" zf flow submit \
+  --apply \
+  --config zf.yaml \
+  --intake docs/intake/prd-account-security.md \
+  --kind prd \
+  --pattern-id prd-scan \
+  --json
 ```
 
-**读懂结果**:
-- 无 `STOP` 输出 = dry-run 通过,可以启动真实 harness。
-- 出现 `STOP terminal_event_without_producer` / `STOP missing_rework_route` 等拓扑错误时,
-  先运行 `uv run zf workflow inspect` 看推导出的 `unhandled` / `orphan` / `dead-end`
-  边,再修 `roles.triggers` / `roles.publishes` / `workflow.rework_routing`。
-- 如果使用内置 preset 仍出现 STOP,以当前 dry-run 输出为准生成 bug/backlog;不要沿用旧手册里某个日期的 preset 状态判断。
+只有 `workflow.kind_routes` 声明的 request kind 才能进入项目。项目已在 route
+中配置 pattern 时可以省略 `--pattern-id`。后续工作使用新的 `request_id`，
+不要为同一个项目创建第二控制面。
 
-Dry run 通过后,再启动真实 harness。
+## 6. 可选 Dashboard
 
-> 远端真实 E2E 注意(2026-07-07):fresh `safe-team` 能启动 9 个 tmux worker,Claude Code
-> 能消费 `zf chat` 并创建 task;但首个真实任务可能停在 backlog,因为 orchestrator 角色的
-> tool allowlist 过窄,而 briefing 要求它写 contract payload 文件再 emit。看到
-> `agent.timeout` 或 `Claude requested permissions to write ... contract.json` 时,这是
-> preset/allowlist 需要修复,不是安装步骤问题。
-
-## 7. 启动真实 Harness
-
-推荐直接启动 watcher,因为 watcher 负责事件唤醒、stuck/orphan/recycle 扫描和 orchestrator 推进:
+从 ZaoFu checkout 启动：
 
 ```bash
-uv run zf start
+tools/start-webkanban.sh --host 127.0.0.1 --port 8001
 ```
 
-`--foreground` 仍被接受,但当前代码里只是 deprecated no-op alias;默认行为已经是在前台运行 watcher。
-如果只想 spawn workers 后退出、不长期运行 watcher,才使用 `--no-watch`。
+访问 `http://127.0.0.1:8001/`。Web mutation 需要生成或显式提供的 action token。
+只有在可信网络中才绑定 `0.0.0.0`。
 
-另开一个终端观察:
+## 7. 停止
 
 ```bash
-tmux attach -t zf
-uv run zf kanban --board
-uv run zf events --last 20
+uv run --project "$ZAOFU_ROOT" zf stop
 ```
 
-如果 `zf.yaml` 设置了 `session.tmux_session`,使用对应 session 名 attach。
+只有优雅停止失败时才使用 `zf stop --force`。共享主机上不要运行
+`tmux kill-server`，只停止当前项目声明的 session。
 
-## 8. 投递任务
+## 下一步
 
-给 orchestrator 发送用户目标:
-
-```bash
-uv run zf chat "实现一个小功能并完成测试、review、judge 全流程"
-```
-
-也可以手动创建 kanban task:
-
-```bash
-TASK_ID="$(
-  uv run zf kanban add \
-    "修复一个具体 bug 并补回归测试" --id-only
-)"
-uv run zf kanban assign "$TASK_ID" dev
-```
-
-严格链路下,`assign review/test/judge` 和 `move done` 会检查前置事件,不能绕过 dev -> review -> test -> judge 的证据链。
-
-## 9. 停止
-
-优先使用:
-
-```bash
-uv run zf stop
-```
-
-只有在 session 卡死、无法优雅停止时才使用:
-
-```bash
-uv run zf stop --force
-```
-
-不要用 `tmux kill-server`。如需手动处理 tmux,只关闭 `zf.yaml` 中 `session.tmux_session` 对应的 session。
+- [架构总览](architecture.md)
+- [CLI 操作手册](03-cli-operations.md)
+- [Web、观测与 E2E](06-web-observability-e2e.md)
+- [故障排查](07-troubleshooting.md)
+- [Autoresearch](10-autoresearch-usage.md)
+- [Feishu AI-Native 直连 Bridge](19-feishu-ai-native-direct-bridge.md)

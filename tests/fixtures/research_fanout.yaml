@@ -1,0 +1,47 @@
+version: "1.0"
+project:
+  name: research-fixture
+workflow:
+  stages:
+    - id: research-fanout
+      trigger: workflow.invoke.requested
+      topology: fanout_reader
+      roles:
+        - source_researcher
+        - product_analyst
+        - technical_analyst
+        - risk_critic
+        - synthesizer
+      fanout:
+        children:
+          - role_instance: source_researcher
+            payload: {child_id: source_researcher}
+          - role_instance: product_analyst
+            payload: {child_id: product_analyst}
+          - role_instance: technical_analyst
+            payload: {child_id: technical_analyst}
+          - role_instance: risk_critic
+            payload: {child_id: risk_critic}
+      aggregate:
+        mode: wait_for_all
+        child_success_event: research.child.completed
+        child_failure_event: research.child.failed
+        synth_role: synthesizer
+        success_event: research.fanout.completed
+        failure_event: research.fanout.failed
+roles:
+  - name: source_researcher
+    backend: mock
+    role_kind: reader
+  - name: product_analyst
+    backend: mock
+    role_kind: reader
+  - name: technical_analyst
+    backend: mock
+    role_kind: reader
+  - name: risk_critic
+    backend: mock
+    role_kind: reader
+  - name: synthesizer
+    backend: mock
+    role_kind: reader

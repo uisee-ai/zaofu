@@ -42,6 +42,14 @@ def reader_stage_failure_events(config: Any) -> dict[str, Any]:
     for stage in getattr(getattr(config, "workflow", None), "stages", []) or []:
         if str(getattr(stage, "topology", "") or "") != "fanout_reader":
             continue
+        assignment = getattr(stage, "assignment", None)
+        if assignment is None:
+            assignment = getattr(getattr(stage, "fanout", None), "assignment", None)
+        if str(getattr(assignment, "strategy", "") or "") == "affinity_stage_slots":
+            # Lane Verify already owns a bounded same-lane back-edge. Generic
+            # reader replan would race that back-edge and can start Verify
+            # before the replacement Impl result exists.
+            continue
         aggregate = getattr(stage, "aggregate", None)
         failure = str(
             getattr(stage, "failure_event", "")
@@ -136,6 +144,9 @@ def plan_reader_stage_replan(
         "workflow_prompt_ref",
         "workflow_input_manifest_ref",
         "task_map_ref",
+        "task_map_digest",
+        "plan_admission_incident_id",
+        "canonical_failure_event_id",
         "artifact_refs",
         "evidence_refs",
     ):

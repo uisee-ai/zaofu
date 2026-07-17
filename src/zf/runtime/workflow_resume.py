@@ -112,6 +112,13 @@ def build_workflow_resume_projection(
         if item.safe_resume_action != "no_action"
     ]
     stale_workers = build_stale_worker_diagnostics(state_dir)
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    workflow_operations = reduce_workflow_operations(event_list)
+    resumable_operations = [
+        row for row in workflow_operations.values()
+        if str(row.get("status") or "") in {"requested", "running"}
+    ]
     return {
         "schema_version": WORKFLOW_RESUME_SCHEMA_VERSION,
         "is_derived_projection": True,
@@ -122,11 +129,14 @@ def build_workflow_resume_projection(
             "batch_checkpoints": len(batch_checkpoints),
             "batch_pending": len(pending_batch),
             "stale_workers": len(stale_workers),
+            "workflow_operations": len(workflow_operations),
+            "resumable_operations": len(resumable_operations),
             "by_action": _count_by_action(checkpoints),
             "by_batch_action": _count_batch_by_action(batch_checkpoints),
         },
         "checkpoints": [item.to_dict() for item in checkpoints],
         "batch_checkpoints": [item.to_dict() for item in batch_checkpoints],
+        "workflow_operations": list(workflow_operations.values()),
         "worker_registry": {
             "source": "role_sessions.yaml",
             "stale": stale_workers,
@@ -1167,10 +1177,10 @@ def _batch_resume_anchors(events: list[ZfEvent]) -> dict[str, dict[str, str]]:
         if not key:
             return
         row = anchors.setdefault(key, {})
-        for field in anchor_keys:
-            value = str(payload.get(field) or "").strip()
+        for key_name in anchor_keys:
+            value = str(payload.get(key_name) or "").strip()
             if value:
-                row[field] = value
+                row[key_name] = value
         if event.correlation_id and not row.get("trace_id"):
             row["trace_id"] = str(event.correlation_id)
 

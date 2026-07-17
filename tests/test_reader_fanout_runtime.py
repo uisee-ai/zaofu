@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -23,7 +24,10 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.fanout import FanoutChild, FanoutContext, validate_fanout_report
 from zf.runtime.fanout_evidence_queries import FanoutEvidenceQueriesMixin
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.call_result_runtime import admit_runtime_call_result
 from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.core.workflow.lane_pipeline import parse_lane_pipeline
 
 
@@ -150,6 +154,274 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
             encoding="utf-8",
         )
     )
+
+
+def _durable_reader_state(tmp_path: Path):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    source = tmp_path / "inputs" / "context.json"
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({"facts": ["one"]}), encoding="utf-8")
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    config = ZfConfig(
+        project=ProjectConfig(name="test", state_dir=str(state_dir)),
+        roles=[
+            RoleConfig(
+                name="verify-1",
+                backend="mock",
+                role_kind="reader",
+            ),
+        ],
+        workflow=WorkflowConfig(
+            flow_metadata={"result_protocol": {"mode": "blocking"}},
+            stages=[
+                WorkflowStageConfig(
+                    id="verify-selected",
+                    trigger="candidate.ready",
+                    topology="fanout_reader",
+                    roles=[],
+                    children=[
+                        FanoutChildConfig(
+                            role_instance="verify-1",
+                            payload={
+                                "task_id": "T-VERIFY",
+                                "artifact_refs": [{
+                                    "source_id": "context",
+                                    "artifact_id": "context",
+                                    "kind": "context",
+                                    "ref": "inputs/context.json",
+                                    "sha256": digest,
+                                    "allowed_paths": ["$.facts"],
+                                }],
+                                "required_reads": [{
+                                    "source_id": "context",
+                                    "artifact_id": "context",
+                                    "artifact_sha256": digest,
+                                    "json_path": "$.facts",
+                                }],
+                            },
+                        ),
+                    ],
+                    aggregate=FanoutAggregateConfig(
+                        mode="wait_for_all",
+                        child_success_event="verify.child.completed",
+                        child_failure_event="verify.child.failed",
+                        success_event="review.approved",
+                        failure_event="review.rejected",
+                    ),
+                ),
+            ],
+        ),
+    )
+    log = EventLog(state_dir / "events.jsonl")
+    transport = _RecordingTransport()
+    orch = Orchestrator(state_dir, config, transport)  # type: ignore[arg-type]
+    trigger = ZfEvent(
+        type="candidate.ready",
+        actor="zf-cli",
+        correlation_id="run-durable",
+        payload={
+            "pdd_id": "F-DURABLE",
+            "workflow_run_id": "run-durable",
+        },
+    )
+    orch.run_once(events=[trigger])
+    started = next(event for event in log.read_all() if event.type == "fanout.started")
+    manifest = _manifest(state_dir, started.payload["fanout_id"])
+    child = manifest["children"][0]
+    child["fanout_id"] = started.payload["fanout_id"]
+    return state_dir, log, transport, orch, config, child
+
+
+def _durable_verification_payload(child: dict, *, verdict: str) -> dict:
+    child_payload = dict(child.get("payload") or {})
+    failed = verdict == "rejected"
+    identity = {
+        "workflow_run_id": "run-durable",
+        "task_id": "T-VERIFY",
+        "contract_revision": "contract-1",
+        "task_map_generation": "generation-1",
+        "base_commit": "base-1",
+        "task_ref": "artifacts/task-ref.json",
+        "contract_snapshot_ref": "artifacts/contract.json",
+        "contract_snapshot_digest": "a" * 64,
+        "target_snapshot_ref": "artifacts/target.json",
+        "target_snapshot_digest": "b" * 64,
+        "target_commit": "target-1",
+    }
+    verification_result = {
+        "schema_version": "verification-result.v1",
+        "execution_status": "completed",
+        "verdict": verdict,
+        "failure_class": "product_rejection" if failed else "none",
+        **identity,
+        "verification_owner": "task_verify",
+        "verification_tier": "runtime",
+        "requirement_results": [{
+            "acceptance_id": "AC-1",
+            "status": "failed" if failed else "passed",
+            "verification_owner": "task_verify",
+            "verification_tier": "runtime",
+            "evidence_refs": ["test:durable"],
+            "findings": [{"message": "gap"}] if failed else [],
+            "reproduction_commands": ["pytest"],
+        }],
+    }
+    return {
+        **child_payload,
+        **identity,
+        "fanout_id": child["fanout_id"],
+        "child_id": child["child_id"],
+        "run_id": child["run_id"],
+        "role_instance": child["role_instance"],
+        "stage_id": "verify-selected",
+        "status": "completed",
+        "verification_result": verification_result,
+        "report": {
+            "child_id": child["child_id"],
+            "status": "failed" if failed else "passed",
+            "summary": "durable verification result",
+            "findings": [{"message": "gap"}] if failed else [],
+            "recommendation": "reject" if failed else "approve",
+            "evidence_refs": ["test:durable"],
+            "requirement_coverage_matrix": [{
+                "acceptance_id": "AC-1",
+                "status": "failed" if failed else "passed",
+                "verification_owner": "task_verify",
+                "verification_tier": "runtime",
+                "evidence_refs": ["test:durable"],
+                "findings": [{"message": "gap"}] if failed else [],
+            }],
+        },
+    }
+
+
+def test_selected_reader_repair_is_restart_idempotent_and_semantic_rejects(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, transport, orch, config, child = _durable_reader_state(tmp_path)
+    initial_payload = _durable_verification_payload(child, verdict="rejected")
+    initial_payload["verification_result"].pop("target_commit")
+    malformed = ZfEvent(
+        type="verify.child.completed",
+        actor="verify-1",
+        task_id="T-VERIFY",
+        correlation_id="run-durable",
+        payload=initial_payload,
+    )
+    log.append(malformed)
+    orch.run_once(events=[malformed])
+
+    repairs = [
+        event for event in log.read_all()
+        if event.type == "workflow.call.result.repair.requested"
+    ]
+    assert len(repairs) == 1
+    assert repairs[0].payload["semantic_attempt_incremented"] is False
+    assert len(transport.sent) == 2  # initial call plus one correction turn
+    assert not any(
+        event.type in {"fanout.child.completed", "fanout.child.failed"}
+        for event in log.read_all()
+    )
+
+    restarted_transport = _RecordingTransport()
+    restarted = Orchestrator(
+        state_dir,
+        config,
+        restarted_transport,
+    )  # type: ignore[arg-type]
+    restarted.run_once(events=[])
+    assert restarted_transport.sent == []
+    assert sum(
+        event.type == "workflow.call.result.repair.requested"
+        for event in log.read_all()
+    ) == 1
+
+    child_payload = dict(child.get("payload") or {})
+    source_manifest = hydrate_sidecar_ref(
+        state_dir,
+        child_payload["attempt_source_manifest"],
+    ).payload
+    read_attempt_artifact(
+        state_dir,
+        manifest=source_manifest,
+        source_id="context",
+        artifact_id="context",
+        json_path="$.facts",
+    )
+    corrected = ZfEvent(
+        type="verify.child.completed",
+        actor="verify-1",
+        task_id="T-VERIFY",
+        correlation_id="run-durable",
+        payload=_durable_verification_payload(child, verdict="rejected"),
+    )
+    log.append(corrected)
+    restarted.run_once(events=[corrected])
+
+    events = log.read_all()
+    assert any(event.type == "workflow.operation.settled" for event in events)
+    child_failure = next(
+        event for event in events if event.type == "fanout.child.failed"
+    )
+    assert child_failure.payload["semantic_verdict"] == "rejected"
+    assert child_failure.payload["admitted_call_result_ref"]["ref"]
+    assert not any("task.attempt" in event.type for event in events)
+
+
+def test_selected_reader_restart_projects_settled_result_without_provider_call(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch, config, child = _durable_reader_state(tmp_path)
+    child_payload = dict(child.get("payload") or {})
+    source_manifest = hydrate_sidecar_ref(
+        state_dir,
+        child_payload["attempt_source_manifest"],
+    ).payload
+    read_attempt_artifact(
+        state_dir,
+        manifest=source_manifest,
+        source_id="context",
+        artifact_id="context",
+        json_path="$.facts",
+    )
+    terminal = ZfEvent(
+        type="verify.child.completed",
+        actor="verify-1",
+        task_id="T-VERIFY",
+        correlation_id="run-durable",
+        payload=_durable_verification_payload(child, verdict="passed"),
+    )
+    log.append(terminal)
+    admitted = admit_runtime_call_result(
+        orch,
+        terminal,
+        mode="blocking",
+        dispatch_correction=False,
+    )
+    assert admitted.admitted is True
+    assert not any(
+        event.type == "fanout.child.completed" for event in log.read_all()
+    )
+
+    restarted_transport = _RecordingTransport()
+    restarted = Orchestrator(
+        state_dir,
+        config,
+        restarted_transport,
+    )  # type: ignore[arg-type]
+    restarted.run_once(events=[])
+
+    events = log.read_all()
+    projected = next(
+        event for event in events if event.type == "fanout.child.completed"
+    )
+    assert projected.payload["admitted_call_result_ref"]["ref"] == (
+        admitted.envelope_ref["ref"]
+    )
+    assert any(event.type == "review.approved" for event in events)
+    assert restarted_transport.sent == []
 
 
 def test_trigger_creates_one_fanout_and_dispatches_children(

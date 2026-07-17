@@ -72,8 +72,8 @@ def _assert_flow_kernel_contract(
     assert verify.feedback_artifact == "required"
     if final_inside_pipeline:
         assert pipeline.final_when == "all_tasks_verified"
-        assert pipeline.final_success == "judge.passed"
-        assert pipeline.final_failure == "judge.failed"
+        assert pipeline.final_success == "goal.closure.synthesized"
+        assert pipeline.final_failure == "goal.closure.synthesis.failed"
     else:
         assert pipeline.final_when == ""
         assert pipeline.final_success == ""
@@ -126,7 +126,7 @@ def test_prd_flow_controller_smoke_matrix() -> None:
     metadata = report["generated"]["flow_metadata"]
     assert metadata["flow_kind"] == "prd"
     assert metadata["post_verify_discovery"] == "product_completeness"
-    assert metadata["delivery_policy"] == "report_and_demo"
+    assert metadata["delivery_policy"] == "ship_candidate"
     assert _generated_pipeline(report)["stage_transition"] == "per_lane"
     _assert_profile_sources(report)
     policy = _policy_by_field(report)

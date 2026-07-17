@@ -10,6 +10,7 @@ import yaml
 
 from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
+from zf.cli.flow import build_flow_submit_preview
 from zf.cli.main import main
 
 
@@ -41,7 +42,7 @@ def test_flow_draft_issue_outputs_short_issue_flow(tmp_path):
     profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
     bundles = profile["spec"]["flow_defaults"]["issue"]["roleSkillBundles"]
     assert "zf-issue-plan-synth" in bundles["issue-triage"]
-    assert "zf-harness-done-contract" in bundles["fix"]
+    assert bundles["fix"] == ["zf-yoke-dev-worker-role-context"]
     config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
     assert config_doc["spec"]["project"]["name"] == "issue-demo"
     assert config_doc["spec"]["uses"] == ["flow-draft-runtime/v1"]
@@ -85,7 +86,7 @@ def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
     }
     bundles = profile["spec"]["flow_defaults"]["prd"]["roleSkillBundles"]
     assert "zf-prd-plan-synth" in bundles["planner"]
-    assert "zf-harness-done-contract" in bundles["impl"]
+    assert bundles["impl"] == ["zf-yoke-dev-worker-role-context"]
     assert "roleSkillBundles" not in docs[0]["spec"]
 
     config = load_config(output)
@@ -97,7 +98,7 @@ def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
     planner = next(role for role in config.roles if role.name == "planner")
     dev = next(role for role in config.roles if role.name == "dev-lane-0")
     assert "zf-prd-plan-synth" in planner.skills
-    assert "zf-harness-done-contract" in dev.skills
+    assert dev.skills == ["zf-yoke-dev-worker-role-context"]
 
 
 def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):
@@ -129,7 +130,9 @@ def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):
     assert "roleSkillBundles" not in docs[0]["spec"]
     profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
     bundles = profile["spec"]["flow_defaults"]["refactor"]["roleSkillBundles"]
-    assert "zf-verify-rescan-replan" in bundles["verify"]
+    assert "zf-verify-rescan-replan" not in bundles["verify"]
+    assert "zf-verify-rescan-replan" in bundles["refactor-verify-bridge"]
+    assert "zf-goal-closure-replan-contract" in bundles["refactor-verify-bridge"]
     assert "zf-refactor-plan-synth" in bundles["refactor-plan-synth"]
     assert "skill_sources" not in profile["spec"]
 
@@ -352,9 +355,11 @@ def test_flow_intake_refactor_records_adapter_skill_plan(tmp_path, capsys):
     skill.parent.mkdir(parents=True)
     skill.write_text(
         "---\n"
-        "name: cangjie-hermes-parity-gate\n"
-        "description: Cangjie parity gate\n"
-        "---\n"
+            "name: cangjie-hermes-parity-gate\n"
+            "description: Cangjie parity gate\n"
+            "stages: [verify]\n"
+            "tags: [project-adapter, parity]\n"
+            "---\n"
         "\n"
         "Verify Cangjie against Hermes.\n",
         encoding="utf-8",
@@ -730,10 +735,64 @@ spec:
     assert any(ref.endswith("task-map.json") for ref in artifact_refs)
     assert preview["payload"]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
     assert preview["payload"]["source_refs"]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
-    preview_path = tmp_path / "artifacts" / "workflow" / "wfint-submit" / "workflow-submit-preview.json"
-    preflight_path = tmp_path / "artifacts" / "workflow" / "wfint-submit" / "workflow-preflight.json"
+    preview_path = tmp_path / ".zf" / "artifacts" / "workflow" / "wfint-submit" / "workflow-submit-preview.json"
+    preflight_path = tmp_path / ".zf" / "artifacts" / "workflow" / "wfint-submit" / "workflow-preflight.json"
     assert preview_path.exists()
     assert preflight_path.exists()
+
+
+def test_flow_submit_keeps_runtime_projection_out_of_tracked_workflow_artifacts(
+    tmp_path,
+    capsys,
+):
+    """Submit reruns must not mutate delivery-tree artifacts and block ship."""
+    source = tmp_path / "request.md"
+    source.write_text("add a small feature\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "request.md"
+    assert main([
+        "flow", "intake", "--kind", "issue", "--from", str(source),
+        "--request-id", "runtime-projection", "--output", str(intake),
+    ]) == 0
+    capsys.readouterr()
+    config = tmp_path / "zf.yaml"
+    config.write_text(
+        "\n".join([
+            "apiVersion: zaofu.dev/v1",
+            "kind: IssueFlow",
+            "metadata: {name: issue-demo}",
+            "spec:",
+            "  lanes: 1",
+            "  backend: mock",
+            "  issueRef: docs/intake/request.md",
+            "---",
+            "apiVersion: zaofu.dev/v1",
+            "kind: ZfConfig",
+            "metadata: {name: demo}",
+            "spec:",
+            '  version: "1.0"',
+            "  project: {name: demo, state_dir: .zf-runtime}",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+    source_projection = (
+        tmp_path / "artifacts" / "workflow" / "runtime-projection" / "workflow-preflight.json"
+    )
+    source_projection.write_text('{"source": "must stay unchanged"}\n', encoding="utf-8")
+
+    preview = build_flow_submit_preview(
+        config_path=config,
+        intake_path=intake,
+        allow_missing_env=True,
+    )
+
+    assert source_projection.read_text(encoding="utf-8") == '{"source": "must stay unchanged"}\n'
+    assert preview["preflight_ref"].endswith(
+        ".zf-runtime/artifacts/workflow/runtime-projection/workflow-preflight.json"
+    )
+    assert preview["submit_preview_ref"].endswith(
+        ".zf-runtime/artifacts/workflow/runtime-projection/workflow-submit-preview.json"
+    )
 
 
 def test_flow_submit_apply_emits_submit_and_invoke_events(tmp_path, capsys):

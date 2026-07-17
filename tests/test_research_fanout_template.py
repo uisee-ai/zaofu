@@ -17,6 +17,8 @@ from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 
+RESEARCH_CONFIG = Path(__file__).parent / "fixtures" / "research_fanout.yaml"
+
 
 class _RecordingTransport:
     def __init__(self) -> None:
@@ -53,8 +55,8 @@ def _state(tmp_path: Path, config: ZfConfig):
     return state_dir, log, transport, orch
 
 
-def test_repo_zf_yaml_declares_fixed_research_fanout_template() -> None:
-    config = load_config(Path("zf.yaml"))
+def test_research_fixture_declares_fixed_fanout_template() -> None:
+    config = load_config(RESEARCH_CONFIG)
 
     stage = next(
         stage for stage in config.workflow.stages
@@ -130,7 +132,7 @@ def test_workflow_invoke_fanout_stage_matches_requested_pattern_only(
 
 
 def test_research_fanout_template_runs_to_channel_update(tmp_path: Path) -> None:
-    config = load_config(Path("zf.yaml"))
+    config = load_config(RESEARCH_CONFIG)
     _state_dir, log, transport, orch = _state(tmp_path, config)
 
     orch.run_once(events=[ZfEvent(

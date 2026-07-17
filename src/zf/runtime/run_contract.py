@@ -61,6 +61,19 @@ def build_run_contract(
         workflow_input_manifest_ref=manifest_ref,
         skill_adapter_plan_ref=skill_adapter_plan_ref,
     )
+    result_protocol = (
+        dict(metadata.get("result_protocol") or {})
+        if isinstance(metadata.get("result_protocol"), Mapping)
+        else {}
+    )
+    from zf.runtime.call_result_admission import CALL_RESULT_ADAPTER_VERSION
+    from zf.runtime.call_result_envelope import CALL_RESULT_CANONICALIZATION
+    from zf.runtime.workflow_operation import WORKFLOW_OPERATION_CANONICALIZATION
+
+    required_operation_ids = _string_list(
+        result_protocol.get("required_operation_ids")
+        or metadata.get("required_operation_ids")
+    )
     contract: dict[str, Any] = {
         "schema_version": RUN_CONTRACT_SCHEMA,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -88,6 +101,49 @@ def build_run_contract(
         "required_delivery_artifacts": required_delivery_artifacts(
             str(metadata.get("flow_kind") or manifest.get("kind") or "")
         ),
+        "protocols": {
+            "result_protocol": {
+                "schema_version": "call-result-envelope.v1",
+                "mode": str(
+                    result_protocol.get("mode")
+                    or metadata.get("result_protocol_mode")
+                    or "shadow"
+                ),
+                "adapter_version": str(
+                    result_protocol.get("adapter_version")
+                    or CALL_RESULT_ADAPTER_VERSION
+                ),
+                "canonicalization_version": str(
+                    result_protocol.get("canonicalization_version")
+                    or CALL_RESULT_CANONICALIZATION
+                ),
+            },
+            "workflow_operation": {
+                "schema_version": "workflow-operation.v1",
+                "canonicalization_version": str(
+                    result_protocol.get("operation_canonicalization_version")
+                    or WORKFLOW_OPERATION_CANONICALIZATION
+                ),
+                "required_operation_ids": required_operation_ids,
+            },
+            "required_read": {
+                "schema_version": "input-consumption-policy.v1",
+                "policy_ref": str(result_protocol.get("read_policy_ref") or ""),
+                "policy_digest": str(result_protocol.get("read_policy_digest") or ""),
+            },
+            "goal_closure": {
+                "schema_version": "goal-closure-protocol.v1",
+                "authority": "admitted_thin_judge",
+                "delivery_policy": str(metadata.get("delivery_policy") or "report_only"),
+                "approval_policy": str(metadata.get("approval_policy") or ""),
+                "target_ref": str(
+                    getattr(getattr(getattr(config, "runtime", None), "git", None), "ship_target_branch", "")
+                    or ""
+                ),
+                "claim_set_binding": "goal.claim_set.pinned",
+                "terminal_event": "run.goal.completed",
+            },
+        },
     }
     contract["contract_digest"] = stable_json_sha256(_stable_contract_body(contract))
     return contract

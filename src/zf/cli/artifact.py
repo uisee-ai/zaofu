@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -75,13 +76,93 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     create.set_defaults(func=_run_manifest_create)
 
+    list_cmd = sub.add_parser(
+        "list",
+        help="List immutable inputs available to one provider attempt",
+    )
+    list_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
+    list_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
+    list_cmd.set_defaults(func=_run_attempt_list)
+
+    read_cmd = sub.add_parser(
+        "read",
+        help="Read one attempt input and append read evidence",
+    )
+    read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
+    read_cmd.add_argument("--source", required=True, help="Source id from artifact list")
+    read_cmd.add_argument("--artifact", required=True, help="Artifact id from artifact list")
+    read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
+    read_cmd.add_argument("--max-items", type=int, default=0)
+    read_cmd.add_argument("--max-chars", type=int, default=0)
+    read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
+    read_cmd.set_defaults(func=_run_attempt_read)
+
     parser.set_defaults(func=_run_help)
     manifest.set_defaults(func=_run_help)
 
 
 def _run_help(args: argparse.Namespace) -> int:
-    print("usage: zf artifact manifest create --task TASK --role ROLE --kind kind=path")
+    print("usage: zf artifact {manifest create|list|read} ...")
     return 0
+
+
+def _run_attempt_list(args: argparse.Namespace) -> int:
+    try:
+        context = resolve_project_context(
+            explicit_state_dir=getattr(args, "state_dir", None),
+        )
+        manifest = _load_attempt_source_manifest(context.state_dir, args.attempt)
+    except (ConfigError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_attempt_read(args: argparse.Namespace) -> int:
+    try:
+        context = resolve_project_context(
+            explicit_state_dir=getattr(args, "state_dir", None),
+        )
+        manifest = _load_attempt_source_manifest(context.state_dir, args.attempt)
+        from zf.runtime.artifact_read_ledger import read_attempt_artifact
+
+        result = read_attempt_artifact(
+            context.state_dir,
+            manifest=manifest,
+            source_id=args.source,
+            artifact_id=args.artifact,
+            json_path=args.json_path,
+            max_items=max(0, int(args.max_items or 0)),
+            max_chars=max(0, int(args.max_chars or 0)),
+        )
+    except (ConfigError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(result["content"])
+    return 0
+
+
+def _load_attempt_source_manifest(state_dir: Path, attempt_id: str) -> dict[str, Any]:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", str(attempt_id)).strip("-._") or "attempt"
+    root = state_dir / "artifacts" / "attempts" / safe / "source-manifests"
+    manifests: list[dict[str, Any]] = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and str(value.get("attempt_id") or "") == str(attempt_id):
+            manifests.append(value)
+    if not manifests:
+        raise ValueError(f"attempt source manifest not found: {attempt_id}")
+    canonical = {
+        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        for item in manifests
+    }
+    if len(canonical) != 1:
+        raise ValueError(f"attempt has divergent source manifests: {attempt_id}")
+    return manifests[0]
 
 
 def _run_manifest_create(args: argparse.Namespace) -> int:

@@ -260,6 +260,16 @@
   cursor: default;
 }
 
+.data-table tbody tr.interactive-row {
+  cursor: pointer;
+}
+
+.data-table tbody tr.interactive-row:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+  background: color-mix(in oklab, var(--brand) 10%, transparent);
+}
+
 .data-table tbody tr:hover,
 .selected-row {
   background: color-mix(in oklab, var(--brand) 10%, transparent);

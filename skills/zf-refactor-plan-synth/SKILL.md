@@ -82,24 +82,22 @@ The workflow contract is authoritative:
 
 ### 根 owner(workspace-root-owner)启发式
 
-默认(greenfield / 从零 scaffold):任一持根级脚手架路径的 task 必须把这些路径
-列进 `allowed_paths`,否则 admission 报「no task owns workspace-root paths」——
-R21 失败形状:根 build config 无主,根 `tsc -b` / `pytest` 从未被任何 lane 执行。
+这是**计划产物显式选择的机械检查**,不是 lane pipeline 的默认推断。只有当本次
+delivery 要修改或验证根级脚手架/entrypoint 时，task_map 才应声明
+`workspace_root_owner_required: true`；此时任一 task 必须把对应根级路径列进
+`allowed_paths`,否则 admission 报「no task owns workspace-root paths」——R21
+失败形状:根 build config 无主,根 `tsc -b` / `pytest` 从未被任何 lane 执行。
 被识别的脚手架 basename 含 `package.json` / `pnpm-lock.yaml` /
 `pnpm-workspace.yaml` / `tsconfig.json` / `vitest.config.ts` / `eslint.config.js`,
 以及 Python 侧 `pyproject.toml` / `setup.py` / `setup.cfg` / `requirements.txt` /
 `uv.lock` / `poetry.lock` / `Pipfile`(`lane_pipeline.py`
 `validate_lane_pipeline_admission` 的 `_SCAFFOLD_BASENAMES`)。
 
-**已有项目 / 局部 refactor 的 opt-out**:把一个已存在仓库导入做局部重构时,根
-脚手架通常已存在、由 plan 之外持有,不该强求某条 task 认领它。此时可关掉这条
-启发式(`lane_pipeline.py` `validate_lane_pipeline_admission` 内的
-`_workspace_root_owner_required`,布尔显式优先于 policy 推断):
-
-- task_map 顶层 `workspace_root_owner_required: false`,或
-  `refactor_contract.workspace_root_owner_required: false`(布尔,优先级最高);
-- 或 `refactor_contract.assembly_policy: "none"`(policy=none 隐含 root owner
-  不需要)。
+**局部 patch / 存量项目**:默认不声明该字段（等同 `false`），不得为了通过门而
+虚构 assembly 或根级文件所有权。顶层
+`workspace_root_owner_required` 或
+`refactor_contract.workspace_root_owner_required` 的布尔值优先；只有 `true`
+才启用根 owner 检查。
 
 关掉 root owner **只跳过这一条启发式**,task schema / path / evidence 校验一律
 不放宽——每条 task 照旧要唯一 `task_id`、显式 `allowed_paths`、`verification`

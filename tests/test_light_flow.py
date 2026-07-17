@@ -65,8 +65,8 @@ spec:
     assert stages[0].aggregate.success_event == "candidate.ready"
     assert stages[1].trigger == "candidate.ready"
     assert stages[1].aggregate.success_event == "test.passed"
-    assert stages[2].trigger == "test.passed"
-    assert stages[2].aggregate.success_event == "judge.passed"
+    assert stages[2].trigger == "flow.goal.closed"
+    assert stages[2].aggregate.success_event == "goal.closure.synthesized"
 
 
 def test_issue_light_config_loads_target_root_topology(tmp_path: Path) -> None:

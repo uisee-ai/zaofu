@@ -17,7 +17,6 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.autoresearch_invocation import (
     autoresearch_invocation_projection,
-    build_invocation_request_event,
 )
 from zf.runtime.event_problem_registry import spec_for_event
 from zf.runtime.problem_taxonomy import problem_envelope_from_attention
@@ -266,14 +265,6 @@ def build_supervisor_control_loop_events(
                 causation_id=source_event_ids[0] if source_event_ids else None,
             ))
             existing_messages.add(message_id)
-        invocation = build_invocation_request_event(
-            item,
-            decision=decision,
-            events=events + out,
-            projection_ref=projection_ref,
-        )
-        if invocation is not None:
-            out.append(invocation)
     return out
 
 
@@ -346,6 +337,24 @@ def _decision_payload(
         "insight_type": str(item.get("insight_type") or ""),
         "recommended_route": str(item.get("recommended_route") or ""),
         "source_insight_ref": str(item.get("source_insight_ref") or ""),
+        "source_event_ids": [
+            str(value) for value in item.get("source_event_ids") or []
+            if str(value).strip()
+        ],
+        # Keep semantic planner incidents intact across Supervisor -> Run
+        # Manager / Orchestrator handoff.  These fields are identity, not an
+        # instruction to mutate workflow truth.
+        "workflow_run_id": str(item.get("workflow_run_id") or ""),
+        "run_id": str(item.get("run_id") or ""),
+        "trace_id": str(item.get("trace_id") or ""),
+        "failure_scope": str(item.get("failure_scope") or ""),
+        "plan_admission_incident_id": str(
+            item.get("plan_admission_incident_id") or ""
+        ),
+        "expected_fault": bool(item.get("expected_fault")),
+        "original_trigger_event_id": str(
+            item.get("original_trigger_event_id") or ""
+        ),
         "expected_output": item.get("expected_output") if isinstance(item.get("expected_output"), list) else [],
         "problem_envelope": problem_envelope,
         "confidence": "derived",
@@ -456,6 +465,14 @@ def _owner_message_payload(
         "task_id": str(item.get("task_id") or ""),
         "attention_id": str(item.get("attention_id") or ""),
         "fingerprint": str(item.get("fingerprint") or ""),
+        "workflow_run_id": str(item.get("workflow_run_id") or ""),
+        "run_id": str(item.get("run_id") or ""),
+        "trace_id": str(item.get("trace_id") or ""),
+        "failure_scope": str(item.get("failure_scope") or ""),
+        "plan_admission_incident_id": str(
+            item.get("plan_admission_incident_id") or ""
+        ),
+        "expected_fault": bool(item.get("expected_fault")),
         "problem_envelope": decision.get("problem_envelope") or problem_envelope_from_attention(item),
         "notification_policy": _notification_policy(item),
         "recovery_policy": _recovery_policy(item),
@@ -567,6 +584,8 @@ def _suppress_owner_message_for_triage(item: dict[str, Any], decision: dict[str,
         return True
     if policy == "owner_immediate":
         return False
+    if policy == "trace_only":
+        return True
     return _run_manager_triage_first(item, decision)
 
 

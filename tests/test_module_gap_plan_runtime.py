@@ -13,8 +13,12 @@ from zf.core.config.schema import (
 )
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
-from zf.core.task.schema import Task
+from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
+from zf.runtime.call_result_envelope import (
+    normalize_call_result_envelope,
+    write_immutable_json_sidecar,
+)
 from zf.runtime.orchestrator import Orchestrator
 
 
@@ -237,6 +241,100 @@ def _write_base_task_map(state_dir: Path) -> str:
         encoding="utf-8",
     )
     return ".zf/artifacts/CANGJIE/task_map.json"
+
+
+def _prime_goal_closure_context(
+    state_dir: Path,
+    log: EventLog,
+    orch: Orchestrator,
+    *,
+    workflow_run_id: str,
+    goal_id: str,
+    task_map_ref: str,
+    generation: str,
+    candidate_head_commit: str,
+) -> None:
+    """Persist the immutable planning and verification inputs Thin Judge reads."""
+
+    task_map_path = state_dir.parent / task_map_ref
+    task_map_path.parent.mkdir(parents=True, exist_ok=True)
+    task_map_path.write_text(
+        json.dumps({
+            "schema_version": "task-map.v1",
+            "feature_id": goal_id,
+            "goal_claims": [{
+                "goal_claim_id": f"{goal_id}-GOAL-1",
+                "text": f"Deliver {goal_id}",
+                "mandatory": True,
+            }],
+            "tasks": [{
+                "task_id": f"{goal_id}-TASK-1",
+                "title": f"Implement {goal_id}",
+                "owner_role": "dev",
+                "acceptance": [f"{goal_id} is implemented"],
+            }],
+        }),
+        encoding="utf-8",
+    )
+    orch.run_once(events=[ZfEvent(
+        id=f"task-map-{goal_id}-{generation}",
+        type="task_map.ready",
+        actor="planner",
+        correlation_id=workflow_run_id,
+        payload={
+            "workflow_run_id": workflow_run_id,
+            "trace_id": workflow_run_id,
+            "goal_id": goal_id,
+            "feature_id": goal_id,
+            "task_map_ref": task_map_ref,
+            "task_map_generation": generation,
+        },
+    )])
+
+    control = write_immutable_json_sidecar(
+        state_dir,
+        {"schema_version": "verification-result.v1", "verdict": "approved"},
+        root="call-results/control",
+        kind="verification_result",
+        schema_version="verification-result.v1",
+        created_by="test",
+    )
+    envelope = normalize_call_result_envelope(
+        source_payload={
+            "run_id": f"verify-{generation}",
+            "role_instance": "verify-lane-0",
+            "task_map_generation": generation,
+            "target_commit": candidate_head_commit,
+        },
+        control_result={
+            "schema_version": "verification-result.v1",
+            "ref": control["ref"],
+            "sha256": control["sha256"],
+        },
+        workflow_run_id=workflow_run_id,
+        operation_id=f"verify-op-{generation}",
+        request_hash=f"verify-request-{generation}",
+        source_event_id=f"verify-result-{generation}",
+        source_event_type="verify.child.completed",
+        actor="verify-lane-0",
+    )
+    descriptor = write_immutable_json_sidecar(
+        state_dir,
+        envelope,
+        root="call-results/envelopes",
+        kind="call_result_envelope",
+        schema_version="call-result-envelope.v1",
+        created_by="test",
+    )
+    log.append(ZfEvent(
+        type="workflow.call.result.admitted",
+        actor="zf-cli",
+        correlation_id=workflow_run_id,
+        payload={
+            "workflow_run_id": workflow_run_id,
+            "envelope_ref": descriptor,
+        },
+    ))
 
 
 def test_issue_verify_passed_requests_report_only_flow_discovery(tmp_path: Path) -> None:
@@ -651,10 +749,30 @@ def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
 def test_flow_discovery_completed_without_gaps_closes_goal(
     tmp_path: Path,
 ) -> None:
-    _state_dir, log, _transport, orch = _flow_discovery_state(
+    state_dir, log, _transport, orch = _flow_discovery_state(
         tmp_path,
         flow_kind="issue",
         discovery_profile="regression_impact",
+        extra_flow_metadata={
+            "objective_ref": ".zf/artifacts/ISSUE-123/objective.json",
+        },
+    )
+    task_map_ref = ".zf/artifacts/ISSUE-123/task_map.json"
+    objective_path = state_dir / "artifacts" / "ISSUE-123" / "objective.json"
+    objective_path.parent.mkdir(parents=True, exist_ok=True)
+    objective_path.write_text(
+        json.dumps({"goal_id": "ISSUE-123", "objective": "fix the issue"}),
+        encoding="utf-8",
+    )
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-issue-clean",
+        goal_id="ISSUE-123",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="c" * 40,
     )
 
     decisions = orch.run_once(events=[ZfEvent(
@@ -667,7 +785,9 @@ def test_flow_discovery_completed_without_gaps_closes_goal(
             "feature_id": "ISSUE-123",
             "flow_kind": "issue",
             "trace_id": "trace-issue-clean",
-            "task_map_ref": ".zf/artifacts/ISSUE-123/task_map.json",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "c" * 40,
             "open_p0_p1_gap_count": 0,
             "evidence_refs": ["reports/ISSUE-123/discovery.json"],
             "test_refs": ["pytest"],
@@ -682,15 +802,32 @@ def test_flow_discovery_completed_without_gaps_closes_goal(
     assert closed[0].payload["source_event_id"] == "flow-discovery-clean"
     assert closed[0].payload["evidence_refs"] == ["reports/ISSUE-123/discovery.json"]
     assert closed[0].payload["test_refs"] == ["pytest"]
+    source_ids = {
+        str(item.get("source_id") or "")
+        for item in closed[0].payload["input_refs"]
+        if isinstance(item, dict)
+    }
+    assert {"objective", "planning-result"} <= source_ids
 
 
 def test_flow_discovery_nested_report_without_gaps_closes_goal(
     tmp_path: Path,
 ) -> None:
-    _state_dir, log, _transport, orch = _flow_discovery_state(
+    state_dir, log, _transport, orch = _flow_discovery_state(
         tmp_path,
         flow_kind="issue",
         discovery_profile="regression_impact",
+    )
+    task_map_ref = ".zf/artifacts/ISSUE-123/task_map.json"
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-issue-clean",
+        goal_id="ISSUE-123",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="c" * 40,
     )
 
     decisions = orch.run_once(events=[ZfEvent(
@@ -703,7 +840,9 @@ def test_flow_discovery_nested_report_without_gaps_closes_goal(
             "feature_id": "ISSUE-123",
             "flow_kind": "issue",
             "trace_id": "trace-issue-clean",
-            "task_map_ref": ".zf/artifacts/ISSUE-123/task_map.json",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "c" * 40,
             "evidence_refs": ["reports/ISSUE-123/discovery.json"],
             "test_refs": ["pytest"],
             "report": {
@@ -789,6 +928,92 @@ def test_verify_passed_requests_module_parity_scan(tmp_path: Path) -> None:
     assert requested[0].payload["task_map_ref"] == ".zf/artifacts/CANGJIE/task_map.json"
     assert len(started) == 1
     assert started[0].payload["stage_id"] == "cangjie-module-parity-scan"
+    assert [sent[0] for sent in transport.sent] == [
+        "scan-contract",
+        "scan-runtime",
+        "scan-verification",
+    ]
+
+
+def test_verify_passed_suppresses_duplicate_scan_while_gap_task_is_active(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="CANGJIE-WEB-GAP-001",
+        title="Close web parity gap",
+        status="in_progress",
+        contract=TaskContract(
+            feature_id="CANGJIE",
+            evidence_contract={
+                "goal_id": "CANGJIE",
+                "gap_kind": "module_parity_gap",
+                "module_id": "web",
+            },
+        ),
+    ))
+
+    decisions = orch.run_once(events=[ZfEvent(
+        id="verify-passed-active-gap",
+        type="verify.passed",
+        actor="zf-cli",
+        correlation_id="trace-verify",
+        payload={
+            "pdd_id": "CANGJIE",
+            "feature_id": "CANGJIE",
+            "candidate_ref": "cand/CANGJIE",
+        },
+    )])
+
+    events = log.read_all()
+    suppressed = [
+        event for event in events
+        if event.type == "verify.parity_scan.suppressed"
+    ]
+    assert any(decision.action == "suppress" for decision in decisions)
+    assert len(suppressed) == 1
+    assert suppressed[0].payload["active_gap_task_ids"] == [
+        "CANGJIE-WEB-GAP-001",
+    ]
+    assert not [event for event in events if event.type == "verify.parity_scan.requested"]
+    assert transport.sent == []
+
+
+def test_verify_passed_does_not_suppress_for_identityless_gap_task(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="LEGACY-GAP-001",
+        title="Legacy unscoped gap",
+        status="in_progress",
+        contract=TaskContract(
+            evidence_contract={"gap_kind": "module_parity_gap"},
+        ),
+    ))
+
+    decisions = orch.run_once(events=[ZfEvent(
+        id="verify-passed-unscoped-gap",
+        type="verify.passed",
+        actor="zf-cli",
+        correlation_id="trace-verify",
+        payload={
+            "pdd_id": "CANGJIE",
+            "feature_id": "CANGJIE",
+            "candidate_ref": "cand/CANGJIE",
+        },
+    )])
+
+    events = log.read_all()
+    assert any(decision.action == "bridge" for decision in decisions)
+    assert not [
+        event for event in events
+        if event.type == "verify.parity_scan.suppressed"
+    ]
+    assert [
+        event for event in events
+        if event.type == "verify.parity_scan.requested"
+    ]
     assert [sent[0] for sent in transport.sent] == [
         "scan-contract",
         "scan-runtime",
@@ -957,7 +1182,18 @@ def test_module_parity_scan_completed_with_gaps_amends_task_map(
 def test_module_parity_scan_completed_without_gaps_closes_and_starts_judge(
     tmp_path: Path,
 ) -> None:
-    _state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    task_map_ref = ".zf/artifacts/CANGJIE/task_map.json"
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-parity-clean",
+        goal_id="CANGJIE",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="c" * 40,
+    )
 
     decisions = orch.run_once(events=[ZfEvent(
         id="parity-scan-completed-clean",
@@ -968,7 +1204,9 @@ def test_module_parity_scan_completed_without_gaps_closes_and_starts_judge(
             "pdd_id": "CANGJIE",
             "feature_id": "CANGJIE",
             "trace_id": "trace-parity-clean",
-            "task_map_ref": ".zf/artifacts/CANGJIE/task_map.json",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "c" * 40,
             "candidate_ref": "cand/CANGJIE",
             "open_p0_p1_gap_count": 0,
         },
@@ -988,6 +1226,17 @@ def test_module_parity_scan_fanout_success_immediately_starts_judge(
     tmp_path: Path,
 ) -> None:
     state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    task_map_ref = ".zf/artifacts/CANGJIE/task_map.json"
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-parity",
+        goal_id="CANGJIE",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="c" * 40,
+    )
 
     orch.run_once(events=[ZfEvent(
         id="verify-parity-scan-request-1",
@@ -998,7 +1247,9 @@ def test_module_parity_scan_fanout_success_immediately_starts_judge(
             "pdd_id": "CANGJIE",
             "feature_id": "CANGJIE",
             "trace_id": "trace-parity",
-            "task_map_ref": ".zf/artifacts/CANGJIE/task_map.json",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "c" * 40,
             "candidate_ref": "cand/CANGJIE",
         },
     )])
@@ -1028,6 +1279,9 @@ def test_module_parity_scan_fanout_success_immediately_starts_judge(
                 "run_id": child["run_id"],
                 "role_instance": child["role_instance"],
                 "status": "completed",
+                "task_map_ref": task_map_ref,
+                "task_map_generation": "generation-1",
+                "candidate_head_commit": "c" * 40,
                 "report": {
                     "status": "passed",
                     "recommendation": "approve",
@@ -1060,6 +1314,78 @@ def test_module_parity_scan_fanout_success_immediately_starts_judge(
         "scan-verification",
         "judge-refactor",
     ]
+
+
+def test_goal_closure_replay_dedupes_and_new_generation_supersedes(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, transport, orch = _parity_scan_state(tmp_path)
+    task_map_ref = ".zf/artifacts/CANGJIE/task_map.json"
+    base = {
+        "pdd_id": "CANGJIE",
+        "feature_id": "CANGJIE",
+        "goal_id": "CANGJIE",
+        "trace_id": "trace-parity",
+        "workflow_run_id": "trace-parity",
+        "task_map_ref": task_map_ref,
+        "task_map_generation": "generation-1",
+        "candidate_head_commit": "c" * 40,
+        "open_p0_p1_gap_count": 0,
+    }
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-parity",
+        goal_id="CANGJIE",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="c" * 40,
+    )
+
+    for event_id in ("parity-clean-1", "parity-clean-replay"):
+        orch.run_once(events=[ZfEvent(
+            id=event_id,
+            type="cangjie.module.parity.scan.completed",
+            actor="zf-cli",
+            correlation_id="trace-parity",
+            payload=dict(base),
+        )])
+
+    assert [event.type for event in log.read_all()].count("module.parity.closed") == 1
+    assert [sent[0] for sent in transport.sent].count("judge-refactor") == 1
+
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="trace-parity",
+        goal_id="CANGJIE",
+        task_map_ref=task_map_ref,
+        generation="generation-2",
+        candidate_head_commit="d" * 40,
+    )
+    orch.run_once(events=[ZfEvent(
+        id="parity-clean-generation-2",
+        type="cangjie.module.parity.scan.completed",
+        actor="zf-cli",
+        correlation_id="trace-parity",
+        payload={
+            **base,
+            "task_map_generation": "generation-2",
+            "candidate_head_commit": "d" * 40,
+        },
+    )])
+
+    events = log.read_all()
+    closures = [event for event in events if event.type == "module.parity.closed"]
+    superseded = [event for event in events if event.type == "goal.closure.superseded"]
+    assert len(closures) == 2
+    assert len(superseded) == 1
+    assert superseded[0].payload["superseded_event_id"] == closures[0].id
+    assert closures[1].payload["supersedes_closure_identity"] == (
+        closures[0].payload["closure_identity"]
+    )
 
 
 def test_gap_plan_ready_amends_task_map_and_dispatches_gap_task(tmp_path: Path) -> None:

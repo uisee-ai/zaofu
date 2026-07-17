@@ -1,6 +1,8 @@
 ---
 name: zf-tool-skill-parity
 description: "Tool registry, function calling, plugin/skill discovery, and execution parity checks for agent refactors. Use when a replacement agent must preserve source tools, skill loading, permissions, and tool execution semantics."
+stages: [impl, verify]
+tags: [parity, "parity:tools", "parity:skills"]
 ---
 
 # Tool And Skill Parity

@@ -1128,3 +1128,150 @@ def test_channel_post_instance_id_allowed_for_backing_worker_member(tmp_path: Pa
         if e.type == "channel.route.blocked"
         and e.payload.get("reason") == "worker_not_channel_member"
     ]
+
+
+def test_channel_summary_caches_and_invalidates_on_new_event(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # A4-1 regression: channel_summary must not re-hydrate + re-project the full
+    # channel event log on every request. It materializes the result keyed by
+    # the projected seq, so a request with no new events is served from cache
+    # (no hydrate_events call), and a new channel event invalidates it.
+    import json
+
+    from zf.web.projections import read_model
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="channel.created",
+        actor="web",
+        payload={"channel_id": "ch-a", "name": "alpha", "source": "web"},
+        correlation_id="ch-a",
+    ))
+
+    first = read_model.channel_summary(state_dir)
+    assert first is not None
+    assert "ch-a" in json.dumps(first, default=str)
+
+    # Second request with no new events: must hit the cache and never hydrate.
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("channel_summary re-hydrated on a cache hit")
+
+    monkeypatch.setattr(read_model, "hydrate_events", _boom)
+    cached = read_model.channel_summary(state_dir)
+    assert cached is not None
+    assert "ch-a" in json.dumps(cached, default=str)
+
+    # A new channel event advances the projected seq → cache invalidated →
+    # recompute (hydrate allowed again) and reflect the new channel.
+    monkeypatch.undo()
+    log.append(ZfEvent(
+        type="channel.created",
+        actor="web",
+        payload={"channel_id": "ch-b", "name": "beta", "source": "web"},
+        correlation_id="ch-b",
+    ))
+    refreshed = read_model.channel_summary(state_dir)
+    assert refreshed is not None
+    assert "ch-b" in json.dumps(refreshed, default=str)
+
+
+def test_channel_summary_caches_empty_result_without_rehydrating(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # A4-1: even a project with zero channels paid the full hydrate cost. The
+    # empty result is cached via a sentinel so repeated 0-channel requests are
+    # served without touching the event log.
+    from zf.web.projections import read_model
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    # A non-channel event so the log/projection is non-empty but has 0 channels.
+    log.append(ZfEvent(type="task.created", actor="web", payload={"task_id": "t-1"}))
+
+    assert read_model.channel_summary(state_dir) is None
+
+    def _boom(*_args, **_kwargs):
+        raise AssertionError("channel_summary re-hydrated an empty-result cache hit")
+
+    monkeypatch.setattr(read_model, "hydrate_events", _boom)
+    assert read_model.channel_summary(state_dir) is None
+
+
+def test_channel_id_normalized_consistently_across_create_invite_post(
+    tmp_path: Path,
+) -> None:
+    # Root-cause regression: channel-create normalizes the channel_id (adds the
+    # `ch-` prefix + slugifies), but invite/post/admin ops used to take it raw.
+    # A caller passing the human slug ("streamval-review") to invite/post
+    # targeted a different id than create produced ("ch-streamval-review"), and
+    # the projection's setdefault materialized a second, phantom channel. All
+    # channel_id entry points now normalize, so the slug resolves to the one
+    # canonical channel and no phantom appears.
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    service = ControlledActionService(
+        state_dir, writer, actor="web", source="channel", surface="web",
+    )
+
+    def run(action: str, requested_action: str, payload: dict) -> dict:
+        requested = writer.emit(
+            "web.action.requested",
+            actor="web",
+            payload={"action": action, "request": {}},
+        )
+        return service.execute(
+            action=action,
+            requested_action=requested_action,
+            requested=requested,
+            payload=payload,
+        )
+
+    created = run(
+        "channel-create",
+        "channel.create",
+        {"name": "Streamval Review", "channel_id": "streamval-review"},
+    )
+    assert created["channel_id"] == "ch-streamval-review"
+
+    # Invite + post using the *un-prefixed* human slug — must resolve to the same
+    # canonical channel, not spawn a phantom "streamval-review".
+    invited = run(
+        "channel-invite-member",
+        "channel.invite_member",
+        {
+            "channel_id": "streamval-review",
+            "member_id": "qa",
+            "member_type": "codex",
+            "persona": "QA",
+        },
+    )
+    assert invited.get("ok", True) is not False, invited
+
+    run(
+        "channel-post-message",
+        "channel.post_message",
+        {
+            "channel_id": "streamval-review",
+            "thread_id": "main",
+            "message_id": "msg-1",
+            "member_id": "operator",
+            "text": "hi",
+        },
+    )
+
+    listing = project_channels(state_dir)
+    ids = [c["channel_id"] for c in listing["channels"]]
+    assert ids == ["ch-streamval-review"], f"phantom channel materialized: {ids}"
+
+    detail = project_channel(state_dir, "ch-streamval-review")
+    assert detail is not None
+    assert any(m["member_id"] == "qa" for m in detail["members"])
+    assert any(m["message_id"] == "msg-1" for m in detail["messages"])

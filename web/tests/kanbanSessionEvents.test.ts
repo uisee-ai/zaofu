@@ -94,4 +94,30 @@ const bounded = mergeBoundedKanbanSessionEvents([], [
 ], 3);
 assert(bounded.map((item) => item.seq).join(",") === "11,12,13", "bounded buffer should keep newest events");
 
+// Regression (live-stream backend-agnostic fold, consistent with b7eebff4):
+// a kanban thread is one durable conversation that can span backends. A live
+// codex delta must still fold into the view when the operator's selector
+// currently reads claude — backend is advisory, never an exclusion. Before the
+// fix this delta was dropped and the reply stayed stuck on "thinking".
+const claudeScope = {
+  projectId: "proj-a",
+  conversationId: "kanban:proj-a",
+  backend: "claude-headless",
+  taskId: "",
+};
+const codexDeltaUnderClaudeSelector = kanbanAgentSessionEventsFromLive([
+  event(20, "kanban.agent.turn.delta", {
+    backend: "codex",
+    provider: "codex",
+    project_id: "proj-a",
+    conversation_id: "kanban:proj-a",
+    turn_id: "turn-x",
+    content: "streamed",
+  }),
+], claudeScope);
+assert(
+  codexDeltaUnderClaudeSelector.length === 1,
+  `codex live delta must fold under a claude selector (backend advisory), got ${codexDeltaUnderClaudeSelector.length}`,
+);
+
 console.log("kanbanSessionEvents.test.ts OK");

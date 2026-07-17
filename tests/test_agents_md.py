@@ -215,11 +215,26 @@ class TestRenderCanonicalBlock:
         assert "worker.heartbeat" in out
         assert "Inline-override audit" in out
 
-    def test_references_actual_commits(self):
+    def test_event_channel_is_operational_not_truth_model(self):
         out = render_canonical_block()
-        # Document trail: explicitly cite the commits that landed these
-        assert "c118146" in out  # ZF-TR-NESTED-GUARD-001
-        assert "96585b" in out  # ZF-LH-INLINE-001
+        assert "zf emit <event-type> --task <task_id>" in out
+        assert "single source of truth" not in out
+        assert "those are Layer 1 projections" not in out
+
+    def test_scope_guard_blocks_non_worker_emission(self):
+        out = render_canonical_block()
+        assert "Scope guard" in out
+        assert "ordinary interactive development" in out
+        assert "do not emit task/workflow events" in out
+
+    def test_references_stable_symbols_not_lines_or_commits(self):
+        out = render_canonical_block()
+        assert "injection.py::generate_task_briefing" in out
+        assert "injection.py::_render_recursion_guard" in out
+        assert "inline_overrides.py::scan_inline_overrides" in out
+        assert "injection.py:452" not in out
+        assert "injection.py:593-642" not in out
+        assert "commit `" not in out
 
     def test_deterministic(self):
         a = render_canonical_block()

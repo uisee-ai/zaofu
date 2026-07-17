@@ -67,6 +67,87 @@ def test_no_blackout_without_dispatch_or_idle_run(tmp_path: Path) -> None:
         event_log=log, event_writer=writer, state_dir=state_dir,
         state=TickServiceState(), intervals=TickServiceIntervals(),
     ) is False
+
+
+def test_ship_completed_closes_cost_blackout_for_its_run(tmp_path: Path) -> None:
+    state_dir, log, writer = _env(tmp_path)
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        ts=_ts(300),
+        task_id="T-A",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="ship.completed",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+
+    assert _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=TickServiceState(),
+        intervals=TickServiceIntervals(),
+    ) is False
+
+
+def test_cost_blackout_scopes_usage_to_the_active_run(tmp_path: Path) -> None:
+    state_dir, log, writer = _env(tmp_path)
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        ts=_ts(300),
+        task_id="T-A",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="agent.usage",
+        ts=_ts(10),
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="ship.completed",
+        correlation_id="run-a",
+        payload={"run_id": "run-a"},
+    ))
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-b",
+        payload={"run_id": "run-b"},
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        ts=_ts(300),
+        task_id="T-B",
+        correlation_id="run-b",
+        payload={"run_id": "run-b"},
+    ))
+
+    assert _emit_cost_blackout_if_needed(
+        event_log=log,
+        event_writer=writer,
+        state_dir=state_dir,
+        state=TickServiceState(),
+        intervals=TickServiceIntervals(),
+    ) is True
+    blackout = [
+        event for event in log.read_all()
+        if event.type == "cost.usage.blackout"
+    ][-1]
+    assert blackout.payload["run_id"] == "run-b"
     # 派发已冷(run 空闲期)
     log.append(ZfEvent(type="task.dispatched", ts=_ts(7200), task_id="T", payload={}))
     assert _emit_cost_blackout_if_needed(

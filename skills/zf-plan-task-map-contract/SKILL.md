@@ -1,15 +1,23 @@
 ---
 name: zf-plan-task-map-contract
 description: "Use in ZaoFu plan/task-map synthesis roles. Defines the fixed machine contract that downstream writer fanout, Kanban, verify, and judge stages consume. Customer/domain skills may be added, but they do not replace this contract."
-stages: [plan, replan]
+stages: [plan, replan, scan, triage]
 tags: [contract, task-map, artifact]
-auto_inject: true
-load_on_demand: false
+auto_inject: false
+load_on_demand: true
 ---
 
 # ZaoFu Plan Task-Map Contract
 
 Absorbs `zf-decision-map-replan`.
+
+This is an on-demand machine-contract reference for
+`zf-yoke-planner-role-context`, not a second always-active planning method.
+Read it immediately before writing a task map. The current briefing's output
+path, compiled schema education, and admission diagnostics are authoritative;
+do not copy an older example when they differ. Runtime owns schema/admission,
+while the planner owns task meaning, slicing, acceptance, dependencies, and
+source traceability.
 
 ## Product Boundary
 
@@ -154,6 +162,15 @@ subdirectory's package scaffold (for example `app/pyproject.toml`) as the
 project scaffold owner and list it in both `allowed_paths` and
 `shared_conventions.packaging_file`.
 
+Do not make a scaffold task own or verify a placeholder file (`.gitkeep`,
+`.keep`, `.placeholder`) below a subtree owned by another task such as
+`app/static/**`. The admission layer delegates that placeholder to the subtree
+owner to avoid overlapping writers. Therefore the scaffold task must not cite
+the delegated file in its acceptance criteria or verification commands. Usually
+the correct plan is to omit the placeholder entirely because the subtree owner
+will create real files; if the placeholder is itself a required deliverable,
+assign it and its acceptance check to that same subtree owner.
+
 `evidence_contract` must be a JSON object (dict), never a list. The kernel
 contract layer only accepts dict values — `contract.update` ignores a non-dict
 `evidence_contract`, the minting path replaces a non-dict with `{}`, and the
@@ -235,16 +252,12 @@ parallel-bundle heuristic:
   or coarsen the work into one serial bundle. Never emit a parallel map plus
   an assembly task while the contract remains `none`, because that creates an
   owner collision/self-lock.
-- Existing-project / 局部 refactor of an already imported project: declare
-  `refactor_contract.workspace_root_owner_required: false` (or a top-level
-  `workspace_root_owner_required: false` on the task map) to skip the
-  workspace-root-owner heuristic, so no task is forced to own root scaffolding
-  (`pyproject.toml` / `setup.py` / `setup.cfg` / `requirements.txt` /
-  `uv.lock` / `poetry.lock` / `Pipfile`, plus the JS scaffolding markers).
-  `refactor_contract.assembly_policy: "none"` implies the same skip. This is
-  the path for refactoring an imported project whose root scaffold already
-  exists; skipping root-owner does NOT relax task schema, path, or evidence
-  validation.
+- Root scaffold ownership is an explicit task-map fact. Set
+  `refactor_contract.workspace_root_owner_required: true` (or a top-level
+  `workspace_root_owner_required: true`) only when this delivery must change
+  or validate a root-level scaffold/entrypoint, and assign that root path to a
+  task. Omit it or set `false` for an imported-project/local patch. This does
+  not relax task schema, path, evidence, or multi-bundle assembly validation.
 - Do not emit success when a declared workflow assembly task is missing. Emit
   the configured failure event with the missing id and the proposed fix.
 

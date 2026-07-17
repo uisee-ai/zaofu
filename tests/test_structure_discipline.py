@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parent.parent
-_DESIGN = _REPO / "docs" / "manual"
+_DESIGN = _REPO / "docs" / "design"
 _SRC = _REPO / "src" / "zf"
 _SOURCE_FILE_SOFT_LIMIT = 1000
 
@@ -49,10 +49,9 @@ def test_00_index_links_resolve_to_existing_files():
 
 
 def test_design_doc_numbering_has_no_duplicates():
-    seen: dict[tuple[str, str], list[str]] = {}
+    seen: dict[str, list[str]] = {}
     for path in _DESIGN.glob("[0-9][0-9]-*.md"):
-        locale = "en" if path.name.endswith(".en.md") else "default"
-        seen.setdefault((path.name[:2], locale), []).append(path.name)
+        seen.setdefault(path.name[:2], []).append(path.name)
     dupes = {num: names for num, names in seen.items() if len(names) > 1}
     assert not dupes, f"duplicate design-doc numbers: {dupes}"
 
@@ -156,7 +155,7 @@ _OVERSIZED_FILE_CAPS = {
     # Reconciliation 2026-07-03: doc-125 web-wizard + R6 GZip/ETag (+29) + prior
     # projection-seam merges pushed to 9052 past the frozen 8100. Freeze at clean
     # dev size; next server route must land in a projections/* sibling.
-    "src/zf/web/server.py": 9307,
+    "src/zf/web/server.py": 9308,
     # P3 (2026-06-12): 49 fanout/synth coordination methods moved to
     # FanoutCoordinationMixin (orchestrator_fanout.py); both files
     # frozen at new size +10% — the mixin is born oversized and is
@@ -337,7 +336,10 @@ _OVERSIZED_FILE_CAPS = {
     # Full-suite reconciliation 2026-06-26: controlled-action runtime already
     # reached 497 in dev/HEAD before this branch's commit. Freeze here; next
     # action-domain growth must move into a domain sibling module.
-    "src/zf/runtime/control_actions.py": 560,
+    # +17 (2026-07-15): execute() emits kanban.agent.proposal.resolved after any
+    # successful proposal action so its Triage card clears — an inline guard on
+    # the central dispatch's own result, not a new action, so it stays here.
+    "src/zf/runtime/control_actions.py": 577,
     "src/zf/runtime/orchestrator_lifecycle.py": 2750,
     # Frontend freeze (2026-06-12): the two web monoliths had no size
     # gate at all (doc 44 "web 没人 review"); after the server.py split
@@ -372,7 +374,10 @@ _OVERSIZED_FILE_CAPS = {
     # -83 (2026-07-11, operator 决定移除 New Task 手工建任务:按钮×2/命令面板
     # 入口/NewTaskModal/draft 持久化/createTaskFromDraft 全链删除)。缩水即
     # 收紧:cap 3652→3579(新尺寸 +10)。
-    "web/src/app/App.tsx": 3579,
+    # +1 (2026-07-16 channel live-stream fix): single `events={events}` prop
+    # pass-through to ChannelRoute — the fold logic itself lives in
+    # channelLiveStream.ts / ChannelPage.tsx, only the wiring line lands here.
+    "web/src/app/App.tsx": 3580,
     # P2 phase 1 (2026-06-12): split into web/src/styles/ ordered chunks
     # (bundle byte-identical); styles.css is now an @import manifest.
     "web/src/styles.css": 200,
@@ -535,20 +540,28 @@ def test_unknown_oversized_source_files_are_not_silent_debt():
 #     runtime (`getattr(self, name, None) -> continue`), so a typo'd
 #     registration would silently never fire.
 
-_REACTOR_GLOB = "runtime/orchestrator*.py"
+_REACTOR_SOURCES = (
+    "runtime/orchestrator*.py",
+    "runtime/durable_call*.py",
+)
 
 
 def _orchestrator_sources() -> str:
+    paths = {
+        path
+        for pattern in _REACTOR_SOURCES
+        for path in _SRC.glob(pattern)
+    }
     return "\n".join(
-        p.read_text(encoding="utf-8", errors="replace")
-        for p in sorted(_SRC.glob(_REACTOR_GLOB))
+        path.read_text(encoding="utf-8", errors="replace")
+        for path in sorted(paths)
     )
 
 
 def test_reactor_handlers_are_registered_or_referenced():
     text = _orchestrator_sources()
     defined = set(re.findall(r"^    def (_on_[a-z0-9_]+)\(", text, re.M))
-    assert defined, "expected _on_* reactor handlers in orchestrator*.py"
+    assert defined, "expected _on_* reactor handlers in reactor mixin sources"
     table = set(re.findall(r'"(_on_[a-z0-9_]+)"', text))
     dead = sorted(
         name

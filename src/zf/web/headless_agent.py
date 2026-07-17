@@ -24,13 +24,10 @@ from typing import Any, Callable, Iterator, Protocol
 
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import FileLock
-from zf.web.agent_session_runtime import (
-    agent_session_process,
-    agent_session_run_cancelled,
-    run_key,
+from zf.runtime.channel_contracts import (
+    normalize_permission_profile,
+    permission_profile_write_policy,
 )
-
-logger = logging.getLogger(__name__)
 from zf.runtime.provider_permissions import (
     build_provider_permission_snapshot,
     claude_permission_mode_for_profile,
@@ -38,13 +35,19 @@ from zf.runtime.provider_permissions import (
     provider_permission_drift,
     snapshot_with_provider_session,
 )
-from zf.runtime.channel_contracts import (
-    normalize_permission_profile,
-    permission_profile_write_policy,
+from zf.web.agent_session_runtime import (
+    agent_session_process,
+    agent_session_run_cancelled,
+    run_key,
 )
+
+logger = logging.getLogger(__name__)
 
 
 SessionCallback = Callable[[str], None]
+
+DEFAULT_KANBAN_AGENT_HEADLESS_IDLE_TIMEOUT_S = 30 * 60.0
+DEFAULT_CODEX_HEADLESS_TOOL_TIMEOUT_S = 2 * 60 * 60.0
 
 
 @dataclass(frozen=True)
@@ -600,10 +603,29 @@ def _codex_reasoning_config(thinking_level: str) -> dict[str, Any]:
 class CodexHeadlessBackend:
     backend_id = "codex-headless"
 
-    def __init__(self, *, command: str | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        command: str | None = None,
+        tool_timeout_s: float | None = None,
+    ) -> None:
         self.command = command or os.environ.get(
             "ZF_KANBAN_AGENT_CODEX_HEADLESS_CMD",
             os.environ.get("ZF_KANBAN_AGENT_CODEX_CMD", "codex"),
+        )
+        if tool_timeout_s is None:
+            raw_tool_timeout = os.environ.get(
+                "ZF_CODEX_HEADLESS_TOOL_TIMEOUT_S",
+                str(DEFAULT_CODEX_HEADLESS_TOOL_TIMEOUT_S),
+            )
+            try:
+                tool_timeout_s = float(raw_tool_timeout)
+            except (TypeError, ValueError):
+                tool_timeout_s = DEFAULT_CODEX_HEADLESS_TOOL_TIMEOUT_S
+        self.tool_timeout_s = (
+            tool_timeout_s
+            if tool_timeout_s > 0
+            else DEFAULT_CODEX_HEADLESS_TOOL_TIMEOUT_S
         )
 
     def available(self) -> bool:
@@ -656,6 +678,7 @@ class CodexHeadlessBackend:
             args,
             cwd=cwd,
             timeout_s=timeout_s,
+            tool_timeout_s=self.tool_timeout_s,
             permission_profile=permission_profile,
         )
         resumed = bool(provider_session_id)
@@ -782,7 +805,10 @@ class KanbanHeadlessAgent:
             "claude-headless": ClaudeHeadlessBackend(),
             "codex-headless": CodexHeadlessBackend(),
         }
-        self.timeout_s = timeout_s or float(os.environ.get("ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S", "120"))
+        self.timeout_s = timeout_s or float(os.environ.get(
+            "ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S",
+            str(DEFAULT_KANBAN_AGENT_HEADLESS_IDLE_TIMEOUT_S),
+        ))
 
     def run_turn(
         self,
@@ -1305,6 +1331,14 @@ def _stream_claude_process(
                 break
             continue
         accumulator.observe_line(line)
+        # A2-1: idle-timeout semantics (parity with the codex app-server path,
+        # _await_turn). A create-task turn spends its first minutes grounding a
+        # contract via many tool-call/stream frames before the first proposal;
+        # a wall-clock cap killed that actively-streaming turn at timeout_s and
+        # returned status:failed with zero proposal. Reset the deadline on each
+        # observed frame so only true silence (no output for timeout_s) trips
+        # the timeout. Runaway protection stays with --max-turns, not here.
+        deadline = time.monotonic() + timeout_s
 
     if timed_out and process.poll() is None:
         process.kill()
@@ -1336,11 +1370,13 @@ class _CodexRpcClient:
         *,
         cwd: Path,
         timeout_s: float,
+        tool_timeout_s: float,
         permission_profile: str = "read_only",
     ) -> None:
         self.args = args
         self.cwd = cwd
         self.timeout_s = timeout_s
+        self.tool_timeout_s = tool_timeout_s
         self.permission_profile = normalize_permission_profile(permission_profile)
         self.write_policy = permission_profile_write_policy(self.permission_profile)
         self.process: subprocess.Popen[str] | None = None
@@ -1351,6 +1387,7 @@ class _CodexRpcClient:
         self._usage: dict[str, Any] = {}
         self._stderr_parts: list[str] = []
         self.thread_id = ""
+        self._in_flight_tools = 0
 
     def start(self) -> None:
         self.process = subprocess.Popen(
@@ -1404,7 +1441,8 @@ class _CodexRpcClient:
         self._write({"jsonrpc": "2.0", "method": method})
 
     def wait_turn(self, *, on_message: MessageCallback | None = None) -> tuple[str, dict[str, Any]]:
-        deadline = time.monotonic() + self.timeout_s
+        timeout_budget_s = self._inactivity_timeout_s()
+        deadline = time.monotonic() + timeout_budget_s
         while True:
             item = self._get_until(deadline)
             if item is None:
@@ -1412,12 +1450,15 @@ class _CodexRpcClient:
                 if time.monotonic() >= deadline:
                     break
                 continue
-            deadline = time.monotonic() + self.timeout_s
             method = str(item.get("method") or "")
             if "id" in item and method:
                 self._handle_server_request(item)
+                timeout_budget_s = self._inactivity_timeout_s()
+                deadline = time.monotonic() + timeout_budget_s
                 continue
             message = self._handle_notification(item)
+            timeout_budget_s = self._inactivity_timeout_s()
+            deadline = time.monotonic() + timeout_budget_s
             if message is not None and on_message is not None:
                 on_message(message)
             if method.endswith("turn/completed") or method == "turn/completed":
@@ -1425,7 +1466,17 @@ class _CodexRpcClient:
                 reply = self._completed_reply or "".join(part for part in self._reply_parts if part)
                 return reply.strip(), self._usage
         stderr = _codex_stderr_tail(self._stderr_parts)
-        raise RuntimeError(_codex_timeout_error("turn", timeout_s=self.timeout_s, stderr=stderr, idle=True))
+        raise RuntimeError(_codex_timeout_error(
+            "turn",
+            timeout_s=timeout_budget_s,
+            stderr=stderr,
+            idle=True,
+        ))
+
+    def _inactivity_timeout_s(self) -> float:
+        if self._in_flight_tools > 0:
+            return self.tool_timeout_s
+        return self.timeout_s
 
     def _write(self, payload: dict[str, Any]) -> None:
         process = self.process
@@ -1500,10 +1551,13 @@ class _CodexRpcClient:
         if method.endswith("item/started"):
             message = _codex_item_message(item, message_type="tool_use")
             if message is not None:
+                self._in_flight_tools += 1
                 return message
         if method.endswith("item/completed"):
             message = _codex_item_message(item, message_type="tool_result")
             if message is not None:
+                if message.type == "tool_result":
+                    self._in_flight_tools = max(0, self._in_flight_tools - 1)
                 return message
         if method.endswith("item/completed"):
             item = params.get("item")
@@ -1524,6 +1578,10 @@ class _CodexRpcClient:
         if method.endswith("item/toolCall/started") or method.endswith("item/toolCall/completed"):
             item_payload = params.get("item") if isinstance(params.get("item"), dict) else params
             if isinstance(item_payload, dict):
+                if method.endswith("started"):
+                    self._in_flight_tools += 1
+                else:
+                    self._in_flight_tools = max(0, self._in_flight_tools - 1)
                 return HeadlessMessage(
                     type="tool_use" if method.endswith("started") else "tool_result",
                     tool=str(item_payload.get("name") or item_payload.get("tool") or ""),

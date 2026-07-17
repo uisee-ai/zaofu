@@ -190,7 +190,13 @@ def run_emit(args: argparse.Namespace) -> int:
     written = event_writer.append(event)
     event_log.close()
     _apply_emit_side_effect(state_dir, written)
-    print(f"Emitted: {event.type} ({event.id})")
+    print(f"Emitted: {written.type} ({written.id})")
+    if written.type == "discriminator.failed" and written.id != event.id:
+        print(
+            f"Blocked: {event.type} ({event.id}) violated the event schema",
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 

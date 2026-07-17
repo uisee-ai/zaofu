@@ -59,6 +59,16 @@ def unclaimed_warnings(
 
     幂等留给调用方(同 task 已有 warning 事件则不重发)。
     """
+    # A workflow invoke bootstrap task is a kernel-owned fanout anchor, not a
+    # worker-owned unit of work.  Its children carry the actual dispatches;
+    # warning on the anchor creates a false SLA escalation for healthy runs.
+    from zf.runtime.workflow_anchor import is_workflow_fanout_anchor_task
+
+    ordinary_task_ids = {
+        str(getattr(task, "id", "") or "")
+        for task in tasks
+        if not is_workflow_fanout_anchor_task(task)
+    }
     created_at: dict[str, float] = {}
     claimed: set[str] = set()
     warned: set[str] = set()
@@ -84,7 +94,8 @@ def unclaimed_warnings(
     open_ids = {
         str(getattr(t, "id", "") or "")
         for t in tasks
-        if str(getattr(t, "status", "") or "") not in
+        if str(getattr(t, "id", "") or "") in ordinary_task_ids
+        and str(getattr(t, "status", "") or "") not in
         ("done", "cancelled", "superseded", "blocked")
     }
     out: list[dict[str, Any]] = []

@@ -12,6 +12,7 @@ from zf.core.config.schema import ProjectConfig, RoleConfig, SkillSourceConfig, 
 from zf.core.skills import (
     build_skill_lock_entries,
     materialize_role_skills,
+    read_skill_metadata,
     upsert_skills_lockfile,
     validate_skill_sources,
 )
@@ -215,6 +216,31 @@ def test_invalid_skill_frontmatter_is_reported(tmp_path: Path):
     assert entries[0].status == "invalid"
     assert any("does not match" in w for w in warnings)
     assert any("description" in w for w in warnings)
+
+
+def test_prod_verify_and_judge_skill_activation_boundaries():
+    root = Path(__file__).resolve().parents[1] / "skills"
+    judge = read_skill_metadata(
+        root / "zf-goal-closure-judge-contract" / "SKILL.md",
+        expected_name="zf-goal-closure-judge-contract",
+    )
+    evaluator = read_skill_metadata(
+        root / "zf-yoke-test-evaluator-role-context" / "SKILL.md",
+        expected_name="zf-yoke-test-evaluator-role-context",
+    )
+    replan = read_skill_metadata(
+        root / "zf-goal-closure-replan-contract" / "SKILL.md",
+        expected_name="zf-goal-closure-replan-contract",
+    )
+
+    assert judge.auto_inject is True
+    assert judge.load_on_demand is False
+    assert evaluator.dependencies == (
+        "verify-review",
+        "zf-harness-verification-checklist",
+        "zf-mechanical-claim-verifier",
+    )
+    assert replan.dependencies == ("zf-verify-gap-producer-contract",)
 
 
 def test_skill_hash_changes_are_detected(tmp_path: Path):

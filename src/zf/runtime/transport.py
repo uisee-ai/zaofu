@@ -14,6 +14,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
 import shlex
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -158,6 +159,13 @@ class TmuxTransport(TransportAdapter):
         "ZF_STATE_DIR",
         "ZF_CLI_CMD",
     )
+    # A tmux pane starts as a shell and only then execs the provider command.
+    # Rejecting that short handoff window turns a healthy respawn into a false
+    # failure; accepting a stable shell turns a failed provider launch into a
+    # false success. Keep the observation window deliberately short and
+    # bounded by the caller's full readiness timeout.
+    _AGENT_LAUNCH_GRACE_SECONDS = 3.0
+    _READY_POLL_INTERVAL_SECONDS = 0.1
 
     def __init__(self, tmux: TmuxSession) -> None:
         self.tmux = tmux
@@ -363,7 +371,50 @@ class TmuxTransport(TransportAdapter):
         return self._agent_process_alive(role_name)
 
     def wait_ready(self, role_name: str, pattern: str, timeout: float) -> bool:
-        return self.tmux.wait_for_prompt(role_name, pattern, timeout=timeout)
+        """Wait for a provider prompt without accepting a shell false-positive.
+
+        Immediately after ``send-keys`` launches a role, tmux still reports
+        ``bash`` for a brief handoff period.  The old implementation returned
+        false on that first sample, even though Claude entered its TUI a few
+        hundred milliseconds later.  Conversely, a provider that exits back
+        to bash must never be accepted merely because old prompt text remains
+        in the pane scrollback.
+        """
+        deadline = time.monotonic() + max(0.0, timeout)
+        launch_grace_deadline = min(
+            deadline,
+            time.monotonic() + self._AGENT_LAUNCH_GRACE_SECONDS,
+        )
+        provider_seen = False
+
+        while time.monotonic() < deadline:
+            if self._agent_process_alive(role_name):
+                provider_seen = True
+                remaining = max(0.0, deadline - time.monotonic())
+                if remaining <= 0:
+                    return False
+                if self.tmux.wait_for_prompt(
+                    role_name,
+                    pattern,
+                    timeout=min(self._READY_POLL_INTERVAL_SECONDS, remaining),
+                ):
+                    # Re-check after the prompt match: scrollback can retain a
+                    # stale provider prompt after the process has exited.
+                    return self._agent_process_alive(role_name)
+            else:
+                # Once a real provider was observed, falling back to a shell is
+                # terminal for this spawn. Before that, allow a bounded exec
+                # handoff from bash to the provider process.
+                if provider_seen or not self.tmux.pane_alive(role_name):
+                    return False
+                if time.monotonic() >= launch_grace_deadline:
+                    return False
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(self._READY_POLL_INTERVAL_SECONDS, remaining))
+        return False
 
     def send_task(
         self,

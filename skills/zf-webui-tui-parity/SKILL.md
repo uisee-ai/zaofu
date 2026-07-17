@@ -1,6 +1,8 @@
 ---
 name: zf-webui-tui-parity
 description: "Web chat, dashboard, SSE, session, and TUI parity checks for agent refactors. Use when a replacement agent must preserve source UI workflows, interactive chat behavior, run dashboards, and terminal UI controls."
+stages: [impl, verify]
+tags: [parity, "parity:webui", "parity:tui"]
 ---
 
 # Web UI And TUI Parity

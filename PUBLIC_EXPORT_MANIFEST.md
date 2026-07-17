@@ -1,7 +1,7 @@
 # ZaoFu Public Export Manifest
 
-- Source ref: `d8f71269c50447daa78ce77a3a6086b3828e4b04`
-- Generated UTC: `2026-07-13T04:40:43Z`
+- Source ref: `ede464a9a28befe702fff0f5ff7d4d40fc6c5acf`
+- Generated UTC: `2026-07-17T00:02:35Z`
 
 ## Included
 
@@ -9,6 +9,7 @@
 - `README.zh-CN.md`
 - `LICENSE`
 - `DISCLAIMER.md`
+- `assets/readme`
 - `.python-version`
 - `pyproject.toml`
 - `uv.lock`
@@ -19,7 +20,6 @@
 - `tools`
 - `scripts`
 - `skills`
-- `yoke`
 - `channel_roles`
 - `docs/manual`
 

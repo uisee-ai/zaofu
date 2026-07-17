@@ -30,6 +30,9 @@ _WAKE_EVENT_TYPES = frozenset({
     "user.intent.submitted",
     "runtime.resume.requested",
     "runtime.attention.acknowledged",
+    # 操作员对 escalation 的决议(approve/dismiss)本身就是"操作员动作"
+    # (ZF-REVIEW-141-QW:07-16 实弹里 dismiss 落盘后 run 仍冬眠)
+    "human.escalation.acknowledged",
     "run.goal.updated",
     "dispatch.resumed",
     "loop.resume_requested",

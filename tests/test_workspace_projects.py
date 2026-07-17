@@ -280,6 +280,60 @@ def test_workspace_overview_marks_duplicate_explicit_tmux_session_conflict(
     assert by_id[project_a.project_id]["runtime"]["tmux_session"] == "shared-zf"
 
 
+def test_workspace_host_actions_require_web_authorization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_home = tmp_path / "workspace-home"
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(workspace_home))
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    root = tmp_path / "project"
+    state_dir = _make_project(root, name="alpha")
+    client = TestClient(
+        create_app(state_dir, config=load_config(root / "zf.yaml"), project_root=root)
+    )
+    project_id = client.get("/api/workspace/projects").json()["server_default_project_id"]
+
+    assert client.get(
+        "/api/workspace/bootstrap/inspect",
+        params={"root": str(root)},
+    ).status_code == 403
+    assert client.post(
+        "/api/workspace/projects/validate-path",
+        json={"root": str(root)},
+    ).status_code == 403
+    assert client.post(
+        "/api/workspace/onboarding",
+        json={"action": "step", "step": 2},
+    ).status_code == 403
+    assert client.post(
+        f"/api/workspace/projects/{project_id}/touch",
+    ).status_code == 403
+    assert not (workspace_home / "onboarding.json").exists()
+
+    headers = {"x-zf-web-token": "test-token"}
+    assert client.get(
+        "/api/workspace/bootstrap/inspect",
+        params={"root": str(root)},
+        headers=headers,
+    ).status_code == 200
+    assert client.post(
+        "/api/workspace/projects/validate-path",
+        headers=headers,
+        json={"root": str(root)},
+    ).status_code == 200
+    assert client.post(
+        "/api/workspace/onboarding",
+        headers=headers,
+        json={"action": "step", "step": 2},
+    ).status_code == 200
+    assert (workspace_home / "onboarding.json").exists()
+    assert client.post(
+        f"/api/workspace/projects/{project_id}/touch",
+        headers=headers,
+    ).status_code == 200
+
+
 def test_workspace_project_wizard_endpoints_register_and_initialize(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -293,6 +347,7 @@ def test_workspace_project_wizard_endpoints_register_and_initialize(
 
     valid = client.post(
         "/api/workspace/projects/validate-path",
+        headers={"x-zf-web-token": "test-token"},
         json={"root": str(root_a)},
     )
     assert valid.status_code == 200
@@ -587,6 +642,7 @@ def test_web_workspace_active_project_always_prefers_server_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace-home"))
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
     root_a = tmp_path / "project-a"
     root_b = tmp_path / "project-b"
     state_a = _make_project(root_a, name="alpha")
@@ -603,7 +659,10 @@ def test_web_workspace_active_project_always_prefers_server_default(
     assert projects["active_project_id"] == project_a.project_id
     assert projects["active_project_is_server_default"] is True
 
-    touched = client.post(f"/api/workspace/projects/{project_b.project_id}/touch")
+    touched = client.post(
+        f"/api/workspace/projects/{project_b.project_id}/touch",
+        headers={"x-zf-web-token": "test-token"},
+    )
     assert touched.status_code == 200
     projects_after_touch = client.get("/api/workspace/projects").json()
     # chat-e2e F1 (262339bf): last_opened_at 是全局 registry 状态,另一 server
@@ -670,7 +729,10 @@ def test_workspace_touch_remove_and_project_scoped_resource_routes(
     app = create_app(state_a, config=load_config(root_a / "zf.yaml"), project_root=root_a)
     client = TestClient(app)
 
-    touched = client.post(f"/api/workspace/projects/{project_b.project_id}/touch")
+    touched = client.post(
+        f"/api/workspace/projects/{project_b.project_id}/touch",
+        headers={"x-zf-web-token": "test-token"},
+    )
     assert touched.status_code == 200
     assert touched.json()["project"]["last_opened_at"]
 

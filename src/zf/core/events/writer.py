@@ -27,6 +27,20 @@ _SCHEMA_META_EVENT_TYPES = frozenset({
     "discriminator.failed",
 })
 
+_BLOCKED_EVENT_IDENTITY_KEYS = (
+    "workflow_run_id",
+    "run_id",
+    "trace_id",
+    "fanout_id",
+    "child_id",
+    "lane_id",
+    "stage_id",
+    "stage_slot",
+    "attempt_id",
+    "task_map_generation",
+    "contract_revision",
+)
+
 
 class EventWriter:
     """Thin append boundary over EventLog.
@@ -135,6 +149,12 @@ class EventWriter:
         Used in blocking mode. The original event is not written to the log
         — its payload is preserved in the discriminator.failed payload so
         operators can reconstruct what the worker tried to emit."""
+        blocked_payload = event.payload if isinstance(event.payload, dict) else {}
+        identity = {
+            key: blocked_payload[key]
+            for key in _BLOCKED_EVENT_IDENTITY_KEYS
+            if key in blocked_payload
+        }
         failure = ZfEvent(
             type="discriminator.failed",
             actor="zf-cli",
@@ -142,9 +162,11 @@ class EventWriter:
             causation_id=event.causation_id,
             correlation_id=event.correlation_id,
             payload={
+                **identity,
                 "failed_d": ["EventSchemaD"],
+                "blocked_event_id": event.id,
                 "blocked_event_type": event.type,
-                "blocked_event_payload": event.payload,
+                "blocked_event_payload": blocked_payload,
                 "violations": [asdict(v) for v in violations],
                 "mode": "blocking",
             },

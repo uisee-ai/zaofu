@@ -535,6 +535,10 @@ def test_stage_backedge_attempt_exhausted_uses_backedge_cap(
     assert capped.payload["max_attempts_source"] == "workflow_stage_backedge"
     assert capped.payload["trigger_event_type"] == "verify.failed"
     assert "integration contract still fails" in capped.payload["last_reason"]
+    assert capped.payload["failure_class"] == "product_rejection"
+    assert capped.payload["recovery_scope"] == "task"
+    assert capped.payload["contract_revision"] == "legacy"
+    assert capped.payload["recovery_owner"] == "run_manager"
     assert not any(event.type == "task.rework.requested" for event in events)
     assert not any(event.type == "impl.rework.requested" for event in events)
     assert not (state_dir / "artifacts" / "rework-feedback" / "T-CAP").exists()

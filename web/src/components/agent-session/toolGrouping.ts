@@ -10,7 +10,10 @@
 
 import type { AgentSessionPart, AgentSessionStatus } from "./types";
 
-export const STREAMING_TAIL = 3;
+// stream-ux axis 3: one line of current activity — the most recent tool call
+// stays visible while earlier ones fold immediately, paired with the live
+// tool-call counter in ToolStepsSegment.
+export const STREAMING_TAIL = 1;
 
 const TOOL_KINDS = new Set(["tool", "tool_call", "tool_result", "command", "test_result", "file_read", "file_change"]);
 
@@ -60,6 +63,8 @@ export interface ToolRunSegment {
   grouped: AgentSessionPart[];
   standalone: AgentSessionPart[];
   total: number;
+  /** True for the live-streaming trailing run — drives the live counter. */
+  live: boolean;
 }
 export interface PartSegment {
   kind: "part";
@@ -85,8 +90,9 @@ export function segmentRunParts(
       while (i < parts.length && isToolPart(parts[i]!)) i += 1;
       const run = parts.slice(runStart, i);
       i -= 1;
-      const { grouped, standalone } = partitionToolRun(run, runStart === streamingRunStart);
-      segments.push({ kind: "tools", grouped, standalone, total: run.length });
+      const live = runStart === streamingRunStart;
+      const { grouped, standalone } = partitionToolRun(run, live);
+      segments.push({ kind: "tools", grouped, standalone, total: run.length, live });
       continue;
     }
     segments.push({ kind: "part", part: parts[i]! });

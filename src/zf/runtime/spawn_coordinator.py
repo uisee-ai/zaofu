@@ -48,6 +48,9 @@ if TYPE_CHECKING:
     from zf.core.events.log import EventLog
 
 
+_MAX_FRESH_CLAUDE_SESSION_CANDIDATES = 8
+
+
 class SpawnCoordinator:
     def __init__(
         self,
@@ -225,19 +228,14 @@ class SpawnCoordinator:
             if cwd is not None
             else Path(self.project_root).resolve()
         )
-        # DID-6 (2026-06-19 e2e): a fresh claude ``--session-id`` spawn whose
-        # deterministic id is still held by a live process (a prior dispatch of
-        # this same instance still tearing down — e.g. a drifted dev-core being
-        # respawned) aborts with "Session ID is already in use" and the watchdog
-        # respawn loops. Purge the stale ~/.claude.json / jsonl lock; if a live
-        # process still owns the uuid (so purge fail-closed, correctly not
-        # stealing a running session), rotate to a fresh id so the respawn
-        # proceeds. build_command below bakes the resolved id into argv. tmux
-        # analog of the stream-json transport rotate-on-collision fix.
+        # DID-6 (2026-06-19 e2e): a fresh Claude ``--session-id`` spawn whose
+        # deterministic id is still held by a live process aborts with "Session
+        # ID is already in use".  A single rotation is insufficient because a
+        # prior state_dir for the same project can have left that rotated UUID's
+        # lock behind.  Reserve a usable fresh candidate before baking it into
+        # argv; normal ``--resume`` paths deliberately keep their session.
         if role.backend == "claude-code" and session_id and not is_respawn:
-            self._purge_stale_claude_session(role, session_id)
-            if _uuid_used_by_live_process(session_id):
-                session_id = str(self.registry.rotate(role.instance_id))
+            session_id = self._reserve_fresh_claude_session_id(role, session_id)
         argv = adapter.build_command(
             role,
             session_id=session_id,
@@ -305,7 +303,9 @@ class SpawnCoordinator:
 
     def _apply_runner_policy(self, role: RoleConfig) -> RoleConfig:
         from zf.core.workflow.runner_policy import (
+            apply_goal_closure_judge_policy,
             apply_pure_aggregator_policy,
+            goal_closure_judge_policy_plan,
             pure_aggregator_policy_plan,
         )
 
@@ -316,7 +316,15 @@ class SpawnCoordinator:
         )
         if effective is not role and plan.get("applied"):
             self._emit_policy_applied(role, plan)
-        return effective
+        judge_plan = goal_closure_judge_policy_plan(
+            self.config, effective, state_dir=state_dir,
+        )
+        narrowed = apply_goal_closure_judge_policy(
+            self.config, effective, state_dir=state_dir,
+        )
+        if narrowed is not effective and judge_plan.get("applied"):
+            self._emit_policy_applied(effective, judge_plan)
+        return narrowed
 
     def _emit_policy_applied(self, role: RoleConfig, plan: dict) -> None:
         if self.event_log is None:
@@ -334,8 +342,8 @@ class SpawnCoordinator:
                     "original": dict(plan.get("original") or {}),
                     "effective": dict(plan.get("effective") or {}),
                     "reason": (
-                        "fanout synth role runs as a pure aggregator; "
-                        "runner permissions are narrowed for this spawn"
+                        "read-only workflow role; runner permissions are "
+                        "narrowed for this spawn"
                     ),
                 },
             ))
@@ -439,6 +447,32 @@ class SpawnCoordinator:
             ))
         except Exception:  # noqa: BLE001 — best-effort
             pass
+
+    def _reserve_fresh_claude_session_id(
+        self,
+        role: RoleConfig,
+        session_id: str,
+    ) -> str:
+        """Return a fresh Claude UUID whose stale state has been cleared.
+
+        ``RoleSessionRegistry.rotate`` is deterministic for an instance.  Two
+        independently created state directories for the same project can
+        therefore reach the same rotation number.  Re-checking every rotated
+        candidate prevents a prior run's live process or stale Claude lock from
+        turning a recovery into a shell pane while the kernel reports success.
+        """
+        candidate = session_id
+        for attempt in range(_MAX_FRESH_CLAUDE_SESSION_CANDIDATES):
+            self._purge_stale_claude_session(role, candidate)
+            if not _uuid_used_by_live_process(candidate):
+                return candidate
+            if attempt + 1 < _MAX_FRESH_CLAUDE_SESSION_CANDIDATES:
+                candidate = str(self.registry.rotate(role.instance_id))
+        raise RuntimeError(
+            "unable to reserve a fresh Claude session after "
+            f"{_MAX_FRESH_CLAUDE_SESSION_CANDIDATES} candidates for "
+            f"{role.instance_id}"
+        )
 
     def _prepare_codex_home(
         self,

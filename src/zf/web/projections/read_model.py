@@ -1060,13 +1060,38 @@ def channel_summary(
 ) -> dict[str, Any] | None:
     from zf.runtime.channel_projection import CHANNEL_EVENT_TYPES, project_channels
 
-    ensure_requested(state_dir, config=config)
+    # A4-1: this hydrated + re-projected *every* channel event on each request
+    # (0.45s@28MB, 1.18s@46MB) — even to return None for a project with zero
+    # channels. Materialize the result in projection_cache keyed by the current
+    # projected seq: a request with no new events since the last build returns
+    # the cached payload without touching the event log. A new channel event
+    # advances projected_seq (via ensure_requested/rebuild) and invalidates it.
+    source_seq = current_projected_seq(state_dir, config=config)
+    cache_key = "channel_summary"
+    cached = get_cached_projection(state_dir, cache_key, source_seq=source_seq)
+    if cached is not None:
+        return None if cached.get("_channel_summary_empty") else cached
+
     events = hydrate_events(state_dir, types=sorted(CHANNEL_EVENT_TYPES), config=config)
     if not events:
+        set_cached_projection(
+            state_dir,
+            cache_key,
+            kind="channel_summary",
+            source_seq=source_seq,
+            payload={"_channel_summary_empty": True},
+        )
         return None
     projected = project_channels(state_dir, events=events)
     projected["source"] = "read_model.sqlite"
     projected["projection_state"] = projection_status(state_dir).get("projection_state", "unknown")
+    set_cached_projection(
+        state_dir,
+        cache_key,
+        kind="channel_summary",
+        source_seq=source_seq,
+        payload=projected,
+    )
     return projected
 
 
@@ -1279,9 +1304,17 @@ def _kanban_agent_history_event_matches(
     payload_thread = str(payload.get("thread_key") or payload.get("thread_id") or "").strip() or "main"
     if thread_id and payload_thread != thread_id:
         return False
-    payload_backend = str(payload.get("backend") or payload.get("provider") or "").strip()
-    if backend and payload_backend and _canonical_backend(payload_backend) != _canonical_backend(backend):
-        return False
+    # NOTE (frontend-stress S9/S10 2026-07-15): do NOT exclude by backend.
+    # The kanban-agent conversation is one durable thread per (project, thread_id)
+    # that legitimately spans backends — a user may switch codex<->claude mid
+    # conversation (runbook D4), and a fresh browser session defaults to Claude
+    # even when the existing transcript was produced by Codex. Filtering the
+    # transcript by the currently-selected backend re-introduced the
+    # "fresh/other-backend session sees an empty chat" symptom (cousin of the
+    # e812d7d2 thread-key regression): the durable turns exist but vanished from
+    # the panel. `backend` is retained as an accepted param (advisory) but is no
+    # longer an exclusion filter; thread_id/conversation_id/project_id already
+    # scope the conversation.
     if task_id and event.task_id and event.task_id != task_id:
         return False
     return True
@@ -1414,6 +1447,11 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         "reject_action",
         "resolution",
         "message_id",
+        # kanban.agent.turn.* events link back to their user.message via
+        # message_event_id; dropping it from the slim payload split the
+        # question and the answer into two separate turns in the web timeline
+        # (operator report 2026-07-16).
+        "message_event_id",
         "thread_id",
         "attention_id",
         "fingerprint",

@@ -68,6 +68,18 @@ def test_operator_wake_event_stays_active() -> None:
     assert s.quiescent is False
 
 
+def test_escalation_acknowledged_wakes_run() -> None:
+    # 07-16 实弹:operator dismiss(human.escalation.acknowledged)后 run
+    # 必须退出静默——决议本身就是操作员动作
+    events = [
+        _ev("human.escalate", minutes_ago=30),
+        _ev("human.escalation.acknowledged", minutes_ago=10),
+    ]
+    s = quiescent_now(events, config=_cfg(), now_epoch=_NOW.timestamp())
+    assert s.quiescent is False
+    assert s.reason == "woken"
+
+
 def test_new_escalate_resets_wake() -> None:
     events = [
         _ev("human.escalate", minutes_ago=60),
@@ -136,3 +148,34 @@ def test_tick_services_gate_returns_empty_when_quiescent(tmp_path: Path) -> None
     assert result.supervisor_inspection is False
     entered = [e for e in log.read_all() if e.type == QUIESCENT_ENTERED_EVENT]
     assert len(entered) == 1
+
+
+def test_tick_services_gate_skips_during_shutdown_drain(tmp_path: Path) -> None:
+    # ZF-STOP-TAIL-01:停机排空窗内探针/RM 立案全体跳过(07-16 实弹:
+    # 拖尾 5 分钟里一秒 8 连发 autoresearch 立案)。
+    from zf.runtime.tick_services import (
+        TickServiceIntervals,
+        TickServiceState,
+        run_standard_tick_services,
+    )
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "shutdown-requested").write_text("")
+    log = EventLog(state_dir / "events.jsonl")
+    orch = SimpleNamespace(
+        event_log=log,
+        event_writer=EventWriter(log),
+        state_dir=state_dir,
+        config=_cfg(enabled=False),
+        project_root=tmp_path,
+    )
+    result = run_standard_tick_services(
+        orch,
+        state=TickServiceState(),
+        now=0.0,
+        intervals=TickServiceIntervals(),
+    )
+    assert result.heartbeat_sweep is False
+    assert result.supervisor_inspection is False
+    assert log.read_all() == []  # 排空窗零立案零副作用

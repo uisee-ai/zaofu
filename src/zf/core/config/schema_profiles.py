@@ -181,13 +181,333 @@ _CANONICAL_DAG_V3: dict[str, dict[str, Any]] = {
     "judge.child.completed": _READER_CHILD_EVIDENCE,
 }
 
+_VERIFICATION_RESULT_V1_RULE: dict[str, Any] = {
+    "required": [
+        "fanout_id", "child_id", "status", "summary", "evidence_refs",
+        "report", "workflow_run_id", "task_id", "contract_revision",
+        "task_map_generation", "base_commit", "task_ref",
+        "contract_snapshot_ref", "contract_snapshot_digest",
+        "target_snapshot_ref", "target_commit",
+        "target_snapshot_digest", "verification_result",
+    ],
+    "non_empty": [
+        "summary", "workflow_run_id", "task_id", "contract_revision",
+        "task_map_generation", "base_commit", "task_ref",
+        "contract_snapshot_ref", "contract_snapshot_digest",
+        "target_snapshot_ref", "target_commit",
+        "target_snapshot_digest",
+    ],
+    "nested": {
+        "verification_result": {
+            "required": [
+                "schema_version", "execution_status", "verdict",
+                "failure_class", "workflow_run_id", "task_id",
+                "contract_revision", "task_map_generation", "base_commit",
+                "task_ref", "contract_snapshot_ref",
+                "contract_snapshot_digest", "target_snapshot_ref",
+                "target_commit", "target_snapshot_digest",
+                "verification_owner", "verification_tier",
+                "requirement_results",
+            ],
+            "non_empty": [
+                "schema_version", "execution_status", "verdict", "failure_class",
+                "workflow_run_id", "task_id", "contract_revision",
+                "task_map_generation", "base_commit", "task_ref",
+                "contract_snapshot_ref", "contract_snapshot_digest",
+                "target_snapshot_ref", "target_commit", "target_snapshot_digest",
+                "verification_owner", "verification_tier",
+            ],
+            "enum": {
+                "execution_status": ["completed", "failed"],
+                "verdict": ["passed", "rejected", "blocked", "abstained"],
+                "failure_class": [
+                    "none", "product_failure", "dependency_blocked",
+                    "verifier_execution_failure", "verifier_contract_failure",
+                ],
+                "verification_owner": [
+                    "impl_self_check", "task_verify", "candidate_verify", "human",
+                ],
+                "verification_tier": [
+                    "fast", "task_non_smoke", "integration", "real_e2e", "release",
+                ],
+            },
+            "list_item": {
+                "requirement_results": {
+                    "required": [
+                        "acceptance_id", "status", "verification_owner",
+                        "verification_tier", "evidence_refs", "findings",
+                        "reproduction_commands",
+                    ],
+                    "non_empty": [
+                        "acceptance_id", "status", "verification_owner",
+                        "verification_tier",
+                    ],
+                    "enum": {
+                        "status": [
+                            "passed", "failed", "blocked", "waived",
+                            "not_applicable",
+                        ],
+                        "verification_owner": [
+                            "impl_self_check", "task_verify", "candidate_verify", "human",
+                        ],
+                        "verification_tier": [
+                            "fast", "task_non_smoke", "integration", "real_e2e", "release",
+                        ],
+                    },
+                },
+            },
+            "when": {
+                "if": {"execution_status": "completed"},
+                "then": {"non_empty": ["requirement_results"]},
+            },
+        },
+    },
+}
+
+# Explicit opt-in only. v3 remains immutable and keeps accepting legacy report
+# payloads; v4 binds verifier output to one immutable task/target snapshot.
+_CANONICAL_DAG_V4: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V3,
+    "verify.child.completed": _VERIFICATION_RESULT_V1_RULE,
+    "verify.child.failed": _VERIFICATION_RESULT_V1_RULE,
+    "review.child.completed": _VERIFICATION_RESULT_V1_RULE,
+    "review.child.failed": _VERIFICATION_RESULT_V1_RULE,
+    "judge.child.completed": _VERIFICATION_RESULT_V1_RULE,
+    "judge.child.failed": _VERIFICATION_RESULT_V1_RULE,
+}
+
+_DURABLE_CALL_RESULT_EVENTS: dict[str, dict[str, Any]] = {
+    "workflow.call.result.reported": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "result_digest", "mode", "adapter_id", "adapter_version",
+        "envelope_ref", "control_result_ref", "source_event_id",
+    ),
+    "workflow.call.result.repair.requested": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "envelope_ref", "control_result_ref", "correction_ref", "issues",
+        "repair_round", "repair_cap", "semantic_attempt_incremented",
+    ),
+    "workflow.call.result.admitted": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "admission_status", "mode", "envelope_ref", "control_result_ref",
+        "control_result_schema", "source_event_id",
+    ),
+    "workflow.call.result.invalid": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "envelope_ref", "control_result_ref", "issues", "repair_round",
+        "repair_cap", "reason", "semantic_attempt_incremented",
+    ),
+    "workflow.operation.requested": _req(
+        "schema_version", "canonicalization_version", "workflow_run_id",
+        "operation_id", "operation_type", "request_hash", "request_ref",
+    ),
+    "workflow.operation.started": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+    ),
+    "workflow.operation.settled": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "admitted_call_result_ref", "reason",
+    ),
+    "workflow.operation.failed": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "reason",
+    ),
+    "workflow.operation.blocked": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "reason",
+    ),
+}
+
+# Explicit opt-in. v4 remains immutable; v5 adds only mechanical call-result
+# and workflow-operation contracts. Product verdict semantics stay in typed
+# sidecars and parent agents rather than this profile.
+_CANONICAL_DAG_V5: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V4,
+    **_DURABLE_CALL_RESULT_EVENTS,
+}
+
+_GOAL_CLOSURE_CHILD_RULE: dict[str, Any] = {
+    "required": [
+        "fanout_id", "child_id", "status", "summary",
+        "workflow_run_id", "operation_id", "request_hash",
+        "task_map_generation", "target_commit",
+        "contract_snapshot_ref", "contract_snapshot_digest",
+        "target_snapshot_ref", "target_snapshot_digest",
+        "goal_closure_result",
+    ],
+    "non_empty": [
+        "summary", "workflow_run_id", "operation_id", "request_hash",
+        "task_map_generation", "target_commit",
+        "contract_snapshot_ref", "contract_snapshot_digest",
+        "target_snapshot_ref", "target_snapshot_digest",
+    ],
+    "nested": {
+        "goal_closure_result": {
+            "required": [
+                "schema_version", "workflow_run_id", "goal_id", "flow_kind",
+                "task_map_generation", "target_commit", "objective_ref",
+                "goal_claim_set_ref", "goal_claim_set_digest",
+                "planning_result_ref", "candidate_ref", "closure_fact_ref",
+                "closure_fact_digest", "input_result_refs", "goal_coverage",
+                "open_gap_refs", "verdict", "recommended_action", "summary",
+            ],
+            "non_empty": [
+                "schema_version", "workflow_run_id", "goal_id", "flow_kind",
+                "task_map_generation", "target_commit", "objective_ref",
+                "goal_claim_set_ref", "goal_claim_set_digest",
+                "planning_result_ref", "candidate_ref", "closure_fact_ref",
+                "closure_fact_digest", "input_result_refs", "goal_coverage",
+                "verdict", "recommended_action", "summary",
+            ],
+            "enum": {
+                "flow_kind": ["issue", "prd", "refactor"],
+                "verdict": ["passed", "rejected", "blocked"],
+                "recommended_action": [
+                    "complete", "gap_plan", "replan", "candidate_verify",
+                    "human", "hold",
+                ],
+            },
+            "list_item": {
+                "goal_coverage": {
+                    "required": [
+                        "goal_claim_id", "status", "supporting_result_refs",
+                    ],
+                    "non_empty": ["goal_claim_id", "status"],
+                    "enum": {
+                        "status": ["closed", "open", "blocked", "waived"],
+                    },
+                },
+            },
+        },
+    },
+}
+
+_GOAL_CLOSURE_RESULT_RULE = _GOAL_CLOSURE_CHILD_RULE["nested"][
+    "goal_closure_result"
+]
+
+_GOAL_CLOSURE_EVENTS: dict[str, dict[str, Any]] = {
+    "goal.claim_set.pinned": _req(
+        "workflow_run_id", "goal_id", "task_map_generation",
+        "task_map_ref", "goal_claim_set_ref", "goal_claim_set_digest",
+    ),
+    "flow.goal.closed": _req(
+        "workflow_run_id", "goal_id", "task_map_generation",
+        "candidate_head_commit", "closure_fact_ref",
+        "closure_fact_digest", "closure_identity",
+    ),
+    "module.parity.closed": _req(
+        "workflow_run_id", "goal_id", "task_map_generation",
+        "candidate_head_commit", "closure_fact_ref",
+        "closure_fact_digest", "closure_identity",
+    ),
+    "goal.closure.synthesized": {
+        **_req(
+            "fanout_id", "stage_id", "status", "workflow_run_id", "goal_id",
+            "task_map_generation", "candidate_head_commit", "closure_identity",
+            "closure_fact_ref", "closure_fact_digest", "goal_claim_set_ref",
+            "goal_claim_set_digest", "operation_id", "request_hash",
+            "contract_snapshot_ref", "contract_snapshot_digest",
+            "target_snapshot_ref", "target_snapshot_digest",
+            "admitted_call_result_ref", "control_result_ref", "goal_closure_result",
+        ),
+        "nested": {"goal_closure_result": _GOAL_CLOSURE_RESULT_RULE},
+    },
+    "goal.closure.synthesis.failed": _req(
+        "fanout_id", "stage_id", "status",
+    ),
+    "run.goal.completion.claimed": _req(
+        "run_id", "goal_id", "claim_id", "task_map_generation",
+        "target_commit", "goal_claim_set_ref", "goal_claim_set_digest",
+        "admitted_call_result_ref",
+    ),
+    "run.goal.completion.blocked": _req(
+        "run_id", "claim_id", "blockers", "blocker_fingerprint",
+    ),
+    "run.goal.completion.rejected": _req(
+        "run_id", "claim_id", "invalid_reasons",
+    ),
+    "run.goal.completed": _req("run_id", "claim_id", "target_commit"),
+    "run.delivery.requested": _req(
+        "run_id", "claim_id", "delivery_operation_id", "candidate_ref",
+    ),
+    "run.delivery.settled": _req(
+        "run_id", "claim_id", "delivery_operation_id", "candidate_ref",
+    ),
+    "run.delivery.failed": _req(
+        "run_id", "claim_id", "delivery_operation_id", "candidate_ref",
+        "reason",
+    ),
+    "run.delivery.blocked": _req(
+        "run_id", "claim_id", "delivery_operation_id", "candidate_ref",
+        "reason",
+    ),
+    "goal.closure.rejected": _req(
+        "workflow_run_id", "goal_id", "task_map_generation", "target_commit",
+        "admitted_call_result_ref", "recommended_action", "open_gap_refs",
+    ),
+    "goal.closure.blocked": _req(
+        "workflow_run_id", "goal_id", "task_map_generation", "target_commit",
+        "admitted_call_result_ref", "recommended_action", "reason",
+    ),
+    "goal.closure.compat.projected": _req(
+        "workflow_run_id", "goal_id", "source_event_id", "compat_event_id",
+        "compat_event_type", "admitted_call_result_ref",
+    ),
+}
+
+# Explicit opt-in. v5 remains immutable; v6 replaces only the final Judge
+# child contract and adds the mechanical Goal-closure lifecycle.
+_CANONICAL_DAG_V6: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V5,
+    **_GOAL_CLOSURE_EVENTS,
+    "judge.child.completed": _GOAL_CLOSURE_CHILD_RULE,
+    "judge.child.failed": _req("fanout_id", "child_id", "status", "reason"),
+}
+
+# Refactor keeps its historical event vocabulary but opts into the same Thin
+# Judge / durable call-result / completion contracts as canonical-dag/v6.
+_REFACTOR_FLOW_V3: dict[str, dict[str, Any]] = {
+    **_REFACTOR_FLOW_V2,
+    **_DURABLE_CALL_RESULT_EVENTS,
+    **_GOAL_CLOSURE_EVENTS,
+    "judge.child.completed": _GOAL_CLOSURE_CHILD_RULE,
+    "judge.child.failed": _req("fanout_id", "child_id", "status", "reason"),
+}
+
 SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "refactor-flow/v1": _REFACTOR_FLOW_V1,
     "refactor-flow/v2": _REFACTOR_FLOW_V2,
+    "refactor-flow/v3": _REFACTOR_FLOW_V3,
     "canonical-dag/v1": _CANONICAL_DAG_V1,
     "canonical-dag/v2": _CANONICAL_DAG_V2,
     "canonical-dag/v3": _CANONICAL_DAG_V3,
+    "canonical-dag/v4": _CANONICAL_DAG_V4,
+    "canonical-dag/v5": _CANONICAL_DAG_V5,
+    "canonical-dag/v6": _CANONICAL_DAG_V6,
 }
+
+_RULE_KEYS = (
+    "required", "optional", "non_empty", "enum", "nested", "list_item",
+    "when", "field_sources",
+)
+
+
+def _copy_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: deepcopy(rule[key])
+        for key in _RULE_KEYS
+        if key in rule
+    }
+
+
+def _merge_rule(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = _copy_rule(base)
+    for key in _RULE_KEYS:
+        if key in override:
+            merged[key] = deepcopy(override[key])
+    merged.setdefault("required", [])
+    return merged
 
 
 def union_required_keys(event_type: str) -> tuple[str, ...]:
@@ -216,6 +536,19 @@ def resolve_schema_profile(
 ) -> dict[str, dict[str, Any]]:
     """B1: extra_profiles = kind: SchemaProfile 注册的项目本地库,
     与内建同名时内建优先(发行契约不可被项目影子化)。"""
+    return _resolve_schema_profile(name, extra_profiles, stack=())
+
+
+def _resolve_schema_profile(
+    name: str,
+    extra_profiles: dict[str, dict[str, Any]] | None,
+    *,
+    stack: tuple[str, ...],
+) -> dict[str, dict[str, Any]]:
+    if name in stack:
+        raise SchemaProfileError(
+            "schema profile extends cycle: " + " -> ".join((*stack, name))
+        )
     source = None
     if name in SCHEMA_PROFILES:
         source = SCHEMA_PROFILES[name]
@@ -226,19 +559,20 @@ def resolve_schema_profile(
         raise SchemaProfileError(
             f"unknown schema profile {name!r}; known profiles: {known}"
         )
-    # 深拷贝防原地篡改(/vN 不可变);field_sources(1404)与证据档位
-    # non_empty / nested(LB-4,v3)一并透传——早期只拷 required 曾把
-    # 档位静默剥掉,是"接线但被遮蔽"类缺陷。
-    out: dict[str, dict[str, Any]] = {}
-    for event, rule in source.items():
-        entry: dict[str, Any] = {"required": list(rule.get("required", []))}
-        if isinstance(rule.get("field_sources"), dict):
-            entry["field_sources"] = dict(rule["field_sources"])
-        if rule.get("non_empty"):
-            entry["non_empty"] = [str(x) for x in rule["non_empty"]]
-        if isinstance(rule.get("nested"), dict) and rule["nested"]:
-            entry["nested"] = deepcopy(rule["nested"])
-        out[event] = entry
+    extends = ""
+    event_source = source
+    if isinstance(source.get("events"), dict):
+        extends = str(source.get("extends") or "").strip()
+        event_source = source["events"]
+    out = (
+        _resolve_schema_profile(extends, extra_profiles, stack=(*stack, name))
+        if extends
+        else {}
+    )
+    for event, rule in event_source.items():
+        if not isinstance(rule, dict):
+            continue
+        out[str(event)] = _merge_rule(out.get(str(event), {}), rule)
     return out
 
 
@@ -265,6 +599,9 @@ def classify_override(
     if "nested" in override_rule:
         if (base_rule.get("nested") or {}) and not (override_rule.get("nested") or {}):
             return "breaking"  # profile 的嵌套档位被整体摘除
+    for key in ("enum", "list_item", "when"):
+        if key in override_rule and base_rule.get(key) and not override_rule.get(key):
+            return "breaking"
     return "additive"
 
 
@@ -321,26 +658,7 @@ def merge_event_schemas(
                     "message": f"{label} additive override on {event!r}",
                 })
             base_rule = effective.get(event) or {}
-            entry: dict[str, Any] = {
-                "required": list(rule.get("required", []) or []),
-            }
-            if isinstance(rule.get("field_sources"), dict):
-                entry["field_sources"] = dict(rule["field_sources"])
-            # 档位继承:override 未显式提供 non_empty/nested 时继承 base
-            # (只写 required 的 additive override 不再静默剥掉证据档位)。
-            non_empty = (
-                rule.get("non_empty") if "non_empty" in rule
-                else base_rule.get("non_empty")
-            )
-            if non_empty:
-                entry["non_empty"] = [str(x) for x in non_empty]
-            nested = (
-                rule.get("nested") if "nested" in rule
-                else base_rule.get("nested")
-            )
-            if isinstance(nested, dict) and nested:
-                entry["nested"] = deepcopy(nested)
-            effective[event] = entry
+            effective[event] = _merge_rule(base_rule, rule)
             sources[event] = label
     _apply(spec_overrides, "override")
     _apply(local_schemas, "local")

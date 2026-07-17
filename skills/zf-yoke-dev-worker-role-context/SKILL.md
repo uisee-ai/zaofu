@@ -3,7 +3,7 @@ name: zf-yoke-dev-worker-role-context
 description: "Use for ZaoFu dev workers that need yoke-style isolated, evidence-first implementation discipline."
 stages: [impl, fix]
 tags: [yoke, role-context, implementation]
-dependencies: [tdd-evidence, incremental-delivery, debugging-triage, git-evidence, source-verification]
+dependencies: [tdd-evidence, incremental-delivery, debugging-triage, git-evidence, source-verification, zf-harness-done-contract]
 auto_inject: true
 load_on_demand: false
 ---
@@ -27,6 +27,8 @@ methodology family — do not restate their content here:
   绑定、多驾驶员纪律、隔离验证用 worktree 不用 stash。
 - `yoke/source-verification` — 外部框架/API 先验来源再落盘:版本从依赖
   清单读、现网能力先 grep、宣称附出处、查不到标 UNVERIFIED。
+- `zf-harness-done-contract` — 仅在准备完成 handoff 时读取；它说明如何
+  组织可复跑证据，identity、schema、attempt 和终态仍以当前 briefing/runtime 为准。
 
 If a method skill and this role context appear to conflict, follow this role
 context for runtime truth, task scope, and completion claims.
@@ -50,13 +52,13 @@ context for runtime truth, task scope, and completion claims.
 - Report changed files, tests run, failures, risks, and whether changes are
   committed or still dirty in the working tree.
 - If blocked by missing context or conflicting instructions, stop and report.
-- Do not claim done without the ZaoFu done evidence fields.
+- Do not claim done without loading `zf-harness-done-contract` and reconciling
+  its evidence method with the current briefing/output profile.
 - When handling rework, show the concrete delta from the failed attempt:
   changed files, tests, docs, artifacts, or command evidence.
-- Use the briefing's dispatch id in the completion event when present.
-- Include changed files, commands run, command results, and evidence refs in
-  `dev.build.done`; review is expected to reject missing evidence rather than
-  repair it.
+- Submit through the exact completion command and output profile in the
+  briefing. Do not infer an event name or duplicate its mechanical field list
+  here.
 - For lane work, use `zf-harness-lane-goal-continuation` before ending a turn:
   incomplete evidence means continue or block, not success. Include lane
   metadata, `source_commit`, `files_touched`, command results, and replayable
@@ -78,36 +80,23 @@ Commit behavior depends on how you were dispatched:
   explicitly asks for a commit/checkpoint. Git evidence is still required even
   when no commit is made.
 
-## Candidate Integration Constraints (kernel-mechanical)
+## Candidate Integration Method
 
 Your commits on a lane branch are consumed by candidate assembly
-(`candidates.py`), so granularity is not cosmetic:
+so granularity is not cosmetic:
 
 - **One concern per commit.** Candidate integrates your branch by patch-id
-  cherry-pick (FIX-10: `rev-list --cherry-pick`, so equivalent patches already
-  in base are skipped — idempotent). A grab-bag commit that mixes concerns
-  cannot be partially applied: a conflict on any commit **aborts the whole
-  cherry-pick for that task ref** and emits `candidate.conflict`, rolling the
-  entire package back.
+  integration. A grab-bag commit that mixes concerns cannot be safely applied
+  or reverted as a unit.
 - **Rework continues, never resets.** For a follow-up attempt, stack the fix as
   new commits on the **same lane / same worktree**. Do not `git reset` and
-  rebuild history — that breaks attempt binding and gets the completion judged
-  stale (`task.completion.stale_rejected`).
+  rebuild history; preserve the attempt's auditable delta.
 
 Method detail for both lives in `yoke/incremental-delivery`; do not restate it.
 
-## Completion States
+## Completion Boundary
 
-Reporting vocabulary only — **not** a kernel-validated enum. The kernel consumes
-the completion **event type** plus fields (`dispatch_id`, `source_commit`,
-`files_touched`, `task_ref`, `worktree_dirty`), not these words:
-
-- `DONE` — emit `dev.build.done` with the evidence fields above.
-- `DONE_WITH_CONCERNS` — skill-owned 约定(无内核校验);still `dev.build.done`,
-  carry the concern in the payload for review to weigh.
-- `BLOCKED` — skill-owned 约定;stop and report the concrete blocker.
-- `NEEDS_CONTEXT` — skill-owned 约定;stop and request the missing context.
-
-Adjacent kernel events you may see referenced in vocab: test evidence flows as
-`test.passed` (skill vocab `TEST_PASS_*` maps to this event, not a kernel enum);
-abstain/hold flows as the `*.suspended` family (skill vocab `SUSPEND`).
+Use the current briefing's success, failure, or suspension channel. These are
+runtime contracts, not vocabulary invented by this Skill. A worker submits an
+implementation result and evidence; admission and downstream state transitions
+remain Kernel-owned.

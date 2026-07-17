@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import Any
 
 
 VALID_VERIFICATION_TIERS = {
@@ -120,7 +121,10 @@ class TaskContract:
     # event_ids that prove the criterion is satisfied. Reviewers /
     # judges write these via completion event payload
     # ``acceptance_evidence_update`` field; Layer 1 merges them in.
-    acceptance_criteria: list[str] = field(default_factory=list)
+    # v1 accepted strings only. Structured entries keep the same canonical
+    # field while adding stable acceptance id / verifier owner / tier metadata;
+    # consumers must normalize through task_contract_snapshot.criterion_text.
+    acceptance_criteria: list[Any] = field(default_factory=list)
     acceptance_evidence: dict[str, list[str]] = field(default_factory=dict)
     # #E fix (TR-STATIC-GATE-PER-TASK-OVERRIDE-001, cangjie 2026-05-21
     # observation-E): per-task quality_gates override. yaml-level

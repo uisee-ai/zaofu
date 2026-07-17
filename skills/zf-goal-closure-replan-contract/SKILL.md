@@ -1,134 +1,60 @@
 ---
 name: zf-goal-closure-replan-contract
-description: "Use when a ZaoFu issue, PRD, or refactor workflow must keep scanning, planning, implementing, and verifying until the stated goal is closed. Defines the generic goal-gap-plan input sources and the bridge-event replan contract; the kernel owns the task_map amend and enforces the loop idempotency gates."
-stages: [verify, judge, replan]
+description: "Use on demand after verified gaps require an incremental task-map amendment; preserves completed work and delegates event/schema mechanics to the gap producer and runtime."
+stages: [verify, discovery, replan]
 tags: [contract, goal-closure, replan]
-auto_inject: true
-load_on_demand: false
+dependencies: [zf-verify-gap-producer-contract]
+auto_inject: false
+load_on_demand: true
 ---
 
 # ZaoFu Goal Closure Replan Contract
 
-## Purpose
+Use this reference only after admitted verification/discovery evidence proves
+that the current goal remains open and new implementation work is required.
+Normal pass/fail reporting does not need it.
 
-Use this skill after an initial task map exists and later verification,
-rescan, review, or runtime evidence shows the goal is not complete. The goal is
-not to rewrite the whole plan; it is to append precise gap work through the
-canonical task-map path.
+## Inputs
 
-This applies to:
+Start from the immutable verifier/discovery result and its evidence refs. The
+gap must identify:
 
-- issue repair: `goal_kind: "issue"`, `gap_category: "issue_gap"`;
-- PRD delivery: `goal_kind: "prd"`, `gap_category: "acceptance_gap"`;
-- refactor parity: `goal_kind: "refactor"`, `gap_category: "parity_gap"`;
-- other project goals with an explicit `goal_kind` and `gap_category`.
+- the still-open goal/acceptance/parity claim;
+- the failed or missing behavior and reproducible evidence;
+- the affected task, assembly, candidate, or goal scope;
+- why existing work cannot close the gap without a new delta.
 
-## Gap Inputs (precedence)
+Do not re-derive a gap from chat or a one-line reason when a typed result exists.
 
-Gaps enter the closure loop through two paths — prefer the first:
+## Incremental Planning Method
 
-1. **Verify report `gap_findings` (primary).** A schema-valid per-child verify
-   report whose graded `gap_findings` rows embed a `gap_task` feeds the rework
-   loop with no separate artifact: the kernel's `_gap_tasks_from_payload`
-   (candidate_rework.py) lifts `findings[].gap_task` / `findings[].gap_tasks`
-   (and top-level `gap_tasks`) straight into gap work. The report must carry a
-   non-empty `requirement_coverage_matrix` — the `non_empty` schema tier in
-   `core/verification/event_schema.py` — so gaps derive from graded coverage,
-   not impressions. Report grading/schema is owned upstream by
-   `zf-verify-gap-producer-contract` / `yoke/verify-review`.
-2. **`goal-gap-plan.v1` artifact (aggregation / manual path).** When gaps span
-   several sources, or no per-child report carries them, aggregate into the
-   durable gap-plan artifact below.
+1. Preserve accepted completed tasks and their evidence.
+2. Use `zf-gap-task-synth` to create the smallest additional task set that can
+   close the verified gap.
+3. Give every task explicit ownership, allowed paths, source anchors,
+   acceptance criteria, verification owner/tier, and dependencies.
+4. Reuse stable task identity where the contract is unchanged; mint a revised
+   contract/task only when the required behavior or ownership changed.
+5. Record what changed from the prior plan and which old attempt/task is
+   superseded.
+6. Persist the gap plan at the path supplied by the briefing, then use
+   `zf-verify-gap-producer-contract` for the exact canonical submission.
 
-Both paths converge on the same bridge event and the same amended `task_map`.
+The current runtime output profile is authoritative for artifact/event shape.
+Do not hand-build the amended full task map, emit task-map truth directly, or
+start a new run merely because a gap exists.
 
-## Required Gap Plan
+## Convergence
 
-For the aggregation path, write a durable `goal-gap-plan.v1` JSON artifact
-(kernel-validated by `validate_goal_gap_plan_payload`):
+If runtime suppresses an equivalent pending plan, wait for its decision or
+change the semantic task set. If re-verification is suppressed because the
+target has no new delta, produce a new implementation commit or escalate the
+real blocker. Re-emitting an identical plan is not progress.
 
-```json
-{
-  "schema_version": "goal-gap-plan.v1",
-  "goal_id": "<issue/prd/refactor id>",
-  "goal_kind": "issue|prd|refactor|custom",
-  "gap_category": "issue_gap|acceptance_gap|parity_gap|custom",
-  "replan_history_ref": "docs/plans/<goal>/replan-history.jsonl",
-  "gap_tasks": [
-    { "task_id": "<stable id>", "title": "<missing behavior>", "...": "per-task fields owned by zf-gap-task-synth" }
-  ]
-}
-```
+## Boundary
 
-The envelope fields (`schema_version` / `goal_id` / `goal_kind` /
-`gap_category` / `replan_history_ref` / `gap_tasks`) are the kernel-validated
-part. The per-`gap_task` field shape — `claim_paths`, `acceptance`,
-`verify_commands`, `source_refs`, and the rest — is owned by `zf-gap-task-synth`;
-do not re-maintain that checklist here. Empty generic TODO tasks are invalid on
-either path.
-
-## Runtime Path (kernel bridge owns the amend)
-
-The agent's only job is to produce a schema-valid gap-plan and emit one bridge
-event. The kernel does the amend + ready deterministically — do NOT hand-build
-the amended task map:
-
-1. Produce/persist the gap input (verify report `gap_findings`, or a
-   `goal-gap-plan.v1` artifact — see Gap Inputs).
-2. Emit exactly one bridge event — `gap_plan.ready`, `goal.gap_plan.ready`, or
-   `flow.gap_plan.ready` — carrying `pdd_id`/`feature_id`, `trace_id`, and
-   `task_map_ref` (plus `gap_plan_ref` when the plan is a separate artifact).
-3. The orchestrator bridge `_bridge_gap_plan_ready_to_task_map` then writes the
-   amended full `task_map.json` and re-emits `task_map.amended` +
-   `task_map.ready` with `resume_scope: "gap_tasks_only"`, dispatching only the
-   new `gap_task_ids` and keeping finished tasks stable.
-
-Do NOT hand-emit `task_map.amended` / `task_map.ready` yourself, do not create a
-second task schema, and do not write directly to `events.jsonl`, `kanban.json`,
-`feature_list.json`, `progress.md`, or `memory/`. The canonical
-`flow.gap_plan.ready` / `goal.gap_plan.ready` event-payload contract is owned by
-`zf-verify-gap-producer-contract`.
-
-## Loop Idempotency Gates
-
-The loop keeps scanning, planning, implementing, and verifying until the goal
-closes — but two kernel gates bound blind retries. Hitting them is expected
-behavior, not an error to retry around:
-
-- `plan.minting.suppressed`: re-emitting a gap plan with the same
-  `plan_fingerprint` while an equivalent plan is still pending is deduped (the
-  payload carries `plan_fingerprint` + `duplicate_of`). Do not re-emit the
-  identical plan; wait for the pending decision or change the task set.
-- `fanout.retrigger.suppressed` (reason `no_delta_since_failure`): a re-verify
-  against the same `target_commit` that already failed is refused. Land a new
-  commit delta and bind the gap evidence to it, or escalate — never spin the
-  loop with no delta.
-
-When suppressed, the correct move is to produce a delta or escalate, not to
-retry the same replan. `zf-verify-gap-producer-contract` owns the full
-suppression-gate payloads.
-
-## Replan History
-
-Append one JSONL row per replan decision to `replan_history_ref` with:
-
-- source event or scan id;
-- detected gap summary;
-- accepted/rejected alternatives;
-- generated `gap_task_ids`;
-- affected original task ids;
-- gate changes, if verification expectations changed.
-
-Workers must receive this context through the task evidence contract so they
-understand why the gap task exists.
-
-## Related Skills
-
-- `zf-gap-task-synth` — authoritative per-`gap_task` shape and evidence
-  contract; this skill owns the `goal-gap-plan.v1` envelope and the loop, not
-  the per-task field checklist.
-- `zf-verify-gap-producer-contract` — authoritative `flow.gap_plan.ready` /
-  `goal.gap_plan.ready` event-payload contract and the full suppression-gate
-  payloads; also owns the verify-report `gap_findings` grading this loop
-  consumes.
-- `zf-verify-rescan-replan` — rescan report, gate decision, and re-entry loop.
+Planner/Synth decides task meaning, slicing, ownership, and acceptance.
+Runtime owns plan fingerprinting, task-map amendment/admission, generation,
+attempt/cap, stale/replay, affinity dispatch, and truth transitions. Thin Judge
+does not load this Skill; a rejected Judge result is routed to the appropriate
+planner/synth owner first.

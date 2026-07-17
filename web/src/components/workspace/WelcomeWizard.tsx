@@ -27,9 +27,17 @@ interface Props {
   hasProject: boolean;               // whether a project got created (STEP 3)
   onOpenProjectWizard: (prefill?: { root?: string; preset?: string; stack?: string; description?: string }) => void;
   onDone: () => void;                // completed or skipped -> re-fetch + dismiss
+  onSaveToken: (token: string) => void;
+  tokenPresent: boolean;
 }
 
-export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props) {
+export function WelcomeWizard({
+  hasProject,
+  onDone,
+  onOpenProjectWizard,
+  onSaveToken,
+  tokenPresent,
+}: Props) {
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [backend, setBackend] = useState("");
@@ -39,6 +47,8 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
   const [inspectBusy, setInspectBusy] = useState(false);
   const [devLang, setDevLang] = useState("auto");   // 语言/栈偏好 → AGENTS.md 栈段
   const [comments, setComments] = useState("");      // 项目备注 → CLAUDE.md
+  const [error, setError] = useState("");
+  const [tokenDraft, setTokenDraft] = useState("");
 
   useEffect(() => {
     getOnboarding().then((s) => {
@@ -50,30 +60,58 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
           ?? s.backends.find((b) => b.always_available);
         if (pre) setBackend(pre.id);
       }
-    }).catch(() => onDone());
-  }, [onDone]);
+    }).catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
 
   const cur = STEPS[stepIdx];
   const preflightOk = useMemo(
     () => (status?.preflight ?? []).every((c) => c.ok), [status]);
 
   async function persistStep(nextIdx: number) {
-    setStepIdx(nextIdx);
-    void updateOnboarding({ action: "step", step: nextIdx + 1, backend });
+    setBusy(true);
+    setError("");
+    try {
+      await updateOnboarding({ action: "step", step: nextIdx + 1, backend });
+      setStepIdx(nextIdx);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   }
   async function finish() {
     setBusy(true);
-    await updateOnboarding({ action: "complete", backend });
-    onDone();
+    setError("");
+    try {
+      await updateOnboarding({ action: "complete", backend });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   }
   async function skipAll() {
     setBusy(true);
-    await updateOnboarding({ action: "skip" });
-    onDone();
+    setError("");
+    try {
+      await updateOnboarding({ action: "skip" });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (!status) {
-    return <div style={overlay}><div style={{ color: TONE.muted }}>加载引导…</div></div>;
+    return (
+      <div style={overlay}>
+        <div style={{ color: error ? TONE.err : TONE.muted }}>
+          {error || "加载引导…"}
+        </div>
+      </div>
+    );
   }
 
   const canContinue =
@@ -105,6 +143,59 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
         </div>
         <h2 style={{ margin: "0 0 2px", fontSize: 18 }}>{cur.title}</h2>
         <div style={{ color: TONE.muted, fontSize: 13, marginBottom: 16 }}>{cur.subtitle}</div>
+        <div
+          data-testid="welcome-action-token"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) auto",
+            gap: 8,
+            alignItems: "center",
+            padding: 10,
+            marginBottom: 14,
+            border: `1px solid ${TONE.line}`,
+            borderRadius: 8,
+            background: TONE.bg,
+          }}
+        >
+          <input
+            aria-label="Web action token"
+            type="password"
+            value={tokenDraft}
+            onChange={(event) => setTokenDraft(event.target.value)}
+            placeholder={tokenPresent ? "替换 Web action token" : "远程主机操作需要 Web action token"}
+            style={{
+              minWidth: 0,
+              font: "inherit",
+              fontSize: 12.5,
+              padding: "7px 9px",
+              border: `1px solid ${TONE.line}`,
+              borderRadius: 6,
+              background: TONE.panel,
+              color: TONE.text,
+            }}
+          />
+          <button
+            type="button"
+            disabled={!tokenDraft.trim()}
+            onClick={() => {
+              onSaveToken(tokenDraft);
+              setTokenDraft("");
+              setError("");
+            }}
+            style={ghostBtn}
+          >
+            {tokenPresent ? "替换 token" : "保存 token"}
+          </button>
+        </div>
+        {error ? (
+          <div
+            role="alert"
+            data-testid="welcome-error"
+            style={{ color: TONE.err, fontSize: 12.5, margin: "-6px 0 12px" }}
+          >
+            {error}
+          </div>
+        ) : null}
 
         <div style={{ minHeight: 220 }}>
           {cur.id === "backend" ? (
@@ -170,8 +261,12 @@ export function WelcomeWizard({ hasProject, onOpenProjectWizard, onDone }: Props
                 <button type="button" data-testid="welcome-inspect-btn" disabled={!inspectRoot.trim() || inspectBusy}
                   onClick={async () => {
                     setInspectBusy(true);
+                    setError("");
                     try { setInspect(await inspectBootstrap(inspectRoot.trim(), backend || 'claude')); }
-                    catch { setInspect(null); }
+                    catch (err) {
+                      setInspect(null);
+                      setError(err instanceof Error ? err.message : String(err));
+                    }
                     finally { setInspectBusy(false); }
                   }}
                   style={{ ...ghostBtn, opacity: inspectRoot.trim() ? 1 : 0.4 }}>

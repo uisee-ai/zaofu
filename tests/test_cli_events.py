@@ -50,6 +50,43 @@ def test_emit_with_payload(tmp_path: Path, monkeypatch, capsys):
     assert '"count":5' in events_text or '"count": 5' in events_text
 
 
+def test_emit_schema_replacement_reports_actual_event_and_nonzero(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(
+        'version: "1.0"\n'
+        "project:\n  name: test\n"
+        "verification:\n  event_schema:\n    mode: blocking\n"
+        "workflow:\n  dag:\n    event_schemas:\n"
+        "      verify.child.completed:\n"
+        "        required: [fanout_id, child_id, status]\n",
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    capsys.readouterr()
+
+    result = main([
+        "emit",
+        "verify.child.completed",
+        "--task",
+        "T-1",
+        "--payload",
+        '{"fanout_id":"f-1","child_id":"c-1"}',
+    ])
+
+    captured = capsys.readouterr()
+    assert result != 0
+    assert "Emitted: discriminator.failed" in captured.out
+    assert "Blocked: verify.child.completed" in captured.err
+    events = EventLog(tmp_path / ".zf" / "events.jsonl").read_all()
+    assert events[-1].type == "discriminator.failed"
+    assert events[-1].payload["fanout_id"] == "f-1"
+    assert events[-1].payload["child_id"] == "c-1"
+
+
 def test_emit_with_payload_file(tmp_path: Path, monkeypatch):
     _init(tmp_path, monkeypatch)
     payload = tmp_path / "payload.json"
