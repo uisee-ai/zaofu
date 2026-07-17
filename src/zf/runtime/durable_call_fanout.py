@@ -297,7 +297,14 @@ class DurableCallFanoutMixin:
                 self,
                 payload=child.payload,
                 operation_type="fanout_reader_child",
-                operation_key=child.child_id,
+                # ZF-GEN-SCOPE-01(07-17 第 4 次实弹同墙):重触发派生同
+                # child 键 → 与已注册 op 撞身份(request_hash_divergence)。
+                # 键掺触发事件 id:同触发重放=同 id(replay 语义保持),
+                # 新触发=天然新代。
+                operation_key=(
+                    f"{child.child_id}@trig:{context.trigger_event_id[:12]}"
+                    if context.trigger_event_id else child.child_id
+                ),
                 stage_id=context.stage_id,
                 task_id=str(child.payload.get("task_id") or ""),
                 dispatch_id=run_id,
@@ -581,7 +588,11 @@ class DurableCallFanoutMixin:
                 self,
                 payload=operation_payload,
                 operation_type="fanout_writer_child",
-                operation_key=child.child_id,
+                # ZF-GEN-SCOPE-01:同上,writer 路径(task_map 重触发场景)
+                operation_key=(
+                    f"{child.child_id}@trig:{context.trigger_event_id[:12]}"
+                    if context.trigger_event_id else child.child_id
+                ),
                 stage_id=context.stage_id,
                 task_id=task_id,
                 dispatch_id=run_id,

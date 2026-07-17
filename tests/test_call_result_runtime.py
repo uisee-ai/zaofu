@@ -180,3 +180,31 @@ def test_rework_of_scopes_new_operation(tmp_path: Path) -> None:
         task_id="T1", dispatch_id="run-F3",
     )
     assert retrigger.operation_id != first.operation_id
+
+
+def test_generation_scoped_operation_key_per_trigger() -> None:
+    """ZF-GEN-SCOPE-01:同触发重放同 id(replay 保持),新触发新代。
+
+    07-17 四次实弹同墙:scan 重发/discovery 重发/final 重发/replan
+    task_map 重派 — 同 child 键撞已注册 op → divergence 拒绝。
+    键掺 trigger_event_id 后,retrigger 天然新代,replay 语义不变。
+    """
+    key_a1 = "dev-lane-0-T1@trig:evt-aaaa0000"
+    key_a2 = "dev-lane-0-T1@trig:evt-aaaa0000"
+    key_b = "dev-lane-0-T1@trig:evt-bbbb1111"
+    from zf.runtime.workflow_operation import stable_operation_id
+
+    id_a1 = stable_operation_id(
+        workflow_run_id="run-1", parent_stage_id="impl",
+        operation_key=key_a1, operation_type="fanout_writer_child",
+    )
+    id_a2 = stable_operation_id(
+        workflow_run_id="run-1", parent_stage_id="impl",
+        operation_key=key_a2, operation_type="fanout_writer_child",
+    )
+    id_b = stable_operation_id(
+        workflow_run_id="run-1", parent_stage_id="impl",
+        operation_key=key_b, operation_type="fanout_writer_child",
+    )
+    assert id_a1 == id_a2  # 同触发重放 → replay
+    assert id_a1 != id_b   # 新触发 → 新代

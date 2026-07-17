@@ -1,7 +1,7 @@
 # ZaoFu Public Export Manifest
 
-- Source ref: `0665608dc62e63b4db60934e46dd8e9a15b1ebd1`
-- Generated UTC: `2026-07-17T08:43:42Z`
+- Source ref: `6c293229dfadf967a42ba94fd853dde695e70ff6`
+- Generated UTC: `2026-07-17T11:46:47Z`
 
 ## Included
 
@@ -15,6 +15,7 @@
 - `DISCLAIMER.md`
 - `assets/readme`
 - `.python-version`
+- `.env.example`
 - `pyproject.toml`
 - `uv.lock`
 - `src`

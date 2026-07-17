@@ -1975,12 +1975,20 @@ def _handle_attention_ack_result(
         }
     attention_id = envelope.args[0].strip()
     actor = f"feishu:{envelope.user_id or 'unknown'}"
+    # Resolve the human-readable operator name from the identity map so the
+    # ack-flip card can show 「已确认 — min 15:18」 instead of a raw open_id.
+    operator = ""
+    identity = _feishu_identity(config)
+    if identity is not None and getattr(identity, "enabled", False):
+        entry = (getattr(identity, "users", {}) or {}).get(envelope.user_id)
+        operator = str(getattr(entry, "operator", "") or "")
     writer = EventWriter(event_log_from_project(state_dir, config=config))
     acked = writer.emit(
         "runtime.attention.acknowledged",
         actor=actor,
         payload={
             "attention_id": attention_id,
+            "operator": operator,
             "source": "feishu_card",
             "surface": "feishu",
         },

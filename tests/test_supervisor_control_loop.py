@@ -275,7 +275,11 @@ def test_control_loop_routes_human_gate_to_feishu() -> None:
     ]
 
     assert len(messages) == 1
-    assert messages[0].payload["handled_by"] == "supervisor"
+    # 找人出口收敛一期:RM is the recovery owner, so a healthy(-or-unknown) RM
+    # means the message carries its name; "supervisor" only appears as
+    # explicit fallback (covered by dedicated tests below).
+    assert messages[0].payload["handled_by"] == "run-manager"
+    assert messages[0].payload["source"] == "supervisor"
     assert messages[0].payload["human_action_required"] is True
     assert messages[0].payload["delivery_targets"] == ["web", "channel", "feishu"]
 
@@ -384,3 +388,75 @@ def test_budget_intrinsic_condition_still_stamps() -> None:
 
     item = {"human_required_when": ["owner_budget_decision_needed"]}
     assert _human_action_required(item, {"route": "owner_notify"}) is True
+
+
+# ---------------------------------------------------------------------------
+# 找人出口收敛一期 (task 2026-07-17-0731-owner-notify-converge-to-rm)
+
+
+def _converge_snapshot() -> dict:
+    return {"attention_items": [{
+        "attention_id": "a-conv", "fingerprint": "f:conv", "status": "open",
+        "severity": "critical", "human_action_required": True,
+        "title": "worker stuck", "summary": "worker.stuck",
+    }]}
+
+
+def _messages_of(events):
+    return [e for e in events if e.type == "owner.visible_message.requested"]
+
+
+def test_owner_message_signs_run_manager_when_rm_alive() -> None:
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events
+
+    import time
+    recent_tick = ZfEvent(type="run.manager.tick.completed", actor="zf-cli")
+    events = build_supervisor_control_loop_events(
+        _converge_snapshot(), events=[recent_tick],
+        projection_ref={}, now=time.time(),
+    )
+    msg = _messages_of(events)[0]
+    assert msg.payload["handled_by"] == "run-manager"
+    assert msg.payload["source"] == "supervisor"
+
+
+def test_owner_message_falls_back_to_supervisor_when_rm_unhealthy() -> None:
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events
+
+    unhealthy = ZfEvent(type="run.manager.unhealthy", actor="zf-cli")
+    events = build_supervisor_control_loop_events(
+        _converge_snapshot(), events=[unhealthy], projection_ref={},
+    )
+    msg = _messages_of(events)[0]
+    assert msg.payload["handled_by"] == "supervisor"
+    assert msg.payload["source"] == "supervisor_fallback"
+
+
+def test_owner_message_falls_back_when_rm_tick_stale() -> None:
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events
+
+    stale_tick = ZfEvent(
+        type="run.manager.tick.completed", actor="zf-cli",
+        ts="2026-07-17T00:00:00+00:00",
+    )
+    import time
+    events = build_supervisor_control_loop_events(
+        _converge_snapshot(), events=[stale_tick], projection_ref={},
+        now=time.time(),  # hours later -> stale beyond 600s
+    )
+    msg = _messages_of(events)[0]
+    assert msg.payload["source"] == "supervisor_fallback"
+
+
+def test_fallback_header_marks_diebottom() -> None:
+    from zf.runtime.owner_visible_delivery import _owner_message_header
+
+    assert _owner_message_header(
+        {"source": "supervisor_fallback", "handled_by": "supervisor"}
+    ) == "[ZaoFu Supervisor·兜底]"
+    assert _owner_message_header(
+        {"source": "supervisor", "handled_by": "run-manager"}
+    ) == "[ZaoFu Run Manager]"

@@ -407,6 +407,48 @@ def run_standard_tick_services(
                     event_writer, _st_events, _report,
                 )
                 stillness_redriven = _emitted.get("redriven", 0)
+            # 恢复案卷:三表对账矛盾投影,供 RM resident 裁决
+            try:
+                import yaml as _yaml
+
+                from zf.core.task.store import TaskStore
+                from zf.runtime.recovery_case_file import (
+                    build_case_file,
+                    write_case_file,
+                )
+
+                _tasks = [
+                    {
+                        "id": t.id,
+                        "status": t.status,
+                        "assigned_to": t.assigned_to,
+                    }
+                    for t in TaskStore(state_dir / "kanban.json").list_all()
+                ]
+                _rs = _yaml.safe_load(
+                    (state_dir / "role_sessions.yaml").read_text(),
+                ) or {}
+                _inst = {
+                    name: str(
+                        ((meta or {}).get("last_heartbeat_payload") or {})
+                        .get("state") or ""
+                    )
+                    for name, meta in (_rs.get("instance_meta") or {}).items()
+                }
+                _case = build_case_file(
+                    _st_events,
+                    tasks=_tasks,
+                    instance_states=_inst,
+                    now_epoch=_stime.time(),
+                    config=config,
+                    stillness={
+                        "state": _report.state,
+                        "breakpoints": _report.breakpoints,
+                    },
+                )
+                write_case_file(state_dir, _case)
+            except Exception:
+                pass
         except Exception:
             pass
 

@@ -63,6 +63,7 @@ from zf.runtime.control_actions_channel_admin import ChannelAdminActionsMixin
 from zf.runtime.control_actions_plan import PlanApprovalActionsMixin
 from zf.runtime.control_actions_product import ProductActionsMixin
 from zf.runtime.control_actions_ops import OpsActionsMixin
+from zf.runtime.control_actions_recovery import RECOVERY_ACTIONS, RecoveryActionsMixin
 from zf.runtime.control_actions_surgery import SurgeryActionsMixin
 from zf.runtime.control_actions_emit import ActionEmitMixin
 from zf.runtime.control_actions_workflow_resume import WorkflowResumeActionsMixin
@@ -107,6 +108,7 @@ class ControlledActionService(
     CandidateReworkActionsMixin,
     WorkflowRequestActionsMixin,
     SurgeryActionsMixin,
+    RecoveryActionsMixin,
     ActionEmitMixin,
 ):
     """Execute deterministic action requests from trusted control surfaces."""
@@ -458,6 +460,26 @@ class ControlledActionService(
                 action=action,
                 requested_action=requested_action,
                 payload=payload,
+            )
+        if action == "task-requeue":
+            return self._task_requeue_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "child-rebuild":
+            return self._child_rebuild_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "stage-retrigger":
+            return self._stage_retrigger_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
+        if action == "rescan-grant":
+            return self._rescan_grant_action(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
             )
         if action == "payload-repair-reemit":
             return self._payload_repair_reemit_action(

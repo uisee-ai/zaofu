@@ -236,6 +236,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "autoscale.scale_down.completed", "autoscale.scale_down.blocked",
     # Run lifecycle / archive projection
     "run.started", "run.heartbeat", "run.stalled", "run.cancelled",
+    "run.goal.rescan.granted",
     "run.completed", "run.archived", "run.abandoned",
     # Runtime skill projection
     "skills.materialized",

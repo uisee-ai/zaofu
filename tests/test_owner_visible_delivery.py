@@ -572,3 +572,105 @@ def test_card_info_alert_has_no_ack_button(tmp_path: Path, monkeypatch) -> None:
     assert not [e for e in card["elements"] if e.get("tag") == "action"]
     body = card["elements"][0]["text"]["content"]
     assert "需要你的确认" not in body
+
+
+# ---------------------------------------------------------------------------
+# ack-flip (task 2026-07-17-0731-owner-card-ack-flip)
+
+
+def _ack(log: EventLog, attention_id: str, operator: str = "min") -> None:
+    log.append(ZfEvent(
+        type="runtime.attention.acknowledged",
+        actor="feishu:ou-op",
+        payload={"attention_id": attention_id, "operator": operator,
+                 "source": "feishu_card", "surface": "feishu"},
+    ))
+
+
+def test_delivered_receipt_carries_feishu_message_id(tmp_path: Path) -> None:
+    log, writer = _state(tmp_path)
+    _requested_card(log, message_id="omsg-f1", summary="worker.stuck")
+    transport = MockFeishuTransport()
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+    delivered = [e for e in log.read_all() if e.type == OWNER_MESSAGE_DELIVERED]
+    assert delivered[0].payload.get("feishu_message_id") == "mock-msg-1"
+
+
+def test_ack_flips_delivered_card_once(tmp_path: Path) -> None:
+    log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="owner.visible_message.requested", actor="zf-supervisor",
+        payload={"message_id": "omsg-flip", "severity": "high",
+                 "human_action_required": True, "attention_id": "attn-9",
+                 "title": "Completion event claims artifacts/head that do not exist",
+                 "summary": "claimed artifact missing on disk: x.md",
+                 "task_id": "AIWEB-003", "delivery_targets": ["feishu"]},
+    ))
+    transport = MockFeishuTransport()
+    routing = _routing()
+    # pass 1: card delivered, no ack yet -> no flip
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=routing)
+    assert transport.updated_messages == []
+    # ack lands (button or Web — same contract), pass 2 flips exactly once
+    _ack(log, "attn-9")
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=routing)
+    assert len(transport.updated_messages) == 1
+    mid, card_json = transport.updated_messages[0]
+    assert mid == "mock-msg-1"
+    import json as _json
+    card = _json.loads(card_json)
+    assert card["header"]["template"] == "green"
+    flat = _json.dumps(card, ensure_ascii=False)
+    assert "已确认" in flat and "min" in flat and "AIWEB-003" in flat
+    # pass 3: ledger idempotency — no second update
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=routing)
+    assert len(transport.updated_messages) == 1
+    ledger = (tmp_path / ".zf" / "integrations" / "feishu"
+              / "owner_card_flip_ledger.json")
+    assert ledger.exists()
+
+
+def test_ack_without_feishu_mid_is_skipped(tmp_path: Path) -> None:
+    from zf.runtime.owner_visible_flip import flip_acknowledged_owner_cards_once
+
+    log, _writer = _state(tmp_path)
+    # legacy delivered receipt (predates feishu_message_id)
+    log.append(ZfEvent(
+        type=OWNER_MESSAGE_DELIVERED, actor="zf-supervisor",
+        payload={"message_id": "omsg-old", "target": "feishu",
+                 "attention_id": "attn-old"},
+    ))
+    _ack(log, "attn-old")
+    transport = MockFeishuTransport()
+    result = flip_acknowledged_owner_cards_once(event_log=log, transport=transport)
+    assert result["flipped"] == [] and transport.updated_messages == []
+
+
+def test_flip_update_failure_capped_no_storm(tmp_path: Path) -> None:
+    from zf.runtime.owner_visible_flip import flip_acknowledged_owner_cards_once
+
+    class _FailingUpdate(MockFeishuTransport):
+        def __init__(self):
+            super().__init__()
+            self.update_attempts = 0
+
+        def update_card(self, message_id, card, sequence=0):
+            self.update_attempts += 1
+            raise RuntimeError("card patch 500")
+
+    log, _writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type=OWNER_MESSAGE_DELIVERED, actor="zf-supervisor",
+        payload={"message_id": "omsg-x", "target": "feishu",
+                 "attention_id": "attn-x", "feishu_message_id": "om-x",
+                 "title": "worker stuck"},
+    ))
+    _ack(log, "attn-x")
+    transport = _FailingUpdate()
+    for _ in range(4):  # cap=2: two attempts then abandoned
+        flip_acknowledged_owner_cards_once(event_log=log, transport=transport)
+    assert transport.update_attempts == 2

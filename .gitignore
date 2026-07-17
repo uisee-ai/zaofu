@@ -7,6 +7,7 @@ venv/
 env/
 .env
 .env.*
+!.env.example
 
 # Node / frontend
 node_modules/
@@ -43,15 +44,8 @@ strategy/
 gm-test/
 ww/
 
-# Provider/editor/session state. Keep reviewed repository rules and one
-# deterministic maintenance command; ignore local settings, worktrees, and
-# generated provider skill copies.
-.claude/*
-!.claude/rules/
-!.claude/rules/*.md
-!.claude/commands/
-.claude/commands/*
-!.claude/commands/audit-backlogs.md
+# Provider/editor/session state
+.claude/
 .codex/
 .omc/
 

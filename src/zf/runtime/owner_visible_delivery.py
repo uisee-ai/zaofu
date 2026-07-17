@@ -20,6 +20,7 @@ from zf.core.events.log import EventLog
 from zf.core.security.redaction import redact_obj
 from zf.integrations.feishu.projection import RoutingConfig
 from zf.integrations.feishu.transport import FeishuMessage, FeishuTransport
+from zf.runtime.owner_visible_flip import flip_acknowledged_owner_cards_once
 from zf.runtime.owner_visible_render import (
     humanize_owner_title,
     owner_message_dedup_key,
@@ -274,6 +275,7 @@ def deliver_owner_visible_messages_once(
             )
             failed_event_ids.append(failed.id)
             continue
+        sent_feishu_mid = ""
         try:
             body = _format_owner_message(event, payload)
             # Interactive card first (severity-colored header + lark_md body,
@@ -281,14 +283,17 @@ def deliver_owner_visible_messages_once(
             # path throws, fall back to the plain-text message — a paged alert
             # must never be lost to a rendering problem.
             try:
-                transport.send_card(FeishuMessage(
+                # ack-flip: keep the provider message_id so a later
+                # runtime.attention.acknowledged can update THIS card in place
+                # (text fallback has no card to flip — mid stays empty).
+                sent_feishu_mid = str(transport.send_card(FeishuMessage(
                     chat_id=receive_id,
                     receive_id_type=receive_id_type,
                     msg_type="interactive",
                     content=json.dumps(
                         _owner_visible_card(payload, body), ensure_ascii=False,
                     ),
-                ))
+                )) or "")
             except Exception:
                 transport.send_message(FeishuMessage(
                     chat_id=receive_id,
@@ -319,10 +324,25 @@ def deliver_owner_visible_messages_once(
             task_id=event.task_id or _text(payload, "task_id") or None,
             causation_id=attempted.id,
             correlation_id=event.correlation_id,
-            payload=redact_obj({**base, "status": "delivered"}),
+            payload=redact_obj({
+                **base,
+                "status": "delivered",
+                "feishu_message_id": sent_feishu_mid,
+            }),
         )
         delivered_event_ids.append(delivered.id)
         delivered_content_keys.add(content_key)
+
+    # ack-flip (task 2026-07-17-0731): flip already-acknowledged cards in the
+    # same sidecar pass. Uses the pre-pass event snapshot — cards delivered in
+    # THIS pass cannot have been acknowledged yet, they flip on a later pass.
+    try:
+        flip_acknowledged_owner_cards_once(
+            event_log=event_log, transport=transport, target=target,
+            events=events,
+        )
+    except Exception:
+        pass  # flipping is cosmetic; it must never break delivery
 
     failed_count = len(failed_event_ids)
     delivered_count = len(delivered_event_ids)
@@ -721,6 +741,10 @@ def _owner_visible_card(payload: dict[str, Any], body: str) -> dict[str, Any]:
 def _owner_message_header(payload: dict[str, Any]) -> str:
     source = _text(payload, "source").lower()
     handled_by = _text(payload, "handled_by").lower()
+    # 找人出口收敛一期:supervisor only signs when the Run Manager is
+    # demonstrably unavailable — the 「兜底」 marker IS the anomaly signal.
+    if source == "supervisor_fallback":
+        return "[ZaoFu Supervisor·兜底]"
     if source in {"watchdog", "run_manager_watchdog"}:
         return "[ZaoFu Watchdog]"
     if source in {"run-manager", "run_manager"} or handled_by in {"run-manager", "run_manager"}:

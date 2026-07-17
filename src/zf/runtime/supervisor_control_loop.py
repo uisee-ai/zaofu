@@ -220,6 +220,13 @@ def build_supervisor_control_loop_events(
 
     existing_decisions = _existing_ids(events, "supervisor.decision.recorded", "decision_id")
     existing_messages = _existing_ids(events, "owner.visible_message.requested", "message_id")
+    # 找人出口收敛一期 (task 2026-07-17-0731-owner-notify-converge-to-rm):
+    # Run Manager is the recovery owner, so owner-facing messages carry ITS
+    # name by default; the supervisor only signs when the Run Manager is
+    # demonstrably unavailable — seeing [ZaoFu Supervisor·兜底] is itself the
+    # anomaly signal. Phase 2 (minting moves into the RM path) is tracked in
+    # the same task.
+    rm_fallback = _run_manager_unavailable(events, now=now)
     out: list[ZfEvent] = []
     for item in snapshot.get("attention_items") or []:
         if not isinstance(item, dict):
@@ -241,6 +248,7 @@ def build_supervisor_control_loop_events(
             events_derived_state=_events_derived_state(
                 item, events=events, contract=contract, now=now,
             ),
+            rm_fallback=rm_fallback,
         )
         message_id = str(message["message_id"])
         source_event_ids = [
@@ -439,6 +447,7 @@ def _owner_message_payload(
     decision: dict[str, Any],
     projection_ref: dict[str, str],
     events_derived_state: dict[str, Any] | None = None,
+    rm_fallback: bool = False,
 ) -> dict[str, Any]:
     decision_id = str(decision.get("decision_id") or "")
     message_id = "omsg-" + _sha1(decision_id)[:12]
@@ -455,9 +464,13 @@ def _owner_message_payload(
         "decision_id": decision_id,
         "idempotency_key": f"owner-visible:{message_id}",
         "status": "requested",
-        "source": "supervisor",
+        # 找人出口收敛一期:the Run Manager is the recovery owner, so the
+        # message carries its name unless it is demonstrably unavailable —
+        # then the supervisor signs as explicit fallback (an anomaly signal
+        # in itself, rendered 「兜底」 by the delivery header).
+        "source": "supervisor_fallback" if rm_fallback else "supervisor",
         "route": str(decision.get("route") or "owner_notify"),
-        "handled_by": "run-manager" if _run_manager_triage_first(item, decision) else "supervisor",
+        "handled_by": "supervisor" if rm_fallback else "run-manager",
         "human_action_required": human_action_required,
         "severity": str(item.get("severity") or ""),
         "title": str(item.get("title") or ""),
@@ -593,6 +606,50 @@ def _suppress_owner_message_for_triage(item: dict[str, Any], decision: dict[str,
     if policy == "trace_only":
         return True
     return _run_manager_triage_first(item, decision)
+
+
+# Aligned with run_manager_watchdog's max_projection_stale_seconds default: a
+# Run Manager whose last completed tick is older than this is not a live owner.
+_RM_TICK_STALE_S = 600.0
+
+
+def _run_manager_unavailable(
+    events: list[ZfEvent], *, now: float | None = None,
+) -> bool:
+    """True when the Run Manager is demonstrably not a live recovery owner.
+
+    Two signals, both event-derived: an unhealthy verdict newer than the last
+    completed tick, or a last completed tick older than the watchdog stale
+    threshold. A log with NO tick history stays False — that is a project where
+    the RM never ran (tests / minimal configs), not a dead owner; signing those
+    "run-manager" is still truthful because it owns recovery by contract.
+    """
+    from datetime import datetime, timezone
+    import time as _time
+
+    def _epoch(ts: str) -> float:
+        try:
+            parsed = datetime.fromisoformat(ts)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except ValueError:
+            return 0.0
+
+    last_tick = 0.0
+    last_unhealthy = 0.0
+    for event in events:
+        if event.type == "run.manager.tick.completed":
+            last_tick = max(last_tick, _epoch(str(event.ts)))
+        elif event.type == "run.manager.unhealthy":
+            last_unhealthy = max(last_unhealthy, _epoch(str(event.ts)))
+    if last_unhealthy and last_unhealthy >= last_tick:
+        return True
+    if last_tick:
+        current = _time.time() if now is None else float(now)
+        if current - last_tick > _RM_TICK_STALE_S:
+            return True
+    return False
 
 
 def _run_manager_triage_first(item: dict[str, Any], decision: dict[str, Any]) -> bool:
