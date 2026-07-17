@@ -6,10 +6,13 @@ from zf.core.profile.flows import flow_id_for_intent, list_flows_detailed
 
 
 def test_controller_examples_are_catalog_entries():
-    ids = {entry["id"] for entry in list_flows_detailed()}
+    entries = {entry["id"]: entry for entry in list_flows_detailed()}
+    ids = set(entries)
     assert "issue-fanout-v3-codex" in ids
     assert "prd-fanout-v3-codex" in ids
     assert "refactor-lane-v3-codex" in ids
+    assert entries["issue-fanout-v3-codex"]["roles"] == 5
+    assert entries["issue-fanout-v3-claude"]["roles"] == 5
 
 
 def test_prod_new_lkg_examples_are_not_catalog_entries():

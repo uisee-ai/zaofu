@@ -82,8 +82,8 @@ def _task_items(count: int) -> list[dict]:
     ]
 
 
-def _pipeline_spec(lane_count: int):
-    return parse_lane_pipeline({
+def _pipeline_spec(lane_count: int, *, flow_kind: str = ""):
+    raw = {
         "id": "demo",
         "kind": "lane_pipeline",
         "trigger": "task_map.ready",
@@ -114,10 +114,18 @@ def _pipeline_spec(lane_count: int):
             "success": "judge.passed",
             "failure": "judge.failed",
         },
-    })
+    }
+    if flow_kind:
+        raw["flow_kind"] = flow_kind
+    return parse_lane_pipeline(raw)
 
 
-def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
+def _config(
+    state_dir: Path,
+    *,
+    lane_count: int = 2,
+    flow_kind: str = "",
+) -> ZfConfig:
     return ZfConfig(
         project=ProjectConfig(name="test", state_dir=str(state_dir)),
         roles=[
@@ -154,6 +162,7 @@ def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
                 WorkflowStageConfig(
                     id="demo-impl",
                     trigger="task_map.ready",
+                    flow_kind=flow_kind,
                     topology="fanout_writer_scoped",
                     roles=[f"dev-{index + 1}" for index in range(lane_count)],
                     task_map=".zf/artifacts/${pdd_id}/task_map.json",
@@ -171,6 +180,7 @@ def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
                 WorkflowStageConfig(
                     id="demo-verify",
                     trigger="lane.stage.completed",
+                    flow_kind=flow_kind,
                     topology="fanout_reader",
                     roles=[f"test-{index + 1}" for index in range(lane_count)],
                     assignment=FanoutAssignmentConfig(
@@ -189,6 +199,7 @@ def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
                 WorkflowStageConfig(
                     id="demo-final",
                     trigger="test.passed",
+                    flow_kind=flow_kind,
                     topology="fanout_reader",
                     roles=["judge"],
                     aggregate=FanoutAggregateConfig(
@@ -213,7 +224,7 @@ def _config(state_dir: Path, *, lane_count: int = 2) -> ZfConfig:
                     ],
                 ),
             },
-            pipelines=[_pipeline_spec(lane_count)],
+            pipelines=[_pipeline_spec(lane_count, flow_kind=flow_kind)],
         ),
         runtime=RuntimeConfig(
             workdirs=WorkdirConfig(enabled=True, mode="worktree"),
@@ -230,6 +241,7 @@ def _state(
     event_schemas: dict[str, dict] | None = None,
     schema_profile: str = "",
     schema_mode: str = "disabled",
+    flow_kind: str = "",
 ):
     _init_repo(tmp_path)
     state_dir = tmp_path / ".zf"
@@ -257,7 +269,7 @@ def _state(
         ))
     log = EventLog(state_dir / "events.jsonl")
     transport = _RecordingTransport()
-    config = _config(state_dir, lane_count=lane_count)
+    config = _config(state_dir, lane_count=lane_count, flow_kind=flow_kind)
     config.workflow.dag.event_schemas = dict(event_schemas or {})
     config.workflow.dag.schema_profile = schema_profile
     config.verification.event_schema.mode = schema_mode
@@ -265,12 +277,15 @@ def _state(
     return state_dir, log, transport, orch
 
 
-def _start(orch: Orchestrator) -> None:
+def _start(orch: Orchestrator, *, flow_kind: str = "") -> None:
+    payload = {"pdd_id": "F-11111111"}
+    if flow_kind:
+        payload["flow_kind"] = flow_kind
     orch.run_once(events=[ZfEvent(
         type="task_map.ready",
         actor="zf-cli",
         correlation_id="trace-1",
-        payload={"pdd_id": "F-11111111"},
+        payload=payload,
     )])
 
 
@@ -408,6 +423,41 @@ def test_impl_lane_completion_starts_verify_for_same_lane_without_batch_barrier(
     assert verify_manifest["children"][0]["role_instance"] == "test-1"
     assert [sent[0] for sent in transport.sent] == ["dev-1", "dev-2", "test-1"]
     assert not [event for event in events if event.type == "candidate.ready"]
+
+
+def test_flow_scoped_lane_handoff_preserves_kind_and_starts_verify(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _, orch = _state(
+        tmp_path,
+        task_count=1,
+        lane_count=1,
+        flow_kind="issue",
+    )
+    _start(orch, flow_kind="issue")
+    impl_id = _fanout_id(log, "demo-impl")
+    impl_manifest = _manifest(state_dir, impl_id)
+
+    _complete_writer(
+        orch,
+        fanout_id=impl_id,
+        child=_child(impl_manifest, "TASK-1"),
+        task_id="TASK-1",
+        file_name="task-1.txt",
+    )
+
+    lane_event = next(
+        event
+        for event in log.read_all()
+        if event.type == "lane.stage.completed"
+        and event.payload.get("stage_slot") == "impl"
+    )
+    assert lane_event.payload["flow_kind"] == "issue"
+    assert any(
+        event.type == "fanout.started"
+        and event.payload.get("stage_id") == "demo-verify"
+        for event in log.read_all()
+    )
 
 
 def test_lane_completion_releases_writer_queue_and_streams_verify(

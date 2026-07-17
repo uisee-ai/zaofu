@@ -67,6 +67,7 @@ from zf.runtime.control_actions_surgery import SurgeryActionsMixin
 from zf.runtime.control_actions_emit import ActionEmitMixin
 from zf.runtime.control_actions_workflow_resume import WorkflowResumeActionsMixin
 from zf.runtime.control_actions_candidate_rework import CandidateReworkActionsMixin
+from zf.runtime.control_actions_workflow_request import WorkflowRequestActionsMixin
 from zf.runtime.control_actions_helpers import (  # noqa: F401 — re-export moved helpers
     _approval_ref,
     _automation_output_summary,
@@ -104,6 +105,7 @@ class ControlledActionService(
     OpsActionsMixin,
     WorkflowResumeActionsMixin,
     CandidateReworkActionsMixin,
+    WorkflowRequestActionsMixin,
     SurgeryActionsMixin,
     ActionEmitMixin,
 ):
@@ -308,6 +310,20 @@ class ControlledActionService(
                 requested_action=requested_action,
                 payload=payload,
             )
+        if action == "workflow-request":
+            return self._workflow_request(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
+        if action == "workflow-submit":
+            return self._workflow_submit(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                payload=payload,
+            )
         if action == "workflow-invoke":
             return self._workflow_invoke(
                 requested=requested,
@@ -500,78 +516,3 @@ class ControlledActionService(
             status_code=501,
             status="not_implemented",
         )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

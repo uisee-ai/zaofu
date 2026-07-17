@@ -24,6 +24,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zf.core.events.model import ZfEvent
+from zf.core.workflow.flow_metadata import flow_kind_from_payload, normalize_flow_kind
 from zf.runtime.terminal_events import terminal_after_event
 
 # Events with no stage_id that nonetheless mean "the kernel handled the trigger".
@@ -47,6 +48,7 @@ class StallFinding:
     workflow_run_id: str = ""
     trace_id: str = ""
     fanout_id: str = ""
+    flow_kind: str = ""
 
 
 def _payload(event) -> dict:
@@ -67,7 +69,13 @@ def _is_original_trigger(event) -> bool:
     return not str(payload.get(_REDISPATCH_FINGERPRINT) or "")
 
 
-def _trigger_targets_stage(event, *, stage_id: str, trigger: str) -> bool:
+def _trigger_targets_stage(
+    event,
+    *,
+    stage_id: str,
+    trigger: str,
+    flow_kind: str = "",
+) -> bool:
     """Whether a shared lane handoff actually enters ``stage_id``.
 
     ``lane.stage.completed`` is deliberately reused by every lane slot.  A
@@ -80,11 +88,20 @@ def _trigger_targets_stage(event, *, stage_id: str, trigger: str) -> bool:
     lane handoff, the producer's explicit next slot is the routing contract.
     """
 
+    payload = _payload(event)
+    expected_kind = normalize_flow_kind(flow_kind)
+    observed_kind = flow_kind_from_payload(payload)
+    if expected_kind and observed_kind and expected_kind != observed_kind:
+        return False
     if trigger != "lane.stage.completed":
         return True
-    payload = _payload(event)
     expected_slot = stage_id.rsplit("-", 1)[-1]
-    return str(payload.get("next_stage_slot") or "") == expected_slot
+    if str(payload.get("next_stage_slot") or "") != expected_slot:
+        return False
+    pipeline_id = str(payload.get("pipeline_id") or "").strip()
+    if pipeline_id and stage_id != f"{pipeline_id}-{expected_slot}":
+        return False
+    return True
 
 
 def _matches_trigger_scope(event, trigger_event, *, stage_id: str) -> bool:
@@ -112,7 +129,7 @@ def detect_structural_stalls(
     """A stage whose ``trigger`` fired but which never started, cancelled, or
     succeeded — and which has since been bypassed by ``min_events_after`` kernel
     events — is a structural stall. ``stages`` is an iterable of
-    ``(stage_id, trigger, success_event)``.
+    ``(stage_id, trigger, success_event[, flow_kind])``.
     """
     seq = list(enumerate(events))
     if not seq:
@@ -127,7 +144,8 @@ def detect_structural_stalls(
 
     findings: list[StallFinding] = []
     for stage in stages:
-        stage_id, trigger, success_event = stage
+        stage_id, trigger, success_event, *scope = stage
+        stage_flow_kind = normalize_flow_kind(scope[0] if scope else "")
         stage_id, trigger = str(stage_id), str(trigger)
         if not stage_id or not trigger:
             continue
@@ -139,7 +157,12 @@ def detect_structural_stalls(
             if (
                 getattr(event, "type", "") == trigger
                 and _is_original_trigger(event)
-                and _trigger_targets_stage(event, stage_id=stage_id, trigger=trigger)
+                and _trigger_targets_stage(
+                    event,
+                    stage_id=stage_id,
+                    trigger=trigger,
+                    flow_kind=stage_flow_kind,
+                )
             ):
                 trigger_idx = idx
                 trigger_event = event
@@ -209,6 +232,7 @@ def detect_structural_stalls(
             workflow_run_id=workflow_run_id,
             trace_id=trace_id,
             fanout_id=fanout_id,
+            flow_kind=stage_flow_kind,
         ))
     return findings
 
@@ -251,16 +275,17 @@ def stall_invocation_event(finding: StallFinding, events) -> ZfEvent | None:
     )
 
 
-def stages_from_config(config) -> list[tuple[str, str, str]]:
-    """Extract (stage_id, trigger, success_event) from a loaded config."""
-    out: list[tuple[str, str, str]] = []
+def stages_from_config(config) -> list[tuple[str, str, str, str]]:
+    """Extract stage routing facts from a loaded config."""
+    out: list[tuple[str, str, str, str]] = []
     for stage in getattr(getattr(config, "workflow", None), "stages", []) or []:
         stage_id = str(getattr(stage, "id", "") or "")
         trigger = str(getattr(stage, "trigger", "") or "")
         aggregate = getattr(stage, "aggregate", None)
         success_event = str(getattr(aggregate, "success_event", "") or "")
+        flow_kind = normalize_flow_kind(getattr(stage, "flow_kind", ""))
         if stage_id and trigger:
-            out.append((stage_id, trigger, success_event))
+            out.append((stage_id, trigger, success_event, flow_kind))
     return out
 
 
@@ -366,6 +391,8 @@ def stall_redispatch_event(
     payload["original_trigger_event_id"] = finding.trigger_event_id or str(
         getattr(latest_trigger, "id", "") or ""
     )
+    if finding.flow_kind:
+        payload.setdefault("flow_kind", finding.flow_kind)
     return ZfEvent(
         type=finding.trigger,
         actor="zf-stall-redispatch",

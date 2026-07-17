@@ -5,14 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+import yaml
 
+from zf.cli.flow import draft_multi_kind_project_spec
 from zf.core.config.loader import ConfigError, load_config
+from zf.core.events.model import ZfEvent
+from zf.core.verification.event_schema import EventSchemaRegistry
 from zf.core.config.workflow_profiles import (
     WorkflowProfileError,
     expand_issue_flow,
     expand_prd_flow,
     expand_workflow_profile,
 )
+from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
 
 
 def _flow_yaml(tmp_path, *, extra_spec="", body_extra=""):
@@ -40,6 +45,71 @@ spec:
 
 
 class TestExpansion:
+    def test_multi_kind_flow_namespaces_roles_routes_and_dispatch(
+        self, tmp_path, capsys,
+    ):
+        path = tmp_path / "zf.yaml"
+        docs = draft_multi_kind_project_spec(
+            backend="mock",
+            project_name="multi-demo",
+            project_root=tmp_path,
+        )
+        path.write_text(
+            yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+
+        cfg = load_config(path)
+        assert "breaking overrides" not in capsys.readouterr().err
+        assert len({role.name for role in cfg.roles}) == len(cfg.roles)
+        assert {role.backend for role in cfg.roles} == {"mock"}
+        assert set(cfg.workflow.kind_routes) >= {"issue", "prd", "feat", "refactor"}
+        assert set(cfg.workflow.flow_metadata_by_kind) == {"issue", "prd", "refactor"}
+        assert cfg.verification.event_schema.mode == "blocking"
+        assert cfg.verification.report_evidence_gate == "fail_closed"
+        assert set(cfg.workflow.dag.event_schemas_by_kind) == {
+            "issue", "prd", "refactor",
+        }
+
+        registry = EventSchemaRegistry.from_config(cfg)
+        assert registry.validate(ZfEvent(
+            type="task_map.ready",
+            actor="test",
+            payload={"flow_kind": "issue", "task_map_ref": "task-map.json"},
+        )) == []
+        refactor_violations = registry.validate(ZfEvent(
+            type="task_map.ready",
+            actor="test",
+            payload={"flow_kind": "refactor", "task_map_ref": "task-map.json"},
+        ))
+        assert {
+            violation.field_path for violation in refactor_violations
+        } >= {
+            "payload.pdd_id",
+            "payload.trace_id",
+            "payload.source_commit",
+            "payload.candidate_base_commit",
+        }
+
+        impl_stages = [
+            stage for stage in cfg.workflow.stages
+            if stage.trigger == "task_map.ready"
+        ]
+        assert {stage.flow_kind for stage in impl_stages} == {
+            "issue", "prd", "refactor",
+        }
+        issue_event = ZfEvent(
+            type="task_map.ready",
+            actor="test",
+            payload={"flow_kind": "issue"},
+        )
+        assert [
+            stage.flow_kind for stage in impl_stages
+            if FanoutCoordinationMixin._fanout_stage_matches_trigger_event(
+                stage, issue_event,
+            )
+        ] == ["issue"]
+
     def test_one_reference_expands_full_flow(self, tmp_path):
         cfg = load_config(_flow_yaml(tmp_path))
         # scan/plan 段(profile stages)+ lane 链(G3 物化)全到位
@@ -398,6 +468,7 @@ spec:
         prd = expand_prd_flow({"entryTrigger": "prd.requested"})
 
         assert issue["metadata"]["post_verify_discovery"] == "regression_impact"
+        assert issue["pipelines"][0]["lane_count"] == 1
         assert prd["metadata"]["post_verify_discovery"] == "product_completeness"
 
     def test_issue_flow_generates_canonical_bugfix_chain(self, tmp_path):
@@ -429,6 +500,7 @@ spec:
             "issue-lanes-verify",
             "issue-lanes-final",
         ]
+        assert next(stage for stage in cfg.workflow.stages if stage.id == "issue-triage").target_ref == "HEAD"
         discovery = next(
             stage for stage in cfg.workflow.stages
             if stage.id == "issue-post-verify-discovery"
@@ -512,6 +584,7 @@ spec:
             "prd-lanes-verify",
             "prd-lanes-final",
         ]
+        assert next(stage for stage in cfg.workflow.stages if stage.id == "prd-scan").target_ref == "HEAD"
         discovery = next(
             stage for stage in cfg.workflow.stages
             if stage.id == "prd-post-verify-discovery"

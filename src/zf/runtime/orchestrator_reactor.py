@@ -5609,7 +5609,22 @@ class EventReactorMixin(DurableCallWorkflowMixin):
             causation_id=event.causation_id,
             correlation_id=event.correlation_id,
         )
-        self._maybe_start_reader_fanout(stage_event)
+        started = self._maybe_start_reader_fanout(stage_event)
+        if not started:
+            self._emit_task_fanout_rejected(
+                event,
+                "declared workflow fanout did not start",
+                expected=f"stage={pattern_id}",
+                actual=(
+                    f"flow_kind={stage_payload.get('flow_kind') or ''}, "
+                    f"prompt_kind={stage_payload.get('prompt_kind') or ''}"
+                ),
+            )
+            return OrchestratorDecision(
+                action="block",
+                task_id=task_id,
+                reason=f"workflow fanout did not start: {pattern_id}",
+            )
         return OrchestratorDecision(
             action="workflow_fanout",
             task_id=task_id,

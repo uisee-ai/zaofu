@@ -344,6 +344,11 @@ def assemble_envelope_stream(
             raise KindEnvelopeError(str(exc))
     if flow_expansions:
         from zf.core.config.workflow_profiles import merge_expansion_into_body
+        if len(flow_expansions) > 1:
+            flow_expansions = [
+                _scope_multi_kind_flow_expansion(expansion)
+                for expansion in flow_expansions
+            ]
         for expansion in flow_expansions:
             merge_expansion_into_body(body, expansion)
     if pipelines or kind_stages:
@@ -365,6 +370,96 @@ def assemble_envelope_stream(
                 )
             existing_stages.extend(kind_stages)
     return body, profiles
+
+
+def _scope_multi_kind_flow_expansion(expansion: dict) -> dict:
+    """Namespace one Flow expansion inside a multi-kind canonical config.
+
+    Event names remain canonical so the existing kernel contracts stay shared;
+    stages carry ``flow_kind`` and runtime dispatch applies the kind guard.
+    Roles, pipeline IDs, stage IDs and lane role patterns are namespaced here so
+    a single tmux/runtime can materialize all kinds without role collisions.
+    """
+
+    out = deepcopy(expansion)
+    metadata = out.get("metadata") if isinstance(out.get("metadata"), dict) else {}
+    kind = str(metadata.get("flow_kind") or "").strip().lower()
+    if kind not in {"issue", "prd", "refactor"}:
+        raise KindEnvelopeError(
+            "multi-kind Flow expansion requires metadata.flow_kind "
+            "(issue|prd|refactor)"
+        )
+
+    def scoped(value: object) -> str:
+        name = str(value or "").strip()
+        if not name:
+            return ""
+        tokens = {token for token in name.replace("_", "-").split("-") if token}
+        return name if kind in tokens else f"{kind}-{name}"
+
+    role_map: dict[str, str] = {}
+    for role in out.get("roles", []) or []:
+        if not isinstance(role, dict):
+            continue
+        old_name = str(role.get("name") or "").strip()
+        new_name = scoped(old_name)
+        if old_name:
+            role_map[old_name] = new_name
+        role["name"] = new_name
+        if str(role.get("instance_id") or "").strip() in {"", old_name}:
+            role["instance_id"] = new_name
+
+    first_stage_id = ""
+    for stage in out.get("stages", []) or []:
+        if not isinstance(stage, dict):
+            continue
+        stage["id"] = scoped(stage.get("id"))
+        stage["flow_kind"] = kind
+        if not first_stage_id:
+            first_stage_id = str(stage.get("id") or "")
+        stage["roles"] = [
+            role_map.get(str(role), scoped(role))
+            for role in stage.get("roles", []) or []
+        ]
+        fanout = stage.get("fanout")
+        if isinstance(fanout, dict):
+            assignment = fanout.get("assignment")
+            if isinstance(assignment, dict):
+                assignment["role_pool"] = [
+                    role_map.get(str(role), scoped(role))
+                    for role in assignment.get("role_pool", []) or []
+                ]
+            for child in fanout.get("children", []) or []:
+                if not isinstance(child, dict):
+                    continue
+                for key in ("role", "role_instance"):
+                    if str(child.get(key) or "").strip():
+                        child[key] = role_map.get(str(child[key]), scoped(child[key]))
+        aggregate = stage.get("aggregate")
+        if isinstance(aggregate, dict) and str(aggregate.get("synth_role") or ""):
+            aggregate["synth_role"] = role_map.get(
+                str(aggregate["synth_role"]), scoped(aggregate["synth_role"]),
+            )
+
+    for pipeline in out.get("pipelines", []) or []:
+        if not isinstance(pipeline, dict):
+            continue
+        pipeline["id"] = scoped(pipeline.get("id"))
+        pipeline["flow_kind"] = kind
+        for stage in pipeline.get("stages", []) or []:
+            if not isinstance(stage, dict):
+                continue
+            pattern = str(stage.get("role_pattern") or "").strip()
+            if pattern:
+                stage["role_pattern"] = scoped(pattern)
+        final = pipeline.get("final")
+        if isinstance(final, dict) and str(final.get("role") or "").strip():
+            final["role"] = role_map.get(str(final["role"]), scoped(final["role"]))
+
+    out["flow_kind"] = kind
+    out["entry_stage_id"] = first_stage_id
+    out["multi_kind"] = True
+    return out
 
 
 def _apply_flow_defaults(

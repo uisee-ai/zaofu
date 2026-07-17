@@ -256,6 +256,7 @@ class WriterFanoutDataMixin:
         evidence_refs = self._dedupe_strings([*evidence_refs, *inventory_refs])
 
         payload: dict = {
+            **self._fanout_flow_identity_payload(manifest, payloads=payloads),
             "artifact_refs": artifact_refs,
             "evidence_refs": evidence_refs,
         }
@@ -578,6 +579,62 @@ class WriterFanoutDataMixin:
             manifest=manifest,
         )
         return payload
+
+    def _fanout_flow_identity_payload(
+        self,
+        manifest: dict,
+        *,
+        payloads: list[dict] | None = None,
+    ) -> dict[str, Any]:
+        """Carry request/run/kind identity across every fanout handoff."""
+
+        values = list(payloads or self._fanout_child_payloads(manifest))
+        trigger = (
+            manifest.get("trigger_payload")
+            if isinstance(manifest.get("trigger_payload"), dict)
+            else {}
+        )
+        result: dict[str, Any] = {}
+        for key in (
+            "request_id",
+            "flow_kind",
+            "request_kind",
+            "workflow_request_ref",
+            "requirement_spec_ref",
+            "requirement_spec_digest",
+            "request_revision",
+        ):
+            # Request identity belongs to the parent invocation. A child may
+            # echo it, but may not replace the trigger/manifest truth.
+            value = trigger.get(key)
+            if value in (None, ""):
+                value = manifest.get(key)
+            if value in (None, ""):
+                value = self._first_child_value(manifest, values, key)
+            if value not in (None, ""):
+                result[key] = value
+
+        # Child run_id identifies one fanout invocation, not the parent
+        # workflow. Promote only parent-owned identity into aggregate events.
+        workflow_run_id = str(
+            trigger.get("workflow_run_id")
+            or manifest.get("workflow_run_id")
+            or trigger.get("run_id")
+            or manifest.get("run_id")
+            or trigger.get("trace_id")
+            or manifest.get("trace_id")
+            or ""
+        ).strip()
+        run_id = str(
+            trigger.get("run_id")
+            or manifest.get("run_id")
+            or workflow_run_id
+        ).strip()
+        if workflow_run_id:
+            result["workflow_run_id"] = workflow_run_id
+        if run_id:
+            result["run_id"] = run_id
+        return result
 
     def _relocate_reader_fanout_artifact_refs(
         self,

@@ -106,7 +106,8 @@ def test_issue_flow_controller_smoke_matrix() -> None:
     assert report["status"] in {"GO", "WARN"}
     assert report["generated"]["flow_metadata"]["flow_kind"] == "issue"
     assert report["generated"]["flow_metadata"]["post_verify_discovery"] == "regression_impact"
-    assert _generated_pipeline(report)["stage_transition"] == "per_lane"
+    pipeline = _generated_pipeline(report)
+    assert pipeline["stage_transition"] == "per_lane"
     _assert_profile_sources(report)
     policy = _policy_by_field(report)
     assert policy["quality_floor"]["detail"]["value"] == "issue-regression"
@@ -115,6 +116,9 @@ def test_issue_flow_controller_smoke_matrix() -> None:
     _assert_discovery_stage("issue-fanout-v3.yaml", "issue-post-verify-discovery")
     _assert_flow_kernel_contract("issue-fanout-v3.yaml")
     config = _config("issue-fanout-v3.yaml")
+    assert config.workflow.pipelines[0].lane_count == 1
+    assert len([role for role in config.roles if role.name.startswith("fix-lane-")]) == 1
+    assert len([role for role in config.roles if role.name.startswith("verify-lane-")]) == 1
     assert config.workflow.admission_replan.enabled is True
     assert config.workflow.admission_replan.resynth_trigger == "issue.requested"
 

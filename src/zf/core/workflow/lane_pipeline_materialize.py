@@ -86,6 +86,7 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
     impl: dict[str, Any] = {
         "id": f"{spec.pipeline_id}-{first.stage_id}",
         "trigger": spec.trigger,
+        "flow_kind": str(getattr(spec, "flow_kind", "") or ""),
         "topology": "fanout_writer_scoped",
         "roles": _lane_roles(first, spec.lane_count),
         "synthesize_canonical_tasks": True,
@@ -123,6 +124,7 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
         entry: dict[str, Any] = {
             "id": f"{spec.pipeline_id}-{stage.stage_id}",
             "trigger": trigger,
+            "flow_kind": str(getattr(spec, "flow_kind", "") or ""),
             "topology": "fanout_reader",
             "roles": _lane_roles(stage, spec.lane_count),
             "fanout": {"assignment": {
@@ -152,6 +154,7 @@ def materialize_lane_pipeline_stages(spec: Any) -> list[dict[str, Any]]:
         stages.append({
             "id": f"{spec.pipeline_id}-final",
             "trigger": str(getattr(spec, "final_trigger", "") or final_trigger),
+            "flow_kind": str(getattr(spec, "flow_kind", "") or ""),
             "topology": "fanout_reader",
             "roles": [spec.final_role],
             "aggregate": {

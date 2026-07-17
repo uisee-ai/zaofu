@@ -253,6 +253,8 @@ def _prime_goal_closure_context(
     task_map_ref: str,
     generation: str,
     candidate_head_commit: str,
+    verification_target_commit: str = "",
+    recorded_task_source_commit: str = "",
 ) -> None:
     """Persist the immutable planning and verification inputs Thin Judge reads."""
 
@@ -291,6 +293,31 @@ def _prime_goal_closure_context(
         },
     )])
 
+    task_id = f"{goal_id}-TASK-1"
+    if recorded_task_source_commit:
+        log.append(ZfEvent(
+            type="task.ref.updated",
+            actor="dev-lane-0",
+            task_id=task_id,
+            correlation_id=workflow_run_id,
+            payload={
+                "workflow_run_id": workflow_run_id,
+                "task_id": task_id,
+                "task_ref": f"task/{task_id}",
+                "source_commit": recorded_task_source_commit,
+            },
+        ))
+        log.append(ZfEvent(
+            type="candidate.ready",
+            actor="zf-cli",
+            correlation_id=workflow_run_id,
+            payload={
+                "workflow_run_id": workflow_run_id,
+                "candidate_head_commit": candidate_head_commit,
+                "completed_task_ids": [task_id],
+            },
+        ))
+
     control = write_immutable_json_sidecar(
         state_dir,
         {"schema_version": "verification-result.v1", "verdict": "approved"},
@@ -304,7 +331,8 @@ def _prime_goal_closure_context(
             "run_id": f"verify-{generation}",
             "role_instance": "verify-lane-0",
             "task_map_generation": generation,
-            "target_commit": candidate_head_commit,
+            "task_id": task_id,
+            "target_commit": verification_target_commit or candidate_head_commit,
         },
         control_result={
             "schema_version": "verification-result.v1",
@@ -808,6 +836,102 @@ def test_flow_discovery_completed_without_gaps_closes_goal(
         if isinstance(item, dict)
     }
     assert {"objective", "planning-result"} <= source_ids
+
+
+def test_goal_closure_accepts_verified_task_ref_integrated_into_candidate(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="issue",
+        discovery_profile="regression_impact",
+    )
+    task_map_ref = ".zf/artifacts/ISSUE-REF/task_map.json"
+    task_commit = "a" * 40
+    candidate_commit = "b" * 40
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="run-task-ref",
+        goal_id="ISSUE-REF",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit=candidate_commit,
+        verification_target_commit=task_commit,
+        recorded_task_source_commit=task_commit,
+    )
+
+    orch.run_once(events=[ZfEvent(
+        id="flow-discovery-task-ref",
+        type="flow.discovery.completed",
+        actor="flow-discovery",
+        correlation_id="run-task-ref",
+        payload={
+            "pdd_id": "ISSUE-REF",
+            "feature_id": "ISSUE-REF",
+            "flow_kind": "issue",
+            "trace_id": "run-task-ref",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": candidate_commit,
+            "open_p0_p1_gap_count": 0,
+            "test_refs": ["pytest"],
+        },
+    )])
+
+    closed = next(event for event in log.read_all() if event.type == "flow.goal.closed")
+    assert closed.payload["input_result_refs"]
+
+
+def test_goal_closure_rejects_task_result_not_bound_to_candidate_ref(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="issue",
+        discovery_profile="regression_impact",
+    )
+    task_map_ref = ".zf/artifacts/ISSUE-STALE/task_map.json"
+    _prime_goal_closure_context(
+        state_dir,
+        log,
+        orch,
+        workflow_run_id="run-stale-task-ref",
+        goal_id="ISSUE-STALE",
+        task_map_ref=task_map_ref,
+        generation="generation-1",
+        candidate_head_commit="b" * 40,
+        verification_target_commit="a" * 40,
+        recorded_task_source_commit="c" * 40,
+    )
+
+    orch.run_once(events=[ZfEvent(
+        id="flow-discovery-stale-task-ref",
+        type="flow.discovery.completed",
+        actor="flow-discovery",
+        correlation_id="run-stale-task-ref",
+        payload={
+            "pdd_id": "ISSUE-STALE",
+            "feature_id": "ISSUE-STALE",
+            "flow_kind": "issue",
+            "trace_id": "run-stale-task-ref",
+            "task_map_ref": task_map_ref,
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "b" * 40,
+            "open_p0_p1_gap_count": 0,
+            "test_refs": ["pytest"],
+        },
+    )])
+
+    events = log.read_all()
+    assert not any(event.type == "flow.goal.closed" for event in events)
+    assert any(
+        event.type == "goal.closure.identity.invalid"
+        and event.payload.get("reason")
+        == "goal closure has no admitted planning/verification results"
+        for event in events
+    )
 
 
 def test_flow_discovery_nested_report_without_gaps_closes_goal(

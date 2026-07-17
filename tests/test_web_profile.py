@@ -8,6 +8,8 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from zf.core.config.loader import load_config
+from zf.core.events.log import EventLog
 from zf.web.server import create_app
 
 
@@ -161,6 +163,60 @@ def test_web_init_with_kind_writes_typed_flow_yaml(client, tmp_path, monkeypatch
     assert docs[0]["spec"]["lanes"] == 3
     config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
     assert config_doc["spec"]["project"]["state_dir"] == ".zf-cangjie"
+
+
+def test_web_init_issue_defaults_to_single_lane(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "secret-token")
+    target = tmp_path / "issue-project"
+
+    response = client.post(
+        "/api/workspace/projects/init",
+        headers={"X-Zf-Web-Token": "secret-token"},
+        json={
+            "root": str(target),
+            "kind": "issue",
+            "name": "issue-project",
+            "backend": "mock",
+            "skip_instruction_docs": True,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    docs = list(yaml.safe_load_all((target / "zf.yaml").read_text(encoding="utf-8")))
+    assert docs[0]["kind"] == "IssueFlow"
+    assert docs[0]["spec"]["lanes"] == 1
+
+
+def test_web_init_multi_kind_registers_project_without_starting_flow(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "secret-token")
+    target = tmp_path / "multi-project"
+
+    response = client.post(
+        "/api/workspace/projects/init",
+        headers={"X-Zf-Web-Token": "secret-token"},
+        json={
+            "root": str(target),
+            "kind": "multi",
+            "name": "multi-project",
+            "backend": "mock",
+            "skip_instruction_docs": True,
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["kind"] == "multi"
+    docs = list(yaml.safe_load_all((target / "zf.yaml").read_text(encoding="utf-8")))
+    assert [doc["kind"] for doc in docs[:3]] == [
+        "IssueFlow", "PrdFlow", "RefactorFlow",
+    ]
+    config = load_config(target / "zf.yaml")
+    assert set(config.workflow.kind_routes) >= {"issue", "prd", "feat", "refactor"}
+    events = EventLog(target / ".zf-multi-project" / "events.jsonl").read_all()
+    assert not any(event.type == "workflow.invoke.requested" for event in events)
 
 
 def test_web_recommend_backend_codex_flow(client, py_repo):

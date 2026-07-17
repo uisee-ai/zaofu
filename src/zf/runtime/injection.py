@@ -1201,8 +1201,15 @@ _KERNEL_ENVELOPE_FIELDS = frozenset({
 })
 
 
-def _event_schema_required_fields(config: ZfConfig, event_type: str) -> list[str]:
-    schemas = getattr(getattr(config.workflow, "dag", None), "event_schemas", {}) or {}
+def _event_schema_required_fields(
+    config: ZfConfig,
+    event_type: str,
+    *,
+    flow_kind: str = "",
+) -> list[str]:
+    from zf.core.verification.event_schema import event_schemas_for_config
+
+    schemas = event_schemas_for_config(config, flow_kind=flow_kind)
     schema = schemas.get(event_type) if isinstance(schemas, dict) else None
     if not isinstance(schema, dict):
         return []
@@ -1253,8 +1260,20 @@ def _append_configured_completion_contract(
     role: RoleConfig,
     protocol: CompletionProtocol,
 ) -> None:
+    role_name = str(role.name or "").strip().lower()
+    flow_kind = next(
+        (
+            kind for kind in ("issue", "prd", "refactor")
+            if role_name.startswith(f"{kind}-")
+        ),
+        "",
+    )
     required = [
-        field for field in _event_schema_required_fields(config, protocol.success_event)
+        field for field in _event_schema_required_fields(
+            config,
+            protocol.success_event,
+            flow_kind=flow_kind,
+        )
         if field not in _KERNEL_ENVELOPE_FIELDS
     ]
     if not required:

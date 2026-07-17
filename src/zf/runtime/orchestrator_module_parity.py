@@ -16,7 +16,9 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
     ) -> OrchestratorDecision | None:
         """Block taskless final judge success when declared flow evidence is absent."""
 
-        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        metadata = flow_metadata_for(self.config, payload=event.payload)
         quality_floor = str(metadata.get("quality_floor") or "").strip()
         if not quality_floor:
             return None
@@ -97,7 +99,9 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
         the YAML declares one.
         """
 
-        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        metadata = flow_metadata_for(self.config, payload=event.payload)
         flow_kind = str(metadata.get("flow_kind") or "").strip()
         discovery_profile = str(metadata.get("post_verify_discovery") or "").strip()
         if not flow_kind:

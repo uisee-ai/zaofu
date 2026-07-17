@@ -171,9 +171,8 @@ def test_sweep_no_probe_idle_when_no_idle_workers(state_dir, config, transport):
     assert len(probe_idle) == 0
 
 
-def test_sweep_emits_one_probe_idle_per_idle_worker(state_dir, config, transport):
-    """Multiple idles + multiple ready tasks → one probe.idle per idle
-    worker, with ready_backlog_count carrying total backlog size."""
+def test_sweep_coalesces_idle_workers_into_one_probe(state_dir, config, transport):
+    """One wake is enough because run_once dispatches the whole ready set."""
     _plant_idle_heartbeat(state_dir, "dev-1")
     _plant_idle_heartbeat(state_dir, "dev-2")
     _plant_ready_task(state_dir)
@@ -191,14 +190,12 @@ def test_sweep_emits_one_probe_idle_per_idle_worker(state_dir, config, transport
 
     log = EventLog(state_dir / "events.jsonl")
     probe_idle = [e for e in log.read_all() if e.type == "worker.probe.idle"]
-    instance_ids = sorted([
-        (e.payload or {}).get("instance_id") for e in probe_idle
-    ])
-
-    assert instance_ids == ["dev-1", "dev-2"]
-    # Each event carries the backlog count
-    for ev in probe_idle:
-        assert (ev.payload or {}).get("ready_backlog_count") >= 2
+    assert len(probe_idle) == 1
+    payload = probe_idle[0].payload or {}
+    assert payload["instance_id"] == "dev-1"
+    assert payload["idle_instances"] == ["dev-1", "dev-2"]
+    assert payload["idle_worker_count"] == 2
+    assert payload["ready_backlog_count"] >= 2
 
 
 # ─── wire-up: start.py uses _run_heartbeat_sweep on tick ────────────────

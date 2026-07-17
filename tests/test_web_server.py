@@ -212,7 +212,12 @@ spec:
         )
 
         assert intake_response.status_code == 200
-        intake = intake_response.json()["result"]["intake_ref"]
+        intake_result = intake_response.json()["result"]
+        intake = intake_result["intake_ref"]
+        manifest = json.loads(
+            Path(intake_result["workflow_input_manifest_ref"]).read_text(encoding="utf-8")
+        )
+        assert manifest["requested_lanes"] == 1
         classify_response = client.post(
             "/api/projects/default/workflow-classify",
             headers={"x-zf-web-token": "test-token"},
@@ -237,6 +242,73 @@ spec:
         assert "workflow.submit.requested" in types
         assert "workflow.submit.accepted" in types
         assert "workflow.invoke.requested" in types
+
+    def test_channel_request_proposes_then_project_submit_explicitly_ignites(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+        config_path = tmp_path / "zf.yaml"
+        config_path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata: {name: issue-demo}
+spec:
+  lanes: 1
+  backend: mock
+  issueRef: docs/intake/channel.md
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo, state_dir: .zf}
+""", encoding="utf-8")
+        state = tmp_path / ".zf"
+        state.mkdir()
+        (state / "kanban.json").write_text("[]\n", encoding="utf-8")
+        log = EventLog(state / "events.jsonl")
+        app = create_app(state, config=load_config(config_path), project_root=tmp_path)
+        client = TestClient(app)
+
+        proposed = client.post(
+            "/api/channels/ch-product/workflow-request",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "request_id": "REQ-CHANNEL",
+                "kind": "issue",
+                "objective": "Fix checkout timeout and add a regression test",
+                "backend": "mock",
+                "allow_missing_env": True,
+            },
+        )
+
+        assert proposed.status_code == 202, proposed.text
+        proposal = proposed.json()
+        assert proposal["status"] == "proposal_ready"
+        assert "workflow.invoke.requested" not in [event.type for event in log.read_all()]
+        intake_ref = proposal["result"]["payload"]["workflow_prompt_ref"]
+
+        submitted = client.post(
+            "/api/projects/default/workflow-submit",
+            headers={"x-zf-web-token": "test-token"},
+            json={
+                "intake_ref": intake_ref,
+                "kind": "issue",
+                "apply": True,
+                "allow_missing_env": True,
+            },
+        )
+
+        assert submitted.status_code == 202, submitted.text
+        invokes = [
+            event for event in log.read_all()
+            if event.type == "workflow.invoke.requested"
+        ]
+        assert len(invokes) == 1
+        assert invokes[0].payload["flow_kind"] == "issue"
 
     def test_with_tasks(self, state_dir, client):
         TaskStore(state_dir / "kanban.json").add(

@@ -424,6 +424,9 @@ class WorkflowStageBackedgeConfig:
 class WorkflowStageConfig:
     id: str = ""
     trigger: str = ""
+    # Optional mechanical scope for canonical configs that contain more than
+    # one Flow kind. Empty keeps legacy hand-written stages unscoped.
+    flow_kind: str = ""
     topology: str = ""
     roles: list[str] = field(default_factory=list)
     target_ref: str = ""
@@ -474,6 +477,13 @@ class WorkflowDagConfig:
     # the rule format. Parsed dumb-as-dict here; EventSchemaRegistry
     # interprets the structure.
     event_schemas: dict[str, dict] = field(default_factory=dict)
+    # Multi-kind projects share canonical event names, but each Flow profile
+    # can require a different payload contract for the same event. Runtime
+    # selects this scoped registry from payload.flow_kind; event_schemas stays
+    # the backward-compatible fallback for single-kind and unscoped events.
+    event_schemas_by_kind: dict[str, dict[str, dict]] = field(
+        default_factory=dict,
+    )
     # doc 90 增补:顶层 profile 引用(不依赖 lane_pipeline)。merge 优先级
     # profile → 本地 event_schemas(逃生门最高),分级同 A2。
     schema_profile: str = ""
@@ -758,6 +768,9 @@ class WorkflowConfig:
     # never drives scheduling directly; it lets inspect/render audit whether
     # declared high-level policies have deterministic consumers.
     flow_metadata: dict = field(default_factory=dict)
+    # Multi-kind canonical configs keep each Flow's policy metadata separate.
+    # This is configuration context, not runtime truth.
+    flow_metadata_by_kind: dict[str, dict] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.harness_profile not in {"baseline", "strict", "release"}:

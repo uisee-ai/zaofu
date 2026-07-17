@@ -400,7 +400,7 @@ function emptyProjectWizardDraft(): ProjectWizardDraft {
     root: "",
     workspace: "default",
     preset: "minimal",
-    kind: "",
+    kind: "multi",
     sourceRoot: "",
     stateDir: "",
     force: false,
@@ -1406,8 +1406,7 @@ export function App() {
     const root = projectWizardDraft.root.trim();
     if (!root) return;
     const rawKind = projectWizardDraft.kind.trim();
-    const kind: "issue" | "prd" | "refactor" | "" =
-      rawKind === "issue" || rawKind === "prd" || rawKind === "refactor" ? rawKind : "";
+      const kind = (["multi", "issue", "prd", "refactor"] as const).find((item) => item === rawKind) ?? "";
     const payload = {
       root,
       workspace: projectWizardDraft.workspace.trim() || "default",
@@ -3354,6 +3353,7 @@ function ProjectWizardModal({
                 onChange={(event) => update({ kind: event.target.value })}
               >
                 <option value="">shape: preset / archetype</option>
+                <option value="multi">kind: multi — 先澄清，再选择工作流</option>
                 <option value="issue">kind: issue — 修 bug / 小变更</option>
                 <option value="prd">kind: prd — 新产品 / 新功能</option>
                 <option value="refactor">kind: refactor — 迁移 / 复刻</option>

@@ -37,6 +37,7 @@ def _append_admitted_upstream(
     *,
     generation: str = "generation-1",
     target_commit: str = "c" * 40,
+    task_id: str = "",
 ) -> str:
     control = write_immutable_json_sidecar(
         tmp_path,
@@ -52,6 +53,7 @@ def _append_admitted_upstream(
             "role_instance": "verify-lane-0",
             "task_map_generation": generation,
             "target_commit": target_commit,
+            "task_id": task_id,
         },
         control_result={
             "schema_version": "test-result.v1",
@@ -64,6 +66,7 @@ def _append_admitted_upstream(
         source_event_id="upstream-result-1",
         source_event_type="verify.child.completed",
         actor="verify-lane-0",
+        task_id=task_id,
     )
     descriptor = write_immutable_json_sidecar(
         tmp_path,
@@ -609,6 +612,195 @@ def test_goal_closure_admission_rejects_stale_admitted_input(
         operation={
             "workflow_run_id": "run-1",
             "operation_id": "goal-judge-stale-input",
+            "request_hash": operation.request_hash,
+        },
+    )
+
+    assert outcome.repair_requested is True
+    assert any(
+        issue["code"] == "result_not_admitted"
+        and issue["field"] == "control_result.input_result_refs"
+        for issue in outcome.issues
+    )
+
+
+def test_goal_closure_admission_accepts_integrated_task_commit_input(
+    tmp_path: Path,
+) -> None:
+    admission, operations = _runtime(tmp_path)
+    task_commit = "b" * 40
+    candidate_commit = "c" * 40
+    task_id = "T1"
+    claim_descriptor = write_immutable_json_sidecar(
+        tmp_path,
+        {
+            "schema_version": "goal-claim-set.v1",
+            "workflow_run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "task_map_generation": "generation-1",
+            "claim_set_digest": "content-digest",
+            "claims": [{
+                "goal_claim_id": "GOAL-AC-1",
+                "mandatory": True,
+                "text": "deliver the requested behavior",
+            }],
+        },
+        root="goal-closure/claim-sets",
+        kind="goal_claim_set",
+        schema_version="goal-claim-set.v1",
+        created_by="test",
+    )
+    upstream_ref = _append_admitted_upstream(
+        tmp_path,
+        operations,
+        target_commit=task_commit,
+        task_id=task_id,
+    )
+    operations.event_log.append(ZfEvent(
+        type="task.ref.updated",
+        task_id=task_id,
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "task_id": task_id,
+            "source_commit": task_commit,
+        },
+    ))
+    operations.event_log.append(ZfEvent(
+        type="candidate.ready",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "candidate_head_commit": candidate_commit,
+            "completed_task_ids": [task_id],
+        },
+    ))
+    operations.event_log.append(ZfEvent(
+        type="flow.goal.closed",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": candidate_commit,
+            "goal_claim_set_ref": claim_descriptor["ref"],
+            "goal_claim_set_digest": claim_descriptor["sha256"],
+            "closure_fact_ref": "artifacts/goal-closure/fact.json",
+            "closure_fact_digest": "d" * 64,
+        },
+    ))
+    operation = operations.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="goal-judge-integrated-task-result",
+        operation_type="agent",
+        request={"goal": "GOAL-1", "generation": "generation-1"},
+    )
+
+    outcome = admission.report_legacy_result(
+        ZfEvent(
+            type="judge.child.completed",
+            actor="judge-prd",
+            correlation_id="run-1",
+            payload=_goal_closure_payload(
+                claim_descriptor=claim_descriptor,
+                upstream_ref=upstream_ref,
+            ),
+        ),
+        mode="blocking",
+        operation={
+            "workflow_run_id": "run-1",
+            "operation_id": "goal-judge-integrated-task-result",
+            "request_hash": operation.request_hash,
+        },
+    )
+
+    assert outcome.admitted is True
+
+
+def test_goal_closure_admission_rejects_unbound_task_commit_input(
+    tmp_path: Path,
+) -> None:
+    admission, operations = _runtime(tmp_path)
+    task_id = "T1"
+    claim_descriptor = write_immutable_json_sidecar(
+        tmp_path,
+        {
+            "schema_version": "goal-claim-set.v1",
+            "workflow_run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "task_map_generation": "generation-1",
+            "claim_set_digest": "content-digest",
+            "claims": [{
+                "goal_claim_id": "GOAL-AC-1",
+                "mandatory": True,
+                "text": "deliver the requested behavior",
+            }],
+        },
+        root="goal-closure/claim-sets",
+        kind="goal_claim_set",
+        schema_version="goal-claim-set.v1",
+        created_by="test",
+    )
+    upstream_ref = _append_admitted_upstream(
+        tmp_path,
+        operations,
+        target_commit="b" * 40,
+        task_id=task_id,
+    )
+    operations.event_log.append(ZfEvent(
+        type="task.ref.updated",
+        task_id=task_id,
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "task_id": task_id,
+            "source_commit": "a" * 40,
+        },
+    ))
+    operations.event_log.append(ZfEvent(
+        type="candidate.ready",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "candidate_head_commit": "c" * 40,
+            "completed_task_ids": [task_id],
+        },
+    ))
+    operations.event_log.append(ZfEvent(
+        type="flow.goal.closed",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "c" * 40,
+            "goal_claim_set_ref": claim_descriptor["ref"],
+            "goal_claim_set_digest": claim_descriptor["sha256"],
+            "closure_fact_ref": "artifacts/goal-closure/fact.json",
+            "closure_fact_digest": "d" * 64,
+        },
+    ))
+    operation = operations.ensure_operation(
+        workflow_run_id="run-1",
+        operation_id="goal-judge-unbound-task-result",
+        operation_type="agent",
+        request={"goal": "GOAL-1", "generation": "generation-1"},
+    )
+
+    outcome = admission.report_legacy_result(
+        ZfEvent(
+            type="judge.child.completed",
+            actor="judge-prd",
+            correlation_id="run-1",
+            payload=_goal_closure_payload(
+                claim_descriptor=claim_descriptor,
+                upstream_ref=upstream_ref,
+            ),
+        ),
+        mode="blocking",
+        operation={
+            "workflow_run_id": "run-1",
+            "operation_id": "goal-judge-unbound-task-result",
             "request_hash": operation.request_hash,
         },
     )

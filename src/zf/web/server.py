@@ -72,11 +72,11 @@ from zf.core.task.schema import Task, TaskContract, TaskEvidence
 from zf.core.task.store import TaskStore
 from zf.core.trace.diagnostics import _safe_trace_id
 from zf.cli.flow import (
-    apply_flow_submit,
     build_flow_intake,
     build_flow_intent,
     build_flow_submit_preview,
     draft_flow_spec,
+    draft_multi_kind_project_spec,
 )
 from zf.integrations.feishu.views import TaskView
 from zf.runtime.run_archive import (
@@ -380,6 +380,10 @@ from zf.web.projections.workspace import (  # noqa: F401
     _project_action_envelope,
     _projection_reply_if_requested,
 )
+from zf.web.workflow_request_routes import (
+    build_workflow_request_router,
+    workflow_request_strings,
+)
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REACT_DIST_DIR = _REPO_ROOT / "web" / "dist"
 _react_dist_missing_warned = False
@@ -505,6 +509,10 @@ _ACTION_ALIASES = {
     "channel-owner-report-request",
     "workflow-invoke",
     "workflow.invoke",
+    "workflow-request",
+    "workflow.request",
+    "workflow-submit",
+    "workflow.submit",
     "workflow-batch-resume",
     "workflow.batch.resume",
     "candidate-rework-apply",
@@ -578,6 +586,8 @@ _PROJECT_OPERATOR_CONTROLLED_ACTIONS = {
     "replan-reject",
     "plan-approve",
     "plan-reject",
+    "workflow-request",
+    "workflow-submit",
     "workflow-batch-resume",
     "candidate-rework-apply",
     "idea-to-product",
@@ -623,6 +633,15 @@ def create_app(
         if default_project_enabled else ""
     )
     default_project_opened_at = datetime.now(timezone.utc).isoformat()
+
+    app.include_router(build_workflow_request_router(
+        default_project_id=default_project_id,
+        default_state_dir=state_dir,
+        default_config=config,
+        default_project_root=project_root,
+        mutation_auth_error=_web_mutation_auth_error,
+        session_cookie=_web_session_cookie,
+    ))
 
     react_dist = _react_dist_dir()
     react_assets = react_dist / "assets" if react_dist is not None else None
@@ -1199,11 +1218,11 @@ def create_app(
         root = Path(str(payload.get("root") or "")).expanduser()
         preset_arg = str(payload.get("preset") or "") or None
         flow_kind = str(payload.get("kind") or payload.get("request_kind") or "").strip().lower()
-        if flow_kind and flow_kind not in {"issue", "prd", "refactor"}:
+        if flow_kind and flow_kind not in {"multi", "issue", "prd", "refactor"}:
             return JSONResponse({
                 "ok": False,
                 "status": "invalid_payload",
-                "reason": "kind must be one of issue, prd, refactor",
+                "reason": "kind must be one of multi, issue, prd, refactor",
             }, status_code=422)
         generated_flow_kind = ""
         if flow_kind:
@@ -1213,7 +1232,11 @@ def create_app(
                 or f"{flow_kind}-project"
             )
             lanes_raw = payload.get("lanes") or payload.get("requested_lanes")
-            lanes = int(lanes_raw) if lanes_raw else {"issue": 2, "prd": 4, "refactor": 5}[flow_kind]
+            lanes = int(lanes_raw) if lanes_raw else 0
+            if not lanes and flow_kind != "multi":
+                from zf.core.workflow.request_policy import default_lanes_for_kind
+
+                lanes = default_lanes_for_kind(flow_kind)
             parity_scope_raw = payload.get("parity_scope") or payload.get("parityScope") or []
             if isinstance(parity_scope_raw, str):
                 parity_scope = tuple(
@@ -1224,29 +1247,40 @@ def create_app(
             else:
                 parity_scope = ()
             root.mkdir(parents=True, exist_ok=True)
-            docs = draft_flow_spec(
-                kind=flow_kind,
-                source_ref=str(
-                    payload.get("from")
-                    or payload.get("source_ref")
-                    or payload.get("objective_ref")
-                    or ""
-                ),
-                source_root=str(payload.get("source_root") or payload.get("sourceRoot") or ""),
-                target_root=str(
-                    payload.get("target_root")
-                    or payload.get("targetRoot")
-                    or payload.get("target")
-                    or ""
-                ),
-                backend=str(payload.get("backend") or "codex"),
-                lanes=lanes,
-                project_name=project_name,
-                state_dir=str(payload.get("state_dir") or ""),
-                project_root=root,
-                strictness=str(payload.get("strictness") or "standard"),
-                parity_scope=parity_scope,
-            )
+            if flow_kind == "multi":
+                docs = draft_multi_kind_project_spec(
+                    backend=str(payload.get("backend") or "codex"),
+                    lanes=lanes,
+                    project_name=project_name,
+                    state_dir=str(payload.get("state_dir") or ""),
+                    project_root=root,
+                    strictness=str(payload.get("strictness") or "standard"),
+                    parity_scope=parity_scope,
+                )
+            else:
+                docs = draft_flow_spec(
+                    kind=flow_kind,
+                    source_ref=str(
+                        payload.get("from")
+                        or payload.get("source_ref")
+                        or payload.get("objective_ref")
+                        or ""
+                    ),
+                    source_root=str(payload.get("source_root") or payload.get("sourceRoot") or ""),
+                    target_root=str(
+                        payload.get("target_root")
+                        or payload.get("targetRoot")
+                        or payload.get("target")
+                        or ""
+                    ),
+                    backend=str(payload.get("backend") or "codex"),
+                    lanes=lanes,
+                    project_name=project_name,
+                    state_dir=str(payload.get("state_dir") or ""),
+                    project_root=root,
+                    strictness=str(payload.get("strictness") or "standard"),
+                    parity_scope=parity_scope,
+                )
             (root / "zf.yaml").write_text(
                 yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
                 encoding="utf-8",
@@ -1885,141 +1919,6 @@ def create_app(
             project_root=context.project_root,
             state_dir=context.state_dir,
         ))
-
-    @app.post("/api/projects/{project_id}/workflow-intake")
-    async def project_workflow_intake(
-        project_id: str,
-        request: Request,
-        authorization: str | None = Header(default=None),
-        x_zf_web_token: str | None = Header(default=None),
-    ) -> JSONResponse:
-        auth_error = _web_mutation_auth_error(
-            "workflow-intake",
-            authorization=authorization,
-            x_zf_web_token=x_zf_web_token,
-            web_session_token=_web_session_cookie(request),
-        )
-        if auth_error is not None:
-            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
-        context = _resolve_api_project(
-            project_id,
-            default_project_id=default_project_id,
-            default_state_dir=state_dir,
-            default_config=config,
-            default_project_root=project_root,
-        )
-        payload = await _request_json(request)
-        request_id = str(payload.get("request_id") or "")
-        output = payload.get("output")
-        if not output and request_id:
-            output = context.project_root / "docs" / "intake" / f"{request_id}.md"
-        result = build_flow_intake(
-            kind=str(payload.get("kind") or payload.get("request_kind") or "auto"),
-            source_ref=str(payload.get("from") or payload.get("source_ref") or ""),
-            objective=str(payload.get("objective") or payload.get("message") or payload.get("reason") or ""),
-            source_root=str(payload.get("source_root") or ""),
-            target_root=str(payload.get("target_root") or payload.get("target") or ""),
-            backend=str(payload.get("backend") or "codex"),
-            lanes=int(payload.get("lanes") or payload.get("requested_lanes") or 2),
-            project_id=project_id,
-            project_name=str(payload.get("project_name") or ""),
-            request_id=request_id,
-            source=str(payload.get("source") or "web"),
-            created_by=str(payload.get("created_by") or "web"),
-            channel_id=str(payload.get("channel_id") or ""),
-            thread_id=str(payload.get("thread_id") or ""),
-            output=Path(str(output)).expanduser() if output else None,
-        )
-        return JSONResponse({"ok": True, "status": "intake_created", "result": result})
-
-    @app.post("/api/projects/{project_id}/workflow-classify")
-    async def project_workflow_classify(
-        project_id: str,
-        request: Request,
-        authorization: str | None = Header(default=None),
-        x_zf_web_token: str | None = Header(default=None),
-    ) -> JSONResponse:
-        auth_error = _web_mutation_auth_error(
-            "workflow-classify",
-            authorization=authorization,
-            x_zf_web_token=x_zf_web_token,
-            web_session_token=_web_session_cookie(request),
-        )
-        if auth_error is not None:
-            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
-        _resolve_api_project(
-            project_id,
-            default_project_id=default_project_id,
-            default_state_dir=state_dir,
-            default_config=config,
-            default_project_root=project_root,
-        )
-        payload = await _request_json(request)
-        intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
-        if not intake_ref:
-            return JSONResponse({
-                "ok": False,
-                "status": "invalid_payload",
-                "reason": "intake_ref is required",
-            }, status_code=422)
-        result = build_flow_intent(
-            intake_path=Path(intake_ref).expanduser(),
-            explicit_kind=str(payload.get("kind") or "auto"),
-        )
-        return JSONResponse({"ok": True, "status": "classified", "result": result})
-
-    @app.post("/api/projects/{project_id}/workflow-submit")
-    async def project_workflow_submit(
-        project_id: str,
-        request: Request,
-        authorization: str | None = Header(default=None),
-        x_zf_web_token: str | None = Header(default=None),
-    ) -> JSONResponse:
-        auth_error = _web_mutation_auth_error(
-            "workflow-submit",
-            authorization=authorization,
-            x_zf_web_token=x_zf_web_token,
-            web_session_token=_web_session_cookie(request),
-        )
-        if auth_error is not None:
-            return JSONResponse(auth_error, status_code=int(auth_error.pop("_status_code", 403)))
-        context = _resolve_api_project(
-            project_id,
-            default_project_id=default_project_id,
-            default_state_dir=state_dir,
-            default_config=config,
-            default_project_root=project_root,
-        )
-        payload = await _request_json(request)
-        intake_ref = str(payload.get("intake") or payload.get("intake_ref") or "").strip()
-        if not intake_ref:
-            return JSONResponse({
-                "ok": False,
-                "status": "invalid_payload",
-                "reason": "intake_ref is required",
-            }, status_code=422)
-        config_ref = Path(str(payload.get("config") or payload.get("config_ref") or context.config_path)).expanduser()
-        apply = bool(payload.get("apply"))
-        builder = apply_flow_submit if apply else build_flow_submit_preview
-        result = builder(
-            config_path=config_ref,
-            intake_path=Path(intake_ref).expanduser(),
-            flow_kind=str(payload.get("kind") or ""),
-            task_id=str(payload.get("task_id") or ""),
-            pattern_id=str(payload.get("pattern_id") or ""),
-            requested_by=str(payload.get("requested_by") or "web"),
-            reason=str(payload.get("reason") or ""),
-            allow_missing_env=bool(payload.get("allow_missing_env")),
-        )
-        code = 202 if apply and result.get("status") != "STOP" else 200
-        if result.get("status") == "STOP":
-            code = 409
-        return JSONResponse({
-            "ok": result.get("status") != "STOP",
-            "status": result.get("status"),
-            "applied": apply,
-            "result": result,
-        }, status_code=code)
 
     @app.get("/api/projects/{project_id}/regression-cases")
     def project_regression_cases(project_id: str, feature_id: str = "") -> JSONResponse:
@@ -3316,18 +3215,21 @@ def create_app(
                     source_root=str(payload.get("source_root") or ""),
                     target_root=str(payload.get("target_root") or payload.get("target") or ""),
                     backend=str(payload.get("backend") or "codex"),
-                    lanes=int(payload.get("lanes") or payload.get("requested_lanes") or 2),
+                    lanes=int(payload.get("lanes") or payload.get("requested_lanes") or 0),
                     project_id=default_project_id,
                     request_id=request_id,
                     source="channel",
                     created_by=str(payload.get("requested_by") or "channel"),
                     channel_id=channel_id,
                     thread_id=str(payload.get("thread_id") or ""),
+                    acceptance=tuple(workflow_request_strings(payload.get("acceptance"))),
+                    constraints=tuple(workflow_request_strings(payload.get("constraints"))),
+                    open_questions=tuple(workflow_request_strings(payload.get("open_questions"))),
                     output=(project_root / "docs" / "intake" / f"{request_id}.md") if request_id else None,
                 )
                 intake_ref = str(intake.get("intake_ref") or "")
                 build_flow_intent(intake_path=Path(intake_ref), explicit_kind=str(payload.get("kind") or "auto"))
-            result = apply_flow_submit(
+            result = build_flow_submit_preview(
                 config_path=project_root / "zf.yaml",
                 intake_path=Path(intake_ref),
                 flow_kind=str(payload.get("kind") or ""),
@@ -3338,46 +3240,50 @@ def create_app(
                 allow_missing_env=bool(payload.get("allow_missing_env")),
             )
             code = 202 if result.get("status") != "STOP" else 409
-            if result.get("status") != "STOP":
-                EventWriter(event_log_from_project(state_dir, config=config)).append(ZfEvent(
-                    type="channel.state_update.posted",
-                    actor="web",
-                    task_id=str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
-                    correlation_id=channel_id,
-                    payload={
-                        "channel_id": channel_id,
-                        "thread_id": str(payload.get("thread_id") or "main"),
-                        "status": "workflow_submitted",
-                        "summary": "workflow submit accepted and invoke requested",
-                        "task_id": str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
-                        "refs": {
-                            "workflow_invoke_event_id": str(result.get("workflow_invoke_event_id") or ""),
-                            "workflow_input_manifest_ref": str((result.get("payload") or {}).get("workflow_input_manifest_ref") or ""),
-                            "workflow_prompt_ref": str((result.get("payload") or {}).get("workflow_prompt_ref") or ""),
-                        },
-                        "source": "workflow-submit",
+            EventWriter(event_log_from_project(state_dir, config=config)).append(ZfEvent(
+                type="channel.state_update.posted",
+                actor="web",
+                task_id=str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
+                correlation_id=channel_id,
+                payload={
+                    "channel_id": channel_id,
+                    "thread_id": str(payload.get("thread_id") or "main"),
+                    "status": (
+                        "workflow_clarification_required"
+                        if result.get("status") == "STOP"
+                        else "workflow_proposal_ready"
+                    ),
+                    "summary": (
+                        "workflow request needs clarification before ignition"
+                        if result.get("status") == "STOP"
+                        else "workflow request is ready for explicit approval"
+                    ),
+                    "task_id": str((result.get("payload") or {}).get("task_id") or payload.get("task_id") or ""),
+                    "refs": {
+                        "workflow_submit_preview_ref": str(result.get("submit_preview_ref") or ""),
+                        "workflow_input_manifest_ref": str((result.get("payload") or {}).get("workflow_input_manifest_ref") or ""),
+                        "workflow_prompt_ref": str((result.get("payload") or {}).get("workflow_prompt_ref") or ""),
                     },
-                ))
+                    "source": "workflow-request",
+                },
+            ))
             return JSONResponse({
                 "ok": result.get("status") != "STOP",
-                "status": result.get("status"),
-                "action": "workflow-submit",
+                "status": (
+                    "clarification_required"
+                    if result.get("status") == "STOP"
+                    else "proposal_ready"
+                ),
+                "action": "workflow-request",
                 "requested_action": "workflow-request",
                 "result": result,
+                "next_action": "approve through project workflow-submit with apply=true",
             }, status_code=code)
-        result = _web_action(
-            state_dir,
-            "workflow-invoke",
-            payload=payload,
-            authorization=authorization,
-            x_zf_web_token=x_zf_web_token,
-            web_session_token=_web_session_cookie(request),
-            x_idempotency_key=x_idempotency_key,
-            config=config,
-            project_root=project_root,
-        )
-        status_code = int(result.pop("_status_code", 200))
-        return JSONResponse(result, status_code=status_code)
+        return JSONResponse({
+            "ok": False,
+            "status": "project_initialization_required",
+            "reason": "initialize/register the project before discussing and submitting a workflow",
+        }, status_code=409)
 
     @app.get("/api/web-session")
     def web_session(request: Request) -> JSONResponse:

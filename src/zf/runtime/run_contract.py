@@ -44,11 +44,17 @@ def build_run_contract(
         if not state_dir.is_absolute():
             state_dir = project_root / state_dir
     state_dir = state_dir.expanduser().resolve(strict=False)
-    metadata = dict(getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {})
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    metadata = flow_metadata_for(config)
     manifest_ref = workflow_input_manifest_ref or str(
         metadata.get("workflow_input_manifest_ref") or ""
     )
     manifest = _load_json_ref(manifest_ref, project_root=project_root)
+    metadata = flow_metadata_for(
+        config,
+        str(manifest.get("kind") or manifest.get("request_kind") or ""),
+    )
     if not skill_adapter_plan_ref:
         skill_adapter_plan_ref = str(
             manifest.get("skill_adapter_plan_ref")

@@ -355,6 +355,57 @@ def test_generic_fanout_success_payload_preserves_inventory_refs() -> None:
     )
 
 
+def test_fanout_success_payload_preserves_workflow_request_identity() -> None:
+    payload = _FanoutPayloadProbe()._fanout_flow_identity_payload(
+        {
+            "fanout_id": "fanout-issue",
+            "trigger_payload": {
+                "request_id": "req-001",
+                "workflow_run_id": "run-001",
+                "flow_kind": "issue",
+                "workflow_request_ref": "requests/req-001.json",
+                "requirement_spec_ref": "requests/req-001-rev-2.json",
+                "requirement_spec_digest": "sha256:abc123",
+                "request_revision": 2,
+            },
+            "children": [{
+                "child_id": "issue-plan",
+                "payload": {"evidence_refs": ["docs/plans/issue.md"]},
+            }],
+        }
+    )
+
+    assert payload["request_id"] == "req-001"
+    assert payload["run_id"] == "run-001"
+    assert payload["workflow_run_id"] == "run-001"
+    assert payload["flow_kind"] == "issue"
+    assert payload["workflow_request_ref"] == "requests/req-001.json"
+    assert payload["requirement_spec_ref"] == "requests/req-001-rev-2.json"
+    assert payload["requirement_spec_digest"] == "sha256:abc123"
+    assert payload["request_revision"] == 2
+
+
+def test_fanout_success_payload_does_not_promote_child_run_to_workflow() -> None:
+    payload = _FanoutPayloadProbe()._fanout_flow_identity_payload(
+        {
+            "fanout_id": "fanout-issue",
+            "trace_id": "workflow-parent-001",
+            "trigger_payload": {
+                "trace_id": "workflow-parent-001",
+                "flow_kind": "issue",
+            },
+            "children": [{
+                "child_id": "issue-verify",
+                "run_id": "run-fanout-issue-verify",
+                "payload": {"run_id": "run-fanout-issue-verify"},
+            }],
+        }
+    )
+
+    assert payload["run_id"] == "workflow-parent-001"
+    assert payload["workflow_run_id"] == "workflow-parent-001"
+
+
 def test_writer_fanout_missing_kanban_tasks_fail_closed(tmp_path: Path):
     state_dir, log, transport, orch = _state(tmp_path)
 
@@ -2925,7 +2976,7 @@ def test_static_gate_reconcile_completes_writer_fanout_child_from_trigger_event(
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "completed"
 
 
-def test_late_task_ref_updated_closes_failed_writer_child(tmp_path: Path):
+def test_dev_build_done_waits_for_late_task_ref_updated(tmp_path: Path):
     state_dir, log, _transport, orch = _state(
         tmp_path,
         include_orchestrator=True,
@@ -2952,12 +3003,12 @@ def test_late_task_ref_updated_closes_failed_writer_child(tmp_path: Path):
     )
     log.append(progress)
     orch._maybe_update_writer_fanout(progress)  # type: ignore[attr-defined]
-    failed = [
+    terminal = [
         event for event in log.read_all()
-        if event.type == "fanout.child.failed"
+        if event.type in {"fanout.child.failed", "fanout.child.completed"}
         and event.payload.get("child_id") == task1["child_id"]
     ]
-    assert failed[-1].payload["reason"] == "missing task ref after dev.build.done"
+    assert terminal == []
 
     task_ref = orch._process_task_ref_for_progress_event(  # type: ignore[attr-defined]
         progress
@@ -2981,12 +3032,7 @@ def test_late_task_ref_updated_closes_failed_writer_child(tmp_path: Path):
         and event.payload.get("child_id") == task1["child_id"]
     ]
     assert completed[-1].payload["result_event_id"] == progress.id
-    assert completed[-1].payload["recovered_from_status"] == "failed"
-    assert (
-        completed[-1].payload["recovery_reason"]
-        == "late_task_ref_updated_after_child_failed"
-    )
-    assert completed[-1].payload["recovery_source_event_id"] == ref_updated.id
+    assert "recovered_from_status" not in completed[-1].payload
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "completed"
 
 
@@ -3039,17 +3085,12 @@ def test_writer_completion_rejects_stale_task_ref_from_prior_attempt(
     )
     orch._maybe_update_writer_fanout(new_progress)  # type: ignore[attr-defined]
 
-    failed = [
+    terminal = [
         event for event in log.read_all()
-        if event.type == "fanout.child.failed"
+        if event.type in {"fanout.child.failed", "fanout.child.completed"}
         and event.payload.get("child_id") == task1["child_id"]
     ]
-    assert failed[-1].payload["reason"] == "missing task ref after dev.build.done"
-    assert not [
-        event for event in log.read_all()
-        if event.type == "fanout.child.completed"
-        and event.payload.get("result_event_id") == new_progress.id
-    ]
+    assert terminal == []
 
     new_ref = TaskRefManager(
         state_dir=state_dir,
@@ -3305,6 +3346,7 @@ def test_stale_writer_completion_from_superseded_fanout_is_adopted(
         },
     )
 
+    log.append(progress)
     orch._maybe_update_writer_fanout(progress)  # type: ignore[attr-defined]
 
     events = log.read_all()
@@ -3322,11 +3364,33 @@ def test_stale_writer_completion_from_superseded_fanout_is_adopted(
         if event.type == "fanout.child.stale_completion"
         and event.payload.get("result_event_id") == progress.id
     ]
-    # 收编后以新代身份继续处理:新代 child 得到终局结果
-    assert [
+    # dev.build.done remains unsettled until the mechanical task-ref result.
+    assert not [
         event for event in events
         if event.type in {"fanout.child.completed", "fanout.child.failed"}
         and event.payload.get("fanout_id") == new_fanout_id
+    ]
+    ref_rejected = ZfEvent(
+        type="task.ref.rejected",
+        actor="zf-cli",
+        task_id="TASK-1",
+        correlation_id="trace-1",
+        causation_id=progress.id,
+        payload={
+            "task_id": "TASK-1",
+            "trigger_event_id": progress.id,
+            "reason": "missing source_commit",
+        },
+    )
+    orch._maybe_update_writer_fanout(ref_rejected)  # type: ignore[attr-defined]
+
+    # The canonical rejection terminates the adopted child in the new fanout.
+    events = log.read_all()
+    assert [
+        event for event in events
+        if event.type == "fanout.child.failed"
+        and event.payload.get("fanout_id") == new_fanout_id
+        and event.payload.get("reason") == "missing source_commit"
     ]
     # 旧代 manifest 不被回写
     final_child = _child(_manifest(state_dir, fanout_id), "TASK-1")

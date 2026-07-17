@@ -18,10 +18,11 @@ from zf.core.events.model import ZfEvent
 LIGHT_TASK_SUFFIX = "DELIVER-001"
 
 
-def light_flow_metadata(config: Any) -> dict[str, Any] | None:
-    workflow = getattr(config, "workflow", None)
-    metadata = getattr(workflow, "flow_metadata", None)
-    if not isinstance(metadata, dict):
+def light_flow_metadata(config: Any, *, flow_kind: str = "") -> dict[str, Any] | None:
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    metadata = flow_metadata_for(config, flow_kind)
+    if not metadata:
         return None
     if str(metadata.get("topology") or "") != "light":
         return None

@@ -84,39 +84,31 @@ def _probe(tmp_path: Path, pane_texts: dict[str, str]):
     )
 
 
-def test_usage_limit_prompt_detected_single_pane(tmp_path: Path) -> None:
+def test_usage_reset_banner_is_not_an_interactive_prompt(tmp_path: Path) -> None:
     probe = _probe(tmp_path, {
         "dev-1": _R5_USAGE_LIMIT_PANE,
         "dev-2": _WORKING_PANE,
     })
     by_id = {p["instance_id"]: p for p in probe["panes"]}
-    assert by_id["dev-1"]["activity_status"] == "interactive_prompt"
-    assert by_id["dev-1"]["interactive_prompt_marker"] == "usage_limit_reset_confirm"
+    assert by_id["dev-1"]["activity_status"] != "interactive_prompt"
+    assert by_id["dev-1"]["interactive_prompt_marker"] == ""
     assert by_id["dev-2"]["activity_status"] != "interactive_prompt"
-    assert probe["summary"]["interactive_prompt"] == 1
+    assert probe["summary"]["interactive_prompt"] == 0
     assert probe["summary"]["correlated_interactive_prompts"] == {}
 
     items = pane_probe_attention_items(probe)
     prompt_items = [i for i in items if "interactive" in i["fingerprint"]]
-    assert len(prompt_items) == 1
-    assert prompt_items[0]["human_action_required"] is True
-    assert prompt_items[0]["severity"] == "high"
+    assert prompt_items == []
 
 
-def test_fleet_correlated_prompt_emits_critical_item(tmp_path: Path) -> None:
-    """r5 实案:9 worker 共享配额同时撞限 → 舰队级相关性失效。"""
+def test_fleet_usage_reset_banners_do_not_emit_attention(tmp_path: Path) -> None:
     probe = _probe(tmp_path, {
         f"dev-{i}": _R5_USAGE_LIMIT_PANE for i in range(1, 4)
     })
-    assert probe["summary"]["interactive_prompt"] == 3
-    assert probe["summary"]["correlated_interactive_prompts"] == {
-        "usage_limit_reset_confirm": 3,
-    }
+    assert probe["summary"]["interactive_prompt"] == 0
+    assert probe["summary"]["correlated_interactive_prompts"] == {}
     items = pane_probe_attention_items(probe)
     fleet = [i for i in items if i["fingerprint"].startswith("pane_probe_fleet:")]
-    assert len(fleet) == 1
-    assert fleet[0]["severity"] == "critical"
-    assert fleet[0]["human_action_required"] is True
-    # 单 pane 项照发(3 个)
+    assert fleet == []
     single = [i for i in items if i["fingerprint"].startswith("pane_probe_interactive:")]
-    assert len(single) == 3
+    assert single == []

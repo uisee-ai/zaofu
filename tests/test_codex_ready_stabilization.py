@@ -26,6 +26,15 @@ def test_backend_adapter_exposes_post_ready_delay():
     )
 
 
+def test_interactive_backends_require_ready_wait():
+    assert ClaudeCodeAdapter().requires_ready_wait is True
+    assert CodexAdapter().requires_ready_wait is True
+
+
+def test_mock_backend_does_not_require_tui_ready_wait():
+    assert MockAdapter().requires_ready_wait is False
+
+
 def test_claude_adapter_has_zero_post_ready_delay():
     """Claude's ❯ prompt appears after stdin is wired — no extra wait."""
     assert ClaudeCodeAdapter().post_ready_delay_s == 0.0

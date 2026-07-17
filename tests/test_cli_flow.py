@@ -10,7 +10,7 @@ import yaml
 
 from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
-from zf.cli.flow import build_flow_submit_preview
+from zf.cli.flow import apply_flow_submit, build_flow_intake, build_flow_submit_preview
 from zf.cli.main import main
 
 
@@ -46,6 +46,24 @@ def test_flow_draft_issue_outputs_short_issue_flow(tmp_path):
     config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
     assert config_doc["spec"]["project"]["name"] == "issue-demo"
     assert config_doc["spec"]["uses"] == ["flow-draft-runtime/v1"]
+
+
+def test_flow_draft_issue_defaults_to_single_lane(tmp_path):
+    output = tmp_path / "issue-flow.yaml"
+
+    rc = main([
+        "flow", "draft",
+        "--kind", "issue",
+        "--from", "backlogs/bug.md",
+        "--backend", "mock",
+        "--output", str(output),
+    ])
+
+    assert rc == 0
+    docs = list(yaml.safe_load_all(output.read_text(encoding="utf-8")))
+    assert docs[0]["spec"]["lanes"] == 1
+    config = load_config(output)
+    assert config.workflow.pipelines[0].lane_count == 1
 
 
 def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
@@ -169,6 +187,7 @@ def test_flow_intake_writes_manifest_and_json(tmp_path, capsys):
     data = json.loads(manifest.read_text(encoding="utf-8"))
     assert data["schema_version"] == "workflow.input_manifest.v1"
     assert data["kind"] == "issue"
+    assert data["requested_lanes"] == 1
     assert data["intake_ref"] == str(intake)
     assert data["intake_json_ref"] == str(intake_json)
     assert data["intake_markdown_ref"] == str(intake)
@@ -676,7 +695,8 @@ def test_flow_start_dry_run_writes_safe_unique_proposal(tmp_path, capsys):
     assert proposal["kind"] == "issue"
     assert proposal["project"]["name"] == "issue-start-demo"
     assert proposal["project"]["state_dir"] == ".zf-issue-start-demo"
-    assert proposal["summary"]["roles"] == 7
+    assert proposal["lanes"] == 1
+    assert proposal["summary"]["roles"] == 5
     assert proposal["policies"]["quality_floor"] == "issue-regression"
     assert output.exists()
 
@@ -1126,8 +1146,224 @@ def test_project_init_creates_flow_project(tmp_path, capsys, monkeypatch):
     assert (root / ".zf-issue-project" / "session.yaml").exists()
     docs = list(yaml.safe_load_all((root / "zf.yaml").read_text(encoding="utf-8")))
     assert docs[0]["kind"] == "IssueFlow"
+    assert docs[0]["spec"]["lanes"] == 1
     config = load_config(root / "zf.yaml")
+    assert config.workflow.pipelines[0].lane_count == 1
     assert config.session.tmux_session == "zf-issue-project"
+
+
+def test_project_init_defaults_to_multi_kind_without_ignition(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "multi-project"
+
+    rc = main([
+        "project", "init",
+        "--name", "multi-project",
+        "--root", str(root),
+        "--create",
+        "--backend", "mock",
+        "--skip-instruction-docs",
+        "--no-workspace-register",
+    ])
+
+    assert rc == 0, capsys.readouterr().err
+    docs = list(yaml.safe_load_all((root / "zf.yaml").read_text(encoding="utf-8")))
+    assert [doc["kind"] for doc in docs[:3]] == [
+        "IssueFlow", "PrdFlow", "RefactorFlow",
+    ]
+    profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
+    assert set(profile["spec"]["flow_defaults"]) == {"issue", "prd", "refactor"}
+
+    config = load_config(root / "zf.yaml")
+    assert set(config.workflow.kind_routes) >= {"issue", "prd", "feat", "refactor"}
+    lane_counts = {
+        pipeline.flow_kind: pipeline.lane_count
+        for pipeline in config.workflow.pipelines
+    }
+    assert lane_counts == {"issue": 1, "prd": 2, "refactor": 5}
+    assert set(config.workflow.flow_metadata_by_kind) == {"issue", "prd", "refactor"}
+    assert (root / "README.md").exists()
+    assert (root / "src" / ".gitkeep").exists()
+    assert (root / "tests" / ".gitkeep").exists()
+
+    events = EventLog(root / ".zf-multi-project" / "events.jsonl").read_all()
+    assert not any(event.type.startswith("workflow.submit") for event in events)
+    assert not any(event.type == "workflow.invoke.requested" for event in events)
+
+
+def test_project_init_vague_request_stays_clarifying(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "clarify-project"
+
+    rc = main([
+        "project", "init",
+        "--name", "clarify-project",
+        "--root", str(root),
+        "--create",
+        "--backend", "mock",
+        "--request-kind", "refactor",
+        "--objective", "Modernize the legacy system",
+        "--open-question", "Which source and target roots are authoritative?",
+        "--skip-instruction-docs",
+        "--no-workspace-register",
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["request"]["request_status"] == "clarifying"
+    events = EventLog(root / ".zf-clarify-project" / "events.jsonl").read_all()
+    assert "workflow.intake.clarification.required" in [event.type for event in events]
+    assert "workflow.invoke.requested" not in [event.type for event in events]
+
+
+def test_project_init_apply_fails_closed_for_vague_request(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "blocked-project"
+
+    rc = main([
+        "project", "init",
+        "--name", "blocked-project",
+        "--root", str(root),
+        "--create",
+        "--backend", "mock",
+        "--request-kind", "refactor",
+        "--objective", "Modernize the legacy system",
+        "--apply",
+        "--allow-missing-env",
+        "--skip-instruction-docs",
+        "--no-workspace-register",
+        "--json",
+    ])
+
+    assert rc == 1
+    result = json.loads(capsys.readouterr().out)
+    assert result["request"]["request_status"] == "clarifying"
+    assert result["submit"]["status"] == "STOP"
+    events = EventLog(root / ".zf-blocked-project" / "events.jsonl").read_all()
+    assert "workflow.submit.rejected" in [event.type for event in events]
+    assert "workflow.invoke.requested" not in [event.type for event in events]
+
+
+def test_project_init_clear_request_only_ignites_with_apply(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "apply-project"
+
+    rc = main([
+        "project", "init",
+        "--name", "apply-project",
+        "--root", str(root),
+        "--create",
+        "--backend", "mock",
+        "--request-kind", "issue",
+        "--objective", "Fix session expiry and add a regression test",
+        "--acceptance", "Focused regression test passes",
+        "--apply",
+        "--allow-missing-env",
+        "--skip-instruction-docs",
+        "--no-workspace-register",
+        "--json",
+    ])
+
+    assert rc == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["request"]["effective_kind"] == "issue"
+    assert result["submit"]["status"] == "accepted"
+    events = EventLog(root / ".zf-apply-project" / "events.jsonl").read_all()
+    invokes = [event for event in events if event.type == "workflow.invoke.requested"]
+    assert len(invokes) == 1
+    assert invokes[0].payload["pattern_id"] == "issue-triage"
+
+
+def test_multi_kind_project_submits_each_kind_without_route_crosstalk(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    root = tmp_path / "multi-project"
+    source_root = tmp_path / "legacy"
+    source_root.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    assert main([
+        "project", "init",
+        "--name", "multi-project",
+        "--root", str(root),
+        "--create",
+        "--git-init",
+        "--backend", "mock",
+        "--skip-instruction-docs",
+        "--no-workspace-register",
+    ]) == 0
+    capsys.readouterr()
+    config_docs = list(yaml.safe_load_all((root / "zf.yaml").read_text()))
+    config_doc = next(doc for doc in config_docs if doc.get("kind") == "ZfConfig")
+    config_doc["spec"].setdefault("workflow", {})[
+        "allow_unverified_candidate"
+    ] = True
+    (root / "zf.yaml").write_text(
+        yaml.safe_dump_all(config_docs, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    source_ref = root / "request.md"
+    source_ref.write_text("Deliver the requested change with regression tests.\n")
+
+    inputs = {
+        "issue": {"objective": "Fix session expiry", "target_root": ""},
+        "prd": {"objective": "Add a session status command", "target_root": str(root)},
+        "refactor": {
+            "objective": "Port session handling into the target project",
+            "source_root": str(source_root),
+            "target_root": str(root),
+        },
+    }
+    results = []
+    for kind, values in inputs.items():
+        intake = build_flow_intake(
+            kind=kind,
+            source_ref=str(source_ref),
+            objective=values["objective"],
+            source_root=str(values.get("source_root") or ""),
+            target_root=str(values.get("target_root") or ""),
+            backend="mock",
+            project_name="multi-project",
+            acceptance=("Focused tests pass",),
+            request_id=f"REQ-{kind.upper()}",
+            output=root / "docs" / "intake" / f"{kind}.md",
+        )
+        results.append(apply_flow_submit(
+            config_path=root / "zf.yaml",
+            intake_path=Path(intake["intake_ref"]),
+            flow_kind=kind,
+            requested_by="test",
+            allow_missing_env=True,
+        ))
+
+    assert [result["status"] for result in results] == [
+        "accepted", "accepted", "accepted",
+    ]
+    invokes = [
+        event for event in EventLog(root / ".zf-multi-project" / "events.jsonl").read_all()
+        if event.type == "workflow.invoke.requested"
+    ]
+    assert [event.payload["flow_kind"] for event in invokes] == [
+        "issue", "prd", "refactor",
+    ]
+    assert [event.payload["pattern_id"] for event in invokes] == [
+        "issue-triage", "prd-scan", "refactor-flow-scan",
+    ]
 
 
 def test_project_init_prd_git_init_and_greenfield_seed(
@@ -1168,6 +1404,17 @@ def test_project_init_prd_git_init_and_greenfield_seed(
     assert (root / "src" / ".gitkeep").exists()
     assert (root / "tests" / ".gitkeep").exists()
     assert (root / "app" / ".gitkeep").exists()
+    assert subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--verify", "HEAD"],
+        capture_output=True,
+        text=True,
+    ).returncode == 0
+    assert ".zf-notes-prd" not in subprocess.run(
+        ["git", "-C", str(root), "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
     config = load_config(root / "zf.yaml")
     assert config.session.tmux_session == "zf-notes-prd"
 

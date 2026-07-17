@@ -27,6 +27,10 @@ from zf.runtime.call_result_envelope import (
     validate_call_result_envelope,
     write_immutable_json_sidecar,
 )
+from zf.runtime.candidate_result_binding import (
+    candidate_task_source_commits,
+    same_task_map_generation,
+)
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
@@ -530,6 +534,11 @@ class CallResultAdmissionService:
         workflow_run_id = str(result.get("workflow_run_id") or "")
         task_map_generation = str(result.get("task_map_generation") or "")
         target_commit = str(result.get("target_commit") or "")
+        task_source_commits = candidate_task_source_commits(
+            events,
+            workflow_run_id=workflow_run_id,
+            candidate_head_commit=target_commit,
+        )
         admitted_refs: set[str] = set()
         for event in events:
             if event.type != "workflow.call.result.admitted" or not isinstance(event.payload, dict):
@@ -550,10 +559,15 @@ class CallResultAdmissionService:
             )
             result_generation = str(identity.get("task_map_generation") or "")
             result_target = str(identity.get("target_commit") or "")
-            if result_generation and result_generation != task_map_generation:
+            if result_generation and not same_task_map_generation(
+                result_generation,
+                task_map_generation,
+            ):
                 continue
             if result_target and result_target != target_commit:
-                continue
+                result_task_id = str(identity.get("task_id") or "")
+                if task_source_commits.get(result_task_id) != result_target:
+                    continue
             ref = str(descriptor.get("ref") or "")
             if ref:
                 admitted_refs.add(ref)
@@ -798,7 +812,9 @@ def result_protocol_mode(config: Any, payload: Mapping[str, Any] | None = None) 
     raw = payload.get("result_protocol_mode")
     if not raw and isinstance(payload.get("result_protocol"), Mapping):
         raw = payload["result_protocol"].get("mode")
-    metadata = dict(getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {})
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    metadata = flow_metadata_for(config, payload=payload)
     if not raw:
         raw = metadata.get("result_protocol_mode")
     if not raw and isinstance(metadata.get("result_protocol"), Mapping):

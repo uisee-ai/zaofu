@@ -407,6 +407,17 @@ def validate_shared_action_payload(
     if action == "channel-synthesis-request":
         if not _required_text(payload, "channel_id"):
             return "channel_id is required"
+    if action == "workflow-request":
+        if not (
+            _required_text(payload, "objective")
+            or _required_text(payload, "message")
+            or _required_text(payload, "source_ref")
+            or _required_text(payload, "artifact_ref")
+        ):
+            return "objective, message, source_ref, or artifact_ref is required"
+    if action == "workflow-submit":
+        if not (_required_text(payload, "intake_ref") or _required_text(payload, "intake")):
+            return "intake_ref is required"
     if action == "workflow-invoke":
         if not _required_text(payload, "task_id"):
             return "task_id is required"

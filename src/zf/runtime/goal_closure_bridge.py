@@ -3,25 +3,54 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.candidate_result_binding import (
+    candidate_task_source_commits,
+    same_task_map_generation,
+)
+
+# Compatibility for existing focused tests and downstream diagnostics.
+_same_task_map_generation = same_task_map_generation
 
 
-def _same_task_map_generation(left: str, right: str) -> bool:
-    """Match the two live encodings of one task-map generation.
+def _resolve_run_objective_ref(
+    events: list[ZfEvent],
+    *,
+    workflow_run_id: str,
+    payload: dict,
+    metadata: dict,
+) -> str:
+    """Resolve the immutable objective artifact for one workflow run."""
 
-    ZF-REVIEW-141-GEN(07-16 实弹):envelope 身份存显式短格式
-    `task-map-<digest 前 20 位>`,closure 身份在触发 payload 缺显式
-    generation 时按 ref/digest 哈希出完整 sha256——纯字符串比较永不
-    相等,goal 闭环 read contract 在 prd-fanout-v3 拓扑下成为永假门
-    (契约键分叉家族)。归一化:去 `task-map-` 前缀后按前缀关系判同代
-    (短格式即完整摘要的截断)。
-    """
-    a = str(left or "").strip().removeprefix("task-map-")
-    b = str(right or "").strip().removeprefix("task-map-")
-    if not a or not b:
-        return a == b
-    if len(a) < 12 or len(b) < 12:
-        return a == b
-    return a.startswith(b) or b.startswith(a)
+    scoped_payloads = [payload]
+    for event in reversed(events):
+        body = event.payload if isinstance(event.payload, dict) else {}
+        identities = {
+            str(body.get("workflow_run_id") or "").strip(),
+            str(body.get("run_id") or "").strip(),
+            str(body.get("request_id") or "").strip(),
+            str(body.get("trace_id") or "").strip(),
+            str(event.correlation_id or "").strip(),
+        }
+        if workflow_run_id in identities:
+            scoped_payloads.append(body)
+
+    # A submitted Request pins the requirement revision for the Run. It must
+    # outrank profile placeholders and mutable intake projections.
+    for body in scoped_payloads:
+        ref = str(body.get("requirement_spec_ref") or "").strip()
+        if ref:
+            return ref
+    for body in scoped_payloads:
+        for key in ("objective_ref", "workflow_prompt_ref", "workflow_input_manifest_ref"):
+            ref = str(body.get(key) or "").strip()
+            if ref:
+                return ref
+    return str(
+        metadata.get("objective_ref")
+        or metadata.get("prd_ref")
+        or metadata.get("issue_ref")
+        or ""
+    ).strip()
 
 
 class GoalClosureBridgeMixin:
@@ -224,6 +253,11 @@ class GoalClosureBridgeMixin:
             kind="goal_claim_set",
         )
 
+        candidate_task_commits = candidate_task_source_commits(
+            events,
+            workflow_run_id=workflow_run_id,
+            candidate_head_commit=str(identity.get("candidate_head_commit") or ""),
+        )
         admitted_refs: list[str] = []
         admitted_index = 0
         for event in reversed(events):
@@ -255,7 +289,7 @@ class GoalClosureBridgeMixin:
                 envelope_identity.get("task_map_generation") or ""
             )
             result_target = str(envelope_identity.get("target_commit") or "")
-            if result_generation and not _same_task_map_generation(
+            if result_generation and not same_task_map_generation(
                 result_generation,
                 str(identity.get("task_map_generation") or ""),
             ):
@@ -264,7 +298,9 @@ class GoalClosureBridgeMixin:
                 result_target
                 and result_target != str(identity.get("candidate_head_commit") or "")
             ):
-                continue
+                result_task_id = str(envelope_identity.get("task_id") or "")
+                if candidate_task_commits.get(result_task_id) != result_target:
+                    continue
             ref_text = str(descriptor.get("ref") or "").strip()
             digest = str(descriptor.get("sha256") or "").strip()
             if not ref_text or not digest or ref_text in admitted_refs:
@@ -295,14 +331,15 @@ class GoalClosureBridgeMixin:
                 ).strip()
             if planning_result_ref and candidate_ref:
                 break
-        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
-        objective_ref = str(
-            metadata.get("objective_ref")
-            or metadata.get("prd_ref")
-            or metadata.get("issue_ref")
-            or payload.get("objective_ref")
-            or goal_id
-        ).strip()
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        metadata = flow_metadata_for(self.config, payload=payload)
+        objective_ref = _resolve_run_objective_ref(
+            events,
+            workflow_run_id=workflow_run_id,
+            payload=payload,
+            metadata=metadata,
+        ) or goal_id
         from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
 
         for source_id, ref, kind in (
@@ -464,7 +501,9 @@ class GoalClosureBridgeMixin:
             task_map_digest=payload.get("task_map_digest"),
             task_map_ref=task_map_ref,
         )
-        metadata = dict(getattr(self.config.workflow, "flow_metadata", {}) or {})
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        metadata = flow_metadata_for(self.config, payload=payload)
         try:
             from zf.runtime.goal_claim_set import pin_goal_claim_set_from_task_map
 
@@ -475,11 +514,11 @@ class GoalClosureBridgeMixin:
                 workflow_run_id=workflow_run_id,
                 goal_id=goal_id,
                 task_map_generation=generation,
-                objective_ref=str(
-                    metadata.get("objective_ref")
-                    or metadata.get("prd_ref")
-                    or metadata.get("issue_ref")
-                    or ""
+                objective_ref=_resolve_run_objective_ref(
+                    events,
+                    workflow_run_id=workflow_run_id,
+                    payload=payload,
+                    metadata=metadata,
                 ),
                 source_event_id=event.id,
             )

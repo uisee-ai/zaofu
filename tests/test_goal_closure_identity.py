@@ -146,3 +146,104 @@ def test_same_task_map_generation_matches_both_encodings() -> None:
     assert not _same_task_map_generation(short, "deadbeef" * 8)
     # 短于 12 位的退回严格相等,避免弱前缀误判
     assert not _same_task_map_generation("task-map-caf7", full)
+
+
+def test_run_objective_ref_prefers_same_run_requirement_snapshot() -> None:
+    from zf.runtime.goal_closure_bridge import _resolve_run_objective_ref
+
+    events = [
+        ZfEvent(
+            type="workflow.invoke.requested",
+            correlation_id="other-run",
+            payload={
+                "workflow_run_id": "other-run",
+                "requirement_spec_ref": "artifacts/other/revision-0009.json",
+            },
+        ),
+        ZfEvent(
+            type="workflow.invoke.requested",
+            correlation_id="run-1",
+            payload={
+                "workflow_run_id": "run-1",
+                "requirement_spec_ref": "artifacts/run-1/revision-0002.json",
+                "workflow_prompt_ref": "artifacts/run-1/intake.json",
+            },
+        ),
+    ]
+
+    assert _resolve_run_objective_ref(
+        events,
+        workflow_run_id="run-1",
+        payload={"objective_ref": "TODO: issue/backlog path"},
+        metadata={"objective_ref": "docs/issues/TODO.md"},
+    ) == "artifacts/run-1/revision-0002.json"
+
+
+def test_run_objective_ref_preserves_legacy_profile_fallback() -> None:
+    from zf.runtime.goal_closure_bridge import _resolve_run_objective_ref
+
+    assert _resolve_run_objective_ref(
+        [],
+        workflow_run_id="legacy-run",
+        payload={},
+        metadata={"prd_ref": "docs/prd/approved.md"},
+    ) == "docs/prd/approved.md"
+
+
+def test_goal_claim_pin_uses_submitted_requirement_snapshot(tmp_path) -> None:  # noqa: ANN001
+    import json
+    from types import SimpleNamespace
+
+    from zf.core.events.log import EventLog
+    from zf.core.events.writer import EventWriter
+    from zf.runtime.goal_closure_bridge import GoalClosureBridgeMixin
+
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    requirement_ref = tmp_path / "requirements" / "revision-0002.json"
+    requirement_ref.parent.mkdir()
+    requirement_ref.write_text('{"objective":"immutable goal"}\n', encoding="utf-8")
+    task_map_ref = tmp_path / "task-map.json"
+    task_map_ref.write_text(json.dumps({
+        "tasks": [{
+            "task_id": "TASK-1",
+            "acceptance_criteria": ["AC-1: implementation is verified"],
+        }],
+    }), encoding="utf-8")
+    event_log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(event_log)
+    invoke = writer.append(ZfEvent(
+        type="workflow.invoke.requested",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "requirement_spec_ref": str(requirement_ref),
+        },
+    ))
+    task_map_ready = writer.append(ZfEvent(
+        type="task_map.ready",
+        causation_id=invoke.id,
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "feature_id": "GOAL-1",
+            "task_map_ref": str(task_map_ref),
+        },
+    ))
+    bridge = GoalClosureBridgeMixin()
+    bridge.state_dir = state_dir
+    bridge.project_root = tmp_path
+    bridge.event_log = event_log
+    bridge.event_writer = writer
+    bridge.config = SimpleNamespace(workflow=SimpleNamespace(
+        flow_metadata={"objective_ref": "TODO: profile placeholder"},
+        flow_metadata_by_kind={},
+    ))
+
+    bridge._pin_goal_claim_set(task_map_ready)
+
+    pinned = next(event for event in event_log.read_all() if event.type == "goal.claim_set.pinned")
+    claim_set = json.loads(
+        (state_dir / pinned.payload["goal_claim_set_ref"]).read_text(encoding="utf-8")
+    )
+    assert claim_set["objective_ref"] == str(requirement_ref)

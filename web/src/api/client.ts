@@ -224,7 +224,7 @@ export async function initWorkspaceProject(payload: {
   root: string;
   workspace?: string;
   preset?: string;
-  kind?: "issue" | "prd" | "refactor";
+  kind?: "multi" | "issue" | "prd" | "refactor";
   name?: string;
   project_name?: string;
   source_ref?: string;

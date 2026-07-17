@@ -25,7 +25,6 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 # 这是一个类别——任何 TUI 等键盘输入的场景都构成假死;标记只匹配 pane
 # 尾部 excerpt(等待提示必然停在底部),避免误伤滚屏历史。
 _INTERACTIVE_PROMPT_MARKERS: tuple[tuple[str, str], ...] = (
-    ("usage_limit_reset_confirm", "usage limit resets available"),
     ("usage_limit_reached", "hit your usage limit"),
     ("login_required", "please sign in"),
     ("login_required", "session expired"),

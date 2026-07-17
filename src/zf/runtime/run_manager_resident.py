@@ -270,10 +270,14 @@ def spawn_resident_run_manager(
     ready = True
     if not dry_run:
         adapter = get_adapter(role.backend)
-        ready = transport.wait_ready(
-            role.instance_id,
-            adapter.ready_pattern,
-            timeout=60.0,
+        ready = (
+            transport.wait_ready(
+                role.instance_id,
+                adapter.ready_pattern,
+                timeout=60.0,
+            )
+            if adapter.requires_ready_wait
+            else True
         )
 
     instructions_dir.mkdir(parents=True, exist_ok=True)
@@ -589,7 +593,11 @@ def _apply_resident_restart_request(
     if not dry_run:
         try:
             adapter = get_adapter(role.backend)
-            ready = bool(transport.wait_ready(role.instance_id, adapter.ready_pattern, timeout=60.0))
+            ready = (
+                bool(transport.wait_ready(role.instance_id, adapter.ready_pattern, timeout=60.0))
+                if adapter.requires_ready_wait
+                else True
+            )
         except Exception:
             ready = False
 

@@ -48,14 +48,14 @@ evidence-gated**.
 ## Product Tour
 
 <p align="center">
-  <a href="https://github.com/uisee-ai/zaofu/blob/main/assets/readme/zaofu-v1-github-720p-small.mp4">
+  <a href="assets/readme/zaofu-v1-github-720p-small.mp4?raw=1">
     <img src="assets/readme/zaofu-v1-github-720p-preview.png" alt="Open the ZaoFu product tour" width="900">
   </a>
 </p>
 
 See the Dashboard, delivery-loop observability, multi-agent Channels, Kanban
 Agent, and Feishu interaction in one product walkthrough.
-[Open the video](https://github.com/uisee-ai/zaofu/blob/main/assets/readme/zaofu-v1-github-720p-small.mp4).
+[Open the video](assets/readme/zaofu-v1-github-720p-small.mp4?raw=1).
 
 ## Quick Start
 

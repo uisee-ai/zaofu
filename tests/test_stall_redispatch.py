@@ -60,6 +60,33 @@ def test_redispatch_reemits_trigger_with_same_payload_under_cap():
     assert re.payload["redispatch_attempt"] == 1
 
 
+def test_redispatch_hydrates_flow_kind_from_stage_scope():
+    events = [
+        _ev(
+            "lane.stage.completed",
+            pipeline_id="issue-lanes",
+            stage_slot="impl",
+            next_stage_slot="verify",
+            workflow_run_id="run-1",
+        ),
+        *[_ev("orchestrator.decision.recorded") for _ in range(6)],
+    ]
+    stages = [
+        (
+            "issue-lanes-verify",
+            "lane.stage.completed",
+            "lane.stage.completed",
+            "issue",
+        ),
+    ]
+    finding = detect_structural_stalls(events, stages=stages)[0]
+
+    redispatch = stall_redispatch_event(finding, events)
+
+    assert redispatch is not None
+    assert redispatch.payload["flow_kind"] == "issue"
+
+
 def test_redispatch_returns_none_at_cap():
     finding = _finding()
     evs = [_ev("candidate.ready", candidate_ref="x")]

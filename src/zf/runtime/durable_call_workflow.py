@@ -9,6 +9,19 @@ from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workstream_scope_guard import check_workstream_scope
 
 
+_WORKFLOW_IDENTITY_KEYS = (
+    "request_id",
+    "run_id",
+    "workflow_run_id",
+    "flow_kind",
+    "request_kind",
+    "workflow_request_ref",
+    "requirement_spec_ref",
+    "requirement_spec_digest",
+    "request_revision",
+)
+
+
 def _strings(value: Any) -> list[str]:
     if value is None:
         return []
@@ -254,6 +267,10 @@ class DurableCallWorkflowMixin:
             causation_id=event.id,
             correlation_id=event.correlation_id,
         )
+        for key in _WORKFLOW_IDENTITY_KEYS:
+            value = payload.get(key)
+            if value not in (None, ""):
+                accepted_event.payload[key] = value
         fanout_request = ZfEvent(
             type="task.fanout.requested",
             actor="zf-cli",
@@ -302,6 +319,10 @@ class DurableCallWorkflowMixin:
             causation_id=accepted_event.id,
             correlation_id=event.correlation_id,
         )
+        for key in _WORKFLOW_IDENTITY_KEYS:
+            value = payload.get(key)
+            if value not in (None, ""):
+                fanout_request.payload[key] = value
         accepted_event.payload["fanout_request_event_id"] = fanout_request.id
         self.event_writer.append(accepted_event)
         self.event_writer.append(fanout_request)

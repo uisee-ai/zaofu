@@ -23,6 +23,7 @@ from zf.runtime.failure_kind import (
 from zf.runtime.fanout_briefing_runtime import FanoutBriefingMixin
 from zf.runtime.durable_call_fanout import DurableCallFanoutMixin
 from zf.runtime.fanout_stage_criteria import evaluate_fanout_stage_success_criteria_for_orchestrator
+from zf.runtime.writer_fanout_result_binding import WriterFanoutResultBindingMixin
 from zf.runtime.injection import build_task_prompt
 from zf.runtime.lane_stage_handoff import (
     LANE_STAGE_HANDOFF_FAILURE_EVENT,
@@ -279,9 +280,15 @@ def _writer_task_dependencies_satisfied(
     return True
 
 
-def _contract_handoff_ref_fields(config, success_event: str) -> list[str]:
-    dag = getattr(getattr(config, "workflow", None), "dag", None)
-    schemas = getattr(dag, "event_schemas", {}) or {}
+def _contract_handoff_ref_fields(
+    config,
+    success_event: str,
+    *,
+    flow_kind: str = "",
+) -> list[str]:
+    from zf.core.verification.event_schema import event_schemas_for_config
+
+    schemas = event_schemas_for_config(config, flow_kind=flow_kind)
     rule = schemas.get(success_event)
     required = rule.get("required", []) if isinstance(rule, dict) else []
     fields = [f for f in required if f in _HANDOFF_REF_FIELDS]
@@ -289,7 +296,11 @@ def _contract_handoff_ref_fields(config, success_event: str) -> list[str]:
         return fields
     return list(_PRD_STAGE_LOOSE_FALLBACK.get(success_event, ()))
 
-class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
+class FanoutCoordinationMixin(
+    DurableCallFanoutMixin,
+    FanoutBriefingMixin,
+    WriterFanoutResultBindingMixin,
+):
     def _recover_unrecorded_writer_fanout_results(self) -> None:
         try:
             from zf.runtime.event_window import read_runtime_events
@@ -1497,6 +1508,7 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                 "dev.failed",
                 "dev.blocked",
                 "task.ref.updated",
+                "task.ref.rejected",
             }:
                 continue
             if event.id in terminal_sources:
@@ -1790,9 +1802,15 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
         return saw_retry_signal
     @staticmethod
     def _fanout_stage_matches_trigger_event(stage, event: ZfEvent) -> bool:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        stage_kind = str(getattr(stage, "flow_kind", "") or "").strip().lower()
+        if stage_kind:
+            from zf.core.workflow.flow_metadata import flow_kind_from_payload
+
+            if flow_kind_from_payload(payload) != stage_kind:
+                return False
         if getattr(event, "type", "") != "workflow.invoke.requested":
             return True
-        payload = event.payload if isinstance(event.payload, dict) else {}
         pattern_id = str(
             payload.get("pattern_id")
             or payload.get("stage_id")
@@ -1949,6 +1967,12 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
         )
         payload = {
             "pipeline_id": str(getattr(match.pipeline, "pipeline_id", "") or ""),
+            "flow_kind": str(
+                getattr(match.pipeline, "flow_kind", "")
+                or child_payload.get("flow_kind")
+                or manifest.get("flow_kind")
+                or ""
+            ),
             "fanout_id": fanout_id,
             "root_fanout_id": root_fanout_id,
             "trace_id": trace_id,
@@ -2768,6 +2792,10 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
             type=publish_event,
             actor="zf-cli",
             payload={
+                **self._fanout_flow_identity_payload(
+                    root_manifest,
+                    payloads=[payload],
+                ),
                 "pipeline_id": pipeline_id,
                 "root_fanout_id": root_fanout_id,
                 "fanout_id": root_fanout_id,
@@ -2800,18 +2828,20 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
         self._maybe_start_reader_fanout(ready_event)
         return ready_event
 
-    def _maybe_start_reader_fanout(self, event: ZfEvent) -> None:
+    def _maybe_start_reader_fanout(self, event: ZfEvent) -> bool:
         stages = [
             stage for stage in getattr(self.config.workflow, "stages", [])
             if stage.topology == "fanout_reader" and stage.trigger == event.type
             and self._fanout_stage_matches_trigger_event(stage, event)
         ]
         if not stages:
-            return
+            return False
         from zf.runtime.fanout import FanoutChild, FanoutContext
 
+        started_any = False
         for stage in stages:
             if self._fanout_started(stage.id, event.id):
+                started_any = True
                 continue
             trace_id = event.correlation_id or (
                 event.payload.get("trace_id", "") if isinstance(event.payload, dict) else ""
@@ -2942,6 +2972,7 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                             or ""
                         ),
                         "pipeline_id": str(trigger_payload.get("pipeline_id") or ""),
+                        "flow_kind": str(trigger_payload.get("flow_kind") or ""),
                         "root_fanout_id": str(
                             trigger_payload.get("root_fanout_id")
                             or upstream_fanout_id
@@ -3319,6 +3350,7 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                 "synth_timeout_seconds": stage.aggregate.synth_timeout_seconds,
             }
             self.event_writer.append(started)
+            started_any = True
             role_by_instance = {role.instance_id: role for role in roles}
             prepared_dispatches = self._preregister_reader_fanout_operations(
                 context=context,
@@ -3337,6 +3369,7 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                     causation_id=started.id,
                     prepared_dispatch=prepared_dispatches.get(child.child_id),
                 )
+        return started_any
     def _writer_source_index_gate(
         self,
         *,
@@ -4241,8 +4274,11 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
     def _typed_task_contract_handoff_enabled(self, task_item: dict) -> bool:
         if str(task_item.get("contract_snapshot_ref") or "").strip():
             return True
-        dag = getattr(self.config.workflow, "dag", None)
-        schemas = getattr(dag, "event_schemas", {}) if dag is not None else {}
+        from zf.core.verification.event_schema import event_schemas_for_config
+
+        task_payload = task_item.get("payload")
+        payload = task_payload if isinstance(task_payload, dict) else task_item
+        schemas = event_schemas_for_config(self.config, payload=payload)
         if not isinstance(schemas, dict):
             return False
         for event_type in (
@@ -5015,141 +5051,6 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
             run_id=run_id, task_id=str(base_payload.get("task_id") or ""),
         )
         self._evaluate_reader_fanout(fanout_id)
-    def _fanout_result_payload(self, event: ZfEvent) -> dict:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        report = payload.get("report")
-        if not isinstance(report, dict):
-            promoted = dict(payload)
-        else:
-            promoted = dict(payload)
-            for key in (
-                "fanout_id",
-                "stage_id",
-                "child_id",
-                "child_run",
-                "run_id",
-                "role_instance",
-                "status",
-                "reason",
-                "summary",
-                "recommendation",
-            ):
-                if (
-                    promoted.get(key) in (None, "")
-                    and report.get(key) not in (None, "")
-                ):
-                    promoted[key] = report.get(key)
-        if promoted.get("fanout_id") and (
-            promoted.get("child_id") or promoted.get("child_run")
-        ):
-            return promoted
-        target = self._writer_fanout_completion_target(
-            event=event,
-            payload=promoted,
-            current_fanout_id="",
-            statuses={"dispatched", "failed", "completed"},
-        )
-        if target is None:
-            return promoted
-        manifest, child = target
-        enriched = dict(promoted)
-        enriched.setdefault("fanout_id", str(manifest.get("fanout_id") or ""))
-        enriched.setdefault("stage_id", str(manifest.get("stage_id") or ""))
-        enriched.setdefault("trace_id", str(manifest.get("trace_id") or ""))
-        enriched.setdefault("child_id", str(child.get("child_id") or ""))
-        enriched.setdefault("run_id", str(child.get("run_id") or ""))
-        enriched.setdefault("role_instance", str(child.get("role_instance") or ""))
-        enriched.setdefault("task_id", str(child.get("task_id") or ""))
-        enriched.setdefault("task_map_ref", str(
-            child.get("task_map_ref") or manifest.get("task_map_ref") or ""
-        ))
-        enriched.setdefault("source_index_ref", str(
-            child.get("source_index_ref") or manifest.get("source_index_ref") or ""
-        ))
-        enriched.setdefault("pdd_id", str(manifest.get("pdd_id") or ""))
-        enriched.setdefault("feature_id", str(manifest.get("feature_id") or ""))
-        enriched.setdefault("scope", str(child.get("scope") or ""))
-        enriched.setdefault("workdir", str(child.get("workdir") or ""))
-        enriched.setdefault("source_branch", str(child.get("source_branch") or ""))
-        return enriched
-    def _writer_fanout_completion_target(
-        self,
-        *,
-        event: ZfEvent,
-        payload: dict,
-        current_fanout_id: str,
-        statuses: set[str],
-    ) -> tuple[dict, dict] | None:
-        if event.type not in {
-            "dev.build.done",
-            "dev.blocked",
-            "dev.failed",
-            "task.ref.updated",
-        }:
-            return None
-        task_id = str(event.task_id or payload.get("task_id") or "").strip()
-        if not task_id:
-            return None
-        event_task_map_ref = str(payload.get("task_map_ref") or "").strip()
-        role_instance = str(
-            payload.get("role_instance")
-            or (
-                payload.get("actor")
-                if event.type == "task.ref.updated"
-                else None
-            )
-            or event.actor
-            or ""
-        ).strip()
-        root = self.state_dir / "fanouts"
-        if not root.exists():
-            return None
-        candidates: list[tuple[float, dict, dict]] = []
-        for manifest_path in root.glob("*/manifest.json"):
-            fanout_id = manifest_path.parent.name
-            manifest = self._fanout_manifest(fanout_id)
-            if not manifest or manifest.get("topology") != "fanout_writer_scoped":
-                continue
-            for child in manifest.get("children", []) or []:
-                if not isinstance(child, dict):
-                    continue
-                if str(child.get("task_id") or "") != task_id:
-                    continue
-                status = str(child.get("status") or "")
-                if status not in statuses:
-                    continue
-                child_role = str(child.get("role_instance") or "")
-                if role_instance and child_role and role_instance != child_role:
-                    continue
-                child_task_map_ref = str(
-                    child.get("task_map_ref")
-                    or manifest.get("task_map_ref")
-                    or ""
-                ).strip()
-                if (
-                    event_task_map_ref
-                    and child_task_map_ref
-                    and event_task_map_ref != child_task_map_ref
-                ):
-                    continue
-                try:
-                    mtime = manifest_path.stat().st_mtime
-                except OSError:
-                    mtime = 0.0
-                if status == "dispatched":
-                    mtime += 1000.0
-                # Prefer the current fanout when it is recoverable; otherwise
-                # take the newest matching fanout for the same logical task.
-                if fanout_id == current_fanout_id:
-                    mtime += 1_000_000_000.0
-                candidates.append((mtime, manifest, child))
-        if not candidates:
-            return None
-        _, manifest, child = sorted(
-            candidates,
-            key=lambda item: item[0],
-        )[-1]
-        return manifest, child
     def _emit_writer_fanout_stale_completion(
         self,
         *,
@@ -5346,7 +5247,11 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
         # BF-1 修补(断点续跑 00:57 实弹):收编只对携带结果的事件开闸。
         # heartbeat 等观察型事件也带旧 fanout 身份,曾触发假审计且无
         # 去重(RF-7A 刷屏家族);非结果事件走原 stale 路径(有去重)。
-        adoptable_event = event.type in {"dev.build.done", "task.ref.updated"}
+        adoptable_event = event.type in {
+            "dev.build.done",
+            "task.ref.updated",
+            "task.ref.rejected",
+        }
         stale_reason, superseded_by = self._fanout_identity_stale_reason(fanout_id)
         if stale_reason:
             # BF-1(r6.1 断点复盘):fanout 换代期间到达的真交付先尝试
@@ -5484,7 +5389,7 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
             value = self._fanout_payload_metadata_value(payload, child, key)
             if value:
                 base_payload[key] = value
-        if event.type in {"dev.blocked", "dev.failed"} or str(payload.get("status") or "") in {
+        if event.type in {"dev.blocked", "dev.failed", "task.ref.rejected"} or str(payload.get("status") or "") in {
             "failed",
             "blocked",
         }:
@@ -5563,11 +5468,18 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
             self._task_ref_entry(base_payload["task_id"]), event=event, payload=payload,
         )
         if not task_ref:
+            # Task-ref creation is a separate mechanical projection and may
+            # settle a few seconds after this event when recovery/watcher
+            # processes overlap. Keep the writer child pending until the
+            # canonical task.ref.updated/rejected signal arrives; treating
+            # this interval as a semantic failure wastes a rework attempt.
+            if event.type == "dev.build.done":
+                return
             self._record_writer_fanout_child_failed(
                 fanout_id=fanout_id,
                 base_payload=base_payload,
                 failure_payload={
-                    "reason": "missing task ref after dev.build.done",
+                    "reason": f"missing task ref in {event.type}",
                 },
                 event=event,
                 manifest=manifest,
@@ -6039,6 +5951,10 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                     manifest=manifest,
                     success_event=success_event,
                 )
+        artifact_payload = {
+            **self._fanout_flow_identity_payload(manifest),
+            **artifact_payload,
+        }
         if final_status == "completed":
             contract_failure = self._success_payload_contract_failure(
                 success_event,
@@ -6359,6 +6275,10 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
             source_index_ref=source_index_ref,
             completed_task_ids=completed_task_ids,
         )
+        candidate_contract_payload = {
+            **self._fanout_flow_identity_payload(manifest),
+            **candidate_contract_payload,
+        }
         aggregate_event = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.completed",
             actor="zf-cli",
@@ -7223,6 +7143,10 @@ class FanoutCoordinationMixin(DurableCallFanoutMixin, FanoutBriefingMixin):
                     success_event=success_event,
                     extra_payloads=[payload],
                 )
+        artifact_payload = {
+            **self._fanout_flow_identity_payload(manifest, payloads=[payload]),
+            **artifact_payload,
+        }
         if final_status == "completed":
             contract_failure = self._success_payload_contract_failure(
                 success_event,

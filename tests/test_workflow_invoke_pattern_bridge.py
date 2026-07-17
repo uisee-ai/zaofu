@@ -213,6 +213,53 @@ def test_workflow_invoke_accepts_declared_pattern_and_emits_fanout_intent(tmp_pa
     assert fanout.payload["artifact_refs"] == [{"path": "channels/ch-zaofu/spec.md"}]
 
 
+def test_scoped_workflow_invoke_preserves_identity_into_declared_fanout(
+    tmp_path: Path,
+) -> None:
+    cfg = _config(target_ref="")
+    cfg.workflow.stages[0].flow_kind = "issue"
+    _state_dir, log, transport, orch = _state(
+        tmp_path,
+        config=cfg,
+        workflow_anchor=True,
+    )
+
+    identity = {
+        "request_id": "req-issue-1",
+        "run_id": "run-issue-1",
+        "workflow_run_id": "run-issue-1",
+        "flow_kind": "issue",
+        "request_kind": "issue",
+        "workflow_request_ref": "workflow-requests/req-issue-1.json",
+        "requirement_spec_ref": "requirements/revision-0002.json",
+        "requirement_spec_digest": "a" * 64,
+        "request_revision": 2,
+    }
+    orch.run_once(events=[ZfEvent(
+        type="workflow.invoke.requested",
+        actor="web",
+        task_id="TASK-1",
+        correlation_id="run-issue-1",
+        payload={
+            **identity,
+            "task_id": "TASK-1",
+            "pattern_id": "review-wave",
+            "dispatch_id": "disp-1",
+            "expected_output": "review report",
+        },
+    )])
+    _run_until_sent(orch, transport, 2)
+
+    events = log.read_all()
+    fanout_request = next(
+        event for event in events if event.type == "task.fanout.requested"
+    )
+    for key, value in identity.items():
+        assert fanout_request.payload[key] == value
+    assert any(event.type == "fanout.started" for event in events)
+    assert not any(event.type == "task.fanout.rejected" for event in events)
+
+
 def test_durable_workflow_invoke_and_compiled_children_are_restart_deduped(
     tmp_path: Path,
 ) -> None:

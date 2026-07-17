@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from zf.runtime.stall_detector import (
     detect_structural_stalls,
     emit_stall_invocations,
+    stages_from_config,
 )
 
 # (stage_id, trigger, success_event)
@@ -148,3 +149,49 @@ def test_lane_handoff_terminal_is_not_reused_as_its_own_verify_trigger():
     ]
 
     assert detect_structural_stalls(events, stages=stages) == []
+
+
+def test_lane_handoff_only_targets_its_pipeline_in_multi_kind_config():
+    stages = [
+        ("issue-lanes-verify", "lane.stage.completed", "lane.stage.completed", "issue"),
+        ("prd-lanes-verify", "lane.stage.completed", "lane.stage.completed", "prd"),
+        (
+            "refactor-lanes-verify",
+            "lane.stage.completed",
+            "lane.stage.completed",
+            "refactor",
+        ),
+    ]
+    trigger = _ev("lane.stage.completed", {
+        "pipeline_id": "issue-lanes",
+        "stage_id": "issue-lanes-impl",
+        "stage_slot": "impl",
+        "next_stage_slot": "verify",
+        "workflow_run_id": "run-1",
+        "task_id": "TASK-1",
+    })
+    findings = detect_structural_stalls([trigger, *_pad(8)], stages=stages)
+
+    assert [finding.stage_id for finding in findings] == ["issue-lanes-verify"]
+    assert findings[0].flow_kind == "issue"
+
+
+def test_stages_from_config_keeps_flow_kind_for_shared_triggers():
+    stages = [
+        SimpleNamespace(
+            id="issue-lanes-verify",
+            trigger="lane.stage.completed",
+            flow_kind="issue",
+            aggregate=SimpleNamespace(success_event="lane.stage.completed"),
+        ),
+    ]
+    config = SimpleNamespace(workflow=SimpleNamespace(stages=stages))
+
+    assert stages_from_config(config) == [
+        (
+            "issue-lanes-verify",
+            "lane.stage.completed",
+            "lane.stage.completed",
+            "issue",
+        ),
+    ]

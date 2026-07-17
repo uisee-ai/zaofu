@@ -74,6 +74,21 @@ def test_disabled_or_empty_gates_do_not_count():
     assert combined_candidate_gate_gap(cfg) != ""
 
 
+def test_multi_kind_container_defers_gate_until_selected_flow():
+    cfg = _config(lanes=2)
+    cfg.workflow.flow_metadata_by_kind = {
+        "issue": {"flow_kind": "issue"},
+        "prd": {"flow_kind": "prd"},
+    }
+    cfg.workflow.stages[0].flow_kind = "prd"
+
+    assert combined_candidate_gate_gap(cfg) == ""
+    assert combined_candidate_gate_gap(cfg, flow_kind="issue") == ""
+    assert "quality_gates" in combined_candidate_gate_gap(
+        cfg, flow_kind="prd",
+    )
+
+
 def test_loader_parses_waiver(tmp_path: Path):
     data = {
         "project": {"name": "t", "state_dir": str(tmp_path / ".zf")},
@@ -95,7 +110,7 @@ def test_controller_multi_lane_examples_fail_validate_until_gates_filled(
     import sys as _sys
 
     repo = Path(__file__).resolve().parents[1]
-    for name in ("prd-fanout-v3", "issue-fanout-v3", "refactor-lane-v3"):
+    for name in ("prd-fanout-v3", "refactor-lane-v3"):
         proc = subprocess.run(
             [_sys.executable, "-c",
              "import sys; sys.argv=['zf','validate','--path',sys.argv[1]]; "
@@ -106,6 +121,16 @@ def test_controller_multi_lane_examples_fail_validate_until_gates_filled(
         )
         assert proc.returncode == 1, (name, proc.stderr[-400:])
         assert "candidate gate" in proc.stderr.lower(), name
+    # Issue defaults to one lane, so it has no combined-candidate skew surface.
+    issue = subprocess.run(
+        [_sys.executable, "-c",
+         "import sys; sys.argv=['zf','validate','--path',sys.argv[1]]; "
+         "from zf.cli import main; sys.exit(main())",
+         str(repo / "examples" / "prod" / "controller" / "issue-fanout-v3.yaml")],
+        capture_output=True, text=True,
+        env={"PYTHONPATH": str(repo / "src"), "PATH": "/usr/bin:/bin"},
+    )
+    assert issue.returncode == 0, issue.stderr[-400:]
     # light(单 lane)不受影响
     proc = subprocess.run(
         [_sys.executable, "-c",

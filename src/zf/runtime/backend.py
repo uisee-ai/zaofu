@@ -107,6 +107,11 @@ class BackendAdapter(ABC):
         return 0.0
 
     @property
+    def requires_ready_wait(self) -> bool:
+        """Whether this backend exposes an interactive readiness signal."""
+        return True
+
+    @property
     @abstractmethod
     def clear_command(self) -> str | None:
         """Command to send to clear agent context, or None if respawn needed."""
@@ -359,6 +364,10 @@ class MockAdapter(BackendAdapter):
     @property
     def ready_pattern(self) -> str:
         return r">"
+
+    @property
+    def requires_ready_wait(self) -> bool:
+        return False
 
     @property
     def clear_command(self) -> str | None:

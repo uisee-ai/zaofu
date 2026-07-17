@@ -26,6 +26,11 @@ from zf.core.skills import (
     AdapterSkillResolverInput,
     build_project_adapter_skill_plan,
 )
+from zf.core.workflow.request_policy import (
+    default_lanes_for_kind,
+    missing_fields_for_kind,
+    required_fields_for_kind,
+)
 from zf.runtime.preflight import preflight_ok, run_preflight_checks
 from zf.runtime.run_contract import (
     build_run_contract,
@@ -72,6 +77,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     intake.add_argument("--project-name", default="")
     intake.add_argument("--strictness", default="standard")
     intake.add_argument("--parity-scope", default="")
+    intake.add_argument("--acceptance", action="append", default=[])
+    intake.add_argument("--constraint", action="append", default=[])
+    intake.add_argument("--open-question", action="append", default=[])
     intake.add_argument("--request-id", default="")
     intake.add_argument("--output", type=Path, default=None)
     intake.add_argument("--json", action="store_true")
@@ -84,13 +92,30 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     classify.add_argument("--json", action="store_true")
     classify.set_defaults(func=run_classify)
 
+    clarify = sub.add_parser(
+        "clarify",
+        help="Revise and optionally confirm a workflow requirement",
+    )
+    clarify.add_argument("--config", type=Path, default=Path("zf.yaml"))
+    clarify.add_argument("--intake", type=Path, required=True)
+    clarify.add_argument("--objective", default=None)
+    clarify.add_argument("--source-root", default=None)
+    clarify.add_argument("--target", "--target-root", dest="target_root", default=None)
+    clarify.add_argument("--acceptance", action="append", default=None)
+    clarify.add_argument("--constraint", action="append", default=None)
+    clarify.add_argument("--open-question", action="append", default=None)
+    clarify.add_argument("--confirm", action="store_true")
+    clarify.add_argument("--actor", default="zf-cli")
+    clarify.add_argument("--json", action="store_true")
+    clarify.set_defaults(func=run_clarify)
+
     draft = sub.add_parser("draft", help="Draft a short controller flow YAML")
     draft.add_argument("--kind", required=True, choices=_FLOW_KIND_CHOICES)
     draft.add_argument("--from", dest="source_ref", default="")
     draft.add_argument("--source-root", default="")
     draft.add_argument("--target", "--target-root", dest="target_root", default="")
     draft.add_argument("--backend", default="codex")
-    draft.add_argument("--lanes", type=int, default=2)
+    draft.add_argument("--lanes", type=int, default=0)
     draft.add_argument("--project-name", default="")
     draft.add_argument("--state-dir", default="")
     draft.add_argument("--strictness", default="standard")
@@ -162,7 +187,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 def _no_sub(args: argparse.Namespace) -> int:
     print(
         "Error: `zf flow` requires a subcommand: "
-        "intake | classify | draft | preflight | submit | start",
+        "intake | classify | clarify | draft | preflight | submit | start",
         file=sys.stderr,
     )
     return 2
@@ -176,11 +201,14 @@ def run_intake(args: argparse.Namespace) -> int:
         source_root=args.source_root,
         target_root=args.target_root,
         backend=args.backend,
-        lanes=args.lanes or _default_lanes(args.kind if args.kind != "auto" else "issue"),
+        lanes=args.lanes,
         project_id=args.project_id,
         project_name=args.project_name,
         strictness=args.strictness,
         parity_scope=_parse_csv(args.parity_scope),
+        acceptance=tuple(args.acceptance),
+        constraints=tuple(args.constraint),
+        open_questions=tuple(args.open_question),
         request_id=args.request_id,
         output=args.output,
     )
@@ -205,11 +233,14 @@ def build_flow_intake(
     source_root: str = "",
     target_root: str = "",
     backend: str = "",
-    lanes: int = 2,
+    lanes: int = 0,
     project_id: str = "",
     project_name: str = "",
     strictness: str = "standard",
     parity_scope: tuple[str, ...] = (),
+    acceptance: tuple[str, ...] = (),
+    constraints: tuple[str, ...] = (),
+    open_questions: tuple[str, ...] = (),
     request_id: str = "",
     source: str = "cli",
     created_by: str = "zf-cli",
@@ -246,7 +277,8 @@ def build_flow_intake(
         inferred_kind if requested_kind == "auto"
         else _normalize_request_kind(requested_kind)
     )
-    missing = _missing_required_fields(
+    lanes = lanes or default_lanes_for_kind(effective_kind)
+    missing = missing_fields_for_kind(
         effective_kind,
         objective=objective_text,
         source_ref=source_ref,
@@ -266,8 +298,9 @@ def build_flow_intake(
         "source_root": source_root,
         "target_root": target_root,
         "refs": [source_ref] if source_ref else [],
-        "constraints": [],
-        "acceptance": [],
+        "constraints": list(constraints),
+        "acceptance": list(acceptance),
+        "open_questions": list(open_questions),
         "requested_backend": backend,
         "requested_lanes": lanes,
         "strictness": strictness,
@@ -337,15 +370,38 @@ def build_flow_intake(
         "skill_adapter_plan_ref": str(skill_plan_path),
         **matrix_refs,
         "workflow_dir": str(workflow_dir),
-        "required_fields": _required_fields_for_kind(effective_kind),
+        "required_fields": required_fields_for_kind(effective_kind),
         "missing_required_fields": missing,
+        "acceptance": list(acceptance),
+        "constraints": list(constraints),
+        "open_questions": list(open_questions),
         "artifact_refs": artifact_refs,
         "created_at": now,
     }
+    manifest["workflow_input_manifest_ref"] = str(manifest_path)
     manifest_path.write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    request_projection: dict[str, Any] = {}
+    request_projection_ref = ""
+    config = _load_project_config(project_root)
+    if config is not None:
+        from zf.runtime.workflow_requests import (
+            register_workflow_intake,
+            workflow_request_path,
+        )
+
+        state_dir = _state_dir_for_config(project_root / "zf.yaml", config)
+        state_dir.mkdir(parents=True, exist_ok=True)
+        writer = EventWriter(event_log_from_project(state_dir, config=config))
+        request_projection = register_workflow_intake(
+            state_dir,
+            manifest_path,
+            actor=created_by,
+            writer=writer,
+        )
+        request_projection_ref = str(workflow_request_path(state_dir, request_id))
     return {
         "schema_version": "workflow.intake.result.v1",
         "request_id": request_id,
@@ -358,6 +414,10 @@ def build_flow_intake(
         "skill_adapter_plan_ref": str(skill_plan_path),
         **matrix_refs,
         "missing_required_fields": missing,
+        "request_status": str(request_projection.get("status") or (
+            "clarifying" if missing or open_questions else "draft"
+        )),
+        "request_projection_ref": request_projection_ref,
     }
 
 
@@ -397,7 +457,7 @@ def build_flow_intent(
     if explicit == "auto" and manifest.get("kind") in {"issue", "prd", "refactor"}:
         kind = str(manifest["kind"])
     confidence = "high" if explicit_kind != "auto" or manifest.get("kind") else "medium"
-    missing = _missing_required_fields(
+    missing = missing_fields_for_kind(
         kind,
         objective=str(manifest.get("objective") or _compact_text(text)),
         source_ref=str(manifest.get("source_ref") or ""),
@@ -440,6 +500,44 @@ def build_flow_intent(
     return result
 
 
+def run_clarify(args: argparse.Namespace) -> int:
+    from zf.runtime.workflow_requests import revise_workflow_request
+
+    config_path = args.config.expanduser().resolve()
+    config = load_config(config_path)
+    state_dir = _state_dir_for_config(config_path, config)
+    manifest_path, _manifest = _load_manifest_for_intake(args.intake.expanduser())
+    if manifest_path is None:
+        print("Error: workflow input manifest not found for intake", file=sys.stderr)
+        return 1
+    writer = EventWriter(event_log_from_project(state_dir, config=config))
+    result = revise_workflow_request(
+        state_dir,
+        manifest_path,
+        actor=args.actor,
+        objective=args.objective,
+        source_root=args.source_root,
+        target_root=args.target_root,
+        acceptance=args.acceptance,
+        constraints=args.constraint,
+        open_questions=args.open_question,
+        confirm=bool(args.confirm),
+        writer=writer,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+    else:
+        print(f"workflow request: {result['request_id']}")
+        print(f"- status: `{result['status']}`")
+        print(f"- revision: `{result['revision']}`")
+        print(f"- requirement: `{result['requirement_spec_ref']}`")
+        if result.get("missing_required_fields"):
+            print(f"- missing: `{', '.join(result['missing_required_fields'])}`")
+        if result.get("open_questions"):
+            print(f"- open_questions: `{'; '.join(result['open_questions'])}`")
+    return 0 if result["status"] != "clarifying" else 1
+
+
 def run_draft(args: argparse.Namespace) -> int:
     project_root = (
         args.output.expanduser().resolve().parent
@@ -452,7 +550,7 @@ def run_draft(args: argparse.Namespace) -> int:
         source_root=args.source_root,
         target_root=args.target_root,
         backend=args.backend,
-        lanes=args.lanes or _default_lanes(args.kind),
+        lanes=args.lanes or default_lanes_for_kind(args.kind),
         project_name=args.project_name,
         state_dir=args.state_dir,
         project_root=project_root,
@@ -475,7 +573,7 @@ def draft_flow_spec(
     source_root: str = "",
     target_root: str = "",
     backend: str = "codex",
-    lanes: int = 2,
+    lanes: int = 0,
     project_name: str = "",
     state_dir: str = "",
     project_root: Path | None = None,
@@ -483,6 +581,7 @@ def draft_flow_spec(
     parity_scope: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     kind = _normalize_request_kind(kind)
+    lanes = lanes or default_lanes_for_kind(kind)
     project = project_name or f"{kind}-flow"
     state = state_dir or f".zf-{project}"
     adapter_plan = _build_skill_adapter_plan(
@@ -499,6 +598,7 @@ def draft_flow_spec(
             "lanes": lanes,
             "backend": backend,
             "issueRef": source_ref or "TODO: issue/backlog path",
+            "targetRef": "HEAD",
             "qualityFloor": "issue-regression",
             "evidencePolicy": "strict_refs",
             "deliveryPolicy": "report_only",
@@ -514,6 +614,7 @@ def draft_flow_spec(
             "lanes": lanes,
             "backend": backend,
             "prdRef": source_ref or "TODO: PRD path",
+            "targetRef": "HEAD",
             "targetRoot": target_root or "TODO: target app path",
             "qualityFloor": "product-demo",
             "evidencePolicy": "strict_refs",
@@ -537,6 +638,7 @@ def draft_flow_spec(
             "assembly": "none",
             "roleDefaults": {"backend": backend, "permission_mode": "bypass"},
             "objectiveRef": source_ref or "TODO: refactor prompt path",
+            "targetRef": "HEAD",
             "sourceRoot": source_root or "TODO: source project path",
             "targetRoot": target_root or "TODO: target project path",
             "parityScope": scope,
@@ -583,6 +685,85 @@ def draft_flow_spec(
     if skill_sources:
         config["spec"]["skill_sources"] = skill_sources
     return [flow, runtime_profile, config]
+
+
+def draft_multi_kind_project_spec(
+    *,
+    backend: str = "codex",
+    lanes: int = 0,
+    project_name: str = "",
+    state_dir: str = "",
+    project_root: Path | None = None,
+    strictness: str = "standard",
+    parity_scope: tuple[str, ...] = (),
+) -> list[dict[str, Any]]:
+    """Build one project container that can admit all shipped flow kinds.
+
+    This only assembles configuration.  It intentionally does not create a
+    request or emit an entry event: requirement clarification and ignition stay
+    explicit request-level operations after project initialization.
+    """
+
+    project = project_name or "zaofu-project"
+    state = state_dir or f".zf-{project}"
+    root = project_root or Path.cwd()
+    flow_docs: list[dict[str, Any]] = []
+    flow_defaults: dict[str, Any] = {}
+    skill_sources: dict[tuple[str, str], dict[str, str]] = {}
+
+    for kind in ("issue", "prd", "refactor"):
+        docs = draft_flow_spec(
+            kind=kind,
+            backend=backend,
+            lanes=lanes or default_lanes_for_kind(kind),
+            project_name=project,
+            state_dir=state,
+            project_root=root,
+            strictness=strictness,
+            parity_scope=parity_scope,
+        )
+        flow_docs.append(docs[0])
+        profile_spec = docs[1].get("spec") or {}
+        defaults = profile_spec.get("flow_defaults") or {}
+        if isinstance(defaults, dict) and isinstance(defaults.get(kind), dict):
+            flow_defaults[kind] = dict(defaults[kind])
+        config_spec = docs[2].get("spec") or {}
+        for source in config_spec.get("skill_sources") or []:
+            if not isinstance(source, dict):
+                continue
+            key = (
+                str(source.get("name") or ""),
+                str(source.get("path") or ""),
+            )
+            if all(key):
+                skill_sources[key] = dict(source)
+
+    runtime_profile_name = "flow-project-runtime/v1"
+    runtime_profile = _draft_runtime_profile_doc(
+        name=runtime_profile_name,
+        backend=backend,
+    )
+    if flow_defaults:
+        runtime_profile["spec"]["flow_defaults"] = flow_defaults
+    config_spec: dict[str, Any] = {
+        "version": "1.0",
+        "project": {"name": project, "state_dir": state},
+        "session": {
+            "tmux_session": f"${{ZF_TMUX_SESSION:-{_default_tmux_session(project)}}}",
+        },
+        "uses": [runtime_profile_name],
+    }
+    if skill_sources:
+        config_spec["skill_sources"] = [
+            skill_sources[key] for key in sorted(skill_sources)
+        ]
+    config = {
+        "apiVersion": "zaofu.dev/v1",
+        "kind": "ZfConfig",
+        "metadata": {"name": project},
+        "spec": config_spec,
+    }
+    return [*flow_docs, runtime_profile, config]
 
 
 def _default_tmux_session(project: str) -> str:
@@ -658,7 +839,7 @@ def run_start(args: argparse.Namespace) -> int:
         source_root=args.source_root,
         target_root=args.target_root,
         backend=args.backend,
-        lanes=args.lanes or _default_lanes(args.kind),
+        lanes=args.lanes or default_lanes_for_kind(args.kind),
         project_name=args.project_name,
         state_dir=args.state_dir,
         strictness=args.strictness,
@@ -721,7 +902,7 @@ def build_flow_start_proposal(
         source_root=source_root,
         target_root=target_root,
         backend=backend,
-        lanes=lanes or _default_lanes(kind),
+        lanes=lanes or default_lanes_for_kind(kind),
         project_name=project,
         state_dir=state,
         project_root=config_path.parent,
@@ -744,7 +925,7 @@ def build_flow_start_proposal(
         "status": report["status"],
         "kind": kind,
         "backend": backend,
-        "lanes": lanes or _default_lanes(kind),
+        "lanes": lanes or default_lanes_for_kind(kind),
         "config_path": str(config_path),
         "project": {
             "name": project,
@@ -761,13 +942,6 @@ def build_flow_start_proposal(
             ),
         },
     }
-
-
-def _default_lanes(kind: str) -> int:
-    kind = _normalize_request_kind(kind)
-    if kind == "refactor":
-        return 5
-    return 2
 
 
 def _unique_project_name(kind: str) -> str:
@@ -937,6 +1111,39 @@ def build_flow_submit_preview(
         intake_path=intake_path,
         allow_missing_env=allow_missing_env,
     )
+    request_projection: dict[str, Any] = {}
+    request_blockers: list[dict[str, Any]] = []
+    if manifest_path is not None:
+        from zf.runtime.workflow_requests import (
+            register_workflow_intake,
+            request_readiness_blockers,
+            workflow_request_path,
+        )
+
+        state_dir.mkdir(parents=True, exist_ok=True)
+        request_writer = EventWriter(event_log_from_project(state_dir, config=config))
+        request_projection = register_workflow_intake(
+            state_dir,
+            manifest_path,
+            actor=requested_by or "zf-cli",
+            writer=request_writer,
+        )
+        request_blockers = request_readiness_blockers(request_projection)
+        manifest["request_projection_ref"] = str(
+            workflow_request_path(state_dir, request_id)
+        )
+        manifest["requirement_spec_ref"] = str(
+            request_projection.get("requirement_spec_ref") or ""
+        )
+        manifest["requirement_spec_digest"] = str(
+            request_projection.get("requirement_spec_digest") or ""
+        )
+        manifest.setdefault("artifact_refs", [])
+        if (
+            manifest["requirement_spec_ref"]
+            and manifest["requirement_spec_ref"] not in manifest["artifact_refs"]
+        ):
+            manifest["artifact_refs"].append(manifest["requirement_spec_ref"])
     resolved_kind = _normalize_request_kind(
         flow_kind or str(manifest.get("kind") or report.get("flow_kind") or "")
     )
@@ -1005,6 +1212,10 @@ def build_flow_submit_preview(
         "workflow_prompt_ref": canonical_intake_ref,
         "workflow_input_manifest_ref": str(manifest_path or ""),
         "workflow_preflight_ref": str(preflight_path),
+        "workflow_request_ref": str(manifest.get("request_projection_ref") or ""),
+        "requirement_spec_ref": str(request_projection.get("requirement_spec_ref") or ""),
+        "requirement_spec_digest": str(request_projection.get("requirement_spec_digest") or ""),
+        "request_revision": int(request_projection.get("revision") or 0),
         "requested_by": requested_by or "zf-cli",
         "reason": reason or f"workflow submit {request_id}",
         # E2(prd-goal e2e):objective 曾不入 submit payload,G0 铸造
@@ -1022,8 +1233,27 @@ def build_flow_submit_preview(
         },
         "artifact_refs": manifest_artifact_refs,
     }
-    blockers = [*(report.get("blockers") or []), *route_blockers]
-    status = "STOP" if route_blockers else report["status"]
+    blockers = [
+        *(report.get("blockers") or []),
+        *route_blockers,
+        *request_blockers,
+    ]
+    status = "STOP" if route_blockers or request_blockers else report["status"]
+    if (
+        status != "STOP"
+        and request_projection
+        and str(request_projection.get("status") or "") in {"draft", "ready", "proposed"}
+    ):
+        from zf.runtime.workflow_requests import mark_workflow_request
+
+        request_projection = mark_workflow_request(
+            state_dir,
+            request_id,
+            status="proposed",
+            actor=requested_by or "zf-cli",
+            writer=request_writer,
+            event_type="workflow.request.proposed",
+        )
     result = {
         "schema_version": "workflow.submit.preview.v1",
         "status": status,
@@ -1033,6 +1263,7 @@ def build_flow_submit_preview(
         "submit_preview_ref": str(preview_path),
         "preflight_ref": str(preflight_path),
         "blockers": blockers,
+        "request": request_projection,
         "next": {
             "apply": "run `zf flow submit --apply ...` after operator approval",
         },
@@ -1091,6 +1322,38 @@ def apply_flow_submit(
     output: Path | None = None,
     allow_missing_env: bool = False,
 ) -> dict[str, Any]:
+    config = load_config(config_path)
+    state_dir = _state_dir_for_config(config_path, config)
+    state_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path, _manifest = _load_manifest_for_intake(intake_path)
+    if manifest_path is not None:
+        from zf.runtime.workflow_requests import (
+            register_workflow_intake,
+            revise_workflow_request,
+        )
+
+        request_writer = EventWriter(event_log_from_project(state_dir, config=config))
+        projection = register_workflow_intake(
+            state_dir,
+            manifest_path,
+            actor=requested_by or "zf-cli",
+            writer=request_writer,
+        )
+        if str(projection.get("status") or "") in {"submitted", "running"}:
+            return _submitted_request_replay_result(
+                config=config,
+                state_dir=state_dir,
+                projection=projection,
+                events=request_writer.event_log.read_all(),
+            )
+        if not bool(projection.get("confirmed")):
+            projection = revise_workflow_request(
+                state_dir,
+                manifest_path,
+                actor=requested_by or "zf-cli",
+                confirm=True,
+                writer=request_writer,
+            )
     preview = build_flow_submit_preview(
         config_path=config_path,
         intake_path=intake_path,
@@ -1102,13 +1365,22 @@ def apply_flow_submit(
         output=output,
         allow_missing_env=allow_missing_env,
     )
-    config = load_config(config_path)
-    state_dir = _state_dir_for_config(config_path, config)
-    state_dir.mkdir(parents=True, exist_ok=True)
     writer = EventWriter(event_log_from_project(state_dir, config=config))
     payload = dict(preview.get("payload") or {})
     correlation_id = str(payload.get("request_id") or "")
     task = str(payload.get("task_id") or "")
+    if preview["status"] != "STOP" and correlation_id:
+        from zf.runtime.workflow_requests import mark_workflow_request
+
+        mark_workflow_request(
+            state_dir,
+            correlation_id,
+            status="approved",
+            actor=str(payload.get("requested_by") or "zf-cli"),
+            writer=writer,
+            run_id=str(payload.get("run_id") or correlation_id),
+            event_type="workflow.request.approved",
+        )
     submit_requested = writer.append(ZfEvent(
         type="workflow.submit.requested",
         actor=str(payload.get("requested_by") or "zf-cli"),
@@ -1160,9 +1432,25 @@ def apply_flow_submit(
             "workflow_input_manifest_ref": payload.get("workflow_input_manifest_ref", ""),
             "workflow_prompt_ref": payload.get("workflow_prompt_ref", ""),
             "config_ref": payload.get("config_ref", ""),
+            "workflow_request_ref": payload.get("workflow_request_ref", ""),
+            "requirement_spec_ref": payload.get("requirement_spec_ref", ""),
+            "requirement_spec_digest": payload.get("requirement_spec_digest", ""),
+            "request_revision": int(payload.get("request_revision") or 0),
         },
     ))
     event_ids.append(accepted.id)
+    if correlation_id:
+        from zf.runtime.workflow_requests import mark_workflow_request
+
+        mark_workflow_request(
+            state_dir,
+            correlation_id,
+            status="submitted",
+            actor=str(payload.get("requested_by") or "zf-cli"),
+            writer=writer,
+            run_id=str(payload.get("run_id") or correlation_id),
+            event_type="workflow.request.submitted",
+        )
     # G0(133):goal 铸造——submit accepted 即 kernel 发 run.goal.started
     # (投影 build_run_goal_projection 已在等这个事件;灰度 goal.enabled)。
     if bool(getattr(getattr(config, "goal", None), "enabled", False)):
@@ -1197,7 +1485,10 @@ def apply_flow_submit(
     # (light has no impl/review path for it), creating a zombie the operator
     # must cancel by hand. Skip it; the operator emits `prd.requested` to start.
     from zf.runtime.light_flow import light_flow_metadata
-    light_metadata = light_flow_metadata(config)
+    light_metadata = light_flow_metadata(
+        config,
+        flow_kind=str(payload.get("kind") or ""),
+    )
     if light_metadata is not None:
         entry_trigger = str(light_metadata.get("light_entry_trigger") or "prd.requested")
         return {
@@ -1224,6 +1515,18 @@ def apply_flow_submit(
         payload=invoke_payload,
     ))
     event_ids.append(invoked.id)
+    if correlation_id:
+        from zf.runtime.workflow_requests import mark_workflow_request
+
+        mark_workflow_request(
+            state_dir,
+            correlation_id,
+            status="running",
+            actor=str(payload.get("requested_by") or "zf-cli"),
+            writer=writer,
+            run_id=str(payload.get("run_id") or correlation_id),
+            event_type="workflow.request.running",
+        )
     invoke_visibility = _workflow_invoke_visibility(
         writer.event_log.read_all(),
         source_event_id=invoked.id,
@@ -1239,6 +1542,62 @@ def apply_flow_submit(
         "next_action": invoke_visibility["next_action"],
         "event_ids": event_ids,
         "state_dir": str(state_dir),
+    }
+
+
+def _submitted_request_replay_result(
+    *,
+    config: Any,
+    state_dir: Path,
+    projection: dict[str, Any],
+    events: list[ZfEvent],
+) -> dict[str, Any]:
+    """Return an idempotent submit result without emitting a second Run."""
+
+    request_id = str(projection.get("request_id") or "")
+    related = [
+        event for event in events
+        if str(event.correlation_id or "") == request_id
+        and event.type in {"workflow.submit.accepted", "workflow.invoke.requested"}
+    ]
+    invoked = next(
+        (event for event in reversed(related) if event.type == "workflow.invoke.requested"),
+        None,
+    )
+    from zf.runtime.light_flow import light_flow_metadata
+
+    light_metadata = light_flow_metadata(
+        config,
+        flow_kind=str(projection.get("kind") or ""),
+    )
+    if invoked is not None:
+        invoke_status = "already_requested"
+        next_action = "workflow request is already running"
+    elif light_metadata is not None:
+        entry_trigger = str(light_metadata.get("light_entry_trigger") or "prd.requested")
+        invoke_status = "skipped_light"
+        next_action = f"light topology: emit `{entry_trigger}` to start the flow"
+    else:
+        invoke_status = "already_submitted"
+        next_action = "inspect/resume the submitted request; duplicate ignition was suppressed"
+    return {
+        "schema_version": "workflow.submit.apply.v1",
+        "status": "accepted",
+        "dry_run": False,
+        "event_type": "workflow.submit.accepted",
+        "payload": {
+            "request_id": request_id,
+            "run_id": str(projection.get("run_id") or request_id),
+            "kind": str(projection.get("kind") or ""),
+        },
+        "request": projection,
+        "idempotent_replay": True,
+        "workflow_invoke_event_id": str(invoked.id if invoked is not None else ""),
+        "workflow_invoke_status": invoke_status,
+        "next_action": next_action,
+        "event_ids": [event.id for event in related],
+        "state_dir": str(state_dir),
+        "blockers": [],
     }
 
 
@@ -1315,8 +1674,32 @@ def build_flow_preflight_report(
         })
     intake_report = _intake_preflight_report(intake_path)
     diagnostics.extend(intake_report.get("diagnostics", []))
+    effective_kind = str(
+        flow_kind
+        or intake_report.get("kind")
+        or _flow_kind(config)
+        or ""
+    )
+    from zf.core.config.candidate_gate import combined_candidate_gate_gap
+
+    candidate_gate_gap = combined_candidate_gate_gap(
+        config,
+        flow_kind=effective_kind,
+    )
+    if candidate_gate_gap:
+        diagnostics.append({
+            "severity": "STOP",
+            "kind": "combined_candidate_gate_missing",
+            "title": "当前 workflow 缺少合并候选树质量门",
+            "message": candidate_gate_gap,
+            "why_it_matters": "多 lane 合并后必须重新验证集成候选树。",
+            "fix_it": "配置项目真实 quality_gates，或仅在观测运行中显式豁免。",
+            "safe_auto_fix": False,
+        })
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
     metadata = _effective_flow_metadata(
-        dict(getattr(config.workflow, "flow_metadata", {}) or {}),
+        flow_metadata_for(config, effective_kind),
         intake_report=intake_report,
     )
     diagnostics.extend(_environment_readiness_diagnostics(
@@ -1328,7 +1711,7 @@ def build_flow_preflight_report(
     delivery_report = _delivery_launch_coverage_report(
         project_root=project_root,
         metadata=metadata,
-        flow_kind=flow_kind or _flow_kind(config),
+        flow_kind=effective_kind,
         intake_report=intake_report,
         skill_report=skill_report,
     )
@@ -1336,7 +1719,7 @@ def build_flow_preflight_report(
     refactor_report = _refactor_safety_report(
         project_root=project_root,
         metadata=metadata,
-        flow_kind=flow_kind or _flow_kind(config),
+        flow_kind=effective_kind,
         intake_report=intake_report,
     )
     diagnostics.extend(refactor_report.get("diagnostics", []))
@@ -1357,7 +1740,7 @@ def build_flow_preflight_report(
         "schema_version": "flow-start-readiness.v1",
         "status": "STOP" if stop else "WARN" if warn else "GO",
         "config": str(config_path),
-        "flow_kind": flow_kind or _flow_kind(config),
+        "flow_kind": effective_kind,
         "project": inspect_report.get("project", {}),
         "summary": inspect_report.get("summary", {}),
         "generated": inspect_report.get("generated", {}),
@@ -1593,7 +1976,9 @@ def _contract_is_strict(strictness: str) -> bool:
 
 
 def _flow_kind(config: Any) -> str:
-    metadata = dict(getattr(config.workflow, "flow_metadata", {}) or {})
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    metadata = flow_metadata_for(config)
     return str(metadata.get("flow_kind") or (
         "refactor" if metadata.get("gap_loop") or metadata.get("verify_rescan") else ""
     ))
@@ -1608,12 +1993,18 @@ def _effective_flow_metadata(
     if not intake_report or intake_report.get("status") == "not_requested":
         return effective
     for key in ("source_root", "target_root"):
-        if str(effective.get(key) or "").strip():
+        configured = str(effective.get(key) or "").strip()
+        if configured and not _is_flow_template_placeholder(configured):
             continue
         value = str(intake_report.get(key) or "").strip()
         if value:
             effective[key] = value
     return effective
+
+
+def _is_flow_template_placeholder(value: str) -> bool:
+    normalized = str(value or "").strip().lower()
+    return normalized.startswith(("todo:", "todo ", "<todo", "${todo"))
 
 
 def _git_is_work_tree(root: Path) -> bool:
@@ -1945,33 +2336,6 @@ def _infer_request_kind(text: str) -> str:
     if any(term in lowered for term in issue_terms):
         return "issue"
     return "issue"
-
-
-def _required_fields_for_kind(kind: str) -> list[str]:
-    if kind == "refactor":
-        return ["objective", "source_root", "target_root"]
-    if kind == "prd":
-        return ["objective", "target_root"]
-    return ["objective"]
-
-
-def _missing_required_fields(
-    kind: str,
-    *,
-    objective: str = "",
-    source_ref: str = "",
-    source_root: str = "",
-    target_root: str = "",
-) -> list[str]:
-    values = {
-        "objective": objective or source_ref,
-        "source_root": source_root,
-        "target_root": target_root,
-    }
-    return [
-        field for field in _required_fields_for_kind(kind)
-        if not str(values.get(field) or "").strip()
-    ]
 
 
 def _classification_reason(kind: str, *, explicit_kind: str) -> str:
@@ -2530,7 +2894,11 @@ def _submit_payload_to_workflow_invoke(payload: dict[str, Any]) -> dict[str, Any
         "task_id": str(payload.get("task_id") or ""),
         "request_id": str(payload.get("request_id") or ""),
         "run_id": str(payload.get("run_id") or payload.get("request_id") or ""),
+        "workflow_run_id": str(
+            payload.get("run_id") or payload.get("request_id") or ""
+        ),
         "kind": str(payload.get("kind") or ""),
+        "flow_kind": str(payload.get("kind") or ""),
         "request_kind": str(payload.get("request_kind") or payload.get("kind") or ""),
         "workflow_tier": str(payload.get("workflow_tier") or ""),
         "pattern_id": str(payload.get("pattern_id") or ""),
@@ -2540,6 +2908,10 @@ def _submit_payload_to_workflow_invoke(payload: dict[str, Any]) -> dict[str, Any
         "source_refs": dict(source_refs),
         "workflow_input_manifest_ref": str(payload.get("workflow_input_manifest_ref") or ""),
         "workflow_prompt_ref": str(payload.get("workflow_prompt_ref") or ""),
+        "workflow_request_ref": str(payload.get("workflow_request_ref") or ""),
+        "requirement_spec_ref": str(payload.get("requirement_spec_ref") or ""),
+        "requirement_spec_digest": str(payload.get("requirement_spec_digest") or ""),
+        "request_revision": int(payload.get("request_revision") or 0),
         "prompt_kind": str(payload.get("kind") or ""),
         "artifact_refs": [{"path": str(ref)} for ref in artifact_refs if str(ref).strip()],
         "expected_output": f"execute {payload.get('kind') or 'workflow'} workflow",

@@ -153,6 +153,37 @@ class EventSchemaRule:
         )
 
 
+def event_schemas_for_config(
+    config: Any,
+    *,
+    flow_kind: str = "",
+    payload: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any]:
+    """Return the event schema table scoped to one workflow kind."""
+
+    try:
+        dag = config.workflow.dag
+    except AttributeError:
+        return {}
+    body = payload or {}
+    kind = str(
+        flow_kind
+        or body.get("flow_kind")
+        or body.get("request_kind")
+        or body.get("goal_kind")
+        or ""
+    ).strip().lower()
+    if kind == "feat":
+        kind = "prd"
+    scoped = getattr(dag, "event_schemas_by_kind", {}) or {}
+    if kind and isinstance(scoped, Mapping):
+        candidate = scoped.get(kind)
+        if isinstance(candidate, Mapping):
+            return candidate
+    fallback = getattr(dag, "event_schemas", {}) or {}
+    return fallback if isinstance(fallback, Mapping) else {}
+
+
 class EventSchemaRegistry:
     """Maps event_type → rule. Built once at startup from zf.yaml.
 
@@ -160,8 +191,17 @@ class EventSchemaRegistry:
     from a ``ZfConfig``.
     """
 
-    def __init__(self, rules: dict[str, EventSchemaRule] | None = None) -> None:
+    def __init__(
+        self,
+        rules: dict[str, EventSchemaRule] | None = None,
+        *,
+        rules_by_kind: dict[str, dict[str, EventSchemaRule]] | None = None,
+    ) -> None:
         self._rules: dict[str, EventSchemaRule] = dict(rules or {})
+        self._rules_by_kind = {
+            str(kind): dict(kind_rules)
+            for kind, kind_rules in (rules_by_kind or {}).items()
+        }
 
     # ---------------------------------------------------------- constructors
 
@@ -188,29 +228,49 @@ class EventSchemaRegistry:
 
         Robust to missing intermediate attrs (returns empty registry).
         """
+        fallback = cls.from_dict(event_schemas_for_config(config))
         try:
-            schemas = config.workflow.dag.event_schemas
+            scoped = config.workflow.dag.event_schemas_by_kind
         except AttributeError:
-            return cls({})
-        return cls.from_dict(schemas)
+            scoped = {}
+        rules_by_kind: dict[str, dict[str, EventSchemaRule]] = {}
+        if isinstance(scoped, Mapping):
+            for kind, schemas in scoped.items():
+                parsed = cls.from_dict(
+                    schemas if isinstance(schemas, Mapping) else {},
+                )
+                rules_by_kind[str(kind)] = parsed._rules
+        return cls(fallback._rules, rules_by_kind=rules_by_kind)
 
     # -------------------------------------------------------------- queries
 
-    def is_loose(self, event_type: str) -> bool:
+    def _rules_for_kind(self, flow_kind: str = "") -> dict[str, EventSchemaRule]:
+        kind = str(flow_kind or "").strip().lower()
+        if kind == "feat":
+            kind = "prd"
+        return self._rules_by_kind.get(kind, self._rules)
+
+    def is_loose(self, event_type: str, *, flow_kind: str = "") -> bool:
         """No rule registered for this event type — caller must accept it."""
-        return event_type not in self._rules
+        return event_type not in self._rules_for_kind(flow_kind)
 
-    def rule_for(self, event_type: str) -> "EventSchemaRule | None":
-        return self._rules.get(event_type)
+    def rule_for(
+        self, event_type: str, *, flow_kind: str = "",
+    ) -> "EventSchemaRule | None":
+        return self._rules_for_kind(flow_kind).get(event_type)
 
-    def has_rule(self, event_type: str) -> bool:
-        return event_type in self._rules
+    def has_rule(self, event_type: str, *, flow_kind: str = "") -> bool:
+        return event_type in self._rules_for_kind(flow_kind)
 
-    def get_rule(self, event_type: str) -> EventSchemaRule | None:
-        return self._rules.get(event_type)
+    def get_rule(
+        self, event_type: str, *, flow_kind: str = "",
+    ) -> EventSchemaRule | None:
+        return self._rules_for_kind(flow_kind).get(event_type)
 
     def rule_count(self) -> int:
-        return len(self._rules)
+        return len(self._rules) + sum(
+            len(rules) for rules in self._rules_by_kind.values()
+        )
 
     # ----------------------------------------------------------- validation
 
@@ -222,13 +282,19 @@ class EventSchemaRegistry:
         dict is treated as ``{}`` for validation purposes (a required
         field will still surface as missing_required).
         """
-        event_type = getattr(event, "type", "")
-        rule = self._rules.get(event_type)
-        if rule is None:
-            return []
         payload = getattr(event, "payload", None)
         if not isinstance(payload, Mapping):
             payload = {}
+        event_type = getattr(event, "type", "")
+        flow_kind = str(
+            payload.get("flow_kind")
+            or payload.get("request_kind")
+            or payload.get("goal_kind")
+            or ""
+        )
+        rule = self._rules_for_kind(flow_kind).get(event_type)
+        if rule is None:
+            return []
         violations: list[SchemaViolation] = []
         _validate_against_rule(
             rule=rule,
@@ -1001,7 +1067,56 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
 
 def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
     """Canonical payload contracts for channel/workflow invocation."""
+    request_base = [
+        "request_id",
+        "project_id",
+        "kind",
+        "status",
+        "revision",
+        "requirement_spec_ref",
+        "requirement_spec_digest",
+    ]
     return {
+        "workflow.intake.created": {
+            "required": request_base,
+            "optional": [
+                "workflow_input_manifest_ref",
+                "missing_required_fields",
+                "open_questions",
+            ],
+        },
+        "workflow.intake.clarification.required": {
+            "required": request_base,
+            "optional": ["missing_required_fields", "open_questions"],
+        },
+        "workflow.intake.ready": {
+            "required": request_base,
+            "optional": ["missing_required_fields", "open_questions"],
+        },
+        "workflow.request.updated": {
+            "required": request_base,
+            "optional": [
+                "previous_revision",
+                "missing_required_fields",
+                "open_questions",
+            ],
+        },
+        "workflow.request.proposed": {
+            "required": request_base,
+            "optional": ["run_id", "missing_required_fields", "open_questions"],
+        },
+        "workflow.request.approved": {
+            "required": request_base,
+            "optional": ["run_id", "missing_required_fields", "open_questions"],
+        },
+        "workflow.request.submitted": {
+            "required": request_base,
+            "optional": ["run_id", "missing_required_fields", "open_questions"],
+        },
+        "workflow.request.running": {
+            "required": request_base,
+            "optional": ["run_id", "missing_required_fields", "open_questions"],
+        },
         "workflow.submit.requested": {
             "required": [
                 "request_id",
@@ -1021,6 +1136,10 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
                 "artifact_refs",
                 "dry_run",
                 "preflight_status",
+                "workflow_request_ref",
+                "requirement_spec_ref",
+                "requirement_spec_digest",
+                "request_revision",
             ],
         },
         "workflow.submit.accepted": {
@@ -1034,6 +1153,10 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
                 "workflow_input_manifest_ref",
                 "workflow_prompt_ref",
                 "config_ref",
+                "workflow_request_ref",
+                "requirement_spec_ref",
+                "requirement_spec_digest",
+                "request_revision",
             ],
         },
         "workflow.submit.rejected": {
@@ -1062,6 +1185,11 @@ def workflow_invoke_schema_rules() -> dict[str, dict[str, Any]]:
                 "workflow_prompt_ref",
                 "prompt_kind",
                 "artifact_refs",
+                "flow_kind",
+                "workflow_request_ref",
+                "requirement_spec_ref",
+                "requirement_spec_digest",
+                "request_revision",
             ],
         },
         "workflow.invoke.accepted": {

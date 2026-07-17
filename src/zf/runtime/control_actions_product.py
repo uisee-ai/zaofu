@@ -781,6 +781,7 @@ class ProductActionsMixin:
                 return {"ok": True, "reason": "already_executed", "proposal_id": proposal_id}
         results: list[dict] = []
         created_task_id = ""
+        created_intake_ref = ""
         for item in (proposal.payload or {}).get("proposals") or []:
             if not isinstance(item, dict):
                 continue
@@ -790,6 +791,10 @@ class ProductActionsMixin:
                 placeholder = str(step_payload.get("task_id") or "")
                 if created_task_id and placeholder in {"", "<created-task-id>"}:
                     step_payload["task_id"] = created_task_id
+            if step_action == "workflow-submit":
+                placeholder = str(step_payload.get("intake_ref") or "")
+                if created_intake_ref and placeholder in {"", "<created-intake-ref>"}:
+                    step_payload["intake_ref"] = created_intake_ref
             result = self._execute_action(
                 action=step_action,
                 requested_action=step_action,
@@ -798,11 +803,14 @@ class ProductActionsMixin:
             )
             if step_action == "create-task" and result.get("ok"):
                 created_task_id = str(result.get("task_id") or result.get("id") or "")
+            if step_action == "workflow-request" and result.get("ok"):
+                created_intake_ref = str(result.get("intake_ref") or "")
             results.append({
                 "action": step_action,
                 "ok": bool(result.get("ok")),
                 "status": str(result.get("status") or ""),
                 "task_id": str(result.get("task_id") or ""),
+                "request_id": str(result.get("request_id") or ""),
             })
             if not result.get("ok"):
                 break
@@ -817,6 +825,7 @@ class ProductActionsMixin:
                 "intent_id": intent_id,
                 "results": results,
                 "created_task_id": created_task_id,
+                "created_intake_ref": created_intake_ref,
                 "source": self.source,
                 "surface": self.surface,
             }),
@@ -825,6 +834,7 @@ class ProductActionsMixin:
             "ok": all(r["ok"] for r in results) if results else False,
             "proposal_id": proposal_id,
             "created_task_id": created_task_id,
+            "created_intake_ref": created_intake_ref,
             "results": results,
         }
     def _replan_owner_decision(
@@ -950,30 +960,66 @@ class ProductActionsMixin:
             },
         )
         proposal_id = _proposal_id("idea-to-product", payload, requested.id)
-        proposals = [
-            {
-                "action": "create-task",
-                "payload": {
-                    "title": objective[:160],
-                    "priority": str(payload.get("priority") or "P1"),
-                    "contract": payload.get("contract")
-                    if isinstance(payload.get("contract"), dict) else {},
+        initialized_project = bool(
+            self.project_root is not None
+            and self.config is not None
+            and (self.project_root / "zf.yaml").exists()
+        )
+        if initialized_project:
+            proposals = [
+                {
+                    "action": "workflow-request",
+                    "payload": {
+                        "objective": objective,
+                        "kind": str(payload.get("kind") or "auto"),
+                        "source_ref": str(payload.get("artifact_ref") or ""),
+                        "source_root": str(payload.get("source_root") or ""),
+                        "target_root": str(payload.get("target_root") or payload.get("target") or ""),
+                        "backend": str(payload.get("backend") or ""),
+                        "lanes": int(payload.get("lanes") or 0),
+                        "acceptance": _string_list(payload.get("acceptance")),
+                        "constraints": _string_list(payload.get("constraints")),
+                        "open_questions": _string_list(payload.get("open_questions")),
+                        "channel_id": str(payload.get("channel_id") or ""),
+                        "thread_id": str(payload.get("thread_id") or ""),
+                        "pattern_id": str(payload.get("pattern_id") or ""),
+                        "allow_missing_env": bool(payload.get("allow_missing_env")),
+                    },
                 },
-            },
-            {
-                "action": "workflow-invoke",
-                "payload": {
-                    "task_id": str(payload.get("task_id") or "<created-task-id>"),
-                    "pattern_id": str(payload.get("pattern_id") or "dag"),
-                    "expected_output": str(payload.get("expected_output") or "plan-to-ship delivery"),
-                    # a clarified-requirement artifact (doc 122 §9) must reach
-                    # the first workflow stage: artifact_refs flow into the
-                    # workflow prompt package + input manifest for the child.
-                    **({"artifact_refs": [str(payload.get("artifact_ref"))]}
-                       if payload.get("artifact_ref") else {}),
+                {
+                    "action": "workflow-submit",
+                    "payload": {
+                        "intake_ref": "<created-intake-ref>",
+                        "kind": str(payload.get("kind") or ""),
+                        "task_id": str(payload.get("task_id") or ""),
+                        "pattern_id": str(payload.get("pattern_id") or ""),
+                        "reason": str(payload.get("reason") or "approved clarified requirement"),
+                        "allow_missing_env": bool(payload.get("allow_missing_env")),
+                    },
                 },
-            },
-        ]
+            ]
+        else:
+            proposals = [
+                {
+                    "action": "create-task",
+                    "payload": {
+                        "title": objective[:160],
+                        "priority": str(payload.get("priority") or "P1"),
+                        "contract": payload.get("contract")
+                        if isinstance(payload.get("contract"), dict) else {},
+                    },
+                },
+                {
+                    "action": "workflow-invoke",
+                    "payload": {
+                        "task_id": str(payload.get("task_id") or "<created-task-id>"),
+                        "pattern_id": str(payload.get("pattern_id") or "dag"),
+                        "expected_output": str(payload.get("expected_output") or "plan-to-ship delivery"),
+                        **({"artifact_refs": [str(payload.get("artifact_ref"))]}
+                           if payload.get("artifact_ref") else {}),
+                    },
+                },
+            ]
         proposal_event = self.writer.emit(
             "operator.action.proposed",
             actor=self.actor,
@@ -1011,7 +1057,11 @@ class ProductActionsMixin:
             "status": "proposed",
             "action": action,
             "requested_action": requested_action,
-            "reason": "idea-to-product intent recorded; task creation and workflow invoke require explicit approval",
+            "reason": (
+                "idea-to-product intent recorded; workflow request and submit require explicit approval"
+                if initialized_project
+                else "idea-to-product intent recorded; task creation and workflow invoke require explicit approval"
+            ),
             "intent_id": str(intent.get("intent_id") or ""),
             "proposal_id": proposal_id,
             "event_id": proposal_event.id,

@@ -132,7 +132,7 @@ metadata:
   name: issue-codex-lanes/v1
 spec:
   backend: codex
-  lanes: 2
+  lanes: 1
   stages:
     fix:
       role_pattern: fix-lane-{lane}

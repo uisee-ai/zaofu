@@ -3,7 +3,7 @@ kind: IssueFlow
 metadata:
   name: issue-fanout/v3-claude
 spec:
-  lanes: 2
+  lanes: 1
   backend: claude-code
   issueRef: docs/issues/TODO.md
   qualityFloor: issue-regression
@@ -21,7 +21,7 @@ metadata:
       description: Short controller issue workflow with claude lanes.
       intent: maintain
       backend: claude
-      roles: 7
+      roles: 5
       recommended_for: [maintain, review, issue]
       preferred: true
       order: 30

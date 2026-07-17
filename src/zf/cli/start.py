@@ -868,8 +868,12 @@ def run(args: argparse.Namespace) -> int:
 
             if not dry_run:
                 adapter = get_adapter(role.backend)
-                ready = transport.wait_ready(
-                    role.instance_id, adapter.ready_pattern, timeout=30.0,
+                ready = (
+                    transport.wait_ready(
+                        role.instance_id, adapter.ready_pattern, timeout=30.0,
+                    )
+                    if adapter.requires_ready_wait
+                    else True
                 )
                 if ready:
                     # B-1203-06 R-1: stabilization wait for TUIs (codex)

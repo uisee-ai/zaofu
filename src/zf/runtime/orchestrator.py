@@ -1482,28 +1482,32 @@ class Orchestrator(
 
         # α-3+ (2026-05-17): proactive dispatch path. For each idle
         # worker observed, if the task store has ≥1 ready backlog item,
-        # emit worker.probe.idle so the next run_once cycle picks it up
-        # via the existing _dispatch_ready_tasks path. Suppressed when
-        # backlog is empty to avoid wake spam.
+        # emit one fleet-level worker.probe.idle so the next run_once cycle
+        # picks it up via the existing _dispatch_ready_tasks path. One
+        # run_once already scans every ready task/worker; emitting one event
+        # per idle pane creates an O(workers) wake backlog that can starve the
+        # actual workflow event on multi-kind projects.
         if result.idle_instances:
             try:
                 ready_count = len(self.task_store.ready())
             except Exception:
                 ready_count = 0
             if ready_count > 0:
-                for instance_id in result.idle_instances:
-                    try:
-                        self.event_writer.append(ZfEvent(
-                            type="worker.probe.idle",
-                            actor="zf-cli",
-                            payload={
-                                "instance_id": instance_id,
-                                "ready_backlog_count": ready_count,
-                                "source": "heartbeat_sweep",
-                            },
-                        ))
-                    except Exception:
-                        pass
+                idle_instances = sorted(set(result.idle_instances))
+                try:
+                    self.event_writer.append(ZfEvent(
+                        type="worker.probe.idle",
+                        actor="zf-cli",
+                        payload={
+                            "instance_id": idle_instances[0],
+                            "idle_instances": idle_instances,
+                            "idle_worker_count": len(idle_instances),
+                            "ready_backlog_count": ready_count,
+                            "source": "heartbeat_sweep",
+                        },
+                    ))
+                except Exception:
+                    pass
 
     def _provider_turn_stuck_grace_seconds(self, instance_id: str) -> float:
         """Extra grace while a Codex turn is visibly in flight.

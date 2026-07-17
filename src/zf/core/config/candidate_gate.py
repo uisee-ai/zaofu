@@ -15,12 +15,31 @@ from __future__ import annotations
 from typing import Any
 
 
-def combined_candidate_gate_gap(config: Any) -> str:
-    """返回缺口描述(空串 = 无缺口/已豁免/单 lane)。"""
+def combined_candidate_gate_gap(config: Any, *, flow_kind: str = "") -> str:
+    """返回缺口描述(空串 = 无缺口/已豁免/单 lane)。
+
+    A multi-kind Project is a resident container, not an active Refactor Run.
+    Its start/validate path therefore defers this gate until Request preflight,
+    where ``flow_kind`` selects the stages that can actually produce a
+    combined candidate.
+    """
+    kind = str(flow_kind or "").strip().lower()
+    if kind == "feat":
+        kind = "prd"
+    scoped_metadata = getattr(
+        getattr(config, "workflow", None), "flow_metadata_by_kind", {},
+    ) or {}
+    if not kind and len(scoped_metadata) > 1:
+        return ""
     stages = getattr(getattr(config, "workflow", None), "stages", None) or []
     multi_lane = any(
         str(getattr(stage, "topology", "")).startswith("fanout_writer")
         and len(getattr(stage, "roles", None) or []) > 1
+        and (
+            not kind
+            or str(getattr(stage, "flow_kind", "") or "").strip().lower()
+            in {"", kind}
+        )
         for stage in stages
     )
     if not multi_lane:

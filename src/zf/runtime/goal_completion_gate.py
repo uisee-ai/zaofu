@@ -86,12 +86,6 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
         if str(item).strip()
     ]
     goal_protocol = protocols.get("goal_closure") if isinstance(protocols.get("goal_closure"), dict) else {}
-    metadata = dict(getattr(runtime.config.workflow, "flow_metadata", {}) or {})
-    delivery_policy = str(
-        goal_protocol.get("delivery_policy")
-        or metadata.get("delivery_policy")
-        or "report_only"
-    )
     terminals = {
         str((event.payload or {}).get("claim_id") or "")
         for event in events
@@ -107,6 +101,14 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
         if claim_id not in terminals:
             claims[claim_id] = candidate
     for claim in claims.values():
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+
+        metadata = flow_metadata_for(runtime.config, payload=claim.payload)
+        delivery_policy = str(
+            goal_protocol.get("delivery_policy")
+            or metadata.get("delivery_policy")
+            or "report_only"
+        )
         outcome = run_goal_completion_gate_event(
             events,
             claim=claim,

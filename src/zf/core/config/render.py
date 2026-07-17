@@ -319,6 +319,9 @@ def build_config_inspection_report(
             "flow_metadata": dict(
                 getattr(config.workflow, "flow_metadata", {}) or {},
             ),
+            "flow_metadata_by_kind": dict(
+                getattr(config.workflow, "flow_metadata_by_kind", {}) or {},
+            ),
         },
     }
     return report
@@ -424,6 +427,10 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
         if workflow.get("pipelines") and workflow.get("stages"):
             rendered_flow_metadata["rendered_pipeline_stages"] = True
         workflow["_flow_metadata"] = rendered_flow_metadata
+
+    flow_metadata_by_kind = workflow.pop("flow_metadata_by_kind", None)
+    if isinstance(flow_metadata_by_kind, dict) and flow_metadata_by_kind:
+        workflow["_flow_metadata_by_kind"] = flow_metadata_by_kind
 
     pipelines = workflow.get("pipelines")
     if isinstance(pipelines, list):

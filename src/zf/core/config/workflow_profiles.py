@@ -80,6 +80,7 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # fanout(default) | light(single lane goal loop)
     "issueRef", "issue_ref",
+    "targetRef", "target_ref",
     "triageRole", "triage_role",
     "fixRolePattern", "fix_role_pattern",
     "targetRoot", "target_root",
@@ -90,6 +91,7 @@ _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
 _KNOWN_PRD_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # 批D: fanout(默认)| light(单 lane goal 环)
     "prdRef", "prd_ref",
+    "targetRef", "target_ref",
     "scanRoles", "scan_roles",
     "planRole", "plan_role",
     "implRolePattern", "impl_role_pattern",
@@ -545,6 +547,11 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
     ]
 
     template = dict(_pick(params, "laneRoleTemplate", "lane_role_template") or {})
+    template.setdefault("backend", backend)
+    template.setdefault(
+        "permission_mode",
+        str(role_defaults.get("permission_mode") or "bypass"),
+    )
     if role_skill_bundles:
         skills_by_stage = dict(template.get("skills_by_stage") or {})
         for stage_id in ("impl", "verify"):
@@ -855,7 +862,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         raise WorkflowProfileError(
             f"IssueFlow: unknown param(s) {unknown} (fail-closed)"
     )
-    lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=2))
+    lanes = int(_pick(params, "lanes", "laneCount", "lane_count", default=1))
     backend = str(_pick(params, "backend", default="codex"))
     topology = str(_pick(params, "topology", default="fanout")).strip() or "fanout"
     if topology not in {"fanout", "light"}:
@@ -946,7 +953,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
             "trigger": entry,
             "topology": "fanout_reader",
             "roles": [triage_role],
-            "target_ref": str(_pick(params, "issueRef", "issue_ref", default="")),
+            "target_ref": str(_pick(params, "targetRef", "target_ref", default="HEAD")),
             "criteria": {"instructions": _ISSUE_TRIAGE_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
@@ -1218,7 +1225,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             "trigger": entry,
             "topology": "fanout_reader",
             "roles": scan_roles,
-            "target_ref": str(_pick(params, "prdRef", "prd_ref", default="")),
+            "target_ref": str(_pick(params, "targetRef", "target_ref", default="HEAD")),
             "criteria": {"instructions": _PRD_SCAN_INSTRUCTIONS},
             "aggregate": {
                 "mode": "wait_for_all",
@@ -1329,10 +1336,18 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
     workflow = body.setdefault("workflow", {})
     stages = workflow.setdefault("stages", [])
     hand_triggers = {
-        str(s.get("trigger") or "") for s in stages if isinstance(s, dict)
+        (
+            str(s.get("trigger") or ""),
+            str(s.get("flow_kind") or "").strip().lower(),
+        )
+        for s in stages if isinstance(s, dict)
     }
     for stage in expansion["stages"]:
-        if stage["trigger"] in hand_triggers:
+        stage_key = (
+            str(stage.get("trigger") or ""),
+            str(stage.get("flow_kind") or "").strip().lower(),
+        )
+        if stage_key in hand_triggers:
             print(
                 f"Warning: flowProfile stage {stage['id']!r} skipped — "
                 f"hand-written stage already covers trigger "
@@ -1341,6 +1356,7 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
             )
             continue
         stages.append(stage)
+        hand_triggers.add(stage_key)
 
     workflow.setdefault("pipelines", []).extend(expansion["pipelines"])
     dag = workflow.setdefault("dag", {})
@@ -1354,9 +1370,22 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
                     ext.append(trig)
     metadata = expansion.get("metadata") or {}
     if isinstance(metadata, dict) and metadata:
-        flow_meta = workflow.setdefault("_flow_metadata", {})
-        if isinstance(flow_meta, dict):
-            flow_meta.update(metadata)
+        flow_kind = str(expansion.get("flow_kind") or metadata.get("flow_kind") or "")
+        if expansion.get("multi_kind") and flow_kind:
+            metadata_by_kind = workflow.setdefault("_flow_metadata_by_kind", {})
+            if isinstance(metadata_by_kind, dict):
+                metadata_by_kind[flow_kind] = dict(metadata)
+            routes = workflow.setdefault("kind_routes", {})
+            if isinstance(routes, dict):
+                route = routes.setdefault(flow_kind, {})
+                if isinstance(route, dict):
+                    route.setdefault("pattern_id", str(expansion.get("entry_stage_id") or ""))
+                if flow_kind == "prd":
+                    routes.setdefault("feat", {"alias": "prd"})
+        else:
+            flow_meta = workflow.setdefault("_flow_metadata", {})
+            if isinstance(flow_meta, dict):
+                flow_meta.update(metadata)
 
     # canonical-dag/v6 and refactor-flow/v3 terminate through the admitted
     # Thin Judge -> Completion Gate protocol. Keep hand-written goal settings

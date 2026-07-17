@@ -2350,6 +2350,8 @@ class LifecycleManagerMixin(
         try:
             from zf.runtime.backend import get_adapter
             adapter = get_adapter(role.backend)
+            if not adapter.requires_ready_wait:
+                return True
             # 2026-05-15 (r5 discovery): claude cold-boot can take 60-90s
             # under cold-cache + multi-pane contention. A hardcoded 30s
             # timeout here causes _respawn_instance to raise, the watchdog

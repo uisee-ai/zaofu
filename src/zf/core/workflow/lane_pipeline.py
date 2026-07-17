@@ -22,7 +22,7 @@ class LanePipelineSpecError(ValueError):
 
 
 _KNOWN_PIPELINE_KEYS = frozenset({
-    "id", "kind", "trigger", "task_source", "affinity_key", "lane_count",
+    "id", "kind", "trigger", "flow_kind", "task_source", "affinity_key", "lane_count",
     "overflow", "max_rework_attempts", "trace_budget",
     "require_artifact_digests", "stages", "final", "barriers",
     "lane_role_template", "schema_profile", "schema_overrides",
@@ -74,6 +74,7 @@ class LaneStageSpec:
 class LanePipelineSpec:
     pipeline_id: str
     trigger: str
+    flow_kind: str
     task_map_ref: str
     affinity_key: str
     lane_count: int
@@ -110,6 +111,11 @@ def parse_lane_pipeline(raw: dict) -> LanePipelineSpec:
     pipeline_id = str(raw.get("id") or "").strip()
     if not pipeline_id:
         raise LanePipelineSpecError("pipeline.id is required")
+    flow_kind = str(raw.get("flow_kind") or "").strip().lower()
+    if flow_kind and flow_kind not in {"issue", "prd", "refactor"}:
+        raise LanePipelineSpecError(
+            f"{pipeline_id}: flow_kind must be issue, prd, or refactor"
+        )
 
     task_source = raw.get("task_source") or {}
     if not isinstance(task_source, dict):
@@ -216,6 +222,7 @@ def parse_lane_pipeline(raw: dict) -> LanePipelineSpec:
     return LanePipelineSpec(
         pipeline_id=pipeline_id,
         trigger=str(raw.get("trigger") or "").strip(),
+        flow_kind=flow_kind,
         task_map_ref=str(task_source.get("task_map_ref") or "").strip(),
         affinity_key=str(raw.get("affinity_key") or "").strip(),
         lane_count=int(raw.get("lane_count") or 0),

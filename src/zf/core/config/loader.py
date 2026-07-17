@@ -271,6 +271,7 @@ _KNOWN_WORKFLOW_KEYS = frozenset({
     "inline_overrides", "work_units", "completion_audit", "resume_packet",
     "integration", "strict_triggers", "fast_path", "replan_eval",
     "pipelines", "admission_replan", "plan_approval", "_flow_metadata",
+    "_flow_metadata_by_kind",
     "kind_routes",
     "allow_unverified_candidate",  # ⑤c 合并候选树门显式豁免(2026-07-08)
 })
@@ -464,6 +465,9 @@ def _build_workflow_dag(data: dict | None) -> WorkflowDagConfig:
         # TR-EVENT-SCHEMA-LOCK-001 step 1/3: parse event_schemas dumb-as-dict
         # — EventSchemaRegistry interprets the shape at validation time.
         event_schemas=dict(data.get("event_schemas", {}) or {}),
+        event_schemas_by_kind=dict(
+            data.get("event_schemas_by_kind", {}) or {},
+        ),
         schema_profile=str(data.get("schema_profile", "") or ""),
         external_triggers=[
             str(t) for t in data.get("external_triggers", []) or []
@@ -555,6 +559,27 @@ def _build_workflow_kind_routes(
                 f"route {route.alias!r}"
             )
     return routes
+
+
+def _build_flow_metadata_by_kind(data: object) -> dict[str, dict]:
+    if data in (None, ""):
+        return {}
+    if not isinstance(data, dict):
+        raise ConfigError("workflow._flow_metadata_by_kind must be a mapping")
+    result: dict[str, dict] = {}
+    for raw_kind, raw_metadata in data.items():
+        kind = str(raw_kind or "").strip().lower()
+        if kind not in {"issue", "prd", "refactor"}:
+            raise ConfigError(
+                "workflow._flow_metadata_by_kind keys must be issue, prd, or "
+                f"refactor; got {kind!r}"
+            )
+        if not isinstance(raw_metadata, dict):
+            raise ConfigError(
+                f"workflow._flow_metadata_by_kind.{kind} must be a mapping"
+            )
+        result[kind] = dict(raw_metadata)
+    return result
 
 
 def _build_workflow_work_units(data: dict | None) -> WorkflowWorkUnitsConfig:
@@ -810,11 +835,17 @@ def _build_workflow_stages(
             raise ConfigError(f"workflow.stages[{i}] must be a mapping")
         stage_id = str(raw_stage.get("id") or "")
         trigger = str(raw_stage.get("trigger") or "")
+        flow_kind = str(raw_stage.get("flow_kind") or "").strip().lower()
         topology = str(raw_stage.get("topology") or "")
         if not stage_id:
             raise ConfigError(f"workflow.stages[{i}].id is required")
         if not trigger:
             raise ConfigError(f"workflow.stages[{i}].trigger is required")
+        if flow_kind and flow_kind not in {"issue", "prd", "refactor"}:
+            raise ConfigError(
+                f"workflow.stages[{i}].flow_kind must be issue, prd, or "
+                f"refactor; got {flow_kind!r}"
+            )
         if topology not in _VALID_STAR_TOPOLOGIES:
             raise ConfigError(
                 f"workflow.stages[{i}].topology {topology!r} must be one of "
@@ -892,6 +923,7 @@ def _build_workflow_stages(
         stages.append(WorkflowStageConfig(
             id=stage_id,
             trigger=trigger,
+            flow_kind=flow_kind,
             topology=topology,
             roles=role_targets,
             target_ref=target_ref,
@@ -2020,6 +2052,9 @@ def load_config(path: Path) -> ZfConfig:
                 harness_profile=harness_profile,
             ),
             flow_metadata=workflow_data.get("_flow_metadata", {}) or {},
+            flow_metadata_by_kind=_build_flow_metadata_by_kind(
+                workflow_data.get("_flow_metadata_by_kind")
+            ),
             pipelines=pipelines,
             pipelines_role_meta=pipelines_role_meta,
         ),
@@ -2059,9 +2094,15 @@ def load_config(path: Path) -> ZfConfig:
     # verification.* 的平行重复声明:未显式配置时派生
     # event_schema.mode=blocking + report_evidence_gate=fail_closed;
     # 显式配置(项目 yaml 或 uses profile 合并进 raw)优先,是逃生门。
-    if str(
-        (cfg.workflow.flow_metadata or {}).get("evidence_policy") or ""
-    ).strip() == "strict_refs":
+    flow_metadata_values = [
+        cfg.workflow.flow_metadata,
+        *(cfg.workflow.flow_metadata_by_kind or {}).values(),
+    ]
+    if any(
+        str((metadata or {}).get("evidence_policy") or "").strip()
+        == "strict_refs"
+        for metadata in flow_metadata_values
+    ):
         verification_raw = raw.get("verification")
         if not isinstance(verification_raw, dict):
             verification_raw = {}
@@ -2072,6 +2113,11 @@ def load_config(path: Path) -> ZfConfig:
             cfg.verification.event_schema.mode = "blocking"
         if "report_evidence_gate" not in verification_raw:
             cfg.verification.report_evidence_gate = "fail_closed"
+    # Keep the project-authored escape-hatch schemas separate from effective
+    # profile output. Multi-kind pipelines must each merge against this same
+    # declared base; feeding one kind's effective rules into the next kind
+    # silently relaxes/overwrites contracts for shared event names.
+    declared_event_schemas = dict(cfg.workflow.dag.event_schemas)
     # doc 90 增补:dag 顶层 schema_profile(不依赖 lane_pipeline 的引用位)。
     if cfg.workflow.dag.schema_profile:
         from zf.core.config.schema_profiles import (
@@ -2104,17 +2150,31 @@ def load_config(path: Path) -> ZfConfig:
             SchemaProfileError,
             merge_event_schemas,
         )
+        pipeline_kinds = {
+            str(getattr(pipeline, "flow_kind", "") or "").strip().lower()
+            for pipeline in cfg.workflow.pipelines
+            if str(getattr(pipeline, "flow_kind", "") or "").strip()
+        }
+        multi_kind = len(pipeline_kinds) > 1
+        scoped_schemas: dict[str, dict[str, dict]] = {}
         for pipeline_spec in cfg.workflow.pipelines:
             profile_name = getattr(pipeline_spec, "schema_profile", "")
             if not profile_name:
                 continue
+            flow_kind = str(
+                getattr(pipeline_spec, "flow_kind", "") or ""
+            ).strip().lower()
             try:
                 effective, sources, schema_diags = merge_event_schemas(
                     profile_name=profile_name,
                     spec_overrides=getattr(
                         pipeline_spec, "schema_overrides", {},
                     ),
-                    local_schemas=cfg.workflow.dag.event_schemas,
+                    local_schemas=(
+                        declared_event_schemas
+                        if multi_kind
+                        else cfg.workflow.dag.event_schemas
+                    ),
                     harness_profile=cfg.workflow.harness_profile,
                     extra_profiles=_envelope_profiles,
                 )
@@ -2128,8 +2188,13 @@ def load_config(path: Path) -> ZfConfig:
             for d in schema_diags:
                 if d["severity"] == "WARN":
                     print(f"Warning: {d['message']}", file=sys.stderr)
-            cfg.workflow.dag.event_schemas = effective
-            cfg.workflow.pipelines_schema_sources = sources
+            if multi_kind and flow_kind:
+                scoped_schemas[flow_kind] = effective
+            else:
+                cfg.workflow.dag.event_schemas = effective
+                cfg.workflow.pipelines_schema_sources = sources
+        if scoped_schemas:
+            cfg.workflow.dag.event_schemas_by_kind = scoped_schemas
     # W2(2026-06-11):runtime 路径默认从 project.state_dir 派生。
     # schema 默认值硬编码 .zf(v3 sim 实测撞 PathGuard 的根因家族);
     # 默认值即派生,显式非默认配置保留。"显式写 .zf/* 但 state_dir
