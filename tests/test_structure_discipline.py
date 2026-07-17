@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 _REPO = Path(__file__).resolve().parent.parent
-_DESIGN = _REPO / "docs" / "design"
+_DESIGN = _REPO / "docs" / "manual"
 _SRC = _REPO / "src" / "zf"
 _SOURCE_FILE_SOFT_LIMIT = 1000
 
@@ -49,9 +49,10 @@ def test_00_index_links_resolve_to_existing_files():
 
 
 def test_design_doc_numbering_has_no_duplicates():
-    seen: dict[str, list[str]] = {}
+    seen: dict[tuple[str, str], list[str]] = {}
     for path in _DESIGN.glob("[0-9][0-9]-*.md"):
-        seen.setdefault(path.name[:2], []).append(path.name)
+        locale = "en" if path.name.endswith(".en.md") else "default"
+        seen.setdefault((path.name[:2], locale), []).append(path.name)
     dupes = {num: names for num, names in seen.items() if len(names) > 1}
     assert not dupes, f"duplicate design-doc numbers: {dupes}"
 

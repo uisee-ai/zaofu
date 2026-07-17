@@ -1,0 +1,40 @@
+# Feishu adapter config. The loader merges this into integrations from zf.yaml.
+# Secret values stay in .env; this file only references env var names.
+#
+# Every env-var reference carries an `:-__..._unset__` sentinel default so that
+# `zf validate` stays green in sandboxes / CI / autoresearch worktrees that run
+# without the Feishu secrets (no .env). The sentinel keys are inert route/user
+# ids that never match a real Feishu chat or open_id, so leaving them unset only
+# means the adapter is not wired for that principal — it never hard-blocks the
+# whole config load.
+
+feishu_identity:
+  enabled: true
+  verification_token_env: FEISHU_CH_SECRET
+  replay_window_seconds: 300
+  users:
+    "${FEISHU_OPENID:-__zf_feishu_openid_unset__}":
+      operator: min
+      level: approver
+    # open_id 是 per-app 的:上面是主 app 视角;RUNM app 的卡片按钮回调
+    # (card.action.trigger)看到的是同一 operator 在 RUNM app 下的另一个
+    # open_id。缺这条映射时,RUNM bot 卡上的一切按钮(含既有 run-manager
+    # human-decision 卡)都会被身份门拒(unmapped→VIEWER,2026-07-17 实弹证实)。
+    "${FEISHU_OPENID_RUNM:-__feishu_openid_runm_unset__}":
+      operator: min
+      level: operator
+  action_token_secret_env: FEISHU_RUNM_SECRET
+  action_token_ttl_seconds: 86400
+  require_signed_actions: false
+
+feishu_routing:
+  "${FEISHU_KANBAN:-__feishu_kanban_unset__}:${ZF_OWNER_VISIBLE_CHAT:-__zf_owner_visible_chat_unset__}":
+    target: kanban_agent
+    default_member: zf-product-manager
+  "${FEISHU_RUNM:-__feishu_runm_unset__}:${ZF_OWNER_VISIBLE_CHAT:-__zf_owner_visible_chat_unset__}":
+    target: run_manager
+    default_member: run-manager
+  "${ZF_OWNER_VISIBLE_CHAT:-__zf_owner_visible_chat_unset__}":
+    target: channel
+    channel_id: zaofu
+    default_member: min

@@ -1,13 +1,14 @@
 # ZaoFu Public Export Manifest
 
 - Source ref: `0665608dc62e63b4db60934e46dd8e9a15b1ebd1`
-- Generated UTC: `2026-07-17T07:56:06Z`
+- Generated UTC: `2026-07-17T08:43:42Z`
 
 ## Included
 
 - `AGENTS.md`
 - `CLAUDE.md`
 - `zf.yaml`
+- `feishu.yaml`
 - `README.md`
 - `README.zh-CN.md`
 - `LICENSE`
@@ -23,6 +24,7 @@
 - `tools`
 - `scripts`
 - `skills`
+- `yoke`
 - `channel_roles`
 - `.claude/rules`
 - `.claude/commands/audit-backlogs.md`
