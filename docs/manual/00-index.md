@@ -18,6 +18,8 @@ English documentation is available through the topic-by-topic
 
 - [01 快速开始](01-quickstart.md) — Controller 推荐/审批/物化、项目初始化、
   cold-start、dry-run 与首个 workflow request
+- [20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md) —
+  multi-kind Project、需求澄清、显式批准、CLI/Web 点火完整路径
 
 ## 2. 核心使用
 

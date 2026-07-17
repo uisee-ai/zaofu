@@ -18,9 +18,11 @@ uv run zf <command> --help
 | `zf presets show <name>` | Render a preset |
 | `zf init` | Initialize configured runtime state |
 | `zf init --preset safe-team` | Initialize from a preset |
-| `zf project init --kind issue|prd|refactor ...` | Create a project workflow container |
+| `zf project init --name NAME --root PATH` | Create the default multi-kind Project and runtime state without ignition |
+| `zf project init --kind issue|prd|refactor ...` | Compatibility entry point for a single-kind Controller |
 | `zf profile detect` | Detect project stack |
 | `zf profile recommend` | Recommend a profile |
+| `zf profile bootstrap` | Inspect or materialize Controller, checks, and instruction docs |
 | `zf validate --path zf.yaml` | Validate config |
 | `zf validate --cold-start` | Check startup readiness |
 | `zf workflow inspect` | Inspect topology and handoff wiring |
@@ -63,6 +65,12 @@ worktrees have been independently verified clean and disposable.
 | `zf kanban show <task>` | Show task details |
 | `zf task trace <task>` | Show task causation |
 | `zf backlog why-not-done <task>` | Explain completion gaps |
+| `zf flow intake` | Create a versioned workflow Request intake |
+| `zf flow classify` | Resolve a request kind |
+| `zf flow clarify --confirm` | Complete and confirm the requirement snapshot |
+| `zf flow preflight` | Check request and environment readiness |
+| `zf flow submit --dry-run` | Preview admission without mutation |
+| `zf flow submit --apply` | Explicitly approve and submit a ready Request |
 
 Example:
 
@@ -74,6 +82,11 @@ uv run zf task trace "$TASK_ID"
 
 Strict terminal transitions require configured evidence. A rejected move to
 `done` should be diagnosed, not bypassed by editing state files.
+
+Project initialization, `zf start`, and workflow ignition are separate actions.
+Default initialization does not emit `workflow.invoke.requested`. See
+[20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for the complete path.
 
 ## 4. Events
 

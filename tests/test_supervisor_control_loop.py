@@ -353,3 +353,34 @@ def test_triage_first_gate_never_suppresses_human_or_critical() -> None:
     assert len(_messages(triage)) == 0
     triage_decisions = [e for e in triage if e.type == "supervisor.decision.recorded"]
     assert triage_decisions[0].payload["outcome"] == "run_manager_triage_first"
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-17 card-quality review: owner_notify no longer stamps
+# human_action_required (needs_diagnosis-class items were bypassing the
+# Feishu push whitelist via the first gate — /tmp/runm.png).
+
+
+def test_owner_notify_route_alone_does_not_stamp_human_action() -> None:
+    from zf.runtime.supervisor_control_loop import _human_action_required
+
+    item = {"title": "Completion event claims artifacts/head that do not exist",
+            "summary": "claimed artifact missing on disk: x.md",
+            "suggested_route": "workflow_rework"}
+    decision = {"route": "owner_notify"}
+    assert _human_action_required(item, decision) is False
+
+
+def test_human_decision_route_still_stamps() -> None:
+    from zf.runtime.supervisor_control_loop import _human_action_required
+
+    assert _human_action_required({}, {"route": "human_decision"}) is True
+
+
+def test_budget_intrinsic_condition_still_stamps() -> None:
+    # ZF-E2E-RACING-P2 regression guard: the budget gate must keep opening
+    # through human_required_when even with owner_notify removed.
+    from zf.runtime.supervisor_control_loop import _human_action_required
+
+    item = {"human_required_when": ["owner_budget_decision_needed"]}
+    assert _human_action_required(item, {"route": "owner_notify"}) is True

@@ -3,7 +3,7 @@
 > Audience: operators, engineering leads, and contributors who need to run,
 > observe, and troubleshoot a ZaoFu multi-agent delivery workflow.
 >
-> Last verified against the CLI: 2026-07-13.
+> Last verified against the CLI: 2026-07-17.
 >
 > This is the consolidated English manual. The topic-specific Chinese manuals
 > in this directory remain the deeper reference for individual subsystems.
@@ -191,23 +191,30 @@ directory whose evidence must be retained.
 
 ### 4.3 Project workflow container
 
-For product-scoped issue, PRD, or refactor intake:
+Create a long-lived, multi-kind Project container by omitting `--kind`:
 
 ```bash
 uv run zf project init \
-  --kind prd \
   --name my-product \
   --root /path/to/my-product \
-  --backend codex \
+  --create \
+  --git-init \
+  --backend claude \
   --workspace-register
 ```
 
-Supported project kinds are currently `issue`, `prd`, and `refactor`.
+Initialization creates Project config and runtime state but does not ignite a
+workflow. Explicit `--kind issue|prd|refactor` remains a compatibility path for
+a single-kind Controller. `--request-kind` describes an optional initial
+Request; only an explicit `--apply` may submit it, and readiness still fails
+closed on missing fields or open questions.
 
-The `zf flow` commands can create intake, classification, draft, and preflight
-artifacts. At the current CLI boundary, `flow start` and `flow submit` build
-safe proposals/previews; treat their `--help` output as authoritative before
-using them in automation.
+The `zf flow` commands create intake, classification, clarification, draft, and
+preflight artifacts. Use `flow clarify --confirm` to confirm the requirement
+snapshot, `flow submit --dry-run` to preview admission, and `flow submit
+--apply` for explicit ignition. See
+[Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for the complete CLI and Web path.
 
 ## 5. Configure `zf.yaml`
 
@@ -775,5 +782,6 @@ The [English manual index](00-index.en.md) links every topic-specific manual:
 - [Codex provider preflight](16-real-codex-provider-preflight.en.md)
 - [Product Fanout real E2E](18-product-fanout-real-e2e.en.md)
 - [Feishu direct bridge](19-feishu-ai-native-direct-bridge.en.md)
+- [Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
 - [Autoresearch Campaign](autoresearch-campaign.en.md)
 - [Autoresearch Orchestrator](autoresearch-orchestrator.en.md)

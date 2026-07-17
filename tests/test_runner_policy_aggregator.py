@@ -197,8 +197,9 @@ def test_codex_goal_closure_judge_stays_headless_safe():
         permission_mode="bypass",
     )
     effective = apply_goal_closure_judge_policy(config, role)
-    assert effective.permission_mode == "default"  # → -a never,不提问
-    assert effective.allowed_tools == []
+    # 07-17 二轮实弹:default 档的 workspace-write 沙箱在 bwrap 不可用
+    # 宿主上让 judge 双手全废 → codex judge 保持 profile 原档(bypass)
+    assert effective.permission_mode == "bypass"
     # claude-code 分支不受影响(仍走 allowlist 只读)
     cc = RoleConfig(
         name="judge-prd", instance_id="judge-prd",

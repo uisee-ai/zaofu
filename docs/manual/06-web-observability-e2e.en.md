@@ -32,6 +32,23 @@ uv run zf web \
   --port 5175
 ```
 
+### 1.1 Create a Project from the Workspace shell
+
+For Project creation or registration, start the workspace shell with a
+controlled action token:
+
+```bash
+export ZF_WEB_ACTION_TOKEN="$(openssl rand -hex 24)"
+uv run zf web --host 127.0.0.1 --port 8001 --workspace-only
+```
+
+Bootstrap Inspect is read-only and proposes stack, Controller, setup, quality
+checks, and instruction documents. Add Project / Initialize creates and
+registers the Project but does not ignite a workflow. Clarification and explicit
+approval are still required. See
+[20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for screenshots and the complete path.
+
 ## 2. Observe a Running Harness
 
 The Web application is a project-scoped dashboard. Its main pages are:

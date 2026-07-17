@@ -191,18 +191,13 @@ def apply_goal_closure_judge_policy(
     if not is_goal_closure_judge_role(config, role):
         return role
     if str(role.backend or "") == "codex":
-        # ZF-JUDGE-HEADLESS-01(07-16 实弹):restricted 映射到
-        # `-a untrusted`,headless tmux 里每条命令等待交互确认 → judge
-        # 必超时(judge 判决两次成孤儿完成)。改走 default 档
-        # (`-a never -s workspace-write`):不提问;只读语义由 L0-a
-        # pre_tool_use scope 守卫 + 真相边界承担(judge 工作树的写
-        # 入不进 candidate,事实事件有 actor/dispatch 判官)。
-        if role.permission_mode != "default" or role.allowed_tools:
-            return replace(
-                role,
-                permission_mode="default",
-                allowed_tools=[],
-            )
+        # ZF-JUDGE-HEADLESS-01(07-16/17 两轮实弹):restricted 映射
+        # `-a untrusted` = headless 每命令等确认必超时;default 档
+        # (`-s workspace-write`)仍走 bwrap 沙箱,宿主 bwrap 不可用时
+        # (loopback RTM_NEWADDR EPERM)worker 活着但双手全废。codex
+        # judge 保持 profile 原档(通常 bypass,与其他角色一致);只读
+        # 语义由 L0-a pre_tool_use scope 守卫 + 真相边界承担(judge
+        # 工作树写入不进 candidate,事实事件有 actor/dispatch 判官)。
         return role
     return _apply_readonly_role_policy(config, role, state_dir=state_dir)
 

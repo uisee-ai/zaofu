@@ -11,6 +11,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +21,46 @@ from zf.core.security.redaction import redact_obj
 from zf.integrations.feishu.projection import RoutingConfig
 from zf.integrations.feishu.transport import FeishuMessage, FeishuTransport
 from zf.runtime.owner_visible_render import (
+    humanize_owner_title,
     owner_message_dedup_key,
     owner_message_is_empty,
 )
+
+# Cross-pass content-fold window: an identical-looking owner card delivered
+# within this window is suppressed as a duplicate instead of re-paging the
+# owner every tick. Long enough to absorb tick-to-tick repeats, short enough
+# that a genuinely persisting problem re-pages within the hour.
+_CONTENT_DEDUP_WINDOW_S = 1800.0
+
+
+def _recent_delivered_content_keys(
+    events: list[ZfEvent], *, target: str,
+) -> set[str]:
+    """Dedup keys of cards delivered to ``target`` within the fold window.
+
+    Reads the persisted ``dedup_key`` off delivered receipts (receipts written
+    before that field existed simply never fold — safe, backward compatible).
+    """
+    now = datetime.now(timezone.utc)
+    keys: set[str] = set()
+    for event in events:
+        if event.type != OWNER_MESSAGE_DELIVERED:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("target") or "") != target:
+            continue
+        key = str(payload.get("dedup_key") or "")
+        if not key:
+            continue
+        try:
+            ts = datetime.fromisoformat(str(event.ts))
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if (now - ts).total_seconds() <= _CONTENT_DEDUP_WINDOW_S:
+            keys.add(key)
+    return keys
 
 
 OWNER_MESSAGE_REQUESTED = "owner.visible_message.requested"
@@ -112,7 +150,12 @@ def deliver_owner_visible_messages_once(
     # repeating signal (recycle_threshold_exceeded ×9, each with a DISTINCT
     # fingerprint) is not spammed to the owner. Keyed on rendered content, not
     # fingerprint, precisely because the spam carries varying fingerprints.
-    delivered_content_keys: set[str] = set()
+    # 2026-07-17: seed the fold set from recent delivered receipts so the fold
+    # also holds ACROSS passes — the in-pass set alone let the same card ship
+    # once per tick (/tmp/runm.png: identical "completion claims" card twice).
+    delivered_content_keys: set[str] = _recent_delivered_content_keys(
+        events, target=target,
+    )
     for event in requested:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if not _wants_target(payload, target):
@@ -588,6 +631,11 @@ def _receipt_payload(
         "task_id": event.task_id or _text(payload, "task_id"),
         "severity": _text(payload, "severity"),
         "title": _text(payload, "title"),
+        # Content-fold key persisted on every receipt so later passes can
+        # window-dedupe against what was actually delivered (the in-pass
+        # ``delivered_content_keys`` set dies with the pass; /tmp/runm.png
+        # showed the same card shipped twice across consecutive ticks).
+        "dedup_key": owner_message_dedup_key(payload),
     }
 
 
@@ -613,18 +661,45 @@ _CARD_HEADER_TEMPLATE = {
 
 def _owner_visible_card(payload: dict[str, Any], body: str) -> dict[str, Any]:
     severity = _text(payload, "severity").lower()
-    title = _text(payload, "title") or "ZaoFu 告警"
+    # 2026-07-17 card-quality review: header in plain Chinese where the reason
+    # table knows the title; severity stays expressed by the header colour and
+    # the internal policy enum never reaches the owner (both used to ride the
+    # note line as ``severity=high · policy=owner_on_repair_failed``).
+    raw_title = _text(payload, "title")
+    title = humanize_owner_title(raw_title) if raw_title else "ZaoFu 告警"
     note_bits = [
         part for part in (
-            f"severity={severity}" if severity else "",
-            f"policy={_text(payload, 'notification_policy')}"
-            if _text(payload, "notification_policy") else "",
-            f"task={_text(payload, 'task_id')}" if _text(payload, "task_id") else "",
+            f"任务 {_text(payload, 'task_id')}" if _text(payload, "task_id") else "",
+            f"run {_text(payload, 'run_id')}" if _text(payload, "run_id") else "",
         ) if part
     ]
     elements: list[dict[str, Any]] = [
         {"tag": "div", "text": {"tag": "lark_md", "content": body}},
     ]
+    # 2026-07-17 card-quality L3: real buttons instead of the dead
+    # "回复「重试」" prompt. Every button maps to an EXISTING backend semantic:
+    # acknowledge rides the same card.action.trigger → ingest → gate chain the
+    # plan/RM cards use (verb registered in gateway + cli/feishu), details is a
+    # zero-backend deep link. No button is rendered without its real target.
+    actions: list[dict[str, Any]] = []
+    attention_id = _text(payload, "attention_id")
+    if attention_id and bool(payload.get("human_action_required")):
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "✅ 确认收到"},
+            "type": "primary",
+            "value": {"action": f"attention-ack:{attention_id}"},
+        })
+    web_base_url = os.environ.get("ZF_WEB_BASE_URL", "").strip()
+    if web_base_url:
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "🔍 详情(Web 收件箱)"},
+            "type": "default",
+            "url": f"{web_base_url.rstrip('/')}/?page=inbox",
+        })
+    if actions:
+        elements.append({"tag": "action", "actions": actions})
     if note_bits:
         elements.append({
             "tag": "note",

@@ -527,9 +527,15 @@ def _human_action_required(item: dict[str, Any], decision: dict[str, Any]) -> bo
     source = str(item.get("source") or "")
     title = str(item.get("title") or "").lower()
     summary = str(item.get("summary") or "").lower()
+    # 2026-07-17 card-quality review: ``owner_notify`` means "tell the owner",
+    # not "the owner must act" — including it here stamped human_action_required
+    # onto needs_diagnosis-class items (completion_claims_unverified et al.)
+    # whose recovery is the RM -> autoresearch automatic chain, so they bypassed
+    # the 2026-07-11 Feishu push whitelist via the first gate and paged the
+    # owner (/tmp/runm.png). Notify-only items now ride their notification
+    # policy: whitelisted policies still push, the rest downgrade to the inbox.
     if route in {
         "human",
-        "owner_notify",
         "human_decision",
         "approval_required",
         "operator_approval",

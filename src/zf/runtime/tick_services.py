@@ -74,6 +74,9 @@ class TickServiceState:
     # G1 idle 驱动器计数(goal.enabled 灰度)
     goal_idle_ticks: int = 0
     goal_last_progress_event_id: str = ""
+    # 静止审计器(run.stalled)
+    last_stillness_audit_at: float = 0.0
+    stillness: "Any" = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,8 @@ class TickServiceIntervals:
     # checks, but no longer creates a started/completed pair every supervisor
     # inspection tick.
     run_manager_idle_refresh_s: float = 900.0
+    # 静止审计:三向对账(未竟×在飞×合法等待)+ 死窗断点重发
+    stillness_audit_s: float = 120.0
 
 
 @dataclass(frozen=True)
@@ -120,6 +125,8 @@ class TickServiceResult:
     invoke_backlog_replayed: int = 0
     runtime_liveness_reconciled: bool = False
     control_plane_health: bool = False
+    stillness_state: str = ""
+    stillness_redriven: int = 0
 
 
 def run_autoresearch_trigger_scan(
@@ -373,6 +380,36 @@ def run_standard_tick_services(
             or source_repair_dispatched
         )
 
+    stillness_state_label = ""
+    stillness_redriven = 0
+    if now - state.last_stillness_audit_at >= intervals.stillness_audit_s:
+        state.last_stillness_audit_at = now
+        try:
+            import time as _stime
+
+            from zf.runtime.stillness_auditor import (
+                StillnessState,
+                audit_stillness,
+                emit_stalled_and_redrive,
+            )
+
+            if state.stillness is None:
+                state.stillness = StillnessState()
+            _st_events = event_log.read_all()
+            _report = audit_stillness(
+                _st_events,
+                now_epoch=_stime.time(),
+                state=state.stillness,
+            )
+            stillness_state_label = _report.state
+            if _report.state == "stalled":
+                _emitted = emit_stalled_and_redrive(
+                    event_writer, _st_events, _report,
+                )
+                stillness_redriven = _emitted.get("redriven", 0)
+        except Exception:
+            pass
+
     control_plane_health = _write_control_plane_health(
         state_dir=state_dir,
         event_log=event_log,
@@ -398,6 +435,8 @@ def run_standard_tick_services(
         channel_discussion_sweep=channel_discussion_sweep if "channel_discussion_sweep" in locals() else 0,
         invoke_backlog_replayed=invoke_backlog_replayed if "invoke_backlog_replayed" in locals() else 0,
         runtime_liveness_reconciled=runtime_liveness_reconciled if "runtime_liveness_reconciled" in locals() else False,
+        stillness_state=stillness_state_label,
+        stillness_redriven=stillness_redriven,
         control_plane_health=control_plane_health,
     )
 

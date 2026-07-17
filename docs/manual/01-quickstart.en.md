@@ -9,6 +9,11 @@ entry point described here. Keep one project-local `zf.yaml` and one configured
 `project.state_dir`; later PRD, issue, feature, or refactor work enters that
 same project as a new workflow request.
 
+The ZaoFu source repository's root `zf.yaml` defaults to PRD. In contrast,
+`zf project init` defaults to a multi-kind Project with no ignition. See
+[20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for the complete creation, clarification, and approval path.
+
 ## 0. Before You Start
 
 Required:
@@ -171,8 +176,19 @@ uv run --project "$ZAOFU_ROOT" zf flow intake \
   --kind prd \
   --from docs/prd/account-security.md \
   --target-root app \
+  --acceptance "Account security acceptance tests pass" \
   --request-id prd-account-security \
   --output docs/intake/prd-account-security.md
+```
+
+If open questions remain, clarify and confirm the requirement snapshot first:
+
+```bash
+uv run --project "$ZAOFU_ROOT" zf flow clarify \
+  --config zf.yaml \
+  --intake docs/intake/prd-account-security.md \
+  --confirm \
+  --json
 ```
 
 Preview admission without mutating runtime state:
@@ -183,7 +199,6 @@ uv run --project "$ZAOFU_ROOT" zf flow submit \
   --config zf.yaml \
   --intake docs/intake/prd-account-security.md \
   --kind prd \
-  --pattern-id prd-scan \
   --allow-missing-env \
   --json
 ```
@@ -196,7 +211,6 @@ uv run --project "$ZAOFU_ROOT" zf flow submit \
   --config zf.yaml \
   --intake docs/intake/prd-account-security.md \
   --kind prd \
-  --pattern-id prd-scan \
   --json
 ```
 

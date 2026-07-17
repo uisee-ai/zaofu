@@ -3,7 +3,7 @@
 > 适用对象: 想让一个或多个 agent 在一个共享对话空间里协作、并把对话投影到飞书 / Web 的操作者。
 >
 > 状态: **当前可用范围版**。Channel 的核心(发消息、@mention 触发 agent 回复、事件投影)
-> 已落地;多成员编排(speaker policy、discussion mode、channel→workflow 完整桥接)仍是
+> 已落地;多成员编排(speaker policy、discussion mode、channel→workflow 直接点火)仍是
 > 规划中,provider adapter 部分 WIP。本手册只覆盖**已实现**部分,规划项在文末"当前边界"列明。
 
 ## 1. Channel 是什么
@@ -18,6 +18,15 @@ agent 被 @mention 时回复,全过程以 `channel.*` 事件落到 `events.jsonl
 - **入站来源** 可以是飞书(`feishu_routing` 的 `target: agent` 会自动建一个临时 channel,
   `target: channel` 投递到已有 channel,见 [19](19-feishu-ai-native-direct-bridge.md) §3.1)
   或 Web Dashboard。
+
+### 1.1 Channel 到 Workflow Request
+
+已初始化 Project 中，Channel 可以通过受控 `workflow-request` action 创建或更新
+Request proposal。系统会生成 intake、分类 kind、执行 submit preview，并返回
+`clarification_required` 或 `proposal_ready`。该动作不会直接产生
+`workflow.invoke.requested`；proposal 仍需通过 Project workflow-submit 的显式批准。
+完整 Project/Request/Run 流程见
+[20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md)。
 
 ## 2. 发消息:`zf channel say`
 
@@ -102,8 +111,9 @@ integrations:
   agent 回帖不自动扇出**(doc 64 §5 防风暴守卫),事件流表现为
   `channel.route.blocked: auto_route_not_allowed`——这是设计内行为,不是故障;
   要 agent 间真实互达必须先设 relay 模式。
-- **channel → workflow 完整桥接** —— `channel.synthesis.proposed` →
-  `workflow.invoke.requested` 的链路在设计中,生产可用性以代码为准,勿假设已闭环。
+- **channel → workflow 直接点火** —— proposal bridge 已落地，但
+  `channel.synthesis.proposed` 不应无批准直接变成 `workflow.invoke.requested`。
+  readiness 和 Project workflow-submit approval 是刻意保留的安全边界。
 - **provider adapter** —— Codex / Claude-Code 在 channel 内的连接器部分 WIP;
   `target: agent` 直连回复路径已可用,复杂多 provider 协作未稳定。
 

@@ -8,6 +8,10 @@
 `zf.yaml` 和一个配置的 `project.state_dir`；后续 PRD、issue、feature 或 refactor
 通过新的 workflow request 进入同一个项目控制面。
 
+ZaoFu 源码仓库根 `zf.yaml` 默认是 PRD 工作流；`zf project init` 则默认创建
+multi-kind Project 且不点火。完整的创建、Bootstrap、澄清与批准步骤见
+[20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md)。
+
 ## 0. 开始之前
 
 必需环境：
@@ -160,8 +164,19 @@ uv run --project "$ZAOFU_ROOT" zf flow intake \
   --kind prd \
   --from docs/prd/account-security.md \
   --target-root app \
+  --acceptance "账号安全验收测试通过" \
   --request-id prd-account-security \
   --output docs/intake/prd-account-security.md
+```
+
+输入仍有 open question 时先澄清并确认 requirement snapshot：
+
+```bash
+uv run --project "$ZAOFU_ROOT" zf flow clarify \
+  --config zf.yaml \
+  --intake docs/intake/prd-account-security.md \
+  --confirm \
+  --json
 ```
 
 先预览 admission，不修改 runtime state：
@@ -172,7 +187,6 @@ uv run --project "$ZAOFU_ROOT" zf flow submit \
   --config zf.yaml \
   --intake docs/intake/prd-account-security.md \
   --kind prd \
-  --pattern-id prd-scan \
   --allow-missing-env \
   --json
 ```
@@ -185,7 +199,6 @@ uv run --project "$ZAOFU_ROOT" zf flow submit \
   --config zf.yaml \
   --intake docs/intake/prd-account-security.md \
   --kind prd \
-  --pattern-id prd-scan \
   --json
 ```
 

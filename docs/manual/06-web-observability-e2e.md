@@ -35,6 +35,20 @@ uv run zf web \
   --port 5175
 ```
 
+### 1.1 从 Workspace 创建 Project
+
+需要创建或注册 Project 时，建议以 workspace shell 启动，并配置受控写操作 token：
+
+```bash
+export ZF_WEB_ACTION_TOKEN="$(openssl rand -hex 24)"
+uv run zf web --host 127.0.0.1 --port 8001 --workspace-only
+```
+
+首次引导中的 Bootstrap Inspect 只读探测技术栈、Controller、setup、quality checks
+和指令文档候选。Add Project 的 Initialize 只创建/注册 Project，不会直接启动
+workflow；后续 Request 仍需澄清和显式批准。完整截图与步骤见
+[20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md)。
+
 ## 2. 运行中观测
 
 当前 Web/API 是 project-scoped dashboard。左侧主要入口包括:

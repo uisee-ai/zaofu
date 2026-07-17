@@ -80,14 +80,17 @@ uv run zf doctor
 | `zf kanban open` | 查看非终态 tasks |
 | `zf kanban pending` | 查看 backlog tasks |
 | `zf task trace <task_id>` | 查看 task 因果链 |
-| `zf project init --kind issue\|prd\|refactor` | 为 issue/PRD/refactor 任务生成项目级 flow 配置 |
+| `zf project init --name NAME --root PATH` | 默认创建 multi-kind Project 容器并初始化运行态，不点火 |
+| `zf project init --kind issue\|prd\|refactor ...` | 兼容入口：显式创建单 kind Controller |
 | `zf project review-spine` | 生成 project spine review |
 | `zf flow intake` | 接收 issue/PRD/refactor 输入并生成 intake artifact |
 | `zf flow classify` | 分类任务类型 |
+| `zf flow clarify --confirm` | 补齐 requirement 并确认不可变提交快照 |
 | `zf flow draft` | 生成 flow spec / yaml 草案 |
 | `zf flow preflight` | 对 flow spec 做启动前检查 |
 | `zf flow start` | 启动 flow |
-| `zf flow submit` | 提交流程入口 |
+| `zf flow submit --dry-run` | 只读预览 admission 与点火 payload |
+| `zf flow submit --apply` | 显式批准并提交 ready Request |
 
 脚本创建 task:
 
@@ -98,6 +101,10 @@ TASK_ID="$(
 )"
 uv run zf kanban assign "$TASK_ID" dev
 ```
+
+`project init`、`zf start` 和 workflow 点火是三个独立动作。默认初始化不会产生
+`workflow.invoke.requested`；完整流程见
+[20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md)。
 
 ## 4. 事件
 

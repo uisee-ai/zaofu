@@ -18,6 +18,8 @@ reference or the topic index below for focused coverage.
 
 - [01 Quick Start](01-quickstart.en.md) - Controller recommendation, approval,
   materialization, project validation, dry-run, and the first workflow request.
+- [20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md) -
+  the complete multi-kind Project, clarification, approval, CLI, and Web path.
 
 ## 2. Core Operation
 

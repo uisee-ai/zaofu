@@ -26,6 +26,20 @@ _SEVERITY_EMOJI = {
 # substring so an embedded code (``prd.blocked: stage replan cap exhausted``) is
 # still recognised. First match wins, so order specific-before-generic.
 _REASON_HUMAN: tuple[tuple[str, str], ...] = (
+    # 2026-07-17 card-quality review (/tmp/runm.png): the three
+    # highest-frequency Run Manager cards shipped their internal English
+    # summary verbatim. Specific-before-generic like the rest of the table.
+    ("cost.budget.exceeded", "成本已超预算上限,需要你决定提额、暂停或忽略"),
+    ("cost budget exceeded", "成本已超预算上限,需要你决定提额、暂停或忽略"),
+    ("requested human decision", "监工在等你的决定才能继续"),
+    ("claimed artifact missing", "任务声称的产物在磁盘上不存在,完成证据不可信"),
+    ("completion event claims", "任务完成证据不可信(声称的产物在磁盘上不存在)"),
+    # Push-prone registry specs surfaced by the coverage forcing test — every
+    # title that can reach the Feishu group must render in Chinese.
+    ("goal closure requires external input", "目标收尾需要外部输入或你的决定"),
+    ("goal delivery operation failed", "目标交付操作失败,需要你关注"),
+    ("goal delivery operation is blocked", "目标交付操作被阻塞,需要你关注"),
+    ("rm outcome circuit breaker", "监工连续动作无进展已熔断,需要你介入"),
     ("recycle_threshold_exceeded", "有执行单元反复重启、超过阈值,可能已经卡住"),
     ("stage replan cap exhausted", "某阶段重规划次数已用尽,反复未通过准入"),
     ("prd.blocked", "PRD 阶段被阻断(多次重规划仍未通过准入)"),
@@ -84,6 +98,13 @@ def _humanize(summary: str, title: str) -> str:
     return "运行需要你关注"
 
 
+def humanize_owner_title(title: str) -> str:
+    """Card-header variant of the reason mapping: known internal titles render
+    in Chinese; generic no-information titles collapse to the standard prompt;
+    anything else passes through unchanged (never an internal enum dump)."""
+    return _humanize("", title)
+
+
 def owner_message_dedup_key(payload: dict[str, Any]) -> str:
     """Content-based fold key: identical-looking owner messages collapse even
     when their fingerprints differ (the real recycle_threshold_exceeded ×9 each
@@ -108,7 +129,13 @@ def _events_state_line(payload: dict[str, Any]) -> str:
     verdict = str(derived.get("verdict") or "").strip()
     if not verdict:
         return ""
-    human = _VERDICT_HUMAN.get(verdict, verdict)
+    # Whitelist, not passthrough: an unmapped verdict is an internal enum
+    # (no_missing / no_reconcile_contract / ...) that reads as noise or even a
+    # contradiction on the card (/tmp/runm.png showed 事件判定:no_missing under
+    # an "artifacts do not exist" title). No mapping -> drop the whole line.
+    human = _VERDICT_HUMAN.get(verdict)
+    if human is None:
+        return ""
     terminal = str(derived.get("task_terminal_seen") or "").strip()
     if terminal:
         return f"事件判定:{human}({terminal})"
@@ -141,9 +168,11 @@ def render_owner_message(payload: dict[str, Any], *, task_id: str = "") -> str:
     if task:
         lines.append(f"任务:{task}")
 
+    # 2026-07-17 card-quality L3: the old closing line promised keyword replies
+    # (「重试」/「忽略」) that NOTHING consumed — a dead prompt. Action guidance
+    # now only states channels that actually exist: the card's buttons (added by
+    # the delivery layer) and the Web inbox; info-only cards carry no action line.
     if bool(payload.get("human_action_required")):
         lines.append("需要你的确认后才能继续。")
-
-    # Actionable, no CLI: the owner talks to the bot in natural language.
-    lines.append("——回复「详情」看完整信息,「重试」再跑一次,或「忽略」跳过。")
+        lines.append("——点「确认收到」或到 Web 收件箱处理;也可 @我 说明处理意见。")
     return "\n".join(lines)

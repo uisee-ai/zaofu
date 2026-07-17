@@ -386,3 +386,189 @@ def test_feishu_delivery_ships_severity_colored_card(tmp_path: Path) -> None:
     assert card["header"]["template"] == "red"
     assert "需要审批" in card["header"]["title"]["content"]
     assert card["elements"][0]["text"]["tag"] == "lark_md"
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-17 card-quality review (/tmp/runm.png)
+
+
+def _requested_card(log: EventLog, *, message_id: str, summary: str,
+               title: str = "", severity: str = "high") -> None:
+    log.append(ZfEvent(
+        type="owner.visible_message.requested",
+        actor="zf-supervisor",
+        task_id="TASK-1",
+        payload={
+            "message_id": message_id,
+            "severity": severity,
+            "human_action_required": True,
+            "title": title,
+            "summary": summary,
+            "delivery_targets": ["feishu"],
+        },
+    ))
+
+
+def _routing() -> RoutingConfig:
+    return RoutingConfig(
+        channels={"owner": "ou-owner"},
+        receive_id_types={"owner": "open_id"},
+    )
+
+
+def test_cross_pass_content_fold_suppresses_duplicate(tmp_path: Path) -> None:
+    # The in-pass fold set dies with the pass; /tmp/runm.png showed the same
+    # "completion claims" card shipped twice on consecutive ticks. A second
+    # request with a DIFFERENT message_id but identical content must fold.
+    log, writer = _state(tmp_path)
+    _requested_card(log, message_id="omsg-a", summary="claimed artifact missing on disk: x.md")
+    transport = MockFeishuTransport()
+    first = deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+    assert first.delivered == 1
+
+    _requested_card(log, message_id="omsg-b", summary="claimed artifact missing on disk: x.md")
+    second = deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+
+    assert second.delivered == 0
+    assert len(transport.sent_messages) == 1
+    suppressed = [e for e in log.read_all() if e.type == OWNER_MESSAGE_SUPPRESSED]
+    assert any(
+        e.payload.get("reason") == "duplicate_owner_message" for e in suppressed
+    )
+
+
+def test_content_fold_expires_outside_window(tmp_path: Path) -> None:
+    from zf.runtime.owner_visible_render import owner_message_dedup_key
+
+    log, writer = _state(tmp_path)
+    payload = {"severity": "high", "title": "",
+               "summary": "claimed artifact missing on disk: x.md"}
+    # A delivered receipt from 2h ago (outside the 30min fold window).
+    log.append(ZfEvent(
+        type=OWNER_MESSAGE_DELIVERED,
+        actor="zf-supervisor",
+        ts="2026-07-17T00:00:00+00:00",
+        payload={
+            "message_id": "omsg-old", "target": "feishu",
+            "dedup_key": owner_message_dedup_key(payload),
+        },
+    ))
+    _requested_card(log, message_id="omsg-new", summary=str(payload["summary"]))
+    transport = MockFeishuTransport()
+
+    result = deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+
+    assert result.delivered == 1  # stale receipt does not fold a fresh alert
+
+
+def test_delivered_receipt_carries_dedup_key(tmp_path: Path) -> None:
+    log, writer = _state(tmp_path)
+    _requested_card(log, message_id="omsg-a", summary="worker.stuck")
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer,
+        transport=MockFeishuTransport(), routing=_routing())
+
+    delivered = [e for e in log.read_all() if e.type == OWNER_MESSAGE_DELIVERED]
+    assert delivered and delivered[0].payload.get("dedup_key")
+
+
+def test_card_note_has_no_internal_enums_and_title_is_chinese(tmp_path: Path) -> None:
+    log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="owner.visible_message.requested",
+        actor="zf-supervisor",
+        task_id="AIWEB-003",
+        payload={
+            "message_id": "omsg-c",
+            "severity": "high",
+            "human_action_required": True,
+            "notification_policy": "owner_on_repair_failed",
+            "title": "Completion event claims artifacts/head that do not exist",
+            "summary": "claimed artifact missing on disk: artifacts/x/plan.md",
+            "task_id": "AIWEB-003",
+            "delivery_targets": ["feishu"],
+        },
+    ))
+    transport = MockFeishuTransport()
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+
+    import json as _json
+
+    sent = transport.sent_messages[0]
+    card = _json.loads(sent.content)
+    flat = _json.dumps(card, ensure_ascii=False)
+    assert "severity=" not in flat
+    assert "policy=" not in flat
+    assert "owner_on_repair_failed" not in flat
+    assert "任务完成证据不可信" in card["header"]["title"]["content"]
+    assert "任务 AIWEB-003" in flat
+
+
+def test_card_actionable_alert_carries_real_ack_button(tmp_path: Path, monkeypatch) -> None:
+    # L3: buttons only with real backends — attention-ack rides the existing
+    # card.action.trigger → ingest → gate chain; details is a Web deep link.
+    monkeypatch.setenv("ZF_WEB_BASE_URL", "http://web.local:8001")
+    log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="owner.visible_message.requested",
+        actor="zf-supervisor",
+        payload={
+            "message_id": "omsg-btn",
+            "severity": "high",
+            "human_action_required": True,
+            "attention_id": "attn-42",
+            "title": "worker stuck",
+            "summary": "worker.stuck",
+            "delivery_targets": ["feishu"],
+        },
+    ))
+    transport = MockFeishuTransport()
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+
+    import json as _json
+    card = _json.loads(transport.sent_messages[0].content)
+    action_blocks = [e for e in card["elements"] if e.get("tag") == "action"]
+    assert action_blocks, "human-actionable alert must carry buttons"
+    buttons = action_blocks[0]["actions"]
+    ack = next(b for b in buttons if "确认收到" in b["text"]["content"])
+    assert ack["value"] == {"action": "attention-ack:attn-42"}
+    detail = next(b for b in buttons if "详情" in b["text"]["content"])
+    assert detail["url"] == "http://web.local:8001/?page=inbox"
+    # The dead keyword-reply prompt is gone from the body.
+    body = card["elements"][0]["text"]["content"]
+    assert "重试" not in body and "忽略" not in body
+
+
+def test_card_info_alert_has_no_ack_button(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ZF_WEB_BASE_URL", raising=False)
+    log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="owner.visible_message.requested",
+        actor="zf-supervisor",
+        payload={
+            "message_id": "omsg-info",
+            "severity": "high",
+            # Whitelisted policy so the card ships, but this instance needs no
+            # human action -> no ack button, no confirmation line.
+            "notification_policy": "owner_on_human_required",
+            "human_action_required": False,
+            "attention_id": "attn-43",
+            "title": "worker stuck",
+            "summary": "worker.stuck",
+            "delivery_targets": ["feishu"],
+        },
+    ))
+    transport = MockFeishuTransport()
+    deliver_owner_visible_messages_once(
+        event_log=log, writer=writer, transport=transport, routing=_routing())
+
+    import json as _json
+    card = _json.loads(transport.sent_messages[0].content)
+    assert not [e for e in card["elements"] if e.get("tag") == "action"]
+    body = card["elements"][0]["text"]["content"]
+    assert "需要你的确认" not in body

@@ -173,6 +173,16 @@ class TestG2EventsDerivedState:
         # events truth leads the body: it sits above the actionable footer and
         # there is no raw "severity:" field dump anymore.
         assert not any(l.startswith("severity:") for l in lines)
-        assert lines.index(lines[1]) < next(
-            i for i, l in enumerate(lines) if l.startswith("——回复")
+        # 2026-07-17 L3: info-only messages carry no action footer at all (the
+        # old「回复…」keyword prompt was a dead end nothing consumed). The
+        # footer only renders for human_action_required — and the events line
+        # must still lead it (G2 unchanged).
+        assert not any(l.startswith("——") for l in lines)
+        act_lines = _format_owner_message(
+            _ev("owner.visible_message.requested"),
+            {**payload, "human_action_required": True},
+        ).splitlines()
+        assert act_lines[1].startswith("事件判定:任务已到达终态")
+        assert act_lines.index(act_lines[1]) < next(
+            i for i, l in enumerate(act_lines) if l.startswith("——")
         )

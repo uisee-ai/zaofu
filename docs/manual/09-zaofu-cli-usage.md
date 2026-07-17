@@ -94,6 +94,22 @@ uv run zf stop
 | `uv run zf doctor panes` | 检查 tmux pane 绑定 |
 | `uv run zf agents` | 探测可用 agent CLI |
 
+### 3.1 Project、Request 与 Workflow 点火
+
+| 命令 | 用途 |
+|---|---|
+| `uv run zf project init --name NAME --root PATH` | 创建默认 multi-kind Project，不点火 |
+| `uv run zf project init --kind KIND ...` | 创建显式单 kind Controller |
+| `uv run zf flow intake ...` | 创建 requirement intake |
+| `uv run zf flow classify ...` | 分类 Issue/PRD/Refactor/Feature |
+| `uv run zf flow clarify --confirm ...` | 澄清并确认 requirement snapshot |
+| `uv run zf flow preflight ...` | 检查 Request 与环境 readiness |
+| `uv run zf flow submit --dry-run ...` | 只读预览点火 admission |
+| `uv run zf flow submit --apply ...` | 显式批准并写入 workflow invoke |
+
+初始化、启动 runtime 和点火相互独立。参数与完整示例见
+[20 Project 创建、Bootstrap 与 Workflow 点火](20-project-bootstrap-workflow-ignition.md)。
+
 建议启动前至少跑:
 
 ```bash

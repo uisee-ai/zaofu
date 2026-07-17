@@ -91,6 +91,10 @@ CHANNEL_QUESTION_COMMANDS = {
     "channel-question-adopt",
     "channel-question-oos",
 }
+# 2026-07-17 card-quality L3: owner-visible alert cards gain a real
+# acknowledge button (attention-ack:<attention_id>) instead of the dead
+# "回复「重试」" text prompt nothing consumed.
+ATTENTION_ACK_COMMANDS = {"attention-ack"}
 # feishu-A2: commands whose buttons carry a signed action token. These are the
 # mutation buttons rendered into pushed cards (plan approve/reject, interrupt).
 SIGNED_ACTION_COMMANDS = (
@@ -98,6 +102,7 @@ SIGNED_ACTION_COMMANDS = (
     | AGENT_CANCEL_COMMANDS
     | HUMAN_DECISION_COMMANDS
     | CHANNEL_QUESTION_COMMANDS
+    | ATTENTION_ACK_COMMANDS
 )
 ATTENTION_COMMANDS = {"attention"}
 
@@ -1235,6 +1240,13 @@ def _handle_event_data(
             config=context.config,
         )
 
+    if envelope.command in ATTENTION_ACK_COMMANDS:
+        return _handle_attention_ack_result(
+            envelope,
+            context.state_dir,
+            config=context.config,
+        )
+
     if envelope.command in HUMAN_DECISION_COMMANDS:
         return _handle_human_decision_result(
             envelope,
@@ -1939,6 +1951,48 @@ def _handle_controlled_action_result(
     )
     message = _format_action_response(response)
     return {**response, "message": message}
+
+
+def _handle_attention_ack_result(
+    envelope: FeishuCommandEnvelope,
+    state_dir: Path,
+    *,
+    config: object | None,
+) -> dict:
+    """Owner-visible alert card acknowledge button → runtime.attention.acknowledged.
+
+    Reaches here only after feishu-B's signature + identity gate (operator
+    level, see gateway ACTION_LEVELS). Emits the SAME event contract as the Web
+    operator surface's attention-ack controlled action (control_actions_ops),
+    so the inbox/attention consumers see one acknowledgement shape regardless
+    of surface. Button payload is ``attention-ack:<attention_id>``.
+    """
+    if not envelope.args or not envelope.args[0].strip():
+        return {
+            "ok": False,
+            "status": "invalid_payload",
+            "message": "Usage: /zf attention-ack <attention_id>",
+        }
+    attention_id = envelope.args[0].strip()
+    actor = f"feishu:{envelope.user_id or 'unknown'}"
+    writer = EventWriter(event_log_from_project(state_dir, config=config))
+    acked = writer.emit(
+        "runtime.attention.acknowledged",
+        actor=actor,
+        payload={
+            "attention_id": attention_id,
+            "source": "feishu_card",
+            "surface": "feishu",
+        },
+    )
+    return {
+        "ok": True,
+        "status": "acknowledged",
+        "action": "attention-ack",
+        "attention_id": attention_id,
+        "event_id": acked.id,
+        "message": f"已确认 {attention_id}",
+    }
 
 
 def _handle_plan_approval_result(

@@ -55,6 +55,9 @@ _COMMAND_AUTH: dict[str, AuthLevel] = {
     "plan-reject": AuthLevel.APPROVER,
     # feishu-C: Interrupt a running channel reply (headless cancel, no tmux).
     "agent-cancel": AuthLevel.OPERATOR,
+    # 2026-07-17 card-quality L3: acknowledge an owner-visible alert straight
+    # from its card. Same event contract as the Web attention-ack action.
+    "attention-ack": AuthLevel.OPERATOR,
     # Run Manager human-decision callbacks. Approving a controlled action needs
     # approver authority; diagnose/halt are operator-safe but still gated.
     "human-decision-approve": AuthLevel.APPROVER,

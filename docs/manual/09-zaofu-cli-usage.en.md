@@ -83,6 +83,23 @@ Stop the harness with `uv run zf stop`.
 | `uv run zf doctor panes` | Check tmux pane bindings |
 | `uv run zf agents` | Detect available agent CLIs |
 
+### 3.1 Project, Request, and workflow ignition
+
+| Command | Purpose |
+|---|---|
+| `uv run zf project init --name NAME --root PATH` | Create the default multi-kind Project without ignition |
+| `uv run zf project init --kind KIND ...` | Create an explicit single-kind Controller |
+| `uv run zf flow intake ...` | Create a requirement intake |
+| `uv run zf flow classify ...` | Classify Issue/PRD/Refactor/Feature |
+| `uv run zf flow clarify --confirm ...` | Clarify and confirm the requirement snapshot |
+| `uv run zf flow preflight ...` | Check Request and environment readiness |
+| `uv run zf flow submit --dry-run ...` | Preview ignition admission without mutation |
+| `uv run zf flow submit --apply ...` | Explicitly approve and emit the workflow invoke |
+
+Initialization, runtime startup, and ignition are separate actions. See
+[20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for complete examples and option guidance.
+
 Before starting, at least run:
 
 ```bash

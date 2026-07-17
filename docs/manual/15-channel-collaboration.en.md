@@ -4,7 +4,7 @@
 > and projecting that conversation to Web or Feishu.
 >
 > Status: the implemented core includes posting, mention-triggered replies, and
-> event projections. Some multi-member policies, full channel-to-workflow
+> event projections. Some multi-member policies, direct channel-to-workflow
 > bridging, and provider adapters remain incomplete.
 
 ## 1. What a Channel Is
@@ -17,6 +17,16 @@ There is no static `channel group` section in `zf.yaml`. Channels are created at
 runtime through `channel.created`, and the model is channel plus members.
 Inbound messages can come from Feishu or Web. A Feishu `target: agent` creates a
 temporary channel; `target: channel` routes to an existing one.
+
+### 1.1 Channel to Workflow Request
+
+Inside an initialized Project, the controlled `workflow-request` action can
+create or revise a Request proposal. It creates intake, resolves the kind, runs
+a submit preview, and returns `clarification_required` or `proposal_ready`. It
+does not emit `workflow.invoke.requested`; explicit Project workflow-submit
+approval remains required. See
+[20 Project Creation, Bootstrap, and Workflow Ignition](20-project-bootstrap-workflow-ignition.en.md)
+for the complete Project/Request/Run path.
 
 ## 2. Post with `zf channel say`
 
@@ -96,8 +106,9 @@ to an existing multi-member channel, configure `target: channel` and
   `fanout_then_synthesis` with blind-answer, relay, and synthesis phases.
 - Under the default `manual_mention` mode, an agent reply does not automatically
   fan out. `channel.route.blocked: auto_route_not_allowed` is expected behavior.
-- The full `channel.synthesis.proposed` to `workflow.invoke.requested` bridge
-  must be verified against current code before use.
+- The proposal bridge is implemented, but `channel.synthesis.proposed` must not
+  become `workflow.invoke.requested` without readiness and explicit Project
+  workflow-submit approval. That separation is an intentional safety boundary.
 - Direct `target: agent` replies work; complex multi-provider collaboration is
   not yet a stable contract.
 
