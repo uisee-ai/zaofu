@@ -29,6 +29,7 @@ from zf.autoresearch.review_gate import (
 from zf.autoresearch.scenarios import AutoresearchScenario, resolve_scenario
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.core.package_source import installed_local_source_root
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 
@@ -98,7 +99,30 @@ def utc_stamp() -> str:
 
 
 def repo_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    configured = str(os.environ.get("ZF_AUTORESEARCH_SOURCE_ROOT") or "").strip()
+    if configured:
+        root = Path(configured).expanduser().resolve()
+        if _is_git_source_root(root):
+            return root
+        raise RuntimeError(
+            "ZF_AUTORESEARCH_SOURCE_ROOT is not a ZaoFu Git checkout: "
+            f"{root}"
+        )
+
+    source_root = Path(__file__).resolve().parents[3]
+    if _is_git_source_root(source_root):
+        return source_root
+
+    installed_root = installed_local_source_root()
+    if installed_root is not None and _is_git_source_root(installed_root):
+        return installed_root
+    raise RuntimeError(
+        "Autoresearch requires a ZaoFu Git source checkout. Install ZaoFu "
+        "from a local checkout or set ZF_AUTORESEARCH_SOURCE_ROOT."
+    )
+
+def _is_git_source_root(path: Path) -> bool:
+    return (path / ".git").exists() and (path / "pyproject.toml").is_file()
 
 
 def default_run_id(scenario_name: str) -> str:

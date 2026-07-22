@@ -284,6 +284,12 @@ class SpawnCoordinator:
             is_resume=is_respawn,
             transport=self.transport,
         )
+        launch_attempt = 0
+        try:
+            launch_payload = json.loads(launch_ref.read_text(encoding="utf-8"))
+            launch_attempt = int(launch_payload.get("attempt") or 0)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            pass
         if self.event_log is not None:
             try:
                 self.event_log.append(ZfEvent(
@@ -294,6 +300,8 @@ class SpawnCoordinator:
                         "role": role.name,
                         "backend": role.backend,
                         "artifact_ref": str(launch_ref),
+                        "launch_attempt": launch_attempt,
+                        "is_resume": is_respawn,
                     },
                 ))
             except Exception:  # noqa: BLE001 — launch artifact is best-effort telemetry

@@ -52,23 +52,46 @@ def emit_upstream_failure_for_bad_task_map(
 ) -> ZfEvent | None:
     """Emit the topology-selected plan failure for a rejected task map."""
 
+    trigger_payload = (
+        trigger_event.payload if isinstance(trigger_event.payload, dict) else {}
+    )
     failure_event = ""
     upstream_stage_id = ""
-    for candidate in getattr(coordinator.config.workflow, "stages", []) or []:
-        aggregate = getattr(candidate, "aggregate", None)
-        success = str(
-            getattr(candidate, "success_event", "")
-            or getattr(aggregate, "success_event", "")
-            or ""
-        )
-        if success == trigger_event.type:
-            failure_event = str(
+    gap_event_type = str(trigger_payload.get("gap_event_type") or "").strip()
+    if str(trigger_payload.get("resume_scope") or "") == "gap_tasks_only":
+        failure_event = {
+            "flow.gap_plan.ready": "flow.discovery.failed",
+            "goal.gap_plan.ready": "flow.discovery.failed",
+            "gap_plan.ready": "module.parity.scan.failed",
+        }.get(gap_event_type, "")
+    stages = getattr(coordinator.config.workflow, "stages", []) or []
+    if failure_event:
+        for candidate in stages:
+            aggregate = getattr(candidate, "aggregate", None)
+            candidate_failure = str(
                 getattr(candidate, "failure_event", "")
                 or getattr(aggregate, "failure_event", "")
                 or ""
             )
-            upstream_stage_id = str(getattr(candidate, "id", "") or "")
-            break
+            if candidate_failure == failure_event:
+                upstream_stage_id = str(getattr(candidate, "id", "") or "")
+                break
+    else:
+        for candidate in stages:
+            aggregate = getattr(candidate, "aggregate", None)
+            success = str(
+                getattr(candidate, "success_event", "")
+                or getattr(aggregate, "success_event", "")
+                or ""
+            )
+            if success == trigger_event.type:
+                failure_event = str(
+                    getattr(candidate, "failure_event", "")
+                    or getattr(aggregate, "failure_event", "")
+                    or ""
+                )
+                upstream_stage_id = str(getattr(candidate, "id", "") or "")
+                break
     if not failure_event:
         return None
     try:
@@ -81,9 +104,6 @@ def emit_upstream_failure_for_bad_task_map(
     except Exception:
         pass
 
-    trigger_payload = (
-        trigger_event.payload if isinstance(trigger_event.payload, dict) else {}
-    )
     source_refs = (
         trigger_payload.get("source_refs")
         if isinstance(trigger_payload.get("source_refs"), dict)
@@ -107,6 +127,9 @@ def emit_upstream_failure_for_bad_task_map(
             "task_map_digest": task_map_digest,
             "target_ref": str(trigger_payload.get("target_ref") or ""),
             "source_refs": dict(source_refs),
+            "gap_event_type": gap_event_type,
+            "resume_scope": str(trigger_payload.get("resume_scope") or ""),
+            "gap_plan_ref": str(trigger_payload.get("gap_plan_ref") or ""),
             "reason": f"task_map rejected by writer fanout admission: {reason}",
             "findings": [{
                 "severity": "high",
@@ -178,6 +201,9 @@ def emit_plan_admission_cancel(
         "canonical_failure_event_id": (
             canonical_failure.id if canonical_failure is not None else ""
         ),
+        "gap_event_type": str(trigger_payload.get("gap_event_type") or ""),
+        "resume_scope": str(trigger_payload.get("resume_scope") or ""),
+        "gap_plan_ref": str(trigger_payload.get("gap_plan_ref") or ""),
         "reason": reason,
         **identity,
     }

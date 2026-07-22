@@ -498,6 +498,7 @@ class WorkflowDagConfig:
 class WorkflowSplitQualityConfig:
     mode: str = "warning"  # warning | blocking
     max_scope_files: int = 12
+    max_acceptance_criteria: int = 0
     require_validation_surface: bool = True
 
     def __post_init__(self) -> None:
@@ -507,6 +508,11 @@ class WorkflowSplitQualityConfig:
             )
         if self.max_scope_files < 0:
             raise ValueError("workflow.work_units.split_quality.max_scope_files must be >= 0")
+        if self.max_acceptance_criteria < 0:
+            raise ValueError(
+                "workflow.work_units.split_quality.max_acceptance_criteria "
+                "must be >= 0"
+            )
 
 
 @dataclass
@@ -675,6 +681,11 @@ class WorkflowConfig:
     # 合成树不经验证即进 judge,r4 F10)。此开关是显式豁免出口——
     # 观测型运行合法,但必须显式声明,不许静默裸奔。
     allow_unverified_candidate: bool = False
+    # auto: run-scoped Task Contract first, explicit zf.yaml gates as fallback.
+    # task_contract_required: Task Map admission requires an executable
+    # verification command for every writer task and Candidate never falls
+    # back to project-static commands.
+    candidate_quality_source: str = "auto"
 
     # 131-P2-3(Temporal 借鉴条款):thinking backend 闲置宽限,自派发起
     # max(idle_threshold, attempt_lease_grace_s) 内不判 idle。F15 实证值
@@ -777,6 +788,23 @@ class WorkflowConfig:
             raise ValueError(
                 "workflow.harness_profile must be baseline, strict, or release; "
                 f"got {self.harness_profile!r}"
+            )
+        if self.candidate_quality_source not in {
+            "auto",
+            "task_contract_required",
+        }:
+            raise ValueError(
+                "workflow.candidate_quality_source must be auto or "
+                "task_contract_required; got "
+                f"{self.candidate_quality_source!r}"
+            )
+        if (
+            self.candidate_quality_source == "task_contract_required"
+            and self.allow_unverified_candidate
+        ):
+            raise ValueError(
+                "workflow.candidate_quality_source=task_contract_required "
+                "cannot be combined with allow_unverified_candidate=true"
             )
 
 

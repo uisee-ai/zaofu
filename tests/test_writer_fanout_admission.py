@@ -7,6 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from zf.core.config.schema import (
+    WorkflowSplitQualityConfig,
+    WorkflowWorkUnitsConfig,
+)
 from zf.core.events.model import ZfEvent
 from zf.core.workflow.lane_pipeline import (
     parse_lane_pipeline,
@@ -260,6 +264,24 @@ def test_writer_task_items_preserves_lane_pipeline_contract_fields():
     assert item["acceptance_criteria"] == ["root build passes"]
 
 
+def test_writer_task_items_normalizes_verification_command_list():
+    items = writer_task_items({
+        "tasks": [{
+            "task_id": "light-deliver",
+            "allowed_paths": ["app/**"],
+            "verification": ["python app/verify.py", "git diff --check"],
+        }],
+    })
+
+    assert items[0]["verification"] == (
+        "python app/verify.py && git diff --check"
+    )
+    assert items[0]["raw_task"]["verification"] == [
+        "python app/verify.py",
+        "git diff --check",
+    ]
+
+
 def test_writer_task_items_accepts_issue_style_path_field():
     items = writer_task_items({
         "tasks": [{
@@ -382,4 +404,81 @@ def test_load_writer_task_map_rejects_bad_verification_before_dispatch(tmp_path)
             pdd_id="CJMIN-R37",
             state_dir=tmp_path / ".zf",
             project_root=tmp_path,
+        )
+
+
+def test_load_writer_task_map_requires_run_scoped_verification(tmp_path):
+    task_map = tmp_path / "task_map.json"
+    task_map.write_text(json.dumps({
+        "schema_version": "task-map.v1",
+        "tasks": [{
+            "task_id": "TASK-A",
+            "title": "A",
+            "allowed_paths": ["src/a.py"],
+            "acceptance": ["A works"],
+        }],
+    }), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="task_contract_required.*TASK-A"):
+        load_writer_task_map(
+            stage=SimpleNamespace(task_map=""),
+            event=ZfEvent(
+                type="task_map.ready",
+                actor="planner",
+                payload={"task_map_ref": str(task_map)},
+            ),
+            pdd_id="PDD-A",
+            state_dir=tmp_path / ".zf",
+            project_root=tmp_path,
+            candidate_quality_source="task_contract_required",
+        )
+
+
+@pytest.mark.parametrize(
+    ("task", "match"),
+    [
+        ({
+            "task_id": "TASK-SCOPE",
+            "allowed_paths": ["a", "b", "c"],
+            "verification": "true",
+        }, "scope has 3 files, max is 2"),
+        ({
+            "task_id": "TASK-AC",
+            "allowed_paths": ["a"],
+            "acceptance": ["one", "two", "three"],
+            "verification": "true",
+        }, "3 acceptance criteria, max is 2"),
+    ],
+)
+def test_load_writer_task_map_blocks_oversized_work_unit_before_dispatch(
+    tmp_path,
+    task,
+    match,
+):
+    task_map = tmp_path / "task_map.json"
+    task_map.write_text(json.dumps({
+        "schema_version": "task-map.v1",
+        "tasks": [task],
+    }), encoding="utf-8")
+    policy = WorkflowWorkUnitsConfig(
+        enabled=True,
+        split_quality=WorkflowSplitQualityConfig(
+            mode="blocking",
+            max_scope_files=2,
+            max_acceptance_criteria=2,
+        ),
+    )
+
+    with pytest.raises(ValueError, match=match):
+        load_writer_task_map(
+            stage=SimpleNamespace(task_map=""),
+            event=ZfEvent(
+                type="task_map.ready",
+                actor="planner",
+                payload={"task_map_ref": str(task_map)},
+            ),
+            pdd_id="PDD-A",
+            state_dir=tmp_path / ".zf",
+            project_root=tmp_path,
+            work_units_config=policy,
         )

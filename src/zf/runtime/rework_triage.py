@@ -95,6 +95,39 @@ def derive_taxonomy_bucket(classification: str) -> str:
     return "unknown"
 
 
+def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
+    """Whether a task-local blocker carries enough evidence to re-plan.
+
+    This is deliberately narrower than free-form ``dev.blocked``. External
+    dependencies and unexplained failures still require owner attention; only
+    an explicit contract/upstream scope diagnosis with replayable evidence is
+    promoted into the existing candidate replan path.
+    """
+    if event.type != "dev.blocked":
+        return False
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    failure_class = str(payload.get("failure_class") or "").strip().lower()
+    blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
+    semantic_kind = (
+        failure_class in {
+            "task_contract_unsatisfiable",
+            "upstream_contract_gap",
+            "scope_contract_gap",
+        }
+        or blocker_kind in {
+            "task_contract_unsatisfiable",
+            "upstream_contract_gap",
+            "scope_contract_gap",
+        }
+    )
+    evidence = payload.get("evidence_refs")
+    has_evidence = isinstance(evidence, list) and any(
+        str(item or "").strip() for item in evidence
+    )
+    reason = str(payload.get("reason") or payload.get("summary") or "").strip()
+    return semantic_kind and has_evidence and bool(reason)
+
+
 @dataclass(frozen=True)
 class ReworkTriageResult:
     classification: str
@@ -155,8 +188,11 @@ def classify_rework_trigger(
     add explanation later, but retry accounting and dispatch routing need a
     stable fallback that works without another agent turn.
 
-    P1/K2 (docs/impl/22): if ``config.workflow.rework_routing[event.type]``
-    has an explicit target role, honor it BEFORE the heuristic classifier.
+    Producer-owned ``failure_class`` is evaluated before event-type routing;
+    this prevents one broad ``integration.failed`` YAML route from masking an
+    environment/dependency fact. Without a structured class,
+    ``config.workflow.rework_routing[event.type]`` remains authoritative over
+    text heuristics.
     Without this priority, ``gate.failed`` from critic was getting caught by
     the ``_evidence_gap`` heuristic (because critic's risks/fix_items text
     contains words like "missing" or "artifact_refs") and routed back to
@@ -168,7 +204,61 @@ def classify_rework_trigger(
     failed_d = _failed_d(payload)
     gate = _gate_rule(payload, failed_d)
 
-    # K2: yaml workflow.rework_routing has highest priority.
+    explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    if explicit_failure_class in {
+        "candidate_environment_setup_failed",
+        "candidate_dependency_missing",
+    }:
+        return _result(
+            "environment_issue",
+            gate or "candidate_environment",
+            "operator",
+            "recover_environment",
+            f"producer classified candidate failure as {explicit_failure_class}",
+        )
+    if explicit_failure_class == "candidate_integration_conflict":
+        return _result(
+            "design_issue",
+            gate or "integration",
+            "planner",
+            "request_replan",
+            "producer classified candidate failure as integration conflict",
+        )
+    if explicit_failure_class == "candidate_quality_gate_contract_mismatch":
+        return _result(
+            "design_issue",
+            gate or "candidate_quality_contract",
+            "planner",
+            "request_replan",
+            "producer classified the declared candidate gate as absent from the project",
+        )
+    if explicit_failure_class == "candidate_integration_failure":
+        return _result(
+            "product_issue",
+            gate or "candidate_integration",
+            "dev",
+            "dispatch_rework",
+            "producer classified candidate failure as non-conflict integration failure",
+        )
+    if explicit_failure_class == "candidate_contract_failure":
+        return _result(
+            "harness_rule_issue",
+            gate or "candidate_contract",
+            "harness",
+            "suspend_for_harness_fix",
+            "producer classified candidate failure as contract/admission failure",
+        )
+    if explicit_failure_class == "candidate_product_quality_failed":
+        return _result(
+            "product_issue",
+            gate or "candidate_quality",
+            "dev",
+            "dispatch_rework",
+            "producer classified candidate failure as product quality failure",
+        )
+
+    # K2: YAML event-type routing has priority over text heuristics, but not
+    # over a producer-owned structured root cause.
     if config is not None:
         try:
             routing = getattr(getattr(config, "workflow", None), "rework_routing", {}) or {}
@@ -228,6 +318,17 @@ def classify_rework_trigger(
             "dispatch_rework",
             "phase gate order violation — baseline contamination or plan-level"
             " gate placement conflict; arch must redesign plan order before retry",
+        )
+
+    if is_plan_level_task_contract_blocker(event):
+        return _result(
+            "design_issue",
+            gate or "task_contract",
+            "planner",
+            "request_replan",
+            "worker supplied reproducible evidence that the current task "
+            "contract or upstream slice makes the acceptance criteria "
+            "unsatisfiable inside allowed_paths",
         )
 
     if _evidence_gap(event, text, failed_d, payload):

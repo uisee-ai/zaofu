@@ -17,9 +17,9 @@ code and tests.
 - The managed `Worker Protocol` block applies only when the current dispatch
   briefing begins with `Active task: <task_id>`. Without that marker, do not
   emit task/workflow events or heartbeats merely because the block is present.
-- For architecture conflicts, use
-  `docs/design/142-layered-runtime-authority-and-orchestration-modes.md` and
-  current code/tests. Historical design documents are context, not overrides.
+- For architecture conflicts, use current code/tests and the routed manual
+  index in `docs/manual/00-index.md`. Historical design documents are context,
+  not overrides.
 
 ## Core Rules
 
@@ -74,7 +74,7 @@ code and tests.
 
 ## Architecture / Runtime Route
 
-- `docs/design/00-index.md` is the full routing index. Short lists here are
+- `docs/manual/00-index.md` is the full routing index. Short lists here are
   starting routes, not exhaustive architecture maps.
 - `142-layered-runtime-authority-and-orchestration-modes.md` is the canonical
   authority/orchestration entry and contains the current route families.
@@ -132,11 +132,32 @@ code and tests.
 - For config/runtime/schema/Web/API changes, add focused tests near the changed
   behavior.
 - Install full test dependencies with `uv sync --extra dev --extra web`.
-- Focused verification is not full verification: any commit touching 30+
-  executable/config/test files, `src/zf/core/workflow/topology.py`, or
-  `src/zf/core/config/` presets must run `uv run pytest -q --no-cov` before
-  commit. A broad docs-only reconciliation instead runs docs/instruction
-  checks plus focused generator tests.
+- Test by change domain and impact closure, not by changed-file count alone.
+  A focused run must cover the changed module, its direct callers, and any
+  shared Event/Schema/Store contract it crosses. Web UI and backend are
+  separate default test domains; cross-domain tests are required only when a
+  change crosses an API, projection, EventLog, Store, or schema boundary.
+- Required test tiers:
+  - UI-only changes: frontend build/typecheck plus the affected browser or
+    component tests; do not run backend pytest by default.
+  - Backend module changes: affected module tests plus direct callers and
+    shared contract tests.
+  - EventLog/Store/schema/config/orchestrator/fanout/rework/recovery changes:
+    impact-closure tests, `scripts/dev-premerge-gate.sh`, and the relevant
+    deterministic mock E2E.
+  - Provider, tmux, worktree, or host-capability changes: isolated mock
+    provider tests first; real provider/host tests are an explicit tier.
+- Full pytest is reserved for release validation, major cross-boundary
+  refactors, changes spanning three or more core domains, or an explicit
+  owner request. Do not trigger full pytest merely because a diff touches
+  30+ executable/config/test files.
+- Full validation may be sharded by module/class/node in fresh processes with
+  explicit time and memory budgets. A long-running or resource-exhausting
+  monolithic pytest process is a test-infrastructure failure to report, not a
+  reason to block ordinary development.
+- Focused verification is not full verification: report the exact tier that
+  ran. A broad docs-only reconciliation instead runs docs/instruction checks
+  plus focused generator tests.
 - The repository full suite currently includes host-capability/version sensors
   and may invoke an installed provider CLI. Classify such failures separately,
   never rewrite a verified hash/version baseline blindly, and do not present
@@ -214,12 +235,12 @@ Multiple agent sessions may work this repo concurrently. Four hard rules:
 
 - Architecture, runtime, config schema, Web/API, security, or external
   control-plane behavior changes must update relevant docs under
-  `docs/design/` or `docs/impl/` (`docs/new-design/` is historical material;
+  `docs/manual/` or `docs/impl/` (`docs/new-design/` is historical material;
   do not add new docs there).
-- New docs must first choose the correct directory class (`design`, `impl`,
-  `ideas`, `runbooks`, `manual`, `refer`, or `records`); design docs use the
-  next numeric `<number>-<slug>.md` prefix and must be registered in
-  `docs/design/00-index.md`.
+- New docs must first choose the correct directory class (`impl`, `ideas`,
+  `runbooks`, `manual`, `refer`, or `records`); manual docs use the next
+  numeric `<number>-<slug>.md` prefix and must be registered in
+  `docs/manual/00-index.md`.
 - Before committing new design / impl docs, check for orphan docs by confirming
   they are referenced from the index, source, another doc, backlog, or task.
 - Claude Code detailed rules live under `.claude/rules/`; keep them aligned

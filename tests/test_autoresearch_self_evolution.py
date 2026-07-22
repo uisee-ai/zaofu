@@ -405,6 +405,7 @@ def test_resident_dry_run_plans_without_executing(tmp_path):
     assert len(actions) == 1
     assert actions[0].action == "run_loop"
     assert "autoresearch" in actions[0].command
+    assert "--no-backlog-on-failure" in actions[0].command
     events = log.read_all()
     assert [event.type for event in events] == [LOOP_REQUESTED]
 

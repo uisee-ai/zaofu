@@ -372,6 +372,10 @@ def register(subparsers) -> None:
         help="Pass review gate mode through to each real autoresearch iteration.",
     )
     loop.add_argument(
+        "--backlog-on-failure", action=argparse.BooleanOptionalAction, default=True,
+        help="Create a repair task after a failed non-resident iteration.",
+    )
+    loop.add_argument(
         "--screenshot-url", default="",
         help="zf web URL to screenshot via docker mcp/playwright each iter "
              "(e.g. http://127.0.0.1:8765). Empty = disabled.",
@@ -806,7 +810,7 @@ def _real_autoresearch_fn(*, scenario: str, run_id: str, cfg: LoopConfig) -> dic
         run_id=run_id,
         confirm=True,
         reuse_worktree=True,
-        backlog_on_failure=True,
+        backlog_on_failure=cfg.backlog_on_failure,
         backlog_state_dir=cfg.parent_state_dir,
         review_gate=cfg.review_gate,
     )
@@ -951,6 +955,7 @@ def _run_loop(args) -> int:
         expected_done=args.expected_done,
         inner_wait_timeout=args.inner_wait_timeout,
         review_gate=args.review_gate,
+        backlog_on_failure=args.backlog_on_failure,
     )
     inner_fn = bypass_inner_run if args.bypass_autoresearch else _real_autoresearch_fn
     result = run_loop(

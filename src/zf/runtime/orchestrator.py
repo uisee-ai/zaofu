@@ -614,22 +614,35 @@ class Orchestrator(
         # Captured on dispatch, consumed on *.done event. Ignore zaofu
         # internal paths and common build artifacts so dispatch's own
         # writes (.zf/briefings/...) don't trip the violation check.
+        scope_ignore_prefixes = [
+            ".zf",
+            ".git",
+            "__pycache__",
+            ".pytest_cache",
+            ".ruff_cache",
+            ".mypy_cache",
+            "node_modules",
+            ".venv",
+            "venv",
+            ".tox",
+            "dist",
+            "build",
+        ]
+        try:
+            configured_state_prefix = self.state_dir.resolve().relative_to(
+                self.project_root
+            ).as_posix()
+        except ValueError:
+            configured_state_prefix = ""
+        if (
+            configured_state_prefix
+            and configured_state_prefix != "."
+            and configured_state_prefix not in scope_ignore_prefixes
+        ):
+            scope_ignore_prefixes.append(configured_state_prefix)
         self._scope_ratchet = ScopeRatchet(
             workspace=self.project_root,
-            ignore_prefixes=[
-                ".zf",
-                ".git",
-                "__pycache__",
-                ".pytest_cache",
-                ".ruff_cache",
-                ".mypy_cache",
-                "node_modules",
-                ".venv",
-                "venv",
-                ".tox",
-                "dist",
-                "build",
-            ],
+            ignore_prefixes=scope_ignore_prefixes,
         )
         self._scope_snapshots: dict[str, ScopeSnapshot] = {}
         # ZF-HOUSEKEEPING-VISIBLE-001 (doc 42 §2.12, sprint
@@ -1440,7 +1453,7 @@ class Orchestrator(
                     (instance_id, "worker.stuck"), None
                 )
                 continue
-            active_turn = self._active_codex_turn(instance_id)
+            active_turn = self._active_provider_turn(instance_id)
             if active_turn:
                 turn_age_s = active_turn.get("age_s")
                 grace_s = self._provider_turn_stuck_grace_seconds(instance_id)
@@ -1494,6 +1507,11 @@ class Orchestrator(
                 ready_count = 0
             if ready_count > 0:
                 idle_instances = sorted(set(result.idle_instances))
+                key = ("fleet", "worker.probe.idle")
+                last = self._sweep_signal_last_emit_at.get(key, 0.0)
+                if _now_mono - last < _SWEEP_DEDUP_COOLDOWN_S:
+                    return
+                self._sweep_signal_last_emit_at[key] = _now_mono
                 try:
                     self.event_writer.append(ZfEvent(
                         type="worker.probe.idle",
@@ -1510,7 +1528,7 @@ class Orchestrator(
                     pass
 
     def _provider_turn_stuck_grace_seconds(self, instance_id: str) -> float:
-        """Extra grace while a Codex turn is visibly in flight.
+        """Extra grace while a provider turn is visibly in flight.
 
         During a single long model turn the worker cannot emit heartbeat
         commands. Treat the provider turn lifecycle as liveness evidence,
@@ -1528,6 +1546,52 @@ class Orchestrator(
         if threshold_s <= 0:
             threshold_s = 300.0
         return max(threshold_s * 4.0, 900.0)
+
+    def _active_provider_turn(
+        self,
+        instance_id: str,
+    ) -> dict[str, object] | None:
+        """Return the current provider turn without trusting worker heartbeats.
+
+        Codex exposes an explicit prompt/stop lifecycle. Claude Code does not
+        publish that lifecycle through the current hook contract, so its
+        kernel dispatch remains the bounded turn anchor until the worker emits
+        a result. This covers long model-only thinking windows while the hard
+        provider grace still lets a genuinely hung turn recover.
+        """
+        codex_turn = self._active_codex_turn(instance_id)
+        if codex_turn is not None:
+            codex_turn["provider"] = "codex"
+            return codex_turn
+
+        role = next(
+            (role for role in self.all_roles() if role.instance_id == instance_id),
+            None,
+        )
+        if role is None or str(role.backend or "") not in {"claude", "claude-code"}:
+            return None
+        task = self._active_task_for_instance(instance_id)
+        if task is None or self._heartbeat_worker_finished_current_dispatch(instance_id):
+            return None
+        dispatch = self._latest_dispatch_event_for_task(task.id)
+        if dispatch is None:
+            return None
+        payload = dispatch.payload if isinstance(dispatch.payload, dict) else {}
+        started_at = _parse_event_ts(dispatch.ts)
+        age_s = None
+        if started_at is not None:
+            age_s = (datetime.now(timezone.utc) - started_at).total_seconds()
+        return {
+            "provider": str(role.backend or "claude-code"),
+            "session_id": "",
+            "turn_id": str(
+                payload.get("run_id")
+                or payload.get("dispatch_id")
+                or dispatch.id
+            ),
+            "started_at": dispatch.ts,
+            "age_s": age_s,
+        }
 
     def _active_codex_turn(self, instance_id: str) -> dict[str, object] | None:
         """Return the newest open Codex turn for a worker, if any."""
@@ -1609,7 +1673,7 @@ class Orchestrator(
                     ),
                     "source": "heartbeat_sweep",
                     "reason": "provider_turn_in_flight",
-                    "provider": "codex",
+                    "provider": turn.get("provider", "codex"),
                     "session_id": turn.get("session_id", ""),
                     "turn_id": turn.get("turn_id", ""),
                     "turn_age_s": (
@@ -1637,7 +1701,7 @@ class Orchestrator(
         try:
             from zf.runtime.event_window import read_runtime_events
             from zf.runtime.run_manager import (
-                _pending_candidate_rework_actions,
+                _pending_candidate_recovery_actions,
                 run_manager_tick,
             )
 
@@ -1653,7 +1717,7 @@ class Orchestrator(
             # candidate action builder already deduplicates applied actions;
             # only enter the bounded Run Manager path while it reports an
             # unresolved candidate-level recovery action.
-            pending_actions = _pending_candidate_rework_actions(
+            pending_actions = _pending_candidate_recovery_actions(
                 self.state_dir,
                 self.config,
                 events,
@@ -1667,7 +1731,6 @@ class Orchestrator(
                     project_root=self.project_root,
                     event_log=self.event_log,
                     auto_execute=True,
-                    action_filter={"candidate-rework-apply"},
                     spawn_repairs=False,
                 )
             events = read_runtime_events(self.event_log, self.state_dir)
@@ -1790,6 +1853,14 @@ class Orchestrator(
                     pipeline_spec=self._lane_pipeline_for_trigger(
                         getattr(event, "type", ""),
                     ),
+                    candidate_quality_source=str(getattr(
+                        self.config.workflow,
+                        "candidate_quality_source",
+                        "auto",
+                    ) or "auto"),
+                    work_units_config=getattr(
+                        self.config.workflow, "work_units", None,
+                    ),
                 )
                 if admit_writer_fanout(
                     task_store=self.task_store,
@@ -1902,6 +1973,7 @@ class Orchestrator(
             dead_result = sweep_dead_dispatches(
                 inflight=inflight, events=events,
                 progressed_task_ids=progressed,
+                assignee_thresholds_s=self._thinking_dispatch_thresholds(),
             )
         except Exception:
             return
@@ -1932,6 +2004,27 @@ class Orchestrator(
                 ))
             except Exception:
                 pass
+
+    def _thinking_dispatch_thresholds(self) -> dict[str, float]:
+        """Per-worker inactivity thresholds for long-thinking providers."""
+        try:
+            lease_grace = float(
+                getattr(self.config.workflow, "attempt_lease_grace_s", 900.0)
+                or 900.0
+            )
+        except (TypeError, ValueError):
+            lease_grace = 900.0
+        thresholds: dict[str, float] = {}
+        for role in self.config.roles:
+            if str(role.backend or "") not in {"claude", "claude-code", "codex"}:
+                continue
+            threshold = max(
+                float(role.stuck_threshold_seconds or 0.0),
+                lease_grace,
+            )
+            thresholds[role.instance_id] = threshold
+            thresholds.setdefault(role.name, threshold)
+        return thresholds
 
     def _heartbeat_current_task_still_owned(
         self,
@@ -2424,7 +2517,11 @@ class Orchestrator(
                 if settle is not None:
                     decisions.append(settle)
 
-            if not event.task_id and event.type in {"verify.passed", "test.passed"}:
+            if not event.task_id and event.type in {
+                "verify.passed",
+                "test.passed",
+                "candidate.ready",
+            }:
                 decision = self._bridge_verify_passed_to_parity_scan(event)
                 if decision:
                     decisions.append(decision)
@@ -2443,6 +2540,19 @@ class Orchestrator(
                 continue
 
             if not event.task_id and event.type == "flow.discovery.completed":
+                decision = self._bridge_flow_discovery_completed(event)
+                if decision:
+                    decisions.append(decision)
+                self._processed_event_ids.add(event.id)
+                continue
+
+            if (
+                not event.task_id
+                and event.type == "flow.discovery.failed"
+                and self._parity_gap_tasks(
+                    event.payload if isinstance(event.payload, dict) else {}
+                )
+            ):
                 decision = self._bridge_flow_discovery_completed(event)
                 if decision:
                     decisions.append(decision)
@@ -2884,6 +2994,9 @@ class Orchestrator(
             "fanout.child.dispatched",
             "fanout.child.completed",
             "fanout.child.failed",
+            "fanout.child.dispatch_lost",
+            "fanout.cancelled",
+            "fanout.timed_out",
         }
         cache = getattr(self, "_agent_usage_fanout_liveness_events", None)
         if isinstance(cache, list):
@@ -2921,6 +3034,9 @@ class Orchestrator(
             "fanout.child.dispatched",
             "fanout.child.completed",
             "fanout.child.failed",
+            "fanout.child.dispatch_lost",
+            "fanout.cancelled",
+            "fanout.timed_out",
         }:
             cache = getattr(self, "_agent_usage_fanout_liveness_events", None)
             if isinstance(cache, list) and all(
@@ -3148,6 +3264,8 @@ class Orchestrator(
                         except Exception:
                             pass
             elif event.type == "dev.build.done":
+                if self._writer_completion_identity_already_terminal(event):
+                    return
                 from zf.runtime.task_refs import TaskRefManager
 
                 result = TaskRefManager(
@@ -3481,6 +3599,7 @@ class Orchestrator(
         refactor task for the same feature so the admission gate matches the
         latest task_map_ref."""
         from zf.core.task.schema import Task, TaskContract
+        from zf.runtime.task_map import normalize_verification_command
         from zf.runtime.writer_task_map_supersede import apply_explicit_task_supersedes
         apply_explicit_task_supersedes(
             task_store=self.task_store, event_writer=self.event_writer, loaded=loaded
@@ -3559,11 +3678,9 @@ class Orchestrator(
             # the contract. Dispatch preflight requires these fields before any
             # writer task can enter the normal worker path.
             behavior = str(payload.get("instruction") or item.get("behavior") or scope)
-            verification = str(
-                item.get("verification")
-                or "; ".join(verification_tiers)
-                or f"Verify {scope} against the task_map acceptance criteria."
-            )
+            verification = normalize_verification_command(raw.get("verification"))
+            if not verification:
+                verification = normalize_verification_command(item.get("verification"))
             acceptance_criteria = (
                 self._writer_acceptance_criteria(raw.get("acceptance_criteria"))
                 or self._writer_acceptance_criteria(raw.get("acceptance"))
@@ -3664,9 +3781,19 @@ class Orchestrator(
             elif self._can_refresh_writer_task(existing, loaded):
                 old_ref = self._task_contract_task_map_ref(existing.contract)
                 old_status = str(getattr(existing, "status", "") or "")
-                if old_status in {"done"}:
+                reset_for_replan = bool(
+                    getattr(loaded, "is_replan", False)
+                    and old_status in {
+                        "done",
+                        "blocked",
+                        "failed",
+                        "review",
+                        "test",
+                    }
+                )
+                if reset_for_replan:
                     self.task_store.reopen(refreshed_task)
-                    reopened = True
+                    reopened = old_status == "done"
                 else:
                     self.task_store.update(
                         task_id,
@@ -3690,6 +3817,7 @@ class Orchestrator(
                         "replan": bool(getattr(loaded, "is_replan", False)),
                         "old_status": old_status,
                         "reopened_from_terminal": reopened,
+                        "reset_for_replan": reset_for_replan,
                     },
                 ))
 
@@ -3758,7 +3886,16 @@ class Orchestrator(
         if isinstance(evidence, dict) and str(evidence.get("source") or "") != "refactor_task_map":
             return False
         old_ref = self._task_contract_task_map_ref(contract)
-        return bool(old_ref and loaded.task_map_ref and old_ref != loaded.task_map_ref)
+        if not old_ref or not loaded.task_map_ref:
+            return False
+        if old_ref != loaded.task_map_ref:
+            return True
+        return str(getattr(task, "status", "") or "") in {
+            "blocked",
+            "failed",
+            "review",
+            "test",
+        }
 
     @staticmethod
     def _is_workflow_bootstrap_task(task, evidence: object | None = None) -> bool:
@@ -3836,128 +3973,32 @@ class Orchestrator(
             causation_id=causation_id,
             correlation_id=trace_id,
         ))
-        manifest = self._fanout_manifest(fanout_id)
-        queued_children = [
-            child for child in manifest.get("children", []) or []
-            if isinstance(child, dict)
-            and str(child.get("status") or "") == "queued"
-            and str(child.get("assignment_strategy") or "") == "affinity_stage_slots"
-            and str(child.get("stage_slot") or "") == stage_slot
-        ]
-        if not queued_children:
-            return
-        completed_task_ids = {
-            str(child.get("task_id") or "")
-            for child in manifest.get("children", []) or []
-            if isinstance(child, dict)
-            and str(child.get("status") or "") == "completed"
-            and str(child.get("task_id") or "")
-        }
-
-        def _queue_key(child: dict) -> tuple[int, str]:
-            try:
-                order = int(child.get("queue_order") or 0)
-            except (TypeError, ValueError):
-                order = 0
-            return order, str(child.get("child_id") or "")
-
-        def _queued_child_payload(child: dict) -> dict:
-            payload = (
-                dict(child.get("payload"))
-                if isinstance(child.get("payload"), dict)
-                else {}
-            )
-            for key in (
-                "task_id",
-                "scope",
-                "task_map_ref",
-                "source_index_ref",
-                "blocked_by",
-                "depends_on",
-            ):
-                value = child.get(key)
-                if value not in (None, ""):
-                    payload[key] = value
-            return payload
-
-        queued = None
-        child_payload: dict = {}
-        for candidate in sorted(queued_children, key=_queue_key):
-            candidate_payload = _queued_child_payload(candidate)
-            if _writer_task_dependencies_satisfied(
-                self.task_store,
-                candidate_payload,
-                completed_task_ids=completed_task_ids,
-            ):
-                queued = candidate
-                child_payload = candidate_payload
-                break
-        if queued is None:
-            return
-        from zf.runtime.fanout import FanoutChild, FanoutContext
-
-        child_payload.update({
-            "assignment_strategy": "affinity_stage_slots",
-            "lane_profile": str(queued.get("lane_profile") or ""),
-            "lane_id": lane_id,
-            "stage_slot": stage_slot,
-            "affinity_tag": str(queued.get("affinity_tag") or ""),
-            "role_instance": role.instance_id,
-        })
-        context = FanoutContext(
+        self._reconcile_affinity_writer_slots(
             fanout_id=fanout_id,
-            stage_id=stage_id,
-            topology=str(manifest.get("topology") or "fanout_writer_scoped"),
-            trace_id=trace_id,
-            trigger_event_id=str(manifest.get("trigger_event_id") or ""),
-            target_ref=str(manifest.get("target_ref") or ""),
-            expected_children=[],
-        )
-        child = FanoutChild(
-            child_id=str(queued.get("child_id") or ""),
-            role_instance=role.instance_id,
-            target_ref=str(queued.get("target_ref") or manifest.get("target_ref") or ""),
-            payload=child_payload,
-        )
-        slot_payload = {
-            "fanout_id": fanout_id,
-            "trace_id": trace_id,
-            "stage_id": stage_id,
-            "child_id": child.child_id,
-            "role_instance": role.instance_id,
-            "task_id": str(child_payload.get("task_id") or ""),
-        }
-        self._copy_fanout_assignment_metadata(slot_payload, child_payload)
-        assigned_event = self.event_writer.append(ZfEvent(
-            type="fanout.slot.assigned",
-            actor="zf-cli",
-            payload=slot_payload,
+            stage=stage,
+            stage_slot=stage_slot,
             causation_id=release_event.id,
-            correlation_id=trace_id,
-        ))
-        self._unpark_writer_fanout_queued_task(str(child_payload.get("task_id") or ""))
-        self._dispatch_writer_fanout_child(
-            context=context,
-            child=child,
-            task_item=child_payload,
-            role=role,
-            pdd_id=str(queued.get("pdd_id") or manifest.get("pdd_id") or ""),
-            feature_id=str(
-                queued.get("feature_id")
-                or manifest.get("feature_id")
-                or manifest.get("pdd_id")
-                or ""
-            ),
-            task_map_ref=str(
-                queued.get("task_map_ref") or manifest.get("task_map_ref") or ""
-            ),
-            source_index_ref=str(
-                queued.get("source_index_ref")
-                or manifest.get("source_index_ref")
-                or ""
-            ),
-            wave=queued.get("wave"),
-            causation_id=assigned_event.id,
+        )
+
+    def _reconcile_affinity_writer_slots(
+        self,
+        *,
+        fanout_id: str,
+        stage,
+        stage_slot: str,
+        causation_id: str,
+    ) -> int:
+        """Fill every free affinity lane with one dependency-ready child."""
+        from zf.runtime.writer_slot_reconciler import (
+            reconcile_affinity_writer_slots,
+        )
+
+        return reconcile_affinity_writer_slots(
+            self,
+            fanout_id=fanout_id,
+            stage=stage,
+            stage_slot=stage_slot,
+            causation_id=causation_id,
         )
 
 
@@ -4269,6 +4310,13 @@ class Orchestrator(
                     or payload.get("source_commit")
                     or ""
                 ),
+                "dispatch_base_commit": str(
+                    payload.get("dispatch_base_commit")
+                    or payload.get("candidate_head_commit")
+                    or payload.get("candidate_base_commit")
+                    or payload.get("source_commit")
+                    or ""
+                ),
                 "target_ref": str(payload.get("target_ref") or ""),
                 "amend_of": base_task_map_ref,
                 "gap_plan_ref": gap_plan_ref,
@@ -4515,6 +4563,11 @@ class Orchestrator(
             if isinstance(candidate_payload.get("quality"), dict)
             else {}
         )
+        candidate_environment = (
+            candidate_payload.get("candidate_environment")
+            if isinstance(candidate_payload.get("candidate_environment"), dict)
+            else {}
+        )
         return {
             "pdd_id": pdd_id,
             "feature_id": feature_id,
@@ -4529,6 +4582,7 @@ class Orchestrator(
             "quality_check_count": int(quality.get("check_count") or 0),
             "quality_gates_passed": list(quality.get("gates_passed") or []),
             "quality_gates_failed": list(quality.get("gates_failed") or []),
+            "candidate_environment": dict(candidate_environment),
         }
 
     def _load_writer_task_map(self, stage, event: ZfEvent, pdd_id: str) -> list[dict]:
@@ -4540,6 +4594,14 @@ class Orchestrator(
             pdd_id=pdd_id,
             state_dir=self.state_dir,
             project_root=self.project_root,
+            candidate_quality_source=str(getattr(
+                self.config.workflow,
+                "candidate_quality_source",
+                "auto",
+            ) or "auto"),
+            work_units_config=getattr(
+                self.config.workflow, "work_units", None,
+            ),
         ).task_items
 
 

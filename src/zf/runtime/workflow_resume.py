@@ -18,6 +18,7 @@ from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
 from zf.core.workflow.graph import compile_workflow_graph
 from zf.runtime.candidate_rework import _feedback_lines_from_payload
+from zf.runtime.role_context import RoleContext, infer_role_context
 from zf.runtime.workflow_reconciler import WorkflowGraphReconciler
 
 
@@ -278,7 +279,14 @@ def build_workflow_resume_checkpoints(
         # 完成证据早于假 stall 信号时照样立案(深水轮重跑 3 个健康任务、
         # csvstats 轮 4 次 gate_unroutable no-op 的共同根)。
         suppression = ""
-        if action not in {"no_action", ""}:
+        if action == "needs_stage_dispatch" and _is_control_role(
+            target_role, config,
+        ):
+            suppression = (
+                "next stage-dispatch targets non-runnable control role: "
+                f"{target_role}"
+            )
+        if not suppression and action not in {"no_action", ""}:
             suppression = _filing_suppression_reason(
                 task_events=task_events,
                 progress=progress,
@@ -309,7 +317,11 @@ def build_workflow_resume_checkpoints(
             last_completed_stage=_stage_from_event(progress.type),
             expected_next_stage=decision.stage_id,
             expected_next_role=target_role,
-            blocking_event_id="" if already_done and not invalid_existing_action else progress.id,
+            blocking_event_id=(
+                ""
+                if suppression or (already_done and not invalid_existing_action)
+                else progress.id
+            ),
             safe_resume_action=action,
             idempotency_key=_idempotency_key(
                 task.id,
@@ -626,6 +638,7 @@ def _batch_checkpoint_from_event(
     pending_children = _unique_strings([
         *_string_list(aggregate.pending_children if aggregate else []),
         *_string_list(payload.get("pending_children")),
+        *_string_list(payload.get("queued_children")),
     ])
     action = (
         "repair_failed_children"
@@ -756,6 +769,11 @@ def _batch_safe_action(
     *,
     aggregate: WorkflowBatchResumeCheckpoint | None = None,
 ) -> str:
+    if (
+        str(payload.get("failure_kind") or "") == "scheduler_queue_timeout"
+        and _string_list(payload.get("queued_children"))
+    ):
+        return "resume_queued_children"
     failed_children = _string_list(payload.get("failed_children"))
     failed_task_ids = _string_list(payload.get("failed_task_ids"))
     if aggregate is not None:
@@ -767,6 +785,29 @@ def _batch_safe_action(
         pending_children.extend(aggregate.pending_children)
     if pending_children:
         return "wait_for_children"
+    findings = payload.get("findings")
+    finding_categories = {
+        str(item.get("category") or "")
+        for item in findings if isinstance(item, dict)
+    } if isinstance(findings, list) else set()
+    candidate_needs_repair = bool(
+        finding_categories
+        & {"candidate_quality", "candidate_integration", "stale_task_ref"}
+    ) or str(
+        payload.get("candidate_status")
+        or payload.get("quality_status")
+        or ""
+    ).strip().lower() in {
+        "failed",
+        "quality_failed",
+        "integration_failed",
+        "rejected",
+    } or str(
+        payload.get("source_event_type") or payload.get("event_type") or ""
+    ) in {
+        "candidate.quality.failed",
+        "integration.failed",
+    }
     completed_task_ids = _string_list(payload.get("completed_task_ids"))
     candidate_ref = str(payload.get("candidate_ref") or payload.get("target_ref") or "").strip()
     candidate_head = str(payload.get("candidate_head_commit") or payload.get("head_commit") or "").strip()
@@ -774,6 +815,12 @@ def _batch_safe_action(
         completed_task_ids.extend(aggregate.completed_task_ids)
         candidate_ref = candidate_ref or aggregate.candidate_ref
         candidate_head = candidate_head or aggregate.candidate_head_commit
+    if candidate_needs_repair:
+        if str(payload.get("task_map_ref") or "").strip() or (
+            aggregate is not None and aggregate.task_map_ref
+        ):
+            return "trigger_rework"
+        return "blocked_external_gate"
     if candidate_ref and candidate_head and completed_task_ids:
         return "reemit_candidate_ready"
     if str(payload.get("task_map_ref") or "").strip() or (
@@ -791,6 +838,8 @@ def _fanout_cancelled_resume_supported(payload: dict[str, Any]) -> bool:
         return False
     if "writer fanout task_map has no tasks" in reason:
         return False
+    if str(payload.get("failure_kind") or "") == "scheduler_queue_timeout":
+        return bool(_string_list(payload.get("queued_children")))
     return "writer fanout has more tasks than writer role instances" in reason
 
 
@@ -813,6 +862,8 @@ def _batch_checkpoint_recovered(
     events: list[ZfEvent],
     checkpoint: WorkflowBatchResumeCheckpoint,
 ) -> bool:
+    if checkpoint.safe_resume_action == "resume_queued_children":
+        return _queued_children_checkpoint_recovered(events, checkpoint)
     recovered = False
     invalidated = False
     for event in events:
@@ -859,6 +910,72 @@ def _batch_checkpoint_recovered(
         if "writer fanout task_map has no tasks" in reason:
             invalidated = True
     return recovered and not invalidated
+
+
+def _queued_children_checkpoint_recovered(
+    events: list[ZfEvent],
+    checkpoint: WorkflowBatchResumeCheckpoint,
+) -> bool:
+    source_idx = next(
+        (
+            idx
+            for idx, event in enumerate(events)
+            if event.id == checkpoint.source_event_id
+        ),
+        -1,
+    )
+    if source_idx < 0:
+        return False
+    queued_child_ids = set(checkpoint.pending_children)
+    queued_task_ids = {
+        task_id
+        for child_id in queued_child_ids
+        if (task_id := _queued_child_task_id(child_id))
+    }
+    for event in events[source_idx + 1:]:
+        payload = _payload(event)
+        if _payload_has_resume_marker(payload, checkpoint.checkpoint_id) and (
+            event.type
+            in {
+                WORKFLOW_RESUME_APPLIED_EVENT,
+                "task_map.ready",
+                "candidate.ready",
+                "run.completed",
+            }
+        ):
+            return True
+        if event.type == "fanout.child.completed":
+            child_id = str(payload.get("child_id") or "")
+            task_id = str(payload.get("task_id") or event.task_id or "")
+            if child_id in queued_child_ids or task_id in queued_task_ids:
+                return True
+        if event.type not in {
+            "lane.stage.completed",
+            "candidate.ready",
+            "verify.passed",
+            "test.passed",
+            "judge.passed",
+            "run.completed",
+        }:
+            continue
+        completed_task_ids = set(_string_list(payload.get("completed_task_ids")))
+        task_id = str(payload.get("task_id") or event.task_id or "")
+        if task_id:
+            completed_task_ids.add(task_id)
+        if queued_task_ids.intersection(completed_task_ids):
+            return True
+    return False
+
+
+def _queued_child_task_id(child_id: str) -> str:
+    text = str(child_id or "").strip()
+    if not text.startswith("queued-"):
+        return ""
+    body = text[len("queued-"):]
+    task_id, separator, ordinal = body.rpartition("-")
+    if not separator or not ordinal.isdigit():
+        return ""
+    return task_id
 
 
 def _payload_has_resume_marker(payload: dict[str, Any], checkpoint_id: str) -> bool:
@@ -1212,12 +1329,12 @@ def _anchor_for_event(
 ) -> dict[str, str]:
     payload = _payload(event)
     keys = [
-        f"fanout:{payload.get('fanout_id')}"
-        if str(payload.get("fanout_id") or "").strip() else "",
-        f"pdd:{payload.get('pdd_id') or payload.get('feature_id')}"
-        if str(payload.get("pdd_id") or payload.get("feature_id") or "").strip() else "",
         f"trace:{payload.get('trace_id') or event.correlation_id}"
         if str(payload.get("trace_id") or event.correlation_id or "").strip() else "",
+        f"pdd:{payload.get('pdd_id') or payload.get('feature_id')}"
+        if str(payload.get("pdd_id") or payload.get("feature_id") or "").strip() else "",
+        f"fanout:{payload.get('fanout_id')}"
+        if str(payload.get("fanout_id") or "").strip() else "",
     ]
     merged: dict[str, str] = {}
     for key in keys:
@@ -1495,6 +1612,20 @@ def _is_lane_task(task: Task, config: object) -> bool:
         or owner_role.startswith("dev-")
         or owner_role in _GENERIC_IMPL_ROLES
     )
+
+
+def _is_control_role(role: str, config: object) -> bool:
+    name = str(role or "").strip()
+    if not name:
+        return False
+    if name in _CONTROL_REWORK_ROLES:
+        return True
+    role_config = _role_config(config, name)
+    role_kind = str(getattr(role_config, "role_kind", "") or "")
+    return infer_role_context(
+        role_name=name,
+        role_kind=role_kind,
+    ) is RoleContext.COORDINATOR
 
 
 def _role_allowed_for_lane_rework(role: str, config: object) -> bool:

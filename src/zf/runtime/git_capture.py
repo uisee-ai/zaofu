@@ -31,7 +31,7 @@ _RUNTIME_LOG_PATTERNS = (
 )
 
 
-def git_env() -> dict[str, str]:
+def git_env(*, allow_large_commit: bool = False) -> dict[str, str]:
     """Environment for harness-issued git subprocesses.
 
     Candidate-integration and ship commits/cherry-picks are machine-generated;
@@ -41,7 +41,10 @@ def git_env() -> dict[str, str]:
     full-flow candidate.integration aborted — mislabeled candidate.conflict —
     because ``git commit`` in the candidate worktree had no identity.
     """
-    return {**os.environ, **_HARNESS_GIT_IDENTITY}
+    env = {**os.environ, **_HARNESS_GIT_IDENTITY}
+    if allow_large_commit:
+        env["ZF_ALLOW_LARGE_COMMIT"] = "1"
+    return env
 
 
 @dataclass

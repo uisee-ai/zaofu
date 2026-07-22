@@ -136,7 +136,7 @@ def latest_quiescent_run_terminal(
         terminal = scoped[index]
         if not is_successful_run_terminal(terminal):
             continue
-        if not any(event.type in RUN_REOPEN_EVENT_TYPES for event in scoped[index + 1:]):
+        if not _has_effective_reopen(scoped[index + 1:]):
             return terminal
     return None
 
@@ -164,9 +164,64 @@ def terminal_after_event(
         terminal = scoped[index]
         if not is_successful_run_terminal(terminal):
             continue
-        if not any(event.type in RUN_REOPEN_EVENT_TYPES for event in scoped[index + 1:]):
+        if not _has_effective_reopen(scoped[index + 1:]):
             return terminal
     return None
+
+
+def successful_terminal_before_event(
+    events: Iterable[ZfEvent],
+    source_event: ZfEvent,
+) -> ZfEvent | None:
+    """Return a successful terminal that fences a later result event."""
+
+    rows = list(events)
+    if not any(_same_event(row, source_event) for row in rows):
+        rows.append(source_event)
+    aliases = run_aliases(rows)
+    source_run_id = event_run_id(source_event, aliases=aliases)
+    scoped = _scoped_rows(rows, run_id=source_run_id)
+    if scoped is None:
+        return None
+    try:
+        source_index = next(
+            index for index, event in enumerate(scoped)
+            if _same_event(event, source_event)
+        )
+    except StopIteration:
+        return None
+    for index in range(source_index - 1, -1, -1):
+        terminal = scoped[index]
+        if not is_successful_run_terminal(terminal):
+            continue
+        # A new run is the only event allowed to reuse worker/fanout identities
+        # after terminal. A new task-map generation still rejects old results.
+        if any(
+            event.type == "run.goal.started"
+            for event in scoped[index + 1:source_index]
+        ):
+            return None
+        return terminal
+    return None
+
+
+def _has_effective_reopen(events: list[ZfEvent]) -> bool:
+    stale_result_ids = {
+        str(_payload(event).get("result_event_id") or "")
+        for event in events
+        if event.type == "fanout.child.stale_completion"
+        and str(_payload(event).get("reason") or "") == "run_terminal"
+    }
+    for event in events:
+        if event.type not in RUN_REOPEN_EVENT_TYPES:
+            continue
+        payload = _payload(event)
+        if payload.get("stale") or payload.get("post_terminal_audit"):
+            continue
+        if event.id and event.id in stale_result_ids:
+            continue
+        return True
+    return False
 
 
 def event_run_scope(events: Iterable[ZfEvent], event: ZfEvent) -> str:
@@ -265,6 +320,7 @@ __all__ = [
     "is_task_attempt_success_event",
     "is_task_attempt_terminal_event",
     "latest_quiescent_run_terminal",
+    "successful_terminal_before_event",
     "task_attempt_terminal_state",
     "terminal_after_event",
 ]

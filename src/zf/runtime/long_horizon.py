@@ -1545,6 +1545,7 @@ def check_split_quality(
     *,
     mode: str = "warning",
     max_scope_files: int = 12,
+    max_acceptance_criteria: int = 0,
     require_validation_surface: bool = True,
 ) -> list[SplitQualityFinding]:
     blocking = "blocking" if mode == "blocking" else "warning"
@@ -1557,6 +1558,16 @@ def check_split_quality(
         findings.append(SplitQualityFinding("missing_validation_surface", blocking, "validation surface is required"))
     if max_scope_files and len(work_unit.scope_include) > max_scope_files:
         findings.append(SplitQualityFinding("scope_too_large", blocking, f"scope has {len(work_unit.scope_include)} files, max is {max_scope_files}"))
+    if (
+        max_acceptance_criteria
+        and len(work_unit.acceptance_criteria) > max_acceptance_criteria
+    ):
+        findings.append(SplitQualityFinding(
+            "acceptance_too_large",
+            blocking,
+            f"acceptance has {len(work_unit.acceptance_criteria)} criteria, "
+            f"max is {max_acceptance_criteria}",
+        ))
     if work_unit.id in work_unit.depends_on:
         findings.append(SplitQualityFinding("self_dependency", "blocking", "work unit depends on itself"))
     return findings
@@ -1591,11 +1602,15 @@ def project_workpad(
     )
     split_mode = getattr(split_cfg, "mode", "warning")
     max_scope = int(getattr(split_cfg, "max_scope_files", 12) or 0)
+    max_acceptance = int(
+        getattr(split_cfg, "max_acceptance_criteria", 0) or 0
+    )
     require_validation = bool(getattr(split_cfg, "require_validation_surface", True))
     split_findings = check_split_quality(
         work_unit,
         mode=split_mode,
         max_scope_files=max_scope,
+        max_acceptance_criteria=max_acceptance,
         require_validation_surface=require_validation,
     )
     criteria_results = evaluate_success_criteria(

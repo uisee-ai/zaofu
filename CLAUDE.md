@@ -13,7 +13,7 @@ Keep this file short and avoid provider-neutral policy duplication. -->
 
 - Config: `zf.yaml`(唯一控制平面);runtime state: `project.state_dir`(默认 `.zf/`,gitignore)
 - CLI: `zf`(pyproject `zf.cli:main`);命令清单看 `zf --help`
-- Design docs 入口: `docs/design/00-index.md`;Examples: `examples/`
+- Manual docs 入口: `docs/manual/00-index.md`;Examples: `examples/`
 
 ## Lazy-Loaded Rules (`.claude/rules/*.md`)
 
@@ -31,7 +31,7 @@ To force-load: `@.claude/rules/code.md`.
 
 Common architecture and runtime interaction rules live in `AGENTS.md`
 §Architecture / Runtime Route so Claude and Codex share the same context.
-Use `docs/design/00-index.md` for the full index and verify behavior against
+Use `docs/manual/00-index.md` for the full index and verify behavior against
 `src/` and tests before implementing.
 
 ## Commands
@@ -43,8 +43,13 @@ Use `docs/design/00-index.md` for the full index and verify behavior against
 - `zf web --port 8001` -- 主端口 8001 留给真 dev session,模拟一律 8002+
   (见 AGENTS.md §Temporary Simulation Hygiene)
 - `uv run pytest <focused-paths> -q --no-cov` -- 修改后的确定性聚焦测试
-- `uv run pytest -q --no-cov` -- 仓库全量;当前包含 host 版本/能力 sensor,
-  并可能调用已安装 provider CLI,必须单独分类环境基线,不等于真实 E2E
+- `uv run pytest <impact-closure-paths> -q --no-cov` -- 修改模块、直接调用者
+  和共享 Event/Schema/Store 契约的最小正确回归集
+- Web/UI 和 backend 默认分域验证;只有跨越 API、projection、EventLog、Store
+  或 schema 边界时才合并运行相关两侧测试
+- `uv run pytest -q --no-cov` -- 仅用于 release、重大跨域重构或 owner 明确要求;
+  full 可按 module/class/node 在新进程中分片，host/provider sensor 必须单独分类，
+  不等于真实 E2E
 - `bash scripts/dev-premerge-gate.sh` -- 合 dev 前哨兵门(规则见
   AGENTS.md §Multi-Driver Git Discipline)
 

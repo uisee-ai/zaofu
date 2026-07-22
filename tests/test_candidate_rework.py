@@ -55,6 +55,36 @@ def test_verify_failed_plans_candidate_retrigger_with_feedback():
     assert p.rework_summary["source_event_type"] == "verify.failed"
 
 
+def test_upstream_contract_blocker_plans_task_map_replan() -> None:
+    events = [
+        _ev(
+            "dev.blocked",
+            {
+                "pdd_id": "SIM1-1",
+                "trace_id": "trace-sim1",
+                "blocker_kind": "upstream_contract_gap",
+                "blocked_on_task": "SIM-CORE-002",
+                "blocked_on_paths": ["app/src/sim/core/simulation.ts"],
+                "reason": "meet-and-pass requires off-lane bays in core",
+                "evidence_refs": ["git:abc123", "cmd:npm test -- blocker"],
+            },
+            task_id="SIM-SCHED-003",
+            eid="blocked-scheduler",
+            corr="trace-sim1",
+        ),
+    ]
+
+    plans = plan_candidate_rework(events, max_attempts=2)
+
+    assert len(plans) == 1
+    plan = plans[0]
+    assert plan.action == "replan"
+    assert plan.classification == "design_issue"
+    assert plan.failed_task_ids == ("SIM-CORE-002", "SIM-SCHED-003")
+    assert plan.source_event_id == "blocked-scheduler"
+    assert "off-lane bays" in plan.feedback[0]
+
+
 def test_verify_failed_payload_findings_become_rework_feedback():
     events = [
         _ev("verify.failed", {
@@ -391,6 +421,60 @@ def test_integration_failure_plans_bounded_rework():
     assert len(plans) == 1
     assert plans[0].action == "retrigger"
     assert plans[0].pdd_id == "CJMIN-1"
+
+
+def test_new_task_map_generation_drops_prior_trace_failure_attribution():
+    events = [
+        _ev(
+            "dev.blocked",
+            {
+                "pdd_id": "SIM1-1",
+                "trace_id": "trace-sim1",
+                "blocker_kind": "upstream_contract_gap",
+                "blocked_on_task": "SIM-CORE-002",
+                "reason": "old schema gap in core",
+            },
+            task_id="SIM-SCHED-003",
+            eid="old-blocker",
+            corr="trace-sim1",
+        ),
+        _ev(
+            "task_map.ready",
+            {
+                "pdd_id": "SIM1-1",
+                "trace_id": "trace-sim1",
+                "rework_of": "old-blocker",
+                "rework_source": "dev.blocked",
+                "rework_attempt": 1,
+            },
+            eid="new-generation",
+            corr="trace-sim1",
+        ),
+        _ev(
+            "integration.failed",
+            {
+                "pdd_id": "SIM1-1",
+                "trace_id": "trace-sim1",
+                "status": "quality_failed",
+                "findings": [{
+                    "category": "candidate_quality",
+                    "message": "candidate package.json is missing",
+                }],
+            },
+            eid="integration-failure",
+            corr="trace-sim1",
+        ),
+    ]
+
+    plans = plan_candidate_rework(events, max_attempts=2)
+
+    assert len(plans) == 1
+    assert plans[0].source_event_id == "integration-failure"
+    assert plans[0].failed_task_ids == ()
+    assert plans[0].failure_categories == ()
+    assert len(plans[0].feedback) == 1
+    assert "candidate package.json is missing" in plans[0].feedback[0]
+    assert "old schema gap" not in plans[0].feedback[0]
 
 
 def test_integration_failure_resolves_pdd_from_fanout_started():
@@ -957,3 +1041,75 @@ def test_candidate_quality_failure_message_falls_back_without_output():
         candidate_quality_failure_message({"gate_checks": {"static": [{"passed": True}]}})
         == "candidate quality gates failed"
     )
+
+
+def test_quality_gate_contract_mismatch_replans_without_blind_retry() -> None:
+    events = [
+        _ev("integration.failed", {
+            "pdd_id": "SIM4-PRD",
+            "trace_id": "sim4-run",
+            "failure_scope": "candidate",
+            "failure_class": "candidate_quality_gate_contract_mismatch",
+            "failure_fingerprint": "candidate-failure-missing-typecheck",
+            "failing_command": "npm --prefix app run typecheck",
+            "diagnostic_summary": 'npm error Missing script: "typecheck"',
+        }, eid="integration-1", corr="sim4-run"),
+    ]
+
+    plans = plan_candidate_rework(events, max_attempts=2)
+
+    assert len(plans) == 1
+    assert plans[0].action == "replan"
+    assert plans[0].classification == "design_issue"
+    assert "quality_gate_contract_gap" in plans[0].failure_categories
+
+
+def test_same_candidate_failure_reaches_cap_despite_volatile_diagnostics() -> None:
+    config = SimpleNamespace(
+        goal=SimpleNamespace(rework_fingerprint=True),
+        workflow=SimpleNamespace(rework_routing={}),
+    )
+
+    def failure(number: int) -> object:
+        return _ev("integration.failed", {
+            "pdd_id": "SIM4-PRD",
+            "trace_id": "sim4-run",
+            "failure_scope": "candidate",
+            "failure_class": "candidate_product_quality_failed",
+            "failure_fingerprint": f"legacy-volatile-fingerprint-{number}",
+            "findings": [{
+                "message": (
+                    'npm error Missing script: "typecheck"; log: '
+                    f"/home/user/.npm/_logs/2026-07-21T01_02_0{number}_00{number}Z-debug-0.log"
+                ),
+            }],
+        }, eid=f"integration-{number}", corr="sim4-run")
+
+    events = [
+        failure(1),
+        _ev("workflow.resume.applied", {
+            "mode": "candidate_rework_integration_only",
+            "pdd_id": "SIM4-PRD",
+            "source_event_id": "integration-1",
+            "rework_source": "integration.failed",
+        }, eid="resume-1", corr="sim4-run"),
+        failure(2),
+        _ev("workflow.resume.applied", {
+            "mode": "candidate_rework_integration_only",
+            "pdd_id": "SIM4-PRD",
+            "source_event_id": "integration-2",
+            "rework_source": "integration.failed",
+        }, eid="resume-2", corr="sim4-run"),
+        failure(3),
+    ]
+
+    plans = plan_candidate_rework(
+        events,
+        max_attempts=2,
+        config=config,
+    )
+
+    assert len(plans) == 1
+    assert plans[0].action == "escalate"
+    assert plans[0].attempt == 3
+    assert len(plans[0].feedback) == 1

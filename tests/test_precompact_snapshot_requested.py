@@ -67,6 +67,14 @@ def test_claude_hook_settings_contains_precompact(tmp_path: Path) -> None:
 
     # Stop hook preserved
     assert "Stop" in hooks
+    assert "PreToolUse" in hooks
+    assert "PostToolUse" in hooks
+    assert "--event claude.hook.pre_tool_use" in (
+        hooks["PreToolUse"][0]["hooks"][0]["command"]
+    )
+    assert "--event claude.hook.post_tool_use" in (
+        hooks["PostToolUse"][0]["hooks"][0]["command"]
+    )
     # PreCompact registered with the snapshot-emit command
     assert "PreCompact" in hooks, (
         "PreCompact hook missing from claude settings.json"

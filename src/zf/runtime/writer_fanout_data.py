@@ -452,9 +452,20 @@ class WriterFanoutDataMixin:
                             if isinstance(task, dict)
                         )
             if gap_tasks:
-                payload["gap_tasks"] = gap_tasks
-                payload["gap_task_count"] = len(gap_tasks)
-                payload.setdefault("open_p0_p1_gap_count", len(gap_tasks))
+                from zf.runtime.module_gap_plan import (
+                    validate_module_gap_plan_payload,
+                )
+
+                validation = validate_module_gap_plan_payload({
+                    "schema_version": "module-gap-plan.v1",
+                    "gap_tasks": gap_tasks,
+                })
+                if validation.passed:
+                    payload["gap_tasks"] = gap_tasks
+                    payload["gap_task_count"] = len(gap_tasks)
+                    payload.setdefault("open_p0_p1_gap_count", len(gap_tasks))
+                else:
+                    payload["gap_task_contract_errors"] = validation.errors
             for key in (
                 "workflow_run_id",
                 "pdd_id",
@@ -614,6 +625,33 @@ class WriterFanoutDataMixin:
             if value not in (None, ""):
                 result[key] = value
 
+        # Replan identity and its bounded resume scope belong to the parent
+        # trigger.  Losing these fields at a reader aggregate makes a revised
+        # task map look like a fresh plan; writer admission then rejects it as
+        # stale and the stage can repeatedly resynthesise the same map.
+        for key in (
+            "rework_of",
+            "rework_attempt",
+            "rework_source",
+            "rework_feedback",
+            "rework_categories",
+            "rework_summary",
+            "replan_classification",
+            "replan",
+            "orchestrator_decision",
+            "supersedes_plan_fanout_id",
+            "supersedes_plan_artifact_refs",
+            "task_ids",
+            "failed_task_ids",
+            "downstream_task_ids",
+            "resume_scope",
+        ):
+            value = trigger.get(key)
+            if value in (None, "", []):
+                value = manifest.get(key)
+            if value not in (None, "", []):
+                result[key] = value
+
         # Child run_id identifies one fanout invocation, not the parent
         # workflow. Promote only parent-owned identity into aggregate events.
         workflow_run_id = str(
@@ -665,6 +703,15 @@ class WriterFanoutDataMixin:
         success_event: str,
         payload: dict,
     ) -> str:
+        if (
+            success_event == "flow.discovery.completed"
+            and isinstance(payload.get("gap_task_contract_errors"), list)
+            and payload["gap_task_contract_errors"]
+        ):
+            return (
+                "flow discovery gap_tasks violate canonical task-map contract: "
+                + "; ".join(str(item) for item in payload["gap_task_contract_errors"])
+            )
         if success_event == "task_map.ready" and not str(
             payload.get("task_map_ref") or ""
         ).strip():

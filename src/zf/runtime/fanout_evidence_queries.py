@@ -122,7 +122,19 @@ class FanoutEvidenceQueriesMixin:
         role = next(iter(self._fanout_roles([role_instance])), None)
         if role is None:
             return 0.0
-        return float(getattr(role, "stuck_threshold_seconds", 0.0) or 0.0)
+        threshold = float(getattr(role, "stuck_threshold_seconds", 0.0) or 0.0)
+        if str(getattr(role, "backend", "") or "") in {
+            "claude", "claude-code", "codex",
+        }:
+            try:
+                lease_grace = float(
+                    getattr(self.config.workflow, "attempt_lease_grace_s", 900.0)
+                    or 900.0
+                )
+            except (TypeError, ValueError):
+                lease_grace = 900.0
+            threshold = max(threshold, lease_grace)
+        return threshold
 
     def _fanout_child_last_activity(
         self, child: dict, events: list[ZfEvent], baseline_epoch: float
@@ -583,7 +595,9 @@ class FanoutEvidenceQueriesMixin:
         """
         role_instance = str(child.get("role_instance") or "")
         role = next(iter(self._fanout_roles([role_instance])), None)
-        if role is None or getattr(role, "backend", "") != "codex":
+        if role is None or getattr(role, "backend", "") not in {
+            "claude", "claude-code", "codex",
+        }:
             return False
         lease_grace = 900.0
         try:

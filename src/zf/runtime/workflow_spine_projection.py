@@ -35,6 +35,18 @@ _ATTEMPT_START_EVENTS = frozenset({
 _ATTEMPT_HEARTBEAT_EVENTS = frozenset({
     "task.attempt.heartbeat",
 })
+_ATTEMPT_ACTIVITY_EVENTS = frozenset({
+    "agent.usage",
+    "agent.text",
+    "agent.tool.use",
+    "worker.heartbeat",
+    "worker.progress",
+    "phase.progressed",
+    "claude.hook.pre_tool_use",
+    "claude.hook.post_tool_use",
+    "codex.hook.pre_tool_use",
+    "codex.hook.post_tool_use",
+})
 _RUN_MILESTONE_EVENTS = frozenset({
     "refactor.scan.requested", "refactor.scan.ready",
     "task_map.ready", "candidate.ready",
@@ -86,6 +98,7 @@ def _attempt_key(task_id: str, event: ZfEvent, payload: dict[str, Any], ordinal:
         or payload.get("attempt_id")
         or payload.get("lease_token")
         or payload.get("dispatch_id")
+        or payload.get("run_id")
         or ""
     ).strip()
     if explicit:
@@ -94,6 +107,108 @@ def _attempt_key(task_id: str, event: ZfEvent, payload: dict[str, Any], ordinal:
     if event_id:
         return f"{task_id}:{event_id}"
     return f"{task_id}:attempt-{ordinal}"
+
+
+def _attempt_identity(payload: dict[str, Any]) -> set[str]:
+    return {
+        str(value).strip()
+        for value in (
+            payload.get("attempt_key"),
+            payload.get("attempt_id"),
+            payload.get("lease_token"),
+            payload.get("dispatch_id"),
+            payload.get("run_id"),
+        )
+        if str(value or "").strip()
+    }
+
+
+def _attempt_matches_payload(attempt: dict[str, Any], payload: dict[str, Any]) -> bool:
+    identities = _attempt_identity(payload)
+    attempt_identities = {
+        str(value).strip()
+        for value in (
+            attempt.get("attempt_key"),
+            attempt.get("lease_token"),
+            attempt.get("dispatch_id"),
+            attempt.get("run_id"),
+        )
+        if str(value or "").strip()
+    }
+    if identities and identities & attempt_identities:
+        return True
+    fanout_id = str(payload.get("fanout_id") or "")
+    child_id = str(payload.get("child_id") or payload.get("child_run") or "")
+    return bool(
+        fanout_id
+        and child_id
+        and fanout_id == str(attempt.get("fanout_id") or "")
+        and child_id == str(attempt.get("child_id") or "")
+    )
+
+
+def _matching_open_attempt(
+    tasks: dict[str, Any],
+    event: ZfEvent,
+    payload: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    task_id = _event_task_id(event)
+    entries: list[dict[str, Any]] = []
+    if task_id and isinstance(tasks.get(task_id), dict):
+        entries = [tasks[task_id]]
+    elif event.actor:
+        entries = [
+            entry
+            for entry in tasks.values()
+            if isinstance(entry, dict)
+            and any(
+                isinstance(attempt, dict)
+                and attempt.get("terminal") is None
+                and str(attempt.get("role") or "") == event.actor
+                for attempt in entry.get("attempts") or []
+            )
+        ]
+        if len(entries) != 1:
+            return None
+    for entry in entries:
+        open_attempts = [
+            attempt
+            for attempt in entry.get("attempts") or []
+            if isinstance(attempt, dict) and attempt.get("terminal") is None
+        ]
+        for attempt in reversed(open_attempts):
+            if _attempt_matches_payload(attempt, payload):
+                return entry, attempt
+        if _attempt_identity(payload) or (
+            payload.get("fanout_id") and payload.get("child_id")
+        ):
+            continue
+        if len(open_attempts) == 1:
+            return entry, open_attempts[0]
+    return None
+
+
+def _supersede_open_attempts(
+    entry: dict[str, Any],
+    *,
+    event: ZfEvent,
+    next_attempt_key: str,
+) -> None:
+    for attempt in entry.get("attempts") or []:
+        if not isinstance(attempt, dict) or attempt.get("terminal") is not None:
+            continue
+        if str(attempt.get("attempt_key") or "") == next_attempt_key:
+            continue
+        attempt["terminal"] = {
+            "type": "task.attempt.superseded",
+            "event_id": str(event.id or ""),
+            "ts": event.ts,
+            "reason": f"superseded by {next_attempt_key}",
+        }
+        attempt["state"] = "superseded"
+        attempt["lease_state"] = "released"
+        attempt["counted"] = False
+        attempt["retryable"] = False
 
 
 def _terminal_state(event_type: str) -> str:
@@ -270,9 +385,25 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
             if task_id:
                 entry = tasks.setdefault(task_id, {"attempts": []})
                 ordinal = len(entry["attempts"]) + 1
+                attempt_key = _attempt_key(task_id, event, payload, ordinal)
+                existing = next((
+                    attempt for attempt in reversed(entry["attempts"])
+                    if isinstance(attempt, dict)
+                    and attempt.get("terminal") is None
+                    and str(attempt.get("attempt_key") or "") == attempt_key
+                ), None)
+                if existing is not None:
+                    existing["last_activity_ts"] = event.ts
+                    existing["last_activity_event_type"] = event.type
+                    continue
+                _supersede_open_attempts(
+                    entry,
+                    event=event,
+                    next_attempt_key=attempt_key,
+                )
                 entry["attempts"].append({
                     "schema_version": "task-attempt.v1",
-                    "attempt_key": _attempt_key(task_id, event, payload, ordinal),
+                    "attempt_key": attempt_key,
                     "ordinal": ordinal,
                     "state": "running",
                     "source_event_id": str(event.id or ""),
@@ -281,29 +412,33 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
                     "role": _event_role(payload),
                     "fanout_id": str(payload.get("fanout_id") or ""),
                     "child_id": str(payload.get("child_id") or ""),
+                    "run_id": str(payload.get("run_id") or ""),
+                    "dispatch_id": str(payload.get("dispatch_id") or ""),
                     "lease_token": str(payload.get("lease_token") or payload.get("dispatch_id") or ""),
                     "lease_state": "held",
                     "last_heartbeat_ts": "",
+                    "last_activity_ts": event.ts,
+                    "last_activity_event_type": event.type,
                     "failure_signature": "",
                     "counted": True,
                     "retryable": True,
                     "terminal": None,
                 })
                 entry["current_owner"] = entry["attempts"][-1]["role"]
-        elif event.type in _ATTEMPT_HEARTBEAT_EVENTS:
-            task_id = _event_task_id(event)
-            entry = tasks.get(task_id)
-            if entry and entry.get("attempts"):
-                last = entry["attempts"][-1]
-                if last.get("terminal") is None:
-                    last["last_heartbeat_ts"] = event.ts
-                    last["state"] = "running"
-                    last["lease_state"] = "held"
+        elif event.type in _ATTEMPT_HEARTBEAT_EVENTS | _ATTEMPT_ACTIVITY_EVENTS:
+            matched = _matching_open_attempt(tasks, event, payload)
+            if matched is not None:
+                _entry, attempt = matched
+                attempt["last_activity_ts"] = event.ts
+                attempt["last_activity_event_type"] = event.type
+                if event.type in _ATTEMPT_HEARTBEAT_EVENTS:
+                    attempt["last_heartbeat_ts"] = event.ts
+                attempt["state"] = "running"
+                attempt["lease_state"] = "held"
         elif is_task_attempt_terminal_event(event.type):
-            task_id = _event_task_id(event)
-            entry = tasks.get(task_id)
-            if entry and entry.get("attempts"):
-                last = entry["attempts"][-1]
+            matched = _matching_open_attempt(tasks, event, payload)
+            if matched is not None:
+                entry, last = matched
                 if last.get("terminal") is None:
                     state = _terminal_state(event.type)
                     counted = _counted_terminal(
@@ -329,7 +464,7 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
                     last["counted"] = counted
                     last["retryable"] = retryable
                     last["failure_signature"] = failure_signature
-                entry["last_terminal"] = event.type
+                    entry["last_terminal"] = event.type
         if event.type == "fanout.started":
             stage_id = str(payload.get("stage_id") or "")
             if stage_id:

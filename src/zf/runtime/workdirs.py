@@ -72,7 +72,11 @@ class WorkdirManager:
         setup = self.config.project.setup_script
         if not setup:
             return
-        result = run_project_setup(project_path, setup)
+        result = run_project_setup(
+            project_path,
+            setup,
+            marker_dir=self.root / role.instance_id,
+        )
         if not result.ok:
             raise RuntimeError(
                 f"workdir setup failed for {role.instance_id}"
@@ -356,6 +360,13 @@ class WorkdirManager:
         self._git(project_path, "clean", "-fd")
         checkout_ref = self._resolve_reader_checkout_ref(target_ref)
         self._git(project_path, "checkout", "--detach", checkout_ref)
+        provision_worktree_env(
+            project_path,
+            self.project_root,
+            self.config.runtime.workdirs.provision_paths,
+            bootstrap_uv_dev=True,
+        )
+        self._run_declared_setup(role, project_path)
         self._write_task_metadata(
             role,
             plan,
@@ -388,6 +399,13 @@ class WorkdirManager:
             raise RuntimeError(
                 f"reader workdir HEAD {head[:12]} != pinned target {pinned[:12]}",
             )
+        provision_worktree_env(
+            project_path,
+            self.project_root,
+            self.config.runtime.workdirs.provision_paths,
+            bootstrap_uv_dev=True,
+        )
+        self._run_declared_setup(role, project_path)
         self._write_task_metadata(
             role,
             plan,
@@ -755,27 +773,11 @@ class WorkdirManager:
                 })
                 continue
             try:
-                self._git(project_path, "cherry-pick", commit)
+                self._git(project_path, "merge", "--no-edit", "--no-ff", commit)
             except RuntimeError as exc:
-                detail = str(exc)
-                if self._cherry_pick_empty(detail):
-                    try:
-                        self._git(project_path, "cherry-pick", "--skip")
-                    except RuntimeError:
-                        self._abort_cherry_pick(project_path)
-                        raise RuntimeError(
-                            f"{task_id}: empty dependency cherry-pick could not skip"
-                        ) from exc
-                    skipped.append({
-                        "task_id": task_id,
-                        "task_ref": target_ref,
-                        "source_commit": commit,
-                        "reason": "empty_cherry_pick",
-                    })
-                    continue
-                self._abort_cherry_pick(project_path)
+                self._abort_merge(project_path)
                 raise RuntimeError(
-                    f"{task_id}: dependency task ref {target_ref} could not be applied: {detail}"
+                    f"{task_id}: dependency task ref {target_ref} could not be merged: {exc}"
                 ) from exc
             applied.append({
                 "task_id": task_id,
@@ -784,6 +786,14 @@ class WorkdirManager:
             })
 
         after = self._git(project_path, "rev-parse", "HEAD").strip()
+        if applied:
+            provision_worktree_env(
+                project_path,
+                self.project_root,
+                self.config.runtime.workdirs.provision_paths,
+                bootstrap_uv_dev=True,
+            )
+            self._run_declared_setup(role, project_path)
         self._record_dependency_metadata(
             role,
             plan,
@@ -823,6 +833,12 @@ class WorkdirManager:
     def _abort_cherry_pick(self, cwd: Path) -> None:
         try:
             self._git(cwd, "cherry-pick", "--abort")
+        except RuntimeError:
+            pass
+
+    def _abort_merge(self, cwd: Path) -> None:
+        try:
+            self._git(cwd, "merge", "--abort")
         except RuntimeError:
             pass
 

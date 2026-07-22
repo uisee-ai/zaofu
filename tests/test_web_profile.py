@@ -163,6 +163,10 @@ def test_web_init_with_kind_writes_typed_flow_yaml(client, tmp_path, monkeypatch
     assert docs[0]["spec"]["lanes"] == 3
     config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
     assert config_doc["spec"]["project"]["state_dir"] == ".zf-cangjie"
+    config = load_config(target / "zf.yaml")
+    assert config.workflow.candidate_quality_source == "task_contract_required"
+    assert {source.path for source in config.skill_sources} == {"skills"}
+    assert any((target / "skills").glob("*/SKILL.md"))
 
 
 def test_web_init_issue_defaults_to_single_lane(client, tmp_path, monkeypatch):

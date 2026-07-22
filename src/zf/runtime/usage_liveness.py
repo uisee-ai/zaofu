@@ -135,21 +135,32 @@ def _fanout_task_state(
     if not instance_id or not task_id:
         return ""
     event_list = events if isinstance(events, list) else list(events)
+    terminal_fanouts: set[str] = set()
     for event in reversed(event_list):
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type in {"fanout.cancelled", "fanout.timed_out"}:
+            fanout_id = str(payload.get("fanout_id") or "")
+            if fanout_id:
+                terminal_fanouts.add(fanout_id)
+            continue
         if event.type not in {
             "fanout.child.dispatched",
             "fanout.child.completed",
             "fanout.child.failed",
+            "fanout.child.dispatch_lost",
         }:
             continue
-        payload = event.payload if isinstance(event.payload, dict) else {}
         role_instance = str(payload.get("role_instance") or "").strip()
         if role_instance != instance_id:
             continue
         event_task_id = str(event.task_id or payload.get("task_id") or "").strip()
         if event_task_id != task_id:
             continue
+        if event.type == "fanout.child.dispatch_lost":
+            return "terminal"
         if event.type == "fanout.child.dispatched":
+            if str(payload.get("fanout_id") or "") in terminal_fanouts:
+                return "terminal"
             return "active"
         return "terminal"
     return ""

@@ -127,6 +127,7 @@ def validate_module_gap_plan_payload(payload: dict[str, Any]) -> ModuleGapPlanVa
         errors.append("gap_tasks must be a non-empty list")
 
     seen: set[str] = set()
+    claimed_by: dict[str, str] = {}
     for idx, task in enumerate(gap_tasks):
         task_id = _task_id(task)
         prefix = task_id or f"gap_tasks[{idx}]"
@@ -136,8 +137,18 @@ def validate_module_gap_plan_payload(payload: dict[str, Any]) -> ModuleGapPlanVa
         if task_id in seen:
             errors.append(f"duplicate gap task_id {task_id!r}")
         seen.add(task_id)
-        if not _claim_paths(task):
+        claim_paths = _claim_paths(task)
+        if not claim_paths:
             errors.append(f"{prefix}.claim_paths is required")
+        for claim_path in claim_paths:
+            prior = claimed_by.get(claim_path)
+            if prior and prior != task_id:
+                errors.append(
+                    f"gap tasks {prior!r} and {task_id!r} have overlapping "
+                    f"claim_path {claim_path!r}"
+                )
+            else:
+                claimed_by[claim_path] = task_id
         if not _acceptance(task):
             errors.append(f"{prefix}.acceptance is required")
         if not _verification(task):
@@ -248,6 +259,9 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
         or task_id
     ).strip()
     owner_role = str(raw.get("owner_role") or "dev").strip()
+    blocked_by = list(dict.fromkeys(
+        _string_list(raw.get("blocked_by")) + _string_list(raw.get("dependencies"))
+    ))
     evidence_contract = _gap_task_evidence_contract(
         raw,
         module_id=module_id,
@@ -258,10 +272,11 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
         gap_kind=gap_kind,
         source_refs=source_refs,
     )
-    return {
+    item = {
         "task_id": task_id,
         "title": title,
         "owner_role": owner_role,
+        "blocked_by": blocked_by,
         "phase": str(raw.get("phase") or "gap-impl").strip(),
         "module_id": module_id,
         "parent_task_id": parent_task_id,
@@ -299,6 +314,10 @@ def _gap_task_to_task_map_item(raw: dict[str, Any], *, wave: int) -> dict[str, A
             "supersedes_task_ids": _string_list(raw.get("supersedes_task_ids")),
         },
     }
+    root_owner_class = str(raw.get("root_owner_class") or "").strip()
+    if root_owner_class:
+        item["root_owner_class"] = root_owner_class
+    return item
 
 
 def _validation_payload(gap_tasks: list[dict[str, Any]]) -> dict[str, Any]:
@@ -533,9 +552,15 @@ def _resolve_artifact_ref(
         return path
     if path.parts and path.parts[0] == ".zf":
         return Path(state_dir).joinpath(*path.parts[1:])
+    state_path = Path(state_dir) / path
+    if state_path.exists():
+        return state_path
     if project_root is not None:
-        return Path(project_root) / path
-    return Path(state_dir) / path
+        project_path = Path(project_root) / path
+        if project_path.exists():
+            return project_path
+        return state_path if path.parts[:1] == ("artifacts",) else project_path
+    return state_path
 
 
 def _safe_artifact_part(value: str) -> str:

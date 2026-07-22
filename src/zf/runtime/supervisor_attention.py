@@ -274,6 +274,9 @@ def _attention_superseded_by_later_progress(
 
 
 _ATTENTION_PROGRESS_EVENTS = frozenset({
+    "agent.usage",
+    "worker.heartbeat",
+    "worker.stuck.recovered",
     "task.ref.updated",
     "fanout.child.completed",
     "fanout.aggregate.completed",
@@ -288,7 +291,10 @@ _ATTENTION_PROGRESS_EVENTS = frozenset({
 
 
 def _is_attention_progress_event(event: ZfEvent) -> bool:
-    if event.type not in _ATTENTION_PROGRESS_EVENTS:
+    if (
+        event.type not in _ATTENTION_PROGRESS_EVENTS
+        and not event.type.startswith(("codex.hook.", "claude.hook."))
+    ):
         return False
     payload = event.payload if isinstance(event.payload, dict) else {}
     status = str(payload.get("status") or payload.get("quality_status") or "").lower()
@@ -302,6 +308,11 @@ def _is_attention_progress_event(event: ZfEvent) -> bool:
 def _attention_progress_matches_source(source: ZfEvent, progress: ZfEvent) -> bool:
     source_payload = source.payload if isinstance(source.payload, dict) else {}
     progress_payload = progress.payload if isinstance(progress.payload, dict) else {}
+    if source.type in {"worker.stuck", "worker.stuck.recovery_failed"}:
+        source_worker = _attention_worker(source, source_payload)
+        progress_worker = _attention_worker(progress, progress_payload)
+        if source_worker and source_worker == progress_worker:
+            return True
     source_scope = _attention_scope(source, source_payload)
     progress_scope = _attention_scope(progress, progress_payload)
     if source_scope and progress_scope:
@@ -314,6 +325,20 @@ def _attention_progress_matches_source(source: ZfEvent, progress: ZfEvent) -> bo
     if source_fanout and source_fanout == progress_fanout:
         return True
     return False
+
+
+def _attention_worker(event: ZfEvent, payload: dict[str, Any]) -> str:
+    worker = str(
+        payload.get("instance_id")
+        or payload.get("role_instance")
+        or payload.get("worker")
+        or payload.get("role")
+        or ""
+    ).strip()
+    if worker:
+        return worker
+    actor = str(event.actor or "").strip()
+    return "" if actor in {"zf-cli", "orchestrator", "kernel"} else actor
 
 
 def _attention_scope(event: ZfEvent, payload: dict[str, Any]) -> dict[str, str]:

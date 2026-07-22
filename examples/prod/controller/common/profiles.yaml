@@ -5,6 +5,11 @@ metadata:
 spec:
   goal:
     enabled: true
+    max_rescans: 5
+    idle_progress_ticks: 3
+    rework_fingerprint: true
+    quiescent_after_escalate: true
+    micro_loop: false
   # 2026-07-08 起只用仓内两目录:skills/(zf-* 边界/合约技能,本 source)
   # + yoke/(方法论族,经 wrapper dependencies 闭包或 bundle 直名走
   # yoke overlay 解析,无需声明 source)。外部 agent-skills 基线已 1v1
@@ -15,6 +20,10 @@ spec:
     # bundle 只声明角色 wrapper + flow/project delta。机械合同经 wrapper
     # dependencies 物化为 load-on-demand reference；Judge 保持单一 Thin Judge。
     issue:
+      roleDefaults: &long-horizon-role-defaults
+        permission_mode: bypass
+        stuck_threshold_seconds: 900
+        spawn_ready_timeout_seconds: 240
       roleSkillBundles:
         issue-triage: [debugging-triage, source-verification, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-issue-plan-synth, zf-yoke-planner-role-context]
         discovery: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
@@ -22,6 +31,7 @@ spec:
         fix: [zf-yoke-dev-worker-role-context]
         verify: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-yoke-test-evaluator-role-context]
     prd:
+      roleDefaults: *long-horizon-role-defaults
       roleSkillBundles:
         scan: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
         planner: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
@@ -47,6 +57,12 @@ spec:
       enabled: true
       interval_seconds: 10
       max_actions_per_tick: 1
+    # Lifecycle is wired into `zf start`, but remains opt-in because credentials
+    # and chat routing are project-local adapter concerns (`feishu.yaml`).
+    feishu_inbound:
+      enabled: ${ZF_FEISHU_INBOUND_ENABLED:-false}
+      mode: bridge
+      require_routing: true
   # 执法档:flowProfile 展开默认 canonical-dag/v6(读者子
   # 报告证据档位);blocking 让空 evidence_refs / 空覆盖矩阵在落盘时被
   # discriminator.failed 替换并走返工,report_evidence_gate 兜住 schema
@@ -56,12 +72,14 @@ spec:
       mode: blocking
     report_evidence_gate: fail_closed
   workflow:
+    candidate_quality_source: task_contract_required
     strict_triggers:
-      rework_attempts_gte: 3
+      rework_attempts_gte: 2
     work_units:
       enabled: true
       split_quality:
         mode: blocking
+        max_acceptance_criteria: 8
 ---
 apiVersion: zaofu.dev/v1
 kind: ConfigProfile
@@ -70,6 +88,11 @@ metadata:
 spec:
   goal:
     enabled: true
+    max_rescans: 5
+    idle_progress_ticks: 3
+    rework_fingerprint: true
+    quiescent_after_escalate: true
+    micro_loop: false
   # 2026-07-08 起只用仓内两目录:skills/(zf-* 边界/合约技能,本 source)
   # + yoke/(方法论族,经 wrapper dependencies 闭包或 bundle 直名走
   # yoke overlay 解析,无需声明 source)。外部 agent-skills 基线已 1v1
@@ -80,6 +103,10 @@ spec:
     # bundle 组成同 prod-runtime/v1(2026-07-08 1v1 切换后):zf-* +
     # 角色 wrapper + flow/project delta；机械合同经 dependency closure 按需加载。
     refactor:
+      roleDefaults:
+        permission_mode: bypass
+        stuck_threshold_seconds: 900
+        spawn_ready_timeout_seconds: 240
       roleSkillBundles:
         scan-contract: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-harness-spec-freeze-contract, zf-harness-evidence-collection, zf-yoke-planner-role-context]
         scan-runtime: [source-verification, context-hygiene, zf-harness-evidence-collection]
@@ -107,6 +134,10 @@ spec:
       enabled: true
       interval_seconds: 10
       max_actions_per_tick: 1
+    feishu_inbound:
+      enabled: ${ZF_FEISHU_INBOUND_ENABLED:-false}
+      mode: bridge
+      require_routing: true
   # 2026-07-08 LB-4 执法档(同 prod-runtime/v1)。
   verification:
     event_schema:
@@ -114,8 +145,9 @@ spec:
     report_evidence_gate: fail_closed
   workflow:
     plan_approval: false
+    candidate_quality_source: task_contract_required
     strict_triggers:
-      rework_attempts_gte: 3
+      rework_attempts_gte: 2
     admission_replan:
       enabled: true
       resynth_trigger: zaofu.refactor.review.ready
@@ -124,6 +156,7 @@ spec:
       split_quality:
         mode: blocking
         max_scope_files: 12
+        max_acceptance_criteria: 8
         require_validation_surface: true
 ---
 apiVersion: zaofu.dev/v1

@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -161,10 +163,24 @@ def write_run_contract(
 ) -> Path:
     path = state_dir.expanduser() / "config" / "run-contract.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(dict(contract), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    payload = json.dumps(
+        dict(contract), ensure_ascii=False, indent=2, sort_keys=True
+    ) + "\n"
+    fd, tmp_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        text=True,
     )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        Path(tmp_name).replace(path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
     return path
 
 
@@ -199,6 +215,43 @@ def run_contract_drift_diagnostics(
         if old and new and old != new:
             diagnostics.append(_drift(f"digests.{key}", old, new, strict=strict))
     return diagnostics
+
+
+def evaluate_run_contract_submit_binding(
+    previous: Mapping[str, Any] | None,
+    current: Mapping[str, Any],
+    *,
+    bootstrap: Mapping[str, Any],
+    strict: bool = False,
+) -> dict[str, Any]:
+    """Evaluate first request binding without weakening drift detection."""
+
+    previous_bound = _has_workflow_input_manifest(previous)
+    current_bound = _has_workflow_input_manifest(current)
+    initial_binding = bool(previous and not previous_bound and current_bound)
+    comparison = bootstrap if initial_binding else current
+    effective_strict = strict_run_contract_drift(
+        previous,
+        comparison,
+        strict=strict,
+    )
+    diagnostics = run_contract_drift_diagnostics(
+        previous,
+        comparison,
+        strict=effective_strict,
+    )
+    return {
+        "schema_version": "run-contract.submit-binding.v1",
+        "status": (
+            "STOP"
+            if diagnostics and effective_strict
+            else "WARN" if diagnostics else "PASS"
+        ),
+        "strict": effective_strict,
+        "initial_binding": initial_binding,
+        "comparison_basis": "bootstrap" if initial_binding else "current",
+        "diagnostics": diagnostics,
+    }
 
 
 def is_strict_run_contract(contract: Mapping[str, Any] | None) -> bool:
@@ -241,13 +294,14 @@ def evaluate_run_contract_resume_policy(
     strict: bool = False,
 ) -> dict[str, Any]:
     """Preview restart/resume safety without overwriting the pinned contract."""
+    previous = load_run_contract(state_dir)
     current = build_run_contract(
         config,
         config_path=config_path,
         project_root=project_root,
         state_dir=state_dir,
+        workflow_input_manifest_ref=_workflow_input_manifest_ref(previous),
     )
-    previous = load_run_contract(state_dir)
     effective_strict = strict_run_contract_drift(previous, current, strict=strict)
     diagnostics = run_contract_drift_diagnostics(
         previous,
@@ -401,6 +455,24 @@ def _string_list(value: Any) -> list[str]:
     return []
 
 
+def _has_workflow_input_manifest(contract: Mapping[str, Any] | None) -> bool:
+    if not contract:
+        return False
+    refs = contract.get("refs")
+    refs = refs if isinstance(refs, Mapping) else {}
+    return bool(_string_list(refs.get("workflow_input_manifest")))
+
+
+def _workflow_input_manifest_ref(contract: Mapping[str, Any] | None) -> str:
+    if not contract:
+        return ""
+    refs = contract.get("refs")
+    if not isinstance(refs, Mapping):
+        return ""
+    manifest_refs = _string_list(refs.get("workflow_input_manifest"))
+    return manifest_refs[0] if manifest_refs else ""
+
+
 def _drift(field: str, old: str, new: str, *, strict: bool) -> dict[str, Any]:
     return {
         "severity": "STOP" if strict else "WARN",
@@ -416,6 +488,7 @@ def _drift(field: str, old: str, new: str, *, strict: bool) -> dict[str, Any]:
 __all__ = [
     "RUN_CONTRACT_SCHEMA",
     "build_run_contract",
+    "evaluate_run_contract_submit_binding",
     "evaluate_run_contract_resume_policy",
     "load_run_contract",
     "required_delivery_artifacts",

@@ -397,6 +397,54 @@ def test_writer_worktree_applies_dependency_task_refs(tmp_path: Path):
     assert meta["dependency_refs"][0]["task_ref"] == "task/TASK-A"
 
 
+def test_writer_worktree_dependency_ref_preserves_transitive_ancestry(
+    tmp_path: Path,
+):
+    base_head = _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = manager.prepare(config.roles[0])
+    project_path = Path(plan.project_path)
+    main_branch = _git_output(tmp_path, "branch", "--show-current")
+    _git(tmp_path, "checkout", "-q", "-b", "task/TASK-B")
+    (tmp_path / "scaffold.txt").write_text("ancestor\n", encoding="utf-8")
+    _git(tmp_path, "add", "scaffold.txt")
+    _git(tmp_path, "commit", "-q", "-m", "scaffold dependency")
+    (tmp_path / "feature.txt").write_text("direct\n", encoding="utf-8")
+    _git(tmp_path, "add", "feature.txt")
+    _git(tmp_path, "commit", "-q", "-m", "direct dependency")
+    dependency_head = _git_output(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", main_branch)
+    refs_dir = state_dir / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "task-index.json").write_text(json.dumps({
+        "TASK-B": {
+            "task_id": "TASK-B",
+            "task_ref": "task/TASK-B",
+            "source_commit": dependency_head,
+        }
+    }), encoding="utf-8")
+
+    manager.sync_writer_to_source_ref(config.roles[0], source_ref_override=base_head)
+    manager.apply_dependency_task_refs(config.roles[0], ["TASK-B"])
+
+    assert (project_path / "scaffold.txt").read_text(encoding="utf-8") == "ancestor\n"
+    assert (project_path / "feature.txt").read_text(encoding="utf-8") == "direct\n"
+    assert _git_output(project_path, "merge-base", "--is-ancestor", dependency_head, "HEAD") == ""
+
+
 def test_impl_child_completed_snapshots_changed_files_to_task_ref(tmp_path: Path):
     _init_repo(tmp_path)
     state_dir = tmp_path / ".zf"
@@ -588,6 +636,58 @@ def test_writer_worktree_dependency_ref_missing_fails_closed(tmp_path: Path):
 
     with pytest.raises(RuntimeError, match="missing dependency task ref task/TASK-A"):
         manager.apply_dependency_task_refs(config.roles[0], ["TASK-A"])
+
+
+def test_writer_setup_marker_does_not_dirty_dependency_worktree(tmp_path: Path):
+    base = _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        project=ProjectConfig(
+            name="test",
+            setup_script="true",
+        ),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = manager.prepare(config.roles[0])
+    project_path = Path(plan.project_path)
+
+    _git(tmp_path, "checkout", "-q", "-b", "dependency")
+    (tmp_path / "dependency.txt").write_text("ready\n", encoding="utf-8")
+    _git(tmp_path, "add", "dependency.txt")
+    _git(tmp_path, "commit", "-q", "-m", "dependency")
+    dependency_commit = _git_output(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-q", "master")
+    _git(tmp_path, "branch", "task/TASK-A", dependency_commit)
+    refs_dir = state_dir / "refs"
+    refs_dir.mkdir()
+    (refs_dir / "task-index.json").write_text(
+        json.dumps({
+            "TASK-A": {
+                "task_ref": "task/TASK-A",
+                "source_commit": dependency_commit,
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    assert _git_output(project_path, "status", "--porcelain") == ""
+    assert (Path(plan.workdir) / ".zf-setup.done").is_file()
+    assert not (project_path / ".zf-setup.done").exists()
+
+    result = manager.apply_dependency_task_refs(config.roles[0], ["TASK-A"])
+
+    assert result["before"] == base
+    assert _git_output(project_path, "status", "--porcelain") == ""
+    assert _git_output(project_path, "show", "HEAD:dependency.txt") == "ready"
 
 
 def test_writer_worktree_sync_stashes_dirty_then_syncs(tmp_path: Path):
@@ -986,3 +1086,43 @@ def test_worktree_mode_runs_declared_setup_and_fails_closed(tmp_path: Path):
     )
     with pytest.raises(RuntimeError, match="workdir setup failed for dev2"):
         failing_manager.prepare(failing.roles[0])
+
+
+def test_reader_setup_reruns_after_checkout_adds_dependency_manifest(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    role = RoleConfig(name="verify", backend="mock", role_kind="reader")
+    config = ZfConfig(
+        project=ProjectConfig(
+            name="test",
+            setup_script=(
+                "if [ -f app/package.json ]; then touch dependencies-ready; fi"
+            ),
+        ),
+        roles=[role],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = manager.prepare(role)
+    project_path = Path(plan.project_path)
+    assert not (project_path / "dependencies-ready").exists()
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "package.json").write_text(
+        '{"name":"demo"}\n', encoding="utf-8",
+    )
+    _git(tmp_path, "add", "app/package.json")
+    _git(tmp_path, "commit", "-q", "-m", "add package manifest")
+    target = _git_output(tmp_path, "rev-parse", "HEAD")
+
+    pinned = manager.pin_reader_target(role, target)
+
+    assert pinned == target
+    assert (project_path / "dependencies-ready").exists()

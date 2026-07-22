@@ -6,6 +6,7 @@ from zf.runtime.goal_claim_set import (
     GoalClaimSetError,
     build_goal_claim_set,
     canonical_task_map_generation,
+    pin_goal_claim_set_from_task_map,
 )
 
 
@@ -93,3 +94,39 @@ def test_duplicate_explicit_goal_claim_ids_fail_closed() -> None:
             goal_id="GOAL-1",
             task_map_generation="generation-1",
         )
+
+
+def test_pin_goal_claim_set_keeps_confirmed_objective_acceptance(
+    tmp_path,
+) -> None:
+    task_map = tmp_path / "artifacts" / "task-map.json"
+    objective = tmp_path / "artifacts" / "requirements.json"
+    task_map.parent.mkdir(parents=True)
+    task_map.write_text(
+        '{"tasks":[{"task_id":"TASK-1","acceptance_criteria":["unit tests pass"]}]}',
+        encoding="utf-8",
+    )
+    objective.write_text(
+        '{"acceptance":["browser E2E passes","workflow reaches delivery"]}',
+        encoding="utf-8",
+    )
+
+    claim_set, _ = pin_goal_claim_set_from_task_map(
+        state_dir=tmp_path / ".zf",
+        project_root=tmp_path,
+        task_map_ref="artifacts/task-map.json",
+        workflow_run_id="run-1",
+        goal_id="GOAL-1",
+        task_map_generation="generation-1",
+        objective_ref="artifacts/requirements.json",
+    )
+
+    assert claim_set["source"] == (
+        "objective.acceptance+task_map.acceptance_criteria_fallback"
+    )
+    assert [claim["text"] for claim in claim_set["claims"]] == [
+        "browser E2E passes",
+        "workflow reaches delivery",
+        "unit tests pass",
+    ]
+    assert all(claim["mandatory"] for claim in claim_set["claims"])

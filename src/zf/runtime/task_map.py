@@ -98,6 +98,7 @@ def validate_task_map_payload(
     missing_allowed_path_reason: list[str] = []
     assembly_owner_roles: dict[str, str] = {}
     bundle_owner_roles: dict[str, str] = {}
+    task_dependencies: dict[str, list[str]] = {}
     quality_contract = (
         payload.get("quality_contract")
         if isinstance(payload.get("quality_contract"), dict)
@@ -146,6 +147,7 @@ def validate_task_map_payload(
         waves[task_id] = wave
         task_count_by_wave[str(wave)] = task_count_by_wave.get(str(wave), 0) + 1
         owner_role = str(raw.get("owner_role") or "").strip()
+        task_dependencies[task_id] = _string_list(raw.get("blocked_by"))
         if str(raw.get("root_owner_class") or "").strip().lower() == "assembly":
             if owner_role:
                 assembly_owner_roles[task_id] = owner_role
@@ -212,8 +214,8 @@ def validate_task_map_payload(
         [raw for raw in tasks_raw if isinstance(raw, dict)],
     ))
     errors.extend(_assembly_ownership_errors(
-        assembly_owner_roles=assembly_owner_roles,
-        bundle_owner_roles=bundle_owner_roles,
+        assembly_owner_roles=assembly_owner_roles, bundle_owner_roles=bundle_owner_roles,
+        task_dependencies=task_dependencies,
     ))
 
     summary = {
@@ -251,11 +253,10 @@ def _assembly_ownership_errors(
     *,
     assembly_owner_roles: dict[str, str],
     bundle_owner_roles: dict[str, str],
+    task_dependencies: dict[str, list[str]],
 ) -> list[str]:
-    """Fail closed on the avbs-r1 self-deadlock class: a parallel plan (>1
-    distinct bundle owner_role) with no independent assembly task, or an
-    assembly task whose owner_role collides with a bundle it depends on
-    (the assembly writer ends up waiting on its own unstarted work)."""
+    """Reject plans without independent assembly ownership or with a
+    dependency owner collision."""
     bundle_owners = set(bundle_owner_roles.values())
     if len(bundle_owners) <= 1:
         return []
@@ -263,7 +264,19 @@ def _assembly_ownership_errors(
         return ["缺 assembly 任务: 多个并行 bundle 需要一个独立 root_owner_class=assembly 任务"]
     errors: list[str] = []
     for task_id, owner_role in assembly_owner_roles.items():
-        if owner_role in bundle_owners:
+        reachable: set[str] = set()
+        pending = list(task_dependencies.get(task_id, []))
+        while pending:
+            dependency_id = pending.pop()
+            if dependency_id in reachable:
+                continue
+            reachable.add(dependency_id)
+            pending.extend(task_dependencies.get(dependency_id, []))
+        dependency_owner_roles = {
+            bundle_owner_roles[dependency_id] for dependency_id in reachable
+            if dependency_id in bundle_owner_roles
+        }
+        if owner_role in dependency_owner_roles:
             errors.append(
                 f"{task_id}.owner_role {owner_role!r} 与并行 bundle owner 冲突: "
                 "assembly 任务不能和它依赖的 bundle 共用同一 owner_role(自锁)"
@@ -505,15 +518,13 @@ def summarize_task_map_file(path: Path) -> dict[str, Any]:
 
 
 def resolve_artifact_file(raw_path: str, *, project_root: Path, state_dir: Path) -> Path:
-    candidate = Path(raw_path)
-    candidates = [candidate] if candidate.is_absolute() else [
-        project_root / candidate,
-        state_dir / candidate,
-    ]
-    for item in candidates:
-        if item.exists():
-            return item
-    return candidates[0]
+    from zf.runtime.artifact_refs import resolve_runtime_artifact_ref
+
+    return resolve_runtime_artifact_ref(
+        raw_path,
+        project_root=project_root,
+        state_dir=state_dir,
+    )
 
 
 def _task_id(raw: dict[str, Any]) -> str:

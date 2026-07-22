@@ -53,6 +53,44 @@ def _resolve_run_objective_ref(
     ).strip()
 
 
+def _resolve_candidate_ref(
+    events: list[ZfEvent],
+    *,
+    workflow_run_id: str,
+    target_commit: str,
+    payload: dict,
+) -> str:
+    explicit = str(
+        payload.get("candidate_ref") or payload.get("target_ref") or ""
+    ).strip()
+    if explicit and explicit != target_commit:
+        return explicit
+    for event in reversed(events):
+        if event.type not in {"candidate.ready", "candidate.integration.completed"}:
+            continue
+        body = event.payload if isinstance(event.payload, dict) else {}
+        event_run = str(
+            body.get("workflow_run_id")
+            or body.get("run_id")
+            or body.get("trace_id")
+            or event.correlation_id
+            or ""
+        ).strip()
+        if workflow_run_id and event_run and event_run != workflow_run_id:
+            continue
+        event_target = str(
+            body.get("candidate_head_commit") or body.get("commit") or ""
+        ).strip()
+        if target_commit and event_target != target_commit:
+            continue
+        candidate_ref = str(
+            body.get("candidate_ref") or body.get("branch") or ""
+        ).strip()
+        if candidate_ref:
+            return candidate_ref
+    return explicit or target_commit
+
+
 class GoalClosureBridgeMixin:
     """Deterministic Goal closure identity and Thin Judge input bridge."""
 
@@ -315,20 +353,16 @@ class GoalClosureBridgeMixin:
             )
 
         planning_result_ref = str(payload.get("task_map_ref") or "").strip()
-        candidate_ref = str(
-            payload.get("candidate_ref")
-            or payload.get("target_ref")
-            or identity.get("candidate_head_commit")
-            or ""
-        ).strip()
+        candidate_ref = _resolve_candidate_ref(
+            events,
+            workflow_run_id=workflow_run_id,
+            target_commit=str(identity.get("candidate_head_commit") or ""),
+            payload=payload,
+        )
         for event in reversed(events):
             body = event.payload if isinstance(event.payload, dict) else {}
             if not planning_result_ref and event.type in {"task_map.ready", "task_map.amended"}:
                 planning_result_ref = str(body.get("task_map_ref") or "").strip()
-            if not candidate_ref and event.type in {"candidate.ready", "candidate.integration.completed"}:
-                candidate_ref = str(
-                    body.get("candidate_ref") or body.get("branch") or ""
-                ).strip()
             if planning_result_ref and candidate_ref:
                 break
         from zf.core.workflow.flow_metadata import flow_metadata_for
@@ -455,26 +489,34 @@ class GoalClosureBridgeMixin:
             }
         return {}
 
-    def _pin_goal_claim_set(self, event: ZfEvent) -> None:
+    def _pin_goal_claim_set(self, event: ZfEvent) -> bool:
         """Project accepted task-map semantics into one immutable claim set."""
 
         if event.type != "task_map.ready":
-            return
+            return True
         payload = event.payload if isinstance(event.payload, dict) else {}
         task_map_ref = str(payload.get("task_map_ref") or "").strip()
         if not task_map_ref:
-            return
+            return False
         try:
             events = self.event_log.read_all()
         except Exception:
             events = []
+        if any(
+            existing.type == "goal.claim_set.pin.failed"
+            and isinstance(existing.payload, dict)
+            and str(existing.payload.get("source_event_id") or "") == event.id
+            and str(existing.payload.get("task_map_ref") or "") == task_map_ref
+            for existing in events
+        ):
+            return False
         if any(
             existing.type == "goal.claim_set.pinned"
             and isinstance(existing.payload, dict)
             and str(existing.payload.get("source_event_id") or "") == event.id
             for existing in events
         ):
-            return
+            return True
         workflow_run_id = str(
             payload.get("workflow_run_id")
             or payload.get("trace_id")
@@ -532,10 +574,11 @@ class GoalClosureBridgeMixin:
                     "workflow_run_id": workflow_run_id,
                     "goal_id": goal_id,
                     "task_map_ref": task_map_ref,
+                    "source_event_id": event.id,
                     "reason": f"{type(exc).__name__}: {exc}",
                 },
             ))
-            return
+            return False
         self.event_writer.append(ZfEvent(
             type="goal.claim_set.pinned",
             actor="zf-cli",
@@ -555,6 +598,7 @@ class GoalClosureBridgeMixin:
                 "source_event_id": event.id,
             },
         ))
+        return True
 
 
 

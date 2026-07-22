@@ -6,7 +6,7 @@ current runtime session, including yesterday's archive after lazy rotation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from zf.core.events.log import EventLog
@@ -58,10 +58,30 @@ def read_runtime_events(
 ) -> list[ZfEvent]:
     """Read the bounded current-session event window for recovery logic."""
 
-    return event_log.read_days(
-        runtime_event_window_days(
-            Path(state_dir),
-            min_days=min_days,
-            max_days=max_days,
-        )
+    now = datetime.now(timezone.utc)
+    days = runtime_event_window_days(
+        Path(state_dir),
+        min_days=min_days,
+        max_days=max_days,
+        now=now,
     )
+    cutoff = now.date() - timedelta(days=days - 1)
+    events = event_log.read_all()
+    selected: list[ZfEvent] = []
+    for event in events:
+        try:
+            event_ts = datetime.fromisoformat(
+                str(event.ts or "").replace("Z", "+00:00")
+            )
+            if event_ts.tzinfo is None:
+                event_ts = event_ts.replace(tzinfo=timezone.utc)
+            else:
+                event_ts = event_ts.astimezone(timezone.utc)
+        except (TypeError, ValueError):
+            # Legacy/malformed records remain visible to recovery rather than
+            # being silently discarded because their timestamp is unusable.
+            selected.append(event)
+            continue
+        if event_ts.date() >= cutoff:
+            selected.append(event)
+    return selected

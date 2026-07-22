@@ -27,7 +27,7 @@ metadata:
       description: Single-lane light PRD flow for small deliverables (no scan/plan fanout).
       intent: build
       backend: codex
-      roles: 3
+      roles: 4
       recommended_for: [build]
       order: 32
 spec:
@@ -36,6 +36,21 @@ spec:
   version: "1.0"
   project:
     name: prd-light-v3
+  orchestrator:
+    backend: codex
+    wake_min_interval_s: 5
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: codex
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
   goal:
     # light 入口合成 task_map 时同点补发 run.goal.started；admitted Thin
     # Judge result 经 Completion Gate 与 delivery operation 产生唯一终态。

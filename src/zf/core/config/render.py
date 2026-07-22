@@ -392,6 +392,11 @@ def renderable_config_to_primitive(config: ZfConfig) -> dict[str, Any]:
     if isinstance(safety, dict) and "tool_closure_enabled" in safety:
         enabled = safety.pop("tool_closure_enabled")
         safety["tool_closure"] = {"enabled": bool(enabled)}
+    project = data.get("project")
+    if isinstance(project, dict) and "setup_script" in project:
+        setup_script = str(project.pop("setup_script") or "").strip()
+        if setup_script:
+            project["scripts"] = {"setup": setup_script}
     roles = data.get("roles")
     if isinstance(roles, list):
         for role in roles:

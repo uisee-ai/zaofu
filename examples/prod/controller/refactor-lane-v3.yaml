@@ -29,7 +29,7 @@ metadata:
       description: Short refactor controller with per-lane verify and module parity loop.
       intent: refactor
       backend: codex
-      roles: 11
+      roles: 12
       recommended_for: [refactor]
       preferred: true
       # 33:与 prd-light(32,build 家族与 prd-fanout 相邻)错开撞号。
@@ -40,9 +40,24 @@ spec:
   version: "1.0"
   project:
     name: refactor-lane-v3
-  # 合并候选树质量门(多 lane 必配,r4 F10)。填目标项目真实命令后取消
-  # 注释;多 lane 无 gates 时 start/validate fail-closed(显式豁免:
-  # workflow.allow_unverified_candidate: true)。
+  orchestrator:
+    backend: codex
+    wake_min_interval_s: 5
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: codex
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  # refactor-controller-runtime/v3 使用 task_contract_required:planner 必须
+  # 在每个 writer task 声明 verification。以下静态配置仅作 legacy/operator
+  # fallback 示例,正常 controller 无需取消注释。
   # quality_gates:
   #   static:
   #     required_checks:

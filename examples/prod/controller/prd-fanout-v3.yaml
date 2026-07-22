@@ -22,7 +22,7 @@ metadata:
       description: Short controller PRD workflow with scan, plan, impl, verify.
       intent: build
       backend: codex
-      roles: 9
+      roles: 10
       recommended_for: [build]
       preferred: true
       order: 31
@@ -32,10 +32,24 @@ spec:
   version: "1.0"
   project:
     name: prd-fanout-v3
-  # 合并候选树质量门(多 lane 必配,r4 F10:跨 lane 偏斜只有它能拦)。
-  # 用项目真实命令替换 TODO 后取消注释;多 lane 无 gates 时
-  # `zf start`/`zf validate` 会 fail-closed 拒绝(观测型运行的显式豁免:
-  # workflow.allow_unverified_candidate: true)。
+  orchestrator:
+    backend: codex
+    wake_min_interval_s: 5
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: codex
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
+  # prod-runtime/v1 使用 task_contract_required:planner 必须在每个 writer
+  # task 声明 verification,candidate 集成树执行本轮命令。以下静态配置仅
+  # 是 legacy/operator fallback 示例,正常 controller 无需取消注释。
   # quality_gates:
   #   static:
   #     required_checks:
@@ -53,6 +67,7 @@ spec:
     # 会被 schema fail-closed 拒绝。
     kind_routes:
       prd:
+        pattern_id: prd-scan
         default_tier: standard
     dag:
       external_triggers: [prd.requested]

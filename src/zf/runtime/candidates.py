@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -22,7 +23,7 @@ from zf.core.state.locks import locked_path
 from zf.core.task.store import TaskStore
 from zf.core.verification.evidence import command_evidence
 from zf.runtime.git_capture import git_env
-from zf.runtime.worktree_env import provision_worktree_env
+from zf.runtime.worktree_env import provision_worktree_env, run_project_setup
 
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -110,6 +111,8 @@ class CandidateRebuilder:
             tasks,
             event_writer=event_writer,
         )
+        requested_tasks = list(tasks)
+        tasks = self._with_dependency_task_refs(pdd_id, tasks)
 
         branch = f"{self.config.runtime.git.candidate_branch_prefix}/{pdd_id}"
         requested_base_ref = self.config.runtime.git.candidate_base_ref
@@ -163,6 +166,7 @@ class CandidateRebuilder:
                 base_ref=base_ref,
                 strategy=strategy,
                 tasks=tasks,
+                requested_tasks=requested_tasks,
                 manifest_path=manifest_path,
                 event_writer=event_writer,
                 causation_id=integration_started.id if integration_started else (
@@ -265,14 +269,17 @@ class CandidateRebuilder:
         from ``main`` in that case drops the already validated assembly/root
         layer and produces a partial candidate. Prefer the existing candidate
         branch, then the last manifest commit, while full rebuilds keep the
-        configured base.
+        configured base. A failed/stale/conflicted candidate is never a
+        validated baseline and must be rebuilt from the configured base.
         """
         if not task_ids:
+            return ""
+        manifest = self._read_manifest(pdd_id)
+        if str(manifest.get("status") or "") != "updated":
             return ""
         branch_ref = f"refs/heads/{branch}" if branch else ""
         if branch_ref and self._git_ref_exists(branch_ref):
             return branch_ref
-        manifest = self._read_manifest(pdd_id)
         commit = str(manifest.get("commit") or "").strip()
         if commit and self._git_ref_exists(commit):
             return commit
@@ -371,6 +378,80 @@ class CandidateRebuilder:
                 approval_event_type="task.ref.updated",
             ))
         return out
+
+    def _with_dependency_task_refs(
+        self,
+        pdd_id: str,
+        tasks: list[CandidateTask],
+    ) -> list[CandidateTask]:
+        """Restore accepted task refs that are Git ancestors of this batch.
+
+        A resumed/replanned run can rotate its active event ledger while the
+        canonical task-ref index and writer branch ancestry remain intact. In
+        that case ``approved_tasks`` sees only the residual generation. A
+        candidate built from those leaf refs alone loses previously accepted
+        scaffold/core files because per-task scope filtering intentionally
+        excludes unrelated ancestor patches.
+
+        Only refs accepted by ``TaskRefManager`` for the same PDD are eligible.
+        Arbitrary worker-branch ancestors therefore remain excluded.
+        """
+        if not tasks:
+            return tasks
+        requested_ids = {task.task_id for task in tasks}
+        descendants = [task.source_commit for task in tasks]
+        dependencies: list[CandidateTask] = []
+        for task_id, entry in self._task_index().items():
+            if task_id in requested_ids or not isinstance(entry, dict):
+                continue
+            entry_pdd = str(entry.get("pdd_id") or entry.get("feature_id") or "")
+            if entry_pdd != pdd_id:
+                continue
+            task_ref = str(entry.get("task_ref") or "").strip()
+            source_commit = str(entry.get("source_commit") or "").strip()
+            if not task_ref or not source_commit:
+                continue
+            if not any(
+                source_commit != descendant
+                and self._git_is_ancestor(source_commit, descendant)
+                for descendant in descendants
+            ):
+                continue
+            dependencies.append(CandidateTask(
+                task_id=task_id,
+                task_ref=task_ref,
+                source_commit=source_commit,
+                approval_event_id=str(entry.get("trigger_event_id") or ""),
+                approval_event_type="task.ref.dependency",
+            ))
+
+        combined = [*dependencies, *tasks]
+        return sorted(combined, key=self._commit_ancestry_size)
+
+    def _git_is_ancestor(self, ancestor: str, descendant: str) -> bool:
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_env(),
+        )
+        return result.returncode == 0
+
+    def _commit_ancestry_size(self, task: CandidateTask) -> int:
+        result = subprocess.run(
+            ["git", "rev-list", "--count", task.source_commit],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_env(),
+        )
+        try:
+            return int(result.stdout.strip()) if result.returncode == 0 else 0
+        except ValueError:
+            return 0
 
     def _sync_tasks_with_latest_completions(
         self,
@@ -482,6 +563,7 @@ class CandidateRebuilder:
         base_ref: str,
         strategy: str,
         tasks: list[CandidateTask],
+        requested_tasks: list[CandidateTask] | None = None,
         manifest_path: Path,
         event_writer: EventWriter | None = None,
         causation_id: str | None = None,
@@ -489,15 +571,21 @@ class CandidateRebuilder:
     ) -> CandidateResult:
         started_at = _now()
         worktree = self._worktree_path(pdd_id)
-        requested_tasks = [asdict(task) for task in tasks]
+        requested_task_models = requested_tasks if requested_tasks is not None else tasks
+        requested_task_ids = {task.task_id for task in requested_task_models}
+        requested_task_payloads = [asdict(task) for task in requested_task_models]
+        dependency_task_payloads = [
+            asdict(task) for task in tasks if task.task_id not in requested_task_ids
+        ]
         manifest_base = {
             "pdd_id": pdd_id,
             "branch": branch,
             "base_ref": base_ref,
             "requested_base_ref": self.config.runtime.git.candidate_base_ref,
             "strategy": strategy,
-            "requested_tasks": requested_tasks,
-            "included_tasks": requested_tasks,
+            "requested_tasks": requested_task_payloads,
+            "dependency_tasks": dependency_task_payloads,
+            "included_tasks": [asdict(task) for task in tasks],
             "skipped_tasks": [],
             "started_at": started_at,
             "manifest_path": str(manifest_path),
@@ -689,6 +777,46 @@ class CandidateRebuilder:
                     event_type="candidate.quality.failed",
                     payload=payload,
                 )
+            candidate_environment = self._prepare_candidate_environment(
+                worktree=worktree,
+                commit=commit,
+            )
+            if candidate_environment["status"] == "failed":
+                quality_payload = {
+                    "status": "failed",
+                    "failure": "candidate_environment_setup_failed",
+                    "checks": [{
+                        "name": "project_setup",
+                        "passed": False,
+                        "detail": candidate_environment["detail"],
+                        "rework_owner_hint": "harness_environment",
+                    }],
+                    "gates_run": [],
+                    "gates_passed": [],
+                    "gates_failed": ["candidate_environment"],
+                    "gate_checks": {},
+                    "failure_details": {
+                        "candidate_environment": [candidate_environment["detail"]],
+                    },
+                }
+                payload = {
+                    **manifest_base,
+                    "status": "quality_failed",
+                    "base_commit": base_commit,
+                    "commit": commit,
+                    "quality_status": "failed",
+                    "quality": quality_payload,
+                    "candidate_environment": candidate_environment,
+                    "materialized_config_refs": materialized_config_refs,
+                    "rework_owner_hint": "harness_environment",
+                    "updated_at": _now(),
+                }
+                self._write_manifest(manifest_path, payload)
+                return CandidateResult(
+                    status="quality_failed",
+                    event_type="candidate.quality.failed",
+                    payload=payload,
+                )
             quality_payload = self._run_quality_gates(
                 pdd_id=pdd_id,
                 branch=branch,
@@ -735,6 +863,7 @@ class CandidateRebuilder:
                     "commit": commit,
                     "quality_status": "failed",
                     "quality": quality_payload,
+                    "candidate_environment": candidate_environment,
                     "materialized_config_refs": materialized_config_refs,
                     "updated_at": _now(),
                 }
@@ -751,6 +880,7 @@ class CandidateRebuilder:
                 "commit": commit,
                 "quality_status": quality_payload["status"],
                 "quality": quality_payload,
+                "candidate_environment": candidate_environment,
                 "materialized_config_refs": materialized_config_refs,
                 "updated_at": _now(),
             }
@@ -787,16 +917,32 @@ class CandidateRebuilder:
         causation_id: str | None,
         correlation_id: str | None,
     ) -> dict[str, Any]:
-        checks = self._quality_checks()
+        checks, gate_source = self._quality_checks(tasks)
         base_payload = {
             "pdd_id": pdd_id,
             "branch": branch,
             "commit": commit,
             "merger_worktree": str(worktree),
+            "gate_source": gate_source,
             "gate_count": len({gate for gate, _ in checks}),
             "check_count": len(checks),
         }
         if not checks:
+            if gate_source == "task_contract_missing":
+                return {
+                    **base_payload,
+                    "status": "failed",
+                    "gates_run": ["task_contract_required"],
+                    "gates_passed": [],
+                    "gates_failed": ["task_contract_required"],
+                    "gate_checks": {},
+                    "failure_details": {
+                        "task_contract_required": [
+                            "one or more candidate tasks have no executable "
+                            "contract.verification"
+                        ],
+                    },
+                }
             return {
                 **base_payload,
                 "status": "skipped",
@@ -1305,7 +1451,47 @@ class CandidateRebuilder:
             ))
         return payload
 
-    def _quality_checks(self) -> list[tuple[str, str]]:
+    def _quality_checks(
+        self,
+        tasks: list[CandidateTask],
+    ) -> tuple[list[tuple[str, str]], str]:
+        """Resolve project checks from this run before legacy config fallback.
+
+        Task contracts are plan-owned, run-scoped project facts. The config
+        remains a compatibility fallback for legacy/manual flows that do not
+        produce verification contracts; it must not impose one technology
+        stack on every generated project.
+        """
+
+        quality_source = str(getattr(
+            getattr(self.config, "workflow", None),
+            "candidate_quality_source",
+            "auto",
+        ) or "auto")
+        checks: list[tuple[str, str]] = []
+        seen_commands: set[str] = set()
+        missing_task_ids: list[str] = []
+        for candidate_task in tasks:
+            task = self.task_store.get(candidate_task.task_id)
+            command = str(
+                getattr(getattr(task, "contract", None), "verification", "")
+                or ""
+            ).strip()
+            if not command:
+                missing_task_ids.append(candidate_task.task_id)
+                continue
+            if command in seen_commands:
+                continue
+            seen_commands.add(command)
+            checks.append((f"task_contract:{candidate_task.task_id}", command))
+        if quality_source == "task_contract_required" and missing_task_ids:
+            return [], "task_contract_missing"
+        if checks:
+            return checks, "task_contract"
+
+        if quality_source == "task_contract_required":
+            return [], "task_contract_missing"
+
         checks: list[tuple[str, str]] = []
         for gate_name, gate_cfg in self.config.quality_gates.items():
             if not getattr(gate_cfg, "enabled", True):
@@ -1314,7 +1500,34 @@ class CandidateRebuilder:
                 command_text = str(command).strip()
                 if command_text:
                     checks.append((gate_name, command_text))
-        return checks
+        return checks, "zf_config_fallback" if checks else "intrinsic_only"
+
+    def _prepare_candidate_environment(
+        self,
+        *,
+        worktree: Path,
+        commit: str,
+    ) -> dict[str, Any]:
+        script = str(getattr(self.config.project, "setup_script", "") or "")
+        result = run_project_setup(
+            worktree,
+            script,
+            marker_dir=worktree.parent,
+            force=True,
+        )
+        return {
+            "schema_version": "candidate-environment.v1",
+            "status": "ready" if result.ok else "failed",
+            "candidate_commit": commit,
+            "setup_declared": bool(script.strip()),
+            "setup_script_digest": (
+                hashlib.sha256(script.encode("utf-8")).hexdigest()
+                if script.strip() else ""
+            ),
+            "setup_ran": result.ran,
+            "exit_code": result.exit_code,
+            "detail": result.detail,
+        }
 
 
     def _prepare_worktree(self, pdd_id: str, base_ref: str) -> None:
@@ -1533,7 +1746,36 @@ class CandidateRebuilder:
         if not commits:
             return declared_files
         commit_files = [self._commit_files(commit) for commit in commits]
-        return _expand_package_scope_closure(declared_files, commit_files)
+        detected_package_roots = {
+            str(Path(path).parent)
+            for files in commit_files
+            for path in files
+            if Path(path).name == "package.json" and str(Path(path).parent) != "."
+        }
+        present_package_roots = {
+            root
+            for root in detected_package_roots
+            if self._git_path_exists(
+                task.source_commit,
+                f"{root}/package.json",
+            )
+        }
+        return _expand_package_scope_closure(
+            declared_files,
+            commit_files,
+            package_roots=present_package_roots,
+        )
+
+    def _git_path_exists(self, commit: str, path: str) -> bool:
+        result = subprocess.run(
+            ["git", "cat-file", "-e", f"{commit}:{path}"],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_env(),
+        )
+        return result.returncode == 0
 
     def _candidate_closure_check(
         self,
@@ -1812,7 +2054,19 @@ class CandidateRebuilder:
         if staged.returncode == 0:
             return "skipped"
         message = self._git(self.project_root, "log", "-1", "--format=%s", commit)
-        self._git(worktree, "commit", "-q", "-m", message)
+        result = subprocess.run(
+            ["git", "commit", "-q", "-m", message],
+            cwd=worktree,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_env(allow_large_commit=True),
+        )
+        if result.returncode != 0:
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(
+                f"git commit -q -m {message} failed in {worktree}: {detail}"
+            )
         return "applied"
 
     def _paths_existing_at_commit(self, commit: str, paths: list[str]) -> set[str]:
@@ -1836,7 +2090,7 @@ class CandidateRebuilder:
             capture_output=True,
             text=True,
             check=False,
-            env=git_env(),
+            env=git_env(allow_large_commit=True),
         )
         if result.returncode == 0:
             return "applied"
@@ -2009,6 +2263,8 @@ def _matching_commit_paths(commit_files: set[str], declared_files: set[str]) -> 
 def _expand_package_scope_closure(
     declared_files: set[str],
     commit_file_sets: list[set[str]],
+    *,
+    package_roots: set[str] | None = None,
 ) -> set[str]:
     """Keep workspace package roots whole when a scoped task creates packages.
 
@@ -2026,6 +2282,12 @@ def _expand_package_scope_closure(
         for path in scope
         if (root := _workspace_package_root(path))
     }
+    package_roots = package_roots or set()
+    roots.update(
+        root
+        for root in package_roots
+        if any(path == root or path.startswith(f"{root}/") for path in scope)
+    )
     scope.update(roots)
     changed = True
     while changed:

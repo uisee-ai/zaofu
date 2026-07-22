@@ -43,8 +43,16 @@ class TestLivenessOriginFirst:
                 self.state_dir = state_dir  # registry 文件不存在 → 走 events
                 self.project_root = state_dir
                 class _Log:
-                    def __init__(s, evs): s._evs = evs
-                    def read_days(s, n): return list(s._evs)
+                    def __init__(s, evs):
+                        s._evs = evs
+                        s.read_all_calls = 0
+
+                    def read_all(s):
+                        s.read_all_calls += 1
+                        return list(s._evs)
+
+                    def read_days(s, n):
+                        raise AssertionError("liveness must use append-fold read_all")
                 self.event_log = _Log(evs)
             def _event_epoch(self, event):
                 return float(event.payload.get("epoch", 0))

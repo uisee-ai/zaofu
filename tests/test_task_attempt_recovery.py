@@ -82,6 +82,33 @@ def test_recent_open_attempt_stays_quiet(tmp_path: Path) -> None:
     ) == []
 
 
+def test_recent_provider_activity_takes_precedence_over_old_heartbeat(
+    tmp_path: Path,
+) -> None:
+    projections = _write_attempts(tmp_path, {
+        "TASK-1": {
+            "latest_state": "running",
+            "current_owner": "dev-lane-1",
+            "attempts": [{
+                "attempt_key": "attempt-1",
+                "state": "running",
+                "role": "dev-lane-1",
+                "started_ts": "2026-07-06T20:00:00+00:00",
+                "last_heartbeat_ts": "2026-07-06T20:05:00+00:00",
+                "last_activity_ts": "2026-07-06T20:35:00+00:00",
+                "source_event_id": "evt-start",
+                "terminal": None,
+            }],
+        },
+    })
+
+    assert pending_task_attempt_recovery_actions(
+        projections,
+        now=datetime(2026, 7, 6, 20, 40, tzinfo=timezone.utc),
+        lease_grace_s=900,
+    ) == []
+
+
 def test_retryable_failed_attempt_routes_to_diagnosis(tmp_path: Path) -> None:
     projections = _write_attempts(tmp_path, {
         "TASK-2": {

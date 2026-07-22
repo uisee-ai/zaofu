@@ -302,6 +302,11 @@ class TmuxSession:
                 _time.sleep(submit_delay_s)
             self._run(["tmux", "send-keys", "-t", target, submit_key])
 
+    def clear_input(self, window: str) -> None:
+        """Clear an unsubmitted provider draft without submitting it."""
+        target = self._target(window)
+        self._run(["tmux", "send-keys", "-t", target, "C-u"])
+
     def capture_pane(self, window: str, *, lines: int = 3000) -> str:
         target = self._target(window)
         result = self._run(

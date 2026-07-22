@@ -17,7 +17,7 @@ scripted worker outputs, in seconds, no tmux, no LLM:
     -> verify fanout -> test.passed -> judge fanout -> judge.passed
 
 plus the self-healing loops the runs depend on:
-  integration.failed xN -> bounded rework retriggers -> human.escalate
+  integration.failed xN -> bounded rework -> Orchestrator triage -> human.escalate
     -> spurious fresh task_map.ready is QUARANTINED (R22 no-livelock fix)
     -> operator-authorized task_map.ready re-arms
   autoresearch repair.dispatch_requested -> dispatch consumer -> dispatched
@@ -43,6 +43,7 @@ from zf.core.config.schema import (
     WorkflowAffinityLaneProfileConfig,
     WorkflowConfig,
     WorkflowStageConfig,
+    WorkflowStrictTriggersConfig,
     ZfConfig,
 )
 from zf.core.events.log import EventLog
@@ -210,8 +211,20 @@ def _config(state_dir: Path) -> ZfConfig:
             _reader("review-1"), _reader("review-2"),
             _reader("verify-1"), _reader("verify-2"),
             _reader("judge-1"),
+            RoleConfig(
+                name="orchestrator",
+                instance_id="orchestrator",
+                backend="mock",
+                role_kind="reader",
+                triggers=["orchestrator.rework.triage.requested"],
+                publishes=["orchestrator.rework.triage.recorded"],
+            ),
         ],
-        workflow=WorkflowConfig(stages=stages, affinity_lanes={"cj-2": lanes}),
+        workflow=WorkflowConfig(
+            stages=stages,
+            affinity_lanes={"cj-2": lanes},
+            strict_triggers=WorkflowStrictTriggersConfig(rework_attempts_gte=2),
+        ),
         runtime=RuntimeConfig(
             workdirs=WorkdirConfig(enabled=True, mode="worktree"),
             git=GitIsolationConfig(candidate_base_ref="main"),
@@ -434,9 +447,11 @@ def _write_task_map(state_dir: Path) -> str:
 
 
 def test_rework_cap_escalates_then_quarantines_spurious_taskmap(tmp_path: Path):
-    """R22 loop, deterministically: integration.failed xN -> bounded retriggers
-    -> human.escalate -> a spurious fresh task_map.ready must be quarantined
-    (no impl re-arm) until an operator-authorized task_map.ready lifts it."""
+    """R22 loop: capped integration recovery is triaged before escalation.
+
+    A spurious fresh task_map.ready must then be quarantined (no impl re-arm)
+    until an operator-authorized task_map.ready lifts it.
+    """
     state_dir, log, transport, orch = _state(tmp_path)
     task_map_ref = _write_task_map(state_dir)
     writer = orch.event_writer
@@ -456,17 +471,53 @@ def test_rework_cap_escalates_then_quarantines_spurious_taskmap(tmp_path: Path):
             payload={"pdd_id": PDD, "reason": "timeout", "status": "failed"},
         ))
 
-    # attempt 1 + 2: bounded retriggers carrying rework lineage
+    # attempt 1 + 2: bounded recoveries carrying canonical rework lineage.
+    # Once an implementation fanout exists, integration-only recovery avoids
+    # reopening completed writers and records workflow.resume.applied instead.
     for expected_attempt in (1, 2):
         fail_integration()
         orch._run_candidate_rework_sweep()
-        retrig = _last_of(log, "task_map.ready")
+        recoveries = [
+            event for event in _events(log)
+            if event.type in {"task_map.ready", "workflow.resume.applied"}
+            and event.payload.get("rework_of")
+        ]
+        retrig = recoveries[-1]
         assert retrig.payload.get("rework_attempt") == expected_attempt
         assert retrig.payload.get("rework_of")
 
-    # attempt 3: cap reached -> escalate + owner-visible, no new retrigger
+    # attempt 3: the no-progress breaker receives the first bounded operation.
     fail_integration()
     orch._run_candidate_rework_sweep()
+    _last_of(log, "run.manager.autoresearch.requested")
+
+    # Candidate exhaustion is not a direct human decision. Wait for the
+    # explicit Orchestrator advisory request, then return a human recommendation.
+    requests: list[ZfEvent] = []
+    for _ in range(5):
+        orch._run_candidate_rework_sweep()
+        requests = [
+            event for event in _events(log)
+            if event.type == "orchestrator.rework.triage.requested"
+        ]
+        if requests:
+            break
+    assert requests, "candidate cap must request semantic triage"
+    request = requests[-1]
+    writer.append(ZfEvent(
+        type="orchestrator.rework.triage.recorded",
+        actor="orchestrator",
+        correlation_id=request.correlation_id,
+        payload={
+            "request_id": request.payload["request_id"],
+            "recommended_action": "human",
+            "guidance": "integration recovery remained unsatisfied",
+        },
+    ))
+    for _ in range(5):
+        orch._run_candidate_rework_sweep()
+        if any(event.type == "human.escalate" for event in _events(log)):
+            break
     _last_of(log, "human.escalate")
     _last_of(log, "owner.visible_message.requested")
 

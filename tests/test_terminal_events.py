@@ -112,3 +112,32 @@ def test_goal_closure_compat_judge_is_not_authoritative_terminal() -> None:
 
     assert is_successful_run_terminal(compat) is False
     assert latest_quiescent_run_terminal([compat], run_id="run-compat") is None
+
+
+def test_late_writer_result_with_stale_audit_does_not_reopen_terminal() -> None:
+    terminal = ZfEvent(
+        id="goal-done",
+        type="run.goal.completed",
+        correlation_id="run-1",
+        payload={"workflow_run_id": "run-1"},
+    )
+    late = ZfEvent(
+        id="late-result",
+        type="dev.build.done",
+        correlation_id="run-1",
+        payload={"workflow_run_id": "run-1", "fanout_id": "fanout-old"},
+    )
+    stale = ZfEvent(
+        type="fanout.child.stale_completion",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "result_event_id": late.id,
+            "reason": "run_terminal",
+        },
+    )
+
+    assert latest_quiescent_run_terminal(
+        [terminal, late, stale],
+        run_id="run-1",
+    ) is terminal

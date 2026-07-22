@@ -43,6 +43,15 @@ def _plan_stage(success: str, failure: str):
     )
 
 
+def _failure_stage(stage_id: str, failure: str):
+    return SimpleNamespace(
+        id=stage_id,
+        success_event="",
+        failure_event="",
+        aggregate=SimpleNamespace(success_event="", failure_event=failure),
+    )
+
+
 def test_bad_task_map_emits_upstream_failure(tmp_path: Path) -> None:
     probe = _Probe(tmp_path, [_plan_stage("task_map.ready", "prd.plan.failed")])
     trigger = ZfEvent(type="task_map.ready", payload={"task_map_ref": "docs/p.md"})
@@ -97,6 +106,42 @@ def test_plan_admission_failure_emits_canonical_failure_before_raw_cancel(
     assert cancelled.payload["canonical_failure_event_id"] == failure.id
 
 
+def test_gap_task_admission_failure_routes_back_to_discovery(
+    tmp_path: Path,
+) -> None:
+    probe = _Probe(tmp_path, [
+        _plan_stage("task_map.ready", "prd.plan.failed"),
+        _failure_stage("prd-post-verify-discovery", "flow.discovery.failed"),
+    ])
+    trigger = ZfEvent(
+        type="task_map.ready",
+        payload={
+            "task_map_ref": "artifacts/gaps/task_map.json",
+            "resume_scope": "gap_tasks_only",
+            "gap_event_type": "flow.gap_plan.ready",
+            "gap_plan_ref": "artifacts/gaps/plan.json",
+        },
+    )
+
+    emit_plan_admission_cancel(
+        probe,
+        trigger_event=trigger,
+        stage_id="impl",
+        trace_id="trace-gap",
+        pdd_id="PRD-GAP",
+        feature_id="PRD-GAP",
+        task_map_ref="artifacts/gaps/task_map.json",
+        reason="overlapping allowed paths 'app/src/render/scene.ts'",
+    )
+
+    failure, cancelled = probe.event_log.read_all()
+    assert failure.type == "flow.discovery.failed"
+    assert failure.payload["stage_id"] == "prd-post-verify-discovery"
+    assert failure.payload["gap_event_type"] == "flow.gap_plan.ready"
+    assert failure.payload["resume_scope"] == "gap_tasks_only"
+    assert cancelled.payload["gap_plan_ref"] == "artifacts/gaps/plan.json"
+
+
 def test_no_upstream_stage_no_emit(tmp_path: Path) -> None:
     probe = _Probe(tmp_path, [_plan_stage("other.event", "other.failed")])
     emit_upstream_failure_for_bad_task_map(
@@ -112,7 +157,8 @@ def test_plan_briefing_contract_lines_exist() -> None:
     plan briefing 指南必须出现 JSON task map 强制条款(源码级断言,
     防止模板回退到只讲 markdown 的旧文案)。"""
     source = _fanout_runtime_source()
-    assert "you MUST also" in source and "task_map.json" in source
+    assert "workdir-relative path" in source and "task_map.json" in source
+    assert "EXACT absolute path" not in source
     assert "task_map_ref_prefill" in source  # 预填走变量,不再是硬编码空串
 
 

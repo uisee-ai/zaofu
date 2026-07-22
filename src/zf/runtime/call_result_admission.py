@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -585,6 +586,42 @@ class CallResultAdmissionService:
                     "message": ref,
                 })
 
+        latest_claim_pin = None
+        for candidate in reversed(events):
+            if candidate.type != "goal.claim_set.pinned":
+                continue
+            body = candidate.payload if isinstance(candidate.payload, dict) else {}
+            if (
+                str(body.get("workflow_run_id") or "") == workflow_run_id
+                and str(body.get("goal_id") or "")
+                == str(result.get("goal_id") or "")
+            ):
+                latest_claim_pin = body
+                break
+        if latest_claim_pin is not None:
+            pin_bindings = {
+                "task_map_generation": "task_map_generation",
+                "goal_claim_set_ref": "goal_claim_set_ref",
+                "goal_claim_set_digest": "goal_claim_set_digest",
+            }
+            for result_key, pin_key in pin_bindings.items():
+                expected = str(latest_claim_pin.get(pin_key) or "")
+                actual = str(result.get(result_key) or "")
+                matches = (
+                    same_task_map_generation(actual, expected)
+                    if result_key == "task_map_generation"
+                    else actual == expected
+                )
+                if expected and not matches:
+                    issues.append({
+                        "field": f"control_result.{result_key}",
+                        "code": "stale_closure_identity",
+                        "message": (
+                            "latest pinned Goal claim set expects "
+                            f"{expected}, got {actual}"
+                        ),
+                    })
+
         from zf.runtime.waivers import active_waivers
 
         coverage = result.get("goal_coverage")
@@ -841,6 +878,12 @@ def dispatch_call_result_correction(
     ), None)
     if role is None:
         return False
+    _wait_for_source_turn_stop(
+        runtime,
+        source_event=source_event,
+        actor=actor,
+        backend=str(getattr(role, "backend", "") or ""),
+    )
     task_id = str(source_event.task_id or payload.get("task_id") or "")
     briefing_dir = Path(runtime.state_dir) / "briefings"
     briefing_dir.mkdir(parents=True, exist_ok=True)
@@ -873,6 +916,55 @@ def dispatch_call_result_correction(
     )
     runtime._send_transport_task(role.instance_id, path, prompt, context)
     return True
+
+
+def _wait_for_source_turn_stop(
+    runtime: Any,
+    *,
+    source_event: ZfEvent,
+    actor: str,
+    backend: str,
+    timeout_seconds: float = 30.0,
+    poll_interval: float = 0.1,
+) -> bool:
+    """Avoid submitting a correction while the source provider turn is active.
+
+    Terminal results are emitted from a provider tool call, before the TUI's
+    stop hook and input loop settle. Sending the correction immediately can
+    paste its text while dropping Enter. Other backends and synthetic tests do
+    not expose a per-turn stop hook, so they keep the existing fast path.
+    """
+
+    stop_type = {
+        "codex": "codex.hook.stop",
+        "claude-code": "claude.hook.stop",
+    }.get(backend)
+    event_log = getattr(runtime, "event_log", None)
+    if not stop_type or event_log is None:
+        return True
+
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    source_seen = False
+    while True:
+        try:
+            events = event_log.read_all()
+        except Exception:
+            return False
+        for event in events:
+            if event.id == source_event.id:
+                source_seen = True
+                continue
+            if (
+                source_seen
+                and event.type == stop_type
+                and str(event.actor or "") == actor
+            ):
+                return True
+        if not source_seen:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(max(0.01, poll_interval))
 
 
 def _semantic_verdict(control_result: Mapping[str, Any]) -> str:

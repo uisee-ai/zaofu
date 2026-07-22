@@ -157,6 +157,44 @@ def materialize_flow_assets(
     }
 
 
+def materialize_config_skills(
+    config_path: str | Path,
+    target_root: str | Path,
+) -> dict:
+    """Vendor the enabled skill closure for a dynamically generated config.
+
+    Flow drafts are commonly created from a short-lived Git worktree. Keeping
+    that checkout in ``skill_sources`` makes the generated project impossible
+    to resume after worktree cleanup, so project init owns this materialization
+    boundary just like profile bootstrap does.
+    """
+
+    cfg_path = Path(config_path).resolve()
+    root = Path(target_root).resolve()
+    config = load_config(cfg_path)
+    required = {
+        str(skill)
+        for role in config.roles
+        for skill in list(getattr(role, "skills", []) or [])
+        if str(skill).strip()
+    }
+    copied = _copy_flow_skills(cfg_path, cfg_path, root)
+    copied_names = {Path(path).name for path in copied}
+    missing = sorted(required - copied_names)
+    if missing:
+        raise FileNotFoundError(
+            "could not materialize enabled project skill(s): "
+            + ", ".join(missing)
+        )
+    rewrote = False
+    if copied:
+        rewrote = _rewrite_config_skill_sources_to_local(cfg_path)
+    return {
+        "skills": copied,
+        "rewrote_skill_sources": rewrote,
+    }
+
+
 def _copy_flow_profile_sources(
     source_path: Path,
     config_path: Path,
@@ -238,6 +276,37 @@ def _rewrite_flow_skill_sources_to_local(config_path: Path) -> bool:
     return changed
 
 
+def _rewrite_config_skill_sources_to_local(config_path: Path) -> bool:
+    try:
+        docs = list(yaml.safe_load_all(config_path.read_text(encoding="utf-8")))
+    except yaml.YAMLError:
+        return False
+    changed = False
+    for doc in docs:
+        if not isinstance(doc, dict) or str(doc.get("kind") or "") not in {
+            "ZfConfig",
+            "ConfigProfile",
+        }:
+            continue
+        spec = doc.get("spec") or {}
+        sources = spec.get("skill_sources") if isinstance(spec, dict) else None
+        if not isinstance(sources, list):
+            continue
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            raw_path = str(source.get("path") or "").strip()
+            if raw_path and raw_path != "skills":
+                source["path"] = "skills"
+                changed = True
+    if changed:
+        config_path.write_text(
+            yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+    return changed
+
+
 def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -> list[str]:
     try:
         config = load_config(config_path)
@@ -259,6 +328,8 @@ def _copy_flow_skills(source_path: Path, config_path: Path, target_root: Path) -
         if not raw:
             continue
         root = Path(raw).expanduser()
+        if not root.is_absolute():
+            root = config_path.parent / root
         if root.is_dir():
             source_roots.append(root.resolve())
     # bundle 直挂的裸 yoke 方法论技能(2026-07-08 agent-skills 退役后)

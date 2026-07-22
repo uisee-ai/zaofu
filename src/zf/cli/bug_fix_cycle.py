@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 from zf.core.events.log import EventLog
+from zf.core.package_source import installed_local_source_root
 
 
 _DEFAULT_STATE_DIR = ".zf"
@@ -60,6 +61,9 @@ def _zaofu_checkout_hint() -> str:
     candidate = Path(__file__).resolve().parents[3]
     if (candidate / "pyproject.toml").exists():
         return str(candidate)
+    installed_root = installed_local_source_root()
+    if installed_root is not None and (installed_root / "pyproject.toml").is_file():
+        return str(installed_root)
     return "<zaofu-checkout>"
 
 

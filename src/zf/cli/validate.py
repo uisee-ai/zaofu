@@ -170,7 +170,14 @@ def run(args: argparse.Namespace) -> int:
         print("Combined candidate gate check:", file=sys.stderr)
         print(f"  - FAIL: {candidate_gate_gap}", file=sys.stderr)
         return 1
-    if fanout_writer_stages and not getattr(config, "quality_gates", None):
+    candidate_quality_source = str(getattr(
+        config.workflow, "candidate_quality_source", "auto",
+    ) or "auto")
+    if (
+        fanout_writer_stages
+        and not getattr(config, "quality_gates", None)
+        and candidate_quality_source != "task_contract_required"
+    ):
         # FIX-10(bizsim r4 F10):多任务写入型 workflow 没配 quality_gates,
         # candidate 合成树不经任何验证即发 candidate.ready——r4 churn 期
         # candidate typecheck 断裂而 judge 照审坏树。观测型运行合法,WARN。

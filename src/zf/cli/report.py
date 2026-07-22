@@ -8,6 +8,12 @@ from pathlib import Path
 
 from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
+from zf.runtime.goal_dossier import (
+    GoalDossierError,
+    build_goal_dossier,
+    write_goal_dossier_markdown,
+    write_goal_dossier_projection,
+)
 from zf.runtime.hermes_run_report import write_hermes_run_report
 from zf.runtime.run_closeout_report import write_run_closeout_report
 
@@ -24,6 +30,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     closeout.add_argument("--out", type=Path, required=True)
     closeout.add_argument("--title", default="Run Closeout")
     closeout.set_defaults(func=run_closeout)
+
+    dossier = sub.add_parser(
+        "goal-dossier",
+        help="Generate a run-scoped Goal Dossier projection and markdown report",
+    )
+    dossier.add_argument("--state-dir", type=str, default=None)
+    dossier.add_argument("--run-id", required=True)
+    dossier.add_argument("--out", type=Path, required=True)
+    dossier.set_defaults(func=run_goal_dossier)
 
     hermes = sub.add_parser(
         "hermes-run",
@@ -66,6 +81,25 @@ def run_hermes_run(args: argparse.Namespace) -> int:
         title=args.title,
     )
     print(str(out))
+    return 0
+
+
+def run_goal_dossier(args: argparse.Namespace) -> int:
+    state_dir = _state_dir(args)
+    if state_dir is None:
+        return 2
+    if not (state_dir / "events.jsonl").exists():
+        print(f"error: events.jsonl not found under {state_dir}", file=sys.stderr)
+        return 2
+    try:
+        dossier = build_goal_dossier(state_dir, args.run_id)
+        projection = write_goal_dossier_projection(state_dir, dossier)
+        report = write_goal_dossier_markdown(args.out, dossier)
+    except GoalDossierError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    print(f"projection: {projection}")
+    print(f"report: {report}")
     return 0
 
 

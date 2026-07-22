@@ -1,14 +1,15 @@
 ---
 name: zf-backlog-batch-closeout
-description: "ZaoFu backlog/task batch closeout workflow for Codex or Claude. Use when the user asks to implement approved backlogs, finish a backlog batch, check whether a batch is done, commit completed backlog work, or archive completed tasks according to AGENTS.md/CLAUDE.md. Moves approved backlog candidates into tasks, verifies implementation, commits without pushing, then records the implementation commit hash before archiving done tasks."
+description: "ZaoFu backlog/task batch closeout workflow for Codex or Claude. Use when the user asks to implement approved backlogs, finish a backlog batch, check whether a batch is done, commit completed backlog work, or archive completed tasks according to AGENTS.md/CLAUDE.md. Moves approved backlog candidates into tasks, verifies implementation, commits without pushing, records the implementation commit before archiving done tasks, and produces a clean worktree handoff for later merge."
 ---
 
 # ZaoFu Backlog Batch Closeout
 
 ## Objective
 
-Turn an approved backlog batch into verified code, local commits, and archived
-`tasks/` records without pushing or sweeping unrelated work into history.
+Turn an approved backlog batch into verified code, local commits, archived
+`tasks/` records, and an auditable merge-ready worktree handoff without pushing
+or sweeping unrelated work into history.
 
 Default repository-facing output is Chinese unless the user asks otherwise.
 
@@ -34,6 +35,7 @@ backlogs/<item>.md   --approval--> tasks/active/<item>.md
 implementation       --verify-->   implementation commit
 tasks/active/<item>.md --hash-->    tasks/done/<item>.md
 archive metadata     --commit-->   archive commit
+worktree             --audit-->    merge-ready handoff
 ```
 
 Two commits are preferred because `done` task records require the short hash
@@ -77,26 +79,51 @@ commit.
      be recorded with the implementation;
    - commit with a conventional prefix;
    - do not push.
-6. Archive:
+6. Implementation completeness audit:
+   - run `git status --short --untracked-files=all` after the implementation
+     commit;
+   - classify every residual path as approved-task work, unrelated pre-existing
+     work, generated/runtime output, or a follow-up task;
+   - if approved-task work remains, do not archive the task as done: finish and
+     verify it, or report the exact blocker;
+   - never make a dirty worktree appear clean with broad staging, destructive
+     reset, or deletion.
+7. Archive:
    - get `git log -1 --oneline`;
    - update each completed task's first paragraph to `> 状态: done`;
    - include the short hash + commit title and a concise verification summary;
    - move completed files to `tasks/done/` with `git mv`.
-7. Archive commit:
+8. Archive commit:
    - stage only task archive files;
    - commit with `docs:` or `chore:` as appropriate;
    - do not push.
-8. Report:
+9. Prepare the merge handoff:
+   - capture `worktree` with `git rev-parse --show-toplevel`, `branch` with
+     `git branch --show-current`, and `source_head` with `git rev-parse HEAD`;
+   - run `git status --short --untracked-files=all` again after the archive
+     commit;
+   - for a `wip/*` branch, set `merge_ready=true` only when the worktree is
+     clean; otherwise set `merge_ready=false`, list every residual path, and
+     leave the worktree and branch intact;
+   - for a direct commit on `dev`, report `merge_ready=not_applicable`;
+   - once a worktree is declared merge-ready, freeze it. Any later write
+     invalidates the handoff and requires this audit again;
+   - do not remove the worktree here. Final merge and cleanup belong to
+     `zf-harness-commit-push` running from the designated `dev` merge-owner
+     checkout.
+10. Report:
    - implementation commit, archive commit, and branch;
    - task files moved to `tasks/done/`;
    - verification commands and outcomes;
-   - unrelated dirty files left untouched;
+   - worktree, source HEAD, merge-ready status, and every residual path;
    - any items intentionally deferred.
 
 ## Safety Rules
 
 - Never use `git add -A` or `git add .`.
 - Never use `git commit --amend`, `git commit --no-verify`, or force push.
+- Never remove a worktree or delete its branch from this skill. A local commit
+  is not proof that the branch has landed on `dev`.
 - Do not mark a task done if acceptance criteria are not verified.
 - Do not hide failed verification. Either fix, defer with a concrete trigger,
   or ask the user to decide.
@@ -142,7 +169,10 @@ Use a concise Chinese closeout:
 归档 commit: <sha> <title>
 归档任务: tasks/done/<file>, ...
 验证: <command> -> pass
-未纳入: <unrelated files or none>
+worktree: <path>
+branch/source_head: <branch> / <sha>
+merge_ready: <true|false|not_applicable>
+残留: <none or classified paths>
 未 push。
 ```
 

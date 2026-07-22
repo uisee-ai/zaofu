@@ -51,6 +51,10 @@ EXTERNAL_EVENTS: frozenset[str] = frozenset({
     # Orchestrator-internal
     "orchestrator.dispatch_failed", "orchestrator.dispatch_skipped",
     "orchestrator.round.complete", "orchestrator.idle",
+    # Product Flow Layer 2 exception bridge: Run Manager / Kernel produces the
+    # triage request and consumes the proposal record outside the role graph.
+    "orchestrator.rework.triage.requested",
+    "orchestrator.rework.triage.recorded",
     # LH-3 Tri-State (suspended is published by review/test but the
     # clarification.needed flow is initiated by arch, so list here)
     "clarification.needed",

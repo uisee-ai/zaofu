@@ -350,9 +350,8 @@ class EventReactorMixin(DurableCallWorkflowMixin):
     def _register_goal_rescan_handlers(self, registry) -> None:
         """B2(G1 消费侧):rescan → lane 微环 continuation,不新起 fanout。"""
         try:
-            from zf.runtime.lane_micro_loop import micro_loop_enabled
-
-            if not micro_loop_enabled(self.config):
+            goal = getattr(self.config, "goal", None)
+            if not bool(getattr(goal, "enabled", False)):
                 return
             registry.register(
                 "goal.rescan.requested",
@@ -1166,8 +1165,19 @@ class EventReactorMixin(DurableCallWorkflowMixin):
         try:
             from zf.runtime.completion_honesty import unverified_completion_claims
 
+            honesty_payload = dict(payload)
+            actor = str(event.actor or "").strip()
+            role_instances = {
+                str(role.instance_id or "") for role in self.config.roles
+            }
+            if not honesty_payload.get("workdir") and actor in role_instances:
+                actor_workdir = self.state_dir / "workdirs" / actor / "project"
+                if actor_workdir.is_dir():
+                    honesty_payload["workdir"] = str(actor_workdir)
             problems = unverified_completion_claims(
-                payload, project_root=self.project_root,
+                honesty_payload,
+                project_root=self.project_root,
+                state_dir=self.state_dir,
             )
         except Exception:
             return
@@ -4546,6 +4556,27 @@ class EventReactorMixin(DurableCallWorkflowMixin):
         if task and task.status == "in_progress":
             self._move_task(event.task_id, "blocked")
             reason = event.payload.get("reason") if event.payload else None
+            from zf.runtime.rework_triage import (
+                is_plan_level_task_contract_blocker,
+            )
+
+            if is_plan_level_task_contract_blocker(event):
+                if task.assigned_to:
+                    self._set_worker_state(
+                        task.assigned_to,
+                        "blocked",
+                        task_id=event.task_id or "",
+                        reason=(
+                            f"dev.blocked on {event.task_id}; awaiting "
+                            "candidate replan"
+                        ),
+                    )
+                return OrchestratorDecision(
+                    action="block",
+                    task_id=event.task_id,
+                    role="planner",
+                    reason="dev.blocked → plan-level candidate replan",
+                )
             escalate_reason = (
                 f"dev blocked on {event.task_id}: {reason}"
                 if reason
@@ -5308,6 +5339,17 @@ class EventReactorMixin(DurableCallWorkflowMixin):
         task = self.task_store.get(task_id) if task_id else None
         if task is not None and task.status in ("done", "cancelled", "blocked"):
             return None
+        source = str(payload.get("source") or "")
+        if source != "dispatch_sweep":
+            return OrchestratorDecision(
+                action="wait",
+                task_id=task_id,
+                target_role=str(payload.get("assignee") or ""),
+                reason=(
+                    "in-flight dispatch inactivity is recovery evidence; "
+                    "do not enqueue a second prompt"
+                ),
+            )
         self._dispatch_ready()
         return OrchestratorDecision(
             action="redispatch",

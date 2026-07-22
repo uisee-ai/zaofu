@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.loader import load_config, validate_config
 from zf.core.config.schema import (
     ZfConfig,
@@ -17,6 +19,7 @@ from zf.core.config.schema import (
     AutopilotScheduleConfig,
     IntegrationsConfig,
     OpenClawFeishuBridgeConfig,
+    WorkflowConfig,
 )
 
 
@@ -109,6 +112,20 @@ def test_zf_config_has_quality_gates():
 def test_zf_config_quality_gates_default_empty():
     cfg = ZfConfig()
     assert cfg.quality_gates == {}
+
+
+def test_workflow_candidate_quality_source_is_validated():
+    assert WorkflowConfig().candidate_quality_source == "auto"
+    assert WorkflowConfig(
+        candidate_quality_source="task_contract_required",
+    ).candidate_quality_source == "task_contract_required"
+    with pytest.raises(ValueError, match="candidate_quality_source"):
+        WorkflowConfig(candidate_quality_source="static_magic")
+    with pytest.raises(ValueError, match="allow_unverified_candidate"):
+        WorkflowConfig(
+            candidate_quality_source="task_contract_required",
+            allow_unverified_candidate=True,
+        )
 
 
 def test_role_config_has_triggers_and_publishes():

@@ -111,9 +111,14 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "run.manager.human_decision.applied",
     "run.manager.action.applied",
     "run.manager.action.failed",
+    "run.manager.action.effect.pending",
+    "run.manager.action.effect.passed",
+    "run.manager.action.effect.failed",
     # Completion is also a task/candidate settlement edge and may arrive after
     # an external delivery action or replay.
     "run.goal.completed",
+    "fanout.cancelled",
+    "flow.discovery.failed",
     "task.done.blocked",
     "orchestrator.evidence_rework.requested",
     # G-LIFE-3: stuck detector emits when a worker's pane output stops
@@ -134,10 +139,8 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "worker.recycling",
     "worker.recycled",
     "worker.recycle.failed",
-    # G-WIRE-1/2/3: scope + drift + refresh observation events
+    # G-WIRE-1: scope violations require immediate policy handling.
     "scope.violation",
-    "worker.drift.detected",
-    "worker.refresh.triggered",
     # G-GAN-1: GAN loop lifecycle
     # G-COST-BLOCK-1: hard budget block
     "cost.budget.exceeded",
@@ -153,6 +156,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # α-3 sweep would see stale data and falsely escalate workers as
     # silent / stuck.
     "worker.heartbeat",
+    "worker.launch_artifact.written",
     # 2026-06-01: channel reactor handlers (orchestrator_reactor._on_channel_*)
     # require wake events. Without these, the handlers are registered but
     # EventWatcher never pushes the event into run_once(), so raw
@@ -401,6 +405,10 @@ def compute_effective_wake_patterns(config) -> set[str]:
         if trigger:
             result.add(trigger)
 
+    goal = getattr(config, "goal", None)
+    if bool(getattr(goal, "enabled", False)):
+        result.add("goal.rescan.requested")
+
     ext = getattr(workflow, "wake_extensions", None)
     if ext is None:
         return result
@@ -479,6 +487,10 @@ BATCH_PROCESSED_EVENTS: frozenset[str] = frozenset({
     "integration.failed",
     "workflow.resume.applied",
     "fanout.child.dispatch_lost",
+    # Observation facts are read on the next legal wake/tick. Waking the
+    # orchestrator for each one created no_action decision floods in sim2.
+    "worker.drift.detected",
+    "worker.refresh.triggered",
 })
 
 

@@ -36,6 +36,24 @@ def test_existing_artifacts_pass(tmp_path: Path) -> None:
     }) == []
 
 
+def test_runtime_artifact_ref_resolves_from_configured_state_dir(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf-custom"
+    artifact = state_dir / "artifacts" / "fanouts" / "plan" / "task_map.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("{}\n", encoding="utf-8")
+
+    assert unverified_completion_claims(
+        {
+            "workdir": str(tmp_path / "worker"),
+            "artifact_refs": ["artifacts/fanouts/plan/task_map.json"],
+        },
+        project_root=tmp_path,
+        state_dir=state_dir,
+    ) == []
+
+
 def test_head_claim_mismatch_flagged(tmp_path: Path) -> None:
     wd = _git_workdir(tmp_path)
     problems = unverified_completion_claims({
@@ -92,6 +110,54 @@ def test_reactor_emits_unverified_event(tmp_path: Path) -> None:
     Orchestrator(sd, config, TmuxTransport(TmuxSession(session_name="t", dry_run=True))).run_once()
     types = [e.type for e in log.read_all()]
     assert "dev.completion.claims_unverified" in types
+
+
+def test_reactor_resolves_omitted_workdir_from_actor_worktree(tmp_path: Path) -> None:
+    """Regular task completions may omit workdir; actor identity is canonical."""
+    from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
+    from zf.core.events.log import EventLog
+    from zf.core.events.model import ZfEvent
+    from zf.core.state.session import SessionStore
+    from zf.core.task.schema import Task
+    from zf.core.task.store import TaskStore
+    from zf.runtime.orchestrator import Orchestrator
+    from zf.runtime.tmux import TmuxSession
+    from zf.runtime.transport import TmuxTransport
+
+    sd = tmp_path / ".zf"
+    sd.mkdir()
+    (sd / "memory").mkdir()
+    EventLog(sd / "events.jsonl").append(ZfEvent(type="loop.started", actor="zf-cli"))
+    SessionStore(sd / "session.yaml").create(project_root=str(tmp_path))
+    (sd / "kanban.json").write_text("[]\n")
+    TaskStore(sd / "kanban.json").add(
+        Task(id="T1", title="x", status="in_progress", assigned_to="dev")
+    )
+    actor_workdir = sd / "workdirs" / "dev" / "project"
+    actor_workdir.parent.mkdir(parents=True)
+    _git_workdir(actor_workdir.parent).rename(actor_workdir)
+    log = EventLog(sd / "events.jsonl")
+    log.append(ZfEvent(
+        type="dev.build.done",
+        actor="dev",
+        task_id="T1",
+        payload={"status": "completed", "artifact_refs": ["a.txt"]},
+    ))
+    config = ZfConfig(
+        project=ProjectConfig(name="t"),
+        session=SessionConfig(tmux_session="t"),
+        roles=[RoleConfig(name="dev", instance_id="dev", backend="mock")],
+    )
+
+    Orchestrator(
+        sd,
+        config,
+        TmuxTransport(TmuxSession(session_name="t", dry_run=True)),
+    ).run_once()
+
+    assert "dev.completion.claims_unverified" not in {
+        event.type for event in log.read_all()
+    }
 
 
 def test_reference_schemes_are_not_disk_paths(tmp_path):

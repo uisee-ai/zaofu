@@ -63,9 +63,14 @@ def _config(
     state_dir: Path,
     *,
     quality_gates: dict[str, QualityGateConfig] | None = None,
+    setup_script: str = "",
 ) -> ZfConfig:
     return ZfConfig(
-        project=ProjectConfig(name="test", state_dir=str(state_dir)),
+        project=ProjectConfig(
+            name="test",
+            state_dir=str(state_dir),
+            setup_script=setup_script,
+        ),
         roles=[
             RoleConfig(name="dev", backend="mock", role_kind="writer"),
             RoleConfig(
@@ -143,12 +148,15 @@ def _add_task(
     *,
     task_id: str,
     feature_id: str = "F-11111111",
+    verification: str = "",
 ) -> None:
-    TaskStore(state_dir / "kanban.json").add(Task(
+    task = Task(
         id=task_id,
         title=task_id,
         key=f"{feature_id}:{task_id}",
-    ))
+    )
+    task.contract.verification = verification
+    TaskStore(state_dir / "kanban.json").add(task)
     log.append(ZfEvent(
         type="task.created",
         actor="zf-cli",
@@ -173,6 +181,109 @@ def _rebuilder(root: Path, state_dir: Path, config: ZfConfig, log: EventLog):
         config=config,
         event_log=log,
     )
+
+
+def test_candidate_quality_prefers_run_scoped_task_contract_commands(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    state_dir, _, log = _state(root)
+    config = _config(
+        state_dir,
+        quality_gates={
+            "static": QualityGateConfig(
+                required_checks=["npm run missing-config-script"],
+            ),
+        },
+    )
+    _add_task(
+        state_dir,
+        log,
+        task_id="TASK-RUST",
+        verification="cargo test --workspace",
+    )
+    candidate_task = CandidateTask(
+        task_id="TASK-RUST",
+        task_ref="refs/heads/task-rust",
+        source_commit="source-rust",
+        approval_event_id="approved-rust",
+        approval_event_type="review.approved",
+    )
+
+    checks, source = _rebuilder(root, state_dir, config, log)._quality_checks(
+        [candidate_task],
+    )
+
+    assert source == "task_contract"
+    assert checks == [("task_contract:TASK-RUST", "cargo test --workspace")]
+
+
+def test_candidate_quality_uses_config_only_as_legacy_fallback(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    state_dir, _, log = _state(root)
+    config = _config(
+        state_dir,
+        quality_gates={
+            "static": QualityGateConfig(required_checks=["make verify"]),
+        },
+    )
+
+    checks, source = _rebuilder(root, state_dir, config, log)._quality_checks([])
+
+    assert source == "zf_config_fallback"
+    assert checks == [("static", "make verify")]
+
+
+def test_candidate_quality_required_never_uses_config_fallback(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    state_dir, _, log = _state(root)
+    config = _config(
+        state_dir,
+        quality_gates={
+            "static": QualityGateConfig(required_checks=["make verify"]),
+        },
+    )
+    config.workflow.candidate_quality_source = "task_contract_required"
+
+    checks, source = _rebuilder(root, state_dir, config, log)._quality_checks([])
+
+    assert checks == []
+    assert source == "task_contract_missing"
+
+
+def test_candidate_quality_required_rejects_partially_missing_contracts(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    state_dir, _, log = _state(root)
+    config = _config(state_dir)
+    config.workflow.candidate_quality_source = "task_contract_required"
+    _add_task(
+        state_dir,
+        log,
+        task_id="TASK-WITH-CHECK",
+        verification="make verify",
+    )
+    _add_task(state_dir, log, task_id="TASK-WITHOUT-CHECK")
+    tasks = [
+        CandidateTask(
+            task_id=task_id,
+            task_ref=f"refs/heads/{task_id.lower()}",
+            source_commit=f"source-{task_id.lower()}",
+            approval_event_id=f"approved-{task_id.lower()}",
+            approval_event_type="review.approved",
+        )
+        for task_id in ("TASK-WITH-CHECK", "TASK-WITHOUT-CHECK")
+    ]
+
+    checks, source = _rebuilder(root, state_dir, config, log)._quality_checks(tasks)
+
+    assert checks == []
+    assert source == "task_contract_missing"
 
 
 def test_candidate_order_uses_task_map_when_present(tmp_path: Path):
@@ -233,6 +344,109 @@ def test_candidate_excludes_unapproved_task_refs(tmp_path: Path):
     tasks = _rebuilder(tmp_path, state_dir, config, log).approved_tasks("F-11111111")
 
     assert [task.task_id for task in tasks] == ["TASK-1"]
+
+
+def test_candidate_rebuild_restores_accepted_dependency_refs_after_ledger_rotation(
+    tmp_path: Path,
+):
+    _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+
+    _git(tmp_path, "checkout", "-q", "-B", "worker/TASK-SCAFFOLD", "main")
+    package = tmp_path / "app" / "package.json"
+    package.parent.mkdir()
+    package.write_text('{"name":"demo"}\n', encoding="utf-8")
+    _git(tmp_path, "add", "app/package.json")
+    _git(tmp_path, "commit", "-q", "-m", "TASK-SCAFFOLD")
+    scaffold_commit = _git(tmp_path, "rev-parse", "HEAD")
+
+    _git(tmp_path, "checkout", "-q", "-B", "worker/TASK-CORE")
+    core = tmp_path / "app" / "src" / "core.ts"
+    core.parent.mkdir()
+    core.write_text("export const core = false;\n", encoding="utf-8")
+    core_types = tmp_path / "app" / "src" / "core-types.ts"
+    core_types.write_text("export type Core = boolean;\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/src/core.ts", "app/src/core-types.ts")
+    _git(tmp_path, "commit", "-q", "-m", "TASK-CORE initial package files")
+    core.write_text("export const core = true;\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/src/core.ts")
+    _git(tmp_path, "commit", "-q", "-m", "TASK-CORE rework")
+    core_commit = _git(tmp_path, "rev-parse", "HEAD")
+
+    _git(tmp_path, "checkout", "-q", "-B", "worker/TASK-LEAF")
+    leaf = tmp_path / "app" / "src" / "leaf.ts"
+    leaf.write_text("export const leaf = true;\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/src/leaf.ts")
+    _git(tmp_path, "commit", "-q", "-m", "TASK-LEAF")
+    leaf_commit = _git(tmp_path, "rev-parse", "HEAD")
+
+    unrelated_commit = _task_commit(
+        tmp_path,
+        branch="worker/TASK-UNRELATED",
+        file_name="unrelated.txt",
+        content="unrelated\n",
+        message="TASK-UNRELATED",
+    )
+    refs = (
+        ("TASK-SCAFFOLD", scaffold_commit, "worker/TASK-SCAFFOLD", ["app/package.json"]),
+        ("TASK-CORE", core_commit, "worker/TASK-CORE", ["app/src/core.ts"]),
+        ("TASK-LEAF", leaf_commit, "worker/TASK-LEAF", ["app/src/leaf.ts"]),
+        ("TASK-UNRELATED", unrelated_commit, "worker/TASK-UNRELATED", ["unrelated.txt"]),
+    )
+    for task_id, commit, branch, changed_files in refs:
+        _record_task_ref(
+            tmp_path,
+            state_dir,
+            config,
+            task_id=task_id,
+            commit=commit,
+            branch=branch,
+            changed_files=changed_files,
+        )
+        _add_task(state_dir, log, task_id=task_id)
+
+    # Simulate a resumed generation whose active ledger contains only the leaf
+    # approval while the canonical task-ref index still owns prior results.
+    _approve(log, "TASK-LEAF")
+    result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+        "F-11111111",
+        event_writer=EventWriter(log),
+    )
+
+    assert result is not None
+    assert result.status == "updated", result.payload.get("error")
+    assert _git(tmp_path, "show", "candidate/F-11111111:app/package.json") == (
+        '{"name":"demo"}'
+    )
+    assert _git(tmp_path, "show", "candidate/F-11111111:app/src/core.ts") == (
+        "export const core = true;"
+    )
+    assert _git(
+        tmp_path,
+        "show",
+        "candidate/F-11111111:app/src/core-types.ts",
+    ) == "export type Core = boolean;"
+    assert _git(tmp_path, "show", "candidate/F-11111111:app/src/leaf.ts") == (
+        "export const leaf = true;"
+    )
+    candidate_files = _git(
+        tmp_path,
+        "ls-tree",
+        "-r",
+        "--name-only",
+        "candidate/F-11111111",
+    ).splitlines()
+    assert "unrelated.txt" not in candidate_files
+    manifest = json.loads(
+        (state_dir / "candidates" / "F-11111111" / "manifest.json").read_text()
+    )
+    assert [task["task_id"] for task in manifest["requested_tasks"]] == [
+        "TASK-LEAF",
+    ]
+    assert [task["task_id"] for task in manifest["dependency_tasks"]] == [
+        "TASK-SCAFFOLD",
+        "TASK-CORE",
+    ]
 
 
 def test_candidate_rebuild_rejects_stale_task_index_entry(tmp_path: Path):
@@ -418,6 +632,38 @@ def test_candidate_subset_rebuild_preserves_existing_candidate_base(tmp_path: Pa
     assert [task["task_id"] for task in manifest["included_tasks"]] == ["TASK-GAP"]
 
 
+def test_candidate_subset_rebuild_rejects_failed_candidate_as_incremental_base(
+    tmp_path: Path,
+):
+    _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+    _git(tmp_path, "checkout", "-q", "-B", "candidate/F-11111111", "main")
+    (tmp_path / "partial.txt").write_text("failed partial\n", encoding="utf-8")
+    _git(tmp_path, "add", "partial.txt")
+    _git(tmp_path, "commit", "-q", "-m", "failed partial candidate")
+    failed_commit = _git(tmp_path, "rev-parse", "HEAD")
+    manifest = state_dir / "candidates" / "F-11111111" / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"status": "quality_failed", "commit": failed_commit}),
+        encoding="utf-8",
+    )
+
+    base_ref = _rebuilder(
+        tmp_path,
+        state_dir,
+        config,
+        log,
+    )._resolve_candidate_base_ref(  # type: ignore[attr-defined]
+        "main",
+        pdd_id="F-11111111",
+        branch="candidate/F-11111111",
+        task_ids=["TASK-GAP"],
+    )
+
+    assert base_ref == "main"
+
+
 def test_candidate_rebuild_skips_base_equivalent_assembly_task_ref(tmp_path: Path):
     base_commit = _init_repo(tmp_path)
     state_dir, config, log = _state(tmp_path)
@@ -549,6 +795,52 @@ def test_candidate_rebuild_uses_harness_identity_without_configured_git_user(
     # the original author, but the committer is the harness).
     committer = _git(tmp_path, "show", "-s", "--format=%cn", "candidate/F-11111111")
     assert committer == "ZaoFu Harness"
+
+
+def test_candidate_rebuild_allows_validated_large_scoped_commit(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+    paths = [f"src/generated_{index:02d}.txt" for index in range(26)]
+    _git(tmp_path, "checkout", "-q", "-B", "worker/TASK-1", "main")
+    for path in paths:
+        target = tmp_path / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(f"{path}\n", encoding="utf-8")
+    _git(tmp_path, "add", "--", *paths)
+    _git(tmp_path, "commit", "-q", "-m", "large validated task")
+    commit = _git(tmp_path, "rev-parse", "HEAD")
+    _record_task_ref(
+        tmp_path,
+        state_dir,
+        config,
+        task_id="TASK-1",
+        commit=commit,
+        branch="worker/TASK-1",
+        changed_files=paths,
+    )
+    _add_task(state_dir, log, task_id="TASK-1")
+    _approve(log, "TASK-1")
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    hook.write_text("""#!/bin/sh
+count=$(git diff --cached --name-only | wc -l)
+if [ "$count" -gt 25 ] && [ -z "$ZF_ALLOW_LARGE_COMMIT" ]; then
+  echo "large commit blocked" >&2
+  exit 1
+fi
+""", encoding="utf-8")
+    hook.chmod(0o755)
+
+    result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+        "F-11111111",
+        event_writer=EventWriter(log),
+    )
+
+    assert result.status == "updated", result.payload.get("error")
+    assert _git(
+        tmp_path,
+        "show",
+        "candidate/F-11111111:src/generated_25.txt",
+    ) == "src/generated_25.txt"
 
 
 def test_candidate_rebuild_applies_full_task_ranges_and_skips_duplicates(
@@ -1247,6 +1539,92 @@ def test_candidate_quality_gate_passes_before_updated(tmp_path: Path):
     assert event_types.index("candidate.quality.passed") < event_types.index(
         "candidate.updated"
     )
+
+
+def test_candidate_runs_declared_setup_before_quality_gate(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir, _, log = _state(tmp_path)
+    config = _config(
+        state_dir,
+        setup_script="test -f a.txt && printf ready > .candidate-env-ready",
+        quality_gates={
+            "candidate": QualityGateConfig(
+                enabled=True,
+                required_checks=["test -f .candidate-env-ready"],
+            ),
+        },
+    )
+    commit = _task_commit(
+        tmp_path,
+        branch="worker/TASK-1",
+        file_name="a.txt",
+        content="TASK-1\n",
+        message="TASK-1",
+    )
+    _record_task_ref(
+        tmp_path,
+        state_dir,
+        config,
+        task_id="TASK-1",
+        commit=commit,
+        branch="worker/TASK-1",
+    )
+    _add_task(state_dir, log, task_id="TASK-1")
+    _approve(log, "TASK-1")
+
+    result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+        "F-11111111",
+        event_writer=EventWriter(log),
+    )
+
+    assert result is not None and result.status == "updated"
+    assert result.payload["candidate_environment"]["status"] == "ready"
+    assert result.payload["candidate_environment"]["setup_ran"] is True
+    assert result.payload["quality"]["gates_passed"] == ["candidate"]
+
+
+def test_candidate_setup_failure_blocks_quality_gate(tmp_path: Path):
+    _init_repo(tmp_path)
+    state_dir, _, log = _state(tmp_path)
+    config = _config(
+        state_dir,
+        setup_script="echo setup-broke >&2; exit 7",
+        quality_gates={
+            "candidate": QualityGateConfig(
+                enabled=True,
+                required_checks=["touch quality-gate-ran"],
+            ),
+        },
+    )
+    commit = _task_commit(
+        tmp_path,
+        branch="worker/TASK-1",
+        file_name="a.txt",
+        content="TASK-1\n",
+        message="TASK-1",
+    )
+    _record_task_ref(
+        tmp_path,
+        state_dir,
+        config,
+        task_id="TASK-1",
+        commit=commit,
+        branch="worker/TASK-1",
+    )
+    _add_task(state_dir, log, task_id="TASK-1")
+    _approve(log, "TASK-1")
+
+    result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+        "F-11111111",
+        event_writer=EventWriter(log),
+    )
+
+    assert result is not None and result.status == "quality_failed"
+    assert result.payload["quality"]["failure"] == "candidate_environment_setup_failed"
+    assert result.payload["candidate_environment"]["exit_code"] == 7
+    assert not (
+        Path(result.payload["merger_worktree"]) / "quality-gate-ran"
+    ).exists()
 
 
 def test_candidate_quality_gate_prefers_candidate_src_over_inherited_pythonpath(

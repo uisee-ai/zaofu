@@ -66,6 +66,13 @@ def test_explicit_waiver_closes_the_gap():
     assert combined_candidate_gate_gap(_config(lanes=2, waiver=True)) == ""
 
 
+def test_task_contract_required_closes_cold_start_gap():
+    cfg = _config(lanes=2)
+    cfg.workflow.candidate_quality_source = "task_contract_required"
+
+    assert combined_candidate_gate_gap(cfg) == ""
+
+
 def test_disabled_or_empty_gates_do_not_count():
     cfg = _config(lanes=2, gates={
         "off": QualityGateConfig(enabled=False, required_checks=["x"]),
@@ -101,11 +108,10 @@ def test_loader_parses_waiver(tmp_path: Path):
     assert cfg.workflow.allow_unverified_candidate is True
 
 
-def test_controller_multi_lane_examples_fail_validate_until_gates_filled(
+def test_controller_multi_lane_examples_use_task_contract_quality_source(
     tmp_path: Path,
 ):
-    """旗舰多 lane 入口自身(模板态,gates 注释着)必须被 validate 拒——
-    这就是 ⑤c 的行为宣称:copy 模板 → 填 gates(或显式豁免)→ 才能跑。"""
+    """Controller cold start accepts run-scoped contracts without static commands."""
     import subprocess
     import sys as _sys
 
@@ -119,8 +125,7 @@ def test_controller_multi_lane_examples_fail_validate_until_gates_filled(
             capture_output=True, text=True,
             env={"PYTHONPATH": str(repo / "src"), "PATH": "/usr/bin:/bin"},
         )
-        assert proc.returncode == 1, (name, proc.stderr[-400:])
-        assert "candidate gate" in proc.stderr.lower(), name
+        assert proc.returncode == 0, (name, proc.stderr[-400:])
     # Issue defaults to one lane, so it has no combined-candidate skew surface.
     issue = subprocess.run(
         [_sys.executable, "-c",

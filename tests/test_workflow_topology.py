@@ -103,6 +103,20 @@ class TestOrphanDetection:
 
         assert topo.dead_end_roles() == []
 
+    def test_product_orchestrator_exception_bridge_is_external(self):
+        orchestrator = RoleConfig(
+            name="orchestrator",
+            triggers=[
+                "dispatch.silent_stall",
+                "orchestrator.rework.triage.requested",
+            ],
+            publishes=["orchestrator.rework.triage.recorded"],
+        )
+        topo = WorkflowTopology.from_config(_make_config(orchestrator))
+
+        assert topo.dead_end_roles() == []
+        assert topo.orphan_events() == []
+
 
 class TestAsciiRender:
     def test_render_returns_string(self):

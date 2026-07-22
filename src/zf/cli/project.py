@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -220,10 +221,10 @@ def init_flow_project(
                     f"refactor target is not a git repository: {target} "
                     "(pass git_init/--git-init, or run git init first)"
                 )
-    elif git_init and not _git_is_work_tree(git_root):
+    elif git_init and not _git_work_tree_is_root(git_root):
         git_root.mkdir(parents=True, exist_ok=True)
         subprocess.run(
-            ["git", "-C", str(git_root), "init"],
+            ["git", "-C", str(git_root), "init", "--initial-branch=main"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -232,6 +233,11 @@ def init_flow_project(
         created_git_repo = True
     if create_root or kind == "prd":
         _ensure_project_greenfield_seed(project_root, kind=kind)
+    source_ref = _localize_request_source(
+        kind=kind,
+        project_root=project_root,
+        source_ref=source_ref,
+    )
     if kind == "multi":
         docs = draft_multi_kind_project_spec(
             backend=backend,
@@ -260,6 +266,9 @@ def init_flow_project(
         yaml.safe_dump_all(docs, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
+    from zf.core.profile.apply import materialize_config_skills
+
+    materialized_assets = materialize_config_skills(yaml_path, project_root)
     result = ProjectInitializer(workspace=workspace).initialize(
         cwd=project_root,
         force=force,
@@ -324,6 +333,7 @@ def init_flow_project(
         ),
         "request": request_result,
         "submit": submit_result,
+        "materialized_assets": materialized_assets,
     }
 
 
@@ -342,6 +352,50 @@ def _ensure_project_greenfield_seed(project_root: Path, *, kind: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
             path.write_text(content, encoding="utf-8")
+
+
+def _git_work_tree_is_root(root: Path) -> bool:
+    proc = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if proc.returncode != 0:
+        return False
+    return Path(proc.stdout.strip()).resolve() == root.resolve()
+
+
+def _localize_request_source(
+    *,
+    kind: str,
+    project_root: Path,
+    source_ref: str,
+) -> str:
+    """Snapshot external Issue/PRD files into the initialized project."""
+
+    raw = str(source_ref or "").strip()
+    if kind not in {"issue", "prd"} or not raw:
+        return raw
+    source = Path(raw).expanduser()
+    if not source.is_file():
+        return raw
+    source = source.resolve()
+    try:
+        return source.relative_to(project_root).as_posix()
+    except ValueError:
+        pass
+
+    target_dir = project_root / "docs" / ("prd" if kind == "prd" else "issues")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / source.name
+    if target.exists() and target.read_bytes() != source.read_bytes():
+        raise FileExistsError(
+            f"project request source already exists with different content: {target}"
+        )
+    if not target.exists():
+        shutil.copy2(source, target)
+    return target.relative_to(project_root).as_posix()
 
 
 def _create_initial_project_commit(project_root: Path, *, state_dir: Path) -> None:

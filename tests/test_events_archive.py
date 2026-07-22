@@ -8,7 +8,7 @@ from pathlib import Path
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
-from zf.runtime.event_window import runtime_event_window_days
+from zf.runtime.event_window import read_runtime_events, runtime_event_window_days
 
 
 def _set_mtime(path: Path, days_ago: int) -> None:
@@ -125,6 +125,28 @@ class TestEventsActiveArchive:
 
     def test_runtime_event_window_defaults_to_yesterday_and_today(self, tmp_path: Path):
         assert runtime_event_window_days(tmp_path, min_days=2, max_days=14) == 2
+
+    def test_runtime_event_reads_use_append_fold_and_filter_old_archives(
+        self,
+        tmp_path: Path,
+    ):
+        path = tmp_path / "events.jsonl"
+        archive_dir = tmp_path / "events"
+        archive_dir.mkdir()
+        old = ZfEvent(
+            type="old",
+            ts=(datetime.now(timezone.utc) - timedelta(days=5)).isoformat(),
+        )
+        (archive_dir / f"{_day_str(5)}.jsonl").write_text(
+            old.to_json() + "\n",
+            encoding="utf-8",
+        )
+        log = EventLog(path)
+        log.append(ZfEvent(type="today"))
+
+        events = read_runtime_events(log, tmp_path, min_days=2, max_days=2)
+
+        assert [event.type for event in events] == ["today"]
 
     def test_offset_tracking_survives_rotation(self, tmp_path: Path):
         """A4 offset cursor behavior after rotation: when the active file

@@ -42,12 +42,21 @@ def build_goal_claim_set(
     goal_id: str,
     task_map_generation: str,
     objective_ref: str = "",
+    objective: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
-    claims = _explicit_goal_claims(task_map)
-    source = "task_map.goal_claims"
-    if not claims:
-        claims = _task_acceptance_claims(task_map)
-        source = "task_map.acceptance_criteria_fallback"
+    objective_claims = _objective_acceptance_claims(
+        objective or {},
+        objective_ref=objective_ref,
+    )
+    planning_claims = _explicit_goal_claims(task_map)
+    planning_source = "task_map.goal_claims"
+    if not planning_claims:
+        planning_claims = _task_acceptance_claims(task_map)
+        planning_source = "task_map.acceptance_criteria_fallback"
+    claims = _merge_claim_groups(objective_claims, planning_claims)
+    source = planning_source
+    if objective_claims:
+        source = f"objective.acceptance+{planning_source}" if planning_claims else "objective.acceptance"
     if not claims:
         root_text = str(task_map.get("objective") or objective_ref or goal_id).strip()
         claims = [{
@@ -87,12 +96,31 @@ def pin_goal_claim_set_from_task_map(
         state_dir=state_dir,
     )
     task_map = load_task_map(path)
+    objective: Mapping[str, Any] = {}
+    if objective_ref and Path(objective_ref).suffix.lower() == ".json":
+        objective_path = resolve_artifact_file(
+            objective_ref,
+            project_root=project_root,
+            state_dir=state_dir,
+        )
+        try:
+            decoded = json.loads(objective_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise GoalClaimSetError(
+                f"objective_ref is not a readable requirement spec: {objective_ref}"
+            ) from exc
+        if not isinstance(decoded, Mapping):
+            raise GoalClaimSetError(
+                f"objective_ref must contain a JSON object: {objective_ref}"
+            )
+        objective = decoded
     claim_set = build_goal_claim_set(
         task_map,
         workflow_run_id=workflow_run_id,
         goal_id=goal_id,
         task_map_generation=task_map_generation,
         objective_ref=objective_ref,
+        objective=objective,
     )
     descriptor = write_immutable_json_sidecar(
         state_dir,
@@ -159,6 +187,69 @@ def _task_acceptance_claims(task_map: Mapping[str, Any]) -> list[dict[str, Any]]
                 "source_ref": f"task-map:{task_id}",
             })
     return _dedupe_claims(out)
+
+
+def _objective_acceptance_claims(
+    objective: Mapping[str, Any],
+    *,
+    objective_ref: str,
+) -> list[dict[str, Any]]:
+    raw = objective.get("acceptance") or objective.get("acceptance_criteria")
+    out: list[dict[str, Any]] = []
+    for index, item in enumerate(raw if isinstance(raw, list) else []):
+        if isinstance(item, Mapping):
+            text = str(
+                item.get("text")
+                or item.get("criterion")
+                or item.get("title")
+                or ""
+            ).strip()
+            claim_id = str(
+                item.get("goal_claim_id")
+                or item.get("acceptance_id")
+                or item.get("id")
+                or ""
+            ).strip()
+            mandatory = bool(item.get("mandatory", True))
+        else:
+            claim_id, text = _claim_id_and_text(
+                str(item),
+                prefix="OBJECTIVE-AC",
+                index=index,
+            )
+            mandatory = True
+        if not text:
+            continue
+        if not claim_id:
+            claim_id = _stable_id(
+                f"objective:{index}:{text}",
+                prefix=f"OBJECTIVE-AC{index + 1}",
+            )
+        out.append({
+            "goal_claim_id": claim_id,
+            "text": text,
+            "mandatory": mandatory,
+            "source_ref": objective_ref,
+        })
+    return _dedupe_claims(out)
+
+
+def _merge_claim_groups(*groups: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: dict[str, dict[str, Any]] = {}
+    for claim in (claim for group in groups for claim in group):
+        claim_id = str(claim.get("goal_claim_id") or "")
+        existing = seen.get(claim_id)
+        if existing is None:
+            seen[claim_id] = claim
+            out.append(claim)
+            continue
+        if str(existing.get("text") or "") != str(claim.get("text") or ""):
+            raise GoalClaimSetError(f"duplicate goal claim id: {claim_id}")
+        existing["mandatory"] = bool(
+            existing.get("mandatory", True) or claim.get("mandatory", True)
+        )
+    return out
 
 
 def _claim_id_and_text(value: str, *, prefix: str, index: int) -> tuple[str, str]:

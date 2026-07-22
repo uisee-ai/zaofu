@@ -48,6 +48,15 @@ def combined_candidate_gate_gap(config: Any, *, flow_kind: str = "") -> str:
         getattr(config, "workflow", None), "allow_unverified_candidate", False,
     )):
         return ""
+    source = str(getattr(
+        getattr(config, "workflow", None),
+        "candidate_quality_source",
+        "auto",
+    ) or "auto")
+    if source == "task_contract_required":
+        # Commands do not exist at cold start. Writer Task Map admission owns
+        # proving that every candidate slice supplies one before dispatch.
+        return ""
     gates = getattr(config, "quality_gates", None) or {}
     for gate in gates.values():
         if not getattr(gate, "enabled", True):
@@ -71,6 +80,8 @@ def combined_candidate_gate_gap(config: Any, *, flow_kind: str = "") -> str:
         "candidate 合成树不经任何验证即进 judge(跨 lane 偏斜 per-lane "
         "verify 原理上不可见,r4 F10 实锚)。修复:配置 "
         "quality_gates.<name>.required_checks(如 typecheck + 单测),"
+        "或配置 workflow.candidate_quality_source=task_contract_required "
+        "并由 Task Map 为每个 writer task 声明 verification,"
         "或显式豁免 workflow.allow_unverified_candidate: true(观测型运行)。"
     )
 

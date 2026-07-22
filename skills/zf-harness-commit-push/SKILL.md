@@ -1,6 +1,6 @@
 ---
 name: zf-harness-commit-push
-description: "Safe ZaoFu commit and push workflow for Claude or Codex. Use only when the user explicitly asks to commit, push, or wrap up approved changes. Inspects git state, separates unrelated dirty files, checks for secrets and risky staging, uses conventional commit messages, stages explicit paths only, never force-pushes, runs the dev pre-merge sentinel gate before merging to dev, respects multi-driver wip-branch discipline, and reports verification. Also carries large/risky diff fallback classification."
+description: "Safe ZaoFu commit, push, merge, and landed-worktree closeout workflow for Claude or Codex. Use only when the user explicitly asks to commit, push, merge to dev, wrap up approved changes, or clean up an already-landed worktree. Inspects git state, separates unrelated dirty files, checks for secrets and risky staging, uses explicit pathspecs, runs the dev pre-merge sentinel gate, and after a verified merge removes only clean inactive worktrees and fully merged local branches. Never force-pushes or force-removes dirty worktrees."
 ---
 
 # ZaoFu Harness Commit Push
@@ -9,9 +9,9 @@ description: "Safe ZaoFu commit and push workflow for Claude or Codex. Use only 
 
 ## Objective
 
-Commit and push approved ZaoFu changes without sweeping in unrelated work,
-leaking secrets, bypassing hooks, colliding with a parallel driver, or violating
-repository rules.
+Commit, push, merge, and close out approved ZaoFu changes without sweeping in
+unrelated work, leaking secrets, bypassing hooks, colliding with a parallel
+driver, deleting unlanded work, or violating repository rules.
 
 Default repository-facing output is Chinese unless the user asks otherwise.
 
@@ -34,13 +34,16 @@ this skill.
 
 ## Preconditions
 
-- Use this skill only after an explicit user request to commit and/or push.
+- Use this skill only after an explicit user request to commit, push, merge,
+  wrap up, or clean up an already-landed worktree.
 - Read `AGENTS.md` and `CLAUDE.md` commit rules before acting (Multi-Driver Git
   Discipline and the dev pre-merge gate are mandatory, not advisory).
 - Do not commit analysis-only notes, unapproved backlog candidates, or unrelated
   dirty files.
 - Never use `git add -A`, `git add .`, `git commit -a`, `git commit --amend`,
   `git commit --no-verify`, `git push --force`, or `+refs`.
+- Never use `git worktree remove --force` or `git branch -D` as ordinary
+  closeout. A dirty or unmerged source is a blocker, not disposable state.
 - If the diff is too broad to understand, stop and summarize what needs user
   confirmation before committing (see Large/risky diff fallback below).
 
@@ -78,12 +81,49 @@ this skill.
    - before committing, self-check `git diff --cached --name-only` contains no
      other driver's files;
    - commit once with a concise message.
-6. Push / merge to `dev`:
-   - if landing a work branch into `dev`, first run the **dev pre-merge sentinel
-     gate** `bash scripts/dev-premerge-gate.sh`; red means do not merge;
-   - run `git push`;
-   - if no upstream exists, use `git push -u origin HEAD`;
-   - never force-push.
+6. Select the requested landing mode:
+   - `commit_only`: stop after commit and report the retained worktree;
+   - `push_only`: push the requested ref but do not merge or clean a worktree;
+   - `direct_dev`: commit/push on `dev`; there is no source worktree closeout;
+   - `merge_to_dev`: capture `source_worktree`, `source_branch`, and
+     `source_head`, then continue through merge, verification, and closeout;
+   - do not infer merge or remote mutation from a commit-only request.
+7. Merge / push:
+   - only the designated `dev` merge owner may land a work branch;
+   - locate the real `dev` checkout through `git worktree list --porcelain`,
+     then confirm it is clean, current, and has no unrelated staged files;
+   - run `bash scripts/dev-premerge-gate.sh` against the source branch before
+     merging; red means do not merge;
+   - merge from the `dev` checkout with `git merge --no-ff <source_branch>`;
+     on conflict, abort the merge and retain the source worktree and branch;
+   - run the required post-merge verification and re-run the dev pre-merge
+     sentinel gate on the merged `dev` checkout;
+   - push only when explicitly requested. If no upstream exists, use
+     `git push -u origin HEAD`; never force-push;
+   - deleting a remote work branch is also a remote mutation and requires an
+     explicit push/remote-cleanup request.
+8. Close out a landed worktree:
+   - perform cleanup from the designated `dev` merge-owner checkout, never from
+     an agent session whose current workspace is the source worktree;
+   - confirm `source_head` is reachable from `dev` with
+     `git merge-base --is-ancestor <source_head> dev`. For an explicitly
+     requested cherry-pick, prove patch equivalence instead of relying on hash
+     equality;
+   - confirm `git log dev..<source_branch>` is empty and post-merge verification
+     is green;
+   - inspect the source with
+     `git -C <source_worktree> status --short --untracked-files=all`;
+   - confirm no tmux pane or active agent/process still uses the source path;
+   - if any commit, staged change, tracked modification, untracked path, or
+     active user remains, retain both worktree and branch and report
+     `closeout=merged_not_closed` with exact blockers;
+   - otherwise run `git worktree remove <source_worktree>`,
+     `git branch -d <source_branch>`, and `git worktree prune`;
+   - run `python scripts/worktree-doctor.py --base-branch dev` when available
+     and report any remaining stale or dirty entries;
+   - if cleanup was requested for an already-landed worktree, run this same
+     audit; deletion never bypasses reachability, cleanliness, or active-user
+     checks.
 
 ## Multi-Driver Git Discipline
 
@@ -100,6 +140,8 @@ this skill.
   a `wip/<driver>-...` work branch.
 - Conflicting staged changes across drivers are exactly the trigger for the
   `operator_confirm` risk tier below.
+- A source worktree becomes immutable after it is handed to the merge owner.
+  Follow-up work starts from current `dev` on a new `wip/*` branch/worktree.
 
 ## Large/risky diff fallback
 
@@ -234,10 +276,13 @@ Use:
 Final response should include:
 
 - commit SHA and message;
+- landing mode and merge result, when requested;
 - pushed branch or push blocker (including a red dev pre-merge gate);
 - staged paths summary;
 - validation run and result;
 - unrelated dirty files intentionally left out;
+- source worktree/branch, cleanup result, and exact blockers when retained;
+- `closeout=complete|merged_not_closed|not_applicable`;
 - diff risk level when the fallback applied.
 
 How to test: ask "使用 zf-harness-commit-push 提交并 push 当前已批准的 skill 改动。"

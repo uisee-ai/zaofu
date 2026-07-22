@@ -116,6 +116,7 @@ def test_issue_flow_controller_smoke_matrix() -> None:
     _assert_discovery_stage("issue-fanout-v3.yaml", "issue-post-verify-discovery")
     _assert_flow_kernel_contract("issue-fanout-v3.yaml")
     config = _config("issue-fanout-v3.yaml")
+    assert config.workflow.kind_routes["issue"].pattern_id == "issue-triage"
     assert config.workflow.pipelines[0].lane_count == 1
     assert len([role for role in config.roles if role.name.startswith("fix-lane-")]) == 1
     assert len([role for role in config.roles if role.name.startswith("verify-lane-")]) == 1
@@ -143,8 +144,17 @@ def test_prd_flow_controller_smoke_matrix() -> None:
     _assert_discovery_stage("prd-fanout-v3.yaml", "prd-post-verify-discovery")
     _assert_flow_kernel_contract("prd-fanout-v3.yaml")
     config = _config("prd-fanout-v3.yaml")
+    assert config.workflow.kind_routes["prd"].pattern_id == "prd-scan"
     assert config.workflow.admission_replan.enabled is True
     assert config.workflow.admission_replan.resynth_trigger == "prd.scan.completed"
+
+
+def test_claude_full_controllers_declare_submit_entrypoints() -> None:
+    prd = _config("prd-fanout-v3-claude.yaml")
+    issue = _config("issue-fanout-v3-claude.yaml")
+
+    assert prd.workflow.kind_routes["prd"].pattern_id == "prd-scan"
+    assert issue.workflow.kind_routes["issue"].pattern_id == "issue-triage"
 
 
 def test_refactor_flow_controller_smoke_matrix() -> None:

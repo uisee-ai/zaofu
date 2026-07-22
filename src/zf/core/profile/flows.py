@@ -16,6 +16,8 @@ from pathlib import Path
 
 import yaml
 
+from zf.core.package_source import installed_local_source_root
+
 
 @dataclass(frozen=True)
 class FlowCatalogEntry:
@@ -41,6 +43,9 @@ def find_prod_dir() -> Path | None:
     if env:
         candidates.append(Path(env) / "prod")
     candidates.append(Path(__file__).resolve().parents[4] / "examples" / "prod")
+    installed_root = installed_local_source_root()
+    if installed_root is not None:
+        candidates.append(installed_root / "examples" / "prod")
     candidates.append(Path.cwd() / "examples" / "prod")
     for c in candidates:
         if c.is_dir():

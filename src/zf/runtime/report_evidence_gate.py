@@ -13,7 +13,13 @@ from typing import Any
 
 REPORT_EVIDENCE_MISSING_EVENT = "stage.report.evidence_missing"
 _VERIFICATION_STAGE_MARKERS = ("review", "verify", "judge", "test")
-_EVIDENCE_KEYS = ("evidence_refs", "evidence", "artifact_refs", "probes")
+_EVIDENCE_KEYS = (
+    "evidence_refs",
+    "runtime_evidence_refs",
+    "evidence",
+    "artifact_refs",
+    "probes",
+)
 
 
 def is_verification_stage(*, stage_id: str, event_type: str) -> bool:

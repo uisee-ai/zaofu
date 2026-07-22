@@ -103,7 +103,12 @@ def _expired_lease_action(
     now: datetime,
     lease_grace_s: float,
 ) -> dict[str, Any] | None:
-    anchor_ts = str(latest.get("last_heartbeat_ts") or latest.get("started_ts") or "")
+    anchor_ts = str(
+        latest.get("last_activity_ts")
+        or latest.get("last_heartbeat_ts")
+        or latest.get("started_ts")
+        or ""
+    )
     anchor = _parse_ts(anchor_ts)
     if anchor is None:
         return None

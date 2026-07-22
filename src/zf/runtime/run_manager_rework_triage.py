@@ -17,6 +17,7 @@ TRIAGE_REQUESTED = "orchestrator.rework.triage.requested"
 TRIAGE_RECORDED = "orchestrator.rework.triage.recorded"
 TRIAGE_REQUEST_ACTION = "orchestrator-rework-triage"
 TRIAGE_APPLY_ACTION = "orchestrator-triage-advice-apply"
+_TRIAGE_CAP_EVENTS = frozenset({"task.rework.capped", "candidate.rework.capped"})
 ORCHESTRATOR_TRIAGE_ACTIONS = frozenset({
     TRIAGE_REQUEST_ACTION,
     TRIAGE_APPLY_ACTION,
@@ -33,6 +34,10 @@ _PROGRESS_EVENTS = frozenset({
     "test.passed",
     "judge.passed",
     "task.done",
+    "orchestrator.replan_requested",
+    "task_map.ready",
+    "candidate.ready",
+    "run.goal.completed",
 })
 _REWORK_RECOMMENDATIONS = frozenset({
     "continue_rework",
@@ -63,12 +68,17 @@ def pending_rework_triage_actions(
     now = now or datetime.now(timezone.utc)
     groups: dict[tuple[str, str], tuple[int, ZfEvent]] = {}
     for index, event in enumerate(events):
-        if event.type != "task.rework.capped":
+        if event.type not in _TRIAGE_CAP_EVENTS:
             continue
         payload = _payload(event)
         if not is_semantic_triage_cap(event, threshold=threshold):
             continue
-        task_id = str(event.task_id or payload.get("task_id") or "")
+        task_id = str(
+            event.task_id
+            or payload.get("task_id")
+            or payload.get("pdd_id")
+            or ""
+        )
         fingerprint = str(
             payload.get("failure_fingerprint")
             or payload.get("fingerprint")
@@ -160,10 +170,19 @@ def _request_action(
         "checkpoint_id": _stable_id("ortriage-request", request_id),
         "safe_resume_action": "request_orchestrator_triage",
         "request_id": request_id,
-        "task_id": str(capped.task_id or payload.get("task_id") or ""),
+        "task_id": str(
+            capped.task_id
+            or payload.get("task_id")
+            or payload.get("pdd_id")
+            or ""
+        ),
         "role": str(payload.get("role") or ""),
         "fingerprint": fingerprint,
-        "failure_class": "repeated_task_failure",
+        "failure_class": (
+            "candidate_rework_exhausted"
+            if str(payload.get("failure_scope") or "") == "candidate"
+            else "repeated_task_failure"
+        ),
         "failure_count": int(payload.get("failure_count") or payload.get("retry_count") or 0),
         "triage_threshold": threshold,
         "owner_route": "run_manager",
@@ -177,6 +196,7 @@ def _request_action(
         "summary": str(payload.get("last_reason") or "rework threshold reached"),
         "expected_downstream_events": [TRIAGE_REQUESTED],
         "verify_condition": f"expected_downstream_event:{TRIAGE_REQUESTED}",
+        **_candidate_scope_fields(payload),
     }
 
 
@@ -188,6 +208,15 @@ def _recorded_advice_action(
 ) -> dict[str, Any]:
     payload = _payload(recorded)
     recommendation = str(payload.get("recommended_action") or "").strip().lower()
+    capped_payload = _payload(capped)
+    if str(capped_payload.get("failure_scope") or "") == "candidate":
+        return _recorded_candidate_advice_action(
+            recorded=recorded,
+            capped=capped,
+            request_id=request_id,
+            fingerprint=fingerprint,
+            recommendation=recommendation,
+        )
     base = {
         "schema_version": "run-manager.pending-action.v1",
         "checkpoint_id": _stable_id("ortriage-advice", request_id, recorded.id),
@@ -261,6 +290,132 @@ def _recorded_advice_action(
         "intervention_class": "semantic_replan",
         "expected_downstream_events": ["task.rework.requested", "task.assigned"],
         "verify_condition": "expected_downstream_event:task.rework.requested,task.assigned",
+    }
+
+
+def _recorded_candidate_advice_action(
+    *,
+    recorded: ZfEvent,
+    capped: ZfEvent,
+    request_id: str,
+    fingerprint: str,
+    recommendation: str,
+) -> dict[str, Any]:
+    capped_payload = _payload(capped)
+    advice = _payload(recorded)
+    context = capped_payload.get("candidate_rework_context")
+    context = dict(context) if isinstance(context, dict) else {}
+    guidance = str(advice.get("guidance") or advice.get("reason") or "").strip()
+    feedback = _string_list(context.get("rework_feedback"))
+    if guidance and guidance not in feedback:
+        feedback.append(guidance)
+    failed_task_ids = _string_list(context.get("failed_task_ids"))
+
+    if recommendation in _DIAGNOSIS_RECOMMENDATIONS:
+        return {
+            "schema_version": "run-manager.pending-action.v1",
+            "action": "diagnose-attention",
+            "checkpoint_id": _stable_id("ortriage-candidate-diagnose", request_id, recorded.id),
+            "safe_resume_action": "diagnose_attention",
+            "request_id": request_id,
+            "task_id": str(capped.task_id or capped_payload.get("pdd_id") or ""),
+            "pdd_id": str(capped_payload.get("pdd_id") or ""),
+            "trace_id": str(capped_payload.get("trace_id") or ""),
+            "fingerprint": fingerprint,
+            "failure_class": "candidate_rework_exhausted",
+            "owner_route": "run_manager",
+            "action_policy": "needs_diagnosis",
+            "intervention_class": "diagnose",
+            "source_event_id": recorded.id,
+            "source_event_type": recorded.type,
+            "source_event_ids": [capped.id, recorded.id],
+            "failure_event_ids": _string_list(capped_payload.get("failure_event_ids")),
+            "recorded_event_id": recorded.id,
+            "recommended_action": recommendation,
+            "guidance": guidance,
+            "summary": guidance or "candidate recovery cap requires diagnosis",
+            "expected_downstream_events": [
+                "run.manager.autoresearch.requested",
+                "run.manager.resident.prompted",
+            ],
+            "verify_condition": (
+                "expected_downstream_event:run.manager.autoresearch.requested,"
+                "run.manager.resident.prompted"
+            ),
+        }
+
+    if recommendation in _HUMAN_RECOMMENDATIONS or recommendation not in (
+        _REWORK_RECOMMENDATIONS | _REPLAN_RECOMMENDATIONS
+    ):
+        candidate_action = "escalate"
+        expected = ["human.escalate", "owner.visible_message.requested"]
+        intervention = "human_decision"
+        owner_route = "human_escalation"
+    elif recommendation in _REWORK_RECOMMENDATIONS and failed_task_ids:
+        candidate_action = "retrigger"
+        expected = ["task_map.ready"]
+        intervention = "semantic_replan"
+        owner_route = "controlled_action"
+    else:
+        candidate_action = "replan"
+        expected = ["orchestrator.replan_requested"]
+        intervention = "semantic_replan"
+        owner_route = "orchestrator_replan"
+
+    return {
+        "schema_version": "run-manager.pending-action.v1",
+        **context,
+        "action": "candidate-rework-apply",
+        "checkpoint_id": _stable_id("ortriage-candidate-advice", request_id, recorded.id),
+        "safe_resume_action": f"candidate_{candidate_action}",
+        "candidate_rework_action": candidate_action,
+        "candidate_retry_mode": "",
+        "orchestrator_triage_applied": True,
+        "semantic_triage_pending": False,
+        "request_id": request_id,
+        "task_id": str(capped.task_id or capped_payload.get("pdd_id") or ""),
+        "pdd_id": str(context.get("pdd_id") or capped_payload.get("pdd_id") or ""),
+        "trace_id": str(context.get("trace_id") or capped_payload.get("trace_id") or ""),
+        "fingerprint": fingerprint,
+        "failure_fingerprint": fingerprint,
+        "failure_class": f"candidate_rework_{candidate_action}",
+        "owner_route": owner_route,
+        "action_policy": "auto_decide",
+        "intervention_class": intervention,
+        "source_event_id": str(context.get("source_event_id") or capped.id),
+        "source_event_type": str(context.get("source_event_type") or capped.type),
+        "source_event_ids": [
+            *_string_list(capped_payload.get("failure_event_ids")),
+            capped.id,
+            recorded.id,
+        ],
+        "failure_event_ids": _string_list(capped_payload.get("failure_event_ids")),
+        "failed_task_ids": failed_task_ids,
+        "rework_feedback": feedback,
+        "rework_attempt": int(
+            context.get("rework_attempt")
+            or capped_payload.get("failure_count")
+            or 0
+        ),
+        "recorded_event_id": recorded.id,
+        "recommended_action": recommendation,
+        "guidance": guidance,
+        "advice": advice,
+        "expected_downstream_events": expected,
+        "verify_condition": "expected_downstream_event:" + ",".join(expected),
+        "route_registry": "run-manager-router.v1",
+    }
+
+
+def _candidate_scope_fields(payload: dict[str, Any]) -> dict[str, Any]:
+    if str(payload.get("failure_scope") or "") != "candidate":
+        return {}
+    return {
+        "recovery_scope": "candidate",
+        "pdd_id": str(payload.get("pdd_id") or payload.get("task_id") or ""),
+        "trace_id": str(payload.get("trace_id") or ""),
+        "candidate_rework_context": payload.get("candidate_rework_context")
+        if isinstance(payload.get("candidate_rework_context"), dict) else {},
     }
 
 
@@ -468,7 +623,13 @@ def _triage_request_id(capped: ZfEvent, task_id: str, fingerprint: str) -> str:
 def _has_later_task_progress(events: list[ZfEvent], start: int, task_id: str) -> bool:
     for event in events[start + 1:]:
         payload = _payload(event)
-        event_task = str(event.task_id or payload.get("task_id") or "")
+        event_task = str(
+            event.task_id
+            or payload.get("task_id")
+            or payload.get("pdd_id")
+            or payload.get("feature_id")
+            or ""
+        )
         if event_task == task_id and event.type in _PROGRESS_EVENTS:
             return True
     return False
@@ -502,7 +663,7 @@ def _event_age_seconds(event: ZfEvent, now: datetime) -> int:
 def is_semantic_triage_cap(event: ZfEvent, *, threshold: int) -> bool:
     """Separate same-fingerprint semantic caps from aggregate retry exhaustion."""
 
-    if event.type != "task.rework.capped" or threshold <= 0:
+    if event.type not in _TRIAGE_CAP_EVENTS or threshold <= 0:
         return False
     payload = _payload(event)
     if bool(payload.get("semantic_triage_required")):

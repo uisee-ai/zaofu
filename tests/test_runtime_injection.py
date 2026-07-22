@@ -559,6 +559,22 @@ class TestTaskBriefing:
         assert "Handoff Evidence Required" in briefing
         assert "evidence_refs" in briefing
 
+    def test_planner_briefing_routes_task_map_through_workdir_relocation(self):
+        config = ZfConfig(project=ProjectConfig(name="test"))
+        role = RoleConfig(
+            name="planner",
+            role_kind="reader",
+            publishes=["prd.plan.child.completed"],
+        )
+        task = Task(id="PLAN-1", title="Build task map")
+
+        briefing = generate_task_briefing(config, role, task)
+
+        assert "workdir-relative path" in briefing
+        assert "artifacts/plan/task_map.json" in briefing
+        assert "Do not write the configured state dir directly" in briefing
+        assert "kernel relocates" in briefing
+
     def test_briefing_prefers_configured_workflow_stage(self):
         config = ZfConfig(project=ProjectConfig(name="test"))
         task = Task(id="T1", title="Implement it")

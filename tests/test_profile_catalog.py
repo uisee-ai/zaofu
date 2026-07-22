@@ -11,8 +11,8 @@ def test_controller_examples_are_catalog_entries():
     assert "issue-fanout-v3-codex" in ids
     assert "prd-fanout-v3-codex" in ids
     assert "refactor-lane-v3-codex" in ids
-    assert entries["issue-fanout-v3-codex"]["roles"] == 5
-    assert entries["issue-fanout-v3-claude"]["roles"] == 5
+    assert entries["issue-fanout-v3-codex"]["roles"] == 6
+    assert entries["issue-fanout-v3-claude"]["roles"] == 6
 
 
 def test_prod_new_lkg_examples_are_not_catalog_entries():

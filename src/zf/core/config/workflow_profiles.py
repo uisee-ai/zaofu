@@ -196,6 +196,70 @@ def _mapping_param(raw: Any, *, name: str) -> dict[str, Any]:
     return dict(raw)
 
 
+_ROLE_DEFAULT_ALIASES = {
+    "permissionMode": "permission_mode",
+    "stuckThresholdSeconds": "stuck_threshold_seconds",
+    "spawnReadyTimeoutSeconds": "spawn_ready_timeout_seconds",
+    "contextWarningThreshold": "context_warning_threshold",
+    "contextCompactThreshold": "context_compact_threshold",
+    "contextHardCap": "context_hard_cap",
+    "drainHoldSeconds": "drain_hold_seconds",
+    "budgetUsd": "budget_usd",
+}
+
+_ROLE_DEFAULT_FIELDS = (
+    "transport",
+    "stuck_threshold_seconds",
+    "spawn_ready_timeout_seconds",
+    "context_warning_threshold",
+    "context_compact_threshold",
+    "context_hard_cap",
+    "drain_hold_seconds",
+    "budget_usd",
+)
+
+_LANE_ROLE_DEFAULT_FIELDS = (
+    "stuck_threshold_seconds",
+    "spawn_ready_timeout_seconds",
+    "budget_usd",
+)
+
+
+def _role_defaults_param(raw: Any, *, name: str) -> dict[str, Any]:
+    """Normalize the external roleDefaults surface before flow expansion."""
+    values = _mapping_param(raw, name=name)
+    normalized: dict[str, Any] = {}
+    for key, value in values.items():
+        source = str(key)
+        target = _ROLE_DEFAULT_ALIASES.get(source, source)
+        if any(char.isupper() for char in source) and source not in _ROLE_DEFAULT_ALIASES:
+            raise WorkflowProfileError(
+                f"{name}: unknown camelCase key {source!r}"
+            )
+        if target in normalized and normalized[target] != value:
+            raise WorkflowProfileError(
+                f"{name}: conflicting values for {target!r}"
+            )
+        normalized[target] = value
+    return normalized
+
+
+def _lane_role_template(
+    *,
+    backend: str,
+    role_defaults: dict[str, Any],
+) -> dict[str, Any]:
+    template: dict[str, Any] = {
+        "backend": backend,
+        "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
+        "skills_by_stage": {},
+    }
+    for field in _LANE_ROLE_DEFAULT_FIELDS:
+        if field in role_defaults:
+            template[field] = role_defaults[field]
+    return template
+
+
 def _list_param(raw: Any, *, name: str) -> list[str]:
     if raw is None:
         return []
@@ -423,7 +487,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         params, "moduleParityRole", "module_parity_role",
         default="module-parity-scan",
     ))
-    role_defaults = _mapping_param(
+    role_defaults = _role_defaults_param(
         _pick(params, "roleDefaults", "role_defaults"),
         name="refactor-flow/v3.roleDefaults",
     )
@@ -552,6 +616,9 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         "permission_mode",
         str(role_defaults.get("permission_mode") or "bypass"),
     )
+    for field in _LANE_ROLE_DEFAULT_FIELDS:
+        if field in role_defaults:
+            template.setdefault(field, role_defaults[field])
     if role_skill_bundles:
         skills_by_stage = dict(template.get("skills_by_stage") or {})
         for stage_id in ("impl", "verify"):
@@ -591,16 +658,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "backend": backend,
             "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
         }
-        for field in (
-            "transport",
-            "stuck_threshold_seconds",
-            "spawn_ready_timeout_seconds",
-            "context_warning_threshold",
-            "context_compact_threshold",
-            "context_hard_cap",
-            "drain_hold_seconds",
-            "budget_usd",
-        ):
+        for field in _ROLE_DEFAULT_FIELDS:
             if field in role_defaults:
                 role[field] = role_defaults[field]
         skills = _list_param(
@@ -701,16 +759,7 @@ def _controller_role(
         "backend": backend,
         "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
     }
-    for field in (
-        "transport",
-        "stuck_threshold_seconds",
-        "spawn_ready_timeout_seconds",
-        "context_warning_threshold",
-        "context_compact_threshold",
-        "context_hard_cap",
-        "drain_hold_seconds",
-        "budget_usd",
-    ):
+    for field in _ROLE_DEFAULT_FIELDS:
         if field in role_defaults:
             role[field] = role_defaults[field]
     if skills:
@@ -913,7 +962,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         params, "judgeRole", "judge_role",
         default="judge-issue",
     ))
-    role_defaults = _mapping_param(
+    role_defaults = _role_defaults_param(
         _pick(params, "roleDefaults", "role_defaults"),
         name="IssueFlow.roleDefaults",
     )
@@ -964,11 +1013,10 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
             },
         },
     ]
-    lane_template = {
-        "backend": backend,
-        "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
-        "skills_by_stage": {},
-    }
+    lane_template = _lane_role_template(
+        backend=backend,
+        role_defaults=role_defaults,
+    )
     if _role_skills(bundles, "fix"):
         lane_template["skills_by_stage"]["impl"] = _role_skills(bundles, "fix")
     if _role_skills(bundles, "verify"):
@@ -1057,7 +1105,7 @@ def _expand_product_flow_light(
         params, "entryTrigger", "entry_trigger", default=entry_default,
     ))
     judge_role = str(_pick(params, "judgeRole", "judge_role", default=judge_role_default))
-    role_defaults = _mapping_param(
+    role_defaults = _role_defaults_param(
         _pick(params, "roleDefaults", "role_defaults"),
         name=f"{flow_kind}.roleDefaults",
     )
@@ -1074,11 +1122,10 @@ def _expand_product_flow_light(
             skills=_role_skills(bundles, judge_role),
         ),
     ]
-    lane_template = {
-        "backend": backend,
-        "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
-        "skills_by_stage": {},
-    }
+    lane_template = _lane_role_template(
+        backend=backend,
+        role_defaults=role_defaults,
+    )
     if _role_skills(bundles, "impl"):
         lane_template["skills_by_stage"]["impl"] = _role_skills(bundles, "impl")
     if _role_skills(bundles, "verify"):
@@ -1175,7 +1222,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         default="flow-discovery",
     ))
     judge_role = str(_pick(params, "judgeRole", "judge_role", default="judge-prd"))
-    role_defaults = _mapping_param(
+    role_defaults = _role_defaults_param(
         _pick(params, "roleDefaults", "role_defaults"),
         name="PrdFlow.roleDefaults",
     )
@@ -1250,11 +1297,10 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             },
         },
     ]
-    lane_template = {
-        "backend": backend,
-        "permission_mode": str(role_defaults.get("permission_mode") or "bypass"),
-        "skills_by_stage": {},
-    }
+    lane_template = _lane_role_template(
+        backend=backend,
+        role_defaults=role_defaults,
+    )
     if _role_skills(bundles, "impl"):
         lane_template["skills_by_stage"]["impl"] = _role_skills(bundles, "impl")
     if _role_skills(bundles, "verify"):

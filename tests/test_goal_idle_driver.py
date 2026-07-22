@@ -83,6 +83,58 @@ def test_pending_rescan_not_duplicated() -> None:
     assert not writer.appended
 
 
+def test_completed_rescan_allows_next_bounded_rescan() -> None:
+    request = ZfEvent(
+        id="rescan-1",
+        type=GOAL_RESCAN_EVENT,
+        actor="zf-cli",
+        payload={"trigger": "idle", "rescan_ordinal": 1},
+    )
+    events = [
+        _goal_started(),
+        request,
+        ZfEvent(
+            type="goal.rescan.completed",
+            actor="zf-cli",
+            causation_id=request.id,
+            payload={"request_event_id": request.id, "outcome": "no_eligible_tasks"},
+        ),
+    ]
+    writer = _Writer()
+
+    assert _tick_until_fire(events, _cfg(), _state(), writer) == "rescan"
+    assert writer.appended[0].payload["rescan_ordinal"] == 2
+
+
+def test_settled_rescans_reach_human_escalation_cap() -> None:
+    events = [_goal_started()]
+    for ordinal in range(1, 4):
+        request = ZfEvent(
+            id=f"rescan-{ordinal}",
+            type=GOAL_RESCAN_EVENT,
+            actor="zf-cli",
+            payload={"trigger": "idle", "rescan_ordinal": ordinal},
+        )
+        events.extend([
+            request,
+            ZfEvent(
+                type="goal.rescan.failed",
+                actor="zf-cli",
+                causation_id=request.id,
+                payload={
+                    "request_event_id": request.id,
+                    "outcome": "no_live_lane_delivery",
+                },
+            ),
+        ])
+    writer = _Writer()
+
+    assert _tick_until_fire(
+        events, _cfg(max_rescans=3), _state(), writer,
+    ) == "exhausted"
+    assert writer.appended[0].type == "human.escalate"
+
+
 def test_exhausted_escalates_once() -> None:
     rescans = [
         ZfEvent(type=GOAL_RESCAN_EVENT, actor="zf-cli", payload={"trigger": "idle"})

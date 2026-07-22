@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import (
     FanoutAggregateConfig,
     ProjectConfig,
@@ -383,6 +385,7 @@ def test_issue_verify_passed_requests_report_only_flow_discovery(tmp_path: Path)
             "trace_id": "trace-issue",
             "task_map_ref": ".zf/artifacts/ISSUE-123/task_map.json",
             "candidate_ref": "cand/ISSUE-123",
+            "candidate_head_commit": "candidate-issue-123",
             "artifact_refs": ["reports/ISSUE-123/verify.md"],
         },
     )])
@@ -419,6 +422,7 @@ def test_prd_verify_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path
             "trace_id": "trace-prd",
             "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
             "candidate_ref": "cand/PRD-1",
+            "candidate_head_commit": "candidate-prd-1",
         },
     )])
 
@@ -454,6 +458,7 @@ def test_prd_test_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path) 
             "trace_id": "trace-prd",
             "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
             "candidate_ref": "cand/PRD-1",
+            "candidate_head_commit": "candidate-prd-1",
         },
     )])
 
@@ -469,6 +474,127 @@ def test_prd_test_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path) 
     assert [event.payload["stage_id"] for event in started] == [
         "prd-post-verify-discovery",
     ]
+    assert [sent[0] for sent in transport.sent] == ["flow-discovery"]
+
+
+def test_prd_discovery_waits_for_candidate_then_resumes(tmp_path: Path) -> None:
+    _state_dir, log, transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="prd",
+        discovery_profile="product_completeness",
+        with_discovery_stage=True,
+    )
+    verified = ZfEvent(
+        id="prd-test-passed-before-candidate",
+        type="test.passed",
+        actor="zf-cli",
+        correlation_id="trace-prd",
+        payload={
+            "workflow_run_id": "run-prd-1",
+            "pdd_id": "PRD-1",
+            "feature_id": "PRD-1",
+            "trace_id": "trace-prd",
+            "status": "completed",
+            "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
+            "candidate_ref": "candidate/PRD-1",
+            "candidate_head_commit": "",
+        },
+    )
+    log.append(verified)
+
+    decisions = orch.run_once(events=[verified])
+
+    assert any(decision.action == "wait" for decision in decisions)
+    assert not [
+        event for event in log.read_all()
+        if event.type == "flow.discovery.requested"
+    ]
+    assert transport.sent == []
+
+    ready = ZfEvent(
+        id="prd-candidate-ready-after-verify",
+        type="candidate.ready",
+        actor="zf-cli",
+        correlation_id="trace-prd",
+        payload={
+            "workflow_run_id": "run-prd-1",
+            "pdd_id": "PRD-1",
+            "feature_id": "PRD-1",
+            "trace_id": "trace-prd",
+            "status": "completed",
+            "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
+            "candidate_ref": "candidate/PRD-1",
+            "candidate_head_commit": "candidate-prd-1",
+        },
+    )
+
+    resumed = orch.run_once(events=[ready])
+
+    requested = [
+        event for event in log.read_all()
+        if event.type == "flow.discovery.requested"
+    ]
+    assert any(decision.action == "bridge" for decision in resumed)
+    assert len(requested) == 1
+    assert requested[0].payload["source"] == "candidate_ready_flow_discovery_bridge"
+    assert requested[0].payload["verification_event_id"] == verified.id
+    assert [sent[0] for sent in transport.sent] == ["flow-discovery"]
+
+
+def test_prd_discovery_uses_candidate_materialized_before_test_passed(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="prd",
+        discovery_profile="product_completeness",
+        with_discovery_stage=True,
+    )
+    ready = ZfEvent(
+        id="prd-candidate-ready-before-verify",
+        type="candidate.ready",
+        actor="zf-cli",
+        correlation_id="trace-prd",
+        payload={
+            "workflow_run_id": "run-prd-1",
+            "pdd_id": "PRD-1",
+            "feature_id": "PRD-1",
+            "trace_id": "trace-prd",
+            "status": "completed",
+            "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
+            "candidate_ref": "candidate/PRD-1",
+            "candidate_head_commit": "candidate-prd-1",
+        },
+    )
+    log.append(ready)
+    verified = ZfEvent(
+        id="prd-test-passed-after-candidate",
+        type="test.passed",
+        actor="zf-cli",
+        correlation_id="trace-prd",
+        payload={
+            "workflow_run_id": "run-prd-1",
+            "pdd_id": "PRD-1",
+            "feature_id": "PRD-1",
+            "trace_id": "trace-prd",
+            "status": "completed",
+            "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
+            "candidate_ref": "candidate/PRD-1",
+            "candidate_head_commit": "",
+        },
+    )
+
+    decisions = orch.run_once(events=[verified])
+
+    requested = [
+        event for event in log.read_all()
+        if event.type == "flow.discovery.requested"
+    ]
+    assert any(decision.action == "bridge" for decision in decisions)
+    assert len(requested) == 1
+    assert requested[0].payload["candidate_ref"] == "candidate/PRD-1"
+    assert requested[0].payload["candidate_head_commit"] == "candidate-prd-1"
+    assert requested[0].payload["source_event_id"] == verified.id
     assert [sent[0] for sent in transport.sent] == ["flow-discovery"]
 
 
@@ -642,6 +768,9 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
             "trace_id": "trace-prd-gap",
             "task_map_ref": task_map_ref,
             "gap_plan_ref": "reports/CANGJIE/prd-gap-plan.json",
+            "candidate_ref": "candidate/CANGJIE",
+            "target_ref": "candidate/CANGJIE",
+            "candidate_head_commit": "candidate-head-123",
             "gap_tasks": [{
                 "task_id": "CANGJIE-PRD-GAP-001",
                 "parent_task_id": "CANGJIE-WEB-001",
@@ -661,7 +790,12 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
     ready = next(event for event in events if event.type == "task_map.ready")
     assert gap_ready.payload["goal_kind"] == "prd"
     assert gap_ready.payload["gap_category"] == "acceptance_gap"
+    assert gap_ready.payload["target_ref"] == "candidate/CANGJIE"
+    assert gap_ready.payload["source_commit"] == "candidate-head-123"
+    assert gap_ready.payload["candidate_base_commit"] == "candidate-head-123"
+    assert gap_ready.payload["dispatch_base_commit"] == "candidate-head-123"
     assert ready.payload["gap_event_type"] == "flow.gap_plan.ready"
+    assert ready.payload["dispatch_base_commit"] == "candidate-head-123"
     assert ready.payload["resume_scope"] == "gap_tasks_only"
     assert ready.payload["task_ids"] == ["CANGJIE-PRD-GAP-001"]
     task = TaskStore(state_dir / "kanban.json").get("CANGJIE-PRD-GAP-001")
@@ -671,8 +805,38 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
     assert transport.sent and transport.sent[0][0] == "dev-lane-0"
 
 
+@pytest.mark.parametrize(
+    (
+        "child_event_type",
+        "child_status",
+        "report_status",
+        "recommendation",
+        "aggregate_event_type",
+    ),
+    [
+        (
+            "flow.discovery.child.completed",
+            "completed",
+            "passed",
+            "approve",
+            "flow.discovery.completed",
+        ),
+        (
+            "flow.discovery.child.failed",
+            "failed",
+            "failed",
+            "reject",
+            "flow.discovery.failed",
+        ),
+    ],
+)
 def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
     tmp_path: Path,
+    child_event_type: str,
+    child_status: str,
+    report_status: str,
+    recommendation: str,
+    aggregate_event_type: str,
 ) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -730,7 +894,7 @@ def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
     )
     child = ZfEvent(
         id="flow-discovery-child-result",
-        type="flow.discovery.child.completed",
+        type=child_event_type,
         actor="flow-discovery",
         correlation_id="trace-flow-fanout",
         payload={
@@ -738,12 +902,12 @@ def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
             "child_id": dispatched.payload["child_id"],
             "run_id": dispatched.payload["run_id"],
             "role_instance": "flow-discovery",
-            "status": "completed",
+            "status": child_status,
             "report": {
-                "status": "passed",
+                "status": report_status,
                 "summary": "one bounded replacement remains",
                 "findings": [],
-                "recommendation": "approve",
+                "recommendation": recommendation,
                 "gap_tasks": [{
                     "task_id": "CANGJIE-WEB-CORE-001",
                     "parent_task_id": "CANGJIE-WEB-001",
@@ -759,7 +923,7 @@ def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
     orch.run_once(events=[child])
     completed = next(
         event for event in log.read_all()
-        if event.type == "flow.discovery.completed"
+        if event.type == aggregate_event_type
     )
 
     assert completed.payload["gap_tasks"][0]["task_id"] == "CANGJIE-WEB-CORE-001"
@@ -770,8 +934,50 @@ def test_flow_discovery_fanout_preserves_gap_tasks_for_incremental_adoption(
     events = log.read_all()
     store = TaskStore(state_dir / "kanban.json")
     assert any(event.type == "task_map.amended" for event in events)
+    assert not any(
+        event.type == "flow.discovery.requested"
+        and event.payload.get("rework_of") == completed.id
+        for event in events
+    )
     assert store.get("CANGJIE-WEB-001").status == "cancelled"
     assert store.get("CANGJIE-WEB-CORE-001").status == "in_progress"
+
+
+def test_flow_discovery_failed_without_gap_tasks_retries_reader_stage(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, _transport, orch = _flow_discovery_state(
+        tmp_path,
+        flow_kind="prd",
+        discovery_profile="product_completeness",
+        with_discovery_stage=True,
+    )
+    failed = ZfEvent(
+        id="flow-discovery-failed-no-gaps",
+        type="flow.discovery.failed",
+        actor="zf-cli",
+        correlation_id="trace-prd-retry",
+        payload={
+            "pdd_id": "PRD-RETRY",
+            "feature_id": "PRD-RETRY",
+            "flow_kind": "prd",
+            "trace_id": "trace-prd-retry",
+            "reason": "provider output did not contain a usable report",
+            "failed_children": ["flow-discovery"],
+        },
+    )
+
+    decisions = orch.run_once(events=[failed])
+    events = log.read_all()
+
+    assert any(decision.action == "dispatch" for decision in decisions)
+    retrigger = next(
+        event for event in events
+        if event.type == "flow.discovery.requested"
+    )
+    assert retrigger.payload["rework_of"] == failed.id
+    assert retrigger.payload["rework_attempt"] == 1
+    assert not any(event.type == "flow.gap_plan.ready" for event in events)
 
 
 def test_flow_discovery_completed_without_gaps_closes_goal(

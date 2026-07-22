@@ -62,6 +62,7 @@ def register_workflow_intake(
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).expanduser().resolve()
     manifest = _read_json(manifest_path)
+    _ensure_workflow_dir(manifest, manifest_path)
     request_id = str(manifest.get("request_id") or "").strip()
     if not request_id:
         raise WorkflowRequestError("workflow input manifest requires request_id")
@@ -120,6 +121,7 @@ def revise_workflow_request(
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).expanduser().resolve()
     manifest = _read_json(manifest_path)
+    _ensure_workflow_dir(manifest, manifest_path)
     request_id = str(manifest.get("request_id") or "").strip()
     if not request_id:
         raise WorkflowRequestError("workflow input manifest requires request_id")
@@ -342,6 +344,12 @@ def _write_requirement_spec(
     text = json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
     atomic_write_text(path, text)
     return str(path), hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _ensure_workflow_dir(manifest: dict[str, Any], manifest_path: Path) -> None:
+    if str(manifest.get("workflow_dir") or "").strip():
+        return
+    manifest["workflow_dir"] = str(Path(manifest_path).parent)
 
 
 def _update_manifest(

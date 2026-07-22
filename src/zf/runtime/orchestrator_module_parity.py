@@ -101,7 +101,19 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
 
         from zf.core.workflow.flow_metadata import flow_metadata_for
 
-        metadata = flow_metadata_for(self.config, payload=event.payload)
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        verification_event = None
+        if event.type == "candidate.ready":
+            verification_event = self._latest_flow_verification_before_candidate(event)
+            if verification_event is None:
+                return None
+            verification_payload = (
+                verification_event.payload
+                if isinstance(verification_event.payload, dict)
+                else {}
+            )
+            payload = {**verification_payload, **payload}
+        metadata = flow_metadata_for(self.config, payload=payload)
         flow_kind = str(metadata.get("flow_kind") or "").strip()
         discovery_profile = str(metadata.get("post_verify_discovery") or "").strip()
         if not flow_kind:
@@ -109,7 +121,6 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
         if flow_kind == "refactor" or discovery_profile == "module_parity":
             return None
         if not discovery_profile:
-            payload = event.payload if isinstance(event.payload, dict) else {}
             context = self._latest_refactor_context(payload)
             pdd_id = (
                 self._first_payload_text(payload, context, "pdd_id", "feature_id")
@@ -148,7 +159,6 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
         if self._has_bridge_output(event.id, {"flow.discovery.requested"}):
             return None
 
-        payload = event.payload if isinstance(event.payload, dict) else {}
         context = self._latest_refactor_context(payload)
         pdd_id = (
             self._first_payload_text(payload, context, "pdd_id", "feature_id")
@@ -171,6 +181,22 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
             "target_ref",
             "branch",
         )
+        candidate_head_commit = self._first_payload_text(
+            payload,
+            context,
+            "candidate_head_commit",
+            "commit",
+        )
+        if event.type in {"verify.passed", "test.passed"} and (
+            candidate_ref and not candidate_head_commit
+        ):
+            return OrchestratorDecision(
+                action="wait",
+                reason=(
+                    f"{event.type} awaits materialized candidate before "
+                    f"{discovery_profile} discovery"
+                ),
+            )
         artifact_refs = payload.get("artifact_refs")
         if not isinstance(artifact_refs, list):
             artifact_refs = []
@@ -194,10 +220,17 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
             ),
             "candidate_ref": candidate_ref,
             "target_ref": candidate_ref,
+            "candidate_head_commit": candidate_head_commit,
             "artifact_refs": [str(item) for item in artifact_refs if str(item).strip()],
             "source_event_id": event.id,
-            "source": "post_verify_flow_discovery_bridge",
+            "source": (
+                "candidate_ready_flow_discovery_bridge"
+                if event.type == "candidate.ready"
+                else "post_verify_flow_discovery_bridge"
+            ),
         }
+        if verification_event is not None:
+            request_payload["verification_event_id"] = verification_event.id
         requested = self.event_writer.append(ZfEvent(
             type="flow.discovery.requested",
             actor="zf-cli",
@@ -213,6 +246,46 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
                 f"{discovery_profile} discovery"
             ),
         )
+
+    def _latest_flow_verification_before_candidate(
+        self,
+        event: ZfEvent,
+    ) -> ZfEvent | None:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        workflow_run_id = str(
+            payload.get("workflow_run_id") or payload.get("run_id") or ""
+        ).strip()
+        pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "").strip()
+        for candidate in reversed(self.event_log.read_all()):
+            if candidate.type not in {"verify.passed", "test.passed"}:
+                continue
+            if candidate.task_id:
+                continue
+            candidate_payload = (
+                candidate.payload if isinstance(candidate.payload, dict) else {}
+            )
+            candidate_run_id = str(
+                candidate_payload.get("workflow_run_id")
+                or candidate_payload.get("run_id")
+                or ""
+            ).strip()
+            candidate_pdd_id = str(
+                candidate_payload.get("pdd_id")
+                or candidate_payload.get("feature_id")
+                or ""
+            ).strip()
+            if workflow_run_id:
+                if candidate_run_id != workflow_run_id:
+                    continue
+            elif pdd_id and candidate_pdd_id != pdd_id:
+                continue
+            if str(candidate_payload.get("status") or "completed") not in {
+                "completed",
+                "passed",
+            }:
+                continue
+            return candidate
+        return None
 
     def _bridge_verify_passed_to_parity_scan(
         self,
@@ -391,6 +464,22 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
             or payload.get("supersedes_task_map_ref")
             or ""
         ).strip()
+        candidate_ref = str(payload.get("candidate_ref") or "").strip()
+        target_ref = str(payload.get("target_ref") or candidate_ref).strip()
+        candidate_head_commit = str(
+            payload.get("candidate_head_commit")
+            or payload.get("target_commit")
+            or ""
+        ).strip()
+        source_commit = str(
+            payload.get("source_commit") or candidate_head_commit
+        ).strip()
+        candidate_base_commit = str(
+            payload.get("candidate_base_commit") or source_commit
+        ).strip()
+        dispatch_base_commit = str(
+            payload.get("dispatch_base_commit") or candidate_head_commit
+        ).strip()
         ref_payload = {
             key: list(value)
             for key in (
@@ -433,6 +522,12 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
                     "trace_id": trace_id,
                     "task_map_ref": task_map_ref,
                     "gap_plan_ref": str(payload.get("gap_plan_ref") or ""),
+                    "candidate_ref": candidate_ref,
+                    "target_ref": target_ref,
+                    "candidate_head_commit": candidate_head_commit,
+                    "source_commit": source_commit,
+                    "candidate_base_commit": candidate_base_commit,
+                    "dispatch_base_commit": dispatch_base_commit,
                     "gap_tasks": gap_tasks,
                     "gap_task_count": len(gap_tasks),
                     "supersedes_task_ids": self._payload_text_list(
@@ -709,6 +804,8 @@ class ModuleParityBridgeMixin(GoalClosureBridgeMixin):
             "source_commit",
             "candidate_base_commit",
             "candidate_ref",
+            "candidate_head_commit",
+            "commit",
             "target_ref",
             "branch",
         )

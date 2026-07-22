@@ -390,7 +390,18 @@ def test_prod_controller_profiles_wire_yoke_and_enforcement():
 
     for spec in (prod, refactor):
         assert spec["goal"]["enabled"] is True
+        assert spec["goal"]["max_rescans"] == 5
+        assert spec["goal"]["idle_progress_ticks"] == 3
+        assert spec["goal"]["rework_fingerprint"] is True
+        assert spec["goal"]["quiescent_after_escalate"] is True
+        assert spec["goal"]["micro_loop"] is False
+        assert spec["workflow"]["strict_triggers"]["rework_attempts_gte"] == 2
         assert spec["runtime"]["skills"]["strict"] is True
+        assert spec["runtime"]["feishu_inbound"] == {
+            "enabled": "${ZF_FEISHU_INBOUND_ENABLED:-false}",
+            "mode": "bridge",
+            "require_routing": True,
+        }
         assert spec["verification"]["event_schema"]["mode"] == "blocking"
         assert spec["verification"]["report_evidence_gate"] == "fail_closed"
 
@@ -421,6 +432,9 @@ def test_controller_entries_use_goal_scoped_delivery():
     for path in yamls:
         cfg = _load(path)
         assert cfg.goal.enabled is True, path.name
+        assert cfg.goal.rework_fingerprint is True, path.name
+        assert cfg.goal.quiescent_after_escalate is True, path.name
+        assert cfg.workflow.strict_triggers.rework_attempts_gte == 2, path.name
         assert cfg.workflow.flow_metadata["delivery_policy"] == "ship_candidate"
         # Legacy active runs remain resumable during the authority cutover.
         assert cfg.runtime.git.auto_ship_on_judge_passed is True, path.name

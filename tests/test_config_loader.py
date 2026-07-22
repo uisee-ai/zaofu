@@ -1064,6 +1064,7 @@ def test_load_real_zf_yaml_expands_thin_prd_controller():
         "dev-lane-1",
         "verify-lane-0",
         "verify-lane-1",
+        "orchestrator",
     }
     assert [stage.id for stage in cfg.workflow.stages] == [
         "prd-scan",
@@ -1121,6 +1122,27 @@ def test_load_workflow_fast_path_config(tmp_path: Path):
     assert cfg.workflow.fast_path.blocked_file_globs == ["src/zf/runtime/**"]
     assert cfg.workflow.fast_path.blocked_keywords == ["security"]
     assert cfg.workflow.fast_path.verification_required is True
+
+
+def test_load_candidate_quality_and_acceptance_split_policy(tmp_path: Path):
+    p = tmp_path / "zf.yaml"
+    p.write_text(
+        'version: "1.0"\n'
+        "project:\n  name: test\n"
+        "workflow:\n"
+        "  candidate_quality_source: task_contract_required\n"
+        "  work_units:\n"
+        "    enabled: true\n"
+        "    split_quality:\n"
+        "      mode: blocking\n"
+        "      max_acceptance_criteria: 7\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_config(p)
+
+    assert cfg.workflow.candidate_quality_source == "task_contract_required"
+    assert cfg.workflow.work_units.split_quality.max_acceptance_criteria == 7
 
 
 def test_validate_rejects_invalid_fast_path_skip_stage(tmp_path: Path):

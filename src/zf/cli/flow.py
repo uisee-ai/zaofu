@@ -34,9 +34,10 @@ from zf.core.workflow.request_policy import (
 from zf.runtime.preflight import preflight_ok, run_preflight_checks
 from zf.runtime.run_contract import (
     build_run_contract,
+    evaluate_run_contract_submit_binding,
     load_run_contract,
     required_delivery_artifacts,
-    run_contract_drift_diagnostics,
+    write_run_contract,
 )
 
 
@@ -668,6 +669,7 @@ def draft_flow_spec(
             "session": {
                 "tmux_session": f"${{ZF_TMUX_SESSION:-{_default_tmux_session(project)}}}",
             },
+            **_explicit_orchestrator_spec(backend),
         },
     }
     runtime_profile_name = "flow-draft-runtime/v1"
@@ -751,6 +753,7 @@ def draft_multi_kind_project_spec(
         "session": {
             "tmux_session": f"${{ZF_TMUX_SESSION:-{_default_tmux_session(project)}}}",
         },
+        **_explicit_orchestrator_spec(backend),
         "uses": [runtime_profile_name],
     }
     if skill_sources:
@@ -770,6 +773,34 @@ def _default_tmux_session(project: str) -> str:
     slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(project or "flow").strip()).strip("-")
     slug = slug.lower()[:48] or "flow"
     return f"zf-{slug}"
+
+
+def _explicit_orchestrator_spec(backend: str) -> dict[str, Any]:
+    return {
+        "orchestrator": {
+            "backend": backend,
+            "wake_min_interval_s": 5,
+        },
+        "roles": [{
+            "name": "orchestrator",
+            "instance_id": "orchestrator",
+            "role_kind": "reader",
+            "backend": backend,
+            "permission_mode": "bypass",
+            "transport": "tmux",
+            "stuck_threshold_seconds": 900,
+            "spawn_ready_timeout_seconds": 240,
+            "triggers": [
+                "dispatch.silent_stall",
+                "orchestrator.rework.triage.requested",
+            ],
+            "publishes": ["orchestrator.rework.triage.recorded"],
+            "skills": [
+                "zf-yoke-orchestrator-role-context",
+                "zf-harness-state-sync",
+            ],
+        }],
+    }
 
 
 def _draft_runtime_profile_doc(
@@ -801,12 +832,19 @@ def _draft_runtime_profile_doc(
                 "interval_seconds": 10,
                 "max_actions_per_tick": 1,
             },
+            "feishu_inbound": {
+                "enabled": "${ZF_FEISHU_INBOUND_ENABLED:-false}",
+                "mode": "bridge",
+                "require_routing": True,
+            },
         },
         "workflow": {
+            "candidate_quality_source": "task_contract_required",
             "work_units": {
                 "enabled": True,
                 "split_quality": {
                     "mode": "blocking",
+                    "max_acceptance_criteria": 8,
                 },
             },
         },
@@ -1006,13 +1044,17 @@ def _skill_sources_from_adapter_plan(
         if not isinstance(item, dict):
             continue
         source_name = str(item.get("source_name") or "")
-        if source_name not in {"zaofu", "skill-source:zaofu"}:
+        if source_name in {"", "project", "state", "yoke"}:
             continue
         source_ref = str(item.get("source_ref") or "")
         if not source_ref:
             continue
         skill_root = Path(source_ref).expanduser().parent.parent
-        source_paths["zaofu-skills"] = skill_root
+        if source_name in {"zaofu", "skill-source:zaofu"}:
+            config_name = "zaofu-skills"
+        else:
+            config_name = source_name.removeprefix("skill-source:")
+        source_paths[config_name] = skill_root
     out: list[dict[str, str]] = []
     for name, root in sorted(source_paths.items()):
         out.append({
@@ -1147,6 +1189,11 @@ def build_flow_submit_preview(
     resolved_kind = _normalize_request_kind(
         flow_kind or str(manifest.get("kind") or report.get("flow_kind") or "")
     )
+    source_ref_blockers = _submit_source_ref_blockers(
+        config_path=config_path,
+        source_ref=str(manifest.get("source_ref") or ""),
+        flow_kind=resolved_kind,
+    )
     resolved_task_id = _resolve_submit_task_id(task_id, request_id=request_id, kind=resolved_kind)
     workflow_tier = str(
         manifest.get("workflow_tier")
@@ -1235,10 +1282,15 @@ def build_flow_submit_preview(
     }
     blockers = [
         *(report.get("blockers") or []),
+        *source_ref_blockers,
         *route_blockers,
         *request_blockers,
     ]
-    status = "STOP" if route_blockers or request_blockers else report["status"]
+    status = (
+        "STOP"
+        if source_ref_blockers or route_blockers or request_blockers
+        else report["status"]
+    )
     if (
         status != "STOP"
         and request_projection
@@ -1286,6 +1338,56 @@ _WORKFLOW_MATRIX_REF_KEYS = (
     "skill_adapter_plan_ref",
     "intake_json_ref",
 )
+
+
+def _submit_source_ref_blockers(
+    *,
+    config_path: Path,
+    source_ref: str,
+    flow_kind: str,
+) -> list[dict[str, Any]]:
+    """Mirror reader target admission before a workflow is submitted."""
+
+    ref = str(source_ref or "").strip()
+    if flow_kind not in {"issue", "prd"} or not ref:
+        return []
+    project_root = config_path.resolve().parent
+    candidate = Path(ref).expanduser()
+    if not candidate.is_absolute():
+        candidate = project_root / candidate
+    try:
+        resolved = candidate.resolve(strict=False)
+        resolved.relative_to(project_root)
+        if resolved.exists():
+            return []
+    except (OSError, RuntimeError, ValueError):
+        pass
+    git_ref = subprocess.run(
+        ["git", "-C", str(project_root), "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if git_ref.returncode == 0:
+        return []
+    return [{
+        "severity": "STOP",
+        "kind": "workflow_source_ref_unresolvable",
+        "title": "workflow source_ref 无法作为 reader target 使用",
+        "message": (
+            f"source_ref `{ref}` 既不是项目内现存路径，也不是可解析 Git ref"
+        ),
+        "why_it_matters": (
+            "reader worktree 会 fail-closed；若继续 submit，只会消耗有界 rework "
+            "而不会启动 scan agent。"
+        ),
+        "fix_it": (
+            "将 Issue/PRD 输入复制到项目内并更新 workflow input manifest，"
+            "或改用当前项目可解析的 Git ref。"
+        ),
+        "safe_auto_fix": False,
+    }]
 
 
 def _workflow_manifest_artifact_refs(
@@ -1369,6 +1471,14 @@ def apply_flow_submit(
     payload = dict(preview.get("payload") or {})
     correlation_id = str(payload.get("request_id") or "")
     task = str(payload.get("task_id") or "")
+    if preview["status"] != "STOP":
+        _pin_submitted_run_contract(
+            state_dir=state_dir,
+            preview=preview,
+            writer=writer,
+            correlation_id=correlation_id,
+            task_id=task,
+        )
     if preview["status"] != "STOP" and correlation_id:
         from zf.runtime.workflow_requests import mark_workflow_request
 
@@ -1693,7 +1803,11 @@ def build_flow_preflight_report(
             "title": "当前 workflow 缺少合并候选树质量门",
             "message": candidate_gate_gap,
             "why_it_matters": "多 lane 合并后必须重新验证集成候选树。",
-            "fix_it": "配置项目真实 quality_gates，或仅在观测运行中显式豁免。",
+            "fix_it": (
+                "配置 workflow.candidate_quality_source=task_contract_required "
+                "并由 Task Map 声明 verification，或配置显式 legacy "
+                "quality_gates；仅观测运行才使用豁免。"
+            ),
             "safe_auto_fix": False,
         })
     from zf.core.workflow.flow_metadata import flow_metadata_for
@@ -1702,6 +1816,15 @@ def build_flow_preflight_report(
         flow_metadata_for(config, effective_kind),
         intake_report=intake_report,
     )
+    diagnostics.extend(_project_setup_readiness_diagnostics(
+        config=config,
+        project_root=project_root,
+        metadata=metadata,
+    ))
+    diagnostics.extend(_git_delivery_baseline_diagnostics(
+        project_root=project_root,
+        metadata=metadata,
+    ))
     diagnostics.extend(_environment_readiness_diagnostics(
         metadata,
         allow_missing_env=allow_missing_env,
@@ -1762,6 +1885,130 @@ def build_flow_preflight_report(
             if str(item.get("severity") or "").upper() == "STOP"
         ],
     }
+
+
+def _project_setup_readiness_diagnostics(
+    *,
+    config: Any,
+    project_root: Path,
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if str(metadata.get("delivery_policy") or "report_only") not in {
+        "ship",
+        "ship_candidate",
+        "candidate_ship",
+        "code_merge",
+        "merge",
+    }:
+        return []
+    target_root = _resolve_declared_root(
+        str(metadata.get("target_root") or ""),
+        project_root,
+    ) or project_root
+    setup_script = str(getattr(config.project, "setup_script", "") or "").strip()
+    node_checks = [
+        str(command).strip()
+        for gate in (getattr(config, "quality_gates", {}) or {}).values()
+        if getattr(gate, "enabled", True)
+        for command in (getattr(gate, "required_checks", []) or [])
+        if re.search(
+            r"(?:^|&&|\|\||;)\s*(?:cd\s+\S+\s+&&\s*)?"
+            r"(?:npm|npx|pnpm|yarn|bun|bunx)\b",
+            str(command).strip(),
+        )
+    ]
+    has_node_manifest = any(
+        (target_root / name).exists()
+        for name in (
+            "package.json",
+            "package-lock.json",
+            "pnpm-lock.yaml",
+            "yarn.lock",
+            "bun.lockb",
+        )
+    )
+    if has_node_manifest and node_checks and not setup_script:
+        return [{
+            "severity": "STOP",
+            "kind": "project_setup_missing",
+            "title": "候选 worktree 缺少依赖准备声明",
+            "message": (
+                "Node quality gates require project.scripts.setup before "
+                "candidate integration"
+            ),
+            "why_it_matters": "干净 worktree 不继承 node_modules,质量门会误报产品失败。",
+            "fix_it": "在 zf.yaml 配置 project.scripts.setup（例如 npm ci）。",
+            "safe_auto_fix": False,
+            "quality_commands": node_checks,
+        }]
+    if not setup_script:
+        return []
+    syntax = subprocess.run(
+        ["sh", "-n", "-c", setup_script],
+        cwd=target_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if syntax.returncode == 0:
+        return []
+    return [{
+        "severity": "STOP",
+        "kind": "project_setup_invalid",
+        "title": "project.scripts.setup 无法解析",
+        "message": (syntax.stderr or syntax.stdout or "invalid shell syntax").strip(),
+        "why_it_matters": "候选 worktree setup 无法执行时所有后续质量门都不可信。",
+        "fix_it": "修复 project.scripts.setup 的 shell 语法。",
+        "safe_auto_fix": False,
+    }]
+
+
+def _git_delivery_baseline_diagnostics(
+    *,
+    project_root: Path,
+    metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
+    if str(metadata.get("delivery_policy") or "report_only") not in {
+        "ship",
+        "ship_candidate",
+        "candidate_ship",
+        "code_merge",
+        "merge",
+    }:
+        return []
+    target_root = _resolve_declared_root(
+        str(metadata.get("target_root") or ""),
+        project_root,
+    ) or project_root
+    delivery_git_root = _target_git_root(target_root, project_root)
+    if delivery_git_root is None:
+        return []
+    try:
+        target_pathspec = os.path.relpath(target_root, delivery_git_root)
+    except ValueError:
+        target_pathspec = "."
+    status = subprocess.run(
+        [
+            "git", "status", "--porcelain", "--untracked-files=no",
+            "--", target_pathspec,
+        ],
+        cwd=delivery_git_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0 or not status.stdout.strip():
+        return []
+    paths = [line[3:] for line in status.stdout.splitlines() if len(line) > 3]
+    return [{
+        "severity": "STOP",
+        "kind": "git_delivery_baseline_dirty",
+        "title": "交付基线包含未提交的 tracked 改动",
+        "message": ", ".join(paths[:10]),
+        "why_it_matters": "candidate/ship 不能区分既有脏改动与本次 workflow 交付。",
+        "fix_it": "先提交、暂存到独立 worktree，或恢复这些 tracked 改动后再启动。",
+        "safe_auto_fix": False,
+    }]
 
 
 def _delivery_launch_coverage_report(
@@ -1888,15 +2135,68 @@ def _run_contract_preflight_report(
         workflow_input_manifest_ref=manifest_ref,
     )
     previous = load_run_contract(state_dir)
-    diagnostics = run_contract_drift_diagnostics(previous, contract, strict=strict)
+    bootstrap = build_run_contract(
+        config,
+        config_path=config_path,
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+    binding = evaluate_run_contract_submit_binding(
+        previous,
+        contract,
+        bootstrap=bootstrap,
+        strict=strict,
+    )
+    diagnostics = list(binding.get("diagnostics") or [])
     return {
         "schema_version": "run-contract-preflight.v1",
-        "status": "STOP" if any(d["severity"] == "STOP" for d in diagnostics)
-        else "WARN" if diagnostics else "PASS",
+        "status": str(binding.get("status") or "PASS"),
         "preview": contract,
         "previous_ref": str(state_dir / "config" / "run-contract.json") if previous else "",
+        "initial_binding": bool(binding.get("initial_binding")),
+        "comparison_basis": str(binding.get("comparison_basis") or "current"),
         "diagnostics": diagnostics,
     }
+
+
+def _pin_submitted_run_contract(
+    *,
+    state_dir: Path,
+    preview: dict[str, Any],
+    writer: EventWriter,
+    correlation_id: str,
+    task_id: str,
+) -> None:
+    preflight_ref = str(preview.get("preflight_ref") or "")
+    report = _load_json(Path(preflight_ref)) if preflight_ref else {}
+    run_contract = report.get("run_contract")
+    run_contract = run_contract if isinstance(run_contract, dict) else {}
+    contract = run_contract.get("preview")
+    if not isinstance(contract, dict) or not str(contract.get("contract_digest") or ""):
+        raise RuntimeError("accepted workflow submit is missing its run contract preview")
+    previous = load_run_contract(state_dir)
+    path = write_run_contract(state_dir, contract)
+    if str((previous or {}).get("contract_digest") or "") == str(
+        contract.get("contract_digest") or ""
+    ):
+        return
+    refs = contract.get("refs")
+    refs = refs if isinstance(refs, dict) else {}
+    manifest_refs = refs.get("workflow_input_manifest")
+    manifest_refs = manifest_refs if isinstance(manifest_refs, list) else []
+    writer.append(ZfEvent(
+        type="config.run_contract.request_bound",
+        actor="zf-cli",
+        task_id=task_id,
+        correlation_id=correlation_id,
+        payload={
+            "run_id": correlation_id,
+            "run_contract_ref": str(path),
+            "contract_digest": str(contract.get("contract_digest") or ""),
+            "workflow_input_manifest_ref": str(manifest_refs[0] if manifest_refs else ""),
+            "initial_binding": bool(run_contract.get("initial_binding")),
+        },
+    ))
 
 
 def _delivery_refs_for_name(

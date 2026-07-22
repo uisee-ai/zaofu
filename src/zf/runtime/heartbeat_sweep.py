@@ -105,6 +105,16 @@ def sweep_heartbeats(
             examined[instance_id] = None
             continue
 
+        # ZF-LIVENESS-FOLD-01(07-17 UISSE 实弹):worker.heartbeat 依赖
+        # LLM 自觉,整轮可为 0;而 last_action_ts 随 agent.usage /
+        # codex.hook 客观更新(dev-lane-0 一轮 499 条 hook 证明活着,
+        # 却因零自觉心跳被判 stuck ×5 → escalate → quiescent)。
+        # 活性 = max(自觉心跳, 客观动作)——对 LLM worker,一切依赖
+        # 其自觉的信号必须有客观折算兜底。
+        action_ts = _parse_ts(payload.get("last_action_ts")) if isinstance(payload, dict) else None
+        if action_ts is not None and action_ts > ts:
+            ts = action_ts
+
         age = (sweep_now - ts).total_seconds()
         examined[instance_id] = age
 

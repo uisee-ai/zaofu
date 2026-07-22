@@ -138,6 +138,22 @@ def test_stale_worker_claim_keeps_feedback_open() -> None:
     assert snapshot["stale_claims"][0]["reason"] == "identity_mismatch"
 
 
+def test_legacy_contract_revision_is_treated_as_unspecified() -> None:
+    request = _request()
+    request.payload["contract_revision"] = "legacy"
+
+    snapshot = reduce_attempt_handoffs([
+        request,
+        _dispatch(),
+        _claim(),
+        _verify("b" * 40),
+    ])
+
+    assert snapshot["open_feedback_count"] == 0
+    assert snapshot["pending_handoff_count"] == 0
+    assert snapshot["stale_claims"] == []
+
+
 def test_impl_lane_terminal_cannot_close_verifier_finding() -> None:
     target = "b" * 40
     impl_lane_terminal = ZfEvent(

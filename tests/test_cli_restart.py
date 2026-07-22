@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import json
+import os
 from pathlib import Path
 
 import pytest
@@ -41,6 +41,19 @@ class TestRestart:
         assert result == 0
         captured = capsys.readouterr()
         assert "dev" in captured.out.lower()
+
+    def test_restart_propagates_exact_cli_command(
+        self,
+        project_dir: Path,
+        monkeypatch,
+    ):
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+
+        result = main(["restart", "dev", "--dry-run"])
+
+        assert result == 0
+        assert os.environ["ZF_CLI_CMD"] != "zf"
+        assert "zf" in os.environ["ZF_CLI_CMD"]
 
     def test_restart_unknown_role(self, project_dir: Path):
         result = main(["restart", "nonexistent", "--dry-run"])

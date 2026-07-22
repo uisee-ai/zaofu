@@ -105,6 +105,30 @@ def test_task_ref_manager_creates_ref_and_index_for_valid_build(tmp_path: Path):
     assert index["TASK-1"]["task_ref"] == "task/TASK-1"
 
 
+def test_task_ref_manager_preserves_workflow_run_without_correlation(tmp_path: Path):
+    head = _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    result = TaskRefManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=_config(state_dir),
+    ).process_dev_build_done(ZfEvent(
+        type="dev.build.done",
+        actor="dev",
+        task_id="TASK-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "source_commit": head,
+            "source_branch": "worker/dev",
+        },
+    ))
+
+    assert result is not None
+    assert result.status == "updated"
+    assert result.payload["trace_id"] == "run-1"
+
+
 def test_task_ref_manager_rejects_source_commit_outside_contract_scope(
     tmp_path: Path,
 ) -> None:
@@ -596,6 +620,9 @@ def test_task_ref_manager_rejects_dirty_workdir_handoff(tmp_path: Path):
             "source_commit": head,
             "source_branch": "worker/dev",
             "workdir": str(workdir),
+            "workflow_run_id": "run-1",
+            "contract_revision": "contract-r1",
+            "task_map_generation": "task-map-g1",
         },
     )
 
@@ -608,6 +635,9 @@ def test_task_ref_manager_rejects_dirty_workdir_handoff(tmp_path: Path):
     assert result is not None
     assert result.status == "rejected"
     assert "has uncommitted changes" in result.payload["reason"]
+    assert result.payload["workflow_run_id"] == "run-1"
+    assert result.payload["contract_revision"] == "contract-r1"
+    assert result.payload["task_map_generation"] == "task-map-g1"
     assert not (state_dir / "refs" / "task-index.json").exists()
 
 
@@ -680,6 +710,9 @@ def test_task_ref_manager_ignores_undeclared_runtime_materialized_dirty(
     skill.parent.mkdir(parents=True)
     skill.write_text("# materialized skill\n", encoding="utf-8")
     (workdir / ".zf-setup.done").write_text("ok\n", encoding="utf-8")
+    vitest_cache = workdir / "node_modules" / ".vite" / "vitest" / "run" / "results.json"
+    vitest_cache.parent.mkdir(parents=True)
+    vitest_cache.write_text("{}\n", encoding="utf-8")
     config = ZfConfig(
         project=ProjectConfig(name="test", state_dir=str(state_dir)),
         roles=[
@@ -717,6 +750,10 @@ def test_task_ref_manager_ignores_undeclared_runtime_materialized_dirty(
         for ref in diagnostics["ignored_runtime_dirty_files"]
     )
     assert ".zf-setup.done" in diagnostics["ignored_runtime_dirty_files"]
+    assert (
+        "node_modules/.vite/vitest/run/results.json"
+        in diagnostics["ignored_runtime_dirty_files"]
+    )
 
 
 def test_task_ref_manager_rejects_non_head_source_commit(tmp_path: Path):

@@ -12,6 +12,8 @@ from zf.core.events.writer import EventWriter
 from zf.runtime.candidate_rework import plan_candidate_rework
 from zf.runtime.lane_micro_loop import (
     CONTINUATION_EVENT,
+    GOAL_RESCAN_COMPLETED_EVENT,
+    GOAL_RESCAN_FAILED_EVENT,
     maybe_inject_rescan_continuation,
     maybe_inject_rework_continuation,
 )
@@ -227,6 +229,49 @@ def test_rescan_skips_done_tasks(tmp_path: Path) -> None:
         events=[], event_writer=EventWriter(log),
         transport=_Transport(), task_store=_TaskStore(status="done"),
     ) == []
+    terminal = log.read_all()
+    assert [event.type for event in terminal] == [GOAL_RESCAN_COMPLETED_EVENT]
+    assert terminal[0].payload["outcome"] == "no_eligible_tasks"
+    assert terminal[0].causation_id == rescan.id
+    assert maybe_inject_rescan_continuation(
+        event=rescan, config=_cfg(), state_dir=state_dir,
+        events=terminal, event_writer=EventWriter(log),
+        transport=_Transport(), task_store=_TaskStore(status="done"),
+    ) == []
+    assert len(log.read_all()) == 1
+
+
+def test_rescan_dead_lane_emits_failed_terminal(tmp_path: Path) -> None:
+    state_dir, log = _env(tmp_path)
+    rescan = ZfEvent(type="goal.rescan.requested", actor="zf-cli",
+                     payload={"trigger": "idle", "rescan_ordinal": 2})
+
+    assert maybe_inject_rescan_continuation(
+        event=rescan, config=_cfg(), state_dir=state_dir,
+        events=[], event_writer=EventWriter(log),
+        transport=_Transport(alive=False), task_store=_TaskStore(),
+    ) == []
+
+    terminal = log.read_all()
+    assert [event.type for event in terminal] == [GOAL_RESCAN_FAILED_EVENT]
+    assert terminal[0].payload["outcome"] == "no_live_lane_delivery"
+    assert terminal[0].payload["eligible_task_ids"] == [_TASK]
+
+
+def test_rescan_disabled_micro_loop_still_settles_request(tmp_path: Path) -> None:
+    state_dir, log = _env(tmp_path)
+    rescan = ZfEvent(type="goal.rescan.requested", actor="zf-cli",
+                     payload={"trigger": "idle"})
+
+    assert maybe_inject_rescan_continuation(
+        event=rescan, config=_cfg(micro=False), state_dir=state_dir,
+        events=[], event_writer=EventWriter(log),
+        transport=_Transport(), task_store=_TaskStore(),
+    ) == []
+
+    terminal = log.read_all()
+    assert [event.type for event in terminal] == [GOAL_RESCAN_FAILED_EVENT]
+    assert terminal[0].payload["outcome"] == "micro_loop_disabled"
 
 
 class _TwoTaskStore:

@@ -17,6 +17,14 @@ NON_SEMANTIC_FAILURE_CLASSES = frozenset({
     "verifier_contract_failure",
     "harness_failure",
     "dependency_blocked",
+    "candidate_environment_setup_failed",
+    "candidate_dependency_missing",
+    "candidate_integration_failure",
+    "candidate_contract_failure",
+})
+PRODUCT_SEMANTIC_FAILURE_CLASSES = frozenset({
+    PRODUCT_FAILURE_CLASS,
+    "candidate_product_quality_failed",
 })
 _CANDIDATE_OWNER_MARKERS = frozenset({
     "assembly",
@@ -187,7 +195,7 @@ def valid_series_failures(
             continue
         if str(payload.get("superseded_by") or "").strip():
             continue
-        if failure_class_from_payload(payload) != PRODUCT_FAILURE_CLASS:
+        if failure_class_from_payload(payload) not in PRODUCT_SEMANTIC_FAILURE_CLASSES:
             continue
         current = recovery_series_from_event(event)
         if current.workflow_run_id != series.workflow_run_id:

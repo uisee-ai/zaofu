@@ -9,6 +9,7 @@ from pathlib import Path
 from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events import EventLog, ZfEvent
+from zf.runtime.cli_command import set_default_zf_cli_cmd
 from zf.runtime.transport import make_transport
 from zf.runtime.orchestrator import Orchestrator
 
@@ -37,6 +38,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> int:
     dry_run = getattr(args, "dry_run", False)
+    set_default_zf_cli_cmd()
 
     try:
         context = resolve_project_context(

@@ -17,6 +17,10 @@ from typing import Any, Iterable
 from zf.core.events.model import ZfEvent
 
 GOAL_RESCAN_EVENT = "goal.rescan.requested"
+_GOAL_RESCAN_TERMINALS = frozenset({
+    "goal.rescan.completed",
+    "goal.rescan.failed",
+})
 _FANOUT_TERMINALS = frozenset({
     "fanout.aggregate.completed", "fanout.timed_out", "fanout.cancelled",
 })
@@ -74,6 +78,8 @@ def maybe_emit_goal_idle_rescan(
         if event.type == GOAL_RESCAN_EVENT:
             rescan_count += 1
             pending_rescan = True
+        elif event.type in _GOAL_RESCAN_TERMINALS:
+            pending_rescan = False
         if event.type.endswith(_FAIL_EVENT_SUFFIXES) and not event.type.startswith("codex."):
             fail_refs.append(event.id)
 

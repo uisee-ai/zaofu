@@ -533,6 +533,15 @@ def _skill_report(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     entries: list[dict[str, Any]] = []
     diagnostics: list[dict[str, Any]] = []
+    # Honor the config's declared skill strictness — the same flag `zf
+    # validate` gates on (validate.py: config.runtime.skills.strict). When
+    # strict=False a missing/invalid enabled skill is a visible WARN, not a
+    # boot-blocking STOP; otherwise `zf validate` blesses a config as valid
+    # that `zf start` preflight then refuses to boot (autoresearch
+    # controlled-stuck-recovery: harness never emits session.started, seeded
+    # user.message is never processed, run times out at 0 tasks done).
+    strict_skills = bool(config.runtime.skills.strict)
+    skill_missing_severity = "STOP" if strict_skills else "WARN"
     for role in config.roles:
         for entry in build_skill_lock_entries(
             project_root=project_root,
@@ -545,7 +554,7 @@ def _skill_report(
             role_ref = item.get("instance_id") or item.get("role") or ""
             if item.get("status") in {"missing", "invalid"}:
                 diagnostics.append(_diag(
-                    severity="STOP",
+                    severity=skill_missing_severity,
                     kind="skill_resolution_failed",
                     message=(
                         f"role `{role_ref}` 启用的 skill `{item.get('name', '')}` "

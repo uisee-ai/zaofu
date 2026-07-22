@@ -112,11 +112,10 @@ def _preserved_run_manager_start_context(
 
 
 def _write_claude_hook_settings(state_dir: Path) -> None:
-    """Phase 1: render .zf/hooks/settings.json consumed by
-    `claude --settings`. Currently configures the Stop hook so every
-    Claude turn end automatically emits orchestrator.round.complete
-    (or, for non-orchestrator roles, the same event — zaofu's reactor
-    filters by actor).
+    """Render the Claude hooks consumed through ``claude --settings``.
+
+    Pre/PostToolUse provide activity and write-scope enforcement. Stop emits
+    the round-complete signal after the deterministic stop guard passes.
 
     All hook invocations pipe the hook JSON through stdin to
     `zf hook-recv`, which resolves session_id → instance_id via
@@ -128,6 +127,26 @@ def _write_claude_hook_settings(state_dir: Path) -> None:
     state_dir_arg = shlex.quote(str(state_dir))
     settings = {
         "hooks": {
+            "PreToolUse": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": (
+                        f"{zf_cli_cmd()} hook-recv --event claude.hook.pre_tool_use "
+                        f"--backend claude-code --state-dir {state_dir_arg}"
+                    ),
+                }],
+            }],
+            "PostToolUse": [{
+                "matcher": "*",
+                "hooks": [{
+                    "type": "command",
+                    "command": (
+                        f"{zf_cli_cmd()} hook-recv --event claude.hook.post_tool_use "
+                        f"--backend claude-code --state-dir {state_dir_arg}"
+                    ),
+                }],
+            }],
             # ZF-PWF-STOP-GUARD-001 integration (2026-05-18):
             # provider.stop.check runs BEFORE the existing
             # orchestrator.round.complete emit so a worker stopping
@@ -414,13 +433,25 @@ def _write_run_contract_snapshot(
         "release",
         "release_candidate",
     }
+    previous = load_run_contract(state_dir)
+    previous_refs = (
+        previous.get("refs")
+        if isinstance(previous, dict) and isinstance(previous.get("refs"), dict)
+        else {}
+    )
+    previous_manifest_refs = previous_refs.get("workflow_input_manifest", [])
+    previous_manifest_ref = (
+        str(previous_manifest_refs[0] or "")
+        if isinstance(previous_manifest_refs, list) and previous_manifest_refs
+        else ""
+    )
     contract = build_run_contract(
         config,
         config_path=config_path,
         project_root=project_root,
         state_dir=state_dir,
+        workflow_input_manifest_ref=previous_manifest_ref,
     )
-    previous = load_run_contract(state_dir)
     strict = strict_run_contract_drift(previous, contract, strict=strict)
     diagnostics = run_contract_drift_diagnostics(previous, contract, strict=strict)
     if diagnostics:

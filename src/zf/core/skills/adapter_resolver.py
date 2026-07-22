@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any
 import yaml
 
 from zf.core.config.schema import ZfConfig
+from zf.core.package_source import installed_local_source_root
 from zf.core.security.hash import sha256_file
 from zf.core.skills.provenance import (
     SkillCandidate,
@@ -407,7 +409,24 @@ def _canonical_zaofu_candidates(
 
 
 def _zaofu_repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    examples_dir = str(os.environ.get("ZF_EXAMPLES_DIR") or "").strip()
+    if examples_dir:
+        configured_root = Path(examples_dir).expanduser().resolve().parent
+        if (configured_root / "examples" / "prod").is_dir():
+            return configured_root
+    package_root = Path(__file__).resolve().parents[4]
+    if (package_root / "examples" / "prod").is_dir():
+        return package_root
+    installed_root = installed_local_source_root()
+    if (
+        installed_root is not None
+        and (installed_root / "examples" / "prod").is_dir()
+    ):
+        return installed_root
+    cwd = Path.cwd().resolve()
+    if (cwd / "examples" / "prod").is_dir():
+        return cwd
+    return package_root
 
 
 def _skill_payload(

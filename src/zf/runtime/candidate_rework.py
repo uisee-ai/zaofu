@@ -21,15 +21,14 @@ it as a self-healing sweep and it stays unit-testable.
 
 from __future__ import annotations
 
-import hashlib
-
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from zf.core.events.module_parity import is_module_parity_scan_completed_event
 from zf.core.events.model import ZfEvent
 from zf.runtime.failure_kind import budget_candidate_failure_ids
-from zf.runtime.rework_triage import classify_rework_trigger
+from zf.runtime.candidate_rework_generation import reset_generation_caches, task_ids_from_payload
+from zf.runtime.rework_triage import classify_rework_trigger, is_plan_level_task_contract_blocker
 from zf.runtime.canonical_recovery import classify_recovery_scope
 from zf.runtime.candidate_rework_identity import (
     _candidate_generation_stale,
@@ -37,6 +36,10 @@ from zf.runtime.candidate_rework_identity import (
     _pdd_by_fanout_id,
     _pdd_from_event,
     _safe_int,
+)
+from zf.runtime.candidate_rework_fingerprint import (
+    dedupe_feedback as _dedupe_feedback,
+    rejection_fingerprint as _rejection_fingerprint,
 )
 
 if TYPE_CHECKING:
@@ -126,6 +129,7 @@ class ReworkPlan:
     failed_task_ids: tuple[str, ...] = field(default_factory=tuple)
     gap_tasks: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     classification: str = ""
+    failure_fingerprint: str = ""
     failure_categories: tuple[str, ...] = field(default_factory=tuple)
     rework_summary: dict[str, Any] = field(default_factory=dict)
 
@@ -139,8 +143,6 @@ class _CandidateClosure:
     trace_id: str
     target_ref: str
     candidate_ref: str
-
-
 
 
 def _is_stale_task_map_candidate_failure(event: object, payload: dict) -> bool:
@@ -158,24 +160,6 @@ def _is_stale_task_map_candidate_failure(event: object, payload: dict) -> bool:
 def _fingerprint_counting_enabled(config: object) -> bool:
     goal = getattr(config, "goal", None)
     return bool(getattr(goal, "rework_fingerprint", False))
-
-
-def _rejection_fingerprint(payload: dict) -> str:
-    """U2:驳回内容指纹(doom-loop 形态的机械等值——同 findings 才同指纹)。"""
-    parts = [str(payload.get("reason") or "").strip().lower()]
-    findings = payload.get("findings")
-    for item in findings if isinstance(findings, list) else []:
-        if isinstance(item, dict):
-            parts.append(str(item.get("message") or item.get("path") or "").strip().lower())
-        else:
-            parts.append(str(item).strip().lower())
-    report = payload.get("report")
-    if isinstance(report, dict):
-        for item in report.get("findings") or []:
-            if isinstance(item, dict):
-                parts.append(str(item.get("message") or "").strip().lower())
-    text = "\n".join(sorted(part for part in parts if part))
-    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
 
 def plan_candidate_rework(
@@ -220,6 +204,14 @@ def plan_candidate_rework(
         payload = getattr(event, "payload", {}) or {}
         if not isinstance(payload, dict):
             payload = {}
+        reset_generation_caches(
+            event,
+            payload,
+            boundary_event_types={RETRIGGER_EVENT, REPLAN_EVENT},
+            feedback_by_trace=feedback_by_trace,
+            failed_task_ids_by_trace=failed_task_ids_by_trace,
+            gap_tasks_by_trace=gap_tasks_by_trace,
+        )
         if event_id and (
             etype in CANDIDATE_FAIL_EVENTS or etype.endswith(".child.failed")
         ):
@@ -229,6 +221,11 @@ def plan_candidate_rework(
             fanout_pdd = str(payload.get("pdd_id") or "").strip()
             if fanout_id and fanout_pdd:
                 pdd_by_fanout_id[fanout_id] = fanout_pdd
+        integration_only_resume = (
+            etype == "workflow.resume.applied"
+            and str(payload.get("mode") or "")
+            == "candidate_rework_integration_only"
+        )
         if etype in (
             RETRIGGER_EVENT,
             REPLAN_EVENT,
@@ -236,9 +233,15 @@ def plan_candidate_rework(
             # 批B:微环注入 = 该拒收已被处理(并计入指纹 attempt,
             # 同指纹再拒时停滞判定正常工作)
             "task.rework.continuation_injected",
-        ) and payload.get("rework_of"):
+        ) or integration_only_resume:
+            rework_of = str(
+                payload.get("rework_of")
+                or (payload.get("source_event_id") if integration_only_resume else "")
+                or ""
+            )
+            if not rework_of:
+                continue
             pdd = str(payload.get("pdd_id") or "")
-            rework_of = str(payload.get("rework_of"))
             handled_by_event.setdefault(rework_of, set()).add(pdd)
             if etype != ESCALATE_EVENT and rework_of not in no_attempt_ids:
                 # Count unique handled source events, not raw task_map.ready rows.
@@ -295,9 +298,34 @@ def plan_candidate_rework(
                 feedback_by_trace.setdefault(trace, []).append(
                     f"worker-rejection {who}: {reason[:220]}"
                 )
+        elif is_plan_level_task_contract_blocker(event):
+            trace = str(
+                payload.get("trace_id")
+                or getattr(event, "correlation_id", "")
+                or ""
+            )
+            reason = str(payload.get("reason") or payload.get("summary") or "").strip()
+            if reason:
+                feedback_by_trace.setdefault(trace, []).append(
+                    f"task-contract-blocker {event.task_id or '?'}: {reason}"
+                )
+            task_ids = task_ids_from_payload(payload)
+            if event.task_id:
+                task_ids.add(str(event.task_id))
+            blocker_ids = payload.get("blocker_task_ids")
+            if not isinstance(blocker_ids, list):
+                blocker_ids = [payload.get("blocked_on_task")]
+            task_ids.update(
+                str(item).strip()
+                for item in blocker_ids
+                if str(item or "").strip()
+            )
+            if task_ids:
+                failed_task_ids_by_trace.setdefault(trace, set()).update(task_ids)
+            rejections.append(event)
         elif etype.endswith(".child.failed"):
             trace = str(payload.get("trace_id") or getattr(event, "correlation_id", "") or "")
-            task_ids = _task_ids_from_payload(payload)
+            task_ids = task_ids_from_payload(payload)
             if task_ids:
                 failed_task_ids_by_trace.setdefault(trace, set()).update(task_ids)
             reason = str(payload.get("reason") or "").strip()
@@ -359,7 +387,7 @@ def plan_candidate_rework(
             gap_tasks = _gap_tasks_from_payload(payload)
             if gap_tasks:
                 gap_tasks_by_trace.setdefault(trace, []).extend(gap_tasks)
-            task_ids = _task_ids_from_payload(payload)
+            task_ids = task_ids_from_payload(payload)
             if task_ids:
                 failed_task_ids_by_trace.setdefault(trace, set()).update(task_ids)
             rejections.append(event)
@@ -422,15 +450,15 @@ def plan_candidate_rework(
         target_ref = str(payload.get("target_ref") or "")
         trace = str(payload.get("trace_id") or getattr(event, "correlation_id", "") or "")
         source_event_type = str(getattr(event, "type", ""))
-        feedback = tuple(feedback_by_trace.get(trace, []))
+        feedback = tuple(_dedupe_feedback(feedback_by_trace.get(trace, [])))
         failed_task_ids = tuple(sorted(failed_task_ids_by_trace.get(trace, set())))
         gap_tasks = tuple(_dedupe_gap_tasks(gap_tasks_by_trace.get(trace, [])))
         source_attempts = attempts_by_pdd_source.get((pdd, source_event_type), set())
         ineffective_rejection = False
+        current_fp = _rejection_fingerprint(payload)
         if fingerprint_on:
             # U2:同 findings 指纹才计满(doom-loop 形态);findings 在
             # 前进 → 新预算,不误报 escalate(r6.1 续跑 6 次误报实弹)。
-            current_fp = _rejection_fingerprint(payload)
             source_attempts = {
                 rework_id for rework_id in source_attempts
                 if rejection_fp_by_id.get(rework_id) == current_fp
@@ -439,7 +467,7 @@ def plan_candidate_rework(
             # (触发 r6.1 续跑停机的第 12 轮正是此类伪拒)。
             from zf.runtime.rejection_validity import rejection_effective
 
-            check_ids = _task_ids_from_payload(payload) or sorted(
+            check_ids = task_ids_from_payload(payload) or sorted(
                 failed_task_ids_by_trace.get(trace, set())
             )
             for check_id in check_ids:
@@ -509,6 +537,7 @@ def plan_candidate_rework(
             failed_task_ids=failed_task_ids,
             gap_tasks=gap_tasks,
             classification=classification,
+            failure_fingerprint=current_fp,
             failure_categories=failure_categories,
             rework_summary=_rework_summary(
                 pdd_id=pdd,
@@ -523,10 +552,6 @@ def plan_candidate_rework(
             ),
         ))
     return plans
-
-
-
-
 
 
 def _candidate_success_closures(
@@ -643,10 +668,6 @@ def _candidate_closure_matches_failure(
     if trace_match and (ref_match or not pdd_id or not closure.pdd_id):
         return True
     return ref_match and (pdd_match or trace_match)
-
-
-
-
 
 
 def _infra_only_candidate_failure_ids(events: list) -> set[str]:
@@ -776,37 +797,6 @@ def _dedupe_gap_tasks(gap_tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-def _task_ids_from_payload(payload: dict) -> set[str]:
-    out: set[str] = set()
-    for key in ("task_id",):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            out.add(value.strip())
-    for key in ("task_ids", "failed_task_ids", "completed_task_ids"):
-        value = payload.get(key)
-        if not isinstance(value, list):
-            continue
-        for item in value:
-            if isinstance(item, str) and item.strip():
-                out.add(item.strip())
-            elif isinstance(item, dict):
-                task_id = str(item.get("task_id") or item.get("id") or "").strip()
-                if task_id:
-                    out.add(task_id)
-    findings = payload.get("findings")
-    if not isinstance(findings, list):
-        report = payload.get("report") if isinstance(payload.get("report"), dict) else {}
-        findings = report.get("findings")
-    if isinstance(findings, list):
-        for item in findings:
-            if not isinstance(item, dict):
-                continue
-            task_id = str(item.get("task_id") or item.get("task") or "").strip()
-            if task_id:
-                out.add(task_id)
-    return out
-
-
 def _rework_summary(
     *,
     pdd_id: str,
@@ -891,6 +881,17 @@ def _failure_categories(event: object, feedback: tuple[str, ...]) -> tuple[str, 
         )
     ):
         categories.append("schema_gap")
+    if any(
+        marker in text
+        for marker in (
+            "missing script:",
+            "unknown script",
+            "script not found",
+            "quality_gate_contract_mismatch",
+            "candidate_quality_gate_contract_mismatch",
+        )
+    ):
+        categories.append("quality_gate_contract_gap")
     if any(
         marker in text
         for marker in (

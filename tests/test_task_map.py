@@ -1,11 +1,53 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from zf.runtime.task_map import (
+    resolve_artifact_file,
     validate_source_index_payload,
     validate_task_map_payload,
 )
+
+
+def test_resolve_artifact_file_maps_dot_zf_to_configured_state_dir(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    state_dir = tmp_path / ".zf-custom"
+    artifact = state_dir / "artifacts" / "GOAL-1" / "task_map.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"tasks": []}\n', encoding="utf-8")
+
+    resolved = resolve_artifact_file(
+        ".zf/artifacts/GOAL-1/task_map.json",
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+
+    assert resolved == artifact
+
+
+def test_resolve_artifact_file_uses_unique_worker_copy_as_legacy_fallback(
+    tmp_path: Path,
+) -> None:
+    project_root = tmp_path / "project"
+    state_dir = tmp_path / ".zf-custom"
+    artifact = (
+        state_dir / "workdirs" / "planner-1" / "project"
+        / ".zf" / "artifacts" / "GOAL-1" / "task_map.json"
+    )
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"tasks": []}\n', encoding="utf-8")
+
+    resolved = resolve_artifact_file(
+        ".zf/artifacts/GOAL-1/task_map.json",
+        project_root=project_root,
+        state_dir=state_dir,
+    )
+
+    assert resolved == artifact
 
 
 def test_task_map_validation_accepts_dependency_layers() -> None:
@@ -589,6 +631,27 @@ def test_task_map_validation_accepts_assembly_task_with_independent_owner() -> N
     assert result.passed is True
     assert result.summary["bundle_owner_count"] == 3
     assert result.summary["assembly_task_count"] == 1
+
+
+def test_task_map_validation_allows_later_gap_to_reuse_assembly_owner() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "tasks": [
+            _task("AVBS-SCENE-001", "dev-scene"),
+            _task("AVBS-FLOW-001", "dev-flow"),
+            _task(
+                "AVBS-ASSEMBLY-001", "dev-assembly",
+                root_owner_class="assembly", wave=2,
+                blocked_by=["AVBS-SCENE-001", "AVBS-FLOW-001"],
+            ),
+            _task(
+                "AVBS-GAP-001", "dev-assembly", wave=3,
+                blocked_by=["AVBS-ASSEMBLY-001"],
+            ),
+        ],
+    })
+
+    assert result.passed is True
 
 
 def test_task_map_validation_allows_single_owner_serial_plan_without_assembly() -> None:

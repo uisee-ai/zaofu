@@ -156,6 +156,9 @@ class DurableCallFanoutMixin:
                 causation_id=str(manifest.get("trigger_event_id") or ""),
             )
             for task_item, role, child, raw_child in pending:
+                self._unpark_writer_fanout_deferred_task(
+                    str(task_item.get("task_id") or "")
+                )
                 before = len(self.event_log.read_all())
                 self._dispatch_writer_fanout_child(
                     context=context,
@@ -444,9 +447,21 @@ class DurableCallFanoutMixin:
         fanout_root = self.state_dir / "fanouts"
         if not fanout_root.exists():
             return False
-        for manifest_path in fanout_root.glob("*/manifest.json"):
-            fanout_id = manifest_path.parent.name
-            manifest = self._fanout_manifest(fanout_id)
+        manifests = [
+            (manifest_path.parent.name, self._fanout_manifest(manifest_path.parent.name))
+            for manifest_path in fanout_root.glob("*/manifest.json")
+        ]
+        started_order = {
+            str((event.payload or {}).get("fanout_id") or ""): index
+            for index, event in enumerate(events)
+            if event.type == "fanout.started" and isinstance(event.payload, dict)
+        }
+
+        # Close stale generations before attempting any current dispatch. The
+        # filesystem does not guarantee glob order; interleaving closeout and
+        # dispatch made current children wait an extra tick when their manifest
+        # happened to sort before the stale owner of the same reader role.
+        for fanout_id, manifest in manifests:
             if not manifest or manifest.get("topology") != "fanout_reader":
                 continue
             aggregate = (
@@ -458,6 +473,54 @@ class DurableCallFanoutMixin:
                 str(manifest.get("status") or "") in terminal_statuses
                 or str(aggregate.get("status") or "") in terminal_statuses
             ):
+                continue
+            stale_reason, superseded_by = self._reader_fanout_stale_status(
+                fanout_id=fanout_id,
+                manifest=manifest,
+                manifests=manifests,
+                started_order=started_order,
+            )
+            if not stale_reason:
+                continue
+            before = len(self.event_log.read_all())
+            self._cancel_superseded_fanout_manifest(
+                fanout_id=fanout_id,
+                manifest=manifest,
+                reason=stale_reason,
+                superseded_by=superseded_by,
+                source="superseded_reader_fanout_manifest_closeout",
+            )
+            recovered = recovered or len(self.event_log.read_all()) > before
+
+        for fanout_id, manifest in manifests:
+            if not manifest or manifest.get("topology") != "fanout_reader":
+                continue
+            aggregate = (
+                manifest.get("aggregate")
+                if isinstance(manifest.get("aggregate"), dict)
+                else {}
+            )
+            if (
+                str(manifest.get("status") or "") in terminal_statuses
+                or str(aggregate.get("status") or "") in terminal_statuses
+            ):
+                continue
+            stale_reason, superseded_by = self._reader_fanout_stale_status(
+                fanout_id=fanout_id,
+                manifest=manifest,
+                manifests=manifests,
+                started_order=started_order,
+            )
+            if stale_reason:
+                before = len(self.event_log.read_all())
+                self._cancel_superseded_fanout_manifest(
+                    fanout_id=fanout_id,
+                    manifest=manifest,
+                    reason=stale_reason,
+                    superseded_by=superseded_by,
+                    source="superseded_reader_fanout_manifest_closeout",
+                )
+                recovered = recovered or len(self.event_log.read_all()) > before
                 continue
             stage_id = str(manifest.get("stage_id") or "")
             stage = self._fanout_stage_by_id(stage_id)
@@ -524,6 +587,124 @@ class DurableCallFanoutMixin:
                 recovered = recovered or len(self.event_log.read_all()) > before
         return recovered
 
+    def _reader_fanout_stale_status(
+        self,
+        *,
+        fanout_id: str,
+        manifest: dict,
+        manifests: list[tuple[str, dict | None]],
+        started_order: dict[str, int],
+    ) -> tuple[str, str]:
+        stale_reason, superseded_by = self._fanout_identity_stale_reason(
+            fanout_id,
+        )
+        if stale_reason:
+            return stale_reason, superseded_by
+        superseded_by = self._newer_reader_replan_fanout(
+            fanout_id=fanout_id,
+            manifest=manifest,
+            manifests=manifests,
+            started_order=started_order,
+        )
+        if superseded_by:
+            return "superseded_by_newer_replan_attempt", superseded_by
+        return "", ""
+
+    @staticmethod
+    def _newer_reader_replan_fanout(
+        *,
+        fanout_id: str,
+        manifest: dict,
+        manifests: list[tuple[str, dict | None]],
+        started_order: dict[str, int],
+    ) -> str:
+        aggregate_config = (
+            manifest.get("aggregate_config")
+            if isinstance(manifest.get("aggregate_config"), dict)
+            else {}
+        )
+        success_event = str(aggregate_config.get("success_event") or "")
+        if success_event != "task_map.ready" and not success_event.endswith(
+            ".plan.ready"
+        ):
+            return ""
+        trigger = (
+            manifest.get("trigger_payload")
+            if isinstance(manifest.get("trigger_payload"), dict)
+            else {}
+        )
+        try:
+            attempt = int(trigger.get("rework_attempt") or 0)
+        except (TypeError, ValueError):
+            return ""
+        if attempt <= 0:
+            return ""
+        current_order = started_order.get(fanout_id, -1)
+        if current_order < 0:
+            return ""
+
+        scope = (
+            str(manifest.get("stage_id") or ""),
+            str(
+                trigger.get("workflow_run_id")
+                or trigger.get("run_id")
+                or manifest.get("workflow_run_id")
+                or manifest.get("trace_id")
+                or ""
+            ),
+            str(manifest.get("pdd_id") or ""),
+            str(manifest.get("feature_id") or ""),
+        )
+        if not any(scope[1:]):
+            return ""
+        role_instances = {
+            str(child.get("role_instance") or "")
+            for child in manifest.get("children", []) or []
+            if isinstance(child, dict) and child.get("role_instance")
+        }
+        newer: list[tuple[int, str]] = []
+        for candidate_id, candidate in manifests:
+            if candidate_id == fanout_id or not candidate:
+                continue
+            if started_order.get(candidate_id, -1) <= current_order:
+                continue
+            candidate_trigger = (
+                candidate.get("trigger_payload")
+                if isinstance(candidate.get("trigger_payload"), dict)
+                else {}
+            )
+            try:
+                candidate_attempt = int(
+                    candidate_trigger.get("rework_attempt") or 0
+                )
+            except (TypeError, ValueError):
+                continue
+            candidate_scope = (
+                str(candidate.get("stage_id") or ""),
+                str(
+                    candidate_trigger.get("workflow_run_id")
+                    or candidate_trigger.get("run_id")
+                    or candidate.get("workflow_run_id")
+                    or candidate.get("trace_id")
+                    or ""
+                ),
+                str(candidate.get("pdd_id") or ""),
+                str(candidate.get("feature_id") or ""),
+            )
+            if candidate_attempt <= attempt or candidate_scope != scope:
+                continue
+            candidate_roles = {
+                str(child.get("role_instance") or "")
+                for child in candidate.get("children", []) or []
+                if isinstance(child, dict) and child.get("role_instance")
+            }
+            if role_instances and candidate_roles and role_instances.isdisjoint(
+                candidate_roles
+            ):
+                continue
+            newer.append((candidate_attempt, candidate_id))
+        return max(newer, default=(0, ""))[1]
+
     def _prepare_writer_fanout_child_operation(
         self,
         *,
@@ -539,11 +720,34 @@ class DurableCallFanoutMixin:
 
         task_id = str(task_item.get("task_id") or "")
         run_id = f"run-{context.fanout_id}-{child.child_id}"
-        plan = WorkdirManager(
+        manager = WorkdirManager(
             state_dir=self.state_dir,
             project_root=self.project_root,
             config=self.config,
-        ).prepare(role)
+        )
+        plan = manager.prepare(role)
+        source_ref = str(
+            task_item.get("dispatch_base_commit")
+            or task_item.get("candidate_base_commit")
+            or task_item.get("source_commit")
+            or ""
+        ).strip()
+        workdir_sync = manager.sync_writer_to_source_ref(
+            role,
+            source_ref_override=source_ref or None,
+        )
+        dependency_task_ids = list(dict.fromkeys([
+            str(task_id).strip()
+            for task_id in (
+                list(task_item.get("blocked_by") or [])
+                + list(task_item.get("depends_on") or [])
+            )
+            if str(task_id or "").strip()
+        ]))
+        dependency_result = manager.apply_dependency_task_refs(
+            role,
+            dependency_task_ids,
+        )
         skill_entries = self._record_skill_provenance(
             role=role,
             task_id=task_id,
@@ -576,6 +780,13 @@ class DurableCallFanoutMixin:
             "role_instance": role.instance_id,
             "target_ref": child.target_ref or context.target_ref,
             "skills": list(role.skills),
+            "workdir_sync": workdir_sync,
+            "dependency_refs": list(
+                dependency_result.get("applied_dependency_refs") or []
+            ),
+            "dependency_refs_skipped": list(
+                dependency_result.get("skipped_dependency_refs") or []
+            ),
         }
         prepared_call = None
         from zf.runtime.call_result_admission import result_protocol_mode
@@ -610,6 +821,8 @@ class DurableCallFanoutMixin:
             "contract_dispatch_fields": contract_dispatch_fields,
             "operation_payload": operation_payload,
             "prepared_call": prepared_call,
+            "workdir_sync": workdir_sync,
+            "dependency_result": dependency_result,
         }
 
     def _preregister_writer_fanout_operations(
@@ -623,6 +836,31 @@ class DurableCallFanoutMixin:
 
         prepared: dict[str, dict[str, Any]] = {}
         for task_item, role, child in assignments:
+            run_id = f"run-{context.fanout_id}-{child.child_id}"
+            if self._writer_task_dispatch_fence_reason(
+                str(task_item.get("task_id") or ""),
+                role_instance=role.instance_id,
+                run_id=run_id,
+            ):
+                prepared[child.child_id] = {"skip": True, "run_id": run_id}
+                continue
+            # Do not mint an immutable operation before the provider lane can
+            # actually receive it. A deferred child is retried later; preparing
+            # it twice may legitimately observe a different dependency merge
+            # commit and contract snapshot, which would turn recovery into a
+            # request_hash_divergence for the same operation id.
+            if not self._ensure_fanout_role_dispatchable(
+                role=role,
+                fanout_id=context.fanout_id,
+                stage_id=context.stage_id,
+                child_id=child.child_id,
+                run_id=run_id,
+                trace_id=context.trace_id,
+                causation_id=causation_id,
+                prompt_kind="fanout_child",
+            ):
+                prepared[child.child_id] = {"skip": True, "run_id": run_id}
+                continue
             try:
                 prepared[child.child_id] = self._prepare_writer_fanout_child_operation(
                     context=context,
@@ -632,7 +870,6 @@ class DurableCallFanoutMixin:
                     causation_id=causation_id,
                 )
             except Exception as exc:
-                run_id = f"run-{context.fanout_id}-{child.child_id}"
                 self.event_writer.append(ZfEvent(
                     type="fanout.child.failed",
                     actor="zf-cli",

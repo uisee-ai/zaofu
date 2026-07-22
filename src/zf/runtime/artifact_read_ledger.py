@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import (
+    SidecarRefError,
     build_sidecar_ref_descriptor,
     hydrate_sidecar_ref,
     safe_sidecar_ref,
@@ -310,10 +312,33 @@ def append_artifact_read(state_dir: Path, row: Mapping[str, Any]) -> Path:
 def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
     active = active_read_ledger_path(state_dir, attempt_id)
     with locked_path(active):
-        if not active.exists():
+        attempt_dir = active.parent
+        sealed_paths = sorted(attempt_dir.glob("read-ledger-*.jsonl"))
+        if not active.exists() and not sealed_paths:
             raise ArtifactReadError(f"active read ledger missing for {attempt_id}")
-        raw = active.read_bytes()
-        _parse_ledger(raw, expected_attempt_id=attempt_id)
+
+        # Output correction keeps the same attempt identity. The runtime may
+        # eagerly seal the active ledger between individual correction reads,
+        # so a later seal must carry forward every prior fragment instead of
+        # validating only the most recent read.
+        rows_by_body: dict[str, dict[str, Any]] = {}
+        for path in [*sealed_paths, *([active] if active.exists() else [])]:
+            for row in _parse_ledger(
+                path.read_bytes(),
+                expected_attempt_id=attempt_id,
+            ):
+                body = json.dumps(
+                    row,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                rows_by_body.setdefault(body, row)
+        ordered = sorted(
+            rows_by_body.items(),
+            key=lambda item: (str(item[1].get("read_at") or ""), item[0]),
+        )
+        raw = "".join(f"{body}\n" for body, _ in ordered).encode("utf-8")
         digest = hashlib.sha256(raw).hexdigest()
         sealed_ref = (
             f"artifacts/attempts/{_safe_component(attempt_id)}/"
@@ -324,9 +349,9 @@ def seal_read_ledger(state_dir: Path, attempt_id: str) -> dict[str, Any]:
         if sealed.exists():
             if sealed.read_bytes() != raw:
                 raise ArtifactReadError("sealed read ledger collision")
-            active.unlink(missing_ok=True)
         else:
-            os.replace(active, sealed)
+            atomic_write_text(sealed, raw.decode("utf-8"))
+        active.unlink(missing_ok=True)
         return build_sidecar_ref_descriptor(
             kind="artifact_read_ledger",
             ref=sealed_ref,
@@ -417,13 +442,28 @@ def render_attempt_source_briefing(payload: Mapping[str, Any]) -> str:
         return ""
     attempt_id = str(payload.get("attempt_id") or payload.get("run_id") or "")
     required = payload.get("required_reads") if isinstance(payload.get("required_reads"), list) else []
+    from zf.runtime.cli_command import zf_cli_cmd
+
+    cli_command = zf_cli_cmd()
     lines = [
         "## Controlled Artifact Inputs",
         "",
         f"- source_manifest_ref: `{ref}`",
         f"- attempt_id: `{attempt_id}`",
-        "- List inputs with `zf artifact list --attempt <attempt-id>`.",
-        "- Read handoff-critical inputs with `zf artifact read --attempt <attempt-id> --source <source-id> --artifact <artifact-id>`.",
+        (
+            f"- List inputs with `{cli_command} artifact list --attempt "
+            "<attempt-id>`."
+        ),
+        (
+            f"- Read handoff-critical inputs with `{cli_command} artifact read "
+            "--attempt <attempt-id> --source <source-id> --artifact <artifact-id>`."
+        ),
+        (
+            "- Execute one literal CLI command per tool call. Do not use shell "
+            "variables, aliases, loops, pipes, redirections, command "
+            "substitution, or compound commands; Claude allowlist matching is "
+            "performed before shell expansion."
+        ),
     ]
     if required:
         lines.extend(["- Required reads for this attempt:", "```json", json.dumps(required, ensure_ascii=False, indent=2), "```"])
@@ -486,6 +526,14 @@ def _source_from_ref(
     normalized_ref = ref
     try:
         normalized_ref = path.resolve().relative_to(state_dir.resolve()).as_posix()
+        try:
+            safe_sidecar_ref(normalized_ref)
+        except SidecarRefError:
+            normalized_ref = _copy_attempt_input(
+                state_dir=state_dir,
+                path=path,
+                digest=digest,
+            )
     except ValueError:
         try:
             path.resolve().relative_to(project_root.resolve())
@@ -494,18 +542,11 @@ def _source_from_ref(
         # Controlled reads operate exclusively on immutable state sidecars.
         # Project inputs are copied by digest so restart/replay cannot observe
         # a later edit through the same manifest ref.
-        safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", path.name).strip("-.") or "input"
-        normalized_ref = f"artifacts/attempt-inputs/{digest[:16]}-{safe_name}"
-        materialized = sidecar_path(state_dir, normalized_ref)
-        with locked_path(materialized):
-            materialized.parent.mkdir(parents=True, exist_ok=True)
-            if materialized.exists():
-                if hashlib.sha256(materialized.read_bytes()).hexdigest() != digest:
-                    raise ArtifactReadError("attempt input sidecar collision")
-            else:
-                materialized.write_bytes(path.read_bytes())
-                with materialized.open("rb") as handle:
-                    os.fsync(handle.fileno())
+        normalized_ref = _copy_attempt_input(
+            state_dir=state_dir,
+            path=path,
+            digest=digest,
+        )
     return {
         "source_id": source_id,
         "artifact_id": path.name,
@@ -514,6 +555,22 @@ def _source_from_ref(
         "sha256": digest,
         "allowed_paths": ["$"],
     }
+
+
+def _copy_attempt_input(*, state_dir: Path, path: Path, digest: str) -> str:
+    safe_name = re.sub(r"[^A-Za-z0-9._-]+", "-", path.name).strip("-.") or "input"
+    normalized_ref = f"artifacts/attempt-inputs/{digest[:16]}-{safe_name}"
+    materialized = sidecar_path(state_dir, normalized_ref)
+    with locked_path(materialized):
+        materialized.parent.mkdir(parents=True, exist_ok=True)
+        if materialized.exists():
+            if hashlib.sha256(materialized.read_bytes()).hexdigest() != digest:
+                raise ArtifactReadError("attempt input sidecar collision")
+        else:
+            materialized.write_bytes(path.read_bytes())
+            with materialized.open("rb") as handle:
+                os.fsync(handle.fileno())
+    return normalized_ref
 
 
 def _resolve_ref_path(*, state_dir: Path, project_root: Path, ref: str) -> Path:

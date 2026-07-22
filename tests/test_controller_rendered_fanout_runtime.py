@@ -118,7 +118,7 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
         (
             "issue",
             "issue-fanout-v3.yaml",
-            ["fix-lane-0", "fix-lane-1"],
+            ["fix-lane-0"],
             "fix-lane-0",
         ),
         (
@@ -212,8 +212,8 @@ def test_rendered_controller_queue_releases_next_impl_task(
 
     assert len(started) == 1
     assert [item[0] for item in transport.sent] == initial_roles
-    assert len(dispatched) == 2
-    assert len(queued) == 2
+    assert len(dispatched) == len(initial_roles)
+    assert len(queued) == len(items) - len(initial_roles)
     assert not [event for event in events if event.type == "fanout.cancelled"]
 
     fanout_id = started[0].payload["fanout_id"]

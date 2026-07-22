@@ -350,6 +350,80 @@ def test_v4_valid_pass_closes_task_and_advances_final_stage(tmp_path: Path) -> N
     assert transport.sent[-1][0] == "judge"
 
 
+def test_v4_missing_target_sidecar_fails_lane_instead_of_closing_task(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, _transport, orch = _state(
+        tmp_path,
+        task_count=1,
+        lane_count=1,
+        event_schemas=_TYPED_RESULT_SCHEMA,
+        schema_profile="canonical-dag/v4",
+    )
+    _start(orch)
+    impl_id = _fanout_id(log, "demo-impl")
+    _complete_writer(
+        orch,
+        fanout_id=impl_id,
+        child=_child(_manifest(state_dir, impl_id), "TASK-1"),
+        task_id="TASK-1",
+        file_name="task-1.txt",
+    )
+    verify_id = _fanout_id(log, "demo-verify")
+    verify_child = _manifest(state_dir, verify_id)["children"][0]
+    child_payload = verify_child["payload"]
+    contract = hydrate_task_contract_snapshot(
+        state_dir,
+        contract_descriptor_from_payload(child_payload),
+    )
+    requirement_results = [{
+        "acceptance_id": criterion["acceptance_id"],
+        "status": "passed",
+        "verification_owner": criterion["verification_owner"],
+        "verification_tier": criterion["verification_tier"],
+        "findings": [],
+        "reproduction_commands": ["test -f task-1.txt"],
+        "evidence_refs": ["artifacts/task-1-pass.log"],
+    } for criterion in contract["acceptance_criteria"]]
+    missing_ref = "artifacts/task-verification-targets/missing.json"
+    completion = ZfEvent(
+        type="verify.child.completed",
+        actor=verify_child["role_instance"],
+        correlation_id="trace-1",
+        payload={
+            **child_payload,
+            "fanout_id": verify_id,
+            "child_id": verify_child["child_id"],
+            "run_id": verify_child["run_id"],
+            "role_instance": verify_child["role_instance"],
+            "status": "completed",
+            "target_snapshot_ref": missing_ref,
+            "target_snapshot_digest": "f" * 64,
+            "verification_result": {
+                "execution_status": "completed",
+                "verdict": "passed",
+                "summary": "claims pass but target sidecar is absent",
+                "target_snapshot_ref": missing_ref,
+                "target_snapshot_digest": "f" * 64,
+                "requirement_results": requirement_results,
+            },
+        },
+    )
+
+    orch.run_once(events=[completion])
+
+    events = log.read_all()
+    failure = next(
+        event for event in events
+        if event.type == "lane.stage.failed"
+        and event.payload.get("task_id") == "TASK-1"
+    )
+    assert failure.payload["failure_class"] == "verifier_contract_failure"
+    assert "sidecar ref missing" in failure.payload["reason"]
+    assert not [event for event in events if event.type == "task.done.evidence"]
+    assert TaskStore(state_dir / "kanban.json").get("TASK-1").status != "done"
+
+
 def test_blocked_terminal_schema_event_fails_reader_child_immediately(
     tmp_path: Path,
 ) -> None:

@@ -163,6 +163,51 @@ def test_fanout_manifest_rebuild_ignores_unknown_payload_fields(tmp_path: Path):
     assert manifest["barrier"]["failed_children"] == ["review"]
 
 
+def test_fanout_manifest_completion_clears_prior_failure_details(
+    tmp_path: Path,
+):
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    events = [
+        ZfEvent(
+            type="fanout.started",
+            actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-1",
+                "topology": "fanout_writer_scoped",
+                "expected_children": [{"child_id": "dev", "role_instance": "dev"}],
+            },
+        ),
+        ZfEvent(
+            type="fanout.child.failed",
+            actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-1",
+                "child_id": "dev",
+                "reason": "stale_task_map",
+                "evidence": {"expected": "old"},
+            },
+        ),
+        ZfEvent(
+            type="fanout.child.completed",
+            actor="zf-cli",
+            payload={
+                "fanout_id": "fanout-1",
+                "child_id": "dev",
+                "status": "completed",
+                "result_event_id": "evt-current-result",
+            },
+        ),
+    ]
+
+    manifest = FanoutManifestProjector(state_dir).write_manifest("fanout-1", events)
+
+    child = manifest["children"][0]
+    assert child["status"] == "completed"
+    assert child["reason"] == ""
+    assert child["evidence"] == {}
+
+
 def test_fanout_manifest_marks_corrected_failure_non_blocking() -> None:
     manifest = {
         "fanout_id": "fanout-final-judge",

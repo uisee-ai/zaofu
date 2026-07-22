@@ -74,6 +74,10 @@ def _norm_template(value: Any) -> Any:
             "roleKindByStage": "role_kind_by_stage",
             "allowedTools": "allowed_tools",
             "budgetUsd": "budget_usd",
+            "contextWarningThreshold": "context_warning_threshold",
+            "contextCompactThreshold": "context_compact_threshold",
+            "contextHardCap": "context_hard_cap",
+            "drainHoldSeconds": "drain_hold_seconds",
         },
         context="spec.laneRoleTemplate",
     )
@@ -484,12 +488,15 @@ def _apply_flow_defaults(
     unknown = sorted(
         str(key)
         for key in raw_defaults
-        if str(key) not in {"roleSkillBundles", "role_skill_bundles"}
+        if str(key) not in {
+            "roleSkillBundles", "role_skill_bundles",
+            "roleDefaults", "role_defaults",
+        }
     )
     if unknown:
         raise KindEnvelopeError(
             f"flow_defaults.{kind_key}: unknown key(s) {unknown}; "
-            "only roleSkillBundles is supported"
+            "only roleSkillBundles and roleDefaults are supported"
         )
     out = dict(spec)
     default_bundles = (
@@ -504,6 +511,27 @@ def _apply_flow_defaults(
             context=f"flow_defaults.{kind_key}.roleSkillBundles",
         )
         out.pop("role_skill_bundles", None)
+    default_role_values = (
+        raw_defaults.get("roleDefaults")
+        or raw_defaults.get("role_defaults")
+        or {}
+    )
+    explicit_role_values = (
+        out.get("roleDefaults")
+        or out.get("role_defaults")
+        or {}
+    )
+    if default_role_values or explicit_role_values:
+        if not isinstance(default_role_values, dict):
+            raise KindEnvelopeError(
+                f"flow_defaults.{kind_key}.roleDefaults must be a mapping"
+            )
+        if not isinstance(explicit_role_values, dict):
+            raise KindEnvelopeError("Flow spec roleDefaults must be a mapping")
+        merged_role_values = _norm_template(default_role_values)
+        merged_role_values.update(_norm_template(explicit_role_values))
+        out["roleDefaults"] = merged_role_values
+        out.pop("role_defaults", None)
     return out
 
 

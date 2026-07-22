@@ -12,7 +12,6 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
 
-
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 REPORT_STATUSES = {"passed", "failed", "blocked", "suspended"}
 REPORT_SEVERITIES = {"info", "low", "medium", "high", "critical"}
@@ -557,6 +556,7 @@ class FanoutManifestProjector:
                     "status": _payload_str(payload, "status") or "completed",
                     "run_id": _payload_str(payload, "run_id"),
                     "result_event_id": _payload_str(payload, "result_event_id"),
+                    "reason": "", "evidence": {},
                     "last_event_id": event.id,
                 })
                 _apply_child_metadata(child, payload)

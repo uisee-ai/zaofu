@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from zf.autoresearch.failure_signals import (
     FailureSignal,
     detect_fanout_failures,
@@ -388,7 +390,7 @@ def test_detect_fanout_pending_uses_grace_window(tmp_path: Path) -> None:
             id="later",
             type="run.manager.tick.completed",
             actor="run-manager",
-            ts=(base + timedelta(seconds=180)).isoformat(),
+            ts=(base + timedelta(seconds=660)).isoformat(),
             payload={"trace_id": "trace-r1"},
             correlation_id="trace-r1",
         ),
@@ -653,6 +655,27 @@ def test_scan_trigger_decisions_ignores_stuck_recovered_by_later_heartbeat(
     decisions = scan_trigger_decisions(state_dir)
 
     assert decisions == []
+
+
+@pytest.mark.parametrize("activity_type", ["agent.usage", "claude.hook.post_tool_use"])
+def test_scan_trigger_decisions_ignores_stuck_recovered_by_objective_activity(
+    tmp_path: Path,
+    activity_type: str,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    log = EventLog(state_dir / "events.jsonl")
+    log.append(ZfEvent(
+        type="worker.stuck",
+        actor="zf-cli",
+        payload={"instance_id": "dev-lane-0", "reason": "stale heartbeat"},
+    ))
+    log.append(ZfEvent(
+        type=activity_type,
+        actor="dev-lane-0",
+        payload={},
+    ))
+
+    assert scan_trigger_decisions(state_dir) == []
 
 
 def test_scan_trigger_decisions_ignores_stuck_recovered_by_later_state_change(
@@ -1100,13 +1123,13 @@ def test_fanout_pending_fires_when_worker_goes_quiet(tmp_path: Path) -> None:
     """反向护栏:worker 静默超宽限(而非仅派发久)才是真停滞,候选照产。"""
     state_dir = tmp_path / ".zf"
     events = [
-        ZfEvent(type="fanout.started", actor="zf-cli", ts=_ago(600),
+        ZfEvent(type="fanout.started", actor="zf-cli", ts=_ago(900),
                 payload={"fanout_id": "fanout-v", "stage_id": "verify"}),
-        ZfEvent(type="fanout.child.dispatched", actor="zf-cli", ts=_ago(590),
+        ZfEvent(type="fanout.child.dispatched", actor="zf-cli", ts=_ago(890),
                 payload={"fanout_id": "fanout-v", "child_id": "verify-1",
                          "stage_id": "verify",
                          "role_instance": "verify-lane-0"}),
-        ZfEvent(type="agent.usage", actor="verify-lane-0", ts=_ago(400),
+        ZfEvent(type="agent.usage", actor="verify-lane-0", ts=_ago(700),
                 payload={}),
         ZfEvent(type="run.manager.tick.completed", actor="zf-cli", ts=_ago(1),
                 payload={}),

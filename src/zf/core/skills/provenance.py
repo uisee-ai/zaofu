@@ -10,6 +10,7 @@ from pathlib import Path
 import yaml
 
 from zf.core.config.schema import RoleConfig, ZfConfig
+from zf.core.package_source import installed_local_source_root
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 
@@ -196,7 +197,13 @@ def _repo_local_yoke_candidates(project_root: Path, name: str) -> list[tuple[str
 
 
 def _zaofu_repo_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    package_root = Path(__file__).resolve().parents[4]
+    if (package_root / "skills").is_dir():
+        return package_root
+    installed_root = installed_local_source_root()
+    if installed_root is not None and (installed_root / "skills").is_dir():
+        return installed_root
+    return package_root
 
 
 def read_skill_metadata(path: Path, *, expected_name: str) -> SkillMetadata:

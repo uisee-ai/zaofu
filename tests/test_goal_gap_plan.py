@@ -93,6 +93,7 @@ def test_goal_gap_plan_appends_generic_gap_task_to_canonical_task_map() -> None:
             "task_id": "ISSUE-123-GAP-001",
             "title": "Fill API regression gap",
             "parent_task_id": "ISSUE-123-PLAN-001",
+            "dependencies": ["ISSUE-123-PLAN-001"],
             "affinity_tag": "api",
             "claim_paths": ["src/api/**", "tests/api/**"],
             "acceptance": ["API returns the requested issue state"],
@@ -117,6 +118,7 @@ def test_goal_gap_plan_appends_generic_gap_task_to_canonical_task_map() -> None:
     assert amended["amend"]["gap_task_ids"] == ["ISSUE-123-GAP-001"]
     appended = amended["tasks"][-1]
     assert appended["task_id"] == "ISSUE-123-GAP-001"
+    assert appended["blocked_by"] == ["ISSUE-123-PLAN-001"]
     assert appended["goal_kind"] == "issue"
     assert appended["gap_category"] == "issue_gap"
     assert appended["allowed_paths"] == ["src/api/**", "tests/api/**"]
@@ -216,3 +218,31 @@ def test_write_gap_task_map_amend_appends_goal_replan_history(tmp_path: Path) ->
     assert rows[0]["gap_category"] == "issue_gap"
     assert rows[0]["affected_tasks"] == ["ISSUE-123-PLAN-001"]
     assert rows[0]["gate_changes"] == ["require API regression evidence"]
+
+
+def test_write_gap_task_map_amend_resolves_state_relative_artifact_ref(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf-custom"
+    base_ref = "artifacts/ISSUE-123/task_map.json"
+    base_path = state_dir / base_ref
+    base_path.parent.mkdir(parents=True)
+    base_path.write_text(json.dumps(_base_task_map()), encoding="utf-8")
+
+    result = write_gap_task_map_amend_artifact(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        base_task_map_ref=base_ref,
+        pdd_id="ISSUE-123",
+        source_event_id="evt-state-relative-gap",
+        gap_tasks=[{
+            "task_id": "ISSUE-123-GAP-001",
+            "claim_paths": ["src/api/**", "tests/api/**"],
+            "acceptance": ["API returns the requested issue state"],
+            "verify_commands": ["uv run pytest tests/api/test_issue_123.py"],
+            "source_refs": ["issues/123.md"],
+        }],
+    )
+
+    assert result["gap_task_ids"] == ["ISSUE-123-GAP-001"]
+    assert Path(result["task_map_path"]).is_file()

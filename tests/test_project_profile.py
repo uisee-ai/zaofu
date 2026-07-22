@@ -15,6 +15,7 @@ from zf.core.profile import PROJECT_TYPES
 from zf.core.profile.apply import (
     apply_agents_md_stack,
     fill_required_checks,
+    materialize_config_skills,
     materialize_flow_assets,
     materialize_zf_yaml,
 )
@@ -319,6 +320,47 @@ def test_materialize_flow_injects_detected_required_checks(tmp_path):
     materialize_flow_assets(r.archetype, tmp_path, config_path=path)
     cfg = load_config(path)
     assert combined_candidate_gate_gap(cfg) == ""
+
+
+def test_materialize_config_skills_resolves_sources_from_config_dir(tmp_path):
+    from zf.core.config.loader import load_config
+
+    source = tmp_path / "harness" / "skills" / "test-skill"
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text(
+        "---\nname: test-skill\ndescription: test\n---\n\n# Test\n",
+        encoding="utf-8",
+    )
+    project = tmp_path / "projects" / "demo"
+    project.mkdir(parents=True)
+    config = project / "zf.yaml"
+    config.write_text(
+        "apiVersion: zaofu.dev/v1\n"
+        "kind: ZfConfig\n"
+        "metadata: {name: demo}\n"
+        "spec:\n"
+        '  version: "1.0"\n'
+        "  project:\n"
+        "    name: demo\n"
+        "  skill_sources:\n"
+        "    - name: harness-skills\n"
+        "      path: ../../harness/skills\n"
+        "      mode: readonly\n"
+        "  roles:\n"
+        "    - name: dev\n"
+        "      backend: mock\n"
+        "      skills: [test-skill]\n",
+        encoding="utf-8",
+    )
+
+    result = materialize_config_skills(config, project)
+
+    assert result == {
+        "skills": ["skills/test-skill"],
+        "rewrote_skill_sources": True,
+    }
+    assert (project / "skills" / "test-skill" / "SKILL.md").is_file()
+    assert load_config(config).skill_sources[0].path == "skills"
 
 
 def test_materialize_preset_injects_checks(tmp_path):

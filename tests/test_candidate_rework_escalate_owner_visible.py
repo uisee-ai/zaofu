@@ -1,10 +1,9 @@
-"""R13 backlog §B: candidate-rework exhaustion surfaces an owner-visible message.
+"""Candidate-rework exhaustion reaches owner visibility through semantic triage.
 
-R13 stalled after the candidate-rework loop fired its 2 bounded attempts on real
-reviewer parity findings and then emitted a bare ``human.escalate`` — which
-dead-ends unattended (nobody is watching). doc 79 no-dead-end: the exhaustion
-must ALSO emit an ``owner.visible_message.requested`` so the operator is actually
-notified (via the O-7 autodeliver) with the unresolved findings.
+The bounded candidate loop first records ``candidate.rework.capped``. Run Manager
+then requests Orchestrator advice and applies the recorded recommendation through
+the controlled action path. A human recommendation must emit both the escalation
+and its owner-visible notification.
 """
 
 from __future__ import annotations
@@ -14,7 +13,14 @@ from pathlib import Path
 
 import pytest
 
-from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
+from zf.core.config.schema import (
+    ProjectConfig,
+    RoleConfig,
+    SessionConfig,
+    WorkflowConfig,
+    WorkflowStrictTriggersConfig,
+    ZfConfig,
+)
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.state.session import SessionStore
@@ -39,7 +45,18 @@ def config() -> ZfConfig:
     return ZfConfig(
         project=ProjectConfig(name="t"),
         session=SessionConfig(tmux_session="t"),
-        roles=[RoleConfig(name="dev", backend="mock")],
+        workflow=WorkflowConfig(
+            strict_triggers=WorkflowStrictTriggersConfig(rework_attempts_gte=2),
+        ),
+        roles=[
+            RoleConfig(name="dev", backend="mock"),
+            RoleConfig(
+                name="orchestrator",
+                backend="mock",
+                triggers=["orchestrator.rework.triage.requested"],
+                publishes=["orchestrator.rework.triage.recorded"],
+            ),
+        ],
     )
 
 
@@ -75,11 +92,34 @@ def test_rework_exhaustion_emits_owner_visible_message(state_dir, config, transp
         log.append(e)
 
     orch = Orchestrator(state_dir, config, transport)
-    orch._run_candidate_rework_sweep()
-    orch._run_candidate_rework_sweep()
+    for _ in range(5):
+        orch._run_candidate_rework_sweep()
+        requests = [
+            event
+            for event in log.read_all()
+            if event.type == "orchestrator.rework.triage.requested"
+        ]
+        if requests:
+            break
+    assert requests, "candidate cap must request semantic triage"
+    request = requests[-1]
+    log.append(ZfEvent(
+        type="orchestrator.rework.triage.recorded",
+        actor="orchestrator",
+        correlation_id=request.correlation_id,
+        payload={
+            "request_id": request.payload["request_id"],
+            "recommended_action": "human",
+            "guidance": "bounded candidate recovery did not converge",
+        },
+    ))
+    for _ in range(5):
+        orch._run_candidate_rework_sweep()
+        if any(event.type == "human.escalate" for event in log.read_all()):
+            break
 
     types = [e.type for e in log.read_all()]
-    # no-dead-end: NOT just human.escalate — an owner-visible notification too
+    assert "candidate.rework.capped" in types
     assert "human.escalate" in types
     assert "owner.visible_message.requested" in types
     escalations = [e for e in log.read_all() if e.type == "human.escalate"]
@@ -165,14 +205,20 @@ def test_integration_failed_rework_recovers_task_map_ref_from_fanout_identity(
 
     rework = [
         e for e in log.read_all()
-        if e.type == "task_map.ready" and e.payload.get("rework_of") == "i1"
+        if e.type == "workflow.resume.applied"
+        and e.payload.get("rework_of") == "i1"
     ]
-    assert rework, "expected corrected rework task_map.ready"
+    assert rework, "expected corrected integration-only rework receipt"
     assert rework[-1].payload.get("pdd_id") == pdd
-    assert rework[-1].payload.get("task_map_ref") == task_map_ref
-    assert rework[-1].payload.get("source_commit") == "abc123"
-    assert rework[-1].payload.get("target_ref") == "main"
     assert rework[-1].payload.get("feature_id") == "FEATURE-1"
+    planned = [
+        e for e in log.read_all()
+        if e.type == "run.manager.action.planned"
+        and e.payload.get("source_event_id") == "i1"
+    ]
+    assert planned[-1].payload.get("task_map_ref") == task_map_ref
+    assert planned[-1].payload.get("source_commit") == "abc123"
+    assert planned[-1].payload.get("target_ref") == "main"
 
 
 def test_stale_task_map_rework_uses_child_payload_and_tmp_anchor(

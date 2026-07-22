@@ -179,6 +179,45 @@ def test_run_objective_ref_prefers_same_run_requirement_snapshot() -> None:
     ) == "artifacts/run-1/revision-0002.json"
 
 
+def test_goal_closure_candidate_ref_uses_matching_candidate_branch() -> None:
+    from zf.runtime.goal_closure_bridge import _resolve_candidate_ref
+
+    target = "a" * 40
+    events = [
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id="other-run",
+            payload={
+                "workflow_run_id": "other-run",
+                "candidate_ref": "candidate/other-run",
+                "candidate_head_commit": target,
+            },
+        ),
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id="run-1",
+            payload={
+                "workflow_run_id": "run-1",
+                "candidate_ref": "candidate/run-1",
+                "candidate_head_commit": target,
+            },
+        ),
+    ]
+
+    assert _resolve_candidate_ref(
+        events,
+        workflow_run_id="run-1",
+        target_commit=target,
+        payload={},
+    ) == "candidate/run-1"
+    assert _resolve_candidate_ref(
+        events,
+        workflow_run_id="run-1",
+        target_commit=target,
+        payload={"candidate_ref": target},
+    ) == "candidate/run-1"
+
+
 def test_run_objective_ref_preserves_legacy_profile_fallback() -> None:
     from zf.runtime.goal_closure_bridge import _resolve_run_objective_ref
 

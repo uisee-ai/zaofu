@@ -537,6 +537,8 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
     payload = event.payload if isinstance(event.payload, dict) else {}
     request_id = str(payload.get("request_id") or "")
     task_id = str(event.task_id or payload.get("task_id") or "")
+    recovery_scope = str(payload.get("recovery_scope") or "task")
+    pdd_id = str(payload.get("pdd_id") or "")
     fingerprint = str(payload.get("failure_fingerprint") or "")
     failure_count = int(payload.get("failure_count") or 0)
     recovery_context = payload.get("recovery_context_ref")
@@ -549,6 +551,8 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
         "schema_version": "orchestrator.rework-triage.advice.v1",
         "request_id": request_id,
         "task_id": task_id,
+        "recovery_scope": recovery_scope,
+        "pdd_id": pdd_id,
         "failure_fingerprint": fingerprint,
         "recommended_action": "REPLACE_WITH_ONE_ALLOWED_VALUE",
         "guidance": "REPLACE_WITH_CONCISE_ACTIONABLE_GUIDANCE",
@@ -559,7 +563,8 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
         "This is proposal-only semantic triage requested by Run Manager.",
         "Do not dispatch, reassign, edit TaskStore, emit `task_map.ready`, or emit "
         "`orchestrator.replan_requested`.",
-        f"Read task `{task_id}`, failure fingerprint `{fingerprint}`, and all "
+        f"Read {recovery_scope} scope `{pdd_id or task_id}`, failure fingerprint "
+        f"`{fingerprint}`, and all "
         f"{failure_count} evidence events listed in the trigger payload.",
         (
             f"Read the bounded recovery context sidecar `{recovery_context_ref}` before deciding."

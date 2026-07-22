@@ -19,6 +19,19 @@ from zf.runtime.remediation_cascade import SAFE_HALTED_EVENT
 
 
 class LifecycleLivenessEvidenceMixin:
+    def _liveness_events(self) -> list[ZfEvent]:
+        """Return the event window through EventLog's append-fold cache.
+
+        Liveness checks run once per role on every orchestrator wake. Using
+        ``read_days(1)`` here re-decodes the complete active JSONL file for
+        every role; ``read_all()`` preserves the same truth source while its
+        append-fold cache decodes only the newly appended tail.
+        """
+        read_all = getattr(self.event_log, "read_all", None)
+        if callable(read_all):
+            return list(read_all())
+        return list(self.event_log.read_days(1))
+
     def _respawn_recent_failure_cooldown_active(self, instance_id: str) -> bool:
         registry = getattr(self, "_respawn_failure_registry", None)
         if registry is None:
@@ -87,7 +100,7 @@ class LifecycleLivenessEvidenceMixin:
             "agent.usage", "agent.text", "agent.tool.use",
         )
         try:
-            for event in reversed(list(self.event_log.read_days(1))):
+            for event in reversed(self._liveness_events()):
                 if getattr(event, "actor", None) != instance_id:
                     continue
                 origin = str(getattr(event, "origin", "") or "")
@@ -122,7 +135,7 @@ class LifecycleLivenessEvidenceMixin:
         (the in-memory registry only caches the active cooldown window).
         """
         try:
-            events = self.event_log.read_days(1)
+            events = self._liveness_events()
         except Exception:
             return 0
         count = 0
@@ -149,7 +162,7 @@ class LifecycleLivenessEvidenceMixin:
         in unattended runs (the R12 "286x escalate, nobody received" hole).
         """
         try:
-            events = self.event_log.read_days(1)
+            events = self._liveness_events()
         except Exception:
             return True
         liveness = channel_liveness(events)
@@ -177,7 +190,7 @@ class LifecycleLivenessEvidenceMixin:
         (doc-80: 878 dispatch_skipped during safe-halt).
         """
         try:
-            events = self.event_log.read_days(1)
+            events = self._liveness_events()
         except Exception:
             return False
         for event in reversed(events):
@@ -193,7 +206,7 @@ class LifecycleLivenessEvidenceMixin:
 
     def _recent_respawn_success_events(self, instance_id: str) -> list[ZfEvent]:
         try:
-            events = self.event_log.read_days(1)
+            events = self._liveness_events()
         except Exception:
             return []
         now = self._now()
@@ -208,4 +221,3 @@ class LifecycleLivenessEvidenceMixin:
             if age <= self._RESPAWN_SUCCESS_WINDOW_SECONDS:
                 recent.append(event)
         return recent
-

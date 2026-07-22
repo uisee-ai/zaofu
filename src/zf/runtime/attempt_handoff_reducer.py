@@ -347,6 +347,11 @@ def _identity_matches(handoff: Mapping[str, Any], payload: Mapping[str, Any]) ->
     for key in ("workflow_run_id", "contract_revision", "task_map_generation"):
         expected = str(handoff.get(key) or "").strip()
         actual = str(payload.get(key) or "").strip()
+        # Historical repair dispatches materialized a missing revision as the
+        # sentinel "legacy".  It carries no identity information and must not
+        # reject a later completion that has the real contract revision.
+        if key == "contract_revision" and expected == "legacy":
+            continue
         if expected and actual and expected != actual:
             return False
     expected_dispatch = str(handoff.get("dispatch_id") or "").strip()

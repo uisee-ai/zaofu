@@ -345,6 +345,11 @@ def test_reconcile_dispatches_task_ref_repair_request_to_owner_lane(
     assert "`source_commit`, `source_branch`, `workdir`" in briefing
     assert "Do not put `git:<sha>`" in briefing
     assert "`.codex/hooks.json`" in briefing
+    assert "source_event_id" in briefing
+    assert "operation/call-result identity" in briefing
+    assert "requires a non-empty `summary`" in briefing
+    assert "Do not run the bare completion command" in briefing
+    assert "Do not commit, delete, add git excludes for" in briefing
 
 
 def test_reconcile_emits_task_ref_repair_request_after_rejection(
@@ -389,6 +394,9 @@ def test_reconcile_emits_task_ref_repair_request_after_rejection(
             "source_branch": "task/T-REF",
             "workdir": str(tmp_path / ".zf" / "workdirs" / "dev-lane-0"),
             "dirty_files": ["packages/core/package.json"],
+            "workflow_run_id": "run-1",
+            "contract_revision": "contract-r1",
+            "task_map_generation": "task-map-g1",
         },
         causation_id=dev_done.id,
     )
@@ -408,6 +416,9 @@ def test_reconcile_emits_task_ref_repair_request_after_rejection(
     assert repair_events[0].payload["expected_action"] == (
         "commit_or_revert_dirty_files_and_reemit_handoff"
     )
+    assert repair_events[0].payload["workflow_run_id"] == "run-1"
+    assert repair_events[0].payload["contract_revision"] == "contract-r1"
+    assert repair_events[0].payload["task_map_generation"] == "task-map-g1"
     assert len(first) == 1
     assert first[0].role == "dev-lane-0"
     assert second == []
@@ -416,6 +427,10 @@ def test_reconcile_emits_task_ref_repair_request_after_rejection(
         and event.payload.get("trigger_event") == "task.ref.repair.requested"
         for event in events
     )
+    rework = next(event for event in events if event.type == "task.rework.requested")
+    assert rework.payload["workflow_run_id"] == "run-1"
+    assert rework.payload["contract_revision"] == "contract-r1"
+    assert rework.payload["task_map_generation"] == "task-map-g1"
 
 
 def test_task_ref_repair_dirty_scan_ignores_runtime_materialized_files(

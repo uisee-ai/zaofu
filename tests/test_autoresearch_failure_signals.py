@@ -96,7 +96,7 @@ def test_fanout_pending_without_lifecycle_becomes_signal(tmp_path: Path) -> None
         id="evt-later",
         type="orchestrator.round.complete",
         actor="zf-cli",
-        ts=(base + timedelta(minutes=5)).isoformat(),
+        ts=(base + timedelta(minutes=15)).isoformat(),
         payload={},
     ))
 

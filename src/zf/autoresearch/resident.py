@@ -218,6 +218,7 @@ def _command_for_request(
         "1",
         "--fix-wait-strategy",
         fix_wait,
+        "--no-backlog-on-failure",
         "--output-dir",
         str(output_root / request_id),
     ]

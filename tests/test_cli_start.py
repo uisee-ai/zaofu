@@ -413,6 +413,37 @@ workflow:
         drift = [event for event in events if event["type"] == "config.run_contract.drift_detected"]
         assert drift[-1]["payload"]["severity"] == "STOP"
 
+    def test_start_preserves_bound_manifest_for_strict_run_restart(
+        self,
+        project_dir: Path,
+    ):
+        from zf.core.config.loader import load_config
+        from zf.runtime.run_contract import build_run_contract, write_run_contract
+
+        manifest = project_dir / "workflow-input-manifest.json"
+        manifest.write_text(json.dumps({
+            "schema_version": "workflow.input_manifest.v1",
+            "kind": "prd",
+            "strictness": "strict",
+        }), encoding="utf-8")
+        state_dir = project_dir / ".zf"
+        original = build_run_contract(
+            load_config(project_dir / "zf.yaml"),
+            config_path=project_dir / "zf.yaml",
+            project_root=project_dir,
+            state_dir=state_dir,
+            workflow_input_manifest_ref=str(manifest),
+        )
+        write_run_contract(state_dir, original)
+
+        assert main(["start", "--dry-run", "--skip-workflow-inspect"]) == 0
+
+        restarted = json.loads(
+            (state_dir / "config" / "run-contract.json").read_text(encoding="utf-8")
+        )
+        assert restarted["contract_digest"] == original["contract_digest"]
+        assert restarted["refs"]["workflow_input_manifest"] == [str(manifest)]
+
     def test_restart_blocks_strict_run_contract_drift_before_stop(
         self,
         project_dir: Path,

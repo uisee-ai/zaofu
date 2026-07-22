@@ -283,6 +283,38 @@ class TestDevBlocked:
         # Must not crash
         orch.run_once()
 
+    def test_evidenced_contract_blocker_routes_to_replan_without_human(
+        self, state_dir: Path, legacy_config, transport
+    ):
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(
+            id="T1", title="scheduler", status="in_progress", assigned_to="dev",
+        ))
+        _emit(state_dir, ZfEvent(
+            type="dev.blocked",
+            actor="dev",
+            task_id="T1",
+            payload={
+                "pdd_id": "PDD-1",
+                "blocker_kind": "upstream_contract_gap",
+                "blocked_on_task": "T0",
+                "reason": "required core surface is outside allowed_paths",
+                "evidence_refs": ["git:abc123"],
+            },
+        ))
+
+        orch = Orchestrator(state_dir, legacy_config, transport)
+        orch.run_once()
+
+        assert store.get("T1").status == "blocked"
+        events = EventLog(state_dir / "events.jsonl").read_all()
+        assert not any(event.type == "human.escalate" for event in events)
+        triage = next(
+            event for event in events
+            if event.type == "task.rework.triage.completed"
+        )
+        assert triage.payload["classification"] == "design_issue"
+
 
 class TestGateFailed:
     def test_gate_failed_returns_task_to_in_progress_from_review(

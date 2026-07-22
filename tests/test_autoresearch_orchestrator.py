@@ -19,7 +19,15 @@ from zf.autoresearch.orchestrator import (
     upsert_failure_backlog,
     write_report,
 )
+from zf.autoresearch.loop import LoopConfig
 from zf.autoresearch.scenarios import resolve_scenario
+
+
+def test_default_config_templates_exist() -> None:
+    root = Path(__file__).resolve().parents[1]
+
+    assert (root / AutoresearchRunConfig().config_template).is_file()
+    assert (root / LoopConfig().config_template).is_file()
 
 
 def test_resolve_builtin_scenario_allows_overrides(tmp_path: Path) -> None:
@@ -364,6 +372,29 @@ def test_tmux_supervisor_command_reenters_with_no_tmux(tmp_path: Path) -> None:
     assert "--no-tmux" in joined
     assert "ZF_AUTORESEARCH_IN_TMUX=1" in joined
     assert f"PYTHONPATH={Path.cwd() / 'src'}" in joined
+
+
+def test_repo_root_resolves_pep610_noneditable_local_install(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "frozen-source"
+    (source / ".git").mkdir(parents=True)
+    (source / "pyproject.toml").write_text("[project]\nname='zaofu'\n", encoding="utf-8")
+
+    monkeypatch.delenv("ZF_AUTORESEARCH_SOURCE_ROOT", raising=False)
+    monkeypatch.setattr(
+        ar_orchestrator,
+        "__file__",
+        str(tmp_path / "venv" / "site-packages" / "zf" / "autoresearch" / "orchestrator.py"),
+    )
+    monkeypatch.setattr(
+        ar_orchestrator,
+        "installed_local_source_root",
+        lambda: source,
+    )
+
+    assert ar_orchestrator.repo_root() == source.resolve()
 
 
 def test_ensure_web_dependencies_noops_without_web_package(tmp_path: Path) -> None:

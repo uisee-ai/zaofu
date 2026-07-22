@@ -181,6 +181,7 @@ class FanoutBriefingMixin:
                 "task_ref",
                 "contract_snapshot_ref",
                 "contract_snapshot_digest",
+                "target_snapshot_ref",
                 "target_commit",
                 "target_snapshot_digest",
             ):
@@ -242,8 +243,8 @@ class FanoutBriefingMixin:
                 "requirement_results": [
                     {
                         **item,
-                        "status": "rejected",
-                        "evidence_refs": [],
+                        "status": "failed",
+                        "evidence_refs": ["artifact-or-event-ref"],
                         "findings": [{"message": "Blocking acceptance finding."}],
                         "reproduction_commands": ["command that reproduces the finding"],
                     }
@@ -301,6 +302,26 @@ class FanoutBriefingMixin:
         failure_payload.update(self._schema_education_toplevel_fields(
             child_failure_event, existing=failure_payload,
         ))
+        if contract_snapshot:
+            binding_fields = (
+                "workflow_run_id",
+                "task_id",
+                "contract_revision",
+                "task_map_generation",
+                "base_commit",
+                "task_ref",
+                "contract_snapshot_ref",
+                "contract_snapshot_digest",
+                "target_snapshot_ref",
+                "target_commit",
+                "target_snapshot_digest",
+            )
+            for result_payload in (success_payload, failure_payload):
+                verification_result = result_payload["verification_result"]
+                for key in binding_fields:
+                    value = result_payload.get(key)
+                    if value not in (None, ""):
+                        verification_result[key] = value
         is_refactor_review = success_event == "zaofu.refactor.review.ready"
         is_refactor_plan = success_event in {
             "zaofu.refactor.plan.ready",
@@ -377,10 +398,20 @@ class FanoutBriefingMixin:
                 "missing_fields": [],
             })
 
-        def _emit_command(event_type: str, payload: dict) -> str:
+        def _emit_command(
+            event_type: str,
+            payload: dict,
+            *,
+            payload_file: str = "",
+        ) -> str:
             if not event_type:
                 return "# no event configured"
             cli_parts = shlex.split(zf_cli_cmd()) or ["zf"]
+            payload_args = (
+                ["--payload-file", shlex.quote(payload_file)]
+                if payload_file
+                else ["--payload", shlex.quote(json.dumps(payload, ensure_ascii=False))]
+            )
             return " ".join([
                 *[shlex.quote(part) for part in cli_parts],
                 "emit",
@@ -389,8 +420,7 @@ class FanoutBriefingMixin:
                 shlex.quote(role.instance_id),
                 "--state-dir",
                 shlex.quote(str(self.state_dir)),
-                "--payload",
-                shlex.quote(json.dumps(payload, ensure_ascii=False)),
+                *payload_args,
             ])
 
         payload_section: list[str] = []
@@ -501,6 +531,23 @@ class FanoutBriefingMixin:
             "Finding schema: use `severity` = info|low|medium|high|critical, `path`, `message`, and optional integer `line`.",
             "`fanout_id`, `stage_id`, `child_id`, `run_id`, `role_instance`, and `status` must stay as top-level payload fields; do not place them only inside `report`.",
         ]
+        if contract_snapshot:
+            result_guidance.append(
+                "For `verification_result.requirement_results[].status`, use only "
+                "`passed`, `failed`, `blocked`, `waived`, or `not_applicable`; "
+                "a `rejected` verdict requires at least one `failed` requirement."
+            )
+        if (
+            success_event == "flow.discovery.completed"
+            and failure_event == "flow.discovery.failed"
+        ):
+            result_guidance.extend([
+                "A blocking product gap is a completed semantic discovery: emit the failure event with bounded `report.gap_tasks`; the kernel will amend the task map instead of rescanning the unchanged candidate.",
+                "Every gap task MUST use the canonical task-map shape: non-empty `task_id`, `owner_role`, `claim_paths` or `allowed_paths`, `acceptance` or `acceptance_criteria`, `verify_commands` or `verification`, and `source_refs`.",
+                "Use `task_id`, not a bare `id`; `acceptance_refs` and `verification_commands` do not replace the canonical acceptance and verification fields.",
+                "Gap tasks MUST NOT claim overlapping paths. Combine related fixes into one task or give each task disjoint file ownership; ordering does not make duplicate path ownership valid.",
+                "Keep suggestions out of `gap_tasks`; only implementation work required to close a blocking goal claim belongs there.",
+            ])
         if is_refactor_review:
             result_guidance.extend([
                 "For this refactor review workflow, finding severity describes planning risk.",
@@ -541,7 +588,7 @@ class FanoutBriefingMixin:
             # 明文 schema 要求。
             produces_task_map = success_event == "task_map.ready"
             task_map_ref_prefill = (
-                f".zf/artifacts/{getattr(context, 'pdd_id', '') or 'default'}/task_map.json"
+                "artifacts/plan/task_map.json"
                 if produces_task_map else ""
             )
             success_payload.update({
@@ -564,23 +611,12 @@ class FanoutBriefingMixin:
             })
             result_guidance.extend(self._plan_artifact_contract_lines())
             if produces_task_map:
-                # A1(PRD goal-mode e2e finding-1,硬规违反根治):ref 里的
-                # `.zf/` 前缀是 state_dir 别名(resolver 特判),agent 会按
-                # 字面路径写 → state_dir≠`.zf` 的项目 plan 必死。写入指令
-                # 必须给绝对路径,ref 保持别名形式供 kernel 解析。
-                task_map_abs_path = str(
-                    self.state_dir
-                    / "artifacts"
-                    / (getattr(context, "pdd_id", "") or "default")
-                    / "task_map.json"
-                )
                 result_guidance.extend([
-                    "THIS stage's success event is `task_map.ready`: you MUST also "
-                    f"write a JSON task map to this EXACT absolute path: `{task_map_abs_path}` "
-                    "before emitting success. (In payload refs it is spelled "
-                    f"`{task_map_ref_prefill}` — the `.zf/` prefix is a state-dir "
-                    "alias resolved by the kernel; do NOT create a literal `.zf/` "
-                    "directory in the project.)",
+                    "THIS stage's success event is `task_map.ready`: write the JSON "
+                    f"task map to the workdir-relative path `{task_map_ref_prefill}` "
+                    "before emitting success. Report that same relative ref in the "
+                    "payload; the kernel relocates it into runtime artifact storage. "
+                    "Do not write the configured state dir directly.",
                     "The task map is JSON (not markdown): {\"tasks\": [{\"task_id\", "
                     "\"title\", \"description\", \"allowed_paths\", \"verification\", "
                     "\"acceptance_criteria\"}...]} — downstream writer-fanout admission "
@@ -706,6 +742,22 @@ class FanoutBriefingMixin:
             stage_id=str(context.stage_id or ""),
             event_type=str(child_success_event or ""),
         )
+        success_payload_file = ""
+        if is_goal_closure:
+            from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+            descriptor = write_immutable_json_sidecar(
+                self.state_dir,
+                success_payload,
+                root=f"attempts/{run_id}/completion-payloads",
+                kind="fanout_child_completion_payload",
+                schema_version="fanout-child-completion-payload.v1",
+                created_by="fanout-briefing-runtime",
+                source_event_id=str(context.trigger_event_id or ""),
+            )
+            success_payload_file = str(
+                self.state_dir.expanduser().resolve() / descriptor["ref"]
+            )
         path.write_text(
             "\n".join([
                 f"# Fanout Reader Child: {child_id}",
@@ -766,7 +818,11 @@ class FanoutBriefingMixin:
                 "",
                 "Success command:",
                 "```bash",
-                _emit_command(child_success_event, success_payload),
+                _emit_command(
+                    child_success_event,
+                    success_payload,
+                    payload_file=success_payload_file,
+                ),
                 "```",
                 "",
                 "Failure command:",

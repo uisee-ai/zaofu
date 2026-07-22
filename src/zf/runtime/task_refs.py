@@ -39,6 +39,10 @@ _IGNORABLE_HANDOFF_DIRTY_PATHS = frozenset({
 # reports worktree_dirty. These prefixes are always excluded from the handoff
 # dirty-check, independent of that flag.
 _RUNTIME_MATERIALIZED_DIRTY_PREFIXES = (".claude/", ".codex/")
+_RUNTIME_MATERIALIZED_DIR_NAMES = frozenset({
+    ".vite",
+    "node_modules",
+})
 _RUNTIME_MATERIALIZED_DIRTY_PATHS = frozenset({
     ".zf-setup.done",
 })
@@ -53,6 +57,15 @@ _NON_FILE_EVIDENCE_REF_PREFIXES = (
     "trace:",
     "dispatch:",
 )
+
+
+def _workflow_trace_id(event: ZfEvent, payload: dict[str, Any]) -> str:
+    return str(
+        payload.get("workflow_run_id")
+        or payload.get("trace_id")
+        or event.correlation_id
+        or ""
+    ).strip()
 
 
 @dataclass(frozen=True)
@@ -212,7 +225,7 @@ class TaskRefManager:
                 task_ref=task_ref,
                 actor=event.actor or "",
                 trigger_event_id=event.id,
-                trace_id=event.correlation_id or "",
+                trace_id=_workflow_trace_id(event, payload),
                 run_id=str(payload.get("run_id") or ""),
                 workdir=workdir,
                 pdd_id=str(payload.get("pdd_id") or ""),
@@ -279,7 +292,7 @@ class TaskRefManager:
                 task_ref=task_ref,
                 actor=event.actor or "",
                 trigger_event_id=event.id,
-                trace_id=event.correlation_id or "",
+                trace_id=_workflow_trace_id(event, payload),
                 run_id=str(payload.get("run_id") or ""),
                 workdir=str(workdir),
                 pdd_id=str(payload.get("pdd_id") or ""),
@@ -374,7 +387,7 @@ class TaskRefManager:
                 task_ref=task_ref,
                 actor=event.actor or "",
                 trigger_event_id=event.id,
-                trace_id=event.correlation_id or "",
+                trace_id=_workflow_trace_id(event, payload),
                 run_id=str(payload.get("run_id") or ""),
                 workdir=str(workdir),
                 pdd_id=str(payload.get("pdd_id") or ""),
@@ -456,7 +469,7 @@ class TaskRefManager:
                 task_id=manifest.task_id,
                 actor=event.actor or "",
                 trigger_event_id=event.id,
-                trace_id=event.correlation_id or "",
+                trace_id=_workflow_trace_id(event, payload),
                 manifest=manifest,
             ),
         )
@@ -1159,6 +1172,17 @@ class TaskRefManager:
         reason: str,
         payload: dict[str, Any],
     ) -> TaskRefResult:
+        identity = {
+            key: payload.get(key)
+            for key in (
+                "workflow_run_id",
+                "contract_revision",
+                "task_map_generation",
+                "contract_snapshot_ref",
+                "contract_snapshot_digest",
+            )
+            if payload.get(key) not in (None, "")
+        }
         return TaskRefResult(
             status="rejected",
             payload={
@@ -1168,6 +1192,7 @@ class TaskRefManager:
                 "source_commit": payload.get("source_commit", ""),
                 "source_branch": payload.get("source_branch", ""),
                 "workdir": payload.get("workdir", ""),
+                **identity,
             },
         )
 
@@ -1334,6 +1359,7 @@ def runtime_materialized_dirty_files(paths: list[str]) -> list[str]:
         path for path in paths
         if path in _RUNTIME_MATERIALIZED_DIRTY_PATHS
         or path.startswith(_RUNTIME_MATERIALIZED_DIRTY_PREFIXES)
+        or any(part in _RUNTIME_MATERIALIZED_DIR_NAMES for part in Path(path).parts)
     ]
 
 

@@ -274,6 +274,7 @@ _KNOWN_WORKFLOW_KEYS = frozenset({
     "_flow_metadata_by_kind",
     "kind_routes",
     "allow_unverified_candidate",  # ⑤c 合并候选树门显式豁免(2026-07-08)
+    "candidate_quality_source",
 })
 _KNOWN_ROLE_KEYS = frozenset({
     "name", "backend", "backends", "role_kind", "model", "allowed_tools",
@@ -313,6 +314,11 @@ def _reject_unknown_keys(
 
 def _parse_project_setup_script(project_data: dict) -> str:
     """project.scripts.setup:项目自声明的 worktree 就绪脚本,可选。"""
+    if "setup_script" in project_data:
+        raise ConfigError(
+            "project.setup_script is not a valid config key; "
+            "use project.scripts.setup"
+        )
     scripts = project_data.get("scripts") or {}
     if not isinstance(scripts, dict):
         raise ConfigError("project.scripts must be a mapping")
@@ -582,6 +588,15 @@ def _build_flow_metadata_by_kind(data: object) -> dict[str, dict]:
     return result
 
 
+def _workflow_flow_metadata_by_kind(workflow_data: dict) -> dict[str, dict]:
+    # Accept the public schema name when hand-written yaml uses it, while
+    # keeping the renderer's private normalized key as the primary path.
+    return _build_flow_metadata_by_kind(
+        workflow_data.get("_flow_metadata_by_kind")
+        or workflow_data.get("flow_metadata_by_kind")
+    )
+
+
 def _build_workflow_work_units(data: dict | None) -> WorkflowWorkUnitsConfig:
     if not isinstance(data, dict):
         return WorkflowWorkUnitsConfig()
@@ -592,6 +607,9 @@ def _build_workflow_work_units(data: dict | None) -> WorkflowWorkUnitsConfig:
         split = WorkflowSplitQualityConfig(
             mode=str(split_data.get("mode", "warning") or "warning"),
             max_scope_files=int(split_data.get("max_scope_files", 12) or 0),
+            max_acceptance_criteria=int(
+                split_data.get("max_acceptance_criteria", 0) or 0
+            ),
             require_validation_surface=bool(
                 split_data.get("require_validation_surface", True)
             ),
@@ -2006,6 +2024,10 @@ def load_config(path: Path) -> ZfConfig:
             allow_unverified_candidate=bool(
                 workflow_data.get("allow_unverified_candidate", False)
             ),
+            candidate_quality_source=str(
+                workflow_data.get("candidate_quality_source", "auto")
+                or "auto"
+            ),
             event_actions=workflow_data.get("event_actions", []) or [],
             # 131-P2-3:lease 宽限可配置(F15 实证出厂 900s)。
             attempt_lease_grace_s=float(
@@ -2052,9 +2074,7 @@ def load_config(path: Path) -> ZfConfig:
                 harness_profile=harness_profile,
             ),
             flow_metadata=workflow_data.get("_flow_metadata", {}) or {},
-            flow_metadata_by_kind=_build_flow_metadata_by_kind(
-                workflow_data.get("_flow_metadata_by_kind")
-            ),
+            flow_metadata_by_kind=_workflow_flow_metadata_by_kind(workflow_data),
             pipelines=pipelines,
             pipelines_role_meta=pipelines_role_meta,
         ),

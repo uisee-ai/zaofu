@@ -18,6 +18,7 @@ later as a normal gate failure, not a crash here.
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,41 @@ Runner = Callable[..., subprocess.CompletedProcess[str]]
 # 未跟踪;脚本变更即 digest 不匹配 → 重跑。
 SETUP_MARKER = ".zf-setup.done"
 
+_SETUP_INPUT_NAMES = {
+    "Cargo.lock",
+    "Cargo.toml",
+    "Gemfile",
+    "Gemfile.lock",
+    "bun.lock",
+    "bun.lockb",
+    "composer.json",
+    "composer.lock",
+    "go.mod",
+    "go.sum",
+    "package-lock.json",
+    "package.json",
+    "pdm.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "pyproject.toml",
+    "requirements-dev.txt",
+    "requirements.txt",
+    "uv.lock",
+    "yarn.lock",
+}
+
+_SETUP_SCAN_EXCLUDES = {
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".venv",
+    ".zf",
+    "build",
+    "dist",
+    "node_modules",
+}
+
 
 @dataclass(frozen=True)
 class ProjectSetupResult:
@@ -39,12 +75,43 @@ class ProjectSetupResult:
     detail: str = ""
 
 
+def _setup_digest(worktree: Path, script: str) -> str:
+    """Bind setup readiness to the script and tracked dependency surfaces.
+
+    A newly scaffolded project can add its package manifests after role
+    worktrees were minted. Script-only markers would keep the earlier no-op
+    result forever, leaving later verifier checkouts without dependencies.
+    """
+    digest = hashlib.sha256()
+    digest.update(script.encode("utf-8"))
+    inputs: list[Path] = []
+    try:
+        for root, dirs, files in os.walk(worktree):
+            dirs[:] = [name for name in dirs if name not in _SETUP_SCAN_EXCLUDES]
+            root_path = Path(root)
+            inputs.extend(root_path / name for name in files if name in _SETUP_INPUT_NAMES)
+    except OSError:
+        inputs = []
+    for path in sorted(inputs, key=lambda item: item.relative_to(worktree).as_posix()):
+        relative = path.relative_to(worktree).as_posix()
+        digest.update(b"\0path\0")
+        digest.update(relative.encode("utf-8"))
+        try:
+            digest.update(b"\0body\0")
+            digest.update(path.read_bytes())
+        except OSError:
+            digest.update(b"\0unreadable\0")
+    return digest.hexdigest()
+
+
 def run_project_setup(
     worktree: Path,
     script: str,
     *,
+    marker_dir: Path | None = None,
     timeout_s: int = 600,
     runner: Runner | None = None,
+    force: bool = False,
 ) -> ProjectSetupResult:
     """Execute the project-declared setup script inside a fresh worktree.
 
@@ -56,10 +123,14 @@ def run_project_setup(
     script = (script or "").strip()
     if not script:
         return ProjectSetupResult(ran=False, ok=True, detail="no setup declared")
-    digest = hashlib.sha256(script.encode("utf-8")).hexdigest()
-    marker = worktree / SETUP_MARKER
+    digest = _setup_digest(worktree, script)
+    marker = (marker_dir or worktree) / SETUP_MARKER
     try:
-        if marker.exists() and marker.read_text(encoding="utf-8").strip() == digest:
+        if (
+            not force
+            and marker.exists()
+            and marker.read_text(encoding="utf-8").strip() == digest
+        ):
             return ProjectSetupResult(ran=False, ok=True, detail="setup marker matches")
     except OSError:
         pass
@@ -81,6 +152,7 @@ def run_project_setup(
             ran=True, ok=False, exit_code=result.returncode, detail=tail,
         )
     try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(digest + "\n", encoding="utf-8")
     except OSError:
         pass

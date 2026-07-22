@@ -85,6 +85,46 @@ def test_split_quality_still_blocks_writer_dispatch(tmp_path: Path) -> None:
     assert len(events) == 1
 
 
+def test_split_quality_blocks_too_many_acceptance_criteria(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        workflow=WorkflowConfig(
+            work_units=WorkflowWorkUnitsConfig(
+                enabled=True,
+                split_quality=WorkflowSplitQualityConfig(
+                    mode="blocking",
+                    max_acceptance_criteria=2,
+                ),
+            ),
+        ),
+    )
+    harness = _Harness(state_dir, config)
+    task = harness.task_store.add(Task(
+        id="TASK-AC",
+        title="oversized acceptance",
+        status="backlog",
+        contract=TaskContract(
+            behavior="Implement the feature",
+            verification="true",
+            verification_tiers=["runtime"],
+            owner_role="dev",
+            scope=["src/a.py"],
+            acceptance_criteria=["one", "two", "three"],
+        ),
+    ))
+
+    blocked = harness._split_quality_blocks_dispatch(
+        task,
+        RoleConfig(name="dev-lane-0", role_kind="writer"),
+    )
+
+    assert blocked is True
+    event = harness.event_log.read_all()[-1]
+    assert event.type == "task.split_quality.blocked"
+    assert event.payload["findings"][0]["kind"] == "acceptance_too_large"
+
+
 def test_split_quality_allows_refactor_task_map_module_scope_with_surface(
     tmp_path: Path,
 ) -> None:

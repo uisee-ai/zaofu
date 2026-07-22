@@ -369,6 +369,59 @@ def test_capture_logs_skips_stuck_detector_after_dev_blocked_progress(
     assert orch._last_worker_state["test-1"] == "blocked_human"
 
 
+def test_capture_logs_skips_terminal_fanout_worker_with_stale_wip_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A completed fanout child has no active obligation despite stale WIP."""
+    orch, store, log = _make_orchestrator(tmp_path)
+    task_id = "TASK-FANOUT-DONE-CAPTURE"
+    fanout_id = "fanout-impl"
+    child_id = f"test-1-{task_id}"
+    run_id = f"run-{child_id}"
+    store.add(Task(
+        id=task_id,
+        title="completed writer awaiting verification",
+        status="in_progress",
+        assigned_to="test-1",
+        active_dispatch_id="disp-capture",
+    ))
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id=task_id,
+        payload={
+            "role": "test",
+            "assignee": "test-1",
+            "dispatch_id": "disp-capture",
+        },
+    ))
+    child_payload = {
+        "fanout_id": fanout_id,
+        "child_id": child_id,
+        "run_id": run_id,
+        "role_instance": "test-1",
+        "task_id": task_id,
+    }
+    log.append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        payload=child_payload,
+    ))
+    log.append(ZfEvent(
+        type="fanout.child.completed",
+        actor="zf-cli",
+        payload={**child_payload, "status": "completed"},
+    ))
+    detector = _AlwaysStuckDetector()
+    orch._stuck_detectors["test-1"] = detector  # type: ignore[assignment]
+
+    decisions = orch._capture_logs()  # type: ignore[attr-defined]
+
+    assert not decisions
+    assert detector.reset_count == 1
+    assert not any(event.type == "worker.stuck" for event in log.read_all())
+
+
 def test_capture_logs_suppresses_codex_active_turn_stuck_grace(
     tmp_path: Path,
 ) -> None:

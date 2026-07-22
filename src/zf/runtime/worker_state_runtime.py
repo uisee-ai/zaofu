@@ -19,6 +19,15 @@ _TASK_GENERATION_GUARDED_STATES = frozenset({
 _TASK_GENERATION_RELEASE_STATES = frozenset({"idle", "awaiting_review"})
 
 
+def _events_after_latest_graceful_stop(events: list[ZfEvent]) -> list[ZfEvent]:
+    """Drop transient worker state from a completed harness lifetime."""
+    boundary = -1
+    for index, event in enumerate(events):
+        if event.type == "loop.stopped":
+            boundary = index
+    return events[boundary + 1:]
+
+
 def _fold_worker_transition(
     states: dict[str, str],
     task_ids: dict[str, str],
@@ -54,7 +63,9 @@ class WorkerStateRuntimeMixin:
         self._last_worker_state: dict[str, str] = {}
         self._last_worker_task_id: dict[str, str] = {}
         try:
-            events = read_runtime_events(self.event_log, self.state_dir)
+            events = _events_after_latest_graceful_stop(list(
+                read_runtime_events(self.event_log, self.state_dir)
+            ))
         except Exception:
             return
         for event in events:
@@ -149,7 +160,9 @@ class WorkerStateRuntimeMixin:
             if role.name != "orchestrator"
         }
         try:
-            events = read_runtime_events(self.event_log, self.state_dir)
+            events = _events_after_latest_graceful_stop(list(
+                read_runtime_events(self.event_log, self.state_dir)
+            ))
         except Exception:
             return out
         task_ids: dict[str, str] = {}

@@ -203,6 +203,23 @@ class TestWorkerHealthFoldsEvents:
         assert health["dev"] == "busy"
         assert health["review"] == "busy"
 
+    def test_graceful_stop_resets_transient_busy_state(
+        self, state_dir, config, transport
+    ):
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="worker.state.changed",
+            actor="dev",
+            task_id="T1",
+            payload={"from": "idle", "to": "busy", "task_id": "T1"},
+        ))
+        log.append(ZfEvent(type="loop.stopped", actor="zf-cli", payload={}))
+
+        orch = Orchestrator(state_dir, config, transport)
+
+        assert orch.worker_health()["dev"] == "idle"
+        assert "dev" not in orch._last_worker_task_id
+
     def test_restart_ignores_taskless_stale_release(
         self, state_dir, config, transport
     ):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -10,8 +11,15 @@ import yaml
 
 from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
-from zf.cli.flow import apply_flow_submit, build_flow_intake, build_flow_submit_preview
+from zf.cli.flow import (
+    _git_delivery_baseline_diagnostics,
+    _project_setup_readiness_diagnostics,
+    apply_flow_submit,
+    build_flow_intake,
+    build_flow_submit_preview,
+)
 from zf.cli.main import main
+from zf.runtime.run_contract import build_run_contract, load_run_contract, write_run_contract
 
 
 def test_flow_draft_issue_outputs_short_issue_flow(tmp_path):
@@ -46,6 +54,26 @@ def test_flow_draft_issue_outputs_short_issue_flow(tmp_path):
     config_doc = next(doc for doc in docs if doc["kind"] == "ZfConfig")
     assert config_doc["spec"]["project"]["name"] == "issue-demo"
     assert config_doc["spec"]["uses"] == ["flow-draft-runtime/v1"]
+    assert config_doc["spec"]["orchestrator"]["backend"] == "codex"
+    assert config_doc["spec"]["roles"] == [{
+        "name": "orchestrator",
+        "instance_id": "orchestrator",
+        "role_kind": "reader",
+        "backend": "codex",
+        "permission_mode": "bypass",
+        "transport": "tmux",
+        "stuck_threshold_seconds": 900,
+        "spawn_ready_timeout_seconds": 240,
+        "triggers": [
+            "dispatch.silent_stall",
+            "orchestrator.rework.triage.requested",
+        ],
+        "publishes": ["orchestrator.rework.triage.recorded"],
+        "skills": [
+            "zf-yoke-orchestrator-role-context",
+            "zf-harness-state-sync",
+        ],
+    }]
 
 
 def test_flow_draft_issue_defaults_to_single_lane(tmp_path):
@@ -113,6 +141,16 @@ def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
     assert config.runtime.run_manager.backend == "claude-code"
     assert config.runtime.run_manager.resident_agent.enabled is True
     assert config.runtime.autoresearch_resident.enabled is True
+    assert config.runtime.feishu_inbound.enabled is False
+    assert config.runtime.feishu_inbound.mode == "bridge"
+    assert config.runtime.feishu_inbound.require_routing is True
+    orchestrator = next(role for role in config.roles if role.name == "orchestrator")
+    assert orchestrator.backend == "claude-code"
+    assert orchestrator.triggers == [
+        "dispatch.silent_stall",
+        "orchestrator.rework.triage.requested",
+    ]
+    assert orchestrator.publishes == ["orchestrator.rework.triage.recorded"]
     planner = next(role for role in config.roles if role.name == "planner")
     dev = next(role for role in config.roles if role.name == "dev-lane-0")
     assert "zf-prd-plan-synth" in planner.skills
@@ -153,6 +191,42 @@ def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):
     assert "zf-goal-closure-replan-contract" in bundles["refactor-verify-bridge"]
     assert "zf-refactor-plan-synth" in bundles["refactor-plan-synth"]
     assert "skill_sources" not in profile["spec"]
+
+
+def test_flow_draft_force_rewrite_preserves_resolved_external_skill_source(tmp_path):
+    output = tmp_path / "zf.yaml"
+    repo_skills = Path(__file__).resolve().parents[1] / "skills"
+    output.write_text(f"""\
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {{name: existing}}
+spec:
+  version: "1.0"
+  project: {{name: existing, state_dir: .zf}}
+  skill_sources:
+    - name: zaofu-skills
+      path: {repo_skills}
+      mode: readonly
+""", encoding="utf-8")
+
+    rc = main([
+        "flow", "draft",
+        "--kind", "prd",
+        "--from", "prompt.md",
+        "--target", "app",
+        "--backend", "claude-code",
+        "--project-name", "existing",
+        "--output", str(output),
+    ])
+
+    assert rc == 0
+    docs = list(yaml.safe_load_all(output.read_text(encoding="utf-8")))
+    config = next(doc for doc in docs if doc["kind"] == "ZfConfig")
+    sources = config["spec"]["skill_sources"]
+    assert len(sources) == 1
+    assert sources[0]["name"] == "zaofu-skills"
+    assert sources[0]["mode"] == "readonly"
+    assert (tmp_path / sources[0]["path"]).resolve() == repo_skills.resolve()
 
 
 def test_flow_intake_writes_manifest_and_json(tmp_path, capsys):
@@ -696,7 +770,7 @@ def test_flow_start_dry_run_writes_safe_unique_proposal(tmp_path, capsys):
     assert proposal["project"]["name"] == "issue-start-demo"
     assert proposal["project"]["state_dir"] == ".zf-issue-start-demo"
     assert proposal["lanes"] == 1
-    assert proposal["summary"]["roles"] == 5
+    assert proposal["summary"]["roles"] == 6
     assert proposal["policies"]["quality_floor"] == "issue-regression"
     assert output.exists()
 
@@ -815,6 +889,51 @@ def test_flow_submit_keeps_runtime_projection_out_of_tracked_workflow_artifacts(
     )
 
 
+def test_flow_submit_blocks_unresolvable_external_reader_source(tmp_path):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    external = tmp_path / "external-prd.md"
+    external.write_text("build a product\n", encoding="utf-8")
+    intake = project_root / "docs" / "intake" / "request.md"
+    assert main([
+        "flow", "intake", "--kind", "prd", "--from", str(external),
+        "--request-id", "external-source", "--output", str(intake),
+    ]) == 0
+    config = project_root / "zf.yaml"
+    config.write_text(
+        "\n".join([
+            "apiVersion: zaofu.dev/v1",
+            "kind: PrdFlow",
+            "metadata: {name: prd-demo}",
+            "spec:",
+            "  lanes: 1",
+            "  backend: mock",
+            "  prdRef: docs/prd/request.md",
+            "---",
+            "apiVersion: zaofu.dev/v1",
+            "kind: ZfConfig",
+            "metadata: {name: demo}",
+            "spec:",
+            '  version: "1.0"',
+            "  project: {name: demo, state_dir: .zf}",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+    preview = build_flow_submit_preview(
+        config_path=config,
+        intake_path=intake,
+        allow_missing_env=True,
+    )
+
+    assert preview["status"] == "STOP"
+    assert any(
+        item.get("kind") == "workflow_source_ref_unresolvable"
+        for item in preview["blockers"]
+    )
+
+
 def test_flow_submit_apply_emits_submit_and_invoke_events(tmp_path, capsys):
     source = tmp_path / "bug.md"
     source.write_text("fix checkout regression\n", encoding="utf-8")
@@ -874,6 +993,62 @@ spec:
     invoke = next(event for event in events if event.type == "workflow.invoke.requested")
     assert invoke.payload["workflow_input_manifest_ref"].endswith("workflow-input-manifest.json")
     assert invoke.payload["workflow_prompt_ref"].endswith("artifacts/intake/wfint-apply.json")
+
+
+def test_flow_submit_binds_bootstrap_run_contract_to_first_request(tmp_path, capsys):
+    source = tmp_path / "feature.md"
+    source.write_text("deliver a runnable feature\n", encoding="utf-8")
+    intake = tmp_path / "docs" / "intake" / "feature.md"
+    assert main([
+        "flow", "intake", "--kind", "issue", "--from", str(source),
+        "--strictness", "strict", "--request-id", "wfint-contract-bind",
+        "--output", str(intake),
+    ]) == 0
+    capsys.readouterr()
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata: {name: issue-demo}
+spec:
+  lanes: 1
+  backend: mock
+  issueRef: docs/intake/feature.md
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo, state_dir: .zf-contract-bind}
+""", encoding="utf-8")
+    config = load_config(config_path)
+    state_dir = tmp_path / ".zf-contract-bind"
+    write_run_contract(
+        state_dir,
+        build_run_contract(
+            config,
+            config_path=config_path,
+            project_root=tmp_path,
+            state_dir=state_dir,
+        ),
+    )
+
+    result = apply_flow_submit(
+        config_path=config_path,
+        intake_path=intake,
+        requested_by="test",
+        allow_missing_env=True,
+    )
+
+    assert result["status"] == "accepted"
+    pinned = load_run_contract(state_dir)
+    assert pinned is not None
+    assert pinned["refs"]["workflow_input_manifest"]
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    bindings = [event for event in events if event.type == "config.run_contract.request_bound"]
+    assert len(bindings) == 1
+    assert bindings[0].payload["initial_binding"] is True
 
 
 def test_flow_intake_feat_aliases_to_prd(tmp_path, capsys):
@@ -1150,6 +1325,21 @@ def test_project_init_creates_flow_project(tmp_path, capsys, monkeypatch):
     config = load_config(root / "zf.yaml")
     assert config.workflow.pipelines[0].lane_count == 1
     assert config.session.tmux_session == "zf-issue-project"
+    assert [role.name for role in config.roles].count("orchestrator") == 1
+    assert config.workflow.candidate_quality_source == "task_contract_required"
+    assert {source.path for source in config.skill_sources} == {"skills"}
+    assert result["materialized_assets"]["rewrote_skill_sources"] is True
+    assert result["materialized_assets"]["skills"]
+    assert (root / result["materialized_assets"]["skills"][0]).is_dir()
+    assert str(Path(__file__).resolve().parents[1]) not in (
+        root / "zf.yaml"
+    ).read_text(encoding="utf-8")
+    relocated = tmp_path / "relocated-issue-project"
+    shutil.copytree(root, relocated)
+    shutil.rmtree(root)
+    relocated_config = load_config(relocated / "zf.yaml")
+    assert {source.path for source in relocated_config.skill_sources} == {"skills"}
+    assert any((relocated / "skills").glob("*/SKILL.md"))
 
 
 def test_project_init_defaults_to_multi_kind_without_ignition(
@@ -1186,6 +1376,10 @@ def test_project_init_defaults_to_multi_kind_without_ignition(
     }
     assert lane_counts == {"issue": 1, "prd": 2, "refactor": 5}
     assert set(config.workflow.flow_metadata_by_kind) == {"issue", "prd", "refactor"}
+    assert [role.name for role in config.roles].count("orchestrator") == 1
+    assert config.workflow.candidate_quality_source == "task_contract_required"
+    assert {source.path for source in config.skill_sources} == {"skills"}
+    assert any((root / "skills").glob("*/SKILL.md"))
     assert (root / "README.md").exists()
     assert (root / "src" / ".gitkeep").exists()
     assert (root / "tests" / ".gitkeep").exists()
@@ -1308,15 +1502,6 @@ def test_multi_kind_project_submits_each_kind_without_route_crosstalk(
         "--no-workspace-register",
     ]) == 0
     capsys.readouterr()
-    config_docs = list(yaml.safe_load_all((root / "zf.yaml").read_text()))
-    config_doc = next(doc for doc in config_docs if doc.get("kind") == "ZfConfig")
-    config_doc["spec"].setdefault("workflow", {})[
-        "allow_unverified_candidate"
-    ] = True
-    (root / "zf.yaml").write_text(
-        yaml.safe_dump_all(config_docs, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
-    )
     source_ref = root / "request.md"
     source_ref.write_text("Deliver the requested change with regression tests.\n")
 
@@ -1426,6 +1611,49 @@ def _git(root, *args):
     )
 
 
+def test_project_init_prd_git_init_owns_nested_parent_work_tree(
+    tmp_path,
+    capsys,
+    monkeypatch,
+):
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / ".zaofu-workspace"))
+    parent = tmp_path / "workspace"
+    parent.mkdir()
+    _git(parent, "init")
+    root = parent / "nested-prd"
+
+    rc = main([
+        "project", "init",
+        "--kind", "prd",
+        "--name", "nested-prd",
+        "--root", str(root),
+        "--from", "prompt.md",
+        "--target", "app",
+        "--backend", "mock",
+        "--create",
+        "--git-init",
+        "--force",
+        "--no-workspace-register",
+        "--json",
+    ])
+
+    assert rc == 0
+    capsys.readouterr()
+    assert (root / ".git").is_dir()
+    assert subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip() == str(root)
+    assert subprocess.run(
+        ["git", "-C", str(root), "branch", "--show-current"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip() == "main"
+
+
 def _draft_refactor_config(tmp_path, source, target):
     prompt = tmp_path / "refactor.md"
     prompt.write_text("rebuild target from source\n", encoding="utf-8")
@@ -1451,6 +1679,69 @@ def _preflight_report(config, capsys, *extra):
         *extra,
     ]) in (0, 1)
     return json.loads(capsys.readouterr().out)
+
+
+def test_ship_candidate_preflight_requires_node_setup_and_clean_git(tmp_path):
+    from types import SimpleNamespace
+
+    target = tmp_path / "app"
+    target.mkdir()
+    (target / "package.json").write_text('{"scripts":{"build":"vite build"}}\n')
+    _git(tmp_path, "init")
+    (target / "tracked.js").write_text("base\n", encoding="utf-8")
+    _git(tmp_path, "add", "app/tracked.js")
+    _git(tmp_path, "commit", "-m", "seed")
+    (target / "tracked.js").write_text("dirty\n", encoding="utf-8")
+    config = SimpleNamespace(
+        project=SimpleNamespace(setup_script=""),
+        quality_gates={
+            "static": SimpleNamespace(
+                enabled=True,
+                required_checks=["cd app && npm run build"],
+            ),
+        },
+    )
+    metadata = {"delivery_policy": "ship_candidate", "target_root": "app"}
+
+    setup = _project_setup_readiness_diagnostics(
+        config=config,
+        project_root=tmp_path,
+        metadata=metadata,
+    )
+    baseline = _git_delivery_baseline_diagnostics(
+        project_root=tmp_path,
+        metadata=metadata,
+    )
+
+    assert setup[0]["kind"] == "project_setup_missing"
+    assert baseline[0]["kind"] == "git_delivery_baseline_dirty"
+
+    config.project.setup_script = "npm ci"
+    assert _project_setup_readiness_diagnostics(
+        config=config,
+        project_root=tmp_path,
+        metadata=metadata,
+    ) == []
+
+
+def test_ship_candidate_baseline_ignores_tracked_changes_outside_target(tmp_path):
+    target = tmp_path / "app"
+    target.mkdir()
+    workflow_dir = tmp_path / "artifacts" / "workflow" / "request-1"
+    workflow_dir.mkdir(parents=True)
+    manifest = workflow_dir / "workflow-input-manifest.json"
+    manifest.write_text('{"revision": 1}\n', encoding="utf-8")
+    _git(tmp_path, "init")
+    _git(tmp_path, "add", "artifacts/workflow/request-1/workflow-input-manifest.json")
+    _git(tmp_path, "commit", "-m", "seed")
+    manifest.write_text('{"revision": 2}\n', encoding="utf-8")
+
+    diagnostics = _git_delivery_baseline_diagnostics(
+        project_root=tmp_path,
+        metadata={"delivery_policy": "ship_candidate", "target_root": "app"},
+    )
+
+    assert diagnostics == []
 
 
 def test_flow_preflight_refactor_target_git_and_overlap_guards(tmp_path, capsys):

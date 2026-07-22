@@ -68,6 +68,33 @@ def test_event_task_map_ref_still_wins_when_present(tmp_path):
     assert [t["task_id"] for t in loaded.task_items] == ["T1"]
 
 
+def test_loader_preserves_planner_target_commit_as_writer_dispatch_base(tmp_path):
+    state_dir = tmp_path / ".zf"
+    pdd = "PRD-BASELINE"
+    target_commit = "a" * 40
+    _write_task_map(state_dir, pdd)
+    task_map = state_dir / "artifacts" / pdd / "task_map.json"
+    payload = json.loads(task_map.read_text(encoding="utf-8"))
+    payload["target_commit"] = target_commit
+    task_map.write_text(json.dumps(payload), encoding="utf-8")
+
+    loaded = load_writer_task_map(
+        stage=SimpleNamespace(task_map="${task_map_ref}"),
+        event=ZfEvent(
+            type="task_map.ready",
+            payload={
+                "pdd_id": pdd,
+                "task_map_ref": f".zf/artifacts/{pdd}/task_map.json",
+            },
+        ),
+        pdd_id=pdd,
+        state_dir=state_dir,
+        project_root=tmp_path,
+    )
+
+    assert loaded.dispatch_base_commit == target_commit
+
+
 def test_state_dir_relative_artifacts_ref_resolves_from_runtime_state(tmp_path):
     state_dir = tmp_path / ".zf-prod-new"
     task_map = (

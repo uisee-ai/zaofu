@@ -28,7 +28,7 @@ metadata:
       description: Single-lane light PRD flow for small deliverables (no scan/plan fanout).
       intent: build
       backend: claude
-      roles: 3
+      roles: 4
       recommended_for: [build]
       order: 32
 spec:
@@ -37,6 +37,21 @@ spec:
   version: "1.0"
   project:
     name: prd-light-v3-claude
+  orchestrator:
+    backend: claude-code
+    wake_min_interval_s: 5
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: claude-code
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
   goal:
     enabled: true
   runtime:

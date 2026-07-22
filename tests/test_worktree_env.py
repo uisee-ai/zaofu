@@ -116,6 +116,54 @@ def test_run_project_setup_reruns_when_script_changes(tmp_path: Path):
     assert (worktree / "b.flag").exists()
 
 
+def test_run_project_setup_reruns_when_dependency_manifest_changes(tmp_path: Path):
+    from zf.runtime.worktree_env import run_project_setup
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    script = "touch installed.flag"
+    run_project_setup(worktree, script)
+    (worktree / "installed.flag").unlink()
+
+    app = worktree / "app"
+    app.mkdir()
+    (app / "package.json").write_text('{"name":"demo"}\n', encoding="utf-8")
+    rerun = run_project_setup(worktree, script)
+
+    assert rerun.ran and rerun.ok
+    assert (worktree / "installed.flag").exists()
+
+    (worktree / "installed.flag").unlink()
+    unchanged = run_project_setup(worktree, script)
+    assert not unchanged.ran and unchanged.ok
+    assert not (worktree / "installed.flag").exists()
+
+
+def test_run_project_setup_supports_marker_outside_git_worktree(tmp_path: Path):
+    from zf.runtime.worktree_env import SETUP_MARKER, run_project_setup
+
+    worktree = tmp_path / "wt"
+    marker_dir = tmp_path / "runtime-meta"
+    worktree.mkdir()
+
+    first = run_project_setup(
+        worktree,
+        "touch installed.flag",
+        marker_dir=marker_dir,
+    )
+    (worktree / "installed.flag").unlink()
+    second = run_project_setup(
+        worktree,
+        "touch installed.flag",
+        marker_dir=marker_dir,
+    )
+
+    assert first.ran and first.ok
+    assert not second.ran and second.ok
+    assert (marker_dir / SETUP_MARKER).is_file()
+    assert not (worktree / SETUP_MARKER).exists()
+
+
 def test_run_project_setup_failure_is_surfaced_without_marker(tmp_path: Path):
     from zf.runtime.worktree_env import SETUP_MARKER, run_project_setup
 

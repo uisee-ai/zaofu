@@ -77,10 +77,19 @@ def build_task_recovery_context(
             "contract": asdict(task.contract),
             "evidence": asdict(task.evidence) if task.evidence is not None else None,
         }
+    candidate_scope = task is None and any(
+        str((event.payload or {}).get("failure_scope") or "") == "candidate"
+        for event in task_events
+        if isinstance(event.payload, dict)
+    )
     return redact_obj({
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
+        "scope": {
+            "kind": "candidate" if candidate_scope else "task",
+            "id": task_id,
+        },
         "task": task_payload,
         "activity": {
             "last_event_id": last.id if last is not None else "",
@@ -141,7 +150,13 @@ def write_task_recovery_context(
 
 def _event_task_id(event: ZfEvent) -> str:
     payload = event.payload if isinstance(event.payload, dict) else {}
-    return str(event.task_id or payload.get("task_id") or "")
+    return str(
+        event.task_id
+        or payload.get("task_id")
+        or payload.get("pdd_id")
+        or payload.get("feature_id")
+        or ""
+    )
 
 
 def _event_row(event: ZfEvent, *, include_findings: bool = False) -> dict[str, Any]:
@@ -167,6 +182,13 @@ def _event_row(event: ZfEvent, *, include_findings: bool = False) -> dict[str, A
                 "artifact_refs",
                 "evidence_refs",
                 "target_commit",
+                "failure_scope",
+                "failure_class",
+                "failure_fingerprint",
+                "diagnostic_summary",
+                "failing_command",
+                "rework_feedback",
+                "rework_summary",
             )
             if payload.get(key) not in (None, "", [], {})
         }

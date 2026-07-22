@@ -5,10 +5,15 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from zf.core.config.schema import RoleConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.call_result_admission import (
+    CallResultAdmissionOutcome,
+    dispatch_call_result_correction,
+)
 from zf.runtime.call_result_runtime import (
     admit_runtime_call_result,
     mark_call_operation_started,
@@ -158,6 +163,62 @@ def test_inherited_operation_identity_is_rederived_per_stage(tmp_path: Path) -> 
         task_id="T1", dispatch_id="run-F2-verify",
     )
     assert replay.operation_id == verify.operation_id
+
+
+def test_call_result_correction_waits_for_source_turn_stop(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    runtime = _runtime(tmp_path)
+    runtime.config.roles = [RoleConfig(
+        name="verify",
+        instance_id="verify-1",
+        backend="codex",
+        role_kind="reader",
+    )]
+    source_event = ZfEvent(
+        type="verify.child.failed",
+        actor="verify-1",
+        task_id="T1",
+        payload={"role_instance": "verify-1"},
+    )
+    runtime.event_log.append(source_event)
+
+    def append_stop(_delay: float) -> None:
+        runtime.event_log.append(ZfEvent(
+            type="codex.hook.stop",
+            actor="verify-1",
+        ))
+
+    monkeypatch.setattr(
+        "zf.runtime.call_result_admission.time.sleep",
+        append_stop,
+    )
+    sent: list[tuple[str, Path]] = []
+
+    def send_task(role_name, briefing_path, _prompt, _context):  # noqa: ANN001
+        assert runtime.event_log.read_all()[-1].type == "codex.hook.stop"
+        sent.append((role_name, briefing_path))
+
+    runtime._dispatch_context = lambda **_kwargs: None
+    runtime._send_transport_task = send_task
+    outcome = CallResultAdmissionOutcome(
+        status="repair_pending",
+        mode="blocking",
+        operation_id="op-1",
+        request_hash="request-1",
+        repair_round=1,
+        correction_ref={"ref": "artifacts/correction.json"},
+        correction_dispatch_required=True,
+    )
+
+    assert dispatch_call_result_correction(
+        runtime,
+        source_event=source_event,
+        outcome=outcome,
+    ) is True
+    assert sent[0][0] == "verify-1"
+    assert sent[0][1].name == "verify-1-T1-result-correction-1.md"
 
 
 def test_rework_of_scopes_new_operation(tmp_path: Path) -> None:

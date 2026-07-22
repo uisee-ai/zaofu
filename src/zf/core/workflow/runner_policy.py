@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from typing import Any
 
@@ -40,13 +41,20 @@ def claude_aggregator_allowed_tools(config: ZfConfig | None) -> tuple[str, ...]:
         ).strip().rstrip("/")
         if configured:
             state_dir = configured
+    cli_command = os.environ.get("ZF_CLI_CMD", "").strip() or "zf"
+    cli_tools = tuple(
+        f"Bash({cli_command} {suffix} *)"
+        for suffix in (
+            "emit",
+            "events",
+            "trace show",
+            "artifact list",
+            "artifact read",
+        )
+    )
     return (
         *CLAUDE_AGGREGATOR_READONLY_TOOLS,
-        "Bash(zf emit *)",
-        "Bash(zf events *)",
-        "Bash(zf trace show *)",
-        "Bash(zf artifact list *)",
-        "Bash(zf artifact read *)",
+        *cli_tools,
         f"Bash(cat {state_dir}/artifacts/*)",
     )
 

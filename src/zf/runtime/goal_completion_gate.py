@@ -22,6 +22,13 @@ _GATE_TRUTH_DELTAS = frozenset({
     "run.manager.human_decision.applied",
     "run.manager.action.applied",
     "run.manager.action.failed",
+    "run.manager.action.effect.pending",
+    "run.manager.action.effect.passed",
+    "run.manager.action.effect.failed",
+    "fanout.started",
+    "fanout.aggregate.completed",
+    "fanout.cancelled",
+    "fanout.timed_out",
     "task.done",
     "verify.passed",
     "test.passed",
@@ -128,6 +135,16 @@ def _apply_delivery_request(runtime: Any, request: ZfEvent) -> None:
     claim_id = str(payload.get("claim_id") or "")
     operation_id = str(payload.get("delivery_operation_id") or "")
     candidate_ref = str(payload.get("candidate_ref") or "")
+    target_commit = str(payload.get("target_commit") or "")
+    if candidate_ref == target_commit:
+        from zf.runtime.goal_closure_bridge import _resolve_candidate_ref
+
+        candidate_ref = _resolve_candidate_ref(
+            list(runtime.event_log.read_all()),
+            workflow_run_id=str(payload.get("run_id") or request.correlation_id or ""),
+            target_commit=target_commit,
+            payload={},
+        )
     run_id = str(payload.get("run_id") or request.correlation_id or "")
     result_payload = {
         "run_id": run_id,
@@ -136,7 +153,7 @@ def _apply_delivery_request(runtime: Any, request: ZfEvent) -> None:
         "claim_id": claim_id,
         "delivery_operation_id": operation_id,
         "candidate_ref": candidate_ref,
-        "target_commit": str(payload.get("target_commit") or ""),
+        "target_commit": target_commit,
     }
     try:
         git_config = getattr(runtime.config.runtime, "git", None)

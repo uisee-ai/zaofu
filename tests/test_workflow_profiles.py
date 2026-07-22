@@ -395,6 +395,37 @@ spec:
         assert cfg.workflow.flow_metadata["gap_loop"] == "enabled"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "module_parity"
 
+    def test_flow_role_defaults_normalize_and_reach_lane_roles(self):
+        defaults = {
+            "permissionMode": "bypass",
+            "stuckThresholdSeconds": 901,
+            "spawnReadyTimeoutSeconds": 241,
+        }
+        expansions = [
+            expand_issue_flow({"roleDefaults": defaults}),
+            expand_prd_flow({"roleDefaults": defaults}),
+            expand_workflow_profile({
+                "flowProfile": "refactor-flow/v3",
+                "assembly": "none",
+                "roleDefaults": defaults,
+            }),
+        ]
+
+        for expansion in expansions:
+            assert all(
+                role["stuck_threshold_seconds"] == 901
+                and role["spawn_ready_timeout_seconds"] == 241
+                for role in expansion["roles"]
+            )
+            template = expansion["pipelines"][0]["lane_role_template"]
+            assert template["permission_mode"] == "bypass"
+            assert template["stuck_threshold_seconds"] == 901
+            assert template["spawn_ready_timeout_seconds"] == 241
+
+    def test_flow_role_defaults_reject_unknown_camel_case(self):
+        with pytest.raises(WorkflowProfileError, match="unknown camelCase key"):
+            expand_prd_flow({"roleDefaults": {"stuckTimeoutSeconds": 900}})
+
     def test_config_profile_flow_defaults_merge_refactor_role_skill_bundles(self, tmp_path):
         text = """\
 apiVersion: zaofu.dev/v1
@@ -688,6 +719,12 @@ spec:
             cfg = load_config(root / relative)
             assert cfg.runtime.workdirs.enabled is True, relative
             assert cfg.runtime.workdirs.mode == "worktree", relative
+            assert all(
+                role.permission_mode == "bypass"
+                and role.stuck_threshold_seconds == 900
+                and role.spawn_ready_timeout_seconds == 240
+                for role in cfg.roles
+            ), relative
             assert any(
                 source.name == "zaofu-skills"
                 and source.path == "../../../skills"

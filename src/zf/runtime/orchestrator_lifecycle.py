@@ -467,12 +467,18 @@ class LifecycleManagerMixin(
             detector = self._stuck_detectors.get(role.instance_id)
             if detector is None or not output.strip():
                 continue
-            # E2 fix: idle workers (no in_progress task assigned) have
-            # legitimately unchanged pane output — don't flag them as
-            # stuck. Reset the detector so the stale clock starts fresh
-            # the moment a task lands; also clear any prior report so
-            # the next real stall can re-fire. Run 15 produced 6 false
-            # worker.stuck events this way.
+            # Idle workers legitimately have unchanged pane output. A stale
+            # task.dispatched entry can still consume WIP after its fanout
+            # child is terminal, so only a canonical active task or live
+            # fanout child counts as an outstanding obligation here.
+            active_task = self._active_task_for_instance(role.instance_id)
+            active_fanout_child = self._active_fanout_child_for_instance(
+                role.instance_id,
+            )
+            if active_task is None and active_fanout_child is None:
+                detector.reset()
+                self._stuck_already_reported.discard(role.instance_id)
+                continue
             try:
                 latest_dispatched = self._latest_dispatched_per_task()
             except Exception:
@@ -482,13 +488,12 @@ class LifecycleManagerMixin(
                 self.task_store,
                 latest_dispatched,
             )
-            if is_idle and self._active_task_for_instance(role.instance_id):
+            if is_idle and active_task is not None:
                 is_idle = False
             if is_idle:
                 detector.reset()
                 self._stuck_already_reported.discard(role.instance_id)
                 continue
-            active_task = self._active_task_for_instance(role.instance_id)
             if active_task is not None:
                 dispatch = self._latest_dispatch_event_for_task(active_task.id)
                 dispatch_payload = dispatch.payload if dispatch is not None else {}
@@ -2702,8 +2707,9 @@ class LifecycleManagerMixin(
             ),
             (
                 "2. If you have uncommitted changes in this worktree, COMMIT them "
-                "(`git add -A && git commit`) before completing — an uncommitted "
-                "worktree is rejected at integration."
+                "before completing. Stage only this task's changed files with explicit "
+                "pathspecs (`git add -- <path>...`); never use `git add -A`, `git add .`, "
+                "or `git commit -a`. An uncommitted task file is rejected at integration."
             ),
             (
                 f"3. Emit your terminal event `{expected_event}` with the active "

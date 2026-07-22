@@ -19,6 +19,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.fanout import FanoutContext
 from zf.runtime.fanout_replay import record_fanout_fixture, replay_fanout_fixture
+from zf.runtime.fanout_timeout_policy import close_expired_queued_wait
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_types import OrchestratorDecision
 
@@ -301,6 +302,31 @@ def test_pending_reader_fanout_dispatches_after_worker_recovers(tmp_path: Path):
     ]
 
 
+def test_busy_reader_fanout_dispatch_defer_is_debounced(tmp_path: Path):
+    transport = _FlakyTransport(alive=True)
+    _state_dir, log, _transport, orch = _state_with_transport(tmp_path, transport)
+    orch._last_worker_state["review-a"] = "busy"  # type: ignore[attr-defined]
+
+    _start(orch)
+    fanout_id = _fanout_id(log)
+    orch.run_once(events=[])
+    orch.run_once(events=[])
+
+    deferred = [
+        event for event in log.read_all()
+        if event.type == "fanout.child.dispatch_deferred"
+        and event.payload.get("fanout_id") == fanout_id
+        and event.payload.get("role_instance") == "review-a"
+    ]
+    assert len(deferred) == 1
+    assert deferred[0].payload["reason"] == "worker_state_not_dispatchable:busy"
+    assert not [
+        event for event in log.read_all()
+        if event.type == "fanout.child.dispatched"
+        and event.payload.get("fanout_id") == fanout_id
+    ]
+
+
 def test_timeout_emits_timed_out_and_child_failure(tmp_path: Path):
     _state_dir, log, _transport, orch = _state(tmp_path, timeout_seconds=1)
     _start(orch)
@@ -323,6 +349,264 @@ def test_timeout_emits_timed_out_and_child_failure(tmp_path: Path):
     assert rejected
     assert rejected[-1].payload["reason"] == "timeout"
     assert rejected[-1].payload["failed_children"] == ["review-a"]
+    assert orch.worker_health()["review-a"] == "idle"
+    assert any(
+        event.type == "worker.state.changed"
+        and event.actor == "review-a"
+        and event.payload.get("to") == "idle"
+        and "terminal" in str(event.payload.get("reason") or "")
+        for event in events
+    )
+
+
+def test_pending_superseded_reader_fanout_is_cancelled_before_recovery(
+    tmp_path: Path,
+):
+    transport = _FlakyTransport(alive=False)
+    _state_dir, log, _transport, orch = _state_with_transport(tmp_path, transport)
+    orch._respawn_instance = lambda role: OrchestratorDecision(  # type: ignore[method-assign]
+        action="respawn",
+        role=role.instance_id,
+        reason="test respawn",
+    )
+    _start(orch)
+    stale_fanout_id = _fanout_id(log)
+    started = next(
+        event
+        for event in log.read_all()
+        if event.type == "fanout.started"
+        and event.payload.get("fanout_id") == stale_fanout_id
+    )
+    replacement_payload = dict(started.payload)
+    replacement_payload["fanout_id"] = "fanout-review-current"
+    replacement_payload["trigger_event_id"] = "candidate-ready-current"
+    EventWriter(log).append(ZfEvent(
+        type="fanout.started",
+        actor="zf-cli",
+        payload=replacement_payload,
+        correlation_id="trace-current",
+    ))
+    transport.alive = True
+
+    orch.run_once(events=[])
+
+    events = log.read_all()
+    cancelled = [
+        event
+        for event in events
+        if event.type == "fanout.cancelled"
+        and event.payload.get("fanout_id") == stale_fanout_id
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0].payload["superseded_by"] == "fanout-review-current"
+    assert (
+        cancelled[0].payload["source"]
+        == "superseded_reader_fanout_manifest_closeout"
+    )
+    assert not [
+        event
+        for event in events
+        if event.type == "fanout.child.dispatched"
+        and event.payload.get("fanout_id") == stale_fanout_id
+    ]
+
+
+def test_newer_reader_replan_attempt_supersedes_different_target(
+    tmp_path: Path,
+):
+    transport = _FlakyTransport(alive=False)
+    state_dir, log, _transport, orch = _state_with_transport(tmp_path, transport)
+    orch._respawn_instance = lambda role: OrchestratorDecision(  # type: ignore[method-assign]
+        action="respawn",
+        role=role.instance_id,
+        reason="test respawn",
+    )
+    _start(orch)
+    stale_fanout_id = _fanout_id(log)
+    stale_path = state_dir / "fanouts" / stale_fanout_id / "manifest.json"
+    stale_manifest = json.loads(stale_path.read_text(encoding="utf-8"))
+    stale_manifest["trigger_payload"].update({
+        "workflow_run_id": "workflow-1",
+        "rework_attempt": 1,
+    })
+    stale_manifest["aggregate_config"]["success_event"] = "task_map.ready"
+    stale_path.write_text(
+        json.dumps(stale_manifest, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    current_fanout_id = "fanout-review-replan-current"
+    current_manifest = json.loads(json.dumps(stale_manifest))
+    current_manifest.update({
+        "fanout_id": current_fanout_id,
+        "trigger_event_id": "candidate-ready-replan-2",
+        "target_ref": "task/TASK-1",
+    })
+    current_manifest["trigger_payload"].update({
+        "target_ref": "task/TASK-1",
+        "rework_attempt": 2,
+    })
+    for child in current_manifest["children"]:
+        child["target_ref"] = "task/TASK-1"
+    current_dir = state_dir / "fanouts" / current_fanout_id
+    current_dir.mkdir()
+    (current_dir / "manifest.json").write_text(
+        json.dumps(current_manifest, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    EventWriter(log).append(ZfEvent(
+        type="fanout.started",
+        actor="zf-cli",
+        payload={
+            "fanout_id": current_fanout_id,
+            "stage_id": "review-candidate",
+            "topology": "fanout_reader",
+            "trace_id": "trace-1",
+            "trigger_event_id": "candidate-ready-replan-2",
+            "target_ref": "task/TASK-1",
+            "pdd_id": "F-11111111",
+            "feature_id": "F-11111111",
+            "trigger_payload": {
+                "workflow_run_id": "workflow-1",
+                "rework_attempt": 2,
+                "target_ref": "task/TASK-1",
+            },
+            "expected_children": [{
+                "child_id": "review-a",
+                "role_instance": "review-a",
+                "target_ref": "task/TASK-1",
+            }],
+        },
+        correlation_id="trace-1",
+    ))
+    transport.alive = True
+
+    orch.run_once(events=[])
+
+    events = log.read_all()
+    cancelled = [
+        event
+        for event in events
+        if event.type == "fanout.cancelled"
+        and event.payload.get("fanout_id") == stale_fanout_id
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0].payload["reason"] == (
+        "superseded_by_newer_replan_attempt"
+    )
+    assert cancelled[0].payload["superseded_by"] == current_fanout_id
+    assert any(
+        event.type == "fanout.child.dispatched"
+        and event.payload.get("fanout_id") == current_fanout_id
+        for event in events
+    )
+
+
+def test_reader_replan_supersession_is_plan_scoped_and_forward_only(
+    tmp_path: Path,
+):
+    _state_dir, _log, _transport, orch = _state(tmp_path)
+    current = {
+        "stage_id": "review-candidate",
+        "trace_id": "workflow-1",
+        "pdd_id": "F-1",
+        "feature_id": "F-1",
+        "aggregate_config": {"success_event": "review.approved"},
+        "trigger_payload": {"workflow_run_id": "workflow-1", "rework_attempt": 1},
+        "children": [{"role_instance": "review-a"}],
+    }
+    later = {
+        **current,
+        "target_ref": "task/TASK-1",
+        "trigger_payload": {"workflow_run_id": "workflow-1", "rework_attempt": 2},
+    }
+    manifests = [("fanout-current", current), ("fanout-later", later)]
+    assert orch._newer_reader_replan_fanout(  # type: ignore[attr-defined]
+        fanout_id="fanout-current",
+        manifest=current,
+        manifests=manifests,
+        started_order={"fanout-current": 0, "fanout-later": 1},
+    ) == ""
+
+    current["aggregate_config"] = {"success_event": "task_map.ready"}
+    current["trigger_payload"] = {
+        "workflow_run_id": "workflow-1",
+        "rework_attempt": 2,
+    }
+    later["aggregate_config"] = {"success_event": "task_map.ready"}
+    later["trigger_payload"] = {
+        "workflow_run_id": "workflow-1",
+        "rework_attempt": 4,
+    }
+    assert orch._newer_reader_replan_fanout(  # type: ignore[attr-defined]
+        fanout_id="fanout-current",
+        manifest=current,
+        manifests=manifests,
+        started_order={"fanout-later": 0, "fanout-current": 1},
+    ) == ""
+
+
+def test_new_reader_fanout_repairs_terminal_child_stale_busy_projection(
+    tmp_path: Path,
+):
+    _state_dir, log, transport, orch = _state(tmp_path)
+    writer = EventWriter(log)
+    old_fanout_id = "fanout-review-old"
+    old_run_id = f"run-{old_fanout_id}-review-a"
+    writer.append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        payload={
+            "fanout_id": old_fanout_id,
+            "child_id": "review-a",
+            "run_id": old_run_id,
+            "role_instance": "review-a",
+        },
+    ))
+    writer.append(ZfEvent(
+        type="worker.state.changed",
+        actor="review-a",
+        payload={
+            "from": "idle",
+            "to": "busy",
+            "reason": f"dispatched fanout child {old_fanout_id}/review-a",
+        },
+    ))
+    writer.append(ZfEvent(
+        type="fanout.child.failed",
+        actor="zf-cli",
+        payload={
+            "fanout_id": old_fanout_id,
+            "child_id": "review-a",
+            "run_id": old_run_id,
+            "role_instance": "review-a",
+            "reason": "timeout",
+        },
+    ))
+    orch._init_worker_state_tracking()  # type: ignore[attr-defined]
+
+    _start(orch)
+
+    current_fanout_id = [
+        event.payload["fanout_id"]
+        for event in log.read_all()
+        if event.type == "fanout.started"
+    ][-1]
+    assert any(
+        event.type == "fanout.child.dispatched"
+        and event.payload.get("fanout_id") == current_fanout_id
+        for event in log.read_all()
+    )
+    assert len(transport.sent) == 1
+    repaired = [
+        event
+        for event in log.read_all()
+        if event.type == "worker.state.changed"
+        and event.actor == "review-a"
+        and event.payload.get("reason")
+        == "terminal reader fanout released stale busy projection"
+    ]
+    assert len(repaired) == 1
 
 
 def test_timeout_skips_superseded_fanout_instance(tmp_path: Path):
@@ -425,6 +709,128 @@ def test_timeout_times_out_child_without_dispatch_event(tmp_path: Path):
     )
 
 
+def test_queued_wait_timeout_does_not_consume_semantic_child_attempt(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, _transport, orch = _state(tmp_path, timeout_seconds=1)
+    _start(orch)
+    fanout_id = _fanout_id(log)
+    dispatched = next(
+        event for event in log.read_all()
+        if event.type == "fanout.child.dispatched"
+        and event.payload.get("fanout_id") == fanout_id
+    )
+    EventWriter(log).append(ZfEvent(
+        type="fanout.child.completed",
+        actor="review-a",
+        payload={
+            "fanout_id": fanout_id,
+            "trace_id": "trace-1",
+            "stage_id": "review-candidate",
+            "child_id": dispatched.payload["child_id"],
+            "run_id": dispatched.payload["run_id"],
+            "role_instance": "review-a",
+        },
+        correlation_id="trace-1",
+    ))
+    EventWriter(log).append(ZfEvent(
+        type="fanout.child.queued",
+        actor="zf-cli",
+        payload={
+            "fanout_id": fanout_id,
+            "trace_id": "trace-1",
+            "stage_id": "review-candidate",
+            "child_id": "review-overflow",
+            "task_id": "TASK-QUEUED",
+            "assignment_strategy": "affinity_stage_slots",
+            "stage_slot": "review",
+        },
+        correlation_id="trace-1",
+    ))
+    orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
+
+    orch.run_once(events=[])
+
+    events = log.read_all()
+    assert not [
+        event
+        for event in events
+        if event.type == "fanout.child.failed"
+        and event.payload.get("child_id") == "review-overflow"
+    ]
+    cancelled = [
+        event
+        for event in events
+        if event.type == "fanout.cancelled"
+        and event.payload.get("reason") == "queued_wait_timeout"
+    ]
+    assert len(cancelled) == 1
+    assert cancelled[0].payload["failure_kind"] == "scheduler_queue_timeout"
+    assert cancelled[0].payload["semantic_attempt_consumed"] is False
+
+
+def test_queued_wait_timeout_ignores_dependency_blocked_children(
+    tmp_path: Path,
+) -> None:
+    log = EventLog(tmp_path / "events.jsonl")
+    manifest = {
+        "fanout_id": "fanout-impl",
+        "trace_id": "trace-1",
+        "stage_id": "impl",
+        "children": [{
+            "child_id": "queued-ASSEMBLY-001-2",
+            "task_id": "ASSEMBLY-001",
+            "status": "queued",
+        }],
+    }
+
+    closed = close_expired_queued_wait(
+        EventWriter(log),
+        manifest=manifest,
+        fanout_epoch=1.0,
+        now=10.0,
+        timeout_seconds=1,
+        eligible_queued_child_ids=set(),
+    )
+
+    assert closed is False
+    assert log.read_all() == []
+
+
+def test_queued_child_does_not_share_running_child_execution_timeout(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, _transport, orch = _state(tmp_path, timeout_seconds=1)
+    _start(orch)
+    fanout_id = _fanout_id(log)
+    EventWriter(log).append(ZfEvent(
+        type="fanout.child.queued",
+        actor="zf-cli",
+        payload={
+            "fanout_id": fanout_id,
+            "trace_id": "trace-1",
+            "stage_id": "review-candidate",
+            "child_id": "review-overflow",
+            "task_id": "TASK-QUEUED",
+            "assignment_strategy": "affinity_stage_slots",
+            "stage_slot": "review",
+        },
+        correlation_id="trace-1",
+    ))
+    orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
+
+    orch.run_once(events=[])
+
+    events = log.read_all()
+    failed_ids = {
+        str(event.payload.get("child_id") or "")
+        for event in events
+        if event.type == "fanout.child.failed"
+    }
+    assert "review-a" in failed_ids
+    assert "review-overflow" not in failed_ids
+
+
 def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     tmp_path: Path,
     monkeypatch,
@@ -439,6 +845,7 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     fanout_id = _fanout_id(log)
     first_dispatch = next(event for event in log.read_all()
                           if event.type == "fanout.child.dispatched")
+    orch._set_worker_state("review-a", "idle", force=True)  # type: ignore[attr-defined]
     orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
 
     orch.run_once(events=[])
@@ -495,6 +902,7 @@ def test_idle_child_retried_when_retries_available(tmp_path: Path):
     _start(orch)
     first_dispatch = next(event for event in log.read_all()
                           if event.type == "fanout.child.dispatched")
+    orch._set_worker_state("review-a", "idle", force=True)  # type: ignore[attr-defined]
     orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
 
     orch.run_once(events=[])
@@ -848,7 +1256,7 @@ def test_duplicate_child_dispatch_within_send_window_is_deferred(
     assert deferred
     assert deferred[-1].payload["reason"] == "briefing_send_window_active"
 
-    # 不同 run_id(重播/新 fanout)不受窗口影响
+    # worker 仍 busy 时,不同 run_id 也不能把新 prompt 塞进同一 pane。
     ok2 = orch._ensure_fanout_role_dispatchable(
         role=role,
         fanout_id=fanout_id,
@@ -857,9 +1265,12 @@ def test_duplicate_child_dispatch_within_send_window_is_deferred(
         run_id=f"{run_id}-replay",
         trace_id="t1",
     )
-    assert ok2 is True
+    assert ok2 is False
+    deferred = [event for event in log.read_all()
+                if event.type == "fanout.child.dispatch_deferred"]
+    assert deferred[-1].payload["reason"] == "worker_state_not_dispatchable:busy"
 
-    # skip_send_window(watchdog retry 路径)旁路
+    # watchdog retry 也不能旁路 busy 状态。
     ok3 = orch._ensure_fanout_role_dispatchable(
         role=role,
         fanout_id=fanout_id,
@@ -869,4 +1280,23 @@ def test_duplicate_child_dispatch_within_send_window_is_deferred(
         trace_id="t1",
         skip_send_window=True,
     )
-    assert ok3 is True
+    assert ok3 is False
+
+
+def test_thinking_backend_idle_threshold_includes_attempt_lease_grace(
+    tmp_path: Path,
+):
+    _state_dir, log, _transport, orch = _state(
+        tmp_path,
+        timeout_seconds=10_000,
+        idle_threshold=1,
+    )
+    orch.config.roles[0].backend = "claude-code"
+    _start(orch)
+    child = next(
+        item
+        for item in orch._fanout_manifest(_fanout_id(log))["children"]
+        if item["role_instance"] == "review-a"
+    )
+
+    assert orch._fanout_child_idle_threshold(child) == 900.0

@@ -106,6 +106,34 @@ class TestSnapshotOnDispatch:
 
 
 class TestDoneEventTriggersCheck:
+    def test_custom_state_dir_activity_is_not_worker_scope(
+        self, state_dir, workspace, config, transport
+    ):
+        custom_state_dir = workspace / ".zf-custom"
+        state_dir.rename(custom_state_dir)
+        store = TaskStore(custom_state_dir / "kanban.json")
+        store.add(Task(
+            id="T1", title="auth", assigned_to="dev",
+            contract=TaskContract(scope=["src/auth.py"]),
+        ))
+
+        orch = Orchestrator(custom_state_dir, config, transport)
+        orch.run_once()
+        runtime_projection = custom_state_dir / "projections" / "health.json"
+        runtime_projection.parent.mkdir(parents=True, exist_ok=True)
+        runtime_projection.write_text("{}\n")
+
+        log = EventLog(custom_state_dir / "events.jsonl")
+        log.append(ZfEvent(type="dev.build.done", actor="dev", task_id="T1"))
+        orch.run_once()
+
+        violations = [
+            event for event in log.read_all()
+            if event.type == "scope.violation"
+        ]
+        assert violations == []
+        assert ".zf-custom" in orch._scope_ratchet.ignore_prefixes
+
     def test_in_scope_change_emits_no_violation(
         self, state_dir, workspace, config, transport
     ):

@@ -93,6 +93,73 @@ def test_cap_exhausted_escalates() -> None:
     assert replan is None and note == "cap_exhausted"
 
 
+def test_candidate_ready_stops_recursive_plan_replan() -> None:
+    origin = ZfEvent(
+        type="issue.requested",
+        correlation_id="trace-1",
+        payload={
+            "pdd_id": "PDD-1",
+            "issue_ref": "docs/issues/TODO.md",
+            "rework_source": "integration.failed",
+        },
+    )
+    integration_failure = ZfEvent(
+        type="integration.failed",
+        correlation_id="trace-1",
+        payload={"pdd_id": "PDD-1"},
+    )
+    candidate_ready = ZfEvent(
+        type="candidate.ready",
+        correlation_id="trace-1",
+        payload={"pdd_id": "PDD-1", "candidate_head_commit": "abc"},
+    )
+    failure = ZfEvent(
+        type="issue.triage.failed",
+        correlation_id="trace-1",
+        payload={"pdd_id": "PDD-1", "reason": "planner timed out"},
+    )
+
+    replan, note = plan_reader_stage_replan(
+        _config(),
+        [origin, integration_failure, candidate_ready, failure],
+        failure,
+    )
+
+    assert replan is None
+    assert note == "superseded_by_candidate_ready"
+
+
+def test_candidate_ready_from_another_run_does_not_stop_replan() -> None:
+    origin = ZfEvent(
+        type="issue.requested",
+        correlation_id="trace-1",
+        payload={
+            "pdd_id": "PDD-1",
+            "issue_ref": "docs/issues/TODO.md",
+            "rework_source": "integration.failed",
+        },
+    )
+    other_ready = ZfEvent(
+        type="candidate.ready",
+        correlation_id="trace-2",
+        payload={"pdd_id": "PDD-1"},
+    )
+    failure = ZfEvent(
+        type="issue.triage.failed",
+        correlation_id="trace-1",
+        payload={"pdd_id": "PDD-1", "reason": "planner timed out"},
+    )
+
+    replan, note = plan_reader_stage_replan(
+        _config(),
+        [origin, other_ready, failure],
+        failure,
+    )
+
+    assert replan is not None
+    assert "issue-triage" in note
+
+
 def test_unknown_failure_event_ignored() -> None:
     failure = ZfEvent(type="something.else.failed", payload={})
     replan, note = plan_reader_stage_replan(_config(), [failure], failure)

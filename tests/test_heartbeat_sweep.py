@@ -689,6 +689,68 @@ def test_orchestrator_sweep_allows_stuck_after_codex_stop(
     assert "worker.stuck" in events
 
 
+def test_orchestrator_sweep_suppresses_stuck_during_open_claude_dispatch(
+    tmp_path: Path,
+) -> None:
+    """A Claude model-only thinking window is an open bounded provider turn."""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "events.jsonl").write_text("", encoding="utf-8")
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    (state_dir / "memory").mkdir()
+    registry = RoleSessionRegistry(
+        state_dir / "role_sessions.yaml", project_root=str(tmp_path),
+    )
+    _heartbeat(
+        registry,
+        "dev-lane-0",
+        state="busy",
+        age_seconds=400,
+        current_task_id="TASK-1",
+    )
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="TASK-1",
+        title="implementation",
+        status="in_progress",
+        assigned_to="dev-lane-0",
+        active_dispatch_id="run-1",
+    ))
+    cfg = ZfConfig(
+        project=ProjectConfig(name="t"),
+        session=SessionConfig(tmux_session="t"),
+        roles=[RoleConfig(
+            name="dev",
+            backend="claude-code",
+            instance_id="dev-lane-0",
+            stuck_threshold_seconds=300.0,
+        )],
+    )
+    orch = Orchestrator(state_dir, cfg, _NoopTransport())  # type: ignore[arg-type]
+    orch.event_writer.append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        task_id="TASK-1",
+        payload={
+            "task_id": "TASK-1",
+            "role_instance": "dev-lane-0",
+            "run_id": "run-1",
+        },
+    ))
+
+    orch._run_heartbeat_sweep()  # type: ignore[attr-defined]
+
+    events = (state_dir / "events.jsonl").read_text(encoding="utf-8")
+    assert "worker.stuck" not in events
+    assert "worker.probe.silent" in events
+    assert "provider_turn_in_flight" in events
+    probe = next(
+        event
+        for event in EventLog(state_dir / "events.jsonl").read_all()
+        if event.type == "worker.probe.silent"
+    )
+    assert probe.payload["provider"] == "claude-code"
+
+
 def test_worker_state_changed_idle_resets_stale_busy_heartbeat_before_sweep(
     tmp_path: Path,
 ) -> None:
@@ -802,3 +864,35 @@ def test_stage_completion_releases_actor_and_usage_preserves_idle(
     assert payload["state"] == "idle"
     assert payload["current_task_id"] == "TASK-1"
     assert payload["source"] == "agent.usage"
+
+
+def test_objective_action_ts_folds_into_liveness(tmp_path):
+    """ZF-LIVENESS-FOLD-01:零自觉心跳 + 新鲜客观动作 = 不判 stuck。
+
+    07-17 UISSE 实弹:dev-lane-0 整轮 0 条 worker.heartbeat、499 条
+    codex.hook 工具调用,被 α-3 判 stuck ×5 → escalate → quiescent。
+    活性必须 max(自觉心跳, last_action_ts 客观折算)。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    from zf.core.state.role_sessions import RoleSessionRegistry
+    from zf.runtime.heartbeat_sweep import sweep_heartbeats
+
+    now = datetime(2026, 7, 17, 12, 0, 0, tzinfo=timezone.utc)
+    reg = RoleSessionRegistry(tmp_path / "role_sessions.yaml", tmp_path)
+    stale = (now - timedelta(seconds=900)).isoformat()
+    fresh = (now - timedelta(seconds=30)).isoformat()
+    reg._meta["dev-lane-0"] = {
+        "last_heartbeat_at": stale,  # 自觉心跳 15 分钟前(远超 stuck 阈)
+        "last_heartbeat_payload": {
+            "state": "busy",
+            "last_action_ts": fresh,  # 客观动作 30 秒前
+        },
+    }
+    reg._meta["dev-lane-1"] = {
+        "last_heartbeat_at": stale,
+        "last_heartbeat_payload": {"state": "busy", "last_action_ts": stale},
+    }
+    result = sweep_heartbeats(registry=reg, now=now)
+    assert "dev-lane-0" not in result.stuck_instances  # 客观活性兜底
+    assert "dev-lane-1" in result.stuck_instances       # 双时间戳都陈旧才判死

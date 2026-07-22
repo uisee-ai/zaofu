@@ -289,3 +289,55 @@ def test_empty_events_no_stall():
     now = datetime.now(timezone.utc)
     result = sweep_silent_dispatches(events=[], now=now)
     assert result.silent_stalls == []
+
+
+def test_dead_dispatch_signal_never_queues_second_prompt():
+    from types import SimpleNamespace
+
+    from zf.runtime.orchestrator_reactor import EventReactorMixin
+
+    calls: list[str] = []
+    host = SimpleNamespace(
+        task_store=SimpleNamespace(get=lambda _task_id: SimpleNamespace(status="in_progress")),
+        _dispatch_ready=lambda: calls.append("dispatch"),
+    )
+    decision = EventReactorMixin._on_dispatch_silent_stall(
+        host,
+        ZfEvent(
+            type="dispatch.silent_stall",
+            task_id="TASK-X",
+            payload={
+                "task_id": "TASK-X",
+                "assignee": "dev-lane-0",
+                "source": "dead_dispatch_sweep",
+            },
+        ),
+    )
+
+    assert calls == []
+    assert decision is not None
+    assert decision.action == "wait"
+
+
+def test_missing_dispatch_signal_still_redrives_scheduler():
+    from types import SimpleNamespace
+
+    from zf.runtime.orchestrator_reactor import EventReactorMixin
+
+    calls: list[str] = []
+    host = SimpleNamespace(
+        task_store=SimpleNamespace(get=lambda _task_id: SimpleNamespace(status="backlog")),
+        _dispatch_ready=lambda: calls.append("dispatch"),
+    )
+    decision = EventReactorMixin._on_dispatch_silent_stall(
+        host,
+        ZfEvent(
+            type="dispatch.silent_stall",
+            task_id="TASK-X",
+            payload={"task_id": "TASK-X", "source": "dispatch_sweep"},
+        ),
+    )
+
+    assert calls == ["dispatch"]
+    assert decision is not None
+    assert decision.action == "redispatch"

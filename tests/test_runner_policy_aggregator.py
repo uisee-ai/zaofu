@@ -68,6 +68,17 @@ def test_aggregator_cat_path_defaults_without_config():
     assert "Bash(cat .zf/artifacts/*)" in tools
 
 
+def test_aggregator_allowlist_uses_exact_runtime_cli_prefix(monkeypatch):
+    command = "uv --project /workspace/zaofu run zf"
+    monkeypatch.setenv("ZF_CLI_CMD", command)
+
+    tools = claude_aggregator_allowed_tools(_config())
+
+    assert f"Bash({command} artifact list *)" in tools
+    assert f"Bash({command} artifact read *)" in tools
+    assert "Bash(zf artifact list *)" not in tools
+
+
 def test_aggregator_write_protection_intact():
     effective = apply_pure_aggregator_policy(_config(), _synth_role())
     for tool in ("Edit", "Write", "NotebookEdit"):

@@ -57,6 +57,7 @@ from zf.core.events.factory import event_log_from_project
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.core.package_source import installed_local_source_root
 from zf.core.safety import PathGuard
 from zf.core.security.redaction import redact_event, redact_obj
 from zf.core.feature.store import FeatureStore
@@ -384,7 +385,14 @@ from zf.web.workflow_request_routes import (
     build_workflow_request_router,
     workflow_request_strings,
 )
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_PACKAGE_REPO_ROOT = Path(__file__).resolve().parents[3]
+_INSTALLED_SOURCE_ROOT = installed_local_source_root()
+_REPO_ROOT = (
+    _INSTALLED_SOURCE_ROOT
+    if _INSTALLED_SOURCE_ROOT is not None
+    and (_INSTALLED_SOURCE_ROOT / "web").is_dir()
+    else _PACKAGE_REPO_ROOT
+)
 _REACT_DIST_DIR = _REPO_ROOT / "web" / "dist"
 _react_dist_missing_warned = False
 
@@ -1303,6 +1311,10 @@ def create_app(
                     materialize_flow_assets(preset_arg, root, config_path=root / "zf.yaml")
                 preset_arg = None
         try:
+            if generated_flow_kind:
+                from zf.core.profile.apply import materialize_config_skills
+
+                materialize_config_skills(root / "zf.yaml", root)
             result = ProjectInitializer(
                 workspace=str(payload.get("workspace") or "default"),
             ).initialize(
@@ -2956,6 +2968,28 @@ def create_app(
     def run_fanouts(run_id: str) -> JSONResponse:
         return JSONResponse(_run_fanouts(state_dir, run_id))
 
+    @app.get("/api/runs/{run_id}/dossier")
+    def run_dossier(
+        run_id: str,
+        section: str = "",
+        preview: bool = False,
+    ) -> JSONResponse:
+        from zf.runtime.goal_dossier import (
+            GoalDossierError,
+            build_goal_dossier,
+            goal_dossier_view,
+        )
+
+        try:
+            dossier = build_goal_dossier(state_dir, run_id)
+            return JSONResponse(goal_dossier_view(
+                dossier,
+                section=section,
+                preview=preview,
+            ))
+        except GoalDossierError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
     @app.get("/api/runs/{run_id}")
     def run_detail(run_id: str) -> JSONResponse:
         return JSONResponse(_run_detail(state_dir, run_id))
@@ -3196,7 +3230,51 @@ def create_app(
     ) -> JSONResponse:
         payload = await _request_json(request)
         payload["channel_id"] = channel_id
-        if config is not None and (project_root / "zf.yaml").exists():
+        if config is not None and not (project_root / "zf.yaml").exists():
+            writer = EventWriter(event_log_from_project(state_dir, config=config))
+            task_id = str(payload.get("task_id") or "")
+            pattern_id = str(payload.get("pattern_id") or "")
+            invoke = writer.append(ZfEvent(
+                type="workflow.invoke.requested",
+                actor="web",
+                task_id=task_id or None,
+                correlation_id=channel_id,
+                payload={
+                    "channel_id": channel_id,
+                    "thread_id": str(payload.get("thread_id") or "main"),
+                    "task_id": task_id,
+                    "pattern_id": pattern_id,
+                    "reason": str(payload.get("reason") or ""),
+                    "expected_output": str(payload.get("expected_output") or ""),
+                    "source": "workflow-request",
+                    "requested_by": str(payload.get("requested_by") or "channel"),
+                },
+            ))
+            writer.append(ZfEvent(
+                type="channel.state_update.posted",
+                actor="web",
+                task_id=task_id or None,
+                causation_id=invoke.id,
+                correlation_id=channel_id,
+                payload={
+                    "channel_id": channel_id,
+                    "thread_id": str(payload.get("thread_id") or "main"),
+                    "status": "workflow_proposal_ready",
+                    "summary": "workflow request is ready for explicit approval",
+                    "task_id": task_id,
+                    "refs": {},
+                    "source": "workflow-request",
+                },
+            ))
+            return JSONResponse({
+                "ok": True,
+                "status": "proposal_ready",
+                "action": "workflow-request",
+                "requested_action": "workflow-request",
+                "event_id": invoke.id,
+                "next_action": "approve through project workflow-submit with apply=true",
+            }, status_code=202)
+        if config is not None:
             auth_error = _web_mutation_auth_error(
                 "workflow-submit",
                 authorization=authorization,

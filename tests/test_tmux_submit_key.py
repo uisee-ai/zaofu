@@ -56,6 +56,25 @@ def test_send_task_uses_enter_for_all_backends(tmp_path: Path):
         )
 
 
+def test_send_task_clears_unsubmitted_draft_before_prompt(tmp_path: Path):
+    tmux = TmuxSession(session_name="zf-test", dry_run=True)
+    transport = TmuxTransport(tmux)
+    role = RoleConfig(name="planner", backend="claude-code")
+    transport.spawn(role, ["claude"])
+    tmux.command_log.clear()
+
+    transport.send_task(role.instance_id, tmp_path / "brief.md", "new briefing")
+
+    sends = [command for command in tmux.command_log if "send-keys" in command]
+    clear_index = next(
+        index for index, command in enumerate(sends) if command.endswith(" C-u")
+    )
+    prompt_index = next(
+        index for index, command in enumerate(sends) if "new briefing" in command
+    )
+    assert clear_index < prompt_index
+
+
 class _FakeTmux:
     dry_run = False
 

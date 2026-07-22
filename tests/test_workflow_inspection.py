@@ -64,6 +64,7 @@ def test_workflow_inspection_fails_closed_for_reserved_event_and_missing_skill(
     tmp_path: Path,
 ) -> None:
     cfg = _healthy_config()
+    cfg.runtime.skills.strict = True
     cfg.roles[0].triggers.append("task.start")
     cfg.roles[0].skills.append("missing-skill")
 
@@ -73,6 +74,43 @@ def test_workflow_inspection_fails_closed_for_reserved_event_and_missing_skill(
     assert report["status"] == "STOP"
     assert "role_uses_reserved_trigger" in kinds
     assert "skill_resolution_failed" in kinds
+
+
+def test_missing_skill_stops_only_when_skills_strict(tmp_path: Path) -> None:
+    """`zf start` preflight must honor config.runtime.skills.strict, the same
+    flag `zf validate` gates on. Non-strict => WARN (bootable); strict => STOP.
+
+    Regression: autoresearch controlled-stuck-recovery shipped strict=False yet
+    `zf start` hard-STOPed on enabled-but-missing skills, so the harness never
+    emitted session.started and the seeded run timed out at 0 tasks done.
+    """
+    def _cfg():
+        c = _healthy_config()
+        c.roles[0].skills.append("missing-skill")
+        return c
+
+    non_strict = _cfg()
+    non_strict.runtime.skills.strict = False
+    report = build_workflow_inspection_report(non_strict, project_root=tmp_path)
+    skill_diags = [
+        d for d in report["diagnostics"]
+        if d["kind"] == "skill_resolution_failed"
+    ]
+    assert skill_diags, "missing skill must still surface a diagnostic"
+    assert all(d["severity"] == "WARN" for d in skill_diags)
+    # A missing skill is the only defect here, so a non-strict config still boots.
+    assert report["status"] != "STOP"
+
+    strict = _cfg()
+    strict.runtime.skills.strict = True
+    report = build_workflow_inspection_report(strict, project_root=tmp_path)
+    skill_diags = [
+        d for d in report["diagnostics"]
+        if d["kind"] == "skill_resolution_failed"
+    ]
+    assert skill_diags
+    assert all(d["severity"] == "STOP" for d in skill_diags)
+    assert report["status"] == "STOP"
 
 
 def test_workflow_inspection_keeps_graph_diagnostic_extra_fields(

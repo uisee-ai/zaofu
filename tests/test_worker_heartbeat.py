@@ -371,6 +371,63 @@ def test_agent_usage_ignores_terminal_fanout_task_id(
     assert last_payload["source"] == "agent.usage"
 
 
+def test_agent_usage_ignores_dispatch_lost_fanout_task_id(tmp_path: Path):
+    from zf.runtime.housekeeping import apply_task_dispatched_heartbeat_seed
+    from zf.runtime.usage_liveness import apply_agent_usage_liveness
+
+    reg = RoleSessionRegistry(
+        tmp_path / "role_sessions.yaml",
+        project_root=str(tmp_path),
+    )
+    task = Task(
+        id="TASK-OLD",
+        title="old",
+        status="in_progress",
+        assigned_to="dev-lane-1",
+    )
+    dispatched = ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        payload={
+            "fanout_id": "fanout-old",
+            "child_id": "queued-TASK-OLD-1",
+            "run_id": "run-old",
+            "task_id": "TASK-OLD",
+            "role_instance": "dev-lane-1",
+        },
+    )
+    dispatch_lost = ZfEvent(
+        type="fanout.child.dispatch_lost",
+        actor="zf-cli",
+        task_id="TASK-OLD",
+        payload={
+            "fanout_id": "fanout-old",
+            "child_id": "queued-TASK-OLD-1",
+            "run_id": "run-old",
+            "task_id": "TASK-OLD",
+            "role_instance": "dev-lane-1",
+        },
+    )
+    apply_task_dispatched_heartbeat_seed(reg, dispatched)
+
+    apply_agent_usage_liveness(
+        reg,
+        ZfEvent(
+            type="agent.usage",
+            actor="dev-lane-1",
+            task_id="TASK-OLD",
+            payload={"task_id": "TASK-OLD", "context_usage_ratio": 0.42},
+        ),
+        tasks=[task],
+        events=[dispatched, dispatch_lost],
+    )
+
+    _last_at, last_payload = reg.get_last_heartbeat("dev-lane-1")
+    assert last_payload["current_task_id"] == ""
+    assert last_payload["state"] == "active"
+    assert last_payload["source"] == "agent.usage"
+
+
 def test_apply_worker_state_changed_updates_role_session_state(tmp_path: Path):
     from zf.runtime.housekeeping import apply_worker_state_changed_event
 

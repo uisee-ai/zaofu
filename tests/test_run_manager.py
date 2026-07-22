@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -57,12 +58,22 @@ from zf.runtime.run_manager import (
     decide_action_policy,
     run_manager_tick,
     write_run_manager_projections,
+    _candidate_rework_shadowed_by_workflow,
+    _action_seen,
+    _emit_no_progress_run_terminal,
+    _outcome_no_progress_break,
+    _operation_precondition_holds,
     _post_verify_action,
+    _workflow_reemit_shadowed_by_candidate,
 )
 from zf.autoresearch.loop_types import ReflectionResult
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_resume import build_workflow_resume_projection
 from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor
+
+
+def _stale_runtime_ts(*, seconds: int = 7200) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).isoformat()
 
 
 def _state(tmp_path: Path) -> tuple[Path, EventLog, EventWriter]:
@@ -569,6 +580,75 @@ def test_workflow_batch_resume_controlled_action_applies_and_emits_web_completio
     assert result["status"] == "applied"
     assert any(event.type == "workflow.resume.applied" for event in events)
     assert any(event.type == "web.action.completed" for event in events)
+
+
+def test_candidate_rework_cap_requires_orchestrator_triage_before_human(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    service = ControlledActionService(
+        state_dir,
+        writer,
+        config=_config(),
+        actor="run-manager",
+        surface="run-manager",
+    )
+    requested = writer.emit(
+        "run.manager.control_action.requested",
+        actor="run-manager",
+        payload={"action": "candidate-rework-apply"},
+    )
+    payload = {
+        "checkpoint_id": "candidate-cap-checkpoint",
+        "candidate_rework_action": "escalate",
+        "pdd_id": "SIM4-PRD",
+        "trace_id": "sim4-run",
+        "source_event_id": "integration-3",
+        "source_event_type": "integration.failed",
+        "source_event_ids": ["integration-1", "integration-2", "integration-3"],
+        "failure_fingerprint": "candidate-failure-stable",
+        "rework_attempt": 3,
+        "rework_feedback": ["same gate failed"],
+        "expected_downstream_events": ["candidate.rework.capped"],
+    }
+
+    result = service.execute(
+        action="candidate-rework-apply",
+        requested_action="candidate-rework-apply",
+        requested=requested,
+        payload=payload,
+    )
+
+    events = log.read_all()
+    assert result["status"] == "applied"
+    cap = [event for event in events if event.type == "candidate.rework.capped"][-1]
+    assert cap.payload["failure_scope"] == "candidate"
+    assert cap.payload["semantic_triage_required"] is True
+    assert cap.payload["failure_fingerprint"] == "candidate-failure-stable"
+    assert not any(event.type == "human.escalate" for event in events)
+
+    advised_request = writer.emit(
+        "run.manager.control_action.requested",
+        actor="run-manager",
+        payload={"action": "candidate-rework-apply"},
+    )
+    advised = service.execute(
+        action="candidate-rework-apply",
+        requested_action="candidate-rework-apply",
+        requested=advised_request,
+        payload={
+            **payload,
+            "checkpoint_id": "candidate-human-checkpoint",
+            "orchestrator_triage_applied": True,
+            "expected_downstream_events": [
+                "human.escalate",
+                "owner.visible_message.requested",
+            ],
+        },
+    )
+
+    assert advised["status"] == "applied"
+    assert any(event.type == "human.escalate" for event in log.read_all())
 
 
 def test_run_manager_executes_safe_workflow_resume_and_post_verifies(
@@ -1230,6 +1310,79 @@ def test_run_manager_recovers_candidate_rework_anchor_from_artifact_and_git_head
     assert rework[-1].payload.get("candidate_base_commit") == "head123"
 
 
+def test_run_manager_retries_candidate_integration_without_reopening_tasks(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    task_map_path = state_dir / "artifacts" / "P1" / "task_map.json"
+    task_map_path.parent.mkdir(parents=True)
+    task_map_path.write_text('{"tasks": []}\n', encoding="utf-8")
+    log.append(ZfEvent(
+        id="task-map-ready-1",
+        type="task_map.ready",
+        payload={
+            "pdd_id": "P1",
+            "task_map_ref": str(task_map_path),
+            "source_commit": "base123",
+            "candidate_base_commit": "base123",
+        },
+        correlation_id="trace-p1",
+    ))
+    log.append(ZfEvent(
+        id="integration-failed-1",
+        type="integration.failed",
+        payload={
+            "pdd_id": "P1",
+            "feature_id": "P1",
+            "fanout_id": "fanout-impl-1",
+            "integration_attempt_id": "attempt-1",
+            "quality_status": "failed",
+            "failed_children": [],
+            "completed_task_ids": ["T1"],
+            "task_map_ref": str(task_map_path),
+            "source_commit": "base123",
+            "candidate_base_commit": "base123",
+        },
+        correlation_id="trace-p1",
+    ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    pending = next(
+        item for item in projection["pending_actions"]
+        if item["action"] == "candidate-rework-apply"
+    )
+    assert pending["candidate_retry_mode"] == "integration_only"
+    assert pending["fanout_id"] == "fanout-impl-1"
+    assert pending["failed_task_ids"] == []
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        action_filter={"candidate-rework-apply"},
+        spawn_repairs=False,
+    )
+
+    assert result.actions_applied == 1
+    events = log.read_all()
+    assert any(
+        event.type == "workflow.resume.applied"
+        and event.payload.get("mode") == "candidate_rework_integration_only"
+        for event in events
+    )
+    assert any(event.type == "run.manager.action.effect.pending" for event in events)
+    assert not any(
+        event.type == "task_map.ready"
+        and event.payload.get("rework_of") == "integration-failed-1"
+        for event in events
+    )
+
+
 def test_run_manager_suppresses_candidate_rework_after_clean_parity_closure(
     tmp_path: Path,
 ) -> None:
@@ -1323,8 +1476,13 @@ def test_run_manager_projection_writes_pane_snapshot_and_monitor(
     assert projection["run_manager_monitor"]["schema_version"] == "run-manager.monitor.v1"
     pane_path = state_dir / "projections" / "runtime_pane_snapshot.json"
     monitor_path = state_dir / "projections" / "run_manager_monitor.json"
+    continuation_path = state_dir / "projections" / "run_continuation.json"
     assert pane_path.exists()
     assert monitor_path.exists()
+    assert continuation_path.exists()
+    continuation = json.loads(continuation_path.read_text(encoding="utf-8"))
+    assert continuation["schema_version"] == "run-continuation.v1"
+    assert continuation["is_derived_projection"] is True
     monitor = json.loads(monitor_path.read_text(encoding="utf-8"))
     assert monitor["refs"]["runtime_pane_snapshot"] == "projections/runtime_pane_snapshot.json"
     assert "pending_actions" in monitor["summary"]
@@ -1630,6 +1788,174 @@ def test_run_manager_unknown_gap_diagnoses_tripped_no_progress(
     assert requests[0].payload["failure_class"] == "no_progress_breaker"
 
 
+def test_no_progress_diagnosis_preempts_ready_resume_action(tmp_path: Path) -> None:
+    state_dir, log, _writer = _state(tmp_path)
+    _append_repair_failed_children_fixture(log)
+    for index in range(3):
+        log.append(ZfEvent(
+            id=f"rm-same-failure-{index}",
+            type=RUN_MANAGER_ACTION_FAILED,
+            actor="run-manager",
+            payload={
+                "checkpoint_id": "same-failure",
+                "failure_class": "same_failure",
+                "reason": "resume did not change world state",
+            },
+        ))
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_lane_resume_config(),
+        project_root=tmp_path,
+    )
+
+    assert projection["pending_actions"][0]["failure_class"] == "no_progress_breaker"
+    assert any(
+        action.get("action") == "workflow-batch-resume"
+        for action in projection["pending_actions"][1:]
+    )
+
+
+def test_candidate_rework_wins_over_candidate_ready_reemit() -> None:
+    candidate = {
+        "source_event_id": "evt-quality",
+        "source_event_ids": ["evt-quality"],
+        "pdd_id": "P1",
+    }
+    reemit = {
+        "safe_resume_action": "reemit_candidate_ready",
+        "source_event_ids": ["evt-quality"],
+        "pdd_id": "P1",
+    }
+    repair = {
+        "safe_resume_action": "repair_failed_children",
+        "source_event_ids": ["evt-quality"],
+        "pdd_id": "P1",
+    }
+
+    assert _candidate_rework_shadowed_by_workflow(candidate, [reemit]) is False
+    assert _workflow_reemit_shadowed_by_candidate(reemit, [candidate]) is True
+    assert _candidate_rework_shadowed_by_workflow(candidate, [repair]) is True
+
+
+def test_operation_key_is_an_idempotency_marker_without_checkpoint() -> None:
+    action = {"operation_key": "op-stable"}
+    events = [ZfEvent(
+        type=RUN_MANAGER_ACTION_APPLIED,
+        payload={"operation_key": "op-stable", "status": "applied"},
+    )]
+
+    assert _action_seen(events, action) is True
+
+
+def test_operation_precondition_rejects_new_progress() -> None:
+    events = [ZfEvent(
+        id="goal-start",
+        type="run.goal.started",
+        correlation_id="RUN-1",
+        payload={"run_id": "RUN-1"},
+    )]
+    from zf.runtime.run_continuation import progress_digest
+
+    action = {
+        "operation_precondition": {
+            "run_id": "RUN-1",
+            "generation": "",
+            "progress_digest": progress_digest(events),
+        },
+    }
+    progressed = [
+        *events,
+        ZfEvent(
+            id="task-done",
+            type="task.done",
+            task_id="T1",
+            correlation_id="RUN-1",
+            payload={"run_id": "RUN-1", "task_id": "T1"},
+        ),
+    ]
+
+    assert _operation_precondition_holds(events, action) is True
+    assert _operation_precondition_holds(progressed, action) is False
+
+
+def test_batch_resume_no_progress_emits_one_blocked_run_terminal(
+    tmp_path: Path,
+) -> None:
+    _state_dir, log, writer = _state(tmp_path)
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="RUN-1",
+        payload={"run_id": "RUN-1", "objective": "ship product"},
+    ))
+    action = {
+        "action": "workflow-batch-resume",
+        "checkpoint_id": "wfres-loop",
+        "safe_resume_action": "repair_failed_children",
+        "workflow_run_id": "RUN-1",
+        "pdd_id": "P1",
+    }
+    for index in range(3):
+        log.append(ZfEvent(
+            id=f"resume-{index}",
+            type="workflow.resume.applied",
+            correlation_id="RUN-1",
+            payload={
+                "checkpoint_id": f"wfres-loop-{index}",
+                "safe_resume_action": "repair_failed_children",
+                "workflow_run_id": "RUN-1",
+                "pdd_id": "P1",
+            },
+        ))
+
+    reason = _outcome_no_progress_break(log.read_all(), action)
+    assert "without progress" in reason
+    first = _emit_no_progress_run_terminal(
+        writer,
+        action=action,
+        reason=reason,
+        causation_id="breaker-1",
+    )
+    second = _emit_no_progress_run_terminal(
+        writer,
+        action=action,
+        reason=reason,
+        causation_id="breaker-2",
+    )
+
+    assert first is not None
+    assert second is None
+    blocked = [event for event in log.read_all() if event.type == "run.goal.blocked"]
+    assert len(blocked) == 1
+    assert blocked[0].payload["run_id"] == "RUN-1"
+    assert blocked[0].payload["evidence_event_ids"][-1] == "breaker-1"
+
+
+def test_task_no_progress_does_not_accept_other_task_milestone() -> None:
+    action = {
+        "task_id": "TASK-A",
+        "trace_id": "TRACE-1",
+        "safe_resume_action": "resume_verify",
+    }
+    events = [
+        ZfEvent(
+            type="workflow.resume.applied",
+            task_id="TASK-A",
+            payload={"task_id": "TASK-A", "safe_resume_action": "resume_verify"},
+        )
+        for _index in range(3)
+    ]
+    events.append(ZfEvent(
+        type="verify.passed",
+        task_id="TASK-B",
+        correlation_id="TRACE-1",
+        payload={"task_id": "TASK-B", "trace_id": "TRACE-1"},
+    ))
+
+    assert "without progress" in _outcome_no_progress_break(events, action)
+
+
 def test_run_manager_unknown_gap_does_not_fire_for_cold_idle_project(
     tmp_path: Path,
 ) -> None:
@@ -1880,7 +2206,7 @@ def test_run_manager_marks_stale_autoresearch_diagnosis_as_failed(
     log.append(ZfEvent(
         id="evt-rmar-stale",
         type=RUN_MANAGER_AUTORESEARCH_REQUESTED,
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_runtime_ts(),
         actor="run-manager",
         correlation_id="rmar-stale-1",
         payload={
@@ -1923,7 +2249,7 @@ def test_run_manager_does_not_fail_stale_diagnosis_after_run_completed(
     log.append(ZfEvent(
         id="evt-rmar-stale",
         type=RUN_MANAGER_AUTORESEARCH_REQUESTED,
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_runtime_ts(),
         actor="run-manager",
         correlation_id="rmar-stale-1",
         payload={
@@ -1961,7 +2287,7 @@ def _stale_diagnosis_request(log, pending, request_id: str) -> None:
     log.append(ZfEvent(
         id=f"evt-{request_id}",
         type=RUN_MANAGER_AUTORESEARCH_REQUESTED,
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_runtime_ts(),
         actor="run-manager",
         payload={
             "request_id": request_id,
@@ -1986,7 +2312,7 @@ def test_stale_diagnosis_resolved_by_loop_skipped(tmp_path: Path) -> None:
     log.append(ZfEvent(
         id="evt-loop-skip",
         type="autoresearch.loop.skipped",
-        ts="2026-06-01T00:00:05+00:00",
+        ts=_stale_runtime_ts(seconds=7195),
         actor="zf-autoresearch-resident",
         payload={"loop_request_id": "rmar-skip-1"},
     ))
@@ -2037,7 +2363,7 @@ def test_stale_diagnosis_still_fails_when_started_loop_hangs(tmp_path: Path) -> 
     log.append(ZfEvent(
         id="evt-loop-hang",
         type="autoresearch.loop.started",
-        ts="2026-06-01T00:01:00+00:00",
+        ts=_stale_runtime_ts(seconds=7100),
         actor="zf-autoresearch-resident",
         payload={"loop_request_id": "rmar-hang-1"},
     ))
@@ -2680,9 +3006,17 @@ def test_run_manager_autonomous_recovery_drill_covers_task_resume_and_worker_rec
         event_log=log,
         spawn_repairs=False,
     )
+    second = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_lane_resume_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
 
     events = log.read_all()
-    assert result.actions_applied == 2
+    assert result.actions_applied == 1
+    assert second.actions_applied == 1
     assert any(
         event.type == "task.dispatched"
         and event.payload.get("source") == "workflow_resume"
@@ -3819,6 +4153,88 @@ def test_run_manager_executes_repair_closeout_validation_plan(tmp_path: Path) ->
     assert queue["items"][0]["next_allowed_action"] == "operator_merge_or_reject"
 
 
+def test_run_manager_tick_executes_only_continuation_next_operation(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    for index in range(2):
+        worktree = tmp_path / f"repair-worktree-{index}"
+        worktree.mkdir()
+        subprocess.run(["git", "-C", str(worktree), "init", "-q"], check=True)
+        subprocess.run(
+            ["git", "-C", str(worktree), "config", "user.email", "test@example.com"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(worktree), "config", "user.name", "Test User"],
+            check=True,
+        )
+        (worktree / "README.md").write_text(f"repair {index}\n", encoding="utf-8")
+        subprocess.run(
+            ["git", "-C", str(worktree), "add", "README.md"],
+            check=True,
+        )
+        subprocess.run(
+            ["git", "-C", str(worktree), "commit", "-q", "-m", f"repair {index}"],
+            check=True,
+        )
+        log.append(ZfEvent(
+            type="autoresearch.repair.closeout.required",
+            payload={
+                "fingerprint": f"stall:single-operation:{index}",
+                "candidate_id": f"C-SINGLE-{index}",
+                "branch": f"self-repair/single-{index}",
+                "worktree": str(worktree),
+                "source_commit": f"source-{index}",
+                "risk_classification": {
+                    "risk": "low",
+                    "controlled_apply_allowed": True,
+                },
+                "verification_plan": [{
+                    "kind": "diff_integrity",
+                    "command": "git diff --check",
+                    "required": "true",
+                }],
+            },
+        ))
+
+    before = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    assert len(before["pending_actions"]) == 2
+    assert before["continuation"]["next_operation"]["operation_key"] == (
+        before["pending_actions"][0]["operation_key"]
+    )
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        event_log=log,
+        spawn_repairs=False,
+    )
+
+    applied = [
+        event
+        for event in log.read_all()
+        if event.type == RUN_MANAGER_ACTION_APPLIED
+        and event.payload.get("action") == "repair-closeout-validate"
+    ]
+    assert result.actions_applied == 1
+    assert len(applied) == 1
+    after = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=_config(),
+    )
+    assert len(after["pending_actions"]) == 1
+    assert after["continuation"]["next_operation"]["operation_key"] == (
+        after["pending_actions"][0]["operation_key"]
+    )
+
+
 def test_run_manager_repair_closeout_validation_rejects_untrusted_command(tmp_path: Path) -> None:
     state_dir, log, writer = _state(tmp_path)
     worktree = tmp_path / "repair-worktree"
@@ -4125,6 +4541,101 @@ def test_run_goal_completion_gate_closes_once_after_independent_verify() -> None
     assert projection["pending_handoff_count"] == 0
 
 
+def test_goal_completion_waits_for_fanout_and_action_effect() -> None:
+    from zf.runtime.run_manager import run_goal_completion_gate_event
+
+    run_id = "R-EFFECT"
+    claim = ZfEvent(
+        id="claim-effect",
+        type="run.goal.completion.claimed",
+        correlation_id=run_id,
+        payload={"run_id": run_id, "claim_id": "claim-effect"},
+    )
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": run_id}),
+        ZfEvent(
+            type="fanout.started",
+            correlation_id=run_id,
+            payload={"workflow_run_id": run_id, "fanout_id": "fanout-1"},
+        ),
+        ZfEvent(
+            type="run.manager.action.effect.pending",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "effect_id": "effect-1",
+                "fanout_id": "fanout-1",
+            },
+        ),
+        claim,
+    ]
+
+    blocked = run_goal_completion_gate_event(events, claim=claim)
+
+    assert blocked is not None
+    assert blocked.type == "run.goal.completion.blocked"
+    assert "active_fanout" in blocked.payload["blockers"]
+    assert "pending_action_effect" in blocked.payload["blockers"]
+
+
+def test_action_receipt_and_candidate_effect_are_settled_separately(
+    tmp_path: Path,
+) -> None:
+    from zf.runtime.run_manager import (
+        _post_verify_action,
+        _settle_pending_action_effects,
+    )
+
+    _state_dir, log, writer = _state(tmp_path)
+    resume = writer.emit(
+        "workflow.resume.applied",
+        payload={"fanout_id": "fanout-1", "checkpoint_id": "checkpoint-1"},
+    )
+    action = {
+        "action": "candidate-rework-apply",
+        "checkpoint_id": "checkpoint-1",
+        "fanout_id": "fanout-1",
+        "expected_downstream_events": ["workflow.resume.applied"],
+        "effect_expected_events": ["candidate.ready"],
+        "effect_failure_events": ["integration.failed"],
+    }
+    _post_verify_action(
+        writer,
+        action,
+        {"emitted_event_ids": [resume.id]},
+        causation_id=resume.id,
+    )
+    assert any(
+        event.type == "run.manager.action.effect.pending"
+        for event in log.read_all()
+    )
+    assert not any(
+        event.type == "run.manager.action.effect.passed"
+        for event in log.read_all()
+    )
+
+    writer.emit("candidate.ready", payload={"fanout_id": "fanout-1"})
+    assert _settle_pending_action_effects(log.read_all(), writer) == 1
+    assert any(
+        event.type == "run.manager.action.effect.passed"
+        for event in log.read_all()
+    )
+
+
+def test_later_candidate_supersedes_failed_effect_from_old_fanout() -> None:
+    from zf.runtime.run_manager import _unresolved_action_effects
+
+    events = [
+        ZfEvent(
+            type="run.manager.action.effect.failed",
+            payload={"effect_id": "effect-old", "fanout_id": "fanout-old"},
+        ),
+        ZfEvent(type="candidate.ready", payload={"fanout_id": "fanout-new"}),
+    ]
+
+    assert _unresolved_action_effects(events) == ([], [])
+
+
 def test_run_goal_completion_gate_blocks_on_blocking_human_decision() -> None:
     from zf.runtime.run_manager import run_goal_completion_event
 
@@ -4147,6 +4658,109 @@ def test_run_goal_completion_gate_blocks_on_blocking_human_decision() -> None:
     assert outcome is not None
     assert outcome.type == "run.goal.completion.blocked"
     assert "pending_human_decision" in outcome.payload["blockers"]
+
+
+def test_run_goal_completion_gate_ignores_active_side_task_outside_candidate() -> None:
+    from zf.runtime.run_manager import run_goal_completion_gate_event
+
+    run_id = "R-SIDE-ATTEMPT"
+    target = "c" * 40
+    claim = ZfEvent(
+        id="claim-side-attempt",
+        type="run.goal.completion.claimed",
+        correlation_id=run_id,
+        payload={
+            "run_id": run_id,
+            "claim_id": "goal-claim-side-attempt",
+            "target_commit": target,
+        },
+    )
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": run_id}),
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "candidate_head_commit": target,
+                "completed_task_ids": ["TASK-MAIN"],
+            },
+        ),
+        ZfEvent(
+            type="task.dispatched",
+            task_id="TASK-SIDE",
+            payload={"task_id": "TASK-SIDE", "dispatch_id": "disp-side"},
+        ),
+        claim,
+    ]
+
+    outcome = run_goal_completion_gate_event(events, claim=claim)
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completed"
+
+
+def test_admitted_goal_closure_supersedes_legacy_worker_escalation() -> None:
+    from zf.runtime.run_manager import (
+        run_goal_completion_claim_event,
+        run_goal_completion_gate_event,
+    )
+
+    run_id = "R-LEGACY-ESCALATION"
+    target = "d" * 40
+    generation = "task-map-" + "e" * 20
+    claim_digest = "f" * 64
+    closure_digest = "1" * 64
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": run_id}),
+        ZfEvent(
+            id="legacy-worker-escalation",
+            type="human.escalate",
+            task_id="TASK-MAIN",
+            payload={"reason": "worker could not continue"},
+        ),
+        ZfEvent(
+            id="goal-closed",
+            type="flow.goal.closed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "goal_id": run_id,
+                "task_map_generation": generation,
+                "candidate_head_commit": target,
+                "goal_claim_set_digest": claim_digest,
+                "closure_fact_digest": closure_digest,
+            },
+        ),
+    ]
+    cause = ZfEvent(
+        id="closure-synthesized",
+        type="goal.closure.synthesized",
+        correlation_id=run_id,
+        payload={
+            "goal_closure_result": {
+                "workflow_run_id": run_id,
+                "goal_id": run_id,
+                "task_map_generation": generation,
+                "target_commit": target,
+                "goal_claim_set_ref": "artifacts/goal-claims.json",
+                "goal_claim_set_digest": claim_digest,
+                "closure_fact_ref": "artifacts/goal-closure.json",
+                "closure_fact_digest": closure_digest,
+            },
+            "admitted_call_result_ref": {
+                "ref": "artifacts/call-result.json",
+                "sha256": "2" * 64,
+            },
+        },
+    )
+    claim = run_goal_completion_claim_event(events, cause=cause)
+    assert claim is not None
+
+    outcome = run_goal_completion_gate_event([*events, cause, claim], claim=claim)
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completed"
 
 
 def test_run_manager_routes_scoped_delivery_failure_to_approved_ship_retry() -> None:

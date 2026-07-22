@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+from zf.core.skills import adapter_resolver
 from zf.core.skills.adapter_resolver import (
     AdapterSkillResolverInput,
+    _canonical_zaofu_candidates,
+    _load_adapter_policy,
     build_project_adapter_skill_plan,
 )
 
@@ -35,6 +38,66 @@ def _write_skill(
         encoding="utf-8",
     )
     return path
+
+
+def test_examples_env_reanchors_installed_adapter_assets(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "zaofu-assets"
+    policy = root / "examples" / "prod" / "controller" / "common" / "skill-adapter-policy.yaml"
+    policy.parent.mkdir(parents=True)
+    policy.write_text(
+        "apiVersion: zaofu.dev/v1\n"
+        "kind: SkillAdapterPolicy\n"
+        "metadata: {name: test/v1}\n"
+        "spec: {profile_source: profiles.yaml}\n",
+        encoding="utf-8",
+    )
+    skill = _write_skill(root / "skills", "packaged-skill")
+    monkeypatch.setenv("ZF_EXAMPLES_DIR", str(root / "examples"))
+
+    loaded = _load_adapter_policy(None)
+    candidates = _canonical_zaofu_candidates("packaged-skill", seen=[])
+
+    assert loaded["source_path"] == policy
+    assert [candidate.path for candidate in candidates] == [skill]
+
+
+def test_pep610_source_reanchors_noneditable_adapter_assets(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    root = tmp_path / "frozen-source"
+    policy = (
+        root
+        / "examples"
+        / "prod"
+        / "controller"
+        / "common"
+        / "skill-adapter-policy.yaml"
+    )
+    policy.parent.mkdir(parents=True)
+    policy.write_text(
+        "apiVersion: zaofu.dev/v1\n"
+        "kind: SkillAdapterPolicy\n"
+        "metadata: {name: test/v1}\n"
+        "spec: {profile_source: profiles.yaml}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("ZF_EXAMPLES_DIR", raising=False)
+    monkeypatch.setattr(
+        adapter_resolver,
+        "__file__",
+        str(tmp_path / "venv" / "site-packages" / "zf" / "core" / "skills" / "adapter_resolver.py"),
+    )
+    monkeypatch.setattr(
+        adapter_resolver,
+        "installed_local_source_root",
+        lambda: root,
+    )
+
+    assert _load_adapter_policy(None)["source_path"] == policy
 
 
 def test_refactor_adapter_plan_discovers_project_skills_and_hashes(tmp_path: Path) -> None:

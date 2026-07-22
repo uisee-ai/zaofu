@@ -21,6 +21,16 @@ from zf.core.events.model import ZfEvent
 # (r5 教训:机械重试无界 = 烧钱活锁)。
 STAGE_REPLAN_CAP = 2
 
+_CANDIDATE_REPLAN_SOURCE_EVENTS = frozenset({
+    "candidate.conflict",
+    "candidate.quality.failed",
+    "integration.failed",
+})
+_CANDIDATE_TERMINAL_EVENTS = frozenset({
+    *_CANDIDATE_REPLAN_SOURCE_EVENTS,
+    "candidate.ready",
+})
+
 
 def _payload_target_ref(payload: dict[str, Any]) -> str:
     for key in ("target_ref", "issue_ref", "prd_ref", "objective_ref"):
@@ -34,6 +44,52 @@ def _payload_target_ref(payload: dict[str, Any]) -> str:
             if value:
                 return value
     return ""
+
+
+def rework_source_from_payload(payload: dict[str, Any]) -> str:
+    source = str(payload.get("rework_source") or "").strip()
+    if source:
+        return source
+    summary = payload.get("rework_summary")
+    if isinstance(summary, dict):
+        return str(summary.get("source_event_type") or "").strip()
+    return ""
+
+
+def superseding_candidate_ready(
+    events: list[ZfEvent],
+    *,
+    rework_source: str,
+    correlation_id: str = "",
+    pdd_id: str = "",
+) -> ZfEvent | None:
+    """Return a candidate success when it is the latest matching terminal fact."""
+    if rework_source not in _CANDIDATE_REPLAN_SOURCE_EVENTS:
+        return None
+    if not correlation_id and not pdd_id:
+        return None
+    latest: ZfEvent | None = None
+    for event in events:
+        if event.type not in _CANDIDATE_TERMINAL_EVENTS:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        event_trace = str(
+            event.correlation_id
+            or payload.get("trace_id")
+            or payload.get("workflow_run_id")
+            or ""
+        ).strip()
+        if correlation_id and event_trace != correlation_id:
+            continue
+        event_pdd = str(
+            payload.get("pdd_id") or payload.get("feature_id") or ""
+        ).strip()
+        if pdd_id and event_pdd != pdd_id:
+            continue
+        latest = event
+    if latest is not None and latest.type == "candidate.ready":
+        return latest
+    return None
 
 
 def reader_stage_failure_events(config: Any) -> dict[str, Any]:
@@ -78,6 +134,27 @@ def plan_reader_stage_replan(
     trigger_type = str(getattr(stage, "trigger", "") or "")
     if not trigger_type:
         return None, "stage_has_no_trigger"
+    origin_payload: dict[str, Any] = {}
+    for event in events:
+        if event.type == trigger_type and isinstance(event.payload, dict):
+            origin_payload = dict(event.payload)
+    failure_payload = (
+        failure_event.payload if isinstance(failure_event.payload, dict) else {}
+    )
+    superseding_success = superseding_candidate_ready(
+        events,
+        rework_source=rework_source_from_payload(origin_payload),
+        correlation_id=str(failure_event.correlation_id or ""),
+        pdd_id=str(
+            origin_payload.get("pdd_id")
+            or origin_payload.get("feature_id")
+            or failure_payload.get("pdd_id")
+            or failure_payload.get("feature_id")
+            or ""
+        ),
+    )
+    if superseding_success is not None:
+        return None, "superseded_by_candidate_ready"
     # E4(prd-goal e2e finding-8):cap 曾数全量历史,后续 admission
     # 成功也不清零 → 每周期回声 escalate。只计"最近一次 stage 成功
     # 之后"的失败——成功即翻篇。
@@ -115,13 +192,6 @@ def plan_reader_stage_replan(
             return None, "already_replanned"
     if prior_failures >= STAGE_REPLAN_CAP:
         return None, "cap_exhausted"
-    origin_payload: dict[str, Any] = {}
-    for event in events:
-        if event.type == trigger_type and isinstance(event.payload, dict):
-            origin_payload = dict(event.payload)
-    failure_payload = (
-        failure_event.payload if isinstance(failure_event.payload, dict) else {}
-    )
     target_ref = _payload_target_ref(failure_payload) or _payload_target_ref(
         origin_payload
     )
@@ -182,5 +252,7 @@ def plan_reader_stage_replan(
 __all__ = [
     "STAGE_REPLAN_CAP",
     "plan_reader_stage_replan",
+    "rework_source_from_payload",
     "reader_stage_failure_events",
+    "superseding_candidate_ready",
 ]

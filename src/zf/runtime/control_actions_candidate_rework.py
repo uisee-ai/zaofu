@@ -121,6 +121,42 @@ class CandidateReworkActionsMixin:
             if isinstance(payload.get("rework_summary"), dict)
             else {}
         )
+        if str(payload.get("candidate_retry_mode") or "") == "integration_only":
+            source_event_id = str(payload.get("source_event_id") or "")
+            fanout_id = str(payload.get("fanout_id") or "")
+            if not fanout_id:
+                return {
+                    "status": "rejected",
+                    "reason": "integration-only candidate retry requires fanout_id",
+                    "emitted_event_ids": [],
+                }
+            event = self.writer.emit(
+                "workflow.resume.applied",
+                actor="zf-cli",
+                causation_id=source_event_id or requested.id,
+                correlation_id=str(payload.get("trace_id") or "") or requested.correlation_id,
+                payload={
+                    "task_id": str(payload.get("pdd_id") or ""),
+                    "safe_resume_action": "retry_candidate_integration",
+                    "expected_next_stage": "candidate-integration",
+                    "source_event_id": source_event_id,
+                    "blocking_event_id": source_event_id,
+                    "rework_of": source_event_id,
+                    "rework_attempt": int(payload.get("rework_attempt") or 0),
+                    "rework_source": str(payload.get("source_event_type") or ""),
+                    "fanout_id": fanout_id,
+                    "pdd_id": str(payload.get("pdd_id") or ""),
+                    "feature_id": str(payload.get("feature_id") or ""),
+                    "checkpoint_id": str(payload.get("checkpoint_id") or ""),
+                    "integration_attempt_id": str(payload.get("integration_attempt_id") or ""),
+                    "mode": "candidate_rework_integration_only",
+                },
+            )
+            return {
+                "status": "applied",
+                "reason": "candidate integration retry requested",
+                "emitted_event_ids": [event.id],
+            }
         task_map_ref = str(payload.get("task_map_ref") or "")
         emitted: list[str] = []
         gap_task_ids: list[str] = []
@@ -180,12 +216,37 @@ class CandidateReworkActionsMixin:
             "resume_checkpoint_ref": str(payload.get("checkpoint_id") or ""),
             "idempotency_key": str(payload.get("checkpoint_id") or ""),
         }
-        task_ids = gap_task_ids or _string_list(payload.get("failed_task_ids"))
+        failed_task_ids = _string_list(payload.get("failed_task_ids"))
+        task_ids = gap_task_ids or failed_task_ids
+        if failed_task_ids and not gap_task_ids:
+            from zf.core.task.store import TaskStore
+            from zf.runtime.rework_task_scope import expand_rework_task_ids
+
+            completed_task_ids = {
+                task.id
+                for task in TaskStore(self.state_dir / "kanban.json").list_all()
+                if task.status in {"done", "cancelled", "superseded"}
+            }
+            task_ids = expand_rework_task_ids(
+                failed_task_ids,
+                task_map_ref=task_map_ref,
+                state_dir=self.state_dir,
+                project_root=self.project_root or self.state_dir.parent,
+                completed_task_ids=completed_task_ids,
+            )
         if task_ids:
             event_payload["task_ids"] = task_ids
-            event_payload["resume_scope"] = (
-                "gap_tasks_only" if gap_task_ids else "failed_children_only"
-            )
+            if gap_task_ids:
+                event_payload["resume_scope"] = "gap_tasks_only"
+            elif task_ids == failed_task_ids:
+                event_payload["resume_scope"] = "failed_children_only"
+            else:
+                event_payload["resume_scope"] = "failed_children_and_downstream"
+                event_payload["failed_task_ids"] = failed_task_ids
+                event_payload["downstream_task_ids"] = [
+                    task_id for task_id in task_ids
+                    if task_id not in set(failed_task_ids)
+                ]
         if gap_task_ids:
             event_payload["amend_of"] = str(payload.get("task_map_ref") or "")
             event_payload["gap_task_ids"] = gap_task_ids
@@ -212,6 +273,11 @@ class CandidateReworkActionsMixin:
         *,
         requested: ZfEvent,
     ) -> dict[str, Any]:
+        scope_payload = _replan_task_scope_payload(
+            payload,
+            state_dir=self.state_dir,
+            project_root=self.project_root,
+        )
         event_payload = {
             "pdd_id": str(payload.get("pdd_id") or ""),
             "trace_id": str(payload.get("trace_id") or ""),
@@ -233,6 +299,7 @@ class CandidateReworkActionsMixin:
             ),
             "resume_checkpoint_ref": str(payload.get("checkpoint_id") or ""),
             "idempotency_key": str(payload.get("checkpoint_id") or ""),
+            **scope_payload,
         }
         replan = self.writer.emit(
             "orchestrator.replan_requested",
@@ -243,7 +310,7 @@ class CandidateReworkActionsMixin:
         )
         emitted = [replan.id]
         resynth = _build_resynth_event(
-            payload,
+            {**payload, **scope_payload},
             state_dir=self.state_dir,
             config=self.config or ZfConfig(),
         )
@@ -261,6 +328,11 @@ class CandidateReworkActionsMixin:
         *,
         requested: ZfEvent,
     ) -> dict[str, Any]:
+        if not bool(payload.get("orchestrator_triage_applied")):
+            return self._candidate_rework_request_triage(
+                payload,
+                requested=requested,
+            )
         findings = "; ".join(_string_list(payload.get("rework_feedback"))) or "(no findings captured)"
         attempt = int(payload.get("rework_attempt") or 0)
         reason = (
@@ -316,6 +388,80 @@ class CandidateReworkActionsMixin:
             "emitted_event_ids": emitted,
         }
 
+    def _candidate_rework_request_triage(
+        self,
+        payload: dict[str, Any],
+        *,
+        requested: ZfEvent,
+    ) -> dict[str, Any]:
+        attempt = int(payload.get("rework_attempt") or 0)
+        failure_count = max(attempt, 1)
+        source_event_ids = _string_list(payload.get("source_event_ids"))
+        source_event_id = str(payload.get("source_event_id") or "")
+        if source_event_id and source_event_id not in source_event_ids:
+            source_event_ids.append(source_event_id)
+        fingerprint = str(
+            payload.get("fingerprint")
+            or payload.get("failure_fingerprint")
+            or payload.get("checkpoint_id")
+            or source_event_id
+        )
+        cap = self.writer.emit(
+            "candidate.rework.capped",
+            actor="run-manager",
+            causation_id=source_event_id or requested.id,
+            correlation_id=str(payload.get("trace_id") or "") or requested.correlation_id,
+            payload={
+                "schema_version": "candidate-rework-cap.v1",
+                "pdd_id": str(payload.get("pdd_id") or ""),
+                "feature_id": str(payload.get("feature_id") or ""),
+                "trace_id": str(payload.get("trace_id") or ""),
+                "failure_scope": "candidate",
+                "failure_fingerprint": fingerprint,
+                "failure_count": failure_count,
+                "retry_count": failure_count,
+                "failure_event_ids": source_event_ids,
+                "trigger_event_id": source_event_id,
+                "trigger_event_type": str(payload.get("source_event_type") or ""),
+                "last_reason": "candidate rework cap reached; semantic triage required",
+                "semantic_triage_required": True,
+                "candidate_rework_context": _candidate_triage_context(payload),
+            },
+        )
+        return {
+            "status": "applied",
+            "reason": "candidate rework cap recorded for semantic triage",
+            "emitted_event_ids": [cap.id],
+        }
+
+
+def _candidate_triage_context(payload: dict[str, Any]) -> dict[str, Any]:
+    keys = (
+        "pdd_id",
+        "feature_id",
+        "trace_id",
+        "target_ref",
+        "fanout_id",
+        "integration_attempt_id",
+        "source_commit",
+        "candidate_base_commit",
+        "source_index_ref",
+        "task_map_ref",
+        "source_event_id",
+        "source_event_type",
+        "rework_attempt",
+        "rework_feedback",
+        "failed_task_ids",
+        "classification",
+        "rework_categories",
+        "rework_summary",
+    )
+    return {
+        key: payload.get(key)
+        for key in keys
+        if payload.get(key) not in (None, "", [], {})
+    }
+
 
 def _build_resynth_event(
     payload: dict[str, Any],
@@ -340,10 +486,58 @@ def _build_resynth_event(
             rework_summary=payload.get("rework_summary")
             if isinstance(payload.get("rework_summary"), dict) else {},
             classification=str(payload.get("classification") or ""),
+            failed_task_ids=tuple(_string_list(payload.get("failed_task_ids"))),
+            task_ids=tuple(_string_list(payload.get("task_ids"))),
+            downstream_task_ids=tuple(
+                _string_list(payload.get("downstream_task_ids"))
+            ),
+            resume_scope=str(payload.get("resume_scope") or ""),
         )
         return build_replan_resynth_event(plan=plan, events=events, config=config)
     except Exception:
         return None
+
+
+def _replan_task_scope_payload(
+    payload: dict[str, Any],
+    *,
+    state_dir: Path,
+    project_root: Path | None,
+) -> dict[str, Any]:
+    failed_task_ids = _string_list(payload.get("failed_task_ids"))
+    if not failed_task_ids:
+        return {}
+
+    from zf.core.task.store import TaskStore
+    from zf.runtime.rework_task_scope import expand_rework_task_ids
+
+    completed_task_ids = {
+        task.id
+        for task in TaskStore(state_dir / "kanban.json").list_all()
+        if task.status in {"done", "cancelled", "superseded"}
+    }
+    task_ids = expand_rework_task_ids(
+        failed_task_ids,
+        task_map_ref=str(payload.get("task_map_ref") or ""),
+        state_dir=state_dir,
+        project_root=project_root or state_dir.parent,
+        completed_task_ids=completed_task_ids,
+    )
+    scope: dict[str, Any] = {
+        "failed_task_ids": failed_task_ids,
+        "task_ids": task_ids,
+        "resume_scope": (
+            "failed_children_only"
+            if task_ids == failed_task_ids
+            else "failed_children_and_downstream"
+        ),
+    }
+    downstream = [
+        task_id for task_id in task_ids if task_id not in set(failed_task_ids)
+    ]
+    if downstream:
+        scope["downstream_task_ids"] = downstream
+    return scope
 
 
 def _write_gap_task_map_amend(

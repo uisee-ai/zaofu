@@ -1026,6 +1026,106 @@ def test_orchestrator_briefing_keeps_triage_advisory_only(tmp_path: Path) -> Non
     assert "Do not dispatch, reassign, edit TaskStore" in briefing
 
 
+def test_candidate_cap_routes_through_orchestrator_advice_before_replan() -> None:
+    cap = ZfEvent(
+        id="candidate-cap-1",
+        type="candidate.rework.capped",
+        actor="run-manager",
+        correlation_id="sim4-run",
+        payload={
+            "pdd_id": "SIM4-PRD",
+            "trace_id": "sim4-run",
+            "failure_scope": "candidate",
+            "failure_fingerprint": "candidate-failure-stable",
+            "failure_count": 3,
+            "failure_event_ids": ["integration-1", "integration-2", "integration-3"],
+            "semantic_triage_required": True,
+            "candidate_rework_context": {
+                "pdd_id": "SIM4-PRD",
+                "trace_id": "sim4-run",
+                "task_map_ref": "artifacts/plan/task-map.json",
+                "source_commit": "base-1",
+                "candidate_base_commit": "base-1",
+                "source_event_id": "integration-3",
+                "source_event_type": "integration.failed",
+                "rework_attempt": 3,
+                "rework_feedback": ["same candidate quality failure"],
+            },
+        },
+    )
+    requested_actions = pending_rework_triage_actions(
+        [cap],
+        threshold=2,
+        stale_seconds=300,
+    )
+    assert len(requested_actions) == 1
+    request_action = requested_actions[0]
+    assert request_action["action"] == "orchestrator-rework-triage"
+    assert request_action["recovery_scope"] == "candidate"
+    assert request_action["pdd_id"] == "SIM4-PRD"
+
+    request = ZfEvent(
+        type=TRIAGE_REQUESTED,
+        actor="run-manager",
+        task_id="SIM4-PRD",
+        payload={"request_id": request_action["request_id"]},
+    )
+    recorded = ZfEvent(
+        id="candidate-advice-1",
+        type=TRIAGE_RECORDED,
+        actor="orchestrator",
+        task_id="SIM4-PRD",
+        payload={
+            "request_id": request_action["request_id"],
+            "recommended_action": "replan",
+            "guidance": "replace the stale quality command with the declared run contract",
+            "apply_policy": "proposal_only",
+        },
+    )
+
+    advice_actions = pending_rework_triage_actions(
+        [cap, request, recorded],
+        threshold=2,
+        stale_seconds=300,
+    )
+
+    assert len(advice_actions) == 1
+    action = advice_actions[0]
+    assert action["action"] == "candidate-rework-apply"
+    assert action["candidate_rework_action"] == "replan"
+    assert action["orchestrator_triage_applied"] is True
+    assert action["source_event_id"] == "integration-3"
+    assert "declared run contract" in action["rework_feedback"][-1]
+
+
+def test_orchestrator_briefing_names_candidate_recovery_scope(tmp_path: Path) -> None:
+    state_dir, _, _ = _state(tmp_path)
+    event = ZfEvent(
+        type=TRIAGE_REQUESTED,
+        actor="run-manager",
+        task_id="SIM4-PRD",
+        payload={
+            "request_id": "candidate-request-1",
+            "task_id": "SIM4-PRD",
+            "pdd_id": "SIM4-PRD",
+            "recovery_scope": "candidate",
+            "failure_fingerprint": "candidate-failure-stable",
+            "failure_count": 3,
+        },
+    )
+
+    briefing = build_orchestrator_briefing(
+        state_dir=state_dir,
+        config=_config(with_orchestrator=True),
+        trigger_event=event,
+    )
+
+    assert "candidate scope `SIM4-PRD`" in briefing
+    assert "recovery_scope" in briefing
+    assert "candidate-request-1" in briefing
+    assert "proposal-only semantic triage" in briefing
+
+
 @pytest.mark.parametrize(
     "relative_path",
     [
@@ -1039,13 +1139,13 @@ def test_orchestrator_briefing_keeps_triage_advisory_only(tmp_path: Path) -> Non
         "examples/prod/controller/refactor-lane-v3-claude.yaml",
     ],
 )
-def test_prod_controller_profiles_use_third_failure_threshold(
+def test_prod_controller_profiles_triage_after_two_failed_rework_attempts(
     relative_path: str,
 ) -> None:
     repo_root = Path(__file__).resolve().parents[1]
     config = load_config(repo_root / relative_path)
 
-    assert config.workflow.strict_triggers.rework_attempts_gte == 3
+    assert config.workflow.strict_triggers.rework_attempts_gte == 2
 
 
 @pytest.mark.parametrize(

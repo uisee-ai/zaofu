@@ -157,6 +157,34 @@ class TestClaudeRespawn:
         # Same uuid reused
         assert str(registry.get("dev")) in argv
 
+    def test_launch_event_records_attempt_and_resume(
+        self, state_dir, registry, transport, monkeypatch,
+    ):
+        event_log = EventLog(state_dir / "events.jsonl")
+        coordinator = SpawnCoordinator(
+            state_dir=state_dir,
+            registry=registry,
+            transport=transport,
+            project_root="/tmp/zf",
+            event_log=event_log,
+        )
+        role = RoleConfig(
+            name="dev", backend="claude-code", permission_mode="bypass",
+        )
+
+        coordinator.spawn(role)
+        monkeypatch.setattr(
+            coordinator, "_claude_session_exists", lambda _sid: True,
+        )
+        coordinator.spawn(role)
+
+        launches = [
+            event for event in event_log.read_all()
+            if event.type == "worker.launch_artifact.written"
+        ]
+        assert [event.payload["launch_attempt"] for event in launches] == [1, 2]
+        assert [event.payload["is_resume"] for event in launches] == [False, True]
+
     def test_fresh_spawn_rotates_session_id_when_live_process_holds_it(
         self, coordinator, transport, registry, monkeypatch,
     ):

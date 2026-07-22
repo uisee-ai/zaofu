@@ -216,6 +216,23 @@ def test_fanout_stage_child_result_events_wake_run_once() -> None:
     assert "candidate.ready" in wp  # trigger still present
 
 
+def test_goal_rescan_request_wakes_registered_consumer() -> None:
+    from types import SimpleNamespace
+
+    from zf.runtime.wake_patterns import compute_effective_wake_patterns
+
+    config = SimpleNamespace(
+        goal=SimpleNamespace(enabled=True),
+        workflow=SimpleNamespace(
+            stages=[],
+            dag=None,
+            wake_extensions=None,
+        ),
+    )
+
+    assert "goal.rescan.requested" in compute_effective_wake_patterns(config)
+
+
 def test_layer2_noise_events_never_wake_agent_turn():
     # B6a (R25 ISSUE-006): hook/telemetry 不该驱动 Layer 2 推理。
     from zf.runtime.wake_patterns import LAYER2_NOISE_EVENTS, WAKE_PATTERNS

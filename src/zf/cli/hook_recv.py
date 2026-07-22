@@ -38,6 +38,13 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.role_sessions import RoleSessionRegistry
+from zf.cli.hook_workdir_guard import (
+    actor_from_workdir_cwd as _actor_from_workdir_cwd,
+    bash_command_looks_mutating as _bash_command_looks_mutating,
+    evaluate_workdir_write_guard as _evaluate_workdir_write_guard,
+    tool_input_digest as _tool_input_digest,
+    write_target_paths as _write_target_paths,
+)
 from zf.runtime.provider_stop import classify_provider_stop
 
 
@@ -254,6 +261,11 @@ def _resolve_hook_actor(
                         state_dir,
                         f"hook-recv: codex hook session bind failed: {e}",
                     )
+
+    if event_type.startswith("claude.hook."):
+        cwd_actor = _actor_from_workdir_cwd(state_dir, payload)
+        if cwd_actor:
+            actor = cwd_actor
 
     return actor
 
@@ -495,29 +507,17 @@ _WRITE_TOOL_NAMES = frozenset({
     "notebookedit",
     "write",
 })
-_BASH_MUTATING_MARKERS = (
-    ">",
-    ">>",
-    " tee ",
-    " sed -i",
-    " perl -i",
-    " rm ",
-    " mv ",
-    " cp ",
-    " truncate ",
-    ".write_text",
-    ".write_bytes",
-)
-
-
 def _active_task_id_for_actor(event_log: EventLog, actor: str) -> str:
     try:
-        for event in reversed(event_log.read_all()):
-            if event.type != "task.dispatched":
+        events = event_log.read_all()
+        active_event_id = _latest_active_dispatch_for_actor(events, actor)
+        if not active_event_id:
+            return ""
+        for event in reversed(events):
+            if event.id != active_event_id:
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
-            if payload.get("assignee") == actor or payload.get("role") == actor:
-                return event.task_id or ""
+            return str(event.task_id or payload.get("task_id") or "")
     except Exception:
         return ""
     return ""
@@ -549,13 +549,6 @@ def _mentions_protected_runtime_state(
         if any(needle in haystack for needle in needles):
             matches.append(filename)
     return matches
-
-
-def _bash_command_looks_mutating(command: str) -> bool:
-    normalized = f" {command.strip()} "
-    if " zf task-doc ingest " in normalized:
-        return True
-    return any(marker in normalized for marker in _BASH_MUTATING_MARKERS)
 
 
 def _evaluate_runtime_write_guard(
@@ -623,46 +616,6 @@ def _evaluate_runtime_write_guard(
         file=sys.stderr,
     )
     return 2
-
-
-def _write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
-    """Files a write tool will create/modify, in the cwd-relative frame.
-
-    Codex writes via ``apply_patch`` (``*** Add/Update/Delete File:`` markers);
-    Claude via Write/Edit/MultiEdit (``file_path``). Bash redirects are not parsed
-    — too fragile to match reliably — so they stay unenforced.
-    """
-    lower = tool_name.lower().strip()
-    if lower in {"write", "edit", "multiedit", "notebookedit"}:
-        raw = (
-            tool_input.get("file_path")
-            or tool_input.get("path")
-            or tool_input.get("notebook_path")
-        )
-        text = str(raw or "").strip()
-        return [text] if text else []
-    if lower == "apply_patch":
-        command = str(
-            tool_input.get("command")
-            or tool_input.get("patch")
-            or tool_input.get("input")
-            or ""
-        )
-        paths: list[str] = []
-        for line in command.splitlines():
-            stripped = line.strip()
-            for marker in (
-                "*** Add File:",
-                "*** Update File:",
-                "*** Delete File:",
-                "*** Move to:",
-            ):
-                if stripped.startswith(marker):
-                    target = stripped[len(marker):].strip()
-                    if target:
-                        paths.append(target)
-        return paths
-    return []
 
 
 def _to_scope_frame(path: str) -> str:
@@ -740,7 +693,14 @@ def _evaluate_allowed_paths_guard(
             task_id=task_id or None,
             payload={
                 "worker": actor,
+                "origin_event": event_type,
                 "tool_name": tool_name,
+                "tool_input_digest": _tool_input_digest(tool_input),
+                "command_class": (
+                    "mutating_shell"
+                    if tool_name.lower() in {"bash", "shell"}
+                    else "provider_write"
+                ),
                 "offending_paths": offending[:10],
                 "allowed_paths": scope[:20],
             },
@@ -800,7 +760,7 @@ def run(args: argparse.Namespace) -> int:
         "session_id": session_id,
         "hook_event": payload.get("hook_event_name", ""),
     }
-    for k in ("tool_name", "tool_input"):
+    for k in ("tool_name", "tool_input", "cwd"):
         if k in payload:
             event_payload[k] = payload[k]
     if "tool_response" in payload:
@@ -923,6 +883,21 @@ def run(args: argparse.Namespace) -> int:
     )
     if guard_exit:
         return guard_exit
+
+    workdir_guard_exit = _evaluate_workdir_write_guard(
+        state_dir=state_dir,
+        project_root=project_root,
+        event_type=args.event,
+        actor=actor,
+        event_payload=event_payload,
+        event_log=event_log,
+        event_writer=event_writer,
+        causation_id=causation_id,
+        should_check_actor=_should_check_causation,
+        active_task_id_for_actor=_active_task_id_for_actor,
+    )
+    if workdir_guard_exit:
+        return workdir_guard_exit
 
     scope_guard_exit = _evaluate_allowed_paths_guard(
         state_dir=state_dir,

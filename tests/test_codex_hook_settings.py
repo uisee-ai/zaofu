@@ -119,32 +119,37 @@ _EVENT_META = {
 
 _REAL_HASHES = {
     ("/path/to/example-project/.zf-mixed", "pre_tool_use"):
-        "sha256:a9bdc376f3404497be9b879de763ead26782087852a2c4273b748a19029e3231",
+        "sha256:6b7b8ce28186dee1b528e5833ac03b5de0fef6929a3c31fbb9eb8d3d57f42ffb",
     ("/path/to/example-project/.zf-mixed", "post_tool_use"):
-        "sha256:22849323caaedf088f0e39ebd11d8dce908b6acc11c3fa74a45b8e17418e5262",
+        "sha256:5e9bc17739803c12c26a88ddd5c7eb5312ebaa1c0fc82dbeaee75d9152b14d0c",
     ("/path/to/example-project/.zf-mixed", "session_start"):
-        "sha256:6c2f3bf7f920f880dc0f46c75e43e0572a5202c9613630964c61667e56094756",
+        "sha256:87f8c890ae91d4725509575bcdc4ecbf1a78e58d9c029d79022ed961151811eb",
     ("/path/to/example-project/.zf-mixed", "user_prompt_submit"):
-        "sha256:02e8a4dc851ce229812888fedcde8be970ff0df943460d8506403d0b5df976a2",
+        "sha256:0dbf978d17aa4f494997ec527c58fa6c4bb4b813a81eb1d02763527c11c15d4d",
     ("/path/to/example-project/.zf-mixed", "stop"):
-        "sha256:13ef7a211a9003f1f6037914aa704816b5e38dad383a0ab2f807aa124f4203fe",
+        "sha256:cf55f0e35d84ba4e5a32e7209e0e9c83dc51536bb12c48dad297aced0847a35b",
     ("/path/to/example-project/.zf", "pre_tool_use"):
-        "sha256:cc0367dbf0faf6d2395b7e9810ddb96ab4fccf6d82452932fdebd92c76827551",
+        "sha256:388d086d8c1460207b1ca478d9239bf2ffbaa30603b1e973265ee2d58a672eb1",
     ("/path/to/example-project/.zf", "post_tool_use"):
-        "sha256:aae2f3c9df9245f60a78180a3aceb14c88794650376abfcead35cfb3d96bcd3e",
+        "sha256:eb7607e10fbae301ee4fb9733876148945427477eab3e76a2ad5bf585419a870",
     ("/path/to/example-project/.zf", "session_start"):
-        "sha256:68125e329c1e9c5bd8fbb2c1da2090f9e3f9d4605436b8fbc7ce5f1c246c53a3",
+        "sha256:87c10035fecaa85a02828f4370d81b0bfb440846ac2888b7cc856ec5402fc46c",
     ("/path/to/example-project/.zf", "user_prompt_submit"):
-        "sha256:1991ff9f6fb7816c398746dfe3dbfb3b7c1007345f21e53fe80f8c4fd428f014",
+        "sha256:d65f030726fc203d0431c93467bbd947e93b30a4b8f626bdb9482535d161be5a",
     ("/path/to/example-project/.zf", "stop"):
-        "sha256:9f8dc49d2866898fb0f5bda3e5ddf1012bc442fed660d2e287881153fdd73310",
+        "sha256:e12a1f95f78709526886dac0df4829f4a83d77c16e8a021b0ebb87697b8bc82f",
 }
 
 
 @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
-def test_codex_hook_hash_matches_real_codex_values(state_dir: str, label: str):
+def test_codex_hook_hash_matches_real_codex_values(
+    state_dir: str,
+    label: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
     from zf.runtime.codex_hooks import codex_hook_hash
 
+    monkeypatch.delenv("ZF_CLI_CMD", raising=False)
     engine_name, zf_event = _EVENT_META[label]
     assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
         _REAL_HASHES[(state_dir, label)]

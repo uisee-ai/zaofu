@@ -22,7 +22,7 @@ metadata:
       description: Short controller PRD workflow with scan, plan, impl, verify.
       intent: build
       backend: claude
-      roles: 9
+      roles: 10
       recommended_for: [build]
       preferred: true
       order: 31
@@ -32,6 +32,21 @@ spec:
   version: "1.0"
   project:
     name: prd-fanout-v3-claude
+  orchestrator:
+    backend: claude-code
+    wake_min_interval_s: 5
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: claude-code
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
   runtime:
     # Legacy active-run compatibility only. New runs ship through the scoped
     # Goal Completion Gate delivery operation declared by deliveryPolicy.
@@ -47,6 +62,7 @@ spec:
     # 会被 schema fail-closed 拒绝。
     kind_routes:
       prd:
+        pattern_id: prd-scan
         default_tier: standard
     dag:
       external_triggers: [prd.requested]

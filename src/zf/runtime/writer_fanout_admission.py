@@ -10,6 +10,7 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
+from zf.runtime.task_map import normalize_verification_command
 from zf.runtime.task_contract_normalize import (
     canonical_verification_tiers,
     owner_fields_from_task_map_item,
@@ -29,6 +30,7 @@ class LoadedWriterTaskMap:
     wave: int | None = None
     requested_task_ids: list[str] = field(default_factory=list)
     is_replan: bool = False
+    dispatch_base_commit: str = ""
 
 
 @dataclass(frozen=True)
@@ -55,6 +57,17 @@ class WriterFanoutAdmission:
         return payload
 
 
+class WriterTaskMapPolicyError(ValueError):
+    """A parsed task map failed run policy before writer dispatch."""
+
+    def __init__(self, errors: list[str], task_items: list[dict[str, Any]]) -> None:
+        super().__init__(
+            "writer fanout task_map policy failed: " + "; ".join(errors)
+        )
+        self.errors = list(errors)
+        self.task_items = list(task_items)
+
+
 def load_writer_task_map(
     *,
     stage: Any,
@@ -63,6 +76,8 @@ def load_writer_task_map(
     state_dir: Path,
     project_root: Path,
     pipeline_spec: Any = None,
+    candidate_quality_source: str = "auto",
+    work_units_config: Any = None,
 ) -> LoadedWriterTaskMap:
     payload = _payload(event)
     event_task_map_ref = str(payload.get("task_map_ref") or "").strip()
@@ -119,6 +134,13 @@ def load_writer_task_map(
                 + "; ".join(task_map_validation.errors)
             )
     all_items = writer_task_items(data)
+    policy_errors = writer_task_map_policy_errors(
+        all_items,
+        candidate_quality_source=candidate_quality_source,
+        work_units_config=work_units_config,
+    )
+    if policy_errors:
+        raise WriterTaskMapPolicyError(policy_errors, all_items)
     requested_task_ids = _string_list(payload.get("task_ids"))
     wave = _optional_int(payload.get("wave"))
     items = all_items
@@ -179,7 +201,58 @@ def load_writer_task_map(
             or payload.get("replan")
             or payload.get("replan_classification")
         ),
+        dispatch_base_commit=str(
+            data.get("target_commit")
+            or payload.get("dispatch_base_commit")
+            or ""
+        ).strip(),
     )
+
+
+def writer_task_map_policy_errors(
+    task_items: list[dict[str, Any]],
+    *,
+    candidate_quality_source: str = "auto",
+    work_units_config: Any = None,
+) -> list[str]:
+    """Validate mechanical run policy before canonical task materialization."""
+
+    errors: list[str] = []
+    if str(candidate_quality_source or "auto") == "task_contract_required":
+        missing = [
+            str(item.get("task_id") or "<unknown>")
+            for item in task_items
+            if not str(item.get("verification") or "").strip()
+        ]
+        if missing:
+            errors.append(
+                "task_contract_required missing executable verification for "
+                + ", ".join(missing)
+            )
+
+    if not getattr(work_units_config, "enabled", False):
+        return errors
+    split = getattr(work_units_config, "split_quality", None)
+    if str(getattr(split, "mode", "warning") or "warning") != "blocking":
+        return errors
+    max_scope = int(getattr(split, "max_scope_files", 0) or 0)
+    max_acceptance = int(
+        getattr(split, "max_acceptance_criteria", 0) or 0
+    )
+    for item in task_items:
+        task_id = str(item.get("task_id") or "<unknown>")
+        scope_count = len(item.get("allowed_paths") or [])
+        acceptance_count = len(item.get("acceptance_criteria") or [])
+        if max_scope and scope_count > max_scope:
+            errors.append(
+                f"{task_id} scope has {scope_count} files, max is {max_scope}"
+            )
+        if max_acceptance and acceptance_count > max_acceptance:
+            errors.append(
+                f"{task_id} has {acceptance_count} acceptance criteria, "
+                f"max is {max_acceptance}"
+            )
+    return errors
 
 
 def admit_writer_fanout(
@@ -214,6 +287,7 @@ def admit_writer_fanout(
             "source_index_ref": loaded.source_index_ref,
             "feature_id": loaded.feature_id,
             "pdd_id": loaded.pdd_id,
+            "dispatch_base_commit": loaded.dispatch_base_commit,
         })
     if missing or stale or superseded or terminal:
         reason = "writer_fanout_admission_failed"
@@ -318,7 +392,7 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
         )
         payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
         owner_role, owner_instance = owner_fields_from_task_map_item(raw)
-        verification = str(raw.get("verification") or "").strip()
+        verification = normalize_verification_command(raw.get("verification"))
         raw_verification_tiers = _string_list(raw.get("verification_tiers"))
         items.append({
             "task_id": task_id,
@@ -570,14 +644,13 @@ def _task_map_ref(task: Task) -> str:
 
 
 def _resolve_artifact_ref(ref: str, *, state_dir: Path, project_root: Path) -> Path:
-    path = Path(ref)
-    if path.is_absolute():
-        return path
-    if path.parts and path.parts[0] == ".zf":
-        return state_dir.joinpath(*path.parts[1:])
-    if path.parts and path.parts[0] == "artifacts":
-        return state_dir / path
-    return project_root / path
+    from zf.runtime.artifact_refs import resolve_runtime_artifact_ref
+
+    return resolve_runtime_artifact_ref(
+        ref,
+        state_dir=state_dir,
+        project_root=project_root,
+    )
 
 
 def _resolve_in_worktrees(ref: str, *, state_dir: Path) -> Path | None:

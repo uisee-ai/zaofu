@@ -36,6 +36,7 @@ def synthesize_light_task_map(
     prd_ref: str,
     target_root: str,
     workflow_refs: dict[str, Any] | None = None,
+    verification_commands: list[str] | None = None,
     flow_kind: str = "prd",
     objective_ref: str = "",
 ) -> dict[str, Any]:
@@ -49,6 +50,32 @@ def synthesize_light_task_map(
     artifact_refs = refs.get("artifact_refs") if isinstance(refs.get("artifact_refs"), list) else []
     path_prefix = "" if root == "." else f"{root}/"
     flow_label = _flow_label(flow_kind)
+    task = {
+        "task_id": task_id,
+        "title": objective_text[:120],
+        "description": (
+            f"{objective_text}\n\nSource requirement: {requirement_ref}. "
+            "Single-lane light flow: you own the entire deliverable; "
+            f"follow the {flow_label} acceptance criteria as the contract."
+        ),
+        "wave": 1,
+        "allowed_paths": [f"{path_prefix}**", "README.md"],
+        "allowed_paths_reason": "light flow single-lane deliverable owns the target root",
+        "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),
+        "workflow_prompt_ref": str(refs.get("workflow_prompt_ref") or ""),
+        "source_refs": source_refs,
+        "artifact_refs": artifact_refs,
+        **matrix_refs,
+        "acceptance": [objective_text],
+        "acceptance_criteria": [
+            f"All acceptance criteria in {requirement_ref} are met on the current tree.",
+            "Read and satisfy every referenced acceptance/test/real-e2e matrix before completion.",
+            "Slice tests pass; runtime evidence regenerated and committed.",
+        ],
+    }
+    commands = _dedupe_strings(verification_commands or [])
+    if commands:
+        task["verification"] = commands
     return {
         "schema_version": "task-map.v1",
         "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),
@@ -59,33 +86,7 @@ def synthesize_light_task_map(
         "shared_conventions": {
             "test_path_prefix": f"{path_prefix}tests",
         },
-        "tasks": [{
-            "task_id": task_id,
-            "title": objective_text[:120],
-            "description": (
-                f"{objective_text}\n\nSource requirement: {requirement_ref}. "
-                "Single-lane light flow: you own the entire deliverable; "
-                f"follow the {flow_label} acceptance criteria as the contract."
-            ),
-            "wave": 1,
-            "allowed_paths": [f"{path_prefix}**", "README.md"],
-            "allowed_paths_reason": "light flow single-lane deliverable owns the target root",
-            "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),
-            "workflow_prompt_ref": str(refs.get("workflow_prompt_ref") or ""),
-            "source_refs": source_refs,
-            "artifact_refs": artifact_refs,
-            **matrix_refs,
-            "acceptance": [objective_text],
-            "acceptance_criteria": [
-                f"All acceptance criteria in {requirement_ref} are met on the current tree.",
-                "Read and satisfy every referenced acceptance/test/real-e2e matrix before completion.",
-                "Slice tests pass; runtime evidence regenerated and committed.",
-            ],
-            "verification": [
-                "Use workflow_input_manifest_ref, acceptance_matrix_ref, test_matrix_ref, and real_e2e_matrix_ref as the verification contract when present.",
-                "Run every verification command declared by the PRD or generated matrices before claiming done.",
-            ],
-        }],
+        "tasks": [task],
     }
 
 
@@ -138,6 +139,11 @@ def maybe_synthesize_light_task_map(
             payload.get("target_root") or metadata.get("target_root") or ""
         ),
         workflow_refs=workflow_refs,
+        verification_commands=_light_verification_commands(
+            config=config,
+            workflow_refs=workflow_refs,
+            state_dir=state_dir,
+        ),
         flow_kind=flow_kind,
     )
     # light goal 终态闭环(2026-07-08):最简配置只开 goal.enabled、无人发
@@ -201,6 +207,41 @@ def _matrix_refs(payload: dict[str, Any]) -> dict[str, str]:
         for key in _MATRIX_REF_KEYS
         if str(payload.get(key) or "").strip()
     }
+
+
+def _light_verification_commands(
+    *,
+    config: Any,
+    workflow_refs: dict[str, Any],
+    state_dir: Path,
+) -> list[str]:
+    matrix_ref = str(workflow_refs.get("test_matrix_ref") or "").strip()
+    matrix = _load_manifest_ref(matrix_ref, state_dir=state_dir)
+    commands: list[str] = []
+    tests = matrix.get("tests") if isinstance(matrix.get("tests"), list) else []
+    for test in tests:
+        if not isinstance(test, dict):
+            continue
+        raw = test.get("commands")
+        if isinstance(raw, list):
+            commands.extend(str(item).strip() for item in raw)
+        elif isinstance(raw, str):
+            commands.append(raw.strip())
+    commands = _dedupe_strings(commands)
+    if commands:
+        return commands
+
+    for gate in getattr(config, "quality_gates", {}).values():
+        if not getattr(gate, "enabled", True):
+            continue
+        commands.extend(getattr(gate, "required_checks", []) or [])
+    return _dedupe_strings(commands)
+
+
+def _dedupe_strings(items: list[Any]) -> list[str]:
+    return list(dict.fromkeys(
+        str(item).strip() for item in items if str(item or "").strip()
+    ))
 
 
 def _workflow_refs_from_payload(payload: dict[str, Any], *, state_dir: Path) -> dict[str, Any]:

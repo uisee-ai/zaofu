@@ -992,14 +992,15 @@ def test_chat_orchestrator_can_use_claude_headless_backend(
     assert "kanban.agent.turn.delta" not in event_types, (
         "deltas are ephemeral bus transport, never ledger truth (doc 106)"
     )
-    deltas = _bus_rows(state_dir, "kanban.agent.turn.delta")
-    assert deltas[-1].payload["content"] == "headless answer"
+    assert _bus_rows(state_dir, "kanban.agent.turn.delta") == []
     replies = [event for event in events if event.type == "kanban.agent.reply"]
     assert replies[-1].payload["answer"] == "final headless answer"
     assert replies[-1].payload["backend"] == "claude-headless"
     assert replies[-1].payload["mutates_task_state"] is False
     session_completed = [event for event in events if event.type == "agent.session.run.completed"]
     assert session_completed[-1].payload["usage"] == {"input_tokens": 3, "output_tokens": 4}
+    turns_completed = [event for event in events if event.type == "kanban.agent.turn.completed"]
+    assert turns_completed[-1].payload["delta_count"] >= 1
     session_started = [event for event in events if event.type == "agent.session.run.started"]
     runtime_snapshots = [event for event in events if event.type == "runtime.snapshot.recorded"]
     assert session_started[-1].payload["snapshot_ref"] == runtime_snapshots[-1].payload["snapshot_ref"]
@@ -1169,12 +1170,12 @@ def test_chat_orchestrator_batches_fast_text_and_thinking_deltas(
 
     assert response.status_code == 200
     events = EventLog(state_dir / "events.jsonl").read_all()
-    deltas = _bus_rows(state_dir, "kanban.agent.turn.delta")
-    assert [row.payload["message_type"] for row in deltas] == ["status", "thinking", "text"]
-    assert [row.payload["content"] for row in deltas if row.payload["message_type"] == "text"] == ["alpha beta"]
+    assert _bus_rows(state_dir, "kanban.agent.turn.delta") == []
     assert not [event for event in events if event.type == "kanban.agent.turn.delta"]
     replies = [event for event in events if event.type == "kanban.agent.reply"]
     assert replies[-1].payload["answer"] == "alpha beta"
+    turns_completed = [event for event in events if event.type == "kanban.agent.turn.completed"]
+    assert turns_completed[-1].payload["delta_count"] == 3
 
 
 def test_chat_orchestrator_spills_large_delta_and_reply_to_sidecar(
@@ -1221,11 +1222,9 @@ def test_chat_orchestrator_spills_large_delta_and_reply_to_sidecar(
     reply_ref = reply.payload["refs"]["raw_output"]
     assert hydrate_sidecar_ref(state_dir, reply_ref).payload == "A" * 15000
     assert "A" * 15000 not in (state_dir / "events.jsonl").read_text(encoding="utf-8")
-    text_delta = [
-        row for row in _bus_rows(state_dir, "kanban.agent.turn.delta")
-        if row.payload.get("message_type") == "text"
-    ][-1]
-    assert text_delta.payload["content"] == "A" * 15000
+    assert _bus_rows(state_dir, "kanban.agent.turn.delta") == []
+    turns_completed = [event for event in events if event.type == "kanban.agent.turn.completed"]
+    assert turns_completed[-1].payload["delta_count"] >= 1
 
 
 def test_headless_thread_key_isolates_provider_sessions(

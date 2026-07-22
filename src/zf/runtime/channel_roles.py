@@ -4,10 +4,19 @@ from __future__ import annotations
 
 from pathlib import Path, PurePosixPath
 
+from zf.core.package_source import installed_local_source_root
+
 
 ROLE_CONTEXT_DIR = "channel_roles"
 ROLE_CONTEXT_MAX_CHARS = 1200
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_PACKAGE_REPO_ROOT = Path(__file__).resolve().parents[3]
+_INSTALLED_SOURCE_ROOT = installed_local_source_root()
+_REPO_ROOT = (
+    _INSTALLED_SOURCE_ROOT
+    if _INSTALLED_SOURCE_ROOT is not None
+    and (_INSTALLED_SOURCE_ROOT / ROLE_CONTEXT_DIR).is_dir()
+    else _PACKAGE_REPO_ROOT
+)
 
 
 def normalize_role_context_ref(value: object) -> str:

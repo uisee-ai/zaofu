@@ -209,6 +209,7 @@ def sweep_dead_dispatches(
     events: Iterable[ZfEvent],
     now: datetime | None = None,
     dead_threshold_s: float = _DEFAULT_DEAD_DISPATCH_THRESHOLD_S,
+    assignee_thresholds_s: dict[str, float] | None = None,
     progressed_task_ids: set[str] | None = None,
 ) -> DeadDispatchSweepResult:
     """ZF-E2E-RACING-P1 (2026-07-11): find in-flight dispatches whose worker
@@ -250,6 +251,7 @@ def sweep_dead_dispatches(
 
     dead: list[tuple[str, str, str, float]] = []
     progressed = progressed_task_ids or set()
+    thresholds = assignee_thresholds_s or {}
     for task_id, assignee, dispatch_id in inflight:
         if not task_id or not assignee or not dispatch_id:
             continue
@@ -277,7 +279,8 @@ def sweep_dead_dispatches(
         else:
             continue
         age = (sweep_now - last_seen).total_seconds()
-        if age >= dead_threshold_s:
+        threshold = max(float(thresholds.get(assignee, dead_threshold_s)), 0.0)
+        if age >= threshold:
             dead.append((task_id, assignee, dispatch_id, age))
 
     dead.sort()

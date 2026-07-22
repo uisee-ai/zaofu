@@ -27,6 +27,29 @@ discipline only when relevant.
 - Resolve runtime state through project context / `project.state_dir`;
   do not hard-code `.zf`
 
+## Test Scope Discipline
+
+Do not select pytest scope from changed-file count alone. Use the impact
+closure: changed module, direct callers, and shared Event/Schema/Store
+contracts. Web/UI and backend are separate default test domains; cross-domain
+tests are required when a change crosses an API, projection, EventLog, Store,
+or schema boundary.
+
+Required minimums:
+
+- UI-only: frontend build/typecheck and affected browser/component tests.
+- Backend module: affected module, direct callers, and contract tests.
+- EventLog/Store/schema/config/orchestration/recovery: impact closure,
+  `scripts/dev-premerge-gate.sh`, and relevant mock E2E.
+- Provider/tmux/worktree/host changes: isolated mock provider tests first;
+  real provider and host sensors are explicit test tiers.
+
+Full pytest is for release, major cross-domain refactors, three-or-more core
+domain changes, or explicit owner request. It may be sharded by module,
+class, or node in fresh processes with time and memory budgets. A monolithic
+pytest process that exhausts resources is a test-infrastructure finding, not
+an automatic blocker for ordinary development.
+
 ## Module Size Discipline (Forward-Looking Only)
 
 Existing oversized files (e.g. `src/zf/web/server.py` ~7000 lines,

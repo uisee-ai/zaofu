@@ -131,6 +131,80 @@ def test_generic_child_completed_closes_attempt(tmp_path: Path) -> None:
     assert task["last_terminal"] == "impl.child.completed"
 
 
+def test_provider_activity_advances_matching_open_attempt_watermark(
+    tmp_path: Path,
+) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    log.append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        task_id="T-LONG",
+        ts="2026-07-18T12:00:00+00:00",
+        payload={
+            "fanout_id": "fanout-1",
+            "child_id": "child-1",
+            "run_id": "run-1",
+            "role_instance": "dev-lane-0",
+        },
+    ))
+    log.append(ZfEvent(
+        type="agent.usage",
+        actor="dev-lane-0",
+        ts="2026-07-18T12:12:00+00:00",
+        payload={"output_tokens": 19775},
+    ))
+
+    refresh_spine_projections(state_dir, log)
+
+    attempt = _read(tmp_path, "task_attempts.json")["tasks"]["T-LONG"]["attempts"][0]
+    assert attempt["attempt_key"] == "run-1"
+    assert attempt["last_activity_ts"] == "2026-07-18T12:12:00+00:00"
+    assert attempt["last_activity_event_type"] == "agent.usage"
+    assert attempt["terminal"] is None
+
+
+def test_new_dispatch_supersedes_prior_open_attempt_and_late_terminal_is_matched(
+    tmp_path: Path,
+) -> None:
+    log = _log(tmp_path)
+    state_dir = tmp_path / ".zf"
+    for fanout_id, child_id, run_id, role in (
+        ("fanout-1", "child-1", "run-1", "dev-lane-0"),
+        ("fanout-2", "child-2", "run-2", "dev-lane-1"),
+    ):
+        log.append(ZfEvent(
+            type="fanout.child.dispatched",
+            actor="zf-cli",
+            task_id="T-FENCE",
+            payload={
+                "fanout_id": fanout_id,
+                "child_id": child_id,
+                "run_id": run_id,
+                "role_instance": role,
+            },
+        ))
+    log.append(ZfEvent(
+        type="impl.child.completed",
+        actor="dev-lane-0",
+        task_id="T-FENCE",
+        payload={
+            "fanout_id": "fanout-1",
+            "child_id": "child-1",
+            "run_id": "run-1",
+            "status": "completed",
+        },
+    ))
+
+    refresh_spine_projections(state_dir, log)
+
+    entry = _read(tmp_path, "task_attempts.json")["tasks"]["T-FENCE"]
+    assert entry["open_attempts"] == 1
+    assert entry["attempts"][0]["state"] == "superseded"
+    assert entry["attempts"][1]["attempt_key"] == "run-2"
+    assert entry["attempts"][1]["terminal"] is None
+
+
 def test_stage_rounds_and_status(tmp_path: Path) -> None:
     log = _log(tmp_path)
     state_dir = tmp_path / ".zf"

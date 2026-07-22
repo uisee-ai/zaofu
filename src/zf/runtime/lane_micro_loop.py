@@ -36,6 +36,8 @@ from zf.runtime.rework_feedback import (
 )
 
 CONTINUATION_EVENT = "task.rework.continuation_injected"
+GOAL_RESCAN_COMPLETED_EVENT = "goal.rescan.completed"
+GOAL_RESCAN_FAILED_EVENT = "goal.rescan.failed"
 _REJECTION_EVENTS = frozenset({
     "review.rejected", "verify.failed", "test.failed",
 })
@@ -678,16 +680,35 @@ def maybe_inject_rescan_continuation(
     """B2 = G1 消费侧:goal.rescan.requested → 对未终局任务的活 lane
     注入 continuation(objective+未解决 findings),不新起 fanout——
     G 批 defer 项在微环机制上收口。"""
-    if not micro_loop_enabled(config):
-        return []
     if event.type != "goal.rescan.requested":
         return []
     payload = event.payload if isinstance(event.payload, dict) else {}
+    if not micro_loop_enabled(config):
+        _settle_rescan(
+            event=event,
+            events=events,
+            event_writer=event_writer,
+            event_type=GOAL_RESCAN_FAILED_EVENT,
+            outcome="micro_loop_disabled",
+            eligible_task_ids=[],
+            payload=payload,
+        )
+        return []
     try:
         tasks = task_store.list_all()
     except Exception:
+        _settle_rescan(
+            event=event,
+            events=events,
+            event_writer=event_writer,
+            event_type=GOAL_RESCAN_FAILED_EVENT,
+            outcome="task_store_unavailable",
+            eligible_task_ids=[],
+            payload=payload,
+        )
         return []
     injected: list[str] = []
+    eligible_task_ids: list[str] = []
     for task in tasks:
         status = str(getattr(task, "status", "") or "")
         if status in {"done", "cancelled"}:
@@ -695,6 +716,7 @@ def maybe_inject_rescan_continuation(
         task_id = str(getattr(task, "id", "") or "")
         if not task_id:
             continue
+        eligible_task_ids.append(task_id)
         duplicate = any(
             prior.type == CONTINUATION_EVENT
             and str((prior.payload or {}).get("rework_of") or "") == event.id
@@ -746,11 +768,72 @@ def maybe_inject_rescan_continuation(
             correlation_id=event.correlation_id,
         ))
         injected.append(task_id)
+    if not injected:
+        event_type = (
+            GOAL_RESCAN_COMPLETED_EVENT
+            if not eligible_task_ids
+            else GOAL_RESCAN_FAILED_EVENT
+        )
+        _settle_rescan(
+            event=event,
+            events=events,
+            event_writer=event_writer,
+            event_type=event_type,
+            outcome=(
+                "no_eligible_tasks"
+                if not eligible_task_ids
+                else "no_live_lane_delivery"
+            ),
+            eligible_task_ids=eligible_task_ids,
+            payload=payload,
+        )
     return injected
+
+
+def _settle_rescan(
+    *,
+    event: ZfEvent,
+    events: list[ZfEvent],
+    event_writer: Any,
+    event_type: str,
+    outcome: str,
+    eligible_task_ids: list[str],
+    payload: Mapping[str, Any],
+) -> None:
+    if _rescan_settled(events, event.id):
+        return
+    event_writer.append(ZfEvent(
+        type=event_type,
+        actor="zf-cli",
+        payload={
+            "request_event_id": event.id,
+            "rescan_ordinal": payload.get("rescan_ordinal"),
+            "outcome": outcome,
+            "eligible_task_ids": eligible_task_ids,
+            "injected_task_ids": [],
+        },
+        causation_id=event.id,
+        correlation_id=event.correlation_id,
+    ))
+
+
+def _rescan_settled(events: list[ZfEvent], request_event_id: str) -> bool:
+    return any(
+        prior.type in {GOAL_RESCAN_COMPLETED_EVENT, GOAL_RESCAN_FAILED_EVENT}
+        and (
+            prior.causation_id == request_event_id
+            or str((prior.payload or {}).get("request_event_id") or "")
+            == request_event_id
+        )
+        for prior in events
+        if isinstance(prior.payload, dict)
+    )
 
 
 __all__ = [
     "CONTINUATION_EVENT",
+    "GOAL_RESCAN_COMPLETED_EVENT",
+    "GOAL_RESCAN_FAILED_EVENT",
     "maybe_inject_rescan_continuation",
     "maybe_inject_rework_continuation",
     "micro_loop_enabled",

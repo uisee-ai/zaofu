@@ -243,6 +243,10 @@ def _worker_stuck_recovered(
             return True
         if event.type == "worker.heartbeat":
             return True
+        if event.type == "agent.usage":
+            return True
+        if event.type.startswith(("codex.hook.", "claude.hook.")):
+            return True
         if event.type == "worker.state.changed":
             if str(_payload(event).get("to") or "").strip() in _WORKER_ACTIVE_STATES:
                 return True
@@ -888,7 +892,7 @@ def _fanout_child_pending_grace_expired(
     *,
     fanout_id: str,
     child_id: str,
-    grace_seconds: int = 120,
+    grace_seconds: int = 600,
 ) -> bool:
     dispatch_ts: datetime | None = None
     latest_ts: datetime | None = None
@@ -907,10 +911,11 @@ def _fanout_child_pending_grace_expired(
             role_instance = str(payload.get("role_instance") or "")
     if dispatch_ts is None or latest_ts is None:
         return True
-    # 2026-07-08 live 三轮实锚:verify/judge 子任务健康跑 3-6 分钟,纯按
-    # 派发时长判停滞每轮必产假候选(→ proposal → escalate 噪音)。宽限从
-    # "该 worker 最后一次可见活动"起算——agent.usage / codex.hook.* /
-    # worker.* 都是它 actor 发的;静默超宽限才是真停滞。
+    # Healthy provider reasoning can remain inside one turn for 3-6 minutes
+    # without emitting another hook. Start the grace period at the worker's
+    # latest visible activity and leave pane death/runner failure to the
+    # lifecycle watchdog; two minutes caused live Opus turns to self-trigger
+    # Autoresearch while they were still making progress.
     last_seen = dispatch_ts
     if role_instance:
         for event in events:

@@ -177,7 +177,7 @@ def test_synthesized_task_map_preserves_workflow_refs() -> None:
     assert task["test_matrix_ref"].endswith("test-matrix.json")
     assert task["real_e2e_matrix_ref"].endswith("real-e2e-matrix.json")
     assert "referenced acceptance/test/real-e2e matrix" in " ".join(task["acceptance_criteria"])
-    assert "workflow_input_manifest_ref" in " ".join(task["verification"])
+    assert "verification" not in task
 
 
 def _light_config():
@@ -192,6 +192,11 @@ def test_entry_trigger_synthesizes_and_emits(tmp_path: Path) -> None:
     state_dir.mkdir()
     manifest = tmp_path / "artifacts" / "workflow" / "wf" / "workflow-input-manifest.json"
     manifest.parent.mkdir(parents=True)
+    test_matrix = manifest.parent / "test-matrix.json"
+    test_matrix.write_text(json.dumps({
+        "schema_version": "test-matrix.v1",
+        "tests": [{"test_id": "verify", "commands": ["python app/verify.py"]}],
+    }), encoding="utf-8")
     manifest.write_text(json.dumps({
         "schema_version": "workflow.input_manifest.v1",
         "acceptance_matrix_ref": str(manifest.parent / "acceptance-matrix.json"),
@@ -218,6 +223,34 @@ def test_entry_trigger_synthesizes_and_emits(tmp_path: Path) -> None:
     )
     assert written["tasks"][0]["task_id"] == "DEFAULT-DELIVER-001"
     assert written["tasks"][0]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
+    assert written["tasks"][0]["verification"] == ["python app/verify.py"]
+
+
+def test_entry_uses_config_quality_checks_without_matrix_commands(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = _light_config()
+    config.quality_gates = {
+        "static": SimpleNamespace(enabled=True, required_checks=["make verify"]),
+    }
+    log = EventLog(state_dir / "events.jsonl")
+
+    maybe_synthesize_light_task_map(
+        event=ZfEvent(
+            type="prd.requested",
+            actor="operator",
+            payload={"pdd_id": "default", "objective": "Deliver X"},
+        ),
+        config=config,
+        state_dir=state_dir,
+        event_writer=EventWriter(log),
+        events=[],
+    )
+
+    written = json.loads(
+        (state_dir / "artifacts" / "default" / "task_map.json").read_text()
+    )
+    assert written["tasks"][0]["verification"] == ["make verify"]
 
 
 def test_entry_is_idempotent(tmp_path: Path) -> None:

@@ -39,6 +39,15 @@ def build_replan_resynth_event(
         "rework_summary": dict(getattr(plan, "rework_summary", {}) or {}),
         "replan_classification": getattr(plan, "classification", ""),
     })
+    for key in (
+        "failed_task_ids",
+        "task_ids",
+        "downstream_task_ids",
+        "resume_scope",
+    ):
+        value = getattr(plan, key, None)
+        if value not in (None, "", (), []):
+            payload[key] = list(value) if isinstance(value, tuple) else value
     return ZfEvent(
         type=trigger,
         actor="zf-cli",

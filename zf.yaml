@@ -30,6 +30,19 @@ spec:
   project:
     name: zaofu
     state_dir: .zf
+  orchestrator: {backend: claude-code, wake_min_interval_s: 5}
+  roles:
+    - name: orchestrator
+      instance_id: orchestrator
+      role_kind: reader
+      backend: claude-code
+      permission_mode: bypass
+      transport: tmux
+      stuck_threshold_seconds: 900
+      spawn_ready_timeout_seconds: 240
+      triggers: [dispatch.silent_stall, orchestrator.rework.triage.requested]
+      publishes: [orchestrator.rework.triage.recorded]
+      skills: [zf-yoke-orchestrator-role-context, zf-harness-state-sync]
   # Resolve the portable profile's named source from the repository root.
   skill_sources:
     - name: zaofu-skills

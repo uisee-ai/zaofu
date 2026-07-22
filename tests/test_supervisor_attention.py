@@ -272,6 +272,38 @@ def test_attention_lifecycle_resolves_after_matching_fanout_terminal() -> None:
     assert updated[0]["status"] == "resolved"
 
 
+def test_attention_lifecycle_resolves_stuck_after_matching_worker_activity() -> None:
+    item = {
+        "fingerprint": "failure:worker_stuck:dev-lane-0",
+        "attention_id": "attn-stuck",
+        "status": "open",
+        "source_event_ids": ["evt-worker-stuck"],
+    }
+    events = [
+        ZfEvent(
+            id="evt-worker-stuck",
+            type="worker.stuck",
+            actor="zf-cli",
+            payload={"instance_id": "dev-lane-0"},
+        ),
+        ZfEvent(
+            id="evt-worker-active",
+            type="agent.usage",
+            actor="dev-lane-0",
+            payload={},
+        ),
+    ]
+
+    updated = apply_attention_lifecycle(
+        [item],
+        events,
+        now=datetime(2026, 7, 7, tzinfo=timezone.utc),
+    )
+
+    assert updated[0]["status"] == "resolved"
+    assert updated[0]["quiesced_by"] == "later_progress"
+
+
 def test_repeated_flow_goal_blocked_routes_to_run_manager() -> None:
     items = build_attention_items(
         events=[

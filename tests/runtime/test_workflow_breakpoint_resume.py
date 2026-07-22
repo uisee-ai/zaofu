@@ -190,6 +190,77 @@ def test_resume_dispatches_static_gate_to_same_review_lane(tmp_path: Path) -> No
     ]) == 1
 
 
+def test_resume_does_not_dispatch_worker_stage_to_orchestrator(tmp_path: Path) -> None:
+    state_dir, store, log = _state(tmp_path)
+    config = ZfConfig(
+        project=ProjectConfig(name="resume-control-target"),
+        session=SessionConfig(tmux_session="resume-control-target"),
+        roles=[
+            RoleConfig(
+                name="dev-lane-3",
+                backend="mock",
+                publishes=["dev.build.done", "dev.failed"],
+            ),
+            RoleConfig(
+                name="orchestrator",
+                backend="mock",
+                triggers=["static_gate.passed"],
+                publishes=["review.approved", "review.rejected"],
+            ),
+        ],
+        workflow=WorkflowConfig(
+            dag=WorkflowDagConfig(
+                enabled=True,
+                graph_review_test_judge_reconcile=True,
+            ),
+        ),
+    )
+    store.add(Task(
+        id="CONTROL-TARGET-001",
+        title="control target",
+        status="in_progress",
+        assigned_to="dev-lane-3",
+    ))
+    dev_done = ZfEvent(
+        type="dev.build.done",
+        actor="dev-lane-3",
+        task_id="CONTROL-TARGET-001",
+        payload={"dispatch_id": "disp-dev"},
+    )
+    gate = ZfEvent(
+        type="static_gate.passed",
+        actor="zf-cli",
+        task_id="CONTROL-TARGET-001",
+        payload={"trigger_event_id": dev_done.id},
+    )
+    log.append(ZfEvent(
+        type="task.dispatched",
+        actor="orchestrator",
+        task_id="CONTROL-TARGET-001",
+        payload={"assignee": "dev-lane-3", "dispatch_id": "disp-dev"},
+    ))
+    log.append(dev_done)
+    log.append(gate)
+
+    checkpoints = build_workflow_resume_checkpoints(state_dir, config)
+    result = apply_workflow_resume(state_dir, config)
+
+    checkpoint = checkpoints[0]
+    assert checkpoint.expected_next_role == "orchestrator"
+    assert checkpoint.safe_resume_action == "no_action"
+    assert checkpoint.blocking_event_id == ""
+    assert checkpoint.reason == (
+        "next stage-dispatch targets non-runnable control role: orchestrator"
+    )
+    assert result["applied"] == 0
+    assert store.get("CONTROL-TARGET-001").assigned_to == "dev-lane-3"
+    assert not [
+        event for event in log.read_all()
+        if event.type == "task.dispatched"
+        and event.payload.get("source") == "workflow_resume"
+    ]
+
+
 def test_lane_gate_resume_is_suppressed_by_candidate_ready(
     tmp_path: Path,
 ) -> None:
@@ -1107,6 +1178,82 @@ def test_resume_apply_batch_checkpoint_uses_operator_task_map_override(
         "original_task_map_ref": str(original_task_map),
         "repaired_task_map_ref": str(override_task_map),
     }
+
+
+def test_resume_apply_scheduler_queue_timeout_dispatches_only_queued_task(
+    tmp_path: Path,
+) -> None:
+    state_dir, _store, log = _state(tmp_path)
+    task_map = state_dir / "artifacts" / "plan" / "task_map.json"
+    task_map.parent.mkdir(parents=True)
+    task_map.write_text(
+        json.dumps({
+            "schema_version": "task-map.v1",
+            "tasks": [
+                {"task_id": "SIM5-SCAFFOLD-001", "allowed_paths": ["app/package.json"]},
+                {
+                    "task_id": "SIM5-ASSEMBLY-006",
+                    "blocked_by": ["SIM5-SCAFFOLD-001"],
+                    "allowed_paths": ["app/src/App.tsx"],
+                },
+            ],
+        }),
+        encoding="utf-8",
+    )
+    fanout_id = "fanout-prd-lanes-impl-queue"
+    manifest = state_dir / "fanouts" / fanout_id / "manifest.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({
+            "fanout_id": fanout_id,
+            "children": [{
+                "child_id": "queued-SIM5-ASSEMBLY-006-6",
+                "task_id": "SIM5-ASSEMBLY-006",
+                "status": "queued",
+            }],
+        }),
+        encoding="utf-8",
+    )
+    log.append(ZfEvent(
+        type="task_map.ready",
+        id="evt-taskmap",
+        actor="zf-cli",
+        correlation_id="trace-sim5",
+        payload={
+            "pdd_id": "SIM5",
+            "task_map_ref": str(task_map),
+            "source_commit": "base123",
+            "target_ref": "main",
+        },
+    ))
+    log.append(ZfEvent(
+        type="fanout.cancelled",
+        id="evt-cancel",
+        actor="zf-cli",
+        correlation_id="trace-sim5",
+        payload={
+            "fanout_id": fanout_id,
+            "stage_id": "prd-lanes-impl",
+            "pdd_id": "SIM5",
+            "task_map_ref": str(task_map),
+            "reason": "queued_wait_timeout",
+            "failure_kind": "scheduler_queue_timeout",
+            "queued_children": ["queued-SIM5-ASSEMBLY-006-6"],
+            "semantic_attempt_consumed": False,
+        },
+    ))
+
+    result = apply_workflow_resume(state_dir, _lane_config())
+
+    resumed = [
+        event for event in log.read_all()
+        if event.type == "task_map.ready"
+        and event.payload.get("source") == "workflow_resume_batch"
+    ]
+    assert result["applied"] == 1
+    assert len(resumed) == 1
+    assert resumed[0].payload["task_ids"] == ["SIM5-ASSEMBLY-006"]
+    assert resumed[0].payload["resume_scope"] == "gap_tasks_only"
 
 
 def test_resume_apply_rejects_missing_operator_task_map_override(

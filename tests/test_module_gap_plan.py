@@ -22,6 +22,29 @@ def test_module_gap_plan_validation_rejects_incomplete_gap_task() -> None:
     assert "CANGJIE-WEB-GAP-001.verify_commands is required" in result.errors
 
 
+def test_module_gap_plan_validation_rejects_overlapping_claim_paths() -> None:
+    shared = {
+        "claim_paths": ["app/src/render/scene.ts"],
+        "acceptance": ["render behavior is correct"],
+        "verify_commands": ["npm test"],
+        "source_refs": ["app/src/render/scene.ts:10"],
+    }
+
+    result = validate_module_gap_plan_payload({
+        "schema_version": "module-gap-plan.v1",
+        "gap_tasks": [
+            {"task_id": "GAP-RENDER", **shared},
+            {"task_id": "GAP-CAMERA", **shared},
+        ],
+    })
+
+    assert result.passed is False
+    assert result.errors == [
+        "gap tasks 'GAP-RENDER' and 'GAP-CAMERA' have overlapping "
+        "claim_path 'app/src/render/scene.ts'",
+    ]
+
+
 def test_gap_tasks_append_to_full_task_map_as_canonical_tasks() -> None:
     base = {
         "schema_version": "task-map.v1",

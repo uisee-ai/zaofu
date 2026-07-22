@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from zf.core.config.schema import (
@@ -42,6 +43,13 @@ from zf.runtime.run_manager_resident import (
 )
 from zf.runtime.shutdown import GracefulShutdown
 from zf.runtime.transport import make_transport
+
+
+_STALE_EVENT_ANCHOR = datetime.now(timezone.utc) - timedelta(hours=1)
+
+
+def _stale_event_ts(offset_seconds: int = 0) -> str:
+    return (_STALE_EVENT_ANCHOR + timedelta(seconds=offset_seconds)).isoformat()
 
 
 def _resident_config(
@@ -464,14 +472,14 @@ def test_run_manager_projection_detects_prompted_resident_without_observation(
         ZfEvent(
             type="run.manager.resident.spawned",
             id="evt-spawned",
-            ts="2026-06-01T00:00:00+00:00",
+            ts=_stale_event_ts(),
             actor="zf-cli",
             payload={"ready": True, "session_mode": "dedicated"},
         ),
         ZfEvent(
             type="run.manager.resident.prompted",
             id="evt-prompted",
-            ts="2026-06-01T00:00:01+00:00",
+            ts=_stale_event_ts(1),
             actor="zf-cli",
             payload={"prompted": True},
         ),
@@ -505,14 +513,14 @@ def test_run_manager_tick_requests_diagnosis_for_resident_stall(
     log.append(ZfEvent(
         type="run.manager.resident.spawned",
         id="evt-spawned",
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_event_ts(),
         actor="zf-cli",
         payload={"ready": True, "session_mode": "dedicated"},
     ))
     log.append(ZfEvent(
         type="run.manager.resident.prompted",
         id="evt-prompted",
-        ts="2026-06-01T00:00:01+00:00",
+        ts=_stale_event_ts(1),
         actor="zf-cli",
         payload={"prompted": True},
     ))
@@ -550,7 +558,7 @@ def test_run_manager_tick_reprompts_live_resident_pane(
     log.append(ZfEvent(
         type="run.manager.resident.spawned",
         id="evt-spawned",
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_event_ts(),
         actor="zf-cli",
         payload={
             "ready": True,
@@ -561,7 +569,7 @@ def test_run_manager_tick_reprompts_live_resident_pane(
     log.append(ZfEvent(
         type="run.manager.resident.prompted",
         id="evt-prompted",
-        ts="2026-06-01T00:00:01+00:00",
+        ts=_stale_event_ts(1),
         actor="zf-cli",
         payload={"prompted": True, "briefing_path": str(briefing)},
     ))
@@ -623,7 +631,7 @@ def test_supervisor_attention_requests_diagnosis_without_resident_reprompt(
     log.append(ZfEvent(
         type="run.manager.resident.spawned",
         id="evt-spawned",
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_event_ts(),
         actor="zf-cli",
         payload={
             "ready": True,
@@ -634,14 +642,14 @@ def test_supervisor_attention_requests_diagnosis_without_resident_reprompt(
     log.append(ZfEvent(
         type="run.manager.resident.prompted",
         id="evt-prompted",
-        ts="2026-06-01T00:00:01+00:00",
+        ts=_stale_event_ts(1),
         actor="zf-cli",
         payload={"prompted": True, "briefing_path": str(briefing)},
     ))
     log.append(ZfEvent(
         type="run.manager.agent.observation",
         id="evt-observed",
-        ts="2026-06-01T00:00:02+00:00",
+        ts=_stale_event_ts(2),
         actor="run-manager",
         payload={"status": "watching"},
     ))
@@ -706,7 +714,7 @@ def test_run_manager_tick_blocks_reprompt_into_shell_only_pane(
     log.append(ZfEvent(
         type="run.manager.resident.spawned",
         id="evt-spawned",
-        ts="2026-06-01T00:00:00+00:00",
+        ts=_stale_event_ts(),
         actor="zf-cli",
         payload={
             "ready": True,
@@ -717,7 +725,7 @@ def test_run_manager_tick_blocks_reprompt_into_shell_only_pane(
     log.append(ZfEvent(
         type="run.manager.resident.prompted",
         id="evt-prompted",
-        ts="2026-06-01T00:00:01+00:00",
+        ts=_stale_event_ts(1),
         actor="zf-cli",
         payload={"prompted": True, "briefing_path": str(briefing)},
     ))
@@ -768,21 +776,21 @@ def test_run_manager_projection_clears_resident_stall_after_observation(
         ZfEvent(
             type="run.manager.resident.spawned",
             id="evt-spawned",
-            ts="2026-06-01T00:00:00+00:00",
+            ts=_stale_event_ts(),
             actor="zf-cli",
             payload={"ready": True, "session_mode": "dedicated"},
         ),
         ZfEvent(
             type="run.manager.resident.prompted",
             id="evt-prompted",
-            ts="2026-06-01T00:00:01+00:00",
+            ts=_stale_event_ts(1),
             actor="zf-cli",
             payload={"prompted": True},
         ),
         ZfEvent(
             type="run.manager.agent.observation",
             id="evt-observation",
-            ts="2026-06-01T00:01:00+00:00",
+            ts=_stale_event_ts(60),
             actor="run-manager",
             payload={"status": "watching"},
         ),
@@ -812,21 +820,21 @@ def test_run_manager_projection_uses_archived_observation_when_prompt_is_newer(
         ZfEvent(
             type="run.manager.resident.spawned",
             id="evt-spawned",
-            ts="2026-06-01T00:00:00+00:00",
+            ts=_stale_event_ts(),
             actor="zf-cli",
             payload={"ready": True, "session_mode": "dedicated"},
         ),
         ZfEvent(
             type="run.manager.agent.observation",
             id="evt-observation",
-            ts="2026-06-01T00:01:00+00:00",
+            ts=_stale_event_ts(60),
             actor="run-manager",
             payload={"status": "watching archived event window"},
         ),
         ZfEvent(
             type="run.manager.resident.prompted",
             id="evt-prompted",
-            ts="2026-06-01T00:02:00+00:00",
+            ts=_stale_event_ts(120),
             actor="zf-cli",
             payload={"prompted": True},
         ),

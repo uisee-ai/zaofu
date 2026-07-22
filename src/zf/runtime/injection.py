@@ -1366,6 +1366,8 @@ def _add_role_handoff_guidance(
         "prd.ready",
         "prd.critic.completed",
         "prd.approved",
+        "prd.plan.child.completed",
+        "prd.plan.completed",
         "task_map.child.completed",
         "task_map.ready",
     }:
@@ -1377,6 +1379,8 @@ def _add_role_handoff_guidance(
         # evidence_refs, then degenerated. Give these roles the exact required
         # fields + a copy-paste example so the contract gate passes first try.
         is_task_map = protocol.success_event in {
+            "prd.plan.child.completed",
+            "prd.plan.completed",
             "task_map.child.completed",
             "task_map.ready",
         }
@@ -1391,11 +1395,18 @@ def _add_role_handoff_guidance(
         )
         if is_task_map:
             lines.append(
-                "Required completion payload fields: `task_map_ref` (repo- or "
-                "state-relative path to the task-map artifact you wrote) and "
+                "Required completion payload fields: `task_map_ref` (workdir-"
+                "relative path to the task-map artifact you wrote) and "
                 "`evidence_refs` (non-empty list of pointers — `git:<sha>`, "
                 "`branch:<name>`, artifact paths, or event ids). Include "
                 "`summary` and `status: completed`."
+            )
+            lines.append(
+                "Workdir artifact rule: write the task map inside your assigned "
+                "workdir (for example `artifacts/plan/task_map.json`) and emit "
+                "that relative ref. Do not write the configured state dir "
+                "directly; the kernel relocates emitted workdir refs into "
+                "runtime artifact storage."
             )
             example_payload = {
                 "dispatch_id": "<dispatch_id from briefing header>",

@@ -205,6 +205,18 @@ class TestDeadDispatchSweep:
         )
         assert result.dead_dispatches == []
 
+    def test_assignee_specific_threshold_preserves_thinking_provider(self):
+        events = self._events(
+            {"type": "task.dispatched", "task_id": "T1", "ts": _ts(400)},
+        )
+        result = sweep_dead_dispatches(
+            inflight=[("T1", "dev-lane-0", "disp-1")],
+            events=events,
+            now=NOW,
+            assignee_thresholds_s={"dev-lane-0": 900.0},
+        )
+        assert result.dead_dispatches == []
+
     def test_short_window_with_absent_pair_skipped(self):
         events = self._events(
             {"type": "loop.started", "actor": "zf-cli", "ts": _ts(60)},

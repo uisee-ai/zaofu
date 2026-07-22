@@ -222,6 +222,7 @@ def apply_workflow_resume(
             force_gate_dispatch=force_gate_dispatch,
             override_task_map_ref=override_task_map_ref,
             events=events,
+            project_root=project_root or state_dir.parent,
         )
         batch_results.append(result)
         events.extend(
@@ -505,6 +506,7 @@ def _apply_batch_checkpoint(
     gate_dispatcher=None,
     override_task_map_ref: str = "",
     events: list[ZfEvent] | None = None,
+    project_root: Path | None = None,
     # FIX-2:batch 侧暂不支持强制路由,仅收下参数保持调用面一致;
     # per-task 侧见 _apply_checkpoint 的 forced_gate_dispatch。
     force_gate_dispatch: bool = False,
@@ -545,7 +547,24 @@ def _apply_batch_checkpoint(
             fanout_id=checkpoint.fanout_id,
             task_map_ref=override_task_map_ref or checkpoint.task_map_ref,
         )
-        resume_scope = "failed_children_only" if task_ids else "all_tasks_rework"
+        failed_task_ids = list(task_ids)
+        if task_ids:
+            from zf.runtime.rework_task_scope import expand_rework_task_ids
+
+            task_ids = expand_rework_task_ids(
+                task_ids,
+                task_map_ref=override_task_map_ref or checkpoint.task_map_ref,
+                state_dir=state_dir,
+                project_root=project_root or state_dir.parent,
+                completed_task_ids=set(checkpoint.completed_task_ids),
+            )
+        resume_scope = (
+            "failed_children_and_downstream"
+            if task_ids != failed_task_ids
+            else "failed_children_only"
+            if task_ids
+            else "all_tasks_rework"
+        )
         return _apply_batch_task_map_ready(
             writer,
             checkpoint,
@@ -557,6 +576,31 @@ def _apply_batch_checkpoint(
             ),
             task_ids=task_ids,
             resume_scope=resume_scope,
+            state_dir=state_dir,
+            gate_dispatcher=gate_dispatcher,
+            override_task_map_ref=override_task_map_ref,
+        )
+    if checkpoint.safe_resume_action == "resume_queued_children":
+        task_ids = _task_ids_from_failed_children(
+            checkpoint.pending_children,
+            state_dir=state_dir,
+            fanout_id=checkpoint.fanout_id,
+            task_map_ref=override_task_map_ref or checkpoint.task_map_ref,
+        )
+        if not task_ids:
+            return _reject_batch(
+                writer,
+                checkpoint,
+                emitted,
+                "missing queued task ids",
+            )
+        return _apply_batch_task_map_ready(
+            writer,
+            checkpoint,
+            emitted,
+            reason="scheduler queue timeout resumed",
+            task_ids=task_ids,
+            resume_scope="gap_tasks_only",
             state_dir=state_dir,
             gate_dispatcher=gate_dispatcher,
             override_task_map_ref=override_task_map_ref,
@@ -1771,9 +1815,9 @@ def _task_ids_from_failed_children(
         if not text or text.startswith("candidate:"):
             continue
         task_id = (
-            _task_id_from_failed_child(text)
-            or fanout_child_tasks.get(text, "")
+            fanout_child_tasks.get(text, "")
             or _task_id_from_task_map_hint(text, task_map_tasks)
+            or _task_id_from_failed_child(text)
         )
         if task_id and task_id not in seen:
             seen.add(task_id)
@@ -1807,11 +1851,15 @@ def _task_ids_by_fanout_child(
             continue
         payload = child.get("payload")
         payload = payload if isinstance(payload, dict) else {}
-        task_id = _first_task_id(
-            child.get("task_id"),
-            payload.get("task_id"),
-            payload.get("upstream_task_id"),
-        )
+        task_id = next((
+            str(value or "").strip()
+            for value in (
+                child.get("task_id"),
+                payload.get("task_id"),
+                payload.get("upstream_task_id"),
+            )
+            if str(value or "").strip()
+        ), "")
         if task_id:
             out[child_id] = task_id
     return out

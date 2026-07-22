@@ -214,7 +214,7 @@ class TmuxTransport(TransportAdapter):
             # tokens like `Bash(zf kanban *)` break the shell command
             # line with "syntax error near unexpected token '('".
             command = shlex.join(argv)
-            env_prefix = self._agent_env_prefix()
+            env_prefix = self._agent_env_prefix(cwd)
             if env_prefix:
                 command = f"{env_prefix} {command}"
             if cwd is not None:
@@ -222,7 +222,7 @@ class TmuxTransport(TransportAdapter):
             self.tmux.send_keys(role.instance_id, command)
 
     @classmethod
-    def _agent_env_prefix(cls) -> str:
+    def _agent_env_prefix(cls, cwd: Path | None = None) -> str:
         """Carry selected launch env into tmux panes.
 
         tmux panes inherit the long-lived tmux server environment, not
@@ -231,14 +231,24 @@ class TmuxTransport(TransportAdapter):
         such as ``zf emit`` then import an older installed ZaoFu. Keep this
         narrow: only runtime resolution variables, never arbitrary secrets.
         """
+        workspace_venv = (cwd / ".venv").resolve() if cwd is not None else None
         assignments: list[str] = []
+        unset_keys: list[str] = []
         for key in cls._AGENT_ENV_KEYS:
             value = os.environ.get(key)
+            if key == "VIRTUAL_ENV" and value and workspace_venv is not None:
+                if Path(value).resolve() != workspace_venv:
+                    unset_keys.append(key)
+                    continue
             if value:
                 assignments.append(shlex.quote(f"{key}={value}"))
-        if not assignments:
+        if not assignments and not unset_keys:
             return ""
-        return "/usr/bin/env " + " ".join(assignments)
+        parts = ["/usr/bin/env"]
+        for key in unset_keys:
+            parts.extend(["-u", key])
+        parts.extend(assignments)
+        return " ".join(parts)
 
     def pane_current_command(self, role_name: str) -> str:
         return self.tmux.pane_current_command(role_name)
@@ -440,6 +450,9 @@ class TmuxTransport(TransportAdapter):
             setattr(err, "dead_reason", dead_reason)
             raise err
         self._assert_expected_cwd(role_name)
+        clear_input = getattr(self.tmux, "clear_input", None)
+        if callable(clear_input):
+            clear_input(role_name)
         self.tmux.send_keys(role_name, prompt)
 
     def compact_context(self, role_name: str, command: str) -> bool:

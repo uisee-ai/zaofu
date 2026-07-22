@@ -35,6 +35,8 @@ class LoopConfig:
     expected_done: int = 1                   # terminal done events to wait for
     inner_wait_timeout: int = 900            # seconds polling terminal done
     review_gate: str = "off"                 # off | auto | always
+    # Standalone loops keep legacy task creation; resident callers disable it.
+    backlog_on_failure: bool = True
 
 
 def default_metric_sources() -> dict[str, str]:

@@ -410,6 +410,9 @@ def test_codex_apply_patch_blocks_write_outside_allowed_paths(
     assert rejected
     assert rejected[0].payload["worker"] == "dev-1"
     assert "app/src/api.js" in rejected[0].payload["offending_paths"]
+    assert rejected[0].payload["origin_event"] == "codex.hook.pre_tool_use"
+    assert len(rejected[0].payload["tool_input_digest"]) == 64
+    assert "*** Begin Patch" not in str(rejected[0].payload)
 
 
 def test_codex_apply_patch_allows_write_inside_allowed_paths(
@@ -444,3 +447,181 @@ def test_codex_apply_patch_allows_write_inside_allowed_paths(
     assert code != 2
     events = EventLog(state_dir / "events.jsonl").read_all()
     assert not [e for e in events if e.type == "worker.scope_write.rejected"]
+
+
+def _seed_claude_fanout_workdir(state_dir: Path) -> Path:
+    workdir = state_dir / "workdirs" / "dev-1" / "project"
+    workdir.mkdir(parents=True)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="T-FANOUT",
+        title="fanout writer",
+        status="in_progress",
+        assigned_to="dev-1",
+        contract=TaskContract(scope=["**/*"]),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="fanout.child.dispatched",
+        actor="zf-cli",
+        payload={
+            "fanout_id": "fanout-1",
+            "child_id": "child-1",
+            "run_id": "run-1",
+            "task_id": "T-FANOUT",
+            "role_instance": "dev-1",
+            "workdir": str(workdir),
+        },
+    ))
+    return workdir
+
+
+def test_claude_cwd_resolves_fanout_actor_and_blocks_canonical_root_write(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    workdir = _seed_claude_fanout_workdir(state_dir)
+    outside = tmp_path / "app" / "escaped.js"
+
+    code = _invoke(
+        state_dir,
+        event="claude.hook.pre_tool_use",
+        backend="claude-code",
+        payload={
+            "session_id": "",
+            "cwd": str(workdir),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {"file_path": str(outside), "content": "bad"},
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    hook = next(e for e in events if e.type == "claude.hook.pre_tool_use")
+    assert hook.actor == "dev-1"
+    assert hook.causation_id
+    rejected = [e for e in events if e.type == "worker.scope_write.rejected"]
+    assert rejected[-1].payload["reason"] == "outside_assigned_workdir"
+    assert rejected[-1].payload["origin_event"] == "claude.hook.pre_tool_use"
+    assert len(rejected[-1].payload["tool_input_digest"]) == 64
+
+
+def test_claude_workdir_write_is_allowed(tmp_path: Path, monkeypatch) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    workdir = _seed_claude_fanout_workdir(state_dir)
+
+    code = _invoke(
+        state_dir,
+        event="claude.hook.pre_tool_use",
+        backend="claude-code",
+        payload={
+            "session_id": "",
+            "cwd": str(workdir),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Write",
+            "tool_input": {
+                "file_path": str(workdir / "app" / "inside.js"),
+                "content": "ok",
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 0
+
+
+def test_claude_workdir_guard_allows_read_only_root_command_redirection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    workdir = _seed_claude_fanout_workdir(state_dir)
+
+    code = _invoke(
+        state_dir,
+        event="claude.hook.pre_tool_use",
+        backend="claude-code",
+        payload={
+            "session_id": "",
+            "cwd": str(workdir),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": (
+                    f"cd {tmp_path} && find . -name task_map.json 2>/dev/null; "
+                    "echo done 2>&1 | head -20"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 0
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    assert not [event for event in events if event.type == "worker.scope_write.rejected"]
+
+
+def test_claude_workdir_guard_still_blocks_root_output_redirection(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    workdir = _seed_claude_fanout_workdir(state_dir)
+    canonical_root_target = Path.cwd() / "escaped.txt"
+
+    code = _invoke(
+        state_dir,
+        event="claude.hook.pre_tool_use",
+        backend="claude-code",
+        payload={
+            "session_id": "",
+            "cwd": str(workdir),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {
+                "command": f"printf bad > {canonical_root_target}",
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    rejected = [event for event in events if event.type == "worker.scope_write.rejected"]
+    assert rejected[-1].payload["command_class"] == "mutating_shell"
+
+
+def test_claude_workdir_guard_ignores_arrow_in_emit_payload(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    workdir = _seed_claude_fanout_workdir(state_dir)
+
+    command = (
+        f"zf emit prd.plan.child.completed --state-dir {state_dir} "
+        "--payload '{\"summary\":\"scaffold -> headless core\"}'"
+    )
+    code = _invoke(
+        state_dir,
+        event="claude.hook.pre_tool_use",
+        backend="claude-code",
+        payload={
+            "session_id": "",
+            "cwd": str(workdir),
+            "hook_event_name": "PreToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"command": command},
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code == 0
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    assert not [event for event in events if event.type == "worker.scope_write.rejected"]

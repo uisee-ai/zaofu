@@ -1175,6 +1175,14 @@ class DispatchMixin(
                 continue
             if not self._is_handoff_success_event(progress_event):
                 continue
+            if (
+                progress_event.type == "dev.build.done"
+                and self._writer_completion_identity_already_terminal(
+                    progress_event
+                )
+            ):
+                self._processed_event_ids.add(progress_event.id)
+                continue
             if self._ignore_design_handoff_for_lane_task(task, progress_event):
                 decisions.append(OrchestratorDecision(
                     action="wait",
@@ -1401,10 +1409,21 @@ class DispatchMixin(
             "dirty_files": dirty_files,
             "expected_action": expected_action,
         }
-        for key in ("scope", "changed_files", "out_of_scope_files"):
+        for key in (
+            "scope",
+            "changed_files",
+            "out_of_scope_files",
+            "workflow_run_id",
+            "contract_revision",
+            "task_map_generation",
+            "contract_snapshot_ref",
+            "contract_snapshot_digest",
+        ):
             value = payload.get(key)
             if isinstance(value, list):
                 repair_payload[key] = list(value)
+            elif value not in (None, ""):
+                repair_payload[key] = value
         repair_role = self._resolve_task_ref_repair_role_from_payload(
             task,
             repair_payload,
@@ -2903,6 +2922,9 @@ class DispatchMixin(
                 work_unit,
                 mode=getattr(split_cfg, "mode", "warning"),
                 max_scope_files=int(getattr(split_cfg, "max_scope_files", 12) or 0),
+                max_acceptance_criteria=int(getattr(
+                    split_cfg, "max_acceptance_criteria", 0,
+                ) or 0),
                 require_validation_surface=bool(
                     getattr(split_cfg, "require_validation_surface", True)
                 ),
@@ -3960,6 +3982,9 @@ class DispatchMixin(
                 "trigger_event_id": trigger_event.id,
                 "failure_fingerprint": failure_fingerprint(trigger_event),
                 **recovery_series_from_event(trigger_event).to_payload(),
+                "task_map_generation": str(
+                    (trigger_event.payload or {}).get("task_map_generation") or ""
+                ),
                 "dispatch_id": dispatch_id,
                 "required_actions": required_actions,
                 "base_git_head": base_git_head,
@@ -4165,6 +4190,15 @@ class DispatchMixin(
                     "\n## Task Ref Repair Handoff Contract\n"
                     "This repair is complete only when the next `dev.build.done` "
                     "payload can be accepted by TaskRefManager in worktree mode.\n"
+                    "- Read the rejected completion named by `source_event_id` "
+                    "in Trigger Payload Evidence and use its `dev.build.done` "
+                    "payload as the base. Preserve its `fanout_id`, `stage_id`, "
+                    "`child_id`, `run_id`, operation/call-result identity, and "
+                    "contract snapshot fields when present.\n"
+                    "- The replacement payload requires a non-empty `summary`; "
+                    "also provide `residual_risks` and `next_agent_input`. Do not "
+                    "run the bare completion command below without `--payload` "
+                    "or `--payload-file`.\n"
                     "- Emit top-level `source_commit`, `source_branch`, `workdir`, "
                     "and `files_touched` fields for the current writer worktree.\n"
                     "- Keep `changed_files`, `files_touched`, and `artifact_refs` "
@@ -4174,6 +4208,11 @@ class DispatchMixin(
                     "or other non-file evidence URIs in `changed_files`, "
                     "`files_touched`, or `artifact_refs`; put those in "
                     "`evidence_refs` only.\n"
+                    "- `.claude/**` and `.codex/**` skill materialization is "
+                    "runtime-owned and filtered by TaskRefManager's workdir scan. "
+                    "Do not commit, delete, add git excludes for, or declare "
+                    "`worktree_dirty` because of those paths. Use the rejection's "
+                    "`dirty_files` list as the repair scope.\n"
                     "- Do not commit generated Codex hook state. If the only dirty "
                     "file is `.codex/hooks.json`, either clean it before emitting or "
                     "declare `worktree_dirty: true`, "

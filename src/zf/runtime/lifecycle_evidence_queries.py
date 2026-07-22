@@ -113,14 +113,21 @@ class LifecycleEvidenceQueriesMixin:
             return ""
         if events is None:
             events = self._fanout_lifecycle_events()
+        terminal_fanouts: set[str] = set()
         for event in reversed(events):
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if event.type in {"fanout.cancelled", "fanout.timed_out"}:
+                fanout_id = str(payload.get("fanout_id") or "")
+                if fanout_id:
+                    terminal_fanouts.add(fanout_id)
+                continue
             if event.type not in {
                 "fanout.child.dispatched",
                 "fanout.child.completed",
                 "fanout.child.failed",
+                "fanout.child.dispatch_lost",
             }:
                 continue
-            payload = event.payload if isinstance(event.payload, dict) else {}
             if str(payload.get("role_instance") or "").strip() != instance_id:
                 continue
             event_task_id = str(
@@ -128,7 +135,11 @@ class LifecycleEvidenceQueriesMixin:
             ).strip()
             if event_task_id != task_id:
                 continue
+            if event.type == "fanout.child.dispatch_lost":
+                return "terminal"
             if event.type == "fanout.child.dispatched":
+                if str(payload.get("fanout_id") or "") in terminal_fanouts:
+                    return "terminal"
                 return "active"
             return "terminal"
         return ""
@@ -196,6 +207,7 @@ class LifecycleEvidenceQueriesMixin:
             "fanout.child.dispatched",
             "fanout.child.completed",
             "fanout.child.failed",
+            "fanout.child.dispatch_lost",
             # fanout 级终局:cancelled 使全体 child 失效;timed_out 此前
             # 虽有处理分支但从未被扫描命中(标记过滤先行)——一并补上。
             "fanout.cancelled",
