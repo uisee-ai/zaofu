@@ -151,6 +151,11 @@ def reduce_workflow_operations(
             "request_ref": payload.get("request_ref") if isinstance(payload.get("request_ref"), dict) else {},
             "status": "requested",
             "task_id": event_task_id,
+            "role_instance": str(payload.get("role_instance") or ""),
+            "active_attempt_id": str(payload.get("active_attempt_id") or ""),
+            "dispatch_id": str(payload.get("dispatch_id") or ""),
+            "lease_id": str(payload.get("lease_id") or ""),
+            "provider_session_id": str(payload.get("provider_session_id") or ""),
             "child_task_ids": [],
             "admitted_call_result_ref": {},
             "source_event_ids": [],
@@ -178,6 +183,16 @@ def reduce_workflow_operations(
                 row["request_ref"] = dict(payload["request_ref"])
         elif event.type == "workflow.operation.started" and row["status"] not in TERMINAL_OPERATION_STATUSES:
             row["status"] = "running"
+            for key in (
+                "role_instance",
+                "active_attempt_id",
+                "dispatch_id",
+                "lease_id",
+                "provider_session_id",
+            ):
+                value = str(payload.get(key) or "")
+                if value:
+                    row[key] = value
         elif event.type == "workflow.operation.settled":
             row["status"] = "settled"
             result_ref = payload.get("admitted_call_result_ref")
@@ -225,6 +240,9 @@ class WorkflowOperationService:
         parent_stage_id: str = "",
         parent_attempt_id: str = "",
         task_id: str = "",
+        role_instance: str = "",
+        active_attempt_id: str = "",
+        lease_id: str = "",
         child_task_ids: list[str] | None = None,
         causation_id: str = "",
         correlation_id: str = "",
@@ -239,6 +257,9 @@ class WorkflowOperationService:
             "parent_stage_id": parent_stage_id,
             "parent_attempt_id": parent_attempt_id,
             "task_id": task_id,
+            "role_instance": role_instance,
+            "active_attempt_id": active_attempt_id,
+            "lease_id": lease_id,
             "child_task_ids": list(child_task_ids or []),
             "request": canonicalize_operation_request(request),
         }
@@ -306,6 +327,9 @@ class WorkflowOperationService:
                     "request_hash": request_hash,
                     "request_ref": request_descriptor,
                     "task_id": task_id,
+                    "role_instance": role_instance,
+                    "active_attempt_id": active_attempt_id,
+                    "lease_id": lease_id,
                     "child_task_ids": list(child_task_ids or []),
                 },
                 causation_id=causation_id or None,
@@ -326,6 +350,9 @@ class WorkflowOperationService:
         workflow_run_id: str,
         task_id: str = "",
         dispatch_id: str = "",
+        role_instance: str = "",
+        active_attempt_id: str = "",
+        lease_id: str = "",
         provider_session_id: str = "",
         causation_id: str = "",
         correlation_id: str = "",
@@ -338,6 +365,9 @@ class WorkflowOperationService:
             task_id=task_id,
             payload={
                 "dispatch_id": dispatch_id,
+                "role_instance": role_instance,
+                "active_attempt_id": active_attempt_id,
+                "lease_id": lease_id,
                 "provider_session_id": provider_session_id,
             },
             causation_id=causation_id,

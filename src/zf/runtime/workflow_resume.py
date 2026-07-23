@@ -206,6 +206,7 @@ def build_workflow_resume_checkpoints(
                 already_done = _action_already_done(
                     task=task,
                     events=task_events,
+                    all_events=event_list,
                     source_event=progress,
                     action="needs_gate_dispatch",
                     target_role="",
@@ -423,11 +424,33 @@ def build_workflow_batch_resume_checkpoints(
     aggregates: dict[str, WorkflowBatchResumeCheckpoint] = {}
     integrations: dict[str, WorkflowBatchResumeCheckpoint] = {}
     integration_fanout_ids: set[str] = set()
+    completion_rejections: dict[str, WorkflowBatchResumeCheckpoint] = {}
     escalated_integration_ids: set[str] = set()
     escalations: list[WorkflowBatchResumeCheckpoint] = []
 
     for event in event_list:
         payload = _payload(event)
+        if event.type == "run.goal.completion.rejected":
+            reasons = {
+                str(item) for item in payload.get("invalid_reasons") or []
+                if str(item).strip()
+            }
+            recoverable = {
+                "verification_evidence_missing",
+                "verification_target_mismatch",
+            }
+            from zf.runtime.goal_verification import GOAL_COMPLETION_REVERIFY_CAP
+
+            attempt = int(payload.get("completion_recovery_attempt") or 0)
+            if reasons and reasons <= recoverable and 0 < attempt <= GOAL_COMPLETION_REVERIFY_CAP:
+                completion_rejections[event.id] = _batch_checkpoint_from_event(
+                    event,
+                    source_event_type=event.type,
+                    safe_resume_action="reemit_candidate_ready",
+                    evidence_event_ids=[event.id],
+                    anchor=_anchor_for_event(event, anchors),
+                )
+            continue
         if event.type == "fanout.aggregate.completed":
             status = str(payload.get("status") or "completed")
             if status == "completed":
@@ -495,6 +518,7 @@ def build_workflow_batch_resume_checkpoints(
         escalations.append(_escalated_batch_checkpoint(event, base))
 
     out: list[WorkflowBatchResumeCheckpoint] = []
+    out.extend(completion_rejections.values())
     out.extend(escalations)
     out.extend(
         checkpoint for event_id, checkpoint in integrations.items()
@@ -864,9 +888,17 @@ def _batch_checkpoint_recovered(
 ) -> bool:
     if checkpoint.safe_resume_action == "resume_queued_children":
         return _queued_children_checkpoint_recovered(events, checkpoint)
+    if checkpoint.safe_resume_action == "reemit_candidate_ready":
+        return _candidate_reverify_checkpoint_recovered(events, checkpoint)
     recovered = False
     invalidated = False
+    source_seen = False
     for event in events:
+        if event.id == checkpoint.source_event_id:
+            source_seen = True
+            continue
+        if not source_seen:
+            continue
         payload = _payload(event)
         if (
             _payload_has_resume_marker(payload, checkpoint.checkpoint_id)
@@ -910,6 +942,32 @@ def _batch_checkpoint_recovered(
         if "writer fanout task_map has no tasks" in reason:
             invalidated = True
     return recovered and not invalidated
+
+
+def _candidate_reverify_checkpoint_recovered(
+    events: list[ZfEvent],
+    checkpoint: WorkflowBatchResumeCheckpoint,
+) -> bool:
+    """Require evidence from this recovery action, not legacy closeout."""
+
+    source_seen = False
+    for event in events:
+        if event.id == checkpoint.source_event_id:
+            source_seen = True
+            continue
+        if not source_seen:
+            continue
+        payload = _payload(event)
+        if not _payload_has_resume_marker(payload, checkpoint.checkpoint_id):
+            continue
+        if event.type in {
+            WORKFLOW_RESUME_APPLIED_EVENT,
+            "candidate.ready",
+            "test.passed",
+            "run.completed",
+        }:
+            return True
+    return False
 
 
 def _queued_children_checkpoint_recovered(

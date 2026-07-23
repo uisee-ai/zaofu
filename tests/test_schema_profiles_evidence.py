@@ -135,6 +135,56 @@ def test_v6_goal_closure_result_binds_current_target_and_claims() -> None:
     )
 
 
+def test_v7_run_goal_completed_requires_verification_and_delivery_identity() -> None:
+    canonical = resolve_schema_profile("canonical-dag/v7")
+    refactor = resolve_schema_profile("refactor-flow/v4")
+    assert canonical["run.goal.completed"] == refactor["run.goal.completed"]
+    registry = EventSchemaRegistry.from_dict(canonical)
+    payload = {
+        "run_id": "run-1",
+        "goal_id": "GOAL-1",
+        "claim_id": "claim-1",
+        "task_map_generation": "task-map-1",
+        "target_commit": "a" * 40,
+        "verified_target_commit": "a" * 40,
+        "verification_event_id": "verify-event-1",
+        "verification_admitted_call_result_ref": {
+            "ref": "artifacts/verify.json",
+            "sha256": "b" * 64,
+        },
+        "candidate_event_id": "candidate-event-1",
+        "candidate_ref": "candidate/GOAL-1",
+        "goal_claim_set_ref": "artifacts/claims.json",
+        "goal_claim_set_digest": "c" * 64,
+        "admitted_call_result_ref": {
+            "ref": "artifacts/closure.json",
+            "sha256": "d" * 64,
+        },
+        "delivery_policy": "report_only",
+        "delivery_status": "not_required",
+        "delivery_event_id": "",
+    }
+    assert registry.validate(ZfEvent(type="run.goal.completed", payload=payload)) == []
+
+    invalid = dict(payload)
+    invalid["verification_event_id"] = ""
+    violations = registry.validate(ZfEvent(type="run.goal.completed", payload=invalid))
+    assert any(
+        item.field_path == "payload.verification_event_id"
+        and item.code == "empty_required"
+        for item in violations
+    )
+
+    unsettled = dict(payload)
+    unsettled["delivery_status"] = "settled"
+    violations = registry.validate(ZfEvent(type="run.goal.completed", payload=unsettled))
+    assert any(
+        item.field_path == "payload.delivery_event_id"
+        and item.code == "empty_required"
+        for item in violations
+    )
+
+
 def test_v3_registry_rejects_empty_evidence_and_matrix():
     registry = EventSchemaRegistry.from_dict(
         resolve_schema_profile("canonical-dag/v3"),

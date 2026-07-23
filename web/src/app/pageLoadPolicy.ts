@@ -3,7 +3,13 @@ import type { PageId } from "./sharedTypes";
 export type SnapshotLoadKind = "none" | "light" | "full";
 
 export const BOARD_REFRESH_PAGES = new Set<PageId>(["board", "project", "task", "triage"]);
-export const MEASURE_REFRESH_PAGES = new Set<PageId>(["delivery", "delivery-trace", "delivery-graph", "behavior-loop"]);
+export const MEASURE_REFRESH_PAGES = new Set<PageId>([
+  "delivery",
+  "goal-coverage",
+  "delivery-trace",
+  "delivery-graph",
+  "behavior-loop",
+]);
 
 const OBSERVABILITY_SNAPSHOT_PAGES = new Set<PageId>([
   "observability",

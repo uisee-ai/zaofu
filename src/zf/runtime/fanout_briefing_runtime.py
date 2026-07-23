@@ -6,9 +6,16 @@ from pathlib import Path
 
 from zf.core.config.schema import RoleConfig
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.impl_self_check import (
+    descriptor_from_payload as self_check_descriptor_from_payload,
+    hydrate_impl_self_check,
+    reusable_command_receipts,
+)
 from zf.runtime.task_contract_snapshot import (
     descriptor_from_payload as contract_descriptor_from_payload,
+    hydrate_target_snapshot,
     hydrate_task_contract_snapshot,
+    target_descriptor_from_payload,
 )
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 
@@ -193,12 +200,45 @@ class FanoutBriefingMixin:
                 if value not in (None, ""):
                     success_payload[key] = value
             criteria = contract_snapshot.get("acceptance_criteria") or []
+            reusable_receipts: list[dict] = []
+            if str(child_payload.get("impl_self_check_ref") or "").strip():
+                target_snapshot = hydrate_target_snapshot(
+                    self.state_dir,
+                    target_descriptor_from_payload(child_payload),
+                    expected={"task_id": str(child_payload.get("task_id") or "")},
+                )
+                self_check = hydrate_impl_self_check(
+                    self.state_dir,
+                    self_check_descriptor_from_payload(child_payload),
+                    contract_snapshot=contract_snapshot,
+                    target_snapshot=target_snapshot,
+                    allow_prior_target=True,
+                )
+                reusable_receipts = reusable_command_receipts(
+                    self_check,
+                    contract_snapshot=contract_snapshot,
+                    target_snapshot=target_snapshot,
+                )
+                success_payload["impl_self_check_ref"] = str(
+                    child_payload.get("impl_self_check_ref") or ""
+                )
+                success_payload["impl_self_check_digest"] = str(
+                    child_payload.get("impl_self_check_digest") or ""
+                )
+                success_payload["reusable_impl_receipts"] = reusable_receipts
             success_payload["verification_result"] = {
                 "schema_version": "verification-result.v1",
                 "execution_status": "completed",
                 "verdict": "passed",
                 "verification_owner": "task_verify",
                 "verification_tier": "runtime",
+                "reused_command_receipt_ids": [
+                    str(item.get("receipt_id") or "")
+                    for item in reusable_receipts
+                    if str(item.get("receipt_id") or "")
+                ],
+                "probe_receipts": [],
+                "rework_items": [],
                 "requirement_results": [
                     {
                         "acceptance_id": str(item.get("acceptance_id") or ""),
@@ -240,6 +280,23 @@ class FanoutBriefingMixin:
             failure_payload["verification_result"] = {
                 **success_payload["verification_result"],
                 "verdict": "rejected",
+                "rework_items": [
+                    {
+                        "rework_item_id": "RW-<acceptance-id>-1",
+                        "status": "incomplete",
+                        "acceptance_id": str(item.get("acceptance_id") or ""),
+                        "expected": "The exact acceptance outcome.",
+                        "observed": "The exact observed gap on this target.",
+                        "required_delta": "The smallest required implementation delta.",
+                        "reproduction_command_ids": [],
+                        "allowed_scope": [],
+                        "done_when": "The acceptance probe passes on the repaired target.",
+                        "next_gate": "task_verify",
+                        "owner": "implementation_owner",
+                    }
+                    for item in contract_snapshot.get("acceptance_criteria") or []
+                    if isinstance(item, dict)
+                ],
                 "requirement_results": [
                     {
                         **item,
@@ -431,7 +488,10 @@ class FanoutBriefingMixin:
             child_payload = materialize_instruction_refs(
                 child_payload, project_root=self.project_root,
             )
-            controlled_inputs = render_attempt_source_briefing(child_payload).strip()
+            controlled_inputs = render_attempt_source_briefing(
+                child_payload,
+                state_dir=self.state_dir,
+            ).strip()
             if controlled_inputs:
                 payload_section.extend([*controlled_inputs.splitlines(), ""])
             instruction = str(
@@ -492,7 +552,11 @@ class FanoutBriefingMixin:
             from zf.runtime.goal_briefing import goal_briefing_section
 
             payload_section.extend(goal_briefing_section(
-                self.event_log.read_all(), config=self.config,
+                self.event_log.read_all(),
+                config=self.config,
+                role=role.instance_id,
+                stage=str(context.stage_id or ""),
+                output_profile=str(child_payload.get("output_profile_id") or ""),
             ))
         except Exception:
             pass
@@ -536,6 +600,16 @@ class FanoutBriefingMixin:
                 "For `verification_result.requirement_results[].status`, use only "
                 "`passed`, `failed`, `blocked`, `waived`, or `not_applicable`; "
                 "a `rejected` verdict requires at least one `failed` requirement."
+            )
+            result_guidance.append(
+                "Reuse only `reusable_impl_receipts` listed in this briefing. Record their "
+                "ids in `verification_result.reused_command_receipt_ids`; put every newly "
+                "run independent check in `probe_receipts`."
+            )
+            result_guidance.append(
+                "For a rejected or blocked verdict, replace the sample with exact "
+                "`rework_items`: classify missing/incomplete/incorrect/unverified/blocked "
+                "and state observed gap, required delta, scope, done_when, next gate, and owner."
             )
         if (
             success_event == "flow.discovery.completed"
@@ -742,8 +816,12 @@ class FanoutBriefingMixin:
             stage_id=str(context.stage_id or ""),
             event_type=str(child_success_event or ""),
         )
+        semantic_submit = (
+            str(child_payload.get("semantic_result_submit_mode") or "") == "blocking"
+            and bool(str(child_payload.get("operation_id") or "").strip())
+        )
         success_payload_file = ""
-        if is_goal_closure:
+        if is_goal_closure and not semantic_submit:
             from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 
             descriptor = write_immutable_json_sidecar(
@@ -758,8 +836,60 @@ class FanoutBriefingMixin:
             success_payload_file = str(
                 self.state_dir.expanduser().resolve() / descriptor["ref"]
             )
-        path.write_text(
-            "\n".join([
+        success_command = _emit_command(
+            child_success_event,
+            success_payload,
+            payload_file=success_payload_file,
+        )
+        output_contract_lines: list[str] = []
+        if semantic_submit:
+            from zf.runtime.call_result_adapters import ControlResultAdapterRegistry
+
+            profile_id = str(child_payload.get("output_profile_id") or "")
+            profile_revision = str(child_payload.get("output_profile_revision") or "")
+            profile = ControlResultAdapterRegistry().profile(
+                profile_id,
+                profile_revision,
+            )
+            semantic_body = success_payload.get(profile.semantic_field)
+            semantic_body = semantic_body if isinstance(semantic_body, dict) else {}
+            immutable_fields = {
+                "workflow_run_id", "operation_id", "request_hash", "task_id",
+                "fanout_id", "stage_id", "child_id", "run_id", "role_instance",
+                "attempt_id", "dispatch_id", "lease_id", "contract_revision",
+                "task_map_generation", "base_commit", "task_ref",
+                "contract_snapshot_ref", "contract_snapshot_digest",
+                "target_snapshot_ref", "target_commit", "target_snapshot_digest",
+                "goal_id", "flow_kind", "objective_ref", "goal_claim_set_ref",
+                "goal_claim_set_digest", "planning_result_ref", "candidate_ref",
+                "closure_fact_ref", "closure_fact_digest", "output_profile_id",
+                "output_profile_revision",
+            }
+            semantic_body = {
+                key: value for key, value in semantic_body.items()
+                if key not in immutable_fields
+            }
+            cli = " ".join(
+                shlex.quote(part) for part in shlex.split(zf_cli_cmd()) or ["zf"]
+            )
+            success_command = "\n".join([
+                f"cat <<'ZF_RESULT' | {cli} result submit \\",
+                f"  --operation {shlex.quote(str(child_payload['operation_id']))} \\",
+                f"  --state-dir {shlex.quote(str(self.state_dir))} --stdin",
+                json.dumps(semantic_body, ensure_ascii=False, indent=2),
+                "ZF_RESULT",
+            ])
+            output_contract_lines = [
+                "## Output Contract",
+                "",
+                f"- profile: `{profile_id}` revision `{profile_revision}`",
+                f"- schema: `{profile.schema_version}`",
+                "- Submit only the stage semantic result below. The Kernel supplies "
+                "operation/run/task/attempt/dispatch identity and selects the canonical event.",
+                "- The transport provides submit authorization; do not print or inspect its credential.",
+                "",
+            ]
+        briefing_text = "\n".join([
                 f"# Fanout Reader Child: {child_id}",
                 "",
                 f"- fanout_id: `{context.fanout_id}`",
@@ -814,15 +944,12 @@ class FanoutBriefingMixin:
                 *self._skill_briefing_section(role, skill_entries),
                 *workflow_input_lines,
                 *payload_section,
+                *output_contract_lines,
                 "Use the runtime state dir explicitly because this role may run from a detached workdir.",
                 "",
                 "Success command:",
                 "```bash",
-                _emit_command(
-                    child_success_event,
-                    success_payload,
-                    payload_file=success_payload_file,
-                ),
+                success_command,
                 "```",
                 "",
                 "Failure command:",
@@ -842,16 +969,22 @@ class FanoutBriefingMixin:
                 "(r10 forensics: one lane re-emitting every ~7s produced 4.5k junk rows).",
                 "After emitting once, stop and wait for new instructions.",
                 "",
-                "When finished, emit exactly one result event with this payload:",
-                "```json",
-                json.dumps(success_payload, indent=2),
-                "```",
                 f"Child success event: `{child_success_event}`",
                 f"Child failure event: `{child_failure_event}`",
                 f"Aggregate success event: `{success_event}`",
                 f"Aggregate failure event: `{failure_event}`",
                 "",
-            ]),
-            encoding="utf-8",
+            ])
+        from zf.runtime.briefing_metrics import write_briefing_with_metrics
+
+        write_briefing_with_metrics(
+            path,
+            briefing_text,
+            state_dir=self.state_dir,
+            stage=str(context.stage_id or ""),
+            role=role.instance_id,
+            payload=child_payload,
+            indexed_skills=list(role.skills),
+            auto_injected_skills=list(skill_entries or []),
         )
         return path

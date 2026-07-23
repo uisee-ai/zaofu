@@ -31,6 +31,8 @@ from zf.runtime.loop_projection import (
 from zf.runtime.run_chain import build_run_chain
 from zf.runtime.workflow_run import build_workflow_run
 
+_DELIVERY_TRACE_CACHE_VERSION = "v2"
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -43,7 +45,10 @@ def build_delivery_trace_router(*, resolve_ctx: Callable[[str], Any]) -> APIRout
 
     def _trace(project_id: str, feature_id: str, *, since_event_id: str = "") -> dict[str, Any]:
         ctx = resolve_ctx(project_id)
-        cache_key = f"delivery-trace:{project_id}:{feature_id}:{since_event_id or '-'}"
+        cache_key = (
+            f"delivery-trace:{_DELIVERY_TRACE_CACHE_VERSION}:"
+            f"{project_id}:{feature_id}:{since_event_id or '-'}"
+        )
         source_seq = 0
         try:
             from zf.web.projections import read_model

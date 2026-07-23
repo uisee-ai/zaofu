@@ -575,7 +575,8 @@ def test_config_inspect_classifies_refactor_flow_expected_event_sinks(capsys):
         if item["kind"] == "expected_event_without_consumer"
     ]
     assert expected
-    assert any(item["event"] == "candidate.ready" for item in expected)
+    assert not any(item["event"] == "candidate.ready" for item in expected)
+    assert any(item["event"] == "test.failed" for item in expected)
     assert all(item["severity"] == "INFO" for item in expected)
     matrix = report["coverage"]["skill_matrix"]
     assert set(matrix) == {"core", "cli", "api", "web", "runtime"}

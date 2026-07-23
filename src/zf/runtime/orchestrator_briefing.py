@@ -30,6 +30,7 @@ from zf.core.feature.store import FeatureStore
 from zf.core.memory.store import MemoryStore
 from zf.core.metrics.collector import MetricsCollector, MetricsSnapshot
 from zf.core.task.store import TaskStore
+from zf.runtime.cli_command import zf_cli_cmd
 from zf.runtime.fast_path import render_fast_path_policy
 
 
@@ -41,6 +42,7 @@ def build_orchestrator_briefing(
     recent_events_limit: int = 30,
     also_triggered: list[str] | tuple[str, ...] = (),
 ) -> str:
+    cli = zf_cli_cmd()
     sections: list[str] = []
     sections.append(f"# Orchestrator wake — {trigger_event.ts}")
     sections.append("")
@@ -127,10 +129,10 @@ def build_orchestrator_briefing(
     sections.append("## What to do")
     sections.append("Based on the state above, decide ONE thing:")
     sections.extend(_render_user_message_intake_rules(config))
-    sections.append("  Create features with `feature_id=$(zf feature add \"Feature title\" --id-only)`")
-    sections.append("  or `zf feature add \"Feature title\" --json`; do not parse human-readable output.")
-    sections.append("  Create linked tasks with `task_id=$(zf kanban add \"$feature_id\" \"Task title\" --id-only)`")
-    sections.append("  or `task_id=$(zf kanban add \"Task title\" --feature \"$feature_id\" --id-only)`; do not parse human-readable output.")
+    sections.append(f"  Create features with `feature_id=$({cli} feature add \"Feature title\" --id-only)`")
+    sections.append(f"  or `{cli} feature add \"Feature title\" --json`; do not parse human-readable output.")
+    sections.append(f"  Create linked tasks with `task_id=$({cli} kanban add \"$feature_id\" \"Task title\" --id-only)`")
+    sections.append(f"  or `task_id=$({cli} kanban add \"Task title\" --feature \"$feature_id\" --id-only)`; do not parse human-readable output.")
     initial_guidance = _render_initial_dispatch_guidance(config)
     if initial_guidance:
         sections.append(f"  {initial_guidance}")
@@ -149,7 +151,10 @@ def build_orchestrator_briefing(
     sections.append("  `task.contract.update` to reduce scope, `task.cancel` on retry exhaustion, or")
     sections.append("  `worker.respawn.requested` when the worker is offline. See skill")
     sections.append("  `zf-yoke-orchestrator-role-context` for the routing table. Do NOT wait for a human steer.")
-    sections.append("- If state is consistent and nothing actionable: emit `orchestrator.idle` and exit")
+    sections.append(
+        f"- If state is consistent and nothing actionable: run "
+        f"`{cli} emit orchestrator.idle` and exit"
+    )
     sections.append("")
     sections.append("Make ONE round of decisions via tool calls, then exit.")
     sections.append("Do NOT keep working in a loop — Layer 1 will call you again on the next event.")
@@ -194,9 +199,9 @@ def build_orchestrator_briefing(
     sections.append("")
     sections.append("```bash")
     sections.append('state_tmp="${ZF_STATE_DIR:-.zf}/tmp"')
-    sections.append("task_id=$(zf kanban add \"$feature_id\" \"Task title\" --id-only)")
-    sections.append('zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
-    sections.append("zf kanban assign \"$task_id\" <role-name>   # 传 role.name (例如 dev / arch / review), 不要传 instance_id")
+    sections.append(f"task_id=$({cli} kanban add \"$feature_id\" \"Task title\" --id-only)")
+    sections.append(f'{cli} emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
+    sections.append(f"{cli} kanban assign \"$task_id\" <role-name>   # 传 role.name (例如 dev / arch / review), 不要传 instance_id")
     sections.append("```")
     sections.append("")
     sections.append("复杂 JSON payload 必须用 Python 标准库生成到文件,再用 `--payload-file`; 不要依赖 `jq`、Node 或其他可能未安装的外部工具。")
@@ -214,7 +219,7 @@ def build_orchestrator_briefing(
     sections.append("state_tmp.mkdir(parents=True, exist_ok=True)")
     sections.append("(state_tmp / 'contract.json').write_text(json.dumps(payload, ensure_ascii=False), encoding='utf-8')")
     sections.append("PY")
-    sections.append('zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
+    sections.append(f'{cli} emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"')
     sections.append("```")
     sections.append("")
     sections.append("strict contract 必填字段:")
@@ -242,7 +247,9 @@ def build_orchestrator_briefing(
     sections.append("2. 自动把任务状态推进到 `in_progress`")
     sections.append("3. 把 task briefing send-keys 到对应 worker 的 tmux pane")
     sections.append("")
-    sections.append("**绝对不要自己**运行 `zf kanban move TASK-XXX in_progress` —")
+    sections.append(
+        f"**绝对不要自己**运行 `{cli} kanban move TASK-XXX in_progress` —"
+    )
     sections.append("这会让任务跳过 Layer 1 的派发队列 (`task_store.ready()` 只看 backlog),")
     sections.append("worker 永远收不到 briefing, 系统陷入静默死锁。")
     sections.append("")
@@ -269,7 +276,10 @@ def build_orchestrator_briefing(
     sections.append("**硬规则**:")
     sections.append("- 每个事件只能触发本表列出的下一站, 不要自己 move 状态跳过阶段")
     sections.append("- 失败事件 (review.rejected/verify.failed/test.failed/judge.failed) 必须显式 rework:")
-    sections.append("  `zf kanban assign <task-id> <rework-role>` (`<rework-role>` 从 task.contract.rework_to / workflow.rework_routing / zf.yaml 推导)")
+    sections.append(
+        f"  `{cli} kanban assign <task-id> <rework-role>` (`<rework-role>` 从 "
+        "task.contract.rework_to / workflow.rework_routing / zf.yaml 推导)"
+    )
     sections.append("- 不要为 rework 构造复杂 JSON payload; rework 的最小正确动作就是 assign 回目标 role")
     sections.append(f"- {terminal_rule}")
     sections.append("- 不要手动 close feature; feature completion 由 Layer 1 在所有 task done 后投影。")
@@ -279,16 +289,18 @@ def build_orchestrator_briefing(
     sections.append("做完本轮所有决策后,**必须**运行:")
     sections.append("")
     sections.append("```bash")
-    sections.append("zf emit orchestrator.round.complete")
+    sections.append(f"{cli} emit orchestrator.round.complete")
     sections.append("```")
     sections.append("")
     sections.append("这是 Layer 1 kernel 知道你这一轮结束的唯一信号。没发出这个事件,")
     sections.append("kernel 会认为你还在思考 — 下一个 trigger 事件到来时不会再唤醒你。")
     sections.append("")
-    sections.append("如果中途遇到不可恢复错误(如 `zf kanban add` 报错、权限不足),emit:")
+    sections.append(
+        f"如果中途遇到不可恢复错误(如 `{cli} kanban add` 报错、权限不足),emit:"
+    )
     sections.append("")
     sections.append("```bash")
-    sections.append("zf emit orchestrator.dispatch_failed --payload '{\"reason\": \"<描述>\"}'")
+    sections.append(f"{cli} emit orchestrator.dispatch_failed --payload '{{\"reason\": \"<描述>\"}}'")
     sections.append("```")
     sections.append("")
     sections.append("然后同样再 emit `orchestrator.round.complete` 结束本轮。")
@@ -378,6 +390,7 @@ def _render_design_approved_rules(config: ZfConfig) -> list[str]:
 
 
 def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
+    cli = zf_cli_cmd()
     target = _primary_implementation_role(config)
     if not target:
         return [
@@ -387,15 +400,15 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
             "# 1) 确认 critic 已 approve 的 candidate plan/backlog artifact 已落盘并带 frontmatter",
             "#    如需合并/规范化,先写入 orchestrator-final artifact,再 validate。",
             "plan_path=\"docs/plans/<approved-or-final-plan-artifact>.md\"",
-            "zf spec validate --strict \"$plan_path\"",
-            "zf spec ingest --dry-run \"$plan_path\"",
+            f"{cli} spec validate --strict \"$plan_path\"",
+            f"{cli} spec ingest --dry-run \"$plan_path\"",
             "",
             "# 2) 如需登记 artifact refs,用事件记录 refs,但不要派发实现角色",
             'state_tmp="${ZF_STATE_DIR:-.zf}/tmp"',
-            'zf emit task.artifact_refs.updated --task "$task_id" --payload-file "$state_tmp/artifact-refs.json"',
+            f'{cli} emit task.artifact_refs.updated --task "$task_id" --payload-file "$state_tmp/artifact-refs.json"',
             "",
             "# 3) 本轮决策结束; 不要 assign dev/review/test/judge",
-            "zf emit orchestrator.round.complete",
+            f"{cli} emit orchestrator.round.complete",
             "```",
         ]
 
@@ -432,8 +445,8 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
         "state_tmp.mkdir(parents=True, exist_ok=True)",
         "(state_tmp / 'contract.json').write_text(json.dumps(contract, ensure_ascii=False), encoding='utf-8')",
         "PY",
-        'zf emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"',
-        f"zf kanban assign \"$task_id\" {target}",
+        f'{cli} emit task.contract.update --task "$task_id" --payload-file "$state_tmp/contract.json"',
+        f"{cli} kanban assign \"$task_id\" {target}",
         "```",
         "",
         f"**可选 fanout** (scope 大可拆 N 个并发 `{target}` task,避同包 package.json 撞车):",
@@ -441,10 +454,10 @@ def _render_backlog_synthesis_commands(config: ZfConfig) -> list[str]:
         "```bash",
         'state_tmp="${ZF_STATE_DIR:-.zf}/tmp"',
         "# scope 按包/文件切分:",
-        "sub_task=$(zf kanban add \"$feature_id\" \"Subtask: file_A\" --id-only)",
+        f"sub_task=$({cli} kanban add \"$feature_id\" \"Subtask: file_A\" --id-only)",
         "# 给每个 sub_task 写自己子集的 contract (scope 不重叠,共享 6 refs)",
-        'zf emit task.contract.update --task "$sub_task" --payload-file "$state_tmp/contract-sub.json"',
-        f"zf kanban assign \"$sub_task\" {target}",
+        f'{cli} emit task.contract.update --task "$sub_task" --payload-file "$state_tmp/contract-sub.json"',
+        f"{cli} kanban assign \"$sub_task\" {target}",
         "```",
     ]
 
@@ -483,6 +496,7 @@ def _render_user_message_intake_rules(config: ZfConfig) -> list[str]:
 
 def _render_initial_dispatch_guidance(config: ZfConfig) -> str:
     """Tell Layer 2 which role should receive a fresh user-message task."""
+    cli = zf_cli_cmd()
     has_arch_intake = any(
         role.name == "arch" and "task.assigned" in role.triggers
         for role in config.roles
@@ -500,7 +514,7 @@ def _render_initial_dispatch_guidance(config: ZfConfig) -> str:
         )
         return (
             "本拓扑启用了 arch/critic 设计门: user.message 创建 task 后先 "
-            "`zf kanban assign \"$task_id\" arch`,不要绕过设计门直接派发下游角色; "
+            f"`{cli} kanban assign \"$task_id\" arch`,不要绕过设计门直接派发下游角色; "
             "contract.owner_role 填初始 owner `arch`,但 contract.behavior / "
             "verification / scope 必须描述最终实现交付,不是 arch 阶段活动; "
             "设计通过 `design.critique.done` 后由 orchestrator 进入 backlog 阶段, "
@@ -509,12 +523,12 @@ def _render_initial_dispatch_guidance(config: ZfConfig) -> str:
     if has_arch_intake:
         return (
             "本拓扑启用了 arch intake: user.message 创建 task 后先 "
-            "`zf kanban assign \"$task_id\" arch`,不要绕过 intake 直接派发下游角色。"
+            f"`{cli} kanban assign \"$task_id\" arch`,不要绕过 intake 直接派发下游角色。"
         )
     initial_role = _initial_intake_role(config)
     return (
         f"本拓扑没有 arch intake: user.message 创建 task 后直接写最终交付 contract,再 "
-        f"`zf kanban assign \"$task_id\" {initial_role}`; 不要 assign arch,也不要等待不存在的 "
+        f"`{cli} kanban assign \"$task_id\" {initial_role}`; 不要 assign arch,也不要等待不存在的 "
         "arch/critic 事件。"
     )
 
@@ -576,7 +590,7 @@ def _render_rework_triage_contract(event: ZfEvent) -> str:
         "`diagnose`, or `human`.",
         "Then emit exactly one advisory event with concise evidence-based guidance:",
         "```bash",
-        "zf emit orchestrator.rework.triage.recorded "
+        f"{zf_cli_cmd()} emit orchestrator.rework.triage.recorded "
         f"--task {json.dumps(task_id)} --actor orchestrator --payload "
         f"{json.dumps(json.dumps(advice, ensure_ascii=False))}",
         "```",
@@ -632,7 +646,10 @@ def _render_worker_roster(config: ZfConfig) -> str:
             for instance_id, backend in instances:
                 lines.append(f"  - `{instance_id}` — backend=`{backend}`")
     lines.append("")
-    lines.append(f"**派发时传 role.name 就好** (如 `zf kanban assign TASK-XXX {example_role}`),")
+    lines.append(
+        f"**派发时传 role.name 就好** (如 `{zf_cli_cmd()} kanban assign "
+        f"TASK-XXX {example_role}`),"
+    )
     lines.append("Layer 1 会自动在 replicas 里挑 WIP 可用的实例. 只有需要强制路由")
     lines.append("到特定 backend (例如混合池里 claude vs codex 的 A/B 对比) 时才传")
     lines.append("具体 instance_id.")
@@ -663,7 +680,7 @@ def _render_terminal_rule(config: ZfConfig) -> str:
         if candidate in all_publishes:
             return (
                 f"`{candidate}` 是 terminal claim;不要手动 "
-                "`zf kanban move <task-id> done`,Layer 1 会在 "
+                f"`{zf_cli_cmd()} kanban move <task-id> done`,Layer 1 会在 "
                 "discriminator/evidence 通过后机械关闭任务。"
             )
 
@@ -672,7 +689,7 @@ def _render_terminal_rule(config: ZfConfig) -> str:
         if event.endswith((".passed", ".approved")):
             return (
                 f"`{event}` 是 terminal claim;不要手动 "
-                "`zf kanban move <task-id> done`,Layer 1 会在 "
+                f"`{zf_cli_cmd()} kanban move <task-id> done`,Layer 1 会在 "
                 "discriminator/evidence 通过后机械关闭任务。"
             )
 

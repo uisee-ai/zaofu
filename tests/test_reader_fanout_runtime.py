@@ -1543,7 +1543,6 @@ def test_verification_briefing_nests_binding_identity_in_typed_result(
         "target_snapshot_digest",
     ):
         assert result[key] == payload[key]
-
     failure_command = briefing.split(
         "Failure command:\n```bash\n", 1,
     )[1].split("\n```", 1)[0]
@@ -1560,6 +1559,50 @@ def test_verification_briefing_nests_binding_identity_in_typed_result(
         "`not_applicable`"
     ) in briefing
 
+
+def test_semantic_submit_briefing_exposes_profile_not_capability(
+    tmp_path: Path,
+) -> None:
+    _state_dir, _log, _transport, orch = _state(tmp_path)
+    context = FanoutContext(
+        fanout_id="fanout-semantic",
+        stage_id="verify-selected",
+        topology="fanout_reader",
+        trace_id="run-semantic",
+        trigger_event_id="evt-semantic",
+        target_ref="candidate/T1",
+    )
+    path = orch._write_fanout_briefing(  # type: ignore[attr-defined]
+        role=RoleConfig(
+            name="review-a",
+            backend="codex",
+            role_kind="reader",
+        ),
+        context=context,
+        child_id="review-a-T1",
+        run_id="attempt-1",
+        aggregate=FanoutAggregateConfig(
+            mode="wait_for_all",
+            child_success_event="verify.child.completed",
+            child_failure_event="verify.child.failed",
+            success_event="verify.approved",
+            failure_event="verify.rejected",
+        ),
+        child_payload={
+            "operation_id": "wop-verify-1",
+            "output_profile_id": "task-verify",
+            "output_profile_revision": "1",
+            "semantic_result_submit_mode": "blocking",
+        },
+    )
+
+    briefing = path.read_text(encoding="utf-8")
+    assert "result submit" in briefing
+    assert "--operation wop-verify-1" in briefing
+    assert "profile: `task-verify` revision `1`" in briefing
+    assert "ZF_RESULT_SUBMIT_TOKEN" not in briefing
+    assert "When finished, emit exactly one result event with this payload" not in briefing
+    assert path.with_suffix(".md.metrics.json").exists()
 
 def test_goal_closure_success_uses_immutable_payload_file(
     tmp_path: Path,

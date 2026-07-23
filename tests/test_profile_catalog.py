@@ -11,8 +11,16 @@ def test_controller_examples_are_catalog_entries():
     assert "issue-fanout-v3-codex" in ids
     assert "prd-fanout-v3-codex" in ids
     assert "refactor-lane-v3-codex" in ids
-    assert entries["issue-fanout-v3-codex"]["roles"] == 6
-    assert entries["issue-fanout-v3-claude"]["roles"] == 6
+    expected_roles = {
+        "issue-fanout-v3-codex": 7,
+        "issue-fanout-v3-claude": 7,
+        "prd-fanout-v3-codex": 11,
+        "prd-fanout-v3-claude": 11,
+        "refactor-lane-v3-codex": 13,
+        "refactor-lane-v3-claude": 13,
+    }
+    for flow_id, role_count in expected_roles.items():
+        assert entries[flow_id]["roles"] == role_count
 
 
 def test_prod_new_lkg_examples_are_not_catalog_entries():

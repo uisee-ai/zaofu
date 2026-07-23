@@ -1563,6 +1563,7 @@ def apply_flow_submit(
         )
     # G0(133):goal 铸造——submit accepted 即 kernel 发 run.goal.started
     # (投影 build_run_goal_projection 已在等这个事件;灰度 goal.enabled)。
+    goal_started: ZfEvent | None = None
     if bool(getattr(getattr(config, "goal", None), "enabled", False)):
         objective = str(
             payload.get("objective")
@@ -1589,11 +1590,9 @@ def apply_flow_submit(
             },
         ))
         event_ids.append(goal_started.id)
-    # LB-2: light topology is driven by the `prd.requested` entry trigger →
-    # kernel task_map synthesizer, not by the bootstrap invoke. Emitting the
-    # invoke here direct-dispatches the whole-objective task to the judge role
-    # (light has no impl/review path for it), creating a zombie the operator
-    # must cancel by hand. Skip it; the operator emits `prd.requested` to start.
+    # LB-2: light topology is driven by its entry trigger and kernel task-map
+    # synthesis, not by the bootstrap invoke. Submit and entry share one
+    # transaction so their run/correlation identity cannot diverge.
     from zf.runtime.light_flow import light_flow_metadata
     light_metadata = light_flow_metadata(
         config,
@@ -1601,17 +1600,58 @@ def apply_flow_submit(
     )
     if light_metadata is not None:
         entry_trigger = str(light_metadata.get("light_entry_trigger") or "prd.requested")
+        source_refs = (
+            dict(payload.get("source_refs") or {})
+            if isinstance(payload.get("source_refs"), dict)
+            else {}
+        )
+        source_ref = str(source_refs.get("source_ref") or "")
+        kind = str(payload.get("kind") or "prd")
+        entry_payload = {
+            **payload,
+            "pdd_id": correlation_id,
+            "feature_id": correlation_id,
+            "workflow_run_id": correlation_id,
+            "trace_id": correlation_id,
+            "flow_kind": kind,
+            "objective_ref": source_ref,
+            "target_root": str(source_refs.get("target_root") or ""),
+            "source": "workflow-submit-light",
+        }
+        if kind == "issue":
+            entry_payload["issue_ref"] = source_ref
+        else:
+            entry_payload["prd_ref"] = source_ref
+        entry = writer.append(ZfEvent(
+            type=entry_trigger,
+            actor=str(payload.get("requested_by") or "zf-cli"),
+            task_id=task,
+            causation_id=(goal_started.id if goal_started is not None else accepted.id),
+            correlation_id=correlation_id,
+            payload=entry_payload,
+        ))
+        event_ids.append(entry.id)
+        if correlation_id:
+            from zf.runtime.workflow_requests import mark_workflow_request
+
+            mark_workflow_request(
+                state_dir,
+                correlation_id,
+                status="running",
+                actor=str(payload.get("requested_by") or "zf-cli"),
+                writer=writer,
+                run_id=str(payload.get("run_id") or correlation_id),
+                event_type="workflow.request.running",
+            )
         return {
             **preview,
             "schema_version": "workflow.submit.apply.v1",
             "dry_run": False,
             "status": "accepted",
             "event_type": "workflow.submit.accepted",
-            "workflow_invoke_status": "skipped_light",
-            "next_action": (
-                f"light topology: emit `{entry_trigger}` to start the flow "
-                "(kernel synthesizes task_map)"
-            ),
+            "workflow_invoke_status": "light_entry_requested",
+            "workflow_entry_event_id": entry.id,
+            "next_action": "light topology entry accepted; monitor the running request",
             "event_ids": event_ids,
             "state_dir": str(state_dir),
         }
@@ -1665,28 +1705,38 @@ def _submitted_request_replay_result(
     """Return an idempotent submit result without emitting a second Run."""
 
     request_id = str(projection.get("request_id") or "")
-    related = [
-        event for event in events
-        if str(event.correlation_id or "") == request_id
-        and event.type in {"workflow.submit.accepted", "workflow.invoke.requested"}
-    ]
-    invoked = next(
-        (event for event in reversed(related) if event.type == "workflow.invoke.requested"),
-        None,
-    )
     from zf.runtime.light_flow import light_flow_metadata
 
     light_metadata = light_flow_metadata(
         config,
         flow_kind=str(projection.get("kind") or ""),
     )
+    entry_trigger = (
+        str(light_metadata.get("light_entry_trigger") or "prd.requested")
+        if light_metadata is not None else ""
+    )
+    related_types = {"workflow.submit.accepted", "workflow.invoke.requested"}
+    if entry_trigger:
+        related_types.add(entry_trigger)
+    related = [
+        event for event in events
+        if str(event.correlation_id or "") == request_id
+        and event.type in related_types
+    ]
+    invoked = next(
+        (event for event in reversed(related) if event.type == "workflow.invoke.requested"),
+        None,
+    )
+    light_entry = next(
+        (event for event in reversed(related) if event.type == entry_trigger),
+        None,
+    )
     if invoked is not None:
         invoke_status = "already_requested"
         next_action = "workflow request is already running"
-    elif light_metadata is not None:
-        entry_trigger = str(light_metadata.get("light_entry_trigger") or "prd.requested")
-        invoke_status = "skipped_light"
-        next_action = f"light topology: emit `{entry_trigger}` to start the flow"
+    elif light_entry is not None:
+        invoke_status = "already_requested"
+        next_action = "light topology entry is already running"
     else:
         invoke_status = "already_submitted"
         next_action = "inspect/resume the submitted request; duplicate ignition was suppressed"
@@ -1703,6 +1753,7 @@ def _submitted_request_replay_result(
         "request": projection,
         "idempotent_replay": True,
         "workflow_invoke_event_id": str(invoked.id if invoked is not None else ""),
+        "workflow_entry_event_id": str(light_entry.id if light_entry is not None else ""),
         "workflow_invoke_status": invoke_status,
         "next_action": next_action,
         "event_ids": [event.id for event in related],

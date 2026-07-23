@@ -77,6 +77,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Skip workflow graph/skill preflight inspection",
     )
+    parser.add_argument(
+        "--simulation",
+        action="store_true",
+        help="Auto-stop an isolated /tmp/zf-* run after its run terminal",
+    )
     parser.set_defaults(func=run)
 
 
@@ -564,6 +569,7 @@ def run(args: argparse.Namespace) -> int:
         set_default_zf_cli_cmd()
     no_watch = getattr(args, "no_watch", False)
     skip_workflow_inspect = getattr(args, "skip_workflow_inspect", False)
+    simulation = getattr(args, "simulation", False)
     legacy_foreground = getattr(args, "foreground", False)
     if legacy_foreground:
         print(
@@ -626,6 +632,13 @@ def run(args: argparse.Namespace) -> int:
 
     # 3. Check .zf/ initialized
     state_dir = project_root / config.project.state_dir
+    if simulation:
+        from zf.runtime.simulation_lifecycle import validate_simulation_scope
+
+        simulation_scope_error = validate_simulation_scope(project_root, state_dir)
+        if simulation_scope_error:
+            print(f"Error: {simulation_scope_error}", file=sys.stderr)
+            return 1
     if not state_dir.exists():
         print(f"Error: {state_dir} not found. To fix: run 'zf init'", file=sys.stderr)
         return 1
@@ -755,6 +768,7 @@ def run(args: argparse.Namespace) -> int:
         return 1
 
     event_log = None
+    transport = None
     feishu_inbound_sidecar = None
     autoresearch_resident_sidecar = None
     try:
@@ -1123,6 +1137,18 @@ def run(args: argparse.Namespace) -> int:
                 event = ZfEvent.from_json(line)
             except Exception:
                 return
+            if simulation:
+                from zf.core.events.writer import EventWriter
+                from zf.runtime.simulation_lifecycle import emit_simulation_done
+
+                done = emit_simulation_done(
+                    event,
+                    events=event_log.read_all(),
+                    writer=EventWriter(event_log, default_origin="kernel"),
+                )
+                if done is not None:
+                    watcher.stop()
+                    return
             if not any(p == event.type for p in wake_patterns):
                 return
             # avbs-r4 F3: 高频观察型 hook 不逐条唤醒(no-op handler /
@@ -1279,6 +1305,13 @@ def run(args: argparse.Namespace) -> int:
             # Release lock when not blocking
             watcher_guard.release()
             _release_lock(lock_fh, lock_path)
+        elif simulation:
+            try:
+                if transport is not None:
+                    transport.shutdown()
+            finally:
+                watcher_guard.release()
+                _release_lock(lock_fh, lock_path)
         # If foreground, lock released on exit/Ctrl+C via finally
 
     return 0

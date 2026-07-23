@@ -463,20 +463,15 @@ class TestCodexFirstSpawn:
         coordinator.spawn(role)
 
         _, argv, _ = transport.spawn_calls[0]
-        assert "--dangerously-bypass-approvals-and-sandbox" not in argv
-        assert "-a" in argv
-        assert argv[argv.index("-a") + 1] == "untrusted"
-        assert "-s" in argv
-        assert argv[argv.index("-s") + 1] == "read-only"
+        assert "--dangerously-bypass-approvals-and-sandbox" in argv
+        assert "untrusted" not in argv
+        assert "read-only" not in argv
         assert "--add-dir" not in argv
         applied = [
             event for event in log.read_all()
             if event.type == "worker.policy.applied"
-        ][0]
-        assert applied.payload["policy_id"] == "pure_aggregator.v1"
-        assert applied.payload["changes"]["permission_mode"]["to"] == "restricted"
-        assert applied.payload["changes"]["allowed_tools"]["to"] == []
-        assert applied.payload["changes"]["constraints.allowed_paths"]["to"] == []
+        ]
+        assert applied == []
 
 
 class TestCodexRespawnWithCachedUuid:

@@ -29,6 +29,7 @@ def normalize_verification_result(
     default_owner: str = "task_verify",
     default_tier: str = "runtime",
     strict: bool = True,
+    require_rework_items: bool = False,
 ) -> dict[str, Any]:
     """Normalize v1 output or adapt a legacy fanout child report.
 
@@ -73,6 +74,11 @@ def normalize_verification_result(
         payload.get("reproduction_commands") or payload.get("verification_commands")
     ))
     result.setdefault("failure_class", _default_failure_class(result))
+    result["reused_command_receipt_ids"] = _string_list(
+        result.get("reused_command_receipt_ids")
+    )
+    result["probe_receipts"] = _list(result.get("probe_receipts"))
+    result["rework_items"] = _normalize_rework_items(result.get("rework_items"))
     result["requirement_results"] = _normalize_requirement_results(
         result.get("requirement_results"),
         contract_snapshot=contract_snapshot,
@@ -81,7 +87,11 @@ def normalize_verification_result(
     )
     _aggregate_requirement_evidence(result)
     _validate_requirement_coverage(result, contract_snapshot)
-    validate_verification_result(result, strict=strict)
+    validate_verification_result(
+        result,
+        strict=strict,
+        require_rework_items=require_rework_items,
+    )
     return result
 
 
@@ -89,6 +99,7 @@ def validate_verification_result(
     result: Mapping[str, Any],
     *,
     strict: bool = True,
+    require_rework_items: bool = False,
 ) -> None:
     if str(result.get("schema_version") or "") != SCHEMA_VERSION:
         raise VerificationResultError("unsupported verification result schema")
@@ -162,6 +173,11 @@ def validate_verification_result(
         raise VerificationResultError("rejected verdict requires a failed requirement")
     if verdict == "blocked" and "blocked" not in statuses:
         raise VerificationResultError("blocked verdict requires a blocked requirement")
+    if require_rework_items and verdict in {"rejected", "blocked"}:
+        if not result.get("rework_items"):
+            raise VerificationResultError(
+                f"{verdict} verdict requires structured rework_items"
+            )
 
 
 def recovery_owner(result: Mapping[str, Any]) -> str:
@@ -309,6 +325,39 @@ def _normalize_requirement_results(
                 record.get("reproduction_commands") or record.get("commands")
             ),
         })
+    return out
+
+
+def _normalize_rework_items(raw: Any) -> list[dict[str, Any]]:
+    source = raw if isinstance(raw, list) else []
+    out: list[dict[str, Any]] = []
+    for index, item in enumerate(source):
+        if not isinstance(item, Mapping):
+            raise VerificationResultError(f"rework_items[{index}] must be an object")
+        record = dict(item)
+        status = str(record.get("status") or "").strip()
+        if status not in {"missing", "incomplete", "incorrect", "unverified", "blocked"}:
+            raise VerificationResultError(f"rework_items[{index}] has invalid status")
+        required = (
+            "rework_item_id",
+            "acceptance_id",
+            "expected",
+            "observed",
+            "required_delta",
+            "done_when",
+            "next_gate",
+            "owner",
+        )
+        missing = [key for key in required if not str(record.get(key) or "").strip()]
+        if missing:
+            raise VerificationResultError(
+                f"rework_items[{index}] missing: {', '.join(missing)}"
+            )
+        record["reproduction_command_ids"] = _string_list(
+            record.get("reproduction_command_ids")
+        )
+        record["allowed_scope"] = _string_list(record.get("allowed_scope"))
+        out.append(record)
     return out
 
 

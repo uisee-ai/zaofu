@@ -73,6 +73,39 @@ def test_adopts_across_r61_supersede_chain() -> None:
     assert target.child["task_id"] == _TASK
 
 
+def test_no_adoption_across_contract_generation_change() -> None:
+    events = _chain_events()
+    target_manifest = _manifest("dispatched")
+    target_manifest["children"][0]["payload"] = {
+        "task_map_ref": "artifacts/task-map-r2.json",
+        "contract_revision": "R2",
+        "task_map_generation": "G2",
+        "contract_snapshot_digest": "b" * 64,
+    }
+    source_manifest = {
+        "fanout_id": _CHAIN[0],
+        "topology": "fanout_writer_scoped",
+    }
+    source_child = {
+        "task_id": _TASK,
+        "payload": {
+            "task_map_ref": "artifacts/task-map-r1.json",
+            "contract_revision": "R1",
+            "task_map_generation": "G1",
+            "contract_snapshot_digest": "a" * 64,
+        },
+    }
+
+    assert find_writer_adoption_target(
+        fanout_id=_CHAIN[0],
+        task_id=_TASK,
+        current_sibling_lookup=_sibling_lookup(events),
+        manifest_loader={_CHAIN[-1]: target_manifest}.get,
+        source_manifest=source_manifest,
+        source_child=source_child,
+    ) is None
+
+
 def test_no_adoption_when_current_child_terminal() -> None:
     # 新一代已交付 → 来件才是真正的陈旧完成,维持丢弃
     manifests = {_CHAIN[-1]: _manifest("completed")}

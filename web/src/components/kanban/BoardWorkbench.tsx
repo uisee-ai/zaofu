@@ -6,10 +6,16 @@ import { SpineHealthStrip } from "../../components/kanban/SpineHealthStrip";
 import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../../components/kanban/TaskCard";
 import { BOARD_COLUMNS, isBoardColumnId, taskColumn } from "../../components/kanban/board";
 import type { BoardColumnId } from "../../components/kanban/board";
+import {
+  TASK_FOCUS_OPTIONS,
+  selectTaskFocus,
+  taskFocusForFilters,
+} from "../../components/kanban/taskToolbarSelection";
+import type { TaskFocus } from "../../components/kanban/taskToolbarSelection";
 import { contextBadgeTone, contextLabel, formatTokens } from "../../lib/format";
 import { taskPriority, taskRiskBadge } from "../../lib/task-display";
 import type { TaskTelemetry } from "../../lib/task-display";
-import { List } from "lucide-react";
+import { Columns3, List } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import type { ViewMode } from "../../app/sharedTypes";
@@ -133,6 +139,7 @@ export function BoardWorkbench({
   const [boardNotice, setBoardNotice] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const telemetryByTaskId = useMemo(() => buildTaskTelemetry(agents), [agents]);
+  const activeTaskFocus = taskFocusForFilters(statusFilter, quickFilter);
   const pointerDragRef = useRef<PointerDragState | null>(null);
   const suppressClickTaskIdRef = useRef("");
   const taskById = useMemo(() => {
@@ -224,6 +231,12 @@ export function BoardWorkbench({
     setBoardNotice("");
   }
 
+  function handleTaskFocus(requested: TaskFocus) {
+    const selection = selectTaskFocus(statusFilter, quickFilter, requested);
+    setStatusFilter(selection.statusFilter);
+    setQuickFilter(selection.quickFilter);
+  }
+
   const moveActionResult = actionResult?.action === "update-task" ? actionResult : null;
   const activeFanout = totalTaskCount === 0 ? activeFanouts[0] : undefined;
 
@@ -237,43 +250,48 @@ export function BoardWorkbench({
         </div>
       </div>
       <div className="task-toolbar">
-        <div className="task-toolbar-row">
-          <button
-            className={`segmented ${viewMode === "board" ? "active" : ""}`}
-            type="button"
-            onClick={() => setViewMode("board")}
-          >
-            Board
-          </button>
-          <button
-            className={`segmented ${viewMode === "list" ? "active" : ""}`}
-            type="button"
-            onClick={() => setViewMode("list")}
-          >
-            List
-          </button>
-          <button
-            className={`segmented ${quickFilter === "ready" ? "active" : ""}`}
-            type="button"
-            onClick={() => setQuickFilter("ready")}
-          >
-            Triage
-          </button>
-          <button
-            className={`segmented ${quickFilter === "blocked" ? "active" : ""}`}
-            type="button"
-            onClick={() => setQuickFilter("blocked")}
-          >
-            Blocked
-          </button>
-          <button
-            className={`segmented ${statusFilter === "testing" ? "active" : ""}`}
-            type="button"
-            onClick={() => setStatusFilter("testing")}
-          >
-            Verify
-          </button>
+        <div className="task-toolbar-row task-toolbar-primary-row">
+          <div className="task-toolbar-control-group">
+            <span className="task-toolbar-control-label" aria-hidden="true">View</span>
+            <div className="task-segmented-control" role="group" aria-label="Task view">
+              <button
+                aria-pressed={viewMode === "board"}
+                className={`segmented ${viewMode === "board" ? "active" : ""}`}
+                type="button"
+                onClick={() => setViewMode("board")}
+              >
+                <Columns3 size={14} strokeWidth={1.8} aria-hidden="true" />
+                Board
+              </button>
+              <button
+                aria-pressed={viewMode === "list"}
+                className={`segmented ${viewMode === "list" ? "active" : ""}`}
+                type="button"
+                onClick={() => setViewMode("list")}
+              >
+                <List size={14} strokeWidth={1.8} aria-hidden="true" />
+                List
+              </button>
+            </div>
+          </div>
+          <div className="task-toolbar-control-group task-focus-control-group">
+            <span className="task-toolbar-control-label" aria-hidden="true">Focus</span>
+            <div className="task-segmented-control" role="group" aria-label="Task focus">
+              {TASK_FOCUS_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={activeTaskFocus === option.value}
+                  className={`segmented ${activeTaskFocus === option.value ? "active" : ""}`}
+                  key={option.value}
+                  type="button"
+                  onClick={() => handleTaskFocus(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <input
+            aria-label="Filter tasks"
             className="filter-input task-search-input"
             placeholder="filter tasks"
             value={textFilter}
@@ -281,7 +299,11 @@ export function BoardWorkbench({
           />
         </div>
         <div className="task-toolbar-row task-filter-row">
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+          <select
+            aria-label="Task status filter"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+          >
             <option value="all">all status</option>
             {BOARD_COLUMNS.map((column) => (
               <option value={column.id} key={column.id}>{column.title}</option>
@@ -535,5 +557,4 @@ function TaskListView({
     </div>
   );
 }
-
 

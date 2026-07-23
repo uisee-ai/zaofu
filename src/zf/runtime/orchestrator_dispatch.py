@@ -1389,6 +1389,8 @@ class DispatchMixin(
         rejection_event: ZfEvent,
     ) -> ZfEvent | None:
         payload = rejection_event.payload if isinstance(rejection_event.payload, dict) else {}
+        if str(payload.get("rejection_kind") or "") == "stale_contract_result":
+            return None
         trigger_event_id = str(payload.get("trigger_event_id") or "")
         reason = str(payload.get("reason") or "task ref rejected").strip()
         dirty_files = self._task_ref_rejection_dirty_files(payload)

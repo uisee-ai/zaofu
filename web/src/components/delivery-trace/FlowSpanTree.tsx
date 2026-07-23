@@ -57,7 +57,7 @@ export function FlowSpanTree({ trace, focus, causalIds, selectedSpanId, onSelect
   // Phases open by default (tree unfolds down to the try layer; leaves fold).
   const [closedPhases, setClosedPhases] = useState<Record<string, boolean>>({});
   // Try rows owning the focused run's dispatches start open (component mounts
-  // fresh on each Runs → Trace switch, so the initializer sees current focus).
+  // fresh on each Run → Spans switch, so the initializer sees current focus).
   const [openTries, setOpenTries] = useState<Record<string, boolean>>(() => {
     if (!focusInfo) return {};
     const open: Record<string, boolean> = {};
@@ -82,17 +82,27 @@ export function FlowSpanTree({ trace, focus, causalIds, selectedSpanId, onSelect
 
   const { domain } = model;
   const usage = trace.trace?.usage_summary;
+  const inputTokens = Number(usage?.input_tokens ?? 0);
+  const outputTokens = Number(usage?.output_tokens ?? 0);
+  const hasUsage = inputTokens > 0 || outputTokens > 0;
   const isEmpty = model.phases.length === 0 && model.unassigned.length === 0;
 
   return (
     <section className="dt-span-tree-panel wf-panel" data-testid="dt-flow-span-tree">
-      <div className="inline-heading">
-        <h3 className="section-title">Delivery Spans</h3>
-        <span className="muted">
-          feature → phase → task → try → event · {model.leafTotal} spans
-          {usage ? ` · ${String(usage.input_tokens ?? 0)} in / ${String(usage.output_tokens ?? 0)} out` : ""}
-        </span>
-      </div>
+      <header className="wf-panel-head" data-testid="wf-panel-head">
+        <div className="wf-panel-title">
+          <h3 className="section-title">Spans</h3>
+          <span className="wf-span-total" data-testid="wf-span-total">{model.leafTotal.toLocaleString()} spans</span>
+        </div>
+        <div className="wf-panel-meta">
+          <span className="wf-span-hierarchy" data-testid="wf-span-hierarchy">feature → phase → task → try → event</span>
+          {hasUsage ? (
+            <span className="wf-span-usage">
+              {inputTokens.toLocaleString()} in / {outputTokens.toLocaleString()} out
+            </span>
+          ) : null}
+        </div>
+      </header>
       <WfAxis domain={domain} model={model} />
       <WfRow
         className="wf-feature"
@@ -104,7 +114,7 @@ export function FlowSpanTree({ trace, focus, causalIds, selectedSpanId, onSelect
                 [{trace.workflow_archetype}]
               </span>
             )}
-            <span className={`badge badge-${dtTone(trace.status)}`}>{trace.status}</span>
+            <WfState status={trace.status} />
           </>
         )}
         bar={domain ? <WfBar domain={domain} startMs={domain.min} endMs={domain.max} className="wf-bar-feature" /> : <WfNoBar />}
@@ -125,7 +135,7 @@ export function FlowSpanTree({ trace, focus, causalIds, selectedSpanId, onSelect
                 <>
                   <span className="dt-tree-caret">{open ? "▾" : "▸"}</span>
                   <span className="dt-tree-label" title={phase.label}>{phase.label}</span>
-                  <span className={`badge badge-${dtTone(phase.status)}`}>{phase.status}</span>
+                  <WfState status={phase.status} />
                   <span className="wf-sigma muted">task {phase.doneCount}/{phase.taskCount}</span>
                 </>
               )}
@@ -178,8 +188,9 @@ function WfAxis({ domain, model }: { domain: WfDomain | null; model: ReturnType<
   if (!domain) {
     return <p className="dt-tree-empty muted" data-testid="wf-axis-empty">No span timestamps yet — waterfall bars are hidden until timing evidence lands.</p>;
   }
+  const labelledTicks = axisTickLabelIndexes(model.ticks.map((tick) => tick.pct));
   return (
-    <div className="wf-row wf-axis-row" data-testid="wf-axis" aria-label="Trace time axis">
+    <div className="wf-row wf-axis-row" data-testid="wf-axis" aria-label="Spans time axis">
       <span className="wf-row-label wf-axis-label">
         <span className="dt-lifeline-tag">AXIS</span>
         <span className="wf-axis-clock">{clockLabel(new Date(domain.min).toISOString())} → {clockLabel(new Date(domain.max).toISOString())}</span>
@@ -188,17 +199,35 @@ function WfAxis({ domain, model }: { domain: WfDomain | null; model: ReturnType<
         {model.ticks.map((tick, index) => (
           <span
             key={index}
-            className={`wf-axis-tick${tick.bad ? " is-bad" : ""}`}
+            className={`wf-axis-tick${tick.bad ? " is-bad" : ""}${labelledTicks.has(index) ? " is-labelled" : ""}${tick.pct >= 50 ? " is-right-side" : ""}${tick.pct < 6 ? " is-edge-start" : tick.pct > 94 ? " is-edge-end" : ""}`}
             style={{ left: `${tick.pct}%` }}
             title={`${tick.kind} · ${tick.clock} — ${tick.title}`}
+            aria-label={`${tick.kind} at ${tick.clock}: ${tick.title}`}
+            tabIndex={0}
           >
             <i aria-hidden="true">{tick.bad ? "✗" : "●"}</i>
-            <small>{tick.kind}</small>
+            <small aria-hidden="true">{tick.kind}</small>
           </span>
         ))}
       </span>
     </div>
   );
+}
+
+function axisTickLabelIndexes(percentages: number[]): Set<number> {
+  const minGapPct = 14;
+  const selected: number[] = [];
+  for (let index = 0; index < percentages.length; index += 1) {
+    if (!selected.length || percentages[index] - percentages[selected[selected.length - 1]] >= minGapPct) {
+      selected.push(index);
+    }
+  }
+  const lastIndex = percentages.length - 1;
+  if (lastIndex > 0 && selected[selected.length - 1] !== lastIndex) {
+    if (percentages[lastIndex] - percentages[selected[selected.length - 1]] < minGapPct) selected.pop();
+    selected.push(lastIndex);
+  }
+  return new Set(selected);
 }
 
 function WfRow({ ariaExpanded, bar, className, label, onClick }: {
@@ -226,6 +255,15 @@ function WfRow({ ariaExpanded, bar, className, label, onClick }: {
 
 function WfNoBar() {
   return <span className="wf-track wf-track-empty" aria-hidden="true" />;
+}
+
+function WfState({ status }: { status: string }) {
+  return (
+    <span className={`wf-state tone-${dtTone(status)}`}>
+      <i aria-hidden="true" />
+      {status}
+    </span>
+  );
 }
 
 function WfBar({ children, className, domain, endMs, startMs }: {
@@ -265,7 +303,7 @@ function TaskRows({ causalIds, domain, focusInfo, onSelectSpan, openTries, selec
         label={(
           <>
             <span className="dt-tree-label mono" title={task.taskId}>{task.taskId}</span>
-            <span className={`badge badge-${dtTone(task.status)}`}>{task.status}</span>
+            <WfState status={task.status} />
             <span className="wf-times" title={`started ${task.startMs !== null ? new Date(task.startMs).toISOString() : "—"} · completed ${task.endMs !== null ? new Date(task.endMs).toISOString() : "—"}`}>
               {clockLabel(task.startMs !== null ? new Date(task.startMs).toISOString() : null)} → {clockLabel(task.endMs !== null ? new Date(task.endMs).toISOString() : null)}
             </span>
@@ -325,8 +363,8 @@ function TryRows({ causalIds, domain, focusInfo, onSelectSpan, open, selectedSpa
             <span className="dt-tree-label" title={tryItem.synthetic ? "spans without a recorded try" : `try#${tryItem.tryNo}`}>
               {tryItem.synthetic ? "events" : `try#${tryItem.tryNo}`}
             </span>
-            <span className={`badge badge-${dtTone(tryItem.outcome)}`}>{tryItem.outcome}</span>
-            {tryItem.reworkKind && <span className="badge badge-warn">{tryItem.reworkKind}</span>}
+            <WfState status={tryItem.outcome} />
+            {tryItem.reworkKind && <span className="wf-state-note">{tryItem.reworkKind}</span>}
             <span className="wf-sigma muted">{tryItem.leaves.length} ev</span>
           </>
         )}
@@ -377,7 +415,7 @@ function LeafRows({ causalIds, domain, focusInfo, leaves, onSelectSpan, selected
                 <span className="wf-leaf-meta" title={span.role || span.backend || span.run_id || "event"}>
                   {span.role || span.backend || span.run_id || "event"}
                 </span>
-                <span className={`badge badge-${dtTone(span.status)}`}>{span.status}</span>
+                <WfState status={span.status} />
               </>
             )}
             bar={domain

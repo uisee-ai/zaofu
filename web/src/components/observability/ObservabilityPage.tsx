@@ -28,6 +28,7 @@ function observabilityTabForPage(page: PageId): ObservabilityTab {
   if (page === "runs") return "runs";
   if (page === "fanouts") return "fanouts";
   if (page === "candidates") return "candidates";
+  if (page === "diagnostics") return "raw";
   // Resources tab 已退役(operator 2026-07-11 整删):旧 workdirs/skills/
   // archives 深链落默认 traces。取证走 CLI(zf status/skills)或 Raw。
   if (page === "workdirs" || page === "skills" || page === "archives") return "traces";
@@ -142,6 +143,7 @@ export function ObservabilityPage({
   onSelectEvent,
   projectionDetail,
   repairActions,
+  scopedTraceRows,
   searchResult,
   selectedEvent,
   selectedEventKey,
@@ -161,6 +163,7 @@ export function ObservabilityPage({
   onSelectEvent: (key: string) => void;
   projectionDetail: Record<string, unknown> | null;
   repairActions: RepairActionProjection | null;
+  scopedTraceRows?: TraceSummary[] | null;
   searchResult: SearchResult | null;
   selectedEvent: EventRecord | null;
   selectedEventKey: string;
@@ -179,7 +182,8 @@ export function ObservabilityPage({
     setTab(activePage === "observability" ? readInitialObservabilityTab(activePage) : observabilityTabForPage(activePage));
   }, [activePage]);
   const snapshotReady = Boolean(snapshot);
-  const traces = snapshot?.traces ?? [];
+  const traces = scopedTraceRows ?? snapshot?.traces ?? [];
+  const scopedTraceMode = scopedTraceRows !== null && scopedTraceRows !== undefined;
   const runs = [...(snapshot?.active_runs ?? []), ...(snapshot?.runs ?? [])];
   const fanouts = snapshot?.fanouts ?? [];
   const candidates = snapshot?.candidates ?? [];
@@ -298,20 +302,20 @@ export function ObservabilityPage({
   };
   const streamTone: UiTone = liveState === "live" ? "ok" : liveState === "connecting" || liveState === "reconnecting" ? "warn" : "err";
   const metrics: ProjectionMetricSpec[] = [
-    { icon: MapIcon, label: "Traces", value: snapshotReady ? traces.length : "-", meta: "causation chains", tone: traces.length ? "info" : "muted" },
-    { icon: Radio, label: "Events", value: eventsPage ? eventItems.length : "-", meta: `seq ${snapshot?.seq ?? "-"}`, tone: eventItems.length ? "info" : "muted" },
-    { icon: PlayCircle, label: "Runs", value: snapshotReady ? runs.length : "-", meta: `${snapshot?.active_runs.length ?? 0} active`, tone: snapshot?.active_runs.length ? "warn" : runs.length ? "info" : "muted" },
-    { icon: GitFork, label: "Fanouts", value: snapshotReady ? fanouts.length : "-", meta: "fan-out / fan-in", tone: fanouts.length ? "info" : "muted" },
-    { icon: Gauge, label: "Context", value: maxContext == null ? "unknown" : `${Math.round(maxContext * 100)}%`, meta: `${snapshot?.agents?.length ?? 0} agents`, tone: maxContext == null ? "muted" : maxContext >= 0.9 ? "err" : maxContext >= 0.75 ? "warn" : "ok" },
-    { icon: Boxes, label: "Tokens", value: formatTokens(totalTokens), meta: formatUsd(totalCost), tone: totalTokens ? "info" : "muted" },
+    { icon: MapIcon, label: "Traces", value: scopedTraceMode || snapshotReady ? traces.length : "-", meta: "causation chains", tone: traces.length ? "info" : "muted" },
+    { icon: Radio, label: "Events", value: scopedTraceMode ? "-" : eventsPage ? eventItems.length : "-", meta: scopedTraceMode ? "load on open" : `seq ${snapshot?.seq ?? "-"}`, tone: !scopedTraceMode && eventItems.length ? "info" : "muted" },
+    { icon: PlayCircle, label: "Runs", value: scopedTraceMode ? "-" : snapshotReady ? runs.length : "-", meta: scopedTraceMode ? "load on open" : `${snapshot?.active_runs.length ?? 0} active`, tone: !scopedTraceMode && snapshot?.active_runs.length ? "warn" : !scopedTraceMode && runs.length ? "info" : "muted" },
+    { icon: GitFork, label: "Fanouts", value: scopedTraceMode ? "-" : snapshotReady ? fanouts.length : "-", meta: scopedTraceMode ? "load on open" : "fan-out / fan-in", tone: !scopedTraceMode && fanouts.length ? "info" : "muted" },
+    { icon: Gauge, label: "Context", value: scopedTraceMode ? "-" : maxContext == null ? "unknown" : `${Math.round(maxContext * 100)}%`, meta: scopedTraceMode ? "load on open" : `${snapshot?.agents?.length ?? 0} agents`, tone: !scopedTraceMode && maxContext != null ? maxContext >= 0.9 ? "err" : maxContext >= 0.75 ? "warn" : "ok" : "muted" },
+    { icon: Boxes, label: "Tokens", value: scopedTraceMode ? "-" : formatTokens(totalTokens), meta: scopedTraceMode ? "load on open" : formatUsd(totalCost), tone: !scopedTraceMode && totalTokens ? "info" : "muted" },
   ];
   const tabs: Array<{ id: ObservabilityTab; label: string; count?: number }> = [
     { id: "traces", label: "Traces", count: traces.length },
-    { id: "events", label: "Events", count: eventItems.length },
+    { id: "events", label: "Events", count: scopedTraceMode ? undefined : eventItems.length },
     { id: "logs", label: "Logs" },
-    { id: "runs", label: "Runs", count: runs.length },
-    { id: "fanouts", label: "Fanouts", count: fanouts.length },
-    { id: "candidates", label: "Candidates", count: candidates.length },
+    { id: "runs", label: "Runs", count: scopedTraceMode ? undefined : runs.length },
+    { id: "fanouts", label: "Fanouts", count: scopedTraceMode ? undefined : fanouts.length },
+    { id: "candidates", label: "Candidates", count: scopedTraceMode ? undefined : candidates.length },
     { id: "integration", label: "Integration", count: integrationQueue?.summary.total ?? 0 },
     { id: "repair", label: "Repair", count: repairActions?.summary.total ?? 0 },
     // Tokens/Context 与 Feedback tab 已退役(operator 2026-07-11):前者三重复

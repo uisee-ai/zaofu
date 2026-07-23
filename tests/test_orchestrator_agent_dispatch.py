@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from zf.core.config.schema import (
-    ConstraintsConfig,
     ProjectConfig,
     RoleConfig,
     SessionConfig,
@@ -25,10 +24,8 @@ from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_briefing import build_orchestrator_briefing
 from zf.runtime.tmux import TmuxSession
 from zf.runtime.transport import (
-    AttachHandle,
     DispatchContext,
     TmuxTransport,
-    TransportAdapter,
 )
 from zf.core.events.model import ZfEvent as ZE
 
@@ -256,6 +253,26 @@ def test_orchestrator_briefing_uses_machine_readable_task_creation(
     assert "--id-only" in briefing
     assert "do not parse human-readable output" in briefing
     assert 'task_id=$(zf kanban add "$feature_id" "Task title" --id-only)' in briefing
+
+
+def test_orchestrator_briefing_pins_executable_cli_commands(
+    state_dir: Path,
+    config_with_orchestrator,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cli = "/opt/zaofu-current/bin/zf"
+    monkeypatch.setenv("ZF_CLI_CMD", cli)
+
+    briefing = build_orchestrator_briefing(
+        state_dir=state_dir,
+        config=config_with_orchestrator,
+        trigger_event=ZE(type="dispatch.silent_stall", actor="supervisor"),
+    )
+
+    assert f"`{cli} emit orchestrator.idle`" in briefing
+    assert f"{cli} emit orchestrator.round.complete" in briefing
+    assert f"{cli} emit orchestrator.dispatch_failed" in briefing
+    assert f'task_id=$({cli} kanban add "$feature_id"' in briefing
 
 
 def test_orchestrator_briefing_uses_portable_payload_files(

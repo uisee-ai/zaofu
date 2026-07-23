@@ -1041,7 +1041,7 @@ def test_load_real_zf_yaml_expands_thin_prd_controller():
     assert cfg.preset == ""
     assert cfg.project.name == "zaofu"
     assert cfg.workflow.harness_profile == "strict"
-    assert cfg.workflow.dag.schema_profile == "canonical-dag/v6"
+    assert cfg.workflow.dag.schema_profile == "canonical-dag/v7"
     assert cfg.goal.enabled is True
     assert cfg.verification.event_schema.mode == "blocking"
     assert cfg.verification.report_evidence_gate == "fail_closed"
@@ -1058,6 +1058,7 @@ def test_load_real_zf_yaml_expands_thin_prd_controller():
         "product-scan",
         "tech-scan",
         "planner",
+        "plan-critic",
         "flow-discovery",
         "judge-prd",
         "dev-lane-0",
@@ -1074,6 +1075,11 @@ def test_load_real_zf_yaml_expands_thin_prd_controller():
         "prd-lanes-verify",
         "prd-lanes-final",
     ]
+    assert next(
+        stage for stage in cfg.workflow.stages if stage.id == "prd-plan"
+    ).aggregate.synth_role == "plan-critic"
+    critic = next(role for role in cfg.roles if role.name == "plan-critic")
+    assert "zf-yoke-critic-role-context" in critic.skills
 
 
 def test_load_workflow_dag_graph_static_gate_action(tmp_path: Path):
@@ -1131,6 +1137,7 @@ def test_load_candidate_quality_and_acceptance_split_policy(tmp_path: Path):
         "project:\n  name: test\n"
         "workflow:\n"
         "  candidate_quality_source: task_contract_required\n"
+        "  impl_self_check_required: true\n"
         "  work_units:\n"
         "    enabled: true\n"
         "    split_quality:\n"
@@ -1142,6 +1149,7 @@ def test_load_candidate_quality_and_acceptance_split_policy(tmp_path: Path):
     cfg = load_config(p)
 
     assert cfg.workflow.candidate_quality_source == "task_contract_required"
+    assert cfg.workflow.impl_self_check_required is True
     assert cfg.workflow.work_units.split_quality.max_acceptance_criteria == 7
 
 

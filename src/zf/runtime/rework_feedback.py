@@ -56,6 +56,11 @@ def write_rework_feedback(
         dict(item) if isinstance(item, Mapping) else item
         for item in result.get("requirement_results") or []
     ]
+    rework_items = [
+        dict(item)
+        for item in result.get("rework_items") or []
+        if isinstance(item, Mapping)
+    ]
     finding_acceptance_ids: dict[str, str] = {}
     for item in requirement_results:
         if not isinstance(item, Mapping):
@@ -127,6 +132,7 @@ def write_rework_feedback(
         "evidence_refs": evidence_refs,
         "allowed_paths": [str(item) for item in allowed_paths or [] if str(item).strip()],
         "required_actions": [str(item) for item in required_actions or [] if str(item).strip()],
+        "rework_items": rework_items,
     }
     _validate_feedback(body)
     stable = json.dumps(body, ensure_ascii=False, sort_keys=True, default=str)
@@ -230,6 +236,15 @@ def feedback_briefing_lines(body: Mapping[str, Any]) -> list[str]:
     summary = str(body.get("summary") or "").strip()
     if summary:
         lines.append(summary)
+    for item in body.get("rework_items") or []:
+        if not isinstance(item, Mapping):
+            continue
+        lines.append(
+            f"{item.get('rework_item_id')} [{item.get('status')}] "
+            f"{item.get('acceptance_id')}: observed={item.get('observed')}; "
+            f"required_delta={item.get('required_delta')}; "
+            f"done_when={item.get('done_when')}; next_gate={item.get('next_gate')}"
+        )
     for item in body.get("requirement_results") or []:
         if not isinstance(item, Mapping):
             continue
@@ -267,6 +282,20 @@ def _validate_feedback(body: Mapping[str, Any]) -> None:
     missing = [key for key in required if not str(body.get(key) or "").strip()]
     if missing:
         raise ReworkFeedbackError("rework feedback missing: " + ", ".join(missing))
+    for index, item in enumerate(body.get("rework_items") or []):
+        if not isinstance(item, Mapping):
+            raise ReworkFeedbackError(f"rework_items[{index}] must be an object")
+        required_item = (
+            "rework_item_id", "status", "acceptance_id", "expected", "observed",
+            "required_delta", "done_when", "next_gate", "owner",
+        )
+        missing_item = [
+            key for key in required_item if not str(item.get(key) or "").strip()
+        ]
+        if missing_item:
+            raise ReworkFeedbackError(
+                f"rework_items[{index}] missing: {', '.join(missing_item)}"
+            )
 
 
 def _finding_text(value: Any) -> str:

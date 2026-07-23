@@ -273,9 +273,11 @@ def test_writer_task_items_normalizes_verification_command_list():
         }],
     })
 
-    assert items[0]["verification"] == (
-        "python app/verify.py && git diff --check"
-    )
+    assert items[0]["verification"] == "python app/verify.py"
+    assert [item["command"] for item in items[0]["validation"]["commands"]] == [
+        "python app/verify.py",
+        "git diff --check",
+    ]
     assert items[0]["raw_task"]["verification"] == [
         "python app/verify.py",
         "git diff --check",

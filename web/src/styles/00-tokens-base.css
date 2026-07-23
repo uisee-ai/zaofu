@@ -697,6 +697,73 @@ h3 {
   gap: 7px;
 }
 
+.task-toolbar-primary-row {
+  min-width: 0;
+}
+
+.task-toolbar-control-group {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-toolbar-control-label {
+  flex: none;
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.task-segmented-control {
+  min-width: 0;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.task-segmented-control .segmented {
+  position: relative;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 0;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.task-segmented-control .segmented + .segmented {
+  margin-left: -1px;
+}
+
+.task-segmented-control .segmented:first-child {
+  border-radius: 6px 0 0 6px;
+}
+
+.task-segmented-control .segmented:last-child {
+  border-radius: 0 6px 6px 0;
+}
+
+.task-segmented-control .segmented.active {
+  z-index: 1;
+}
+
+.task-segmented-control .segmented:hover:not(.active) {
+  z-index: 1;
+  border-color: color-mix(in oklab, var(--brand) 48%, var(--line));
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.task-segmented-control .segmented:focus-visible {
+  z-index: 2;
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .task-filter-row {
   opacity: 0.92;
 }

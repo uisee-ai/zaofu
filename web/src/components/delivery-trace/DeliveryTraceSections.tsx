@@ -10,7 +10,6 @@ import type {
   OverviewPulse,
 } from "../../api/types";
 import { SegBar, formatSeconds } from "../common/SegBar";
-import { GraphView } from "./GraphView";
 import {
   copyText,
   currentCycle,
@@ -31,7 +30,6 @@ interface DeliveryTasksTabProps {
 }
 
 export function DeliveryTasksTab({ onOpenDispatch, onSelectTask, pulse, trace }: DeliveryTasksTabProps) {
-  const cycles = traceCycles(trace);
   // S-C: list = execution-graph rows (列头常显); grid = task × try outcome matrix.
   const [view, setView] = useState<"list" | "grid">("list");
   return (
@@ -51,19 +49,22 @@ export function DeliveryTasksTab({ onOpenDispatch, onSelectTask, pulse, trace }:
           ))}
         </div>
       </div>
-      <section className="delivery-trace-section">
-        <h3 className="section-title">Graph</h3>
-        <GraphView trace={trace} />
-      </section>
-      <DeliveryCyclesSection cycles={cycles} trace={trace} />
-      <WorkflowSpineSection trace={trace} />
-      <PhasesSection trace={trace} />
       {view === "list" ? (
         <ExecutionGraphSection onOpenDispatch={onOpenDispatch} onSelectTask={onSelectTask} pulse={pulse} trace={trace} />
       ) : (
         <TasksTryGridSection onSelectTask={onSelectTask} trace={trace} />
       )}
       <DriftSection trace={trace} />
+    </div>
+  );
+}
+
+export function DeliveryFlowContext({ trace }: { trace: DeliveryTrace }) {
+  return (
+    <div className="delivery-flow-context" data-testid="delivery-flow-context">
+      <DeliveryCyclesSection cycles={traceCycles(trace)} trace={trace} />
+      <WorkflowSpineSection trace={trace} />
+      <PhasesSection trace={trace} />
     </div>
   );
 }
@@ -84,6 +85,9 @@ export function DeliveryRawTab({ trace }: { trace: DeliveryTrace }) {
 
 function DeliveryCyclesSection({ cycles, trace }: { cycles: DeliveryTraceCycle[]; trace: DeliveryTrace }) {
   if (!cycles.length) {
+    const taskCount = trace.task_map?.task_count ?? trace.execution_graph?.task_count ?? trace.execution_graph?.nodes.length ?? 0;
+    const waveCount = trace.task_map?.wave_count
+      ?? new Set(trace.execution_graph?.nodes.map((node) => node.planned.wave) ?? []).size;
     return (
       <section className="delivery-cycle-strip">
         <div className="inline-heading"><h3 className="section-title">Cycles</h3><span className="muted">fallback</span></div>
@@ -91,7 +95,7 @@ function DeliveryCyclesSection({ cycles, trace }: { cycles: DeliveryTraceCycle[]
           <div className="delivery-cycle-item active">
             <span className="delivery-cycle-id mono">trace</span>
             <span className={`badge badge-${dtTone(trace.status)}`}>{trace.status}</span>
-            <span className="delivery-cycle-meta">task-map {trace.task_map.task_count} tasks / {trace.task_map.wave_count} waves</span>
+            <span className="delivery-cycle-meta">task-map {taskCount} tasks / {waveCount} waves</span>
           </div>
         </div>
       </section>
@@ -183,7 +187,7 @@ function ExecutionGraphSection({
   }, [pulse]);
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Execution Graph</h3>
+      <h3 className="section-title">Task Runtime</h3>
       {/* S-C 顺修: legend + 列头常显 — 无 flow_metrics 时行值显灰 "—",不再隐藏整列 */}
       <div className="dt-flow-legend muted" data-testid="dt-flow-legend">
         <span className="seg-chip seg-chip-wait" /> wait
@@ -195,7 +199,7 @@ function ExecutionGraphSection({
         /* R5 (2026-06-12): 空态自解释 —— diagnostics 升格进正文,空白必须说明
            自己(同 no-data ≠ 0 纪律);页脚小字保留。 */
         <div className="projection-empty-copy" data-testid="dt-graph-empty">
-          <p className="muted">No task graph to mount for this feature.</p>
+          <p className="muted">No task runtime projection for this feature.</p>
           {trace.task_map?.status === "missing" && (
             <p className="muted">No accepted task_map yet — the graph appears after a plan/task_map is accepted.</p>
           )}
@@ -372,7 +376,7 @@ function TasksTryGridSection({ onSelectTask, trace }: { onSelectTask?: (taskId: 
   };
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Execution Graph</h3>
+      <h3 className="section-title">Task Attempts</h3>
       {taskIds.length === 0 ? (
         <p className="muted">No tasks projected yet — grid fills in once task lifecycle events land.</p>
       ) : (

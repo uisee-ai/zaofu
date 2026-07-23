@@ -55,6 +55,10 @@ includes=(
   README.zh-CN.md
   LICENSE
   DISCLAIMER.md
+  AGENTS.md
+  CLAUDE.md
+  zf.yaml
+  feishu.yaml
   .python-version
   .env.example
   pyproject.toml
@@ -70,6 +74,9 @@ includes=(
   channel_roles
   assets/readme
   docs/manual
+  docs/design
+  .claude/rules
+  .claude/commands
 )
 
 existing=()
@@ -107,6 +114,30 @@ while IFS= read -r -d '' file; do
     sed -i "s/${escaped_source_root}/\/path\/to\/zaofu/g" "$file"
   fi
 done < <(find "$tmp" -type f -print0)
+
+if [[ -f "$tmp/feishu.yaml" ]]; then
+  perl -0pi -e 's/\$\{([A-Za-z_][A-Za-z0-9_]*)\:-[^}]*\}/"\${".$1."}"/ge' "$tmp/feishu.yaml"
+  set +e
+  perl -ne '
+    if (/^\s*(app_id|app_secret|encrypt_key|verification_token)\s*:\s*(.+?)\s*(?:#.*)?$/) {
+      my $value = $2;
+      $value =~ s/^\s+|\s+$//g;
+      $value =~ s/^["'\'']|["'\'']$//g;
+      if ($value ne "" && $value !~ /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/ && $value !~ /^[A-Z][A-Z0-9_]*$/) {
+        exit 42;
+      }
+    }
+  ' "$tmp/feishu.yaml"
+  feishu_scan_status=$?
+  set -e
+  if [[ "$feishu_scan_status" -eq 42 ]]; then
+    echo "literal Feishu credential field exported" >&2
+    exit 1
+  elif [[ "$feishu_scan_status" -ne 0 ]]; then
+    echo "Feishu export sanitization scan failed" >&2
+    exit 1
+  fi
+fi
 
 scan_pattern="${ZF_EXPORT_PRIVATE_RG_PATTERN:-}"
 if [[ -n "$scan_pattern" ]]; then

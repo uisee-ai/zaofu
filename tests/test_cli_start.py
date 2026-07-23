@@ -173,6 +173,15 @@ class TestZfStart:
             main(["start", "--help"])
         assert exc_info.value.code == 0
 
+    def test_simulation_rejects_normal_project_scope(
+        self,
+        project_dir: Path,
+        capsys,
+    ):
+        result = main(["start", "--dry-run", "--simulation"])
+        assert result == 1
+        assert "simulation project root must match /tmp/zf-*" in capsys.readouterr().err
+
     def test_start_requires_zf_yaml(self, tmp_path: Path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = main(["start", "--dry-run"])

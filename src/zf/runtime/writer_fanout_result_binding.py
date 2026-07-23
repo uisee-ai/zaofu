@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.impl_self_check import (
+    ImplSelfCheckError,
+    descriptor_from_payload as self_check_descriptor_from_payload,
+    hydrate_impl_self_check,
+    normalize_impl_self_check,
+    self_check_payload_fields,
+    write_impl_self_check,
+)
 from zf.runtime.task_contract_snapshot import (
     TaskContractSnapshotError,
     build_target_snapshot,
     build_task_contract_snapshot,
+    current_task_contract_identity,
+    descriptor_from_payload,
+    hydrate_target_snapshot,
+    hydrate_task_contract_snapshot,
     snapshot_payload_fields,
     target_payload_fields,
+    target_descriptor_from_payload,
     task_map_generation,
     write_target_snapshot,
     write_task_contract_snapshot,
@@ -26,11 +39,6 @@ class WriterFanoutResultBindingMixin:
     ) -> None:
         """Mint typed handoff snapshots for an adopted regular task attempt."""
 
-        if (
-            base_payload.get("contract_snapshot_ref")
-            and base_payload.get("contract_snapshot_digest")
-        ):
-            return
         contract_input = {
             **(child.get("payload") if isinstance(child.get("payload"), dict) else {}),
             **child,
@@ -38,6 +46,71 @@ class WriterFanoutResultBindingMixin:
             **payload,
         }
         if not self._typed_task_contract_handoff_enabled(contract_input):
+            return
+        contract_snapshot_ready = bool(
+            base_payload.get("contract_snapshot_ref")
+            and base_payload.get("contract_snapshot_digest")
+        )
+        target_commit = str(
+            payload.get("target_commit") or payload.get("source_commit") or ""
+        ).strip()
+        if not target_commit:
+            raise TaskContractSnapshotError(
+                "adopted writer completion lacks target commit for "
+                f"{str(base_payload.get('task_id') or '').strip()}"
+            )
+        if contract_snapshot_ready:
+            task_id = str(base_payload.get("task_id") or "").strip()
+            task = self.task_store.get(task_id) if task_id else None
+            if task is None:
+                raise TaskContractSnapshotError(
+                    f"cannot validate missing canonical task {task_id!r}"
+                )
+            snapshot = hydrate_task_contract_snapshot(
+                self.state_dir,
+                descriptor_from_payload(base_payload),
+                expected=current_task_contract_identity(
+                    task,
+                    task_map_ref=str(base_payload.get("task_map_ref") or ""),
+                ),
+            )
+            target_snapshot = build_target_snapshot(
+                descriptor_from_payload(base_payload),
+                target_commit=target_commit,
+                contract_snapshot=snapshot,
+            )
+            try:
+                target_descriptor = target_descriptor_from_payload(base_payload)
+                target_snapshot = hydrate_target_snapshot(
+                    self.state_dir,
+                    target_descriptor,
+                    expected={
+                        "contract_snapshot_ref": str(
+                            base_payload.get("contract_snapshot_ref") or ""
+                        ),
+                        "contract_snapshot_digest": str(
+                            base_payload.get("contract_snapshot_digest") or ""
+                        ),
+                        "target_commit": target_commit,
+                    },
+                )
+            except TaskContractSnapshotError:
+                target_descriptor = write_target_snapshot(
+                    self.state_dir,
+                    target_snapshot,
+                    source_event_id=event.id,
+                )
+            base_payload.update({
+                "target_commit": target_commit,
+                **target_payload_fields(target_descriptor),
+            })
+            self._ensure_impl_self_check_handoff(
+                event=event,
+                payload=payload,
+                base_payload=base_payload,
+                contract_snapshot=snapshot,
+                target_snapshot=target_snapshot,
+            )
             return
         task_id = str(base_payload.get("task_id") or "").strip()
         task = self.task_store.get(task_id) if task_id else None
@@ -48,7 +121,9 @@ class WriterFanoutResultBindingMixin:
         dispatch_id = str(
             payload.get("dispatch_id") or payload.get("attempt_id") or ""
         ).strip()
-        base_commit = str(payload.get("base_commit") or "").strip()
+        base_commit = str(
+            payload.get("base_commit") or base_payload.get("base_commit") or ""
+        ).strip()
         if not base_commit and dispatch_id:
             try:
                 dispatch_event = next(
@@ -85,13 +160,6 @@ class WriterFanoutResultBindingMixin:
             snapshot,
             source_event_id=event.id,
         )
-        target_commit = str(
-            payload.get("target_commit") or payload.get("source_commit") or ""
-        ).strip()
-        if not target_commit:
-            raise TaskContractSnapshotError(
-                f"adopted writer completion lacks target commit for {task_id}"
-            )
         target_descriptor = write_target_snapshot(
             self.state_dir,
             build_target_snapshot(
@@ -110,6 +178,103 @@ class WriterFanoutResultBindingMixin:
             **snapshot_payload_fields(descriptor),
             **target_payload_fields(target_descriptor),
         })
+        self._ensure_impl_self_check_handoff(
+            event=event,
+            payload=payload,
+            base_payload=base_payload,
+            contract_snapshot=snapshot,
+            target_snapshot=build_target_snapshot(
+                descriptor,
+                target_commit=target_commit,
+                contract_snapshot=snapshot,
+            ),
+        )
+
+    def _ensure_impl_self_check_handoff(
+        self,
+        *,
+        event: ZfEvent,
+        payload: dict,
+        base_payload: dict,
+        contract_snapshot: dict,
+        target_snapshot: dict,
+    ) -> None:
+        """Admit or recover one exact-target Agent self-check sidecar."""
+
+        required = bool(getattr(
+            getattr(self.config, "workflow", None),
+            "impl_self_check_required",
+            False,
+        ))
+        descriptor_payload: dict = {}
+        for source in (base_payload, payload):
+            if source.get("impl_self_check_ref") and source.get("impl_self_check_digest"):
+                descriptor_payload = source
+                break
+        if not descriptor_payload:
+            target_commit = str(target_snapshot.get("target_commit") or "")
+            try:
+                prior = next(
+                    item
+                    for item in reversed(self.event_log.read_all())
+                    if item.type == "impl.self_check.completed"
+                    and str(item.task_id or "") == str(base_payload.get("task_id") or "")
+                    and isinstance(item.payload, dict)
+                    and str(item.payload.get("target_commit") or "") == target_commit
+                )
+            except (StopIteration, OSError):
+                prior = None
+            if prior is not None:
+                descriptor_payload = prior.payload
+        if descriptor_payload:
+            descriptor = self_check_descriptor_from_payload(descriptor_payload)
+            hydrate_impl_self_check(
+                self.state_dir,
+                descriptor,
+                contract_snapshot=contract_snapshot,
+                target_snapshot=target_snapshot,
+            )
+            base_payload.update(self_check_payload_fields(descriptor))
+            return
+
+        if isinstance(payload.get("impl_self_check"), dict):
+            attempt_id = str(
+                payload.get("attempt_id") or payload.get("dispatch_id") or ""
+            ).strip()
+            body = normalize_impl_self_check(
+                payload,
+                contract_snapshot=contract_snapshot,
+                target_snapshot=target_snapshot,
+                expected_attempt_id=attempt_id,
+                strict=True,
+            )
+            descriptor = write_impl_self_check(
+                self.state_dir,
+                body,
+                source_event_id=event.id,
+                created_by=str(event.actor or "worker"),
+            )
+            fields = self_check_payload_fields(descriptor)
+            base_payload.update(fields)
+            self.event_writer.append(ZfEvent(
+                type="impl.self_check.completed",
+                actor="orchestrator",
+                task_id=str(base_payload.get("task_id") or ""),
+                payload={
+                    **fields,
+                    "workflow_run_id": str(contract_snapshot.get("workflow_run_id") or ""),
+                    "contract_revision": str(contract_snapshot.get("contract_revision") or ""),
+                    "target_commit": str(target_snapshot.get("target_commit") or ""),
+                    "attempt_id": str(body.get("attempt_id") or ""),
+                },
+                causation_id=event.id,
+                correlation_id=event.correlation_id,
+            ))
+            return
+        if required:
+            raise ImplSelfCheckError(
+                "writer completion lacks required impl_self_check sidecar"
+            )
 
     def _writer_source_event_already_terminal(self, source_event_id: str) -> bool:
         """Return whether one writer result was already terminally consumed.

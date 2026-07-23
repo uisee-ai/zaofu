@@ -50,10 +50,6 @@
   font-size: var(--text-12);
 }
 
-.delivery-graph-pane .delivery-graph {
-  min-height: 260px;
-}
-
 .delivery-inspector-section,
 .workflow-inspector-block {
   display: grid;
@@ -381,8 +377,7 @@
     display: grid;
   }
 
-  .delivery-flow-layout,
-  .dt-trace-layout {
+  .delivery-flow-layout {
     grid-template-columns: 1fr;
   }
 

@@ -275,6 +275,7 @@ _KNOWN_WORKFLOW_KEYS = frozenset({
     "kind_routes",
     "allow_unverified_candidate",  # ⑤c 合并候选树门显式豁免(2026-07-08)
     "candidate_quality_source",
+    "impl_self_check_required",
 })
 _KNOWN_ROLE_KEYS = frozenset({
     "name", "backend", "backends", "role_kind", "model", "allowed_tools",
@@ -586,15 +587,6 @@ def _build_flow_metadata_by_kind(data: object) -> dict[str, dict]:
             )
         result[kind] = dict(raw_metadata)
     return result
-
-
-def _workflow_flow_metadata_by_kind(workflow_data: dict) -> dict[str, dict]:
-    # Accept the public schema name when hand-written yaml uses it, while
-    # keeping the renderer's private normalized key as the primary path.
-    return _build_flow_metadata_by_kind(
-        workflow_data.get("_flow_metadata_by_kind")
-        or workflow_data.get("flow_metadata_by_kind")
-    )
 
 
 def _build_workflow_work_units(data: dict | None) -> WorkflowWorkUnitsConfig:
@@ -2028,6 +2020,9 @@ def load_config(path: Path) -> ZfConfig:
                 workflow_data.get("candidate_quality_source", "auto")
                 or "auto"
             ),
+            impl_self_check_required=bool(
+                workflow_data.get("impl_self_check_required", False)
+            ),
             event_actions=workflow_data.get("event_actions", []) or [],
             # 131-P2-3:lease 宽限可配置(F15 实证出厂 900s)。
             attempt_lease_grace_s=float(
@@ -2074,7 +2069,12 @@ def load_config(path: Path) -> ZfConfig:
                 harness_profile=harness_profile,
             ),
             flow_metadata=workflow_data.get("_flow_metadata", {}) or {},
-            flow_metadata_by_kind=_workflow_flow_metadata_by_kind(workflow_data),
+            flow_metadata_by_kind=_build_flow_metadata_by_kind(
+                workflow_data.get(
+                    "flow_metadata_by_kind",
+                    workflow_data.get("_flow_metadata_by_kind"),
+                )
+            ),
             pipelines=pipelines,
             pipelines_role_meta=pipelines_role_meta,
         ),

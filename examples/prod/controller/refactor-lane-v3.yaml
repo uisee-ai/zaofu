@@ -29,7 +29,7 @@ metadata:
       description: Short refactor controller with per-lane verify and module parity loop.
       intent: refactor
       backend: codex
-      roles: 12
+      roles: 13
       recommended_for: [refactor]
       preferred: true
       # 33:与 prd-light(32,build 家族与 prd-fanout 相邻)错开撞号。

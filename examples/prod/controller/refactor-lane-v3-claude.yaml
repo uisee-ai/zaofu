@@ -29,7 +29,7 @@ metadata:
       description: Short refactor controller with per-lane verify and module parity loop.
       intent: refactor
       backend: claude
-      roles: 12
+      roles: 13
       recommended_for: [refactor]
       preferred: true
       order: 33

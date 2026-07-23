@@ -114,6 +114,7 @@ import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../componen
 import { BoardColumn } from "../components/kanban/BoardColumn";
 import { buildObservabilityEventWindow } from "./observabilityModel";
 import { ProjectEventBus } from "./projectEventBus";
+import { pageTitle } from "./pageMetadata";
 import { useProjectRequestScope } from "./useProjectRequestScope";
 import { ChannelRoute, OrchestratorRoute, ProjectionRoute } from "./lazyRoutes";
 import { useProjectObservabilityData } from "./useProjectObservabilityData";
@@ -595,38 +596,6 @@ function runtimeActionState(snapshot: Snapshot | null, tokenPresent: boolean): R
   };
 }
 
-function pageTitle(page: PageId): string {
-  const labels: Record<PageId, string> = {
-    project: "Overview",
-    inbox: "Inbox",
-    channels: "Channels",
-    board: "Tasks",
-    triage: "Triage",
-    observability: "Observability",
-    events: "Events",
-    agents: "Agents",
-    automations: "Automations",
-    backlogs: "Backlogs",
-    workdirs: "Workdirs",
-    skills: "Skills",
-    traces: "Event Traces",
-    delivery: "Delivery",
-    "delivery-trace": "Trace",
-    "delivery-graph": "Graph",
-    "behavior-loop": "Loop",
-    "control-room": "Control (retired)",
-    diagnostics: "Diagnostics",
-    candidates: "Candidates",
-    fanouts: "Fanouts",
-    runs: "Runs",
-    archives: "Archives",
-    runtime: "Runtime",
-    settings: "Settings",
-    task: "Task",
-  };
-  return labels[page] ?? page;
-}
-
 export function App() {
   const initial = useMemo(() => readInitialQuery(), []);
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProject[]>([]);
@@ -663,7 +632,7 @@ export function App() {
   const [taskTimelineLoading, setTaskTimelineLoading] = useState(false);
   const [taskTimelineError, setTaskTimelineError] = useState<string | null>(null);
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<DetailTab>("Timeline");
+  const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
   // Retired page: deep links keep working via redirect (doc116 §7.5 / P0-C2).
   useEffect(() => {
@@ -674,7 +643,7 @@ export function App() {
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [skillFilter, setSkillFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  const [quickFilter, setQuickFilter] = useState("focused");
+  const [quickFilter, setQuickFilter] = useState("all");
   const [textFilter, setTextFilter] = useState("");
   const [eventFilter, setEventFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -1406,7 +1375,9 @@ export function App() {
     const root = projectWizardDraft.root.trim();
     if (!root) return;
     const rawKind = projectWizardDraft.kind.trim();
-      const kind = (["multi", "issue", "prd", "refactor"] as const).find((item) => item === rawKind) ?? "";
+    const kind = projectWizardDraft.mode === "create"
+      ? (["multi", "issue", "prd", "refactor"] as const).find((item) => item === rawKind) ?? ""
+      : "";
     const payload = {
       root,
       workspace: projectWizardDraft.workspace.trim() || "default",
@@ -1438,7 +1409,7 @@ export function App() {
     setProjectWizardResult(result);
     const project = recordValue(result.project);
     const projectId = textValue(project?.project_id).trim();
-    if (result.ok !== false && kind && projectId) {
+    if (result.ok !== false && kind && kind !== "multi" && projectId) {
       // doc 125 §7.3: kind init flows straight into intake so the new project
       // has a next step instead of ending at "yaml written".
       const intake = await createWorkflowIntake(projectId, {
@@ -1451,7 +1422,7 @@ export function App() {
     }
     await loadWorkspaceProjects();
     if (result.ok !== false && projectId) switchProject(projectId);
-    if (result.ok !== false && !kind) setProjectWizardOpen(false);
+    if (result.ok !== false) setProjectWizardOpen(false);
   }
 
   async function initializeActiveProject() {
@@ -1673,7 +1644,7 @@ export function App() {
 
   function openTask(taskId: string) {
     setSelectedTaskId(taskId);
-    setDetailTab("Timeline");
+    setDetailTab("Summary");
     setPage("task");
   }
 
@@ -1695,6 +1666,12 @@ export function App() {
     }
     window.localStorage.removeItem("zf.webActionToken");
     setWebActionTokenPresent(false);
+  }
+
+  function openProjectWizard(prefill: Partial<ProjectWizardDraft> = {}) {
+    setProjectWizardDraft({ ...emptyProjectWizardDraft(), ...prefill });
+    setProjectWizardResult(null);
+    setProjectWizardOpen(true);
   }
 
   function openTaskAgent() {
@@ -1868,15 +1845,7 @@ export function App() {
         tokenPresent={webActionTokenPresent}
         onSaveToken={saveWebActionToken}
         onOpenProjectWizard={(prefill) => {
-          if (prefill?.root || prefill?.preset || prefill?.stack || prefill?.description) {
-            setProjectWizardDraft((d) => ({
-              ...d,
-              root: prefill.root ?? d.root, preset: prefill.preset ?? d.preset,
-              stack: prefill.stack ?? d.stack, description: prefill.description ?? d.description,
-              applyProfile: true,
-            }));
-          }
-          setProjectWizardOpen(true);
+          openProjectWizard({ ...prefill, mode: "create", applyProfile: true });
         }}
         onDone={() => { setShowWelcome(false); void loadWorkspaceProjects(); }}
       />
@@ -1927,7 +1896,7 @@ export function App() {
           channels={channelsPage?.channels ?? []}
           inboxPendingCount={projectHealth?.runtime_state === "archived" ? 0 : inboxPendingCount}
           liveState={liveState}
-          onAddProject={() => setProjectWizardOpen(true)}
+          onAddProject={() => openProjectWizard()}
           onOpenChannel={openChannel}
           onOpenPage={(nextPage) => setPage(nextPage)}
           onNewChannel={() => setNewChannelOpen(true)}
@@ -1941,11 +1910,11 @@ export function App() {
 
         <section className="board-panel">
           {!activeProjectId ? (
-            <WorkspaceEmptyPanel onAddProject={() => setProjectWizardOpen(true)} />
+            <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
             <ProjectInitPanel
               actionReady={webActionTokenPresent}
-              onAddProject={() => setProjectWizardOpen(true)}
+              onAddProject={() => openProjectWizard()}
               onInit={() => void initializeActiveProject()}
               project={activeProject}
             />
@@ -3397,6 +3366,7 @@ function ProjectWizardModal({
                     data-testid="wizard-bootstrap-init"
                     onClick={() => update({
                       mode: "create",
+                      kind: "",
                       preset: inspect.recommended_flow || draft.preset,
                       applyProfile: true,
                     })}

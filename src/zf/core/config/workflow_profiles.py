@@ -38,7 +38,7 @@ _KNOWN_PARAM_KEYS = frozenset({
     "assembly", "budgets",
     "laneRoleTemplate", "lane_role_template",
     "entryTrigger", "entry_trigger",
-    "scan", "judgeRole", "judge_role",
+    "scan", "judgeRole", "judge_role", "planCriticRole", "plan_critic_role",
     "schemaProfile", "schema_profile",
 })
 _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
@@ -61,6 +61,7 @@ _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
     "verifyBridgeRole", "verify_bridge_role",
     "roleDefaults", "role_defaults",
     "roleSkillBundles", "role_skill_bundles",
+    "semanticSubmitProfiles", "semantic_submit_profiles",
 })
 _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "flowProfile", "flow_profile",
@@ -76,6 +77,8 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "projectionPolicy", "projection_policy",
     "deliveryPolicy", "delivery_policy",
     "postVerifyDiscovery", "post_verify_discovery",
+    "planCriticRole", "plan_critic_role",
+    "semanticSubmitProfiles", "semantic_submit_profiles",
 })
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # fanout(default) | light(single lane goal loop)
@@ -117,10 +120,11 @@ _TASK_MAP_CONTRACT_INSTRUCTIONS = [
     "Task-map hard contract: write valid JSON with top-level `schema_version` exactly `task-map.v1`.",
     "Task-map hard contract: when the workflow has a target root, include top-level `target_root` and keep all paths repo-relative.",
     "Task-map hard contract: include `shared_conventions.test_path_prefix` and package/scaffold conventions such as `package_root` and `packaging_file` when more than one task depends on them.",
-    "Task-map hard contract: top-level `tasks` must be a non-empty array; each task must have a stable `task_id`, `title`, scoped `allowed_paths`, executable `verification`, `acceptance_criteria`, and `blocked_by` (empty array when none).",
+    "Task-map hard contract: top-level `tasks` must be a non-empty array; each task must have a stable `task_id`, `title`, scoped `allowed_paths`, structured `validation.commands`, `acceptance_criteria`, and `blocked_by` (empty array when none).",
     "Task-map hard contract: when `allowed_paths` is non-empty, include `allowed_paths_reason` or `scope_reason` explaining the ownership boundary.",
     "Task-map hard contract: dependencies in `blocked_by` must reference existing task ids and must not point to a later wave.",
-    "Task-map hard contract: `verification` must be an executable shell command only, not prose; put explanatory text in acceptance criteria or evidence fields.",
+    "Task-map hard contract: new plans use `validation.commands[]`; each command has stable `id`, executable `command`, `acceptance_ids`, `owner`, `tier`, `deterministic`, `reusable`, and `timeout_seconds`. Keep commands independent; do not join them with `&&`. Legacy `verification` remains accepted only as an adapter.",
+    "Task-map hard contract: acceptance entries use stable `id`, observable `statement`, `mandatory`, `verification_owner`, `verification_tier`, and `verification_command_ids`. An AC is a product outcome, not a test command or implementation step.",
     "Task-map hard contract: verification may use `cd <target_root>`, but referenced files must still be represented by repo-relative `allowed_paths` such as `app/tests/...`, not bare `tests/...`.",
     "Task-map hard contract: scaffold owners must list package metadata files they create, including `package.json`, `pyproject.toml`, `setup.py`, `setup.cfg`, `tsconfig.json`, or lockfiles.",
 ]
@@ -194,6 +198,31 @@ def _mapping_param(raw: Any, *, name: str) -> dict[str, Any]:
     if not isinstance(raw, dict):
         raise WorkflowProfileError(f"{name}: must be a mapping")
     return dict(raw)
+
+
+def _semantic_submit_profiles_param(params: dict[str, Any]) -> dict[str, str]:
+    raw = _mapping_param(
+        _pick(
+            params,
+            "semanticSubmitProfiles",
+            "semantic_submit_profiles",
+        ),
+        name="flow.semanticSubmitProfiles",
+    )
+    profiles: dict[str, str] = {}
+    for profile_id, value in raw.items():
+        key = str(profile_id).strip()
+        mode = str(value).strip().lower()
+        if not key:
+            raise WorkflowProfileError(
+                "flow.semanticSubmitProfiles: profile id must not be empty"
+            )
+        if mode not in {"shadow", "blocking"}:
+            raise WorkflowProfileError(
+                "flow.semanticSubmitProfiles: mode must be shadow or blocking"
+            )
+        profiles[key] = mode
+    return profiles
 
 
 _ROLE_DEFAULT_ALIASES = {
@@ -326,6 +355,12 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
     ))
     judge_role = str(_pick(params, "judgeRole", "judge_role",
                            default="judge-refactor"))
+    plan_critic_role = str(_pick(
+        params,
+        "planCriticRole",
+        "plan_critic_role",
+        default="plan-critic",
+    ))
     scan_cfg = params.get("scan") or {}
     scan_children = scan_cfg.get("children") or [
         {"id": cid} for cid in _SCAN_CHILDREN_V1
@@ -390,6 +425,7 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.plan.ready",
                 "failure_event": "zaofu.refactor.plan.blocked",
+                "synth_role": plan_critic_role,
             },
         },
     ]
@@ -428,7 +464,7 @@ def expand_refactor_flow_v1(params: dict) -> dict[str, Any]:
         *({"name": r, "instance_id": r, "role_kind": "reader",
            "backend": str((template or {}).get("backend") or "claude-code"),
            "permission_mode": "bypass"}
-          for r in (*scan_roles, scan_synth, judge_role)),
+          for r in (*scan_roles, scan_synth, plan_critic_role, judge_role)),
     ]
     return {
         "roles": roles,
@@ -479,6 +515,12 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
     ))
     judge_role = str(_pick(params, "judgeRole", "judge_role",
                            default="judge-refactor"))
+    plan_critic_role = str(_pick(
+        params,
+        "planCriticRole",
+        "plan_critic_role",
+        default="plan-critic",
+    ))
     verify_bridge_role = str(_pick(
         params, "verifyBridgeRole", "verify_bridge_role",
         default="refactor-verify-bridge",
@@ -564,6 +606,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
                 "mode": "wait_for_all",
                 "success_event": "zaofu.refactor.plan.ready",
                 "failure_event": "zaofu.refactor.plan.blocked",
+                "synth_role": plan_critic_role,
             },
         },
         {
@@ -638,11 +681,15 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         lane_template=template,
         schema_profile=str(_pick(
             params, "schemaProfile", "schema_profile",
-            default="refactor-flow/v3",
+            default="refactor-flow/v4",
         )),
         assembly=assembly,
         max_rework_attempts=max_rework,
         trace_budget=trace_budget,
+        # v4 completion binds Verify to the assembled Candidate commit. A
+        # per-lane transition verifies task branches before integration and
+        # therefore cannot satisfy that terminal identity contract.
+        stage_transition="stage_barrier",
         # Refactor v3 must judge only after the module-parity loop closes.
         # A lane-pipeline final here would also mint flow-lanes-final on
         # test.passed, causing two judge.passed events and a second auto-ship
@@ -671,7 +718,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
 
     roles = [
         *(_generated_role(r)
-          for r in (*scan_roles, scan_synth, verify_bridge_role,
+          for r in (*scan_roles, scan_synth, plan_critic_role, verify_bridge_role,
                     module_parity_role, judge_role)),
     ]
     metadata = {
@@ -732,14 +779,17 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             params, "deliveryPolicy", "delivery_policy",
             default="report_only",
         )),
-        "result_protocol": {"mode": "blocking"},
+        "result_protocol": {
+            "mode": "blocking",
+            "semantic_submit_profiles": _semantic_submit_profiles_param(params),
+        },
     }
     return {
         "roles": roles,
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "refactor-flow/v3",
+        "schema_profile": "refactor-flow/v4",
         "metadata": metadata,
     }
 
@@ -870,7 +920,10 @@ def _controller_metadata(
             params, "postVerifyDiscovery", "post_verify_discovery",
             default=default_discovery,
         )),
-        "result_protocol": {"mode": "blocking"},
+        "result_protocol": {
+            "mode": "blocking",
+            "semantic_submit_profiles": _semantic_submit_profiles_param(params),
+        },
     }
 
 
@@ -944,6 +997,12 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         params, "triageRole", "triage_role",
         default="issue-triage",
     ))
+    plan_critic_role = str(_pick(
+        params,
+        "planCriticRole",
+        "plan_critic_role",
+        default="plan-critic",
+    ))
     fix_pattern = str(_pick(
         params, "fixRolePattern", "fix_role_pattern",
         default="fix-lane-{lane}",
@@ -979,6 +1038,16 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
             skills=_role_skills(bundles, triage_role),
         ),
         _controller_role(
+            plan_critic_role,
+            backend=backend,
+            role_kind="reader",
+            role_defaults=role_defaults,
+            skills=(
+                _role_skills(bundles, plan_critic_role)
+                or _role_skills(bundles, "plan-critic")
+            ),
+        ),
+        _controller_role(
             discovery_role,
             backend=backend,
             role_kind="reader",
@@ -1010,6 +1079,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
                 "failure_event": "issue.triage.failed",
                 "child_success_event": "issue.triage.child.completed",
                 "child_failure_event": "issue.triage.child.failed",
+                "synth_role": plan_critic_role,
             },
         },
     ]
@@ -1027,8 +1097,9 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         impl_pattern=fix_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v6",
+        schema_profile="canonical-dag/v7",
         task_map_ref=task_map_ref,
+        stage_transition="stage_barrier",
         final={
             "when": "all_tasks_verified",
             "role": judge_role,
@@ -1057,7 +1128,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v6",
+        "schema_profile": "canonical-dag/v7",
         "metadata": metadata,
     }
 
@@ -1142,7 +1213,7 @@ def _expand_product_flow_light(
             default="verify-lane-{lane}",
         )),
         lane_template=lane_template,
-        schema_profile="canonical-dag/v6",
+        schema_profile="canonical-dag/v7",
         task_map_ref=str(_pick(
             params, "taskMapRef", "task_map_ref", default="${task_map_ref}",
         )),
@@ -1173,7 +1244,7 @@ def _expand_product_flow_light(
         "stages": [],
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "canonical-dag/v6",
+        "schema_profile": "canonical-dag/v7",
         "metadata": metadata,
     }
 
@@ -1207,6 +1278,12 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         name="PrdFlow.scanRoles",
     ) or ["product-scan", "tech-scan"]
     plan_role = str(_pick(params, "planRole", "plan_role", default="planner"))
+    plan_critic_role = str(_pick(
+        params,
+        "planCriticRole",
+        "plan_critic_role",
+        default="plan-critic",
+    ))
     impl_pattern = str(_pick(
         params, "implRolePattern", "impl_role_pattern",
         default="dev-lane-{lane}",
@@ -1247,6 +1324,16 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
             role_kind="reader",
             role_defaults=role_defaults,
             skills=_role_skills(bundles, plan_role),
+        ),
+        _controller_role(
+            plan_critic_role,
+            backend=backend,
+            role_kind="reader",
+            role_defaults=role_defaults,
+            skills=(
+                _role_skills(bundles, plan_critic_role)
+                or _role_skills(bundles, "plan-critic")
+            ),
         ),
         _controller_role(
             discovery_role,
@@ -1294,6 +1381,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
                 "failure_event": "prd.plan.failed",
                 "child_success_event": "prd.plan.child.completed",
                 "child_failure_event": "prd.plan.child.failed",
+                "synth_role": plan_critic_role,
             },
         },
     ]
@@ -1311,8 +1399,9 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         impl_pattern=impl_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v6",
+        schema_profile="canonical-dag/v7",
         task_map_ref=task_map_ref,
+        stage_transition="stage_barrier",
         final={
             "when": "all_tasks_verified",
             "role": judge_role,
@@ -1343,7 +1432,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v6",
+        "schema_profile": "canonical-dag/v7",
         "metadata": metadata,
     }
 
@@ -1433,10 +1522,10 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
             if isinstance(flow_meta, dict):
                 flow_meta.update(metadata)
 
-    # canonical-dag/v6 and refactor-flow/v3 terminate through the admitted
+    # canonical-dag/v7 and refactor-flow/v4 terminate through the admitted
     # Thin Judge -> Completion Gate protocol. Keep hand-written goal settings
     # authoritative, but make the protocol runnable for a bare Flow document.
-    if expansion.get("schema_profile") in {"canonical-dag/v6", "refactor-flow/v3"}:
+    if expansion.get("schema_profile") in {"canonical-dag/v7", "refactor-flow/v4"}:
         goal = body.setdefault("goal", {})
         if isinstance(goal, dict):
             goal.setdefault("enabled", True)

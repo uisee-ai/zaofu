@@ -15,6 +15,7 @@ from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
+from zf.web.projections import read_model
 from zf.web.server import create_app
 
 
@@ -71,10 +72,38 @@ def test_delivery_trace_endpoint(client: TestClient):
     assert data["related_loop_ids"] == []
     assert data["related_loop_count"] == 0
     assert data["thick_trace"]["schema_version"] == "delivery-thick-trace.v1"
+    assert data["goal_coverage_graph"]["schema_version"] == "goal-coverage-graph.v1"
+    assert data["goal_coverage_graph"]["summary"]["mandatory_claims"] >= 1
     assert data["thick_trace"]["graph"]["node_count"] >= 2
     assert data["thick_trace"]["spans"]
     assert any(node["node_id"] == "task:T1" for node in data["closed_loop"]["nodes"])
     assert any(edge["kind"] == "blocked_by" for edge in data["closed_loop"]["edges"])
+
+
+def test_delivery_trace_cache_version_ignores_legacy_payload(
+    client: TestClient,
+    state_dir: Path,
+):
+    first = client.get("/api/projects/default/delivery-traces/F-1")
+    assert first.status_code == 200
+    source_seq = read_model.current_projected_seq(state_dir, config=None)
+    assert source_seq > 0
+    read_model.set_cached_projection(
+        state_dir,
+        "delivery-trace:default:F-1:-",
+        kind="delivery-trace",
+        source_seq=source_seq,
+        payload={
+            "schema_version": "delivery-trace.v1",
+            "feature_id": "F-1",
+            "legacy_cache_payload": True,
+        },
+    )
+
+    data = client.get("/api/projects/default/delivery-traces/F-1").json()
+
+    assert "legacy_cache_payload" not in data
+    assert data["goal_coverage_graph"]["schema_version"] == "goal-coverage-graph.v1"
 
 
 def test_delivery_trace_endpoint_includes_goal_closure_loop(

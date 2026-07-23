@@ -187,6 +187,15 @@ def apply_pure_aggregator_policy(
 ) -> RoleConfig:
     if not is_fanout_synth_role(config, role):
         return role
+    if str(role.backend or "") == "codex":
+        # ZF-PLAN-SYNTH-HEADLESS-01 (2026-07-22 real Provider E2E): Codex
+        # restricted maps to `-a untrusted -s read-only`, which prompts even
+        # when the synth only reads its Kernel-issued briefing outside the
+        # worktree. There is no unattended per-tool allowlist equivalent.
+        # Keep the configured headless-safe mode; the role remains isolated in
+        # its own worktree and pre-tool scope guards enforce the no-source-write
+        # boundary. This is the same provider constraint as Thin Judge.
+        return role
     return _apply_readonly_role_policy(config, role, state_dir=state_dir)
 
 

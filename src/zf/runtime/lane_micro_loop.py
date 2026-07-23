@@ -613,7 +613,13 @@ def _write_continuation_briefing(
     try:
         from zf.runtime.goal_briefing import goal_briefing_section
 
-        goal_lines = goal_briefing_section(events, config=config)
+        goal_lines = goal_briefing_section(
+            events,
+            config=config,
+            role=lane,
+            stage="rework",
+            output_profile="implementation-result",
+        )
     except Exception:
         goal_lines = []
     findings = (

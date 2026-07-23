@@ -3,7 +3,7 @@
 > 适用对象：需要从空目录或已有代码库创建 ZaoFu Project，并安全提交第一条
 > PRD、Issue 或 Refactor workflow 的操作者。
 >
-> 最后按 CLI 与 Web 验证：2026-07-17。
+> 最后按 CLI 与 Web 验证：2026-07-22。
 
 ## 1. 先区分 Project、Request 和 Run
 
@@ -38,7 +38,9 @@ PRD 交付。它不是新项目模板；新项目仍应通过 `zf project init` 
 | `zf start` | 启动 worker、sidecar 和 watcher，等待入口事件 | 不会凭空创建 Request |
 
 真正的点火动作是 `zf flow submit --apply`，或者 `zf project init ... --apply`
-这一显式 fast path。
+这一显式 fast path。对于 light topology，`flow submit --apply` 会在同一个
+`EventWriter` transaction 中追加受理事件和关联的 `prd.requested` / `issue.requested`
+入口事件；不要再手工补发入口事件，否则会制造第二个 run identity。
 
 ## 3. CLI：创建一个默认 multi-kind Project
 

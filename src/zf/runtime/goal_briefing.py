@@ -18,6 +18,9 @@ def goal_briefing_section(
     events: Iterable[ZfEvent],
     *,
     config: Any,
+    role: str = "",
+    stage: str = "",
+    output_profile: str = "",
 ) -> list[str]:
     goal = getattr(config, "goal", None)
     if not bool(getattr(goal, "enabled", False)):
@@ -28,6 +31,42 @@ def goal_briefing_section(
     objective = str(projection.get("objective") or "").strip()
     if not objective:
         return []
+    identity = " ".join((role, stage, output_profile)).lower()
+    if any(token in identity for token in ("judge", "goal-closure", "closure")):
+        role_clause = [
+            "Judge 职责:",
+            "- 只消费已准入结果、closure facts 与 waiver refs，综合 Goal closure。",
+            "- 不运行测试、不扫描源码、不修改产品代码、不 commit，也不发起 replan。",
+        ]
+    elif any(token in identity for token in ("verify", "review", "critic")):
+        role_clause = [
+            "Verify/Critic 职责:",
+            "- 先复用与当前 target 精确绑定且仍有效的 receipts；只补独立风险 probe。",
+            "- 不修改产品代码，不把重复执行 Impl 已通过命令当作独立验证。",
+        ]
+    elif any(token in identity for token in ("impl", "dev", "writer", "rework")):
+        role_clause = [
+            "Impl/Rework 职责:",
+            "- 完成当前 Task Contract，并运行合同声明的验证和必要的邻接回归。",
+            "- 提交本任务改动与当前 target 绑定的 self-check/receipt；不要自行扩大为全量回归。",
+        ]
+    elif any(token in identity for token in ("plan", "planner", "synth")):
+        role_clause = [
+            "Planner/Synth 职责:",
+            "- 检查 Goal/AC 覆盖、风险、依赖和可执行切片，产出当前阶段规划 artifact。",
+            "- 不实施产品代码，不把 proposal 当作已准入的 canonical plan。",
+        ]
+    elif any(token in identity for token in ("recover", "run-manager", "supervisor", "autoresearch")):
+        role_clause = [
+            "Recovery 职责:",
+            "- 只诊断当前 failure package，并产出观察、恢复决定或修复 proposal。",
+            "- 不替代业务 Impl/Verify，也不直接修改 Kernel canonical state。",
+        ]
+    else:
+        role_clause = [
+            "当前阶段职责:",
+            "- 按 briefing 的 stage scope 和 output contract 工作，不扩大职责。",
+        ]
     return [
         "## Run Goal (persistent)",
         "",
@@ -43,8 +82,8 @@ def goal_briefing_section(
         "- 完成审计:把完成当作未证明——对每条验收标准找到当前状态下",
         "  的权威证据(文件/命令输出/测试结果/运行时行为)后方可声称;",
         "  不确定或间接证据 = 未完成,继续工作或收集更强证据。",
-        "- 发完成事件前跑全量自检(单测/e2e/不变量),证明\"没弄坏别处\"",
-        "  而不只是\"修了这点\";运行时证据一并再生成并随 commit 提交。",
+        "",
+        *role_clause,
         "",
     ]
 

@@ -24,6 +24,7 @@ from zf.core.task.store import TaskStore
 from zf.core.verification.evidence import command_evidence
 from zf.runtime.git_capture import git_env
 from zf.runtime.worktree_env import provision_worktree_env, run_project_setup
+from zf.runtime.verification_commands import task_contract_verification_commands
 
 
 _SAFE_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
@@ -1469,21 +1470,27 @@ class CandidateRebuilder:
             "auto",
         ) or "auto")
         checks: list[tuple[str, str]] = []
-        seen_commands: set[str] = set()
+        seen_commands: set[tuple[str, str]] = set()
         missing_task_ids: list[str] = []
         for candidate_task in tasks:
             task = self.task_store.get(candidate_task.task_id)
-            command = str(
-                getattr(getattr(task, "contract", None), "verification", "")
-                or ""
-            ).strip()
-            if not command:
+            commands = (
+                task_contract_verification_commands(task.contract)
+                if task is not None
+                else []
+            )
+            if not commands:
                 missing_task_ids.append(candidate_task.task_id)
                 continue
-            if command in seen_commands:
-                continue
-            seen_commands.add(command)
-            checks.append((f"task_contract:{candidate_task.task_id}", command))
+            for command in commands:
+                identity = (str(command["id"]), str(command["command_digest"]))
+                if identity in seen_commands:
+                    continue
+                seen_commands.add(identity)
+                checks.append((
+                    f"task_contract:{candidate_task.task_id}:{command['id']}",
+                    str(command["command"]),
+                ))
         if quality_source == "task_contract_required" and missing_task_ids:
             return [], "task_contract_missing"
         if checks:

@@ -22,7 +22,7 @@ class LoopConfig:
     reflect_backend: str = "claude-code"
     fix_wait_strategy: str = "head_change"   # head_change | manual | none
     fix_wait_timeout: int = 1800             # seconds
-    config_template: Path = Path("examples/dev-codex-backends.yaml")
+    config_template: Path = Path("examples/tmp/dev-codex-backends.yaml")
     # §9 playwright screenshot — empty url disables, default mcp image.
     screenshot_url: str = ""                 # e.g. "http://127.0.0.1:8765"
     screenshot_docker_image: str = "mcp/playwright:latest"

@@ -120,6 +120,22 @@ class TestCodexPermissionMode:
         assert "-s" in cmd and cmd[cmd.index("-s") + 1] == "danger-full-access"
         assert "read-only" not in cmd
 
+    def test_restricted_ignores_unsupported_worker_sandbox_override(self, monkeypatch):
+        monkeypatch.setenv("ZF_CODEX_WORKER_SANDBOX", "workspace-write")
+        role = RoleConfig(name="test", permission_mode="restricted")
+        cmd = CodexAdapter().build_command(role)
+        assert cmd[cmd.index("-s") + 1] == "read-only"
+
+    def test_worker_sandbox_does_not_inherit_kanban_headless_override(self, monkeypatch):
+        monkeypatch.delenv("ZF_CODEX_WORKER_SANDBOX", raising=False)
+        monkeypatch.setenv(
+            "ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX",
+            "danger-full-access",
+        )
+        role = RoleConfig(name="test", permission_mode="restricted")
+        cmd = CodexAdapter().build_command(role)
+        assert cmd[cmd.index("-s") + 1] == "read-only"
+
     def test_restricted_with_allowed_paths_uses_workspace_write(self):
         """B-1203-01 (2026-04-21): codex aborts when `-s read-only` is
         combined with `--add-dir`. Upgrade sandbox to workspace-write

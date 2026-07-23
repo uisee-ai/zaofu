@@ -51,7 +51,7 @@ FATAL_EVENT_TYPES = frozenset({
 class AutoresearchRunConfig:
     scenario_name: str = "self-eval-backlog"
     worktree: Path = Path("/tmp/zaofu-autoresearch")
-    config_template: Path = Path("examples/dev-codex-backends.yaml")
+    config_template: Path = Path("examples/tmp/dev-codex-backends.yaml")
     branch: str = ""
     seed_file: Path | None = None
     expected_done: int | None = None

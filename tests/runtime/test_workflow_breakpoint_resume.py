@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from zf.core.config.loader import load_config
 from zf.core.config.schema import (
     ProjectConfig,
     QualityGateConfig,
@@ -289,6 +290,71 @@ def test_lane_gate_resume_is_suppressed_by_candidate_ready(
         item["safe_resume_action"] == "no_action"
         for item in projection["checkpoints"]
     )
+
+
+def test_verify_child_resume_uses_linked_global_fanout_completion(
+    tmp_path: Path,
+) -> None:
+    state_dir, store, log = _state(tmp_path)
+    config = load_config(
+        Path(__file__).resolve().parents[2]
+        / "examples" / "prod" / "controller" / "prd-fanout-v3.yaml"
+    )
+    store.add(Task(
+        id="ZF149-RESULT-001",
+        title="result",
+        status="in_progress",
+        assigned_to="verify-lane-0",
+    ))
+    verify_completed = ZfEvent(
+        type="verify.child.completed",
+        actor="verify-lane-0",
+        payload={
+            "task_id": "ZF149-RESULT-001",
+            "fanout_id": "fanout-prd-lanes-verify-r6",
+            "stage_id": "prd-lanes-verify",
+            "child_id": "verify-lane-0-artifact-delivery",
+            "status": "completed",
+        },
+    )
+    log.append(verify_completed)
+    log.append(ZfEvent(
+        type="fanout.child.completed",
+        actor="zf-cli",
+        causation_id=verify_completed.id,
+        payload={
+            "fanout_id": "fanout-prd-lanes-verify-r6",
+            "stage_id": "prd-lanes-verify",
+            "child_id": "verify-lane-0-artifact-delivery",
+            "status": "completed",
+        },
+    ))
+    log.append(ZfEvent(
+        type="fanout.aggregate.completed",
+        actor="zf-cli",
+        payload={
+            "fanout_id": "fanout-prd-lanes-verify-r6",
+            "stage_id": "prd-lanes-verify",
+            "status": "completed",
+        },
+    ))
+    log.append(ZfEvent(
+        type="test.passed",
+        actor="zf-cli",
+        payload={
+            "fanout_id": "fanout-prd-lanes-verify-r6",
+            "stage_id": "prd-lanes-verify",
+            "status": "completed",
+        },
+    ))
+
+    projection = build_workflow_resume_projection(state_dir, config)
+
+    checkpoint = projection["checkpoints"][0]
+    assert checkpoint["last_trusted_event_id"] == verify_completed.id
+    assert checkpoint["safe_resume_action"] == "no_action"
+    assert checkpoint["blocking_event_id"] == ""
+    assert projection["summary"]["pending"] == 0
 
 
 def test_semantic_resume_dedupe_waits_for_downstream_progress() -> None:
@@ -871,6 +937,266 @@ def test_resume_apply_reemits_candidate_ready_with_same_head(
         "CJMIN-PROVIDER-001",
     ]
     assert dispatched == [ready[0]]
+
+
+def test_completion_rejection_reverifies_candidate_once(tmp_path: Path) -> None:
+    state_dir, _store, log = _state(tmp_path)
+    rejection = ZfEvent(
+        id="completion-rejected-1",
+        type="run.goal.completion.rejected",
+        correlation_id="RUN-1",
+        payload={
+            "run_id": "RUN-1",
+            "claim_id": "claim-1",
+            "invalid_reasons": ["verification_evidence_missing"],
+            "completion_recovery_attempt": 1,
+            "completion_recovery_cap": 2,
+            "fanout_id": "fanout-impl-1",
+            "pdd_id": "GOAL-1",
+            "feature_id": "GOAL-1",
+            "candidate_ref": "candidate/GOAL-1",
+            "candidate_base_commit": "a" * 40,
+            "candidate_head_commit": "b" * 40,
+            "target_commit": "b" * 40,
+            "completed_task_ids": ["TASK-A", "TASK-B"],
+            "task_map_generation": "task-map-11111111111111111111",
+        },
+    )
+    log.append(rejection)
+    dispatched: list[ZfEvent] = []
+
+    first = apply_workflow_resume(
+        state_dir,
+        _lane_config(),
+        gate_dispatcher=dispatched.append,
+    )
+    second = apply_workflow_resume(
+        state_dir,
+        _lane_config(),
+        gate_dispatcher=dispatched.append,
+    )
+
+    ready = [
+        event for event in log.read_all()
+        if event.type == "candidate.ready"
+        and event.payload.get("source") == "workflow_resume_batch"
+    ]
+    assert first["applied"] == 1
+    assert second["applied"] == 0
+    assert len(ready) == 1
+    assert ready[0].payload["candidate_head_commit"] == "b" * 40
+    assert ready[0].payload["rework_of"] == "completion-rejected-1"
+    assert dispatched == ready
+
+
+def test_completion_rejection_is_not_recovered_by_compat_judge_passed(
+    tmp_path: Path,
+) -> None:
+    state_dir, _store, log = _state(tmp_path)
+    log.append(ZfEvent(
+        id="completion-rejected-before-compat",
+        type="run.goal.completion.rejected",
+        correlation_id="RUN-COMPAT",
+        payload={
+            "run_id": "RUN-COMPAT",
+            "claim_id": "claim-compat",
+            "invalid_reasons": ["verification_evidence_missing"],
+            "completion_recovery_attempt": 1,
+            "completion_recovery_cap": 2,
+            "fanout_id": "fanout-impl-compat",
+            "pdd_id": "GOAL-COMPAT",
+            "feature_id": "GOAL-COMPAT",
+            "candidate_ref": "candidate/GOAL-COMPAT",
+            "candidate_base_commit": "a" * 40,
+            "candidate_head_commit": "b" * 40,
+            "target_commit": "b" * 40,
+            "completed_task_ids": ["TASK-A"],
+            "task_map_generation": "task-map-11111111111111111111",
+        },
+    ))
+    log.append(ZfEvent(
+        type="judge.passed",
+        correlation_id="RUN-COMPAT",
+        payload={
+            "pdd_id": "GOAL-COMPAT",
+            "candidate_ref": "candidate/GOAL-COMPAT",
+            "candidate_head_commit": "b" * 40,
+            "reason": "compatibility projection of admitted Goal closure result",
+        },
+    ))
+
+    projection = build_workflow_resume_projection(state_dir, _lane_config())
+
+    assert projection["summary"]["batch_pending"] == 1
+    assert projection["batch_checkpoints"][0]["source_event_id"] == (
+        "completion-rejected-before-compat"
+    )
+
+
+def test_completion_rejection_reverify_is_bounded(tmp_path: Path) -> None:
+    state_dir, _store, log = _state(tmp_path)
+    log.append(ZfEvent(
+        type="run.goal.completion.rejected",
+        correlation_id="RUN-1",
+        payload={
+            "run_id": "RUN-1",
+            "claim_id": "claim-3",
+            "invalid_reasons": ["verification_target_mismatch"],
+            "completion_recovery_attempt": 3,
+            "completion_recovery_cap": 2,
+            "fanout_id": "fanout-impl-1",
+            "pdd_id": "GOAL-1",
+            "candidate_ref": "candidate/GOAL-1",
+            "candidate_base_commit": "a" * 40,
+            "candidate_head_commit": "b" * 40,
+            "completed_task_ids": ["TASK-A"],
+        },
+    ))
+
+    projection = build_workflow_resume_projection(state_dir, _lane_config())
+
+    assert projection["summary"]["batch_pending"] == 0
+    assert projection["batch_checkpoints"] == []
+
+
+def test_completion_reverify_produces_fresh_claim_and_unique_terminal(
+    tmp_path: Path,
+) -> None:
+    from zf.runtime.run_manager import (
+        run_goal_completion_claim_event,
+        run_goal_completion_gate_event,
+    )
+
+    state_dir, _store, log = _state(tmp_path)
+    run_id = "RUN-REVERIFY"
+    target = "b" * 40
+    stale_target = "a" * 40
+    generation = "task-map-44444444444444444444"
+    candidate_ref = "candidate/GOAL-REVERIFY"
+    initial = [
+        ZfEvent(type="run.goal.started", correlation_id=run_id, payload={"run_id": run_id}),
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "fanout_id": "fanout-impl",
+                "pdd_id": "GOAL-REVERIFY",
+                "feature_id": "GOAL-REVERIFY",
+                "candidate_ref": candidate_ref,
+                "candidate_base_commit": "0" * 40,
+                "candidate_head_commit": target,
+                "completed_task_ids": ["TASK-A"],
+            },
+        ),
+        ZfEvent(
+            type="fanout.child.completed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "task_map_generation": generation,
+                "candidate_ref": candidate_ref,
+                "target_commit": stale_target,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/verify-stale.json",
+                    "sha256": "1" * 64,
+                },
+            },
+        ),
+        ZfEvent(
+            type="flow.goal.closed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "goal_id": "GOAL-REVERIFY",
+                "task_map_generation": generation,
+                "candidate_head_commit": target,
+                "goal_claim_set_digest": "2" * 64,
+                "closure_fact_digest": "3" * 64,
+            },
+        ),
+    ]
+    for event in initial:
+        log.append(event)
+
+    def closure_event(event_id: str, digest: str) -> ZfEvent:
+        return ZfEvent(
+            id=event_id,
+            type="goal.closure.synthesized",
+            correlation_id=run_id,
+            payload={
+                "goal_closure_result": {
+                    "workflow_run_id": run_id,
+                    "goal_id": "GOAL-REVERIFY",
+                    "task_map_generation": generation,
+                    "target_commit": target,
+                    "candidate_ref": candidate_ref,
+                    "goal_claim_set_ref": "artifacts/claims.json",
+                    "goal_claim_set_digest": "2" * 64,
+                    "closure_fact_ref": "artifacts/closure.json",
+                    "closure_fact_digest": "3" * 64,
+                },
+                "admitted_call_result_ref": {
+                    "ref": f"artifacts/{event_id}.json",
+                    "sha256": digest,
+                },
+            },
+        )
+
+    first_closure = closure_event("closure-first", "4" * 64)
+    first_claim = run_goal_completion_claim_event(log.read_all(), cause=first_closure)
+    assert first_claim is not None
+    rejection = run_goal_completion_gate_event(
+        [*log.read_all(), first_closure, first_claim],
+        claim=first_claim,
+    )
+    assert rejection is not None
+    assert rejection.type == "run.goal.completion.rejected"
+    assert rejection.payload["invalid_reasons"] == ["verification_target_mismatch"]
+    for event in (first_closure, first_claim, rejection):
+        log.append(event)
+
+    resume = apply_workflow_resume(state_dir, _lane_config())
+    assert resume["applied"] == 1
+    exact_verify = ZfEvent(
+        id="verify-current-after-recovery",
+        type="fanout.child.completed",
+        correlation_id=run_id,
+        payload={
+            "workflow_run_id": run_id,
+            "task_map_generation": generation,
+            "candidate_ref": candidate_ref,
+            "target_commit": target,
+            "control_result_schema": "verification-result.v1",
+            "semantic_verdict": "passed",
+            "admitted_call_result_ref": {
+                "ref": "artifacts/verify-current.json",
+                "sha256": "5" * 64,
+            },
+        },
+    )
+    second_closure = closure_event("closure-second", "6" * 64)
+    log.append(exact_verify)
+    second_claim = run_goal_completion_claim_event(log.read_all(), cause=second_closure)
+    assert second_claim is not None
+    assert second_claim.payload["claim_id"] != first_claim.payload["claim_id"]
+    completion = run_goal_completion_gate_event(
+        [*log.read_all(), second_closure, second_claim],
+        claim=second_claim,
+    )
+    assert completion is not None
+    assert completion.type == "run.goal.completed"
+    assert completion.payload["verification_event_id"] == "verify-current-after-recovery"
+    for event in (second_closure, second_claim, completion):
+        log.append(event)
+
+    assert len([
+        event for event in log.read_all()
+        if event.type == "run.goal.completed"
+    ]) == 1
+    assert run_goal_completion_gate_event(log.read_all(), claim=first_claim) is None
 
 
 def test_resume_projection_suppresses_stale_candidate_reemit_checkpoint(

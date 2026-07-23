@@ -1,8 +1,12 @@
 
 
-/* ── Delivery Trace page (doc 68) —— 卡片/badge 统一走 design token ── */
-.delivery-trace-page { padding: 14px 16px; max-width: none; }
-.delivery-trace-page { padding: 14px 16px; max-width: 1220px; }
+/* Delivery workspace fills the projection area; individual views own scrolling. */
+.delivery-trace-page {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  padding: 14px 16px;
+}
 .delivery-empty-state { margin: 12px 0 0; }
 .delivery-empty-cockpit {
   display: grid;
@@ -371,7 +375,6 @@
 .delivery-flow-rail,
 .delivery-flow-stage-panel,
 .delivery-flow-inspector,
-.delivery-span-inspector,
 .delivery-autoresearch-graphs {
   min-width: 0;
   display: grid;
@@ -640,12 +643,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* T-刀④ — Trace tab: 树×瀑布主面板 + Span Inspector 两列。 */
-.dt-trace-layout {
-  display: grid;
-  grid-template-columns: minmax(360px, 1.6fr) minmax(260px, 0.7fr);
-  gap: 12px;
-  align-items: start;
+.dt-spans-layout {
+  min-width: 0;
+  width: 100%;
 }
 .delivery-autoresearch-graph {
   min-width: 0;

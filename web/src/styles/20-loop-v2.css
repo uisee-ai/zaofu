@@ -1,0 +1,36 @@
+.loop-v2-page {
+  width: 100%;
+  min-width: 0;
+  min-height: 100%;
+  padding: 14px 16px 24px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.loop-v2-page-heading {
+  margin-bottom: 12px;
+}
+
+.loop-v2-page-heading > div {
+  min-width: 0;
+}
+
+.loop-v2-state {
+  display: grid;
+  place-items: center;
+  color: var(--muted-foreground);
+}
+
+.loop-v2-state.tone-err {
+  color: var(--err);
+}
+
+.loop-v2-page > :last-child {
+  margin-bottom: 0 !important;
+}
+
+@media (max-width: 680px) {
+  .loop-v2-page {
+    padding: 8px;
+  }
+}

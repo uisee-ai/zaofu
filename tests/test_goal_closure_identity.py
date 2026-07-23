@@ -84,6 +84,52 @@ def test_closure_identity_uses_same_legacy_generation_as_claim_pin(tmp_path) -> 
     )
 
 
+def test_closure_identity_uses_pinned_run_identity_for_trace_alias(
+    tmp_path,
+) -> None:  # noqa: ANN001
+    events = [
+        ZfEvent(
+            type="prd.requested",
+            payload={"workflow_run_id": "provider-run-1"},
+        ),
+        ZfEvent(
+            type="fanout.child.completed",
+            correlation_id="trace-1",
+            payload={
+                "workflow_run_id": "provider-run-1",
+                "trace_id": "trace-1",
+            },
+        ),
+        ZfEvent(
+            type="goal.claim_set.pinned",
+            correlation_id="provider-run-1",
+            payload={
+                "workflow_run_id": "provider-run-1",
+                "goal_id": "GOAL-1",
+                "task_map_generation": "generation-1",
+            },
+        ),
+    ]
+    identity = build_closure_identity(
+        events,
+        source_event=ZfEvent(
+            type="flow.discovery.completed",
+            correlation_id="trace-1",
+            payload={"workflow_run_id": "trace-1"},
+        ),
+        payload={
+            "workflow_run_id": "trace-1",
+            "goal_id": "GOAL-1",
+            "candidate_head_commit": "a" * 40,
+        },
+        state_dir=tmp_path,
+        flow_kind="prd",
+    )
+
+    assert identity["workflow_run_id"] == "provider-run-1"
+    assert identity["task_map_generation"] == "generation-1"
+
+
 def test_goal_closure_dispatch_snapshots_bind_identity(tmp_path) -> None:  # noqa: ANN001
     contract = write_immutable_json_sidecar(
         tmp_path,

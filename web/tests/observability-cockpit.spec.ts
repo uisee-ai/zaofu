@@ -35,13 +35,30 @@ test("observability cockpit remains usable on mobile", async ({ page }) => {
   await expect(page.locator(".observability-filter-panel")).toBeVisible();
 });
 
+test("trace compatibility route uses the Observability product surface", async ({ page }) => {
+  await page.goto(`/?project=${encodeURIComponent(projectId)}&page=traces`);
+  await expect(page.getByTestId("observability-page")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Observability" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Traces/ })).toHaveClass(/active/);
+  await expect(page.locator(".trace-index-panel")).toBeVisible();
+  await expect(page.getByText("load on open", { exact: true })).toHaveCount(5);
+});
+
+test("legacy entity routes open their canonical Observability tabs", async ({ page }) => {
+  for (const route of ["runs", "fanouts", "candidates"] as const) {
+    await page.goto(`/?project=${encodeURIComponent(projectId)}&page=${route}`);
+    await expect(page.getByTestId("observability-page")).toBeVisible();
+    await expect(page.getByRole("button", { name: new RegExp(`^${route}`, "i") })).toHaveClass(/active/);
+  }
+});
+
 test("core cockpit pages render on desktop and mobile", async ({ page }) => {
   const routes = [
     { pageId: "project", heading: "Project" },
     { pageId: "board", heading: "Tasks" },
     { pageId: "delivery", heading: "Delivery" },
     { pageId: "agents", heading: "Agents" },
-    { pageId: "runtime", heading: "Runtime" },
+    { pageId: "runtime", heading: "Observability" },
     { pageId: "observability", heading: "Observability" },
     { pageId: "channels", selector: ".channel-shell" },
     { pageId: "automations", heading: "Automations" },

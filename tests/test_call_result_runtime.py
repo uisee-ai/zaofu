@@ -20,6 +20,7 @@ from zf.runtime.call_result_runtime import (
     prepare_call_operation,
 )
 from zf.runtime.operation_projection import project_workflow_operation
+from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -80,6 +81,17 @@ def test_selected_call_result_replays_settled_operation_without_redispatch(
         dispatch_id="attempt-1",
     )
     assert prepared.should_dispatch is True
+    assert prepared.output_profile_id == "implementation"
+    requested = next(
+        event for event in runtime.event_log.read_all()
+        if event.type == "workflow.operation.requested"
+    )
+    request = hydrate_sidecar_ref(
+        runtime.state_dir,
+        requested.payload["request_ref"],
+    ).payload["request"]
+    assert request["output_profile_id"] == "implementation"
+    assert request["output_profile_revision"] == "1"
     manifest = hydrate_sidecar_ref(
         runtime.state_dir,
         payload["attempt_source_manifest"],
@@ -97,6 +109,11 @@ def test_selected_call_result_replays_settled_operation_without_redispatch(
         task_id="T1",
         dispatch_id="attempt-1",
     )
+    running_projection = project_workflow_operation(
+        runtime.state_dir,
+        prepared.operation_id,
+    )
+    assert running_projection["status"] == "running"
     terminal = ZfEvent(
         type="dev.build.done",
         actor="dev-1",
@@ -163,6 +180,232 @@ def test_inherited_operation_identity_is_rederived_per_stage(tmp_path: Path) -> 
         task_id="T1", dispatch_id="run-F2-verify",
     )
     assert replay.operation_id == verify.operation_id
+
+
+def test_candidate_verify_operation_requires_current_contract_target_and_self_check(
+    tmp_path: Path,
+) -> None:
+    runtime = _runtime(tmp_path)
+    descriptors: dict[str, tuple[str, str]] = {}
+    for source_id in ("contract", "target", "impl-self-check"):
+        ref = f"artifacts/{source_id}.json"
+        path = runtime.state_dir / ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"source": source_id}), encoding="utf-8")
+        descriptors[source_id] = (ref, hashlib.sha256(path.read_bytes()).hexdigest())
+    payload = {
+        "workflow_run_id": "run-candidate",
+        "task_id": "T1",
+        "output_profile_id": "candidate-verify",
+        "contract_snapshot_ref": descriptors["contract"][0],
+        "contract_snapshot_digest": descriptors["contract"][1],
+        "target_snapshot_ref": descriptors["target"][0],
+        "target_snapshot_digest": descriptors["target"][1],
+        "impl_self_check_ref": descriptors["impl-self-check"][0],
+        "impl_self_check_digest": descriptors["impl-self-check"][1],
+    }
+
+    prepared = prepare_call_operation(
+        runtime,
+        payload=payload,
+        operation_type="fanout_reader_child",
+        operation_key="candidate-verify-T1",
+        stage_id="candidate-verify",
+        task_id="T1",
+        dispatch_id="attempt-candidate",
+    )
+
+    assert prepared.output_profile_id == "candidate-verify"
+    manifest = hydrate_sidecar_ref(
+        runtime.state_dir,
+        payload["attempt_source_manifest"],
+    ).payload
+    assert {item["source_id"] for item in manifest["sources"]} == {
+        "contract",
+        "target",
+        "impl-self-check",
+    }
+    assert {item["source_id"] for item in payload["required_reads"]} == {
+        "contract",
+        "target",
+        "impl-self-check",
+    }
+
+
+def _prepared_plan_synth(tmp_path: Path):
+    runtime = _runtime(tmp_path)
+    report_path = runtime.state_dir / "fanouts" / "F-PLAN" / "children" / "planner" / "report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(json.dumps({
+        "status": "passed",
+        "recommendation": "approve",
+        "task_map": {"tasks": [{"task_id": "T1"}]},
+    }), encoding="utf-8")
+    manifest = {
+        "fanout_id": "F-PLAN",
+        "trace_id": "run-plan",
+        "workflow_run_id": "run-plan",
+        "stage_id": "plan",
+        "trigger_event_id": "evt-plan-trigger",
+        "target_ref": "main",
+    }
+    payload = build_plan_synth_call_payload(
+        state_dir=runtime.state_dir,
+        project_root=runtime.project_root,
+        manifest=manifest,
+        reports=[{
+            "child_id": "planner",
+            "report_path": str(report_path),
+        }],
+        run_id="run-F-PLAN-synth",
+        role_instance="plan-critic",
+    )
+    prepared = prepare_call_operation(
+        runtime,
+        payload=payload,
+        operation_type="fanout_synth",
+        operation_key="synth@trig:evt-plan-tri",
+        stage_id="plan",
+        task_id="",
+        dispatch_id="run-F-PLAN-synth",
+    )
+    mark_call_operation_started(
+        runtime,
+        prepared,
+        task_id="",
+        dispatch_id="run-F-PLAN-synth",
+    )
+    return runtime, payload, prepared
+
+
+def _plan_synth_event(payload: dict, *, plan_revision: str = "") -> ZfEvent:
+    return ZfEvent(
+        type="fanout.synth.completed",
+        actor="plan-critic",
+        correlation_id="run-plan",
+        payload={
+            **payload,
+            "plan_revision": plan_revision or payload["plan_revision"],
+            "status": "completed",
+            "recommendation": "approve",
+            "summary": "plan ready",
+            "report": {
+                "status": "passed",
+                "recommendation": "approve",
+                "summary": "plan ready",
+            },
+        },
+    )
+
+
+def test_plan_synth_required_reads_repair_then_admit_and_replay(
+    tmp_path: Path,
+) -> None:
+    runtime, payload, prepared = _prepared_plan_synth(tmp_path)
+    assert prepared.output_profile_id == "plan-synth"
+    assert {row["source_id"] for row in payload["required_reads"]} == {
+        "plan-synth-contract",
+        "child-result-planner",
+    }
+
+    missing = admit_runtime_call_result(
+        runtime,
+        _plan_synth_event(payload),
+        mode="blocking",
+        dispatch_correction=False,
+    )
+    assert missing.repair_requested is True
+    assert missing.repair_round == 1
+
+    manifest = hydrate_sidecar_ref(
+        runtime.state_dir,
+        payload["attempt_source_manifest"],
+    ).payload
+    for requirement in payload["required_reads"]:
+        read_attempt_artifact(
+            runtime.state_dir,
+            manifest=manifest,
+            source_id=requirement["source_id"],
+            artifact_id=requirement["artifact_id"],
+        )
+    admitted = admit_runtime_call_result(
+        runtime,
+        _plan_synth_event(payload),
+        mode="blocking",
+        dispatch_correction=False,
+    )
+    assert admitted.admitted is True
+    duplicate = admit_runtime_call_result(
+        runtime,
+        _plan_synth_event(payload),
+        mode="blocking",
+        dispatch_correction=False,
+    )
+    assert duplicate.admitted is True
+    assert duplicate.admitted_event_id == admitted.admitted_event_id
+
+    restarted = _runtime(tmp_path)
+    replay_payload = build_plan_synth_call_payload(
+        state_dir=restarted.state_dir,
+        project_root=restarted.project_root,
+        manifest={
+            "fanout_id": "F-PLAN",
+            "trace_id": "run-plan",
+            "workflow_run_id": "run-plan",
+            "stage_id": "plan",
+            "trigger_event_id": "evt-plan-trigger",
+            "target_ref": "main",
+        },
+        reports=[{
+            "child_id": "planner",
+            "report_path": str(
+                restarted.state_dir
+                / "fanouts/F-PLAN/children/planner/report.json"
+            ),
+        }],
+        run_id="run-F-PLAN-synth",
+        role_instance="plan-critic",
+    )
+    replay = prepare_call_operation(
+        restarted,
+        payload=replay_payload,
+        operation_type="fanout_synth",
+        operation_key="synth@trig:evt-plan-tri",
+        stage_id="plan",
+        task_id="",
+        dispatch_id="run-F-PLAN-synth",
+    )
+    assert replay.ensure_status == "settled"
+    assert replay.output_profile_id == "plan-synth"
+    assert replay.output_profile_revision == "1"
+
+
+def test_plan_synth_stale_revision_is_superseded(tmp_path: Path) -> None:
+    runtime, payload, _prepared = _prepared_plan_synth(tmp_path)
+    manifest = hydrate_sidecar_ref(
+        runtime.state_dir,
+        payload["attempt_source_manifest"],
+    ).payload
+    for requirement in payload["required_reads"]:
+        read_attempt_artifact(
+            runtime.state_dir,
+            manifest=manifest,
+            source_id=requirement["source_id"],
+            artifact_id=requirement["artifact_id"],
+        )
+
+    outcome = admit_runtime_call_result(
+        runtime,
+        _plan_synth_event(payload, plan_revision="plan-rstale"),
+        mode="blocking",
+        dispatch_correction=False,
+    )
+    assert outcome.status == "superseded"
+    assert {issue["code"] for issue in outcome.issues} == {"stale_plan_revision"}
+    assert not [
+        event for event in runtime.event_log.read_all()
+        if event.type == "workflow.call.result.admitted"
+    ]
 
 
 def test_call_result_correction_waits_for_source_turn_stop(

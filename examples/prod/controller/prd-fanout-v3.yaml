@@ -22,7 +22,7 @@ metadata:
       description: Short controller PRD workflow with scan, plan, impl, verify.
       intent: build
       backend: codex
-      roles: 10
+      roles: 11
       recommended_for: [build]
       preferred: true
       order: 31

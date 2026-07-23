@@ -571,7 +571,7 @@ spec:
     report = json.loads(capsys.readouterr().out)
     assert report["schema_version"] == "flow-start-readiness.v1"
     assert report["flow_kind"] == "issue"
-    assert report["summary"]["roles"] == 5
+    assert report["summary"]["roles"] == 6
 
 
 def test_flow_preflight_with_intake_reports_manifest(tmp_path, capsys):
@@ -770,7 +770,7 @@ def test_flow_start_dry_run_writes_safe_unique_proposal(tmp_path, capsys):
     assert proposal["project"]["name"] == "issue-start-demo"
     assert proposal["project"]["state_dir"] == ".zf-issue-start-demo"
     assert proposal["lanes"] == 1
-    assert proposal["summary"]["roles"] == 6
+    assert proposal["summary"]["roles"] == 7
     assert proposal["policies"]["quality_floor"] == "issue-regression"
     assert output.exists()
 
@@ -1183,9 +1183,8 @@ workflow:
     return config
 
 
-def test_flow_submit_apply_light_topology_skips_invoke(tmp_path, capsys):
-    """LB-2: light submit must NOT emit the bootstrap invoke — it would
-    direct-dispatch the whole objective to the judge role (dead path)."""
+def test_flow_submit_apply_light_topology_emits_correlated_entry(tmp_path, capsys):
+    """Light submit emits its entry, not the dead-path bootstrap invoke."""
     source = tmp_path / "prd.md"
     source.write_text("deliver mdtoc CLI\n", encoding="utf-8")
     intake = tmp_path / "docs" / "intake" / "prd.md"
@@ -1228,11 +1227,29 @@ spec:
     assert rc == 0
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "accepted"
-    assert result["workflow_invoke_status"] == "skipped_light"
-    assert "prd.requested" in result["next_action"]
-    types = [e.type for e in EventLog(tmp_path / ".zf-light-apply" / "events.jsonl").read_all()]
+    assert result["workflow_invoke_status"] == "light_entry_requested"
+    events = EventLog(tmp_path / ".zf-light-apply" / "events.jsonl").read_all()
+    types = [event.type for event in events]
     assert "workflow.submit.accepted" in types
+    assert "prd.requested" in types
     assert "workflow.invoke.requested" not in types
+    entry = next(event for event in events if event.type == "prd.requested")
+    assert entry.correlation_id == "wfint-light"
+    assert entry.payload["workflow_run_id"] == "wfint-light"
+    assert entry.payload["workflow_input_manifest_ref"]
+    assert entry.payload["source_refs"]["source_ref"] == str(source)
+
+    assert main([
+        "flow", "submit", "--apply", "--config", str(config),
+        "--intake", str(intake), "--task-id", "TASK-LIGHT",
+        "--pattern-id", "prd-lanes-impl", "--json",
+    ]) == 0
+    replay = json.loads(capsys.readouterr().out)
+    assert replay["idempotent_replay"] is True
+    assert replay["workflow_invoke_status"] == "already_requested"
+    assert replay["workflow_entry_event_id"] == entry.id
+    replay_events = EventLog(tmp_path / ".zf-light-apply" / "events.jsonl").read_all()
+    assert sum(event.type == "prd.requested" for event in replay_events) == 1
 
 
 def test_flow_submit_apply_issue_light_uses_issue_entry_trigger(tmp_path, capsys):
@@ -1279,15 +1296,16 @@ spec:
     assert rc == 0
     result = json.loads(capsys.readouterr().out)
     assert result["status"] == "accepted"
-    assert result["workflow_invoke_status"] == "skipped_light"
-    assert "issue.requested" in result["next_action"]
-    assert "prd.requested" not in result["next_action"]
-    types = [
-        e.type
-        for e in EventLog(tmp_path / ".zf-issue-light-apply" / "events.jsonl").read_all()
-    ]
+    assert result["workflow_invoke_status"] == "light_entry_requested"
+    events = EventLog(tmp_path / ".zf-issue-light-apply" / "events.jsonl").read_all()
+    types = [event.type for event in events]
     assert "workflow.submit.accepted" in types
+    assert "issue.requested" in types
+    assert "prd.requested" not in types
     assert "workflow.invoke.requested" not in types
+    entry = next(event for event in events if event.type == "issue.requested")
+    assert entry.correlation_id == "wfint-issue-light"
+    assert entry.payload["issue_ref"] == str(source)
 
 
 def test_project_init_creates_flow_project(tmp_path, capsys, monkeypatch):

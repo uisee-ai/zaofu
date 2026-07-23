@@ -33,17 +33,28 @@ amendment are separate role capabilities supplied by the workflow profile.
    product verdict.
 2. Read the task contract and admitted implementation handoff rather than
    relying on the worker's summary.
-3. Re-run declared checks, then add independent acceptance, regression,
-   integration, browser, provider, or packaging checks required by the task's
-   verification tier.
-4. Map every mandatory acceptance criterion to evidence. Passing commands do
+3. Read the admitted Impl self-check. Reuse a passing command receipt only when
+   the briefing marks it reusable for the exact target commit and command
+   digest. Do not rerun that identical deterministic command merely to produce
+   another receipt. A stale/different-target receipt is evidence only, not a
+   reusable result.
+4. Add independent acceptance, regression, integration, browser, provider, or
+   packaging probes required by the task's risk and verification tier. Receipt
+   reuse never waives semantic AC review or an independent high-risk probe.
+5. Map every mandatory acceptance criterion to evidence. Passing commands do
    not close uncovered criteria.
-5. Separate verifier/environment execution failure from a product rejection.
+6. Separate verifier/environment execution failure from a product rejection.
    Only a successfully executed, evidence-backed rejection enters semantic
    rework.
-6. Record exact findings, affected criteria, reproducible commands, evidence
-   refs, and the recommended semantic owner.
-7. Submit through the exact result profile and completion command in the
+7. Record `reused_command_receipt_ids`, newly executed probes, exact findings,
+   affected criteria, reproducible command ids, evidence refs, and the
+   recommended semantic owner.
+8. For each rejected/blocked AC, emit a structured `rework_items[]` entry with
+   `rework_item_id`, `status` (`missing|incomplete|incorrect|unverified|blocked`),
+   `acceptance_id`, `expected`, `observed`, `required_delta`,
+   `reproduction_command_ids`, `allowed_scope`, `done_when`, `next_gate`, and
+   `owner`.
+9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
 
 ## Role Boundary
@@ -53,7 +64,9 @@ amendment are separate role capabilities supplied by the workflow profile.
 - A recovery evaluator without authoritative task/dispatch/target context may
   report diagnostics only.
 - Rework verification must examine the new delta and the previously failing
-  evidence; a different target cannot silently satisfy the old attempt.
+  evidence. Recheck open rework items, impacted ACs, and necessary regression;
+  do not rerun every closed AC. A different target cannot silently satisfy the
+  old attempt.
 - Non-blocking suggestions remain findings, not gap tasks.
 - Judge is not this role. Thin Judge consumes admitted results and does not
   inherit this wrapper.

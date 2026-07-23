@@ -15,6 +15,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.task_map_goal_coverage import validate_goal_coverage
+from zf.runtime.verification_commands import (
+    VerificationCommandError,
+    first_verification_command as normalize_verification_command,
+    task_map_verification_command_fields,
+    task_map_verification_commands as task_verification_commands,
+)
+
 
 @dataclass(frozen=True)
 class TaskMapValidationResult:
@@ -66,6 +74,7 @@ def build_task_map_from_ingest_plan(
             "shared_files": _string_list(item.get("shared_files")),
             "exclusive_files": _string_list(item.get("exclusive_files")),
             "acceptance": _string_list(item.get("acceptance")),
+            "goal_claim_ids": list(dict.fromkeys(_string_list(item.get("goal_claim_ids")))),
             "verification": normalize_verification_command(item.get("verification")),
             "verification_tiers": _string_list(item.get("verification_tiers")),
         })
@@ -153,14 +162,19 @@ def validate_task_map_payload(
                 assembly_owner_roles[task_id] = owner_role
         elif owner_role:
             bundle_owner_roles[task_id] = owner_role
+        try:
+            verification_commands = task_verification_commands(raw)
+        except VerificationCommandError as exc:
+            errors.append(f"{task_id}.validation.commands {exc}")
+            verification_commands = []
         if (
             require_task_verification
-            and not normalize_verification_command(raw.get("verification"))
+            and not verification_commands
             and not _string_list(raw.get("acceptance"))
-            and not _validation_command(raw)
         ):
             errors.append(f"{task_id} requires verification or acceptance")
-        for field, command in _verification_command_fields(raw):
+        for field, item in task_map_verification_command_fields(raw):
+            command = str(item["command"])
             for error in _verification_command_errors(command):
                 errors.append(f"{task_id}.{field} {error}")
             for error in _verification_scope_errors(
@@ -217,6 +231,11 @@ def validate_task_map_payload(
         assembly_owner_roles=assembly_owner_roles, bundle_owner_roles=bundle_owner_roles,
         task_dependencies=task_dependencies,
     ))
+    goal_coverage, goal_coverage_errors = validate_goal_coverage(
+        payload,
+        [raw for raw in tasks_raw if isinstance(raw, dict)],
+    )
+    errors.extend(goal_coverage_errors)
 
     summary = {
         "task_count": len(ids),
@@ -226,6 +245,7 @@ def validate_task_map_payload(
         "tasks_missing_allowed_paths_reason": missing_allowed_path_reason,
         "bundle_owner_count": len(set(bundle_owner_roles.values())),
         "assembly_task_count": len(assembly_owner_roles),
+        "goal_coverage": goal_coverage,
     }
     return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
 
@@ -316,7 +336,10 @@ def _inventory_binding_errors(
         normalize_verification_command(raw.get("verification"))
         or normalize_verification_command(raw.get("verify_commands"))
         or normalize_verification_command(raw.get("verification_commands"))
-        or _validation_command(raw)
+        or normalize_verification_command(
+            raw.get("validation", {}).get("command")
+            if isinstance(raw.get("validation"), dict) else ""
+        )
     )
     if not verification:
         errors.append(f"{task_id}.verification or verify_commands is required by quality_contract")
@@ -531,32 +554,6 @@ def _task_id(raw: dict[str, Any]) -> str:
     return str(raw.get("task_id") or raw.get("id") or "").strip()
 
 
-def _validation_command(raw: dict[str, Any]) -> str:
-    validation = raw.get("validation")
-    if not isinstance(validation, dict):
-        return ""
-    return str(validation.get("command") or "").strip()
-
-
-def normalize_verification_command(value: Any) -> str:
-    if isinstance(value, list):
-        return " && ".join(
-            str(item).strip() for item in value if str(item or "").strip()
-        )
-    return str(value or "").strip()
-
-
-def _verification_command_fields(raw: dict[str, Any]) -> list[tuple[str, str]]:
-    fields: list[tuple[str, str]] = []
-    verification = normalize_verification_command(raw.get("verification"))
-    if verification:
-        fields.append(("verification", verification))
-    validation_command = _validation_command(raw)
-    if validation_command:
-        fields.append(("validation.command", validation_command))
-    return fields
-
-
 def _verification_command_errors(command: str) -> list[str]:
     text = str(command or "").strip()
     if not text:
@@ -742,8 +739,8 @@ def _shared_convention_errors(
     for raw in task_items:
         task_id = str(raw.get("task_id") or "?")
         refs = list(_string_list(raw.get("allowed_paths")))
-        for _field, command in _verification_command_fields(raw):
-            refs.extend(_command_path_refs(command))
+        for _field, item in task_map_verification_command_fields(raw):
+            refs.extend(_command_path_refs(str(item["command"])))
         for ref in refs:
             norm = str(ref).lstrip("./")
             if not test_like.search(norm):

@@ -272,11 +272,7 @@ class CodexAdapter(BackendAdapter):
         # declared --add-dir entries, which is the closest Codex can
         # express to "writable only within these paths".
         pm = role.permission_mode or "default"
-        sandbox_override = (
-            os.environ.get("ZF_CODEX_WORKER_SANDBOX")
-            or os.environ.get("ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX")
-            or ""
-        ).strip()
+        sandbox_override = os.environ.get("ZF_CODEX_WORKER_SANDBOX", "").strip()
         if pm == "bypass":
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
         elif pm in ("restricted", "allowlist"):

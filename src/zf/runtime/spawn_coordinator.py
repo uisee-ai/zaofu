@@ -248,6 +248,14 @@ class SpawnCoordinator:
             f"ZF_ROLE_NAME={role.name}",
             f"ZF_ROLE_INSTANCE={role.instance_id}",
         ]
+        from zf.runtime.result_submit import provision_role_submit_credential
+
+        submit_token_file = provision_role_submit_credential(
+            self.state_dir,
+            role.instance_id,
+            rotate=True,
+        )
+        env_prefix.append(f"ZF_RESULT_SUBMIT_TOKEN_FILE={submit_token_file}")
         zf_cli_cmd = os.environ.get("ZF_CLI_CMD", "").strip()
         if zf_cli_cmd:
             env_prefix.append(f"ZF_CLI_CMD={zf_cli_cmd}")

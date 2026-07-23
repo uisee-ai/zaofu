@@ -4,7 +4,7 @@
 > existing repository, then safely submitting the first PRD, Issue, or
 > Refactor workflow.
 >
-> Last verified against the CLI and Web UI: 2026-07-17.
+> Last verified against the CLI and Web UI: 2026-07-22.
 
 ## 1. Project, Request, and Run are different lifecycles
 
@@ -38,7 +38,10 @@ New Projects still default to multi-kind and no ignition.
 | `zf start` | Start workers, sidecars, and the watcher, then wait for entry events | Does not invent a Request |
 
 The ignition action is `zf flow submit --apply`, or the explicit
-`zf project init ... --apply` fast path.
+`zf project init ... --apply` fast path. For a light topology, `flow submit
+--apply` appends both the acceptance events and the correlated `prd.requested`
+or `issue.requested` entry event in one `EventWriter` transaction. Do not emit
+a second entry event manually; that would create another run identity.
 
 ## 3. CLI: create a default multi-kind Project
 

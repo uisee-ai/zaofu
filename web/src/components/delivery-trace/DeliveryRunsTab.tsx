@@ -1,6 +1,5 @@
-// DeliveryRunsTab (R-刀) — GitHub Actions job 风格的 attempt 列表。
-// 四 tab 职责: Run Graph=现在(历史压缩) · Tasks=对象 ·
-// **Runs=每一次尝试(不可变记录)** · Trace=时间真相(统一时间轴)。
+// DeliveryRunsTab — stage-oriented immutable attempt records rendered under
+// Delivery Execution / Attempts / By stage.
 // 每个 run group 一行 run:{stage}:#{n}(状态 glyph + 起止 + 时长 + children n/m),
 // superseded run 标 ▒ + sunk 结账;展开 = children 子行 + barrier/aggregate +
 // artifacts + 三锚(dispatch ⧉ / seq[a..b] / view in Trace ▸)。

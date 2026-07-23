@@ -19,6 +19,7 @@ from zf.runtime.artifact_read_ledger import (
 from zf.runtime.call_result_admission import CallResultAdmissionService
 from zf.runtime.call_result_runtime import hydrate_admitted_control_result
 from zf.runtime.run_manager import run_goal_completion_gate_event
+from zf.runtime.simulation_lifecycle import emit_simulation_done
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.runtime.workflow_operation import WorkflowOperationService
 
@@ -213,12 +214,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     )
     if goal is None or goal.type != "run.goal.completed":
         raise AssertionError(f"goal closure failed: {goal}")
-    writer.append(ZfEvent(
-        type="simulation.done",
-        actor="test",
-        correlation_id=workflow_run_id,
-        payload={"run_id": workflow_run_id, "backend": args.backend},
-    ))
+    goal = writer.append(goal)
+    if emit_simulation_done(
+        goal,
+        events=event_log.read_all(),
+        writer=writer,
+    ) is None:
+        raise AssertionError("simulation.done was not emitted from the run terminal")
     counts: dict[str, int] = {}
     for event in event_log.read_all():
         counts[event.type] = counts.get(event.type, 0) + 1

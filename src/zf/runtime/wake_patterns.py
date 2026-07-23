@@ -124,6 +124,7 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # G-LIFE-3: stuck detector emits when a worker's pane output stops
     # changing for too long. Wakes Layer 1 to process the escalation.
     "worker.stuck",
+    "worker.launch_artifact.written",
     # G-RESUME-4: watchdog-driven respawn events
     "worker.respawned",
     "worker.respawn.failed",
@@ -156,7 +157,6 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # α-3 sweep would see stale data and falsely escalate workers as
     # silent / stuck.
     "worker.heartbeat",
-    "worker.launch_artifact.written",
     # 2026-06-01: channel reactor handlers (orchestrator_reactor._on_channel_*)
     # require wake events. Without these, the handlers are registered but
     # EventWatcher never pushes the event into run_once(), so raw

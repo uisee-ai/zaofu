@@ -353,7 +353,7 @@ def test_workflow_inspection_reports_pipeline_final_thin_judge_policy(
     assert policy["detail"]["changes"]["permission_mode"]["to"] == "restricted"
 
 
-def test_workflow_inspection_reports_pure_aggregator_runner_policy(
+def test_workflow_inspection_does_not_report_codex_interactive_narrowing(
     tmp_path: Path,
 ) -> None:
     cfg = ZfConfig(
@@ -383,15 +383,12 @@ def test_workflow_inspection_reports_pure_aggregator_runner_policy(
     )
 
     report = build_workflow_inspection_report(cfg, project_root=tmp_path)
-    policy = [
+    policies = [
         item for item in report["diagnostics"]
         if item["kind"] == "pure_aggregator_runner_policy_applied"
-    ][0]
+    ]
 
-    assert policy["severity"] == "WARN"
-    assert policy["role"] == "review-synth"
-    assert policy["detail"]["policy_id"] == "pure_aggregator.v1"
-    assert policy["detail"]["changes"]["permission_mode"]["to"] == "restricted"
+    assert policies == []
 
 
 def test_workflow_inspect_cli_emits_json(tmp_path: Path, monkeypatch, capsys) -> None:

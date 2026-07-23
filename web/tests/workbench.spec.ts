@@ -1,38 +1,12 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 const token = process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST ?? "";
 
 test.describe.configure({ timeout: 120_000 });
 
 async function expectWorkbenchLoaded(page: import("@playwright/test").Page) {
-  await expect(page.locator(".status-pill.status-live"))
+  await expect(page.locator('.status-pill[title*="stream live"]'))
     .toBeVisible({ timeout: 90_000 });
-}
-
-async function graphOverlapPairs(page: Page): Promise<string[]> {
-  return page.locator("[data-testid=behavior-loop-graph]").evaluate((graph) => {
-    const nodes = Array.from(graph.querySelectorAll("[data-testid=behavior-loop-node]")).map((node) => {
-      const element = node as HTMLElement;
-      const rect = element.getBoundingClientRect();
-      return {
-        bottom: rect.bottom,
-        label: element.querySelector("strong")?.textContent?.trim() || "",
-        left: rect.left,
-        right: rect.right,
-        top: rect.top,
-      };
-    });
-    const pairs: string[] = [];
-    for (let i = 0; i < nodes.length; i += 1) {
-      for (let j = i + 1; j < nodes.length; j += 1) {
-        const left = nodes[i]!;
-        const right = nodes[j]!;
-        const overlaps = !(left.right <= right.left || right.right <= left.left || left.bottom <= right.top || right.bottom <= left.top);
-        if (overlaps) pairs.push(`${left.label}<->${right.label}`);
-      }
-    }
-    return pairs;
-  });
 }
 
 async function expectEventTimeSeparated(row: Locator) {
@@ -127,7 +101,7 @@ test("loads the ZaoFu workbench from FastAPI projections", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Role Fleet" })).toBeVisible();
   await workspaceRail.getByRole("button", { name: "Tasks" }).click();
   await expect(page.getByRole("heading", { name: "Tasks" })).toBeVisible();
-  await expect(page.getByLabel("Task signal filter")).toHaveValue("focused");
+  await expect(page.getByLabel("Task signal filter")).toHaveValue("all");
   await page.getByRole("button", { name: "List" }).click();
   await expect(page.getByRole("heading", { name: "Task List" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Inspector" })).toBeVisible();
@@ -203,88 +177,38 @@ test("opens project home projection", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Open Kanban Agent" })).toBeVisible();
 });
 
-test("Loop layout selector preserves topology deeplink", async ({ page }) => {
-  await page.goto("/?page=behavior-loop&layout=ring");
+test("Loop V2 remains canonical and fills the dashboard workspace", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.addInitScript(() => window.localStorage.setItem("zf.loopV1", "1"));
+  await page.goto("/?page=behavior-loop&v=1");
   await expectWorkbenchLoaded(page);
-  await expect(page.getByRole("heading", { name: "Loop", exact: true })).toBeVisible();
+  const loopPage = page.getByTestId("loop-page-v2");
+  await expect(loopPage).toBeVisible();
+  await expect(page.locator("[data-testid=behavior-loop-graph]")).toHaveCount(0);
+  await expect(page.getByTestId("loop-hero")).toHaveCount(0);
+  await expect(page.getByTestId("loop-inbox-action")).toHaveCount(0);
+  await expect(loopPage.getByRole("heading", { name: "Loop", exact: true })).toBeVisible();
 
-  const lensGroup = page.getByRole("radiogroup", { name: "Loop lens" });
-  await expect(lensGroup.getByRole("radio", { name: "All loop lens" })).toHaveAttribute("aria-checked", "true");
-  const graphPanel = page.locator(".behavior-loop-graph");
-  await expect(graphPanel.getByText("Plan", { exact: true })).toBeVisible();
-  await expect(lensGroup.getByText("Agent", { exact: true })).toBeVisible();
-  await lensGroup.getByRole("radio", { name: "Agent loop lens" }).click();
-  await expect(lensGroup.getByRole("radio", { name: "Agent loop lens" })).toHaveAttribute("aria-checked", "true");
-  await expect(page).toHaveURL(/lens=agent/);
-  await expect(page).not.toHaveURL(/node_id=/);
-  await expect(page.getByText("Active Agents")).toBeVisible();
-  await expect(graphPanel.getByText("Heartbeat", { exact: true })).toBeVisible();
-  await page.getByTestId("loop-metric-active_agents").click();
-  const lineagePanel = page.getByTestId("loop-lineage-panel");
-  await expect(lineagePanel.getByRole("heading", { name: "metric: Active Agents" })).toBeVisible();
-  await expect(lineagePanel.getByText(/projections/)).toBeVisible();
-  await page.getByTestId("loop-stage-act").click();
-  await expect(lineagePanel.getByRole("heading", { name: "stage: Briefing" })).toBeVisible();
-  await expect(page).toHaveURL(/node_id=briefing/);
-  await lensGroup.getByRole("radio", { name: "Verification loop lens" }).click();
-  await expect(page).toHaveURL(/lens=verification/);
-  await expect(page).not.toHaveURL(/node_id=/);
-  await expect(graphPanel.getByText("Dev Done", { exact: true })).toBeVisible();
-  await expect(graphPanel.getByText("Judge", { exact: true })).toBeVisible();
-  await lensGroup.getByRole("radio", { name: "Event-driven loop lens" }).click();
-  await expect(page).toHaveURL(/lens=event_driven/);
-  await expect(page).not.toHaveURL(/node_id=/);
-  await expect(graphPanel.getByText("Ingest", { exact: true })).toBeVisible();
-  await expect(graphPanel.getByText("Ack", { exact: true })).toBeVisible();
-  await expect(page.locator("[data-testid=behavior-loop-node]")).toHaveCount(5);
-  const overlapPairs = await graphOverlapPairs(page);
-  expect(overlapPairs).toEqual([]);
-  await lensGroup.getByRole("radio", { name: "Hill-climbing loop lens" }).click();
-  await expect(page).toHaveURL(/lens=hill_climbing/);
-  await expect(page).not.toHaveURL(/node_id=/);
-  await expect(graphPanel.getByText("Failure Trace", { exact: true })).toBeVisible();
-  await expect(graphPanel.getByText("Verified", { exact: true })).toBeVisible();
-  await lensGroup.getByRole("radio", { name: "All loop lens" }).click();
-  await expect(page).not.toHaveURL(/lens=/);
+  const [loopBox, projectionBox] = await Promise.all([
+    loopPage.boundingBox(),
+    page.locator(".projection-scroll").boundingBox(),
+  ]);
+  expect(loopBox).not.toBeNull();
+  expect(projectionBox).not.toBeNull();
+  expect(loopBox!.width).toBeGreaterThanOrEqual(projectionBox!.width - 1);
+  expect(Math.abs(loopBox!.x - projectionBox!.x)).toBeLessThan(1);
+  await page.screenshot({ path: testInfo.outputPath("loop-dashboard-desktop.png"), fullPage: true });
 
-  const layoutGroup = page.getByRole("radiogroup", { name: "Loop layout" });
-  await expect(layoutGroup.getByRole("radio", { name: "Ring" })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByText(/Ring .*selected|Auto -> Ring|closed-loop stages/i)).toBeVisible();
-
-  await layoutGroup.getByRole("radio", { name: "Tree" }).click();
-  await expect(layoutGroup.getByRole("radio", { name: "Tree" })).toHaveAttribute("aria-checked", "true");
-  await expect(page).toHaveURL(/layout=tree/);
-
-  await layoutGroup.getByRole("radio", { name: "Auto" }).click();
-  await expect(layoutGroup.getByRole("radio", { name: "Auto" })).toHaveAttribute("aria-checked", "true");
-  await expect(page).not.toHaveURL(/layout=/);
-  await expect(page.getByRole("heading", { name: "Graph", exact: true })).toBeVisible();
-  await expect(page.locator(".behavior-loop-status")).toHaveCount(0);
-  await expect(page.getByText("measure-loop.projector")).toHaveCount(0);
-});
-
-test("Loop lineage Trace action opens trace explorer deep link", async ({ page }) => {
-  await page.goto("/?page=behavior-loop");
-  await expectWorkbenchLoaded(page);
-  await expect(page.getByRole("heading", { name: "Loop", exact: true })).toBeVisible();
-
-  await page.getByTestId("loop-metric-delivery").click();
-  const lineagePanel = page.getByTestId("loop-lineage-panel");
-  await expect(lineagePanel.getByRole("heading", { name: "metric: Delivery" })).toBeVisible();
-  await lineagePanel.getByRole("button", { name: "Trace" }).first().click();
-
-  await expect(page).toHaveURL(/page=traces/);
-  await expect(page).toHaveURL(/trace_id=trace-/);
-  await expect(page.getByRole("heading", { name: "Observability" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Trace Detail" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Trace Summary" })).toBeVisible({ timeout: 90_000 });
-
-  const traceId = new URL(page.url()).searchParams.get("trace_id");
-  expect(traceId).toBeTruthy();
-  await page.goto(`/?page=traces&trace_id=${traceId}`);
-  await expect(page.getByRole("heading", { name: "Observability" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Trace Detail" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Trace Summary" })).toBeVisible({ timeout: 90_000 });
+  await page.setViewportSize({ width: 390, height: 844 });
+  const [mobileLoopBox, mobileProjectionBox] = await Promise.all([
+    loopPage.boundingBox(),
+    page.locator(".projection-scroll").boundingBox(),
+  ]);
+  expect(mobileLoopBox).not.toBeNull();
+  expect(mobileProjectionBox).not.toBeNull();
+  expect(mobileLoopBox!.width).toBeGreaterThanOrEqual(mobileProjectionBox!.width - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: testInfo.outputPath("loop-dashboard-mobile.png"), fullPage: true });
 });
 
 test("settings exposes appearance theme controls", async ({ page }) => {
@@ -303,7 +227,7 @@ test("settings exposes appearance theme controls", async ({ page }) => {
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
-test("opens task drilldown as a page instead of a right sidebar", async ({ page }) => {
+test("opens task drilldown as a page instead of a right sidebar", async ({ page }, testInfo) => {
   let title = "";
   let taskId = "";
   if (token) {
@@ -344,6 +268,20 @@ test("opens task drilldown as a page instead of a right sidebar", async ({ page 
   await expect(
     page.locator(".task-detail").getByText(taskId, { exact: true }).first(),
   ).toBeVisible({ timeout: 15_000 });
+  const detailTabs = page.locator(".task-detail .tab-row");
+  await expect(detailTabs.getByRole("button")).toHaveCount(4);
+  await expect(detailTabs.getByRole("button", { name: "Summary" })).toBeVisible();
+  await expect(detailTabs.getByRole("button", { name: "Activity" })).toBeVisible();
+  await expect(detailTabs.getByRole("button", { name: "Evidence" })).toBeVisible();
+  await expect(detailTabs.getByRole("button", { name: "Advanced" })).toBeVisible();
+  await expect(page.getByTestId("task-summary-view")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("task-detail-summary.png"), fullPage: true });
+  await detailTabs.getByRole("button", { name: "Activity" }).click();
+  await expect(page.getByTestId("task-activity-view")).toBeVisible();
+  await detailTabs.getByRole("button", { name: "Evidence" }).click();
+  await expect(page.getByTestId("task-evidence-view")).toBeVisible();
+  await detailTabs.getByRole("button", { name: "Advanced" }).click();
+  await expect(page.getByTestId("task-advanced-view")).toBeVisible();
   await expect(page.locator(".task-detail").getByRole("button", { name: "Agent" })).toBeVisible();
   await expect(page.getByLabel("Move task status")).toHaveCount(0);
   await expect(page.locator(".task-card-actions")).toHaveCount(0);
@@ -376,9 +314,9 @@ test("keeps event timeline readable and inspector structured", async ({ page }) 
   await page.getByLabel("Task signal filter").selectOption("all");
   await page.locator(".task-open").first().click();
   await expect(page.getByRole("heading", { name: "Task", exact: true })).toBeVisible();
-  await page.locator(".task-detail").getByRole("button", { name: "Workbench" }).click();
+  await page.locator(".task-detail").getByRole("button", { name: "Advanced" }).click();
   await expectWorkbenchKeyValueSeparated(page.locator(".task-workbench"));
-  await page.locator(".task-detail").getByRole("button", { name: "Events" }).click();
+  await page.locator(".task-detail").getByRole("button", { name: "Activity" }).click();
   await expect(page.locator(".compact-events .event-row").first()).toBeVisible();
   await expectEventTimeSeparated(page.locator(".compact-events .event-row").first());
 });

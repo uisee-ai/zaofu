@@ -15,6 +15,10 @@ spec:
   qualityFloor: product-demo
   evidencePolicy: strict_refs
   deliveryPolicy: ship_candidate
+  # 149 pilot: Thin Judge uses Kernel-bound semantic result submission.
+  # Verify and Impl remain on the legacy adapter until their parity proof lands.
+  semanticSubmitProfiles:
+    thin-judge-goal-closure: blocking
 ---
 apiVersion: zaofu.dev/v1
 kind: ZfConfig

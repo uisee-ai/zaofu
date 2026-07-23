@@ -3274,7 +3274,7 @@ def create_app(
                 "event_id": invoke.id,
                 "next_action": "approve through project workflow-submit with apply=true",
             }, status_code=202)
-        if config is not None:
+        if config is not None and (project_root / "zf.yaml").exists():
             auth_error = _web_mutation_auth_error(
                 "workflow-submit",
                 authorization=authorization,

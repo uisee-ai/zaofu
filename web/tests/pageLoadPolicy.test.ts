@@ -19,14 +19,17 @@ function testChannelsUseSlimPath(): void {
 function testMeasureUsesDeliverySlice(): void {
   assert(snapshotLoadKindForPage("delivery") === "none", "delivery overview should not wait for snapshot");
   assert(snapshotLoadKindForPage("delivery-trace") === "none", "delivery trace should not wait for snapshot");
+  assert(snapshotLoadKindForPage("goal-coverage") === "none", "goal coverage should not wait for snapshot");
   assert(snapshotLoadKindForPage("behavior-loop") === "none", "loop page should not wait for snapshot");
   assert(pageLoadsDeliveryFeatures("delivery"), "delivery overview should load delivery features");
+  assert(pageLoadsDeliveryFeatures("goal-coverage"), "goal coverage should load delivery features");
   assert(pageLoadsDeliveryFeatures("behavior-loop"), "loop page should load delivery features");
 }
 
 function testSnapshotPagesStayExplicit(): void {
   assert(snapshotLoadKindForPage("board") === "light", "board should use light snapshot");
   assert(snapshotLoadKindForPage("task") === "light", "task detail shell should use light snapshot");
+  assert(snapshotLoadKindForPage("traces") === "light", "trace compatibility route should keep the scoped light path");
   assert(snapshotLoadKindForPage("events") === "full", "events should use full observability snapshot");
   assert(snapshotLoadKindForPage("runs") === "full", "runs should use full observability snapshot");
 }

@@ -23,6 +23,7 @@ from zf.core.config.schema import (
 )
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
+from zf.core.events.writer import EventWriter
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.goal_dossier import (
@@ -30,6 +31,7 @@ from zf.runtime.goal_dossier import (
     write_goal_dossier_projection,
 )
 from zf.runtime.workflow_spine_projection import refresh_spine_projections
+from zf.runtime.simulation_lifecycle import emit_simulation_done
 
 
 TASKS = [
@@ -341,11 +343,15 @@ def test_sim1_mock_reaches_unique_terminal_without_duplicate_attempts(
         if event.type == "judge.passed"
     )
     orch.run_once(events=[judge_passed])
-    log.append(ZfEvent(
-        type="simulation.done",
-        actor="test-driver",
-        payload={"status": "passed", "mode": "mock"},
-    ))
+    terminal = next(
+        event for event in reversed(log.read_all())
+        if event.type == "run.goal.completed"
+    )
+    assert emit_simulation_done(
+        terminal,
+        events=log.read_all(),
+        writer=EventWriter(log),
+    ) is not None
     refresh_spine_projections(state_dir, log)
 
     events = log.read_all()

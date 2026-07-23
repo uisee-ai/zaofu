@@ -20,7 +20,9 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +113,25 @@ def _manifest(state_dir: Path, fanout_id: str) -> dict:
     )
 
 
+def _record_required_reads(state_dir: Path, child: dict) -> None:
+    payload = dict(child.get("payload") or {})
+    payload.update({key: value for key, value in child.items() if key != "payload"})
+    manifest = hydrate_sidecar_ref(
+        state_dir,
+        payload["attempt_source_manifest"],
+    ).payload
+    for required in payload.get("required_reads") or []:
+        read_attempt_artifact(
+            state_dir,
+            manifest=manifest,
+            source_id=required["source_id"],
+            artifact_id=required["artifact_id"],
+            json_path=required["json_path"],
+            max_items=int(required.get("max_items") or 0),
+            max_chars=int(required.get("max_chars") or 0),
+        )
+
+
 @pytest.mark.parametrize(
     ("kind", "yaml_name", "initial_roles", "released_role"),
     [
@@ -146,6 +167,9 @@ def test_rendered_controller_queue_releases_next_impl_task(
     config.project.root = str(project)
     config.project.state_dir = str(project / f".zf-{kind}-rendered-sim")
     config.workflow.plan_approval_enabled = False
+    # This test exercises affinity queue release with a synthetic completion;
+    # impl-self-check admission has dedicated integration coverage.
+    config.workflow.impl_self_check_required = False
     config.runtime.git.candidate_base_ref = "main"
     state_dir = Path(config.project.state_dir)
     state_dir.mkdir(parents=True, exist_ok=True)
@@ -221,6 +245,7 @@ def test_rendered_controller_queue_releases_next_impl_task(
         item for item in _manifest(state_dir, fanout_id)["children"]
         if item.get("status") == "dispatched"
     )
+    _record_required_reads(state_dir, child)
     source_commit = _commit_file(
         Path(child["workdir"]),
         child["payload"]["allowed_paths"][0],
@@ -245,14 +270,14 @@ def test_rendered_controller_queue_releases_next_impl_task(
 
     after = log.read_all()
     queued_task_ids = {event.payload["task_id"] for event in queued}
-    assert [
-        event for event in after
-        if event.type == "fanout.started"
-        and event.payload.get("stage_id") == verify_stage
-    ]
     reassigned = [
         event for event in after
         if event.type == "fanout.slot.assigned"
         and event.payload.get("task_id") in queued_task_ids
     ]
     assert [event.payload["role_instance"] for event in reassigned] == [released_role]
+    assert not [
+        event for event in after
+        if event.type == "fanout.started"
+        and event.payload.get("stage_id") == verify_stage
+    ]

@@ -1,21 +1,13 @@
-// DeliveryTraceTabs — Delivery 页五 tab 工作台。四视图职责判别(设计依据):
-//   Run Graph = 现在(历史压缩)    · Tasks = 对象
-//   Runs      = 每一次尝试(不可变记录) · Trace = 时间真相(统一时间轴)
-// Runs → Trace 联动 state(focusWindow/focusRunId)与 Run Graph ⛓ causation
-// 回放 state 都提升到这里共享(Trace 树的 event 叶按链/窗高亮)。
+// Delivery Runs workbench. Run answers current state and causation; Spans
+// answers temporal order and evidence. Task attempts live in the run's
+// lifecycle drawer instead of competing as a third top-level view.
 import { Fragment, useEffect, useState } from "react";
 
-import {
-  fetchOverviewPulse,
-  getRegressionCases,
-  getWorkflowGraph,
-  postAction,
-} from "../../api/client";
+import { fetchOverviewPulse, postAction } from "../../api/client";
 import type { RegressionCase } from "../../api/client";
 import type {
   DeliveryAutoresearchGraph,
   DeliveryRunGroup,
-  DeliveryRunTraceSpan,
   DeliveryTaskFlowStage,
   DeliveryTrace,
   DeliveryTraceAutoresearchCycle,
@@ -23,17 +15,15 @@ import type {
   OverviewPulse,
   WorkflowGraph,
 } from "../../api/types";
-import { DeliveryRunsTab } from "./DeliveryRunsTab";
-import { DeliveryRawTab, DeliveryTasksTab } from "./DeliveryTraceSections";
-import { copyText, dtTone, formatDuration, parseSpanSeq } from "./DeliveryTraceViewUtils";
-import type { TraceFocus } from "./DeliveryTraceViewUtils";
+import type { PageId } from "../../app/sharedTypes";
+import { copyText, dtTone, formatDuration } from "./DeliveryTraceViewUtils";
 import { FlowSpanTree } from "./FlowSpanTree";
 import { LifecycleDrawer } from "./LifecycleDrawer";
 import type { LifecycleDrawerTab } from "./LifecycleDrawer";
 import { RunGraphView } from "./RunGraphView";
 import type { CausalState } from "./RunGraphView";
 
-type DeliveryTab = "flow" | "tasks" | "runs" | "trace" | "raw";
+type DeliveryTab = "run" | "spans";
 
 interface DrawerTarget {
   taskId: string;
@@ -42,63 +32,23 @@ interface DrawerTarget {
 }
 
 interface DeliveryTraceTabsProps {
+  onOpenPage?: (page: PageId) => void;
   projectId?: string;
   trace: DeliveryTrace;
+  workflowGraph: WorkflowGraph | null;
 }
 
-export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) {
-  const [activeTab, setActiveTab] = useState<DeliveryTab>("flow");
+export function DeliveryTraceTabs({ onOpenPage, projectId, trace, workflowGraph }: DeliveryTraceTabsProps) {
+  const [activeTab, setActiveTab] = useState<DeliveryTab>("run");
   const [selectedStageId, setSelectedStageId] = useState("");
   const [selectedSpanId, setSelectedSpanId] = useState("");
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
-  // R-刀/T-刀 联动 state(提升共享):Runs 三锚 → Trace 焦点窗;⛓ 回放链。
-  const [traceFocus, setTraceFocus] = useState<TraceFocus | null>(null);
   const [causal, setCausal] = useState<CausalState | null>(null);
+  const [capturedRoles, setCapturedRoles] = useState<Set<string>>(new Set());
   // T-刀①.5 — pool strip stuck count + Tasks "why" column share one
   // overview-pulse fetch; failure degrades to null (both consumers omit).
   const [pulse, setPulse] = useState<OverviewPulse | null>(null);
-  const [graphAgg, setGraphAgg] = useState<WorkflowGraph | null>(null);
-  const [captured, setCaptured] = useState<Set<string>>(new Set());
-  const [cases, setCases] = useState<RegressionCase[]>([]);
-  const [verdicts, setVerdicts] = useState<Record<string, boolean>>({});
-
-  // design 101 §8 C — list captured regression cases (I1b) + refresh.
-  const refreshCases = () =>
-    getRegressionCases(projectId, trace.feature_id)
-      .then((r) => setCases(r.cases ?? []))
-      .catch(() => undefined);
-
-  // capture a role's failing task as a deterministic regression case.
-  const captureRole = (taskId: string) => {
-    postAction(
-      "capture-regression-case",
-      {
-        task_id: taskId,
-        feature_id: trace.feature_id,
-        assertions: ["rework==0", "scope_violation==0"],
-      },
-      projectId,
-    )
-      .then(() => {
-        setCaptured((prev) => new Set(prev).add(taskId));
-        refreshCases();
-      })
-      .catch(() => undefined);
-  };
-
-  // design 101 §8 E — replay a captured case (I1c); store pass/fail verdict.
-  const replayCase = (caseId: string) => {
-    postAction("replay-regression-case", { case_id: caseId }, projectId)
-      .then((r) =>
-        setVerdicts((prev) => ({
-          ...prev,
-          [caseId]: !!(r as { result?: { passed?: boolean } }).result?.passed,
-        })),
-      )
-      .catch(() => undefined);
-  };
   const stages = trace.task_flow?.stages ?? [];
-  const runGroups = trace.run_groups ?? [];
   const spans = trace.trace?.spans ?? [];
   // S-E: run-chain.v1 drives the Run Graph; absent/no_stage_order falls back
   // to the legacy stage-line Flow rendering (kept below, not deleted).
@@ -107,8 +57,8 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
 
   useEffect(() => {
     setDrawer(null);
-    setTraceFocus(null);
     setCausal(null);
+    setCapturedRoles(new Set());
   }, [trace.feature_id]);
 
   useEffect(() => {
@@ -124,36 +74,6 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
       cancelled = true;
     };
   }, [projectId]);
-
-  // design 101 §2 layer-2: config-level aggregate outcome heatmap.
-  useEffect(() => {
-    let cancelled = false;
-    getWorkflowGraph(projectId || "")
-      .then((data) => {
-        if (!cancelled) setGraphAgg(data);
-      })
-      .catch(() => {
-        if (!cancelled) setGraphAgg(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId]);
-
-  // design 101 §8 I1b: list captured regression cases for this feature.
-  useEffect(() => {
-    let cancelled = false;
-    getRegressionCases(projectId, trace.feature_id)
-      .then((r) => {
-        if (!cancelled) setCases(r.cases ?? []);
-      })
-      .catch(() => {
-        if (!cancelled) setCases([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, trace.feature_id]);
 
   useEffect(() => {
     const candidate =
@@ -173,17 +93,30 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
     }
   }, [selectedSpanId, spans]);
 
+  const stageCount = hasRunGraph ? runChain!.stages.length : stages.length;
   const tabs: Array<{ id: DeliveryTab; label: string; meta: string }> = [
-    { id: "flow", label: "Run Graph", meta: `${hasRunGraph ? runChain!.stages.length : stages.length} stages` },
-    { id: "tasks", label: "Tasks", meta: `${trace.execution_graph.task_count} tasks` },
-    { id: "runs", label: "Runs", meta: `${runGroups.length} groups` },
-    { id: "trace", label: "Trace", meta: `${trace.trace?.span_count ?? spans.length} spans` },
-    { id: "raw", label: "Raw", meta: "json" },
+    { id: "run", label: "Run", meta: `${stageCount} stage${stageCount === 1 ? "" : "s"}` },
+    { id: "spans", label: "Spans", meta: `${trace.trace?.span_count ?? spans.length}` },
   ];
+
+  const captureRole = (taskId: string) => {
+    if (!projectId) return;
+    void postAction(
+      "capture-regression-case",
+      {
+        task_id: taskId,
+        feature_id: trace.feature_id,
+        assertions: ["rework==0", "scope_violation==0"],
+      },
+      projectId,
+    ).then(() => {
+      setCapturedRoles((current) => new Set(current).add(taskId));
+    }).catch(() => undefined);
+  };
 
   return (
     <section className="delivery-tabbed-workbench" data-testid="delivery-tabs">
-      <div className="delivery-main-tabs" role="tablist" aria-label="Delivery views">
+      <div className="delivery-main-tabs" role="tablist" aria-label="Runs views">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -200,18 +133,13 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
         ))}
       </div>
 
-      {activeTab === "flow" && (
+      {activeTab === "run" && (
         <Fragment>
           <StageHeatmap
-            graph={graphAgg}
-            onPickRole={(taskId) => setDrawer({ taskId })}
+            captured={capturedRoles}
+            graph={workflowGraph}
             onCaptureRole={captureRole}
-            captured={captured}
-          />
-          <RegressionCasesPanel
-            cases={cases}
-            verdicts={verdicts}
-            onReplay={replayCase}
+            onPickRole={(taskId) => setDrawer({ taskId })}
           />
           {hasRunGraph ? (
             <RunGraphView
@@ -231,43 +159,25 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
           )}
         </Fragment>
       )}
-      {activeTab === "tasks" && (
-        <DeliveryTasksTab
-          onOpenDispatch={(taskId, trySel) => setDrawer({ taskId, tab: "events", trySel })}
-          onSelectTask={(taskId) => setDrawer({ taskId })}
-          pulse={pulse}
-          trace={trace}
-        />
-      )}
-      {activeTab === "runs" && (
-        <DeliveryRunsTab
-          onViewInTrace={(focus) => {
-            setTraceFocus(focus);
-            setActiveTab("trace");
-          }}
-          trace={trace}
-        />
-      )}
-      {activeTab === "trace" && (
+      {activeTab === "spans" && (
         <>
-          <div className="dt-trace-layout" data-testid="delivery-trace-tab">
+          <div className="dt-spans-layout" data-testid="delivery-trace-tab">
             <FlowSpanTree
               causalIds={causal?.ids ?? null}
-              focus={traceFocus}
+              focus={null}
               onSelectSpan={setSelectedSpanId}
               selectedSpanId={selectedSpanId}
               trace={trace}
             />
-            <SpanInspector span={spans.find((span) => span.span_id === selectedSpanId) ?? spans[0]} />
           </div>
-          <AutoresearchGraphStrip
+          <AutoresearchSummary
             cycles={trace.autoresearch_cycles ?? []}
             graphs={trace.trace?.autoresearch_graphs ?? []}
+            onOpenLoop={onOpenPage ? () => onOpenPage("behavior-loop") : undefined}
           />
         </>
       )}
-      {activeTab === "raw" && <DeliveryRawTab trace={trace} />}
-      {drawer && (activeTab === "flow" || activeTab === "tasks") && (
+      {drawer && activeTab === "run" && (
         <LifecycleDrawer
           key={`${drawer.taskId}:${drawer.tab ?? ""}:${drawer.trySel ?? ""}`}
           initialTab={drawer.tab}
@@ -284,7 +194,7 @@ export function DeliveryTraceTabs({ projectId, trace }: DeliveryTraceTabsProps) 
 // design 101 §2 layer-2 — config-level aggregate outcome heatmap strip.
 // Renders per-role pass_rate / rework_count / cost_usd from the
 // workflow_graph projection, sorted weakest-first (loop targets).
-// Exported so the Graph page can show it read-only (I5a).
+// Runs owns this aggregate because it explains stage/role execution quality.
 export function StageHeatmap({
   graph,
   onPickRole,
@@ -349,6 +259,7 @@ export function StageHeatmap({
       (typeof a.pass_rate === "number" ? a.pass_rate : 2) -
       (typeof b.pass_rate === "number" ? b.pass_rate : 2),
   );
+  if (!rows.length) return null;
   // I4: hide quality columns that have no data across any role.
   const hasCost = rows.some((r) => typeof r.cost_usd === "number");
   // PM 后批:名副其实的"热"——按成本占比着色底色,rework 加红边。
@@ -379,70 +290,66 @@ export function StageHeatmap({
       <header style={{ opacity: 0.8, marginBottom: 6 }}>
         Stage Heatmap <small style={{ opacity: 0.6 }}>aggregate outcome by role · 🟥 weak 🟧 watch</small>
       </header>
-      {rows.length ? (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-          {rows.map((node) => (
-            <div
-              key={node.id}
-              data-testid="graph-stage-heatmap-row"
-              role={node.drill_task_id ? "button" : undefined}
-              title={node.drill_task_id ? "drill to this role's trace" : undefined}
-              onClick={
-                node.drill_task_id
-                  ? () => onPickRole?.(node.drill_task_id as string)
-                  : undefined
-              }
-              style={{
-                display: "flex",
-                gap: 6,
-                alignItems: "baseline",
-                cursor: node.drill_task_id ? "pointer" : "default",
-                ...rowHeat(node),
-              }}
-            >
-              <span>{heat(node.pass_rate)}</span>
-              <strong>{node.label}</strong>
-              <span style={{ opacity: 0.75 }}>pass {fmtPct(node.pass_rate)}</span>
-              <span style={{ opacity: 0.75 }}>rw {node.rework_count ?? 0}</span>
-              {hasCost ? (
-                <span style={{ opacity: 0.75 }}>{fmtCost(node.cost_usd)}</span>
-              ) : null}
-              {hasScope ? (
-                <span style={{ opacity: 0.6 }} title="scope violation rate">
-                  scope {fmtPct(node.scope_violation_rate)}
-                </span>
-              ) : null}
-              {hasDcatch ? (
-                <span style={{ opacity: 0.6 }} title="discriminator catch rate">
-                  D-catch {fmtPct(node.discriminator_catch_rate)}
-                </span>
-              ) : null}
-              {node.drill_task_id && onCaptureRole && isFailing(node) ? (
-                <button
-                  type="button"
-                  data-testid="graph-capture-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCaptureRole(node.drill_task_id as string);
-                  }}
-                  style={{ fontSize: 11, padding: "0 6px", cursor: "pointer" }}
-                  title="capture this failure as a deterministic regression case"
-                >
-                  {captured?.has(node.drill_task_id) ? "✓ captured" : "capture"}
-                </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div style={{ opacity: 0.6 }}>no role data</div>
-      )}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {rows.map((node) => (
+          <div
+            key={node.id}
+            data-testid="graph-stage-heatmap-row"
+            role={node.drill_task_id ? "button" : undefined}
+            title={node.drill_task_id ? "drill to this role's trace" : undefined}
+            onClick={
+              node.drill_task_id
+                ? () => onPickRole?.(node.drill_task_id as string)
+                : undefined
+            }
+            style={{
+              display: "flex",
+              gap: 6,
+              alignItems: "baseline",
+              cursor: node.drill_task_id ? "pointer" : "default",
+              ...rowHeat(node),
+            }}
+          >
+            <span>{heat(node.pass_rate)}</span>
+            <strong>{node.label}</strong>
+            <span style={{ opacity: 0.75 }}>pass {fmtPct(node.pass_rate)}</span>
+            <span style={{ opacity: 0.75 }}>rw {node.rework_count ?? 0}</span>
+            {hasCost ? (
+              <span style={{ opacity: 0.75 }}>{fmtCost(node.cost_usd)}</span>
+            ) : null}
+            {hasScope ? (
+              <span style={{ opacity: 0.6 }} title="scope violation rate">
+                scope {fmtPct(node.scope_violation_rate)}
+              </span>
+            ) : null}
+            {hasDcatch ? (
+              <span style={{ opacity: 0.6 }} title="discriminator catch rate">
+                D-catch {fmtPct(node.discriminator_catch_rate)}
+              </span>
+            ) : null}
+            {node.drill_task_id && onCaptureRole && isFailing(node) ? (
+              <button
+                type="button"
+                data-testid="graph-capture-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCaptureRole(node.drill_task_id as string);
+                }}
+                style={{ fontSize: 11, padding: "0 6px", cursor: "pointer" }}
+                title="capture this failure as a deterministic regression case"
+              >
+                {captured?.has(node.drill_task_id) ? "✓ captured" : "capture"}
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
 
 // design 101 §8 I1b/I1c — list captured regression cases + replay them.
-function RegressionCasesPanel({
+export function RegressionCasesPanel({
   cases,
   verdicts,
   onReplay,
@@ -525,7 +432,7 @@ function DeliveryFlowTab({
     return (
       <div className="delivery-tab-empty">
         <strong>No task-flow projection.</strong>
-        <span className="muted">Delivery can still render task graph and raw workflow trace.</span>
+        <span className="muted">Run is limited to the available attempt and timeline evidence.</span>
       </div>
     );
   }
@@ -835,100 +742,30 @@ function stageSummary(stage: DeliveryTaskFlowStage, runGroups: DeliveryRunGroup[
   return stage.status || "pending";
 }
 
-// Span Inspector(T-刀④ 保留并扩展)— 点 event 叶后在 Trace 树右侧显示:
-// seq(从 span_id `event:{seq}` 解析,⧉ copy = Observability 锚)、payload
-// 字段、causation/raw event refs。Exported for the SSR smoke fixture.
-export function SpanInspector({ span }: { span?: DeliveryRunTraceSpan }) {
-  if (!span) return <aside className="delivery-span-inspector">Select a span.</aside>;
-  const seq = parseSpanSeq(span.span_id);
-  return (
-    <aside className="delivery-span-inspector" data-testid="dt-span-inspector">
-      <div className="inline-heading">
-        <h3 className="section-title">Span Inspector</h3>
-        <span className={`badge badge-${dtTone(span.status)}`}>{span.status}</span>
-      </div>
-      <dl className="delivery-inspector-grid">
-        {[
-          ["span", span.span_id],
-          ["parent", span.parent_span_id || "-"],
-          ["task", span.task_id || "-"],
-          ["run", span.run_id || "-"],
-          ["backend", span.backend || "-"],
-          ["status", span.status],
-          ["duration", formatDuration(span.duration_ms)],
-          ["tokens", `${span.tokens_input ?? 0}/${span.tokens_output ?? 0}`],
-          ["tools", span.tools_count ?? 0],
-          ["events", span.raw_event_refs?.length ?? 0],
-        ].map(([key, value]) => (
-          <Fragment key={String(key)}>
-            <dt>{key}</dt>
-            <dd>{String(value || "-")}</dd>
-          </Fragment>
-        ))}
-        <dt>seq</dt>
-        <dd>
-          {seq !== null ? (
-            <button
-              type="button"
-              className="dt-anchor"
-              title={`seq ${seq} — click copies it; paste into the Observability seq filter`}
-              onClick={() => copyText(String(seq))}
-            >
-              {seq} ⧉
-            </button>
-          ) : (
-            <span className="muted" title="span id is not event:{seq} shaped">—</span>
-          )}
-        </dd>
-      </dl>
-      <div className="workflow-inspector-block">
-        <h4>Causation / Refs</h4>
-        <div className="workflow-chip-list">
-          {(span.raw_event_refs ?? []).slice(0, 8).map((ref) => <code key={ref} title={ref}>{ref}</code>)}
-          {(span.evidence_refs ?? []).slice(0, 6).map((ref) => <code key={ref} title={ref}>{ref}</code>)}
-          {!(span.raw_event_refs?.length || span.evidence_refs?.length) && <span className="muted">No refs.</span>}
-        </div>
-      </div>
-      {span.error && Object.keys(span.error).length > 0 ? (
-        <pre className="delivery-raw-block">{JSON.stringify(span.error, null, 2)}</pre>
-      ) : null}
-    </aside>
-  );
-}
-
-function AutoresearchGraphStrip({
+function AutoresearchSummary({
   cycles,
   graphs,
+  onOpenLoop,
 }: {
   cycles: DeliveryTraceAutoresearchCycle[];
   graphs: DeliveryAutoresearchGraph[];
+  onOpenLoop?: () => void;
 }) {
   if (!graphs.length && !cycles.length) return null;
+  const statuses = [...new Set(graphs.map((graph) => graph.status).filter(Boolean))];
   return (
-    <section className="delivery-autoresearch-graphs">
+    <section className="delivery-autoresearch-summary" data-testid="delivery-autoresearch-summary">
       <div className="inline-heading">
         <h3 className="section-title">Autoresearch</h3>
-        <span className="muted">{graphs.length || cycles.length} loops</span>
+        <span className="muted">
+          {graphs.length || cycles.length} loops{statuses.length ? ` · ${statuses.join(", ")}` : ""}
+        </span>
       </div>
-      <div className="delivery-autoresearch-graph-grid">
-        {graphs.map((graph) => (
-          <article key={graph.graph_id} className="delivery-autoresearch-graph">
-            <div>
-              <strong>{graph.graph_id}</strong>
-              <span className={`badge badge-${dtTone(graph.status)}`}>{graph.status}</span>
-              <span className="badge">{graph.comparison_mode}</span>
-            </div>
-            <div className="delivery-autoresearch-node-row">
-              {graph.nodes.slice(0, 8).map((node, index) => (
-                <Fragment key={`${String(node.node_id ?? index)}`}>
-                  {index > 0 && <span className="dt-arrow">→</span>}
-                  <code>{String(node.kind ?? node.event_type ?? "-")}</code>
-                </Fragment>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
+      {onOpenLoop ? (
+        <button className="icon-button" onClick={onOpenLoop} type="button">
+          Open Loop
+        </button>
+      ) : null}
     </section>
   );
 }

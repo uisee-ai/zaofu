@@ -10,7 +10,8 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task
 from zf.core.task.store import TaskStore
-from zf.runtime.task_map import normalize_verification_command
+from zf.runtime.task_map import task_verification_commands
+from zf.runtime.verification_commands import validation_with_commands
 from zf.runtime.task_contract_normalize import (
     canonical_verification_tiers,
     owner_fields_from_task_map_item,
@@ -392,7 +393,13 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
         )
         payload = raw.get("payload") if isinstance(raw.get("payload"), dict) else {}
         owner_role, owner_instance = owner_fields_from_task_map_item(raw)
-        verification = normalize_verification_command(raw.get("verification"))
+        verification_commands = task_verification_commands(raw)
+        verification = str(
+            verification_commands[0]["command"] if verification_commands else ""
+        )
+        validation = (
+            raw.get("validation") if isinstance(raw.get("validation"), dict) else {}
+        )
         raw_verification_tiers = _string_list(raw.get("verification_tiers"))
         items.append({
             "task_id": task_id,
@@ -443,6 +450,10 @@ def writer_task_items(data: object) -> list[dict[str, Any]]:
             "source_refs": _source_refs_list(raw.get("source_refs")),
             "source_excerpt": str(raw.get("source_excerpt") or "").strip(),
             "verification": verification,
+            "validation": (
+                validation_with_commands(validation, verification_commands)
+                if verification_commands else dict(validation)
+            ),
             "raw_task": dict(raw),
         })
     return _normalize_writer_task_items(items)

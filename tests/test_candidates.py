@@ -216,7 +216,10 @@ def test_candidate_quality_prefers_run_scoped_task_contract_commands(
     )
 
     assert source == "task_contract"
-    assert checks == [("task_contract:TASK-RUST", "cargo test --workspace")]
+    assert checks == [(
+        "task_contract:TASK-RUST:contract-verification",
+        "cargo test --workspace",
+    )]
 
 
 def test_candidate_quality_uses_config_only_as_legacy_fallback(tmp_path: Path) -> None:

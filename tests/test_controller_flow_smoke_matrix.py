@@ -59,8 +59,8 @@ def _assert_flow_kernel_contract(
     assert pipeline.trigger == "task_map.ready"
     assert pipeline.affinity_key == "affinity_tag"
     assert pipeline.overflow == "first_released_lane"
-    assert pipeline.stage_transition == "per_lane"
-    assert pipeline.final_barrier == "all_lanes_verified"
+    assert pipeline.stage_transition == "stage_barrier"
+    assert pipeline.final_barrier == ""
     assert [stage.stage_id for stage in pipeline.stages] == ["impl", "verify"]
     impl = pipeline.stages[0]
     assert impl.success_event == "dev.build.done"
@@ -107,7 +107,7 @@ def test_issue_flow_controller_smoke_matrix() -> None:
     assert report["generated"]["flow_metadata"]["flow_kind"] == "issue"
     assert report["generated"]["flow_metadata"]["post_verify_discovery"] == "regression_impact"
     pipeline = _generated_pipeline(report)
-    assert pipeline["stage_transition"] == "per_lane"
+    assert pipeline["stage_transition"] == "stage_barrier"
     _assert_profile_sources(report)
     policy = _policy_by_field(report)
     assert policy["quality_floor"]["detail"]["value"] == "issue-regression"
@@ -132,7 +132,7 @@ def test_prd_flow_controller_smoke_matrix() -> None:
     assert metadata["flow_kind"] == "prd"
     assert metadata["post_verify_discovery"] == "product_completeness"
     assert metadata["delivery_policy"] == "ship_candidate"
-    assert _generated_pipeline(report)["stage_transition"] == "per_lane"
+    assert _generated_pipeline(report)["stage_transition"] == "stage_barrier"
     _assert_profile_sources(report)
     policy = _policy_by_field(report)
     assert policy["quality_floor"]["detail"]["value"] == "product-demo"
@@ -164,7 +164,7 @@ def test_refactor_flow_controller_smoke_matrix() -> None:
     metadata = report["generated"]["flow_metadata"]
     assert metadata["flow_kind"] == "refactor"
     assert metadata["post_verify_discovery"] == "module_parity"
-    assert _generated_pipeline(report)["stage_transition"] == "per_lane"
+    assert _generated_pipeline(report)["stage_transition"] == "stage_barrier"
     _assert_profile_sources(report)
     policy = _policy_by_field(report)
     assert policy["gap_loop"]["kind"] == "flow_policy_consumer"

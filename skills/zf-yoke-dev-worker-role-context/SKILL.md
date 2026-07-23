@@ -49,6 +49,11 @@ context for runtime truth, task scope, and completion claims.
 - Before emitting `dev.build.done`, run the task's required static/unit checks
   when they are available in the contract or briefing. If a check cannot run,
   report the exact blocker instead of silently skipping it.
+- Before emitting `dev.build.done`, produce the runtime-requested
+  `impl_self_check` object. Bind it to the current contract revision and source
+  commit; cover every mandatory `acceptance_id`, and record each declared
+  command as an independent receipt. This is author evidence, not an
+  independent verdict.
 - Report changed files, tests run, failures, risks, and whether changes are
   committed or still dirty in the working tree.
 - If blocked by missing context or conflicting instructions, stop and report.
@@ -56,6 +61,10 @@ context for runtime truth, task scope, and completion claims.
   its evidence method with the current briefing/output profile.
 - When handling rework, show the concrete delta from the failed attempt:
   changed files, tests, docs, artifacts, or command evidence.
+- When handling structured rework, map every open `rework_item_id` to the
+  changed commit, passing command receipt ids, and evidence refs. Distinguish
+  `missing`, `incomplete`, `incorrect`, `unverified`, and `blocked`; do not
+  answer a concrete item with a generic “fixed” summary.
 - Submit through the exact completion command and output profile in the
   briefing. Do not infer an event name or duplicate its mechanical field list
   here.
@@ -100,3 +109,38 @@ Use the current briefing's success, failure, or suspension channel. These are
 runtime contracts, not vocabulary invented by this Skill. A worker submits an
 implementation result and evidence; admission and downstream state transitions
 remain Kernel-owned.
+
+### `impl_self_check` minimum shape
+
+```json
+{
+  "schema_version": "impl-self-check.v1",
+  "verdict": "passed",
+  "acceptance_results": [
+    {
+      "acceptance_id": "AC-1",
+      "status": "passed",
+      "command_receipt_ids": ["receipt-unit"],
+      "evidence_refs": ["test:..."],
+      "residual_risks": []
+    }
+  ],
+  "command_receipts": [
+    {
+      "receipt_id": "receipt-unit",
+      "command_id": "unit-focused",
+      "command": "<exact declared command>",
+      "exit_code": 0,
+      "status": "passed",
+      "deterministic": true,
+      "reusable": true,
+      "evidence_refs": ["test:..."]
+    }
+  ],
+  "rework_items_addressed": []
+}
+```
+
+The briefing/runtime fills immutable run/task/contract/target bindings. Do not
+invent a different contract revision or claim a receipt for a command you did
+not run on the reported source commit.

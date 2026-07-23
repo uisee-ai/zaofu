@@ -63,7 +63,8 @@ def test_wake_list_changes_are_explicit():
         f"141 closure/result/gate/delivery truth edges +14 → 137; "
         f"task_map.ready claim-set pin + run.goal.completed settlement +2 → 139; "
         f"continuation effect/cancel/failure edges +5, drift/refresh 改为 "
-        f"batch-only -2 → 142; worker.launch_artifact.written +1 → 143"
+        f"batch-only -2 → 142; worker.launch_artifact.written housekeeping "
+        f"外部入口 +1 → 143"
     )
 
 

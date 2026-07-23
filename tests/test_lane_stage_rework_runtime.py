@@ -350,7 +350,7 @@ def test_v4_valid_pass_closes_task_and_advances_final_stage(tmp_path: Path) -> N
     assert transport.sent[-1][0] == "judge"
 
 
-def test_v4_missing_target_sidecar_fails_lane_instead_of_closing_task(
+def test_v4_missing_target_sidecar_supersedes_result_without_closing_task(
     tmp_path: Path,
 ) -> None:
     state_dir, log, _transport, orch = _state(
@@ -413,13 +413,18 @@ def test_v4_missing_target_sidecar_fails_lane_instead_of_closing_task(
     orch.run_once(events=[completion])
 
     events = log.read_all()
-    failure = next(
+    invalid = next(
         event for event in events
-        if event.type == "lane.stage.failed"
-        and event.payload.get("task_id") == "TASK-1"
+        if event.type == "workflow.call.result.invalid"
+        and event.payload.get("reason") == "stale_call_result_superseded"
     )
-    assert failure.payload["failure_class"] == "verifier_contract_failure"
-    assert "sidecar ref missing" in failure.payload["reason"]
+    assert invalid.payload["semantic_attempt_incremented"] is False
+    assert any(
+        issue.get("code") == "stale_target_snapshot"
+        and "sidecar ref missing" in str(issue.get("message") or "")
+        for issue in invalid.payload["issues"]
+    )
+    assert not [event for event in events if event.type == "lane.stage.failed"]
     assert not [event for event in events if event.type == "task.done.evidence"]
     assert TaskStore(state_dir / "kanban.json").get("TASK-1").status != "done"
 

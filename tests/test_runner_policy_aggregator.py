@@ -125,6 +125,27 @@ def test_claude_adapter_emits_add_dir_for_allowlist_paths():
     assert "--add-dir" not in ClaudeCodeAdapter().build_command(bypass)
 
 
+def test_codex_pure_aggregator_stays_headless_safe():
+    """Codex restricted mode is interactive even for canonical briefing reads."""
+
+    role = RoleConfig(
+        name="review-synth",
+        instance_id="review-synth",
+        backend="codex",
+        role_kind="reader",
+        permission_mode="bypass",
+    )
+
+    effective = apply_pure_aggregator_policy(
+        _config(),
+        role,
+        state_dir="/abs/proj/.zf-custom",
+    )
+
+    assert effective is role
+    assert effective.permission_mode == "bypass"
+
+
 def test_lane_pipeline_final_judge_gets_goal_closure_readonly_policy():
     pipeline = parse_lane_pipeline({
         "id": "prd-lanes",

@@ -1,6 +1,6 @@
 // TaskDetail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { DETAIL_TABS, OPERATOR_BACKENDS } from "../../app/sharedTypes";
-import type { ActionResponse, EventRecord, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff, TaskTimeline } from "../../api/types";
+import type { ActionResponse, EventRecord, ExecutionRouteProjection, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff, TaskTimeline } from "../../api/types";
 import { contextBadgeTone, contextLabel } from "../../lib/format";
 import { routeStatusTone, taskPriority } from "../../lib/task-display";
 import { Hash, Wrench } from "lucide-react";
@@ -286,121 +286,205 @@ export function TaskDetail({
         ))}
       </div>
       <div className="detail-body">
-        {tab === "Timeline" ? (
-          <ExecutionRoutePanel
-            error={timelineError}
-            loading={timelineLoading}
-            route={timelineRoute}
-            traceId={timelineTraceId}
-            onOpenProjection={onOpenProjection}
-          />
-        ) : null}
-        {tab === "Workbench" ? (
-          <TaskWorkbenchPanel
+        {tab === "Summary" ? (
+          <TaskSummaryPanel
+            actionReady={actionReady}
+            actionResult={actionResult}
+            actionState={actionState}
             detail={detail}
-            diff={diff}
-            events={taskEvents.slice(0, 20)}
+            onAction={onAction}
+            onOpenOrchestrator={onOpenOrchestrator}
             onOpenProjection={onOpenProjection}
             task={task}
           />
         ) : null}
-        {tab === "Overview" ? (
-          <>
-            <dl className="detail-grid">
-              <dt>Title</dt>
-              <dd>{task.title || "-"}</dd>
-              <dt>Phase</dt>
-              <dd>{task.phase ?? "-"}</dd>
-              <dt>Assignee</dt>
-              <dd>{task.assigned_to || "-"}</dd>
-              <dt>Trace</dt>
-              <dd>
-                <EvidenceLink
-                  id={detail?.links?.trace || detail?.trace_id || ""}
-                  kind="trace"
-                  onOpen={onOpenProjection}
-                />
-              </dd>
-              <dt>Candidate</dt>
-              <dd>
-                <EvidenceLink
-                  id={detail?.links?.candidate || ""}
-                  kind="candidate"
-                  onOpen={onOpenProjection}
-                />
-              </dd>
-              <dt>Fanout</dt>
-              <dd>
-                <EvidenceLink
-                  id={detail?.links?.fanout || ""}
-                  kind="fanout"
-                  onOpen={onOpenProjection}
-                />
-              </dd>
-              <dt>Workdir</dt>
-              <dd>{detail?.role_instance || task.assigned_to || "-"}</dd>
-              <dt>Blocked By</dt>
-              <dd>{task.blocked_by?.length ? task.blocked_by.join(", ") : "-"}</dd>
-              <dt>Skills</dt>
-              <dd>{task.skills_required?.length ? task.skills_required.join(", ") : "-"}</dd>
-            </dl>
-            <TaskEditPanel
-              actionReady={actionReady}
-              actionState={actionState}
-              detail={detail}
-              onUpdate={(payload) => onAction("update-task", payload)}
-              task={task}
-            />
-            <TaskEffectiveSkillsPanel
-              skillsSummary={skillsSummary}
-              task={task}
-            />
-            <ArtifactLedgerPanel detail={detail} />
-            <AssignmentIntentPanel
-              actionReady={actionReady}
-              actionState={actionState}
-              onPropose={(payload) => onAction("assignment-propose", payload)}
-              task={task}
-            />
-            <div className="action-row">
-              <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>
-                Open Agent
-              </button>
-              {["dispatch-task", "request-verify", "request-review", "ship-candidate"].map((action) => (
-                <button className="icon-button" key={action} type="button" onClick={() => onAction(action)}>
-                  {action}
-                </button>
-              ))}
-            </div>
-            {actionResult ? (
-              <div className="notice">
-                <span className="mono">{actionResult.status}</span> {actionResult.reason}
-              </div>
-            ) : null}
-          </>
+        {tab === "Activity" ? (
+          <TaskActivityPanel
+            detail={detail}
+            events={taskEvents.slice(0, 20)}
+            onOpenProjection={onOpenProjection}
+            route={timelineRoute}
+            timelineError={timelineError}
+            timelineLoading={timelineLoading}
+            traceId={timelineTraceId}
+          />
         ) : null}
-        {tab === "Contract" ? <PreBlock value={detail?.contract ?? task} /> : null}
-        {tab === "Briefing" ? (
-          detail?.briefing.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">No briefing projection.</p>
+        {tab === "Evidence" ? <TaskEvidencePanel detail={detail} diff={diff} /> : null}
+        {tab === "Advanced" ? (
+          <TaskAdvancedPanel detail={detail} skillsSummary={skillsSummary} task={task} />
         ) : null}
-        {tab === "Events" ? <EventTable events={taskEvents} compact /> : null}
-        {tab === "Git" ? (
-          <>
-            <PreBlock value={detail?.git ?? {}} />
-            {diff?.files.length ? (
-              <div className="compact-list">
-                {diff.files.map((file) => <span className="mono" key={file}>{file}</span>)}
-              </div>
-            ) : null}
-            {diff?.error ? <p className="empty-text">{diff.error}</p> : null}
-            {diff?.diff ? <pre className="text-block diff-block">{diff.diff}</pre> : null}
-          </>
-        ) : null}
-        {tab === "Verify" ? <PreBlock value={detail?.verify ?? {}} /> : null}
-        {tab === "Review" ? <PreBlock value={detail?.review ?? {}} /> : null}
-        {tab === "Diagnostics" ? <PreBlock value={detail?.diagnostics ?? {}} /> : null}
       </div>
     </section>
+  );
+}
+
+
+function TaskSummaryPanel({
+  actionReady,
+  actionResult,
+  actionState,
+  detail,
+  onAction,
+  onOpenOrchestrator,
+  onOpenProjection,
+  task,
+}: {
+  actionReady: boolean;
+  actionResult: ActionResponse | null;
+  actionState: string;
+  detail: TaskDetailModel | null;
+  onAction: TaskActionHandler;
+  onOpenOrchestrator: () => void;
+  onOpenProjection: (kind: ProjectionKind, id: string) => void;
+  task: Task;
+}) {
+  return (
+    <div className="task-summary-view" data-testid="task-summary-view">
+      <dl className="detail-grid">
+        <dt>Title</dt>
+        <dd>{task.title || "-"}</dd>
+        <dt>Phase</dt>
+        <dd>{task.phase ?? "-"}</dd>
+        <dt>Assignee</dt>
+        <dd>{task.assigned_to || "-"}</dd>
+        <dt>Trace</dt>
+        <dd><EvidenceLink id={detail?.links?.trace || detail?.trace_id || ""} kind="trace" onOpen={onOpenProjection} /></dd>
+        <dt>Candidate</dt>
+        <dd><EvidenceLink id={detail?.links?.candidate || ""} kind="candidate" onOpen={onOpenProjection} /></dd>
+        <dt>Fanout</dt>
+        <dd><EvidenceLink id={detail?.links?.fanout || ""} kind="fanout" onOpen={onOpenProjection} /></dd>
+        <dt>Workdir</dt>
+        <dd>{detail?.role_instance || task.assigned_to || "-"}</dd>
+        <dt>Blocked By</dt>
+        <dd>{task.blocked_by?.length ? task.blocked_by.join(", ") : "-"}</dd>
+      </dl>
+      <HandoffSummaryPanel detail={detail} />
+      <TaskEditPanel
+        actionReady={actionReady}
+        actionState={actionState}
+        detail={detail}
+        onUpdate={(payload) => onAction("update-task", payload)}
+        task={task}
+      />
+      <AssignmentIntentPanel
+        actionReady={actionReady}
+        actionState={actionState}
+        onPropose={(payload) => onAction("assignment-propose", payload)}
+        task={task}
+      />
+      <div className="action-row">
+        <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>Open Agent</button>
+        {["dispatch-task", "request-verify", "request-review", "ship-candidate"].map((action) => (
+          <button className="icon-button" key={action} type="button" onClick={() => onAction(action)}>{action}</button>
+        ))}
+      </div>
+      {actionResult ? (
+        <div className="notice"><span className="mono">{actionResult.status}</span> {actionResult.reason}</div>
+      ) : null}
+    </div>
+  );
+}
+
+
+function TaskActivityPanel({
+  detail,
+  events,
+  onOpenProjection,
+  route,
+  timelineError,
+  timelineLoading,
+  traceId,
+}: {
+  detail: TaskDetailModel | null;
+  events: EventRecord[];
+  onOpenProjection: (kind: ProjectionKind, id: string) => void;
+  route: ExecutionRouteProjection | null;
+  timelineError: string | null;
+  timelineLoading: boolean;
+  traceId: string;
+}) {
+  return (
+    <div className="task-activity-view" data-testid="task-activity-view">
+      <ExecutionRoutePanel
+        error={timelineError}
+        loading={timelineLoading}
+        onOpenProjection={onOpenProjection}
+        route={route}
+        traceId={traceId}
+      />
+      <section className="subsection">
+        <div className="inline-heading"><h3>Recent Task Events</h3><span className="muted">{events.length} events</span></div>
+        <EventTable events={events} compact />
+      </section>
+      <TaskExecutionPanel detail={detail} onOpenProjection={onOpenProjection} />
+    </div>
+  );
+}
+
+
+function TaskEvidencePanel({ detail, diff }: { detail: TaskDetailModel | null; diff: TaskDiff | null }) {
+  return (
+    <div className="task-evidence-view" data-testid="task-evidence-view">
+      <ArtifactLedgerPanel detail={detail} />
+      <section className="subsection">
+        <h3>Git</h3>
+        <PreBlock value={detail?.git ?? {}} />
+        {diff?.files.length ? (
+          <div className="compact-list">{diff.files.map((file) => <span className="mono" key={file}>{file}</span>)}</div>
+        ) : null}
+        {diff?.error ? <p className="empty-text">{diff.error}</p> : null}
+        {diff?.diff ? <pre className="text-block diff-block">{diff.diff}</pre> : null}
+      </section>
+      <section className="subsection"><h3>Verify</h3><PreBlock value={detail?.verify ?? {}} /></section>
+      <section className="subsection"><h3>Review</h3><PreBlock value={detail?.review ?? {}} /></section>
+    </div>
+  );
+}
+
+
+function TaskAdvancedPanel({
+  detail,
+  skillsSummary,
+  task,
+}: {
+  detail: TaskDetailModel | null;
+  skillsSummary: SkillsSummary | null;
+  task: Task;
+}) {
+  const workdir = asRecord(detail?.workdir);
+  const statusModel = asRecord(detail?.status_model);
+  const evidenceModel = asRecord(detail?.evidence_model);
+  const interactionEvidence = asRecord(evidenceModel.interaction);
+  const currentSession = asRecord(interactionEvidence.current_session);
+  const sessionRows = [
+    { key: "role_session", value: detail?.role_instance || "-" },
+    { key: "agent_scope", value: `project + context:${task.id}` },
+    { key: "workdir", value: textValue(workdir.project_path || workdir.workdir) || "-" },
+    { key: "branch", value: textValue(workdir.branch || workdir.branch_or_ref || task.git?.branch) || "-" },
+    { key: "session", value: textValue(currentSession.status) || "-" },
+    { key: "transcripts", value: numberValue(interactionEvidence.transcript_count) ?? 0 },
+  ];
+  const statusRows = [
+    { key: "canonical", value: statusModel.canonical_task_status || "task.status" },
+    { key: "source", value: statusModel.task_status_source || "TaskStore/EventWriter" },
+    { key: "task_status", value: statusModel.task_status || task.status },
+    { key: "run_done", value: statusModel.run_completed_implies_task_done === false ? "evidence only" : stringify(statusModel.run_completed_implies_task_done) },
+    { key: "done_requires", value: statusModel.done_requires || "-" },
+  ];
+  return (
+    <div className="task-advanced-view task-workbench" data-testid="task-advanced-view">
+      <div className="workbench-grid evidence-grid">
+        <KeyValuePanel title="Session" rows={sessionRows} />
+        <KeyValuePanel title="Status Model" rows={statusRows} />
+      </div>
+      <TaskEffectiveSkillsPanel skillsSummary={skillsSummary} task={task} />
+      <section className="subsection"><h3>Contract</h3><PreBlock value={detail?.contract ?? task} /></section>
+      <section className="subsection">
+        <h3>Briefing</h3>
+        {detail?.briefing.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">No briefing projection.</p>}
+      </section>
+      <section className="subsection"><h3>Diagnostics</h3><PreBlock value={detail?.diagnostics ?? {}} /></section>
+    </div>
   );
 }
 
@@ -1042,118 +1126,6 @@ function AssignmentIntentPanel({
 }
 
 
-function TaskWorkbenchPanel({
-  detail,
-  diff,
-  events,
-  onOpenProjection,
-  task,
-}: {
-  detail: TaskDetailModel | null;
-  diff: TaskDiff | null;
-  events: EventRecord[];
-  onOpenProjection: (kind: ProjectionKind, id: string) => void;
-  task: Task;
-}) {
-  const workdir = (detail?.workdir ?? {}) as Record<string, unknown>;
-  const workdirPath = textValue(workdir.project_path || workdir.workdir);
-  const branch = textValue(workdir.branch || workdir.branch_or_ref || task.git?.branch);
-  const traceId = detail?.links?.trace || detail?.trace_id || task.links?.trace || "";
-  const candidateId = detail?.links?.candidate || task.links?.candidate || "";
-  const fanoutId = detail?.links?.fanout || task.links?.fanout || "";
-  const statusModel = (detail?.status_model ?? {}) as Record<string, unknown>;
-  const evidenceModel = (detail?.evidence_model ?? {}) as Record<string, unknown>;
-  const executionEvidence = (evidenceModel.execution ?? {}) as Record<string, unknown>;
-  const interactionEvidence = (evidenceModel.interaction ?? {}) as Record<string, unknown>;
-  const transcriptCount = Number(interactionEvidence.transcript_count ?? 0);
-  const currentSession = (interactionEvidence.current_session ?? {}) as Record<string, unknown>;
-  const sessionRows = [
-    { key: "status", value: task.status },
-    { key: "phase", value: task.phase || "-" },
-    { key: "assignee", value: task.assigned_to || "-" },
-    { key: "role_session", value: detail?.role_instance || "-" },
-    { key: "agent_scope", value: `project + context:${task.id}` },
-    { key: "workdir", value: workdirPath || "-" },
-    { key: "branch", value: branch || "-" },
-  ];
-  const statusRows = [
-    { key: "canonical", value: statusModel.canonical_task_status || "task.status" },
-    { key: "source", value: statusModel.task_status_source || "TaskStore/EventWriter" },
-    { key: "task_status", value: statusModel.task_status || task.status },
-    {
-      key: "run_done",
-      value: statusModel.run_completed_implies_task_done === false ? "evidence only" : stringify(statusModel.run_completed_implies_task_done),
-    },
-    { key: "done_requires", value: statusModel.done_requires || "-" },
-  ];
-  const qualityRows = [
-    { key: "verify", value: detail?.verify?.state || "-" },
-    { key: "verify_events", value: detail?.verify?.event_count ?? 0 },
-    { key: "review", value: detail?.review?.state || "-" },
-    { key: "review_events", value: detail?.review?.event_count ?? 0 },
-    { key: "diff_files", value: diff?.files.length ?? 0 },
-    { key: "diff_range", value: diff?.range || "-" },
-  ];
-  const operatorRows = [
-    { key: "events", value: executionEvidence.event_count ?? events.length },
-    { key: "runs", value: executionEvidence.run_count ?? detail?.runs?.length ?? 0 },
-    { key: "transcripts", value: transcriptCount },
-    { key: "session", value: currentSession.status || "-" },
-    { key: "transcript", value: interactionEvidence.transcript_truth || "interaction_evidence_only" },
-  ];
-
-  return (
-    <div className="task-workbench">
-      <div className="workbench-grid evidence-grid">
-        <KeyValuePanel title="Session" rows={sessionRows} />
-        <KeyValuePanel title="Status Model" rows={statusRows} />
-        <div className="subsection key-panel">
-          <h3>Evidence</h3>
-          <dl className="detail-grid compact-detail-grid">
-            <dt>trace</dt>
-            <dd><EvidenceLink id={traceId} kind="trace" onOpen={onOpenProjection} /></dd>
-            <dt>candidate</dt>
-            <dd><EvidenceLink id={candidateId} kind="candidate" onOpen={onOpenProjection} /></dd>
-            <dt>fanout</dt>
-            <dd><EvidenceLink id={fanoutId} kind="fanout" onOpen={onOpenProjection} /></dd>
-            <dt>blocked</dt>
-            <dd>{task.blocked_reason || "-"}</dd>
-          </dl>
-        </div>
-        <KeyValuePanel title="Verify / Review" rows={qualityRows} />
-        <KeyValuePanel title="Operator Evidence" rows={operatorRows} />
-      </div>
-      <HandoffSummaryPanel detail={detail} />
-      <div className="subsection">
-        <div className="inline-heading">
-          <h3>Recent Task Events</h3>
-          <span className="muted">{events.length} events</span>
-        </div>
-        <EventTable events={events} compact />
-      </div>
-      <TaskExecutionPanel detail={detail} onOpenProjection={onOpenProjection} />
-      {diff?.files.length ? (
-        <div className="subsection">
-          <div className="inline-heading">
-            <h3>Changed Files</h3>
-            <span className="muted">{diff.files.length} files</span>
-          </div>
-          <div className="compact-list">
-            {diff.files.map((file) => <span className="mono" key={file}>{file}</span>)}
-          </div>
-        </div>
-      ) : null}
-      {detail?.diagnostics && !detail.diagnostics.empty ? (
-        <div className="subsection">
-          <h3>Diagnostics</h3>
-          <PreBlock value={detail.diagnostics} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-
 function TaskExecutionPanel({
   detail,
   onOpenProjection,
@@ -1212,4 +1184,3 @@ function EvidenceLink({
     </button>
   );
 }
-

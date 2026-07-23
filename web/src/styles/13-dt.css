@@ -128,6 +128,52 @@
   background: var(--panel);
 }
 
+.wf-panel-head {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  padding: 1px 2px 7px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.wf-panel-title,
+.wf-panel-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.wf-panel-title .section-title {
+  margin: 0;
+}
+
+.wf-span-total {
+  color: var(--text-secondary);
+  font-size: var(--text-12);
+  font-variant-numeric: tabular-nums;
+}
+
+.wf-panel-meta {
+  color: var(--muted-foreground);
+  font-size: var(--text-11);
+}
+
+.wf-span-hierarchy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-span-usage {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 .dt-tree-caret {
   flex: none;
   width: 12px;
@@ -166,7 +212,7 @@
   min-width: 0;
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(240px, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
   gap: 10px;
   align-items: center;
   padding: 3px 6px;
@@ -207,6 +253,38 @@ button.wf-row:hover {
   gap: 6px;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.wf-state {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--text-11);
+  white-space: nowrap;
+}
+
+.wf-state > i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.wf-state.tone-ok > i { background: var(--ok); }
+.wf-state.tone-err > i { background: var(--err); }
+.wf-state.tone-warn > i { background: var(--warn); }
+.wf-state.tone-info > i { background: var(--info); }
+
+.wf-state-note {
+  min-width: 0;
+  color: var(--warn);
+  font-size: var(--text-10);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wf-feature .dt-tree-label {
@@ -256,6 +334,40 @@ button.wf-row:hover {
   font-size: var(--text-12);
   color: var(--text-tertiary);
   white-space: nowrap;
+}
+
+@media (max-width: 980px) {
+  .wf-panel-meta {
+    display: grid;
+    gap: 2px;
+  }
+
+  .wf-span-usage {
+    margin-left: 0;
+  }
+
+  .wf-row {
+    grid-template-columns: minmax(0, 1fr) minmax(72px, 0.4fr);
+    gap: 6px;
+  }
+
+  .wf-times {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .wf-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wf-row-label {
+    width: 100%;
+  }
+
+  .wf-row > .wf-track {
+    display: none;
+  }
 }
 
 .wf-leaf-seq {
@@ -340,9 +452,15 @@ button.wf-row:hover {
 }
 
 .wf-axis-label {
-  display: inline-flex;
+  display: inline-grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  gap: 6px;
+  column-gap: 10px;
+}
+
+.wf-axis-label .dt-lifeline-tag {
+  padding-right: 10px;
+  border-right: 1px solid var(--line);
 }
 
 .wf-axis-clock {
@@ -372,6 +490,11 @@ button.wf-row:hover {
   white-space: nowrap;
 }
 
+.wf-axis-tick:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 .wf-axis-tick i {
   font-style: normal;
   color: var(--brand);
@@ -384,10 +507,64 @@ button.wf-row:hover {
 }
 
 .wf-axis-tick small {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 2;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--panel);
+  box-shadow: 0 0 0 1px var(--line);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
   max-width: 64px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--text-9);
+}
+
+.wf-axis-tick.is-labelled small,
+.wf-axis-tick:hover small,
+.wf-axis-tick:focus-visible small {
+  opacity: 1;
+}
+
+.wf-axis-track:hover .wf-axis-tick.is-labelled:not(:hover) small {
+  opacity: 0;
+}
+
+.wf-axis-tick.is-right-side small {
+  right: 50%;
+  left: auto;
+  transform: none;
+}
+
+.wf-axis-tick.is-edge-start small {
+  left: 0;
+  transform: none;
+}
+
+.wf-axis-tick.is-edge-start {
+  align-items: flex-start;
+  transform: none;
+}
+
+.wf-axis-tick.is-edge-end small {
+  left: auto;
+  right: 50%;
+  transform: none;
+}
+
+.wf-axis-tick.is-edge-end {
+  align-items: center;
+  transform: translateX(-50%);
+}
+
+@media (max-width: 1100px) {
+  .wf-axis-tick.is-labelled small {
+    opacity: 0;
+  }
 }
 
 /* ── R-刀 Runs tab — GitHub Actions job 风格 attempt 列表(每行一次尝试)。 ── */

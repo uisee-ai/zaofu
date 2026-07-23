@@ -686,6 +686,9 @@ class WorkflowConfig:
     # verification command for every writer task and Candidate never falls
     # back to project-static commands.
     candidate_quality_source: str = "auto"
+    # Require an admitted impl-self-check sidecar before a typed writer handoff.
+    # The Agent owns its semantic contents; Runtime only validates bindings.
+    impl_self_check_required: bool = False
 
     # 131-P2-3(Temporal 借鉴条款):thinking backend 闲置宽限,自派发起
     # max(idle_threshold, attempt_lease_grace_s) 内不判 idle。F15 实证值

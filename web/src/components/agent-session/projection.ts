@@ -1,6 +1,6 @@
 import type { EventRecord } from "../../api/types.js";
 import type {
-  AgentConversation, AgentSessionCard, AgentSessionPart, AgentSessionRun,
+  AgentConversation, AgentSessionActionProposal, AgentSessionCard, AgentSessionPart, AgentSessionRun,
   AgentSessionThread, AgentSessionThreadRef, AgentSessionTurn,
 } from "./types.js";
 import {
@@ -35,6 +35,32 @@ function canonicalBackend(value: unknown): string {
   }
   return raw;
 }
+
+function proposalDisplayAnswer(answer: string, proposal: AgentSessionActionProposal): string {
+  const matchesProposalEnvelope = (candidate: string): boolean => {
+    try {
+      const decoded = recordValue(JSON.parse(candidate));
+      const envelope = recordValue(decoded?.action_proposal ?? decoded?.proposal ?? decoded);
+      const action = textValue(envelope?.action ?? envelope?.requested_action).trim();
+      return Boolean(action && (action === proposal.action || action === proposal.requestedAction));
+    } catch {
+      return false;
+    }
+  };
+
+  let visible = answer.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (block, body: string) => (
+    matchesProposalEnvelope(body.trim()) ? "" : block
+  )).trim();
+  if (!visible || matchesProposalEnvelope(visible)) return "";
+
+  const start = visible.indexOf("{");
+  const end = visible.lastIndexOf("}");
+  if (start >= 0 && end > start && matchesProposalEnvelope(visible.slice(start, end + 1))) {
+    visible = `${visible.slice(0, start)}${visible.slice(end + 1)}`.trim();
+  }
+  return visible.replace(/\n{3,}/g, "\n\n");
+}
+
 function ensureThread(
   threads: Map<string, AgentSessionThread>,
   id: string,
@@ -408,7 +434,11 @@ export function buildKanbanConversation(args: {
       run.updatedAt = event.ts;
       run.providerSessionId = textValue(payload.provider_session_id) || run.providerSessionId;
       run.usage = recordValue(payload.usage) ?? undefined;
-      const answer = textValue(payload.answer || payload.error).trim();
+      const proposal = parseActionProposal(payload);
+      const rawAnswer = textValue(payload.answer || payload.error).trim();
+      const answer = proposal && !payload.error
+        ? proposalDisplayAnswer(rawAnswer, proposal)
+        : rawAnswer;
       if (answer) {
         upsertPart(run, {
           id: payload.error ? "text-error" : "text",
@@ -424,7 +454,6 @@ export function buildKanbanConversation(args: {
           refs: eventSourceRefs(event, recordValue(payload.refs)),
         });
       }
-      const proposal = parseActionProposal(payload);
       if (proposal) {
         run.proposal = proposal;
         addCard(turn, {

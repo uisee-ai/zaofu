@@ -35,6 +35,7 @@ from zf.core.config.schema import (
     FanoutAggregateConfig,
     FanoutAssignmentConfig,
     GitIsolationConfig,
+    GoalConfig,
     ProjectConfig,
     RoleConfig,
     RuntimeConfig,
@@ -49,6 +50,8 @@ from zf.core.config.schema import (
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 PDD = "CJMIN-SMOKE-001"
 
@@ -148,13 +151,14 @@ def _config(state_dir: Path) -> ZfConfig:
         ),
         WorkflowStageConfig(
             id="plan", trigger="zaofu.refactor.review.ready", topology="fanout_reader",
-            roles=["plan-synth"], target_ref="${target_ref}",
+            roles=["plan-worker"], target_ref="${target_ref}",
             aggregate=FanoutAggregateConfig(
                 mode="wait_for_all",
                 child_success_event="refactor.plan.child.completed",
                 child_failure_event="refactor.plan.child.failed",
                 success_event="zaofu.refactor.plan.ready",
                 failure_event="zaofu.refactor.plan.blocked",
+                synth_role="plan-critic",
             ),
         ),
         WorkflowStageConfig(
@@ -206,7 +210,8 @@ def _config(state_dir: Path) -> ZfConfig:
     return ZfConfig(
         project=ProjectConfig(name="cj-smoke", state_dir=str(state_dir)),
         roles=[
-            _reader("scan-1"), _reader("scan-2"), _reader("plan-synth"),
+            _reader("scan-1"), _reader("scan-2"), _reader("plan-worker"),
+            _reader("plan-critic"),
             _writer("dev-1"), _writer("dev-2"),
             _reader("review-1"), _reader("review-2"),
             _reader("verify-1"), _reader("verify-2"),
@@ -229,6 +234,7 @@ def _config(state_dir: Path) -> ZfConfig:
             workdirs=WorkdirConfig(enabled=True, mode="worktree"),
             git=GitIsolationConfig(candidate_base_ref="main"),
         ),
+        goal=GoalConfig(enabled=True),
     )
 
 
@@ -295,8 +301,92 @@ def _complete_reader_children(
     orch.run_once(events=completions)
 
 
+def _consume_synth_required_reads(state_dir: Path, dispatched: ZfEvent) -> None:
+    descriptor = dispatched.payload["attempt_source_manifest"]
+    manifest = hydrate_sidecar_ref(state_dir, descriptor).payload
+    assert isinstance(manifest, dict)
+    for requirement in dispatched.payload["required_reads"]:
+        read_attempt_artifact(
+            state_dir,
+            manifest=manifest,
+            source_id=requirement["source_id"],
+            artifact_id=requirement["artifact_id"],
+            json_path=requirement.get("json_path", "$"),
+            max_items=int(requirement.get("max_items") or 0),
+            max_chars=int(requirement.get("max_chars") or 0),
+        )
+
+
+def _complete_plan_synth(
+    state_dir: Path,
+    log: EventLog,
+    orch: Orchestrator,
+    *,
+    fanout_id: str,
+    report: dict,
+) -> ZfEvent:
+    dispatched = next(
+        event for event in reversed(log.read_all())
+        if event.type == "fanout.synth.dispatched"
+        and event.payload.get("fanout_id") == fanout_id
+    )
+    assert dispatched.payload["output_profile_id"] == "plan-synth"
+    assert dispatched.payload["result_protocol_mode"] == "blocking"
+    assert dispatched.payload["plan_revision"].startswith("plan-r")
+    assert {
+        item["source_id"] for item in dispatched.payload["required_reads"]
+    } >= {"plan-synth-contract", "child-result-plan-worker"}
+    briefing = Path(dispatched.payload["briefing_path"]).read_text(encoding="utf-8")
+    assert "Child reports:\n```json" not in briefing
+    assert "canonical required inputs" in briefing
+    command = briefing.split(
+        "When finished, emit exactly one fanout.synth.completed event with "
+        "the runtime state dir explicitly:\n```bash\n",
+        1,
+    )[1].split("\n```", 1)[0]
+    command_lines = command.splitlines()
+    assert "--payload-file -" in command_lines[0]
+    delimiter = command_lines[0].rsplit("<<'", 1)[1].removesuffix("'")
+    assert command_lines[-1] == delimiter
+    completion_payload = json.loads("\n".join(command_lines[1:-1]))
+    assert completion_payload["child_id"] == "synth"
+    _consume_synth_required_reads(state_dir, dispatched)
+    completion_payload.update({
+        "status": "completed",
+        "recommendation": "approve",
+        "summary": "plan synthesis passed",
+    })
+    completion_payload["report"].update({
+        "child_id": "synth",
+        "status": "passed",
+        "recommendation": "approve",
+        "summary": "plan synthesis passed",
+        **report,
+    })
+    completed = ZfEvent(
+        type="fanout.synth.completed",
+        actor="plan-critic",
+        correlation_id=dispatched.correlation_id,
+        payload=completion_payload,
+    )
+    log.append(completed)
+    orch.run_once(events=[completed])
+    return completed
+
+
 def test_full_refactor_chain_reaches_judge_passed(tmp_path: Path):
     state_dir, log, transport, orch = _state(tmp_path)
+    goal_started = ZfEvent(
+        type="run.goal.started",
+        actor="orchestrator",
+        correlation_id="trace-smoke",
+        payload={
+            "run_id": "trace-smoke",
+            "goal_id": PDD,
+            "objective": "deliver the full refactor smoke product",
+        },
+    )
+    log.append(goal_started)
 
     # 1. scan: refactor.scan.requested -> reader fanout -> review.ready
     scan_trigger = ZfEvent(
@@ -329,17 +419,25 @@ def test_full_refactor_chain_reaches_judge_passed(tmp_path: Path):
     # 2. plan: review.ready -> synth fanout -> plan.ready (projected task_map)
     orch.run_once(events=[review_ready])
     plan_fanout = _stage_fanout_id(log, "plan")
+    plan_result = {
+        "review_artifact_ref": review_ready.payload["review_artifact_ref"],
+        "refactor_plan_md": "# cj-min smoke 重构计划\n\n两条 lane。",
+        "plan_intent": "smoke",
+        "task_map": {"tasks": TASK_MAP_TASKS},
+        "gates": ["python3 -m compileall -q ."],
+        "risk_register": [],
+        "backlog_candidates": [],
+    }
     _complete_reader_children(
         log, orch, fanout_id=plan_fanout, child_event="refactor.plan.child.completed",
-        extra={
-            "review_artifact_ref": review_ready.payload["review_artifact_ref"],
-            "refactor_plan_md": "# cj-min smoke 重构计划\n\n两条 lane。",
-            "plan_intent": "smoke",
-            "task_map": {"tasks": TASK_MAP_TASKS},
-            "gates": ["python3 -m compileall -q ."],
-            "risk_register": [],
-            "backlog_candidates": [],
-        },
+        extra=plan_result,
+    )
+    _complete_plan_synth(
+        state_dir,
+        log,
+        orch,
+        fanout_id=plan_fanout,
+        report=plan_result,
     )
     plan_ready = _last_of(log, "zaofu.refactor.plan.ready")
     assert plan_ready.payload.get("artifact_gate") == "passed"
@@ -400,6 +498,11 @@ def test_full_refactor_chain_reaches_judge_passed(tmp_path: Path):
     orch.run_once(events=[])  # let reconcile/aggregate sweeps settle
 
     events = _events(log)
+    assert len([
+        event for event in events
+        if event.type == "workflow.call.result.reported"
+        and event.payload.get("adapter_id") == "plan-synthesis-result-v1"
+    ]) == 1
     # R21 regression gate: zero scope rejections on the live kernel path
     assert not [e for e in events if e.type == "task.ref.rejected"], (
         "writer ref handoff rejected — scope/contract regression"
@@ -429,12 +532,15 @@ def test_full_refactor_chain_reaches_judge_passed(tmp_path: Path):
     _complete_reader_children(
         log, orch, fanout_id=judge_fanout, child_event="judge.child.completed",
     )
-    _last_of(log, "judge.passed")
+    judge_passed = _last_of(log, "judge.passed")
+    orch.run_once(events=[judge_passed])
+    _last_of(log, "run.goal.completed")
 
     events = _events(log)
     assert not [e for e in events if e.type == "fanout.cancelled"]
     assert not [e for e in events if e.type == "integration.failed"]
     assert not [e for e in events if e.type == "task.contract.invalid"]
+    assert len([e for e in events if e.type == "run.goal.completed"]) == 1
 
 
 def _write_task_map(state_dir: Path) -> str:

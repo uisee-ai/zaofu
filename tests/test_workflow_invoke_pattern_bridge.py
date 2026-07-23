@@ -16,6 +16,13 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
+from zf.runtime.task_contract_snapshot import (
+    build_target_snapshot,
+    build_task_contract_snapshot,
+    task_map_generation,
+    write_target_snapshot,
+    write_task_contract_snapshot,
+)
 
 
 class _RecordingTransport:
@@ -78,7 +85,10 @@ def _state(
         title="Review candidate",
         active_dispatch_id="disp-1",
         contract=TaskContract(
-            evidence_contract={"workflow_fanout_anchor": True}
+            evidence_contract={
+                "workflow_fanout_anchor": True,
+                "task_map_generation": "generation-1",
+            }
             if workflow_anchor else {},
         ),
     )
@@ -106,21 +116,52 @@ def _run_until_sent(orch: Orchestrator, transport: _RecordingTransport, expected
         orch.run_once()
 
 
-def _durable_review_terminal(*, fanout_id: str, child: dict) -> ZfEvent:
+def _durable_review_terminal(
+    *,
+    state_dir: Path,
+    fanout_id: str,
+    child: dict,
+) -> ZfEvent:
     child_payload = dict(child.get("payload") or {})
+    task = TaskStore(state_dir / "kanban.json").get("TASK-1")
+    assert task is not None
+    generation = task_map_generation(task)
+    contract_snapshot = build_task_contract_snapshot(
+        task,
+        workflow_run_id="wf-durable-review",
+        task_map_generation_id=generation,
+        base_commit="base-1",
+        task_ref="artifacts/task-ref.json",
+    )
+    contract_descriptor = write_task_contract_snapshot(
+        state_dir,
+        contract_snapshot,
+    )
+    target_snapshot = build_target_snapshot(
+        contract_descriptor,
+        target_commit="target-1",
+        contract_snapshot=contract_snapshot,
+    )
+    target_descriptor = write_target_snapshot(state_dir, target_snapshot)
     identity = {
-        "workflow_run_id": "wf-durable-review",
-        "task_id": "TASK-1",
-        "contract_revision": "contract-1",
-        "task_map_generation": "generation-1",
-        "base_commit": "base-1",
-        "task_ref": "artifacts/task-ref.json",
-        "contract_snapshot_ref": "artifacts/contract.json",
-        "contract_snapshot_digest": "a" * 64,
-        "target_snapshot_ref": "artifacts/target.json",
-        "target_snapshot_digest": "b" * 64,
+        **{
+            key: contract_snapshot[key]
+            for key in (
+                "workflow_run_id",
+                "task_id",
+                "contract_revision",
+                "task_map_generation",
+                "base_commit",
+                "task_ref",
+            )
+        },
+        "contract_snapshot_ref": contract_descriptor["ref"],
+        "contract_snapshot_digest": contract_descriptor["sha256"],
+        "target_snapshot_ref": target_descriptor["ref"],
+        "target_snapshot_digest": target_descriptor["sha256"],
         "target_commit": "target-1",
     }
+    acceptance_id = contract_snapshot["acceptance_criteria"][0]["acceptance_id"]
     verification_result = {
         "schema_version": "verification-result.v1",
         "execution_status": "completed",
@@ -130,7 +171,7 @@ def _durable_review_terminal(*, fanout_id: str, child: dict) -> ZfEvent:
         "verification_owner": "task_verify",
         "verification_tier": "runtime",
         "requirement_results": [{
-            "acceptance_id": f"AC-{child['child_id']}",
+            "acceptance_id": acceptance_id,
             "status": "passed",
             "verification_owner": "task_verify",
             "verification_tier": "runtime",
@@ -162,7 +203,7 @@ def _durable_review_terminal(*, fanout_id: str, child: dict) -> ZfEvent:
                 "recommendation": "approve",
                 "evidence_refs": ["test:workflow-invoke"],
                 "requirement_coverage_matrix": [{
-                    "acceptance_id": f"AC-{child['child_id']}",
+                    "acceptance_id": acceptance_id,
                     "status": "passed",
                     "verification_owner": "task_verify",
                     "verification_tier": "runtime",
@@ -349,6 +390,7 @@ def test_durable_workflow_invoke_and_compiled_children_are_restart_deduped(
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     for child in manifest["children"]:
         orch.run_once(events=[_durable_review_terminal(
+            state_dir=_state_dir,
             fanout_id=manifest["fanout_id"],
             child=child,
         )])

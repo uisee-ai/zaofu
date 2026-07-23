@@ -21,6 +21,10 @@ from zf.runtime.delivery_trace import build_delivery_trace
 from zf.runtime.delivery_run_trace import build_delivery_run_projection
 from zf.runtime.drift_report import build_drift_report
 from zf.runtime.execution_graph import build_execution_graph
+from zf.runtime.goal_coverage_graph import (
+    build_goal_coverage_graph,
+    degraded_goal_coverage_graph,
+)
 from zf.runtime.workflow_trace import build_workflow_trace
 
 _IDEA_TYPES = ("feature.created", "user.message")
@@ -71,6 +75,23 @@ def resolve_delivery_trace(
         execution_graph=trace.get("execution_graph", {}),
         autoresearch_cycles=trace.get("autoresearch_cycles", []),
     ))
+    try:
+        trace["goal_coverage_graph"] = build_goal_coverage_graph(
+            task_map=inp["task_map"],
+            tasks=inp["tasks"],
+            events=inp["events"],
+            project_id=project_id,
+            feature_id=inp["feature_id"],
+            task_map_ref=inp["ref"],
+        )
+    except Exception as exc:
+        # A read projection may degrade, but must never block Delivery Trace or
+        # alter canonical task/closure state.
+        trace["goal_coverage_graph"] = degraded_goal_coverage_graph(
+            project_id=project_id,
+            feature_id=inp["feature_id"],
+            reason=f"{type(exc).__name__}: {exc}",
+        )
     if inp["diagnostics"]:
         trace["diagnostics"] = list(trace.get("diagnostics", [])) + inp["diagnostics"]
     if inp["bundle"]:

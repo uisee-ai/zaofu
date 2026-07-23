@@ -126,6 +126,9 @@ class TaskContract:
     # consumers must normalize through task_contract_snapshot.criterion_text.
     acceptance_criteria: list[Any] = field(default_factory=list)
     acceptance_evidence: dict[str, list[str]] = field(default_factory=dict)
+    # Claim-centered delivery relation (doc 149). Planner-owned semantics;
+    # the kernel only preserves and validates the referenced identities.
+    goal_claim_ids: list[str] = field(default_factory=list)
     # #E fix (TR-STATIC-GATE-PER-TASK-OVERRIDE-001, cangjie 2026-05-21
     # observation-E): per-task quality_gates override. yaml-level
     # quality_gates.<gate>.{enabled, required_checks} is global default;

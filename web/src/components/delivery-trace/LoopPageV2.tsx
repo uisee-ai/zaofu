@@ -1,7 +1,7 @@
 // Loop page v2 — timeline + business-loop cards over loop-view.v1.
 // Design lineage: doc130 (stage-loop contract), doc131 §3.3/§8 (promise,
 // spine), 2026-07 five-run dry-run (mock v12 + gen3 reference prototypes).
-// Flag-gated (?v=2 / localStorage zf.loopV2); BehaviorLoopPage stays default.
+// Canonical Loop product view. Legacy BehaviorLoopPage was retired by design 150.
 import { useEffect, useMemo, useState } from "react";
 
 import { getLoopView } from "../../api/client";
@@ -294,19 +294,16 @@ export function LoopPageV2({ projectId }: Props) {
     if (view.run.latched && worst) setOpenLoop(worst.id);
   }, [view]);
 
-  if (error) return <div style={{ padding: 24, color: TONE.err }}>loop-view failed: {error}</div>;
-  if (!view) return <div style={{ padding: 24, color: TONE.muted }}>Loading loop view…</div>;
+  if (error) {
+    return <div className="loop-v2-page loop-v2-state tone-err">loop-view failed: {error}</div>;
+  }
+  if (!view) return <div className="loop-v2-page loop-v2-state">Loading loop view…</div>;
 
   const { run, loops, stages, tasks, faults, companions, pump } = view;
   const backflows = view.backflows ?? [];
-  const counters = view.health_counters;
-  const counterLine = Object.entries(counters)
-    .sort((a, b) => b[1] - a[1]).slice(0, 4)
-    .map(([k, v]) => `${k} ${v}`).join(" · ");
-  const brokenLoops = Object.values(loops).filter((l) => l.arc.state === "broken");
 
   const card: React.CSSProperties = {
-    background: "var(--panel)", border: `1px solid ${TONE.line}`, borderRadius: 10,
+    background: "var(--panel)", border: `1px solid ${TONE.line}`, borderRadius: 8,
     padding: "14px 18px", marginBottom: 12,
   };
   const h3: React.CSSProperties = {
@@ -320,43 +317,12 @@ export function LoopPageV2({ projectId }: Props) {
   };
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px 20px" }} data-testid="loop-page-v2">
-      {/* hero — event-driven */}
-      <div style={{
-        ...card, display: "flex", gap: 14, alignItems: "center",
-        borderColor: run.latched ? "color-mix(in oklab, var(--ok) 40%, transparent)" : "color-mix(in oklab, var(--warn) 45%, transparent)",
-        background: run.latched
-          ? "color-mix(in oklab, var(--ok) 5%, var(--panel))"
-          : "color-mix(in oklab, var(--warn) 6%, var(--panel))",
-      }} data-testid="loop-hero">
-        <div style={{ fontSize: 18 }}>{run.latched ? "✓" : "⚠"}</div>
+    <div className="loop-v2-page" data-testid="loop-page-v2">
+      <div className="section-heading loop-v2-page-heading">
         <div>
-          <div style={{ fontWeight: 650, fontSize: 14 }}>
-            {run.latched
-              ? `Run latched · promise ${run.promise.satisfied}/${run.promise.chain.length}`
-              : `Run not latched · promise ${run.promise.satisfied}/${run.promise.chain.length}${brokenLoops.length ? ` · ${brokenLoops.length} broken loop${brokenLoops.length > 1 ? "s" : ""}` : ""}`}
-          </div>
-          <div style={{ fontSize: 12.5, color: TONE.muted, marginTop: 2 }}>
-            {counterLine || `${run.semantic_event_count} semantic events`}
-          </div>
+          <h2>Loop</h2>
+          <span className="muted">convergence, rework, and recovery</span>
         </div>
-        {!run.latched && (counters["human.escalate"] ?? 0) > 0 ? (
-          <button type="button" data-testid="loop-hero-inbox"
-            onClick={() => {
-              const q = new URLSearchParams(window.location.search);
-              q.set("page", "inbox");
-              q.delete("v");
-              window.location.search = q.toString();
-            }}
-            style={{
-              marginLeft: "auto", font: "inherit", fontSize: 12.5, fontWeight: 600,
-              padding: "6px 14px", borderRadius: 7, cursor: "pointer",
-              border: "1px solid var(--warn)", background: "var(--warn)",
-              color: "oklch(1 0 0)", whiteSpace: "nowrap",
-            }}>
-            Open Inbox · {counters["human.escalate"]} escalations
-          </button>
-        ) : null}
       </div>
 
       {/* completion promise */}

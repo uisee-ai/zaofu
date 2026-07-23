@@ -6,7 +6,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from zf.core.config.loader import load_config
-from zf.core.config.workflow_profiles import expand_issue_flow, expand_prd_flow
+from zf.core.config.workflow_profiles import (
+    expand_issue_flow,
+    expand_prd_flow,
+    expand_refactor_flow_v1,
+)
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -101,8 +105,30 @@ spec:
 
 def test_default_topology_unchanged() -> None:
     out = expand_prd_flow({"prdRef": "docs/prd/x.md", "targetRoot": "app"})
-    assert len(out["stages"]) == 3  # scan/plan/discovery 现状
+    assert len(out["stages"]) == 3  # scan/plan/discovery
     assert out["metadata"].get("topology") is None
+    plan = next(stage for stage in out["stages"] if stage["id"] == "prd-plan")
+    assert plan["aggregate"]["success_event"] == "task_map.ready"
+    assert plan["aggregate"]["synth_role"] == "plan-critic"
+    assert [role["name"] for role in out["roles"]].count("plan-critic") == 1
+    critic = next(role for role in out["roles"] if role["name"] == "plan-critic")
+    assert critic["role_kind"] == "reader"
+
+
+def test_standard_issue_and_refactor_have_one_plan_critic() -> None:
+    issue = expand_issue_flow({"issueRef": "docs/issues/x.md", "targetRoot": "."})
+    refactor = expand_refactor_flow_v1({"assembly": "none", "lanes": 1})
+
+    assert next(
+        stage for stage in issue["stages"] if stage["id"] == "issue-triage"
+    )["aggregate"]["synth_role"] == "plan-critic"
+    refactor_plan = next(
+        stage for stage in refactor["stages"] if stage["id"] == "flow-plan"
+    )
+    assert refactor_plan["aggregate"]["synth_role"] == "plan-critic"
+    assert refactor_plan["aggregate"]["success_event"] == (
+        "zaofu.refactor.plan.ready"
+    )
 
 
 def test_issue_light_expansion_reuses_single_lane_shape() -> None:
@@ -223,7 +249,10 @@ def test_entry_trigger_synthesizes_and_emits(tmp_path: Path) -> None:
     )
     assert written["tasks"][0]["task_id"] == "DEFAULT-DELIVER-001"
     assert written["tasks"][0]["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
-    assert written["tasks"][0]["verification"] == ["python app/verify.py"]
+    assert written["tasks"][0]["verification"] == "python app/verify.py"
+    assert written["tasks"][0]["validation"]["commands"][0]["id"] == (
+        "light-verification-1"
+    )
 
 
 def test_entry_uses_config_quality_checks_without_matrix_commands(tmp_path: Path) -> None:
@@ -250,7 +279,10 @@ def test_entry_uses_config_quality_checks_without_matrix_commands(tmp_path: Path
     written = json.loads(
         (state_dir / "artifacts" / "default" / "task_map.json").read_text()
     )
-    assert written["tasks"][0]["verification"] == ["make verify"]
+    assert written["tasks"][0]["verification"] == "make verify"
+    assert written["tasks"][0]["validation"]["commands"][0]["command"] == (
+        "make verify"
+    )
 
 
 def test_entry_is_idempotent(tmp_path: Path) -> None:

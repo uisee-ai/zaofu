@@ -77,6 +77,54 @@ def test_task_map_validation_accepts_dependency_layers() -> None:
     assert result.summary["wave_count"] == 2
 
 
+def test_task_map_goal_coverage_reports_uncovered_claim_without_blocking() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+            {"goal_claim_id": "CLAIM-A", "text": "A", "mandatory": True},
+            {"goal_claim_id": "CLAIM-B", "text": "B", "mandatory": True},
+        ],
+        "tasks": [
+            {
+                "task_id": "TASK-A",
+                "goal_claim_ids": ["CLAIM-A"],
+                "verification": "pytest tests/a.py",
+            },
+        ],
+    })
+
+    assert result.passed is True
+    assert result.summary["goal_coverage"] == {
+        "mode": "explicit",
+        "claim_count": 2,
+        "mapped_claim_count": 1,
+        "diagnostics": [{
+            "code": "mandatory_claim_uncovered",
+            "goal_claim_id": "CLAIM-B",
+        }],
+    }
+
+
+def test_task_map_goal_coverage_rejects_unknown_and_duplicate_claim_refs() -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+            {"goal_claim_id": "CLAIM-A", "text": "A", "mandatory": True},
+        ],
+        "tasks": [
+            {
+                "task_id": "TASK-A",
+                "goal_claim_ids": ["CLAIM-A", "CLAIM-A", "CLAIM-MISSING"],
+                "verification": "pytest tests/a.py",
+            },
+        ],
+    })
+
+    assert result.passed is False
+    assert "duplicate_goal_claim_id task=TASK-A goal_claim_id=CLAIM-A" in result.errors
+    assert "unknown_goal_claim_id task=TASK-A goal_claim_id=CLAIM-MISSING" in result.errors
+
+
 def test_task_map_validation_accepts_simple_issue_serial_task() -> None:
     result = validate_task_map_payload({
         "schema_version": "task-map.v1",

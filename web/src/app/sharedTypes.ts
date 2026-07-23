@@ -15,6 +15,7 @@ export const NAV_PAGES = [
   "skills",
   "traces",
   "delivery",
+  "goal-coverage",
   "control-room",
   "delivery-trace",
   "delivery-graph",
@@ -29,16 +30,10 @@ export const NAV_PAGES = [
 ] as const;
 export const PAGES = ["project", ...NAV_PAGES, "task"] as const;
 export const DETAIL_TABS = [
-  "Timeline",
-  "Workbench",
-  "Overview",
-  "Contract",
-  "Briefing",
-  "Events",
-  "Git",
-  "Verify",
-  "Review",
-  "Diagnostics",
+  "Summary",
+  "Activity",
+  "Evidence",
+  "Advanced",
 ] as const;
 export const OPERATOR_BACKENDS = [
   { id: "claude-headless", title: "Claude" },

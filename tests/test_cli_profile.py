@@ -92,7 +92,7 @@ def test_cli_bootstrap_refactor_flow_copies_profile_sources_and_skills(tmp_path)
     assert rc == 0
     assert (tmp_path / "common" / "profiles.yaml").is_file()
     config = load_config(tmp_path / "zf.yaml")
-    assert len(config.roles) == 12
+    assert len(config.roles) == 13
     assert any(role.skills for role in config.roles)
     assert combined_candidate_gate_gap(config) == ""
     assert config.quality_gates["static"].required_checks == ["npm run lint", "npm test"]

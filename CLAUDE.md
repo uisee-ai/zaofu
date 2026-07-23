@@ -13,7 +13,7 @@ Keep this file short and avoid provider-neutral policy duplication. -->
 
 - Config: `zf.yaml`(唯一控制平面);runtime state: `project.state_dir`(默认 `.zf/`,gitignore)
 - CLI: `zf`(pyproject `zf.cli:main`);命令清单看 `zf --help`
-- Manual docs 入口: `docs/manual/00-index.md`;Examples: `examples/`
+- Design docs 入口: `docs/design/00-index.md`;Examples: `examples/`
 
 ## Lazy-Loaded Rules (`.claude/rules/*.md`)
 
@@ -31,7 +31,7 @@ To force-load: `@.claude/rules/code.md`.
 
 Common architecture and runtime interaction rules live in `AGENTS.md`
 §Architecture / Runtime Route so Claude and Codex share the same context.
-Use `docs/manual/00-index.md` for the full index and verify behavior against
+Use `docs/design/00-index.md` for the full index and verify behavior against
 `src/` and tests before implementing.
 
 ## Commands

@@ -111,6 +111,7 @@ def source_manifest_from_payload(
     descriptor_fields = (
         ("contract", "contract_snapshot_ref", "contract_snapshot_digest"),
         ("target", "target_snapshot_ref", "target_snapshot_digest"),
+        ("impl-self-check", "impl_self_check_ref", "impl_self_check_digest"),
         ("rework-feedback", "rework_feedback_ref", "rework_feedback_digest"),
         ("parent-call-result", "parent_call_result_ref", "parent_call_result_digest"),
     )
@@ -163,6 +164,82 @@ def source_manifest_from_payload(
         source_event_id=source_event_id,
     )
     return manifest, descriptor
+
+
+def canonical_required_reads(
+    manifest: Mapping[str, Any],
+    *,
+    output_profile_id: str,
+    explicit: Iterable[Mapping[str, Any]] = (),
+) -> list[dict[str, Any]]:
+    """Declare the canonical artifact slices one stage must actually consume."""
+
+    rows = [dict(item) for item in explicit if isinstance(item, Mapping)]
+    profile = str(output_profile_id or "").strip()
+    required_paths: dict[str, tuple[str, ...]] = {}
+    if profile == "implementation":
+        required_paths = {
+            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+        }
+    elif profile in {"task-verify", "candidate-verify"}:
+        required_paths = {
+            "contract": ("$.acceptance_criteria", "$.verification_commands"),
+            "target": ("$",),
+            "impl-self-check": ("$",),
+        }
+
+    if profile == "plan-synth":
+        for source in (
+            manifest.get("sources")
+            if isinstance(manifest.get("sources"), list)
+            else []
+        ):
+            if not isinstance(source, Mapping):
+                continue
+            source_id = str(source.get("source_id") or "")
+            if source_id == "plan-synth-contract" or source_id.startswith("child-result-"):
+                required_paths[source_id] = ("$",)
+            elif source_id in {
+                "goal-objective",
+                "requirement",
+                "review-artifact",
+                "workflow-input",
+                "workflow-prompt",
+            }:
+                required_paths[source_id] = ("$",)
+
+    sources = manifest.get("sources")
+    source_rows = sources if isinstance(sources, list) else []
+    for source in source_rows:
+        if not isinstance(source, Mapping):
+            continue
+        source_id = str(source.get("source_id") or "")
+        for json_path in required_paths.get(source_id, ()):
+            rows.append({
+                "source_id": source_id,
+                "artifact_id": str(source.get("artifact_id") or ""),
+                "artifact_sha256": str(source.get("sha256") or ""),
+                "json_path": json_path,
+                "min_returned_bytes": 1,
+                "max_items": 0,
+                "max_chars": 0,
+                "allow_truncated": False,
+            })
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for row in rows:
+        key = (
+            str(row.get("source_id") or ""),
+            str(row.get("artifact_id") or ""),
+            str(row.get("artifact_sha256") or row.get("sha256") or ""),
+            str(row.get("json_path") or "$"),
+        )
+        if not all(key[:3]) or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
 
 
 def materialize_attempt_source_ref(
@@ -436,7 +513,11 @@ def active_ledger_attempt_id(ref: str) -> str:
     return str(match.group("attempt") if match else "")
 
 
-def render_attempt_source_briefing(payload: Mapping[str, Any]) -> str:
+def render_attempt_source_briefing(
+    payload: Mapping[str, Any],
+    *,
+    state_dir: Path | None = None,
+) -> str:
     ref = str(payload.get("attempt_source_manifest_ref") or "").strip()
     if not ref:
         return ""
@@ -465,6 +546,33 @@ def render_attempt_source_briefing(payload: Mapping[str, Any]) -> str:
             "performed before shell expansion."
         ),
     ]
+    sources: list[dict[str, Any]] = []
+    descriptor = payload.get("attempt_source_manifest")
+    if state_dir is not None and isinstance(descriptor, Mapping):
+        try:
+            manifest = hydrate_sidecar_ref(Path(state_dir), dict(descriptor)).payload
+        except Exception:
+            manifest = {}
+        raw_sources = manifest.get("sources") if isinstance(manifest, Mapping) else None
+        if isinstance(raw_sources, list):
+            sources = [
+                {
+                    "source_id": str(item.get("source_id") or ""),
+                    "artifact_id": str(item.get("artifact_id") or ""),
+                    "sha256": str(item.get("sha256") or ""),
+                    "ref": str(item.get("ref") or ""),
+                    "allowed_paths": list(item.get("allowed_paths") or ["$"]),
+                }
+                for item in raw_sources
+                if isinstance(item, Mapping)
+            ]
+    if sources:
+        lines.extend([
+            "- Source Manifest index (allowed does not mean required):",
+            "```json",
+            json.dumps(sources, ensure_ascii=False, indent=2),
+            "```",
+        ])
     if required:
         lines.extend(["- Required reads for this attempt:", "```json", json.dumps(required, ensure_ascii=False, indent=2), "```"])
     return "\n".join(lines) + "\n"
@@ -713,6 +821,7 @@ __all__ = [
     "append_artifact_read",
     "build_attempt_source_manifest",
     "build_input_consumption_policy",
+    "canonical_required_reads",
     "live_attempt_ids",
     "materialize_attempt_source_ref",
     "read_attempt_artifact",

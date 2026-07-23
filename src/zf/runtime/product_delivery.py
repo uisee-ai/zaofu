@@ -17,11 +17,12 @@ from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.replan_contract_eval import event_payload_for_eval
 from zf.runtime.task_map import (
-    normalize_verification_command,
+    task_verification_commands,
     validate_coverage_report_payload,
     validate_source_index_payload,
     validate_task_map_payload,
 )
+from zf.runtime.verification_commands import validation_with_commands
 from zf.runtime.task_contract_normalize import (
     canonical_verification_tiers,
     owner_fields_from_task_map_item,
@@ -801,11 +802,10 @@ def _contract_from_task_map_item(
     acceptance = _acceptance_criteria_list(
         raw.get("acceptance_criteria") or raw.get("acceptance")
     )
-    verification = normalize_verification_command(raw.get("verification"))
     validation = raw.get("validation") if isinstance(raw.get("validation"), dict) else {}
-    validation = dict(validation)
-    if not verification and str(validation.get("kind") or "") == "command":
-        verification = str(validation.get("command") or "").strip()
+    commands = task_verification_commands(raw)
+    validation = validation_with_commands(validation, commands) if commands else dict(validation)
+    verification = str(commands[0]["command"] if commands else "")
     verification_tiers = canonical_verification_tiers(
         raw.get("verification_tiers"),
         verification=verification,
@@ -867,10 +867,12 @@ def _contract_from_task_map_item(
     if not isinstance(success_criteria, list):
         success_criteria = []
     evidence_contract["success_criteria"] = list(success_criteria)
-    if verification:
+    for command in commands:
         evidence_contract["success_criteria"].append({
             "kind": "command_passed",
-            "command": verification,
+            "command_id": command["id"],
+            "command": command["command"],
+            "acceptance_ids": list(command["acceptance_ids"]),
         })
     return TaskContract(
         schema_version="task-contract.v1",
@@ -893,6 +895,7 @@ def _contract_from_task_map_item(
         ),
         acceptance="\n".join(_criterion_text(item) for item in acceptance) or verification or "exit_code=0",
         acceptance_criteria=acceptance,
+        goal_claim_ids=_unique(_string_list(raw.get("goal_claim_ids"))),
         source_key=source_key,
         source_ref=source_ref,
         source_task_id=source_task_id,
@@ -936,20 +939,18 @@ def _contract_completeness_errors(task_map: dict[str, Any]) -> list[str]:
         if not _string_list(raw.get("scope")):
             errors.append(f"{task_id}.scope is required")
         if not (
-            normalize_verification_command(raw.get("verification"))
+            task_verification_commands(raw)
             or _string_list(raw.get("acceptance"))
-            or (
-                isinstance(raw.get("validation"), dict)
-                and str(raw.get("validation", {}).get("command") or "").strip()
-            )
         ):
             errors.append(f"{task_id}.verification or acceptance is required")
-        verification = normalize_verification_command(raw.get("verification"))
-        if _verification_contains_prose(verification):
-            errors.append(
-                f"{task_id}.verification must be an executable command only; "
-                "put expected-red/prose in validation or evidence_contract"
-            )
+        commands = task_verification_commands(raw)
+        verification = str(commands[0]["command"] if commands else "")
+        for command in commands:
+            if _verification_contains_prose(str(command["command"])):
+                errors.append(
+                    f"{task_id}.verification must be an executable command only; "
+                    "put expected-red/prose in validation or evidence_contract"
+                )
         validation = raw.get("validation") if isinstance(raw.get("validation"), dict) else {}
         if not canonical_verification_tiers(
             raw.get("verification_tiers"),

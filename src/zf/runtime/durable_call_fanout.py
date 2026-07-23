@@ -264,6 +264,7 @@ class DurableCallFanoutMixin:
         child,
         role: RoleConfig,
         causation_id: str,
+        aggregate=None,
     ) -> dict[str, Any]:
         """Persist one selected reader call before any sibling is sent."""
 
@@ -279,6 +280,9 @@ class DurableCallFanoutMixin:
             return {"skip": True, "run_id": run_id}
         self._prepare_reader_contract_target(child)
         skill_entries = self._record_skill_provenance(role=role)
+        child_success_event, child_failure_event = self._fanout_child_result_events(
+            aggregate or {},
+        )
         child.payload.update({
             "fanout_id": context.fanout_id,
             "trace_id": context.trace_id,
@@ -288,6 +292,8 @@ class DurableCallFanoutMixin:
             "role_instance": role.instance_id,
             "target_ref": child.target_ref or context.target_ref,
             "skills": list(role.skills),
+            "canonical_success_event": child_success_event,
+            "canonical_failure_event": child_failure_event,
         })
         prepared_call = None
         from zf.runtime.call_result_admission import result_protocol_mode
@@ -327,6 +333,7 @@ class DurableCallFanoutMixin:
         context,
         roles_by_instance: dict[str, RoleConfig],
         causation_id: str,
+        aggregate=None,
     ) -> dict[str, dict[str, Any]]:
         """Register the whole durable sibling batch before provider send."""
 
@@ -341,6 +348,7 @@ class DurableCallFanoutMixin:
                     child=child,
                     role=role,
                     causation_id=causation_id,
+                    aggregate=aggregate,
                 )
             except Exception as exc:
                 run_id = f"run-{context.fanout_id}-{child.child_id}"
@@ -573,6 +581,7 @@ class DurableCallFanoutMixin:
                 context=context,
                 roles_by_instance=roles_by_instance,
                 causation_id=str(manifest.get("trigger_event_id") or ""),
+                aggregate=stage.aggregate,
             )
             for child, role in pending:
                 before = len(self.event_log.read_all())
@@ -787,6 +796,8 @@ class DurableCallFanoutMixin:
             "dependency_refs_skipped": list(
                 dependency_result.get("skipped_dependency_refs") or []
             ),
+            "canonical_success_event": "dev.build.done",
+            "canonical_failure_event": "dev.blocked",
         }
         prepared_call = None
         from zf.runtime.call_result_admission import result_protocol_mode

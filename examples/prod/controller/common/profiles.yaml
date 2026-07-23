@@ -26,6 +26,7 @@ spec:
         spawn_ready_timeout_seconds: 240
       roleSkillBundles:
         issue-triage: [debugging-triage, source-verification, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-issue-plan-synth, zf-yoke-planner-role-context]
+        plan-critic: [zf-workflow-adaptation-boundary, zf-yoke-critic-role-context]
         discovery: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
         judge-issue: [zf-goal-closure-judge-contract]
         fix: [zf-yoke-dev-worker-role-context]
@@ -35,6 +36,7 @@ spec:
       roleSkillBundles:
         scan: [source-verification, context-hygiene, zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
         planner: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-prd-plan-synth, zf-yoke-planner-role-context]
+        plan-critic: [zf-workflow-adaptation-boundary, zf-yoke-critic-role-context]
         discovery: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
         judge-prd: [zf-goal-closure-judge-contract]
         impl: [zf-yoke-dev-worker-role-context]
@@ -73,6 +75,7 @@ spec:
     report_evidence_gate: fail_closed
   workflow:
     candidate_quality_source: task_contract_required
+    impl_self_check_required: true
     strict_triggers:
       rework_attempts_gte: 2
     work_units:
@@ -112,6 +115,7 @@ spec:
         scan-runtime: [source-verification, context-hygiene, zf-harness-evidence-collection]
         scan-verification: [zf-yoke-test-evaluator-role-context]
         refactor-plan-synth: [zf-workflow-adaptation-boundary, zf-project-adapter-matrix-enrichment, zf-refactor-plan-synth, zf-yoke-planner-role-context]
+        plan-critic: [zf-workflow-adaptation-boundary, zf-yoke-critic-role-context]
         refactor-verify-bridge: [zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
         module-parity-scan: [source-verification, zf-verify-rescan-replan, zf-goal-closure-replan-contract, zf-yoke-test-evaluator-role-context]
         judge-refactor: [zf-goal-closure-judge-contract]
@@ -146,6 +150,7 @@ spec:
   workflow:
     plan_approval: false
     candidate_quality_source: task_contract_required
+    impl_self_check_required: true
     strict_triggers:
       rework_attempts_gte: 2
     admission_replan:

@@ -42,6 +42,28 @@ Local adaptation of yoke critic role context for ZaoFu.
 - After repeated failed revision loops, escalate with a concise history and a
   recommended next action.
 
+## Plan Critic Gate (Skill-Owned)
+
+标准 Issue/PRD/Refactor 计划在进入 writer admission 前由一个独立 Critic
+做一次有界语义检查。light topology 可跳过。这里的检查完全属于本 Skill 和
+Critic Agent；Kernel 只接纳 verdict/ref/digest/current plan revision，不负责理解
+AC 或风险。
+
+按以下顺序检查：
+
+1. owner/Goal 原意是否全部映射到 mandatory AC，是否发生静默收窄；
+2. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
+3. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
+4. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
+5. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
+6. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
+   determinism/replay、reset/recovery 和证据真实性；项目 Skill 可扩展该清单。
+
+Approve 时返回当前 plan/task-map refs、revision、摘要和 residual risks。Reject 时
+返回非空 `fix_items[]`，每项包含 `task_id` 或 `acceptance_id`、`observed_gap`、
+`required_change`、`done_when` 和 evidence refs。不要修改 task map；同一 Planner
+根据这些项修订。
+
 ## 触发②:critic.gate.requested 升级分诊(区别于 design_critique 正常门)
 
 除了 arch 提案自动路由到你的 `design_critique` 正常门(触发①,即下方 Reject

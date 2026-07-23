@@ -11,6 +11,10 @@ from typing import Iterable
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
+from zf.runtime.fanout_projection_metadata import (
+    apply_report_payload as _apply_report_payload,
+    apply_synth_handoff_metadata as _apply_synth_handoff_metadata,
+)
 
 _SAFE_RE = re.compile(r"[^A-Za-z0-9._-]+")
 REPORT_STATUSES = {"passed", "failed", "blocked", "suspended"}
@@ -617,6 +621,7 @@ class FanoutManifestProjector:
                     "report_paths": payload.get("report_paths", []),
                     "last_event_id": event.id,
                 }
+                _apply_synth_handoff_metadata(manifest["synth"], payload)
                 manifest["status"] = "synth_dispatched"
             elif event.type == "fanout.synth.completed":
                 report = payload.get("report") if isinstance(payload.get("report"), dict) else {}
@@ -631,6 +636,7 @@ class FanoutManifestProjector:
                     "report": report,
                     "last_event_id": event.id,
                 }
+                _apply_synth_handoff_metadata(manifest["synth"], payload)
             elif event.type == "fanout.timed_out":
                 manifest["status"] = "timed_out"
                 manifest["aggregate"] = {
@@ -764,19 +770,6 @@ def _child(children: dict[str, dict], payload: dict) -> dict:
     })
 
 
-def _apply_report_payload(child: dict, payload: dict) -> None:
-    report = payload.get("report")
-    if isinstance(report, dict):
-        child["report"] = report
-        child["report_status"] = str(report.get("status") or "")
-        child["recommendation"] = str(report.get("recommendation") or "")
-    if _payload_str(payload, "report_path"):
-        child["report_path"] = _payload_str(payload, "report_path")
-    diagnostics = payload.get("report_diagnostics")
-    if isinstance(diagnostics, list):
-        child["report_diagnostics"] = diagnostics
-
-
 def _apply_child_metadata(child: dict, payload: dict) -> None:
     for key in (
         "task_id", "scope", "workdir", "source_branch", "source_commit",
@@ -789,6 +782,7 @@ def _apply_child_metadata(child: dict, payload: dict) -> None:
         "contract_revision", "task_map_generation", "base_commit",
         "contract_snapshot_ref", "contract_snapshot_digest", "target_snapshot_ref",
         "target_commit", "target_snapshot_digest",
+        "impl_self_check_ref", "impl_self_check_digest",
         "operation_id", "parent_operation_id", "request_hash", "attempt_id",
         "result_protocol_mode", "attempt_source_manifest_ref",
         "attempt_source_manifest_digest", "input_consumption_policy_digest",

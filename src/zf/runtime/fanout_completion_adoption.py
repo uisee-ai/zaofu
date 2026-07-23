@@ -34,6 +34,8 @@ def find_writer_adoption_target(
     task_id: str,
     current_sibling_lookup: Callable[[str], dict[str, Any] | None],
     manifest_loader: Callable[[str], dict[str, Any] | None],
+    source_manifest: dict[str, Any] | None = None,
+    source_child: dict[str, Any] | None = None,
 ) -> AdoptionTarget | None:
     """同 logical_key 当前代中,同 task 的 child 未终局则返回收编目标。
 
@@ -57,12 +59,49 @@ def find_writer_adoption_target(
             continue
         if str(child.get("status") or "") in TERMINAL_CHILD_STATUSES:
             return None
+        if not _same_contract_authority(
+            source_manifest or {},
+            source_child or {},
+            manifest,
+            child,
+        ):
+            return None
         return AdoptionTarget(
             manifest=manifest,
             child=child,
             adopted_into=current_id,
         )
     return None
+
+
+def _same_contract_authority(
+    source_manifest: dict[str, Any],
+    source_child: dict[str, Any],
+    target_manifest: dict[str, Any],
+    target_child: dict[str, Any],
+) -> bool:
+    def binding(manifest: dict[str, Any], child: dict[str, Any]) -> dict[str, Any]:
+        payload = child.get("payload") if isinstance(child.get("payload"), dict) else {}
+        return {**manifest, **payload, **child}
+
+    source = binding(source_manifest, source_child)
+    target = binding(target_manifest, target_child)
+    identity_fields = (
+        "task_map_ref",
+        "contract_revision",
+        "task_map_generation",
+        "contract_snapshot_digest",
+    )
+    target_is_typed = any(str(target.get(key) or "") for key in identity_fields[1:])
+    source_is_typed = any(str(source.get(key) or "") for key in identity_fields[1:])
+    if target_is_typed and not source_is_typed:
+        return False
+    for key in identity_fields:
+        left = str(source.get(key) or "")
+        right = str(target.get(key) or "")
+        if left and right and left != right:
+            return False
+    return True
 
 
 __all__ = [

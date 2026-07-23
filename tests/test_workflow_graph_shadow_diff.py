@@ -228,7 +228,7 @@ def test_static_gate_graph_action_shadow_diff_matches_legacy(
 def test_current_zf_yaml_uses_controller_static_gate_contract() -> None:
     cfg = load_config(ROOT / "zf.yaml")
 
-    assert cfg.workflow.dag.schema_profile == "canonical-dag/v6"
+    assert cfg.workflow.dag.schema_profile == "canonical-dag/v7"
     assert cfg.workflow.dag.graph_static_gate_action is False
     assert cfg.workflow.dag.graph_review_test_judge_reconcile is False
     assert cfg.quality_gates["static"].enabled is True

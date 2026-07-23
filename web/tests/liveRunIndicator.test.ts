@@ -204,4 +204,68 @@ assert(slimThread.turns.length === 1, `slim rows: question and answer share ONE 
 assert(slimThread.turns[0]!.user?.content === "R3 怎么验证?", "slim rows: turn carries the question");
 assert(slimThread.turns[0]!.runs[0]!.parts.some((p) => p.kind === "text" && p.content === "写退出码断言"), "slim rows: answer folded under the question");
 
+// --- structured proposal replies: the raw JSON remains canonical event data,
+// but the conversation projection must not duplicate it beside the proposal card.
+const proposalPayload = {
+  action: "create-task",
+  requested_action: "create-task",
+  payload: { title: "Track auth timeout" },
+  reason: "New work needs approval.",
+  valid: true,
+};
+const proposalEnvelope = JSON.stringify({ action_proposal: {
+  action: "create-task",
+  payload: { title: "Track auth timeout" },
+  reason: "New work needs approval.",
+} });
+const proposalOnly = buildKanbanConversation({
+  activeThreadId: "main",
+  events: [{
+    seq: 1,
+    id: "evt-proposal-only",
+    ts: "2026-07-16T00:00:00Z",
+    type: "kanban.agent.reply",
+    payload: { turn_id: "turn-proposal-only", thread_key: "main", answer: proposalEnvelope, action_proposal: proposalPayload },
+  }],
+});
+const proposalOnlyTurn = proposalOnly.threads[0]!.turns[0]!;
+assert(!proposalOnlyTurn.runs[0]!.parts.some((p) => p.kind === "text"), "proposal-only JSON is hidden from reply text");
+assert(proposalOnlyTurn.cards.some((card) => card.kind === "proposal"), "proposal-only JSON still produces a proposal card");
+
+const proposalWithProse = buildKanbanConversation({
+  activeThreadId: "main",
+  events: [{
+    seq: 1,
+    id: "evt-proposal-prose",
+    ts: "2026-07-16T00:00:00Z",
+    type: "kanban.agent.reply",
+    payload: {
+      turn_id: "turn-proposal-prose",
+      thread_key: "main",
+      answer: `I prepared a task for approval.\n\n\`\`\`json\n${proposalEnvelope}\n\`\`\``,
+      action_proposal: proposalPayload,
+    },
+  }],
+});
+const proposalProseRun = proposalWithProse.threads[0]!.turns[0]!.runs[0]!;
+assert(
+  proposalProseRun.parts.find((p) => p.kind === "text")?.content === "I prepared a task for approval.",
+  "proposal fenced JSON is removed while explanatory prose remains",
+);
+
+const ordinaryJson = buildKanbanConversation({
+  activeThreadId: "main",
+  events: [{
+    seq: 1,
+    id: "evt-ordinary-json",
+    ts: "2026-07-16T00:00:00Z",
+    type: "kanban.agent.reply",
+    payload: { turn_id: "turn-ordinary-json", thread_key: "main", answer: '{"status":"healthy"}' },
+  }],
+});
+assert(
+  ordinaryJson.threads[0]!.turns[0]!.runs[0]!.parts.find((p) => p.kind === "text")?.content === '{"status":"healthy"}',
+  "ordinary JSON without a parsed proposal remains visible",
+);
+
 console.log("liveRunIndicator.test.ts OK");

@@ -75,7 +75,22 @@ def synthesize_light_task_map(
     }
     commands = _dedupe_strings(verification_commands or [])
     if commands:
-        task["verification"] = commands
+        task["verification"] = commands[0]
+        task["validation"] = {
+            "commands": [
+                {
+                    "id": f"light-verification-{index}",
+                    "command": command,
+                    "acceptance_ids": [],
+                    "owner": "impl_self_check",
+                    "tier": "task_non_smoke",
+                    "deterministic": True,
+                    "reusable": True,
+                    "timeout_seconds": 900,
+                }
+                for index, command in enumerate(commands, start=1)
+            ]
+        }
     return {
         "schema_version": "task-map.v1",
         "workflow_input_manifest_ref": str(refs.get("workflow_input_manifest_ref") or ""),

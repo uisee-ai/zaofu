@@ -112,9 +112,9 @@ export function WorkspaceRail({
   ];
   const railActivePage = isObservabilityPage(activePage)
     ? "observability"
-    : activePage === "runtime"
+    : activePage === "runtime" || activePage === "traces" || activePage === "diagnostics"
       ? "observability"
-      : activePage === "delivery-trace" || activePage === "delivery-graph"
+      : activePage === "delivery-trace" || activePage === "delivery-graph" || activePage === "goal-coverage"
         ? "delivery"
         : activePage;
 

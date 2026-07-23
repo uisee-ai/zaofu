@@ -906,16 +906,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if replay_transport.sent:
         raise AssertionError("restart replay dispatched a second Thin Judge")
     _run(["git", "merge-base", "--is-ancestor", target_commit, "main"], cwd=project_root)
-    writer.append(ZfEvent(
-        type="simulation.done",
-        actor="test",
-        correlation_id=workflow_run_id,
-        payload={
-            "workflow_run_id": workflow_run_id,
-            "flow_kind": flow_kind,
-            "backend": args.backend,
-        },
-    ))
+    from zf.runtime.simulation_lifecycle import emit_simulation_done
+
+    terminal = next(
+        event for event in reversed(events)
+        if event.type == "run.goal.completed"
+    )
+    if emit_simulation_done(terminal, events=events, writer=writer) is None:
+        raise AssertionError("simulation.done was not emitted from the run terminal")
     return {
         "schema_version": "thin-judge-goal-closure-provider-drill.v1",
         "flow_kind": flow_kind,

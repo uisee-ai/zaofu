@@ -39,6 +39,15 @@ authoritative when it differs from an older Skill example.
   契约的一部分,不是 verify 阶段事后发明的。事后补判据 = 返工通胀四根因
   之一(判据后置):worker 与 verifier 各按各的想象干活,驳回不可预测。
   写不出可执行判据的 task 说明切片还没切对,回 `yoke/vertical-slicing`。
+- **AC 不是命令**:先把 owner/Goal 的可观察结果拆成稳定 `acceptance_id`,
+  再把每个 mandatory AC 映射到一个或多个 command id。不要把“运行 pytest”
+  写成 AC,也不要用 `exit_code=0` 代替产品行为。结构化 AC 使用
+  `id`、`statement`、`mandatory`、`verification_owner`、
+  `verification_tier`、`verification_command_ids`。
+- **命令保持独立身份**:新 task map 把命令写入 `validation.commands[]`,
+  每项至少包含 `id`、`command`、`acceptance_ids`、`owner`、`tier`,并按
+  实际性质声明 `deterministic`、`reusable`、`timeout_seconds`。不要把多条
+  命令拼成 `cmd1 && cmd2`;`verification` 单字符串只用于旧合同兼容。
 - **两轴自检**:task_map 交付前对照两轴——**落闩**(每片有机械可验的
   完成闸门:命令+退出码,不是"应当工作")与**分母**(所有验收条款都
   映射到某个 task,`requirement_coverage` 无遗漏)。只报分母不落闩 =
@@ -62,6 +71,6 @@ authoritative when it differs from an older Skill example.
 | 你产出的 | 消费它的机械 | 违约后果 |
 |---|---|---|
 | task_map JSON(含 `shared_conventions`) | writer-fanout admission(schema/test_path_prefix 机械校验) | 不合合同直接拒收,bad task_map 走上游返工路由 |
-| 每 task `verification` | contract gate + verify reader 复跑 | 判据缺失/不可执行 → 切片无法独立闭环 |
+| 每 task `validation.commands[]` + AC mapping | contract snapshot + Impl/Verify/Candidate | identity 丢失会导致证据不可复用；语义充分性由 Critic/Verify 判断 |
 | `blocked_by` 依赖 | task_map 波次排队/lane 并行 | 假并行 → 约定竞态,candidate 集成才炸 |
 | decision items(收窄) | plan approval digest(操作员审批面) | 静默收窄 = F16 复发,合并后才暴露落差 |

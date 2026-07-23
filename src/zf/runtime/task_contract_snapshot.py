@@ -5,12 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.task.schema import Task
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
+from zf.runtime.verification_commands import task_contract_verification_commands
 
 
 SCHEMA_VERSION = "task-contract-snapshot.v1"
@@ -106,14 +106,13 @@ def normalize_acceptance_criteria(
 
 
 def effective_contract_revision(task: Task) -> str:
-    contract = task.contract
-    explicit = str(getattr(contract, "contract_revision", "") or "").strip()
-    if explicit:
-        return explicit
-    body = asdict(contract) if is_dataclass(contract) else dict(vars(contract))
-    for mutable in ("acceptance_evidence", "dispatch_id", "critic_dispatch_id"):
-        body.pop(mutable, None)
-    return "contract-" + _digest(body)[:20]
+    # Task docs are projections and refresh their stored revision during
+    # lifecycle moves. Derive the snapshot identity from the same canonical
+    # semantic body so a dispatch cannot become stale merely because that
+    # projection refresh ran after operation preregistration.
+    from zf.runtime.task_doc import compute_task_capsule_revisions
+
+    return compute_task_capsule_revisions(task)["contract_revision"]
 
 
 def task_map_generation(task: Task, *, task_map_ref: str = "") -> str:
@@ -143,6 +142,23 @@ def task_map_generation(task: Task, *, task_map_ref: str = "") -> str:
     return "task-map-" + hashlib.sha256(ref.encode("utf-8")).hexdigest()[:20]
 
 
+def current_task_contract_identity(
+    task: Task,
+    *,
+    task_map_ref: str = "",
+) -> dict[str, str]:
+    """Return the TaskStore-owned identity used to reject stale snapshots."""
+
+    return {
+        "task_id": str(task.id or "").strip(),
+        "contract_revision": effective_contract_revision(task),
+        "task_map_generation": task_map_generation(
+            task,
+            task_map_ref=task_map_ref,
+        ),
+    }
+
+
 def build_task_contract_snapshot(
     task: Task,
     *,
@@ -170,17 +186,25 @@ def build_task_contract_snapshot(
         if isinstance(getattr(contract, "evidence_contract", None), dict)
         else {}
     )
-    verification_command = str(getattr(contract, "verification", "") or "").strip()
+    commands = task_contract_verification_commands(contract)
+    verification_command = str(commands[0]["command"] if commands else "")
     criteria = normalize_acceptance_criteria(
         getattr(contract, "acceptance_criteria", []) or [getattr(contract, "acceptance", "")],
         task_id=identity["task_id"],
         contract_revision=identity["contract_revision"],
         verification_tiers=list(getattr(contract, "verification_tiers", []) or []),
     )
-    if verification_command:
-        for criterion in criteria:
-            if not criterion["verification_command_ids"]:
-                criterion["verification_command_ids"] = ["contract-verification"]
+    all_command_ids = [str(item["id"]) for item in commands]
+    for criterion in criteria:
+        if criterion["verification_command_ids"]:
+            continue
+        acceptance_id = str(criterion["acceptance_id"])
+        mapped = [
+            str(item["id"])
+            for item in commands
+            if not item["acceptance_ids"] or acceptance_id in item["acceptance_ids"]
+        ]
+        criterion["verification_command_ids"] = mapped or list(all_command_ids)
     return {
         "schema_version": SCHEMA_VERSION,
         **identity,
@@ -190,11 +214,20 @@ def build_task_contract_snapshot(
         "protected_paths": [".zf/**"],
         "acceptance_criteria": criteria,
         "verification_command": verification_command,
-        "verification_commands": (
-            [{"command_id": "contract-verification", "command": verification_command}]
-            if verification_command
-            else []
-        ),
+        "verification_commands": [
+            {
+                "command_id": item["id"],
+                "command": item["command"],
+                "command_digest": item["command_digest"],
+                "acceptance_ids": list(item["acceptance_ids"]),
+                "owner": item["owner"],
+                "tier": item["tier"],
+                "deterministic": item["deterministic"],
+                "reusable": item["reusable"],
+                "timeout_seconds": item["timeout_seconds"],
+            }
+            for item in commands
+        ],
         "verification_tiers": list(getattr(contract, "verification_tiers", []) or []),
         "required_source_outputs": _string_list(
             evidence_contract.get("required_source_outputs")
@@ -431,6 +464,31 @@ def _validate_snapshot(snapshot: Mapping[str, Any]) -> None:
     acceptance_ids = [str(item.get("acceptance_id") or "") for item in criteria]
     if len(acceptance_ids) != len(set(acceptance_ids)):
         raise TaskContractSnapshotError("snapshot acceptance ids must be unique")
+    commands = snapshot.get("verification_commands", [])
+    if not isinstance(commands, list):
+        raise TaskContractSnapshotError("snapshot verification_commands must be a list")
+    command_ids: list[str] = []
+    for item in commands:
+        if not isinstance(item, Mapping):
+            raise TaskContractSnapshotError("snapshot verification command must be an object")
+        command_id = str(item.get("command_id") or "").strip()
+        command = str(item.get("command") or "").strip()
+        digest = str(item.get("command_digest") or "").strip()
+        if not command_id or not command or len(digest) != 64:
+            raise TaskContractSnapshotError("snapshot verification command is incomplete")
+        if _digest_text(command) != digest:
+            raise TaskContractSnapshotError("snapshot verification command digest mismatch")
+        command_ids.append(command_id)
+    if len(command_ids) != len(set(command_ids)):
+        raise TaskContractSnapshotError("snapshot verification command ids must be unique")
+    known_commands = set(command_ids)
+    for criterion in criteria:
+        unknown = set(_string_list(criterion.get("verification_command_ids"))) - known_commands
+        if unknown:
+            raise TaskContractSnapshotError(
+                "snapshot acceptance criterion references unknown command ids: "
+                + ", ".join(sorted(unknown))
+            )
 
 
 def _validate_target_snapshot(snapshot: Mapping[str, Any]) -> None:
@@ -460,6 +518,10 @@ def _digest(value: Any) -> str:
         default=str,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _digest_text(value: str) -> str:
+    return hashlib.sha256(value.strip().encode("utf-8")).hexdigest()
 
 
 def _segment(value: Any) -> str:

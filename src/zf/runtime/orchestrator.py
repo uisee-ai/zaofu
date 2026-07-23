@@ -40,16 +40,14 @@ from zf.runtime.drift import DriftDetector
 from zf.runtime.escalation import EscalationManager
 from zf.runtime.reader_child_task_resolution import resolve_reader_child_task_id
 from zf.runtime.refresh import RefreshPolicy
+from zf.runtime.call_result_runtime import hydrate_runtime_call_result_event
 from zf.runtime.transport import (
     DispatchContext,
     TransportAdapter,
     transport_error_diagnostics,
 )
 from zf.runtime.orchestrator_lifecycle import LifecycleManagerMixin
-from zf.runtime.orchestrator_fanout import (
-    FanoutCoordinationMixin,
-    _writer_task_dependencies_satisfied,
-)
+from zf.runtime.orchestrator_fanout import FanoutCoordinationMixin
 from zf.runtime.orchestrator_dispatch import DispatchMixin
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 from zf.runtime.orchestrator_module_parity import ModuleParityBridgeMixin
@@ -85,8 +83,6 @@ from zf.runtime.worker_state_runtime import WorkerStateRuntimeMixin
 from zf.runtime.writer_fanout_data import WriterFanoutDataMixin
 from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
-
-
 from zf.runtime.orchestrator_types import OrchestratorDecision
 
 
@@ -2451,6 +2447,11 @@ class Orchestrator(
             if event.id in self._processed_event_ids:
                 continue
 
+            if (hydrated := hydrate_runtime_call_result_event(self, event)) is None:
+                self._processed_event_ids.add(event.id)
+                continue
+            event = hydrated
+
             rejected = self._reject_invalid_lifecycle_event(event)
             if rejected:
                 decisions.append(rejected)
@@ -3599,7 +3600,9 @@ class Orchestrator(
         refactor task for the same feature so the admission gate matches the
         latest task_map_ref."""
         from zf.core.task.schema import Task, TaskContract
-        from zf.runtime.task_map import normalize_verification_command
+        from zf.runtime.verification_commands import (
+            task_map_contract_verification_fields,
+        )
         from zf.runtime.writer_task_map_supersede import apply_explicit_task_supersedes
         apply_explicit_task_supersedes(
             task_store=self.task_store, event_writer=self.event_writer, loaded=loaded
@@ -3678,9 +3681,9 @@ class Orchestrator(
             # the contract. Dispatch preflight requires these fields before any
             # writer task can enter the normal worker path.
             behavior = str(payload.get("instruction") or item.get("behavior") or scope)
-            verification = normalize_verification_command(raw.get("verification"))
-            if not verification:
-                verification = normalize_verification_command(item.get("verification"))
+            verification, validation = task_map_contract_verification_fields(
+                raw, item,
+            )
             acceptance_criteria = (
                 self._writer_acceptance_criteria(raw.get("acceptance_criteria"))
                 or self._writer_acceptance_criteria(raw.get("acceptance"))
@@ -3740,6 +3743,7 @@ class Orchestrator(
                 parent_task_id=parent_task_id,
                 behavior=behavior,
                 verification=verification,
+                validation=validation,
                 verification_tiers=verification_tiers,
                 # allowed_paths first: in the refactor task_map dialect `scope`
                 # is prose while `allowed_paths` carries path globs for task_refs.
@@ -3767,6 +3771,9 @@ class Orchestrator(
                     else "exit_code=0"
                 ),
                 acceptance_criteria=acceptance_criteria,
+                goal_claim_ids=self._writer_task_contract_list(
+                    raw.get("goal_claim_ids") or item.get("goal_claim_ids")
+                ),
                 evidence_contract=evidence_contract,
             )
             refreshed_task = Task(
@@ -4603,7 +4610,6 @@ class Orchestrator(
                 self.config.workflow, "work_units", None,
             ),
         ).task_items
-
 
 
     @staticmethod

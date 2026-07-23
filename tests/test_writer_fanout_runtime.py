@@ -36,6 +36,11 @@ from zf.runtime.candidates import CandidateRebuilder, CandidateTask
 from zf.runtime.light_flow import synthesize_light_task_map
 from zf.runtime.product_delivery import ingest_task_map_to_kanban
 from zf.runtime.task_refs import TaskRefManager
+from zf.runtime.task_contract_snapshot import (
+    build_task_contract_snapshot,
+    task_map_generation,
+    write_task_contract_snapshot,
+)
 from zf.runtime.writer_fanout_data import WriterFanoutDataMixin
 
 
@@ -527,6 +532,12 @@ def test_writer_fanout_synthesize_canonical_tasks_admits_unseeded(tmp_path: Path
     state_dir, log, transport, orch = _state(tmp_path, synthesize_canonical=True)
     task_map_path = state_dir / "artifacts" / "F-11111111" / "task_map.json"
     task_map = json.loads(task_map_path.read_text(encoding="utf-8"))
+    task_map["goal_claims"] = [
+        {"goal_claim_id": "CLAIM-A", "text": "A exists", "mandatory": True},
+        {"goal_claim_id": "CLAIM-B", "text": "B exists", "mandatory": True},
+    ]
+    task_map["tasks"][0]["goal_claim_ids"] = ["CLAIM-A"]
+    task_map["tasks"][1]["goal_claim_ids"] = ["CLAIM-B"]
     task_map["tasks"][1]["verification"] = "test -f b.txt"
     task_map_path.write_text(json.dumps(task_map), encoding="utf-8")
 
@@ -579,6 +590,8 @@ def test_writer_fanout_synthesize_canonical_tasks_admits_unseeded(tmp_path: Path
     # prose entry rejects every writer handoff (HIC-E8311AE35F).
     assert store.get("TASK-1").contract.scope == ["a.txt"]
     assert store.get("TASK-2").contract.scope == ["b.txt"]
+    assert store.get("TASK-1").contract.goal_claim_ids == ["CLAIM-A"]
+    assert store.get("TASK-2").contract.goal_claim_ids == ["CLAIM-B"]
 
 
 def test_writer_fanout_synthesize_canonical_refreshes_workflow_bootstrap_placeholder(
@@ -3800,6 +3813,7 @@ def test_adopted_regular_completion_mints_typed_verify_target(
         harness_profile="baseline",
     )
     orch._typed_task_contract_handoff_enabled = lambda _payload: True  # type: ignore[method-assign]
+    orch.config.workflow.impl_self_check_required = True
     _seed_tasks(state_dir)
     store = TaskStore(state_dir / "kanban.json")
     store.update(
@@ -3842,6 +3856,18 @@ def test_adopted_regular_completion_mints_typed_verify_target(
     fanout_id = _fanout_id(log)
     pending = _child(_manifest(state_dir, fanout_id), "TASK-1")
     assert pending["status"] == "pending"
+    canonical_task = store.get("TASK-1")
+    assert canonical_task is not None
+    contract_snapshot = build_task_contract_snapshot(
+        canonical_task,
+        workflow_run_id="trace-1",
+        task_map_generation_id=task_map_generation(canonical_task),
+        base_commit=base_commit,
+        task_ref="task/TASK-1",
+    )
+    contract_descriptor = write_task_contract_snapshot(state_dir, contract_snapshot)
+    command = contract_snapshot["verification_commands"][0]
+    criterion = contract_snapshot["acceptance_criteria"][0]
     source_commit = _commit(tmp_path, "a.txt", "delivered\n", "deliver TASK-1")
     progress = ZfEvent(
         type="dev.build.done",
@@ -3853,6 +3879,37 @@ def test_adopted_regular_completion_mints_typed_verify_target(
             "task_map_ref": ".zf/artifacts/F-11111111/task_map.json",
             "source_branch": "main",
             "source_commit": source_commit,
+            "attempt_id": dispatch_id,
+            "impl_self_check": {
+                "schema_version": "impl-self-check.v1",
+                "workflow_run_id": "trace-1",
+                "task_id": "TASK-1",
+                "attempt_id": dispatch_id,
+                "contract_revision": contract_snapshot["contract_revision"],
+                "task_map_generation": contract_snapshot["task_map_generation"],
+                "source_commit": source_commit,
+                "target_commit": source_commit,
+                "contract_snapshot_ref": contract_descriptor["ref"],
+                "contract_snapshot_digest": contract_descriptor["sha256"],
+                "command_receipts": [{
+                    "receipt_id": "receipt-contract",
+                    "command_id": command["command_id"],
+                    "command_digest": command["command_digest"],
+                    "target_commit": source_commit,
+                    "status": "passed",
+                    "exit_code": 0,
+                    "evidence_refs": ["evt-command-pass"],
+                }],
+                "acceptance_results": [{
+                    "acceptance_id": criterion["acceptance_id"],
+                    "status": "passed",
+                    "command_receipt_ids": ["receipt-contract"],
+                    "evidence_refs": ["evt-ac-pass"],
+                    "residual_risks": [],
+                }],
+                "evidence_refs": ["evt-impl-summary"],
+                "residual_risks": [],
+            },
         },
     )
     log.append(progress)
@@ -3886,6 +3943,14 @@ def test_adopted_regular_completion_mints_typed_verify_target(
     assert completed.payload["contract_snapshot_digest"]
     assert completed.payload["target_snapshot_ref"]
     assert completed.payload["target_snapshot_digest"]
+    assert completed.payload["impl_self_check_ref"]
+    assert completed.payload["impl_self_check_digest"]
+    self_check_event = next(
+        event for event in log.read_all()
+        if event.type == "impl.self_check.completed"
+    )
+    assert self_check_event.payload["target_commit"] == source_commit
+    assert "impl_self_check" not in self_check_event.payload
     result, error = orch._normalize_lane_verification_result(  # type: ignore[attr-defined]
         completed.payload,
         manifest=_manifest(state_dir, fanout_id),

@@ -9,7 +9,7 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
-from zf.runtime.run_scope import resolve_run_for_event
+from zf.runtime.run_scope import resolve_run_for_event, run_aliases
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
@@ -28,7 +28,7 @@ def build_closure_identity(
     state_dir: Path,
     flow_kind: str,
 ) -> dict[str, Any]:
-    workflow_run_id = str(
+    raw_workflow_run_id = str(
         payload.get("workflow_run_id")
         or payload.get("trace_id")
         or resolve_run_for_event(events, source_event)
@@ -41,6 +41,14 @@ def build_closure_identity(
         or payload.get("pdd_id")
         or ""
     ).strip()
+    workflow_run_id = (
+        _pinned_claim_workflow_run_id(
+            events,
+            workflow_run_id=raw_workflow_run_id,
+            goal_id=goal_id,
+        )
+        or raw_workflow_run_id
+    )
     generation = _task_map_generation(events, payload, workflow_run_id, goal_id)
     candidate_head = _candidate_head(events, payload, workflow_run_id, goal_id)
     closure_source = {
@@ -196,6 +204,8 @@ def _task_map_generation(
 ) -> str:
     from zf.runtime.goal_claim_set import canonical_task_map_generation
 
+    aliases = run_aliases(events)
+    canonical_run_id = aliases.get(workflow_run_id, workflow_run_id)
     direct = canonical_task_map_generation(
         task_map_generation=payload.get("task_map_generation"),
         task_map_digest=payload.get("task_map_digest"),
@@ -209,7 +219,11 @@ def _task_map_generation(
         body = event.payload if isinstance(event.payload, dict) else {}
         event_run = str(body.get("workflow_run_id") or body.get("trace_id") or event.correlation_id or "")
         event_goal = str(body.get("goal_id") or body.get("feature_id") or body.get("pdd_id") or "")
-        if workflow_run_id and event_run and event_run != workflow_run_id:
+        if (
+            canonical_run_id
+            and event_run
+            and aliases.get(event_run, event_run) != canonical_run_id
+        ):
             continue
         if goal_id and event_goal and event_goal != goal_id:
             continue
@@ -223,12 +237,39 @@ def _task_map_generation(
     return ""
 
 
+def _pinned_claim_workflow_run_id(
+    events: list[ZfEvent],
+    *,
+    workflow_run_id: str,
+    goal_id: str,
+) -> str:
+    """Use the current Claim Set identity without rewriting admitted results."""
+
+    aliases = run_aliases(events)
+    canonical_run_id = aliases.get(workflow_run_id, workflow_run_id)
+    for event in reversed(events):
+        if event.type != "goal.claim_set.pinned" or not isinstance(event.payload, dict):
+            continue
+        body = event.payload
+        event_goal_id = str(body.get("goal_id") or "").strip()
+        if goal_id and event_goal_id and event_goal_id != goal_id:
+            continue
+        event_run_id = str(body.get("workflow_run_id") or "").strip()
+        if not event_run_id:
+            continue
+        if aliases.get(event_run_id, event_run_id) == canonical_run_id:
+            return event_run_id
+    return ""
+
+
 def _candidate_head(
     events: list[ZfEvent],
     payload: Mapping[str, Any],
     workflow_run_id: str,
     goal_id: str,
 ) -> str:
+    aliases = run_aliases(events)
+    canonical_run_id = aliases.get(workflow_run_id, workflow_run_id)
     direct = str(
         payload.get("candidate_head_commit")
         or payload.get("target_commit")
@@ -243,7 +284,11 @@ def _candidate_head(
         body = event.payload if isinstance(event.payload, dict) else {}
         event_run = str(body.get("workflow_run_id") or body.get("trace_id") or event.correlation_id or "")
         event_goal = str(body.get("goal_id") or body.get("feature_id") or body.get("pdd_id") or "")
-        if workflow_run_id and event_run and event_run != workflow_run_id:
+        if (
+            canonical_run_id
+            and event_run
+            and aliases.get(event_run, event_run) != canonical_run_id
+        ):
             continue
         if goal_id and event_goal and event_goal != goal_id:
             continue

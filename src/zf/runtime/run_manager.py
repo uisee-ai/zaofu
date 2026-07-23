@@ -2215,7 +2215,30 @@ def run_goal_completion_gate_event(
     if failed_effect_ids:
         blockers.append("failed_action_effect")
     claim_target = str((claim.payload or {}).get("target_commit") or "").strip()
-    verified_target = _latest_independent_verify_target(scoped_events)
+    canonical_claim = (
+        str(claim_payload.get("claim_type") or "")
+        == "admitted_goal_closure_result"
+    )
+    verification_event_id = ""
+    verification_admitted_ref: dict[str, Any] = {}
+    candidate_event_id = ""
+    candidate_identity: dict[str, Any] = {}
+    verification_reason = ""
+    if canonical_claim:
+        from zf.runtime.goal_verification import bind_canonical_goal_verification
+
+        verification = bind_canonical_goal_verification(
+            scoped_events,
+            claim_payload=claim_payload,
+        )
+        verified_target = verification.verified_target_commit
+        verification_event_id = verification.verification_event_id
+        verification_admitted_ref = verification.verification_admitted_ref
+        candidate_event_id = verification.candidate_event_id
+        candidate_identity = verification.candidate_payload
+        verification_reason = verification.invalid_reason
+    else:
+        verified_target = _latest_independent_verify_target(scoped_events)
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
     operation_views = reduce_workflow_operations(scoped_events)
@@ -2234,7 +2257,9 @@ def run_goal_completion_gate_event(
         scoped_events,
         claim_payload=claim_payload,
     )
-    if claim_target and verified_target and claim_target != verified_target:
+    if canonical_claim and verification_reason:
+        invalid_reasons.append(verification_reason)
+    elif claim_target and verified_target and claim_target != verified_target:
         invalid_reasons.append("verification_target_mismatch")
     invalid_reasons = list(dict.fromkeys(invalid_reasons))
 
@@ -2255,6 +2280,33 @@ def run_goal_completion_gate_event(
         "source_event_id": str((claim.payload or {}).get("source_event_id") or ""),
         "target_commit": claim_target,
         "verified_target_commit": verified_target,
+        "verification_event_id": verification_event_id,
+        "verification_admitted_call_result_ref": verification_admitted_ref,
+        "candidate_event_id": candidate_event_id,
+        "candidate_ref": str(
+            claim_payload.get("candidate_ref")
+            or candidate_identity.get("candidate_ref")
+            or ""
+        ),
+        "fanout_id": str(candidate_identity.get("fanout_id") or ""),
+        "upstream_fanout_id": str(
+            candidate_identity.get("upstream_fanout_id")
+            or candidate_identity.get("fanout_id")
+            or ""
+        ),
+        "candidate_base_commit": str(
+            candidate_identity.get("candidate_base_commit") or ""
+        ),
+        "candidate_head_commit": str(
+            candidate_identity.get("candidate_head_commit") or claim_target
+        ),
+        "completed_task_ids": [
+            str(item) for item in candidate_identity.get("completed_task_ids") or []
+            if str(item).strip()
+        ],
+        "task_map_ref": str(candidate_identity.get("task_map_ref") or ""),
+        "source_index_ref": str(candidate_identity.get("source_index_ref") or ""),
+        "diff_ref": str(candidate_identity.get("diff_ref") or ""),
         "delivery_phase": str(handoff.get("delivery_phase") or ""),
         "open_feedback_count": int(handoff.get("open_feedback_count") or 0),
         "pending_handoff_count": int(handoff.get("pending_handoff_count") or 0),
@@ -2272,6 +2324,13 @@ def run_goal_completion_gate_event(
         "delivery_policy": str(delivery_policy or "report_only"),
     }
     if invalid_reasons:
+        from zf.runtime.goal_verification import GOAL_COMPLETION_REVERIFY_CAP
+
+        recovery_attempt = _completion_recovery_attempt(
+            scoped_events,
+            task_map_generation=str(shared["task_map_generation"]),
+            target_commit=claim_target,
+        )
         return ZfEvent(
             type=RUN_GOAL_COMPLETION_REJECTED,
             actor="zf-cli",
@@ -2280,6 +2339,8 @@ def run_goal_completion_gate_event(
             payload={
                 **shared,
                 "invalid_reasons": invalid_reasons,
+                "completion_recovery_attempt": recovery_attempt,
+                "completion_recovery_cap": GOAL_COMPLETION_REVERIFY_CAP,
                 "reason": "completion claim identity is stale or invalid",
             },
         )
@@ -2311,8 +2372,17 @@ def run_goal_completion_gate_event(
             },
         )
 
+    delivery = (
+        _delivery_status(scoped_events, claim_id=claim_id)
+        if _delivery_requires_ship(delivery_policy)
+        else "not_required"
+    )
+    delivery_event_id = _delivery_outcome_event_id(
+        scoped_events,
+        claim_id=claim_id,
+        status=delivery,
+    )
     if _delivery_requires_ship(delivery_policy):
-        delivery = _delivery_status(scoped_events, claim_id=claim_id)
         if delivery == "settled":
             pass
         elif delivery == "not_requested":
@@ -2363,6 +2433,8 @@ def run_goal_completion_gate_event(
         correlation_id=claim.correlation_id or run_id,
         payload={
             **shared,
+            "delivery_status": delivery,
+            "delivery_event_id": delivery_event_id,
             "reason": "completion claim passed deterministic gate",
         },
     )
@@ -2516,7 +2588,7 @@ def _completion_claim_invalid_reasons(
         return []
     required = (
         "run_id", "goal_id", "claim_id", "task_map_generation",
-        "target_commit", "goal_claim_set_ref", "goal_claim_set_digest",
+        "target_commit", "candidate_ref", "goal_claim_set_ref", "goal_claim_set_digest",
         "closure_fact_ref", "closure_fact_digest",
     )
     invalid = [
@@ -2527,13 +2599,24 @@ def _completion_claim_invalid_reasons(
     admitted_ref = claim_payload.get("admitted_call_result_ref")
     if not isinstance(admitted_ref, Mapping) or not str(admitted_ref.get("ref") or ""):
         invalid.append("missing_admitted_call_result_ref")
+    from zf.runtime.run_scope import resolve_run_id
+
+    claim_run_id = str(claim_payload.get("run_id") or "")
+    canonical_claim_run_id = resolve_run_id(events, claim_run_id) or claim_run_id
     current = None
     for event in reversed(events):
         if event.type not in {"flow.goal.closed", "module.parity.closed"}:
             continue
         body = event.payload if isinstance(event.payload, dict) else {}
+        body_run_id = str(
+            body.get("workflow_run_id")
+            or body.get("run_id")
+            or event.correlation_id
+            or ""
+        )
+        canonical_body_run_id = resolve_run_id(events, body_run_id) or body_run_id
         if (
-            str(body.get("workflow_run_id") or "") == str(claim_payload.get("run_id") or "")
+            canonical_body_run_id == canonical_claim_run_id
             and str(body.get("goal_id") or "") == str(claim_payload.get("goal_id") or "")
         ):
             current = body
@@ -2597,6 +2680,56 @@ def _delivery_status(events: list[ZfEvent], *, claim_id: str) -> str:
     return status
 
 
+def _delivery_outcome_event_id(
+    events: list[ZfEvent],
+    *,
+    claim_id: str,
+    status: str,
+) -> str:
+    if status == "not_required":
+        return ""
+    expected = {
+        "settled": "run.delivery.settled",
+        "failed": "run.delivery.failed",
+        "pending": "run.delivery.requested",
+    }.get(status, "")
+    for event in reversed(events):
+        if event.type != expected or not isinstance(event.payload, dict):
+            continue
+        if str(event.payload.get("claim_id") or "") == claim_id:
+            return event.id
+    return ""
+
+
+def _completion_recovery_attempt(
+    events: list[ZfEvent],
+    *,
+    task_map_generation: str,
+    target_commit: str,
+) -> int:
+    count = 0
+    for event in events:
+        if event.type != RUN_GOAL_COMPLETION_REJECTED:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        reasons = {str(item) for item in payload.get("invalid_reasons") or []}
+        if not reasons.intersection({
+            "verification_target_mismatch",
+            "verification_evidence_missing",
+        }):
+            continue
+        if str(payload.get("target_commit") or "") != target_commit:
+            continue
+        from zf.runtime.candidate_result_binding import same_task_map_generation
+
+        if same_task_map_generation(
+            str(payload.get("task_map_generation") or ""),
+            task_map_generation,
+        ):
+            count += 1
+    return count + 1
+
+
 def _latest_independent_verify_target(events: list[ZfEvent]) -> str:
     """Return the latest explicit target accepted by an independent verifier.
 
@@ -2606,13 +2739,27 @@ def _latest_independent_verify_target(events: list[ZfEvent]) -> str:
     """
 
     for event in reversed(events):
+        admitted_fanout_result = event.type == "fanout.child.completed"
         if event.type not in {
+            "fanout.child.completed",
             "verify.passed",
             "test.passed",
             "review.approved",
         }:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
+        if admitted_fanout_result:
+            admitted_ref = payload.get("admitted_call_result_ref")
+            if (
+                str(payload.get("control_result_schema") or "")
+                != "verification-result.v1"
+                or str(payload.get("semantic_verdict") or "").lower()
+                != "passed"
+                or not isinstance(admitted_ref, Mapping)
+                or not str(admitted_ref.get("ref") or "").strip()
+                or not str(admitted_ref.get("sha256") or "").strip()
+            ):
+                continue
         target = str(
             payload.get("target_commit")
             or payload.get("candidate_head_commit")

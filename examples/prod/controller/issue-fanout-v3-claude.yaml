@@ -21,7 +21,7 @@ metadata:
       description: Short controller issue workflow with claude lanes.
       intent: maintain
       backend: claude
-      roles: 6
+      roles: 7
       recommended_for: [maintain, review, issue]
       preferred: true
       order: 30

@@ -200,6 +200,80 @@ export interface DeliveryTraceNode {
   superseded?: boolean;
 }
 
+export type GoalCoverageNodeKind =
+  | "goal"
+  | "goal_claim"
+  | "task"
+  | "verification_result"
+  | "goal_closure"
+  | "gap";
+
+export interface GoalCoverageNode {
+  node_id: string;
+  kind: GoalCoverageNodeKind;
+  title: string;
+  status?: string;
+  goal_id?: string;
+  goal_claim_id?: string;
+  task_id?: string;
+  owner?: string;
+  mandatory?: boolean;
+  source_ref?: string;
+  result_ref?: string;
+  gap_ref?: string;
+  plan_coverage?: "covered" | "uncovered";
+  execution?: "pending" | "running" | "done" | "failed" | "blocked";
+  task_verification?: "unverified" | "passed" | "rejected" | "blocked" | "stale";
+  closure?: "unknown" | "open" | "closed" | "waived" | "blocked";
+  task_ids?: string[];
+  goal_claim_ids?: string[];
+  supporting_result_refs?: string[];
+  evidence_refs?: string[];
+  gap_refs?: string[];
+  current?: boolean;
+  stale_reasons?: string[];
+  contract_revision?: string;
+}
+
+export interface GoalCoverageGraph {
+  schema_version: "goal-coverage-graph.v1" | string;
+  coverage_mode: "explicit" | "legacy_derived" | "unmapped" | string;
+  identity: {
+    project_id?: string;
+    workflow_run_id?: string;
+    goal_id?: string;
+    task_map_generation?: string;
+    task_map_ref?: string;
+    task_map_digest?: string;
+    goal_claim_set_ref?: string;
+    goal_claim_set_digest?: string;
+    target_commit?: string;
+  };
+  currentness: {
+    is_current_generation: boolean;
+    superseded_by?: string;
+    stale_reasons?: string[];
+  };
+  summary: {
+    mandatory_claims: number;
+    planned_claims: number;
+    claims_with_current_results: number;
+    closed_claims: number;
+    open_gaps: number;
+  };
+  nodes: GoalCoverageNode[];
+  edges: Array<{ from: string; to: string; kind: string }>;
+  diagnostics: Array<{
+    code?: string;
+    kind?: string;
+    message?: string;
+    goal_claim_id?: string;
+    task_id?: string;
+    result_ref?: string;
+    stale_reasons?: string[];
+  }>;
+}
+
 export interface DeliveryClosedLoopNode {
   node_id: string;
   kind: string;
@@ -1055,6 +1129,7 @@ export interface DeliveryTrace {
   thick_trace?: DeliveryThickTrace;
   related_loop_ids?: string[];
   related_loop_count?: number;
+  goal_coverage_graph?: GoalCoverageGraph;
   diagnostics: { kind: string; message: string }[];
 }
 

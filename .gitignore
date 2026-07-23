@@ -31,6 +31,11 @@ htmlcov/
 docs/*
 !docs/manual/
 !docs/manual/**
+!docs/design/
+!docs/design/**
+!docs/runbooks/
+!docs/runbooks/**
+examples/tmp/
 backlogs/
 tasks/
 prompt/

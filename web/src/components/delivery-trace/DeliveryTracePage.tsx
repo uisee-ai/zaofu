@@ -13,14 +13,17 @@ import type {
   DeliveryTracePhase,
   Feature,
   RecentEvent,
+  WorkflowGraph,
 } from "../../api/types";
+import { LatestRequestGate } from "../../app/latestRequestGate";
 import type { PageId } from "../../app/sharedTypes";
+import { DeliveryMapView } from "./DeliveryMapView";
 import { DeliveryOverview } from "./DeliveryOverview";
-import { DeliveryThickGraphView } from "./DeliveryThickGraphView";
 import { DeliveryTraceTabs } from "./DeliveryTraceTabs";
 
 interface DeliveryTracePageProps {
   onOpenPage?: (page: PageId) => void;
+  onSelectTask?: (taskId: string) => void;
   projectId: string;
   features: Feature[];
   liveEvents?: RecentEvent[];
@@ -178,7 +181,15 @@ function flowRollup(metrics: DeliveryFlowMetrics | undefined): {
   return { backedges, reworkRatio: total > 0 ? rework / total : null, hasData: true };
 }
 
-export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents = [], mode = "overview", totalUsd = 0 }: DeliveryTracePageProps) {
+export function DeliveryTracePage({
+  onOpenPage,
+  onSelectTask,
+  projectId,
+  features,
+  liveEvents = [],
+  mode = "overview",
+  totalUsd = 0,
+}: DeliveryTracePageProps) {
   const primaryFeatures = features.filter((f) => !AUX_SOURCES.has(f.source || ""));
   const auxAll = features.filter((f) => AUX_SOURCES.has(f.source || ""));
   const auxTraces = auxAll.filter((f) => !isRepairTrace(f.id));
@@ -190,27 +201,41 @@ export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents 
   const [error, setError] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [cursorStatus, setCursorStatus] = useState("snapshot");
-  // hero Cost:delivery 页是 light snapshot(无 agent_live),totalUsd 缺时
-  // 回落 workflow_graph 聚合(per-role cost_usd 求和,与 Stage Heatmap 同源)。
+  // Runs reuses workflow_graph for Stage Heatmap; the same response provides
+  // the delivery-page cost fallback when the light snapshot has no agent_live.
+  const [workflowGraph, setWorkflowGraph] = useState<WorkflowGraph | null>(null);
   const [fallbackUsd, setFallbackUsd] = useState(0);
   useEffect(() => {
-    if (totalUsd > 0 || !projectId) return;
+    const needsWorkflowGraph = mode === "trace" || totalUsd <= 0;
+    if (!projectId || !needsWorkflowGraph) {
+      setWorkflowGraph(null);
+      setFallbackUsd(0);
+      return;
+    }
+    setWorkflowGraph(null);
+    if (totalUsd <= 0) setFallbackUsd(0);
     let cancelled = false;
     getWorkflowGraph(projectId)
       .then((g) => {
         if (cancelled) return;
+        setWorkflowGraph(g);
         const sum = (g?.nodes ?? []).reduce((acc, node) => {
           const cost = (node as { cost_usd?: number | null }).cost_usd;
           return acc + (typeof cost === "number" ? cost : 0);
         }, 0);
         setFallbackUsd(sum);
       })
-      .catch(() => { if (!cancelled) setFallbackUsd(0); });
+      .catch(() => {
+        if (cancelled) return;
+        setWorkflowGraph(null);
+        setFallbackUsd(0);
+      });
     return () => { cancelled = true; };
-  }, [projectId, totalUsd]);
+  }, [mode, projectId, totalUsd]);
   const heroUsd = totalUsd > 0 ? totalUsd : fallbackUsd;
   const lastEventIdRef = useRef("");
   const lastLiveSeqRef = useRef(0);
+  const traceRequestGateRef = useRef(new LatestRequestGate());
   const traceTaskIds = useMemo(() => new Set((trace?.execution_graph?.nodes ?? []).map((node) => node.task_id).filter(Boolean)), [trace]);
 
   const applyTrace = (t: DeliveryTrace, mode: "initial" | "poll" | "live") => {
@@ -242,32 +267,45 @@ export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents 
     }
     let cancelled = false;
     let timer: ReturnType<typeof window.setInterval> | undefined;
+    traceRequestGateRef.current.invalidate();
     lastEventIdRef.current = "";
     setLoading(true);
     setError("");
+    const initialTicket = traceRequestGateRef.current.issue();
     getDeliveryTrace(selected, projectId || undefined)
       .then((t) => {
-        if (!cancelled) applyTrace(t, "initial");
+        if (!cancelled && traceRequestGateRef.current.isCurrent(initialTicket)) {
+          applyTrace(t, "initial");
+          setLoading(false);
+        }
       })
       .catch((e) => {
-        if (!cancelled) setError(String(e?.message ?? e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && traceRequestGateRef.current.isCurrent(initialTicket)) {
+          setError(String(e?.message ?? e));
+          setLoading(false);
+        }
       });
     timer = window.setInterval(() => {
       const since = lastEventIdRef.current;
       if (!since) return;
+      const ticket = traceRequestGateRef.current.issue();
       getDeliveryTrace(selected, projectId || undefined, since)
         .then((t) => {
-          if (!cancelled) applyTrace(t, "poll");
+          if (!cancelled && traceRequestGateRef.current.isCurrent(ticket)) {
+            applyTrace(t, "poll");
+            setLoading(false);
+          }
         })
         .catch((e) => {
-          if (!cancelled) setCursorStatus(`poll error: ${String(e?.message ?? e)}`);
+          if (!cancelled && traceRequestGateRef.current.isCurrent(ticket)) {
+            setCursorStatus(`poll error: ${String(e?.message ?? e)}`);
+            setLoading(false);
+          }
         });
     }, 5000);
     return () => {
       cancelled = true;
+      traceRequestGateRef.current.invalidate();
       if (timer) window.clearInterval(timer);
     };
   }, [selected, projectId]);
@@ -279,16 +317,25 @@ export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents 
     if (!event || !seq || seq <= lastLiveSeqRef.current) return;
     lastLiveSeqRef.current = seq;
     const since = lastEventIdRef.current;
+    const ticket = traceRequestGateRef.current.issue();
     getDeliveryTrace(selected, projectId || undefined, since || undefined)
-      .then((t) => applyTrace(t, "live"))
-      .catch((e) => setCursorStatus(`live error: ${String(e?.message ?? e)}`));
+      .then((t) => {
+        if (!traceRequestGateRef.current.isCurrent(ticket)) return;
+        applyTrace(t, "live");
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (!traceRequestGateRef.current.isCurrent(ticket)) return;
+        setCursorStatus(`live error: ${String(e?.message ?? e)}`);
+        setLoading(false);
+      });
   }, [liveEvents, projectId, selected, traceTaskIds]);
 
-  const pageTitle = mode === "trace" ? "Trace" : mode === "graph" ? "Graph" : "Delivery";
+  const pageTitle = mode === "trace" ? "Runs" : mode === "graph" ? "Graph" : "Delivery";
   const pageSubtitle = mode === "trace"
-    ? "timeline, waterfall, runs, and replay"
+    ? "run state, spans, and stage quality"
     : mode === "graph"
-      ? "advanced topology and artifact analysis"
+      ? "coverage, work, and diagnostics"
       : "feature delivery cockpit";
 
   return (
@@ -482,7 +529,7 @@ export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents 
           {/* 2026-07-11 operator 决定(A 案):三导航项收敛为页内 mode tab。
               tab 切换走 onOpenPage 保留 page id 路由与深链。 */}
           <div className="tab-row compact-tabs" aria-label="Delivery mode" data-testid="dt-mode-tabs">
-            {([["delivery", "overview", "Overview"], ["delivery-trace", "trace", "Trace"], ["delivery-graph", "graph", "Graph"]] as const).map(([pid, m, label]) => (
+            {([["delivery", "overview", "Overview"], ["delivery-trace", "trace", "Runs"], ["delivery-graph", "graph", "Graph"]] as const).map(([pid, m, label]) => (
               <button
                 key={m}
                 type="button"
@@ -497,11 +544,20 @@ export function DeliveryTracePage({ onOpenPage, projectId, features, liveEvents 
           {mode === "overview" ? (
             <DeliveryOverview trace={trace} repairCount={repairCount} onOpenPage={onOpenPage} />
           ) : mode === "graph" ? (
-            // I5a 的 Graph 页只读 StageHeatmap 副本已删:tab 化后与 Trace tab
-            // 的交互版一键之隔,双渲染不再必要(2026-07-11 Playwright 评审)。
-            <DeliveryThickGraphView onOpenPage={onOpenPage} trace={trace} />
+            <DeliveryMapView
+              feature={selectedFeature ?? null}
+              onOpenPage={onOpenPage}
+              onSelectTask={onSelectTask}
+              projectId={projectId}
+              trace={trace}
+            />
           ) : (
-            <DeliveryTraceTabs projectId={projectId} trace={trace} />
+            <DeliveryTraceTabs
+              onOpenPage={onOpenPage}
+              projectId={projectId}
+              trace={trace}
+              workflowGraph={workflowGraph}
+            />
           )}
 
           {trace.diagnostics.length > 0 && (
@@ -563,7 +619,7 @@ function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePagePr
         </div>
       </div>
       <div className="delivery-main-tabs delivery-empty-tabs" aria-hidden="true">
-        {["Run Graph", "Tasks", "Runs", "Trace", "Raw"].map((label, index) => (
+        {["Run", "Spans"].map((label, index) => (
           <span key={label} className={`delivery-main-tab ${index === 0 ? "active" : ""}`}>
             <span>{label}</span>
             <small>{index === 0 ? "pending" : "empty"}</small>

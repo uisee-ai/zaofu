@@ -21,17 +21,12 @@ from zf.runtime.call_result_adapters import (
     ControlResultAdapterRegistry,
 )
 from zf.runtime.call_result_envelope import (
-    CallResultEnvelopeError,
     envelope_identity_key,
-    hydrate_call_result_envelope,
     normalize_call_result_envelope,
     validate_call_result_envelope,
     write_immutable_json_sidecar,
 )
-from zf.runtime.candidate_result_binding import (
-    candidate_task_source_commits,
-    same_task_map_generation,
-)
+from zf.runtime.call_result_authority import CallResultAuthorityMixin
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.workflow_operation import (
     WorkflowOperationService,
@@ -75,7 +70,7 @@ class CallResultAdmissionOutcome:
         return self.status == "admitted"
 
 
-class CallResultAdmissionService:
+class CallResultAdmissionService(CallResultAuthorityMixin):
     def __init__(
         self,
         *,
@@ -152,6 +147,15 @@ class CallResultAdmissionService:
             require_read_proof=bool(policy),
         ))
         issues.extend(self._control_result_identity_issues(envelope, adapted))
+        currentness_issues = self._operation_result_currentness_issues(
+            envelope,
+            operation or {},
+        )
+        currentness_issues.extend(self._task_result_currentness_issues(
+            envelope,
+            adapted,
+        ))
+        issues.extend(currentness_issues)
         if adapted.schema_version == "goal-closure-result.v1":
             issues.extend(self._goal_closure_issues(adapted.payload))
         if policy and ledger_descriptor:
@@ -167,7 +171,7 @@ class CallResultAdmissionService:
             })
         key = envelope_identity_key(envelope)
         existing = self._existing_admission(key)
-        if existing is not None:
+        if existing is not None and not currentness_issues:
             body = existing.payload if isinstance(existing.payload, dict) else {}
             existing_envelope = body.get("envelope_ref")
             existing_control = body.get("control_result_ref")
@@ -208,6 +212,36 @@ class CallResultAdmissionService:
             identity_key=key,
             workflow_run_id=operation_identity["workflow_run_id"],
         )
+        if currentness_issues:
+            existing_invalid = self._existing_invalid(key)
+            if existing_invalid is None:
+                self.event_writer.append(ZfEvent(
+                    type="workflow.call.result.invalid",
+                    actor="zf-cli",
+                    task_id=event.task_id,
+                    payload={
+                        **operation_identity,
+                        "schema_version": "call-result-admission.v1",
+                        "envelope_ref": envelope_descriptor,
+                        "control_result_ref": adapted.descriptor,
+                        "issues": currentness_issues,
+                        "repair_round": 0,
+                        "repair_cap": self.repair_cap,
+                        "reason": "stale_call_result_superseded",
+                        "semantic_attempt_incremented": False,
+                    },
+                    causation_id=reported.id,
+                    correlation_id=event.correlation_id,
+                ))
+            return CallResultAdmissionOutcome(
+                status="superseded",
+                mode=mode,
+                operation_id=key[0],
+                request_hash=key[1],
+                envelope_ref=envelope_descriptor,
+                control_result_ref=adapted.descriptor,
+                issues=tuple(currentness_issues),
+            )
         if issues:
             if mode == "shadow":
                 return CallResultAdmissionOutcome(
@@ -471,7 +505,13 @@ class CallResultAdmissionService:
         for field in (
             "workflow_run_id",
             "task_id",
+            "plan_revision",
+            "plan_synth_contract_ref",
+            "plan_synth_contract_digest",
+            "contract_revision",
             "task_map_generation",
+            "base_commit",
+            "task_ref",
             "contract_snapshot_ref",
             "contract_snapshot_digest",
             "target_snapshot_ref",
@@ -502,185 +542,6 @@ class CallResultAdmissionService:
                     issues.append({
                         "field": f"control_result.{field}",
                         "code": "missing_required",
-                    })
-        return issues
-
-    def _goal_closure_issues(
-        self,
-        result: Mapping[str, Any],
-    ) -> list[dict[str, str]]:
-        """Validate current closure/claim identity before admission."""
-
-        from zf.runtime.goal_closure_result import claim_set_issues
-        from zf.runtime.sidecar_refs import SidecarRefError
-
-        issues: list[dict[str, str]] = []
-        claim_ref = str(result.get("goal_claim_set_ref") or "")
-        claim_digest = str(result.get("goal_claim_set_digest") or "")
-        try:
-            hydrated = hydrate_sidecar_ref(
-                self.state_dir,
-                {"ref": claim_ref, "sha256": claim_digest},
-            )
-            claim_set = hydrated.payload if isinstance(hydrated.payload, dict) else {}
-        except (SidecarRefError, OSError, ValueError) as exc:
-            issues.append({
-                "field": "control_result.goal_claim_set_ref",
-                "code": "claim_set_unreadable",
-                "message": str(exc),
-            })
-            claim_set = {}
-
-        events = self.event_log.read_all()
-        workflow_run_id = str(result.get("workflow_run_id") or "")
-        task_map_generation = str(result.get("task_map_generation") or "")
-        target_commit = str(result.get("target_commit") or "")
-        task_source_commits = candidate_task_source_commits(
-            events,
-            workflow_run_id=workflow_run_id,
-            candidate_head_commit=target_commit,
-        )
-        admitted_refs: set[str] = set()
-        for event in events:
-            if event.type != "workflow.call.result.admitted" or not isinstance(event.payload, dict):
-                continue
-            if str(event.payload.get("workflow_run_id") or "") != workflow_run_id:
-                continue
-            descriptor = event.payload.get("envelope_ref")
-            if not isinstance(descriptor, Mapping):
-                continue
-            try:
-                envelope = hydrate_call_result_envelope(self.state_dir, descriptor)
-            except (CallResultEnvelopeError, OSError, ValueError):
-                continue
-            identity = (
-                envelope.get("identity")
-                if isinstance(envelope.get("identity"), Mapping)
-                else {}
-            )
-            result_generation = str(identity.get("task_map_generation") or "")
-            result_target = str(identity.get("target_commit") or "")
-            if result_generation and not same_task_map_generation(
-                result_generation,
-                task_map_generation,
-            ):
-                continue
-            if result_target and result_target != target_commit:
-                result_task_id = str(identity.get("task_id") or "")
-                if task_source_commits.get(result_task_id) != result_target:
-                    continue
-            ref = str(descriptor.get("ref") or "")
-            if ref:
-                admitted_refs.add(ref)
-        issues.extend(claim_set_issues(
-            result,
-            claim_set,
-            admitted_result_refs=admitted_refs,
-            claim_set_descriptor_digest=claim_digest,
-        ))
-        for ref in _string_values(result.get("input_result_refs")):
-            if ref not in admitted_refs:
-                issues.append({
-                    "field": "control_result.input_result_refs",
-                    "code": "result_not_admitted",
-                    "message": ref,
-                })
-
-        latest_claim_pin = None
-        for candidate in reversed(events):
-            if candidate.type != "goal.claim_set.pinned":
-                continue
-            body = candidate.payload if isinstance(candidate.payload, dict) else {}
-            if (
-                str(body.get("workflow_run_id") or "") == workflow_run_id
-                and str(body.get("goal_id") or "")
-                == str(result.get("goal_id") or "")
-            ):
-                latest_claim_pin = body
-                break
-        if latest_claim_pin is not None:
-            pin_bindings = {
-                "task_map_generation": "task_map_generation",
-                "goal_claim_set_ref": "goal_claim_set_ref",
-                "goal_claim_set_digest": "goal_claim_set_digest",
-            }
-            for result_key, pin_key in pin_bindings.items():
-                expected = str(latest_claim_pin.get(pin_key) or "")
-                actual = str(result.get(result_key) or "")
-                matches = (
-                    same_task_map_generation(actual, expected)
-                    if result_key == "task_map_generation"
-                    else actual == expected
-                )
-                if expected and not matches:
-                    issues.append({
-                        "field": f"control_result.{result_key}",
-                        "code": "stale_closure_identity",
-                        "message": (
-                            "latest pinned Goal claim set expects "
-                            f"{expected}, got {actual}"
-                        ),
-                    })
-
-        from zf.runtime.waivers import active_waivers
-
-        coverage = result.get("goal_coverage")
-        for index, item in enumerate(coverage if isinstance(coverage, list) else []):
-            if not isinstance(item, Mapping) or str(item.get("status") or "") != "waived":
-                continue
-            waiver_ref = str(item.get("waiver_ref") or "").strip()
-            claim_id = str(item.get("goal_claim_id") or "").strip()
-            active: list[dict[str, Any]] = []
-            for scope in dict.fromkeys((claim_id, str(result.get("goal_id") or ""))):
-                if scope:
-                    active.extend(active_waivers(events, scope))
-            valid_refs = {
-                str(value)
-                for waiver in active
-                for value in (waiver.get("signature"), waiver.get("event_id"))
-                if str(value or "").strip()
-            }
-            if waiver_ref not in valid_refs:
-                issues.append({
-                    "field": f"control_result.goal_coverage[{index}].waiver_ref",
-                    "code": "waiver_not_active",
-                    "message": waiver_ref,
-                })
-
-        current = None
-        for event in reversed(events):
-            if event.type not in {"flow.goal.closed", "module.parity.closed"}:
-                continue
-            body = event.payload if isinstance(event.payload, dict) else {}
-            if (
-                str(body.get("workflow_run_id") or "") == workflow_run_id
-                and str(body.get("goal_id") or "") == str(result.get("goal_id") or "")
-            ):
-                current = body
-                break
-        if current is None:
-            issues.append({
-                "field": "control_result.closure_fact_ref",
-                "code": "closure_not_current",
-                "message": "no current closure fact for run/goal",
-            })
-        else:
-            bindings = {
-                "task_map_generation": "task_map_generation",
-                "target_commit": "candidate_head_commit",
-                "goal_claim_set_ref": "goal_claim_set_ref",
-                "goal_claim_set_digest": "goal_claim_set_digest",
-                "closure_fact_ref": "closure_fact_ref",
-                "closure_fact_digest": "closure_fact_digest",
-            }
-            for result_key, closure_key in bindings.items():
-                expected = str(current.get(closure_key) or "")
-                actual = str(result.get(result_key) or "")
-                if expected and actual != expected:
-                    issues.append({
-                        "field": f"control_result.{result_key}",
-                        "code": "stale_closure_identity",
-                        "message": f"expected {expected}, got {actual}",
                     })
         return issues
 
@@ -969,11 +830,6 @@ def _wait_for_source_turn_stop(
 
 def _semantic_verdict(control_result: Mapping[str, Any]) -> str:
     return str(control_result.get("verdict") or "pending")
-
-
-def _string_values(value: Any) -> list[str]:
-    raw = value if isinstance(value, (list, tuple, set)) else [value] if value else []
-    return list(dict.fromkeys(str(item).strip() for item in raw if str(item).strip()))
 
 
 __all__ = [

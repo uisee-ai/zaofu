@@ -475,16 +475,63 @@ _REFACTOR_FLOW_V3: dict[str, dict[str, Any]] = {
     "judge.child.failed": _req("fanout_id", "child_id", "status", "reason"),
 }
 
+_RUN_GOAL_COMPLETED_V2_RULE: dict[str, Any] = {
+    "required": [
+        "run_id", "goal_id", "claim_id", "task_map_generation",
+        "target_commit", "verified_target_commit", "verification_event_id",
+        "verification_admitted_call_result_ref", "candidate_event_id",
+        "candidate_ref", "goal_claim_set_ref", "goal_claim_set_digest",
+        "admitted_call_result_ref", "delivery_policy", "delivery_status",
+        "delivery_event_id",
+    ],
+    "non_empty": [
+        "run_id", "goal_id", "claim_id", "task_map_generation",
+        "target_commit", "verified_target_commit", "verification_event_id",
+        "verification_admitted_call_result_ref", "candidate_event_id",
+        "candidate_ref", "goal_claim_set_ref", "goal_claim_set_digest",
+        "admitted_call_result_ref", "delivery_policy", "delivery_status",
+    ],
+    "enum": {"delivery_status": ["not_required", "settled"]},
+    "nested": {
+        "verification_admitted_call_result_ref": {
+            "required": ["ref", "sha256"],
+            "non_empty": ["ref", "sha256"],
+        },
+        "admitted_call_result_ref": {
+            "required": ["ref", "sha256"],
+            "non_empty": ["ref", "sha256"],
+        },
+    },
+    "when": {
+        "if": {"delivery_status": "settled"},
+        "then": {"non_empty": ["delivery_event_id"]},
+    },
+}
+
+# v6/v3 remain immutable. These versions make the successful run terminal
+# prove exact Candidate Verify and delivery identities mechanically.
+_CANONICAL_DAG_V7: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V6,
+    "run.goal.completed": _RUN_GOAL_COMPLETED_V2_RULE,
+}
+
+_REFACTOR_FLOW_V4: dict[str, dict[str, Any]] = {
+    **_REFACTOR_FLOW_V3,
+    "run.goal.completed": _RUN_GOAL_COMPLETED_V2_RULE,
+}
+
 SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "refactor-flow/v1": _REFACTOR_FLOW_V1,
     "refactor-flow/v2": _REFACTOR_FLOW_V2,
     "refactor-flow/v3": _REFACTOR_FLOW_V3,
+    "refactor-flow/v4": _REFACTOR_FLOW_V4,
     "canonical-dag/v1": _CANONICAL_DAG_V1,
     "canonical-dag/v2": _CANONICAL_DAG_V2,
     "canonical-dag/v3": _CANONICAL_DAG_V3,
     "canonical-dag/v4": _CANONICAL_DAG_V4,
     "canonical-dag/v5": _CANONICAL_DAG_V5,
     "canonical-dag/v6": _CANONICAL_DAG_V6,
+    "canonical-dag/v7": _CANONICAL_DAG_V7,
 }
 
 _RULE_KEYS = (

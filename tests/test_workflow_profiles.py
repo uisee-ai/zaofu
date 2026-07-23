@@ -124,6 +124,7 @@ class TestExpansion:
             for item in scan.criteria.instructions
         )
         plan = next(s for s in cfg.workflow.stages if s.id == "flow-plan")
+        assert plan.aggregate.synth_role == "plan-critic"
         assert any(
             "Synthesize the scan reports" in item
             for item in plan.criteria.instructions
@@ -307,8 +308,8 @@ spec:
         assert contract["assembly_task_id"] == "DEMO-ASM-001"
         assert contract["lane_count"] == 2
         pipeline = cfg.workflow.pipelines[0]
-        assert pipeline.stage_transition == "per_lane"
-        assert pipeline.schema_profile == "refactor-flow/v3"
+        assert pipeline.stage_transition == "stage_barrier"
+        assert pipeline.schema_profile == "refactor-flow/v4"
 
     def test_v3_target_ref_is_explicit_and_not_objective_ref(self, tmp_path):
         text = """\
@@ -532,6 +533,9 @@ spec:
             "issue-lanes-final",
         ]
         assert next(stage for stage in cfg.workflow.stages if stage.id == "issue-triage").target_ref == "HEAD"
+        assert next(
+            stage for stage in cfg.workflow.stages if stage.id == "issue-triage"
+        ).aggregate.synth_role == "plan-critic"
         discovery = next(
             stage for stage in cfg.workflow.stages
             if stage.id == "issue-post-verify-discovery"
@@ -562,12 +566,12 @@ spec:
         )
         assert impl.synthesize_canonical_tasks is True
         names = {role.name for role in cfg.roles}
-        assert {"issue-triage", "fix-lane-0", "fix-lane-1", "verify-lane-0", "judge-issue"} <= names
+        assert {"issue-triage", "plan-critic", "fix-lane-0", "fix-lane-1", "verify-lane-0", "judge-issue"} <= names
         assert cfg.workflow.flow_metadata["flow_kind"] == "issue"
         assert cfg.workflow.flow_metadata["quality_floor"] == "issue-regression"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "regression_impact"
-        assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v6"
+        assert cfg.workflow.pipelines[0].stage_transition == "stage_barrier"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v7"
         assert cfg.goal.enabled is True
 
     def test_prd_flow_generates_canonical_build_chain(self, tmp_path):
@@ -616,6 +620,9 @@ spec:
             "prd-lanes-final",
         ]
         assert next(stage for stage in cfg.workflow.stages if stage.id == "prd-scan").target_ref == "HEAD"
+        assert next(
+            stage for stage in cfg.workflow.stages if stage.id == "prd-plan"
+        ).aggregate.synth_role == "plan-critic"
         discovery = next(
             stage for stage in cfg.workflow.stages
             if stage.id == "prd-post-verify-discovery"
@@ -658,9 +665,57 @@ spec:
         assert cfg.workflow.flow_metadata["flow_kind"] == "prd"
         assert cfg.workflow.flow_metadata["delivery_policy"] == "report_and_demo"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "product_completeness"
-        assert cfg.workflow.pipelines[0].stage_transition == "per_lane"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v6"
+        assert cfg.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"] == {}
+        assert cfg.workflow.pipelines[0].stage_transition == "stage_barrier"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v7"
         assert cfg.goal.enabled is True
+
+    def test_prd_flow_pins_semantic_submit_profile_modes(self, tmp_path):
+        path = tmp_path / "zf.yaml"
+        path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata: {name: prd-demo}
+spec:
+  topology: light
+  backend: mock
+  semanticSubmitProfiles:
+    thin-judge-goal-closure: blocking
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata: {name: demo}
+spec:
+  version: "1.0"
+  project: {name: demo}
+""")
+
+        cfg = load_config(path)
+
+        assert cfg.workflow.flow_metadata["result_protocol"] == {
+            "mode": "blocking",
+            "semantic_submit_profiles": {
+                "thin-judge-goal-closure": "blocking",
+            },
+        }
+
+    def test_prd_flow_rejects_invalid_semantic_submit_mode(self, tmp_path):
+        path = tmp_path / "zf.yaml"
+        path.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+spec:
+  topology: light
+  semanticSubmitProfiles:
+    thin-judge-goal-closure: permissive
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+spec: {project: {name: demo}}
+""")
+
+        with pytest.raises(ConfigError, match="mode must be shadow or blocking"):
+            load_config(path)
 
     def test_prd_flow_role_skill_bundles_override_defaults(self, tmp_path):
         path = tmp_path / "zf.yaml"

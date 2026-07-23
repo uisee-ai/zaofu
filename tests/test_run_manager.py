@@ -4732,6 +4732,37 @@ def test_admitted_goal_closure_supersedes_legacy_worker_escalation() -> None:
                 "closure_fact_digest": closure_digest,
             },
         ),
+        ZfEvent(
+            id="candidate-current",
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "fanout_id": "fanout-impl",
+                "pdd_id": run_id,
+                "candidate_ref": f"candidate/{run_id}",
+                "candidate_base_commit": "0" * 40,
+                "candidate_head_commit": target,
+                "completed_task_ids": ["TASK-MAIN"],
+            },
+        ),
+        ZfEvent(
+            id="verify-current",
+            type="fanout.child.completed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "task_map_generation": generation,
+                "candidate_ref": f"candidate/{run_id}",
+                "target_commit": target,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/verify-result.json",
+                    "sha256": "3" * 64,
+                },
+            },
+        ),
     ]
     cause = ZfEvent(
         id="closure-synthesized",
@@ -4743,6 +4774,7 @@ def test_admitted_goal_closure_supersedes_legacy_worker_escalation() -> None:
                 "goal_id": run_id,
                 "task_map_generation": generation,
                 "target_commit": target,
+                "candidate_ref": f"candidate/{run_id}",
                 "goal_claim_set_ref": "artifacts/goal-claims.json",
                 "goal_claim_set_digest": claim_digest,
                 "closure_fact_ref": "artifacts/goal-closure.json",
@@ -4761,6 +4793,297 @@ def test_admitted_goal_closure_supersedes_legacy_worker_escalation() -> None:
 
     assert outcome is not None
     assert outcome.type == "run.goal.completed"
+    assert outcome.payload["verification_event_id"] == "verify-current"
+
+
+def test_canonical_goal_completion_rejects_missing_admitted_verify() -> None:
+    from zf.runtime.run_manager import run_goal_completion_gate_event
+
+    run_id = "RUN-CANONICAL-MISSING-VERIFY"
+    target = "a" * 40
+    generation = "task-map-11111111111111111111"
+    events = [
+        ZfEvent(type="run.goal.started", correlation_id=run_id, payload={"run_id": run_id}),
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "fanout_id": "fanout-impl",
+                "pdd_id": run_id,
+                "candidate_ref": f"candidate/{run_id}",
+                "candidate_base_commit": "0" * 40,
+                "candidate_head_commit": target,
+                "completed_task_ids": ["TASK-1"],
+            },
+        ),
+        ZfEvent(
+            type="flow.goal.closed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "goal_id": run_id,
+                "task_map_generation": generation,
+                "candidate_head_commit": target,
+                "goal_claim_set_digest": "b" * 64,
+                "closure_fact_digest": "c" * 64,
+            },
+        ),
+    ]
+    claim = ZfEvent(
+        id="claim-missing-verify",
+        type="run.goal.completion.claimed",
+        correlation_id=run_id,
+        payload={
+            "run_id": run_id,
+            "goal_id": run_id,
+            "claim_id": "claim-missing-verify",
+            "claim_type": "admitted_goal_closure_result",
+            "task_map_generation": generation,
+            "target_commit": target,
+            "candidate_ref": f"candidate/{run_id}",
+            "goal_claim_set_ref": "artifacts/claims.json",
+            "goal_claim_set_digest": "b" * 64,
+            "closure_fact_ref": "artifacts/closure.json",
+            "closure_fact_digest": "c" * 64,
+            "admitted_call_result_ref": {
+                "ref": "artifacts/goal-result.json",
+                "sha256": "d" * 64,
+            },
+        },
+    )
+
+    outcome = run_goal_completion_gate_event([*events, claim], claim=claim)
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completion.rejected"
+    assert outcome.payload["invalid_reasons"] == ["verification_evidence_missing"]
+    assert outcome.payload["completion_recovery_attempt"] == 1
+    assert outcome.payload["candidate_head_commit"] == target
+
+
+def test_canonical_goal_completion_ignores_stale_and_side_verify() -> None:
+    from zf.runtime.run_manager import run_goal_completion_gate_event
+
+    run_id = "RUN-CANONICAL-IDENTITY"
+    target = "e" * 40
+    candidate_ref = f"candidate/{run_id}"
+    generation = "task-map-22222222222222222222"
+    common_ref = {"ref": "artifacts/verify.json", "sha256": "f" * 64}
+    events = [
+        ZfEvent(type="run.goal.started", correlation_id=run_id, payload={"run_id": run_id}),
+        ZfEvent(
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "fanout_id": "fanout-current",
+                "pdd_id": run_id,
+                "candidate_ref": candidate_ref,
+                "candidate_base_commit": "0" * 40,
+                "candidate_head_commit": target,
+                "completed_task_ids": ["TASK-A", "TASK-B"],
+            },
+        ),
+        ZfEvent(
+            type="fanout.child.completed",
+            correlation_id=run_id,
+            payload={
+                "task_map_generation": "task-map-oldoldoldoldoldoldold",
+                "candidate_ref": candidate_ref,
+                "target_commit": target,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+                "admitted_call_result_ref": common_ref,
+            },
+        ),
+        ZfEvent(
+            type="fanout.child.completed",
+            correlation_id=run_id,
+            payload={
+                "task_map_generation": generation,
+                "candidate_ref": "candidate/side",
+                "target_commit": target,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+                "admitted_call_result_ref": common_ref,
+            },
+        ),
+        ZfEvent(
+            type="flow.goal.closed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "goal_id": run_id,
+                "task_map_generation": generation,
+                "candidate_head_commit": target,
+                "goal_claim_set_digest": "1" * 64,
+                "closure_fact_digest": "2" * 64,
+            },
+        ),
+    ]
+    claim = ZfEvent(
+        id="claim-current-identity",
+        type="run.goal.completion.claimed",
+        correlation_id=run_id,
+        payload={
+            "run_id": run_id,
+            "goal_id": run_id,
+            "claim_id": "claim-current-identity",
+            "claim_type": "admitted_goal_closure_result",
+            "task_map_generation": generation,
+            "target_commit": target,
+            "candidate_ref": candidate_ref,
+            "goal_claim_set_ref": "artifacts/claims.json",
+            "goal_claim_set_digest": "1" * 64,
+            "closure_fact_ref": "artifacts/closure.json",
+            "closure_fact_digest": "2" * 64,
+            "admitted_call_result_ref": {
+                "ref": "artifacts/goal-result.json",
+                "sha256": "3" * 64,
+            },
+        },
+    )
+
+    outcome = run_goal_completion_gate_event([*events, claim], claim=claim)
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completion.rejected"
+    assert "verification_evidence_missing" in outcome.payload["invalid_reasons"]
+
+
+def test_canonical_goal_completion_accepts_exact_current_verify() -> None:
+    from zf.runtime.run_manager import run_goal_completion_gate_event
+
+    run_id = "RUN-CANONICAL-EXACT"
+    target = "4" * 40
+    candidate_ref = f"candidate/{run_id}"
+    generation = "task-map-33333333333333333333"
+    candidate = ZfEvent(
+        id="candidate-exact",
+        type="candidate.ready",
+        correlation_id=run_id,
+        payload={
+            "workflow_run_id": run_id,
+            "fanout_id": "fanout-exact",
+            "pdd_id": run_id,
+            "candidate_ref": candidate_ref,
+            "candidate_base_commit": "0" * 40,
+            "candidate_head_commit": target,
+            "completed_task_ids": ["TASK-A", "TASK-B"],
+        },
+    )
+    verify = ZfEvent(
+        id="verify-exact",
+        type="fanout.child.completed",
+        correlation_id=run_id,
+        payload={
+            "workflow_run_id": run_id,
+            "task_map_generation": generation,
+            "candidate_ref": candidate_ref,
+            "target_commit": target,
+            "control_result_schema": "verification-result.v1",
+            "semantic_verdict": "passed",
+            "admitted_call_result_ref": {
+                "ref": "artifacts/verify.json",
+                "sha256": "5" * 64,
+            },
+        },
+    )
+    closure = ZfEvent(
+        type="flow.goal.closed",
+        correlation_id=run_id,
+        payload={
+            "workflow_run_id": run_id,
+            "goal_id": run_id,
+            "task_map_generation": generation,
+            "candidate_head_commit": target,
+            "goal_claim_set_digest": "6" * 64,
+            "closure_fact_digest": "7" * 64,
+        },
+    )
+    claim = ZfEvent(
+        id="claim-exact",
+        type="run.goal.completion.claimed",
+        correlation_id=run_id,
+        payload={
+            "run_id": run_id,
+            "goal_id": run_id,
+            "claim_id": "claim-exact",
+            "claim_type": "admitted_goal_closure_result",
+            "task_map_generation": generation,
+            "target_commit": target,
+            "candidate_ref": candidate_ref,
+            "goal_claim_set_ref": "artifacts/claims.json",
+            "goal_claim_set_digest": "6" * 64,
+            "closure_fact_ref": "artifacts/closure.json",
+            "closure_fact_digest": "7" * 64,
+            "admitted_call_result_ref": {
+                "ref": "artifacts/goal-result.json",
+                "sha256": "8" * 64,
+            },
+        },
+    )
+
+    gate_events = [
+        ZfEvent(type="run.goal.started", correlation_id=run_id, payload={"run_id": run_id}),
+        candidate,
+        verify,
+        closure,
+        claim,
+    ]
+    outcome = run_goal_completion_gate_event(gate_events, claim=claim)
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completed"
+    assert outcome.payload["verified_target_commit"] == target
+    assert outcome.payload["verification_event_id"] == "verify-exact"
+    assert outcome.payload["candidate_event_id"] == "candidate-exact"
+    assert outcome.payload["delivery_status"] == "not_required"
+
+    delivery_request = run_goal_completion_gate_event(
+        gate_events,
+        claim=claim,
+        delivery_policy="ship_candidate",
+    )
+    assert delivery_request is not None
+    assert delivery_request.type == "run.delivery.requested"
+    failed_delivery = ZfEvent(
+        id="delivery-failed-exact",
+        type="run.delivery.failed",
+        correlation_id=run_id,
+        payload={
+            "claim_id": "claim-exact",
+            "delivery_operation_id": delivery_request.payload["delivery_operation_id"],
+        },
+    )
+    blocked = run_goal_completion_gate_event(
+        [*gate_events, delivery_request, failed_delivery],
+        claim=claim,
+        delivery_policy="ship_candidate",
+    )
+    assert blocked is not None
+    assert blocked.type == "run.goal.completion.blocked"
+    assert blocked.payload["blockers"] == ["delivery_failed"]
+
+    settled_delivery = ZfEvent(
+        id="delivery-settled-exact",
+        type="run.delivery.settled",
+        correlation_id=run_id,
+        payload={
+            "claim_id": "claim-exact",
+            "delivery_operation_id": delivery_request.payload["delivery_operation_id"],
+        },
+    )
+    shipped = run_goal_completion_gate_event(
+        [*gate_events, delivery_request, failed_delivery, settled_delivery],
+        claim=claim,
+        delivery_policy="ship_candidate",
+    )
+    assert shipped is not None
+    assert shipped.type == "run.goal.completed"
+    assert shipped.payload["delivery_status"] == "settled"
+    assert shipped.payload["delivery_event_id"] == "delivery-settled-exact"
 
 
 def test_run_manager_routes_scoped_delivery_failure_to_approved_ship_retry() -> None:
@@ -4930,6 +5253,74 @@ def test_run_goal_completion_gate_rejects_judge_verify_target_mismatch() -> None
     assert "verification_target_mismatch" in outcome.payload["invalid_reasons"]
     assert outcome.payload["target_commit"] == judge_target
     assert outcome.payload["verified_target_commit"] == verified_target
+
+
+def test_run_goal_completion_gate_uses_admitted_fanout_verify_target() -> None:
+    from zf.runtime.run_manager import run_goal_completion_event
+
+    verified_target = "a" * 40
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-FANOUT-TARGET"}),
+        ZfEvent(
+            type="fanout.child.completed",
+            task_id="T-FANOUT-TARGET",
+            correlation_id="R-FANOUT-TARGET",
+            payload={
+                "target_commit": verified_target,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/call-results/verify.json",
+                    "sha256": "c" * 64,
+                },
+            },
+        ),
+    ]
+
+    outcome = run_goal_completion_event(
+        events,
+        cause=ZfEvent(
+            type="judge.passed",
+            id="judge-fanout-target",
+            correlation_id="R-FANOUT-TARGET",
+            payload={"target_commit": verified_target},
+        ),
+    )
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completed"
+    assert outcome.payload["verified_target_commit"] == verified_target
+
+
+def test_run_goal_completion_gate_ignores_unadmitted_fanout_verify_target() -> None:
+    from zf.runtime.run_manager import run_goal_completion_event
+
+    events = [
+        ZfEvent(type="run.goal.started", payload={"run_id": "R-RAW-TARGET"}),
+        ZfEvent(
+            type="fanout.child.completed",
+            correlation_id="R-RAW-TARGET",
+            payload={
+                "target_commit": "a" * 40,
+                "control_result_schema": "verification-result.v1",
+                "semantic_verdict": "passed",
+            },
+        ),
+    ]
+
+    outcome = run_goal_completion_event(
+        events,
+        cause=ZfEvent(
+            type="judge.passed",
+            id="judge-raw-target",
+            correlation_id="R-RAW-TARGET",
+            payload={"target_commit": "b" * 40},
+        ),
+    )
+
+    assert outcome is not None
+    assert outcome.type == "run.goal.completed"
+    assert outcome.payload["verified_target_commit"] == ""
 
 
 def test_run_goal_completion_gate_isolates_interleaved_runs() -> None:

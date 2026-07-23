@@ -78,7 +78,7 @@ def register(subparsers) -> None:
     )
     run.add_argument("--worktree", type=Path, required=True)
     run.add_argument("--config", dest="config_template", type=Path,
-                     default=Path("examples/dev-codex-backends.yaml"))
+                     default=Path("examples/tmp/dev-codex-backends.yaml"))
     run.add_argument("--branch", default="")
     run.add_argument("--seed-file", type=Path, default=None)
     run.add_argument("--expected-done", type=int, default=None)
@@ -363,7 +363,7 @@ def register(subparsers) -> None:
     loop.add_argument("--fix-wait-timeout", type=int, default=1800)
     loop.add_argument(
         "--config", dest="config_template", type=Path,
-        default=Path("examples/dev-codex-backends.yaml"),
+        default=Path("examples/tmp/dev-codex-backends.yaml"),
     )
     loop.add_argument(
         "--review-gate",
@@ -443,7 +443,7 @@ def register(subparsers) -> None:
         "--config",
         dest="config_template",
         type=Path,
-        default=Path("examples/dev-codex-backends.yaml"),
+        default=Path("examples/tmp/dev-codex-backends.yaml"),
     )
     plan.add_argument(
         "--no-tmux",

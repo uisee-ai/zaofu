@@ -31,6 +31,10 @@ def _task_map() -> dict:
     return {
         "schema_version": "task-map.v1",
         "feature_id": "F-PROD",
+        "goal_claims": [
+            {"goal_claim_id": "CLAIM-A", "text": "Slice A works", "mandatory": True},
+            {"goal_claim_id": "CLAIM-B", "text": "Slice B works", "mandatory": True},
+        ],
         "source_refs": {
             "spec_ref": "docs/design/product-spec.md",
             "plan_ref": "docs/design/product-plan.md",
@@ -48,6 +52,7 @@ def _task_map() -> dict:
                 "verification": "uv run pytest tests/test_a.py",
                 "verification_tiers": ["runtime"],
                 "acceptance": ["A works"],
+                "goal_claim_ids": ["CLAIM-A"],
             },
             {
                 "task_id": "TASK-PROD-B",
@@ -58,6 +63,7 @@ def _task_map() -> dict:
                 "scope": ["src/b.py"],
                 "verification": "uv run pytest tests/test_b.py",
                 "verification_tiers": ["runtime"],
+                "goal_claim_ids": ["CLAIM-B"],
             },
         ],
     }
@@ -166,6 +172,8 @@ def test_ingest_task_map_to_kanban_creates_contract_tasks(tmp_path: Path) -> Non
     assert tasks["TASK-PROD-A"].contract.source_mode == "canonical"
     assert "Task A: build product slice A" in tasks["TASK-PROD-A"].contract.source_excerpt
     assert tasks["TASK-PROD-A"].contract.product_contract_ref == "docs/design/product-spec.md"
+    assert tasks["TASK-PROD-A"].contract.goal_claim_ids == ["CLAIM-A"]
+    assert tasks["TASK-PROD-B"].contract.goal_claim_ids == ["CLAIM-B"]
     assert tasks["TASK-PROD-B"].blocked_by == ["TASK-PROD-A"]
     assert result.summary["task_doc_failure_count"] == 0
     assert result.summary["feature_projection"]["status"] == "created"
@@ -254,19 +262,36 @@ def test_ingest_task_map_to_kanban_normalizes_verification_command_list(
     assert result.passed is True
     task = TaskStore(state_dir / "kanban.json").get("TASK-PROD-A")
     assert task is not None
-    assert task.contract.verification == "npm run check && npm test"
-    assert task.contract.evidence_contract["success_criteria"] == [{
-        "kind": "command_passed",
-        "command": "npm run check && npm test",
-    }]
+    assert task.contract.verification == "npm run check"
+    assert [item["command"] for item in task.contract.validation["commands"]] == [
+        "npm run check",
+        "npm test",
+    ]
+    assert task.contract.evidence_contract["success_criteria"] == [
+        {
+            "kind": "command_passed",
+            "command_id": "contract-verification-1",
+            "command": "npm run check",
+            "acceptance_ids": [],
+        },
+        {
+            "kind": "command_passed",
+            "command_id": "contract-verification-2",
+            "command": "npm test",
+            "acceptance_ids": [],
+        },
+    ]
     contract_updates = [
         event for event in EventLog(state_dir / "events.jsonl").read_all()
         if event.type == "task.contract.update"
         and event.task_id == "TASK-PROD-A"
     ]
     assert contract_updates[-1].payload["contract"]["verification"] == (
-        "npm run check && npm test"
+        "npm run check"
     )
+    assert len(
+        contract_updates[-1].payload["contract"]["validation"]["commands"]
+    ) == 2
 
 
 def test_product_delivery_accepts_structured_expected_red_validation(

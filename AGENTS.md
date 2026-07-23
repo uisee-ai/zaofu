@@ -17,9 +17,9 @@ code and tests.
 - The managed `Worker Protocol` block applies only when the current dispatch
   briefing begins with `Active task: <task_id>`. Without that marker, do not
   emit task/workflow events or heartbeats merely because the block is present.
-- For architecture conflicts, use current code/tests and the routed manual
-  index in `docs/manual/00-index.md`. Historical design documents are context,
-  not overrides.
+- For architecture conflicts, use
+  `docs/design/142-layered-runtime-authority-and-orchestration-modes.md` and
+  current code/tests. Historical design documents are context, not overrides.
 
 ## Core Rules
 
@@ -74,7 +74,7 @@ code and tests.
 
 ## Architecture / Runtime Route
 
-- `docs/manual/00-index.md` is the full routing index. Short lists here are
+- `docs/design/00-index.md` is the full routing index. Short lists here are
   starting routes, not exhaustive architecture maps.
 - `142-layered-runtime-authority-and-orchestration-modes.md` is the canonical
   authority/orchestration entry and contains the current route families.
@@ -235,12 +235,12 @@ Multiple agent sessions may work this repo concurrently. Four hard rules:
 
 - Architecture, runtime, config schema, Web/API, security, or external
   control-plane behavior changes must update relevant docs under
-  `docs/manual/` or `docs/impl/` (`docs/new-design/` is historical material;
+  `docs/design/` or `docs/impl/` (`docs/new-design/` is historical material;
   do not add new docs there).
-- New docs must first choose the correct directory class (`impl`, `ideas`,
-  `runbooks`, `manual`, `refer`, or `records`); manual docs use the next
-  numeric `<number>-<slug>.md` prefix and must be registered in
-  `docs/manual/00-index.md`.
+- New docs must first choose the correct directory class (`design`, `impl`,
+  `ideas`, `runbooks`, `manual`, `refer`, or `records`); design docs use the
+  next numeric `<number>-<slug>.md` prefix and must be registered in
+  `docs/design/00-index.md`.
 - Before committing new design / impl docs, check for orphan docs by confirming
   they are referenced from the index, source, another doc, backlog, or task.
 - Claude Code detailed rules live under `.claude/rules/`; keep them aligned

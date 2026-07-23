@@ -23,6 +23,11 @@ from zf.runtime.artifact_manifest import (
     normalize_artifact_kind,
 )
 from zf.runtime.recovery_sufficiency import verify_artifact_ref
+from zf.runtime.task_contract_snapshot import (
+    TaskContractSnapshotError,
+    current_task_contract_identity,
+    hydrate_task_contract_snapshot,
+)
 
 
 _IGNORABLE_HANDOFF_DIRTY_PATHS = frozenset({
@@ -92,6 +97,14 @@ class TaskRefManager:
         if event.type not in {"dev.build.done", "impl.child.completed"} or not event.task_id:
             return None
         payload = event.payload if isinstance(event.payload, dict) else {}
+        stale_reason = self._stale_contract_result_reason(event, payload)
+        if stale_reason:
+            return self._reject(
+                event,
+                stale_reason,
+                payload,
+                rejection_kind="stale_contract_result",
+            )
         relevant_keys = {
             "source_commit",
             "source_branch",
@@ -238,6 +251,54 @@ class TaskRefManager:
             return self._reject(event, str(exc), payload)
 
         return TaskRefResult(status="updated", payload=entry)
+
+    def _stale_contract_result_reason(
+        self,
+        event: ZfEvent,
+        payload: dict[str, Any],
+    ) -> str:
+        """Reject a late typed Impl result before it can move the task ref."""
+
+        binding: dict[str, Any] = {}
+        fanout_id = str(payload.get("fanout_id") or "").strip()
+        child_id = str(payload.get("child_id") or payload.get("child_run") or "").strip()
+        if fanout_id and child_id:
+            path = self.state_dir / "fanouts" / fanout_id / "manifest.json"
+            try:
+                manifest = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                manifest = {}
+            for child in manifest.get("children", []) if isinstance(manifest, dict) else []:
+                if not isinstance(child, dict):
+                    continue
+                if str(child.get("child_id") or "") != child_id:
+                    continue
+                child_payload = child.get("payload")
+                if isinstance(child_payload, dict):
+                    binding.update(child_payload)
+                binding.update(child)
+                break
+        binding.update(payload)
+        ref = str(binding.get("contract_snapshot_ref") or "").strip()
+        digest = str(binding.get("contract_snapshot_digest") or "").strip()
+        if not ref or not digest:
+            return ""
+        task = TaskStore(self.state_dir / "kanban.json").get(str(event.task_id or ""))
+        if task is None:
+            return "stale task contract: canonical task is missing"
+        try:
+            expected = current_task_contract_identity(
+                task,
+                task_map_ref=str(binding.get("task_map_ref") or ""),
+            )
+            hydrate_task_contract_snapshot(
+                self.state_dir,
+                {"ref": ref, "sha256": digest},
+                expected=expected,
+            )
+        except TaskContractSnapshotError as exc:
+            return f"stale task contract: {exc}"
+        return ""
 
     def _snapshot_dev_artifacts_if_available(
         self,
@@ -1171,6 +1232,8 @@ class TaskRefManager:
         event: ZfEvent,
         reason: str,
         payload: dict[str, Any],
+        *,
+        rejection_kind: str = "",
     ) -> TaskRefResult:
         identity = {
             key: payload.get(key)
@@ -1192,6 +1255,7 @@ class TaskRefManager:
                 "source_commit": payload.get("source_commit", ""),
                 "source_branch": payload.get("source_branch", ""),
                 "workdir": payload.get("workdir", ""),
+                **({"rejection_kind": rejection_kind} if rejection_kind else {}),
                 **identity,
             },
         )
