@@ -123,6 +123,182 @@ def test_trace_export_otlp_json_stdout_and_file(tmp_path: Path, monkeypatch, cap
     } == canonical_before
 
 
+def test_trace_export_completion_json_is_fail_closed_and_read_only(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    run_id = "run-completion-export"
+    target = "a" * 40
+    events = [
+        ZfEvent(
+            id="evt-run-start",
+            type="run.goal.started",
+            correlation_id=run_id,
+            payload={"run_id": run_id, "goal_id": "GOAL-1"},
+        ),
+        ZfEvent(
+            id="evt-closure",
+            type="goal.closure.synthesized",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "goal_id": "GOAL-1",
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/closure.json",
+                    "sha256": "d" * 64,
+                },
+            },
+        ),
+        ZfEvent(
+            id="evt-claim",
+            type="run.goal.completion.claimed",
+            correlation_id=run_id,
+            payload={
+                "run_id": run_id,
+                "goal_id": "GOAL-1",
+                "claim_id": "claim-1",
+                "claim_type": "admitted_goal_closure_result",
+                "task_map_generation": "generation-1",
+                "target_commit": target,
+            },
+        ),
+        ZfEvent(
+            id="evt-candidate",
+            type="candidate.ready",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "candidate_ref": "candidate/GOAL-1",
+                "candidate_head_commit": target,
+            },
+        ),
+        ZfEvent(
+            id="evt-verify",
+            type="fanout.child.completed",
+            correlation_id=run_id,
+            payload={
+                "workflow_run_id": run_id,
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/verify.json",
+                    "sha256": "b" * 64,
+                },
+            },
+        ),
+        ZfEvent(
+            id="evt-completed",
+            type="run.goal.completed",
+            causation_id="evt-claim",
+            correlation_id=run_id,
+            payload={
+                "run_id": run_id,
+                "workflow_run_id": run_id,
+                "goal_id": "GOAL-1",
+                "claim_id": "claim-1",
+                "source_event_id": "evt-closure",
+                "task_map_generation": "generation-1",
+                "target_commit": target,
+                "verified_target_commit": target,
+                "verification_event_id": "evt-verify",
+                "verification_admitted_call_result_ref": {
+                    "ref": "artifacts/verify.json",
+                    "sha256": "b" * 64,
+                },
+                "candidate_event_id": "evt-candidate",
+                "candidate_ref": "candidate/GOAL-1",
+                "goal_claim_set_ref": "artifacts/claims.json",
+                "goal_claim_set_digest": "c" * 64,
+                "admitted_call_result_ref": {
+                    "ref": "artifacts/closure.json",
+                    "sha256": "d" * 64,
+                },
+                "delivery_policy": "report_only",
+                "delivery_status": "not_required",
+                "delivery_event_id": "",
+            },
+        ),
+    ]
+    for event in events:
+        log.append(event)
+    canonical_before = (state_dir / "events.jsonl").read_bytes()
+
+    missing_run = main([
+        "trace",
+        "export",
+        "--format",
+        "completion-json",
+        "--state-dir",
+        str(state_dir),
+    ])
+    assert missing_run == 2
+    assert "requires an explicit --run-id" in capsys.readouterr().err
+
+    result = main([
+        "trace",
+        "export",
+        "--format",
+        "completion-json",
+        "--run-id",
+        run_id,
+        "--state-dir",
+        str(state_dir),
+    ])
+
+    assert result == 0
+    receipt = json.loads(capsys.readouterr().out)
+    assert receipt["schema_version"] == "goal-completion-receipt.v1"
+    assert receipt["terminal"]["event_id"] == "evt-completed"
+    assert receipt["completion_gate"]["verified_target_commit"] == target
+
+    output = tmp_path / "completion.json"
+    result = main([
+        "trace",
+        "export",
+        "--format",
+        "completion-json",
+        "--run-id",
+        run_id,
+        "--output",
+        str(output),
+        "--state-dir",
+        str(state_dir),
+    ])
+    assert result == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["degraded"] is False
+    assert (state_dir / "events.jsonl").read_bytes() == canonical_before
+
+
+def test_trace_export_completion_json_rejects_non_terminal_run(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    monkeypatch.chdir(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="run-active",
+        payload={"run_id": "run-active", "goal_id": "GOAL-ACTIVE"},
+    ))
+
+    result = main([
+        "trace",
+        "export",
+        "--format",
+        "completion-json",
+        "--run-id",
+        "run-active",
+        "--state-dir",
+        str(state_dir),
+    ])
+
+    assert result == 3
+    assert "completion_not_admitted" in capsys.readouterr().err
 def test_trace_delivery_summary_is_bounded_and_full_is_explicit(
     tmp_path: Path, monkeypatch, capsys
 ) -> None:

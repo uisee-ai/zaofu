@@ -171,7 +171,8 @@ uv run zf skills doctor
 | `zf trace gantt` | 输出 per-dev swim-lane Gantt / dep DAG |
 | `zf trace workflow-run <fanout_id>` | 查看 fanout/workflow run trace |
 | `zf trace report <feature_id>` | 生成 delivery trace report |
-| `zf trace export <feature_id>` | 导出 trace 数据 |
+| `zf trace export <feature_id> --format otlp-json` | 导出 span 遥测 |
+| `zf trace export --run-id <run_id> --format completion-json` | 导出 Kernel 接纳的 Goal 完成凭据 |
 
 建议在真实 E2E 或长任务结束后运行:
 

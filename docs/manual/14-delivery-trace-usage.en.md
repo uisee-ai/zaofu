@@ -26,11 +26,15 @@ surfaces an existing `scope.violation`; it does not rerun that gate.
 | `zf trace task-node <task_id>` | One task's planned and actual node | execution-graph node |
 | `zf trace workflow-run <fanout_id>` | Fanout/workflow run trace | workflow run projection |
 | `zf trace report <feature_id>` | Generate a trace report | report artifact |
-| `zf trace export <feature_id>` | Export trace data | JSON/export artifact |
+| `zf trace export <feature_id> --format otlp-json` | Export span telemetry | OTLP JSON |
+| `zf trace export --run-id <run_id> --format completion-json` | Export a kernel-admitted Goal completion receipt | `goal-completion-receipt.v1` |
 
-Shared options include `--format table|json`, `--task-map-ref <path>`, and
-`--state-dir <path>`. Without an explicit task-map path, the resolver checks
-`<state_dir>/artifacts/<feature_id>/task_map.json`.
+Delivery query options include `--format table|json`, `--task-map-ref <path>`,
+and `--state-dir <path>`. Without an explicit task-map path, the resolver
+checks `<state_dir>/artifacts/<feature_id>/task_map.json`.
+
+`trace export` instead accepts `--format otlp-json|completion-json` and
+`--output <path>|-`; `completion-json` additionally requires `--run-id`.
 
 ## 3. Examples
 
@@ -42,12 +46,25 @@ zf trace task-node TASK-API-002
 zf trace workflow-run fanout-123
 zf trace report F-CANGJIE-GA
 zf trace delivery F-CANGJIE-GA --format json
+zf trace export F-CANGJIE-GA --format otlp-json
+zf trace export --run-id run-20260724-001 --format completion-json
 ```
 
 Overall `status` can be `in_progress`, `done`, `blocked`, `not_started`, or
 `empty`. Ship readiness is `ready` only when every node is done and no
 error-level drift exists. It is still only a projection; actual shipping
 requires the ship gate or operator action.
+
+`completion-json` is stricter than the normal trace status. It succeeds only
+when the explicit run has one current, evidence-complete `run.goal.completed`.
+Missing or duplicate completion events, missing Verify/Goal Closure/Candidate/
+delivery references, or a later state change cause a non-zero exit. A task or
+span marked `completed` is never promoted into Goal completion.
+
+The receipt is a redacted, read-only EventLog projection rather than new
+canonical truth. Its `source_fingerprint` detects input drift; without a
+separate signature layer it is not a cryptographic attestation across trust
+boundaries.
 
 ## 4. Drift Classes
 
@@ -71,7 +88,8 @@ surface.
 ## 6. Implementation and API
 
 Projection logic lives in `src/zf/runtime/execution_graph.py`,
-`delivery_trace.py`, and `drift_report.py`. Loading is in
+`delivery_trace.py`, `drift_report.py`, and `goal_completion_receipt.py`.
+Loading is in
 `delivery_trace_resolve.py`; Web routes are in `delivery_trace_routes.py`; CLI
 entry points are in `src/zf/cli/trace.py`.
 

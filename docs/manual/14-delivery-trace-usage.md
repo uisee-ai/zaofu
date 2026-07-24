@@ -27,15 +27,19 @@
 | `zf trace task-node <task_id>` | 单个 task 节点的 planned vs actual + drift | execution-graph 节点 |
 | `zf trace workflow-run <fanout_id>` | 查看 fanout/workflow run trace | workflow run projection |
 | `zf trace report <feature_id>` | 生成 delivery trace report | report artifact |
-| `zf trace export <feature_id>` | 导出 trace 数据 | JSON/export artifact |
+| `zf trace export <feature_id> --format otlp-json` | 导出 span 遥测 | OTLP JSON |
+| `zf trace export --run-id <run_id> --format completion-json` | 导出 Kernel 接纳的 Goal 完成凭据 | `goal-completion-receipt.v1` |
 
-公共参数：
+Delivery 查询命令的公共参数：
 
 | 参数 | 默认 | 说明 |
 |---|---|---|
 | `--format table\|json` | `table` | 终端表格 或 完整 JSON（喂给脚本/Web） |
 | `--task-map-ref <path>` | — | 显式指定 task-map 路径；默认从 `<state_dir>/artifacts/<feature_id>/task_map.json` 找 |
 | `--state-dir <path>` | `project.state_dir`（否则 `.zf`） | 运行态目录 |
+
+`trace export` 单独使用 `--format otlp-json|completion-json` 与
+`--output <path>|-`；`completion-json` 还必须提供 `--run-id`。
 
 ## 3. 典型用法
 
@@ -52,6 +56,12 @@ zf trace report F-CANGJIE-GA
 
 # 机器可读输出
 zf trace delivery F-CANGJIE-GA --format json
+
+# span 遥测导出
+zf trace export F-CANGJIE-GA --format otlp-json
+
+# CI/交付审计使用的完成凭据；run_id 必须显式指定
+zf trace export --run-id run-20260724-001 --format completion-json
 ```
 
 `delivery` 表格输出示例：
@@ -75,6 +85,15 @@ Drift [warning] error=0 warning=3 info=0
 - 每行节点：`task_id  实际状态  owner=计划角色  actual=实际 assigned_to`。
 - **Drift** 段按严重度列出偏移（见 §5）。
 
+`completion-json` 与普通 trace 状态不同：它只在指定 run 存在唯一、当前且
+证据完整的 `run.goal.completed` 时成功。缺 completion、重复 completion、
+Verify/Goal Closure/Candidate/delivery 引用缺失或 completion 已过期时，命令
+非零退出。它不会把 task `done` 或 span `completed` 当作 Goal 完成。
+
+Receipt 是 `events.jsonl` 的只读脱敏投影，不是新的 canonical truth。其
+`source_fingerprint` 可检测输入变化，但在未增加独立签名层时不构成跨信任域
+的密码学证明。
+
 ## 4. Drift 分类（P0 覆盖）
 
 | 类型 | 触发 | 严重度 |
@@ -96,7 +115,8 @@ Drift [warning] error=0 warning=3 info=0
 
 ## 6. 实现位置（排障参考）
 
-- 投影纯函数：`src/zf/runtime/execution_graph.py`、`delivery_trace.py`、`drift_report.py`
+- 投影纯函数：`src/zf/runtime/execution_graph.py`、`delivery_trace.py`、
+  `drift_report.py`、`goal_completion_receipt.py`
 - 加载层（从盘读 kanban/events/task-map）：`src/zf/runtime/delivery_trace_resolve.py`
 - Web/API：`src/zf/web/delivery_trace_routes.py`
 - CLI：`src/zf/cli/trace.py`（`run_delivery_trace` 等）

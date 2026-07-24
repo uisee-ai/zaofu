@@ -14,6 +14,7 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.goal_completion_receipt import build_goal_completion_receipt
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.simulation_lifecycle import emit_simulation_done
@@ -476,6 +477,17 @@ def test_light_profile_mock_e2e_closes_with_self_check_and_receipt_reuse(
     assert len(completed) == 1
     assert verified_targets == {candidate.payload["candidate_head_commit"]}
     assert completed[0].payload["verified_target_commit"] == next(iter(verified_targets))
+    receipt = build_goal_completion_receipt(
+        events,
+        run_id=workflow_run_id,
+        generated_at="2026-07-24T00:00:00+00:00",
+        project_id="light-148",
+    )
+    assert receipt["terminal"]["event_id"] == completed[0].id
+    assert receipt["completion_gate"]["verified_target_commit"] == next(
+        iter(verified_targets)
+    )
+    assert receipt["delivery"]["status"] == "settled"
     assert len([item for item in events if item.type == "impl.self_check.completed"]) == 2
     assert len([item for item in events if item.type == "verify.child.completed"]) == 2
     assert not [item for item in events if item.type in {"test.failed", "judge.failed"}]

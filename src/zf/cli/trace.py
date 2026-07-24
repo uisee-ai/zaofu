@@ -162,10 +162,22 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     wfr.add_argument("--state-dir", type=str, default=None)
     wfr.set_defaults(func=run_workflow_run)
 
-    export = sub.add_parser("export", help="Export a Delivery thick trace")
+    export = sub.add_parser(
+        "export",
+        help="Export Delivery telemetry or a Goal completion receipt",
+    )
     export.add_argument("target", nargs="?", default="", help="Delivery target / feature id")
     export.add_argument("--target", dest="target_opt", default="", help="Delivery target / feature id")
-    export.add_argument("--format", choices=["otlp-json"], default="otlp-json")
+    export.add_argument(
+        "--format",
+        choices=["otlp-json", "completion-json"],
+        default="otlp-json",
+    )
+    export.add_argument(
+        "--run-id",
+        default="",
+        help="Explicit workflow run id required by completion-json",
+    )
     export.add_argument("--output", default="-", help="Output file, or '-' for stdout")
     export.add_argument("--state-dir", type=str, default=None)
     export.set_defaults(func=run_export)
@@ -277,7 +289,7 @@ def run_delivery_report(args: argparse.Namespace) -> int:
 
 
 def run_export(args: argparse.Namespace) -> int:
-    """zf trace export <target> --format otlp-json — read-only exporter."""
+    """Export OTLP spans or one fail-closed Goal completion receipt."""
     from datetime import datetime, timezone
 
     try:
@@ -287,6 +299,41 @@ def run_export(args: argparse.Namespace) -> int:
     except ConfigError as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
+    export_format = str(getattr(args, "format", "otlp-json") or "otlp-json")
+    generated_at = datetime.now(timezone.utc).isoformat()
+    if export_format == "completion-json":
+        run_id = str(getattr(args, "run_id", "") or "").strip()
+        if not run_id:
+            print(
+                "Error: completion-json requires an explicit --run-id",
+                file=sys.stderr,
+            )
+            return 2
+        from zf.runtime.goal_completion_receipt import (
+            GoalCompletionReceiptError,
+            build_goal_completion_receipt,
+        )
+
+        events = event_log_from_project(
+            context.state_dir,
+            config=context.config,
+        ).read_all()
+        try:
+            project_id = str(
+                getattr(getattr(context.config, "project", None), "name", "")
+                or context.project_root.name
+            )
+            receipt = build_goal_completion_receipt(
+                events,
+                run_id=run_id,
+                generated_at=generated_at,
+                project_id=project_id,
+            )
+        except GoalCompletionReceiptError as exc:
+            print(f"Error [{exc.code}]: {exc}", file=sys.stderr)
+            return 3
+        return _write_export(receipt, output=str(getattr(args, "output", "-") or "-"))
+
     target = str(getattr(args, "target_opt", "") or getattr(args, "target", "") or "").strip()
     if not target:
         print("Error: trace export requires a target", file=sys.stderr)
@@ -295,7 +342,6 @@ def run_export(args: argparse.Namespace) -> int:
     from zf.runtime.delivery_thick_trace import export_otlp_json
     from zf.runtime.delivery_trace_resolve import resolve_delivery_trace
 
-    generated_at = datetime.now(timezone.utc).isoformat()
     trace = resolve_delivery_trace(
         state_dir=context.state_dir,
         config=context.config,
@@ -314,13 +360,19 @@ def run_export(args: argparse.Namespace) -> int:
         generated_at=generated_at,
         project_id=context.project_root.name,
     )
-    payload = json.dumps(export_otlp_json(thick), indent=2, ensure_ascii=False)
-    output = str(getattr(args, "output", "-") or "-")
+    return _write_export(
+        export_otlp_json(thick),
+        output=str(getattr(args, "output", "-") or "-"),
+    )
+
+
+def _write_export(payload: dict, *, output: str) -> int:
+    encoded = json.dumps(payload, indent=2, ensure_ascii=False)
     if output == "-":
-        print(payload)
+        print(encoded)
     else:
         with open(output, "w", encoding="utf-8") as fh:
-            fh.write(payload)
+            fh.write(encoded)
             fh.write("\n")
     return 0
 
