@@ -633,9 +633,7 @@ h3 {
 }
 
 /* Page-level H2 (Archives / Workdirs / Skills / Runtime / Settings / ...) —
-   sentence-case + medium weight instead of inherited h2 { uppercase + 650 }.
-   Sidebar section <h2> (Control / Workspace) keep uppercase since they act
-   as SectionLabel (R3-compliant) — overridden below. */
+   sentence-case + medium weight instead of inherited h2 { uppercase + 650 }. */
 .section-heading h2 {
   text-transform: none;
   font-size: var(--text-16);
@@ -643,12 +641,12 @@ h3 {
   letter-spacing: 0;
 }
 
-/* Sidebar section H2 stays uppercase SectionLabel. */
-.project-rail .section-heading h2 {
-  text-transform: uppercase;
-  font-size: var(--text-12);
+/* The rail heading is the product brand, not a navigation section label. */
+.project-rail .section-heading .rail-brand {
+  text-transform: none;
+  font-size: var(--text-18);
   font-weight: 650;
-  letter-spacing: normal;
+  letter-spacing: 0;
 }
 
 .filter-row {

@@ -122,7 +122,7 @@ export function WorkspaceRail({
     <section className={`panel project-rail ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navigation rail">
       <div className="section-heading">
         <div>
-          <h2>Control</h2>
+          <h2 className="rail-brand">ZaoFu</h2>
           {/* count removed: the unified header is the single count source (doc116 §11.2) */}
         </div>
         <div className="rail-heading-actions">
