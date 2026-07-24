@@ -74,6 +74,27 @@ def test_validate_invalid_config(tmp_path: Path, monkeypatch, capsys):
     assert "project" in output or "error" in output
 
 
+def test_validate_fails_for_unknown_runtime_backend(
+    tmp_path: Path, monkeypatch, capsys
+):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(
+        'version: "1.0"\n'
+        "project:\n"
+        "  name: test\n"
+        "roles:\n"
+        "  - name: dev\n"
+        "    backend: claude-cod\n"
+    )
+
+    result = main(["validate"])
+
+    assert result == 1
+    captured = capsys.readouterr()
+    assert "runtime backend validation errors" in captured.err.lower()
+    assert "claude-cod" in captured.err
+
+
 def test_validate_custom_path(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     custom = tmp_path / "custom.yaml"

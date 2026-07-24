@@ -244,7 +244,7 @@ def test_emit_rejects_payload_file_and_inline_payload_together(
     ])
 
     assert result == 1
-    assert "use only one" in capsys.readouterr().out
+    assert "use only one" in capsys.readouterr().err
 
 
 def test_emit_rejects_payload_file_with_non_object_json(
@@ -259,7 +259,7 @@ def test_emit_rejects_payload_file_with_non_object_json(
     result = main(["emit", "test.passed", "--payload-file", str(payload)])
 
     assert result == 1
-    assert "JSON object" in capsys.readouterr().out
+    assert "JSON object" in capsys.readouterr().err
 
 
 def test_emit_dispatch_id_adds_payload_field(tmp_path: Path, monkeypatch):

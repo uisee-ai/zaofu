@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from zf.runtime.supervisor_attention import build_attention_items
 from zf.runtime.supervisor_control_loop import build_supervisor_control_loop_events
 
 
@@ -54,6 +55,67 @@ def test_control_loop_routes_low_severity_actionable_attention() -> None:
     assert decisions[0].payload["fingerprint"] == "workflow_resume_batch:ck-low"
     assert decisions[0].payload["problem_envelope"]["problem_class"] == "workflow_progress"
     assert decisions[0].payload["outcome"] == "run_manager_triage_first"
+
+
+def test_idle_context_warning_routes_to_run_manager_without_owner_message() -> None:
+    items = build_attention_items(
+        events=[],
+        automation={"items": [{
+            "automation_id": "project-monitor",
+            "outputs": [{
+                "alerts": [{
+                    "event_id": "evt-context",
+                    "type": "worker.context.warning",
+                    "task_id": "TASK-1",
+                    "reason": "idle worker context ratio is 0.82",
+                }],
+            }],
+        }]},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    out = build_supervisor_control_loop_events(
+        {"attention_items": items},
+        events=[],
+        projection_ref={},
+    )
+
+    decisions = [event for event in out if event.type == "supervisor.decision.recorded"]
+    messages = [event for event in out if event.type == "owner.visible_message.requested"]
+    assert len(decisions) == 1
+    assert decisions[0].payload["route"] == "run_manager_recovery"
+    assert decisions[0].payload["outcome"] == "run_manager_triage_first"
+    assert decisions[0].payload["notification_policy"] == "run_manager_first"
+    assert messages == []
+
+
+def test_critical_context_warning_can_escalate_owner_visible() -> None:
+    items = build_attention_items(
+        events=[],
+        automation={"items": [{
+            "automation_id": "project-monitor",
+            "outputs": [{
+                "alerts": [{
+                    "event_id": "evt-context-critical",
+                    "type": "worker.context.critical",
+                    "task_id": "TASK-1",
+                    "reason": "context hard cap reached",
+                }],
+            }],
+        }]},
+        failure_signals=[],
+        plan_integrity={},
+    )
+
+    out = build_supervisor_control_loop_events(
+        {"attention_items": items},
+        events=[],
+        projection_ref={},
+    )
+
+    assert any(event.type == "supervisor.decision.recorded" for event in out)
+    assert any(event.type == "owner.visible_message.requested" for event in out)
 
 
 def test_control_loop_preserves_plan_admission_identity_without_owner_message() -> None:

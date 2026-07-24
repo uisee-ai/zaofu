@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from dataclasses import asdict
 
 from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
@@ -63,6 +64,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     events_sub = events_parser.add_subparsers(dest="events_command")
     events_parser.add_argument("--type", type=str, default=None, help="Filter by type")
     events_parser.add_argument("--last", type=int, default=None, help="Show last N events")
+    events_parser.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     events_parser.add_argument(
         "--state-dir",
         type=str,
@@ -85,17 +87,17 @@ def run_emit(args: argparse.Namespace) -> int:
             explicit_state_dir=getattr(args, "state_dir", None),
         )
     except ConfigError as e:
-        print(f"Error: {e}", file=sys.stdout)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
     state_dir = context.state_dir
     if not state_dir.exists():
-        print("Error: not initialized. Run 'zf init' first.", file=sys.stdout)
+        print("Error: not initialized. Run 'zf init' first.", file=sys.stderr)
         return 1
 
     payload = {}
     payload_file = getattr(args, "payload_file", None)
     if args.payload and payload_file is not None:
-        print("Error: use only one of --payload or --payload-file", file=sys.stdout)
+        print("Error: use only one of --payload or --payload-file", file=sys.stderr)
         return 1
     if payload_file is not None:
         try:
@@ -105,19 +107,19 @@ def run_emit(args: argparse.Namespace) -> int:
                 raw_payload = payload_file.read_text(encoding="utf-8")
             payload = json.loads(raw_payload)
         except OSError as e:
-            print(f"Error: could not read --payload-file: {e}", file=sys.stdout)
+            print(f"Error: could not read --payload-file: {e}", file=sys.stderr)
             return 1
         except json.JSONDecodeError:
-            print("Error: --payload-file must contain valid JSON", file=sys.stdout)
+            print("Error: --payload-file must contain valid JSON", file=sys.stderr)
             return 1
     elif args.payload:
         try:
             payload = json.loads(args.payload)
         except json.JSONDecodeError:
-            print("Error: --payload must be valid JSON", file=sys.stdout)
+            print("Error: --payload must be valid JSON", file=sys.stderr)
             return 1
     if not isinstance(payload, dict):
-        print("Error: payload must be a JSON object", file=sys.stdout)
+        print("Error: payload must be a JSON object", file=sys.stderr)
         return 1
     if getattr(args, "dispatch_id", None):
         payload["dispatch_id"] = args.dispatch_id
@@ -290,11 +292,11 @@ def run_events(args: argparse.Namespace) -> int:
             explicit_state_dir=getattr(args, "state_dir", None),
         )
     except ConfigError as e:
-        print(f"Error: {e}", file=sys.stdout)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
     state_dir = context.state_dir
     if not state_dir.exists():
-        print("Error: not initialized. Run 'zf init' first.", file=sys.stdout)
+        print("Error: not initialized. Run 'zf init' first.", file=sys.stderr)
         return 1
 
     try:
@@ -304,6 +306,15 @@ def run_events(args: argparse.Namespace) -> int:
         return 2
     events = event_log.query(type=args.type, last=args.last)
 
+    if getattr(args, "json", False):
+        from zf.cli.output import print_result
+
+        print_result(
+            command="events",
+            data={"events": [asdict(event) for event in events]},
+            context=context,
+        )
+        return 0
     for ev in events:
         payload_str = f" {json.dumps(ev.payload)}" if ev.payload else ""
         print(f"[{ev.ts}] {ev.type}{payload_str}")

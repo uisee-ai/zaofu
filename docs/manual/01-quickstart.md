@@ -38,7 +38,7 @@ Claude Code stream-json transport 需要 `stream-json`；只有使用本地 Dash
 ```bash
 command -v tmux
 command -v codex      # 使用 --backend codex 时
-command -v claude     # 使用 --backend claude 时
+command -v claude     # 使用 --backend claude-code 时
 
 uv run zf doctor provider --backend codex
 ```

@@ -8,6 +8,9 @@ from zf.runtime.preflight import (
     CheckResult,
     _check_dispatch_chain_imports,
     _check_dispatch_prompt_signature,
+    _check_provider_auth_readiness,
+    _configured_provider_backends,
+    _probe_provider_auth,
     _check_role_backends,
     preflight_ok,
     run_preflight_checks,
@@ -70,3 +73,96 @@ def test_run_preflight_checks_all_pass_on_minimal_config():
         "role_backends_known",
     }
     assert preflight_ok(results)
+
+
+def test_provider_auth_readiness_reports_logged_out_claude(monkeypatch):
+    config = SimpleNamespace(
+        roles=[SimpleNamespace(name="dev", backend="claude-code", backends=[])],
+        runtime=SimpleNamespace(run_manager=SimpleNamespace(
+            backend="",
+            self_repair_backend="",
+        )),
+    )
+    monkeypatch.setattr(
+        "zf.runtime.preflight._probe_provider_auth",
+        lambda backend: (False, "not authenticated; authenticate with `claude /login`"),
+    )
+
+    result = _check_provider_auth_readiness(config)
+
+    assert result.ok is False
+    assert "claude-code" in result.detail
+    assert "/login" in result.detail
+
+
+def test_provider_auth_readiness_skips_mock_without_probe(monkeypatch):
+    config = SimpleNamespace(
+        roles=[SimpleNamespace(name="dev", backend="mock", backends=[])],
+        runtime=SimpleNamespace(run_manager=SimpleNamespace(
+            backend="",
+            self_repair_backend="",
+        )),
+    )
+    monkeypatch.setattr(
+        "zf.runtime.preflight._probe_provider_auth",
+        lambda backend: (_ for _ in ()).throw(AssertionError(backend)),
+    )
+
+    result = _check_provider_auth_readiness(config)
+
+    assert result.ok is True
+    assert "no real provider" in result.detail
+
+
+def test_provider_readiness_collects_recovery_and_autoresearch_backends():
+    config = SimpleNamespace(
+        roles=[SimpleNamespace(name="dev", backend="claude", backends=[])],
+        runtime=SimpleNamespace(
+            run_manager=SimpleNamespace(
+                backend="codex",
+                reflect=SimpleNamespace(backend="claude-headless"),
+                source_repair=SimpleNamespace(backend="codex-headless"),
+            ),
+            autoresearch_resident=SimpleNamespace(
+                self_repair_backend="claude-code",
+            ),
+        ),
+        autoresearch=SimpleNamespace(
+            trigger_policy=SimpleNamespace(self_repair_backend="codex"),
+        ),
+    )
+
+    assert _configured_provider_backends(config) == {
+        "claude-code",
+        "claude-headless",
+        "codex",
+        "codex-headless",
+    }
+
+
+def test_headless_provider_uses_its_underlying_cli_auth_probe(monkeypatch):
+    monkeypatch.setattr("zf.runtime.preflight.shutil.which", lambda command: command)
+    monkeypatch.setattr(
+        "zf.runtime.preflight.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout='{"loggedIn": true}',
+            stderr="",
+        ),
+    )
+
+    assert _probe_provider_auth("claude-headless") == (True, "authenticated")
+
+
+def test_codex_headless_uses_codex_cli_auth_probe(monkeypatch):
+    monkeypatch.setattr("zf.runtime.preflight.shutil.which", lambda command: command)
+    monkeypatch.setattr(
+        "zf.runtime.preflight.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout="Logged in using ChatGPT",
+            stderr="",
+        ),
+    )
+
+    assert _probe_provider_auth("codex-headless") == (True, "authenticated")

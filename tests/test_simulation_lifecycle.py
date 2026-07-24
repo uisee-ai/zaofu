@@ -16,10 +16,12 @@ def test_simulation_scope_is_limited_to_direct_tmp_zf_root() -> None:
         Path("/tmp/zf-light-proof"),
         Path("/tmp/zf-light-proof/.zf"),
     ) == ""
-    assert "must match" in validate_simulation_scope(
-        Path("/home/user/workspace/project"),
-        Path("/home/user/workspace/project/.zf"),
+    invalid_root = validate_simulation_scope(
+        Path("/tmp/nested/zf-light-proof"),
+        Path("/tmp/nested/zf-light-proof/.zf"),
     )
+    assert "direct child" in invalid_root
+    assert "/tmp/zf-*" in invalid_root
     assert "must be inside" in validate_simulation_scope(
         Path("/tmp/zf-light-proof"),
         Path("/tmp/other-state"),

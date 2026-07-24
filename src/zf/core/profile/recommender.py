@@ -8,6 +8,7 @@ ever *recommends from a finite catalog* — never synthesises a bespoke zf.yaml
 
 from __future__ import annotations
 
+from zf.core.config.backend_identity import catalog_backend_id
 from zf.core.config.presets import get_preset, list_presets
 from zf.core.profile.flows import flow_id_for_intent, flow_roles, is_flow_id
 from zf.core.profile.schema import ProjectProfile, Recommendation
@@ -35,6 +36,7 @@ def recommend(
 ) -> Recommendation:
     intent = intent if intent in VALID_INTENTS else "build"
     scale = scale if scale in VALID_SCALES else None
+    backend = catalog_backend_id(backend)
     backend = backend if backend in VALID_BACKENDS else "claude"
     presets = set(list_presets())
 

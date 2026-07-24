@@ -60,7 +60,7 @@ For an existing repository, inspect without writing:
 uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
   "$TARGET_PROJECT" \
   --intent build \
-  --backend claude \
+  --backend claude-code \
   --scale launch
 ```
 
@@ -76,7 +76,7 @@ Apply the Bootstrap result only when that is the selected path:
 uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
   "$TARGET_PROJECT" \
   --intent build \
-  --backend claude \
+  --backend claude-code \
   --scale launch \
   --apply
 ```
@@ -97,7 +97,7 @@ uv run --project "$ZAOFU_ROOT" zf project init \
   --root "$TARGET_PROJECT" \
   --create \
   --git-init \
-  --backend claude \
+  --backend claude-code \
   --workspace-register
 ```
 
@@ -264,7 +264,7 @@ uv run --project "$ZAOFU_ROOT" zf project init \
   --root /path/to/account-service \
   --create \
   --git-init \
-  --backend claude \
+  --backend claude-code \
   --request-kind prd \
   --objective "Deliver the account security settings page" \
   --target app \

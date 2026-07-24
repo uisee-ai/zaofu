@@ -144,6 +144,7 @@ def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
     assert config.runtime.feishu_inbound.enabled is False
     assert config.runtime.feishu_inbound.mode == "bridge"
     assert config.runtime.feishu_inbound.require_routing is True
+    assert config.workflow.rework_routing["static_gate.failed"] == "dev-lane-0"
     orchestrator = next(role for role in config.roles if role.name == "orchestrator")
     assert orchestrator.backend == "claude-code"
     assert orchestrator.triggers == [
@@ -155,6 +156,35 @@ def test_flow_draft_prd_embeds_executable_claude_runtime_profile(tmp_path):
     dev = next(role for role in config.roles if role.name == "dev-lane-0")
     assert "zf-prd-plan-synth" in planner.skills
     assert dev.skills == ["zf-yoke-dev-worker-role-context"]
+
+
+def test_flow_draft_canonicalizes_claude_product_alias(tmp_path):
+    output = tmp_path / "prd-flow.yaml"
+
+    rc = main([
+        "flow",
+        "draft",
+        "--kind",
+        "prd",
+        "--from",
+        "docs/prd/textstat.md",
+        "--target",
+        "app",
+        "--backend",
+        "claude",
+        "--project-name",
+        "prd-demo",
+        "--output",
+        str(output),
+    ])
+
+    assert rc == 0
+    docs = list(yaml.safe_load_all(output.read_text(encoding="utf-8")))
+    assert docs[0]["spec"]["backend"] == "claude-code"
+    profile = next(doc for doc in docs if doc["kind"] == "ConfigProfile")
+    assert profile["spec"]["runtime"]["run_manager"]["backend"] == "claude-code"
+    config = load_config(output)
+    assert {role.backend for role in config.roles} == {"claude-code"}
 
 
 def test_flow_draft_refactor_outputs_goal_loop_defaults(capsys):

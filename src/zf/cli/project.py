@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 from zf.core.config.loader import ConfigError
+from zf.core.config.backend_identity import canonical_backend_id
 from zf.core.safety.path_guard import PathGuard, PathGuardError
 from zf.core.workspace.project_initializer import ProjectInitializer
 from zf.core.workflow.request_policy import default_lanes_for_kind
@@ -182,6 +183,7 @@ def init_flow_project(
     kind = str(kind or "multi").strip().lower()
     if kind not in {"multi", "issue", "prd", "refactor"}:
         raise ValueError("kind must be one of multi, issue, prd, refactor")
+    backend = canonical_backend_id(backend)
     has_request_input = bool(
         str(objective or "").strip()
         or str(source_ref or "").strip()
@@ -238,6 +240,17 @@ def init_flow_project(
         project_root=project_root,
         source_ref=source_ref,
     )
+    request_output = (
+        project_root / "docs" / "intake" / f"{request_id}.md"
+        if request_id
+        else project_root / "docs" / "intake" / "project-init-request.md"
+    )
+    config_source_ref = source_ref
+    if has_request_input and not config_source_ref:
+        config_source_ref = request_output.relative_to(project_root).as_posix()
+    config_target_root = target_root
+    if kind == "prd" and not config_target_root:
+        config_target_root = "."
     if kind == "multi":
         docs = draft_multi_kind_project_spec(
             backend=backend,
@@ -251,9 +264,9 @@ def init_flow_project(
     else:
         docs = draft_flow_spec(
             kind=kind,
-            source_ref=source_ref,
+            source_ref=config_source_ref,
             source_root=source_root,
-            target_root=target_root,
+            target_root=config_target_root,
             backend=backend,
             lanes=lanes or _default_project_lanes(kind),
             project_name=name,
@@ -284,10 +297,10 @@ def init_flow_project(
         )
         request_result = build_flow_intake(
             kind=effective_request_kind,
-            source_ref=source_ref,
+            source_ref=config_source_ref,
             objective=objective,
             source_root=source_root,
-            target_root=target_root,
+            target_root=config_target_root,
             backend=backend,
             lanes=lanes,
             project_id=(
@@ -305,9 +318,7 @@ def init_flow_project(
             source="project-init",
             created_by="zf-project-init",
             output=(
-                project_root / "docs" / "intake" / f"{request_id}.md"
-                if request_id
-                else project_root / "docs" / "intake" / "project-init-request.md"
+                request_output
             ),
         )
     if created_git_repo:
@@ -319,6 +330,21 @@ def init_flow_project(
             flow_kind=str(request_result.get("effective_kind") or ""),
             requested_by="zf-project-init",
             allow_missing_env=allow_missing_env,
+        )
+    missing_fields = list(request_result.get("missing_required_fields") or [])
+    launch_ready = bool(request_result) and not missing_fields
+    next_actions: list[str] = []
+    if request_result and not launch_ready:
+        next_actions.append(
+            "Resolve missing workflow intake fields: " + ", ".join(missing_fields)
+        )
+    elif request_result and not apply_request:
+        next_actions.append(
+            "Review the generated intake, then run `zf flow submit --apply`."
+        )
+    if not request_result:
+        next_actions.append(
+            "Clarify a requirement with Kanban/Channel or create a flow intake."
         )
     return {
         "ok": True,
@@ -334,6 +360,12 @@ def init_flow_project(
         "request": request_result,
         "submit": submit_result,
         "materialized_assets": materialized_assets,
+        "readiness": {
+            "launch_ready": launch_ready,
+            "missing_required_fields": missing_fields,
+            "source_ref": config_source_ref,
+        },
+        "next_actions": next_actions,
     }
 
 

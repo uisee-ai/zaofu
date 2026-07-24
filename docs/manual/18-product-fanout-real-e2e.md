@@ -40,7 +40,7 @@ export ZF_STATE_DIR=".zf"
 
 ```bash
 uv run zf validate --path zf.yaml
-uv run zf start --path zf.yaml
+uv run zf start
 ```
 
 触发真实任务:
@@ -103,7 +103,8 @@ PY
 ## 清理
 
 ```bash
-uv run zf stop --path zf.yaml || true
+cd "$run_dir"
+uv run zf stop || true
 tmux kill-session -t "$ZF_TMUX_SESSION" 2>/dev/null || true
 cd /path/to/zaofu
 git worktree remove --force "$run_dir" 2>/dev/null || true

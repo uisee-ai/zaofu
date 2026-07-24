@@ -59,7 +59,7 @@ export TARGET_PROJECT=/path/to/my-product
 uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
   "$TARGET_PROJECT" \
   --intent build \
-  --backend claude \
+  --backend claude-code \
   --scale launch
 ```
 
@@ -74,7 +74,7 @@ uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
 uv run --project "$ZAOFU_ROOT" zf profile bootstrap \
   "$TARGET_PROJECT" \
   --intent build \
-  --backend claude \
+  --backend claude-code \
   --scale launch \
   --apply
 ```
@@ -94,7 +94,7 @@ uv run --project "$ZAOFU_ROOT" zf project init \
   --root "$TARGET_PROJECT" \
   --create \
   --git-init \
-  --backend claude \
+  --backend claude-code \
   --workspace-register
 ```
 
@@ -269,7 +269,7 @@ uv run --project "$ZAOFU_ROOT" zf project init \
   --root /path/to/account-service \
   --create \
   --git-init \
-  --backend claude \
+  --backend claude-code \
   --request-kind prd \
   --objective "交付账号安全设置页" \
   --target app \

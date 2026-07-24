@@ -732,6 +732,8 @@ def _artifact_ref(payload: dict[str, Any]) -> str:
 
 
 def _attention_from_automation(automation: dict[str, Any]) -> list[dict[str, Any]]:
+    from zf.runtime.event_problem_registry import spec_for_event
+
     rows: list[dict[str, Any]] = []
     items = automation.get("items") if isinstance(automation.get("items"), list) else []
     for item in items:
@@ -760,17 +762,44 @@ def _attention_from_automation(automation: dict[str, Any]) -> list[dict[str, Any
                     or event_id
                     or str(ref.get("proposal_id") or "")
                 )
-                rows.append(_attention_item(
+                event_type = str(ref.get("type") or key)
+                spec = spec_for_event(event_type)
+                row = _attention_item(
                     source="automation",
                     fingerprint=f"automation:{key}:{dedupe_key}",
-                    severity=severity,
-                    title=str(ref.get("type") or key),
+                    severity=str(spec.severity if spec is not None else severity),
+                    title=event_type,
                     summary=str(ref.get("reason") or ref.get("summary") or ""),
                     task_id=str(ref.get("task_id") or ""),
                     source_event_ids=[event_id] if event_id else [],
                     source_ref=str(ref.get("proposal_id") or ""),
-                    suggested_route="l2_orchestrator",
-                ))
+                    suggested_route=(
+                        str(spec.suggested_route or "run_manager_recovery")
+                        if spec is not None else "l2_orchestrator"
+                    ),
+                    suggested_action=(
+                        {
+                            "kind": spec.suggested_action_kind,
+                            "event_type": event_type,
+                        }
+                        if spec is not None and spec.suggested_action_kind
+                        else {}
+                    ),
+                    failure_class=str(spec.failure_class if spec is not None else ""),
+                    owner_route=str(spec.owner_route if spec is not None else ""),
+                    action_policy=str(spec.action_policy if spec is not None else ""),
+                    intervention_class=str(
+                        spec.intervention_class if spec is not None else ""
+                    ),
+                    notification_policy=(
+                        spec.effective_notification_policy if spec is not None else ""
+                    ),
+                    recovery_policy=(
+                        spec.effective_recovery_policy if spec is not None else ""
+                    ),
+                )
+                row["event_type"] = event_type
+                rows.append(row)
     return rows
 
 

@@ -49,8 +49,8 @@ class TestWakePatterns:
 
 
 class TestMustPushMembership:
-    def test_context_warning_must_push(self):
-        assert "worker.context.warning" in _MUST_PUSH
+    def test_context_warning_is_run_manager_first(self):
+        assert "worker.context.warning" not in _MUST_PUSH
 
     def test_context_critical_must_push(self):
         assert "worker.context.critical" in _MUST_PUSH
@@ -66,8 +66,8 @@ class TestMustPushMembership:
 
 
 class TestRoutingDestinations:
-    def test_context_warning_routes_to_approval(self):
-        assert _ROUTING["worker.context.warning"] == "approval"
+    def test_context_warning_has_no_owner_route(self):
+        assert "worker.context.warning" not in _ROUTING
 
     def test_context_critical_routes_to_approval(self):
         assert _ROUTING["worker.context.critical"] == "approval"
@@ -179,16 +179,15 @@ def router(tmp_path: Path):
 
 
 class TestLiveRouting:
-    def test_context_warning_sent_to_approval(self, router):
+    def test_context_warning_is_not_sent_before_run_manager_escalation(self, router):
         r, transport = router
         ok = r.route_event(ZfEvent(
             type="worker.context.warning",
             actor="dev-1",
             payload={"ratio": 0.62, "role": "dev"},
         ))
-        assert ok
-        assert len(transport.sent_messages) == 1
-        assert transport.sent_messages[0].chat_id == "chat-approval"
+        assert not ok
+        assert transport.sent_messages == []
 
     def test_recycling_sent_to_progress(self, router):
         r, transport = router

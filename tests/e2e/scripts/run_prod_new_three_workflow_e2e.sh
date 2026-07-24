@@ -17,6 +17,24 @@ RUN_ROOT="${ZF_E2E_ROOT:-/tmp/zf-prod-new-three-workflow-$STAMP}"
 PRODUCT="$RUN_ROOT/product"
 REPORT="$RUN_ROOT/report.json"
 TIMEOUT_SECONDS="${ZF_E2E_TIMEOUT_SECONDS:-3600}"
+TEMPLATE_FAMILY="${ZF_E2E_TEMPLATE_FAMILY:-controller-v3}"
+
+case "$TEMPLATE_FAMILY" in
+  controller-v3)
+    PRD_TEMPLATE="$ROOT/examples/prod/controller/prd-fanout-v3.yaml"
+    ISSUE_TEMPLATE="$ROOT/examples/prod/controller/issue-fanout-v3.yaml"
+    REFACTOR_TEMPLATE="$ROOT/examples/prod/controller/refactor-lane-v3.yaml"
+    ;;
+  legacy-v2)
+    PRD_TEMPLATE="$ROOT/examples/prod/new/prd-fanout-v2.yaml"
+    ISSUE_TEMPLATE="$ROOT/examples/prod/new/issue-fanout-v2.yaml"
+    REFACTOR_TEMPLATE="$ROOT/examples/prod/new/refactor-lane-v2.yaml"
+    ;;
+  *)
+    echo "unknown ZF_E2E_TEMPLATE_FAMILY: $TEMPLATE_FAMILY (expected controller-v3 or legacy-v2)" >&2
+    exit 2
+    ;;
+esac
 
 mkdir -p "$PRODUCT"
 cd "$PRODUCT"
@@ -184,7 +202,7 @@ cat > "$RUN_ROOT/prd-request.json" <<JSON
   "source_commit": "$(git rev-parse HEAD)"
 }
 JSON
-run_workflow prd "$ROOT/examples/prod/new/prd-fanout-v2.yaml" ".zf-prod-new-prd-$STAMP" "zf-prod-new-prd-$STAMP" user.message "$RUN_ROOT/prd-request.json"
+run_workflow prd "$PRD_TEMPLATE" ".zf-prod-new-prd-$STAMP" "zf-prod-new-prd-$STAMP" user.message "$RUN_ROOT/prd-request.json"
 
 cat > "$RUN_ROOT/issue-request.json" <<JSON
 {
@@ -194,7 +212,7 @@ cat > "$RUN_ROOT/issue-request.json" <<JSON
   "source_commit": "$(git rev-parse HEAD)"
 }
 JSON
-run_workflow issue "$ROOT/examples/prod/new/issue-fanout-v2.yaml" ".zf-prod-new-issue-$STAMP" "zf-prod-new-issue-$STAMP" user.message "$RUN_ROOT/issue-request.json"
+run_workflow issue "$ISSUE_TEMPLATE" ".zf-prod-new-issue-$STAMP" "zf-prod-new-issue-$STAMP" user.message "$RUN_ROOT/issue-request.json"
 
 cat > "$RUN_ROOT/refactor-request.json" <<JSON
 {
@@ -206,6 +224,6 @@ cat > "$RUN_ROOT/refactor-request.json" <<JSON
   "objective": "Refactor Product Pulse server internals without changing behavior. Separate pulse data access/filtering and HTML rendering into small pure functions inside the existing no-dependency Node.js project. Preserve /health, /api/pulse, /api/pulse?status=<status>, homepage rendering, package metadata, and npm test results. Keep changes small and covered by node:test."
 }
 JSON
-run_workflow refactor "$ROOT/examples/prod/new/refactor-lane-v2.yaml" ".zf-prod-new-refactor-$STAMP" "zf-prod-new-refactor-$STAMP" refactor.scan.requested "$RUN_ROOT/refactor-request.json"
+run_workflow refactor "$REFACTOR_TEMPLATE" ".zf-prod-new-refactor-$STAMP" "zf-prod-new-refactor-$STAMP" refactor.scan.requested "$RUN_ROOT/refactor-request.json"
 
 echo "report: $REPORT"

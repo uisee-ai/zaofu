@@ -180,7 +180,9 @@ class TestZfStart:
     ):
         result = main(["start", "--dry-run", "--simulation"])
         assert result == 1
-        assert "simulation project root must match /tmp/zf-*" in capsys.readouterr().err
+        error = capsys.readouterr().err
+        assert "direct child" in error
+        assert "/tmp/zf-*" in error
 
     def test_start_requires_zf_yaml(self, tmp_path: Path, monkeypatch):
         monkeypatch.chdir(tmp_path)

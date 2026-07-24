@@ -20,7 +20,6 @@ _MUST_PUSH = {
     # G-LIFE-4: stuck detection also needs to reach humans via Feishu
     "worker.stuck",
     # G-RECYCLE-7: context-window recycle lifecycle
-    "worker.context.warning",
     "worker.context.critical",
     "worker.recycling",
     "worker.recycled",
@@ -65,7 +64,6 @@ _ROUTING: dict[str, str] = {
     "task.dispatched": "progress",
     "loop.completed": "progress",
     # G-RECYCLE-7
-    "worker.context.warning": "approval",
     "worker.context.critical": "approval",
     "worker.recycling": "progress",
     "worker.recycled": "progress",

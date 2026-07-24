@@ -291,6 +291,7 @@ def _delivery_feature_fallbacks(
         events = list(_events_with_seq(state_dir))
     except Exception:
         events = []
+    runtime_statuses = _delivery_runtime_statuses(events)
     candidates: dict[str, dict[str, Any]] = {}
 
     def add(
@@ -313,7 +314,7 @@ def _delivery_feature_fallbacks(
         candidates[fid] = {
             "id": fid,
             "title": title or fid,
-            "status": statuses.get(fid, "active"),
+            "status": statuses.get(fid, runtime_statuses.get(fid, "active")),
             "priority": 3,
             "source": f"fallback:{source}",
             "confidence": confidence,
@@ -372,6 +373,44 @@ def _delivery_feature_fallbacks(
     for row in rows:
         seen.add(str(row.get("id") or ""))
     return rows[:12]
+
+
+def _delivery_runtime_statuses(
+    events: list[tuple[int, object]],
+) -> dict[str, str]:
+    """Derive fallback target state from ordered terminal runtime facts."""
+
+    statuses: dict[str, str] = {}
+    fanout_states = {
+        "fanout.started": "active",
+        "fanout.aggregate.completed": "done",
+        "fanout.cancelled": "cancelled",
+        "fanout.timed_out": "blocked",
+    }
+    goal_states = {
+        "run.goal.completed": "done",
+        "run.goal.blocked": "blocked",
+    }
+    for _seq, event in events:
+        event_type = str(getattr(event, "type", "") or "")
+        payload = getattr(event, "payload", {}) or {}
+        fanout_id = str(_payload_ref(payload, "fanout_id") or "").strip()
+        if fanout_id and event_type in fanout_states:
+            statuses[fanout_id] = fanout_states[event_type]
+        if event_type not in goal_states:
+            continue
+        state = goal_states[event_type]
+        for value in (
+            _payload_ref(payload, "pdd_id"),
+            _payload_ref(payload, "feature_id"),
+            _payload_ref(payload, "workflow_run_id"),
+            _payload_ref(payload, "run_id"),
+            getattr(event, "correlation_id", ""),
+        ):
+            identity = str(value or "").strip()
+            if identity:
+                statuses[identity] = state
+    return statuses
 
 
 def _delivery_feature_title(

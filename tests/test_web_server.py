@@ -489,6 +489,50 @@ workflow:
         assert ids["PDD-RUNTIME"]["degraded"] is True
         assert data["features"][0]["id"] == "PDD-RUNTIME"
 
+    def test_runtime_fallback_projects_fanout_and_trace_terminal_state(
+        self,
+        tmp_path: Path,
+    ):
+        sd = tmp_path / ".zf"
+        sd.mkdir()
+        TaskStore(sd / "kanban.json").add(Task(
+            id="TASK-RUNTIME",
+            title="runtime lane task",
+            status="done",
+            contract=TaskContract(feature_id="", owner_role="dev"),
+        ))
+        log = EventLog(sd / "events.jsonl")
+        log.append(ZfEvent(
+            type="fanout.started",
+            actor="zf-cli",
+            task_id="TASK-RUNTIME",
+            correlation_id="trace-runtime",
+            payload={"fanout_id": "FX-RUNTIME", "pdd_id": "PDD-RUNTIME"},
+        ))
+        log.append(ZfEvent(
+            type="fanout.aggregate.completed",
+            actor="zf-cli",
+            task_id="TASK-RUNTIME",
+            correlation_id="trace-runtime",
+            payload={"fanout_id": "FX-RUNTIME", "pdd_id": "PDD-RUNTIME"},
+        ))
+        log.append(ZfEvent(
+            type="run.goal.completed",
+            actor="zf-cli",
+            correlation_id="trace-runtime",
+            payload={"run_id": "run-runtime", "pdd_id": "PDD-RUNTIME"},
+        ))
+        local_client = TestClient(create_app(sd))
+
+        rows = {
+            row["id"]: row
+            for row in local_client.get("/api/state").json()["delivery_features"]
+        }
+
+        assert rows["FX-RUNTIME"]["status"] == "done"
+        assert rows["trace-runtime"]["status"] == "done"
+        assert rows["PDD-RUNTIME"]["status"] == "done"
+
 
 class TestApiSnapshot:
     def test_snapshot_wraps_state_with_seq_and_runtime(self, state_dir, client):

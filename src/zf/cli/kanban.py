@@ -167,6 +167,7 @@ def _load_config_safe() -> object | None:
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("kanban", help="Task board management")
     parser.add_argument("--board", action="store_true", help="Show columnar board view")
+    parser.add_argument("--json", action="store_true", help="Wrap board output in zf.cli.result.v1")
     parser.add_argument("--watch", action="store_true", help="Watch mode (refresh every 2s)")
     parser.add_argument("--all", action="store_true",
                         help="Include every archived task (default: active only)")
@@ -384,6 +385,15 @@ def _run_board(args: argparse.Namespace) -> int:
             print(f"Error: {e}", file=sys.stderr)
             return 1
         tasks = _load_tasks(store, args)
+        if getattr(args, "json", False):
+            from zf.cli.output import print_result
+
+            print_result(
+                command="kanban.board",
+                data={"tasks": [asdict(task) for task in tasks]},
+                context=_context(args),
+            )
+            return 0
         if not tasks:
             print("(empty board)")
             return 0

@@ -54,6 +54,7 @@ _RUN_MILESTONE_EVENTS = frozenset({
     "verify.passed", "verify.failed",
     "module.parity.closed", "judge.passed", "judge.failed",
     "human.escalate", "zaofu.refactor.plan.blocked",
+    "run.goal.completed", "run.goal.blocked",
 })
 
 _HEALTH_COUNTER_EVENTS = frozenset({
@@ -488,17 +489,34 @@ def refresh_spine_projections(state_dir: Path, event_log) -> dict[str, Any]:
         health["last_event_ts"] = event.ts
         # P0-4:run 级里程碑(按 pdd 聚合,回答"这个 run 走到哪了")
         if event.type in _RUN_MILESTONE_EVENTS:
-            pdd_id = str(payload.get("pdd_id") or payload.get("feature_id") or "")
-            if pdd_id:
-                run_entry = runs.setdefault("runs", {}).setdefault(pdd_id, {
+            run_identity = str(
+                payload.get("pdd_id")
+                or payload.get("feature_id")
+                or payload.get("workflow_run_id")
+                or payload.get("run_id")
+                or event.correlation_id
+                or ""
+            )
+            if run_identity:
+                run_entry = runs.setdefault("runs", {}).setdefault(run_identity, {
                     "milestones": 0,
                 })
+                run_entry["run_id"] = run_identity
                 run_entry["milestones"] += 1
                 run_entry["last_milestone"] = event.type
                 run_entry["last_ts"] = event.ts
+                if event.type == "run.goal.completed":
+                    run_entry["status"] = "completed"
+                    run_entry["terminal_event_id"] = event.id
+                elif event.type == "run.goal.blocked":
+                    run_entry["status"] = "blocked"
+                    run_entry["terminal_event_id"] = event.id
+                else:
+                    run_entry.setdefault("status", "running")
                 run_entry["attention"] = event.type in {
                     "human.escalate", "review.rejected", "verify.failed",
                     "judge.failed", "zaofu.refactor.plan.blocked",
+                    "run.goal.blocked",
                 }
 
     for doc in (attempts, stages, health, runs):

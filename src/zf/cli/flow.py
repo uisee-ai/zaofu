@@ -16,6 +16,7 @@ from typing import Any
 
 import yaml
 
+from zf.core.config.backend_identity import canonical_backend_id
 from zf.core.config.loader import ConfigError, load_config
 from zf.core.config.render import build_config_inspection_report
 from zf.core.events import ZfEvent
@@ -582,6 +583,7 @@ def draft_flow_spec(
     parity_scope: tuple[str, ...] = (),
 ) -> list[dict[str, Any]]:
     kind = _normalize_request_kind(kind)
+    backend = canonical_backend_id(backend)
     lanes = lanes or default_lanes_for_kind(kind)
     project = project_name or f"{kind}-flow"
     state = state_dir or f".zf-{project}"
@@ -706,6 +708,7 @@ def draft_multi_kind_project_spec(
     explicit request-level operations after project initialization.
     """
 
+    backend = canonical_backend_id(backend)
     project = project_name or "zaofu-project"
     state = state_dir or f".zf-{project}"
     root = project_root or Path.cwd()
@@ -840,6 +843,13 @@ def _draft_runtime_profile_doc(
         },
         "workflow": {
             "candidate_quality_source": "task_contract_required",
+            "rework_routing": (
+                {"static_gate.failed": "fix-lane-0"}
+                if kind == "issue"
+                else {"static_gate.failed": "dev-lane-0"}
+                if kind in {"prd", "refactor"}
+                else {}
+            ),
             "work_units": {
                 "enabled": True,
                 "split_quality": {
@@ -930,6 +940,7 @@ def build_flow_start_proposal(
     allow_missing_env: bool = False,
 ) -> dict[str, Any]:
     kind = _normalize_request_kind(kind)
+    backend = canonical_backend_id(backend)
     project = project_name or _unique_project_name(kind)
     state = state_dir or f".zf-{project}"
     config_path = output or Path.cwd() / f"zf-{project}.yaml"
@@ -1833,7 +1844,10 @@ def build_flow_preflight_report(
         state_dir=state_dir.resolve(),
     )
     diagnostics = list(inspect_report.get("diagnostics") or [])
-    static_results = run_preflight_checks(config)
+    static_results = run_preflight_checks(
+        config,
+        check_provider_auth=not allow_missing_env,
+    )
     for result in static_results:
         if result.ok:
             continue
@@ -2604,9 +2618,9 @@ def _project_root_from_intake_path(path: Path) -> Path:
 def _resolve_intake_backend(project_root: Path, backend: str) -> str:
     explicit = str(backend or "").strip()
     if explicit:
-        return explicit
+        return canonical_backend_id(explicit)
     configured = _project_default_backend(project_root)
-    return configured or "codex"
+    return canonical_backend_id(configured or "codex")
 
 
 def _project_default_backend(project_root: Path) -> str:
@@ -2621,10 +2635,10 @@ def _project_default_backend(project_root: Path) -> str:
         for backend in list(getattr(role, "backends", []) or []):
             text = str(backend or "").strip()
             if text and text != "python":
-                return text
+                return canonical_backend_id(text)
         text = str(getattr(role, "backend", "") or "").strip()
         if text and text != "python":
-            return text
+            return canonical_backend_id(text)
     return ""
 
 

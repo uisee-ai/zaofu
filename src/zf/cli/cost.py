@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from pathlib import Path
 
-from zf.core.config.project_context import resolve_state_dir
+from zf.core.config.project_context import resolve_project_context
 from zf.core.cost.tracker import CostTracker
 
 
@@ -20,11 +21,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
                         help="Group spend by backend (claude-code / codex / ...)")
     parser.add_argument("--doctor", action="store_true",
                         help="Diagnose duplicate or legacy cost projection entries")
+    parser.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     parser.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> int:
-    state_dir = resolve_state_dir()
+    context = resolve_project_context()
+    state_dir = context.state_dir
     tracker = CostTracker(state_dir / "cost.jsonl")
 
     if getattr(args, "doctor", False):
@@ -40,7 +43,41 @@ def run(args: argparse.Namespace) -> int:
     grand_total = tracker.total_usd(last_days=last_days)
 
     if not totals:
+        if getattr(args, "json", False):
+            from zf.cli.output import print_result
+
+            print_result(
+                command="cost",
+                data={"totals": {}, "grand_total_usd": grand_total},
+                context=context,
+            )
+            return 0
         print("No cost data recorded yet.")
+        return 0
+
+    if getattr(args, "json", False):
+        from zf.cli.output import print_result
+
+        budget = None
+        if args.budget is not None:
+            budget = {
+                "limit_usd": args.budget,
+                "used_percent": (
+                    grand_total / args.budget * 100 if args.budget > 0 else 0
+                ),
+                "status": "within" if grand_total <= args.budget else "exceeded",
+            }
+        print_result(
+            command="cost",
+            data={
+                "totals": {
+                    role: asdict(summary) for role, summary in sorted(totals.items())
+                },
+                "grand_total_usd": grand_total,
+                "budget": budget,
+            },
+            context=context,
+        )
         return 0
 
     print("Cost Breakdown:")

@@ -51,9 +51,16 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     runs_p = subparsers.add_parser("runs", help="Inspect and reconcile run archives")
     _add_common_project_args(runs_p)
+    runs_p.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     runs_sub = runs_p.add_subparsers(dest="runs_command")
 
     list_p = runs_sub.add_parser("list", help="List projected runs")
+    list_p.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Wrap output in zf.cli.result.v1",
+    )
     list_p.set_defaults(func=run_list)
 
     rebuild_p = runs_sub.add_parser("rebuild", help="Rebuild run projections")
@@ -75,6 +82,12 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     explain_p.add_argument(
         "--no-refresh", action="store_true",
         help="Skip incremental fold of new events before reading projections",
+    )
+    explain_p.add_argument(
+        "--json",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Wrap output in zf.cli.result.v1",
     )
     explain_p.set_defaults(func=run_explain)
     runs_p.set_defaults(func=run_list)
@@ -250,11 +263,31 @@ def run_list(args: argparse.Namespace) -> int:
         return 2
     context, project_root = resolved
     projector = RunProjector(project_root=project_root, state_dir=context.state_dir)
+    from zf.runtime.workflow_spine_projection import (
+        read_spine_explain,
+        refresh_spine_projections,
+    )
+
+    refresh_spine_projections(
+        context.state_dir,
+        EventLog(context.state_dir / "events.jsonl"),
+    )
+    spine = read_spine_explain(context.state_dir)
+    workflow_runs = [
+        {"run_id": run_id, **(entry if isinstance(entry, dict) else {})}
+        for run_id, entry in sorted((spine.get("runs") or {}).items())
+    ]
     data = {
         "active": projector.load_active().get("active_runs") or [],
         "runs": projector.load_index().get("runs") or [],
+        "workflow_runs": workflow_runs,
     }
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    if getattr(args, "json", False):
+        from zf.cli.output import print_result
+
+        print_result(command="runs.list", data=data, context=context)
+    else:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -271,7 +304,12 @@ def run_explain(args: argparse.Namespace) -> int:
     if not args.no_refresh:
         refresh_spine_projections(state_dir, EventLog(state_dir / "events.jsonl"))
     out = read_spine_explain(state_dir, task_id=str(args.task or ""))
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    if getattr(args, "json", False):
+        from zf.cli.output import print_result
+
+        print_result(command="runs.explain", data=out, context=context)
+    else:
+        print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
 

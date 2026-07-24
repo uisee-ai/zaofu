@@ -117,6 +117,17 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         sp = sub.add_parser(name, help=help_text)
         sp.add_argument("feature_id", help="Feature id (or '' to group all)")
         sp.add_argument("--format", choices=["table", "json"], default="table")
+        detail = sp.add_mutually_exclusive_group()
+        detail.add_argument(
+            "--summary",
+            action="store_true",
+            help="Emit bounded summary JSON without event/task bodies",
+        )
+        detail.add_argument(
+            "--full",
+            action="store_true",
+            help="Emit the complete JSON projection",
+        )
         sp.add_argument(
             "--task-map-ref", type=str, default="",
             help="Explicit task-map path (default: artifacts/<feature_id>/task_map.json)",
@@ -134,6 +145,13 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     rep = sub.add_parser("report", help="Delivery completion report (post-mortem) by feature_id")
     rep.add_argument("feature_id")
     rep.add_argument("--format", choices=["table", "json"], default="table")
+    report_detail = rep.add_mutually_exclusive_group()
+    report_detail.add_argument(
+        "--summary",
+        action="store_true",
+        help="Emit bounded summary JSON without the frozen trace body",
+    )
+    report_detail.add_argument("--full", action="store_true", help="Emit complete JSON")
     rep.add_argument("--state-dir", type=str, default=None)
     rep.set_defaults(func=run_delivery_report)
 
@@ -184,6 +202,15 @@ def run_delivery_trace(args: argparse.Namespace) -> int:
     )
 
     fmt = getattr(args, "format", "table")
+    if getattr(args, "summary", False):
+        print(json.dumps(
+            _delivery_summary(trace, view=view),
+            indent=2,
+            ensure_ascii=False,
+        ))
+        return 0
+    if getattr(args, "full", False):
+        fmt = "json"
     if view == "execution-graph":
         return _emit(trace["execution_graph"], fmt, _render_graph, trace)
     if view == "drift":
@@ -222,7 +249,14 @@ def run_delivery_report(args: argparse.Namespace) -> int:
         generated_at=datetime.now(timezone.utc).isoformat(),
         project_id=context.project_root.name, feature_id=args.feature_id,
     )
-    if getattr(args, "format", "table") == "json":
+    if getattr(args, "summary", False):
+        print(json.dumps(
+            _delivery_report_summary(report),
+            indent=2,
+            ensure_ascii=False,
+        ))
+        return 0
+    if getattr(args, "full", False) or getattr(args, "format", "table") == "json":
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
     pm = report["post_mortem"]
@@ -335,6 +369,64 @@ def _emit(payload, fmt, renderer, trace) -> int:
     else:
         renderer(payload, trace)
     return 0
+
+
+def _delivery_summary(trace: dict, *, view: str) -> dict:
+    graph = trace.get("execution_graph") or {}
+    drift = trace.get("drift_report") or {}
+    ship = trace.get("ship") or {}
+    return {
+        "schema_version": "delivery-trace-summary.v1",
+        "view": view,
+        "feature_id": str(trace.get("feature_id") or ""),
+        "status": str(trace.get("status") or ""),
+        "generated_at": str(trace.get("generated_at") or ""),
+        "current_task_map_ref": str(trace.get("current_task_map_ref") or ""),
+        "current_source_index_ref": str(trace.get("current_source_index_ref") or ""),
+        "tasks": {
+            key: int(graph.get(key) or 0)
+            for key in (
+                "task_count",
+                "done_count",
+                "in_progress_count",
+                "blocked_count",
+                "waiting_count",
+            )
+        },
+        "drift": {
+            "status": str(drift.get("status") or ""),
+            "summary": drift.get("summary") or {},
+        },
+        "ship": {
+            "status": str(ship.get("status") or ""),
+            "readiness": str(ship.get("readiness") or ""),
+            "shipped": bool(ship.get("shipped")),
+        },
+        "phase_count": len(trace.get("phases") or []),
+        "full_output_hint": "rerun with `--full` (or `--format json`)",
+    }
+
+
+def _delivery_report_summary(report: dict) -> dict:
+    post_mortem = report.get("post_mortem") or {}
+    ship = post_mortem.get("ship") or {}
+    return {
+        "schema_version": "delivery-report-summary.v1",
+        "feature_id": str(report.get("feature_id") or ""),
+        "generated_at": str(report.get("generated_at") or ""),
+        "verdict": str(post_mortem.get("verdict") or ""),
+        "duration_seconds": post_mortem.get("duration_seconds"),
+        "first_pass_yield": post_mortem.get("first_pass_yield"),
+        "rework_episodes": int(post_mortem.get("rework_episodes") or 0),
+        "pause_total": int(post_mortem.get("pause_total") or 0),
+        "ship": {
+            "status": str(ship.get("ship_status") or ""),
+            "readiness": str(ship.get("readiness") or ""),
+            "shipped": bool(ship.get("shipped")),
+        },
+        "phase_count": len(post_mortem.get("phase_summary") or []),
+        "full_output_hint": "rerun with `--full` (or `--format json`)",
+    }
 
 
 def _render_delivery(trace, _t) -> None:

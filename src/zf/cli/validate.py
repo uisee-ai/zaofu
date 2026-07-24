@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import os
 import subprocess
 import sys
@@ -39,10 +41,46 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         help="Fail when active tasks have incomplete strict contracts",
     )
+    parser.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     parser.set_defaults(func=run)
 
 
 def run(args: argparse.Namespace) -> int:
+    if not getattr(args, "json", False):
+        return _run_impl(args)
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        result = _run_impl(args)
+
+    from zf.cli.output import print_result
+    from zf.core.config.project_context import resolve_project_context
+
+    path = Path(args.path) if args.path else Path.cwd() / "zf.yaml"
+    try:
+        context = resolve_project_context(cwd=path.parent)
+    except Exception:
+        context = None
+    diagnostics = {
+        "stdout": [line for line in stdout.getvalue().splitlines() if line.strip()],
+        "stderr": [line for line in stderr.getvalue().splitlines() if line.strip()],
+    }
+    print_result(
+        command="validate",
+        data={"diagnostics": diagnostics},
+        context=context,
+        ok=result == 0,
+        error_code="validation_failed" if result else "",
+        error="configuration validation failed" if result else "",
+        next_actions=(
+            ("Resolve validation diagnostics before `zf start`.",) if result else ()
+        ),
+    )
+    return result
+
+
+def _run_impl(args: argparse.Namespace) -> int:
     path = Path(args.path) if args.path else Path.cwd() / "zf.yaml"
 
     if getattr(args, "cold_start", False):
@@ -77,6 +115,21 @@ def run(args: argparse.Namespace) -> int:
             errors=[str(e)],
         )
         print(f"Validation errors:\n  - {e}", file=sys.stderr)
+        return 1
+    from zf.runtime.preflight import preflight_ok, run_preflight_checks
+
+    backend_results = run_preflight_checks(config)
+    if not preflight_ok(backend_results):
+        failures = [result for result in backend_results if not result.ok]
+        write_validation_report(
+            state_dir=Path(path.parent) / config.project.state_dir,
+            config_path=path,
+            status="invalid",
+            errors=[result.detail for result in failures],
+        )
+        print("Runtime backend validation errors:", file=sys.stderr)
+        for result in failures:
+            print(f"  - {result.name}: {result.detail}", file=sys.stderr)
         return 1
     remote_errors = _validate_remote_policy(config, path.parent)
     if remote_errors:
@@ -315,6 +368,7 @@ def _owner_visible_delivery_warnings(env: dict[str, str]) -> list[str]:
 def _run_cold_start(config_path: Path) -> int:
     """Run 5-point cold-start readiness check + workflow topology check."""
     from zf.core.config.cold_start import cold_start_check
+    from zf.runtime.preflight import run_preflight_checks
 
     if not config_path.exists():
         print(f"Error: {config_path} not found. To fix: run 'zf init'", file=sys.stderr)
@@ -390,7 +444,18 @@ def _run_cold_start(config_path: Path) -> int:
 
     # ZF-TR-PROVIDER-CAP-001: backend capability matrix.
     print()
-    _print_backend_capability_matrix(config)
+    capability_errors = _print_backend_capability_matrix(config)
+    if capability_errors:
+        handoff_fatal.extend(capability_errors)
+
+    provider_results = run_preflight_checks(config, check_provider_auth=True)
+    provider_failures = [
+        result for result in provider_results
+        if result.name == "provider_auth_readiness" and not result.ok
+    ]
+    for failure in provider_failures:
+        print(f"  [FAIL] {failure.name}: {failure.detail}")
+        handoff_fatal.append(f"{failure.name}={failure.detail}")
 
     # EVAL-BACKEND-ISOLATION-001: warn when adversarial roles share
     # backend with dev/builder (self-confirmation bias risk).
@@ -492,7 +557,7 @@ def _print_backend_isolation_check(config) -> None:
         )
 
 
-def _print_backend_capability_matrix(config) -> None:
+def _print_backend_capability_matrix(config) -> list[str]:
     """ZF-TR-PROVIDER-CAP-001 (doc 39 §2.1.3): report backend
     capabilities for every distinct backend used in this config.
 
@@ -507,14 +572,16 @@ def _print_backend_capability_matrix(config) -> None:
         (role.backend or "python") for role in getattr(config, "roles", [])
     })
     if not backends:
-        return
+        return []
 
     print("Backend Capability Matrix:")
+    errors: list[str] = []
     for backend in backends:
         try:
             adapter = get_adapter(backend)
         except ValueError as exc:
             print(f"  {backend}: ERROR — {exc}")
+            errors.append(f"backend_capability={backend}:{exc}")
             continue
         caps = adapter.capabilities
         print(
@@ -526,6 +593,7 @@ def _print_backend_capability_matrix(config) -> None:
             f"hook_review_required={caps.hook_review_required} "
             f"nested_agent_disable={caps.nested_agent_disable!r}"
         )
+    return errors
 
 
 def _print_stage_reachability(config):

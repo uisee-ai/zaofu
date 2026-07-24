@@ -83,6 +83,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     list_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
     list_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
+    list_cmd.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     list_cmd.set_defaults(func=_run_attempt_list)
 
     read_cmd = sub.add_parser(
@@ -151,7 +152,16 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
     except (ConfigError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
+    if getattr(args, "json", False):
+        from zf.cli.output import print_result
+
+        print_result(
+            command="artifact.list",
+            data=manifest,
+            context=context,
+        )
+    else:
+        print(json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

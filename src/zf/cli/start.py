@@ -694,7 +694,10 @@ def run(args: argparse.Namespace) -> int:
     if not skip_workflow_inspect:
         from zf.runtime.preflight import preflight_ok, run_preflight_checks
 
-        preflight_results = run_preflight_checks(config)
+        preflight_results = run_preflight_checks(
+            config,
+            check_provider_auth=not dry_run,
+        )
         if not preflight_ok(preflight_results):
             print("Static dispatch preflight FAILED:", file=sys.stderr)
             for result in preflight_results:

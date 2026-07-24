@@ -16,6 +16,7 @@ from pathlib import Path
 
 import yaml
 
+from zf.core.config.backend_identity import catalog_backend_id
 from zf.core.package_source import installed_local_source_root
 
 
@@ -54,6 +55,7 @@ def find_prod_dir() -> Path | None:
 
 
 def flow_id(base: str, backend: str) -> str:
+    backend = catalog_backend_id(backend)
     backend = backend if backend in _BACKEND_ORDER else "claude"
     return f"{base}-{backend}"
 
@@ -144,6 +146,7 @@ def _entry_by_id(archetype: str) -> FlowCatalogEntry | None:
 
 
 def flow_id_for_intent(intent: str, backend: str = "claude") -> str | None:
+    backend = catalog_backend_id(backend)
     for entry in _catalog_entries():
         if intent in entry.recommended_for and entry.backend == backend:
             return entry.id

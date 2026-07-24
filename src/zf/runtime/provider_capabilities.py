@@ -6,6 +6,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from zf.core.config.backend_identity import canonical_backend_id
 from zf.runtime.backend import BackendCapabilities, get_adapter
 
 
@@ -56,7 +57,7 @@ def project_provider_capabilities(
 
 
 def provider_capability_for_backend(backend: str) -> dict[str, Any]:
-    backend = _canonical_backend(backend)
+    backend = canonical_backend_id(backend)
     if backend in ADAPTER_BACKENDS:
         caps = get_adapter(backend).capabilities
         return _adapter_capability(backend, caps)
@@ -199,24 +200,13 @@ def _with_runtime_hints(
 def _roles_by_backend(config: Any | None) -> dict[str, list[str]]:
     roles: dict[str, list[str]] = {}
     for role in getattr(config, "roles", []) or []:
-        backend = _canonical_backend(getattr(role, "backend", ""))
+        backend = canonical_backend_id(getattr(role, "backend", ""))
         if not backend:
             continue
         roles.setdefault(backend, []).append(str(getattr(role, "instance_id", "") or getattr(role, "name", "")))
     for values in roles.values():
         values.sort()
     return roles
-
-
-def _canonical_backend(backend: str) -> str:
-    value = str(backend or "").strip()
-    return {
-        "claude": "claude-code",
-        "claude-code-headless": "claude-headless",
-        "claude_headless": "claude-headless",
-        "codex-app-server": "codex-headless",
-        "codex_headless": "codex-headless",
-    }.get(value, value)
 
 
 def _surface_order(surface: str) -> int:

@@ -199,7 +199,7 @@ uv run zf project init \
   --root /path/to/my-product \
   --create \
   --git-init \
-  --backend claude \
+  --backend claude-code \
   --workspace-register
 ```
 

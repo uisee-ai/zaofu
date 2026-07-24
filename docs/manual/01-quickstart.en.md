@@ -40,7 +40,7 @@ Check the provider before starting real workers:
 ```bash
 command -v tmux
 command -v codex      # when using --backend codex
-command -v claude     # when using --backend claude
+command -v claude     # when using --backend claude-code
 
 uv run zf doctor provider --backend codex
 ```

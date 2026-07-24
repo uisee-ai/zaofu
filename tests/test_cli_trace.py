@@ -121,3 +121,40 @@ def test_trace_export_otlp_json_stdout_and_file(tmp_path: Path, monkeypatch, cap
         path.name: path.read_bytes()
         for path in (state_dir / "events.jsonl", state_dir / "kanban.json")
     } == canonical_before
+
+
+def test_trace_delivery_summary_is_bounded_and_full_is_explicit(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="T1",
+        title="build api",
+        status="in_progress",
+        contract=TaskContract(feature_id="F-1", owner_role="dev"),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="worker.progress",
+        task_id="T1",
+        payload={"large": "x" * 10000},
+    ))
+
+    assert main([
+        "trace", "delivery", "F-1", "--summary",
+        "--state-dir", str(state_dir),
+    ]) == 0
+    summary_text = capsys.readouterr().out
+    summary = json.loads(summary_text)
+    assert summary["schema_version"] == "delivery-trace-summary.v1"
+    assert summary["tasks"]["task_count"] == 1
+    assert "events" not in summary
+    assert len(summary_text) < 3000
+
+    assert main([
+        "trace", "delivery", "F-1", "--full",
+        "--state-dir", str(state_dir),
+    ]) == 0
+    full = json.loads(capsys.readouterr().out)
+    assert full["schema_version"] == "delivery-trace.v1"

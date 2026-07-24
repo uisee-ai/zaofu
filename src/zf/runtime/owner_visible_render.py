@@ -47,6 +47,7 @@ _REASON_HUMAN: tuple[tuple[str, str], ...] = (
      "有失败流程需要你确认是否收尾"),
     ("requires explicit owner approval", "有动作需要你明确批准才能继续"),
     ("headless provider completed", "后台执行已完成"),
+    ("worker.context.critical", "执行单元上下文已达到硬上限,需要你关注"),
     ("silent_stall", "任务长时间没有进展,疑似停滞"),
     ("worker.stuck", "有执行单元疑似卡住,没有新的进展"),
     ("stuck", "任务疑似卡住,没有新的进展"),

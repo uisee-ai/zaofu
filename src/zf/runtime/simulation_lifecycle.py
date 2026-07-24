@@ -16,7 +16,7 @@ def validate_simulation_scope(project_root: Path, state_dir: Path) -> str:
     root = Path(project_root).resolve()
     state = Path(state_dir).resolve()
     if root.parent != Path("/tmp") or not root.name.startswith("zf-"):
-        return "simulation project root must match /tmp/zf-*"
+        return "simulation project root must be a direct child of /tmp matching /tmp/zf-*"
     if not state.is_relative_to(root):
         return "simulation state_dir must be inside its /tmp/zf-* project root"
     return ""
