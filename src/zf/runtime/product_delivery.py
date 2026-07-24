@@ -27,7 +27,6 @@ from zf.runtime.task_contract_normalize import (
     canonical_verification_tiers,
     owner_fields_from_task_map_item,
 )
-from zf.runtime.task_doc import write_task_doc
 
 
 @dataclass(frozen=True)
@@ -177,6 +176,51 @@ def ingest_task_map_to_kanban(
         return adoption_gate
 
     source_entries = _source_entries_by_task_id(source_index)
+    materialization_tasks: list[Task] = []
+    for raw in task_map.get("tasks") or []:
+        if not isinstance(raw, dict):
+            continue
+        task_id = str(raw.get("task_id") or raw.get("id") or "").strip()
+        if not task_id:
+            continue
+        _owner_role, owner_instance = owner_fields_from_task_map_item(raw)
+        contract = _contract_from_task_map_item(
+            raw,
+            feature_id=str(task_map.get("feature_id") or ""),
+            refs=refs,
+            source_entry=source_entries.get(task_id),
+        )
+        materialization_tasks.append(Task(
+            id=task_id,
+            title=str(raw.get("title") or task_id),
+            key=str(raw.get("key") or f"{task_map.get('feature_id') or 'product'}:{task_id}"),
+            status="backlog",
+            priority=_priority(raw.get("priority")),
+            assigned_to=str(raw.get("assigned_to") or owner_instance or "") or None,
+            blocked_by=_string_list(raw.get("blocked_by")),
+            contract=contract,
+        ))
+    from zf.runtime.task_map_materialization import (
+        commit_task_map_materialization,
+        prepare_task_map_materialization,
+    )
+
+    materialization_plan, materialization_descriptor = (
+        prepare_task_map_materialization(
+            state_dir=state_dir,
+            tasks=materialization_tasks,
+            task_map_ref=task_map_ref,
+            source_index_ref=source_index_ref,
+            package_id=str(refs.get("plan_artifact_package_id") or ""),
+            package_ref=str(refs.get("plan_artifact_package_ref") or ""),
+            package_digest=str(
+                refs.get("plan_artifact_package_digest") or ""
+            ),
+            writer=writer,
+            causation_id=causation_id,
+            correlation_id=correlation_id,
+        )
+    )
     superseded = _cancel_superseded_tasks(
         state_dir=state_dir,
         feature_id=str(task_map.get("feature_id") or ""),
@@ -196,75 +240,19 @@ def ingest_task_map_to_kanban(
         correlation_id=correlation_id,
     )
 
-    store = TaskStore(state_dir / "kanban.json")
-    created: list[str] = []
-    skipped: list[str] = []
-    task_doc_failures: list[str] = []
-    for raw in task_map.get("tasks") or []:
-        if not isinstance(raw, dict):
-            continue
-        task_id = str(raw.get("task_id") or raw.get("id") or "").strip()
-        if not task_id:
-            continue
-        if store.get(task_id) is not None:
-            skipped.append(task_id)
-            continue
-        _owner_role, owner_instance = owner_fields_from_task_map_item(raw)
-        contract = _contract_from_task_map_item(
-            raw,
-            feature_id=str(task_map.get("feature_id") or ""),
-            refs=refs,
-            source_entry=source_entries.get(task_id),
-        )
-        task = Task(
-            id=task_id,
-            title=str(raw.get("title") or task_id),
-            key=str(raw.get("key") or f"{task_map.get('feature_id') or 'product'}:{task_id}"),
-            status="backlog",
-            priority=_priority(raw.get("priority")),
-            assigned_to=str(raw.get("assigned_to") or owner_instance or "") or None,
-            blocked_by=_string_list(raw.get("blocked_by")),
-            contract=contract,
-        )
-        store.add(task)
-        try:
-            write_task_doc(
-                state_dir,
-                task,
-                source_event="product_delivery_task_map",
-                project_root=state_dir.parent,
-            )
-            store.update(task.id, contract=task.contract)
-        except Exception as exc:
-            task_doc_failures.append(f"{task_id}: {exc}")
-        created.append(task.id)
-        if writer is not None:
-            created_event = writer.emit(
-                "task.created",
-                actor=actor,
-                task_id=task.id,
-                payload={
-                    "source": "product_delivery_task_map",
-                    "task_map_ref": task_map_ref,
-                    "source_index_ref": source_index_ref,
-                    "task": asdict(task),
-                },
-                causation_id=causation_id,
-                correlation_id=correlation_id,
-            )
-            writer.emit(
-                "task.contract.update",
-                actor=actor,
-                task_id=task.id,
-                payload={
-                    "source": "product_delivery_task_map",
-                    "task_map_ref": task_map_ref,
-                    "source_index_ref": source_index_ref,
-                    "contract": asdict(contract),
-                },
-                causation_id=created_event.id,
-                correlation_id=created_event.correlation_id,
-            )
+    materialization = commit_task_map_materialization(
+        state_dir=state_dir,
+        plan=materialization_plan,
+        descriptor=materialization_descriptor,
+        writer=writer,
+        actor=actor,
+        causation_id=causation_id,
+        correlation_id=correlation_id,
+        project_root=state_dir.parent,
+    )
+    created = list(materialization.get("created_task_ids") or [])
+    skipped = list(materialization.get("skipped_task_ids") or [])
+    task_doc_failures = list(materialization.get("task_doc_failures") or [])
 
     result = ProductDeliveryIngestResult(
         passed=True,
@@ -296,6 +284,12 @@ def ingest_task_map_to_kanban(
                 dict(adoption_gate.summary)
                 if adoption_gate is not None
                 else {}
+            ),
+            "materialization_plan_ref": str(
+                materialization.get("materialization_plan_ref") or ""
+            ),
+            "materialization_plan_digest": str(
+                materialization.get("materialization_plan_digest") or ""
             ),
         },
     )

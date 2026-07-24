@@ -32,7 +32,7 @@ from zf.core.state.locks import locked_path
 from zf.runtime.sidecar_refs import iter_sidecar_ref_descriptors
 
 
-SCHEMA_VERSION = "event-read-model.v4"
+SCHEMA_VERSION = "event-read-model.v5"
 _JOBS: dict[str, threading.Thread] = {}
 _JOBS_LOCK = threading.Lock()
 # Throttle background tail catch-ups: a busy dashboard calls hydrate/events/
@@ -45,6 +45,48 @@ _PAYLOAD_SLIM_SAFE_ROUTING_KEYS = {
     "decision_token",
     "response_token",
 }
+_EVENT_INDEX_REF_COLUMNS = {
+    "event": "event_id",
+    "type": "type",
+    "actor": "actor",
+    "task": "task_id",
+    "trace": "trace_id",
+    "feature": "feature_id",
+    "channel": "channel_id",
+    "causation": "causation_id",
+    "correlation": "correlation_id",
+}
+_PAYLOAD_EVENT_REF_KEYS = (
+    ("run_id", "run_id"),
+    ("workflow_run_id", "workflow_run_id"),
+    ("fanout_id", "fanout_id"),
+    ("loop_id", "loop_id"),
+    ("dispatch_id", "dispatch_id"),
+    ("active_dispatch_id", "dispatch_id"),
+    ("operation_id", "operation_id"),
+    ("parent_operation_id", "parent_operation_id"),
+    ("attempt_id", "attempt_id"),
+    ("active_attempt_id", "attempt_id"),
+    ("parent_attempt_id", "attempt_id"),
+    ("plan_id", "plan_id"),
+    ("request_id", "request_id"),
+    ("stage_id", "stage_id"),
+    ("task_map_generation", "task_map_generation"),
+    ("package_id", "plan_artifact_package_id"),
+    ("plan_artifact_package_id", "plan_artifact_package_id"),
+    ("approval_id", "approval_id"),
+    ("approval_ref", "approval_ref"),
+    ("message_id", "message_id"),
+    ("thread_id", "thread_id"),
+    ("worker_id", "worker_id"),
+    ("instance_id", "instance_id"),
+    ("task_ids", "task"),
+    ("child_task_ids", "task"),
+    ("related_task_ids", "task"),
+    ("feature_ids", "feature"),
+    ("trace_ids", "trace"),
+)
+_MAX_EVENT_REFS_PER_PAYLOAD_KEY = 100
 KANBAN_AGENT_HISTORY_TYPES = (
     "user.message",
     "kanban.agent.reply",
@@ -88,12 +130,29 @@ def _connect(path: Path) -> sqlite3.Connection:
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
-    conn.executescript(
+    conn.execute(
         """
         CREATE TABLE IF NOT EXISTS projection_meta (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL
-        );
+        )
+        """
+    )
+    meta = _meta(conn)
+    schema_changed = bool(meta and meta.get("schema_version") != SCHEMA_VERSION)
+    if schema_changed:
+        conn.executescript(
+            """
+            DROP TABLE IF EXISTS event_ref;
+            DROP TABLE IF EXISTS sidecar_ref;
+            DROP TABLE IF EXISTS task_timeline;
+            DROP TABLE IF EXISTS event_index;
+            DROP TABLE IF EXISTS projection_cache;
+            DELETE FROM projection_meta;
+            """
+        )
+    conn.executescript(
+        """
         CREATE TABLE IF NOT EXISTS event_index (
           seq INTEGER PRIMARY KEY,
           event_id TEXT,
@@ -121,15 +180,15 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_event_index_feature_seq ON event_index(feature_id, seq);
         CREATE INDEX IF NOT EXISTS idx_event_index_channel_seq ON event_index(channel_id, seq);
         CREATE INDEX IF NOT EXISTS idx_event_index_event_id ON event_index(event_id);
+        CREATE INDEX IF NOT EXISTS idx_event_index_causation_seq ON event_index(causation_id, seq);
+        CREATE INDEX IF NOT EXISTS idx_event_index_correlation_seq ON event_index(correlation_id, seq);
 
         CREATE TABLE IF NOT EXISTS event_ref (
           ref_kind TEXT NOT NULL,
           ref_id TEXT NOT NULL,
           seq INTEGER NOT NULL,
-          event_id TEXT,
           PRIMARY KEY (ref_kind, ref_id, seq)
-        );
-        CREATE INDEX IF NOT EXISTS idx_event_ref_seq ON event_ref(seq);
+        ) WITHOUT ROWID;
 
         CREATE TABLE IF NOT EXISTS sidecar_ref (
           kind TEXT NOT NULL,
@@ -177,19 +236,9 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
-    meta = _meta(conn)
-    if meta and meta.get("schema_version") != SCHEMA_VERSION:
-        conn.executescript(
-            """
-            DELETE FROM event_ref;
-            DELETE FROM sidecar_ref;
-            DELETE FROM task_timeline;
-            DELETE FROM event_index;
-            DELETE FROM projection_cache;
-            DELETE FROM projection_meta;
-            """
-        )
     _set_meta(conn, "schema_version", SCHEMA_VERSION)
+    if schema_changed:
+        _set_meta(conn, "vacuum_required", "1")
     conn.commit()
 
 
@@ -368,6 +417,7 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
         with _connect(path) as conn:
             _ensure_schema(conn)
             meta = _meta(conn)
+            vacuum_required = meta.get("vacuum_required") == "1"
             previous_layout_digest = meta.get("segment_layout_digest", "")
             layout_digest = _layout_digest(manifest)
             row = conn.execute("SELECT COALESCE(MAX(seq), 0) AS seq FROM event_index").fetchone()
@@ -439,10 +489,10 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
                         record.raw_length,
                     ),
                 )
-                for kind, ref_id in _event_refs(event, payload, feature_id=feature_id, trace_id=trace_id, channel_id=channel_id):
+                for kind, ref_id in _event_refs(payload):
                     conn.execute(
-                        "INSERT OR IGNORE INTO event_ref(ref_kind, ref_id, seq, event_id) VALUES (?, ?, ?, ?)",
-                        (kind, ref_id, record.seq, event.id),
+                        "INSERT OR IGNORE INTO event_ref(ref_kind, ref_id, seq) VALUES (?, ?, ?)",
+                        (kind, ref_id, record.seq),
                     )
                 for descriptor in iter_sidecar_ref_descriptors(payload):
                     conn.execute(
@@ -504,6 +554,13 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
             _set_meta(conn, "segment_count", len(manifest.segments))
             _set_meta(conn, "total_bytes", manifest.total_bytes)
             conn.commit()
+            if vacuum_required:
+                try:
+                    conn.execute("VACUUM")
+                    _set_meta(conn, "vacuum_required", "0")
+                    conn.commit()
+                except sqlite3.Error:
+                    pass
             try:
                 # Truncate the WAL after a rebuild: multi-MB projection_cache
                 # REPLACEs otherwise pile up (58MB WAL observed on a live
@@ -765,9 +822,18 @@ def hydrate_event_by_id(
     return int(row["seq"] or 0), event
 
 
-_SLIM_COLUMNS = (
-    "seq, event_id, ts, type, actor, task_id, correlation_id, causation_id, payload_slim"
+_SLIM_COLUMN_NAMES = (
+    "seq",
+    "event_id",
+    "ts",
+    "type",
+    "actor",
+    "task_id",
+    "correlation_id",
+    "causation_id",
+    "payload_slim",
 )
+_SLIM_COLUMNS = ", ".join(_SLIM_COLUMN_NAMES)
 
 
 def _event_from_index_row(row: sqlite3.Row) -> ZfEvent:
@@ -867,6 +933,94 @@ def hydrate_events(
         if event is not None:
             out.append(event)
     return out
+
+
+def hydrate_events_by_ref(
+    state_dir: Path,
+    *,
+    ref_kind: str,
+    ref_id: str,
+    limit: int | None = None,
+    config: ZfConfig | None = None,
+    require_fresh: bool = True,
+    slim: bool = False,
+) -> list[ZfEvent] | None:
+    """Hydrate one bounded event slice through the rebuildable ref index.
+
+    ``None`` means the read model was unavailable and callers may fall back to
+    EventLog. An empty list is a valid indexed result with no matching events.
+    """
+
+    kind = str(ref_kind or "").strip()
+    identity = str(ref_id or "").strip()
+    if not kind or not identity:
+        return []
+    try:
+        status = ensure_requested(state_dir, config=config)
+        if require_fresh and status.get("projection_state") != "ready":
+            rebuild(state_dir, config=config)
+    except (OSError, sqlite3.Error):
+        return None
+    if not db_path(state_dir).exists():
+        return None
+
+    alias = "e"
+    columns = (
+        ", ".join(f"{alias}.{name}" for name in _SLIM_COLUMN_NAMES)
+        if slim
+        else ", ".join(
+            f"{alias}.{name}"
+            for name in ("seq", "raw_segment", "raw_offset", "raw_length")
+        )
+    )
+    direct_column = _EVENT_INDEX_REF_COLUMNS.get(kind)
+    args: list[Any]
+    if direct_column:
+        sql = f"""
+            SELECT {columns}
+            FROM event_index AS e
+            WHERE e.{direct_column} = ?
+            UNION
+            SELECT {columns}
+            FROM event_ref AS r
+            JOIN event_index AS e ON e.seq = r.seq
+            WHERE r.ref_kind = ? AND r.ref_id = ?
+            ORDER BY seq ASC
+        """
+        args = [identity, kind, identity]
+    else:
+        sql = f"""
+            SELECT {columns}
+            FROM event_ref AS r
+            JOIN event_index AS e ON e.seq = r.seq
+            WHERE r.ref_kind = ? AND r.ref_id = ?
+            ORDER BY e.seq ASC
+        """
+        args = [kind, identity]
+    if limit is not None:
+        sql += "\nLIMIT ?"
+        args.append(max(1, int(limit)))
+
+    try:
+        with _connect(db_path(state_dir)) as conn:
+            _ensure_schema(conn)
+            rows = conn.execute(sql, tuple(args)).fetchall()
+    except sqlite3.Error:
+        return None
+    if slim:
+        return [_event_from_index_row(row) for row in rows]
+    events: list[ZfEvent] = []
+    for row in rows:
+        event = hydrate_event_at(
+            state_dir,
+            segment=str(row["raw_segment"]),
+            offset=int(row["raw_offset"]),
+            length=int(row["raw_length"]),
+            config=config,
+        )
+        if event is not None:
+            events.append(event)
+    return events
 
 
 def agent_session_history(
@@ -1361,51 +1515,15 @@ def _row_event_dict(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-def _event_refs(
-    event: ZfEvent,
-    payload: dict[str, Any],
-    *,
-    feature_id: str,
-    trace_id: str,
-    channel_id: str,
-) -> Iterable[tuple[str, str]]:
-    refs = [
-        ("event", event.id),
-        ("type", event.type),
-        ("actor", event.actor or ""),
-        ("task", event.task_id or ""),
-        ("trace", trace_id),
-        ("feature", feature_id),
-        ("channel", channel_id),
-        ("causation", event.causation_id or ""),
-        ("correlation", event.correlation_id or ""),
-    ]
-    for key in (
-        "run_id",
-        "fanout_id",
-        "loop_id",
-        "dispatch_id",
-        "plan_id",
-        "approval_id",
-        "approval_ref",
-        "message_id",
-        "thread_id",
-        "worker_id",
-        "instance_id",
-    ):
-        value = _payload_ref(payload, key)
-        if value:
-            refs.append((key, value))
+def _event_refs(payload: dict[str, Any]) -> Iterable[tuple[str, str]]:
     seen: set[tuple[str, str]] = set()
-    for kind, ref_id in refs:
-        ref_id = str(ref_id or "").strip()
-        if not ref_id:
-            continue
-        item = (kind, ref_id)
-        if item in seen:
-            continue
-        seen.add(item)
-        yield item
+    for key, kind in _PAYLOAD_EVENT_REF_KEYS:
+        for ref_id in _payload_ref_values(payload, key):
+            item = (kind, ref_id)
+            if item in seen:
+                continue
+            seen.add(item)
+            yield item
 
 
 def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
@@ -1544,6 +1662,19 @@ def _payload_ref(payload: dict[str, Any], key: str) -> str:
     if isinstance(value, (str, int, float)):
         return str(value).strip()
     return ""
+
+
+def _payload_ref_values(payload: dict[str, Any], key: str) -> tuple[str, ...]:
+    value = payload.get(key)
+    values = value if isinstance(value, list) else [value]
+    refs: list[str] = []
+    for item in values[:_MAX_EVENT_REFS_PER_PAYLOAD_KEY]:
+        if not isinstance(item, (str, int, float)):
+            continue
+        ref = str(item).strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return tuple(refs)
 
 
 def _first_nonempty(*values: object) -> str:

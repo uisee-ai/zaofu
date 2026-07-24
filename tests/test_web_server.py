@@ -572,7 +572,7 @@ class TestApiSnapshot:
 
         assert data["snapshot_slice"] == "light"
         assert data["runtime"]["mode"] == "snapshot-light"
-        assert data["event_projection"]["schema_version"] == "event-read-model.v4"
+        assert data["event_projection"]["schema_version"] == "event-read-model.v5"
 
     def test_snapshot_includes_runtime_snapshot_projection(
         self,

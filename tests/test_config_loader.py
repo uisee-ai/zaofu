@@ -1041,7 +1041,7 @@ def test_load_real_zf_yaml_expands_thin_prd_controller():
     assert cfg.preset == ""
     assert cfg.project.name == "zaofu"
     assert cfg.workflow.harness_profile == "strict"
-    assert cfg.workflow.dag.schema_profile == "canonical-dag/v7"
+    assert cfg.workflow.dag.schema_profile == "canonical-dag/v8"
     assert cfg.goal.enabled is True
     assert cfg.verification.event_schema.mode == "blocking"
     assert cfg.verification.report_evidence_gate == "fail_closed"

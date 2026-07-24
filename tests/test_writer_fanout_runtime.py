@@ -2416,6 +2416,58 @@ def test_writer_fanout_completion_keeps_canonical_task_active_for_verify(
     )
 
 
+def test_reader_operation_inherits_plan_package_identity_from_contract_snapshot(
+    tmp_path: Path,
+) -> None:
+    state_dir, _log, _transport, orch = _state(tmp_path)
+    task = Task(
+        id="TASK-PACKAGE",
+        title="package-bound task",
+        contract=TaskContract(
+            behavior="verify package-bound result",
+            verification="true",
+            acceptance_criteria=["result is current"],
+            evidence_contract={
+                "source_refs": {
+                    "task_map_ref": ".zf/artifacts/F-11111111/task_map.json",
+                    "plan_artifact_package_id": "planpkg-abc",
+                    "plan_artifact_package_ref": "artifacts/plan-packages/abc.json",
+                    "plan_artifact_package_digest": "abc",
+                },
+            },
+        ),
+    )
+    TaskStore(state_dir / "kanban.json").add(task)
+    target_commit = _git(tmp_path, "rev-parse", "HEAD")
+    snapshot = build_task_contract_snapshot(
+        task,
+        workflow_run_id="trace-package",
+        task_map_generation_id=task_map_generation(task),
+        base_commit=target_commit,
+        task_ref="task/TASK-PACKAGE",
+    )
+    descriptor = write_task_contract_snapshot(state_dir, snapshot)
+    child = SimpleNamespace(
+        target_ref=target_commit,
+        payload={
+            "task_id": task.id,
+            "task_map_ref": ".zf/artifacts/F-11111111/task_map.json",
+            "target_commit": target_commit,
+            "contract_snapshot_ref": descriptor["ref"],
+            "contract_snapshot_digest": descriptor["sha256"],
+        },
+    )
+
+    orch._prepare_reader_contract_target(child)  # type: ignore[attr-defined]
+
+    assert child.payload["plan_artifact_package_id"] == "planpkg-abc"
+    assert (
+        child.payload["plan_artifact_package_ref"]
+        == "artifacts/plan-packages/abc.json"
+    )
+    assert child.payload["plan_artifact_package_digest"] == "abc"
+
+
 def test_selected_writer_call_settles_with_admitted_implementation_result(
     tmp_path: Path,
 ) -> None:
@@ -2471,8 +2523,14 @@ def test_selected_writer_call_settles_with_admitted_implementation_result(
                     "workflow_run_id",
                     "operation_id",
                     "request_hash",
-                    "attempt_id",
-                    "result_protocol_mode",
+                        "attempt_id",
+                        "attempt_domain",
+                        "result_protocol_mode",
+                        "plan_artifact_package_id",
+                        "plan_artifact_package_ref",
+                        "plan_artifact_package_digest",
+                        "run_contract_ref",
+                        "run_contract_digest",
                     "attempt_source_manifest_ref",
                     "attempt_source_manifest_digest",
                     "attempt_source_manifest",

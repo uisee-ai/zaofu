@@ -37,7 +37,11 @@ Do not re-derive a gap from chat or a one-line reason when a typed result exists
    contract/task only when the required behavior or ownership changed.
 5. Record what changed from the prior plan and which old attempt/task is
    superseded.
-6. Persist the gap plan at the path supplied by the briefing, then use
+6. Declare the semantic `required_delta`: changed AC/evidence fields,
+   ownership paths, whether a Task Map revision is required, and the expected
+   postcondition. Preserve unchanged logical ports by explicit inheritance
+   from the current Package rather than rediscovering files.
+7. Persist the gap plan at the path supplied by the briefing, then use
    `zf-verify-gap-producer-contract` for the exact canonical submission.
 
 The current runtime output profile is authoritative for artifact/event shape.
@@ -55,6 +59,7 @@ real blocker. Re-emitting an identical plan is not progress.
 
 Planner/Synth decides task meaning, slicing, ownership, and acceptance.
 Runtime owns plan fingerprinting, task-map amendment/admission, generation,
-attempt/cap, stale/replay, affinity dispatch, and truth transitions. Thin Judge
+attempt/cap, stale/replay, Package currentness, Recovery Proposal admission,
+affinity dispatch, and truth transitions. Thin Judge
 does not load this Skill; a rejected Judge result is routed to the appropriate
 planner/synth owner first.

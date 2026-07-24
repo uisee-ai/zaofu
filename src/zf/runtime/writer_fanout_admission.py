@@ -32,6 +32,9 @@ class LoadedWriterTaskMap:
     requested_task_ids: list[str] = field(default_factory=list)
     is_replan: bool = False
     dispatch_base_commit: str = ""
+    plan_artifact_package_id: str = ""
+    plan_artifact_package_ref: str = ""
+    plan_artifact_package_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -206,6 +209,15 @@ def load_writer_task_map(
             data.get("target_commit")
             or payload.get("dispatch_base_commit")
             or ""
+        ).strip(),
+        plan_artifact_package_id=str(
+            payload.get("plan_artifact_package_id") or ""
+        ).strip(),
+        plan_artifact_package_ref=str(
+            payload.get("plan_artifact_package_ref") or ""
+        ).strip(),
+        plan_artifact_package_digest=str(
+            payload.get("plan_artifact_package_digest") or ""
         ).strip(),
     )
 

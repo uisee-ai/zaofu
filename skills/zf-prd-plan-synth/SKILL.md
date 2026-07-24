@@ -105,6 +105,39 @@ Do not emit a task map that places implementation in one task and its tests or
 entrypoint smoke in another. Do not use `tests/...` paths when the declared
 test prefix is `app/tests/...`; all owned paths stay repo-relative.
 
+## Acceptance Evidence Satisfiability
+
+Before emitting `task_map.json`, build an AC-to-evidence ownership matrix for
+every mandatory acceptance criterion. Each row must identify:
+
+- acceptance id and verification tier;
+- the task that can produce the behavior;
+- the task or Verify role that produces each required artifact/receipt;
+- command ids and the real runner/method they invoke;
+- configuration, specification, fixture, and output paths that must be
+  writable;
+- proof that those paths are covered by the producer task's `allowed_paths`,
+  or by an explicit upstream dependency that already materializes the
+  artifact.
+
+Reject or revise the task map before handoff when a task is responsible for
+evidence that it cannot legally produce. In particular, a final assembly task
+may aggregate admitted evidence refs from prior slices, but it must not own
+creation of browser traces, videos, screenshots, fixtures, or runner
+configuration when those files belong to another task. Move evidence
+production to the owning slice or expand/split ownership explicitly.
+
+Declare `required_plan_ports` from the PRD's actual dependencies, normally
+`requirement_spec`, `goal_claim_set`, `task_map`, `planning_result`, and the
+matrices consumed by implementation or Verify. Emit their source refs; never
+construct or select the current Plan Artifact Package yourself.
+
+For `e2e` / `real_e2e` criteria, bind the command to the intended executable
+path and method. A deterministic analytical estimate, fixture replay, or
+mock-only receipt cannot satisfy a contract that requires the real application,
+browser, provider, or simulation unless the acceptance criterion explicitly
+permits that substitute.
+
 ## Goal Closure Loop
 
 PRD delivery can replan after verify without discarding completed slices. If

@@ -101,11 +101,16 @@ def _safe_task_capsule_projection(state_dir: Path, task: Task) -> dict:
         }
 
 
-def _safe_task_operations_projection(state_dir: Path, task_id: str) -> dict:
+def _safe_task_operations_projection(
+    state_dir: Path,
+    task_id: str,
+    *,
+    config: ZfConfig | None = None,
+) -> dict:
     try:
-        from zf.runtime.operation_projection import project_task_operations
+        from zf.web.projections.operations import task_operations
 
-        return project_task_operations(state_dir, task_id)
+        return task_operations(state_dir, task_id, config=config)
     except Exception as exc:
         return {
             "schema_version": "task-operations.v1",

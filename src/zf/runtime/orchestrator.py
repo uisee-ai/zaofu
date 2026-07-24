@@ -3593,12 +3593,7 @@ class Orchestrator(
 
 
     def _ensure_writer_tasks_canonical(self, loaded) -> None:
-        """Register a writer task_map's tasks as canonical kanban tasks when no
-        product-delivery ingest has (the refactor scan flow emits task_map.ready
-        directly, bypassing product_delivery). Normal runs are idempotent:
-        existing tasks are left untouched. Replan runs may refresh an existing
-        refactor task for the same feature so the admission gate matches the
-        latest task_map_ref."""
+        """Register writer task-map tasks and refresh replan refs."""
         from zf.core.task.schema import Task, TaskContract
         from zf.runtime.verification_commands import (
             task_map_contract_verification_fields,
@@ -3617,6 +3612,7 @@ class Orchestrator(
             ),
             "dev",
         )
+        pending_new_tasks = []
         for item in loaded.task_items:
             task_id = str(item.get("task_id") or "")
             if not task_id:
@@ -3635,6 +3631,8 @@ class Orchestrator(
             }
             if loaded.source_index_ref:
                 source_refs["source_index_ref"] = loaded.source_index_ref
+            from zf.runtime.writer_task_materialization import bind_plan_package_source_refs
+            bind_plan_package_source_refs(source_refs, loaded)
             module_id = self._first_nonempty(
                 raw.get("module_id"),
                 payload.get("module_id"),
@@ -3784,7 +3782,7 @@ class Orchestrator(
                 contract=contract,
             )
             if existing is None:
-                self.task_store.add(refreshed_task)
+                pending_new_tasks.append(refreshed_task)
             elif self._can_refresh_writer_task(existing, loaded):
                 old_ref = self._task_contract_task_map_ref(existing.contract)
                 old_status = str(getattr(existing, "status", "") or "")
@@ -3827,6 +3825,8 @@ class Orchestrator(
                         "reset_for_replan": reset_for_replan,
                     },
                 ))
+        from zf.runtime.writer_task_materialization import materialize_writer_tasks
+        materialize_writer_tasks(self, pending_new_tasks, loaded)
 
     def _task_map_runtime_owner_role(
         self,

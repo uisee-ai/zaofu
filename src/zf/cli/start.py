@@ -428,6 +428,7 @@ def _write_run_contract_snapshot(
         run_contract_drift_diagnostics,
         strict_run_contract_drift,
         write_run_contract,
+        write_run_contract_snapshot,
     )
 
     metadata = dict(getattr(getattr(config, "workflow", None), "flow_metadata", {}) or {})
@@ -472,13 +473,16 @@ def _write_run_contract_snapshot(
         ))
         if strict:
             return False
+    snapshot = write_run_contract_snapshot(state_dir, contract)
     path = write_run_contract(state_dir, contract)
     event_log.append(ZfEvent(
         type="config.run_contract.written",
         actor="zf-cli",
         payload={
-            "run_contract_ref": str(path),
+            "run_contract_ref": str(snapshot.get("ref") or ""),
+            "run_contract_sha256": str(snapshot.get("sha256") or ""),
             "contract_digest": str(contract.get("contract_digest") or ""),
+            "active_run_contract_ref": str(path),
         },
     ))
     return True

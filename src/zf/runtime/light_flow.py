@@ -261,7 +261,16 @@ def _dedupe_strings(items: list[Any]) -> list[str]:
 
 def _workflow_refs_from_payload(payload: dict[str, Any], *, state_dir: Path) -> dict[str, Any]:
     refs: dict[str, Any] = {}
-    for key in ("workflow_input_manifest_ref", "workflow_prompt_ref", "workflow_run_id"):
+    for key in (
+        "workflow_input_manifest_ref",
+        "workflow_prompt_ref",
+        "workflow_run_id",
+        "requirement_spec_ref",
+        "requirement_spec_digest",
+        "objective_ref",
+        "prd_ref",
+        "issue_ref",
+    ):
         value = str(payload.get(key) or "").strip()
         if value:
             refs[key] = value

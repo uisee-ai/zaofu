@@ -848,7 +848,11 @@ def _task_detail(
     }
     progress_projection = _safe_task_progress_projection(state_dir, task_id)
     task_capsule = _safe_task_capsule_projection(state_dir, task)
-    operations_projection = _safe_task_operations_projection(state_dir, task_id)
+    operations_projection = _safe_task_operations_projection(
+        state_dir,
+        task_id,
+        config=config,
+    )
     execution_route = project_execution_route(
         task_events,
         task_id=task_id,

@@ -51,6 +51,37 @@ class WorkflowResumeActionsMixin:
                 status_code=409,
                 status="blocked",
             )
+        proposal_ref = str(payload.get("recovery_proposal_ref") or "")
+        proposal_digest = str(payload.get("recovery_proposal_digest") or "")
+        if proposal_ref and proposal_digest:
+            from zf.runtime.recovery_delta import (
+                RecoveryDeltaError,
+                hydrate_recovery_proposal,
+                validate_recovery_action,
+            )
+
+            try:
+                proposal = hydrate_recovery_proposal(
+                    self.state_dir,
+                    {"ref": proposal_ref, "sha256": proposal_digest},
+                )
+                validate_recovery_action(
+                    proposal,
+                    action=safe_resume_action,
+                    new_package_digest=str(
+                        payload.get("plan_artifact_package_digest") or ""
+                    ),
+                )
+            except RecoveryDeltaError as exc:
+                return self._failed(
+                    requested=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    task_id=None,
+                    reason=str(exc),
+                    status_code=409,
+                    status="blocked",
+                )
 
         from zf.runtime.workflow_resume import apply_workflow_resume
 

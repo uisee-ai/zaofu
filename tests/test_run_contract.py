@@ -4,12 +4,15 @@ import json
 
 from zf.core.config.loader import load_config
 from zf.runtime.run_contract import (
+    active_run_contract_path,
     build_run_contract,
     evaluate_run_contract_resume_policy,
     evaluate_run_contract_submit_binding,
     load_run_contract,
+    load_run_contract_snapshot,
     run_contract_drift_diagnostics,
     write_run_contract,
+    write_run_contract_snapshot,
 )
 
 
@@ -53,6 +56,47 @@ workflow:
     assert diagnostics
     assert diagnostics[0]["kind"] == "run_contract_drift"
     assert diagnostics[0]["severity"] == "WARN"
+
+
+def test_run_contract_snapshots_preserve_history_and_are_idempotent(tmp_path):
+    state_dir = tmp_path / ".zf-demo"
+    first = {
+        "schema_version": "run-contract.v1",
+        "created_at": "2026-07-23T00:00:00+00:00",
+        "project": {"name": "one"},
+        "contract_digest": "",
+    }
+    from zf.runtime.run_contract import stable_json_sha256
+
+    first["contract_digest"] = stable_json_sha256({
+        "schema_version": "run-contract.v1",
+        "project": {"name": "one"},
+    })
+    second = {
+        "schema_version": "run-contract.v1",
+        "created_at": "2026-07-23T00:01:00+00:00",
+        "project": {"name": "two"},
+        "contract_digest": "",
+    }
+    second["contract_digest"] = stable_json_sha256({
+        "schema_version": "run-contract.v1",
+        "project": {"name": "two"},
+    })
+
+    first_snapshot = write_run_contract_snapshot(state_dir, first)
+    repeated = write_run_contract_snapshot(
+        state_dir,
+        {**first, "created_at": "2026-07-23T00:02:00+00:00"},
+    )
+    second_snapshot = write_run_contract_snapshot(state_dir, second)
+    write_run_contract(state_dir, second)
+
+    assert repeated["ref"] == first_snapshot["ref"]
+    assert first_snapshot["ref"] != second_snapshot["ref"]
+    assert load_run_contract_snapshot(state_dir, first_snapshot)["contract"]["project"]["name"] == "one"
+    assert load_run_contract_snapshot(state_dir, second_snapshot)["contract"]["project"]["name"] == "two"
+    assert load_run_contract(state_dir)["project"]["name"] == "two"
+    assert active_run_contract_path(state_dir).exists()
 
 
 def test_run_contract_includes_manifest_skill_digests(tmp_path):

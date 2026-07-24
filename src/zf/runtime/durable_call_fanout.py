@@ -776,6 +776,15 @@ class DurableCallFanoutMixin:
                 "contract_revision": str(contract_snapshot["contract_revision"]),
                 "task_map_generation": str(contract_snapshot["task_map_generation"]),
                 "base_commit": str(contract_snapshot["base_commit"]),
+                "plan_artifact_package_id": str(
+                    contract_snapshot.get("plan_artifact_package_id") or ""
+                ),
+                "plan_artifact_package_ref": str(
+                    contract_snapshot.get("plan_artifact_package_ref") or ""
+                ),
+                "plan_artifact_package_digest": str(
+                    contract_snapshot.get("plan_artifact_package_digest") or ""
+                ),
             }
         operation_payload = {
             **(child.payload if isinstance(child.payload, dict) else {}),

@@ -2226,6 +2226,9 @@ def _pin_submitted_run_contract(
     if not isinstance(contract, dict) or not str(contract.get("contract_digest") or ""):
         raise RuntimeError("accepted workflow submit is missing its run contract preview")
     previous = load_run_contract(state_dir)
+    from zf.runtime.run_contract import write_run_contract_snapshot
+
+    snapshot = write_run_contract_snapshot(state_dir, contract)
     path = write_run_contract(state_dir, contract)
     if str((previous or {}).get("contract_digest") or "") == str(
         contract.get("contract_digest") or ""
@@ -2242,8 +2245,10 @@ def _pin_submitted_run_contract(
         correlation_id=correlation_id,
         payload={
             "run_id": correlation_id,
-            "run_contract_ref": str(path),
+            "run_contract_ref": str(snapshot.get("ref") or ""),
+            "run_contract_sha256": str(snapshot.get("sha256") or ""),
             "contract_digest": str(contract.get("contract_digest") or ""),
+            "active_run_contract_ref": str(path),
             "workflow_input_manifest_ref": str(manifest_refs[0] if manifest_refs else ""),
             "initial_binding": bool(run_contract.get("initial_binding")),
         },

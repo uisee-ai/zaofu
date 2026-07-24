@@ -52,6 +52,8 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "loop.learning.promotion.requested", "loop.learning.promotion.materialized",
     "loop.learning.promotion.rejected",
     "projection.rebuild.requested",
+    "projection.rebuild.completed",
+    "projection.rebuild.failed",
     # doc 80 rev1 review N1 — natural-completion terminals (Tier1 recover / Tier3 ack)
     "remediation.recovered", "remediation.escalated_acked",
     # doc 80 rev1 review N10 — incomplete-SM threshold observation (bypass signal)
@@ -408,6 +410,13 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "run.delivery.requested", "run.delivery.settled",
     "run.delivery.failed", "run.delivery.blocked",
     "goal.claim_set.pinned", "goal.claim_set.pin.failed",
+    "plan.artifact_package.proposed",
+    "plan.artifact_package.admitted",
+    "plan.artifact_package.rejected",
+    "plan.artifact_package.superseded",
+    "task_map.materialization.prepared",
+    "task_map.materialization.committed",
+    "task_map.materialization.failed",
     "goal.closure.identity.invalid", "goal.closure.superseded",
     "goal.closure.synthesized", "goal.closure.synthesis.failed",
     "goal.closure.rejected", "goal.closure.blocked",

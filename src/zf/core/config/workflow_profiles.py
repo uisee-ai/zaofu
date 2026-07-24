@@ -62,6 +62,7 @@ _KNOWN_PARAM_KEYS_V3 = _KNOWN_PARAM_KEYS | frozenset({
     "roleDefaults", "role_defaults",
     "roleSkillBundles", "role_skill_bundles",
     "semanticSubmitProfiles", "semantic_submit_profiles",
+    "artifactPackageMode", "artifact_package_mode",
 })
 _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "flowProfile", "flow_profile",
@@ -79,6 +80,7 @@ _COMMON_PRODUCT_FLOW_KEYS = frozenset({
     "postVerifyDiscovery", "post_verify_discovery",
     "planCriticRole", "plan_critic_role",
     "semanticSubmitProfiles", "semantic_submit_profiles",
+    "artifactPackageMode", "artifact_package_mode",
 })
 _KNOWN_ISSUE_FLOW_KEYS = _COMMON_PRODUCT_FLOW_KEYS | frozenset({
     "topology",  # fanout(default) | light(single lane goal loop)
@@ -271,6 +273,20 @@ def _role_defaults_param(raw: Any, *, name: str) -> dict[str, Any]:
             )
         normalized[target] = value
     return normalized
+
+
+def _artifact_package_mode_param(params: dict[str, Any]) -> str:
+    mode = str(_pick(
+        params,
+        "artifactPackageMode",
+        "artifact_package_mode",
+        default="shadow",
+    )).strip().lower()
+    if mode not in {"off", "shadow", "blocking"}:
+        raise WorkflowProfileError(
+            "flow.artifactPackageMode: mode must be off, shadow, or blocking"
+        )
+    return mode
 
 
 def _lane_role_template(
@@ -681,7 +697,7 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
         lane_template=template,
         schema_profile=str(_pick(
             params, "schemaProfile", "schema_profile",
-            default="refactor-flow/v4",
+            default="refactor-flow/v5",
         )),
         assembly=assembly,
         max_rework_attempts=max_rework,
@@ -783,13 +799,23 @@ def expand_refactor_flow_v3(params: dict) -> dict[str, Any]:
             "mode": "blocking",
             "semantic_submit_profiles": _semantic_submit_profiles_param(params),
         },
+        "artifact_package": {
+            "mode": _artifact_package_mode_param(params),
+            "package_slot": "execution_plan",
+            "required_ports": [
+                "requirement_spec",
+                "goal_claim_set",
+                "task_map",
+                "planning_result",
+            ],
+        },
     }
     return {
         "roles": roles,
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "refactor-flow/v4",
+        "schema_profile": "refactor-flow/v5",
         "metadata": metadata,
     }
 
@@ -923,6 +949,25 @@ def _controller_metadata(
         "result_protocol": {
             "mode": "blocking",
             "semantic_submit_profiles": _semantic_submit_profiles_param(params),
+        },
+        "artifact_package": {
+            "mode": _artifact_package_mode_param(params),
+            "package_slot": "execution_plan",
+            "required_ports": [
+                (
+                    "issue_spec"
+                    if kind == "issue"
+                    else "requirement_spec"
+                ),
+                "goal_claim_set",
+                "task_map",
+                "planning_result",
+            ],
+            "conditional_ports": [
+                "accepted_plan",
+                "plan_critique",
+                "project_adapter",
+            ],
         },
     }
 
@@ -1097,7 +1142,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         impl_pattern=fix_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v7",
+        schema_profile="canonical-dag/v8",
         task_map_ref=task_map_ref,
         stage_transition="stage_barrier",
         final={
@@ -1128,7 +1173,7 @@ def expand_issue_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v7",
+        "schema_profile": "canonical-dag/v8",
         "metadata": metadata,
     }
 
@@ -1213,7 +1258,7 @@ def _expand_product_flow_light(
             default="verify-lane-{lane}",
         )),
         lane_template=lane_template,
-        schema_profile="canonical-dag/v7",
+        schema_profile="canonical-dag/v8",
         task_map_ref=str(_pick(
             params, "taskMapRef", "task_map_ref", default="${task_map_ref}",
         )),
@@ -1244,7 +1289,7 @@ def _expand_product_flow_light(
         "stages": [],
         "pipelines": [pipeline],
         "external_triggers": [entry, "task_map.ready"],
-        "schema_profile": "canonical-dag/v7",
+        "schema_profile": "canonical-dag/v8",
         "metadata": metadata,
     }
 
@@ -1399,7 +1444,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         impl_pattern=impl_pattern,
         verify_pattern=verify_pattern,
         lane_template=lane_template,
-        schema_profile="canonical-dag/v7",
+        schema_profile="canonical-dag/v8",
         task_map_ref=task_map_ref,
         stage_transition="stage_barrier",
         final={
@@ -1432,7 +1477,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         "stages": stages,
         "pipelines": [pipeline],
         "external_triggers": [entry],
-        "schema_profile": "canonical-dag/v7",
+        "schema_profile": "canonical-dag/v8",
         "metadata": metadata,
     }
 
@@ -1522,10 +1567,10 @@ def merge_expansion_into_body(body: dict, expansion: dict) -> None:
             if isinstance(flow_meta, dict):
                 flow_meta.update(metadata)
 
-    # canonical-dag/v7 and refactor-flow/v4 terminate through the admitted
+    # canonical-dag/v8 and refactor-flow/v5 terminate through the admitted
     # Thin Judge -> Completion Gate protocol. Keep hand-written goal settings
     # authoritative, but make the protocol runnable for a bare Flow document.
-    if expansion.get("schema_profile") in {"canonical-dag/v7", "refactor-flow/v4"}:
+    if expansion.get("schema_profile") in {"canonical-dag/v8", "refactor-flow/v5"}:
         goal = body.setdefault("goal", {})
         if isinstance(goal, dict):
             goal.setdefault("enabled", True)

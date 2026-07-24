@@ -94,6 +94,9 @@ class CallResultAuthorityMixin:
                 "task_map_generation",
                 "base_commit",
                 "task_ref",
+                "plan_artifact_package_id",
+                "plan_artifact_package_ref",
+                "plan_artifact_package_digest",
             )
             if identity.get(key) not in (None, "")
         }
@@ -131,6 +134,9 @@ class CallResultAuthorityMixin:
                             "task_map_generation",
                             "base_commit",
                             "task_ref",
+                            "plan_artifact_package_id",
+                            "plan_artifact_package_ref",
+                            "plan_artifact_package_digest",
                         )
                     },
                     "contract_snapshot_ref": contract_ref,
@@ -181,6 +187,47 @@ class CallResultAuthorityMixin:
             ))
         return issues
 
+    def _plan_package_currentness_issues(
+        self,
+        envelope: Mapping[str, Any],
+    ) -> list[dict[str, str]]:
+        identity = (
+            envelope.get("identity")
+            if isinstance(envelope.get("identity"), Mapping)
+            else {}
+        )
+        workflow_run_id = str(identity.get("workflow_run_id") or "")
+        if not workflow_run_id:
+            return []
+        from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+
+        reduced = reduce_plan_artifact_packages(
+            self.event_log.read_all(),
+            workflow_run_id=workflow_run_id,
+        )
+        current = reduced.get("current")
+        if not isinstance(current, Mapping):
+            return []
+        actual_digest = str(identity.get("plan_artifact_package_digest") or "")
+        blocking = str(current.get("mode") or "") == "blocking"
+        if not actual_digest and not blocking:
+            return []
+        issues: list[dict[str, str]] = []
+        for field, event_field in (
+            ("plan_artifact_package_id", "package_id"),
+            ("plan_artifact_package_ref", "package_ref"),
+            ("plan_artifact_package_digest", "package_digest"),
+        ):
+            expected = str(current.get(event_field) or "")
+            actual = str(identity.get(field) or "")
+            if expected and actual != expected:
+                issues.append(_currentness_issue(
+                    f"control_result.{field}",
+                    "stale_plan_artifact_package",
+                    f"current package expects {expected}, got {actual or '<missing>'}",
+                ))
+        return issues
+
     def _operation_result_currentness_issues(
         self,
         envelope: Mapping[str, Any],
@@ -201,6 +248,7 @@ class CallResultAuthorityMixin:
             ("stage_id", "producer_stage_id", "stale_operation_identity"),
             ("child_id", "child_id", "stale_operation_identity"),
             ("run_id", "attempt_id", "stale_operation_identity"),
+            ("attempt_domain", "attempt_domain", "stale_attempt_domain"),
             ("role_instance", "producer_role", "stale_operation_identity"),
             ("plan_revision", "plan_revision", "stale_plan_revision"),
             (
@@ -215,6 +263,21 @@ class CallResultAuthorityMixin:
             ),
             ("contract_revision", "contract_revision", "stale_contract_revision"),
             ("task_map_generation", "task_map_generation", "stale_task_map_generation"),
+            (
+                "plan_artifact_package_id",
+                "plan_artifact_package_id",
+                "stale_plan_artifact_package",
+            ),
+            (
+                "plan_artifact_package_ref",
+                "plan_artifact_package_ref",
+                "stale_plan_artifact_package",
+            ),
+            (
+                "plan_artifact_package_digest",
+                "plan_artifact_package_digest",
+                "stale_plan_artifact_package",
+            ),
             ("base_commit", "base_commit", "stale_contract_snapshot"),
             ("task_ref", "task_ref", "stale_contract_snapshot"),
             ("contract_snapshot_ref", "contract_snapshot_ref", "stale_contract_snapshot"),

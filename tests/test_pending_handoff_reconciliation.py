@@ -1530,6 +1530,60 @@ def test_reconcile_projects_worker_state_for_completed_stage_actor(
     )
 
 
+def test_reconcile_does_not_replay_terminal_writer_completion(
+    tmp_path: Path,
+) -> None:
+    orch, store, log = _make_orchestrator(tmp_path)
+    orch._last_worker_state["dev"] = "idle"
+    store.add(Task(
+        id="T-WRITER",
+        title="writer slice",
+        status="in_progress",
+        assigned_to="dev",
+    ))
+    progress = ZfEvent(
+        type="dev.build.done",
+        actor="dev",
+        task_id="T-WRITER",
+        payload={
+            "fanout_id": "fanout-writer",
+            "child_id": "child-writer",
+            "run_id": "run-writer",
+            "source_commit": "abc123",
+        },
+    )
+    log.append(progress)
+    log.append(ZfEvent(
+        type="fanout.child.completed",
+        actor="zf-cli",
+        task_id="T-WRITER",
+        payload={
+            "fanout_id": "fanout-writer",
+            "child_id": "child-writer",
+            "run_id": "run-writer",
+            "source_commit": "abc123",
+            "result_event_id": progress.id,
+        },
+        causation_id=progress.id,
+    ))
+
+    decisions = orch._reconcile_pending_handoffs()  # type: ignore[attr-defined]
+
+    assert decisions == []
+    assert not [
+        event for event in _events(log)
+        if event.type == "worker.state.changed"
+        and event.actor == "dev"
+        and event.payload.get("to") == "awaiting_review"
+    ]
+    assert not [
+        event for event in _events(log)
+        if event.type == "task.assigned"
+        and event.task_id == "T-WRITER"
+        and event.payload.get("assignee") == "review"
+    ]
+
+
 def test_replayed_progress_after_handoff_is_not_rejected(
     tmp_path: Path,
 ) -> None:

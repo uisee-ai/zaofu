@@ -59,8 +59,10 @@ from zf.runtime.run_manager_rework_triage import (
     TRIAGE_RECORDED,
     TRIAGE_REQUEST_ACTION,
     TRIAGE_REQUESTED,
+    active_immediate_replan_task_ids,
     active_rework_triage_task_ids,
     is_semantic_triage_cap,
+    pending_immediate_replan_actions,
     pending_rework_triage_actions,
 )
 from zf.runtime.recovery_context import write_task_recovery_context
@@ -296,6 +298,16 @@ def _run_manager_tick_unlocked(
             "auto_execute": auto_execute,
         },
     )
+    from zf.runtime.operational_workflow_projection import (
+        consume_projection_rebuild_requests,
+    )
+
+    if consume_projection_rebuild_requests(
+        state_dir=state_dir,
+        events=events,
+        writer=writer,
+    ):
+        events = _read_events(state_dir, event_log=event_log)
     if _settle_pending_action_effects(events, writer):
         events = _read_events(state_dir, event_log=event_log)
 
@@ -634,6 +646,17 @@ def _run_manager_tick_unlocked(
                     reason=str(decision.get("reason") or "action requires operator"),
                     human=True,
                 )
+                if str(action.get("action") or "") == "failure-closeout-activate":
+                    _emit_no_progress_run_terminal(
+                        writer,
+                        action=action,
+                        reason=str(
+                            decision.get("reason")
+                            or "failure closeout requires owner approval"
+                        ),
+                        causation_id=started.id,
+                        terminal_reason="failure_closeout_approval_pending",
+                    )
                 actions_blocked += 1
                 events = _read_events(state_dir, event_log=event_log)
 
@@ -758,22 +781,36 @@ def build_run_manager_projection(
     strict = getattr(config.workflow, "strict_triggers", None)
     triage_threshold = int(getattr(strict, "rework_attempts_gte", 0) or 0)
     resident_agent = build_resident_agent_projection(events, config=config)
-    rework_triage_actions = pending_rework_triage_actions(
-        events,
-        threshold=triage_threshold,
-        stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
-        advisor_available=any(
-            str(getattr(role, "name", "") or "") == "orchestrator"
-            for role in getattr(config, "roles", []) or []
+    immediate_replan_actions = pending_immediate_replan_actions(events)
+    rework_triage_actions = [
+        *immediate_replan_actions,
+        *pending_rework_triage_actions(
+            events,
+            threshold=triage_threshold,
+            stale_seconds=_DIAGNOSIS_REQUEST_STALE_SECONDS,
+            advisor_available=any(
+                str(getattr(role, "name", "") or "") == "orchestrator"
+                for role in getattr(config, "roles", []) or []
+            ),
+            resident_advisor=resident_agent,
         ),
-        resident_advisor=resident_agent,
-    )
+    ]
     rework_triage_actions = [
         enrich_semantic_replan_action(
             action,
             state_dir=state_dir,
             events=events,
             config=config,
+        )
+        for action in rework_triage_actions
+    ]
+    from zf.runtime.recovery_delta import attach_recovery_proposal
+
+    rework_triage_actions = [
+        attach_recovery_proposal(
+            action,
+            state_dir=state_dir,
+            events=events,
         )
         for action in rework_triage_actions
     ]
@@ -791,13 +828,44 @@ def build_run_manager_projection(
         events,
         threshold=triage_threshold,
     )
+    triage_owned_tasks.update(active_immediate_replan_task_ids(events))
+    triage_owned_tasks.update(
+        str(action.get("task_id") or "")
+        for action in rework_triage_actions
+        if str(action.get("task_id") or "")
+    )
+    events_by_id = {event.id: event for event in events if event.id}
+    triage_owned_fanouts: set[str] = set()
+    for event in events:
+        if event.type != "task.rework.triage.completed":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        task_id = str(event.task_id or payload.get("task_id") or "")
+        if task_id not in triage_owned_tasks:
+            continue
+        failed = events_by_id.get(str(payload.get("failed_event_id") or ""))
+        failed_payload = (
+            failed.payload
+            if failed is not None and isinstance(failed.payload, dict)
+            else {}
+        )
+        fanout_id = str(failed_payload.get("fanout_id") or "")
+        if fanout_id:
+            triage_owned_fanouts.add(fanout_id)
     workflow_actions = [
         *_pending_workflow_task_actions(workflow_resume, events),
         *_pending_workflow_batch_actions(workflow_resume, events),
     ]
     workflow_actions = [
         action for action in workflow_actions
-        if str(action.get("task_id") or "") not in triage_owned_tasks
+        if (
+            str(action.get("task_id") or "") not in triage_owned_tasks
+            and str(action.get("fanout_id") or "") not in triage_owned_fanouts
+            and not (
+                set(_string_list(action.get("failed_children")))
+                & triage_owned_tasks
+            )
+        )
     ]
     attempt_recovery_actions = _pending_task_attempt_recovery_actions(
         state_dir,
@@ -1043,6 +1111,11 @@ def build_run_manager_projection(
         for item in pending_actions
         if isinstance(item, dict)
     )
+    from zf.runtime.operational_workflow_projection import (
+        build_operational_workflow_projection,
+    )
+
+    operational_workflow = build_operational_workflow_projection(events)
     return redact_obj({
         "schema_version": RUN_MANAGER_SCHEMA_VERSION,
         "is_derived_projection": True,
@@ -1050,6 +1123,7 @@ def build_run_manager_projection(
         "state_dir": str(state_dir),
         "project_root": str(project_root or state_dir.parent),
         "goal": goal,
+        "operational_workflow": operational_workflow,
         "continuation": continuation,
         "completion_profile": completion_profile,
         "repair_ledger": ledger,
@@ -7124,6 +7198,13 @@ def _pending_semantic_event_actions(
         ):
             continue
         if (
+            event.type == "plan.artifact_package.rejected"
+            and str(event_payload.get("mode") or "").strip().lower() == "shadow"
+        ):
+            # Shadow rollout records compatibility diagnostics without
+            # becoming a recovery owner or changing the legacy control path.
+            continue
+        if (
             event.type in {"task.rework.capped", "candidate.rework.capped"}
             and is_semantic_triage_cap(
                 event,
@@ -9036,6 +9117,7 @@ def _emit_no_progress_run_terminal(
     action: dict[str, Any],
     reason: str,
     causation_id: str,
+    terminal_reason: str = "recovery_no_progress_exhausted",
 ) -> ZfEvent | None:
     try:
         events = writer.event_log.read_all()
@@ -9079,7 +9161,7 @@ def _emit_no_progress_run_terminal(
             "schema_version": "run-goal.terminal.v1",
             "run_id": run_id,
             "status": "blocked",
-            "reason": "recovery_no_progress_exhausted",
+            "reason": terminal_reason,
             "detail": reason,
             "blocker_fingerprint": fingerprint,
             "safe_resume_action": str(action.get("safe_resume_action") or ""),

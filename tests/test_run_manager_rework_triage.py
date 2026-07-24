@@ -27,6 +27,8 @@ from zf.runtime.run_manager import build_run_manager_projection, run_manager_tic
 from zf.runtime.run_manager_rework_triage import (
     TRIAGE_RECORDED,
     TRIAGE_REQUESTED,
+    active_immediate_replan_task_ids,
+    pending_immediate_replan_actions,
     pending_rework_triage_actions,
 )
 from zf.runtime.semantic_replan import (
@@ -75,6 +77,246 @@ def _failure(round_number: int) -> ZfEvent:
             "reason": "missing expiry test",
         },
     )
+
+
+def test_first_unsatisfiable_contract_routes_to_semantic_replan(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer = _state(tmp_path)
+    store = TaskStore(state_dir / "kanban.json")
+    store.add(Task(
+        id="TASK-ASSEMBLY",
+        title="assemble product evidence",
+        status="in_progress",
+        assigned_to="dev-lane-1",
+        contract=TaskContract(
+            feature_id="PRD-SIM",
+            behavior="produce passing browser evidence",
+        ),
+    ))
+    task_map = state_dir / "artifacts" / "PRD-SIM" / "task_map.json"
+    task_map.parent.mkdir(parents=True)
+    task_map.write_text(
+        """{
+  "schema_version": "task-map.v1",
+  "pdd_id": "PRD-SIM",
+  "tasks": [{
+    "task_id": "TASK-ASSEMBLY",
+    "title": "assemble product evidence",
+    "owner_role": "dev-lane-1",
+    "wave": 1,
+    "allowed_paths": ["app/src/App.tsx"],
+    "allowed_paths_reason": "entrypoint owner",
+    "acceptance": ["passing browser trace exists"]
+  }]
+}
+""",
+        encoding="utf-8",
+    )
+    writer.emit(
+        "task_map.ready",
+        actor="zf-cli",
+        correlation_id="sim-run",
+        payload={
+            "pdd_id": "PRD-SIM",
+            "feature_id": "PRD-SIM",
+            "task_map_ref": str(task_map),
+            "source_index_ref": "artifacts/PRD-SIM/source_index.json",
+            "target_ref": "main",
+        },
+    )
+    blocked = writer.emit(
+        "dev.blocked",
+        actor="dev-lane-1",
+        task_id="TASK-ASSEMBLY",
+        correlation_id="sim-run",
+        payload={
+            "fanout_id": "fanout-impl",
+            "child_id": "assembly-child",
+            "failure_class": "task_contract_unsatisfiable",
+            "reason": "required browser config is outside allowed_paths",
+        },
+    )
+    triage = writer.emit(
+        "task.rework.triage.completed",
+        actor="zf-cli",
+        task_id="TASK-ASSEMBLY",
+        correlation_id="sim-run",
+        payload={
+            "task_id": "TASK-ASSEMBLY",
+            "failed_event_id": blocked.id,
+            "failed_event_type": blocked.type,
+            "classification": "design_issue",
+            "suspected_owner": "planner",
+            "recommended_action": "request_replan",
+            "retryable": False,
+            "is_terminal": False,
+            "notes": "task contract cannot satisfy the mandatory evidence",
+        },
+    )
+    writer.emit(
+        "fanout.aggregate.completed",
+        actor="zf-cli",
+        correlation_id="sim-run",
+        payload={
+            "fanout_id": "fanout-impl",
+            "stage_id": "prd-lanes-impl",
+            "status": "failed",
+            "pdd_id": "PRD-SIM",
+            "feature_id": "PRD-SIM",
+            "task_map_ref": str(task_map),
+            "failed_children": ["assembly-child"],
+        },
+    )
+    writer.emit(
+        "integration.failed",
+        actor="zf-cli",
+        correlation_id="sim-run",
+        payload={
+            "fanout_id": "fanout-impl",
+            "stage_id": "prd-lanes-impl",
+            "pdd_id": "PRD-SIM",
+            "feature_id": "PRD-SIM",
+            "task_map_ref": str(task_map),
+            "target_ref": "main",
+            "candidate_base_commit": "abc123",
+            "failed_children": ["assembly-child"],
+            "failed_task_ids": ["TASK-ASSEMBLY"],
+        },
+    )
+    config = _config(with_orchestrator=True)
+    config.roles.append(RoleConfig(
+        name="flow-discovery",
+        backend="mock",
+        skills=["zf-gap-task-synth"],
+    ))
+    config.workflow.stages.append(WorkflowStageConfig(
+        id="prd-post-impl-discovery",
+        trigger="flow.discovery.requested",
+        topology="fanout_reader",
+        roles=["flow-discovery"],
+    ))
+
+    actions = pending_immediate_replan_actions(log.read_all())
+    assert len(actions) == 1
+    assert actions[0]["recorded_event_id"] == triage.id
+    assert actions[0]["task_id"] == "TASK-ASSEMBLY"
+
+    projection = build_run_manager_projection(
+        state_dir,
+        events=log.read_all(),
+        config=config,
+    )
+    pending = projection["pending_actions"]
+    assert pending[0]["action"] == SEMANTIC_REPLAN_ACTION
+    assert pending[0]["semantic_replan_trigger"] == "flow.discovery.requested"
+    assert not [
+        action for action in pending
+        if action.get("action") == "workflow-batch-resume"
+    ]
+
+    result = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=config,
+        event_log=log,
+        spawn_repairs=False,
+    )
+    assert result.actions_applied == 1
+    requests = [
+        event for event in log.read_all()
+        if event.type == "flow.discovery.requested"
+    ]
+    assert len(requests) == 1
+    assert requests[0].payload["task_id"] == "TASK-ASSEMBLY"
+    assert requests[0].payload["task_map_ref"] == str(task_map)
+    assert blocked.id in requests[0].payload["failure_event_ids"]
+
+    second = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=config,
+        event_log=log,
+        spawn_repairs=False,
+    )
+    assert second.actions_applied == 0
+    assert len([
+        event for event in log.read_all()
+        if event.type == "flow.discovery.requested"
+    ]) == 1
+
+
+def test_immediate_replan_suppression_uses_latest_task_triage() -> None:
+    blocked = ZfEvent(
+        id="blocked-1",
+        type="dev.blocked",
+        task_id="TASK-1",
+        payload={"failure_class": "task_contract_unsatisfiable"},
+    )
+    request_replan = ZfEvent(
+        id="triage-1",
+        type="task.rework.triage.completed",
+        task_id="TASK-1",
+        payload={
+            "failed_event_id": blocked.id,
+            "recommended_action": "request_replan",
+            "retryable": False,
+        },
+    )
+    retry_current_contract = ZfEvent(
+        id="triage-2",
+        type="task.rework.triage.completed",
+        task_id="TASK-1",
+        payload={
+            "failed_event_id": "blocked-2",
+            "recommended_action": "dispatch_rework",
+            "retryable": True,
+        },
+    )
+
+    assert active_immediate_replan_task_ids([blocked, request_replan]) == {
+        "TASK-1"
+    }
+    assert active_immediate_replan_task_ids([
+        blocked,
+        request_replan,
+        retry_current_contract,
+    ]) == set()
+    assert pending_immediate_replan_actions([
+        blocked,
+        request_replan,
+        retry_current_contract,
+    ]) == []
+
+
+def test_immediate_replan_suppression_ends_when_task_map_supersedes_task() -> None:
+    request_replan = ZfEvent(
+        id="triage-1",
+        type="task.rework.triage.completed",
+        task_id="TASK-1",
+        payload={
+            "failed_event_id": "blocked-1",
+            "recommended_action": "request_replan",
+            "retryable": False,
+        },
+    )
+    replacement = ZfEvent(
+        id="task-map-2",
+        type="task_map.ready",
+        payload={
+            "task_map_generation": 2,
+            "supersedes_task_ids": ["TASK-1"],
+        },
+    )
+
+    assert active_immediate_replan_task_ids([
+        request_replan,
+        replacement,
+    ]) == set()
+    assert pending_immediate_replan_actions([
+        request_replan,
+        replacement,
+    ]) == []
 
 
 def test_l1_dispatches_first_two_failures_and_stops_at_third(tmp_path: Path) -> None:

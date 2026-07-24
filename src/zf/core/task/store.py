@@ -211,6 +211,39 @@ class TaskStore:
             self._save_raw(raw)
         return task
 
+    def add_many(self, tasks: list[Task]) -> tuple[list[str], list[str]]:
+        """Atomically append a dependency-closed task batch."""
+
+        if not tasks:
+            return [], []
+        ids = [task.id for task in tasks]
+        if len(ids) != len(set(ids)):
+            raise ValueError("task batch contains duplicate ids")
+        with self._locked():
+            raw = self._load_raw()
+            existing_ids = {str(item.get("id") or "") for item in raw}
+            terminal_ids = set(self._load_terminal_index().keys())
+            batch_ids = set(ids)
+            known_ids = existing_ids | terminal_ids | batch_ids
+            for task in tasks:
+                for ref in task.blocked_by:
+                    if ref not in known_ids:
+                        raise ValueError(
+                            f"blocked_by reference not found: {task.id} -> {ref}"
+                        )
+            created: list[str] = []
+            skipped: list[str] = []
+            for task in tasks:
+                if task.id in existing_ids or task.id in terminal_ids:
+                    skipped.append(task.id)
+                    continue
+                raw.append(asdict(task))
+                existing_ids.add(task.id)
+                created.append(task.id)
+            if created:
+                self._save_raw(raw)
+        return created, skipped
+
     def reopen(self, task: Task) -> Task:
         """Put a previously terminal task back on the active board.
 
@@ -236,7 +269,7 @@ class TaskStore:
         return task
 
     def update(self, task_id: str, **kwargs) -> Task | None:
-        from dataclasses import asdict, fields
+        from dataclasses import asdict
         with self._locked():
             raw = self._load_raw()
             for i, d in enumerate(raw):

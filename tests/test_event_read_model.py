@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 
 from zf.cli.main import main
@@ -96,6 +97,126 @@ def test_read_model_rebuild_indexes_timeline_and_raw_event(tmp_path: Path) -> No
     assert hydrated is not None
     assert hydrated.id == "evt-2"
     assert hydrated.payload["summary"] == "built"
+
+
+def test_event_ref_is_compact_and_hydrates_controlled_multi_refs(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="workflow.operation.started",
+        id="evt-operation",
+        actor="zf-cli",
+        task_id="TASK-1",
+        correlation_id="run-1",
+        causation_id="evt-parent",
+        payload={
+            "workflow_run_id": "run-1",
+            "operation_id": "op-1",
+            "parent_operation_id": "op-parent",
+            "attempt_id": "attempt-1",
+            "dispatch_id": "dispatch-1",
+            "active_dispatch_id": "dispatch-1",
+            "plan_artifact_package_id": "planpkg-1",
+            "package_id": "planpkg-1",
+            "child_task_ids": ["TASK-2", "TASK-2", "TASK-3"],
+            "trace_ids": ["trace-child"],
+        },
+    ))
+
+    read_model.rebuild(state_dir)
+
+    with sqlite3.connect(read_model.db_path(state_dir)) as conn:
+        columns = [
+            row[1] for row in conn.execute("PRAGMA table_info(event_ref)").fetchall()
+        ]
+        table_sql = str(conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'event_ref'"
+        ).fetchone()[0])
+        index_names = {
+            row[1] for row in conn.execute("PRAGMA index_list(event_ref)").fetchall()
+        }
+        refs = set(conn.execute(
+            "SELECT ref_kind, ref_id FROM event_ref ORDER BY ref_kind, ref_id"
+        ).fetchall())
+
+    assert columns == ["ref_kind", "ref_id", "seq"]
+    assert "WITHOUT ROWID" in table_sql.upper()
+    assert "idx_event_ref_seq" not in index_names
+    assert ("operation_id", "op-1") in refs
+    assert ("parent_operation_id", "op-parent") in refs
+    assert ("workflow_run_id", "run-1") in refs
+    assert ("attempt_id", "attempt-1") in refs
+    assert ("dispatch_id", "dispatch-1") in refs
+    assert ("plan_artifact_package_id", "planpkg-1") in refs
+    assert ("task", "TASK-2") in refs
+    assert ("task", "TASK-3") in refs
+    assert ("trace", "trace-child") in refs
+    assert ("event", "evt-operation") not in refs
+    assert ("actor", "zf-cli") not in refs
+
+    for ref_kind, ref_id in (
+        ("event", "evt-operation"),
+        ("task", "TASK-1"),
+        ("task", "TASK-2"),
+        ("operation_id", "op-1"),
+        ("dispatch_id", "dispatch-1"),
+        ("causation", "evt-parent"),
+        ("correlation", "run-1"),
+    ):
+        events = read_model.hydrate_events_by_ref(
+            state_dir,
+            ref_kind=ref_kind,
+            ref_id=ref_id,
+        )
+        assert events is not None
+        assert [event.id for event in events] == ["evt-operation"]
+
+
+def test_read_model_v4_schema_rebuilds_to_v5(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    _write_line(
+        state_dir / "events.jsonl",
+        ZfEvent(
+            type="workflow.operation.requested",
+            id="evt-v5",
+            payload={"operation_id": "op-v5"},
+        ),
+    )
+    path = read_model.db_path(state_dir)
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE projection_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO projection_meta(key, value)
+            VALUES ('schema_version', 'event-read-model.v4');
+            CREATE TABLE event_ref (
+              ref_kind TEXT NOT NULL,
+              ref_id TEXT NOT NULL,
+              seq INTEGER NOT NULL,
+              event_id TEXT,
+              PRIMARY KEY (ref_kind, ref_id, seq)
+            );
+            INSERT INTO event_ref VALUES ('event', 'legacy', 1, 'legacy');
+            """
+        )
+
+    rebuilt = read_model.rebuild(state_dir)
+
+    assert rebuilt["schema_version"] == "event-read-model.v5"
+    events = read_model.hydrate_events_by_ref(
+        state_dir,
+        ref_kind="operation_id",
+        ref_id="op-v5",
+    )
+    assert events is not None
+    assert [event.id for event in events] == ["evt-v5"]
+    with sqlite3.connect(path) as conn:
+        columns = [
+            row[1] for row in conn.execute("PRAGMA table_info(event_ref)").fetchall()
+        ]
+    assert columns == ["ref_kind", "ref_id", "seq"]
 
 
 def test_read_model_indexes_sidecar_ref_metadata_without_raw_payload(tmp_path: Path) -> None:
@@ -447,7 +568,7 @@ def test_projection_cli_rebuild_and_status(tmp_path: Path, monkeypatch, capsys) 
 
     assert main(["projection", "status", "--count-source", "--json"]) == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["schema_version"] == "event-read-model.v4"
+    assert status["schema_version"] == "event-read-model.v5"
     assert status["source_cursor"]["schema_version"] == "event-segment-cursor.v1"
     assert status["projection_lag"] == 0
 

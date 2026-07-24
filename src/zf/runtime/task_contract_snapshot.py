@@ -187,6 +187,7 @@ def build_task_contract_snapshot(
         else {}
     )
     commands = task_contract_verification_commands(contract)
+    source_refs = dict(evidence_contract.get("source_refs") or {})
     verification_command = str(commands[0]["command"] if commands else "")
     criteria = normalize_acceptance_criteria(
         getattr(contract, "acceptance_criteria", []) or [getattr(contract, "acceptance", "")],
@@ -208,6 +209,15 @@ def build_task_contract_snapshot(
     return {
         "schema_version": SCHEMA_VERSION,
         **identity,
+        "plan_artifact_package_id": str(
+            source_refs.get("plan_artifact_package_id") or ""
+        ),
+        "plan_artifact_package_ref": str(
+            source_refs.get("plan_artifact_package_ref") or ""
+        ),
+        "plan_artifact_package_digest": str(
+            source_refs.get("plan_artifact_package_digest") or ""
+        ),
         "title": str(task.title or ""),
         "behavior": str(getattr(contract, "behavior", "") or ""),
         "allowed_paths": list(getattr(contract, "scope", []) or []),
@@ -237,7 +247,7 @@ def build_task_contract_snapshot(
             evidence_contract.get("required_contract_tests")
             or evidence_contract.get("required_tests")
         ),
-        "source_refs": dict(evidence_contract.get("source_refs") or {}),
+        "source_refs": source_refs,
         "evidence_contract": evidence_contract,
         "source_ref": str(getattr(contract, "source_ref", "") or ""),
         "source_index_ref": str(getattr(contract, "source_index_ref", "") or ""),
@@ -342,6 +352,9 @@ def build_target_snapshot(
             "task_map_generation",
             "base_commit",
             "task_ref",
+            "plan_artifact_package_id",
+            "plan_artifact_package_ref",
+            "plan_artifact_package_digest",
         )
         if str((contract_snapshot or {}).get(key) or "").strip()
     }

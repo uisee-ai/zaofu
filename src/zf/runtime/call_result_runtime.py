@@ -105,6 +105,13 @@ def prepare_call_operation(
         "attempt_id": attempt_id,
         "result_protocol_mode": mode,
     })
+    from zf.runtime.attempt_domain import infer_attempt_domain
+
+    payload["attempt_domain"] = infer_attempt_domain(
+        payload,
+        operation_type=operation_type,
+        stage_id=stage_id,
+    )
     from zf.runtime.call_result_adapters import call_result_profile_identity
 
     output_profile_id, output_profile_revision = call_result_profile_identity(
@@ -176,6 +183,7 @@ def prepare_call_operation(
         "operation_type": operation_type,
         "stage_id": stage_id,
         "operation_key": operation_key,
+        "attempt_domain": str(payload.get("attempt_domain") or ""),
         "task_id": task_id,
         "fanout_id": str(payload.get("fanout_id") or ""),
         "child_id": str(payload.get("child_id") or ""),
@@ -212,6 +220,7 @@ def prepare_call_operation(
                 "run_id",
                 "role_instance",
                 "attempt_id",
+                "attempt_domain",
                 "plan_revision",
                 "plan_synth_contract_ref",
                 "plan_synth_contract_digest",
@@ -225,6 +234,11 @@ def prepare_call_operation(
                 "base_git_head",
                 "contract_revision",
                 "task_map_generation",
+                "plan_artifact_package_id",
+                "plan_artifact_package_ref",
+                "plan_artifact_package_digest",
+                "run_contract_ref",
+                "run_contract_digest",
                 "base_commit",
                 "task_ref",
                 "contract_snapshot_ref",
@@ -339,16 +353,23 @@ def admit_runtime_call_result(
         **(event.payload if isinstance(event.payload, dict) else {}),
         **dict(merged_payload or {}),
     }
-    source = replace(event, payload=payload)
-    from zf.runtime.call_result_adapters import hydrate_profiled_control_result_event
-
-    source = hydrate_profiled_control_result_event(runtime.state_dir, source)
-    effective_mode = mode or result_protocol_mode(runtime.config, payload)
     operation_result_identity = _pinned_operation_result_identity(
         runtime,
         operation_id=str(payload.get("operation_id") or ""),
         request_hash=str(payload.get("request_hash") or ""),
     )
+    # Provider terminals are allowed to omit mechanical dispatch identity.  The
+    # immutable operation request is authoritative for omitted fields, while an
+    # explicitly returned value remains visible to mismatch/currentness checks.
+    for key, value in operation_result_identity.items():
+        if value not in (None, ""):
+            payload.setdefault(key, value)
+
+    source = replace(event, payload=payload)
+    from zf.runtime.call_result_adapters import hydrate_profiled_control_result_event
+
+    source = hydrate_profiled_control_result_event(runtime.state_dir, source)
+    effective_mode = mode or result_protocol_mode(runtime.config, payload)
     outcome = call_result_admission_service(runtime).report_legacy_result(
         source,
         mode=effective_mode,

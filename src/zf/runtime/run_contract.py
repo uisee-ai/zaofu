@@ -15,8 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+
 
 RUN_CONTRACT_SCHEMA = "run-contract.v1"
+RUN_CONTRACT_SNAPSHOT_SCHEMA = "run-contract-snapshot.v1"
 STRICT_RUN_CONTRACT_VALUES = frozenset({
     "strict",
     "full-parity",
@@ -161,7 +165,7 @@ def write_run_contract(
     state_dir: Path,
     contract: Mapping[str, Any],
 ) -> Path:
-    path = state_dir.expanduser() / "config" / "run-contract.json"
+    path = active_run_contract_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(
         dict(contract), ensure_ascii=False, indent=2, sort_keys=True
@@ -184,8 +188,85 @@ def write_run_contract(
     return path
 
 
+def active_run_contract_path(state_dir: Path) -> Path:
+    """Return the mutable compatibility view used by legacy callers."""
+
+    return state_dir.expanduser() / "config" / "run-contract.json"
+
+
+def write_run_contract_snapshot(
+    state_dir: Path,
+    contract: Mapping[str, Any],
+    *,
+    source_event_id: str = "",
+) -> dict[str, Any]:
+    """Persist an immutable baseline without retaining volatile timestamps."""
+
+    payload = {
+        "schema_version": RUN_CONTRACT_SNAPSHOT_SCHEMA,
+        "contract_schema_version": str(
+            contract.get("schema_version") or RUN_CONTRACT_SCHEMA
+        ),
+        "contract_digest": str(contract.get("contract_digest") or ""),
+        "contract": _stable_contract_body(contract),
+    }
+    if not payload["contract_digest"]:
+        payload["contract_digest"] = stable_json_sha256(payload["contract"])
+    descriptor = write_immutable_json_sidecar(
+        state_dir,
+        payload,
+        root="run-contracts",
+        kind="run_contract",
+        schema_version=RUN_CONTRACT_SNAPSHOT_SCHEMA,
+        created_by="zf-runtime",
+        source_event_id=source_event_id,
+    )
+    return {
+        **descriptor,
+        "contract_digest": payload["contract_digest"],
+    }
+
+
+def load_run_contract_snapshot(
+    state_dir: Path,
+    descriptor: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Hydrate and validate one immutable run-contract descriptor."""
+
+    hydrated = hydrate_sidecar_ref(state_dir, dict(descriptor))
+    if not hydrated.ok or not isinstance(hydrated.payload, dict):
+        raise SidecarRefError(
+            "invalid_run_contract_snapshot",
+            "run contract snapshot is not a JSON object",
+            ref=str(descriptor.get("ref") or ""),
+        )
+    payload = dict(hydrated.payload)
+    if payload.get("schema_version") != RUN_CONTRACT_SNAPSHOT_SCHEMA:
+        raise SidecarRefError(
+            "invalid_run_contract_snapshot_schema",
+            "run contract snapshot schema mismatch",
+            ref=hydrated.ref,
+        )
+    contract = payload.get("contract")
+    if not isinstance(contract, dict):
+        raise SidecarRefError(
+            "invalid_run_contract_snapshot_body",
+            "run contract snapshot is missing contract body",
+            ref=hydrated.ref,
+        )
+    expected = str(payload.get("contract_digest") or "")
+    actual = stable_json_sha256(contract)
+    if not expected or expected != actual:
+        raise SidecarRefError(
+            "run_contract_snapshot_digest_mismatch",
+            "run contract semantic digest does not match its body",
+            ref=hydrated.ref,
+        )
+    return payload
+
+
 def load_run_contract(state_dir: Path) -> dict[str, Any] | None:
-    path = state_dir.expanduser() / "config" / "run-contract.json"
+    path = active_run_contract_path(state_dir)
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):

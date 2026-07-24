@@ -234,6 +234,9 @@ def test_entry_trigger_synthesizes_and_emits(tmp_path: Path) -> None:
                     payload={
                         "pdd_id": "default",
                         "objective": "交付 X",
+                        "requirement_spec_ref": "artifacts/requirements/r2.json",
+                        "requirement_spec_digest": "requirement-r2-sha",
+                        "prd_ref": "docs/prd/current.md",
                         "workflow_input_manifest_ref": str(manifest),
                     })
     emitted = maybe_synthesize_light_task_map(
@@ -243,6 +246,11 @@ def test_entry_trigger_synthesizes_and_emits(tmp_path: Path) -> None:
     assert emitted is not None and emitted.type == "task_map.ready"
     assert emitted.payload["source"] == "light_flow_kernel"
     assert emitted.payload["task_map_ref"] == ".zf/artifacts/default/task_map.json"
+    assert emitted.payload["requirement_spec_ref"] == (
+        "artifacts/requirements/r2.json"
+    )
+    assert emitted.payload["requirement_spec_digest"] == "requirement-r2-sha"
+    assert emitted.payload["prd_ref"] == "docs/prd/current.md"
     assert emitted.payload["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
     written = json.loads(
         (state_dir / "artifacts" / "default" / "task_map.json").read_text()

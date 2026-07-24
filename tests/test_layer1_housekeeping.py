@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-import json
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
 
-from zf.core.config.schema import (
-    ProjectConfig,
-    RoleConfig,
-    SessionConfig,
-    ZfConfig,
-)
 from zf.core.cost.tracker import CostTracker
-from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.memory.store import MemoryStore
 from zf.core.task.schema import Task, TaskContract
@@ -153,6 +146,54 @@ def test_sprint_contract_event_writes_contract_to_task(state_dir: Path):
     task = ts.get("T1")
     assert task.contract.behavior == "JWT login works"
     assert "src/auth.py" in task.contract.scope
+
+
+def test_materialized_full_contract_update_is_lossless(state_dir: Path):
+    ts = TaskStore(state_dir / "kanban.json")
+    contract = TaskContract(
+        behavior="deliver exact result",
+        verification="grep -qx expected app/result.txt",
+        validation={
+            "commands": [{
+                "id": "light-verification-1",
+                "command": "grep -qx expected app/result.txt",
+                "acceptance_ids": ["ac-result"],
+                "owner": "impl_self_check",
+                "tier": "task_non_smoke",
+                "deterministic": True,
+                "reusable": True,
+                "timeout_seconds": 900,
+            }],
+        },
+        scope=["app/**"],
+        acceptance_criteria=[{
+            "acceptance_id": "ac-result",
+            "statement": "result is exact",
+            "mandatory": True,
+        }],
+        goal_claim_ids=["claim-result"],
+        evidence_contract={
+            "source": "refactor_task_map",
+            "source_refs": {"task_map_ref": ".zf/artifacts/run/task_map.json"},
+        },
+    )
+    ts.add(Task(id="T1", title="x", contract=contract))
+
+    apply_task_contract_event(ts, ZfEvent(
+        type="task.contract.update",
+        actor="zf-cli",
+        task_id="T1",
+        payload={
+            "source": "task_map_materialization",
+            "contract": asdict(contract),
+        },
+    ))
+
+    projected = ts.get("T1").contract
+    assert asdict(projected) == asdict(contract)
+    assert projected.validation["commands"][0]["id"] == "light-verification-1"
+    assert projected.acceptance_criteria[0]["acceptance_id"] == "ac-result"
+    assert projected.goal_claim_ids == ["claim-result"]
 
 
 def test_sprint_contract_event_preserves_env_prefixed_absolute_python_command(

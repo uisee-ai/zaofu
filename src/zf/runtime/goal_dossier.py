@@ -19,6 +19,10 @@ from zf.runtime.attempt_handoff_reducer import reduce_attempt_handoffs
 from zf.runtime.attempt_ledger import failure_fingerprint
 from zf.runtime.goal_closure_projection import build_goal_closure_loop
 from zf.runtime.operation_projection import project_task_operations
+from zf.runtime.plan_artifact_package import (
+    hydrate_plan_artifact_package,
+    reduce_plan_artifact_packages,
+)
 from zf.runtime.progress_projection import project_task_progress
 from zf.runtime.run_archive import RunArchiveError, validate_run_id
 from zf.runtime.run_manager import build_run_goal_projection
@@ -146,6 +150,11 @@ def build_goal_dossier(
         "artifact_digests": digests,
     })
     incident_history = _failure_incidents(scoped_events)
+    package_roadmap, package_diagnostics = _plan_package_roadmap(
+        state_dir,
+        scoped_events,
+        canonical_run_id,
+    )
     gaps = _gaps(goal, tasks, handoff, incident_history)
     task_counts = _task_counts(tasks)
     diagnostics = [
@@ -156,6 +165,7 @@ def build_goal_dossier(
         for task in tasks
         if task.get("missing")
     ]
+    diagnostics.extend(package_diagnostics)
     dossier = {
         "schema_version": SCHEMA_VERSION,
         "is_derived_projection": True,
@@ -186,6 +196,7 @@ def build_goal_dossier(
                 scoped_events,
                 {"goal_claim_set_ref", "goal_claim_ref"},
             ),
+            **package_roadmap,
             "workflow_anchor_task_ids": workflow_anchor_task_ids,
         },
         "state": {
@@ -202,6 +213,97 @@ def build_goal_dossier(
         "source_manifest": source_manifest,
     }
     return redact_obj(dossier)
+
+
+def _plan_package_roadmap(
+    state_dir: Path,
+    events: list[ZfEvent],
+    run_id: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    diagnostics: list[dict[str, Any]] = []
+    try:
+        reduced = reduce_plan_artifact_packages(
+            events,
+            workflow_run_id=run_id,
+        )
+    except Exception as exc:
+        return {
+            "current_plan_package": None,
+            "plan_package_history": [],
+            "plan_package_freshness": {
+                "status": "invalid",
+                "reason": str(exc),
+            },
+        }, [{
+            "type": "plan_package_reducer_invalid",
+            "reason": str(exc),
+        }]
+
+    def row(value: Any) -> dict[str, Any] | None:
+        if not isinstance(value, dict):
+            return None
+        if not str(value.get("package_ref") or ""):
+            return {
+                **value,
+                "ports": [],
+                "hydrate_status": "not_applicable",
+            }
+        try:
+            body = hydrate_plan_artifact_package(
+                state_dir,
+                {
+                    "ref": value.get("package_ref"),
+                    "sha256": value.get("package_digest"),
+                },
+            )
+        except Exception as exc:
+            diagnostics.append({
+                "type": "plan_package_hydrate_failed",
+                "package_ref": str(value.get("package_ref") or ""),
+                "reason": str(exc),
+            })
+            return {
+                **value,
+                "ports": [],
+                "hydrate_status": "failed",
+            }
+        return {
+            **value,
+            "flow_kind": str(body.get("flow_kind") or ""),
+            "plan_revision": str(body.get("plan_revision") or ""),
+            "task_map_generation": str(body.get("task_map_generation") or ""),
+            "ports": [
+                {
+                    "logical_name": str(port.get("logical_name") or ""),
+                    "ref": str(port.get("ref") or ""),
+                    "sha256": str(port.get("sha256") or ""),
+                    "inherited": port in body.get("inherited", []),
+                }
+                for port in [*body.get("produced", []), *body.get("inherited", [])]
+                if isinstance(port, dict)
+            ],
+            "hydrate_status": "ready",
+        }
+
+    current = row(reduced.get("current"))
+    history = [
+        item
+        for item in (
+            row(value)
+            for value in [
+                *reduced.get("history", []),
+                *reduced.get("rejected", []),
+            ]
+        )
+        if item is not None
+    ]
+    freshness = dict(reduced.get("freshness") or {})
+    freshness["status"] = "incomplete" if diagnostics else "ready"
+    return {
+        "current_plan_package": current,
+        "plan_package_history": history,
+        "plan_package_freshness": freshness,
+    }, diagnostics
 
 
 def write_goal_dossier_projection(state_dir: Path, dossier: dict[str, Any]) -> Path:

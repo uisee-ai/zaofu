@@ -140,6 +140,21 @@ class GoalClosureBridgeMixin:
                 },
             ))
             return None
+        from zf.core.workflow.flow_metadata import flow_metadata_for
+        from zf.runtime.plan_artifact_package import artifact_package_mode
+
+        metadata = flow_metadata_for(self.config, payload=payload)
+        if artifact_package_mode(metadata) == "blocking" and not all((
+            identity.get("plan_artifact_package_id"),
+            identity.get("plan_artifact_package_ref"),
+            identity.get("plan_artifact_package_digest"),
+        )):
+            self._emit_goal_closure_identity_invalid(
+                source_event,
+                identity=identity,
+                reason="blocking Goal closure has no current Plan Artifact Package",
+            )
+            return None
         prior = current_closure_event(
             events,
             event_type=event_type,
@@ -257,6 +272,7 @@ class GoalClosureBridgeMixin:
         """Bind Thin Judge inputs to immutable sidecars and required reads."""
 
         descriptors: list[dict] = []
+        descriptor_keys: set[tuple[str, str]] = set()
 
         def add_descriptor(
             *,
@@ -269,6 +285,10 @@ class GoalClosureBridgeMixin:
             digest_text = str(digest or "").strip()
             if not ref_text or not digest_text:
                 return
+            descriptor_key = (ref_text, digest_text)
+            if descriptor_key in descriptor_keys:
+                return
+            descriptor_keys.add(descriptor_key)
             descriptors.append({
                 "ref": ref_text,
                 "sha256": digest_text,
@@ -290,6 +310,29 @@ class GoalClosureBridgeMixin:
             source_id="goal-claim-set",
             kind="goal_claim_set",
         )
+        package_ref = str(identity.get("plan_artifact_package_ref") or "")
+        package_digest = str(identity.get("plan_artifact_package_digest") or "")
+        add_descriptor(
+            ref=package_ref,
+            digest=package_digest,
+            source_id="plan-artifact-package",
+            kind="plan_artifact_package",
+        )
+        if package_ref and package_digest:
+            from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
+
+            package = hydrate_plan_artifact_package(
+                self.state_dir,
+                {"ref": package_ref, "sha256": package_digest},
+            )
+            for port in [*package["produced"], *package["inherited"]]:
+                logical_name = str(port.get("logical_name") or "")
+                add_descriptor(
+                    ref=port.get("ref"),
+                    digest=port.get("sha256"),
+                    source_id=f"plan-port-{logical_name}",
+                    kind=str(port.get("artifact_kind") or logical_name),
+                )
 
         candidate_task_commits = candidate_task_source_commits(
             events,
@@ -401,6 +444,15 @@ class GoalClosureBridgeMixin:
             "planning_result_ref": planning_result_ref,
             "goal_claim_set_ref": str(claim_set.get("goal_claim_set_ref") or ""),
             "goal_claim_set_digest": str(claim_set.get("goal_claim_set_digest") or ""),
+            "plan_artifact_package_id": str(
+                identity.get("plan_artifact_package_id") or ""
+            ),
+            "plan_artifact_package_ref": str(
+                identity.get("plan_artifact_package_ref") or ""
+            ),
+            "plan_artifact_package_digest": str(
+                identity.get("plan_artifact_package_digest") or ""
+            ),
             "delivery_policy": str(metadata.get("delivery_policy") or "report_only"),
         }
         contract_descriptor = write_immutable_json_sidecar(
@@ -416,6 +468,15 @@ class GoalClosureBridgeMixin:
             "workflow_run_id": workflow_run_id,
             "goal_id": goal_id,
             "task_map_generation": str(identity.get("task_map_generation") or ""),
+            "plan_artifact_package_id": str(
+                identity.get("plan_artifact_package_id") or ""
+            ),
+            "plan_artifact_package_ref": str(
+                identity.get("plan_artifact_package_ref") or ""
+            ),
+            "plan_artifact_package_digest": str(
+                identity.get("plan_artifact_package_digest") or ""
+            ),
             "candidate_ref": candidate_ref,
             "target_commit": str(identity.get("candidate_head_commit") or ""),
             "closure_identity": str(identity.get("closure_identity") or ""),
@@ -455,6 +516,15 @@ class GoalClosureBridgeMixin:
             "planning_result_ref": planning_result_ref,
             "candidate_ref": candidate_ref,
             "target_commit": str(identity.get("candidate_head_commit") or ""),
+            "plan_artifact_package_id": str(
+                identity.get("plan_artifact_package_id") or ""
+            ),
+            "plan_artifact_package_ref": str(
+                identity.get("plan_artifact_package_ref") or ""
+            ),
+            "plan_artifact_package_digest": str(
+                identity.get("plan_artifact_package_digest") or ""
+            ),
             "contract_snapshot_ref": str(contract_descriptor.get("ref") or ""),
             "contract_snapshot_digest": str(contract_descriptor.get("sha256") or ""),
             "target_snapshot_ref": str(target_descriptor.get("ref") or ""),
@@ -510,13 +580,6 @@ class GoalClosureBridgeMixin:
             for existing in events
         ):
             return False
-        if any(
-            existing.type == "goal.claim_set.pinned"
-            and isinstance(existing.payload, dict)
-            and str(existing.payload.get("source_event_id") or "") == event.id
-            for existing in events
-        ):
-            return True
         workflow_run_id = str(
             payload.get("workflow_run_id")
             or payload.get("trace_id")
@@ -543,6 +606,23 @@ class GoalClosureBridgeMixin:
             task_map_digest=payload.get("task_map_digest"),
             task_map_ref=task_map_ref,
         )
+        if any(
+            existing.type == "goal.claim_set.pinned"
+            and isinstance(existing.payload, dict)
+            and (
+                str(existing.payload.get("source_event_id") or "") == event.id
+                or (
+                    str(existing.payload.get("workflow_run_id") or "")
+                    == workflow_run_id
+                    and str(existing.payload.get("task_map_generation") or "")
+                    == generation
+                    and str(existing.payload.get("task_map_ref") or "")
+                    == task_map_ref
+                )
+            )
+            for existing in events
+        ):
+            return True
         from zf.core.workflow.flow_metadata import flow_metadata_for
 
         metadata = flow_metadata_for(self.config, payload=payload)

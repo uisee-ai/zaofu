@@ -41,6 +41,19 @@ Write durable artifacts before emitting the stage success event:
 
 Include these paths in `artifact_refs` / `evidence_refs` as appropriate.
 
+## Plan Artifact Ports
+
+Emit every plan-level input as an explicit top-level ref. Use canonical logical
+names when the result profile supports descriptors: `requirement_spec`,
+`task_map`, `planning_result`, `source_index`, and applicable matrices. Legacy
+`prd_ref`, `product_spec`, and `issue_ref` remain valid producer fields during
+migration, but do not invent a ref or scan a directory to fill a missing port.
+
+`required_plan_ports` in `task_map.json` names logical inputs only. Do not
+write a Plan Artifact Package id/ref, choose which Package is current, or emit
+Package lifecycle events; the Kernel derives the Goal Claim Set and admits the
+immutable Package after validating these explicit refs.
+
 ## Source Provenance Contract
 
 Every dispatchable task must be traceable back to the plan, scan, PRD, issue,

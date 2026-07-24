@@ -409,6 +409,40 @@ def test_load_writer_task_map_rejects_bad_verification_before_dispatch(tmp_path)
         )
 
 
+def test_load_writer_task_map_preserves_complete_plan_package_identity(tmp_path):
+    task_map = tmp_path / "task_map.json"
+    task_map.write_text(json.dumps({
+        "schema_version": "task-map.v1",
+        "tasks": [{
+            "task_id": "TASK-A",
+            "title": "A",
+            "allowed_paths": ["src/a.py"],
+            "verification": "true",
+        }],
+    }), encoding="utf-8")
+
+    loaded = load_writer_task_map(
+        stage=SimpleNamespace(task_map=""),
+        event=ZfEvent(
+            type="task_map.ready",
+            actor="kernel",
+            payload={
+                "task_map_ref": str(task_map),
+                "plan_artifact_package_id": "planpkg-abc",
+                "plan_artifact_package_ref": "artifacts/plan-packages/abc.json",
+                "plan_artifact_package_digest": "abc",
+            },
+        ),
+        pdd_id="PDD-A",
+        state_dir=tmp_path / ".zf",
+        project_root=tmp_path,
+    )
+
+    assert loaded.plan_artifact_package_id == "planpkg-abc"
+    assert loaded.plan_artifact_package_ref == "artifacts/plan-packages/abc.json"
+    assert loaded.plan_artifact_package_digest == "abc"
+
+
 def test_load_writer_task_map_requires_run_scoped_verification(tmp_path):
     task_map = tmp_path / "task_map.json"
     task_map.write_text(json.dumps({

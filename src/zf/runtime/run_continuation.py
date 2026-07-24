@@ -18,6 +18,9 @@ _PROGRESS_EVENTS = frozenset({
     "task_map.amended",
     "task_map.admitted",
     "goal.claim_set.pinned",
+    "plan.artifact_package.admitted",
+    "plan.artifact_package.rejected",
+    "plan.artifact_package.superseded",
     "task.assigned",
     "task.dispatched",
     "task.done",
@@ -85,6 +88,9 @@ _PHASES = (
         "task_map.amended",
         "task_map.admitted",
         "goal.claim_set.pinned",
+        "plan.artifact_package.admitted",
+        "plan.artifact_package.rejected",
+        "plan.artifact_package.superseded",
     })),
 )
 
@@ -264,6 +270,7 @@ def _latest_generation(events: list[ZfEvent]) -> str:
     for event in reversed(events):
         if event.type not in {
             "goal.claim_set.pinned",
+            "plan.artifact_package.admitted",
             "task_map.ready",
             "task_map.amended",
         }:

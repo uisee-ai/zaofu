@@ -173,19 +173,19 @@ def validate_task_map_payload(
             and not _string_list(raw.get("acceptance"))
         ):
             errors.append(f"{task_id} requires verification or acceptance")
-        for field, item in task_map_verification_command_fields(raw):
+        for field_name, item in task_map_verification_command_fields(raw):
             command = str(item["command"])
             for error in _verification_command_errors(command):
-                errors.append(f"{task_id}.{field} {error}")
+                errors.append(f"{task_id}.{field_name} {error}")
             for error in _verification_scope_errors(
                 raw,
                 command,
                 plan_scope_paths,
                 relative_roots=_relative_path_roots(payload),
             ):
-                errors.append(f"{task_id}.{field} {error}")
+                errors.append(f"{task_id}.{field_name} {error}")
             for error in _verification_level_errors(command):
-                errors.append(f"{task_id}.{field} {error}")
+                errors.append(f"{task_id}.{field_name} {error}")
         if _string_list(raw.get("allowed_paths")) and not str(
             raw.get("allowed_paths_reason") or raw.get("scope_reason") or ""
         ).strip():
@@ -219,9 +219,9 @@ def validate_task_map_payload(
     source_refs = payload.get("source_refs")
     if source_refs is not None and not isinstance(source_refs, dict):
         errors.append("source_refs must be an object when present")
-    for field, value in _workspace_root_owner_requirement_values(payload):
+    for field_name, value in _workspace_root_owner_requirement_values(payload):
         if not isinstance(value, bool):
-            errors.append(f"{field} must be a boolean when present")
+            errors.append(f"{field_name} must be a boolean when present")
 
     errors.extend(_shared_convention_errors(
         payload,
@@ -236,6 +236,9 @@ def validate_task_map_payload(
         [raw for raw in tasks_raw if isinstance(raw, dict)],
     )
     errors.extend(goal_coverage_errors)
+    from zf.runtime.task_map_evidence import validate_task_map_evidence
+    topological_order, evidence_errors = validate_task_map_evidence(payload)
+    errors.extend(evidence_errors)
 
     summary = {
         "task_count": len(ids),
@@ -246,6 +249,7 @@ def validate_task_map_payload(
         "bundle_owner_count": len(set(bundle_owner_roles.values())),
         "assembly_task_count": len(assembly_owner_roles),
         "goal_coverage": goal_coverage,
+        "topological_order": topological_order,
     }
     return TaskMapValidationResult(passed=not errors, errors=errors, summary=summary)
 

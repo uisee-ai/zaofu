@@ -56,6 +56,11 @@ def test_selected_call_result_replays_settled_operation_without_redispatch(
         "child_id": "C1",
         "stage_id": "impl",
         "task_id": "T1",
+        "plan_artifact_package_id": "planpkg-current",
+        "plan_artifact_package_ref": "artifacts/plan-packages/current.json",
+        "plan_artifact_package_digest": "package-sha",
+        "run_contract_ref": "artifacts/run-contracts/current.json",
+        "run_contract_digest": "contract-sha",
         "artifact_refs": [{
             "source_id": "context",
             "artifact_id": "context",
@@ -92,6 +97,9 @@ def test_selected_call_result_replays_settled_operation_without_redispatch(
     ).payload["request"]
     assert request["output_profile_id"] == "implementation"
     assert request["output_profile_revision"] == "1"
+    assert request["attempt_domain"] == "task"
+    assert request["result_identity"]["plan_artifact_package_id"] == "planpkg-current"
+    assert request["result_identity"]["run_contract_digest"] == "contract-sha"
     manifest = hydrate_sidecar_ref(
         runtime.state_dir,
         payload["attempt_source_manifest"],

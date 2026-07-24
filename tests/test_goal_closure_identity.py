@@ -84,6 +84,56 @@ def test_closure_identity_uses_same_legacy_generation_as_claim_pin(tmp_path) -> 
     )
 
 
+def test_closure_identity_binds_current_plan_artifact_package(tmp_path) -> None:  # noqa: ANN001
+    events = [
+        ZfEvent(
+            type="goal.claim_set.pinned",
+            correlation_id="run-1",
+            payload={
+                "workflow_run_id": "run-1",
+                "goal_id": "GOAL-1",
+                "task_map_generation": "generation-1",
+            },
+        ),
+        ZfEvent(
+            type="plan.artifact_package.admitted",
+            correlation_id="run-1",
+            payload={
+                "workflow_run_id": "run-1",
+                "package_slot": "execution_plan",
+                "task_map_generation": "generation-1",
+                "package_id": "planpkg-current",
+                "package_ref": "artifacts/plan-packages/current.json",
+                "package_digest": "d" * 64,
+                "mode": "blocking",
+            },
+        ),
+    ]
+
+    identity = build_closure_identity(
+        events,
+        source_event=ZfEvent(
+            type="test.passed",
+            correlation_id="run-1",
+            payload={},
+        ),
+        payload={
+            "workflow_run_id": "run-1",
+            "goal_id": "GOAL-1",
+            "task_map_generation": "generation-1",
+            "candidate_head_commit": "a" * 40,
+        },
+        state_dir=tmp_path,
+        flow_kind="prd",
+    )
+
+    assert identity["plan_artifact_package_id"] == "planpkg-current"
+    assert identity["plan_artifact_package_ref"] == (
+        "artifacts/plan-packages/current.json"
+    )
+    assert identity["plan_artifact_package_digest"] == "d" * 64
+
+
 def test_closure_identity_uses_pinned_run_identity_for_trace_alias(
     tmp_path,
 ) -> None:  # noqa: ANN001
@@ -138,6 +188,9 @@ def test_goal_closure_dispatch_snapshots_bind_identity(tmp_path) -> None:  # noq
             "workflow_run_id": "run-1",
             "goal_id": "GOAL-1",
             "task_map_generation": "generation-1",
+            "plan_artifact_package_id": "planpkg-current",
+            "plan_artifact_package_ref": "artifacts/plan-packages/current.json",
+            "plan_artifact_package_digest": "d" * 64,
         },
         root="goal-closure/contracts",
         kind="goal_closure_contract_snapshot",
@@ -151,6 +204,9 @@ def test_goal_closure_dispatch_snapshots_bind_identity(tmp_path) -> None:  # noq
             "workflow_run_id": "run-1",
             "goal_id": "GOAL-1",
             "task_map_generation": "generation-1",
+            "plan_artifact_package_id": "planpkg-current",
+            "plan_artifact_package_ref": "artifacts/plan-packages/current.json",
+            "plan_artifact_package_digest": "d" * 64,
             "target_commit": "c" * 40,
             "closure_identity": "closure-1",
         },
@@ -163,6 +219,9 @@ def test_goal_closure_dispatch_snapshots_bind_identity(tmp_path) -> None:  # noq
         "workflow_run_id": "run-1",
         "goal_id": "GOAL-1",
         "task_map_generation": "generation-1",
+        "plan_artifact_package_id": "planpkg-current",
+        "plan_artifact_package_ref": "artifacts/plan-packages/current.json",
+        "plan_artifact_package_digest": "d" * 64,
         "target_commit": "c" * 40,
         "closure_identity": "closure-1",
         "contract_snapshot_ref": contract["ref"],
@@ -177,6 +236,14 @@ def test_goal_closure_dispatch_snapshots_bind_identity(tmp_path) -> None:  # noq
         validate_goal_closure_dispatch_snapshots(
             tmp_path,
             {**payload, "target_commit": "d" * 40},
+        )
+    with pytest.raises(
+        GoalClosureIdentityError,
+        match="contract plan_artifact_package_digest mismatch",
+    ):
+        validate_goal_closure_dispatch_snapshots(
+            tmp_path,
+            {**payload, "plan_artifact_package_digest": "e" * 64},
         )
 
 

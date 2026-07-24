@@ -42,7 +42,11 @@ amendment are separate role capabilities supplied by the workflow profile.
    packaging probes required by the task's risk and verification tier. Receipt
    reuse never waives semantic AC review or an independent high-risk probe.
 5. Map every mandatory acceptance criterion to evidence. Passing commands do
-   not close uncovered criteria.
+   not close uncovered criteria. For `e2e` / `real_e2e`, inspect the receipt's
+   runner and method identity and confirm that the command exercised the
+   contract's real application, browser, provider, or simulation path. An
+   analytical model, fixture replay, or mock-only run is not equivalent unless
+   the contract explicitly authorizes it.
 6. Separate verifier/environment execution failure from a product rejection.
    Only a successfully executed, evidence-backed rejection enters semantic
    rework.

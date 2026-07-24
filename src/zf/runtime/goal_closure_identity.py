@@ -51,6 +51,11 @@ def build_closure_identity(
     )
     generation = _task_map_generation(events, payload, workflow_run_id, goal_id)
     candidate_head = _candidate_head(events, payload, workflow_run_id, goal_id)
+    package_identity = _current_plan_package_identity(
+        events,
+        workflow_run_id=workflow_run_id,
+        task_map_generation=generation,
+    )
     closure_source = {
         "schema_version": "closure-source.v1",
         "workflow_run_id": workflow_run_id,
@@ -58,6 +63,7 @@ def build_closure_identity(
         "flow_kind": flow_kind,
         "task_map_generation": generation,
         "candidate_head_commit": candidate_head,
+        **package_identity,
         "source_event_type": source_event.type,
         "source_payload": _stable_source_payload(payload),
     }
@@ -75,6 +81,7 @@ def build_closure_identity(
         "goal_id": goal_id,
         "task_map_generation": generation,
         "candidate_head_commit": candidate_head,
+        **package_identity,
         "closure_fact_digest": str(descriptor.get("sha256") or ""),
     }
     identity = _digest(identity_fields)
@@ -150,10 +157,19 @@ def validate_goal_closure_dispatch_snapshots(
         raise GoalClosureIdentityError("unsupported Goal closure contract snapshot schema")
     if str(target.get("schema_version") or "") != "goal-closure-target-snapshot.v1":
         raise GoalClosureIdentityError("unsupported Goal closure target snapshot schema")
-    for key in ("workflow_run_id", "goal_id", "task_map_generation"):
+    for key in (
+        "workflow_run_id",
+        "goal_id",
+        "task_map_generation",
+        "plan_artifact_package_id",
+        "plan_artifact_package_ref",
+        "plan_artifact_package_digest",
+    ):
         expected = str(payload.get(key) or "").strip()
-        if not expected:
+        if key in {"workflow_run_id", "goal_id", "task_map_generation"} and not expected:
             raise GoalClosureIdentityError(f"Goal closure dispatch missing {key}")
+        if not expected:
+            continue
         for label, snapshot in (("contract", contract), ("target", target)):
             if str(snapshot.get(key) or "").strip() != expected:
                 raise GoalClosureIdentityError(
@@ -194,6 +210,35 @@ def _hydrate_snapshot(
     if not isinstance(hydrated.payload, dict):
         raise GoalClosureIdentityError(f"{ref_key} is not a JSON object")
     return dict(hydrated.payload)
+
+
+def _current_plan_package_identity(
+    events: list[ZfEvent],
+    *,
+    workflow_run_id: str,
+    task_map_generation: str,
+) -> dict[str, str]:
+    from zf.runtime.candidate_result_binding import same_task_map_generation
+    from zf.runtime.plan_artifact_package import reduce_plan_artifact_packages
+
+    current = reduce_plan_artifact_packages(
+        events,
+        workflow_run_id=workflow_run_id,
+    ).get("current")
+    if not isinstance(current, Mapping):
+        return {}
+    package_generation = str(current.get("task_map_generation") or "")
+    if (
+        task_map_generation
+        and package_generation
+        and not same_task_map_generation(package_generation, task_map_generation)
+    ):
+        return {}
+    return {
+        "plan_artifact_package_id": str(current.get("package_id") or ""),
+        "plan_artifact_package_ref": str(current.get("package_ref") or ""),
+        "plan_artifact_package_digest": str(current.get("package_digest") or ""),
+    }
 
 
 def _task_map_generation(

@@ -3327,6 +3327,15 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
     state_dir, log, writer = _state(tmp_path)
     manifest = _write_failure_closeout_manifest(tmp_path)
     writer.emit(
+        "run.goal.started",
+        actor="zf-cli",
+        correlation_id="R-FAILED",
+        payload={
+            "run_id": "R-FAILED",
+            "objective": "deliver a complete product",
+        },
+    )
+    writer.emit(
         "failure.closeout.materialized",
         actor="run-manager",
         payload={
@@ -3351,6 +3360,27 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
     ][-1]
     assert escalation.payload["action"] == "failure-closeout-activate"
     assert escalation.payload["manifest_ref"] == str(manifest)
+    blocked = [
+        event for event in log.read_all()
+        if event.type == "run.goal.blocked"
+    ]
+    assert len(blocked) == 1
+    assert blocked[0].payload["run_id"] == "R-FAILED"
+    assert blocked[0].payload["reason"] == "failure_closeout_approval_pending"
+
+    repeated = run_manager_tick(
+        state_dir=state_dir,
+        writer=writer,
+        config=_config(),
+        project_root=tmp_path,
+        event_log=log,
+        spawn_repairs=False,
+    )
+    assert repeated.actions_blocked == 0
+    assert len([
+        event for event in log.read_all()
+        if event.type == "run.goal.blocked"
+    ]) == 1
 
     writer.emit(
         "human.escalation.acknowledged",
@@ -5152,6 +5182,37 @@ def test_run_manager_deduplicates_completion_blocker_fingerprint() -> None:
         "rework.feedback.verified_closed",
         "rework.feedback.residual",
     ]
+
+
+def test_run_manager_ignores_shadow_plan_package_rejection() -> None:
+    from zf.runtime.run_manager import _pending_semantic_event_actions
+
+    rejected = ZfEvent(
+        id="shadow-package-rejected",
+        type="plan.artifact_package.rejected",
+        correlation_id="run-1",
+        payload={
+            "workflow_run_id": "run-1",
+            "mode": "shadow",
+            "reason": "legacy flow has no immutable run contract",
+        },
+    )
+
+    assert _pending_semantic_event_actions([rejected]) == []
+
+    blocking = ZfEvent(
+        id="blocking-package-rejected",
+        type="plan.artifact_package.rejected",
+        correlation_id="run-2",
+        payload={
+            "workflow_run_id": "run-2",
+            "mode": "blocking",
+            "reason": "current package is invalid",
+        },
+    )
+    actions = _pending_semantic_event_actions([blocking])
+    assert len(actions) == 1
+    assert actions[0]["failure_class"] == "plan_artifact_package_rejected"
 
 
 def test_run_manager_classifies_goal_completion_handoff_and_human_blockers() -> None:

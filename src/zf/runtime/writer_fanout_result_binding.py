@@ -327,7 +327,7 @@ class WriterFanoutResultBindingMixin:
                 recorded.payload if isinstance(recorded.payload, dict) else {}
             )
             if str(recorded_payload.get("result_event_id") or "") == event.id:
-                continue
+                return True
             if str(recorded_payload.get("fanout_id") or "") != fanout_id:
                 continue
             if str(recorded_payload.get("child_id") or "") != child_id:

@@ -29,6 +29,10 @@ Write:
 
 Emit top-level `plan_artifact_ref`, `task_map_ref`, `source_index_ref`,
 `artifact_refs`, and `evidence_refs`. Do not put these only inside `report`.
+Also declare the logical inputs consumed by the task map through
+`required_plan_ports`; use `issue_spec`, `goal_claim_set`, `task_map`, and
+`planning_result` unless the issue profile narrows them. Runtime owns Package
+construction/current selection, so do not emit Package lifecycle events.
 
 ## Source Provenance
 

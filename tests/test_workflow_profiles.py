@@ -309,7 +309,7 @@ spec:
         assert contract["lane_count"] == 2
         pipeline = cfg.workflow.pipelines[0]
         assert pipeline.stage_transition == "stage_barrier"
-        assert pipeline.schema_profile == "refactor-flow/v4"
+        assert pipeline.schema_profile == "refactor-flow/v5"
 
     def test_v3_target_ref_is_explicit_and_not_objective_ref(self, tmp_path):
         text = """\
@@ -571,7 +571,7 @@ spec:
         assert cfg.workflow.flow_metadata["quality_floor"] == "issue-regression"
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "regression_impact"
         assert cfg.workflow.pipelines[0].stage_transition == "stage_barrier"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v7"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v8"
         assert cfg.goal.enabled is True
 
     def test_prd_flow_generates_canonical_build_chain(self, tmp_path):
@@ -667,7 +667,7 @@ spec:
         assert cfg.workflow.flow_metadata["post_verify_discovery"] == "product_completeness"
         assert cfg.workflow.flow_metadata["result_protocol"]["semantic_submit_profiles"] == {}
         assert cfg.workflow.pipelines[0].stage_transition == "stage_barrier"
-        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v7"
+        assert cfg.workflow.pipelines[0].schema_profile == "canonical-dag/v8"
         assert cfg.goal.enabled is True
 
     def test_prd_flow_pins_semantic_submit_profile_modes(self, tmp_path):
@@ -865,3 +865,21 @@ spec: {project: {name: demo}}
 """)
         with pytest.raises(ConfigError, match="PrdFlow: unknown param"):
             load_config(prd)
+
+    def test_product_flow_accepts_and_validates_artifact_package_mode(self, tmp_path):
+        config = tmp_path / "prd.yaml"
+        config.write_text("""\
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+spec: {topology: light, lanes: 1, artifactPackageMode: blocking}
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+spec: {project: {name: demo}}
+""")
+        loaded = load_config(config)
+        assert loaded.workflow.flow_metadata["artifact_package"]["mode"] == "blocking"
+
+        config.write_text(config.read_text().replace("blocking", "surprise"))
+        with pytest.raises(ConfigError, match="artifactPackageMode"):
+            load_config(config)

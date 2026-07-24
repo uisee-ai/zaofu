@@ -229,10 +229,15 @@ def test_operation_projection_groups_dispatch_timeline_and_web_routes(
 
     client = TestClient(create_app(state_dir))
     assert client.get("/api/provider-health").status_code == 200
-    assert client.get("/api/operations/disp-1").json()["task_id"] == "TASK-1"
+    dispatch = client.get("/api/operations/disp-1").json()
+    assert dispatch["task_id"] == "TASK-1"
+    assert dispatch["source"] == "read_model.sqlite"
+    task_operations_response = client.get("/api/tasks/TASK-1/operations").json()
+    assert task_operations_response["source"] == "read_model.sqlite"
     detail = client.get("/api/tasks/TASK-1").json()
     assert detail["progress_projection"]["latest_progress"]["message"] == "working"
     assert detail["operations"]["operations"][0]["dispatch_id"] == "disp-1"
+    assert detail["operations"]["source"] == "read_model.sqlite"
 
 
 def test_kernel_mediated_fanout_request_accepts_and_emits_children(

@@ -127,6 +127,116 @@ def pending_rework_triage_actions(
     return out
 
 
+def pending_immediate_replan_actions(
+    events: list[ZfEvent],
+) -> list[dict[str, Any]]:
+    """Promote a first-attempt unsatisfiable contract to semantic replan.
+
+    ``task.rework.triage.completed`` already owns the semantic classification.
+    A non-retryable ``request_replan`` must take precedence over the generic
+    batch fallback that would otherwise requeue the same failed child with the
+    same contract.
+    """
+
+    events_by_id = {event.id: event for event in events if event.id}
+    latest_by_task: dict[str, tuple[int, ZfEvent]] = {}
+    for index, event in enumerate(events):
+        if event.type != "task.rework.triage.completed":
+            continue
+        payload = _payload(event)
+        task_id = str(event.task_id or payload.get("task_id") or "").strip()
+        if task_id:
+            latest_by_task[task_id] = (index, event)
+
+    out: list[dict[str, Any]] = []
+    for task_id, (index, triage) in latest_by_task.items():
+        payload = _payload(triage)
+        recommendation = str(
+            payload.get("recommended_action") or ""
+        ).strip().lower()
+        retryable = payload.get("retryable")
+        if recommendation != "request_replan":
+            continue
+        if retryable is not False and str(retryable).strip().lower() != "false":
+            continue
+        if bool(payload.get("is_terminal")):
+            continue
+        checkpoint_id = _stable_id(
+            "ortriage-immediate-replan",
+            task_id,
+            triage.id,
+        )
+        if (
+            _has_later_task_progress(events, index, task_id)
+            or _action_completed(events, checkpoint_id)
+        ):
+            continue
+        failed_event_id = str(payload.get("failed_event_id") or "").strip()
+        failed_event = events_by_id.get(failed_event_id)
+        failed_payload = _payload(failed_event) if failed_event is not None else {}
+        evidence_ids = list(dict.fromkeys(
+            item for item in (failed_event_id, triage.id) if item
+        ))
+        fingerprint = str(
+            failed_payload.get("failure_fingerprint")
+            or failed_payload.get("fingerprint")
+            or failed_payload.get("failure_class")
+            or failed_event_id
+            or triage.id
+        )
+        guidance = str(
+            payload.get("notes")
+            or failed_payload.get("reason")
+            or "current task contract is not satisfiable inside its owned scope"
+        )
+        out.append({
+            "schema_version": "run-manager.pending-action.v1",
+            "action": SEMANTIC_REPLAN_ACTION,
+            "checkpoint_id": checkpoint_id,
+            "safe_resume_action": SEMANTIC_REPLAN_SAFE_ACTION,
+            "request_id": _stable_id(
+                "semantic-replan",
+                task_id,
+                failed_event_id or triage.id,
+            ),
+            "task_id": task_id,
+            "recorded_event_id": triage.id,
+            "recommended_action": "replan",
+            "guidance": guidance,
+            "summary": guidance,
+            "fingerprint": fingerprint,
+            "failure_class": str(
+                failed_payload.get("failure_class")
+                or payload.get("classification")
+                or "task_contract_unsatisfiable"
+            ),
+            "failure_count": 1,
+            "failure_event_ids": [failed_event_id] if failed_event_id else [],
+            "source_event_id": failed_event_id or triage.id,
+            "source_event_type": (
+                failed_event.type
+                if failed_event is not None
+                else str(payload.get("failed_event_type") or triage.type)
+            ),
+            "source_event_ids": evidence_ids,
+            "owner_route": "orchestrator_replan",
+            "action_policy": "auto_decide",
+            "intervention_class": "semantic_replan",
+            "expected_downstream_events": sorted(
+                triage_expected_downstream_events(
+                    SEMANTIC_REPLAN_SAFE_ACTION
+                )
+            ),
+            "verify_condition": (
+                "expected_downstream_event:"
+                + ",".join(sorted(triage_expected_downstream_events(
+                    SEMANTIC_REPLAN_SAFE_ACTION
+                )))
+            ),
+        })
+    return out
+
+
 def active_rework_triage_task_ids(
     events: list[ZfEvent],
     *,
@@ -150,6 +260,55 @@ def active_rework_triage_task_ids(
             and failure_count >= threshold
             and not _has_later_task_progress(events, index, task_id)
         ):
+            active.add(task_id)
+    return active
+
+
+def active_immediate_replan_task_ids(events: list[ZfEvent]) -> set[str]:
+    """Keep old-contract recovery suppressed until a replacement is admitted."""
+
+    active: set[str] = set()
+    latest_by_task: dict[str, tuple[int, ZfEvent]] = {}
+    for index, event in enumerate(events):
+        if event.type != "task.rework.triage.completed":
+            continue
+        payload = _payload(event)
+        task_id = str(event.task_id or payload.get("task_id") or "").strip()
+        if task_id:
+            latest_by_task[task_id] = (index, event)
+
+    for task_id, (index, event) in latest_by_task.items():
+        payload = _payload(event)
+        retryable = payload.get("retryable")
+        if (
+            str(payload.get("recommended_action") or "").strip().lower()
+            != "request_replan"
+            or (
+                retryable is not False
+                and str(retryable).strip().lower() != "false"
+            )
+            or bool(payload.get("is_terminal"))
+        ):
+            continue
+        resolved = False
+        for later in events[index + 1:]:
+            later_payload = _payload(later)
+            if later.type in {"run.goal.completed", "run.goal.blocked"}:
+                resolved = True
+                break
+            if later.type not in {
+                "task_map.ready",
+                "task_map.amended",
+                "product_delivery.task_map.adopted",
+            }:
+                continue
+            superseded = set(_string_list(
+                later_payload.get("supersedes_task_ids")
+            ))
+            if task_id in superseded:
+                resolved = True
+                break
+        if not resolved:
             active.add(task_id)
     return active
 
@@ -623,6 +782,15 @@ def _triage_request_id(capped: ZfEvent, task_id: str, fingerprint: str) -> str:
 def _has_later_task_progress(events: list[ZfEvent], start: int, task_id: str) -> bool:
     for event in events[start + 1:]:
         payload = _payload(event)
+        if (
+            event.type in {
+                "task_map.ready",
+                "task_map.amended",
+                "product_delivery.task_map.adopted",
+            }
+            and task_id in set(_string_list(payload.get("supersedes_task_ids")))
+        ):
+            return True
         event_task = str(
             event.task_id
             or payload.get("task_id")
@@ -763,8 +931,10 @@ __all__ = [
     "TRIAGE_RECORDED",
     "TRIAGE_REQUEST_ACTION",
     "TRIAGE_REQUESTED",
+    "active_immediate_replan_task_ids",
     "active_rework_triage_task_ids",
     "is_semantic_triage_cap",
+    "pending_immediate_replan_actions",
     "pending_rework_triage_actions",
     "triage_action_preflight",
     "triage_expected_downstream_events",

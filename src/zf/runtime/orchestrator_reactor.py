@@ -1586,6 +1586,26 @@ class EventReactorMixin(DurableCallWorkflowMixin):
                     reason="product delivery blocked: task-map synthesis failed",
                 )
 
+        from zf.runtime.plan_artifact_package_runtime import (
+            admit_product_delivery_package,
+        )
+        package_error = admit_product_delivery_package(
+            self, event=event, task=task, source_refs=source_refs,
+            task_map_ref=task_map_ref, source_index_ref=source_index_ref,
+        )
+        if package_error:
+            self._emit_plan_only_blocked(
+                task=task,
+                event=event,
+                reason="product delivery package admission failed",
+                details={"task_map_ref": task_map_ref, "error": package_error},
+            )
+            return OrchestratorDecision(
+                action="block",
+                task_id=task.id,
+                reason="product delivery blocked: package admission failed",
+            )
+
         result = ingest_task_map_to_kanban(
             self.state_dir,
             task_map_payload or {},

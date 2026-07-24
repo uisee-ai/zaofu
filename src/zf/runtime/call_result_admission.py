@@ -151,6 +151,7 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             envelope,
             operation or {},
         )
+        currentness_issues.extend(self._plan_package_currentness_issues(envelope))
         currentness_issues.extend(self._task_result_currentness_issues(
             envelope,
             adapted,
@@ -510,6 +511,11 @@ class CallResultAdmissionService(CallResultAuthorityMixin):
             "plan_synth_contract_digest",
             "contract_revision",
             "task_map_generation",
+            "plan_artifact_package_id",
+            "plan_artifact_package_ref",
+            "plan_artifact_package_digest",
+            "run_contract_ref",
+            "run_contract_digest",
             "base_commit",
             "task_ref",
             "contract_snapshot_ref",

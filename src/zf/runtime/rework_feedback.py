@@ -118,6 +118,14 @@ def write_rework_feedback(
         "source_event_id": str(source_event.id or ""),
         "source_event_type": str(source_event.type or ""),
         "source_attempt": int(source_attempt or 0),
+        "attempt_domain": str(event_payload.get("attempt_domain") or "task"),
+        "task_map_generation": str(event_payload.get("task_map_generation") or ""),
+        "plan_artifact_package_id": str(
+            event_payload.get("plan_artifact_package_id") or ""
+        ),
+        "plan_artifact_package_digest": str(
+            event_payload.get("plan_artifact_package_digest") or ""
+        ),
         "summary": str(
             summary
             or result.get("summary")
@@ -155,6 +163,10 @@ def write_rework_feedback(
     return {
         **descriptor,
         "feedback_id": feedback_id,
+        "attempt_domain": body["attempt_domain"],
+        "task_map_generation": body["task_map_generation"],
+        "plan_artifact_package_id": body["plan_artifact_package_id"],
+        "plan_artifact_package_digest": body["plan_artifact_package_digest"],
         "finding_ids": [
             str(item.get("finding_id") or "")
             for item in normalized_findings
@@ -169,6 +181,7 @@ def hydrate_rework_feedback(
     *,
     expected_task_id: str = "",
     expected_fingerprint: str = "",
+    expected_attempt_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
         hydrated = hydrate_sidecar_ref(
@@ -187,6 +200,11 @@ def hydrate_rework_feedback(
         raise ReworkFeedbackError("rework feedback task_id mismatch")
     if expected_fingerprint and str(body.get("failure_fingerprint") or "") != expected_fingerprint:
         raise ReworkFeedbackError("rework feedback fingerprint mismatch")
+    if expected_attempt_identity:
+        from zf.runtime.attempt_domain import feedback_matches_attempt
+
+        if not feedback_matches_attempt(body, expected_attempt_identity):
+            raise ReworkFeedbackError("rework feedback attempt identity mismatch")
     return body
 
 
@@ -228,6 +246,15 @@ def feedback_payload_fields(descriptor: Mapping[str, Any]) -> dict[str, Any]:
     ]
     if finding_ids:
         fields["finding_ids"] = finding_ids
+    for key in (
+        "attempt_domain",
+        "task_map_generation",
+        "plan_artifact_package_id",
+        "plan_artifact_package_digest",
+    ):
+        value = str(descriptor.get(key) or "")
+        if value:
+            fields[key] = value
     return fields
 
 

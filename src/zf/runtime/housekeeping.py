@@ -591,6 +591,23 @@ def apply_task_contract_event(store: TaskStore, event: ZfEvent) -> None:
         return
     contract_data = event.payload.get("contract") or {}
     existing = task.contract or TaskContract()
+    if (
+        event.actor == "zf-cli"
+        and event.payload.get("source") == "task_map_materialization"
+    ):
+        # The materializer publishes a complete canonical TaskContract after
+        # its atomic store write. Re-running that body through the legacy
+        # partial-update adapter is lossy: coerce_validation_spec() drops
+        # validation.commands[], and structured acceptance/claim fields can
+        # also be flattened. Project the complete internal body byte-for-byte
+        # at the schema level so its semantic revision remains stable between
+        # dispatch and result admission.
+        try:
+            materialized = TaskContract(**dict(contract_data))
+        except (TypeError, ValueError):
+            return
+        store.update(event.task_id, contract=materialized)
+        return
     behavior = contract_data.get("behavior", existing.behavior)
     if not behavior:
         behavior = _first_contract_text(

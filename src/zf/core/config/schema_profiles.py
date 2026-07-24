@@ -520,11 +520,54 @@ _REFACTOR_FLOW_V4: dict[str, dict[str, Any]] = {
     "run.goal.completed": _RUN_GOAL_COMPLETED_V2_RULE,
 }
 
+_PLAN_ARTIFACT_PACKAGE_EVENTS: dict[str, dict[str, Any]] = {
+    "plan.artifact_package.admitted": _req(
+        "status", "workflow_run_id", "flow_kind", "package_slot",
+        "producer_stage_id", "plan_revision", "task_map_generation",
+        "package_id", "package_ref", "package_digest",
+        "run_contract_ref", "run_contract_digest", "mode",
+    ),
+    "plan.artifact_package.rejected": _req(
+        "status", "workflow_run_id", "flow_kind", "package_slot",
+        "producer_stage_id", "mode", "reason",
+    ),
+    "plan.artifact_package.superseded": _req(
+        "status", "workflow_run_id", "package_slot",
+        "package_ref", "package_digest",
+        "superseded_by_package_ref", "superseded_by_package_digest",
+    ),
+    "task_map.materialization.prepared": _req(
+        "status", "materialization_plan_ref",
+        "materialization_plan_digest", "task_map_ref", "task_ids",
+    ),
+    "task_map.materialization.committed": _req(
+        "status", "materialization_plan_ref",
+        "materialization_plan_digest", "task_map_ref", "task_ids",
+    ),
+    "task_map.materialization.failed": _req(
+        "status", "materialization_plan_ref",
+        "materialization_plan_digest", "task_map_ref", "reason",
+    ),
+}
+
+# Doc 152 adds immutable plan-package and task-map materialization lifecycle.
+# Prior profile versions remain unchanged for historical runs.
+_CANONICAL_DAG_V8: dict[str, dict[str, Any]] = {
+    **_CANONICAL_DAG_V7,
+    **_PLAN_ARTIFACT_PACKAGE_EVENTS,
+}
+
+_REFACTOR_FLOW_V5: dict[str, dict[str, Any]] = {
+    **_REFACTOR_FLOW_V4,
+    **_PLAN_ARTIFACT_PACKAGE_EVENTS,
+}
+
 SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "refactor-flow/v1": _REFACTOR_FLOW_V1,
     "refactor-flow/v2": _REFACTOR_FLOW_V2,
     "refactor-flow/v3": _REFACTOR_FLOW_V3,
     "refactor-flow/v4": _REFACTOR_FLOW_V4,
+    "refactor-flow/v5": _REFACTOR_FLOW_V5,
     "canonical-dag/v1": _CANONICAL_DAG_V1,
     "canonical-dag/v2": _CANONICAL_DAG_V2,
     "canonical-dag/v3": _CANONICAL_DAG_V3,
@@ -532,6 +575,7 @@ SCHEMA_PROFILES: dict[str, dict[str, dict[str, Any]]] = {
     "canonical-dag/v5": _CANONICAL_DAG_V5,
     "canonical-dag/v6": _CANONICAL_DAG_V6,
     "canonical-dag/v7": _CANONICAL_DAG_V7,
+    "canonical-dag/v8": _CANONICAL_DAG_V8,
 }
 
 _RULE_KEYS = (

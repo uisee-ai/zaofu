@@ -54,10 +54,19 @@ AC 或风险。
 1. owner/Goal 原意是否全部映射到 mandatory AC，是否发生静默收窄；
 2. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
 3. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
-4. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
-5. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
-6. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
+4. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
+   `allowed_paths` 是否覆盖生成 evidence 所需的实现、runner 配置、spec、
+   fixture 和输出登记路径；
+5. Final assembly 是否只聚合已生成的 evidence refs；如果它必须修改上游
+   Playwright/测试/仿真配置才能满足 AC，则当前 task map 不可满足，必须 Reject；
+6. `e2e` / `real_e2e` command 是否真的调用合同指定的 application/browser/
+   provider/simulation；分析模型、fixture replay 或 mock 不得冒充真实执行；
+7. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
+8. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
+9. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
    determinism/replay、reset/recovery 和证据真实性；项目 Skill 可扩展该清单。
+10. `required_plan_ports` 是否覆盖下游真实读取的计划级输入，所有 ref 是否显式；
+    Critic 只审核 descriptor/语义，不选择 current Package，也不写 Package lifecycle。
 
 Approve 时返回当前 plan/task-map refs、revision、摘要和 residual risks。Reject 时
 返回非空 `fix_items[]`，每项包含 `task_id` 或 `acceptance_id`、`observed_gap`、

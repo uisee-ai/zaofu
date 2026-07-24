@@ -17,6 +17,13 @@ from zf.runtime.goal_dossier import (
     build_goal_dossier,
     write_goal_dossier_projection,
 )
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.plan_artifact_package import (
+    build_plan_artifact_package,
+    package_event_payload,
+    write_plan_artifact_package,
+)
+from zf.runtime.run_contract import stable_json_sha256, write_run_contract_snapshot
 from zf.runtime.workflow_anchor import mark_workflow_fanout_anchor
 from zf.web.server import create_app
 
@@ -111,6 +118,72 @@ def test_goal_dossier_unknown_run_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(GoalDossierError, match="unknown run_id"):
         build_goal_dossier(state_dir, "missing-run")
+
+
+def test_goal_dossier_projects_current_plan_package_and_history(tmp_path: Path) -> None:
+    state_dir, log = _state(tmp_path)
+    contract = {
+        "schema_version": "run-contract.v1",
+        "workflow": {"kind": "prd"},
+    }
+    contract["contract_digest"] = stable_json_sha256(contract)
+    run_contract = write_run_contract_snapshot(state_dir, contract)
+
+    def package(revision: str, generation: str):
+        ports = []
+        for name in (
+            "requirement_spec",
+            "goal_claim_set",
+            "task_map",
+            "planning_result",
+        ):
+            descriptor = write_immutable_json_sidecar(
+                state_dir,
+                {"schema_version": f"{name}.v1", "revision": revision},
+                root=f"dossier-fixtures/{name}",
+                kind=name,
+                schema_version=f"{name}.v1",
+                created_by="test",
+            )
+            ports.append({
+                "logical_name": name,
+                "artifact_kind": name,
+                "schema_version": f"{name}.v1",
+                "producer_stage_id": "prd-plan",
+                "ref": descriptor["ref"],
+                "sha256": descriptor["sha256"],
+            })
+        body = build_plan_artifact_package(
+            workflow_run_id="run-a",
+            flow_kind="prd",
+            producer_stage_id="prd-plan",
+            run_contract=run_contract,
+            plan_revision=revision,
+            task_map_generation=generation,
+            produced=ports,
+            required_ports=[item["logical_name"] for item in ports],
+        )
+        return body, write_plan_artifact_package(state_dir, body)
+
+    first, first_ref = package("r1", "g1")
+    second, second_ref = package("r2", "g2")
+    log.append(ZfEvent(
+        type="plan.artifact_package.admitted",
+        correlation_id="trace-a",
+        payload=package_event_payload(first, first_ref, status="admitted"),
+    ))
+    log.append(ZfEvent(
+        type="plan.artifact_package.admitted",
+        correlation_id="trace-a",
+        payload=package_event_payload(second, second_ref, status="admitted"),
+    ))
+
+    dossier = build_goal_dossier(state_dir, "run-a", now=NOW)
+
+    assert dossier["roadmap"]["current_plan_package"]["plan_revision"] == "r2"
+    assert dossier["roadmap"]["current_plan_package"]["hydrate_status"] == "ready"
+    assert dossier["roadmap"]["plan_package_history"][0]["plan_revision"] == "r1"
+    assert dossier["roadmap"]["plan_package_freshness"]["status"] == "ready"
 
 
 def test_goal_dossier_cli_writes_json_and_markdown(tmp_path: Path) -> None:

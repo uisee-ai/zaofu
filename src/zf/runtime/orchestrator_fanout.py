@@ -126,6 +126,9 @@ _CONTRACT_HANDOFF_KEYS = (
     "base_commit",
     "contract_snapshot_ref",
     "contract_snapshot_digest",
+    "plan_artifact_package_id",
+    "plan_artifact_package_ref",
+    "plan_artifact_package_digest",
     "target_snapshot_ref",
     "target_commit",
     "target_snapshot_digest",
@@ -182,6 +185,9 @@ _DURABLE_CALL_TRIGGER_KEYS = (
     "durable_operation",
     "contract_snapshot_ref",
     "contract_snapshot_digest",
+    "plan_artifact_package_id",
+    "plan_artifact_package_ref",
+    "plan_artifact_package_digest",
     "target_snapshot_ref",
     "target_snapshot_digest",
     "target_commit",
@@ -3409,6 +3415,10 @@ class FanoutCoordinationMixin(
         ]
         if not stages:
             return
+        from zf.runtime.plan_artifact_package_runtime import admit_task_map_trigger_package
+        event = admit_task_map_trigger_package(self, event, stages)
+        if event is None:
+            return
         # R22 no-livelock: once candidate rework for this pdd has escalated
         # (human.escalate at the cap), a spurious fresh task_map.ready must not
         # re-arm impl and restart the capped loop from zero. Bounded sweep
@@ -4081,9 +4091,7 @@ class FanoutCoordinationMixin(
                     task_map_ref=str(task_item.get("task_map_ref") or ""),
                 ),
                 base_commit=base_commit,
-                task_ref=(
-                    f"{self.config.runtime.git.task_ref_prefix}/{task_id}"
-                ),
+                task_ref=f"{self.config.runtime.git.task_ref_prefix}/{task_id}",
             )
             descriptor = write_task_contract_snapshot(
                 self.state_dir,
@@ -4096,6 +4104,9 @@ class FanoutCoordinationMixin(
             "contract_revision": str(snapshot["contract_revision"]),
             "task_map_generation": str(snapshot["task_map_generation"]),
             "base_commit": str(snapshot["base_commit"]),
+            "plan_artifact_package_id": str(snapshot.get("plan_artifact_package_id") or ""),
+            "plan_artifact_package_ref": str(snapshot.get("plan_artifact_package_ref") or ""),
+            "plan_artifact_package_digest": str(snapshot.get("plan_artifact_package_digest") or ""),
         }
         task_item.update(fields)
         task_payload = task_item.get("payload")
@@ -4184,6 +4195,9 @@ class FanoutCoordinationMixin(
             "contract_revision": str(snapshot["contract_revision"]),
             "task_map_generation": str(snapshot["task_map_generation"]),
             "base_commit": str(snapshot["base_commit"]),
+            "plan_artifact_package_id": str(snapshot.get("plan_artifact_package_id") or ""),
+            "plan_artifact_package_ref": str(snapshot.get("plan_artifact_package_ref") or ""),
+            "plan_artifact_package_digest": str(snapshot.get("plan_artifact_package_digest") or ""),
             "target_snapshot": target,
             "target_commit": str(target["target_commit"]),
             **target_payload_fields(target_descriptor),
@@ -7089,6 +7103,17 @@ class FanoutCoordinationMixin(
                 final_status = "failed"
                 recommendation = "reject"
                 artifact_payload = criteria_failure.artifact_payload
+        from zf.runtime.plan_artifact_package_runtime import (
+            admit_synthesized_plan_package,
+        )
+        final_status, recommendation, artifact_payload = (
+            admit_synthesized_plan_package(
+                self, event=event, manifest=manifest, stage_id=stage_id,
+                trace_id=trace_id, success_event=success_event,
+                final_status=final_status, recommendation=recommendation,
+                artifact_payload=artifact_payload,
+            )
+        )
         if not self._fanout_aggregate_started(manifest):
             self.event_writer.append(ZfEvent(
                 type="fanout.aggregate.started",

@@ -36,6 +36,11 @@ Write and emit:
 
 All refs needed by the next stage must be top-level payload fields and included
 in `artifact_refs` or `evidence_refs`.
+List the corresponding canonical `required_plan_ports` in the Task Map,
+including the requirement/contract ref, Goal Claim Set, Task Map, planning
+result, source inventory/index, and matrices actually consumed. Do not choose
+the current Plan Artifact Package or copy plan bodies into a package object;
+runtime validates explicit refs and performs admission.
 
 ## Source Index Rules
 

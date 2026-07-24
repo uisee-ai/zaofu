@@ -2834,9 +2834,9 @@ def create_app(
 
     @app.get("/api/tasks/{task_id}/operations")
     def task_operations(task_id: str) -> JSONResponse:
-        from zf.runtime.operation_projection import project_task_operations
+        from zf.web.projections.operations import task_operations as project_task_operations
 
-        return JSONResponse(project_task_operations(state_dir, task_id))
+        return JSONResponse(project_task_operations(state_dir, task_id, config=config))
 
     @app.get("/api/tasks/{task_id}/harness-score")
     def task_harness_score(task_id: str) -> JSONResponse:
@@ -2891,15 +2891,15 @@ def create_app(
 
     @app.get("/api/operations/{dispatch_id}")
     def operation_detail(dispatch_id: str) -> JSONResponse:
-        from zf.runtime.operation_projection import project_operation
+        from zf.web.projections.operations import dispatch_operation
 
-        return JSONResponse(project_operation(state_dir, dispatch_id))
+        return JSONResponse(dispatch_operation(state_dir, dispatch_id, config=config))
 
     @app.get("/api/workflow-operations/{operation_id}")
     def workflow_operation_detail(operation_id: str) -> JSONResponse:
-        from zf.runtime.operation_projection import project_workflow_operation
+        from zf.web.projections.operations import workflow_operation
 
-        return JSONResponse(project_workflow_operation(state_dir, operation_id))
+        return JSONResponse(workflow_operation(state_dir, operation_id, config=config))
 
     @app.get("/api/candidates/{pdd_id}")
     def candidate_detail(pdd_id: str) -> JSONResponse:

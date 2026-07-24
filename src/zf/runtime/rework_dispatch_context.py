@@ -176,6 +176,19 @@ class ReworkDispatchContextMixin:
                 feedback_descriptor_from_payload(rework_payload),
                 expected_task_id=task.id,
                 expected_fingerprint=str(rework_payload.get("failure_fingerprint") or ""),
+                expected_attempt_identity={
+                    "attempt_domain": "task",
+                    "task_id": task.id,
+                    "task_map_generation": str(
+                        rework_payload.get("task_map_generation") or ""
+                    ),
+                    "plan_artifact_package_id": str(
+                        rework_payload.get("plan_artifact_package_id") or ""
+                    ),
+                    "plan_artifact_package_digest": str(
+                        rework_payload.get("plan_artifact_package_digest") or ""
+                    ),
+                },
             )
             feedback_artifact_section = (
                 "\n### Verified Rework Feedback\n"
