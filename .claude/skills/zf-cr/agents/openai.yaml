@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Codebase Review"
+  short_description: "Read-only ZaoFu architecture review"
+  default_prompt: "Use $zf-cr to review this repository for development readiness."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Refactor Audit"
+  short_description: "Audit refactor fixes for reuse across projects"
+  default_prompt: "Use $zf-refactor-generalization-audit to review recent refactor backlogs and commits, then decide what is reusable for the next target project."

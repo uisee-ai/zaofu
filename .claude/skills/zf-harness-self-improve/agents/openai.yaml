@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Harness Self Improve"
+  short_description: "Find repeatable harness improvement workflows"
+  default_prompt: "Use $zf-harness-self-improve to review ZaoFu runtime evidence and propose self-improvement backlogs."

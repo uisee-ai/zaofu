@@ -1,0 +1,4 @@
+interface:
+  display_name: "ZaoFu Harness Commit Push"
+  short_description: "Safely commit, merge, push, and close worktrees"
+  default_prompt: "Use $zf-harness-commit-push to safely inspect and land approved ZaoFu changes, then close a clean merged worktree when applicable."

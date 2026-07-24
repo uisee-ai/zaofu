@@ -49,16 +49,18 @@ strategy/
 gm-test/
 ww/
 
-# Provider/editor/session state. Keep reviewed repository rules and one
-# deterministic maintenance command; ignore local settings, worktrees, and
-# generated provider skill copies.
+# Provider/editor/session state. Keep reviewed repository rules, one
+# deterministic maintenance command, and tracked provider skill mirrors;
+# ignore local settings, worktrees, and other provider state.
 .claude/*
 !.claude/rules/
 !.claude/rules/*.md
 !.claude/commands/
 .claude/commands/*
 !.claude/commands/audit-backlogs.md
-.codex/
+!.claude/skills/
+.codex/*
+!.codex/skills/
 .omc/
 
 # Misc
