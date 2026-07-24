@@ -405,10 +405,10 @@ class Orchestrator(
         # (instance_id, timestamp) → True. Prevents double-counting when
         # _check_context_thresholds reads the same session turn twice.
         self._synth_usage_seen: set[tuple[str, str]] = set()
-        # G-WIRE-2: drift detector + per-signal cooldown tracking.
+        # G-WIRE-2: drift detector + per-(signal, role, dispatch) cooldown.
         # Runs once per run_once cycle on the recent event tail.
         self._drift_detector = DriftDetector()
-        self._drift_last_emit: dict[str, float] = {}
+        self._drift_last_emit: dict[tuple[str, str, str], float] = {}
         self._drift_cooldown_seconds: float = 30.0
         # G-GAN-1: per-task GAN round counter for architect↔critic loop.
         # When workflow.gan_rounds >= 2, arch.proposal.done events

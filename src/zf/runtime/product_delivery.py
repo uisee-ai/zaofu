@@ -176,6 +176,7 @@ def ingest_task_map_to_kanban(
         return adoption_gate
 
     source_entries = _source_entries_by_task_id(source_index)
+    required_plan_ports = _string_list(task_map.get("required_plan_ports"))
     materialization_tasks: list[Task] = []
     for raw in task_map.get("tasks") or []:
         if not isinstance(raw, dict):
@@ -189,6 +190,7 @@ def ingest_task_map_to_kanban(
             feature_id=str(task_map.get("feature_id") or ""),
             refs=refs,
             source_entry=source_entries.get(task_id),
+            required_plan_ports=required_plan_ports,
         )
         materialization_tasks.append(Task(
             id=task_id,
@@ -792,6 +794,7 @@ def _contract_from_task_map_item(
     feature_id: str,
     refs: dict[str, str],
     source_entry: dict[str, Any] | None = None,
+    required_plan_ports: list[str] | None = None,
 ) -> TaskContract:
     acceptance = _acceptance_criteria_list(
         raw.get("acceptance_criteria") or raw.get("acceptance")
@@ -857,6 +860,8 @@ def _contract_from_task_map_item(
         "source": "product_delivery_task_map",
         "source_refs": dict(refs),
     })
+    if required_plan_ports:
+        evidence_contract["required_plan_ports"] = list(required_plan_ports)
     success_criteria = evidence_contract.get("success_criteria")
     if not isinstance(success_criteria, list):
         success_criteria = []

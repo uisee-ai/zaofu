@@ -98,6 +98,10 @@ def synthesize_light_task_map(
         "source_refs": source_refs,
         "artifact_refs": artifact_refs,
         **matrix_refs,
+        "required_plan_ports": _light_required_plan_ports(
+            flow_kind=flow_kind,
+            matrix_refs=matrix_refs,
+        ),
         "shared_conventions": {
             "test_path_prefix": f"{path_prefix}tests",
         },
@@ -222,6 +226,28 @@ def _matrix_refs(payload: dict[str, Any]) -> dict[str, str]:
         for key in _MATRIX_REF_KEYS
         if str(payload.get(key) or "").strip()
     }
+
+
+def _light_required_plan_ports(
+    *,
+    flow_kind: str,
+    matrix_refs: dict[str, str],
+) -> list[str]:
+    requirement_port = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+    ports = [requirement_port, "goal_claim_set", "task_map", "planning_result"]
+    ref_to_port = {
+        "source_inventory_ref": "source_inventory",
+        "capability_matrix_ref": "capability_matrix",
+        "acceptance_matrix_ref": "acceptance_matrix",
+        "test_matrix_ref": "test_matrix",
+        "real_e2e_matrix_ref": "real_e2e_matrix",
+    }
+    ports.extend(
+        logical_name
+        for ref_key, logical_name in ref_to_port.items()
+        if matrix_refs.get(ref_key)
+    )
+    return list(dict.fromkeys(ports))
 
 
 def _light_verification_commands(

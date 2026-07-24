@@ -60,6 +60,8 @@ def _init_fixture_repo(root: Path, manual_name: str, manual_text: str) -> Path:
     (source / "docs" / "manual").mkdir(parents=True)
     (source / ".claude" / "rules").mkdir(parents=True)
     (source / ".claude" / "commands").mkdir(parents=True)
+    (source / ".claude" / "skills" / "public-skill").mkdir(parents=True)
+    (source / ".codex" / "skills" / "public-skill").mkdir(parents=True)
     (source / ".claude" / "worktrees" / "private").mkdir(parents=True)
     (source / "yoke" / "context-hygiene").mkdir(parents=True)
     shutil.copy2(SCRIPT, source / "tools" / "export-public.sh")
@@ -82,6 +84,13 @@ def _init_fixture_repo(root: Path, manual_name: str, manual_text: str) -> Path:
     )
     (source / ".claude" / "commands" / "audit-backlogs.md").write_text(
         "# Public audit command\n", encoding="utf-8"
+    )
+    provider_skill = "---\nname: public-skill\n---\n# Public skill\n"
+    (source / ".claude" / "skills" / "public-skill" / "SKILL.md").write_text(
+        provider_skill, encoding="utf-8"
+    )
+    (source / ".codex" / "skills" / "public-skill" / "SKILL.md").write_text(
+        provider_skill, encoding="utf-8"
     )
     (source / ".claude" / "settings.local.json").write_text(
         "{}\n", encoding="utf-8"
@@ -118,6 +127,8 @@ def _init_fixture_repo(root: Path, manual_name: str, manual_text: str) -> Path:
             "assets/readme/fixture.txt",
             ".claude/rules/code.md",
             ".claude/commands/audit-backlogs.md",
+            ".claude/skills/public-skill/SKILL.md",
+            ".codex/skills/public-skill/SKILL.md",
             ".claude/settings.local.json",
             ".claude/worktrees/private/secret.txt",
             "yoke/context-hygiene/SKILL.md",
@@ -197,6 +208,23 @@ def test_export_includes_disclaimer_and_accepts_no_private_matches(tmp_path: Pat
         assert (
             target / ".claude" / "commands" / "audit-backlogs.md"
         ).is_file()
+        assert (
+            target / ".claude" / "skills" / "zf-cr" / "SKILL.md"
+        ).is_file()
+        assert (
+            target / ".codex" / "skills" / "zf-cr" / "SKILL.md"
+        ).is_file()
+        subprocess.run(["git", "init", "-q"], cwd=target, check=True)
+        for provider_skill_path in (
+            ".claude/skills/zf-cr/SKILL.md",
+            ".codex/skills/zf-cr/SKILL.md",
+        ):
+            ignored = subprocess.run(
+                ["git", "check-ignore", "-q", "--", provider_skill_path],
+                cwd=target,
+                check=False,
+            )
+            assert ignored.returncode == 1, provider_skill_path
         assert not (target / ".claude" / "settings.local.json").exists()
         assert not (target / ".claude" / "worktrees").exists()
 
@@ -232,6 +260,12 @@ def test_grep_fallback_sanitizes_path_with_spaces(tmp_path: Path) -> None:
     assert "oc_private_chat" not in exported_feishu
     assert (target / "yoke" / "context-hygiene" / "SKILL.md").is_file()
     assert (target / ".claude" / "rules" / "code.md").is_file()
+    assert (
+        target / ".claude" / "skills" / "public-skill" / "SKILL.md"
+    ).is_file()
+    assert (
+        target / ".codex" / "skills" / "public-skill" / "SKILL.md"
+    ).is_file()
     assert not (target / ".claude" / "settings.local.json").exists()
     assert not (target / ".claude" / "worktrees").exists()
 

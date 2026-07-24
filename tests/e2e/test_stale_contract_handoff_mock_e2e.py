@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from copy import deepcopy
 from pathlib import Path
@@ -729,8 +730,11 @@ def test_stale_contract_results_cannot_advance_current_generation(tmp_path: Path
     ).payload["briefing_path"]
     text = Path(judge_briefing).read_text(encoding="utf-8")
     command = text.split("Success command:\n```bash\n", 1)[1].split("\n```", 1)[0]
+    command_argv = shlex.split(command)
     semantic_result = json.loads(
-        command[command.index("{"):].rsplit("\nZF_RESULT", 1)[0]
+        Path(command_argv[command_argv.index("--result-file") + 1]).read_text(
+            encoding="utf-8",
+        )
     )
     submitted = SemanticResultSubmitService(
         state_dir=state_dir,

@@ -198,6 +198,7 @@ def test_v4_contract_result_feedback_runtime_handoff(tmp_path: Path) -> None:
     impl_manifest = _manifest(state_dir, impl_id)
     impl_child = _child(impl_manifest, "TASK-1")
     contract_ref = impl_child["contract_snapshot_ref"]
+    assert impl_child["task_ref"] == "task/TASK-1"
     assert contract_ref in transport.sent[0][1].read_text(encoding="utf-8")
 
     _complete_writer(
@@ -212,6 +213,7 @@ def test_v4_contract_result_feedback_runtime_handoff(tmp_path: Path) -> None:
     verify_child = verify_manifest["children"][0]
     child_payload = verify_child["payload"]
     assert child_payload["contract_snapshot_ref"] == contract_ref
+    assert child_payload["task_ref"] == "task/TASK-1"
     assert len(child_payload["target_commit"]) == 40
     assert child_payload["target_snapshot_ref"]
     assert contract_ref in transport.sent[-1][1].read_text(encoding="utf-8")
@@ -256,6 +258,7 @@ def test_v4_contract_result_feedback_runtime_handoff(tmp_path: Path) -> None:
         and event.payload.get("task_id") == "TASK-1"
     )
     assert lane_failure.payload["failure_class"] == "product_rejection"
+    assert lane_failure.payload["task_ref"] == "task/TASK-1"
     feedback = hydrate_rework_feedback(
         state_dir,
         feedback_descriptor_from_payload(lane_failure.payload),
@@ -267,6 +270,7 @@ def test_v4_contract_result_feedback_runtime_handoff(tmp_path: Path) -> None:
     rework = [event for event in events if event.type == "lane.stage.rework.requested"]
     assert len(rework) == 1
     assert rework[0].payload["lane_id"] == "lane0"
+    assert rework[0].payload["task_ref"] == "task/TASK-1"
     assert "task output is incorrect" in transport.sent[-1][1].read_text(
         encoding="utf-8",
     )

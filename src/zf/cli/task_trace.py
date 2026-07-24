@@ -77,6 +77,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     create.set_defaults(func=_run_create_from_contract)
 
+    artifacts = sub.add_parser(
+        "artifacts",
+        help="List artifact occurrences linked to one task",
+    )
+    artifacts.add_argument("task_id")
+    artifacts.add_argument("--limit", type=int, default=200)
+    artifacts.add_argument("--state-dir", default=None)
+    artifacts.set_defaults(func=_run_artifacts)
+
     parser.set_defaults(func=lambda a: _show_help(parser))
 
 
@@ -186,6 +195,31 @@ def _run_trace(args: argparse.Namespace) -> int:
                                "discriminator.failed"))
     print(f"\nTotal: {len(events)} events · "
           f"duration {dur_min:.1f}min · rework {rework}")
+    return 0
+
+
+def _run_artifacts(args: argparse.Namespace) -> int:
+    context = resolve_project_context(
+        explicit_state_dir=getattr(args, "state_dir", None),
+        load_config_with_explicit=True,
+    )
+    from zf.runtime.artifact_query import ArtifactQueryService
+
+    service = ArtifactQueryService(
+        state_dir=context.state_dir,
+        project_root=context.project_root,
+        config=context.config,
+    )
+    result = service.task_artifacts(
+        args.task_id,
+        context=service.context(
+            actor="operator",
+            purpose="task-artifacts",
+            mode="canonical",
+            limit=args.limit,
+        ),
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

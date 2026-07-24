@@ -260,6 +260,20 @@ class WriterFanoutDataMixin:
             "artifact_refs": artifact_refs,
             "evidence_refs": evidence_refs,
         }
+        for source in payloads:
+            plan_ports = source.get("plan_ports")
+            if not isinstance(plan_ports, list):
+                synthesis = source.get("plan_synthesis_result")
+                plan_ports = (
+                    synthesis.get("plan_ports")
+                    if isinstance(synthesis, dict)
+                    else None
+                )
+            if isinstance(plan_ports, list):
+                payload["plan_ports"] = [
+                    dict(item) for item in plan_ports if isinstance(item, dict)
+                ]
+                break
         if inventory_refs:
             payload["inventory_refs"] = self._dedupe_strings(inventory_refs)
         # E3-2(审计 D3 dead-end 修复):quality-floor 词表键必须随聚合

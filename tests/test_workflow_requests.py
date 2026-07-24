@@ -52,6 +52,7 @@ def _request_fixture(tmp_path: Path) -> tuple[Path, Path, EventWriter]:
 
 def test_workflow_request_revision_reaches_ready_with_versioned_spec(tmp_path: Path) -> None:
     state_dir, manifest_ref, writer = _request_fixture(tmp_path)
+    source_manifest = manifest_ref.read_bytes()
 
     initial = register_workflow_intake(
         state_dir,
@@ -80,6 +81,16 @@ def test_workflow_request_revision_reaches_ready_with_versioned_spec(tmp_path: P
     assert ready["revision"] == 2
     assert ready["confirmed"] is True
     assert request_readiness_blockers(ready) == []
+    assert manifest_ref.read_bytes() == source_manifest
+    assert Path(ready["requirement_spec_ref"]).is_relative_to(state_dir)
+    assert Path(ready["workflow_input_manifest_ref"]).is_relative_to(state_dir)
+    assert ready["source_workflow_input_manifest_ref"] == str(manifest_ref)
+    effective = json.loads(
+        Path(ready["workflow_input_manifest_ref"]).read_text(encoding="utf-8")
+    )
+    assert effective["request_revision"] == 2
+    assert effective["source_workflow_input_manifest_ref"] == str(manifest_ref)
+    assert effective["source_workflow_input_manifest_digest"]
     spec = json.loads(Path(ready["requirement_spec_ref"]).read_text(encoding="utf-8"))
     assert spec["schema_version"] == "requirement-spec.v1"
     assert spec["revision"] == 2

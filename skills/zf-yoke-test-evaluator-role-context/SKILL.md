@@ -32,7 +32,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    worktree does not match, report execution/target failure and do not issue a
    product verdict.
 2. Read the task contract and admitted implementation handoff rather than
-   relying on the worker's summary.
+   relying on the worker's summary. Execute one literal sanctioned
+   `zf artifact read` command for every briefing `required_reads` row, including
+   all `plan-port-*` sources, with the exact source/artifact/json-path tuple.
+   Direct file reads do not satisfy the attempt read ledger.
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce

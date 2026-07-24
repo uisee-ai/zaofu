@@ -49,6 +49,14 @@ context for runtime truth, task scope, and completion claims.
 - Before emitting `dev.build.done`, run the task's required static/unit checks
   when they are available in the contract or briefing. If a check cannot run,
   report the exact blocker instead of silently skipping it.
+- Before editing, inspect the briefing's Controlled Artifact Inputs and execute
+  one literal sanctioned `zf artifact read` command for every declared
+  `required_reads` row, using its exact attempt id, source id, artifact id, and
+  JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
+  exploration but does not satisfy the runtime read ledger.
+- Treat every `plan-port-*` input as immutable Planner/Adapter output. Implement
+  against the current port contents; do not rewrite a matrix or Plan Package
+  after the contract snapshot has been dispatched.
 - Before emitting `dev.build.done`, produce the runtime-requested
   `impl_self_check` object. Bind it to the current contract revision and source
   commit; cover every mandatory `acceptance_id`, and record each declared

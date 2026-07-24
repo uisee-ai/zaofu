@@ -104,29 +104,35 @@ class LifecycleObservationMixin:
                 continue
 
     def _recent_drift_refresh_scope(self) -> tuple[set[str], bool]:
-        """Return role-scoped drift refresh targets.
+        """Return actionable role-scoped drift refresh targets.
 
         Historical drift events had no affected_role, so keep them global.
-        Node-skip signals emitted after this change carry the specific role and
-        should not refresh every pane in the campaign.
+        Low-confidence observations such as node_skip must not become refresh
+        actions merely because they appear in the drift ledger.
         """
         roles: set[str] = set()
         global_drift = False
         try:
             events = self.event_log.read_days(1)
         except Exception:
-            return roles, bool(self._drift_last_emit)
+            return roles, False
         for event in events[-50:]:
             if event.type != "worker.drift.detected":
                 continue
             payload = event.payload if isinstance(event.payload, dict) else {}
+            severity = str(payload.get("severity") or "").strip().lower()
+            recommended_action = str(
+                payload.get("recommended_action") or ""
+            ).strip().lower()
+            if severity not in {"medium", "high"}:
+                continue
+            if recommended_action != "refresh":
+                continue
             affected_role = str(payload.get("affected_role") or "").strip()
             if affected_role:
                 roles.add(affected_role)
             else:
                 global_drift = True
-        if not roles and not global_drift and self._drift_last_emit:
-            global_drift = True
         return roles, global_drift
 
     # -- G-WIRE-2: drift detection observation layer --
@@ -134,8 +140,8 @@ class LifecycleObservationMixin:
 
     def _check_drift(self) -> None:
         """Run DriftDetector against the recent event tail and emit a
-        worker.drift.detected event for each signal, deduped per signal
-        via _drift_cooldown_seconds.
+        worker.drift.detected event for each signal, deduped per
+        (signal, role, dispatch) via _drift_cooldown_seconds.
 
         Observation only — does not auto-recycle/respawn. Layer 2 (and
         humans via Feishu) decide what to do with the signal."""
@@ -164,10 +170,17 @@ class LifecycleObservationMixin:
             return
         now = _time.time()
         for s in signals:
-            last = self._drift_last_emit.get(s.signal, 0.0)
+            affected_role = str(getattr(s, "affected_role", "") or "")
+            if s.signal == "node_skip" and self._drift_role_is_live(
+                affected_role
+            ):
+                continue
+            dispatch_id = self._drift_dispatch_identity(affected_role)
+            dedup_key = (s.signal, affected_role, dispatch_id)
+            last = self._drift_last_emit.get(dedup_key, 0.0)
             if now - last < self._drift_cooldown_seconds:
                 continue
-            self._drift_last_emit[s.signal] = now
+            self._drift_last_emit[dedup_key] = now
             try:
                 self.event_writer.append(ZfEvent(
                     type="worker.drift.detected",
@@ -177,11 +190,65 @@ class LifecycleObservationMixin:
                         "severity": s.severity,
                         "detail": s.detail,
                         "recommended_action": s.recommended_action,
-                        "affected_role": getattr(s, "affected_role", ""),
+                        "affected_role": affected_role,
+                        "dispatch_id": dispatch_id,
                     },
                 ))
             except Exception:
                 continue
+
+    def _drift_role_is_live(self, affected_role: str) -> bool:
+        """Use worker-originated liveness before trusting actor-window drift."""
+        if not affected_role:
+            return False
+        matching_roles = [
+            role
+            for role in self.config.roles
+            if role.name == affected_role or role.instance_id == affected_role
+        ]
+        for role in matching_roles:
+            active_turn = self._active_provider_turn(role.instance_id)
+            if active_turn is not None:
+                age_s = active_turn.get("age_s")
+                grace_s = self._provider_turn_stuck_grace_seconds(
+                    role.instance_id
+                )
+                if age_s is None or float(age_s) < grace_s:
+                    return True
+            try:
+                stale, _basis = self._worker_liveness_stale(role)
+            except Exception:
+                continue
+            if not stale:
+                return True
+        return False
+
+    def _drift_dispatch_identity(self, affected_role: str) -> str:
+        """Bind observational drift cooldown to the current dispatch."""
+        if not affected_role:
+            return ""
+        role_names = {
+            role.name
+            for role in self.config.roles
+            if role.name == affected_role or role.instance_id == affected_role
+        }
+        role_instances = {
+            role.instance_id
+            for role in self.config.roles
+            if role.name == affected_role or role.instance_id == affected_role
+        }
+        try:
+            tasks = self.task_store.list_all()
+        except Exception:
+            return ""
+        for task in tasks:
+            assignee = str(task.assigned_to or "")
+            if assignee not in role_names and assignee not in role_instances:
+                continue
+            dispatch_id = str(task.active_dispatch_id or "").strip()
+            if dispatch_id:
+                return dispatch_id
+        return ""
 
     def _active_drift_expected_roles(self) -> list[str]:
         """Return role names that currently own active work.

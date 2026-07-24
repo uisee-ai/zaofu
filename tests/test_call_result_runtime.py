@@ -14,6 +14,7 @@ from zf.runtime.call_result_admission import (
     CallResultAdmissionOutcome,
     dispatch_call_result_correction,
 )
+from zf.runtime.call_result_adapters import ControlResultAdapterRegistry
 from zf.runtime.call_result_runtime import (
     admit_runtime_call_result,
     mark_call_operation_started,
@@ -75,6 +76,20 @@ def test_selected_call_result_replays_settled_operation_without_redispatch(
             "json_path": "$.facts",
         }],
     }
+    runtime.event_log.append(ZfEvent(
+        id="evt-plan-package-current",
+        type="plan.artifact_package.admitted",
+        correlation_id="run-1",
+        payload={
+            "status": "admitted",
+            "workflow_run_id": "run-1",
+            "plan_revision": "r1",
+            "task_map_generation": "g1",
+            "package_id": "planpkg-current",
+            "package_ref": "artifacts/plan-packages/current.json",
+            "package_digest": "package-sha",
+        },
+    ))
     payload = dict(base_payload)
     prepared = prepare_call_operation(
         runtime,
@@ -304,6 +319,51 @@ def _plan_synth_event(payload: dict, *, plan_revision: str = "") -> ZfEvent:
             },
         },
     )
+
+
+def test_plan_synth_semantic_result_preserves_ready_plan_ports(
+    tmp_path: Path,
+) -> None:
+    semantic_result = {
+        "schema_version": "plan-synthesis-result.v1",
+        "execution_status": "completed",
+        "verdict": "passed",
+        "summary": "plan ready",
+        "plan_ports": [{
+            "logical_name": "acceptance_matrix",
+            "schema_version": "acceptance-matrix.v1",
+            "body": {
+                "schema_version": "acceptance-matrix.v1",
+                "status": "ready",
+                "metadata": {
+                    "enrichment_contract": {"status": "fulfilled"},
+                },
+                "rows": [{"acceptance_id": "AC-1"}],
+            },
+        }],
+    }
+    _event, adapted = ControlResultAdapterRegistry().adapt_semantic_result(
+        tmp_path / ".zf",
+        profile_id="plan-synth",
+        revision="1",
+        event_type="fanout.synth.completed",
+        semantic_result=semantic_result,
+        identity={
+            "output_profile_id": "plan-synth",
+            "workflow_run_id": "run-plan",
+            "fanout_id": "F-PLAN",
+            "stage_id": "plan",
+            "plan_revision": "plan-r2",
+            "plan_synth_contract_ref": "artifacts/contracts/plan-r2.json",
+            "plan_synth_contract_digest": "a" * 64,
+        },
+        source_event_id="evt-plan-result",
+        actor="plan-critic",
+        task_id="",
+        correlation_id="run-plan",
+    )
+
+    assert adapted.payload["plan_ports"] == semantic_result["plan_ports"]
 
 
 def test_plan_synth_required_reads_repair_then_admit_and_replay(

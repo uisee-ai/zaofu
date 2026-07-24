@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.task_map_goal_coverage import validate_goal_coverage
+from zf.runtime.task_map_required_ports import required_plan_port_errors
 from zf.runtime.verification_commands import (
     VerificationCommandError,
     first_verification_command as normalize_verification_command,
@@ -219,6 +220,7 @@ def validate_task_map_payload(
     source_refs = payload.get("source_refs")
     if source_refs is not None and not isinstance(source_refs, dict):
         errors.append("source_refs must be an object when present")
+    errors.extend(required_plan_port_errors(payload.get("required_plan_ports")))
     for field_name, value in _workspace_root_owner_requirement_values(payload):
         if not isinstance(value, bool):
             errors.append(f"{field_name} must be a boolean when present")
@@ -992,9 +994,7 @@ def _truthy(value: Any, *, default: bool = False) -> bool:
 
 
 def _int_value(value: Any) -> int:
-    if value in (None, ""):
-        return 0
     try:
-        return int(value)
+        return int(value or 0)
     except (TypeError, ValueError):
         return 0

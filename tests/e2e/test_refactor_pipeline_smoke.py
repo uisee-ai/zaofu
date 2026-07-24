@@ -28,6 +28,7 @@ Run before every live R round: pytest tests/e2e/test_refactor_pipeline_smoke.py
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -345,10 +346,26 @@ def _complete_plan_synth(
         1,
     )[1].split("\n```", 1)[0]
     command_lines = command.splitlines()
-    assert "--payload-file -" in command_lines[0]
-    delimiter = command_lines[0].rsplit("<<'", 1)[1].removesuffix("'")
-    assert command_lines[-1] == delimiter
-    completion_payload = json.loads("\n".join(command_lines[1:-1]))
+    command_args = shlex.split(command_lines[0])
+    if "--result-file" in command_args:
+        payload_file_index = command_args.index("--result-file") + 1
+        payload_file = command_args[payload_file_index]
+    elif "--payload-file" in command_args:
+        payload_file_index = command_args.index("--payload-file") + 1
+        payload_file = command_args[payload_file_index]
+    else:
+        payload_file = next(
+            arg.split("=", 1)[1]
+            for arg in command_args
+            if arg.startswith("--payload-file=")
+            or arg.startswith("--result-file=")
+        )
+    if payload_file == "-":
+        delimiter = command_lines[0].rsplit("<<'", 1)[1].removesuffix("'")
+        assert command_lines[-1] == delimiter
+        completion_payload = json.loads("\n".join(command_lines[1:-1]))
+    else:
+        completion_payload = json.loads(Path(payload_file).read_text(encoding="utf-8"))
     assert completion_payload["child_id"] == "synth"
     _consume_synth_required_reads(state_dir, dispatched)
     completion_payload.update({

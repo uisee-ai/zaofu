@@ -237,20 +237,29 @@ def call_result_profile_identity(
     stage_id: str,
     payload: Mapping[str, Any],
 ) -> tuple[str, str]:
+    # Writer operations own implementation output even when their inherited
+    # payload carries goal-closure refs. Those refs are inputs/provenance, not
+    # permission to change the writer's result contract.
+    if "writer" in operation_type:
+        return "implementation", "1"
     explicit_id = str(payload.get("output_profile_id") or "").strip()
     explicit_revision = str(payload.get("output_profile_revision") or "1").strip()
     if explicit_id:
         ControlResultAdapterRegistry().profile(explicit_id, explicit_revision)
         return explicit_id, explicit_revision
     identity = " ".join((stage_id, str(payload.get("verification_owner") or ""))).lower()
-    if str(payload.get("closure_identity") or "").strip() or str(
-        payload.get("goal_claim_set_ref") or ""
-    ).strip():
+    has_closure_input = bool(
+        str(payload.get("closure_identity") or "").strip()
+        or str(payload.get("goal_claim_set_ref") or "").strip()
+    )
+    if (
+        operation_type == "fanout_reader_child"
+        and has_closure_input
+        and any(marker in identity for marker in ("judge", "closure", "final"))
+    ):
         return "thin-judge-goal-closure", "1"
     if operation_type == "fanout_synth" or "plan-synth" in identity:
         return PLAN_SYNTH_PROFILE_ID, PLAN_SYNTH_PROFILE_REVISION
-    if "writer" in operation_type:
-        return "implementation", "1"
     if "global" in identity or "rescan" in identity:
         return "global-rescan", "1"
     if "candidate" in identity:
@@ -362,13 +371,15 @@ def _normalize_plan_synth(
     event: ZfEvent,
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     payload = event.payload if isinstance(event.payload, dict) else {}
-    report = payload.get("report") if isinstance(payload.get("report"), Mapping) else {}
+    semantic = payload.get("plan_synthesis_result")
+    source = semantic if isinstance(semantic, Mapping) else payload
+    report = source.get("report") if isinstance(source.get("report"), Mapping) else {}
     recommendation = str(
-        payload.get("recommendation")
+        source.get("recommendation")
         or report.get("recommendation")
         or "abstain"
     ).lower()
-    status = str(payload.get("status") or report.get("status") or "completed").lower()
+    status = str(source.get("status") or report.get("status") or "completed").lower()
     failed = status in {"failed", "failure"} or recommendation in {
         "reject",
         "rejected",
@@ -380,16 +391,17 @@ def _normalize_plan_synth(
         "schema_version": PLAN_SYNTH_RESULT_SCHEMA,
         "execution_status": "failed" if status in {"failed", "failure"} else "completed",
         "verdict": "rejected" if failed else "passed",
-        "workflow_run_id": _text(payload, "workflow_run_id", "trace_id"),
-        "fanout_id": _text(payload, "fanout_id"),
-        "stage_id": _text(payload, "stage_id"),
-        "plan_revision": _text(payload, "plan_revision"),
-        "plan_synth_contract_ref": _text(payload, "plan_synth_contract_ref"),
-        "plan_synth_contract_digest": _text(payload, "plan_synth_contract_digest"),
-        "summary": str(payload.get("summary") or report.get("summary") or ""),
-        "artifact_refs": _strings(payload.get("artifact_refs") or report.get("artifact_refs")),
-        "evidence_refs": _strings(payload.get("evidence_refs") or report.get("evidence_refs")),
-        "findings": _objects(payload.get("findings") or report.get("findings")),
+        "workflow_run_id": _text(source, "workflow_run_id", "trace_id"),
+        "fanout_id": _text(source, "fanout_id"),
+        "stage_id": _text(source, "stage_id"),
+        "plan_revision": _text(source, "plan_revision"),
+        "plan_synth_contract_ref": _text(source, "plan_synth_contract_ref"),
+        "plan_synth_contract_digest": _text(source, "plan_synth_contract_digest"),
+        "summary": str(source.get("summary") or report.get("summary") or ""),
+        "artifact_refs": _strings(source.get("artifact_refs") or report.get("artifact_refs")),
+        "evidence_refs": _strings(source.get("evidence_refs") or report.get("evidence_refs")),
+        "plan_ports": _objects(source.get("plan_ports") or report.get("plan_ports")),
+        "findings": _objects(source.get("findings") or report.get("findings")),
     }
     issues = [
         {"field": f"control_result.{field}", "code": "missing_required"}

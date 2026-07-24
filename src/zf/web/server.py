@@ -650,6 +650,13 @@ def create_app(
         mutation_auth_error=_web_mutation_auth_error,
         session_cookie=_web_session_cookie,
     ))
+    from zf.web.artifact_query_routes import build_artifact_query_router
+
+    app.include_router(build_artifact_query_router(
+        state_dir=state_dir,
+        project_root=project_root,
+        config=config,
+    ))
 
     react_dist = _react_dist_dir()
     react_assets = react_dist / "assets" if react_dist is not None else None
@@ -2976,12 +2983,17 @@ def create_app(
     ) -> JSONResponse:
         from zf.runtime.goal_dossier import (
             GoalDossierError,
-            build_goal_dossier,
+            build_cached_goal_dossier,
             goal_dossier_view,
         )
 
         try:
-            dossier = build_goal_dossier(state_dir, run_id)
+            dossier = build_cached_goal_dossier(
+                state_dir,
+                run_id,
+                project_root=project_root,
+                config=config,
+            )
             return JSONResponse(goal_dossier_view(
                 dossier,
                 section=section,

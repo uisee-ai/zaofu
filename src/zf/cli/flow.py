@@ -1170,6 +1170,16 @@ def build_flow_submit_preview(
             actor=requested_by or "zf-cli",
             writer=request_writer,
         )
+        effective_manifest_ref = str(
+            request_projection.get("workflow_input_manifest_ref") or ""
+        )
+        effective_manifest = (
+            _load_json(Path(effective_manifest_ref))
+            if effective_manifest_ref
+            else {}
+        )
+        if effective_manifest:
+            manifest = effective_manifest
         request_blockers = request_readiness_blockers(request_projection)
         manifest["request_projection_ref"] = str(
             workflow_request_path(state_dir, request_id)
@@ -1229,9 +1239,12 @@ def build_flow_submit_preview(
         json.dumps(_public_preflight_report(report), ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+    effective_manifest_path = Path(
+        str(request_projection.get("workflow_input_manifest_ref") or "")
+    ) if request_projection.get("workflow_input_manifest_ref") else manifest_path
     manifest_artifact_refs = _workflow_manifest_artifact_refs(
         manifest,
-        manifest_path=manifest_path,
+        manifest_path=effective_manifest_path,
         intake_path=intake_path,
         preflight_path=preflight_path,
     )
@@ -1257,7 +1270,7 @@ def build_flow_submit_preview(
         "pattern_id": resolved_pattern_id,
         "config_ref": str(config_path),
         "workflow_prompt_ref": canonical_intake_ref,
-        "workflow_input_manifest_ref": str(manifest_path or ""),
+        "workflow_input_manifest_ref": str(effective_manifest_path or ""),
         "workflow_preflight_ref": str(preflight_path),
         "workflow_request_ref": str(manifest.get("request_projection_ref") or ""),
         "requirement_spec_ref": str(request_projection.get("requirement_spec_ref") or ""),
@@ -1275,7 +1288,7 @@ def build_flow_submit_preview(
             "target_root": str(manifest.get("target_root") or ""),
             "intake_ref": canonical_intake_ref,
             "intake_markdown_ref": display_intake_ref,
-            "workflow_input_manifest_ref": str(manifest_path or ""),
+            "workflow_input_manifest_ref": str(effective_manifest_path or ""),
             **matrix_ref_payload,
         },
         "artifact_refs": manifest_artifact_refs,

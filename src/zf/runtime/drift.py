@@ -160,7 +160,7 @@ class DriftDetector:
                     signal="node_skip",
                     severity="low",
                     detail=f"Role '{role}' not active in recent events",
-                    recommended_action="refresh",
+                    recommended_action="observe",
                     affected_role=role,
                 )]
         return []

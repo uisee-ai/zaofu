@@ -439,8 +439,11 @@ def test_light_profile_mock_e2e_closes_with_self_check_and_receipt_reuse(
     command = judge_briefing.split(
         "Success command:\n```bash\n", 1,
     )[1].split("\n```", 1)[0]
+    command_argv = shlex.split(command)
     semantic_result = json.loads(
-        command[command.index("{"):].rsplit("\nZF_RESULT", 1)[0]
+        Path(command_argv[command_argv.index("--result-file") + 1]).read_text(
+            encoding="utf-8",
+        )
     )
     submitted = SemanticResultSubmitService(
         state_dir=state_dir,
@@ -488,6 +491,8 @@ def test_light_profile_mock_e2e_closes_with_self_check_and_receipt_reuse(
     assert judge_metrics["required_read_count"] == len(
         judge_child_payload["required_reads"]
     )
+    assert judge_metrics["briefing_bytes"] <= 10 * 1024
+    assert judge_metrics["soft_budget_exceeded"] is False
     self_check_event = _latest_event(log, "impl.self_check.completed")
     assert "impl_self_check" not in self_check_event.payload
     assert (state_dir / self_check_event.payload["impl_self_check_ref"]).is_file()

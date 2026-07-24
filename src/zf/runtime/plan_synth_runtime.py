@@ -25,6 +25,8 @@ PLAN_SYNTH_HANDOFF_KEYS = (
     "input_consumption_policy_digest",
     "input_consumption_policy",
     "required_reads",
+    "result_scratch_ref",
+    "semantic_result_submit_mode",
     "plan_revision",
     "plan_synth_contract_ref",
     "plan_synth_contract_digest",

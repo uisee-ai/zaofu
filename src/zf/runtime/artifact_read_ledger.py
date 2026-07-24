@@ -44,6 +44,7 @@ def build_attempt_source_manifest(
     attempt_id: str,
     dispatch_id: str,
     sources: Iterable[Mapping[str, Any]],
+    metadata: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -66,7 +67,7 @@ def build_attempt_source_manifest(
             "sha256": digest,
             "allowed_paths": _strings(raw.get("allowed_paths")) or ["$"],
         })
-    return {
+    manifest = {
         "schema_version": SOURCE_MANIFEST_SCHEMA,
         "workflow_run_id": workflow_run_id,
         "task_id": task_id,
@@ -74,6 +75,24 @@ def build_attempt_source_manifest(
         "dispatch_id": dispatch_id,
         "sources": normalized,
     }
+    if metadata:
+        for key in (
+            "contract_revision",
+            "task_map_generation",
+            "base_commit",
+            "target_commit",
+            "task_ref",
+            "plan_artifact_package_id",
+            "plan_artifact_package_ref",
+            "plan_artifact_package_digest",
+            "plan_revision",
+            "source_snapshot",
+            "resolver",
+        ):
+            value = metadata.get(key)
+            if value not in (None, "", {}, []):
+                manifest[key] = value
+    return manifest
 
 
 def write_attempt_source_manifest(
@@ -106,6 +125,7 @@ def source_manifest_from_payload(
     attempt_id: str,
     dispatch_id: str,
     source_event_id: str = "",
+    manifest_metadata: Mapping[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     sources: list[dict[str, Any]] = []
     descriptor_fields = (
@@ -157,6 +177,7 @@ def source_manifest_from_payload(
         attempt_id=attempt_id,
         dispatch_id=dispatch_id,
         sources=sources,
+        metadata=manifest_metadata,
     )
     descriptor = write_attempt_source_manifest(
         state_dir,
@@ -187,6 +208,17 @@ def canonical_required_reads(
             "target": ("$",),
             "impl-self-check": ("$",),
         }
+    if profile in {"implementation", "task-verify", "candidate-verify"}:
+        for source in (
+            manifest.get("sources")
+            if isinstance(manifest.get("sources"), list)
+            else []
+        ):
+            if not isinstance(source, Mapping):
+                continue
+            source_id = str(source.get("source_id") or "")
+            if source_id.startswith("plan-port-"):
+                required_paths[source_id] = ("$",)
 
     if profile == "plan-synth":
         for source in (
@@ -313,6 +345,9 @@ def read_attempt_artifact(
     json_path: str = "$",
     max_items: int = 0,
     max_chars: int = 0,
+    actor: str = "",
+    role: str = "",
+    provider: str = "",
 ) -> dict[str, Any]:
     source = _find_source(manifest, source_id=source_id, artifact_id=artifact_id)
     allowed_paths = _strings(source.get("allowed_paths")) or ["$"]
@@ -365,6 +400,9 @@ def read_attempt_artifact(
         "truncated": truncated,
         "max_items": max_items,
         "max_chars": max_chars,
+        "consumer_actor": str(actor or ""),
+        "consumer_role": str(role or ""),
+        "consumer_provider": str(provider or ""),
         "read_at": datetime.now(timezone.utc).isoformat(),
     }
     append_artifact_read(state_dir, row)
@@ -546,35 +584,26 @@ def render_attempt_source_briefing(
             "performed before shell expansion."
         ),
     ]
-    sources: list[dict[str, Any]] = []
-    descriptor = payload.get("attempt_source_manifest")
-    if state_dir is not None and isinstance(descriptor, Mapping):
-        try:
-            manifest = hydrate_sidecar_ref(Path(state_dir), dict(descriptor)).payload
-        except Exception:
-            manifest = {}
-        raw_sources = manifest.get("sources") if isinstance(manifest, Mapping) else None
-        if isinstance(raw_sources, list):
-            sources = [
-                {
-                    "source_id": str(item.get("source_id") or ""),
-                    "artifact_id": str(item.get("artifact_id") or ""),
-                    "sha256": str(item.get("sha256") or ""),
-                    "ref": str(item.get("ref") or ""),
-                    "allowed_paths": list(item.get("allowed_paths") or ["$"]),
-                }
-                for item in raw_sources
-                if isinstance(item, Mapping)
-            ]
-    if sources:
-        lines.extend([
-            "- Source Manifest index (allowed does not mean required):",
-            "```json",
-            json.dumps(sources, ensure_ascii=False, indent=2),
-            "```",
-        ])
     if required:
-        lines.extend(["- Required reads for this attempt:", "```json", json.dumps(required, ensure_ascii=False, indent=2), "```"])
+        lines.extend(["- Required reads for this attempt:"])
+        for item in required:
+            source_id = str(item.get("source_id") or "")
+            artifact_id = str(item.get("artifact_id") or "")
+            json_path = str(item.get("json_path") or "$")
+            digest = str(
+                item.get("artifact_sha256")
+                or item.get("sha256")
+                or ""
+            )
+            lines.append(
+                f"  - `{source_id}` / `{artifact_id}` / `{json_path}` "
+                f"(sha256 `{digest[:16]}`)"
+            )
+            lines.append(
+                f"    `{cli_command} artifact read --attempt {attempt_id} "
+                f"--source {source_id} --artifact {artifact_id} "
+                f"--json-path {json_path}`"
+            )
     return "\n".join(lines) + "\n"
 
 

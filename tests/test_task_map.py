@@ -741,3 +741,25 @@ def test_task_map_validation_requires_boolean_root_owner_requirement(
 
     assert result.passed is False
     assert any(f"{field} must be a boolean" in error for error in result.errors)
+
+
+@pytest.mark.parametrize(
+    "required_plan_ports",
+    [
+        "acceptance_matrix",
+        [],
+        ["prd_ref", "requirement_spec"],
+        ["acceptance/matrix"],
+    ],
+)
+def test_task_map_validation_rejects_invalid_required_plan_ports(
+    required_plan_ports: object,
+) -> None:
+    result = validate_task_map_payload({
+        "schema_version": "task-map.v1",
+        "required_plan_ports": required_plan_ports,
+        "tasks": [_task("TASK-A", "dev-core")],
+    })
+
+    assert result.passed is False
+    assert any("required_plan_ports" in error for error in result.errors)

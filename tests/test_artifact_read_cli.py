@@ -14,6 +14,7 @@ from zf.runtime.artifact_read_ledger import (
 def test_artifact_list_and_read_cli_record_attempt_ledger(
     tmp_path: Path,
     capsys,
+    monkeypatch,
 ) -> None:
     state_dir = tmp_path / ".zf"
     artifact = state_dir / "artifacts" / "inputs" / "facts.json"
@@ -48,6 +49,21 @@ def test_artifact_list_and_read_cli_record_attempt_ledger(
         "--json-path", "$.facts", "--state-dir", str(state_dir),
     ]) == 0
     assert '"one"' in capsys.readouterr().out
-    assert (
+    ledger = (
         state_dir / "artifacts/attempts/attempt-cli/read-ledger.active.jsonl"
-    ).exists()
+    )
+    assert ledger.exists()
+
+    monkeypatch.setenv("ZF_ROLE_INSTANCE", "dev-1")
+    monkeypatch.setenv("ZF_ROLE_NAME", "dev")
+    monkeypatch.setenv("ZF_ROLE_BACKEND", "codex")
+    assert main([
+        "artifact", "read", "--attempt", "attempt-cli",
+        "--source", "context", "--artifact", "facts",
+        "--json-path", "$.facts", "--state-dir", str(state_dir),
+    ]) == 0
+    capsys.readouterr()
+    row = json.loads(ledger.read_text(encoding="utf-8").splitlines()[-1])
+    assert row["consumer_actor"] == "dev-1"
+    assert row["consumer_role"] == "dev"
+    assert row["consumer_provider"] == "codex"

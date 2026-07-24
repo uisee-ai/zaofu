@@ -247,6 +247,7 @@ class SpawnCoordinator:
             f"ZF_STATE_DIR={self.state_dir.resolve()}",
             f"ZF_ROLE_NAME={role.name}",
             f"ZF_ROLE_INSTANCE={role.instance_id}",
+            f"ZF_ROLE_BACKEND={role.backend}",
         ]
         from zf.runtime.result_submit import provision_role_submit_credential
 

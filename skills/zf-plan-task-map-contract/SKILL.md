@@ -54,6 +54,19 @@ write a Plan Artifact Package id/ref, choose which Package is current, or emit
 Package lifecycle events; the Kernel derives the Goal Claim Set and admits the
 immutable Package after validating these explicit refs.
 
+The declaration is an executable downstream input contract:
+
+- use canonical logical names and keep the list non-empty when it is present;
+- declare only ports actually needed by Impl/Verify, including applicable
+  matrices;
+- emit a real top-level ref for every declared port in the Plan result;
+- do not declare a port whose project-specific draft is still unadapted or
+  whose ref cannot be hydrated.
+
+After Package admission, the Kernel binds these ports to the current
+generation and exposes them as required controlled reads. Planner owns the
+selection and semantic readiness; it does not self-select a Package.
+
 ## Source Provenance Contract
 
 Every dispatchable task must be traceable back to the plan, scan, PRD, issue,

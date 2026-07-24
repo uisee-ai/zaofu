@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import json
-import shlex
 from pathlib import Path
 from typing import Any, Mapping
 
 from zf.runtime.artifact_read_ledger import materialize_attempt_source_ref
-from zf.runtime.call_result_envelope import (
-    canonical_json_sha256,
-    write_immutable_json_sidecar,
-)
+from zf.runtime.call_result_envelope import canonical_json_sha256, write_immutable_json_sidecar
 
 
 PLAN_SYNTH_PROFILE_ID = "plan-synth"
@@ -27,26 +22,19 @@ def render_plan_synth_completion_command(
     state_dir: Path,
     payload: Mapping[str, Any],
 ) -> str:
-    """Render a shell-safe stdin payload command for editable synth results."""
+    """Render a compact result-file submit command for plan synthesis."""
 
-    body = json.dumps(dict(payload), ensure_ascii=False, indent=2)
-    delimiter = f"ZF_PLAN_SYNTH_PAYLOAD_{canonical_json_sha256(payload)[:12]}"
-    command = " ".join([
-        *[
-            shlex.quote(part)
-            for part in shlex.split(cli_command) or ["zf"]
-        ],
-        "emit",
-        "fanout.synth.completed",
-        "--actor",
-        shlex.quote(actor),
-        "--state-dir",
-        shlex.quote(str(Path(state_dir))),
-        "--payload-file",
-        "-",
-        f"<<'{delimiter}'",
-    ])
-    return f"{command}\n{body}\n{delimiter}"
+    del actor
+    from zf.runtime.stage_execution_card import prepare_result_file_command
+
+    command, _ = prepare_result_file_command(
+        state_dir=Path(state_dir),
+        result_scratch_ref=str(payload.get("result_scratch_ref") or ""),
+        operation_id=str(payload.get("operation_id") or ""),
+        cli_command=cli_command,
+        semantic_template=dict(payload),
+    )
+    return command
 
 
 def build_plan_synth_call_payload(

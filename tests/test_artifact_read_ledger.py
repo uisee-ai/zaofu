@@ -57,6 +57,67 @@ def test_stage_profiles_declare_only_their_canonical_required_inputs() -> None:
     assert all(row["source_id"] != "notes" for row in verify)
 
 
+def test_impl_and_verify_require_every_injected_plan_port() -> None:
+    manifest = build_attempt_source_manifest(
+        workflow_run_id="run-ports",
+        task_id="T-ports",
+        attempt_id="attempt-ports",
+        dispatch_id="dispatch-ports",
+        sources=[
+            {
+                "source_id": "contract",
+                "artifact_id": "contract.json",
+                "ref": "artifacts/contract.json",
+                "sha256": "a" * 64,
+            },
+            {
+                "source_id": "target",
+                "artifact_id": "target.json",
+                "ref": "artifacts/target.json",
+                "sha256": "b" * 64,
+            },
+            {
+                "source_id": "impl-self-check",
+                "artifact_id": "self-check.json",
+                "ref": "artifacts/self-check.json",
+                "sha256": "c" * 64,
+            },
+            {
+                "source_id": "plan-port-acceptance_matrix",
+                "artifact_id": "acceptance_matrix",
+                "ref": "artifacts/acceptance-matrix.json",
+                "sha256": "d" * 64,
+            },
+            {
+                "source_id": "plan-port-test_matrix",
+                "artifact_id": "test_matrix",
+                "ref": "artifacts/test-matrix.json",
+                "sha256": "e" * 64,
+            },
+        ],
+    )
+
+    impl = canonical_required_reads(
+        manifest,
+        output_profile_id="implementation",
+    )
+    verify = canonical_required_reads(
+        manifest,
+        output_profile_id="candidate-verify",
+    )
+
+    expected_ports = {
+        ("plan-port-acceptance_matrix", "$"),
+        ("plan-port-test_matrix", "$"),
+    }
+    assert expected_ports <= {
+        (row["source_id"], row["json_path"]) for row in impl
+    }
+    assert expected_ports <= {
+        (row["source_id"], row["json_path"]) for row in verify
+    }
+
+
 def test_attempt_source_briefing_renders_literal_runtime_cli(monkeypatch) -> None:
     command = "uv --project /workspace/zaofu run zf"
     monkeypatch.setenv("ZF_CLI_CMD", command)

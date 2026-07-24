@@ -161,6 +161,12 @@ def test_synthesized_task_map_passes_validation() -> None:
     assert result.passed, result.errors
     # C1 单源节自带;C2 无系统级命令
     assert payload["shared_conventions"]["test_path_prefix"] == "app/tests"
+    assert payload["required_plan_ports"] == [
+        "requirement_spec",
+        "goal_claim_set",
+        "task_map",
+        "planning_result",
+    ]
 
 
 def test_synthesized_issue_task_map_uses_generic_requirement_text() -> None:
@@ -176,6 +182,7 @@ def test_synthesized_issue_task_map_uses_generic_requirement_text() -> None:
     assert result.passed, result.errors
     task = payload["tasks"][0]
     assert payload["shared_conventions"]["test_path_prefix"] == "tests"
+    assert payload["required_plan_ports"][0] == "issue_spec"
     assert task["allowed_paths"][0] == "**"
     assert "issue fix acceptance criteria" in task["description"]
     assert "docs/issues/login-500.md" in task["acceptance_criteria"][0]
@@ -202,6 +209,11 @@ def test_synthesized_task_map_preserves_workflow_refs() -> None:
     assert task["acceptance_matrix_ref"].endswith("acceptance-matrix.json")
     assert task["test_matrix_ref"].endswith("test-matrix.json")
     assert task["real_e2e_matrix_ref"].endswith("real-e2e-matrix.json")
+    assert payload["required_plan_ports"][-3:] == [
+        "acceptance_matrix",
+        "test_matrix",
+        "real_e2e_matrix",
+    ]
     assert "referenced acceptance/test/real-e2e matrix" in " ".join(task["acceptance_criteria"])
     assert "verification" not in task
 

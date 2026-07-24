@@ -37,6 +37,27 @@ def test_profile_identity_distinguishes_verify_surfaces() -> None:
     ) == ("plan-synth", "1")
 
 
+def test_writer_profile_wins_over_inherited_goal_closure_fields() -> None:
+    assert call_result_profile_identity(
+        operation_type="fanout_writer_child",
+        stage_id="prd-lanes-impl",
+        payload={
+            "closure_identity": "closure-current",
+            "goal_claim_set_ref": "artifacts/goal-claims.json",
+        },
+    ) == ("implementation", "1")
+    assert call_result_profile_identity(
+        operation_type="fanout_reader_child",
+        stage_id="task-verify",
+        payload={"goal_claim_set_ref": "artifacts/goal-claims.json"},
+    ) == ("task-verify", "1")
+    assert call_result_profile_identity(
+        operation_type="fanout_reader_child",
+        stage_id="goal-closure",
+        payload={"goal_claim_set_ref": "artifacts/goal-claims.json"},
+    ) == ("thin-judge-goal-closure", "1")
+
+
 def test_profile_revision_and_event_mapping_fail_closed(tmp_path: Path) -> None:
     registry = ControlResultAdapterRegistry()
     with pytest.raises(ControlResultAdapterError, match="unknown call-result profile"):

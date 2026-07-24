@@ -77,6 +77,8 @@ includes=(
   docs/design
   .claude/rules
   .claude/commands
+  .claude/skills
+  .codex/skills
 )
 
 existing=()

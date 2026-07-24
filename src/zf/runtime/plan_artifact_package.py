@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,10 @@ from zf.runtime.goal_claim_set import (
     canonical_task_map_generation,
     pin_goal_claim_set_from_task_map,
 )
-from zf.runtime.plan_artifact_ports import normalize_plan_ports
+from zf.runtime.plan_artifact_ports import (
+    canonical_plan_port_name,
+    normalize_plan_ports,
+)
 from zf.runtime.run_contract import (
     load_run_contract,
     load_run_contract_snapshot,
@@ -47,6 +51,14 @@ _PORT_REF_KEYS = {
     "project_adapter": ("project_adapter_ref",),
     "accepted_plan": ("accepted_plan_ref",),
 }
+_ENRICHED_MATRIX_PORTS = frozenset({
+    "source_inventory",
+    "capability_matrix",
+    "acceptance_matrix",
+    "test_matrix",
+    "task_map",
+    "real_e2e_matrix",
+})
 
 
 class PlanArtifactPackageError(ValueError):
@@ -69,15 +81,24 @@ def required_plan_ports(
     *,
     flow_kind: str,
     metadata: Mapping[str, Any] | None = None,
+    declared: Iterable[object] = (),
 ) -> list[str]:
+    task_map_ports = _normalize_required_port_names(declared)
     raw = metadata or {}
     policy = raw.get("artifact_package")
     policy = policy if isinstance(policy, Mapping) else {}
     explicit = _strings(policy.get("required_ports"))
     if explicit:
-        return explicit
-    requirement = "issue_spec" if flow_kind == "issue" else "requirement_spec"
-    return [requirement, "goal_claim_set", "task_map", "planning_result"]
+        profile_ports = _normalize_required_port_names(explicit)
+    else:
+        requirement = "issue_spec" if flow_kind == "issue" else "requirement_spec"
+        profile_ports = [
+            requirement,
+            "goal_claim_set",
+            "task_map",
+            "planning_result",
+        ]
+    return list(dict.fromkeys([*profile_ports, *task_map_ports]))
 
 
 def build_plan_artifact_package(
@@ -344,6 +365,11 @@ def prepare_plan_artifact_package(
     task_map_ref = str(payload.get("task_map_ref") or "")
     if not task_map_ref:
         raise PlanArtifactPackageError("task_map_ref is required")
+    task_map = _load_package_task_map(
+        state_dir=state_dir,
+        project_root=project_root,
+        task_map_ref=task_map_ref,
+    )
     generation = canonical_task_map_generation(
         task_map_generation=payload.get("task_map_generation"),
         task_map_digest=payload.get("task_map_digest"),
@@ -419,6 +445,20 @@ def prepare_plan_artifact_package(
         active_contract,
         source_event_id=source_event_id,
     )
+    required_ports = required_plan_ports(
+        flow_kind=flow_kind,
+        metadata=metadata,
+        declared=(
+            task_map.get("required_plan_ports")
+            if "required_plan_ports" in task_map
+            else ()
+        ),
+    )
+    _validate_required_matrix_readiness(
+        state_dir=state_dir,
+        ports=[*explicit_ports.values(), *inherited],
+        required_ports=required_ports,
+    )
     package = build_plan_artifact_package(
         workflow_run_id=workflow_run_id,
         request_id=str(payload.get("request_id") or ""),
@@ -433,7 +473,7 @@ def prepare_plan_artifact_package(
         task_map_generation=generation,
         produced=explicit_ports.values(),
         inherited=inherited,
-        required_ports=required_plan_ports(flow_kind=flow_kind, metadata=metadata),
+        required_ports=required_ports,
         supersedes=previous,
     )
     descriptor = write_plan_artifact_package(
@@ -726,6 +766,71 @@ def _materialize_explicit_ports(
             "ref": str(source.get("ref") or ""),
             "sha256": str(source.get("sha256") or ""),
         }
+    inline_ports = payload.get("plan_ports")
+    synthesis_result = payload.get("plan_synthesis_result")
+    if not isinstance(inline_ports, list) and isinstance(synthesis_result, Mapping):
+        inline_ports = synthesis_result.get("plan_ports")
+    for item in inline_ports if isinstance(inline_ports, list) else []:
+        if not isinstance(item, Mapping):
+            raise PlanArtifactPackageError("plan_ports entries must be objects")
+        logical_name = canonical_plan_port_name(str(
+            item.get("logical_name")
+            or item.get("artifact_kind")
+            or item.get("kind")
+            or ""
+        ))
+        if not logical_name:
+            raise PlanArtifactPackageError("plan_ports entry requires logical_name")
+        body = item.get("body")
+        if isinstance(body, Mapping):
+            descriptor = write_immutable_json_sidecar(
+                state_dir,
+                dict(body),
+                root="plan-ports",
+                kind=logical_name,
+                schema_version=str(
+                    item.get("schema_version")
+                    or body.get("schema_version")
+                    or ""
+                ),
+                created_by="plan-synth",
+                source_event_id=str(payload.get("source_event_id") or ""),
+            )
+        else:
+            descriptor = {
+                "ref": str(item.get("ref") or ""),
+                "sha256": str(item.get("sha256") or item.get("digest") or ""),
+            }
+            if not descriptor["ref"] or not descriptor["sha256"]:
+                raise PlanArtifactPackageError(
+                    f"plan port {logical_name!r} requires body or ref/sha256"
+                )
+            hydrated = hydrate_sidecar_ref(state_dir, descriptor)
+            if not hydrated.ok:
+                raise PlanArtifactPackageError(
+                    f"plan port {logical_name!r} cannot hydrate its descriptor"
+                )
+        ports[logical_name] = {
+            "logical_name": logical_name,
+            "artifact_kind": str(item.get("artifact_kind") or logical_name),
+            "schema_version": str(
+                item.get("schema_version")
+                or (
+                    body.get("schema_version")
+                    if isinstance(body, Mapping)
+                    else ""
+                )
+                or ""
+            ),
+            "producer_stage_id": str(
+                item.get("producer_stage_id")
+                or payload.get("stage_id")
+                or payload.get("producer_stage_id")
+                or ""
+            ),
+            "ref": str(descriptor.get("ref") or ""),
+            "sha256": str(descriptor.get("sha256") or ""),
+        }
     if flow_kind == "issue" and "issue_spec" not in ports and "requirement_spec" in ports:
         ports["issue_spec"] = {
             **ports.pop("requirement_spec"),
@@ -734,6 +839,55 @@ def _materialize_explicit_ports(
             "adapter_version": "plan-artifact-port-adapter.v1",
         }
     return ports
+
+
+def _validate_required_matrix_readiness(
+    *,
+    state_dir: Path,
+    ports: Iterable[Mapping[str, Any]],
+    required_ports: Iterable[str],
+) -> None:
+    required = {
+        canonical_plan_port_name(name)
+        for name in required_ports
+        if canonical_plan_port_name(name) in _ENRICHED_MATRIX_PORTS
+    }
+    if not required:
+        return
+    by_name = {
+        canonical_plan_port_name(str(port.get("logical_name") or "")): port
+        for port in ports
+        if isinstance(port, Mapping)
+    }
+    for name in sorted(required):
+        port = by_name.get(name)
+        if port is None:
+            continue
+        hydrated = hydrate_sidecar_ref(
+            state_dir,
+            {
+                "ref": str(port.get("ref") or ""),
+                "sha256": str(port.get("sha256") or ""),
+            },
+        )
+        body = hydrated.payload
+        if not isinstance(body, Mapping):
+            raise PlanArtifactPackageError(
+                f"required matrix port {name!r} must contain a JSON object"
+            )
+        metadata = body.get("metadata")
+        metadata = metadata if isinstance(metadata, Mapping) else {}
+        contract = metadata.get("enrichment_contract")
+        if not isinstance(contract, Mapping):
+            continue
+        status = str(body.get("status") or "").strip().lower()
+        enrichment_status = str(contract.get("status") or "").strip().lower()
+        if status != "ready" or enrichment_status != "fulfilled":
+            raise PlanArtifactPackageError(
+                f"required matrix port {name!r} is not ready: "
+                f"status={status or 'missing'}, "
+                f"enrichment={enrichment_status or 'missing'}"
+            )
 
 
 def _event_parts(
@@ -752,6 +906,57 @@ def _event_parts(
 def _strings(value: Any) -> list[str]:
     raw = value if isinstance(value, (list, tuple, set)) else [value] if value else []
     return list(dict.fromkeys(str(item).strip() for item in raw if str(item).strip()))
+
+
+_PLAN_PORT_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]*$")
+
+
+def _normalize_required_port_names(
+    values: Iterable[object] | None,
+) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, (str, bytes, Mapping)):
+        raise PlanArtifactPackageError("required_plan_ports must be a list")
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise PlanArtifactPackageError(
+                "required_plan_ports entries must be non-empty strings"
+            )
+        name = canonical_plan_port_name(value)
+        if not _PLAN_PORT_NAME.fullmatch(name):
+            raise PlanArtifactPackageError(
+                f"invalid required plan artifact port name: {name!r}"
+            )
+        if name in seen:
+            raise PlanArtifactPackageError(
+                f"duplicate required plan artifact port: {name!r}"
+            )
+        seen.add(name)
+        normalized.append(name)
+    return normalized
+
+
+def _load_package_task_map(
+    *,
+    state_dir: Path,
+    project_root: Path,
+    task_map_ref: str,
+) -> dict[str, Any]:
+    from zf.runtime.task_map import load_task_map, resolve_artifact_file
+
+    try:
+        return load_task_map(resolve_artifact_file(
+            task_map_ref,
+            project_root=project_root,
+            state_dir=state_dir,
+        ))
+    except Exception as exc:
+        raise PlanArtifactPackageError(
+            f"task_map required ports cannot be loaded: {exc}"
+        ) from exc
 
 
 __all__ = [

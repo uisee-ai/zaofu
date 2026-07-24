@@ -6,7 +6,6 @@ from pathlib import Path
 
 from zf.core.config.schema import ProjectConfig, RoleConfig, SessionConfig, ZfConfig
 from zf.core.events.log import EventLog
-from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.feature.store import FeatureStore
 from zf.core.task.schema import Task, TaskContract
@@ -150,10 +149,16 @@ def _source_index_v2() -> dict:
 def test_ingest_task_map_to_kanban_creates_contract_tasks(tmp_path: Path) -> None:
     state_dir = _state_dir(tmp_path)
     writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    task_map = _task_map()
+    task_map["required_plan_ports"] = [
+        "requirement_spec",
+        "acceptance_matrix",
+        "test_matrix",
+    ]
 
     result = ingest_task_map_to_kanban(
         state_dir,
-        _task_map(),
+        task_map,
         source_index=_source_index(),
         source_index_ref=".zf/artifacts/F-PROD/source-index.json",
         task_map_ref=".zf/artifacts/F-PROD/task-map.json",
@@ -175,6 +180,9 @@ def test_ingest_task_map_to_kanban_creates_contract_tasks(tmp_path: Path) -> Non
     assert tasks["TASK-PROD-A"].contract.goal_claim_ids == ["CLAIM-A"]
     assert tasks["TASK-PROD-B"].contract.goal_claim_ids == ["CLAIM-B"]
     assert tasks["TASK-PROD-B"].blocked_by == ["TASK-PROD-A"]
+    assert tasks["TASK-PROD-A"].contract.evidence_contract[
+        "required_plan_ports"
+    ] == task_map["required_plan_ports"]
     assert result.summary["task_doc_failure_count"] == 0
     assert result.summary["feature_projection"]["status"] == "created"
     features = FeatureStore(state_dir / "feature_list.json").list_all()

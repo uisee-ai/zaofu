@@ -18,6 +18,7 @@ from zf.runtime.call_result_runtime import (
     mark_call_operation_started,
     prepare_call_operation,
 )
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.plan_artifact_package import (
     PlanArtifactPackageError,
     admit_plan_artifact_package_for_payload,
@@ -28,6 +29,12 @@ from zf.runtime.product_delivery import ingest_task_map_to_kanban
 from zf.runtime.run_contract import (
     stable_json_sha256,
     write_run_contract,
+)
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.task_contract_snapshot import (
+    build_task_contract_snapshot,
+    current_task_contract_identity,
+    write_task_contract_snapshot,
 )
 from zf.runtime.task_map_materialization import (
     commit_task_map_materialization,
@@ -53,6 +60,12 @@ def _task_map(*, generation: str, sentinel: str) -> dict:
     return {
         "schema_version": "task-map.v1",
         "feature_id": "DOC152-MOCK",
+        "required_plan_ports": [
+            "requirement_spec",
+            "goal_claim_set",
+            "task_map",
+            "planning_result",
+        ],
         "goal_claims": [{
             "goal_claim_id": f"CLAIM-{generation}",
             "text": sentinel,
@@ -88,6 +101,23 @@ def _runtime(project_root: Path, state_dir: Path) -> SimpleNamespace:
             ),
         ),
     )
+
+
+def _record_required_reads(state_dir: Path, payload: dict) -> None:
+    manifest = hydrate_sidecar_ref(
+        state_dir,
+        payload["attempt_source_manifest"],
+    ).payload
+    for required in payload.get("required_reads") or []:
+        read_attempt_artifact(
+            state_dir,
+            manifest=manifest,
+            source_id=required["source_id"],
+            artifact_id=required["artifact_id"],
+            json_path=required["json_path"],
+            max_items=int(required.get("max_items") or 0),
+            max_chars=int(required.get("max_chars") or 0),
+        )
 
 
 def _package_payload(
@@ -292,6 +322,7 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         task_map_r2,
         source_refs={
             "task_map_ref": task_map_r2_ref,
+            "task_map_generation": "G2",
             "plan_artifact_package_id": current["plan_artifact_package_id"],
             "plan_artifact_package_ref": current["plan_artifact_package_ref"],
             "plan_artifact_package_digest": current["plan_artifact_package_digest"],
@@ -316,6 +347,12 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         "plan_artifact_package_ref"
     ]
     assert task.contract.goal_claim_ids == ["CLAIM-G2"]
+    assert task.contract.evidence_contract["required_plan_ports"] == [
+        "requirement_spec",
+        "goal_claim_set",
+        "task_map",
+        "planning_result",
+    ]
 
     stale_result = admit_runtime_call_result(
         runtime,
@@ -340,11 +377,25 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         issue["code"] for issue in stale_result.issues
     }
 
+    task_ref = f"refs/zf/tasks/{TASK_ID}"
+    identity = current_task_contract_identity(task)
+    snapshot = build_task_contract_snapshot(
+        task,
+        workflow_run_id=WORKFLOW_RUN_ID,
+        task_map_generation_id=identity["task_map_generation"],
+        base_commit="base-r2",
+        task_ref=task_ref,
+    )
+    snapshot_descriptor = write_task_contract_snapshot(state_dir, snapshot)
     current_call_payload = {
         **old_call_payload,
         "fanout_id": "fanout-r2",
         "child_id": "impl-r2",
-        "task_map_generation": "G2",
+        **identity,
+        "base_commit": "base-r2",
+        "task_ref": task_ref,
+        "contract_snapshot_ref": snapshot_descriptor["ref"],
+        "contract_snapshot_digest": snapshot_descriptor["sha256"],
         **{
             key: current[key]
             for key in (
@@ -366,6 +417,16 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         dispatch_id="attempt-r2",
         correlation_id=WORKFLOW_RUN_ID,
     )
+    assert {
+        required["source_id"]
+        for required in current_call_payload["required_reads"]
+    } == {
+        "contract",
+        "plan-port-requirement_spec",
+        "plan-port-goal_claim_set",
+        "plan-port-task_map",
+        "plan-port-planning_result",
+    }
     mark_call_operation_started(
         runtime,
         current_operation,
@@ -373,6 +434,7 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
         dispatch_id="attempt-r2",
         correlation_id=WORKFLOW_RUN_ID,
     )
+    _record_required_reads(state_dir, current_call_payload)
     admitted = admit_runtime_call_result(
         runtime,
         ZfEvent(
@@ -384,7 +446,6 @@ def test_doc152_package_currentness_and_restart_closure(tmp_path: Path) -> None:
                 **current_call_payload,
                 "source_commit": "commit-r2",
                 "target_commit": "commit-r2",
-                "task_ref": f"refs/zf/tasks/{TASK_ID}",
                 "summary": "current implementation",
             },
         ),

@@ -499,12 +499,19 @@ class FanoutBriefingMixin:
                 or child_payload.get("summary")
                 or ""
             ).strip()
+            from zf.runtime.stage_execution_card import compact_stage_context
+
             payload_section.extend([
                 "## Child-Specific Context",
                 "",
-                "Treat this workflow child payload as the verification scope for this run:",
+                "This compact card carries dispatch identity and scope. Read canonical "
+                "semantic bodies through Controlled Artifact Inputs.",
                 "```json",
-                json.dumps(child_payload, ensure_ascii=False, indent=2),
+                json.dumps(
+                    compact_stage_context(child_payload),
+                    ensure_ascii=False,
+                    indent=2,
+                ),
                 "```",
                 "",
             ])
@@ -841,54 +848,19 @@ class FanoutBriefingMixin:
             success_payload,
             payload_file=success_payload_file,
         )
+        failure_command = _emit_command(child_failure_event, failure_payload)
         output_contract_lines: list[str] = []
         if semantic_submit:
-            from zf.runtime.call_result_adapters import ControlResultAdapterRegistry
+            from zf.runtime.stage_execution_card import prepare_profiled_stage_result
 
-            profile_id = str(child_payload.get("output_profile_id") or "")
-            profile_revision = str(child_payload.get("output_profile_revision") or "")
-            profile = ControlResultAdapterRegistry().profile(
-                profile_id,
-                profile_revision,
+            success_command, output_contract_lines = prepare_profiled_stage_result(
+                state_dir=self.state_dir,
+                child_payload=child_payload,
+                success_payload=success_payload,
+                run_id=run_id,
+                cli_command=zf_cli_cmd(),
             )
-            semantic_body = success_payload.get(profile.semantic_field)
-            semantic_body = semantic_body if isinstance(semantic_body, dict) else {}
-            immutable_fields = {
-                "workflow_run_id", "operation_id", "request_hash", "task_id",
-                "fanout_id", "stage_id", "child_id", "run_id", "role_instance",
-                "attempt_id", "dispatch_id", "lease_id", "contract_revision",
-                "task_map_generation", "base_commit", "task_ref",
-                "contract_snapshot_ref", "contract_snapshot_digest",
-                "target_snapshot_ref", "target_commit", "target_snapshot_digest",
-                "goal_id", "flow_kind", "objective_ref", "goal_claim_set_ref",
-                "goal_claim_set_digest", "planning_result_ref", "candidate_ref",
-                "closure_fact_ref", "closure_fact_digest", "output_profile_id",
-                "output_profile_revision",
-            }
-            semantic_body = {
-                key: value for key, value in semantic_body.items()
-                if key not in immutable_fields
-            }
-            cli = " ".join(
-                shlex.quote(part) for part in shlex.split(zf_cli_cmd()) or ["zf"]
-            )
-            success_command = "\n".join([
-                f"cat <<'ZF_RESULT' | {cli} result submit \\",
-                f"  --operation {shlex.quote(str(child_payload['operation_id']))} \\",
-                f"  --state-dir {shlex.quote(str(self.state_dir))} --stdin",
-                json.dumps(semantic_body, ensure_ascii=False, indent=2),
-                "ZF_RESULT",
-            ])
-            output_contract_lines = [
-                "## Output Contract",
-                "",
-                f"- profile: `{profile_id}` revision `{profile_revision}`",
-                f"- schema: `{profile.schema_version}`",
-                "- Submit only the stage semantic result below. The Kernel supplies "
-                "operation/run/task/attempt/dispatch identity and selects the canonical event.",
-                "- The transport provides submit authorization; do not print or inspect its credential.",
-                "",
-            ]
+            failure_command = success_command
         briefing_text = "\n".join([
                 f"# Fanout Reader Child: {child_id}",
                 "",
@@ -954,7 +926,7 @@ class FanoutBriefingMixin:
                 "",
                 "Failure command:",
                 "```bash",
-                _emit_command(child_failure_event, failure_payload),
+                failure_command,
                 "```",
                 "",
                 "Do not emit the aggregate success/failure event directly; the kernel publishes it after the fanout barrier or synth role finishes.",

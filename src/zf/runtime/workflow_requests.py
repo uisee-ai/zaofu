@@ -62,13 +62,27 @@ def register_workflow_intake(
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).expanduser().resolve()
     manifest = _read_json(manifest_path)
-    _ensure_workflow_dir(manifest, manifest_path)
     request_id = str(manifest.get("request_id") or "").strip()
     if not request_id:
         raise WorkflowRequestError("workflow input manifest requires request_id")
     existing = load_workflow_request(state_dir, request_id)
     if existing:
-        return existing
+        current = _read_json(Path(str(existing.get("requirement_spec_ref") or "")))
+        if not current:
+            raise WorkflowRequestError("current requirement spec is missing")
+        spec_ref, digest = _write_requirement_spec(state_dir, current)
+        projection = dict(existing)
+        projection["requirement_spec_ref"] = spec_ref
+        projection["requirement_spec_digest"] = digest
+        _bind_effective_manifest(
+            state_dir,
+            manifest_path=manifest_path,
+            source_manifest=manifest,
+            projection=projection,
+            spec=current,
+        )
+        _write_projection(state_dir, projection)
+        return projection
 
     intake = _read_json(Path(str(manifest.get("intake_json_ref") or "")))
     spec = _requirement_spec(
@@ -77,7 +91,7 @@ def register_workflow_intake(
         revision=1,
         confirmed=False,
     )
-    spec_ref, digest = _write_requirement_spec(manifest, spec)
+    spec_ref, digest = _write_requirement_spec(state_dir, spec)
     projection = _projection(
         manifest,
         spec,
@@ -85,15 +99,25 @@ def register_workflow_intake(
         digest=digest,
         prior={},
     )
-    projection["workflow_input_manifest_ref"] = str(manifest_path)
+    _bind_effective_manifest(
+        state_dir,
+        manifest_path=manifest_path,
+        source_manifest=manifest,
+        projection=projection,
+        spec=spec,
+    )
     _write_projection(state_dir, projection)
-    _update_manifest(manifest_path, manifest, projection, spec)
     _emit(
         writer,
         "workflow.intake.created",
         projection,
         actor=actor,
-        extra={"workflow_input_manifest_ref": str(manifest_path)},
+        extra={
+            "workflow_input_manifest_ref": str(
+                projection.get("workflow_input_manifest_ref") or ""
+            ),
+            "source_workflow_input_manifest_ref": str(manifest_path),
+        },
     )
     if projection["status"] == "clarifying":
         _emit(
@@ -121,7 +145,6 @@ def revise_workflow_request(
 ) -> dict[str, Any]:
     manifest_path = Path(manifest_path).expanduser().resolve()
     manifest = _read_json(manifest_path)
-    _ensure_workflow_dir(manifest, manifest_path)
     request_id = str(manifest.get("request_id") or "").strip()
     if not request_id:
         raise WorkflowRequestError("workflow input manifest requires request_id")
@@ -156,13 +179,20 @@ def revise_workflow_request(
         spec["confirmed_at"] = _now_iso()
         spec["confirmed_by"] = actor
     spec = _normalize_spec(spec)
-    spec_ref, digest = _write_requirement_spec(manifest, spec)
+    spec_ref, digest = _write_requirement_spec(state_dir, spec)
     projection = _projection(
         manifest,
         spec,
         spec_ref=spec_ref,
         digest=digest,
         prior=prior,
+    )
+    _bind_effective_manifest(
+        state_dir,
+        manifest_path=manifest_path,
+        source_manifest=manifest,
+        projection=projection,
+        spec=spec,
     )
     _write_projection(state_dir, projection)
     _emit(
@@ -181,7 +211,6 @@ def revise_workflow_request(
             projection,
             actor=actor,
         )
-    _update_manifest(manifest_path, manifest, projection, spec)
     return projection
 
 
@@ -332,33 +361,37 @@ def _projection(
 
 
 def _write_requirement_spec(
-    manifest: dict[str, Any],
+    state_dir: Path,
     spec: dict[str, Any],
 ) -> tuple[str, str]:
-    workflow_dir_raw = str(manifest.get("workflow_dir") or "").strip()
-    if not workflow_dir_raw:
-        raise WorkflowRequestError("workflow input manifest requires workflow_dir")
-    workflow_dir = Path(workflow_dir_raw)
+    request_id = str(spec.get("request_id") or "").strip()
+    if not request_id:
+        raise WorkflowRequestError("requirement spec requires request_id")
     revision = int(spec.get("revision") or 1)
-    path = workflow_dir / "requirements" / f"revision-{revision:04d}.json"
     text = json.dumps(spec, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    path = (
+        Path(state_dir)
+        / "workflow-requests"
+        / _safe_id(request_id)
+        / "requirements"
+        / f"revision-{revision:04d}-{digest[:16]}.json"
+    )
     atomic_write_text(path, text)
-    return str(path), hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return str(path), digest
 
 
-def _ensure_workflow_dir(manifest: dict[str, Any], manifest_path: Path) -> None:
-    if str(manifest.get("workflow_dir") or "").strip():
-        return
-    manifest["workflow_dir"] = str(Path(manifest_path).parent)
-
-
-def _update_manifest(
+def _bind_effective_manifest(
+    state_dir: Path,
+    *,
     manifest_path: Path,
-    manifest: dict[str, Any],
+    source_manifest: dict[str, Any],
     projection: dict[str, Any],
     spec: dict[str, Any],
 ) -> None:
-    manifest = dict(manifest)
+    source_text = manifest_path.read_text(encoding="utf-8")
+    source_digest = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
+    manifest = dict(source_manifest)
     manifest.update({
         "objective": str(spec.get("objective") or ""),
         "source_root": str(spec.get("source_root") or ""),
@@ -371,15 +404,41 @@ def _update_manifest(
         "requirement_spec_digest": projection["requirement_spec_digest"],
         "request_status": projection["status"],
         "request_revision": projection["revision"],
+        "source_workflow_input_manifest_ref": str(manifest_path),
+        "source_workflow_input_manifest_digest": source_digest,
     })
     refs = [str(item) for item in manifest.get("artifact_refs") or []]
+    if str(manifest_path) not in refs:
+        refs.append(str(manifest_path))
     if projection["requirement_spec_ref"] not in refs:
         refs.append(projection["requirement_spec_ref"])
     manifest["artifact_refs"] = refs
-    atomic_write_text(
-        manifest_path,
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+    text = json.dumps(
+        manifest,
+        ensure_ascii=False,
+        indent=2,
+        sort_keys=True,
+    ) + "\n"
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    effective_path = (
+        Path(state_dir)
+        / "workflow-requests"
+        / _safe_id(str(projection.get("request_id") or "request"))
+        / "effective"
+        / (
+            f"revision-{int(projection.get('revision') or 1):04d}-"
+            f"{digest[:16]}"
+        )
+        / "workflow-input-manifest.json"
     )
+    atomic_write_text(
+        effective_path,
+        text,
+    )
+    projection["workflow_input_manifest_ref"] = str(effective_path)
+    projection["workflow_input_manifest_digest"] = digest
+    projection["source_workflow_input_manifest_ref"] = str(manifest_path)
+    projection["source_workflow_input_manifest_digest"] = source_digest
 
 
 def _write_projection(state_dir: Path, projection: dict[str, Any]) -> None:

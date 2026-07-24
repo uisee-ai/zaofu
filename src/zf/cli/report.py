@@ -10,7 +10,7 @@ from zf.core.config.loader import ConfigError
 from zf.core.config.project_context import resolve_project_context
 from zf.runtime.goal_dossier import (
     GoalDossierError,
-    build_goal_dossier,
+    build_cached_goal_dossier,
     write_goal_dossier_markdown,
     write_goal_dossier_projection,
 )
@@ -92,7 +92,16 @@ def run_goal_dossier(args: argparse.Namespace) -> int:
         print(f"error: events.jsonl not found under {state_dir}", file=sys.stderr)
         return 2
     try:
-        dossier = build_goal_dossier(state_dir, args.run_id)
+        context = resolve_project_context(
+            explicit_state_dir=state_dir,
+            load_config_with_explicit=True,
+        )
+        dossier = build_cached_goal_dossier(
+            state_dir,
+            args.run_id,
+            project_root=context.project_root,
+            config=context.config,
+        )
         projection = write_goal_dossier_projection(state_dir, dossier)
         report = write_goal_dossier_markdown(args.out, dossier)
     except GoalDossierError as exc:

@@ -190,7 +190,7 @@ class TestRefreshTriggered:
         triggers = [e for e in events if e.type == "worker.refresh.triggered"]
         assert triggers == []
 
-    def test_role_scoped_drift_refreshes_only_affected_worker(
+    def test_low_node_skip_does_not_trigger_refresh(
         self, state_dir, config, transport,
     ):
         log = EventLog(state_dir / "events.jsonl")
@@ -201,7 +201,7 @@ class TestRefreshTriggered:
                 "signal": "node_skip",
                 "severity": "low",
                 "detail": "Role 'review' not active in recent events",
-                "recommended_action": "refresh",
+                "recommended_action": "observe",
                 "affected_role": "review",
             },
         ))
@@ -212,6 +212,32 @@ class TestRefreshTriggered:
         events = log.read_all()
         triggers = [
             e for e in events
+            if e.type == "worker.refresh.triggered"
+            and e.payload.get("reason") == "drift"
+        ]
+        assert triggers == []
+
+    def test_actionable_role_scoped_drift_refreshes_only_affected_worker(
+        self, state_dir, config, transport,
+    ):
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="worker.drift.detected",
+            actor="zf-cli",
+            payload={
+                "signal": "repeat_decisions",
+                "severity": "medium",
+                "detail": "review repeated the same decision",
+                "recommended_action": "refresh",
+                "affected_role": "review",
+            },
+        ))
+        orch = Orchestrator(state_dir, config, transport)
+
+        orch._check_refresh_triggers()
+
+        triggers = [
+            e for e in log.read_all()
             if e.type == "worker.refresh.triggered"
             and e.payload.get("reason") == "drift"
         ]

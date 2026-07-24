@@ -194,6 +194,41 @@ class TestRepeatDecisionsDetection:
         drift = [e for e in events if e.type == "worker.drift.detected"]
         node_skip = [e for e in drift if e.payload.get("signal") == "node_skip"]
         assert node_skip[-1].payload.get("affected_role") == "review"
+        assert node_skip[-1].payload.get("recommended_action") == "observe"
+
+    def test_live_provider_turn_suppresses_node_skip(
+        self, state_dir, config, transport, monkeypatch,
+    ):
+        TaskStore(state_dir / "kanban.json").add(Task(
+            id="T1",
+            title="x",
+            status="in_progress",
+            assigned_to="review",
+            active_dispatch_id="dispatch-live",
+        ))
+        for i in range(12):
+            _emit(
+                state_dir,
+                ZfEvent(type=f"dev.progress.{i}", actor="dev", task_id="T1"),
+            )
+        orch = Orchestrator(state_dir, config, transport)
+        monkeypatch.setattr(
+            orch,
+            "_active_provider_turn",
+            lambda instance_id: (
+                {"age_s": 10.0, "turn_id": "turn-live"}
+                if instance_id == "review"
+                else None
+            ),
+        )
+
+        orch._check_drift()
+
+        drift = [
+            e for e in EventLog(state_dir / "events.jsonl").read_all()
+            if e.type == "worker.drift.detected"
+        ]
+        assert not any(e.payload.get("signal") == "node_skip" for e in drift)
 
 
 class TestCooldownDedup:
@@ -224,6 +259,44 @@ class TestCooldownDedup:
             and e.payload.get("signal") == "thrashing"
         )
         assert second_count == first_count  # no new emission
+
+    def test_new_dispatch_gets_independent_node_skip_observation(
+        self, state_dir, config, transport,
+    ):
+        store = TaskStore(state_dir / "kanban.json")
+        store.add(Task(
+            id="T1",
+            title="x",
+            status="in_progress",
+            assigned_to="review",
+            active_dispatch_id="dispatch-1",
+        ))
+        for i in range(12):
+            _emit(
+                state_dir,
+                ZfEvent(type=f"dev.progress.{i}", actor="dev", task_id="T1"),
+            )
+        orch = Orchestrator(state_dir, config, transport)
+
+        orch._check_drift()
+        orch._check_drift()
+        first = [
+            e for e in EventLog(state_dir / "events.jsonl").read_all()
+            if e.type == "worker.drift.detected"
+            and e.payload.get("signal") == "node_skip"
+        ]
+        assert len(first) == 1
+        assert first[0].payload.get("dispatch_id") == "dispatch-1"
+
+        store.update("T1", active_dispatch_id="dispatch-2")
+        orch._check_drift()
+        current = [
+            e for e in EventLog(state_dir / "events.jsonl").read_all()
+            if e.type == "worker.drift.detected"
+            and e.payload.get("signal") == "node_skip"
+        ]
+        assert len(current) == 2
+        assert current[-1].payload.get("dispatch_id") == "dispatch-2"
 
     def test_signal_re_emits_after_cooldown(
         self, state_dir, config, transport

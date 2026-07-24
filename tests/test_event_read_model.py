@@ -173,7 +173,7 @@ def test_event_ref_is_compact_and_hydrates_controlled_multi_refs(
         assert [event.id for event in events] == ["evt-operation"]
 
 
-def test_read_model_v4_schema_rebuilds_to_v5(tmp_path: Path) -> None:
+def test_read_model_v4_schema_rebuilds_to_v6(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     _write_line(
         state_dir / "events.jsonl",
@@ -204,7 +204,7 @@ def test_read_model_v4_schema_rebuilds_to_v5(tmp_path: Path) -> None:
 
     rebuilt = read_model.rebuild(state_dir)
 
-    assert rebuilt["schema_version"] == "event-read-model.v5"
+    assert rebuilt["schema_version"] == "event-read-model.v6"
     events = read_model.hydrate_events_by_ref(
         state_dir,
         ref_kind="operation_id",
@@ -563,14 +563,48 @@ def test_projection_cli_rebuild_and_status(tmp_path: Path, monkeypatch, capsys) 
 
     assert main(["projection", "rebuild", "--json"]) == 0
     rebuild = json.loads(capsys.readouterr().out)
-    assert rebuild["projection_state"] == "ready"
-    assert rebuild["source_seq"] >= 1
+    assert rebuild["overall_state"] == "ready"
+    assert rebuild["projections"]["event-index"]["source_seq"] >= 1
+    assert rebuild["projections"]["artifact-catalog"]["projection_state"] == "ready"
 
     assert main(["projection", "status", "--count-source", "--json"]) == 0
     status = json.loads(capsys.readouterr().out)
-    assert status["schema_version"] == "event-read-model.v5"
-    assert status["source_cursor"]["schema_version"] == "event-segment-cursor.v1"
-    assert status["projection_lag"] == 0
+    assert status["schema_version"] == "projection-status.v2"
+    event_index = status["projections"]["event-index"]
+    assert event_index["source_cursor"]["schema_version"] == "event-segment-cursor.v1"
+    assert event_index["projection_lag"] == 0
+    assert status["projections"]["artifact-catalog"]["projection_state"] == "ready"
+
+
+def test_projection_cli_reports_catalog_ready_event_index_missing(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(
+        'version: "1.0"\nproject:\n  name: test\n',
+        encoding="utf-8",
+    )
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    assert main(["emit", "task.created", "--task", "TASK-1"]) == 0
+    capsys.readouterr()
+
+    assert main([
+        "projection",
+        "rebuild",
+        "--projection",
+        "artifact-catalog",
+        "--json",
+    ]) == 0
+    capsys.readouterr()
+    assert main(["projection", "status", "--json"]) == 0
+    status = json.loads(capsys.readouterr().out)
+
+    assert status["overall_state"] == "missing"
+    assert status["projections"]["event-index"]["projection_state"] == "missing"
+    assert status["projections"]["artifact-catalog"]["projection_state"] == "ready"
 
 
 def test_payload_slim_keeps_proposal_object() -> None:

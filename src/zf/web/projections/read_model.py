@@ -29,10 +29,7 @@ from zf.core.events.segments import (
 )
 from zf.core.security.redaction import redact_obj
 from zf.core.state.locks import locked_path
-from zf.runtime.sidecar_refs import iter_sidecar_ref_descriptors
-
-
-SCHEMA_VERSION = "event-read-model.v5"
+SCHEMA_VERSION = "event-read-model.v6"
 _JOBS: dict[str, threading.Thread] = {}
 _JOBS_LOCK = threading.Lock()
 # Throttle background tail catch-ups: a busy dashboard calls hydrate/events/
@@ -189,26 +186,6 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
           seq INTEGER NOT NULL,
           PRIMARY KEY (ref_kind, ref_id, seq)
         ) WITHOUT ROWID;
-
-        CREATE TABLE IF NOT EXISTS sidecar_ref (
-          kind TEXT NOT NULL,
-          ref TEXT NOT NULL,
-          seq INTEGER NOT NULL,
-          event_id TEXT,
-          sha256 TEXT,
-          byte_count INTEGER,
-          content_type TEXT,
-          schema_version TEXT,
-          required INTEGER,
-          access_scope_json TEXT,
-          retention_json TEXT,
-          source_event_id TEXT,
-          preview TEXT,
-          PRIMARY KEY (kind, ref, seq)
-        );
-        CREATE INDEX IF NOT EXISTS idx_sidecar_ref_seq ON sidecar_ref(seq);
-        CREATE INDEX IF NOT EXISTS idx_sidecar_ref_ref ON sidecar_ref(ref);
-        CREATE INDEX IF NOT EXISTS idx_sidecar_ref_kind ON sidecar_ref(kind);
 
         CREATE TABLE IF NOT EXISTS task_timeline (
           task_id TEXT NOT NULL,
@@ -428,7 +405,6 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
                 conn.executescript(
                     """
                     DELETE FROM event_ref;
-                    DELETE FROM sidecar_ref;
                     DELETE FROM task_timeline;
                     DELETE FROM event_index;
                     DELETE FROM projection_cache;
@@ -493,31 +469,6 @@ def rebuild(state_dir: Path, *, config: ZfConfig | None = None) -> dict[str, Any
                     conn.execute(
                         "INSERT OR IGNORE INTO event_ref(ref_kind, ref_id, seq) VALUES (?, ?, ?)",
                         (kind, ref_id, record.seq),
-                    )
-                for descriptor in iter_sidecar_ref_descriptors(payload):
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO sidecar_ref(
-                          kind, ref, seq, event_id, sha256, byte_count,
-                          content_type, schema_version, required,
-                          access_scope_json, retention_json, source_event_id, preview
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """,
-                        (
-                            str(descriptor.get("kind") or ""),
-                            str(descriptor.get("ref") or ""),
-                            record.seq,
-                            event.id,
-                            str(descriptor.get("sha256") or ""),
-                            int(descriptor.get("byte_count") or 0),
-                            str(descriptor.get("content_type") or ""),
-                            str(descriptor.get("schema_version") or ""),
-                            1 if bool(descriptor.get("required", False)) else 0,
-                            json.dumps(descriptor.get("access_scope") or {}, ensure_ascii=False, default=str),
-                            json.dumps(descriptor.get("retention") or {}, ensure_ascii=False, default=str),
-                            str(descriptor.get("source_event_id") or ""),
-                            str(descriptor.get("preview") or "")[:500],
-                        ),
                     )
                 if event.task_id:
                     conn.execute(
@@ -722,66 +673,49 @@ def sidecar_refs(
     limit: int = 200,
     config: ZfConfig | None = None,
 ) -> dict[str, Any] | None:
-    status = ensure_requested(state_dir, config=config)
-    if status.get("projection_state") != "ready":
-        rebuild(state_dir, config=config)
-        status = projection_status(state_dir)
-    if not db_path(state_dir).exists():
-        return None
-    where: list[str] = []
-    args: list[Any] = []
-    if kind:
-        where.append("kind = ?")
-        args.append(kind)
-    if ref:
-        where.append("ref = ?")
-        args.append(ref)
-    sql_where = f"WHERE {' AND '.join(where)}" if where else ""
-    limit = max(1, min(int(limit or 200), 1000))
-    with _connect(db_path(state_dir)) as conn:
-        _ensure_schema(conn)
-        rows = conn.execute(
-            f"""
-            SELECT *
-            FROM sidecar_ref
-            {sql_where}
-            ORDER BY seq ASC
-            LIMIT ?
-            """,
-            (*args, limit),
-        ).fetchall()
+    from zf.runtime.artifact_query import ArtifactQueryService
+
+    service = ArtifactQueryService(
+        state_dir=state_dir,
+        project_root=Path(state_dir).parent,
+        config=config,
+    )
+    result = service.catalog_list(
+        context=service.context(
+            actor="web",
+            purpose="catalog",
+            mode="canonical",
+            limit=limit,
+        ),
+        kind=kind or "",
+        ref=ref or "",
+    )
     return {
         "schema_version": "sidecar-ref-index.v1",
-        "items": [_sidecar_ref_row(row) for row in rows],
-        "limit": limit,
-        "current_seq": int(status.get("projected_seq") or status.get("source_seq") or 0),
-        "projection_state": status.get("projection_state", "unknown"),
-        "source": "read_model.sqlite",
-    }
-
-
-def _sidecar_ref_row(row: sqlite3.Row) -> dict[str, Any]:
-    def load_json(value: object) -> dict[str, Any]:
-        try:
-            loaded = json.loads(str(value or "{}"))
-        except json.JSONDecodeError:
-            return {}
-        return loaded if isinstance(loaded, dict) else {}
-
-    return {
-        "kind": str(row["kind"] or ""),
-        "ref": str(row["ref"] or ""),
-        "seq": int(row["seq"] or 0),
-        "event_id": str(row["event_id"] or ""),
-        "sha256": str(row["sha256"] or ""),
-        "byte_count": int(row["byte_count"] or 0),
-        "content_type": str(row["content_type"] or ""),
-        "schema_version": str(row["schema_version"] or ""),
-        "required": bool(row["required"]),
-        "access_scope": load_json(row["access_scope_json"]),
-        "retention": load_json(row["retention_json"]),
-        "source_event_id": str(row["source_event_id"] or ""),
-        "preview": str(row["preview"] or ""),
+        "items": [
+            {
+                "kind": item.get("kind", ""),
+                "ref": item.get("ref", ""),
+                "seq": item.get("source_seq", 0),
+                "event_id": item.get("event_id", ""),
+                "sha256": item.get("sha256", ""),
+                "byte_count": item.get("byte_count", 0),
+                "content_type": item.get("content_type", ""),
+                "schema_version": item.get("schema_version", ""),
+                "required": item.get("required", False),
+                "access_scope": item.get("access_scope", {}),
+                "retention": item.get("retention", {}),
+                "source_event_id": item.get("source_event_id", ""),
+                "preview": item.get("preview", ""),
+            }
+            for item in result.get("items", [])
+        ],
+        "limit": int(result.get("limit") or limit),
+        "current_seq": int(
+            (result.get("source_snapshot") or {}).get("projected_seq") or 0
+        ),
+        "projection_state": result.get("projection_state", "unknown"),
+        "source": result.get("source", "read_model.sqlite"),
     }
 
 

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from zf.core.config.schema import ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.feature.store import FeatureStore
@@ -213,6 +214,28 @@ def build_goal_dossier(
         "source_manifest": source_manifest,
     }
     return redact_obj(dossier)
+
+
+def build_cached_goal_dossier(
+    state_dir: Path,
+    run_id: str,
+    *,
+    project_root: Path,
+    config: ZfConfig | None = None,
+) -> dict[str, Any]:
+    """Use a cheap canonical snapshot key before running the full reducer."""
+
+    from zf.runtime.artifact_query import ArtifactQueryService
+
+    service = ArtifactQueryService(
+        state_dir=state_dir,
+        project_root=project_root,
+        config=config,
+    )
+    return service.cached_goal_dossier(
+        run_id,
+        builder=lambda: build_goal_dossier(state_dir, run_id),
+    )
 
 
 def _plan_package_roadmap(
@@ -851,6 +874,7 @@ def _digest(value: Any) -> str:
 __all__ = [
     "GoalDossierError",
     "SCHEMA_VERSION",
+    "build_cached_goal_dossier",
     "build_goal_dossier",
     "goal_dossier_view",
     "render_goal_dossier_markdown",

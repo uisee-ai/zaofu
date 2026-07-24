@@ -15,9 +15,9 @@ from zf.core.events.model import ZfEvent
 from zf.runtime.artifact_read_ledger import (
     build_input_consumption_policy,
     canonical_required_reads,
-    source_manifest_from_payload,
     write_input_consumption_policy,
 )
+from zf.runtime.artifact_query.handoff import CanonicalHandoffResolver
 from zf.runtime.call_result_admission import (
     CallResultAdmissionOutcome,
     CallResultAdmissionService,
@@ -135,9 +135,11 @@ def prepare_call_operation(
     )
     payload["semantic_result_submit_mode"] = semantic_submit_mode
 
-    source_manifest, source_descriptor = source_manifest_from_payload(
+    source_manifest, source_descriptor = CanonicalHandoffResolver(
         state_dir=runtime.state_dir,
         project_root=runtime.project_root,
+        config=runtime.config,
+    ).resolve_payload(
         payload=payload,
         workflow_run_id=workflow_run_id,
         task_id=task_id,

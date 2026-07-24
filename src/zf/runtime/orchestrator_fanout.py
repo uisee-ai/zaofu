@@ -120,6 +120,7 @@ _HANDOFF_REF_FIELDS = (
 )
 
 _CONTRACT_HANDOFF_KEYS = (
+    "task_ref",
     "workflow_run_id",
     "contract_revision",
     "task_map_generation",
@@ -1713,6 +1714,17 @@ class FanoutCoordinationMixin(
             or source_event.correlation_id
             or ""
         )
+        task_id = str(child_payload.get("task_id") or source_event.task_id or "")
+        task_ref_entry = self._task_ref_entry(task_id)
+        task_ref = str(
+            child_payload.get("task_ref")
+            or task_ref_entry.get("task_ref")
+            or (
+                f"{self.config.runtime.git.task_ref_prefix}/{task_id}"
+                if task_id
+                else ""
+            )
+        )
         payload = {
             "pipeline_id": str(getattr(match.pipeline, "pipeline_id", "") or ""),
             "flow_kind": str(
@@ -1734,16 +1746,16 @@ class FanoutCoordinationMixin(
             "attempt_id": str(child_payload.get("attempt_id") or ""),
             "handoff_ref": str(
                 child_payload.get("handoff_ref")
-                or child_payload.get("task_ref")
+                or task_ref
                 or ""
             ),
             "run_id": str(child_payload.get("run_id") or ""),
             "role_instance": str(child_payload.get("role_instance") or ""),
-            "task_id": str(child_payload.get("task_id") or source_event.task_id or ""),
+            "task_id": task_id,
             "lane_id": str(child_payload.get("lane_id") or ""),
             "lane_profile": str(child_payload.get("lane_profile") or ""),
             "affinity_tag": str(child_payload.get("affinity_tag") or ""),
-            "task_ref": str(child_payload.get("task_ref") or ""),
+            "task_ref": task_ref,
             "task_map_ref": str(child_payload.get("task_map_ref") or manifest.get("task_map_ref") or ""),
             "source_index_ref": str(child_payload.get("source_index_ref") or manifest.get("source_index_ref") or ""),
             "source_branch": str(child_payload.get("source_branch") or ""),
@@ -2147,6 +2159,11 @@ class FanoutCoordinationMixin(
                 "child_id": str(payload.get("child_id") or ""),
                 "role_instance": role.instance_id,
                 "reason": str(payload.get("reason") or "lane stage failed"),
+                **{
+                    key: task_item[key]
+                    for key in _CONTRACT_HANDOFF_KEYS
+                    if task_item.get(key) not in (None, "")
+                },
                 **series.to_payload(),
                 "failure_class": PRODUCT_FAILURE_CLASS,
                 "recovery_owner": "implementation_owner",
@@ -2310,6 +2327,12 @@ class FanoutCoordinationMixin(
             value = payload.get(key)
             if value not in (None, ""):
                 task_item[key] = value
+        if not str(task_item.get("task_ref") or "") and task_id:
+            task_ref_entry = self._task_ref_entry(task_id)
+            task_item["task_ref"] = str(
+                task_ref_entry.get("task_ref")
+                or f"{self.config.runtime.git.task_ref_prefix}/{task_id}"
+            )
         if not str(task_item.get("affinity_tag") or ""):
             task_item["affinity_tag"] = task_id
         return task_item
@@ -4100,6 +4123,7 @@ class FanoutCoordinationMixin(
             )
         fields = {
             **snapshot_payload_fields(descriptor),
+            "task_ref": str(snapshot["task_ref"]),
             "workflow_run_id": str(snapshot["workflow_run_id"]),
             "contract_revision": str(snapshot["contract_revision"]),
             "task_map_generation": str(snapshot["task_map_generation"]),
@@ -4116,26 +4140,11 @@ class FanoutCoordinationMixin(
         return snapshot, descriptor
 
     def _typed_task_contract_handoff_enabled(self, task_item: dict) -> bool:
-        if str(task_item.get("contract_snapshot_ref") or "").strip():
-            return True
-        from zf.core.verification.event_schema import event_schemas_for_config
+        from zf.runtime.typed_handoff_policy import (
+            typed_task_contract_handoff_enabled,
+        )
 
-        task_payload = task_item.get("payload")
-        payload = task_payload if isinstance(task_payload, dict) else task_item
-        schemas = event_schemas_for_config(self.config, payload=payload)
-        if not isinstance(schemas, dict):
-            return False
-        for event_type in (
-            "verify.child.completed",
-            "review.child.completed",
-            "judge.child.completed",
-        ):
-            rule = schemas.get(event_type)
-            if isinstance(rule, dict) and "verification_result" in (
-                rule.get("required") or []
-            ):
-                return True
-        return False
+        return typed_task_contract_handoff_enabled(self.config, task_item)
 
     def _prepare_reader_contract_target(self, child) -> None:
         payload = child.payload if isinstance(child.payload, dict) else {}
@@ -4163,6 +4172,14 @@ class FanoutCoordinationMixin(
                 task,
                 task_map_ref=str(payload.get("task_map_ref") or ""),
             ))
+        task_ref_entry = self._task_ref_entry(task_id)
+        expected_task_ref = str(
+            task_ref_entry.get("task_ref")
+            or payload.get("task_ref")
+            or ""
+        )
+        if expected_task_ref:
+            expected["task_ref"] = expected_task_ref
         snapshot = hydrate_task_contract_snapshot(
             self.state_dir,
             descriptor,
@@ -4191,6 +4208,7 @@ class FanoutCoordinationMixin(
                 source_event_id=str(payload.get("trigger_event_id") or ""),
             )
         payload.update({
+            "task_ref": str(snapshot["task_ref"]),
             "workflow_run_id": str(snapshot["workflow_run_id"]),
             "contract_revision": str(snapshot["contract_revision"]),
             "task_map_generation": str(snapshot["task_map_generation"]),
@@ -7882,6 +7900,19 @@ class FanoutCoordinationMixin(
             "--payload",
             shlex.quote(json.dumps(blocked_payload, ensure_ascii=False)),
         ])
+        from zf.runtime.stage_execution_card import prepare_writer_execution_card
+        (
+            completion_command, blocked_command,
+            display_task_payload, result_file_section,
+        ) = prepare_writer_execution_card(
+            state_dir=self.state_dir,
+            task_item=task_item,
+            task_payload=task_payload,
+            completion_payload=completion_payload,
+            run_id=run_id, cli_command=zf_cli_cmd(),
+            completion_command=completion_command,
+            blocked_command=blocked_command,
+        )
         rework_section: list[str] = []
         if rework_feedback:
             rework_section = [
@@ -7932,14 +7963,9 @@ class FanoutCoordinationMixin(
             if controlled_input_section
             else []
         )
-        # 2026-06-19 (e2e context-continuity audit): the plan's per-task
-        # contract content (acceptance / verification / summary-scope-guard /
-        # source_refs) must be inlined into the briefing so the impl agent does
-        # not have to dereference task_map_ref to learn it. writer_task_items
-        # normalizes the task (renaming acceptance→acceptance_criteria and
-        # stringifying verification) but preserves the untouched plan task under
-        # ``raw_task``, so read the original list-typed contract from there;
-        # fall back to task_item for the truly-raw dispatch path.
+        # Keep mechanical scope inline. Semantic contract bodies are immutable
+        # required reads so a stale copied task-map fragment cannot conflict
+        # with the current Contract Snapshot.
         workflow_scope_refs = _workflow_ref_bundle(
             task_item,
             task_payload,
@@ -7969,29 +7995,14 @@ class FanoutCoordinationMixin(
                 "tests",
                 "files_changed",
             ],
-            # Inline the plan's per-task contract content (summary holds
-            # any SCOPE GUARD) from the preserved raw plan task — see
-            # contract_src above.
-            "summary": str(
-                contract_snapshot.get("behavior")
-                or contract_src.get("summary")
-                or ""
-            ),
-            "acceptance": (
-                contract_snapshot.get("acceptance_criteria")
-                or contract_src.get("acceptance", [])
-            ),
-            "verification": (
-                contract_snapshot.get("verification_commands")
-                or contract_src.get("verification", [])
-            ),
+            # Semantic contract bodies are canonical required reads. Keep only
+            # mechanical write scope and provenance inline.
             "source_refs": (
                 contract_src.get("source_refs")
                 or task_item.get("source_refs", [])
             ),
             "contract_snapshot_ref": str(task_item.get("contract_snapshot_ref") or ""),
             "contract_snapshot_digest": str(task_item.get("contract_snapshot_digest") or ""),
-            "contract_snapshot": contract_snapshot,
         }
         scope_contract.update({
             key: value
@@ -8000,20 +8011,6 @@ class FanoutCoordinationMixin(
         })
         if workflow_scope_refs.get("source_refs"):
             scope_contract["workflow_source_refs"] = workflow_scope_refs["source_refs"]
-        display_task_payload = dict(task_payload)
-        for contract_key in (
-            "acceptance",
-            "acceptance_criteria",
-            "allowed_paths",
-            "contract_revision",
-            "raw_task",
-            "scope",
-            "task_map_generation",
-            "validation",
-            "verification",
-            "verification_tiers",
-        ):
-            display_task_payload.pop(contract_key, None)
         briefing_text = "\n".join([
                 f"# Fanout Writer Child: {task_id}",
                 "",
@@ -8036,10 +8033,11 @@ class FanoutCoordinationMixin(
                 *self._skill_briefing_section(role, skill_entries),
                 *workflow_input_lines,
                 *controlled_input_lines,
+                *result_file_section,
                 "Task instruction:",
                 task_instruction or "Implement the assigned task scope inside allowed_paths.",
                 "",
-                "Compatibility task payload (contract fields are intentionally omitted):",
+                "Compact execution context:",
                 "```json",
                 json.dumps(display_task_payload, indent=2, ensure_ascii=False),
                 "```",
@@ -8087,8 +8085,8 @@ class FanoutCoordinationMixin(
                 "```",
                 "",
                 "If the contract cannot be satisfied inside `allowed_paths`, do not "
-                "search runtime source or emit success. Fill the blocker evidence, "
-                "upstream `blocker_task_ids`, and `required_paths`, then emit:",
+                "search runtime source or emit success. Fill the blocker evidence "
+                "in the signed result scratch, then submit:",
                 "```bash",
                 blocked_command,
                 "```",
@@ -8393,6 +8391,7 @@ class FanoutCoordinationMixin(
                 "plan_artifact_ref": plan_ref,
                 "artifact_refs": [plan_ref],
                 "evidence_refs": [],
+                "plan_ports": [],
             })
             completion_payload["report"].update({
                 "plan_artifact_ref": plan_ref,
@@ -8400,6 +8399,7 @@ class FanoutCoordinationMixin(
                 "task_map_ref": "",
                 "backlog_ref": "",
                 "source_index_ref": "",
+                "plan_ports": [],
                 "evidence_refs": [],
             })
         if call_payload:

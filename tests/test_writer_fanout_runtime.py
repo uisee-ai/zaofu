@@ -33,8 +33,10 @@ from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.orchestrator_fanout import _writer_task_dependencies_satisfied
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.candidates import CandidateRebuilder, CandidateTask
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
 from zf.runtime.light_flow import synthesize_light_task_map
 from zf.runtime.product_delivery import ingest_task_map_to_kanban
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.task_refs import TaskRefManager
 from zf.runtime.task_contract_snapshot import (
     build_task_contract_snapshot,
@@ -1606,20 +1608,24 @@ def test_writer_briefing_uses_configured_zf_cli_cmd(
     assert '"required_paths": []' in briefing
 
 
-def test_writer_briefing_inlines_acceptance_verification_and_scope_guard(tmp_path: Path):
-    # 2026-06-19 e2e context-continuity audit: the impl agent must not have to
-    # dereference task_map_ref to learn its acceptance/verification — the
-    # briefing's scope contract inlines them, including the SCOPE GUARD that
-    # lives in the task summary.
+def test_writer_briefing_uses_canonical_contract_required_read(tmp_path: Path):
     state_dir, _log, transport, orch = _state(tmp_path)
     _seed_tasks(state_dir)
+    orch.config.workflow.flow_metadata = {
+        "result_protocol": {
+            "mode": "blocking",
+            "semantic_submit_profiles": {"implementation": "blocking"},
+        },
+    }
     _start(orch)
     briefing = transport.sent[0][1].read_text(encoding="utf-8")
-    assert '"acceptance"' in briefing
-    assert "no behavior change" in briefing
-    assert '"verification"' in briefing
-    assert "test -f a.txt" in briefing
-    assert "SCOPE GUARD: pure extraction only" in briefing
+    assert "Required reads for this attempt:" in briefing
+    assert "artifact read --attempt" in briefing
+    assert "contract_snapshot_ref" in briefing
+    assert '"contract_snapshot":' not in briefing
+    assert "result submit" in briefing
+    assert "--result-file" in briefing
+    assert len(briefing.encode("utf-8")) <= 12 * 1024
 
 
 def test_writer_briefing_surfaces_candidate_rework_feedback(tmp_path: Path):
@@ -2501,6 +2507,19 @@ def test_selected_writer_call_settles_with_admitted_implementation_result(
     fanout_id = _fanout_id(log)
     task1 = _child(_manifest(state_dir, fanout_id), "TASK-1")
     commit1 = _commit(Path(task1["workdir"]), "a.txt", "TASK-1\n", "TASK-1")
+    operation_payload = dict(task1)
+    source_manifest = hydrate_sidecar_ref(
+        state_dir,
+        operation_payload["attempt_source_manifest"],
+    ).payload
+    for required_read in operation_payload["required_reads"]:
+        read_attempt_artifact(
+            state_dir,
+            manifest=source_manifest,
+            source_id=required_read["source_id"],
+            artifact_id=required_read["artifact_id"],
+            json_path=required_read["json_path"],
+        )
     progress = ZfEvent(
         type="dev.build.done",
         actor=task1["role_instance"],
@@ -2518,19 +2537,28 @@ def test_selected_writer_call_settles_with_admitted_implementation_result(
             "summary": "implemented task one",
             **{
                 key: value
-                for key, value in dict(task1.get("payload") or {}).items()
+                for key, value in operation_payload.items()
                 if key in {
                     "workflow_run_id",
                     "operation_id",
                     "request_hash",
-                        "attempt_id",
-                        "attempt_domain",
-                        "result_protocol_mode",
-                        "plan_artifact_package_id",
-                        "plan_artifact_package_ref",
-                        "plan_artifact_package_digest",
-                        "run_contract_ref",
-                        "run_contract_digest",
+                    "attempt_id",
+                    "attempt_domain",
+                    "result_protocol_mode",
+                    "plan_artifact_package_id",
+                    "plan_artifact_package_ref",
+                    "plan_artifact_package_digest",
+                    "run_contract_ref",
+                    "run_contract_digest",
+                    "contract_snapshot_ref",
+                    "contract_snapshot_digest",
+                    "contract_revision",
+                    "task_map_generation",
+                    "base_commit",
+                    "required_reads",
+                    "input_consumption_policy_ref",
+                    "input_consumption_policy_digest",
+                    "input_consumption_policy",
                     "attempt_source_manifest_ref",
                     "attempt_source_manifest_digest",
                     "attempt_source_manifest",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -97,12 +98,47 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     read_cmd.add_argument("--state-dir", default=None, help="Runtime state dir override")
     read_cmd.set_defaults(func=_run_attempt_read)
 
+    catalog = sub.add_parser(
+        "catalog",
+        help="Query rebuildable artifact metadata and lineage",
+    )
+    catalog_sub = catalog.add_subparsers(dest="artifact_catalog_cmd")
+
+    catalog_list = catalog_sub.add_parser("list", help="List artifact occurrences")
+    for flag in (
+        "kind",
+        "ref",
+        "task-id",
+        "run-id",
+        "attempt-id",
+        "operation-id",
+        "package-id",
+    ):
+        catalog_list.add_argument(f"--{flag}", default="")
+    catalog_list.add_argument("--limit", type=int, default=200)
+    catalog_list.add_argument("--offset", type=int, default=0)
+    catalog_list.add_argument("--state-dir", default=None)
+    catalog_list.set_defaults(func=_run_catalog_list)
+
+    catalog_show = catalog_sub.add_parser("show", help="Show one artifact identity")
+    catalog_show.add_argument("identity")
+    catalog_show.add_argument("--state-dir", default=None)
+    catalog_show.set_defaults(func=_run_catalog_show)
+
+    lineage = catalog_sub.add_parser("lineage", help="Show subject-to-artifact lineage")
+    lineage.add_argument("--subject-kind", required=True)
+    lineage.add_argument("--subject-id", required=True)
+    lineage.add_argument("--limit", type=int, default=200)
+    lineage.add_argument("--state-dir", default=None)
+    lineage.set_defaults(func=_run_catalog_lineage)
+
     parser.set_defaults(func=_run_help)
     manifest.set_defaults(func=_run_help)
+    catalog.set_defaults(func=_run_help)
 
 
 def _run_help(args: argparse.Namespace) -> int:
-    print("usage: zf artifact {manifest create|list|read} ...")
+    print("usage: zf artifact {manifest create|list|read|catalog} ...")
     return 0
 
 
@@ -135,11 +171,97 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
             json_path=args.json_path,
             max_items=max(0, int(args.max_items or 0)),
             max_chars=max(0, int(args.max_chars or 0)),
+            actor=os.environ.get("ZF_ROLE_INSTANCE", ""),
+            role=os.environ.get("ZF_ROLE_NAME", ""),
+            provider=os.environ.get("ZF_ROLE_BACKEND", ""),
         )
     except (ConfigError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     print(result["content"])
+    return 0
+
+
+def _query_service(args: argparse.Namespace):
+    context = resolve_project_context(
+        explicit_state_dir=getattr(args, "state_dir", None),
+        load_config_with_explicit=True,
+    )
+    from zf.runtime.artifact_query import ArtifactQueryService
+
+    return ArtifactQueryService(
+        state_dir=context.state_dir,
+        project_root=context.project_root,
+        config=context.config,
+    )
+
+
+def _run_catalog_list(args: argparse.Namespace) -> int:
+    try:
+        service = _query_service(args)
+        query_context = service.context(
+            actor="operator",
+            purpose="catalog",
+            mode="canonical",
+            limit=args.limit,
+            offset=args.offset,
+        )
+        result = service.catalog_list(
+            context=query_context,
+            kind=args.kind,
+            ref=args.ref,
+            task_id=args.task_id,
+            run_id=args.run_id,
+            attempt_id=args.attempt_id,
+            operation_id=args.operation_id,
+            package_id=args.package_id,
+        )
+    except (ConfigError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_catalog_show(args: argparse.Namespace) -> int:
+    try:
+        service = _query_service(args)
+        result = service.catalog_show(
+            args.identity,
+            context=service.context(
+                actor="operator",
+                purpose="catalog",
+                mode="canonical",
+                limit=1,
+            ),
+        )
+    except (ConfigError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    if result.get("item") is None:
+        print(f"Error: artifact not found: {args.identity}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+    return 0
+
+
+def _run_catalog_lineage(args: argparse.Namespace) -> int:
+    try:
+        service = _query_service(args)
+        result = service.lineage(
+            subject_kind=args.subject_kind,
+            subject_id=args.subject_id,
+            context=service.context(
+                actor="operator",
+                purpose="lineage",
+                mode="canonical",
+                limit=args.limit,
+            ),
+        )
+    except (ConfigError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0
 
 

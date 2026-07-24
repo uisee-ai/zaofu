@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
                         hook_recv, trace, doctor, workdir, refs, workflow, runs,
                         plan_approval, issue,
                         feishu, autopilot, skills, state, self_eval, panes,
-                        autoresearch, update, guard, artifact, bridge, preflight,
+                        autoresearch, update, guard, artifact, attempt, bridge, preflight,
                         self_repair, recover, projection, goal)
     from zf.cli import result as result_cli
     from zf.cli import config as config_cli
@@ -94,6 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     update.register(subparsers)
     guard.register(subparsers)
     artifact.register(subparsers)
+    attempt.register(subparsers)
     preflight.register(subparsers)
     self_repair.register(subparsers)
     recover.register(subparsers)
