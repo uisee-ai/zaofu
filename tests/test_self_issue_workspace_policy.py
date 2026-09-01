@@ -180,6 +180,21 @@ def test_web_created_project_materializes_policy_for_its_cli(
     assert config.self_issue.delivery.repository == "rzwu-uisee/zaofu-self-issue"
     assert config.self_issue.delivery.base_branch == "dev"
     assert config.self_issue.delivery.auto_close_issue is False
+    assert {
+        role.name
+        for role in config.roles
+    } >= {
+        "orchestrator",
+        "external-issue-triage",
+        "external-issue-triage-verifier",
+    }
+    assert {
+        stage.id
+        for stage in config.workflow.stages
+    } >= {
+        "external-issue-triage",
+        "external-issue-triage-verify",
+    }
 
     preset_target = tmp_path / "preset-project"
     preset_initialized = client.post(
@@ -198,6 +213,13 @@ def test_web_created_project_materializes_policy_for_its_cli(
     assert preset_config.self_issue.delivery.repository == (
         "rzwu-uisee/zaofu-self-issue"
     )
+    assert {
+        stage.id
+        for stage in preset_config.workflow.stages
+    } >= {
+        "external-issue-triage",
+        "external-issue-triage-verify",
+    }
 
     monkeypatch.chdir(target)
     assert main(["issue", "report", "Created project CLI failure"]) == 0

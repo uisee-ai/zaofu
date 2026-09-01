@@ -165,6 +165,13 @@ self_issue:
   browser_capture_base_url: http://127.0.0.1:8002
 ```
 
+启用 Workspace 锁定的 Self-Issue policy 后，新建项目时会一并物化外部 Issue
+Triage 的运行合同：`external-issue-triage/v1` Workflow、只读的
+`external-issue-triage` 与 `external-issue-triage-verifier` 角色，以及对应的
+stages/tasks。这样项目既能接收 GitHub Issue，也能在人工批准后转入 Fix Run。
+`zf project init` 会生成这些声明；普通 `zf init` 只初始化已有项目的运行态，不会
+重写已有 `zf.yaml`。
+
 评估器不能修改代码、访问网络、读取 Secret Store 或主动发布 Issue。它最多通过提供的
 runner 执行 3 个现有 focused tests；活动区按 `Reproduction 1/3 started`、结果的形式
 显示安全测试目标。次数来自按 draft/run 隔离的 Kernel 持久 ledger，Interrupt/Resume
