@@ -39,7 +39,8 @@ assert(nextIssueLabelSelection(null, "p1")?.[0] === "p1", "clicking a label must
 assert(nextIssueLabelSelection(["p1"], "p1") === null, "clicking the active label must return to all labels");
 assert(issueLabelFoldCount(["a", "b", "c"]) === 0, "three labels must remain visible");
 assert(issueLabelFoldCount(["a", "b", "c", "d", "e"]) === 2, "labels after the first three must fold into a count");
-assert(canManageIssueRun("triaging") && canManageIssueRun("fix_paused"), "active and paused runs must expose Manage Run");
+assert(canManageIssueRun("triaging") && canManageIssueRun("triage_recovering") && canManageIssueRun("fix_recovering") && canManageIssueRun("fix_paused"), "active, recovering, and paused runs must expose Manage Run");
+assert(!canManageIssueRun("triage_blocked") && !canManageIssueRun("fix_blocked"), "terminal blocked runs must expose Start Triage instead of invalid Run controls");
 assert(!canManageIssueRun("verified_candidate"), "completed verification must not expose Run controls");
 assert(
   ISSUE_STATE_FILTERS.filter(([, label]) => label.startsWith("Queued:"))
@@ -50,6 +51,7 @@ assert(
 assert(!ISSUE_STATE_FILTERS.some(([value]) => String(value) === "queued"), "Queued must be a searchable prefix, not a synthetic state");
 const queuedStates = filterIssueStateOptions("Queued").map(({ value }) => value);
 assert(queuedStates.join(",") === "triage_queued,fix_queued", "Queued search must return all queued states");
+assert(filterIssueStateOptions("Blocked").map(({ value }) => value).join(",") === "triage_blocked,fix_blocked,blocked", "Blocked search must include phase-specific terminal states");
 assert(nextIssueStateSelection(null, "triage_queued").join(",") === "triage_queued", "a state click must start a single selection");
 assert(nextIssueStateSelection(["triage_queued"], "fix_queued").length === 2, "state selection must support multiple values");
 const selectedQueuedStates = nextIssueStateSelectAll(

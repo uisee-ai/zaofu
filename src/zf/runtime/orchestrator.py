@@ -3447,6 +3447,19 @@ class WorkflowRuntimeCoordinator(
                 "run.delivery.failed",
                 "run.delivery.blocked",
             }:
+                if event.type == "artifact.delivery.verified":
+                    from zf.runtime.event_window import read_runtime_events
+                    from zf.runtime.external_issue_clarification import (
+                        external_issue_triage_outcome_event,
+                    )
+
+                    outcome = external_issue_triage_outcome_event(
+                        self.state_dir,
+                        read_runtime_events(self.event_log, self.state_dir),
+                        cause=event,
+                    )
+                    if outcome is not None:
+                        self.event_writer.append(outcome)
                 self._maybe_complete_run_goal(event)
             if event.type == "judge.passed":
                 self._maybe_auto_ship(event)

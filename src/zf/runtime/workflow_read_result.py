@@ -30,6 +30,7 @@ _TOP_LEVEL_HANDOFF_FIELDS = (
     "execution_status",
     "result_semantics",
     "failure_class",
+    "external_issue_disposition",
 )
 
 
@@ -120,6 +121,17 @@ def normalize_workflow_read_result(
     report.setdefault("findings", [])
 
     issues: list[dict[str, str]] = []
+    if "external_issue_disposition" in report:
+        from zf.runtime.external_issue_clarification import (
+            normalize_external_issue_disposition,
+        )
+
+        disposition, disposition_issues = normalize_external_issue_disposition(
+            report.get("external_issue_disposition"),
+        )
+        issues.extend(disposition_issues)
+        if disposition is not None:
+            report["external_issue_disposition"] = disposition
     if not str(report.get("summary") or "").strip():
         issues.append({
             "field": "control_result.summary",

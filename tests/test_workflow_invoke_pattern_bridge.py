@@ -538,9 +538,11 @@ def test_generic_workflow_invoke_preserves_goal_identity_into_child_briefing(
 def test_durable_workflow_invoke_and_compiled_children_are_restart_deduped(
     tmp_path: Path,
 ) -> None:
+    config = _config(durable=True, target_ref="")
+    config.goal.enabled = True
     _state_dir, log, transport, orch = _state(
         tmp_path,
-        config=_config(durable=True, target_ref=""),
+        config=config,
         workflow_anchor=True,
     )
     payload = {
@@ -579,6 +581,11 @@ def test_durable_workflow_invoke_and_compiled_children_are_restart_deduped(
 
     events = log.read_all()
     assert sum(event.type == "workflow.invoke.accepted" for event in events) == 1
+    assert sum(
+        event.type == "run.goal.started"
+        and event.payload.get("run_id") == "wf-durable-review"
+        for event in events
+    ) == 1
     assert sum(event.type == "task.fanout.requested" for event in events) == 1
     parent_requested = [
         event for event in events

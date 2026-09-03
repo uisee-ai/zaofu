@@ -110,6 +110,9 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "user.message", "user.intent.submitted",
     # Provider-neutral External Issue ingress and controlled Fix admission.
     "external_issue.received", "external_issue.triage.queued",
+    "external_issue.triage.needs_info",
+    "external_issue.triage.needs_info_exhausted",
+    "external_issue.clarification.published",
     "external_issue.fix_approval.intent",
     # Observability for orphan user.message: emitted by orchestrator
     # _scan_inline_overrides when a human-actor user.message produced no

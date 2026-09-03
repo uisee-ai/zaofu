@@ -197,7 +197,7 @@ def test_tmux_transport_send_task_allows_node_codex_wrapper(tmp_path) -> None:
         context=DispatchContext(backend="codex"),
     )
 
-    assert tmux.sent == [("dev-1", "do work")]
+    assert tmux.sent == [("dev-1", "do work"), ("dev-1", "")]
     snapshot = transport.lifecycle_snapshot("dev-1").to_payload()
     assert snapshot["process_probe"]["agent_markers"] == ["codex"]
 

@@ -114,9 +114,12 @@ def _events(state_dir: Path, *, base: str, head: str) -> None:
     writer.emit(
         "candidate.ready",
         actor="zf-kernel",
-        task_id="ISSUE-17",
+        correlation_id="FIX-17",
         payload={
+            "workflow_run_id": "FIX-17",
+            "flow_kind": "issue",
             "pdd_id": "PDD-17",
+            "feature_id": "FEATURE-17",
             "candidate_ref": "candidate/PDD-17",
             "candidate_base_commit": base,
             "candidate_head_commit": head,
@@ -128,8 +131,14 @@ def _events(state_dir: Path, *, base: str, head: str) -> None:
     writer.emit(
         "judge.passed",
         actor="judge",
-        task_id="ISSUE-17",
-        payload={"unresolved_risks": ["Human review required"]},
+        correlation_id="FIX-17",
+        payload={
+            "workflow_run_id": "FIX-17",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-17",
+            "feature_id": "FEATURE-17",
+            "unresolved_risks": ["Human review required"],
+        },
     )
     manifest = state_dir / "candidates" / "PDD-17" / "manifest.json"
     manifest.parent.mkdir(parents=True)
@@ -246,6 +255,43 @@ def test_owner_review_records_changes_and_rejection_with_reasons(tmp_path: Path)
             expected_candidate_sha=head,
             expected_source_revision="sha256:source-1",
         )
+
+
+def test_taskless_candidate_from_another_fix_run_is_not_bound_to_issue(
+    tmp_path: Path,
+) -> None:
+    service, state_dir, _base, head = _service(tmp_path)
+    writer = EventWriter(event_log_from_project(state_dir))
+    writer.emit(
+        "candidate.ready",
+        actor="zf-kernel",
+        correlation_id="FIX-OTHER",
+        payload={
+            "workflow_run_id": "FIX-OTHER",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-OTHER",
+            "feature_id": "FEATURE-OTHER",
+            "candidate_ref": "candidate/PDD-OTHER",
+            "candidate_base_commit": "a" * 40,
+            "candidate_head_commit": "b" * 40,
+        },
+    )
+    writer.emit(
+        "judge.passed",
+        actor="judge",
+        correlation_id="FIX-OTHER",
+        payload={
+            "workflow_run_id": "FIX-OTHER",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-OTHER",
+        },
+    )
+
+    candidate = service.projection(_issue())["candidate"]
+    assert candidate is not None
+    assert candidate["workflow_run_id"] == "FIX-17"
+    assert candidate["candidate_head_sha"] == head
+    assert candidate["pdd_id"] == "PDD-17"
 
 
 def test_candidate_or_source_drift_invalidates_owner_approval(tmp_path: Path) -> None:

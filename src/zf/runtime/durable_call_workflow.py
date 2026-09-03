@@ -617,6 +617,39 @@ class DurableCallWorkflowMixin:
         fanout_request.payload["workflow_invoke_admitted"] = True
         accepted_event.payload["fanout_request_event_id"] = fanout_request.id
         self.event_writer.append(accepted_event)
+        if bool(getattr(getattr(self.config, "goal", None), "enabled", False)):
+            workflow_run_id = str(
+                payload.get("workflow_run_id") or event.correlation_id or ""
+            )
+            already_started = any(
+                candidate.type == "run.goal.started"
+                and str((candidate.payload or {}).get("run_id") or "")
+                == workflow_run_id
+                for candidate in self.event_log.read_all()
+            )
+            if workflow_run_id and not already_started:
+                self.event_writer.append(ZfEvent(
+                    type="run.goal.started",
+                    actor="zf-cli",
+                    task_id=task_id,
+                    payload={
+                        "objective": str(
+                            payload.get("objective")
+                            or payload.get("reason")
+                            or f"execute workflow {pattern_id}"
+                        ),
+                        "run_id": workflow_run_id,
+                        "goal_id": str(payload.get("goal_id") or workflow_run_id),
+                        "workflow_generation": str(
+                            payload.get("workflow_generation") or ""
+                        ),
+                        "completion_profile": str(
+                            payload.get("completion_profile") or ""
+                        ),
+                    },
+                    causation_id=accepted_event.id,
+                    correlation_id=workflow_run_id,
+                ))
         self._activate_workflow_task(accepted_event)
         self._mark_workflow_request_running(
             payload,

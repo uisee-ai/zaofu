@@ -40,6 +40,7 @@ def _external_issue_workflow_document() -> dict[str, Any]:
                             "Work read-only; do not modify source, git refs, provider state, or runtime canonical files.",
                             "Produce classification, duplicate/needs-info status, reproduction, bounded scope, acceptance, verification commands, and risks.",
                             "Only with sufficient evidence request a complete TaskContract bound to current source_key/source_ref/source_revision; set external_issue_triage_status=ready_to_fix and external_issue_revision, otherwise report needs_info.",
+                            "Set top-level external_issue_disposition in the submitted result: outcome is ready_to_fix with an empty questions list, or needs_info with reason and 1-5 targeted questions. Each question has a stable snake_case id, type short_text/long_text/single_choice/boolean, question text, required, and options only for single_choice.",
                         ],
                     },
                     "inputs": [

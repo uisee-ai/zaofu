@@ -536,6 +536,7 @@ export function OrchestratorPanel({
   const [selfIssueAttachmentBusy, setSelfIssueAttachmentBusy] = useState(false);
   const [selfIssueConfirmationBusy, setSelfIssueConfirmationBusy] = useState(false);
   const [selfIssuePublishBusy, setSelfIssuePublishBusy] = useState(false);
+  const selfIssueActionRef = useRef(onAction);
   const selfIssueEvidencePollGenerationRef = useRef(0);
   const selfIssueEvidenceBusy = Boolean(selfIssueEvidenceBusyAction);
   const [selfIssueDraftTab, setSelfIssueDraftTab] = useState<"draft" | "preview">("draft");
@@ -561,14 +562,23 @@ export function OrchestratorPanel({
     const response = recordValue(actionResult);
     const requestedAction = textValue(response?.requested_action ?? response?.action);
     if (requestedAction !== "self-issue-oauth-callback") return;
-    const draft = recordValue(response?.draft) ?? recordValue(recordValue(response?.result)?.draft);
+    const result = recordValue(response?.result);
+    const nestedResult = recordValue(result?.result);
+    const draft = recordValue(response?.draft)
+      ?? recordValue(result?.draft)
+      ?? recordValue(nestedResult?.draft);
     if (draft) {
       setOperatorError(actionFailed(actionResult) ? actionFailureReason(actionResult) : "");
-      const result = recordValue(response?.result);
-      const issue = recordValue(response?.issue) ?? recordValue(result?.issue);
-      const callbackStatus = textValue(response?.status) || textValue(result?.status) || "connected";
+      const issue = recordValue(response?.issue)
+        ?? recordValue(result?.issue)
+        ?? recordValue(nestedResult?.issue);
+      const callbackStatus = textValue(response?.status)
+        || textValue(result?.status)
+        || textValue(nestedResult?.status)
+        || "connected";
       const connectedDraft: Record<string, unknown> = {
         ...draft,
+        ...(nestedResult ?? {}),
         ...(result ?? {}),
         ...response,
         status: callbackStatus,
@@ -584,6 +594,24 @@ export function OrchestratorPanel({
         textValue(connectedDraft.draft_id),
         true,
       );
+      // The OAuth callback can complete in a popup while the opener still
+      // holds the pre-authorization Draft projection. Read the canonical
+      // Draft once more so a completed publication cannot look unauthorized
+      // until the user manually toggles tabs or refreshes the page.
+      const draftId = textValue(connectedDraft.draft_id);
+      if (draftId) {
+        void Promise.resolve(selfIssueActionRef.current("self-issue-get", {
+          draft_id: draftId,
+        })).then((latest) => {
+          const latestDraft = recordValue(recordValue(latest)?.draft);
+          if (latestDraft) {
+            setSelfIssueCard((current) => ({
+              ...(current ?? {}),
+              ...latestDraft,
+            }));
+          }
+        }).catch(() => undefined);
+      }
     } else if (actionFailed(actionResult)) {
       setOperatorError(actionFailureReason(actionResult));
     }
@@ -682,7 +710,6 @@ export function OrchestratorPanel({
   const [headlessSplitThreadKey, setHeadlessSplitThreadKey] = useState("");
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
   const headlessInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const selfIssueActionRef = useRef(onAction);
   const selfIssueRestoreProjectRef = useRef("");
   const selfIssueRestoreGenerationRef = useRef(0);
   // Message typed before the first snapshot resolved the action gate — sent

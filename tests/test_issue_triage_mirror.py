@@ -341,6 +341,16 @@ def test_routes_list_detail_and_signed_webhook(tmp_path: Path) -> None:
         params={"order_by": "created", "order_direction": "asc"},
     ).json()
     assert [item["number"] for item in by_created["items"]] == [8, 7]
+    by_updated = client.get(
+        "/api/projects/test/issue-triage",
+        params={"order_by": "updated", "order_direction": "asc"},
+    ).json()
+    assert [item["number"] for item in by_updated["items"]] == [7, 8]
+    by_created_name = client.get(
+        "/api/projects/test/issue-triage",
+        params={"order_by": "created_name", "order_direction": "asc"},
+    ).json()
+    assert [item["number"] for item in by_created_name["items"]] == [8, 7]
     detail = client.get("/api/projects/test/issue-triage/7").json()
     assert detail["body"] == "Observed slowdown"
     assert detail["comments"][0]["author_login"] == "commenter"
@@ -655,6 +665,15 @@ def test_list_and_detail_project_external_issue_workflow_state(tmp_path: Path) -
     assert item["workflow"]["state"] == "triage_queued"
     assert item["workflow"]["task_id"] == "ISSUE-123"
     assert item["workflow"]["source_revision"] == "sha256:revision"
+    assert item["workflow"]["triage_id"] == "TRIAGE-123"
+    assert item["workflow"]["triage_history"][0]["triage_id"] == "TRIAGE-123"
+
+    for query in ("ISSUE-123", "TRIAGE-123"):
+        result = client.get(
+            "/api/projects/test/issue-triage",
+            params={"q": query},
+        ).json()
+        assert [entry["number"] for entry in result["items"]] == [7]
 
     writer.emit(
         "run.cancelled",
@@ -668,6 +687,7 @@ def test_list_and_detail_project_external_issue_workflow_state(tmp_path: Path) -
     )
     cancelled = client.get("/api/projects/test/issue-triage/7").json()["issue"]
     assert cancelled["workflow"]["state"] == "triage_cancelled"
+
 
 
 def test_list_filters_all_queued_workflow_states(tmp_path: Path) -> None:
@@ -807,6 +827,69 @@ def test_workflow_projection_tracks_pause_resume_and_fix_cancellation(tmp_path: 
     assert client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]["state"] == "fix_cancelled"
 
 
+def test_stage_failure_does_not_make_active_triage_run_restartable(tmp_path: Path) -> None:
+    """A stage failure can trigger recovery while the parent Run is active."""
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(),
+        repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123",
+        seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    writer.emit(
+        "external_issue.received", actor="github-poller",
+        payload={"source_key": mirror.issue_key, "source_revision": "sha256:revision"},
+    )
+    writer.emit(
+        "external_issue.triage.queued", actor="external-issue-intake",
+        task_id="ISSUE-123",
+        payload={
+            "source_key": mirror.issue_key,
+            "source_revision": "sha256:revision",
+            "workflow_run_id": "TRIAGE-123",
+        },
+    )
+    writer.emit(
+        "workflow.invoke.accepted", actor="zf-kernel", task_id="ISSUE-123",
+        payload={"workflow_run_id": "TRIAGE-123"},
+    )
+    writer.emit(
+        "external-issue-triage-verify.failed", actor="zf-kernel", task_id="ISSUE-123",
+        payload={"workflow_run_id": "TRIAGE-123", "reason": "attempt failed; recovery pending"},
+    )
+
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    client = TestClient(app)
+
+    active = client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]
+    assert active["state"] == "triage_recovering"
+    assert active["run_id"] == "TRIAGE-123"
+    assert active["failure_event"] == "external-issue-triage-verify.failed"
+    assert active["failure_reason"] == "attempt failed; recovery pending"
+
+    writer.emit(
+        "run.goal.blocked", actor="run-manager",
+        payload={
+            "workflow_run_id": "TRIAGE-123",
+            "reason": "unrecoverable_human_escalation",
+        },
+        correlation_id="TRIAGE-123",
+    )
+    # Cleanup/lease failures can arrive after terminalization. They must not
+    # reopen the Run as recovering.
+    writer.emit(
+        "task.attempt.failed", actor="zf-kernel", task_id="ISSUE-123",
+        payload={"workflow_run_id": "TRIAGE-123", "reason": "lease_expired"},
+    )
+    terminal = client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]
+    assert terminal["state"] == "triage_blocked"
+    assert terminal["failure_event"] == "run.goal.blocked"
+    assert terminal["failure_reason"] == "unrecoverable_human_escalation"
+
+
 def test_workflow_projection_tracks_candidate_delivery_lifecycle(tmp_path: Path) -> None:
     ctx = configured_context(tmp_path / "state")
     mirror, body = normalize_github_issue(
@@ -824,9 +907,39 @@ def test_workflow_projection_tracks_candidate_delivery_lifecycle(tmp_path: Path)
     writer.emit(
         "external_issue.triage.queued", actor="external-issue-intake",
         task_id="ISSUE-123",
-        payload={"source_key": mirror.issue_key, "workflow_run_id": "FIX-123"},
+        payload={"source_key": mirror.issue_key, "workflow_run_id": "TRIAGE-123"},
     )
-    writer.emit("judge.passed", actor="judge", task_id="ISSUE-123", payload={})
+    writer.emit(
+        "workflow.invoke.requested", actor="web-operator", task_id="ISSUE-123",
+        payload={"flow_kind": "issue", "workflow_run_id": "FIX-123"},
+    )
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    client = TestClient(app)
+    writer.emit(
+        "candidate.ready", actor="zf-kernel", correlation_id="FIX-123",
+        payload={
+            "workflow_run_id": "FIX-123",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-123",
+            "feature_id": "FEATURE-123",
+        },
+    )
+    assert client.get(
+        "/api/projects/test/issue-triage/7"
+    ).json()["issue"]["workflow"]["state"] == "verifying"
+    writer.emit(
+        "judge.passed", actor="judge", correlation_id="FIX-123",
+        payload={
+            "workflow_run_id": "FIX-123",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-123",
+            "feature_id": "FEATURE-123",
+        },
+    )
+    assert client.get(
+        "/api/projects/test/issue-triage/7"
+    ).json()["issue"]["workflow"]["state"] == "verified_candidate"
     writer.emit(
         "candidate.owner_review.approved", actor="web-operator", task_id="ISSUE-123",
         payload={"source_key": mirror.issue_key},
@@ -839,9 +952,6 @@ def test_workflow_projection_tracks_candidate_delivery_lifecycle(tmp_path: Path)
         "forge.pull_request.recorded", actor="web-operator", task_id="ISSUE-123",
         payload={"source_key": mirror.issue_key, "status": "pr_open"},
     )
-    app = FastAPI()
-    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
-    client = TestClient(app)
     assert client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]["state"] == "pr_open"
     writer.emit(
         "delivery.merged", actor="github-pr-reader", task_id="ISSUE-123",

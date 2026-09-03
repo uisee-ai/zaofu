@@ -48,6 +48,19 @@
   padding: var(--space-4);
 }
 
+.issue-needs-info-card {
+  margin: 12px 0;
+  padding: 14px;
+  border: 1px solid #d29922;
+  border-radius: 8px;
+  background: #fff8dc;
+}
+.issue-needs-info-card.exhausted { border-color: #cf222e; background: #fff1f0; }
+.issue-needs-info-card h4 { margin: 0 0 6px; font-size: 15px; }
+.issue-needs-info-question { display: grid; gap: 5px; margin: 10px 0; font-weight: 600; }
+.issue-needs-info-question textarea, .issue-needs-info-question select { font: inherit; padding: 7px; border: 1px solid #b6b8bd; border-radius: 5px; }
+.issue-needs-info-authorization { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
 .issue-triage-header,
 .issue-triage-pagination {
   display: flex;
@@ -713,6 +726,25 @@
 }
 .issue-triage-meta .issue-triage-label-field {
   grid-column: 1 / -1;
+}
+.issue-triage-detail-triage {
+  grid-column: 1 / -1;
+}
+.issue-triage-history {
+  display: grid;
+  gap: 4px;
+  margin: var(--space-2) 0 0;
+  padding-left: 18px;
+}
+.issue-triage-history li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+.issue-triage-history li span {
+  color: var(--text-muted);
+  font-size: var(--text-12);
 }
 .issue-triage-detail-labels {
   display: flex;

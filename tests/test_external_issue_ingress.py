@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,10 +13,11 @@ from zf.core.config.schema import (
     ProjectConfig,
     SelfIssueConfig,
     SelfIssueTargetConfig,
+    WorkflowConfig,
     ZfConfig,
 )
 from zf.core.events import EventLog
-from zf.core.issue_triage.models import IssueMirror, derived_triage_group
+from zf.core.issue_triage.models import IssueComment, IssueMirror, derived_triage_group
 from zf.core.issue_triage.store import IssueMirrorStore
 from zf.runtime.external_issue_ingress import ExternalIssueIngressService
 from zf.runtime.task_contract_authority import TaskContractAuthorityService
@@ -59,6 +61,13 @@ def _config(*, auto_triage_new_only: bool = True) -> ZfConfig:
                 approval_label="zaofu:ready-to-fix",
                 auto_triage_new_only=auto_triage_new_only,
             ),
+        ),
+        workflow=WorkflowConfig(
+            flow_metadata_by_kind={
+                "workflow": {
+                    "generic_workflow_contract_digest": "a" * 64,
+                },
+            },
         ),
     )
 
@@ -133,6 +142,100 @@ def test_new_issue_revision_queues_one_read_only_triage_run(tmp_path: Path) -> N
     assert tasks[0].contract.exclusions
 
 
+def test_issue_invoke_binds_runtime_flow_identity(tmp_path: Path) -> None:
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+    )
+    contract_path = service.state_dir / "config" / "run-contract.json"
+    contract_path.parent.mkdir(parents=True)
+    contract_path.write_text(
+        json.dumps({"contract_digest": "b" * 64}) + "\n",
+        encoding="utf-8",
+    )
+
+    service.poll_once()
+
+    invoke = next(
+        event
+        for event in EventLog(service.state_dir / "events.jsonl").read_all()
+        if event.type == "workflow.invoke.requested"
+    )
+    assert invoke.payload["effective_config_digest"]
+    assert invoke.payload["effective_config_ref"]["sha256"] == (
+        invoke.payload["effective_config_digest"]
+    )
+    assert invoke.payload["run_contract_digest"] == "b" * 64
+    assert invoke.payload["run_contract_ref"]
+    assert not Path(invoke.payload["run_contract_ref"]).is_absolute()
+    assert invoke.payload["run_contract_ref"].startswith("artifacts/run-contracts/")
+    assert invoke.payload["goal_id"] == invoke.payload["workflow_run_id"]
+    assert invoke.payload["workflow_generation"] == (
+        invoke.payload["generic_workflow_contract_digest"]
+    )
+    assert invoke.payload["request_revision"] > 0
+    assert invoke.payload["workflow_intent"] == "research"
+    assert invoke.payload["workflow_template"] == "evidence-synthesis-v1"
+    assert invoke.payload["completion_profile"] == "artifact_delivery"
+    assert invoke.payload["goal_claim_set_ref"]
+    assert len(invoke.payload["goal_claim_set_digest"]) == 64
+    claim_event = next(
+        event
+        for event in EventLog(service.state_dir / "events.jsonl").read_all()
+        if event.type == "goal.claim_set.pinned"
+    )
+    assert claim_event.payload["workflow_run_id"] == invoke.payload["workflow_run_id"]
+    assert claim_event.payload["goal_claim_set_digest"] == (
+        invoke.payload["goal_claim_set_digest"]
+    )
+
+
+def test_issue_invoke_exposes_body_and_comments_as_controlled_inputs(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+    )
+    mirrored = service.mirrors.get(8)
+    assert mirrored is not None
+    mirrored, _ = service.mirrors.write_comments(
+        mirrored,
+        [
+            IssueComment(
+                id=1,
+                node_id="IC_node_1",
+                html_url=(
+                    "https://github.com/rzwu-uisee/zaofu-self-issue/"
+                    "issues/8#issuecomment-1"
+                ),
+                author_login="commenter",
+                author_avatar_url="https://avatars.githubusercontent.com/u/1",
+                body="Untrusted issue comment",
+                created_at="2026-09-01T00:00:00+00:00",
+                updated_at="2026-09-01T00:00:00+00:00",
+            )
+        ],
+    )
+
+    service.poll_once()
+
+    invoke = next(
+        event
+        for event in EventLog(service.state_dir / "events.jsonl").read_all()
+        if event.type == "workflow.invoke.requested"
+    )
+    refs = {
+        str(item["ref"]): str(item["sha256"])
+        for item in invoke.payload["artifact_refs"]
+    }
+    assert refs[mirrored.body_ref] == mirrored.body_digest.removeprefix("sha256:")
+    assert refs[mirrored.comments_ref] == mirrored.comments_digest.removeprefix(
+        "sha256:"
+    )
+    assert str(invoke.payload["source_refs"]["external_issue"]) in refs
+
+
 def test_historical_issue_is_mirrored_but_not_auto_triaged(tmp_path: Path) -> None:
     service, _ = _service(
         tmp_path,
@@ -169,6 +272,42 @@ def test_operator_can_manually_queue_one_historical_issue_revision(tmp_path: Pat
     invokes = [event for event in events if event.type == "workflow.invoke.requested"]
     assert len(invokes) == 1
     assert invokes[0].payload["requested_by"] == "web-operator"
+
+
+def test_operator_can_retry_cancelled_historical_issue_revision(tmp_path: Path) -> None:
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-08-30T00:00:00+00:00"),
+    )
+
+    first = service.start_manual_triage(8)
+    events = EventLog(service.state_dir / "events.jsonl")
+    writer = service.writer
+    writer.emit(
+        "run.cancelled",
+        actor="web",
+        task_id=first.task_id,
+        payload={
+            "run_id": first.workflow_run_id,
+            "workflow_run_id": first.workflow_run_id,
+        },
+        correlation_id=first.workflow_run_id,
+    )
+
+    retry = service.start_manual_triage(8)
+
+    assert retry.ok is True
+    assert retry.queued is True
+    assert retry.task_id != first.task_id
+    assert retry.workflow_run_id != first.workflow_run_id
+    queued = [
+        event for event in events.read_all()
+        if event.type == "external_issue.triage.queued"
+    ]
+    assert len(queued) == 2
+    assert queued[1].payload["workflow_run_id"] == retry.workflow_run_id
+    assert queued[1].payload["retry_of_workflow_run_id"] == first.workflow_run_id
+    assert queued[1].payload["triage_attempt"] == 2
 
 
 def test_ready_label_is_only_an_approval_intent(tmp_path: Path) -> None:

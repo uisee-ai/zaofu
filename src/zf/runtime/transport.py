@@ -185,6 +185,7 @@ class TransportAdapter(ABC):
 class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
     """Run each role in its own tmux window. Wraps TmuxSession."""
 
+    _CODEX_TASK_SUBMIT_RETRY_DELAY_SECONDS = 1.0
     _SHELL_COMMANDS = frozenset({"", "bash", "sh", "zsh", "fish", "dash"})
     _AGENT_ENV_KEYS = (
         "PYTHONPATH",
@@ -454,6 +455,20 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         if callable(clear_input):
             clear_input(role_name)
         self.tmux.send_keys(role_name, prompt)
+        if context is not None and context.backend == "codex":
+            # Codex's ratatui occasionally drops the first submit key even
+            # after its prompt is ready.  The briefing then remains in the
+            # draft while the TaskAttempt is incorrectly marked sent.  A
+            # bounded empty submit is harmless after a successful first
+            # submit and recovers the lost-Enter case before send_task returns.
+            try:
+                self.tmux.send_keys(
+                    role_name,
+                    "",
+                    submit_delay_s=self._CODEX_TASK_SUBMIT_RETRY_DELAY_SECONDS,
+                )
+            except TypeError:
+                self.tmux.send_keys(role_name, "")
 
     def compact_context(self, role_name: str, command: str) -> bool:
         if not command:

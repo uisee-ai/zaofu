@@ -67,6 +67,55 @@ def _digest(value: dict[str, Any]) -> str:
     return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def issue_candidate_event_matches(
+    event: ZfEvent,
+    *,
+    task_id: str,
+    workflow_run_id: str,
+    candidate_identities: tuple[str, ...] = (),
+    require_candidate_identity: bool = False,
+) -> bool:
+    """Bind candidate-level events to one Issue Fix Run.
+
+    Candidate-level Kernel events intentionally have no ``task_id``.  Their
+    durable parent identity is the workflow run carried in the aggregate
+    payload/correlation id.  Task-bound legacy events remain supported, while
+    taskless events fail closed unless the exact Issue Fix Run matches.
+    """
+
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    event_run_id = str(
+        payload.get("workflow_run_id")
+        or payload.get("run_id")
+        or payload.get("trace_id")
+        or event.correlation_id
+        or ""
+    ).strip()
+    if event.task_id:
+        if event.task_id != task_id:
+            return False
+        if event_run_id and workflow_run_id and event_run_id != workflow_run_id:
+            return False
+    elif not workflow_run_id or event_run_id != workflow_run_id:
+        return False
+
+    flow_kind = str(payload.get("flow_kind") or payload.get("request_kind") or "")
+    if flow_kind and flow_kind != "issue":
+        return False
+
+    event_identities = {
+        str(payload.get(key) or "").strip()
+        for key in ("pdd_id", "feature_id", "goal_id")
+    }
+    event_identities.discard("")
+    if not event.task_id and require_candidate_identity and not event_identities:
+        return False
+    expected_identities = {value for value in candidate_identities if value}
+    if expected_identities and event_identities.isdisjoint(expected_identities):
+        return False
+    return True
+
+
 def _stdlib_transport(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
     request = urllib.request.Request(url, headers=headers)
     try:
@@ -482,6 +531,7 @@ class IssueCandidateDeliveryService:
         candidate_source_revision = ""
         candidate_event: ZfEvent | None = None
         judge_event: ZfEvent | None = None
+        candidate_identities: tuple[str, ...] = ()
         for event in events:
             payload = event.payload if isinstance(event.payload, dict) else {}
             if (
@@ -499,14 +549,29 @@ class IssueCandidateDeliveryService:
             elif task_id and event.task_id == task_id and event.type == "workflow.invoke.requested":
                 if str(payload.get("flow_kind") or "") == "issue":
                     run_id = str(payload.get("workflow_run_id") or run_id)
-            elif task_id and event.task_id == task_id and event.type == "candidate.ready":
+            elif task_id and event.type == "candidate.ready" and issue_candidate_event_matches(
+                event,
+                task_id=task_id,
+                workflow_run_id=run_id,
+                require_candidate_identity=True,
+            ):
                 candidate_event = event
                 candidate_source_revision = source_revision
                 judge_event = None
+                candidate_identities = tuple(
+                    str(payload.get(key) or "").strip()
+                    for key in ("pdd_id", "feature_id")
+                    if str(payload.get(key) or "").strip()
+                )
             elif (
                 candidate_event is not None
-                and event.task_id == task_id
                 and event.type == "judge.passed"
+                and issue_candidate_event_matches(
+                    event,
+                    task_id=task_id,
+                    workflow_run_id=run_id,
+                    candidate_identities=candidate_identities,
+                )
             ):
                 judge_event = event
         if candidate_event is None or judge_event is None:

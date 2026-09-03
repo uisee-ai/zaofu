@@ -3,7 +3,7 @@ import { useState } from "react";
 import { postAction } from "../api/client";
 import type { IssueTriageItem } from "../api/types";
 
-const PAUSABLE_STATES = new Set(["triaging", "fixing", "verifying"]);
+const PAUSABLE_STATES = new Set(["triaging", "triage_recovering", "fixing", "fix_recovering", "verifying"]);
 const PAUSED_STATES = new Set(["triage_paused", "fix_paused"]);
 
 export function IssueTriageRunDialog({
@@ -39,7 +39,17 @@ export function IssueTriageRunDialog({
         run_id: runId,
         reason: `Operator ${kind} for GitHub Issue #${issue.number}`,
       }, projectId);
-      if (!result.ok) throw new Error(result.reason || `Unable to ${kind} this Run.`);
+      if (!result.ok) {
+        // A stale mirror can outlive a rejected/expired Run.  Treat that as a
+        // refresh race instead of leaving the operator trapped in a red modal;
+        // the refreshed projection will expose Start Triage again.
+        if (result.status === "not_found" || /run not found/i.test(result.reason || "")) {
+          await onUpdated(`The ${queued ? "queued " : ""}Run was no longer available; Issue state refreshed.`);
+          onClose();
+          return;
+        }
+        throw new Error(result.reason || `Unable to ${kind} this Run.`);
+      }
       const notice = kind === "pause"
         ? `Pause requested for GitHub Issue #${issue.number}; already-dispatched work may finish.`
         : kind === "resume"

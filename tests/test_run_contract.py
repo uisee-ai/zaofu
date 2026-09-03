@@ -61,6 +61,35 @@ workflow:
     assert diagnostics[0]["severity"] == "WARN"
 
 
+def test_run_contract_uses_workflow_metadata_for_multi_kind_config(tmp_path):
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text("""\
+version: "1.0"
+project: {name: demo, state_dir: .zf-demo}
+workflow:
+  _flow_metadata_by_kind:
+    issue:
+      completion_profile: software_delivery
+      flow_kind: issue
+    workflow:
+      completion_profile: artifact_delivery
+      flow_kind: workflow
+      workflow_template: evidence-synthesis-v1
+      intent: research
+""", encoding="utf-8")
+
+    contract = build_run_contract(
+        load_config(config_path),
+        config_path=config_path,
+        project_root=tmp_path,
+        state_dir=tmp_path / ".zf-demo",
+    )
+
+    assert contract["workflow"]["kind"] == "workflow"
+    assert contract["workflow"]["completion_profile"] == "artifact_delivery"
+    assert contract["workflow"]["template"] == "evidence-synthesis-v1"
+
+
 def test_run_contract_snapshots_preserve_history_and_are_idempotent(tmp_path):
     state_dir = tmp_path / ".zf-demo"
     first = {

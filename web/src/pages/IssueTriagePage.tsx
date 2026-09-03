@@ -8,9 +8,11 @@ import {
   getIssueTriageSummary,
   refreshIssueTriage,
   startIssueTriage,
+  postAction,
 } from "../api/client";
 import type {
   IssueTriageDetail,
+  IssueTriageItem,
   IssueTriagePageData,
   IssueTriageSummary,
 } from "../api/types";
@@ -113,7 +115,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
   const [selectedLabels, setSelectedLabels] = useState<string[] | null>(null);
   const [selectedAuthors, setSelectedAuthors] = useState<string[] | null>(null);
   const [source, setSource] = useState("");
-  const [orderBy, setOrderBy] = useState<"created" | "name">("created");
+  const [orderBy, setOrderBy] = useState<"created" | "updated" | "created_name" | "updated_name">("created");
   const [orderDirection, setOrderDirection] = useState<"asc" | "desc">("desc");
   const [cursor, setCursor] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -286,11 +288,6 @@ function IssuesTab({ projectId }: { projectId: string }) {
             >
               {selectedWorkflowState.includes("queued") ? <CircleX aria-hidden="true" size={15} /> : <SlidersHorizontal aria-hidden="true" size={15} />}
               {selectedWorkflowState === "triage_queued" ? "Cancel queued Triage" : selectedWorkflowState === "fix_queued" ? "Cancel queued Fix" : "Manage Run"}
-            </button>
-          ) : selectedWorkflowState === "triage_cancelled" || selectedWorkflowState === "fix_cancelled" ? (
-            <button className="icon-button" disabled type="button">
-              <CircleX aria-hidden="true" size={15} />
-              {selectedWorkflowState === "fix_cancelled" ? "Fix Cancelled" : "Triage Cancelled"}
             </button>
           ) : (
             <button className="icon-button primary issue-triage-tooltip" data-tooltip="Manually queue the selected or specified GitHub Issue for read-only Triage" disabled={startingTriage} type="button" onClick={openStartDialog}>
@@ -530,9 +527,9 @@ function OrderFilter({
   onOrderBy,
   onDirection,
 }: {
-  orderBy: "created" | "name";
+  orderBy: "created" | "updated" | "created_name" | "updated_name";
   direction: "asc" | "desc";
-  onOrderBy: (value: "created" | "name") => void;
+  onOrderBy: (value: "created" | "updated" | "created_name" | "updated_name") => void;
   onDirection: (value: "asc" | "desc") => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -550,9 +547,11 @@ function OrderFilter({
             <button aria-label="Ascending" className={direction === "asc" ? "active" : ""} type="button" onClick={() => onDirection("asc")}><ArrowUp size={15} /></button>
             <button aria-label="Descending" className={direction === "desc" ? "active" : ""} type="button" onClick={() => onDirection("desc")}><ArrowDown size={15} /></button>
           </div>
-          <select aria-label="Order field" value={orderBy} onChange={(event) => onOrderBy(event.target.value as "created" | "name")}>
+          <select aria-label="Order field" value={orderBy} onChange={(event) => onOrderBy(event.target.value as "created" | "updated" | "created_name" | "updated_name")}>
             <option value="created">Date created</option>
-            <option value="name">Name</option>
+            <option value="updated">Date updated</option>
+            <option value="created_name">Name at creation</option>
+            <option value="updated_name">Name after update</option>
           </select>
         </div>
       </div> : null}
@@ -871,8 +870,7 @@ function IssueDetail({
       <header className="issue-triage-detail-header">
         <span className="muted">GitHub Issue #{issue.number}</span>
         <div className="button-row issue-triage-detail-actions">
-          <a className="icon-button primary" href={issue.html_url} target="_blank" rel="noopener noreferrer">Open on GitHub <ExternalLink aria-hidden="true" size={14} /></a>
-          <a className="icon-button" href={issue.html_url} target="_blank" rel="noopener noreferrer">Edit on GitHub</a>
+          <a className="icon-button primary" href={issue.html_url} target="_blank" rel="noopener noreferrer">Open/Edit <ExternalLink aria-hidden="true" size={14} /></a>
           <button className="icon-button" type="button" onClick={onClose}>Close</button>
         </div>
         <h3>{issue.title}</h3>
@@ -882,6 +880,23 @@ function IssueDetail({
         <div><dt>Group</dt><dd>{issue.derived_group}</dd></div>
         <div><dt>Workflow</dt><dd>{issue.workflow?.state ?? "mirrored"}</dd></div>
         <div><dt>Task</dt><dd>{issue.workflow?.task_id || "None"}</dd></div>
+        <div className="issue-triage-detail-triage"><dt>Triage</dt><dd>
+          {issue.workflow?.triage_id ? (
+            <>
+              <code>{issue.workflow.triage_id}</code>
+              {issue.workflow.triage_history?.length ? (
+                <ul className="issue-triage-history">
+                  {issue.workflow.triage_history.map((entry) => (
+                    <li key={entry.triage_id}>
+                      <code>{entry.triage_id}</code>
+                      <span>{entry.state} · attempt {entry.attempt}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </>
+          ) : "None"}
+        </dd></div>
         <div><dt>Reporter</dt><dd><IssueDetailIdentity login={issue.author_login} avatarUrl={issue.author_avatar_url} /></dd></div>
         <div><dt>Assignees</dt><dd className="issue-detail-identities">{issue.assignees.length
           ? issue.assignees.map((login) => <IssueDetailIdentity avatarUrl={issue.assignee_avatar_urls?.[login]} key={login} login={login} />)
@@ -892,6 +907,15 @@ function IssueDetail({
           <IssueLabelList labels={issue.labels} colors={issue.label_colors} onSelect={onLabelSelect} />
         ) : "None"}</dd></div>
       </dl>
+      {issue.workflow?.needs_info ? (
+        <NeedsInfoCard
+          projectId={projectId}
+          issueNumber={issue.number}
+          triageId={issue.workflow.triage_id}
+          needsInfo={issue.workflow.needs_info}
+          onUpdated={onUpdated}
+        />
+      ) : null}
       <IssueCandidateDeliveryPanel projectId={projectId} issueNumber={issue.number} delivery={detail.delivery} onUpdated={onUpdated} />
       <div className="issue-triage-body">
         <div className="issue-triage-section-heading"><h4>Issue body</h4><span className="muted">GitHub Markdown preview</span></div>
@@ -920,6 +944,136 @@ function IssueDetail({
       </section>
     </aside>
   );
+}
+
+function NeedsInfoCard({
+  projectId,
+  issueNumber,
+  triageId,
+  needsInfo,
+  onUpdated,
+}: {
+  projectId: string;
+  issueNumber: number;
+  triageId: string;
+  needsInfo: NonNullable<NonNullable<IssueTriageItem["workflow"]>["needs_info"]>;
+  onUpdated: (notice: string) => Promise<void>;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [authorization, setAuthorization] = useState<{
+    transaction_id: string;
+    user_code: string;
+    verification_uri: string;
+    retry_after?: number;
+  } | null>(null);
+  const [sessionId] = useState(() => (
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `clarification-${Date.now()}`
+  ));
+
+  const submit = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const response = await postAction("external-issue-needs-info-submit", {
+        issue_number: issueNumber,
+        triage_id: triageId,
+        answers,
+      }, projectId);
+      const record = response.result ?? response;
+      if (response.status === "authorization_required" || record.status === "authorization_required") {
+        const started = await postAction("external-issue-needs-info-github-device-start", {
+          issue_number: issueNumber,
+          triage_id: triageId,
+          answers,
+          session_id: sessionId,
+        }, projectId);
+        const auth = (started.result ?? started) as Record<string, unknown>;
+        if (String(auth.status) !== "authorization_required" || !auth.transaction_id) {
+          throw new Error(String(started.reason || "GitHub authorization could not be started"));
+        }
+        setAuthorization({
+          transaction_id: String(auth.transaction_id),
+          user_code: String(auth.user_code || ""),
+          verification_uri: String(auth.verification_uri || ""),
+          retry_after: Number(auth.interval || 5),
+        });
+        return;
+      }
+      if (!response.ok) throw new Error(response.reason || "Clarification was not published");
+      await onUpdated("补充信息已发布到 GitHub，新的 Triage 已提交。");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pollAuthorization = async () => {
+    if (!authorization) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await postAction("external-issue-needs-info-github-device-poll", {
+        transaction_id: authorization.transaction_id,
+        session_id: sessionId,
+      }, projectId);
+      const record = (response.result ?? response) as Record<string, unknown>;
+      if (["authorization_pending", "slow_down"].includes(String(record.status))) {
+        setAuthorization({ ...authorization, retry_after: Number(record.retry_after || 5) });
+      } else if (response.ok && String(record.status).includes("published")) {
+        setAuthorization(null);
+        await onUpdated("GitHub 授权完成，补充信息已发布并重新开始 Triage。");
+      } else if (!response.ok) {
+        throw new Error(response.reason || "GitHub authorization failed");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!authorization) return undefined;
+    const timer = window.setTimeout(() => void pollAuthorization(), Math.max(5, authorization.retry_after || 5) * 1000);
+    return () => window.clearTimeout(timer);
+  }, [authorization]);
+
+  return <section className={`issue-needs-info-card ${needsInfo.status === "needs_info_exhausted" ? "exhausted" : ""}`}>
+    <h4>需要补充信息</h4>
+    <p>{needsInfo.reason}</p>
+    {needsInfo.status === "needs_info_exhausted" ? (
+      <p className="muted">已达到最多 {needsInfo.max_rounds} 轮自动追问，请人工处理。</p>
+    ) : authorization ? (
+      <div className="issue-needs-info-authorization">
+        <p>请在 GitHub 完成授权。验证码：<strong>{authorization.user_code}</strong></p>
+        <a href={authorization.verification_uri} target="_blank" rel="noopener noreferrer">打开 GitHub 授权页面</a>
+        <button type="button" disabled={busy} onClick={() => void pollAuthorization()}>检查授权状态</button>
+      </div>
+    ) : <>
+      {needsInfo.questions.map((question) => (
+        <label className="issue-needs-info-question" key={question.id}>
+          <span>{question.question}{question.required ? " *" : ""}</span>
+          {question.type === "single_choice" ? (
+            <select value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}>
+              <option value="">请选择</option>
+              {(question.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          ) : question.type === "boolean" ? (
+            <select value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}>
+              <option value="">请选择</option><option value="Yes">是</option><option value="No">否</option>
+            </select>
+          ) : <textarea rows={question.type === "long_text" ? 3 : 1} value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />}
+        </label>
+      ))}
+      <button className="primary" type="button" disabled={busy} onClick={() => void submit()}>{busy ? "正在发布…" : "提交补充信息并重新分诊"}</button>
+    </>}
+    {error ? <div className="issue-triage-error">{error}</div> : null}
+  </section>;
 }
 
 function IssueDetailIdentity({ login, avatarUrl }: { login: string; avatarUrl?: string }) {

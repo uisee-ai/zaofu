@@ -100,6 +100,71 @@ class GitHubComProvider:
             url=issue_url,
         ), reason=label_reason)
 
+    def publish_issue_comment(
+        self,
+        project: str,
+        issue_number: int,
+        body: str,
+        *,
+        marker: str,
+        access_token: str,
+    ) -> dict[str, str]:
+        """Publish one idempotent Issue comment through an exact marker."""
+
+        owner, repo = _project_parts(project)
+        if issue_number < 1 or not marker or marker not in body:
+            raise ValueError("GitHub Issue comment identity is invalid")
+        url = (
+            f"{self.base_url}/repos/{urllib.parse.quote(owner)}/"
+            f"{urllib.parse.quote(repo)}/issues/{issue_number}/comments"
+        )
+        try:
+            status, raw = self.transport(
+                "GET", f"{url}?per_page=100", self._headers(access_token), None,
+            )
+        except (TimeoutError, ConnectionError, OSError):
+            status, raw = 0, b""
+        if status == 200:
+            try:
+                comments = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                comments = []
+            for comment in comments if isinstance(comments, list) else []:
+                if isinstance(comment, dict) and marker in str(comment.get("body") or ""):
+                    return {
+                        "status": "published",
+                        "url": str(comment.get("html_url") or ""),
+                        "id": str(comment.get("id") or ""),
+                        "replayed": "true",
+                    }
+        encoded = json.dumps(
+            {"body": body}, ensure_ascii=False, separators=(",", ":"),
+        ).encode("utf-8")
+        try:
+            status, raw = self.transport(
+                "POST", url, self._headers(access_token), encoded,
+            )
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            return {"status": "outcome_unknown", "reason": type(exc).__name__}
+        if status >= 500:
+            return {"status": "outcome_unknown", "reason": f"github_http_{status}"}
+        if status == 401:
+            return {"status": "authorization_required", "reason": "credential_rejected"}
+        if status != 201:
+            return {"status": "publish_failed", "reason": f"github_http_{status}"}
+        try:
+            comment = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            return {"status": "outcome_unknown", "reason": "github_response_invalid"}
+        if not isinstance(comment, dict) or not str(comment.get("id") or ""):
+            return {"status": "outcome_unknown", "reason": "github_response_invalid"}
+        return {
+            "status": "published",
+            "url": str(comment.get("html_url") or ""),
+            "id": str(comment.get("id") or ""),
+            "replayed": "false",
+        }
+
     def _apply_labels(
         self,
         owner: str,

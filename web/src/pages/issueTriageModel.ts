@@ -9,12 +9,17 @@ export const ISSUE_STATE_FILTERS = [
   ["triage_queued", "Queued: triaged_queued"],
   ["triaging", "Triaging"],
   ["triage_paused", "Triage paused"],
+  ["triage_recovering", "Triage recovering"],
+  ["triage_blocked", "Triage blocked"],
   ["triage_cancelled", "Triage cancelled"],
   ["needs_info", "Needs info"],
+  ["needs_info_exhausted", "Needs info exhausted"],
   ["awaiting_fix_approval", "Awaiting Fix approval"],
   ["fix_queued", "Queued: fix_queued"],
   ["fixing", "Fixing"],
   ["fix_paused", "Fix paused"],
+  ["fix_recovering", "Fix recovering"],
+  ["fix_blocked", "Fix blocked"],
   ["fix_cancelled", "Fix cancelled"],
   ["verifying", "Verifying"],
   ["verified_candidate", "Verified candidate"],
@@ -66,8 +71,8 @@ export function nextIssueStateSelectAll(
 }
 
 const MANAGEABLE_RUN_STATES = new Set([
-  "triage_queued", "triaging", "triage_paused",
-  "fix_queued", "fixing", "fix_paused", "verifying",
+  "triage_queued", "triaging", "triage_paused", "triage_recovering",
+  "fix_queued", "fixing", "fix_paused", "fix_recovering", "verifying",
 ]);
 
 export function canManageIssueRun(state: string): boolean {

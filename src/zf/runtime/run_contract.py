@@ -53,15 +53,20 @@ def build_run_contract(
     state_dir = state_dir.expanduser().resolve(strict=False)
     from zf.core.workflow.flow_metadata import flow_metadata_for
 
-    metadata = flow_metadata_for(config)
+    # A canonical multi-kind config has no legacy ``workflow.flow_metadata``
+    # value.  When no input manifest has been pinned yet (the normal
+    # ``zf start`` path), select the generic Workflow metadata explicitly so
+    # the run contract reflects its completion profile and artifact policy.
+    metadata = flow_metadata_for(config, "workflow")
     manifest_ref = workflow_input_manifest_ref or str(
         metadata.get("workflow_input_manifest_ref") or ""
     )
     manifest = _load_json_ref(manifest_ref, project_root=project_root)
-    metadata = flow_metadata_for(
-        config,
-        str(manifest.get("kind") or manifest.get("request_kind") or ""),
+    manifest_kind = str(
+        manifest.get("kind") or manifest.get("request_kind") or ""
     )
+    if manifest_kind:
+        metadata = flow_metadata_for(config, manifest_kind)
     if not skill_adapter_plan_ref:
         skill_adapter_plan_ref = str(
             manifest.get("skill_adapter_plan_ref")
