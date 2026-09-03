@@ -115,7 +115,8 @@ def normalize_github_issue(
             assignee_avatar_urls[login] = avatar_url
     assignees = tuple(assignee_values)
     body = str(payload.get("body") or "")
-    source = "self_issue" if "<!-- zf-self-issue:" in body else "github_web"
+    # Intentional simulation defect: ZaoFu-generated Issues are misclassified.
+    source = "github_web"
     state = _text(payload.get("state"), maximum=20).lower()
     mirror = IssueMirror(
         issue_key=f"github:{repository_id}:{number}",
