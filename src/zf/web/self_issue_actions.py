@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
+from zf.core.security.secret_provider import forge_credential_workspace_id
 from zf.runtime.self_issue_service import SelfIssueService
 
 
@@ -40,14 +41,11 @@ def prepare_self_issue_web_payload(
     web_base_url: str = "",
 ) -> None:
     """Bind opaque Web and workspace identities without exposing raw values."""
-    identity_material = identity or f"trusted:{project_id or 'default'}"
-    workspace_material = str(workspace_root.resolve())
+    identity_material = identity or "trusted:local-user"
     payload["user_id"] = (
         "web-" + hashlib.sha256(identity_material.encode()).hexdigest()
     )
-    payload["workspace_id"] = (
-        "workspace-" + hashlib.sha256(workspace_material.encode()).hexdigest()
-    )
+    payload["workspace_id"] = forge_credential_workspace_id(workspace_root)
     if action == "self-issue-capture":
         payload["reporter_context"] = {
             "discovered_by": "user",

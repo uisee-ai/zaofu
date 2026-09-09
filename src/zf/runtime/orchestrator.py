@@ -100,6 +100,7 @@ from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
+from zf.runtime.self_issue_target import resolve_self_issue_target_root
 
 
 if TYPE_CHECKING:
@@ -373,7 +374,10 @@ class WorkflowRuntimeCoordinator(
         # entry point should resolve it explicitly via ProjectContext so
         # configurations like ``project.state_dir: .runtime/zf`` resolve to
         # the real project root rather than a nested directory.
-        self.project_root = (project_root or state_dir.parent).resolve()
+        self.project_root = resolve_self_issue_target_root(
+            project_root or state_dir.parent,
+            getattr(config, "self_issue", None),
+        )
         # Runtime-only roles spawned by autoscale (or other runtime decisions)
         # are tracked here instead of mutating ``self.config.roles``. Keeping
         # the original ZfConfig.roles list pristine preserves the

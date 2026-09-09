@@ -1,11 +1,13 @@
-import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronUp, CircleCheck, CircleX, ExternalLink, Play, RefreshCw, Search, SlidersHorizontal, Star } from "lucide-react";
+import type { FocusEvent, MouseEvent, ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AlertTriangle, ArrowDown, ArrowUp, ChevronDown, ChevronUp, CircleDot, CircleX, Clock3, ExternalLink, GitPullRequest, Play, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Star, Wrench } from "lucide-react";
 import { MarkdownText } from "../components/agent-session/MarkdownText";
 import {
   getIssueTriage,
   getIssueTriageDetail,
   getIssueTriageSummary,
+  getProjectHealth,
   refreshIssueTriage,
   startIssueTriage,
   postAction,
@@ -18,10 +20,20 @@ import type {
 } from "../api/types";
 import {
   ISSUE_TRIAGE_MIRROR_POLL_INTERVAL_MS,
+  ISSUE_STATE_STAGES,
   ISSUE_STATE_FILTERS,
   canManageIssueRun,
+  effectiveIssueState,
   filterIssueStateOptions,
   githubMarkdownForDisplay,
+  isIssueStateSelected,
+  issueStateStage,
+  issueStateDescription,
+  issueStateLabel,
+  issueStateStageTotal,
+  issueSyncPresentation,
+  issueTooltipDelayMs,
+  nextIssueStageSelection,
   nextIssueStateSelectAll,
   nextIssueStateSelection,
   nextIssueLabelSelection,
@@ -42,6 +54,34 @@ function githubAvatarUrl(login: string, supplied?: string): string {
   return `https://github.com/${encodeURIComponent(login)}.png?size=40`;
 }
 
+function issueStatePresentation(state: string): {
+  className: string;
+  icon: typeof CircleDot;
+} {
+  const stage = issueStateStage(state);
+  const icons = {
+    repository: Clock3,
+    triage: CircleDot,
+    decision: AlertTriangle,
+    fix: Wrench,
+    delivery: GitPullRequest,
+    complete: ShieldCheck,
+    stopped: CircleX,
+  } as const;
+  return { className: `stage-${stage.id}`, icon: icons[stage.id] };
+}
+
+function IssueStateValue({ state }: { state: string }) {
+  const presentation = issueStatePresentation(state);
+  const Icon = presentation.icon;
+  return (
+    <span className={`issue-detail-state ${presentation.className}`}>
+      <Icon aria-hidden="true" size={14} />
+      {issueStateLabel(state)}
+    </span>
+  );
+}
+
 function GithubMark({ size = 15 }: { size?: number }) {
   return (
     <svg aria-hidden="true" height={size} viewBox="0 0 16 16" width={size}>
@@ -58,11 +98,15 @@ export function IssueTriagePage({
   runtimeInterventions,
   tab,
   onTabChange,
+  onOpenTask,
+  onOpenProjection,
 }: {
   projectId: string;
   runtimeInterventions: ReactNode;
   tab: TriageTab;
   onTabChange: (tab: TriageTab) => void;
+  onOpenTask: (taskId: string) => void;
+  onOpenProjection: (kind: "run" | "trace", id: string) => void;
 }) {
   return (
     <section className="issue-triage-shell">
@@ -95,7 +139,7 @@ export function IssueTriagePage({
           RUNTIME INTERVENTIONS
         </button>
       </div>
-      {tab === "github" ? <IssuesTab projectId={projectId} /> : tab === "gitlab" ? <GitlabPlaceholder /> : runtimeInterventions}
+      {tab === "github" ? <IssuesTab projectId={projectId} onOpenTask={onOpenTask} onOpenProjection={onOpenProjection} /> : tab === "gitlab" ? <GitlabPlaceholder /> : runtimeInterventions}
     </section>
   );
 }
@@ -104,13 +148,20 @@ function GitlabPlaceholder() {
   return <section className="issue-triage-placeholder" aria-label="GitLab Issue" />;
 }
 
-function IssuesTab({ projectId }: { projectId: string }) {
+function IssuesTab({
+  projectId,
+  onOpenTask,
+  onOpenProjection,
+}: {
+  projectId: string;
+  onOpenTask: (taskId: string) => void;
+  onOpenProjection: (kind: "run" | "trace", id: string) => void;
+}) {
   const [summary, setSummary] = useState<IssueTriageSummary | null>(null);
   const [page, setPage] = useState<IssueTriagePageData | null>(null);
   const [detail, setDetail] = useState<IssueTriageDetail | null>(null);
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
-  const [group, setGroup] = useState("");
   const [selectedStates, setSelectedStates] = useState<string[] | null>(null);
   const [selectedLabels, setSelectedLabels] = useState<string[] | null>(null);
   const [selectedAuthors, setSelectedAuthors] = useState<string[] | null>(null);
@@ -127,10 +178,18 @@ function IssuesTab({ projectId }: { projectId: string }) {
   const [manageRunOpen, setManageRunOpen] = useState(false);
   const [triageNotice, setTriageNotice] = useState("");
   const [error, setError] = useState("");
+  const [runtimeState, setRuntimeState] = useState("unknown");
+  const [floatingTooltip, setFloatingTooltip] = useState<{
+    text: string;
+    left: number;
+    top: number;
+    above: boolean;
+  } | null>(null);
+  const floatingTooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const floatingTooltipTarget = useRef<HTMLElement | null>(null);
 
   const filters = useMemo(() => ({
     q: appliedQuery,
-    group,
     states: selectedStates === null ? "" : JSON.stringify(selectedStates),
     label: selectedLabels?.length === 1 ? selectedLabels[0] : "",
     labels: selectedLabels === null ? "" : JSON.stringify(selectedLabels),
@@ -141,7 +200,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
     order_direction: orderDirection,
     cursor,
     limit: 50,
-  }), [appliedQuery, cursor, group, orderBy, orderDirection, selectedAuthors, selectedLabels, selectedStates, source]);
+  }), [appliedQuery, cursor, orderBy, orderDirection, selectedAuthors, selectedLabels, selectedStates, source]);
 
   const labelColors = useMemo(() => {
     const merged = { ...(summary?.label_colors ?? {}) };
@@ -150,12 +209,14 @@ function IssuesTab({ projectId }: { projectId: string }) {
   }, [page?.items, summary?.label_colors]);
 
   const load = useCallback(async () => {
-    const [nextSummary, nextPage] = await Promise.all([
+    const [nextSummary, nextPage, health] = await Promise.all([
       getIssueTriageSummary(projectId),
       getIssueTriage(projectId, filters),
+      getProjectHealth(projectId).catch(() => null),
     ]);
     setSummary(nextSummary);
     setPage(nextPage);
+    if (health?.runtime_state) setRuntimeState(health.runtime_state);
     return nextSummary;
   }, [filters, projectId]);
 
@@ -175,7 +236,6 @@ function IssuesTab({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     setError("");
     void load()
       .catch((cause) => {
@@ -257,24 +317,59 @@ function IssuesTab({ projectId }: { projectId: string }) {
 
   const selectedWorkflowState = detail?.issue.workflow?.state ?? "";
 
+  const clearFloatingTooltip = () => {
+    if (floatingTooltipTimer.current) clearTimeout(floatingTooltipTimer.current);
+    floatingTooltipTimer.current = null;
+    floatingTooltipTarget.current = null;
+    setFloatingTooltip(null);
+  };
+  const showFloatingTooltip = (target: EventTarget | null) => {
+    const element = target instanceof Element
+      ? target.closest<HTMLElement>("[data-tooltip]")
+      : null;
+    const text = element?.dataset.tooltip?.trim();
+    if (!element || !text) return;
+    if (floatingTooltipTarget.current === element) return;
+    clearFloatingTooltip();
+    floatingTooltipTarget.current = element;
+    const delay = issueTooltipDelayMs(
+      element.closest(".issue-state-stage-options") ? "stage-state" : "default",
+    );
+    floatingTooltipTimer.current = setTimeout(() => {
+      if (floatingTooltipTarget.current !== element || !element.isConnected) return;
+      const rect = element.getBoundingClientRect();
+      const estimatedWidth = Math.min(240, Math.max(120, text.length * 7));
+      const left = Math.max(12, Math.min(window.innerWidth - estimatedWidth - 12, rect.left + rect.width / 2 - estimatedWidth / 2));
+      const above = rect.bottom + 72 > window.innerHeight;
+      floatingTooltipTimer.current = null;
+      setFloatingTooltip({ text, left, top: above ? rect.top - 7 : rect.bottom + 7, above });
+    }, delay);
+  };
+  const hideFloatingTooltip = (currentTarget: EventTarget | null, relatedTarget: EventTarget | null) => {
+    if (
+      currentTarget instanceof Element
+      && relatedTarget instanceof Node
+      && currentTarget.closest("[data-tooltip]")?.contains(relatedTarget)
+    ) return;
+    clearFloatingTooltip();
+  };
+
+  useEffect(() => () => {
+    if (floatingTooltipTimer.current) clearTimeout(floatingTooltipTimer.current);
+  }, []);
+
   return (
-    <section className="issue-triage-page">
+    <section
+      className="issue-triage-page floating-tooltips"
+      onMouseOver={(event: MouseEvent<HTMLElement>) => showFloatingTooltip(event.target)}
+      onMouseOut={(event: MouseEvent<HTMLElement>) => hideFloatingTooltip(event.target, event.relatedTarget)}
+      onFocus={(event: FocusEvent<HTMLElement>) => showFloatingTooltip(event.target)}
+      onBlur={(event: FocusEvent<HTMLElement>) => hideFloatingTooltip(event.target, event.relatedTarget)}
+    >
       <header className="issue-triage-header">
         <p className="muted issue-triage-description">Read-only in ZaoFu. Edit labels, state, assignees, or content on GitHub.</p>
-        <div className="button-row">
-          {summary ? (
-            <a className="issue-triage-repository-action" href={summary.repository_url} target="_blank" rel="noopener noreferrer">
-              <span className="issue-triage-repository-label"><GithubMark /> View Repo</span>
-              <span className="issue-triage-repository-stat" title={`${summary.sync.star_count ?? 0} GitHub stars`}>
-                <Star aria-hidden="true" size={14} /> {compactStat(summary.sync.star_count ?? 0)}
-              </span>
-            </a>
-          ) : null}
-          {summary ? (
-            <a className="icon-button" href={summary.new_issue_url} target="_blank" rel="noopener noreferrer">
-              New issue <ExternalLink aria-hidden="true" size={14} />
-            </a>
-          ) : null}
+        <div className="button-row issue-triage-toolbar-actions">
+          <SyncStatus summary={summary} error={error} runtimeState={runtimeState} />
           <button className="icon-button issue-triage-tooltip" data-tooltip="Fetch the latest Issue metadata and comments from GitHub" disabled={refreshing} type="button" onClick={() => void refresh()}>
             <RefreshCw aria-hidden="true" className={refreshing ? "spinning" : ""} size={15} />
             {refreshing ? "Syncing…" : "Refresh"}
@@ -295,18 +390,29 @@ function IssuesTab({ projectId }: { projectId: string }) {
               Start Triage
             </button>
           )}
+          {summary ? (
+            <a className="issue-triage-repository-action" href={summary.repository_url} target="_blank" rel="noopener noreferrer">
+              <span className="issue-triage-repository-label"><GithubMark /> View Repo</span>
+              <span className="issue-triage-repository-stat" title={`${summary.sync.star_count ?? 0} GitHub stars`}>
+                <Star aria-hidden="true" size={14} /> {compactStat(summary.sync.star_count ?? 0)}
+              </span>
+            </a>
+          ) : null}
+          {summary ? (
+            <a className="icon-button" href={summary.new_issue_url} target="_blank" rel="noopener noreferrer">
+              New issue <ExternalLink aria-hidden="true" size={14} />
+            </a>
+          ) : null}
         </div>
       </header>
 
-      <SyncBanner summary={summary} error={error} />
       {triageNotice ? <div className="issue-triage-action-notice" role="status">{triageNotice}</div> : null}
 
-      <div className="issue-triage-metrics">
-        <Metric label="Untriaged" value={summary?.groups.untriaged ?? 0} active={group === "untriaged"} onClick={() => resetCursor(setGroup, group === "untriaged" ? "" : "untriaged")} />
-        <Metric label="Triaged" value={summary?.groups.triaged ?? 0} active={group === "triaged"} onClick={() => resetCursor(setGroup, group === "triaged" ? "" : "triaged")} />
-        <Metric label="Closed" value={summary?.groups.closed ?? 0} active={group === "closed"} onClick={() => resetCursor(setGroup, group === "closed" ? "" : "closed")} />
-        <Metric label="All issues" value={summary?.total ?? 0} active={!group} onClick={() => resetCursor(setGroup, "")} />
-      </div>
+      <IssueStateStages
+        counts={summary?.states ?? {}}
+        selected={selectedStates}
+        onChange={(next) => { setSelectedStates(next); setCursor(0); setDetail(null); }}
+      />
 
       <div className="issue-triage-filters">
         <OrderFilter
@@ -320,6 +426,7 @@ function IssuesTab({ projectId }: { projectId: string }) {
           <input aria-label="Search issues" placeholder="Search title, number, author, or label" value={query} onChange={(event) => setQuery(event.target.value)} />
         </form>
         <StateFilter
+          counts={summary?.states ?? {}}
           selected={selectedStates}
           onChange={(next) => { setSelectedStates(next); setCursor(0); setDetail(null); }}
         />
@@ -347,8 +454,11 @@ function IssuesTab({ projectId }: { projectId: string }) {
         <div className="issue-triage-list" aria-busy={loading}>
           {loading ? <p className="empty-text">Loading Issue mirror…</p> : null}
           {!loading && !page?.items.length ? <p className="empty-text">No matching GitHub Issues.</p> : null}
-          {page?.items.map((item) => (
-            <div
+          {page?.items.map((item) => {
+            const effectiveState = effectiveIssueState(item.github_state, item.workflow?.state);
+            const presentation = issueStatePresentation(effectiveState);
+            const StateIcon = presentation.icon;
+            return <div
               aria-label={`Open Issue ${item.number}`}
               className={`issue-triage-row ${detail?.issue.number === item.number ? "selected" : ""}`}
               key={item.issue_key}
@@ -363,13 +473,11 @@ function IssuesTab({ projectId }: { projectId: string }) {
               }}
             >
               <span
-                aria-label={`This issue is ${item.github_state}.`}
-                className="issue-state-indicator issue-triage-tooltip"
-                data-tooltip={`This issue is ${item.github_state}.`}
+                aria-label={`This issue is ${issueStateLabel(effectiveState)}.`}
+                className={`issue-state-indicator issue-triage-tooltip ${presentation.className}`}
+                data-tooltip={issueStateDescription(effectiveState)}
               >
-                {item.github_state === "closed"
-                  ? <CircleCheck aria-hidden="true" className="issue-state-check" size={16} />
-                  : <span className="issue-state-dot" />}
+                <StateIcon aria-hidden="true" size={16} />
               </span>
               <span className="issue-triage-row-main">
                 <strong>{item.title}</strong>
@@ -385,20 +493,20 @@ function IssuesTab({ projectId }: { projectId: string }) {
                 <IssueLabelList labels={item.labels} colors={item.label_colors} onSelect={selectLabel} />
               </span>
               <span
-                className="issue-group-badge issue-triage-tooltip"
+                className={`issue-group-badge issue-triage-tooltip ${presentation.className}`}
                 data-tooltip={item.workflow
-                  ? `Workflow: ${item.workflow.state}${item.workflow.task_id ? ` · ${item.workflow.task_id}` : ""}`
-                  : `This issue is ${item.derived_group}.`}
-              >{item.workflow?.state ?? item.derived_group}</span>
+                  ? `Workflow: ${issueStateLabel(effectiveState)}${item.workflow.task_id ? ` · ${item.workflow.task_id}` : ""}`
+                  : issueStateDescription(effectiveState)}
+              ><StateIcon aria-hidden="true" size={14} />{issueStateLabel(effectiveState)}</span>
             </div>
-          ))}
+          })}
           <div className="issue-triage-pagination">
             <button className="icon-button" disabled={!page || page.cursor === 0} type="button" onClick={() => { setCursor(Math.max(0, cursor - 50)); setDetail(null); }}>Previous</button>
             <span className="muted">{page ? `${page.cursor + (page.items.length ? 1 : 0)}–${page.cursor + page.items.length} of ${page.total}` : "0 issues"}</span>
             <button className="icon-button" disabled={page?.next_cursor == null} type="button" onClick={() => { setCursor(page?.next_cursor ?? cursor); setDetail(null); }}>Next</button>
           </div>
         </div>
-        {detail ? <IssueDetail projectId={projectId} detail={detail} authorStates={summary?.author_states ?? {}} onClose={() => setDetail(null)} onLabelSelect={selectLabel} onUpdated={(notice) => refreshSelected(detail.issue.number, notice)} /> : null}
+        {detail ? <IssueDetail projectId={projectId} detail={detail} authorStates={summary?.author_states ?? {}} onClose={() => setDetail(null)} onLabelSelect={selectLabel} onOpenTask={onOpenTask} onOpenProjection={onOpenProjection} onUpdated={(notice) => refreshSelected(detail.issue.number, notice)} /> : null}
       </div>
       {startDialogOpen ? (
         <StartTriageDialog
@@ -419,6 +527,16 @@ function IssuesTab({ projectId }: { projectId: string }) {
           onClose={() => setManageRunOpen(false)}
           onUpdated={(notice) => refreshSelected(detail.issue.number, notice)}
         />
+      ) : null}
+      {floatingTooltip && typeof document !== "undefined" ? createPortal(
+        <div
+          className={`issue-floating-tooltip ${floatingTooltip.above ? "above" : ""}`}
+          role="tooltip"
+          style={{ left: floatingTooltip.left, top: floatingTooltip.top }}
+        >
+          {floatingTooltip.text}
+        </div>,
+        document.body,
       ) : null}
     </section>
   );
@@ -499,7 +617,63 @@ function AuthorIdentity({
   states?: { open: number; closed: number };
 }) {
   const profileUrl = `https://github.com/${encodeURIComponent(login)}`;
-  return <span className="issue-author-identity" onClick={(event) => event.stopPropagation()}>
+  const [popover, setPopover] = useState<{ left: number; top: number; above: boolean } | null>(null);
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelOpen = () => {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    openTimer.current = null;
+  };
+  const cancelClose = () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = null;
+  };
+  const openPopover = (element: HTMLElement) => {
+    cancelClose();
+    if (popover || openTimer.current) return;
+    openTimer.current = setTimeout(() => {
+      openTimer.current = null;
+      if (!element.isConnected) return;
+      const rect = element.getBoundingClientRect();
+      const width = 230;
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left - 12));
+      const above = rect.top >= 150;
+      setPopover({ left, top: above ? rect.top - 7 : rect.bottom + 7, above });
+    }, issueTooltipDelayMs("default"));
+  };
+  const scheduleClose = () => {
+    cancelOpen();
+    cancelClose();
+    closeTimer.current = setTimeout(() => setPopover(null), 100);
+  };
+  useEffect(() => () => {
+    cancelOpen();
+    cancelClose();
+  }, []);
+  const card = <span
+    className={`issue-author-popover floating ${popover?.above ? "above" : ""}`}
+    role="tooltip"
+    style={popover ? { left: popover.left, top: popover.top } : undefined}
+    onClick={(event) => event.stopPropagation()}
+    onMouseEnter={cancelClose}
+    onMouseLeave={scheduleClose}
+  >
+    <span className="issue-author-popover-heading">
+      <img src={githubAvatarUrl(login, avatarUrl)} alt="" loading="lazy" referrerPolicy="no-referrer" />
+      <strong>{login}</strong>
+    </span>
+    <span className="issue-author-popover-stats">{states?.open ?? 0} open · {states?.closed ?? 0} closed issues</span>
+    <a href={profileUrl} rel="noopener noreferrer" target="_blank" onClick={(event) => event.stopPropagation()}>
+      <GithubMark /> View GitHub profile
+    </a>
+  </span>;
+  return <span
+    className="issue-author-identity"
+    onClick={(event) => event.stopPropagation()}
+    onFocus={(event) => openPopover(event.currentTarget)}
+    onMouseEnter={(event) => openPopover(event.currentTarget)}
+    onMouseLeave={scheduleClose}
+  >
     <img
       className="issue-author-avatar"
       src={githubAvatarUrl(login, avatarUrl)}
@@ -508,16 +682,7 @@ function AuthorIdentity({
       referrerPolicy="no-referrer"
     />
     <span className="issue-author-login">{login}</span>
-    <span className="issue-author-popover" role="tooltip">
-      <span className="issue-author-popover-heading">
-        <img src={githubAvatarUrl(login, avatarUrl)} alt="" loading="lazy" referrerPolicy="no-referrer" />
-        <strong>{login}</strong>
-      </span>
-      <span className="issue-author-popover-stats">{states?.open ?? 0} open · {states?.closed ?? 0} closed issues</span>
-      <a href={profileUrl} rel="noopener noreferrer" target="_blank" onClick={(event) => event.stopPropagation()}>
-        <GithubMark /> View GitHub profile
-      </a>
-    </span>
+    {popover && typeof document !== "undefined" ? createPortal(card, document.body) : null}
   </span>;
 }
 
@@ -559,10 +724,88 @@ function OrderFilter({
   );
 }
 
-function StateFilter({
+function IssueStateStages({
+  counts,
   selected,
   onChange,
 }: {
+  counts: Record<string, number>;
+  selected: string[] | null;
+  onChange: (states: string[] | null) => void;
+}) {
+  const allStates = ISSUE_STATE_FILTERS.map(([value]) => value);
+  const [openStages, setOpenStages] = useState<Set<string>>(() => new Set());
+  const toggle = (state: string) => {
+    const next = nextIssueStateSelection(selected, state);
+    onChange(next.length === allStates.length ? null : next);
+  };
+  const toggleOpen = (stageId: string) => {
+    setOpenStages((current) => {
+      const next = new Set(current);
+      if (next.has(stageId)) next.delete(stageId);
+      else next.add(stageId);
+      return next;
+    });
+  };
+  return (
+    <div className="issue-state-stages" aria-label="Issue lifecycle stages">
+      {ISSUE_STATE_STAGES.map((stage) => {
+        const presentation = issueStatePresentation(stage.states[0]);
+        const Icon = presentation.icon;
+        const open = openStages.has(stage.id);
+        const allStageStatesSelected = stage.states.every((state) => isIssueStateSelected(selected, state));
+        const stateCountLabel = `${stage.states.length} state${stage.states.length === 1 ? "" : "s"}`;
+        return (
+          <section className={`issue-state-stage ${presentation.className} ${open ? "open" : ""}`} key={stage.id}>
+            <button
+              aria-pressed={allStageStatesSelected}
+              className="issue-state-stage-select issue-triage-tooltip"
+              data-tooltip={`${allStageStatesSelected ? "Exclude" : "Include"} every state in the ${stage.label} stage.`}
+              type="button"
+              onClick={() => onChange(nextIssueStageSelection(selected, stage.states, allStates))}
+            >
+              <span><Icon aria-hidden="true" size={15} />{stage.label}</span>
+              <strong>{issueStateStageTotal(stage, counts)}</strong>
+            </button>
+            <button
+              aria-expanded={open}
+              aria-label={`${open ? "Collapse" : "Expand"} ${stage.label} states`}
+              className="issue-state-stage-toggle"
+              type="button"
+              onClick={() => toggleOpen(stage.id)}
+            >
+              <span>{stateCountLabel}</span>
+              <ChevronDown aria-hidden="true" className="issue-state-stage-chevron" size={14} />
+            </button>
+            {open ? (
+              <div className="issue-state-stage-options" role="group" aria-label={`${stage.label} states`}>
+                {stage.states.map((state) => (
+                  <button
+                    aria-pressed={isIssueStateSelected(selected, state)}
+                    className={`issue-triage-tooltip ${isIssueStateSelected(selected, state) ? "selected" : ""}`}
+                    data-tooltip={issueStateDescription(state)}
+                    key={state}
+                    type="button"
+                    onClick={() => toggle(state)}
+                  >
+                    <span>{issueStateLabel(state)}</span><strong>{counts[state] ?? 0}</strong>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function StateFilter({
+  counts,
+  selected,
+  onChange,
+}: {
+  counts: Record<string, number>;
   selected: string[] | null;
   onChange: (states: string[] | null) => void;
 }) {
@@ -572,23 +815,17 @@ function StateFilter({
     ([value, label]) => ({ value, label }),
   );
   const optionValues = options.map(({ value }) => value);
-  const normalizedSearch = search.trim().toLocaleLowerCase();
   const visible = filterIssueStateOptions(search);
-  const active = selected?.filter((item) => optionValues.includes(item)) ?? [];
   const visibleValues = visible.map(({ value }) => value);
-  const visibleOnlySelected = selected !== null
-    && active.length === visibleValues.length
-    && visibleValues.length > 0
-    && visibleValues.every((value) => active.includes(value));
-  const selectAllChecked = normalizedSearch
-    ? visibleOnlySelected
-    : selected === null;
+  const visibleOnlySelected = visibleValues.length > 0
+    && visibleValues.every((value) => isIssueStateSelected(selected, value));
+  const selectAllChecked = visibleOnlySelected;
   const buttonLabel = selected === null
     ? "All states"
     : selected.length === 0
       ? "No states"
       : selected.length === 1
-        ? options.find(({ value }) => value === selected[0])?.label ?? selected[0]
+        ? "1 state"
         : `${selected.length} states`;
 
   const commitSelection = (next: string[]) => {
@@ -640,15 +877,16 @@ function StateFilter({
           <div className="issue-label-filter-options">
             {visible.map(({ value, label }) => (
               <button
-                aria-checked={active.includes(value)}
+                aria-checked={isIssueStateSelected(selected, value)}
                 className="issue-label-filter-option"
                 key={value}
                 role="menuitemcheckbox"
                 type="button"
                 onClick={() => toggle(value)}
               >
-                <input checked={active.includes(value)} readOnly tabIndex={-1} type="checkbox" />
-                <span>{label}</span>
+                <input checked={isIssueStateSelected(selected, value)} readOnly tabIndex={-1} type="checkbox" />
+                {(() => { const presentation = issueStatePresentation(value); const Icon = presentation.icon; return <span className={`issue-filter-state ${presentation.className}`}><Icon aria-hidden="true" size={14} />{label}</span>; })()}
+                <span className="muted">{counts[value] ?? 0}</span>
               </button>
             ))}
             {!visible.length ? <span className="muted issue-label-filter-empty">No matching states</span> : null}
@@ -714,24 +952,15 @@ function ContributorFilter({
   </div>;
 }
 
-function SyncBanner({ summary, error }: { summary: IssueTriageSummary | null; error: string }) {
+function SyncStatus({ summary, error, runtimeState }: { summary: IssueTriageSummary | null; error: string; runtimeState: string }) {
   const sync = summary?.sync;
-  const stale = Boolean(error || !sync || sync.status === "never" || sync.status === "failed" || sync.status === "rate_limited");
-  const status = stale
-    ? "GitHub mirror disconnected"
-    : sync?.status === "syncing"
-      ? "GitHub mirror syncing"
-      : "GitHub mirror is current";
+  const presentation = issueSyncPresentation(sync?.status ?? "never", error, runtimeState);
   return (
-    <div className={`issue-triage-sync ${stale ? "stale" : ""}`}>
-      <span className={`issue-triage-sync-dot ${stale ? "stale" : sync?.status === "syncing" ? "syncing" : "current"}`} title={status} aria-label={status} />
+    <div className={`issue-triage-sync ${presentation.tone}`}>
+      <span className={`issue-triage-sync-dot ${presentation.tone}`} title={presentation.label} aria-label={presentation.label} />
       <span className="muted">{sync?.last_success_at ? `Last synced ${new Date(sync.last_success_at).toLocaleString()}` : "Not synchronized yet"}</span>
     </div>
   );
-}
-
-function Metric({ label, value, active, onClick }: { label: string; value: number; active: boolean; onClick: () => void }) {
-  return <button className={`issue-triage-metric ${active ? "active" : ""}`} type="button" onClick={onClick}><strong>{value}</strong><span>{label}</span></button>;
 }
 
 function LabelFilter({
@@ -839,6 +1068,8 @@ function IssueDetail({
   authorStates,
   onClose,
   onLabelSelect,
+  onOpenTask,
+  onOpenProjection,
   onUpdated,
 }: {
   projectId: string;
@@ -846,9 +1077,13 @@ function IssueDetail({
   authorStates: Record<string, { open: number; closed: number }>;
   onClose: () => void;
   onLabelSelect: (label: string) => void;
+  onOpenTask: (taskId: string) => void;
+  onOpenProjection: (kind: "run" | "trace", id: string) => void;
   onUpdated: (notice: string) => Promise<void>;
 }) {
   const { issue } = detail;
+  const workflowId = issue.workflow?.workflow_id || "";
+  const workflowRunId = issue.workflow?.run_id || "";
   return (
     <aside
       className="issue-triage-detail"
@@ -870,26 +1105,42 @@ function IssueDetail({
       <header className="issue-triage-detail-header">
         <span className="muted">GitHub Issue #{issue.number}</span>
         <div className="button-row issue-triage-detail-actions">
-          <a className="icon-button primary" href={issue.html_url} target="_blank" rel="noopener noreferrer">Open/Edit <ExternalLink aria-hidden="true" size={14} /></a>
+          <a className="icon-button primary" href={issue.html_url} target="_blank" rel="noopener noreferrer">Open/Edit on Github <ExternalLink aria-hidden="true" size={14} /></a>
           <button className="icon-button" type="button" onClick={onClose}>Close</button>
         </div>
         <h3>{issue.title}</h3>
       </header>
       <dl className="issue-triage-meta">
-        <div><dt>State</dt><dd>{issue.github_state}</dd></div>
+        <div><dt>State</dt><dd><IssueStateValue state={issue.github_state} /></dd></div>
         <div><dt>Group</dt><dd>{issue.derived_group}</dd></div>
-        <div><dt>Workflow</dt><dd>{issue.workflow?.state ?? "mirrored"}</dd></div>
-        <div><dt>Task</dt><dd>{issue.workflow?.task_id || "None"}</dd></div>
+        <div><dt>Workflow</dt><dd>{workflowId ? <button className="issue-detail-id-link" type="button" onClick={() => onOpenProjection("run", workflowRunId || workflowId)}>{workflowId}</button> : <IssueStateValue state={issue.workflow?.state ?? "mirrored"} />}</dd></div>
+        <div><dt>Task</dt><dd>{issue.workflow?.task_id ? (
+          <>
+            <button className="issue-detail-id-link" type="button" onClick={() => onOpenTask(issue.workflow?.task_id ?? "")}>{issue.workflow.task_id}</button>
+            {issue.workflow.task_history?.some((entry) => entry.task_id !== issue.workflow?.task_id) ? (
+              <ul className="issue-triage-history issue-task-history">
+                {issue.workflow.task_history
+                  .filter((entry) => entry.task_id !== issue.workflow?.task_id)
+                  .map((entry) => (
+                    <li key={entry.task_id}>
+                      <button className="issue-detail-id-link" type="button" onClick={() => onOpenTask(entry.task_id)}>{entry.task_id}</button>
+                    </li>
+                  ))}
+              </ul>
+            ) : null}
+          </>
+        ) : "None"}</dd></div>
+        <div><dt>ZaoFu source revision</dt><dd>{issue.workflow?.source_code_revision ? <code>{issue.workflow.source_code_revision}</code> : "Unbound"}</dd></div>
         <div className="issue-triage-detail-triage"><dt>Triage</dt><dd>
           {issue.workflow?.triage_id ? (
             <>
-              <code>{issue.workflow.triage_id}</code>
+              <button className="issue-detail-id-link" type="button" onClick={() => onOpenProjection("trace", issue.workflow?.triage_id ?? "")}>{issue.workflow.triage_id}</button>
               {issue.workflow.triage_history?.length ? (
                 <ul className="issue-triage-history">
                   {issue.workflow.triage_history.map((entry) => (
                     <li key={entry.triage_id}>
-                      <code>{entry.triage_id}</code>
-                      <span>{entry.state} · attempt {entry.attempt}</span>
+                      <button className="issue-detail-id-link" type="button" onClick={() => onOpenProjection("trace", entry.triage_id)}>{entry.triage_id}</button>
+                      <span>{issueStateLabel(entry.state)} · attempt {entry.attempt}</span>
                     </li>
                   ))}
                 </ul>
@@ -915,6 +1166,15 @@ function IssueDetail({
           needsInfo={issue.workflow.needs_info}
           onUpdated={onUpdated}
         />
+      ) : null}
+      {issue.workflow?.state === "unverified_candidate" ? (
+        <section className="issue-unverified-candidate-card" role="status">
+          <h4>Candidate awaiting maintainer review</h4>
+          <p>The Issue and source scope are sufficient to continue, but dynamic verification is incomplete. The reporter's product environment is not required.</p>
+          {issue.workflow.verification_gaps?.length ? (
+            <ul>{issue.workflow.verification_gaps.map((gap) => <li key={gap}>{gap}</li>)}</ul>
+          ) : null}
+        </section>
       ) : null}
       <IssueCandidateDeliveryPanel projectId={projectId} issueNumber={issue.number} delivery={detail.delivery} onUpdated={onUpdated} />
       <div className="issue-triage-body">
@@ -1004,7 +1264,7 @@ function NeedsInfoCard({
         return;
       }
       if (!response.ok) throw new Error(response.reason || "Clarification was not published");
-      await onUpdated("补充信息已发布到 GitHub，新的 Triage 已提交。");
+      await onUpdated("Additional information was published to GitHub and a new Triage was submitted.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -1026,7 +1286,7 @@ function NeedsInfoCard({
         setAuthorization({ ...authorization, retry_after: Number(record.retry_after || 5) });
       } else if (response.ok && String(record.status).includes("published")) {
         setAuthorization(null);
-        await onUpdated("GitHub 授权完成，补充信息已发布并重新开始 Triage。");
+        await onUpdated("GitHub authorization completed; the information was published and Triage restarted.");
       } else if (!response.ok) {
         throw new Error(response.reason || "GitHub authorization failed");
       }
@@ -1044,15 +1304,15 @@ function NeedsInfoCard({
   }, [authorization]);
 
   return <section className={`issue-needs-info-card ${needsInfo.status === "needs_info_exhausted" ? "exhausted" : ""}`}>
-    <h4>需要补充信息</h4>
+    <h4>Additional information required</h4>
     <p>{needsInfo.reason}</p>
     {needsInfo.status === "needs_info_exhausted" ? (
-      <p className="muted">已达到最多 {needsInfo.max_rounds} 轮自动追问，请人工处理。</p>
+      <p className="muted">The maximum of {needsInfo.max_rounds} clarification rounds was reached. Maintainer action is required.</p>
     ) : authorization ? (
       <div className="issue-needs-info-authorization">
-        <p>请在 GitHub 完成授权。验证码：<strong>{authorization.user_code}</strong></p>
-        <a href={authorization.verification_uri} target="_blank" rel="noopener noreferrer">打开 GitHub 授权页面</a>
-        <button type="button" disabled={busy} onClick={() => void pollAuthorization()}>检查授权状态</button>
+        <p>Complete authorization on GitHub. Device code: <strong>{authorization.user_code}</strong></p>
+        <a href={authorization.verification_uri} target="_blank" rel="noopener noreferrer">Open GitHub authorization</a>
+        <button type="button" disabled={busy} onClick={() => void pollAuthorization()}>Check authorization status</button>
       </div>
     ) : <>
       {needsInfo.questions.map((question) => (
@@ -1060,17 +1320,17 @@ function NeedsInfoCard({
           <span>{question.question}{question.required ? " *" : ""}</span>
           {question.type === "single_choice" ? (
             <select value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}>
-              <option value="">请选择</option>
+              <option value="">Select an option</option>
               {(question.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           ) : question.type === "boolean" ? (
             <select value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}>
-              <option value="">请选择</option><option value="Yes">是</option><option value="No">否</option>
+              <option value="">Select an option</option><option value="Yes">Yes</option><option value="No">No</option>
             </select>
           ) : <textarea rows={question.type === "long_text" ? 3 : 1} value={answers[question.id] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />}
         </label>
       ))}
-      <button className="primary" type="button" disabled={busy} onClick={() => void submit()}>{busy ? "正在发布…" : "提交补充信息并重新分诊"}</button>
+      <button className="primary" type="button" disabled={busy} onClick={() => void submit()}>{busy ? "Publishing…" : "Submit information and restart Triage"}</button>
     </>}
     {error ? <div className="issue-triage-error">{error}</div> : null}
   </section>;

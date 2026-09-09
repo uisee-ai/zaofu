@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from zf.core.config.schema import (
+    ExternalIssueDeliveryConfig,
     GitIsolationConfig,
     ProjectConfig,
     QualityGateConfig,
@@ -686,6 +687,29 @@ def test_candidate_subset_rebuild_rejects_failed_candidate_as_incremental_base(
     )
 
     assert base_ref == "main"
+
+
+def test_candidate_base_prefers_configured_delivery_remote_tracking_ref(
+    tmp_path: Path,
+):
+    base_commit = _init_repo(tmp_path)
+    state_dir, config, log = _state(tmp_path)
+    _git(tmp_path, "remote", "add", "delivery", "https://example.test/repo.git")
+    _git(tmp_path, "update-ref", "refs/remotes/delivery/dev", base_commit)
+    config.self_issue.delivery = ExternalIssueDeliveryConfig(
+        enabled=True,
+        remote_url="https://example.test/repo.git",
+        base_branch="dev",
+    )
+
+    resolved = _rebuilder(
+        tmp_path,
+        state_dir,
+        config,
+        log,
+    )._resolve_candidate_base_ref("missing-baseline")  # type: ignore[attr-defined]
+
+    assert resolved == "refs/remotes/delivery/dev"
 
 
 def test_candidate_rebuild_skips_base_equivalent_assembly_task_ref(tmp_path: Path):

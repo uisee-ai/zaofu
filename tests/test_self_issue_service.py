@@ -29,6 +29,7 @@ from zf.runtime.self_issue_reproduction_ledger import (
     reserve_reproduction_attempt,
 )
 from zf.runtime.self_issue_service import SelfIssueService
+from zf.web.self_issue_actions import prepare_self_issue_web_payload
 
 
 class MemorySecrets:
@@ -190,6 +191,51 @@ def _mark_runtime_live(service: SelfIssueService) -> None:
     guard.write_text(json.dumps({"owner_pid": os.getpid()}), encoding="utf-8")
 
 
+def test_web_github_authorization_is_shared_across_projects_in_one_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace_home = tmp_path / "workspace-home"
+    project_a = tmp_path / "project-a"
+    project_b = tmp_path / "project-b"
+    state_a = project_a / ".zf"
+    state_b = project_b / ".zf"
+    state_a.mkdir(parents=True)
+    state_b.mkdir(parents=True)
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(workspace_home))
+    payload_a: dict[str, object] = {}
+    payload_b: dict[str, object] = {}
+    prepare_self_issue_web_payload(
+        payload_a, "self-issue-publish", "same-web-session", "project-a", project_a,
+    )
+    prepare_self_issue_web_payload(
+        payload_b, "self-issue-publish", "same-web-session", "project-b", project_b,
+    )
+    service_a = SelfIssueService(
+        state_a, EventWriter(EventLog(state_a / "events.jsonl")), project_root=project_a,
+    )
+    service_b = SelfIssueService(
+        state_b, EventWriter(EventLog(state_b / "events.jsonl")), project_root=project_b,
+    )
+    key_a = SecretKey(
+        user_id=str(payload_a["user_id"]),
+        workspace_id=str(payload_a["workspace_id"]),
+        provider="github",
+        authorization_domain="github.com",
+    )
+    key_b = SecretKey(
+        user_id=str(payload_b["user_id"]),
+        workspace_id=str(payload_b["workspace_id"]),
+        provider="github",
+        authorization_domain="github.com",
+    )
+
+    service_a.secrets.put(key_a, {"access_token": "shared-token"})
+
+    assert key_a.subject == key_b.subject
+    assert service_b.secrets.reveal(key_b) == {"access_token": "shared-token"}
+
+
 def _claim_assessment(service: SelfIssueService) -> dict:
     claimed = service.claim_pending_assessment(owner_pid=os.getpid())
     assert claimed is not None
@@ -319,6 +365,15 @@ def test_intake_is_pre_draft_persistent_and_required_answers_fail_closed(tmp_pat
     assert incomplete["missing_question_id"] == "bug_description"
     assert incomplete["reason"] == "This question can not be empty"
     assert "self_issue.intake.started" in [event.type for event in event_log.read_all()]
+
+
+def test_promoted_draft_captures_exact_source_revision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    service, _, _ = _service(tmp_path)
+    monkeypatch.setattr(service, "_git_head", lambda: "abc123-source-revision")
+
+    draft = _promote(service)
+
+    assert draft["source_code_revision"] == "abc123-source-revision"
 
 
 def test_web_reporter_capture_becomes_local_evidence_and_confirmation_candidate(
@@ -851,6 +906,7 @@ def test_sanitized_runtime_evidence_is_uploaded_and_rendered_as_clickable_links(
 def test_markdown_preview_is_exact_snapshot_and_publication_is_idempotent(tmp_path: Path) -> None:
     provider = FakeProvider()
     service, _, secrets = _service(tmp_path, provider)
+    service._git_head = lambda: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"  # type: ignore[method-assign]
     draft = _complete(service, _promote(service, answers=_answers(
         additional_context="Bearer private-token must not leave the machine",
     )))
@@ -862,6 +918,7 @@ def test_markdown_preview_is_exact_snapshot_and_publication_is_idempotent(tmp_pa
     assert "## To reproduce" in body
     assert "- **Impact scope:** Users with a saved Self-Issue Draft" in body
     assert "- **Assessment confidence:** high" in body
+    assert "- **ZaoFu source commit:** 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in body
     confirmed = service.confirm({
         "intent_id": preview["intent_id"], "payload_digest": preview["payload_digest"],
     })

@@ -68,3 +68,21 @@ def test_fresh_pending_recycle_not_rescued(state_dir: Path) -> None:
     orch._rescue_orphan_pending_recycles()
     events = EventLog(state_dir / "events.jsonl").read_all()
     assert not [e for e in events if e.type == "worker.state.changed"]
+
+
+def test_orphan_recycling_is_rescued_after_restart(state_dir: Path, tmp_path: Path) -> None:
+    _write_heartbeat(state_dir, "dev-1", "recycling", "2020-01-01T00:00:00+00:00")
+    config = ZfConfig(
+        project=ProjectConfig(name="t"),
+        session=SessionConfig(tmux_session="t"),
+        roles=[RoleConfig(name="dev", instance_id="dev-1", backend="mock")],
+    )
+    orch = Orchestrator(state_dir, config, TmuxTransport(TmuxSession(session_name="t", dry_run=True)))
+    rescued: list[str] = []
+    orch._start_recycle = lambda role: rescued.append(role.instance_id)  # type: ignore[method-assign]
+    orch._rescue_orphan_pending_recycles()
+    assert rescued == ["dev-1"]
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    changed = [e for e in events if e.type == "worker.state.changed"]
+    assert changed[-1].payload["to"] == "recycling"
+    assert "orphan recycling rescued" in str(changed[-1].payload["reason"])

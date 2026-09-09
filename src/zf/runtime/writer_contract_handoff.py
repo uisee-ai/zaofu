@@ -101,6 +101,30 @@ class WriterContractHandoffMixin:
             )
         return self._nonempty_payload_merge(trigger_source, source)
 
+    @staticmethod
+    def _completion_target_commit(source_payload: dict) -> str:
+        """Resolve the immutable result commit from the writer payload.
+
+        Older/lean writer agents report the commit as an evidence reference
+        (``git:<sha>``) rather than duplicating it in ``source_commit``.  The
+        handoff must accept that equivalent contract evidence; otherwise a
+        valid completion is rejected before candidate integration.
+        """
+        target = str(
+            source_payload.get("target_commit")
+            or source_payload.get("source_commit")
+            or ""
+        ).strip()
+        if target:
+            return target
+        evidence_refs = source_payload.get("evidence_refs")
+        if isinstance(evidence_refs, (list, tuple)):
+            for ref in evidence_refs:
+                value = str(ref or "").strip()
+                if value.startswith("git:") and value[4:].strip():
+                    return value[4:].strip()
+        return ""
+
     def _writer_source_fanout_child(
         self,
         source_payload: dict,
@@ -293,11 +317,7 @@ class WriterContractHandoffMixin:
         }
         if not self._typed_task_contract_handoff_enabled(contract_input):
             return
-        target_commit = str(
-            source_payload.get("target_commit")
-            or source_payload.get("source_commit")
-            or ""
-        ).strip()
+        target_commit = self._completion_target_commit(source_payload)
         task_id = str(base_payload.get("task_id") or "").strip()
         if not target_commit:
             raise TaskContractSnapshotError(

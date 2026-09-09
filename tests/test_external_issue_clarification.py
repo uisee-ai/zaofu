@@ -11,9 +11,18 @@ from zf.core.config.schema import (
 from zf.core.events import EventLog, EventWriter
 from zf.core.issue_triage.models import IssueMirror, derived_triage_group
 from zf.core.issue_triage.store import IssueMirrorStore
-from zf.core.security.secret_provider import LocalSecretProvider, SecretKey
+from zf.core.security.secret_provider import (
+    LocalSecretProvider,
+    SecretKey,
+    forge_credential_store_path,
+    forge_credential_workspace_id,
+)
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.sidecar_refs import write_sidecar_text
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.external_issue_clarification import (
+    _disposition_from_report_markdown,
+    _producer_disposition,
     external_issue_triage_outcome_event,
     normalize_external_issue_disposition,
 )
@@ -68,6 +77,193 @@ def test_needs_info_rejects_invalid_question_shape() -> None:
     assert {item["code"] for item in issues} >= {
         "invalid_or_duplicate", "invalid_value",
     }
+
+
+def test_unverified_candidate_is_a_valid_bounded_disposition() -> None:
+    disposition, issues = normalize_external_issue_disposition({
+        "outcome": "unverified_candidate",
+        "reason": "源码范围明确，但动态验证未运行",
+        "questions": [],
+        "confidence": "medium",
+        "verification_status": "partial",
+        "verification_gaps": ["runtime stopped"],
+    })
+    assert issues == []
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+    assert disposition["verification_gaps"] == ["runtime stopped"]
+
+
+def test_legacy_markdown_report_recovers_needs_info_disposition() -> None:
+    disposition = _disposition_from_report_markdown(
+        "## 结论\n`verdict`: `needs_info`; `recommendation`: `needs_rework`。"
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "needs_info"
+    assert disposition["questions"][0]["id"] == "missing_required_context"
+
+
+def test_legacy_markdown_non_user_gap_becomes_unverified_candidate() -> None:
+    disposition = _disposition_from_report_markdown(
+        "## 结论\n`verdict`: `needs_info`; `recommendation`: `needs_rework`。"
+        "当前运行时已停止，未能执行动态复现。"
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+    assert disposition["verification_status"] == "partial"
+
+
+def test_markdown_ready_to_fix_marker_is_recovered() -> None:
+    disposition = _disposition_from_report_markdown(
+        "## Disposition\n"
+        "`external_issue_disposition: ready_to_fix`\n"
+        "The bounded target and evidence anchor are present."
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "ready_to_fix"
+
+
+def test_english_runtime_gap_becomes_unverified_candidate() -> None:
+    disposition = _disposition_from_report_markdown(
+        "## Classification\n`verdict`: `needs_info`; `recommendation`: `needs_rework`.\n"
+        "The runtime is stopped and no live browser capture was possible."
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+
+
+def test_report_status_marker_with_runtime_gap_becomes_unverified_candidate() -> None:
+    disposition = _disposition_from_report_markdown(
+        "## Classification\n"
+        "Triage remains **needs_info** rather than ready-to-fix.\n"
+        "The runtime is stopped and no live browser capture was possible.\n"
+        "`external_issue_triage_status`: `needs_info`"
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+
+
+def test_long_report_reason_keeps_recovered_candidate_valid() -> None:
+    disposition = _disposition_from_report_markdown(
+        "`external_issue_triage_status`: `needs_info`\n"
+        "The runtime is stopped.\n" + "details " * 300
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+    assert len(disposition["verification_gaps"][0]) <= 500
+
+
+def test_long_report_uses_bounded_gap_and_keeps_complete_report_ref(tmp_path: Path) -> None:
+    report_text = (
+        "## 结论\n`external_issue_triage_status`: `needs_info`\n"
+        "运行时已停止。\n" + "details " * 300
+    )
+    report_ref = write_sidecar_text(
+        tmp_path,
+        "artifacts/external-issues/reports/full-report.md",
+        report_text,
+        kind="external_issue_report",
+        schema_version="external-issue-report.v1",
+        created_by="test",
+    )
+    disposition = _disposition_from_report_markdown(
+        report_text, report_ref=report_ref,
+    )
+    assert disposition is not None
+    assert disposition["outcome"] == "unverified_candidate"
+    assert len(disposition["verification_gaps"][0]) <= 500
+    assert disposition["report_ref"] == report_ref
+    assert hydrate_sidecar_ref(tmp_path, disposition["report_ref"]).payload == report_text
+
+
+def test_inline_long_report_is_promoted_to_complete_sidecar(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import zf.runtime.external_issue_clarification as module
+
+    report_text = (
+        "## 结论\n`external_issue_triage_status`: `needs_info`\n"
+        "The runtime is stopped.\n" + "details " * 300
+    )
+    control = write_immutable_json_sidecar(
+        tmp_path,
+        {"outputs": {"report": report_text}},
+        root="external-issues/control",
+        kind="call_control_result",
+        schema_version="workflow-read-result.v1",
+        created_by="test",
+    )
+    monkeypatch.setattr(
+        module,
+        "hydrate_call_result_envelope",
+        lambda _state_dir, _descriptor: {"control_result": control},
+    )
+    result = module._producer_disposition(tmp_path, [{}])
+    assert result is not None
+    assert result["outcome"] == "unverified_candidate"
+    assert len(result["verification_gaps"][0]) <= 500
+    full_report = hydrate_sidecar_ref(tmp_path, result["report_ref"]).payload
+    assert full_report == report_text
+
+
+def test_output_artifact_markdown_report_recovers_disposition(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import zf.runtime.external_issue_clarification as module
+
+    report = write_sidecar_text(
+        tmp_path,
+        "artifacts/generic-workflow/report.md",
+        "## 结论\n`verdict`: `needs_info`; `recommendation`: `needs_rework`。"
+        "运行时已停止，未能执行动态复现。",
+        kind="report/markdown",
+        schema_version="generic-workflow-output.v1",
+        created_by="test",
+    )
+    control = write_immutable_json_sidecar(
+        tmp_path,
+        {"output_artifacts": [report]},
+        root="generic-workflow/control",
+        kind="call_control_result",
+        schema_version="workflow-read-result.v1",
+        created_by="test",
+    )
+    monkeypatch.setattr(
+        module,
+        "hydrate_call_result_envelope",
+        lambda _state_dir, _descriptor: {
+            "control_result": control,
+        },
+    )
+    result = _producer_disposition(tmp_path, [{}])
+    assert result is not None
+    assert result["outcome"] == "unverified_candidate"
+
+
+def test_forbidden_needs_info_reason_is_downgraded_to_unverified_candidate(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    import zf.runtime.external_issue_clarification as module
+
+    disposition = {
+        "outcome": "needs_info",
+        "reason": "动态 Playwright 未运行",
+        "reason_code": "no_dynamic_playwright",
+        "questions": [],
+    }
+    monkeypatch.setattr(module, "_producer_disposition", lambda *args: disposition)
+    invoke = ZfEvent(
+        type="workflow.invoke.requested", task_id="TASK-3", correlation_id="TRIAGE-3",
+        payload={"workflow_run_id": "TRIAGE-3", "source": "external_issue",
+                 "source_key": "github:1:4", "source_revision": "sha256:r"},
+    )
+    verified = ZfEvent(
+        type="artifact.delivery.verified", task_id="TASK-3", correlation_id="TRIAGE-3",
+        payload={"workflow_run_id": "TRIAGE-3", "artifact_delivery_result": {}},
+    )
+    result = module.external_issue_triage_outcome_event(tmp_path, [invoke], cause=verified)
+    assert result is not None
+    assert result.type == "external_issue.triage.unverified_candidate"
 
 
 def test_verified_needs_info_projects_sidecar_and_round(tmp_path: Path, monkeypatch) -> None:
@@ -188,8 +384,13 @@ def test_clarification_submit_is_idempotent_and_retriages(
     writer.append(ZfEvent(type="external_issue.triage.needs_info", task_id="TASK-1",
         payload={"source_key": "github:1:2", "workflow_run_id": "TRIAGE-1",
                  "clarification_ref": clarification}))
-    key = SecretKey("local-user", str(tmp_path.resolve()), "github", "github.com")
-    secrets = LocalSecretProvider(state_dir / "secrets" / "forge-credentials.json")
+    key = SecretKey(
+        "local-user",
+        forge_credential_workspace_id(tmp_path),
+        "github",
+        "github.com",
+    )
+    secrets = LocalSecretProvider(forge_credential_store_path(state_dir))
     secrets.put(key, {"access_token": "token"})
 
     class FakeGitHub:

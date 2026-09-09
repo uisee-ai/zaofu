@@ -88,6 +88,7 @@ from zf.runtime.run_archive import (
 from zf.runtime.kanban_proposals import PROPOSAL_EVENT
 from zf.autoresearch.projection import project_autoresearch_state
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.control_actions_external_issue import EXTERNAL_ISSUE_ACTIONS
 from zf.runtime.control_actions_self_issue import SELF_ISSUE_ACTIONS
 from zf.runtime.channel_contracts import (
     CHANNEL_DISCUSSION_MODES,
@@ -316,6 +317,7 @@ from zf.web.projections.events import (  # noqa: F401
     _diagnostics,
     _search,
     _events_with_seq,
+    _archive_inventory,
     _event_log_fingerprint,
     _events_with_exact_task_id,
     _trace_id_from_events,
@@ -415,6 +417,8 @@ from zf.web.projections.tasks import (  # noqa: F401
 from zf.web.projections.workspace import (  # noqa: F401
     _workspace_project_payload,
     _workspace_projects_payload,
+    _workspace_scope_root,
+    _project_in_scope,
     _resolve_api_project,
     _project_initialized,
     _ensure_project_initialized,
@@ -660,7 +664,7 @@ _ACTION_ALIASES = {
 # Moved verbatim to operator_contract.CANONICAL_ACTIONS (kept import-aliased
 # so every existing _CANONICAL_ACTIONS reference keeps working).
 _CANONICAL_ACTIONS = CANONICAL_ACTIONS
-_ACTION_ALIASES.update(SELF_ISSUE_ACTIONS)
+_ACTION_ALIASES.update(SELF_ISSUE_ACTIONS | EXTERNAL_ISSUE_ACTIONS)
 _ALLOWED_WEB_ACTIONS = set(_ACTION_ALIASES)
 _CHANNEL_DISCUSSION_MODES = CHANNEL_DISCUSSION_MODES
 _OPERATOR_MANAGERS: dict[str, OperatorSessionManager] = {}
@@ -3772,6 +3776,8 @@ def create_app(
                 )
             except Exception:
                 rows = []
+            scope_root = _workspace_scope_root(project_root)
+            rows = [row for row in rows if _project_in_scope(row, scope_root)]
             row_meta: dict[str, tuple] = {}
             for row in rows[:4]:
                 lifecycle = project_lifecycle(row)
@@ -3781,6 +3787,12 @@ def create_app(
                         getattr(row, "config_path", ""), getattr(row, "root", ""),
                     )
             seen: set[str] = set()
+            # Never prewarm a project whose immutable event archive is large
+            # enough to monopolize the Web process.  Workspace registry rows
+            # are metadata only; a historical project can legitimately have
+            # gigabytes of archived events that must remain cold until the
+            # operator explicitly opens that project.
+            max_prewarm_bytes = 16 * 1024 * 1024
 
             def _yield_to_requests() -> None:
                 # GIL courtesy: prewarming a 30k-event project starves a live
@@ -3800,6 +3812,10 @@ def create_app(
                     continue
                 seen.add(key)
                 try:
+                    active_size = (sd / "events.jsonl").stat().st_size if (sd / "events.jsonl").exists() else 0
+                    archive_size = sum(size for _rel, size in _archive_inventory(sd))
+                    if active_size + archive_size > max_prewarm_bytes:
+                        continue
                     cfg = config if name == "default" else None
                     root = project_root if name == "default" else None
                     meta = row_meta.get(str(sd))
@@ -5666,7 +5682,7 @@ def _web_action(
         payload,
         idempotency_key=x_idempotency_key,
     )
-    if canonical_action in SELF_ISSUE_ACTIONS:
+    if canonical_action in SELF_ISSUE_ACTIONS or canonical_action in EXTERNAL_ISSUE_ACTIONS:
         prepare_self_issue_web_payload(
             request_payload,
             canonical_action,
@@ -5678,6 +5694,49 @@ def _web_action(
     if canonical_action.startswith("workflow-"):
         request_payload = _action_payload(payload, preserve_request_id=True)
     payload_hash = _payload_hash(request_payload)
+
+    # ``self-issue-get`` is a pure read used by the panel's periodic restore
+    # poll.  Do not put it on the audited mutation path: emitting request /
+    # accepted / attempt events on every poll changes events.jsonl's
+    # fingerprint continuously, invalidates the snapshot cache, and leaves
+    # the Kanban Agent without a snapshot during its first-message gate.
+    if canonical_action in {"self-issue-get", "self-issue-intake-get"}:
+        from zf.runtime.self_issue_service import SelfIssueService
+
+        service = SelfIssueService(
+            state_dir,
+            EventWriter(event_log_from_project(state_dir, config=config)),
+            project_root=_resolve_project_root_for_state(state_dir, project_root),
+            policy=config.self_issue if config is not None else None,
+        )
+        operation = (
+            service.get
+            if canonical_action == "self-issue-get"
+            else service.get_intake
+        )
+        try:
+            result = operation(request_payload, causation_id="")
+        except (ValueError, PermissionError) as exc:
+            return {
+                "_status_code": 422,
+                "ok": False,
+                "status": "invalid_self_issue_request",
+                "action": canonical_action,
+                "requested_action": action_name,
+                "reason": str(exc),
+            }
+        result.setdefault("action", canonical_action)
+        result.setdefault("requested_action", action_name)
+        response = {"ok": True, **redact_obj(result)}
+        _complete_idempotency_key(
+            state_dir,
+            key=idempotency_key,
+            action=canonical_action,
+            payload_hash=payload_hash,
+            response=response,
+        )
+        return response
+
     if idempotency_key:
         idempotency_state = _reserve_idempotency_key(
             state_dir,
@@ -7617,6 +7676,21 @@ def _run_headless_kanban_agent_turn(
     plan_started_at = provider_completed_at
     origin_message_event_id = str(payload.get("plan_origin_message_event_id") or "")
     prior_events = writer.event_log.read_all()
+    # A re-run proposal may intentionally target a terminal Task whose prior
+    # workflow was cancelled or completed.  ``list_all`` only exposes the
+    # active projection, so it would hide that Task and make the otherwise
+    # valid Plan report ``workflow Task binding is unavailable``.  Include the
+    # append-only archive for binding lookup; no canonical state is changed.
+    task_candidates = TaskStore(
+        state_dir / "kanban.json"
+    ).list_all_with_archive()
+    task_binding_digests, task_contract_errors, workflow_route_eligibility = (
+        plan_runtime.task_contract_context_for_plan(
+            task_candidates,
+            config=config,
+            project_root=project_root,
+        )
+    )
     action_proposal = _headless_action_proposal(
         result.reply,
         user_message=plan_runtime.plan_proposal_user_message(
@@ -7628,16 +7702,9 @@ def _run_headless_kanban_agent_turn(
             "thread_id": thread_key or result.thread_id,
             "run_id": turn_id,
             "causation_id": user_message.id,
+            "task_binding_digests": task_binding_digests,
         },
         config=config,
-    )
-    task_candidates = TaskStore(state_dir / "kanban.json").list_all()
-    task_binding_digests, task_contract_errors, workflow_route_eligibility = (
-        plan_runtime.task_contract_context_for_plan(
-            task_candidates,
-            config=config,
-            project_root=project_root,
-        )
     )
     plan_draft, action_proposal = plan_runtime.prepare_headless_plan_draft(
         prior_events, answer=result.reply, action_proposal=action_proposal,

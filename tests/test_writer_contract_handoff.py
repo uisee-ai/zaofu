@@ -119,6 +119,19 @@ def _impl_self_check_body(
     return body
 
 
+def test_writer_completion_accepts_git_evidence_as_target_commit(
+    tmp_path: Path,
+):
+    _state_dir, _log, _transport, orch = _state(
+        tmp_path,
+        harness_profile="baseline",
+    )
+
+    assert orch._completion_target_commit({  # type: ignore[attr-defined]
+        "evidence_refs": ["check:pytest", "git:6d08306"],
+    }) == "6d08306"
+
+
 def test_adopted_task_ref_recovers_source_generation_dispatch_base(
     tmp_path: Path,
 ):

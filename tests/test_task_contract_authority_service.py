@@ -208,6 +208,36 @@ def test_contract_authority_can_reopen_terminal_task_with_cas(
     assert reopened.task.contract_authority_revision == current.contract_authority_revision
 
 
+def test_contract_authority_can_reopen_terminal_task_with_same_contract(
+    tmp_path: Path,
+) -> None:
+    store, _, service = _service(tmp_path)
+    store.add(Task(
+        id="TASK-REOPEN-SAME-CONTRACT",
+        title="Terminal",
+        contract=TaskContract(behavior="R1", verification="pytest"),
+    ))
+    original = store.get("TASK-REOPEN-SAME-CONTRACT")
+    assert original is not None
+    stamped = service.replace(original, contract=original.contract, source="initial")
+    store.update(stamped.task.id, status="cancelled")
+    archived = store.get(stamped.task.id)
+    assert archived is not None and archived.status == "cancelled"
+
+    reopened = service.replace(
+        archived,
+        contract=archived.contract,
+        source="retry",
+        task_updates={"status": "backlog", "cancelled_at": None},
+        reopen_terminal=True,
+    )
+
+    current = store.get(stamped.task.id)
+    assert current is not None
+    assert current.status == "backlog"
+    assert reopened.changed is True
+
+
 def test_operational_task_patch_does_not_invalidate_contract_snapshot(
     tmp_path: Path,
 ) -> None:

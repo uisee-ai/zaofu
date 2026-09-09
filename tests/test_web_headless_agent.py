@@ -2296,6 +2296,39 @@ def test_chat_orchestrator_validates_workflow_proposal_against_project_config(
     assert action_proposal["validation_error"] == ""
 
 
+def test_workflow_start_proposal_binds_existing_task_contract_digest() -> None:
+    from zf.web.server import _headless_action_proposal
+
+    answer = json.dumps({
+        "action_proposal": {
+            "action": "workflow-start",
+            "intent": _proposal_intent("重新启动 workflow"),
+            "payload": {
+                "task_id": "TASK-WORKFLOW",
+                "route_id": "delivery:issue:default",
+                "objective": "重新执行已有 Task",
+            },
+        }
+    })
+
+    proposal = _headless_action_proposal(
+        answer,
+        user_message="请重新启动 workflow",
+        proposal_context={
+            "task_binding_digests": {
+                "TASK-WORKFLOW": "sha256:canonical-task-binding",
+            }
+        },
+    )
+
+    assert proposal is not None
+    assert proposal["valid"] is True, proposal["validation_error"]
+    assert proposal["payload"]["task_contract_digest"] == (
+        "sha256:canonical-task-binding"
+    )
+    assert "task_binding_digests" not in proposal["payload"]
+
+
 def test_chat_orchestrator_extracts_create_task_proposal(
     state_dir: Path,
     tmp_path: Path,

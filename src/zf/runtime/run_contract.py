@@ -40,6 +40,7 @@ def build_run_contract(
     workflow_input_manifest_ref: str = "",
     skill_adapter_plan_ref: str = "",
     run_tag: str = "",
+    metadata_flow_kind: str = "",
 ) -> dict[str, Any]:
     """Build a deterministic run contract preview for a loaded config."""
 
@@ -57,7 +58,7 @@ def build_run_contract(
     # value.  When no input manifest has been pinned yet (the normal
     # ``zf start`` path), select the generic Workflow metadata explicitly so
     # the run contract reflects its completion profile and artifact policy.
-    metadata = flow_metadata_for(config, "workflow")
+    metadata = flow_metadata_for(config, metadata_flow_kind or "workflow")
     manifest_ref = workflow_input_manifest_ref or str(
         metadata.get("workflow_input_manifest_ref") or ""
     )
@@ -65,7 +66,7 @@ def build_run_contract(
     manifest_kind = str(
         manifest.get("kind") or manifest.get("request_kind") or ""
     )
-    if manifest_kind:
+    if manifest_kind and not metadata_flow_kind:
         metadata = flow_metadata_for(config, manifest_kind)
     if not skill_adapter_plan_ref:
         skill_adapter_plan_ref = str(

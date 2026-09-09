@@ -149,6 +149,12 @@ class IssueDraft:
     expected_behavior: str = ""
     environment: dict[str, str] = field(default_factory=dict)
     zaofu_version: str = ""
+    # Exact canonical checkout captured when the intake is promoted.  Keep
+    # this separate from ``zaofu_version``: the latter is the user-facing
+    # package version entered in the questionnaire (for example, 0.0.7),
+    # while this commit binds the published Issue to the source that was
+    # actually reported.
+    source_code_revision: str = ""
     additional_context: str = ""
     attachment_context: str = ""
     attachment_refs: list[dict[str, Any]] = field(default_factory=list)

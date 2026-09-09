@@ -176,7 +176,31 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             else:
                 cached_id = str(cached)
                 if self._codex_session_exists(role, cached_id):
-                    session_id = cached_id
+                    from zf.runtime.codex_session_ownership import (
+                        codex_session_terminal_error_for_role,
+                    )
+
+                    terminal_error = codex_session_terminal_error_for_role(
+                        self.registry,
+                        role_sessions_root=self._codex_sessions_root(role),
+                        instance_id=role.instance_id,
+                        session_id=cached_id,
+                    )
+                    if terminal_error:
+                        self.registry.clear(role.instance_id)
+                        is_respawn = False
+                        session_id = None
+                        self._emit_warning(
+                            role,
+                            "codex_cached_session_terminal_error",
+                            (
+                                "respawning codex without resume — cached "
+                                f"session {cached_id} ended with a provider error: "
+                                f"{terminal_error}"
+                            ),
+                        )
+                    else:
+                        session_id = cached_id
                 else:
                     self.registry.clear(role.instance_id)
                     is_respawn = False
@@ -874,6 +898,30 @@ def _write_codex_runtime_hook_trust(
     except OSError:
         current = ""
     base = _strip_codex_runtime_hook_trust_block(current)
+
+    # The per-role config starts as a copy of the operator's global Codex
+    # config.  That file may already contain trust tables for this project;
+    # appending the generated block verbatim creates duplicate TOML table
+    # definitions and Codex refuses to start the worker.  Remove only the
+    # tables we are about to regenerate, preserving every unrelated setting.
+    hook_keys = {key for key, _ in hook_states}
+    if hook_keys:
+        lines = base.splitlines(keepends=True)
+        filtered: list[str] = []
+        skipping = False
+        for line in lines:
+            if line.startswith("[hooks.state."):
+                skipping = any(
+                    line.rstrip("\r\n") == f'[hooks.state.{_toml_basic_string(key)}]'
+                    for key in hook_keys
+                )
+                if skipping:
+                    continue
+            elif skipping and line.startswith("["):
+                skipping = False
+            if not skipping:
+                filtered.append(line)
+        base = "".join(filtered)
 
     project_key = f'[projects.{_toml_basic_string(str(project_root))}]'
     block_lines = [_ZAOFU_CODEX_RUNTIME_BEGIN.rstrip()]

@@ -18,6 +18,7 @@ from zf.core.config.schema import (
     ZfConfig,
 )
 from zf.core.events.model import ZfEvent
+from zf.core.safety import write_workdir_owner_marker
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.task_refs import TaskRefManager
@@ -106,7 +107,10 @@ def test_workdir_manager_dry_run_writes_owner_marker_and_meta(tmp_path: Path):
         project=ProjectConfig(name="test"),
         roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
         runtime=RuntimeConfig(
-            workdirs=WorkdirConfig(enabled=True, root=".zf/workdirs"),
+            workdirs=WorkdirConfig(
+                enabled=True,
+                root=".zf/workdirs",
+            ),
         ),
     )
     manager = WorkdirManager(
@@ -386,6 +390,34 @@ def test_writer_worktree_sync_can_target_rework_task_ref(tmp_path: Path):
     assert result["before"] == main_head
     assert result["after"] == task_head
     assert _git_output(project_path, "rev-parse", "HEAD") == task_head
+
+
+def test_writer_worktree_sync_falls_back_to_head_when_configured_ref_missing(
+    tmp_path: Path,
+):
+    base_head = _init_repo(tmp_path)
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="dev", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(enabled=True, mode="worktree"),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=config,
+    )
+    plan = manager.prepare(config.roles[0])
+    result = manager.sync_writer_to_source_ref(
+        config.roles[0],
+        source_ref_override="main",
+    )
+
+    assert result["source_ref"] == base_head
+    assert result["after"] == base_head
 
 
 def test_writer_worktree_applies_dependency_task_refs(tmp_path: Path):
@@ -1122,6 +1154,79 @@ def test_workdir_manager_rejects_root_outside_state_dir(tmp_path: Path):
 
     with pytest.raises(ValueError):
         WorkdirManager(state_dir=state_dir, project_root=tmp_path, config=config)
+
+
+def test_workdir_manager_resolves_derived_state_root_when_target_root_differs(
+    tmp_path: Path,
+):
+    """Canonical self-issue target roots must not relocate project state."""
+    state_dir = tmp_path / "harness" / ".zf-test_issue_intakeWorkflow"
+    state_dir.mkdir(parents=True)
+    config = ZfConfig(
+        project=ProjectConfig(name="test", state_dir=state_dir.name),
+        roles=[RoleConfig(name="review", backend="mock", role_kind="reader")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(
+                enabled=True,
+                root=f"{state_dir.name}/workdirs",
+            ),
+        ),
+    )
+
+    manager = WorkdirManager(
+        state_dir=state_dir,
+        project_root=tmp_path / "canonical-source-root",
+        config=config,
+    )
+
+    assert manager.root == state_dir / "workdirs"
+
+
+def test_reader_worktree_replaced_when_source_repository_changes(tmp_path: Path):
+    """A managed reader path must not reuse a worktree from another repo."""
+    source = tmp_path / "source"
+    old_source = tmp_path / "old-source"
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    for repo in (source, old_source):
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "marker.txt").write_text(repo.name, encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "marker.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=Test", "-c",
+             "user.email=test@example.com", "commit", "-qm", "init"],
+            check=True,
+        )
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="review", backend="mock", role_kind="reader")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(
+                enabled=True,
+                root=".zf/workdirs",
+                mode="worktree",
+            ),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir / ".zf", project_root=source, config=config,
+    )
+    manager.state_dir.mkdir()
+    old_workdir = manager.root / "review" / "project"
+    old_workdir.parent.mkdir(parents=True)
+    subprocess.run(["git", "-C", str(old_source), "worktree", "add", "--detach", str(old_workdir), "HEAD"], check=True)
+    write_workdir_owner_marker(
+        old_workdir.parent,
+        project_name="test",
+        instance_id="review",
+        project_root=source,
+        created_by="test",
+    )
+
+    manager.prepare(config.roles[0])
+
+    assert (old_workdir / "marker.txt").read_text(encoding="utf-8") == "source"
 
 
 def test_start_workdir_dry_run_prepares_runtime_dirs(

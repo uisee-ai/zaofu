@@ -1,5 +1,5 @@
 import type { CSSProperties, SyntheticEvent } from "react";
-import { issueLabelFoldCount } from "./issueTriageModel";
+import { issueLabelFoldCount, labelExplanation } from "./issueTriageModel";
 
 function githubLabelStyle(name: string, colors?: Record<string, string>): CSSProperties | undefined {
   const color = String(colors?.[name] || "").replace(/^#/, "");
@@ -34,7 +34,7 @@ export function IssueLabelList({
         <button
           aria-label={`Filter issues by label ${label}`}
           className="badge issue-label-badge issue-triage-tooltip"
-          data-tooltip={`Show only issues labelled “${label}”`}
+          data-tooltip={labelExplanation(label)}
           key={label}
           style={githubLabelStyle(label, colors)}
           type="button"
@@ -62,10 +62,11 @@ export function IssueLabelList({
               {labels.map((label) => (
                 <button
                   aria-label={`Filter issues by label ${label}`}
-                  className="badge issue-label-badge"
+                  className="badge issue-label-badge issue-triage-tooltip"
                   key={label}
                   role="menuitem"
                   style={githubLabelStyle(label, colors)}
+                  data-tooltip={labelExplanation(label)}
                   type="button"
                   onClick={(event) => { stop(event); onSelect(label); }}
                   onKeyDown={stop}

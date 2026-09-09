@@ -436,6 +436,21 @@ def normalize_action_proposal(
     if not isinstance(payload, dict):
         return None
     payload = dict(payload)
+    # Workflow-start proposals are emitted by the provider, but the canonical
+    # Task binding is owned by ZaoFu.  Bind the digest from the read-only
+    # context before validating so a provider does not have to reproduce an
+    # internal digest (and cannot accidentally omit the required field).
+    if action in {"workflow-start", "task-workflow-start"}:
+        task_id = str(
+            payload.get("task_id")
+            or (proposal_context or {}).get("task_id")
+            or ""
+        ).strip()
+        task_bindings = (proposal_context or {}).get("task_binding_digests")
+        if isinstance(task_bindings, dict) and task_id:
+            digest = str(task_bindings.get(task_id) or "").strip()
+            if digest and not str(payload.get("task_contract_digest") or "").strip():
+                payload["task_contract_digest"] = digest
     if action == "create-task" and not str(
         payload.get("execution_mode") or ""
     ).strip():
@@ -443,6 +458,8 @@ def normalize_action_proposal(
         # Legacy direct dispatch remains available only as an explicit choice.
         payload["execution_mode"] = "workflow"
     for key, value in (proposal_context or {}).items():
+        if key == "task_binding_digests":
+            continue
         if value and not payload.get(key):
             payload[key] = value
     if action in {"create-task", "update-task", "idea-to-product"}:

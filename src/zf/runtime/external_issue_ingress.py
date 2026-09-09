@@ -5,20 +5,25 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
+import subprocess
 import threading
-from dataclasses import dataclass
+import urllib.error
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from zf.core.config.render import redact_config, renderable_config_to_primitive
 from zf.core.config.schema import ZfConfig
-from zf.core.events import EventWriter
+from zf.core.events import EventWriter, ZfEvent
 from zf.core.events.factory import event_log_from_project
 from zf.core.issue_triage.models import IssueMirror
 from zf.core.issue_triage.store import IssueMirrorStore
 from zf.core.state.atomic_io import atomic_write_text
-from zf.core.task.schema import Task, TaskContract
+from zf.core.task.schema import Task, TaskContract, TaskExecutionBinding
 from zf.core.task.store import TaskStore
 from zf.core.task.contract_validation import validate_task_contract
 from zf.core.workflow.flow_metadata import flow_metadata_for
@@ -27,18 +32,39 @@ from zf.runtime.call_result_envelope import (
     canonical_json_sha256,
     write_immutable_json_sidecar,
 )
-from zf.runtime.run_contract import write_run_contract_snapshot
+from zf.runtime.run_contract import (
+    _stable_contract_body,
+    build_run_contract,
+    stable_json_sha256,
+    write_run_contract_snapshot,
+)
 from zf.runtime.workflow_anchor import mark_workflow_managed_task
+from zf.runtime.task_contract_authority import (
+    TaskContractAuthorityConflict,
+    TaskContractAuthorityService,
+)
 from zf.runtime.workflow_start import WorkflowStartService
+from zf.runtime.run_admission import request_admission_view
+from zf.runtime.workflow_intake import _extract_verification_commands
 from zf.runtime.workflow_submission_binding import (
     pin_artifact_delivery_goal_claim_set,
 )
+from zf.runtime.self_issue_target import (
+    SELF_ISSUE_TARGET_ROOT,
+    resolve_self_issue_target_root,
+)
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_bytes
 
 
 SOURCE_SCHEMA_VERSION = "external-issue-source.v1"
 INGRESS_STATE_SCHEMA_VERSION = "external-issue-ingress-state.v1"
 TRIAGE_PATTERN_ID = "external-issue-triage"
 _LOG = logging.getLogger(__name__)
+_GITHUB_ATTACHMENT_HOSTS = frozenset({
+    "github.com", "user-images.githubusercontent.com", "camo.githubusercontent.com",
+})
+_ATTACHMENT_URL = re.compile(r"https://[^\s)<>\"']+")
+_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 
 
 def _utc_now() -> datetime:
@@ -94,8 +120,10 @@ class ExternalIssueIngressService:
     ) -> None:
         self.state_dir = Path(state_dir)
         self.config = config
-        self.project_root = Path(project_root)
         self.policy = config.self_issue.ingress
+        self.project_root = resolve_self_issue_target_root(
+            project_root, config.self_issue,
+        )
         github_target = config.self_issue.targets.get("github")
         if self.policy.enabled and github_target is None:
             raise ValueError("GitHub issue ingress requires a configured GitHub target")
@@ -113,6 +141,7 @@ class ExternalIssueIngressService:
             default_origin="kernel",
         )
         self.state_path = self.state_dir / "external-issues" / "ingress-state.json"
+        self._attachment_cache: dict[tuple[str, str], list[dict[str, Any]]] = {}
 
     def poll_once(self, *, force: bool = False) -> ExternalIssuePollResult:
         if not self.policy.enabled:
@@ -126,6 +155,7 @@ class ExternalIssueIngressService:
                 changed=int(refreshed.get("changed") or 0),
                 error=str(refreshed.get("error") or "GitHub issue sync failed"),
             )
+        self._reconcile_completed_triage_outcomes()
         received = 0
         queued = 0
         for mirror in self.mirrors.list():
@@ -170,7 +200,7 @@ class ExternalIssueIngressService:
                         "issue_number": mirror.number,
                         "action": action,
                         "project": self.config.project.name,
-                        "target_root": self.policy.target_root,
+                        "target_root": SELF_ISSUE_TARGET_ROOT,
                     },
                     correlation_id=f"external-issue:{mirror.issue_key}",
                 )
@@ -204,6 +234,192 @@ class ExternalIssueIngressService:
             received=received,
             triage_queued=queued,
         )
+
+    def _reconcile_completed_triage_outcomes(self) -> None:
+        """Backfill semantic triage outcomes missed by an earlier runtime tick.
+
+        Artifact delivery is durable and may be admitted just before Web/API
+        restarts.  Re-running the poller must therefore project a completed
+        External Issue report into ``needs_info``/``unverified_candidate``
+        exactly once instead of leaving the mirror stuck in ``triaging``.
+        """
+
+        from zf.runtime.external_issue_clarification import (
+            external_issue_triage_outcome_event,
+        )
+
+        events = self.writer.event_log.read_all()
+        # A previous poll may have persisted the semantic outcome just before
+        # a process crash (or a contract promotion CAS failure).  Re-run the
+        # idempotent promotion for such outcomes so the task cannot remain in
+        # ``awaiting_fix_approval`` forever after a Web/API restart.
+        for event in events:
+            if event.type in {
+                "external_issue.triage.needs_info",
+                "external_issue.triage.needs_info_exhausted",
+                "external_issue.triage.ready_to_fix",
+                "external_issue.triage.unverified_candidate",
+            }:
+                self._complete_triage_run(event)
+            if event.type == "external_issue.triage.ready_to_fix":
+                self._promote_ready_triage_task(event)
+        external_runs = {
+            str((event.payload or {}).get("workflow_run_id") or event.correlation_id or "")
+            for event in events
+            if event.type == "workflow.invoke.requested"
+            and str((event.payload or {}).get("source") or "") == "external_issue"
+        }
+        projected_runs = {
+            str((event.payload or {}).get("workflow_run_id") or event.correlation_id or "")
+            for event in events
+            if event.type in {
+                "external_issue.triage.needs_info",
+                "external_issue.triage.needs_info_exhausted",
+                "external_issue.triage.ready_to_fix",
+                "external_issue.triage.unverified_candidate",
+            }
+        }
+        candidates: dict[str, Any] = {}
+        for event in events:
+            if event.type != "artifact.delivery.verified":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            run_id = str(payload.get("workflow_run_id") or event.correlation_id or "")
+            if not run_id or run_id not in external_runs or run_id in projected_runs:
+                continue
+            candidates[run_id] = event
+        for event in candidates.values():
+            outcome = external_issue_triage_outcome_event(
+                self.state_dir, events, cause=event,
+            )
+            if outcome is None:
+                continue
+            self.writer.append(outcome)
+            events.append(outcome)
+            self._complete_triage_run(outcome)
+            if outcome.type == "external_issue.triage.ready_to_fix":
+                self._promote_ready_triage_task(outcome)
+
+    def _complete_triage_run(self, outcome: Any) -> None:
+        """Close a semantic Triage outcome and release Project Run capacity."""
+
+        payload = outcome.payload if isinstance(outcome.payload, dict) else {}
+        run_id = str(
+            payload.get("workflow_run_id")
+            or payload.get("run_id")
+            or outcome.correlation_id
+            or ""
+        ).strip()
+        if not run_id:
+            return
+        events = self.writer.event_log.read_all()
+        if any(
+            event.type in {
+                "run.goal.completed",
+                "run.goal.blocked",
+                "run.completed",
+                "run.failed",
+                "run.cancelled",
+                "run.abandoned",
+            }
+            and str(
+                (event.payload or {}).get("workflow_run_id")
+                or (event.payload or {}).get("run_id")
+                or event.correlation_id
+                or ""
+            ) == run_id
+            for event in events
+        ):
+            return
+        self.writer.append(ZfEvent(
+            type="run.completed",
+            actor="external-issue-intake",
+            task_id=str(outcome.task_id or "") or None,
+            payload={
+                "schema_version": "run-admission.v1",
+                "run_id": run_id,
+                "workflow_run_id": run_id,
+                "request_id": run_id,
+                "status": "completed",
+                "validation_status": "passed",
+                "source": "external_issue_triage_outcome",
+                "outcome_event_id": str(outcome.id or ""),
+                "outcome_type": str(outcome.type or ""),
+            },
+            causation_id=str(outcome.id or "") or None,
+            correlation_id=run_id,
+        ))
+
+    def _promote_ready_triage_task(self, outcome: Any) -> None:
+        """Promote the intake contract after an admitted ready-to-fix result.
+
+        External Issue reader children are intentionally report-only.  The
+        report's ready disposition is the kernel-owned handoff point: retain
+        the existing source binding, mark the contract as a normal fix
+        contract, and let the regular delivery proposal path take over.
+        """
+        task = self.tasks.get(str(outcome.task_id or ""))
+        if task is None or task.contract.schema_version != "external-issue-intake.v1":
+            return
+        payload = outcome.payload if isinstance(outcome.payload, dict) else {}
+        evidence = dict(task.contract.evidence_contract or {})
+        evidence.update({
+            "external_issue_triage_status": "ready_to_fix",
+            "external_issue_revision": str(payload.get("source_revision") or task.contract.source_revision),
+            "verification_status": str(payload.get("verification_status") or ""),
+            "verification_gaps": list(payload.get("verification_gaps") or []),
+        })
+        if isinstance(payload.get("report_ref"), dict):
+            evidence["external_issue_report_ref"] = dict(payload["report_ref"])
+        contract = replace(
+            task.contract,
+            schema_version="task-contract.v1",
+            behavior="修复 External Issue 报告中的有界问题，并保持源码 revision 绑定。",
+            verification="执行分诊报告中的验证命令并保存可审计证据。",
+            acceptance="完成有界修复并通过报告中声明的验证目标。",
+            acceptance_criteria=[
+                "修复目标限定在 External Issue 报告声明的源码范围",
+                "验证命令通过或将明确缺口记录为证据",
+            ],
+            evidence_contract=evidence,
+            spec_skip_reason="External Issue Triage 已形成绑定当前源码 revision 的 ready_to_fix 合同。",
+        )
+        try:
+            TaskContractAuthorityService(
+                task_store=self.tasks,
+                event_writer=self.writer,
+                state_dir=self.state_dir,
+            ).replace(
+                task,
+                contract=contract,
+                # The triage Run is complete.  Its workflow Request must not
+                # be carried into the separate delivery proposal: doing so
+                # makes WorkflowStart treat the proposal as an active replay
+                # and reject it before emitting operator.action.proposed.
+                execution_binding=TaskExecutionBinding(),
+                source="external_issue_triage_ready_to_fix",
+                actor="external-issue-intake",
+                causation_id=str(outcome.id or ""),
+                correlation_id=str(outcome.correlation_id or ""),
+                task_updates=(
+                    {
+                        "status": "backlog",
+                        "completed_at": None,
+                        "cancelled_at": None,
+                    }
+                    if task.status in {"done", "cancelled"}
+                    else None
+                ),
+                reopen_terminal=task.status in {"done", "cancelled"},
+            )
+        except TaskContractAuthorityConflict:
+            # A concurrent runtime projection may win the CAS between the
+            # read above and the mutation.  If it already applied this exact
+            # promotion, treat the retry as successful; otherwise surface the
+            # conflict to the poller instead of silently changing state.
+            latest = self.tasks.get(task.id)
+            if latest is None or latest.contract.schema_version != "task-contract.v1":
+                raise
 
     def start_manual_triage(self, issue_number: int) -> ExternalIssueManualTriageResult:
         """Fetch and explicitly admit one Issue, including historical revisions."""
@@ -258,7 +474,7 @@ class ExternalIssueIngressService:
                     "action": "opened" if not self._was_admitted(mirror.issue_key) else "updated",
                     "admission_mode": "manual",
                     "project": self.config.project.name,
-                    "target_root": self.policy.target_root,
+                    "target_root": SELF_ISSUE_TARGET_ROOT,
                 },
                 correlation_id=f"external-issue:{mirror.issue_key}",
             )
@@ -307,6 +523,7 @@ class ExternalIssueIngressService:
         return value
 
     def _source_revision(self, mirror: IssueMirror) -> tuple[dict[str, Any], str]:
+        attachment_refs = self._issue_attachment_refs(mirror)
         source = {
             "schema_version": SOURCE_SCHEMA_VERSION,
             "provider": mirror.provider,
@@ -329,11 +546,28 @@ class ExternalIssueIngressService:
             "body_digest": mirror.body_digest,
             "comments_ref": mirror.comments_ref,
             "comments_digest": mirror.comments_digest,
+            "attachment_refs": attachment_refs,
             "project": self.config.project.name,
-            "target_root": self.policy.target_root,
+            "target_root": SELF_ISSUE_TARGET_ROOT,
             "trust": "untrusted_external_input",
         }
         return source, "sha256:" + canonical_json_sha256(source)
+
+    def _canonical_source_revision(self) -> str:
+        """Return the committed ZaoFu revision used for this triage run."""
+
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return result.stdout.strip() if result.returncode == 0 else ""
 
     def _received_revision(self, source_key: str, revision: str):
         for event in reversed(self.writer.event_log.read_all()):
@@ -370,7 +604,8 @@ class ExternalIssueIngressService:
         ):
             return False
         run_id = self._triage_run_id(mirror.issue_key, revision)
-        task_id = _task_id(mirror.issue_key, run_id=run_id)
+        task_id = self._task_id_for_revision(mirror.issue_key, revision)
+        source_code_revision = self._canonical_source_revision()
         task = self.tasks.get(task_id)
         if task is None:
             task = mark_workflow_managed_task(Task(
@@ -402,6 +637,8 @@ class ExternalIssueIngressService:
                         "external_issue_source_ref": source_ref,
                         "external_issue_source_digest": source_digest,
                         "external_issue_revision": revision,
+                        "source_code_root": str(self.project_root),
+                        "source_code_revision": source_code_revision,
                     },
                 ),
             ))
@@ -421,6 +658,44 @@ class ExternalIssueIngressService:
                     causation_id=causation_id,
                     correlation_id=f"external-issue:{mirror.issue_key}",
                 )
+        elif task.status in {"cancelled", "done"}:
+            # Terminal tasks are archived by TaskStore. A retry on the same
+            # Issue revision keeps the stable Task identity but reactivates it
+            # before the new workflow dispatch.
+            previous_status = task.status
+            contract_evidence = dict(task.contract.evidence_contract or {})
+            contract_evidence.update({
+                "source_code_root": str(self.project_root),
+                "source_code_revision": source_code_revision,
+            })
+            task = replace(
+                task,
+                status="backlog",
+                assigned_to=None,
+                active_dispatch_id="",
+                completed_at=None,
+                cancelled_at=None,
+                blocked_reason="",
+                contract=replace(
+                    task.contract,
+                    evidence_contract=contract_evidence,
+                ),
+            )
+            self.tasks.reopen(task)
+            self.writer.emit(
+                "task.status_changed",
+                actor="external-issue-intake",
+                task_id=task_id,
+                payload={
+                    "from": previous_status,
+                    "to": "backlog",
+                    "source": "external_issue_retry",
+                    "source_key": mirror.issue_key,
+                    "source_revision": revision,
+                },
+                causation_id=causation_id,
+                correlation_id=f"external-issue:{mirror.issue_key}",
+            )
         triage_attempt = self._triage_attempt(mirror.issue_key, revision)
         previous_run_id = self._triage_retry_of(
             mirror.issue_key, revision, allow_retry=allow_retry,
@@ -444,7 +719,16 @@ class ExternalIssueIngressService:
             "source_key": mirror.issue_key,
             "source_revision": revision,
             "expected_output": "triage report and proposed TaskContract; no source writes",
-            "target_ref": self.policy.target_root,
+            # ``target_root`` is a config symbol; workflow target refs are
+            # resolved relative to the canonical project_root above.
+            "target_ref": ".",
+            # The Issue digest above identifies the external input revision;
+            # these fields identify the committed ZaoFu source being assessed.
+            # Keeping both prevents an environment/version supplied in the
+            # Issue form from being mistaken for the code revision.
+            "target_root": SELF_ISSUE_TARGET_ROOT,
+            "target_commit": source_code_revision,
+            "source_code_revision": source_code_revision,
             "triage_attempt": triage_attempt,
         }
         if previous_run_id:
@@ -490,8 +774,8 @@ class ExternalIssueIngressService:
         )
         return True
 
-    @staticmethod
     def _issue_artifact_refs(
+        self,
         mirror: IssueMirror,
         *,
         source_ref: str,
@@ -514,7 +798,89 @@ class ExternalIssueIngressService:
             normalized_digest = str(digest or "").removeprefix("sha256:")
             if ref and normalized_digest:
                 refs.append({"ref": ref, "sha256": normalized_digest})
+        refs.extend(self._issue_attachment_refs(mirror))
         return refs
+
+    def _issue_attachment_refs(self, mirror: IssueMirror) -> list[dict[str, Any]]:
+        """Materialize safe GitHub image links as digest-bound evidence sidecars."""
+
+        cache_key = (mirror.body_digest, mirror.comments_digest)
+        cached = self._attachment_cache.get(cache_key)
+        if cached is not None:
+            return [dict(item) for item in cached]
+
+        texts: list[str] = []
+        for ref in (mirror.body_ref, mirror.comments_ref):
+            if not ref:
+                continue
+            try:
+                hydrated = hydrate_sidecar_ref(self.state_dir, {
+                    "ref": ref,
+                    "sha256": (
+                        mirror.body_digest if ref == mirror.body_ref else mirror.comments_digest
+                    ).removeprefix("sha256:"),
+                })
+                payload = hydrated.payload
+                if isinstance(payload, str):
+                    texts.append(payload)
+                elif isinstance(payload, list):
+                    texts.extend(
+                        str(item.get("body") or "")
+                        for item in payload if isinstance(item, dict)
+                    )
+            except (OSError, ValueError, TypeError):
+                continue
+        urls: list[str] = []
+        for text in texts:
+            for raw in _ATTACHMENT_URL.findall(text):
+                try:
+                    parsed = urllib.parse.urlparse(raw.rstrip(".,"))
+                    port = parsed.port
+                except ValueError:
+                    continue
+                if (
+                    parsed.scheme == "https"
+                    and parsed.hostname in _GITHUB_ATTACHMENT_HOSTS
+                    and port in {None, 443}
+                    and parsed.username is None
+                    and parsed.password is None
+                    and (parsed.hostname != "github.com" or parsed.path.startswith("/user-attachments/"))
+                ):
+                    value = raw.rstrip(".,")
+                    if value not in urls:
+                        urls.append(value)
+        descriptors: list[dict[str, Any]] = []
+        for url in urls[:8]:
+            try:
+                request = urllib.request.Request(
+                    url,
+                    headers={"Accept": "image/*", "User-Agent": "ZaoFu-Issue-Triage"},
+                )
+                with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
+                    content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0]
+                    if not content_type.startswith("image/"):
+                        continue
+                    raw = response.read(_MAX_ATTACHMENT_BYTES + 1)
+                if len(raw) > _MAX_ATTACHMENT_BYTES:
+                    continue
+                digest = hashlib.sha256(raw).hexdigest()
+                suffix = ".png" if content_type == "image/png" else ".jpg" if content_type in {"image/jpeg", "image/jpg"} else ".bin"
+                descriptor = write_sidecar_bytes(
+                    self.state_dir,
+                    f"artifacts/external-issues/attachments/{digest}{suffix}",
+                    raw,
+                    kind="external_issue_attachment",
+                    schema_version="external-issue-attachment.v1",
+                    created_by="external-issue-ingress",
+                    content_type=content_type,
+                    preview=urllib.parse.urlparse(url).path.rsplit("/", 1)[-1][:120],
+                )
+                descriptor.update({"source_url": url, "capture_source": "github_issue"})
+                descriptors.append(descriptor)
+            except (OSError, urllib.error.URLError, ValueError):
+                _LOG.info("Skipping unavailable GitHub attachment", exc_info=True)
+        self._attachment_cache[cache_key] = [dict(item) for item in descriptors]
+        return descriptors
 
     def _workflow_identity(self) -> dict[str, Any]:
         """Bind External Issue invokes to the runtime's immutable identities.
@@ -547,7 +913,90 @@ class ExternalIssueIngressService:
             contract = json.loads(contract_path.read_text(encoding="utf-8"))
             if isinstance(contract, dict):
                 contract_digest = str(contract.get("contract_digest") or "")
-                if contract_digest:
+                if not isinstance(contract.get("workflow"), dict):
+                    if contract_digest:
+                        contract_snapshot = write_run_contract_snapshot(
+                            self.state_dir, contract
+                        )
+                    return {
+                        "effective_config_ref": effective_ref,
+                        "effective_config_digest": str(effective_ref.get("sha256") or ""),
+                        "run_contract_ref": str(contract_snapshot.get("ref") or ""),
+                        "run_contract_digest": contract_digest,
+                    }
+                workflow_metadata = flow_metadata_for(self.config, "workflow")
+                contract_config = self.config
+                contract_config_path = self.project_root / "zf.yaml"
+                # ``zf start`` can load the selected product's legacy
+                # compatibility contract while Self-Issue is intentionally
+                # rooted at the canonical ZaoFu checkout.  Prefer that
+                # checkout's generic Workflow metadata for this route so a
+                # software-delivery baseline cannot be reused accidentally.
+                if (
+                    str(workflow_metadata.get("completion_profile") or "")
+                    != "artifact_delivery"
+                    or not str(
+                        workflow_metadata.get("generic_workflow_contract_digest")
+                        or ""
+                    )
+                ):
+                    try:
+                        from zf.core.config.loader import load_config
+
+                        canonical_config = load_config(contract_config_path)
+                        canonical_metadata = flow_metadata_for(
+                            canonical_config, "workflow"
+                        )
+                        if canonical_metadata.get("generic_workflow_contract_digest"):
+                            workflow_metadata = canonical_metadata
+                            contract_config = canonical_config
+                    except (OSError, ValueError):
+                        # Unit/test configurations may deliberately use a
+                        # minimal zf.yaml.  Keep the already-loaded config in
+                        # that case; the route still fails closed if it has no
+                        # valid generic contract digest.
+                        pass
+                expected_profile = str(
+                    workflow_metadata.get("completion_profile") or "artifact_delivery"
+                )
+                expected_generation = str(
+                    workflow_metadata.get("generic_workflow_contract_digest") or ""
+                )
+                # Never reuse the mutable baseline for an External Issue
+                # child.  It may describe a previous software-delivery run;
+                # this route must snapshot the generic artifact-delivery
+                # Workflow on every admission.
+                if (self.project_root / "zf.yaml").is_file():
+                    contract = build_run_contract(
+                        contract_config,
+                        config_path=contract_config_path,
+                        project_root=self.project_root,
+                        state_dir=self.state_dir,
+                        metadata_flow_kind="workflow",
+                    )
+                    # The mutable compatibility contract may have been built
+                    # by ``zf start`` for a software-delivery flow before the
+                    # External Issue route was selected.  Keep this ingress
+                    # snapshot authoritative for the generic Workflow that
+                    # is actually being dispatched; otherwise the verifier
+                    # admits against the stale software profile/generation.
+                    contract_workflow = dict(contract.get("workflow") or {})
+                    contract_workflow.update({
+                        "completion_profile": expected_profile,
+                        "generic_workflow_contract_digest": expected_generation,
+                        "workflow_generation": expected_generation,
+                    })
+                    contract["workflow"] = contract_workflow
+                    required = workflow_metadata.get("required_delivery_artifacts")
+                    if isinstance(required, list):
+                        contract["required_delivery_artifacts"] = [
+                            dict(item) for item in required
+                            if isinstance(item, Mapping)
+                        ]
+                    contract["contract_digest"] = stable_json_sha256(
+                        _stable_contract_body(contract)
+                    )
+                    contract_digest = str(contract.get("contract_digest") or "")
                     contract_snapshot = write_run_contract_snapshot(
                         self.state_dir, contract
                     )
@@ -635,7 +1084,20 @@ class ExternalIssueIngressService:
             return True
         terminal_types = {
             "run.cancelled", "run.abandoned", "run.failed",
-            "run.goal.blocked", "workflow.invoke.rejected", "run.admission.rejected",
+            "run.goal.blocked", "run.goal.completed",
+            "workflow.invoke.rejected", "run.admission.rejected",
+            # A disposition is a terminal Triage decision.  Allowing an
+            # explicit Start Triage after it is what lets an operator rerun
+            # the same Issue against a newly fixed canonical checkout,
+            # without reusing the old Triage run.
+            "external_issue.triage.ready_to_fix",
+            "external_issue.triage.unverified_candidate",
+            # A needs_info disposition is a completed Triage attempt.  An
+            # operator may explicitly start a fresh attempt after correcting
+            # the source/evidence binding; clarification submission remains
+            # the automatic retry path.
+            "external_issue.triage.needs_info",
+            "external_issue.triage.needs_info_exhausted",
         }
         return not any(
             event.type in terminal_types
@@ -685,7 +1147,12 @@ class ExternalIssueIngressService:
             return ""
         terminal_types = {
             "run.cancelled", "run.abandoned", "run.failed",
-            "run.goal.blocked", "workflow.invoke.rejected", "run.admission.rejected",
+            "run.goal.blocked", "run.goal.completed",
+            "workflow.invoke.rejected", "run.admission.rejected",
+            "external_issue.triage.ready_to_fix",
+            "external_issue.triage.unverified_candidate",
+            "external_issue.triage.needs_info",
+            "external_issue.triage.needs_info_exhausted",
         }
         return previous_run_id if any(
             event.type in terminal_types
@@ -702,6 +1169,31 @@ class ExternalIssueIngressService:
         return len(self._triage_queue_events(
             self.writer.event_log.read_all(), source_key, revision,
         )) + 1
+
+    def _task_id_for_revision(self, source_key: str, revision: str) -> str:
+        """Keep retries on one revision attached to one Task identity.
+
+        A changed Issue revision gets a deterministic ``-R<n>`` suffix while
+        repeated Start Triage calls for the same revision reuse the Task.
+        """
+
+        revisions: list[str] = []
+        for event in self.writer.event_log.read_all():
+            if event.type != "external_issue.received":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(payload.get("source_key") or "") != source_key:
+                continue
+            value = str(payload.get("source_revision") or "")
+            if value and value not in revisions:
+                revisions.append(value)
+        try:
+            revision_index = revisions.index(revision)
+        except ValueError:
+            revision_index = len(revisions)
+        digest = hashlib.sha256(source_key.encode("utf-8")).hexdigest()[:12].upper()
+        suffix = f"-R{revision_index}" if revision_index else ""
+        return f"ISSUE-{digest}{suffix}"
 
     def _triage_run_id(self, source_key: str, revision: str) -> str:
         events = self.writer.event_log.read_all()
@@ -772,17 +1264,26 @@ class ExternalIssueIngressService:
         task = self.tasks.get(task_id) if task_id else None
         if task is None:
             return None
-        if (
-            task.contract.source_key != mirror.issue_key
-            or task.contract.source_revision != revision
-            or task.contract.source_ref != source_ref
-        ):
-            return None
         evidence_contract = (
             task.contract.evidence_contract
             if isinstance(task.contract.evidence_contract, dict)
             else {}
         )
+        # ``TaskContract.source_revision`` is the internal task-capsule
+        # revision (for example ``source-r...``), while the immutable Issue
+        # revision is stored as ``external_issue_revision``.  Comparing the
+        # two directly strands every promoted task before proposal creation.
+        external_issue_revision = str(
+            evidence_contract.get("external_issue_revision")
+            or task.contract.source_revision
+            or ""
+        )
+        if (
+            task.contract.source_key != mirror.issue_key
+            or external_issue_revision != revision
+            or task.contract.source_ref != source_ref
+        ):
+            return None
         if (
             task.contract.schema_version == "external-issue-intake.v1"
             or evidence_contract.get("external_issue_triage_status")
@@ -791,12 +1292,91 @@ class ExternalIssueIngressService:
             != revision
         ):
             return None
+        task = self._ensure_executable_verification(task, causation_id=causation_id)
         if validate_task_contract(
             task,
             config=self.config,
             project_root=self.project_root,
         ):
             return None
+        if task.status in {"cancelled", "done"}:
+            # A stale cancellation from an older attempt may have projected
+            # onto the stable Task after a newer attempt reached ready_to_fix.
+            # Reopen only when the latest triage Run itself has a ready result;
+            # a user-cancelled queued Run must remain terminal.
+            events = self.writer.event_log.read_all()
+            latest_run_id = self._latest_triage_run_id(mirror.issue_key, revision)
+            has_ready_result = any(
+                event.type == "external_issue.triage.ready_to_fix"
+                and str(
+                    event.payload.get("workflow_run_id")
+                    or event.correlation_id
+                    or ""
+                ) == latest_run_id
+                for event in events
+            )
+            if not latest_run_id or not has_ready_result:
+                return None
+            try:
+                TaskContractAuthorityService(
+                    task_store=self.tasks,
+                    event_writer=self.writer,
+                    state_dir=self.state_dir,
+                ).replace(
+                    task,
+                    contract=task.contract,
+                    source="external_issue_triage_ready_to_fix_reopen",
+                    actor="external-issue-intake",
+                    causation_id=causation_id,
+                    correlation_id=f"external-issue:{mirror.issue_key}",
+                    task_updates={
+                        "status": "backlog",
+                        "completed_at": None,
+                        "cancelled_at": None,
+                    },
+                    reopen_terminal=True,
+                )
+                task = self.tasks.get(task.id) or task
+            except TaskContractAuthorityConflict:
+                task = self.tasks.get(task.id) or task
+                if task.status in {"cancelled", "done"}:
+                    return None
+        # Tasks promoted by an earlier runtime may already use the
+        # ``task-contract.v1`` schema, so the promotion path above is skipped.
+        # Still detach the completed triage Request before building the Fix
+        # proposal; otherwise preview treats the new delivery as an active
+        # Request replay and returns ``workflow_request_active``.
+        binding = task.execution_binding
+        if binding.request_id or binding.workflow_run_id:
+            admission = request_admission_view(
+                self.writer.event_log.read_all(),
+                request_id=str(binding.request_id or ""),
+                run_id=str(binding.workflow_run_id or ""),
+            )
+            # A live delivery Request owns the Task and must not be detached
+            # by the poller.  Only clear a binding left by a terminal,
+            # completed Triage attempt.
+            if not bool(admission.get("terminal")):
+                return None
+            try:
+                TaskContractAuthorityService(
+                    task_store=self.tasks,
+                    event_writer=self.writer,
+                    state_dir=self.state_dir,
+                ).replace(
+                    task,
+                    contract=task.contract,
+                    execution_binding=TaskExecutionBinding(),
+                    source="external_issue_triage_ready_to_fix_clear_request",
+                    actor="external-issue-intake",
+                    causation_id=causation_id,
+                    correlation_id=f"external-issue:{mirror.issue_key}",
+                )
+                task = self.tasks.get(task.id) or task
+            except TaskContractAuthorityConflict:
+                task = self.tasks.get(task.id) or task
+                if task.execution_binding.request_id or task.execution_binding.workflow_run_id:
+                    return None
         result = WorkflowStartService(
             self.state_dir,
             self.config,
@@ -826,6 +1406,82 @@ class ExternalIssueIngressService:
             correlation_id=f"external-issue:{mirror.issue_key}",
         )
         return result if result.get("status") == "proposal_ready" else None
+
+    def _ensure_executable_verification(
+        self,
+        task: Task,
+        *,
+        causation_id: str,
+    ) -> Task:
+        """Bind executable checks from the immutable triage report.
+
+        Older ready-to-fix tasks were promoted with a prose-only verification
+        sentence.  The writer fanout admission contract intentionally rejects
+        that shape, so backfill the commands declared by the report before
+        creating a delivery proposal.  This is idempotent and only replaces a
+        prose/empty value when the report supplies a real command.
+        """
+        current = str(task.contract.verification or "").strip()
+        evidence = task.contract.evidence_contract
+        if not isinstance(evidence, dict):
+            return task
+        descriptor = evidence.get("external_issue_report_ref")
+        if not isinstance(descriptor, dict):
+            # Tasks promoted by an older runtime may predate the report-ref
+            # field even though the authoritative ready_to_fix event carries
+            # it.  Recover that immutable ref from the event ledger so a
+            # cancelled/retried Task can still produce a valid Fix contract.
+            for event in reversed(self.writer.event_log.read_all()):
+                if event.type != "external_issue.triage.ready_to_fix":
+                    continue
+                if str(event.task_id or "") != task.id:
+                    continue
+                candidate = (event.payload or {}).get("report_ref")
+                if isinstance(candidate, dict):
+                    descriptor = candidate
+                    break
+        if not isinstance(descriptor, dict):
+            return task
+        ref = str(descriptor.get("ref") or descriptor.get("path") or "").strip()
+        if not ref:
+            return task
+        report_path = Path(ref)
+        if not report_path.is_absolute():
+            report_path = self.state_dir / report_path
+        try:
+            report_text = report_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return task
+        commands = _extract_verification_commands(report_text)
+        if not commands or current in commands:
+            return task
+        service = TaskContractAuthorityService(
+            task_store=self.tasks,
+            event_writer=self.writer,
+            state_dir=self.state_dir,
+        )
+        # Reopen/clear-request can update the same contract between the
+        # initial read and this backfill.  Retry once against the freshly
+        # loaded authority so a ready-to-fix delivery cannot carry the old
+        # prose-only verification into writer fanout.
+        candidate = task
+        for _ in range(2):
+            contract = replace(candidate.contract, verification=commands[0])
+            try:
+                service.replace(
+                    candidate,
+                    contract=contract,
+                    source="external_issue_triage_report_verification_backfill",
+                    actor="external-issue-intake",
+                    causation_id=causation_id,
+                    correlation_id=f"external-issue:{candidate.contract.source_key}",
+                )
+                return self.tasks.get(task.id) or candidate
+            except TaskContractAuthorityConflict:
+                candidate = self.tasks.get(task.id) or candidate
+                if str(candidate.contract.verification or "").strip() in commands:
+                    return candidate
+        return self.tasks.get(task.id) or candidate
 
 
 class ExternalIssuePoller:
@@ -879,13 +1535,6 @@ def build_external_issue_poller(
         config,
         project_root=project_root,
     ))
-
-
-def _task_id(source_key: str, *, run_id: str) -> str:
-    digest = hashlib.sha256(
-        f"{source_key}:{run_id}".encode("utf-8")
-    ).hexdigest()[:12].upper()
-    return f"ISSUE-{digest}"
 
 
 __all__ = [

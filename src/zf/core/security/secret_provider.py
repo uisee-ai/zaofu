@@ -17,6 +17,26 @@ from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 
 
+def forge_credential_store_path(state_dir: Path) -> Path:
+    """Resolve the shared Web workspace credential store when configured."""
+
+    workspace_home = os.environ.get("ZF_WORKSPACE_HOME", "").strip()
+    if workspace_home:
+        return Path(workspace_home).expanduser().resolve() / "secrets" / "forge-credentials.json"
+    return Path(state_dir) / "secrets" / "forge-credentials.json"
+
+
+def forge_credential_workspace_id(project_root: Path) -> str:
+    """Return one credential scope for every project in a Web workspace."""
+
+    workspace_home = os.environ.get("ZF_WORKSPACE_HOME", "").strip()
+    root = (
+        Path(workspace_home).expanduser().resolve()
+        if workspace_home else Path(project_root).resolve()
+    )
+    return str(root)
+
+
 @dataclass(frozen=True)
 class SecretKey:
     user_id: str

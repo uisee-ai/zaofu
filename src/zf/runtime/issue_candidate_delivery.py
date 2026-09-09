@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import urllib.error
@@ -21,6 +22,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.issue_triage.models import IssueMirror
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
+from zf.runtime.self_issue_target import resolve_self_issue_target_root
 
 
 HANDOFF_SCHEMA_VERSION = "candidate-publication-handoff.v1"
@@ -60,6 +62,24 @@ def _git_remote_base(remote_url: str, branch: str) -> str:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _github_access_token() -> str:
+    token = str(os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or "").strip()
+    if token:
+        return token if "\n" not in token and "\r" not in token else ""
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    token = result.stdout.strip() if result.returncode == 0 else ""
+    return token if "\n" not in token and "\r" not in token else ""
 
 
 def _digest(value: dict[str, Any]) -> str:
@@ -146,6 +166,9 @@ class GitHubPullRequestReader:
             "User-Agent": "ZaoFu-Issue-Candidate-Delivery",
             "X-GitHub-Api-Version": "2022-11-28",
         }
+        access_token = _github_access_token()
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
         status, raw = self.transport(base, headers)
         if status == 404:
             raise CandidateDeliveryError("GitHub pull request was not found")
@@ -231,9 +254,12 @@ class IssueCandidateDeliveryService:
         remote_base_reader: RemoteBaseReader | None = None,
     ) -> None:
         self.state_dir = Path(state_dir)
-        self.project_root = Path(project_root)
         self.config = config
         self.policy = config.self_issue.delivery
+        self.project_root = resolve_self_issue_target_root(
+            Path(project_root),
+            config.self_issue,
+        )
         self.event_log = event_log_from_project(self.state_dir, config=config)
         self.writer = EventWriter(self.event_log)
         self.pr_reader = pr_reader or GitHubPullRequestReader()
@@ -242,22 +268,25 @@ class IssueCandidateDeliveryService:
     def projection(self, issue: IssueMirror) -> dict[str, Any]:
         candidate = self._candidate(issue)
         handoff = self._read_handoff(issue.number)
-        stale_reason = ""
-        if candidate and candidate["current_source_revision"] != candidate["source_revision"]:
-            stale_reason = "source_revision_changed"
-        elif handoff and candidate:
-            if str(handoff.get("candidate_head_sha") or "") != candidate["candidate_head_sha"]:
-                stale_reason = "candidate_head_changed"
-            elif str(handoff.get("source_revision") or "") != candidate["source_revision"]:
-                stale_reason = "source_revision_changed"
+        if handoff and candidate:
+            handoff_matches_candidate = (
+                str(handoff.get("candidate_head_sha") or "")
+                == candidate["candidate_head_sha"]
+                and str(handoff.get("source_revision") or "")
+                == candidate["source_revision"]
+            )
+            if not handoff_matches_candidate:
+                # A handoff is an approval receipt for one exact candidate,
+                # not evidence that a later verified candidate is stale.
+                handoff = {}
         return {
             "enabled": bool(self.policy.enabled),
             "configured_repository": self.policy.repository,
             "configured_base_branch": self.policy.base_branch,
             "candidate": candidate,
             "handoff": handoff,
-            "status": "stale" if stale_reason else str(handoff.get("status") or "") if handoff else "",
-            "stale_reason": stale_reason,
+            "status": str(handoff.get("status") or "") if handoff else "",
+            "stale_reason": "",
         }
 
     def review(
@@ -620,10 +649,6 @@ class IssueCandidateDeliveryService:
         candidate = self._candidate(issue)
         if candidate is None:
             raise CandidateDeliveryError("Issue does not have a current verified candidate")
-        if candidate["current_source_revision"] != candidate["source_revision"]:
-            raise CandidateDeliveryError(
-                "Issue source revision changed; rebuild and reverify the candidate"
-            )
         if expected_candidate_sha and expected_candidate_sha != candidate["candidate_head_sha"]:
             raise CandidateDeliveryError("Candidate changed after the page was loaded")
         if expected_source_revision and expected_source_revision != candidate["source_revision"]:

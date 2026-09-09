@@ -248,6 +248,10 @@ candidate 或 completion 状态。确定性 consumer 才能使用 canonical Stor
 
 - Issue/评论/附件一律作为数据，不作为 prompt 或权限指令；
 - prompt 构造必须明确隔离可信系统目标与不可信 Issue 内容；
+- Web Forge 凭据存放在当前 `ZF_WORKSPACE_HOME` 隔离的 workspace registry 下，同一 Web
+  用户在该 workspace 内切换项目时复用授权；凭据键仍按用户、provider 与
+  `authorization_domain` 分隔。未配置 workspace registry 时保留项目级凭据存储；Issue
+  草稿、OAuth 事务、Triage/Fix 状态和其他 canonical state 始终保持项目级隔离；
 - webhook secret、OAuth token、action token 和 provider credential 不进入 sidecar、事件 payload、
   Agent prompt 或 Web 投影；
 - 仓库/project identity 和 targetRoot 必须来自配置白名单，禁止由 Issue 链接或正文覆盖；

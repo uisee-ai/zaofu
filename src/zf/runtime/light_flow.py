@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.task_map import _verification_contains_prose
 
 LIGHT_TASK_SUFFIX = "DELIVER-001"
 
@@ -117,7 +118,18 @@ def synthesize_light_task_map(
         "acceptance": [objective_text],
         "acceptance_criteria": acceptance_criteria,
     }
-    commands = _dedupe_strings(verification_commands or [])
+    # Task contracts may carry human-oriented verification guidance (for
+    # example "执行分诊报告中的验证命令...") rather than shell commands.
+    # Never copy that prose into validation.commands: admission treats every
+    # entry there as an executable command and must fail closed on prose.
+    raw_commands = _dedupe_strings(verification_commands or [])
+    commands = [
+        command for command in raw_commands
+        if not _verification_contains_prose(command)
+    ]
+    for guidance in raw_commands:
+        if _verification_contains_prose(guidance):
+            acceptance_criteria.append(f"Verification guidance: {guidance}")
     if commands:
         task["verification"] = commands[0]
         task["validation"] = {

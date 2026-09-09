@@ -195,6 +195,7 @@ def assert_task_workflow_input_coverage(
     constraints: list[str] | tuple[str, ...],
     scope: list[str] | tuple[str, ...],
     project_root: Path,
+    reference_roots: tuple[Path, ...] = (),
 ) -> None:
     errors: list[str] = []
     if str(binding.get("schema_version") or "") != TASK_INPUT_BINDING_SCHEMA_VERSION:
@@ -225,7 +226,12 @@ def assert_task_workflow_input_coverage(
     if (
         canonical_source
         and "source_ref" not in overrides
-        and not _same_project_ref(source_ref, canonical_source, project_root)
+        and not _same_project_ref(
+            source_ref,
+            canonical_source,
+            project_root,
+            reference_roots=reference_roots,
+        )
     ):
         errors.append("source_ref coverage is missing")
     expected_source_refs = {
@@ -299,18 +305,34 @@ def _artifact_ref(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _same_project_ref(actual: str, expected: str, project_root: Path) -> bool:
+def _same_project_ref(
+    actual: str,
+    expected: str,
+    project_root: Path,
+    *,
+    reference_roots: tuple[Path, ...] = (),
+) -> bool:
     if str(actual or "").strip() == str(expected or "").strip():
         return True
     try:
-        root = Path(project_root).expanduser().resolve()
+        roots = (Path(project_root), *reference_roots)
         actual_path = Path(actual).expanduser()
         expected_path = Path(expected).expanduser()
-        if not actual_path.is_absolute():
-            actual_path = root / actual_path
-        if not expected_path.is_absolute():
-            expected_path = root / expected_path
-        return actual_path.resolve() == expected_path.resolve()
+        if actual_path.is_absolute():
+            actual_candidates = (actual_path.resolve(),)
+        else:
+            actual_candidates = tuple(
+                (root.expanduser().resolve() / actual_path).resolve()
+                for root in roots
+            )
+        if expected_path.is_absolute():
+            expected_candidates = (expected_path.resolve(),)
+        else:
+            expected_candidates = tuple(
+                (root.expanduser().resolve() / expected_path).resolve()
+                for root in roots
+            )
+        return bool(set(actual_candidates).intersection(expected_candidates))
     except (OSError, RuntimeError, ValueError):
         return False
 

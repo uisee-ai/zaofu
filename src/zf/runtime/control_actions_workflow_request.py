@@ -85,6 +85,26 @@ class WorkflowRequestActionsMixin:
         requested_action: str,
         payload: dict,
     ) -> dict:
+        # Web Kanban proposals carry their return origin on the outer action
+        # request, while the proposal payload intentionally stays
+        # surface-neutral. Preserve that origin when preparing the exact
+        # Workflow Request; otherwise a Kanban-origin request is interpreted
+        # as CLI and the start is rejected as an origin mismatch.
+        request_context = requested.payload.get("request")
+        if isinstance(request_context, dict):
+            payload = dict(payload)
+            for key in (
+                "project_id",
+                "channel_id",
+                "thread_id",
+                "conversation_id",
+                "thread_key",
+                "origin_binding",
+            ):
+                if key not in payload or payload.get(key) in (None, "", {}, []):
+                    value = request_context.get(key)
+                    if value not in (None, "", {}, []):
+                        payload[key] = value
         preview = WorkflowStartService(
             self.state_dir,
             self.config,

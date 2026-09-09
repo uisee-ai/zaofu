@@ -182,6 +182,7 @@ class TaskContractAuthorityService:
         )
         if (
             expected_revision
+            and not reopen_terminal
             and asdict(current.contract) == asdict(materialized)
             and asdict(task_execution_binding(current)) == asdict(binding)
         ):

@@ -1093,6 +1093,117 @@ class FanoutCoordinationMixin(
             if event_log_snapshot_token(self.event_log) != before:
                 return True
         return False
+
+    def _recover_cancelled_reader_fanout_aggregates(
+        self,
+        events: list[ZfEvent],
+        *,
+        recovery_snapshot=None,
+    ) -> bool:
+        """Recover only the historical candidate-order cancellation race.
+
+        Before the ordering fence was added, a candidate produced by an
+        upstream stage could cancel a downstream reader fanout while its child
+        was still running.  A later child result is durable, but ordinary
+        recovery correctly ignores terminal (cancelled) manifests.  Require
+        all of the following before reopening the aggregate: the exact legacy
+        cancellation reason, the superseding candidate predates the fanout
+        trigger, the operator has explicitly resumed the run, and every child
+        is terminal.  Intentional cancellations therefore remain terminal.
+        """
+        if recovery_snapshot is not None:
+            manifests = recovery_snapshot.manifests
+        else:
+            fanout_root = self.state_dir / "fanouts"
+            if not fanout_root.exists():
+                return False
+            manifests = (
+                (path.parent.name, self._fanout_manifest(path.parent.name))
+                for path in fanout_root.glob("*/manifest.json")
+            )
+        event_order = {event.id: index for index, event in enumerate(events)}
+        for fanout_id, manifest in manifests:
+            if not manifest or manifest.get("topology") != "fanout_reader":
+                continue
+            aggregate = (
+                manifest.get("aggregate")
+                if isinstance(manifest.get("aggregate"), dict)
+                else {}
+            )
+            if str(aggregate.get("status") or "") != "cancelled":
+                continue
+            if str(aggregate.get("reason") or "") != (
+                "candidate_replan_superseded_by_candidate_ready"
+            ):
+                continue
+            cancellation = next(
+                (
+                    event for event in reversed(events)
+                    if event.type == "fanout.cancelled"
+                    and isinstance(event.payload, dict)
+                    and str(event.payload.get("fanout_id") or "") == fanout_id
+                ),
+                None,
+            )
+            if cancellation is None:
+                continue
+            trigger_index = event_order.get(
+                str(manifest.get("trigger_event_id") or "")
+            )
+            ready_id = str(
+                (cancellation.payload or {}).get("superseded_by") or ""
+            )
+            ready_index = event_order.get(ready_id)
+            cancellation_index = event_order.get(cancellation.id)
+            if (
+                trigger_index is None
+                or ready_index is None
+                or cancellation_index is None
+                or ready_index > trigger_index
+            ):
+                continue
+            if not any(
+                event.type == "candidate.ready" and event.id == ready_id
+                for event in events
+            ):
+                continue
+            run_id = str(
+                manifest.get("workflow_run_id")
+                or manifest.get("trace_id")
+                or ""
+            )
+            resumed = next(
+                (
+                    event for event in reversed(events)
+                    if event.type == "run.resumed"
+                    and event_order.get(event.id, -1) > cancellation_index
+                    and (
+                        not run_id
+                        or str((event.payload or {}).get("run_id") or "")
+                        == run_id
+                    )
+                ),
+                None,
+            )
+            if resumed is None:
+                continue
+            children = [
+                child for child in manifest.get("children", []) or []
+                if isinstance(child, dict)
+            ]
+            if not children or not all(
+                str(child.get("status") or "") in {"completed", "failed"}
+                for child in children
+            ):
+                continue
+            before = event_log_snapshot_token(self.event_log)
+            self._evaluate_reader_fanout(
+                fanout_id,
+                rebuild_request=resumed,
+            )
+            if event_log_snapshot_token(self.event_log) != before:
+                return True
+        return False
     def _resume_unrecorded_writer_fanout_results(
         self,
         events: list[ZfEvent],
@@ -3019,6 +3130,14 @@ class FanoutCoordinationMixin(
                             parent_operation_id,
                         )
                     for key in _DURABLE_CALL_TRIGGER_KEYS:
+                        value = trigger_payload.get(key)
+                        if value not in (None, ""):
+                            child.payload.setdefault(key, value)
+                    # External Issue ingress pins the canonical ZaoFu source
+                    # separately from the Issue content digest.  Keep that
+                    # binding on each reader child so the agent can recognize
+                    # the supplied environment/version as source context.
+                    for key in ("target_commit", "source_code_revision", "target_root"):
                         value = trigger_payload.get(key)
                         if value not in (None, ""):
                             child.payload.setdefault(key, value)
@@ -6614,6 +6733,25 @@ class FanoutCoordinationMixin(
         if ready is None:
             return False
         if ready.id == str(manifest.get("trigger_event_id") or ""):
+            return False
+        # A candidate produced before this fanout is an upstream input, not a
+        # superseding replan. Rework lineage is propagated into downstream
+        # stages, so matching only on ``rework_source`` would incorrectly
+        # cancel the final/verify fanout when an old candidate.ready exists.
+        trigger_id = str(manifest.get("trigger_event_id") or "")
+        trigger_index = next(
+            (index for index, event in enumerate(events) if event.id == trigger_id),
+            None,
+        )
+        ready_index = next(
+            (index for index, event in enumerate(events) if event.id == ready.id),
+            None,
+        )
+        if (
+            trigger_index is not None
+            and ready_index is not None
+            and ready_index <= trigger_index
+        ):
             return False
         fanout_id = str(manifest.get("fanout_id") or "")
         for event in reversed(events):

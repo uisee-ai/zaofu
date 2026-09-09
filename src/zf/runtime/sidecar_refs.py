@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -97,6 +98,55 @@ def write_sidecar_text(
         content_type=content_type,
         schema_version=schema_version,
         encoding=encoding,
+        created_by=created_by,
+        source_event_id=source_event_id,
+        access_scope=access_scope,
+        retention=retention,
+        required=required,
+        preview=preview,
+    )
+
+
+def write_sidecar_bytes(
+    state_dir: Path,
+    relative_ref: str | PurePosixPath,
+    content: bytes,
+    *,
+    kind: str,
+    schema_version: str,
+    created_by: str,
+    source_event_id: str = "",
+    access_scope: dict[str, Any] | None = None,
+    retention: dict[str, Any] | None = None,
+    required: bool = False,
+    content_type: str = "application/octet-stream",
+    preview: str = "",
+) -> dict[str, Any]:
+    """Atomically write immutable binary evidence and return its descriptor."""
+
+    rel = safe_sidecar_ref(relative_ref)
+    target = sidecar_path(state_dir, rel)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and target.read_bytes() != content:
+        raise SidecarRefError("immutable_collision", "sidecar content changed", ref=rel.as_posix())
+    if not target.exists():
+        fd, temporary = tempfile.mkstemp(prefix=f".{target.name}.", dir=target.parent)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+    return build_sidecar_ref_descriptor(
+        kind=kind,
+        ref=rel.as_posix(),
+        sha256=hashlib.sha256(content).hexdigest(),
+        byte_count=len(content),
+        content_type=content_type,
+        schema_version=schema_version,
+        encoding="binary",
         created_by=created_by,
         source_event_id=source_event_id,
         access_scope=access_scope,
@@ -491,5 +541,6 @@ __all__ = [
     "sidecar_path",
     "verify_sidecar_ref",
     "write_sidecar_json",
+    "write_sidecar_bytes",
     "write_sidecar_text",
 ]

@@ -282,6 +282,9 @@ class CandidateRebuilder:
         ref = str(requested_ref or "").strip() or "main"
         if self._git_ref_exists(ref):
             return ref
+        delivery_ref = self._configured_delivery_base_ref()
+        if delivery_ref:
+            return delivery_ref
         if ref != "main":
             return ref
         fallback = self._current_branch()
@@ -290,6 +293,54 @@ class CandidateRebuilder:
         if self._git_ref_exists("HEAD"):
             return "HEAD"
         return ref
+
+    def _configured_delivery_base_ref(self) -> str:
+        """Resolve the configured delivery branch from a local remote ref.
+
+        External Issue candidates are later prepared against
+        ``self_issue.delivery.base_branch``.  When the normal local candidate
+        ref (usually ``main``) is absent, falling straight back to the current
+        checkout makes the candidate base differ from that delivery branch and
+        guarantees a fail-closed rejection at publication time.  Prefer the
+        matching remote-tracking ref when it is already present locally.  This
+        is deliberately read-only: fetching remains an operator concern.
+        """
+        self_issue = getattr(self.config, "self_issue", None)
+        delivery = getattr(self_issue, "delivery", None)
+        if not delivery or not bool(getattr(delivery, "enabled", False)):
+            return ""
+        remote_url = str(getattr(delivery, "remote_url", "") or "").strip()
+        base_branch = str(getattr(delivery, "base_branch", "") or "").strip()
+        if not remote_url or not base_branch:
+            return ""
+        remotes = subprocess.run(
+            ["git", "remote"],
+            cwd=self.project_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_env(),
+        )
+        if remotes.returncode != 0:
+            return ""
+        for remote in remotes.stdout.splitlines():
+            remote = remote.strip()
+            if not remote:
+                continue
+            url = subprocess.run(
+                ["git", "config", "--get", f"remote.{remote}.url"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=False,
+                env=git_env(),
+            )
+            if url.returncode != 0 or url.stdout.strip() != remote_url:
+                continue
+            ref = f"refs/remotes/{remote}/{base_branch}"
+            if self._git_ref_exists(ref):
+                return ref
+        return ""
 
     def _incremental_candidate_base_ref(
         self,

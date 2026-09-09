@@ -19,6 +19,7 @@ from zf.runtime.issue_candidate_delivery import (
     GitHubPullRequestReader,
     IssueCandidateDeliveryService,
 )
+from zf.runtime.self_issue_target import zaofu_v7_root
 
 
 def _git(root: Path, *args: str) -> str:
@@ -43,12 +44,12 @@ def _repo(root: Path) -> tuple[str, str]:
     return base, _git(root, "rev-parse", "HEAD")
 
 
-def _config(state_dir: Path) -> ZfConfig:
+def _config(state_dir: Path, *, target_locked: bool = False) -> ZfConfig:
     config = ZfConfig()
     config.project.state_dir = str(state_dir)
     config.self_issue = SelfIssueConfig(
         enabled=True,
-        target_locked=True,
+        target_locked=target_locked,
         target_project="rzwu-uisee/zaofu-self-issue",
         delivery=ExternalIssueDeliveryConfig(
             enabled=True,
@@ -165,6 +166,21 @@ def _service(root: Path, reader: GitHubPullRequestReader | None = None):
         base,
         head,
     )
+
+
+def test_locked_self_issue_delivery_uses_canonical_zaofu_repository(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+
+    service = IssueCandidateDeliveryService(
+        state_dir=state_dir,
+        project_root=tmp_path,
+        config=_config(state_dir, target_locked=True),
+    )
+
+    assert service.project_root == zaofu_v7_root().resolve()
 
 
 def test_owner_review_and_prepare_create_immutable_local_ref_without_push(
@@ -294,7 +310,7 @@ def test_taskless_candidate_from_another_fix_run_is_not_bound_to_issue(
     assert candidate["pdd_id"] == "PDD-17"
 
 
-def test_candidate_or_source_drift_invalidates_owner_approval(tmp_path: Path) -> None:
+def test_later_issue_revision_does_not_invalidate_bound_candidate(tmp_path: Path) -> None:
     service, state_dir, _base, head = _service(tmp_path)
     issue = _issue()
     service.review(
@@ -309,20 +325,66 @@ def test_candidate_or_source_drift_invalidates_owner_approval(tmp_path: Path) ->
         payload={"source_key": issue.issue_key, "source_revision": "sha256:source-2"},
     )
 
-    with pytest.raises(CandidateDeliveryError, match="source revision changed"):
-        service.prepare(
-            issue,
-            expected_candidate_sha=head,
-            expected_source_revision="sha256:source-1",
-        )
-    assert service.projection(issue)["status"] == "stale"
-    with pytest.raises(CandidateDeliveryError, match="rebuild and reverify"):
-        service.review(
-            issue,
-            verdict="approve",
-            expected_candidate_sha=head,
-            expected_source_revision="sha256:source-1",
-        )
+    projection = service.projection(issue)
+    assert projection["status"] == "approved_for_pr"
+    assert projection["stale_reason"] == ""
+    assert projection["candidate"]["source_revision"] == "sha256:source-1"
+    assert projection["candidate"]["current_source_revision"] == "sha256:source-2"
+
+    prepared = service.prepare(
+        issue,
+        expected_candidate_sha=head,
+        expected_source_revision="sha256:source-1",
+    )
+
+    assert prepared["status"] == "publication_prepared"
+
+
+def test_previous_handoff_does_not_mark_new_verified_candidate_stale(
+    tmp_path: Path,
+) -> None:
+    service, state_dir, base, head = _service(tmp_path)
+    issue = _issue()
+    service.review(
+        issue,
+        verdict="approve",
+        expected_candidate_sha=head,
+        expected_source_revision="sha256:source-1",
+    )
+    next_head = "b" * 40
+    writer = EventWriter(event_log_from_project(state_dir))
+    writer.emit(
+        "candidate.ready",
+        actor="zf-kernel",
+        correlation_id="FIX-17",
+        payload={
+            "workflow_run_id": "FIX-17",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-17-NEXT",
+            "feature_id": "FEATURE-17-NEXT",
+            "candidate_ref": "candidate/PDD-17-NEXT",
+            "candidate_base_commit": base,
+            "candidate_head_commit": next_head,
+            "quality_status": "passed",
+        },
+    )
+    writer.emit(
+        "judge.passed",
+        actor="judge",
+        correlation_id="FIX-17",
+        payload={
+            "workflow_run_id": "FIX-17",
+            "flow_kind": "issue",
+            "pdd_id": "PDD-17-NEXT",
+            "feature_id": "FEATURE-17-NEXT",
+        },
+    )
+
+    projection = service.projection(issue)
+
+    assert projection["status"] == ""
+    assert projection["stale_reason"] == ""
+    assert projection["candidate"]["candidate_head_sha"] == next_head
 
 
 def test_prepare_fails_closed_when_remote_base_drifted(tmp_path: Path) -> None:
@@ -346,6 +408,49 @@ def test_prepare_fails_closed_when_remote_base_drifted(tmp_path: Path) -> None:
     assert not (
         state_dir / "artifacts/issue-triage/delivery/github/17/pr-body.md"
     ).exists()
+
+
+def test_pull_request_reader_uses_local_github_cli_credential(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = "test-token"
+    real_run = subprocess.run
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def run(command, **kwargs):
+        if command == ["gh", "auth", "token"]:
+            return subprocess.CompletedProcess(command, 0, stdout=token + "\n", stderr="")
+        return real_run(command, **kwargs)
+
+    def transport(url: str, headers: dict[str, str]) -> tuple[int, bytes]:
+        if headers.get("Authorization") != f"Bearer {token}":
+            return 403, json.dumps({"message": "API rate limit exceeded"}).encode()
+        if url.endswith("/reviews"):
+            return 200, b"[]"
+        return 200, json.dumps({
+            "number": 26,
+            "html_url": "https://github.com/rzwu-uisee/zaofu-self-issue/pull/26",
+            "state": "open",
+            "head": {
+                "ref": "review/github-issue-23-8c9a46d9",
+                "sha": "8" * 40,
+                "repo": {"full_name": "rzwu-uisee/zaofu-self-issue"},
+            },
+            "base": {"ref": "dev", "sha": "b" * 40},
+        }).encode()
+
+    monkeypatch.setattr(
+        "zf.runtime.issue_candidate_delivery.subprocess.run",
+        run,
+    )
+
+    result = GitHubPullRequestReader(transport=transport).read(
+        "rzwu-uisee/zaofu-self-issue",
+        26,
+    )
+
+    assert result["number"] == 26
 
 
 def test_record_and_refresh_pr_require_exact_repo_base_and_candidate(tmp_path: Path) -> None:

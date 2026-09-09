@@ -23,13 +23,18 @@ def render_publication_markdown(disclosed: dict[str, Any], *, marker: str) -> st
         sections.extend(["## Expected behavior", _user_prose(disclosed["expected_behavior"])])
     if "environment" in disclosed:
         environment = disclosed["environment"] if isinstance(disclosed["environment"], dict) else {}
+        environment_lines = [
+            f"- **Operating system:** {_user_scalar(environment.get('os'))}",
+            f"- **OS version:** {_user_scalar(environment.get('version'))}",
+            f"- **ZaoFu version:** {_user_scalar(disclosed.get('zaofu_version'))}",
+        ]
+        if disclosed.get("source_code_revision"):
+            environment_lines.append(
+                f"- **ZaoFu source commit:** {_user_scalar(disclosed['source_code_revision'])}"
+            )
         sections.extend([
             "## Environment",
-            "\n".join((
-                f"- **Operating system:** {_user_scalar(environment.get('os'))}",
-                f"- **OS version:** {_user_scalar(environment.get('version'))}",
-                f"- **ZaoFu version:** {_user_scalar(disclosed.get('zaofu_version'))}",
-            )),
+            "\n".join(environment_lines),
         ])
     elif "zaofu_version" in disclosed:
         sections.extend(["## ZaoFu version", _user_scalar(disclosed["zaofu_version"])])

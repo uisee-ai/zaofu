@@ -689,6 +689,145 @@ def test_list_and_detail_project_external_issue_workflow_state(tmp_path: Path) -
     assert cancelled["workflow"]["state"] == "triage_cancelled"
 
 
+def test_workflow_projection_exposes_unverified_candidate(tmp_path: Path) -> None:
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(12), repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123", seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    writer.emit("external_issue.triage.queued", actor="kernel", task_id="ISSUE-12",
+                payload={"source_key": mirror.issue_key, "source_revision": "sha256:r",
+                         "workflow_run_id": "TRIAGE-12", "status": "triage_queued"})
+    writer.emit("external_issue.triage.unverified_candidate", actor="kernel", task_id="ISSUE-12",
+                payload={"source_key": mirror.issue_key, "workflow_run_id": "TRIAGE-12",
+                         "verification_status": "partial", "verification_gaps": ["runtime stopped"]})
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    projection = TestClient(app).get("/api/projects/test/issue-triage/12").json()["issue"]["workflow"]
+    assert projection["state"] == "unverified_candidate"
+    assert projection["verification_gaps"] == ["runtime stopped"]
+
+
+def test_workflow_projection_exposes_unique_task_history_newest_first(
+    tmp_path: Path,
+) -> None:
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(12), repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123", seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    for revision, task_id, run_id in (
+        ("sha256:r1", "ISSUE-12", "TRIAGE-12"),
+        ("sha256:r2", "ISSUE-12-R1", "TRIAGE-12-R1"),
+        ("sha256:r2", "ISSUE-12-R1", "TRIAGE-12-R1-RETRY"),
+    ):
+        writer.emit(
+            "external_issue.received", actor="github-poller",
+            payload={"source_key": mirror.issue_key, "source_revision": revision},
+        )
+        writer.emit(
+            "external_issue.triage.queued", actor="kernel", task_id=task_id,
+            payload={
+                "source_key": mirror.issue_key,
+                "source_revision": revision,
+                "workflow_run_id": run_id,
+            },
+        )
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+
+    workflow = TestClient(app).get(
+        "/api/projects/test/issue-triage/12",
+    ).json()["issue"]["workflow"]
+
+    assert workflow["task_id"] == "ISSUE-12-R1"
+    assert workflow["task_history"] == [
+        {"task_id": "ISSUE-12-R1", "source_revision": "sha256:r2"},
+        {"task_id": "ISSUE-12", "source_revision": "sha256:r1"},
+    ]
+
+
+def test_workflow_projection_exposes_ready_to_fix_as_approval_state(tmp_path: Path) -> None:
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(13),
+        repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123",
+        seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    writer.emit(
+        "external_issue.triage.queued", actor="kernel", task_id="ISSUE-13",
+        payload={"source_key": mirror.issue_key, "source_revision": "sha256:r",
+                 "workflow_run_id": "TRIAGE-13", "status": "triage_queued"},
+    )
+    writer.emit(
+        "workflow.invoke.accepted", actor="kernel", task_id="ISSUE-13",
+        payload={"workflow_run_id": "TRIAGE-13"},
+    )
+    writer.emit(
+        "external_issue.triage.ready_to_fix", actor="kernel", task_id="ISSUE-13",
+        payload={"source_key": mirror.issue_key, "workflow_run_id": "TRIAGE-13"},
+    )
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    projection = TestClient(app).get(
+        "/api/projects/test/issue-triage/13"
+    ).json()["issue"]["workflow"]
+    assert projection["state"] == "awaiting_fix_approval"
+
+
+def test_fix_queue_is_not_regressed_by_replayed_delivery_proposal(tmp_path: Path) -> None:
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(14),
+        repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123",
+        seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    writer.emit(
+        "external_issue.triage.queued", actor="external-issue-intake",
+        task_id="ISSUE-14",
+        payload={
+            "source_key": mirror.issue_key,
+            "source_revision": "sha256:revision",
+            "workflow_run_id": "TRIAGE-14",
+        },
+    )
+    proposal = {
+        "proposal": {
+            "proposal_id": "delivery-proposal-1",
+            "payload": {"route_id": "delivery:issue:default"},
+        },
+    }
+    writer.emit("operator.action.proposed", actor="web", task_id="ISSUE-14", payload=proposal)
+    writer.emit(
+        "workflow.invoke.requested", actor="web", task_id="ISSUE-14",
+        payload={"flow_kind": "issue", "workflow_run_id": "FIX-14"},
+    )
+    writer.emit("operator.action.proposed", actor="web", task_id="ISSUE-14", payload={
+        "proposal": {
+            "proposal_id": "delivery-proposal-duplicate",
+            "payload": {"route_id": "delivery:issue:default"},
+        },
+    })
+
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    workflow = TestClient(app).get(
+        "/api/projects/test/issue-triage/14"
+    ).json()["issue"]["workflow"]
+    assert workflow["state"] == "fix_queued"
+    assert workflow["run_id"] == "FIX-14"
+
+
 
 def test_list_filters_all_queued_workflow_states(tmp_path: Path) -> None:
     ctx = configured_context(tmp_path / "state")
@@ -749,10 +888,98 @@ def test_list_filters_all_queued_workflow_states(tmp_path: Path) -> None:
         "/api/projects/test/issue-triage",
         params={"states": json.dumps(["triage_queued", "fix_queued"])},
     ).json()
+    summary_states = client.get(
+        "/api/projects/test/issue-triage/summary",
+    ).json()["states"]
 
     assert [item["number"] for item in triage_queued["items"]] == [7]
     assert [item["number"] for item in fix_queued["items"]] == [8]
     assert {item["number"] for item in both_queued_states["items"]} == {7, 8}
+    assert summary_states == {
+        "fix_queued": 1,
+        "mirrored": 1,
+        "open": 3,
+        "triage_queued": 1,
+    }
+
+
+def test_filter_requests_reuse_the_current_issue_workflow_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from zf.web import issue_triage_routes as routes
+
+    ctx = configured_context(tmp_path / "state")
+    store = IssueMirrorStore(ctx.state_dir)
+    for number in (31, 32):
+        mirror, body = normalize_github_issue(
+            issue_payload(number),
+            repository="rzwu-uisee/zaofu-self-issue",
+            repository_id="123",
+            seen_at="2026-08-25T02:00:00+00:00",
+        )
+        store.upsert(mirror, body)
+    original = routes._workflow_projection
+    calls = 0
+
+    def counted(events, item):
+        nonlocal calls
+        calls += 1
+        return original(events, item)
+
+    monkeypatch.setattr(routes, "_workflow_projection", counted)
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    client = TestClient(app)
+
+    assert client.get("/api/projects/test/issue-triage/summary").status_code == 200
+    first_calls = calls
+    assert client.get(
+        "/api/projects/test/issue-triage",
+        params={"states": json.dumps(["open"])},
+    ).status_code == 200
+
+    assert first_calls == 2
+    assert calls == first_calls
+
+
+def test_workflow_projection_leaves_triaging_after_terminal_success(tmp_path: Path) -> None:
+    ctx = configured_context(tmp_path / "state")
+    mirror, body = normalize_github_issue(
+        issue_payload(),
+        repository="rzwu-uisee/zaofu-self-issue",
+        repository_id="123",
+        seen_at="2026-08-25T02:00:00+00:00",
+    )
+    IssueMirrorStore(ctx.state_dir).upsert(mirror, body)
+    writer = EventWriter(EventLog(ctx.state_dir / "events.jsonl"))
+    writer.emit(
+        "external_issue.received", actor="github-poller",
+        payload={"source_key": mirror.issue_key, "source_revision": "sha256:revision"},
+    )
+    writer.emit(
+        "external_issue.triage.queued", actor="external-issue-intake",
+        task_id="ISSUE-123",
+        payload={
+            "source_key": mirror.issue_key,
+            "source_revision": "sha256:revision",
+            "workflow_run_id": "TRIAGE-123",
+        },
+    )
+    writer.emit(
+        "workflow.invoke.accepted", actor="zf-kernel", task_id="ISSUE-123",
+        payload={"workflow_run_id": "TRIAGE-123"},
+    )
+    writer.emit(
+        "run.goal.completed", actor="zf-cli", task_id="ISSUE-123",
+        payload={"workflow_run_id": "TRIAGE-123", "run_id": "TRIAGE-123"},
+    )
+    app = FastAPI()
+    app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
+    workflow = TestClient(app).get(
+        "/api/projects/test/issue-triage/7"
+    ).json()["issue"]["workflow"]
+    assert workflow["state"] == "awaiting_fix_approval"
 
 
 def test_workflow_projection_tracks_pause_resume_and_fix_cancellation(tmp_path: Path) -> None:
@@ -780,12 +1007,13 @@ def test_workflow_projection_tracks_pause_resume_and_fix_cancellation(tmp_path: 
     )
     writer.emit(
         "workflow.invoke.accepted", actor="zf-kernel", task_id="ISSUE-123",
-        payload={"workflow_run_id": "TRIAGE-123"},
+        payload={"workflow_run_id": "TRIAGE-123", "workflow_id": "external-issue-triage/v1"},
     )
     app = FastAPI()
     app.include_router(build_issue_triage_router(resolve_ctx=lambda project_id: ctx))
     client = TestClient(app)
     assert client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]["state"] == "triaging"
+    assert client.get("/api/projects/test/issue-triage/7").json()["issue"]["workflow"]["workflow_id"] == "external-issue-triage/v1"
 
     writer.emit(
         "run.paused", actor="web", task_id="ISSUE-123",

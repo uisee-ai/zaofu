@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.task.schema import Task
-from zf.core.task.store import TaskStore
+from zf.core.task.store import TERMINAL_STATES, TaskStore
 from zf.runtime.task_workflow_plans import task_workflow_binding_digest
 from zf.runtime.workflow_anchor import (
     is_workflow_managed_task,
@@ -32,7 +32,10 @@ def ensure_workflow_managed_task(
     causation_id: str,
     correlation_id: str,
 ) -> None:
-    if workflow_task is None or is_workflow_managed_task(workflow_task):
+    if workflow_task is None:
+        return
+    reopen_terminal = workflow_task.status in TERMINAL_STATES
+    if is_workflow_managed_task(workflow_task) and not reopen_terminal:
         return
     mark_workflow_managed_task(workflow_task)
     from zf.runtime.task_contract_authority import (
@@ -56,6 +59,16 @@ def ensure_workflow_managed_task(
             "contract_digest": task_workflow_binding_digest(workflow_task),
             "execution_owner": "workflow",
         },
+        task_updates=(
+            {
+                "status": "backlog",
+                "completed_at": None,
+                "cancelled_at": None,
+            }
+            if reopen_terminal
+            else None
+        ),
+        reopen_terminal=reopen_terminal,
     )
 
 

@@ -1213,14 +1213,15 @@ class LifecycleManagerMixin(
             instance_id = getattr(role, "instance_id", "") or getattr(role, "name", "")
             if not instance_id:
                 continue
-            if self._instance_state.get(instance_id) in ("pending_recycle", "recycling"):
-                continue  # 本进程已在管
+            tracked_state = self._instance_state.get(instance_id)
+            if tracked_state == "pending_recycle":
+                continue  # 本进程仍在等待当前工作排空
             try:
                 heartbeat_ts, heartbeat = registry.get_last_heartbeat(instance_id)
             except Exception:
                 continue
             state = str((heartbeat or {}).get("state") or "")
-            if state != "pending_recycle":
+            if state not in {"pending_recycle", "recycling"}:
                 continue
             age = None
             try:
@@ -1236,9 +1237,10 @@ class LifecycleManagerMixin(
             self._set_worker_state(
                 instance_id, "recycling",
                 reason=(
-                    f"orphan pending_recycle rescued after {age:.0f}s silence "
+                    f"orphan {state} rescued after {age:.0f}s silence "
                     "(recycle executor lost across restart, r6-F6)"
                 ),
+                force=True,
             )
             try:
                 self._start_recycle(role)

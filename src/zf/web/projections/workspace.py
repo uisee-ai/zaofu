@@ -11,6 +11,7 @@ from zf.core.workspace import WorkspaceProject
 from zf.core.workspace import WorkspaceRegistry
 from zf.core.workspace import project_lifecycle
 from zf.runtime.automation_projection import project_automations
+from zf.runtime.self_issue_target import zaofu_v7_root
 from zf.web.projections.common import _active_workspace_project_id, _default_workspace_project, _no_default_project_payload, _payload_mentions
 from zf.web.projections.events import _event_to_dict, _events_with_seq
 from zf.web.projections.fanouts import _fanouts
@@ -26,6 +27,33 @@ def _workspace_project_payload(project: WorkspaceProject) -> dict[str, Any]:
     return payload
 
 
+def _workspace_scope_root(default_project_root: Path) -> Path | None:
+    """Return the allowed registry root for the canonical v7 workspace.
+
+    The operator workspace is shared by several historical checkouts.  When
+    Web is launched from the canonical v7 checkout (or one of its projects),
+    only descendants of that checkout belong in the picker.  Test callers and
+    ordinary non-v7 projects retain the previous unrestricted registry view.
+    """
+
+    canonical = zaofu_v7_root().resolve()
+    supplied = Path(default_project_root).resolve()
+    if supplied == canonical or canonical in supplied.parents:
+        return canonical
+    return None
+
+
+def _project_in_scope(project: WorkspaceProject, scope_root: Path | None) -> bool:
+    if scope_root is None:
+        return True
+    try:
+        return scope_root == Path(project.root).expanduser().resolve() or (
+            scope_root in Path(project.root).expanduser().resolve().parents
+        )
+    except OSError:
+        return False
+
+
 def _workspace_projects_payload(
     *,
     default_project_id: str,
@@ -35,6 +63,7 @@ def _workspace_projects_payload(
     default_project_opened_at: str = "",
 ) -> dict[str, Any]:
     projects: dict[str, dict[str, Any]] = {}
+    scope_root = _workspace_scope_root(default_project_root)
     if default_project_id:
         default_project = _default_workspace_project(
             project_id=default_project_id,
@@ -46,6 +75,8 @@ def _workspace_projects_payload(
         projects[default_project_id] = _workspace_project_payload(default_project)
     try:
         for project in WorkspaceRegistry().list_projects():
+            if not _project_in_scope(project, scope_root):
+                continue
             projects[project.project_id] = _workspace_project_payload(project)
     except Exception as exc:
         items = list(projects.values())

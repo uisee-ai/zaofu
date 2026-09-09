@@ -17,7 +17,13 @@ from typing import Any
 from zf.core.config.schema import SelfIssueConfig
 from zf.core.events import EventWriter
 from zf.core.security.redaction import redact_obj
-from zf.core.security.secret_provider import LocalSecretProvider, SecretKey, SecretProvider
+from zf.core.security.secret_provider import (
+    LocalSecretProvider,
+    SecretKey,
+    SecretProvider,
+    forge_credential_store_path,
+    forge_credential_workspace_id,
+)
 from zf.core.self_issue.markdown import render_publication_markdown
 from zf.core.self_issue.models import IssueDraft, PublicationIntent, stable_digest, utc_now
 from zf.core.self_issue.safe_export import (
@@ -51,6 +57,7 @@ from zf.runtime.self_issue_liveness import self_issue_runtime_status
 from zf.runtime.self_issue_github_oauth import SelfIssueGitHubOAuthMixin
 from zf.runtime.self_issue_oauth import SelfIssueOAuthMixin
 from zf.runtime.self_issue_publication import SelfIssuePublicationMixin
+from zf.runtime.self_issue_target import resolve_self_issue_target_root
 
 
 DISCLOSURE_ALLOWLIST = frozenset({
@@ -58,6 +65,7 @@ DISCLOSURE_ALLOWLIST = frozenset({
     "zaofu_version", "additional_context", "attachment_context", "classification", "severity",
     "reproduction_status", "component", "impact_scope", "assessment_confidence",
     "analysis", "recommended_next_action",
+    "source_code_revision",
     "evidence_refs", "published_attachments", "evidence_collection_status",
     "runtime_status", "assessment_status", "evidence_collection_mode",
     "evidence_limit_reason",
@@ -91,7 +99,8 @@ class SelfIssueService(
         policy: SelfIssueConfig | None = None,
     ) -> None:
         self.state_dir = Path(state_dir)
-        self.project_root = Path(project_root)
+        self.policy = policy or SelfIssueConfig()
+        self.project_root = resolve_self_issue_target_root(project_root, self.policy)
         self.writer = writer
         self.drafts = IssueDraftStore(self.state_dir / "self-issues" / "drafts.json")
         self.intakes = SelfIssueIntakeStore(self.state_dir / "self-issues" / "intakes.json")
@@ -105,7 +114,7 @@ class SelfIssueService(
             self.state_dir / "self-issues" / "attachment-preparations.json",
         )
         self.secrets = secret_provider or LocalSecretProvider(
-            self.state_dir / "secrets" / "forge-credentials.json",
+            forge_credential_store_path(self.state_dir),
         )
         default_forge = forge_provider or GitLabComProvider()
         self.forges: dict[str, ForgeProvider] = {
@@ -117,7 +126,6 @@ class SelfIssueService(
         self.forge = default_forge
         self.oauth = oauth_client or GitLabOAuthClient()
         self.github_oauth = github_oauth_client or GitHubDeviceOAuthClient()
-        self.policy = policy or SelfIssueConfig()
 
     def capture(self, payload: dict[str, Any], *, causation_id: str = "") -> dict[str, Any]:
         return self.start_intake(payload, causation_id=causation_id)
@@ -619,6 +627,7 @@ class SelfIssueService(
             "expected_behavior": draft.expected_behavior,
             "environment": draft.environment,
             "zaofu_version": draft.zaofu_version,
+            "source_code_revision": draft.source_code_revision or self._git_head(),
             "additional_context": draft.additional_context,
             "attachment_context": draft.attachment_context,
             "classification": draft.classification,
@@ -644,11 +653,20 @@ class SelfIssueService(
             "evidence_collection_mode": draft.evidence_collection_mode,
             "evidence_limit_reason": draft.evidence_limit_reason,
         }
+        # The questionnaire's ``zaofu_version`` is the human-readable package
+        # version.  The exact source commit is captured when the intake is
+        # promoted, so publishing later cannot silently bind the Issue to a
+        # different checkout.  Legacy drafts fall back to the current head.
+        source_code_revision = draft.source_code_revision or self._git_head()
+        if source_code_revision and source_code_revision != "unknown":
+            values["source_code_revision"] = source_code_revision
         fields.update({
             "assessment_confidence", "evidence_collection_status", "impact_scope",
             "runtime_status", "assessment_status", "evidence_collection_mode",
             "evidence_limit_reason",
         })
+        if "source_code_revision" in values:
+            fields.add("source_code_revision")
         disclosed = {key: values[key] for key in sorted(fields)}
         if provider == "github":
             disclosed.pop("published_attachments", None)
@@ -694,7 +712,10 @@ class SelfIssueService(
             raise ValueError("Self-Issue authorization domain is fixed by zf.yaml")
         return SecretKey(
             user_id=str(payload.get("user_id") or "local-user"),
-            workspace_id=str(payload.get("workspace_id") or self.project_root.resolve()),
+            workspace_id=str(
+                payload.get("workspace_id")
+                or forge_credential_workspace_id(self.project_root)
+            ),
             provider=provider,
             authorization_domain=(
                 configured_domain
@@ -706,7 +727,7 @@ class SelfIssueService(
     def _provider_secret(
         self, key: SecretKey, *, causation_id: str,
     ) -> dict[str, str] | None:
-        with locked_path(self.state_dir / "secrets" / "forge-refresh.lock"):
+        with locked_path(forge_credential_store_path(self.state_dir).with_name("forge-refresh.lock")):
             secret = self.secrets.reveal(key)
             if not secret or not self._token_expired(secret):
                 return secret

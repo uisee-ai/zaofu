@@ -10,6 +10,14 @@ export interface SelfIssueOAuthCallback {
 
 export type SelfIssueCardLayout = "expanded" | "minimized";
 
+export function selfIssueIntakeMountState(
+  intake: unknown,
+  expanded: boolean,
+): { mounted: boolean; hidden: boolean } {
+  const mounted = Boolean(intake);
+  return { mounted, hidden: mounted && !expanded };
+}
+
 export const SELF_ISSUE_RUNTIME_STOPPED_WARNING =
   "ZaoFu runtime is stopped. Intake, Draft persistence, and committed-source inspection still work, "
   + "but fresh runtime events, logs, Traces, failure screenshots, and live reproduction evidence may be unavailable. "

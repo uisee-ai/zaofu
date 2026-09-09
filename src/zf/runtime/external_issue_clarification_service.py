@@ -14,7 +14,12 @@ from zf.core.config.schema import ZfConfig
 from zf.core.events import EventWriter
 from zf.core.events.factory import event_log_from_project
 from zf.core.issue_triage.store import IssueMirrorStore
-from zf.core.security.secret_provider import LocalSecretProvider, SecretKey
+from zf.core.security.secret_provider import (
+    LocalSecretProvider,
+    SecretKey,
+    forge_credential_store_path,
+    forge_credential_workspace_id,
+)
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 from zf.integrations.forge.github import GitHubComProvider, GitHubDeviceOAuthClient
@@ -46,7 +51,7 @@ class ExternalIssueClarificationService:
         self.github = github or GitHubComProvider()
         self.oauth = oauth or GitHubDeviceOAuthClient()
         self.secrets = LocalSecretProvider(
-            self.state_dir / "secrets" / "forge-credentials.json",
+            forge_credential_store_path(self.state_dir),
         )
         target = config.self_issue.targets.get("github")
         self.repository = str(getattr(target, "project", "") or "")
@@ -151,7 +156,10 @@ class ExternalIssueClarificationService:
             ).isoformat(),
             "pending": pending,
             "user_id": str(payload.get("user_id") or "local-user"),
-            "workspace_id": str(payload.get("workspace_id") or self.project_root.resolve()),
+            "workspace_id": str(
+                payload.get("workspace_id")
+                or forge_credential_workspace_id(self.project_root)
+            ),
             "consumed": False,
         }
         with locked_path(self._transactions_path):
@@ -297,7 +305,10 @@ class ExternalIssueClarificationService:
     def _secret_key(self, payload: Mapping[str, Any]) -> SecretKey:
         return SecretKey(
             user_id=str(payload.get("user_id") or "local-user"),
-            workspace_id=str(payload.get("workspace_id") or self.project_root.resolve()),
+            workspace_id=str(
+                payload.get("workspace_id")
+                or forge_credential_workspace_id(self.project_root)
+            ),
             provider="github",
             authorization_domain=self.authorization_domain,
         )

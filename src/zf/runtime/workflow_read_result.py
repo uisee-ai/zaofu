@@ -31,6 +31,11 @@ _TOP_LEVEL_HANDOFF_FIELDS = (
     "result_semantics",
     "failure_class",
     "external_issue_disposition",
+    "external_issue_triage_status",
+    "external_issue_revision",
+    "verification_status",
+    "verification_gaps",
+    "attachment_refs",
 )
 
 
@@ -48,6 +53,11 @@ def normalize_workflow_read_result(
             report[field] = payload_value
 
     status = str(report.get("status") or payload.get("status") or "").lower()
+    external_triage_status = str(
+        report.get("external_issue_triage_status")
+        or payload.get("external_issue_triage_status")
+        or ""
+    ).strip().lower()
     recommendation = str(
         report.get("recommendation")
         or report.get("verdict")
@@ -126,12 +136,59 @@ def normalize_workflow_read_result(
             normalize_external_issue_disposition,
         )
 
+        # External Issue readers may declare a valid actionable outcome while
+        # omitting the human-readable reason.  The report summary is already
+        # an admitted, immutable part of this result, so use it as the
+        # deterministic protocol fallback instead of burning repair rounds on
+        # a shape-only omission.
+        raw_disposition = report.get("external_issue_disposition")
+        if isinstance(raw_disposition, Mapping):
+            outcome = str(raw_disposition.get("outcome") or "").strip().lower()
+            if outcome in {"ready_to_fix", "unverified_candidate"} and not str(
+                raw_disposition.get("reason") or ""
+            ).strip():
+                fallback_reason = str(report.get("summary") or "").strip()
+                if fallback_reason:
+                    report["external_issue_disposition"] = {
+                        **raw_disposition,
+                        "reason": fallback_reason[:1000],
+                    }
+
         disposition, disposition_issues = normalize_external_issue_disposition(
             report.get("external_issue_disposition"),
         )
         issues.extend(disposition_issues)
         if disposition is not None:
             report["external_issue_disposition"] = disposition
+            report["external_issue_triage_status"] = str(disposition.get("outcome") or "")
+    elif external_triage_status in {"needs_info", "needs_info_exhausted"}:
+        # Older readers sometimes emitted only the status field.  Preserve
+        # that semantic result as a safe, structured clarification instead of
+        # silently dropping it at the control-result boundary.
+        report["external_issue_disposition"] = {
+            "schema_version": "external-issue-clarification.v1",
+            "outcome": "needs_info",
+            "reason": str(report.get("summary") or "缺少不可由当前证据推导的必要信息")[:1000],
+            "questions": [{
+                "id": "missing_required_context",
+                "type": "long_text",
+                "question": "请补充仍缺失且无法由现有 Issue、artifact 和源码推导的信息。",
+                "required": True,
+            }],
+        }
+    elif external_triage_status == "unverified_candidate":
+        report["external_issue_disposition"] = {
+            "schema_version": "external-issue-clarification.v1",
+            "outcome": "unverified_candidate",
+            "reason": str(report.get("summary") or "候选修复可继续，但仍有验证缺口")[:1000],
+            "questions": [],
+            "verification_status": str(report.get("verification_status") or "partial"),
+            "verification_gaps": list(report.get("verification_gaps") or []),
+        }
+    if isinstance(report.get("external_issue_disposition"), Mapping):
+        report["external_issue_triage_status"] = str(
+            report["external_issue_disposition"].get("outcome") or ""
+        )
     if not str(report.get("summary") or "").strip():
         issues.append({
             "field": "control_result.summary",

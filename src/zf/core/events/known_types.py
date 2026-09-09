@@ -112,6 +112,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "external_issue.received", "external_issue.triage.queued",
     "external_issue.triage.needs_info",
     "external_issue.triage.needs_info_exhausted",
+    "external_issue.triage.unverified_candidate",
     "external_issue.clarification.published",
     "external_issue.fix_approval.intent",
     # Observability for orphan user.message: emitted by orchestrator

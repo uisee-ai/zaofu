@@ -205,13 +205,16 @@ class TaskStore:
         index = self._load_terminal_index()
         date = index.get(task_id)
         if date is not None:
-            for d in self._load_archive_file(self._archive_file(date)):
+            # One stable Task id may have several terminal attempts.  Archive
+            # files are append-only, so the latest canonical snapshot is the
+            # last matching record, not the first one.
+            for d in reversed(self._load_archive_file(self._archive_file(date))):
                 if d.get("id") == task_id:
                     return self._to_task(d)
         # Final fallback: scan every archive file (handles orphaned records
         # whose index entry was lost).
-        for f in list_archives(self._archive_dir, suffix=".json"):
-            for d in self._load_archive_file(f):
+        for f in reversed(list_archives(self._archive_dir, suffix=".json")):
+            for d in reversed(self._load_archive_file(f)):
                 if d.get("id") == task_id:
                     return self._to_task(d)
         return None
@@ -364,16 +367,51 @@ class TaskStore:
                 )
                 for archive_path in archive_paths:
                     archived = self._load_archive_file(archive_path)
+                    matches = [d for d in archived if d.get("id") == task_id]
+                    # A task may have several archival copies after repeated
+                    # cancellation/retry cycles.  Prefer the copy carrying
+                    # the caller's CAS revision; selecting an older legacy
+                    # copy would make a valid terminal reopen look stale.
                     record = next(
                         (
-                            d for d in reversed(archived)
-                            if d.get("id") == task_id
+                            d for d in reversed(matches)
+                            if str(d.get("contract_authority_revision") or "")
+                            == str(expected_authority_revision or "")
                         ),
-                        None,
+                        matches[-1] if matches else None,
                     )
                     if record is not None:
                         break
                 reopening = record is not None
+            # A crash-safe terminal transition can leave a stale cancelled
+            # copy in the active board while the authoritative copy lives in
+            # the archive.  When a caller supplies the current CAS token,
+            # resolve that archived copy too; otherwise every retry is
+            # rejected against the stale active record (current="").
+            if record is not None and reopen_terminal:
+                current = str(record.get("contract_authority_revision") or "")
+                expected = str(expected_authority_revision or "")
+                if current != expected:
+                    date = self._load_terminal_index().get(task_id)
+                    archive_paths = (
+                        [self._archive_file(date)]
+                        if date
+                        else list(reversed(list_archives(
+                            self._archive_dir,
+                            suffix=".json",
+                        )))
+                    )
+                    for archive_path in archive_paths:
+                        archived = self._load_archive_file(archive_path)
+                        matches = [
+                            d for d in archived
+                            if d.get("id") == task_id
+                            and str(d.get("contract_authority_revision") or "") == expected
+                        ]
+                        if matches:
+                            record = matches[-1]
+                            reopening = True
+                            break
             if record is not None:
                 d = dict(record) if reopening else record
                 current = str(d.get("contract_authority_revision") or "")
@@ -408,6 +446,9 @@ class TaskStore:
                         raise ValueError(
                             "reopened contract mutation must set non-terminal status"
                         )
+                    # Replace any crash-left active duplicate so subsequent
+                    # CAS reads cannot select the stale terminal copy again.
+                    raw = [item for item in raw if item.get("id") != task_id]
                     raw.append(d)
                     # Preserve the crash-safe ordering used by ``reopen``:
                     # publish the active record before removing the terminal

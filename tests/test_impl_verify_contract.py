@@ -40,6 +40,7 @@ from zf.runtime.verification_result import (
     normalize_verification_result,
     recovery_owner,
 )
+from zf.runtime.task_pipeline_briefing import verification_result_template
 
 
 def _task() -> Task:
@@ -184,6 +185,30 @@ def test_verification_result_separates_execution_failure_from_rejection() -> Non
     assert failed["execution_status"] == "failed"
     assert failed["verdict"] == "abstained"
     assert recovery_owner(failed) == "run_manager"
+
+
+def test_verification_result_binds_explicit_identity_to_snapshots() -> None:
+    contract = _snapshot(_task())
+    target = _target({"ref": "artifacts/contract.json", "sha256": "b" * 64})
+    explicit = verification_result_template(contract)
+    explicit.update({
+        "workflow_run_id": "stale-run",
+        "task_map_generation": "malformed-generationmalformed-generation",
+        "contract_revision": "stale-contract",
+        "target_commit": "stale-target",
+    })
+
+    normalized = normalize_verification_result(
+        {"verification_result": explicit},
+        contract_snapshot=contract,
+        target_snapshot=target,
+        strict=False,
+    )
+
+    assert normalized["workflow_run_id"] == contract["workflow_run_id"]
+    assert normalized["task_map_generation"] == contract["task_map_generation"]
+    assert normalized["contract_revision"] == contract["contract_revision"]
+    assert normalized["target_commit"] == target["target_commit"]
 
 
 def test_completed_verdict_requires_symmetric_requirement_matrix() -> None:

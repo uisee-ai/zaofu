@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import stat
 import subprocess
 from dataclasses import asdict, dataclass
@@ -64,7 +65,16 @@ class WorkdirManager:
     def _resolve_root(self, root: Path) -> Path:
         if root.is_absolute():
             return root
-        if root.parts and root.parts[0] == ".zf":
+        # A self-issue runtime may deliberately execute against the locked
+        # canonical source root while its state tree belongs to a harness
+        # project (for example ``.zf-test_issue_intakeWorkflow``).  Config
+        # loading derives ``runtime.workdirs.root`` from that state-dir name;
+        # resolving it against ``project_root`` would escape the state tree
+        # and make on-demand role activation fail closed.  Treat both the
+        # conventional ``.zf`` prefix and the effective state-dir basename
+        # as state-relative roots.
+        state_name = self.state_dir.name
+        if root.parts and root.parts[0] in {".zf", state_name}:
             return self.state_dir.joinpath(*root.parts[1:])
         return self.project_root / root
 
@@ -388,7 +398,17 @@ class WorkdirManager:
                 raise RuntimeError(
                     f"workdir project path exists but is not a git worktree: {project_path}"
                 )
-        else:
+            # Reader worktrees can outlive a project switch.  A prior start
+            # may have created this managed path from the product harness
+            # repository, while a locked Self-Issue run now resolves its
+            # source root to the canonical ZaoFu checkout.  Reusing that
+            # path silently gives the agent an empty/wrong source tree.  The
+            # path is inside our managed state dir, so replace only this
+            # reader worktree when its git common dir belongs to another
+            # repository.
+            if not self._reader_worktree_matches_source(project_path):
+                shutil.rmtree(project_path)
+        if not project_path.exists():
             self._git(
                 self.project_root,
                 "worktree",
@@ -405,6 +425,23 @@ class WorkdirManager:
         )
         self._run_declared_setup(role, project_path)
         self._write_metadata(role, plan, git_worktree_created=True)
+
+    def _reader_worktree_matches_source(self, project_path: Path) -> bool:
+        """Return whether an existing reader worktree uses this source repo."""
+        try:
+            source_common = Path(
+                self._git(self.project_root, "rev-parse", "--git-common-dir")
+            )
+            worktree_common = Path(
+                self._git(project_path, "rev-parse", "--git-common-dir")
+            )
+            if not source_common.is_absolute():
+                source_common = self.project_root / source_common
+            if not worktree_common.is_absolute():
+                worktree_common = project_path / worktree_common
+        except (OSError, RuntimeError):
+            return False
+        return source_common.resolve() == worktree_common.resolve()
 
     def checkout_reader_task_ref(self, role: RoleConfig, task_id: str) -> str | None:
         plan = self.plan(role)
@@ -685,6 +722,15 @@ class WorkdirManager:
         project_path = Path(plan.project_path)
         if not (project_path / ".git").exists():
             return {}
+        # ``candidate_base_ref`` historically defaulted to ``main`` while a
+        # checkout may legitimately use another branch (for example ``v7``).
+        # A writer dispatch must still start from the canonical repository
+        # HEAD when that symbolic ref is absent; otherwise every retry fails
+        # before the provider is even contacted.
+        try:
+            self._git(project_path, "rev-parse", "--verify", f"{source_ref}^{{commit}}")
+        except RuntimeError:
+            source_ref = self._git(self.project_root, "rev-parse", "HEAD").strip()
         before = self._git(project_path, "rev-parse", "HEAD").strip()
         branch = self._git(project_path, "rev-parse", "--abbrev-ref", "HEAD").strip()
         status = self._git(project_path, "status", "--porcelain").strip()

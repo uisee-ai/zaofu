@@ -48,6 +48,11 @@ export function IssueTriageRunDialog({
           onClose();
           return;
         }
+        if (result.status === "invalid_transition" || /invalid Run transition/i.test(result.reason || "")) {
+          await onUpdated("The Run changed in the background. The Issue state was refreshed; continue from its latest state.");
+          onClose();
+          return;
+        }
         throw new Error(result.reason || `Unable to ${kind} this Run.`);
       }
       const notice = kind === "pause"

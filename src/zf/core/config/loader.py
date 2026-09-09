@@ -3398,8 +3398,14 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
     ).strip()
     if not approval_label or len(approval_label) > 100:
         raise ConfigError("self_issue.ingress.approval_label is invalid")
-    target_root = str(ingress_raw.get("target_root") or ".").strip()
-    if not target_root or Path(target_root).is_absolute() or ".." in Path(target_root).parts:
+    target_root = str(ingress_raw.get("target_root") or "zaofu").strip()
+    if (
+        not target_root
+        or (
+            target_root != "zaofu"
+            and (Path(target_root).is_absolute() or ".." in Path(target_root).parts)
+        )
+    ):
         raise ConfigError(
             "self_issue.ingress.target_root must be a relative path within the project"
         )

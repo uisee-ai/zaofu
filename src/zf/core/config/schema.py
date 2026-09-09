@@ -1893,7 +1893,10 @@ class ExternalIssueIngressConfig:
     mode: str = "poll"
     poll_interval_seconds: int = 300
     approval_label: str = "zaofu:ready-to-fix"
-    target_root: str = "."
+    # ``zaofu`` is a symbolic root resolved to the running ZaoFu checkout.
+    # ``.`` remains accepted for backwards-compatible config loading; locked
+    # Self-Issue policy inheritance rewrites it to the symbolic root.
+    target_root: str = "zaofu"
     auto_triage_new_only: bool = True
 
 

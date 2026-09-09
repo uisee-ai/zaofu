@@ -25,6 +25,7 @@ from zf.runtime.workflow_anchor import (
 )
 from zf.runtime.workflow_origin import (
     WorkflowOriginError,
+    build_workflow_origin_binding,
     workflow_origin_digest,
     workflow_origin_from_request,
 )
@@ -33,6 +34,62 @@ from zf.runtime.workflow_requests import load_workflow_request
 
 class WorkflowTaskRequestRotationError(ValueError):
     """A Task Request rotation cannot be proven safe."""
+
+
+def legacy_cli_origin_migration_allowed(
+    prior: dict[str, Any],
+    supplied: dict[str, Any],
+) -> bool:
+    """Allow a one-time repair of requests created by the Kanban CLI shim.
+
+    Older Kanban starts persisted a CLI origin even though the request was
+    initiated from the Kanban Agent. A fresh retry may bind the same project
+    to its actual Kanban conversation; other origin changes remain rejected.
+    """
+    return (
+        str(prior.get("surface") or "") == "cli"
+        and str(prior.get("source") or "") == "kanban-agent"
+        and str(supplied.get("surface") or "") == "kanban_agent"
+        and str(supplied.get("source") or "") == "kanban-agent"
+        and bool(str(prior.get("project_id") or "").strip())
+        and str(prior.get("project_id") or "").strip()
+        == str(supplied.get("project_id") or "").strip()
+    )
+
+
+def terminal_retry_origin_binding(
+    rotation: dict[str, Any],
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Select the immutable origin for a proven terminal retry.
+
+    The only permitted change repairs legacy Kanban requests that were stored
+    as CLI origins.  It requires the same non-empty project and a concrete
+    Kanban conversation; every other retry keeps the prior canonical origin.
+    """
+
+    prior = dict(rotation.get("origin_binding") or {})
+    supplied = payload.get("origin_binding")
+    if not isinstance(supplied, dict):
+        conversation_id = str(payload.get("conversation_id") or "").strip()
+        project_id = str(payload.get("project_id") or "").strip()
+        if conversation_id and project_id:
+            supplied = build_workflow_origin_binding(
+                source=str(prior.get("source") or ""),
+                project_id=project_id,
+                conversation_id=conversation_id,
+                thread_key=str(
+                    payload.get("thread_key")
+                    or payload.get("thread_id")
+                    or "main"
+                ),
+            )
+    if (
+        isinstance(supplied, dict)
+        and legacy_cli_origin_migration_allowed(prior, supplied)
+    ):
+        return dict(supplied)
+    return prior
 
 
 @dataclass(frozen=True)
@@ -119,6 +176,15 @@ def fresh_task_request_origin_binding(
         )
     except WorkflowOriginError:
         supplied_origin_digest = ""
+    supplied_binding = supplied_origin if isinstance(supplied_origin, dict) else None
+    migrated_origin = bool(
+        supplied_binding
+        and rotation
+        and legacy_cli_origin_migration_allowed(
+            dict(rotation.get("origin_binding") or {}),
+            supplied_binding,
+        )
+    )
     if (
         not rotation
         or not isinstance(supplied_origin, dict)
@@ -128,14 +194,17 @@ def fresh_task_request_origin_binding(
         != int(rotation.get("prior_request_revision") or 0)
         or str(payload.get("prior_terminal_event_id") or "").strip()
         != str(rotation.get("prior_terminal_event_id") or "")
-        or supplied_origin_digest
-        != str(rotation.get("origin_binding_digest") or "")
+        or (
+            supplied_origin_digest
+            != str(rotation.get("origin_binding_digest") or "")
+            and not migrated_origin
+        )
     ):
         raise WorkflowTaskRequestRotationError(
             "fresh Workflow Request is not bound to a proven terminal "
             "Task request"
         )
-    return dict(rotation["origin_binding"])
+    return dict(supplied_origin if migrated_origin else rotation["origin_binding"])
 
 
 def task_request_binding_decision(
@@ -172,12 +241,19 @@ def task_request_binding_decision(
         request_id=request_id,
         run_id=str(request_projection.get("run_id") or request_id),
     )
+    legacy_origin_migration = legacy_cli_origin_migration_allowed(
+        dict(rotation.get("origin_binding") or {}),
+        canonical_origin,
+    ) if rotation else False
     if (
         task.status in TERMINAL_STATES
         or not rotation
         or request_id == task_request["request_id"]
         or bool(new_admission.get("status"))
-        or origin_digest != rotation.get("origin_binding_digest")
+        or (
+            origin_digest != rotation.get("origin_binding_digest")
+            and not legacy_origin_migration
+        )
     ):
         raise WorkflowTaskRequestRotationError(
             "workflow Task is already bound to another Workflow Request revision"
@@ -362,6 +438,8 @@ __all__ = [
     "accepted_task_request_rotation_event",
     "apply_task_request_binding",
     "fresh_task_request_origin_binding",
+    "legacy_cli_origin_migration_allowed",
     "task_request_binding_decision",
+    "terminal_retry_origin_binding",
     "terminal_task_request_rotation_context",
 ]

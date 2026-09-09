@@ -1043,6 +1043,30 @@ export function App() {
     void loadSnapshot();
   }, [activeProjectId, activeProjectReady, issueTriageTab, loadSnapshot, page]);
 
+  // The Issues tab intentionally skips the expensive Kanban snapshot, but the
+  // embedded Kanban Agent still needs the snapshot's action allow-list before
+  // it can execute a pending workflow proposal. Load the light snapshot when
+  // the operator opens the Agent so a visible proposal is never silently
+  // dropped by the action gate while `snapshot` is still null.
+  useEffect(() => {
+    // Issue/Triage remains usable while the runtime is stopped. The light
+    // snapshot is also the source of the action allow-list; gating this read
+    // on board readiness leaves visible proposals without a submit handler.
+    if (
+      agentPanelMode === "collapsed"
+      || (snapshot?.project?.project_id && snapshot.project.project_id === activeProjectId)
+      || !activeProjectId
+    ) return;
+    void loadSnapshot("light");
+    // Project bootstrap can invalidate the first read while the workspace
+    // registry settles. Retry a few times so the Agent cannot remain locked
+    // with a visible proposal after that benign race.
+    const retries = [500, 1500, 3000].map((delay) => window.setTimeout(() => {
+      void loadSnapshot("light");
+    }, delay));
+    return () => retries.forEach((timer) => window.clearTimeout(timer));
+  }, [activeProjectId, activeProjectReady, agentPanelMode, loadSnapshot, snapshot]);
+
   useEffect(() => {
     refreshRef.current = refresh;
   }, [refresh]);
@@ -2372,6 +2396,8 @@ export function App() {
                 projectId={activeProjectId}
                 tab={issueTriageTab}
                 onTabChange={setIssueTriageTab}
+                onOpenTask={openTask}
+                onOpenProjection={(kind, id) => void openProjection(kind, id)}
                 runtimeInterventions={(
                   <TriagePage
                     actionResult={actionResult}
@@ -2526,8 +2552,11 @@ export function App() {
           <MessageCircle size={20} strokeWidth={1.9} aria-hidden="true" />
         </button>
       ) : null}
-      {agentPanelHasOpened ? (
-        <div
+      {/* Keep the orchestrator mounted in the background so an automatically
+          detected /issue can surface its intake card without requiring the
+          operator to open Kanban Agent first. The shell remains hidden until
+          explicitly opened. */}
+      <div
           aria-hidden={agentPanelVisible ? undefined : true}
           className={`agent-page-shell ${renderedAgentPanelMode}`}
           hidden={!agentPanelVisible}
@@ -2540,7 +2569,7 @@ export function App() {
               events={events}
               focusSignal={orchestratorFocusSignal}
               panelMode={renderedAgentPanelMode}
-              visible={agentPanelVisible}
+              visible
               onAction={submitAction}
               onPanelModeChange={setAgentPanelMode}
               onLockSession={() => void lockSession()}
@@ -2549,8 +2578,7 @@ export function App() {
               snapshot={snapshot}
               tokenPresent={webActionTokenPresent}
             />
-        </div>
-      ) : null}
+      </div>
       {newChannelOpen ? (
         <NewChannelModal
           actionReady={actionGate.actionReady}

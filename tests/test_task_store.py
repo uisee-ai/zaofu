@@ -89,6 +89,34 @@ def test_get_missing_returns_none(tmp_path: Path):
     assert store.get("nonexistent") is None
 
 
+def test_get_terminal_task_returns_latest_archived_attempt(tmp_path: Path):
+    store = TaskStore(tmp_path / "kanban.json")
+    original = store.add(Task(
+        id="TASK-RETRY",
+        title="First attempt",
+        contract=TaskContract(contract_revision="contract-r1"),
+    ))
+    store.update(original.id, status="done")
+    first = store.get(original.id)
+    assert first is not None
+    store.reopen(Task(
+        **{
+            **first.__dict__,
+            "title": "Second attempt",
+            "status": "backlog",
+            "contract": TaskContract(contract_revision="contract-r2"),
+            "completed_at": None,
+        }
+    ))
+    store.update(original.id, status="done")
+
+    latest = store.get(original.id)
+
+    assert latest is not None
+    assert latest.title == "Second attempt"
+    assert latest.contract.contract_revision == "contract-r2"
+
+
 def test_update_status(tmp_path: Path):
     store = TaskStore(tmp_path / "kanban.json")
     t = store.add(Task(title="Move me"))

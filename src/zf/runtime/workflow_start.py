@@ -35,6 +35,7 @@ from zf.runtime.workflow_route_catalog import (
     workflow_route_catalog,
 )
 from zf.runtime.workflow_task_request_rotation import (
+    terminal_retry_origin_binding,
     terminal_task_request_rotation_context,
 )
 
@@ -262,9 +263,9 @@ class WorkflowStartService:
                     task_id=task_id,
                 )
             origin_binding = (
-                request_projection.get("origin_binding")
-                or terminal_rotation.get("origin_binding")
-                or {}
+                terminal_retry_origin_binding(terminal_rotation, payload)
+                if terminal_rotation
+                else request_projection.get("origin_binding") or {}
             )
             if not _matches_canonical_origin(payload, origin_binding):
                 return _failure(
@@ -476,7 +477,10 @@ class WorkflowStartService:
                     origin_binding.get("thread_key") or "main"
                 )
         elif terminal_rotation:
-            origin_binding = dict(terminal_rotation["origin_binding"])
+            origin_binding = terminal_retry_origin_binding(
+                terminal_rotation,
+                payload,
+            )
             normalized.update({
                 "fresh_request": True,
                 "prior_request_id": str(
@@ -573,20 +577,41 @@ class WorkflowStartService:
             WORKFLOW_START_ACTION,
             proposed_payload,
         )
-        proposal_id = f"proposal-{digest[:24]}"
-        prior = _proposal_by_id(
-            writer.event_log.read_all(),
-            proposal_id=proposal_id,
+        events = writer.event_log.read_all()
+        base_proposal_id = f"proposal-{digest[:24]}"
+        proposal_id = base_proposal_id
+        prior = _latest_proposal_for_digest(
+            events,
+            digest=digest,
+            base_proposal_id=base_proposal_id,
         )
         if prior is not None:
-            return {
-                **preview,
-                "status": "proposal_ready",
-                "proposal_event_id": prior.id,
-                "proposal_id": proposal_id,
-                "proposal_digest": digest,
-                "replayed": True,
-            }
+            prior_payload = prior.payload if isinstance(prior.payload, dict) else {}
+            prior_proposal = (
+                prior_payload.get("proposal")
+                if isinstance(prior_payload.get("proposal"), dict)
+                else {}
+            )
+            prior_id = str(prior_proposal.get("proposal_id") or base_proposal_id)
+            if not _proposal_is_resolved(events, prior, prior_id):
+                return {
+                    **preview,
+                    "status": "proposal_ready",
+                    "proposal_event_id": prior.id,
+                    "proposal_id": prior_id,
+                    "proposal_digest": digest,
+                    "replayed": True,
+                }
+            try:
+                revision = int(prior_proposal.get("revision") or 1) + 1
+            except (TypeError, ValueError):
+                revision = 2
+            # A resolved proposal must not suppress a later approval for the
+            # same task contract.  Keep the payload digest stable for audit,
+            # while giving the new approval a distinct exact identity.
+            proposal_id = f"{base_proposal_id}-r{revision}"
+        else:
+            revision = 1
 
         proposal_event = ZfEvent(
             type=PROPOSAL_EVENT,
@@ -599,7 +624,7 @@ class WorkflowStartService:
             "proposal_event_id": proposal_event.id,
             "proposal_id": proposal_id,
             "proposal_digest": digest,
-            "revision": 1,
+            "revision": revision,
             "expires_at": "",
             "supersedes": "",
             "action": WORKFLOW_START_ACTION,
@@ -798,6 +823,56 @@ def _proposal_by_id(
         if str(proposal.get("proposal_id") or "") == proposal_id:
             return event
     return None
+
+
+def _latest_proposal_for_digest(
+    events: Iterable[ZfEvent],
+    *,
+    digest: str,
+    base_proposal_id: str,
+) -> ZfEvent | None:
+    """Return the newest proposal for one exact action payload.
+
+    Proposal IDs are normally digest-derived.  Once that proposal has been
+    resolved, a retry must receive a new identity; otherwise ``propose``
+    would replay the resolved event forever and the approval queue would stay
+    empty.  Matching the digest also lets us find the suffixed retry IDs.
+    """
+    candidates: list[ZfEvent] = []
+    for event in events:
+        if event.type not in PROPOSAL_EVENT_TYPES:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        proposal = payload.get("proposal")
+        if not isinstance(proposal, dict):
+            continue
+        proposal_id = str(proposal.get("proposal_id") or "")
+        proposal_digest = str(proposal.get("proposal_digest") or "")
+        if proposal_digest == digest or proposal_id == base_proposal_id:
+            candidates.append(event)
+    return candidates[-1] if candidates else None
+
+
+def _proposal_is_resolved(
+    events: Iterable[ZfEvent],
+    proposal_event: ZfEvent,
+    proposal_id: str,
+) -> bool:
+    """Detect resolution of a proposal across both modern and legacy events."""
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if event.type in {"operator.action.resolved", "kanban.agent.proposal.resolved"}:
+            if (
+                str(payload.get("proposal_event_id") or "") == proposal_event.id
+                or str(payload.get("proposal_id") or "") == proposal_id
+            ):
+                return True
+        if event.type == "task.created":
+            request = payload.get("request")
+            request = request if isinstance(request, dict) else {}
+            if str(request.get("proposal_event_id") or "") == proposal_event.id:
+                return True
+    return False
 
 
 def _failure(

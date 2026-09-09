@@ -42,6 +42,16 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
     recovery_snapshot = build_reader_fanout_recovery_snapshot(runtime, events)
     if not recovery_snapshot.consistent:
         return
+    # A pre-fix candidate-order race could cancel a downstream final fanout
+    # after it had already dispatched its child.  Resume is the explicit
+    # operator acknowledgement that this cancelled result may be recovered;
+    # let the runtime rebuild only that narrowly identifiable case before the
+    # normal non-terminal sweep (which intentionally ignores cancelled runs).
+    if runtime._recover_cancelled_reader_fanout_aggregates(
+        events,
+        recovery_snapshot=recovery_snapshot,
+    ):
+        return
     if not has_nonterminal_reader_fanouts(
         runtime,
         recovery_snapshot=recovery_snapshot,

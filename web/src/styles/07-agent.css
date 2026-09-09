@@ -1784,7 +1784,7 @@
   display: flex;
   left: 18px;
   max-width: none;
-  right: 526px;
+  right: min(667px, calc(44vw + 7px), calc(100vw - 32px));
   transform: none;
   width: auto;
 }

@@ -136,9 +136,11 @@ async def test_web_slash_action_persists_answers_and_promotes_to_canonical_draft
                 "answers": _answers(), "current_step": 7,
             },
         )
+        events_before_read = (state / "events.jsonl").read_text(encoding="utf-8")
         restored = await client.post(
             "/api/actions/self-issue-get", headers=headers, json={},
         )
+        events_after_read = (state / "events.jsonl").read_text(encoding="utf-8")
         submitted = await client.post(
             "/api/actions/self-issue-intake-submit", headers=headers,
             json={"intake_id": intake["intake_id"], "answers": _answers()},
@@ -151,9 +153,52 @@ async def test_web_slash_action_persists_answers_and_promotes_to_canonical_draft
     assert browser_capture["target"] == "kanban_board"
     assert browser_capture["base_url"] == "http://test/"
     assert browser_capture["project_id"]
+    assert events_after_read == events_before_read
     assert restored.json()["intake"]["answers"]["bug_description"] == "CLI observed a failure."
     assert submitted.json()["status"] == "draft_collecting_evidence"
     assert json.loads((state / "self-issues" / "drafts.json").read_text())[0]["title"] == "CLI title"
+
+
+async def test_web_external_issue_actions_receive_the_authenticated_user_binding(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    state = _project(tmp_path)
+    monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
+    prepared: list[tuple[str, str, str]] = []
+
+    def record_binding(
+        payload: dict[str, object],
+        action: str,
+        identity: str,
+        project_id: str,
+        project_root: Path,
+        *,
+        web_base_url: str = "",
+    ) -> None:
+        prepared.append((action, identity, project_id))
+
+    monkeypatch.setattr(
+        "zf.web.server.prepare_self_issue_web_payload",
+        record_binding,
+    )
+    app = create_app(
+        state,
+        config=ZfConfig(project=ProjectConfig(name="test", state_dir=".state")),
+        project_root=tmp_path,
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        await client.post(
+            "/api/actions/external-issue-needs-info-submit",
+            headers={"X-ZF-Web-Token": "test-token"},
+            json={"task_id": "ISSUE-1", "response": "details"},
+        )
+
+    assert len(prepared) == 1
+    action, identity, project_id = prepared[0]
+    assert action == "external-issue-needs-info-submit"
+    assert identity == "test-token"
+    assert project_id
 
 
 async def test_web_evidence_start_waits_for_runtime_without_scheduling_an_agent(

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from zf.core.security.secret_provider import SecretKey
+from zf.core.security.secret_provider import SecretKey, forge_credential_workspace_id
 from zf.core.self_issue.models import IssueDraft, PublicationBatch, utc_now
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
@@ -227,7 +227,8 @@ class SelfIssueGitHubOAuthMixin:
             "confirmation_id": batch.confirmation_id,
             "user_id": str(payload.get("user_id") or "local-user"),
             "workspace_id": str(
-                payload.get("workspace_id") or self.project_root.resolve()
+                payload.get("workspace_id")
+                or forge_credential_workspace_id(self.project_root)
             ),
         }, causation_id=causation_id)
         return {

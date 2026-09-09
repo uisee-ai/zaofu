@@ -25,10 +25,14 @@ from zf.core.verification.event_schema import (
 )
 from zf.core.workspace.lifecycle import clear_project_lifecycle_cache, project_lifecycle
 from zf.core.workspace.project_resolver import ProjectResolver, clear_project_resolver_cache
-from zf.core.workspace.registry import WorkspaceRegistry, legacy_project_id
+from zf.core.workspace.registry import WorkspaceProject, WorkspaceRegistry, legacy_project_id
 from zf.runtime.automation_projection import project_automations
 from zf.web.server import create_app
-from zf.web.projections.workspace import _project_action_envelope
+from zf.web.projections.workspace import (
+    _project_action_envelope,
+    _workspace_scope_root,
+    _project_in_scope,
+)
 
 
 def _make_project(
@@ -88,6 +92,40 @@ def test_project_action_envelope_rejects_unrelated_payload_project_id() -> None:
 
     assert envelope["ok"] is False
     assert envelope["status"] == "project_mismatch"
+
+
+def test_workspace_registry_scope_keeps_canonical_checkout_descendants(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    canonical = tmp_path / "zaofu_v7"
+    target = canonical / "awesome-zaofu" / "test_issue_intakeWorkflow"
+    outside = tmp_path / "other-checkout"
+    monkeypatch.setattr(
+        "zf.web.projections.workspace.zaofu_v7_root",
+        lambda: canonical,
+    )
+    scope = _workspace_scope_root(target)
+    assert scope == canonical
+
+    in_scope = WorkspaceProject(
+        project_id="inside",
+        name="inside",
+        root=str(canonical / "awesome-zaofu"),
+        config_path=str(canonical / "awesome-zaofu" / "zf.yaml"),
+        state_dir_hint=str(canonical / "awesome-zaofu" / ".zf"),
+        last_opened_at="",
+    )
+    out_scope = WorkspaceProject(
+        project_id="outside",
+        name="outside",
+        root=str(outside),
+        config_path=str(outside / "zf.yaml"),
+        state_dir_hint=str(outside / ".zf"),
+        last_opened_at="",
+    )
+    assert _project_in_scope(in_scope, scope)
+    assert not _project_in_scope(out_scope, scope)
 
 
 def test_workspace_registry_resolver_reloads_state_dir_hint(

@@ -92,6 +92,7 @@ def build_flow_intake(
         )
     )
     config = _load_project_config(project_root)
+    state_dir: Path | None = None
     if config is not None:
         from zf.runtime.workflow_requests import (
             WorkflowRequestError,
@@ -150,6 +151,7 @@ def build_flow_intake(
         scope=scope,
         binding=task_input_binding or {},
         input_contract=task_input_contract or {},
+        reference_roots=(state_dir,) if state_dir is not None else (),
     )
     normalized_source_refs = task_input.source_refs
     intake_payload = {

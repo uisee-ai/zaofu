@@ -2694,11 +2694,17 @@ export interface IssueTriageItem {
   derived_group: "untriaged" | "triaged" | "closed";
   last_seen_at: string;
   workflow?: {
-    state: "mirrored" | "triage_queued" | "triaging" | "triage_paused" | "triage_recovering" | "triage_blocked" | "triage_cancelled" | "needs_info" | "needs_info_exhausted" | "awaiting_fix_approval" | "fix_queued" | "fixing" | "fix_paused" | "fix_recovering" | "fix_blocked" | "fix_cancelled" | "verifying" | "verified_candidate" | "approved_for_pr" | "owner_changes_requested" | "owner_rejected" | "publication_prepared" | "pr_open" | "pr_changes_requested" | "pr_approved" | "pr_closed_without_merge" | "merged" | "blocked" | "failed" | string;
+    state: "mirrored" | "triage_queued" | "triaging" | "triage_paused" | "triage_recovering" | "triage_blocked" | "triage_cancelled" | "needs_info" | "needs_info_exhausted" | "unverified_candidate" | "awaiting_fix_approval" | "fix_queued" | "fixing" | "fix_paused" | "fix_recovering" | "fix_blocked" | "fix_cancelled" | "verifying" | "verified_candidate" | "approved_for_pr" | "owner_changes_requested" | "owner_rejected" | "publication_prepared" | "pr_open" | "pr_changes_requested" | "pr_approved" | "pr_closed_without_merge" | "merged" | "blocked" | "failed" | string;
     task_id: string;
+    task_history: Array<{
+      task_id: string;
+      source_revision: string;
+    }>;
     source_revision: string;
+    source_code_revision?: string;
     proposal_id: string;
     run_id: string;
+    workflow_id?: string;
     triage_id: string;
     triage_history: Array<{
       triage_id: string;
@@ -2726,6 +2732,9 @@ export interface IssueTriageItem {
         options?: string[];
       }>;
     };
+    disposition?: "ready_to_fix" | "needs_info" | "unverified_candidate" | string;
+    verification_status?: "complete" | "partial" | "not_run" | string;
+    verification_gaps?: string[];
   };
 }
 

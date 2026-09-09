@@ -404,6 +404,31 @@ class TestCodexFirstSpawn:
         assert f'[hooks.state."{hook_key}"]' in text
         assert 'trusted_hash = "sha256:abc"' in text
 
+    def test_codex_home_replaces_existing_global_hook_trust_state(
+        self, tmp_path,
+    ):
+        config = tmp_path / "config.toml"
+        project_root = tmp_path / "project"
+        hook_key = f"{project_root}/.codex/hooks.json:session_start:0:0"
+        config.write_text(
+            f'[hooks.state."{hook_key}"]\n'
+            'trusted_hash = "sha256:old"\n\n'
+            '[notice]\n'
+            'hide_rate_limit_model_nudge = true\n',
+            encoding="utf-8",
+        )
+
+        _write_codex_runtime_hook_trust(
+            config,
+            project_root=project_root,
+            hook_states=[(hook_key, "sha256:new")],
+        )
+
+        text = config.read_text(encoding="utf-8")
+        assert text.count(f'[hooks.state."{hook_key}"]') == 1
+        assert 'trusted_hash = "sha256:new"' in text
+        assert '[notice]\n' in text
+
     def test_codex_spawn_trusts_workdir_project_hooks(
         self, state_dir, registry, transport, tmp_path, monkeypatch,
     ):
@@ -539,6 +564,47 @@ class TestCodexRespawnWithCachedUuid:
         resume_idx = argv.index("resume")
         assert argv[resume_idx + 1] == u
         assert argv[resume_idx - 2:resume_idx] == ["-C", "/tmp/zf"]
+
+    def test_codex_respawn_replaces_session_ending_with_provider_error(
+        self, state_dir, registry, transport
+    ):
+        event_log = EventLog(state_dir / "events.jsonl")
+        coordinator = SpawnCoordinator(
+            state_dir=state_dir,
+            registry=registry,
+            transport=transport,
+            project_root="/tmp/zf",
+            event_log=event_log,
+        )
+        role = RoleConfig(name="dev", backend="codex")
+        sessions_root = coordinator._codex_sessions_root(role)
+        session_id = "57575757-5757-5757-5757-575757575757"
+        folder = sessions_root / "2026" / "09" / "03"
+        folder.mkdir(parents=True)
+        rollout = folder / f"rollout-2026-09-03T00-00-00-{session_id}.jsonl"
+        rollout.write_text(json.dumps({
+            "type": "event_msg",
+            "payload": {
+                "type": "task_complete",
+                "error": {"message": "unexpected status 404 Not Found"},
+            },
+        }) + "\n", encoding="utf-8")
+        registry.observe_codex_session(
+            "dev", since_ts=0, sessions_root=sessions_root,
+        )
+        registry.mark_spawned("dev")
+
+        coordinator.spawn(role)
+
+        _, argv, _ = transport.spawn_calls[-1]
+        assert "resume" not in argv
+        assert registry.get("dev") is None
+        warning = [
+            event for event in event_log.read_all()
+            if event.type == "worker.spawn_warning"
+        ][-1]
+        assert warning.payload["code"] == "codex_cached_session_terminal_error"
+        assert "404 Not Found" in warning.payload["message"]
 
     def test_codex_respawn_rejects_session_owned_by_another_role_home(
         self, state_dir, registry, transport, tmp_path

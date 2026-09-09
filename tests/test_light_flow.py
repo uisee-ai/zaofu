@@ -331,6 +331,23 @@ def test_absolute_target_root_uses_worktree_relative_scope() -> None:
     assert payload["shared_conventions"]["test_path_prefix"] == "tests"
 
 
+def test_prose_verification_guidance_is_not_emitted_as_command() -> None:
+    payload = synthesize_light_task_map(
+        pdd_id="issue",
+        objective="修复 issue",
+        prd_ref="artifacts/issue.md",
+        target_root=".",
+        verification_commands=["执行分诊报告中的验证命令并保存可审计证据。"],
+        flow_kind="issue",
+    )
+
+    task = payload["tasks"][0]
+    assert "verification" not in task
+    assert "validation" not in task
+    assert "Verification guidance:" in " ".join(task["acceptance_criteria"])
+    assert validate_task_map_payload(payload).passed
+
+
 def test_synthesized_task_map_binds_only_explicit_ready_matrix_ports() -> None:
     payload = synthesize_light_task_map(
         pdd_id="default",

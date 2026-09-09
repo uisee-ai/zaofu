@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from zf.cli.main import main
 from zf.core.config.schema import (
@@ -22,7 +23,23 @@ from zf.runtime.workflow_resume import (
     _idempotency_key,
     build_workflow_resume_projection,
 )
-from zf.runtime.workflow_resume_apply import _apply_checkpoint
+from zf.runtime.workflow_resume_apply import _apply_checkpoint, _resume_context_rejections
+
+
+def test_resume_context_allows_state_nested_under_canonical_root(tmp_path: Path) -> None:
+    """Detached product workspaces may keep relative state below source root."""
+
+    workspace = tmp_path / "awesome-zaofu" / "issue-workflow"
+    state_dir = workspace / ".zf"
+    state_dir.mkdir(parents=True)
+    SessionStore(state_dir / "session.yaml").create(project_root=str(workspace))
+    config = SimpleNamespace(project=SimpleNamespace(state_dir=".zf"))
+
+    assert _resume_context_rejections(
+        state_dir,
+        config,
+        project_root=tmp_path,
+    ) == []
 
 
 def test_recover_workflow_resume_pending_cli(

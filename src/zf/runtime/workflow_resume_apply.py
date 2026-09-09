@@ -2353,13 +2353,28 @@ def _resume_context_rejections(
     configured_state_dir = str(
         getattr(getattr(config, "project", None), "state_dir", "") or ""
     )
+    # A workflow may run from a product workspace nested below the canonical
+    # ZaoFu source root.  In that layout the action carries the source root as
+    # ``project_root`` while ``session.yaml`` (and the relative state dir)
+    # live below the workspace root.  Treat that nested session as a valid
+    # detached workspace, but keep rejecting sibling/out-of-tree sessions.
+    session_nested = False
+    if session_root is not None:
+        try:
+            session_root.relative_to(root)
+            session_nested = True
+        except ValueError:
+            session_nested = False
+    nested_state_matches = False
     if configured_state_dir:
         expected = Path(configured_state_dir)
         if not expected.is_absolute():
-            expected = root / expected
+            expected = (session_root if session_nested else root) / expected
         expected = expected.resolve()
+        nested_state_matches = session_nested and expected == actual_state_dir
         runtime_override_allowed = (
             _state_dir_matches_env_override(actual_state_dir, root)
+            or nested_state_matches
             or (session_root is not None and session_root == root)
         )
         if expected != actual_state_dir and not runtime_override_allowed:
@@ -2370,7 +2385,11 @@ def _resume_context_rejections(
                 "actual_state_dir": str(actual_state_dir),
             })
 
-    if session_root is not None and session_root != root:
+    if (
+        session_root is not None
+        and session_root != root
+        and not nested_state_matches
+    ):
         rejections.append({
             "code": "session_project_root_mismatch",
             "reason": "session.yaml project_root does not match current project root",

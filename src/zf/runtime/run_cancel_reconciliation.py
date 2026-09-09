@@ -91,8 +91,17 @@ def _close_cancelled_run(
         else ""
     ).strip() or "workflow run cancelled"
     changed = False
-    task_ids = {str(cancellation.task_id or "").strip()}
-    task_ids.discard("")
+    task_ids: set[str] = set()
+    cancelled_task_id = str(cancellation.task_id or "").strip()
+    if cancelled_task_id:
+        # A stable External Issue task can be reused by a later retry.  A
+        # delayed cancellation event from the previous run must not cancel
+        # that newer attempt merely because it carries the same task id.
+        current = runtime.task_store.get(cancelled_task_id)
+        if current is None or _task_bound_to_run(
+            events, task_id=cancelled_task_id, run_id=run_id, aliases=aliases,
+        ):
+            task_ids.add(cancelled_task_id)
 
     fanout_root = Path(runtime.state_dir) / "fanouts"
     if fanout_root.exists():
@@ -180,7 +189,12 @@ def _close_cancelled_run(
         changed = True
 
     for task in runtime.task_store.list_all():
-        if _task_owned_by_run(task, run_id, aliases):
+        if _task_owned_by_run(task, run_id, aliases) and _task_bound_to_run(
+            events,
+            task_id=str(task.id or ""),
+            run_id=run_id,
+            aliases=aliases,
+        ):
             task_ids.add(task.id)
     for task_id in sorted(task_ids):
         task = runtime.task_store.get(task_id)
@@ -335,6 +349,41 @@ def _task_owned_by_run(
         _same_run(run_id, str(evidence.get(key) or ""), aliases)
         for key in ("workflow_run_id", "workflow_request_id", "run_id")
     )
+
+
+def _task_bound_to_run(
+    events: list[ZfEvent],
+    *,
+    task_id: str,
+    run_id: str,
+    aliases: dict[str, str],
+) -> bool:
+    """Return whether the task's latest explicitly bound run is this run.
+
+    Retry attempts intentionally keep a stable task id.  Cancellation is
+    ordered by event occurrence, so the latest task-scoped run anchor is the
+    mechanical ownership check that prevents an older cancellation from
+    clobbering a newer retry.
+    """
+
+    latest = ""
+    for event in events:
+        if str(event.task_id or "") != task_id:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        candidate = str(
+            payload.get("workflow_run_id")
+            or payload.get("run_id")
+            or event.correlation_id
+            or ""
+        ).strip()
+        if candidate and event.type in {
+            "workflow.invoke.requested",
+            "workflow.invoke.accepted",
+            "external_issue.triage.queued",
+        }:
+            latest = candidate
+    return not latest or _same_run(run_id, latest, aliases)
 
 
 def _fanout_terminal(manifest: dict) -> bool:

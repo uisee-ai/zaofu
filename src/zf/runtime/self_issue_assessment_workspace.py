@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from zf.core.security.redaction import redact_text
+from zf.runtime.self_issue_target import zaofu_v7_root
 
 
 _ALLOWED_SUFFIXES = frozenset({
@@ -185,7 +186,7 @@ def _copy_intake_attachments(
 
 
 def _runtime_harness_root() -> Path:
-    return Path(__file__).resolve().parents[3]
+    return zaofu_v7_root()
 
 
 def _source_spec(path: Path) -> tuple[Path, Path, str] | None:

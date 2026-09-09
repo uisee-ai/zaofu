@@ -48,6 +48,14 @@ def normalize_verification_result(
             default_tier=default_tier,
         )
     result.setdefault("schema_version", SCHEMA_VERSION)
+    # The contract and target snapshots are the kernel-issued identity
+    # authority.  A verifier may edit the semantic verdict, but it must not be
+    # able to carry a stale or accidentally concatenated identity field into
+    # the typed result.  ``setdefault`` here used to preserve malformed values
+    # supplied in an explicit result (for example a duplicated
+    # ``task_map_generation``), which then made call-result admission reject an
+    # otherwise valid verification.  Bind every non-empty snapshot value
+    # explicitly; missing snapshot values retain the legacy fallback below.
     for key in (
         "workflow_run_id",
         "task_id",
@@ -61,7 +69,11 @@ def normalize_verification_result(
         "base_commit",
         "task_ref",
     ):
-        result.setdefault(key, str(contract_snapshot.get(key) or ""))
+        snapshot_value = str(contract_snapshot.get(key) or "")
+        if snapshot_value:
+            result[key] = snapshot_value
+        else:
+            result.setdefault(key, "")
     for key in (
         "contract_snapshot_ref",
         "contract_snapshot_digest",
@@ -69,7 +81,11 @@ def normalize_verification_result(
         "target_commit",
         "target_snapshot_digest",
     ):
-        result.setdefault(key, str(target_snapshot.get(key) or ""))
+        snapshot_value = str(target_snapshot.get(key) or "")
+        if snapshot_value:
+            result[key] = snapshot_value
+        else:
+            result.setdefault(key, "")
     result.setdefault("verification_owner", default_owner)
     result.setdefault("verification_tier", default_tier)
     result.setdefault("summary", str(payload.get("summary") or ""))

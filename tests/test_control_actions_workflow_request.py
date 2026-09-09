@@ -120,6 +120,51 @@ def test_request_is_proposed_before_explicit_submit(tmp_path: Path) -> None:
     ]) == 1
 
 
+def test_workflow_start_preserves_outer_kanban_origin(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, _log = _service(tmp_path)
+    captured: dict[str, object] = {}
+
+    def preview(_self, payload, **_kwargs):
+        captured.update(payload)
+        return {
+            "ok": False,
+            "status": "preflight_blocked",
+            "reason": "test stop",
+            "_status_code": 409,
+        }
+
+    monkeypatch.setattr(
+        "zf.runtime.control_actions_workflow_request.WorkflowStartService.preview",
+        preview,
+    )
+    requested = ZfEvent(
+        type="web.action.requested",
+        actor="web",
+        payload={
+            "request": {
+                "project_id": "demo",
+                "conversation_id": "kanban:demo",
+                "thread_id": "kanban:demo",
+                "thread_key": "kanban:demo",
+            }
+        },
+    )
+    service._workflow_start(
+        requested=requested,
+        action="workflow-start",
+        requested_action="workflow-start",
+        payload={"task_id": "TASK-DEMO", "route_id": "delivery:issue:default"},
+    )
+
+    assert captured["project_id"] == "demo"
+    assert captured["conversation_id"] == "kanban:demo"
+    assert captured["thread_id"] == "kanban:demo"
+    assert captured["thread_key"] == "kanban:demo"
+
+
 def test_terminal_workflow_request_replay_fails_closed(tmp_path: Path) -> None:
     service, log = _service(tmp_path)
     proposed = _execute(service, "workflow-request", {
@@ -485,7 +530,7 @@ def test_workflow_submit_binds_existing_task_before_invoke(
     )
 
 
-def test_workflow_start_rotates_terminal_request_for_blocked_task(
+def test_workflow_start_rotates_legacy_cli_request_to_kanban_origin(
     tmp_path: Path,
 ) -> None:
     service, log = _service(tmp_path)
@@ -506,8 +551,6 @@ def test_workflow_start_rotates_terminal_request_for_blocked_task(
         "task_id": "TASK-ROTATE",
         "allow_missing_env": True,
         "project_id": "demo",
-        "conversation_id": "kanban:demo",
-        "thread_key": "session-expiry",
     })
     submitted = _execute(service, "workflow-submit", {
         "intake_ref": proposed["intake_ref"],
@@ -523,6 +566,8 @@ def test_workflow_start_rotates_terminal_request_for_blocked_task(
         service.state_dir,
         proposed["request_id"],
     )
+    assert old_request["origin_binding"]["surface"] == "cli"
+    assert old_request["origin_binding"]["source"] == "kanban-agent"
     terminal = EventWriter(log).emit(
         "run.goal.blocked",
         actor="orchestrator",
@@ -550,6 +595,20 @@ def test_workflow_start_rotates_terminal_request_for_blocked_task(
         project_root=tmp_path,
     )
     routes = start.routes(task_id="TASK-ROTATE")
+    wrong_project = start.preview(
+        {
+            "task_id": "TASK-ROTATE",
+            "route_id": "research:fixed",
+            "objective": "Retry the blocked delivery with the same contract.",
+            "task_contract_digest": routes["task_contract_digest"],
+            "config_digest": routes["config_digest"],
+            "project_id": "other-project",
+            "conversation_id": "kanban:other-project",
+            "thread_id": "session-expiry",
+        },
+        require_bindings=True,
+        origin="web",
+    )
     preview = start.preview(
         {
             "task_id": "TASK-ROTATE",
@@ -565,14 +624,19 @@ def test_workflow_start_rotates_terminal_request_for_blocked_task(
         origin="web",
     )
 
+    assert wrong_project["status"] == "origin_binding_mismatch"
     assert preview["ok"] is True, preview
     assert preview["payload"]["fresh_request"] is True
     assert "request_id" not in preview["payload"]
     assert preview["payload"]["prior_request_id"] == proposed["request_id"]
     assert preview["payload"]["prior_terminal_event_id"] == terminal.id
-    assert preview["payload"]["origin_binding"] == proposed["origin_binding"]
     assert preview["payload"]["origin_binding"]["surface"] == (
         "kanban_agent"
+    )
+    assert preview["payload"]["origin_binding"]["source"] == "kanban-agent"
+    assert preview["payload"]["origin_binding"]["project_id"] == "demo"
+    assert preview["payload"]["origin_binding"]["conversation_id"] == (
+        "kanban:demo"
     )
 
     next_request = _execute(service, "workflow-request", {
@@ -613,7 +677,7 @@ def test_workflow_start_rotates_terminal_request_for_blocked_task(
     assert load_workflow_request(
         service.state_dir,
         new_request_id,
-    )["origin_binding"] == proposed["origin_binding"]
+    )["origin_binding"] == preview["payload"]["origin_binding"]
     invokes = [
         event
         for event in log.read_all()

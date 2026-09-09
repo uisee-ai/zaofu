@@ -34,6 +34,7 @@ def materialize_task_workflow_input(
     scope: Sequence[str],
     binding: Mapping[str, Any],
     input_contract: Mapping[str, Any],
+    reference_roots: tuple[Path, ...] = (),
 ) -> MaterializedTaskInput:
     normalized_source_refs = dict(source_refs)
     if binding or input_contract:
@@ -47,6 +48,7 @@ def materialize_task_workflow_input(
             constraints=list(constraints),
             scope=list(scope),
             project_root=project_root,
+            reference_roots=reference_roots,
         )
     if not input_contract:
         return MaterializedTaskInput(normalized_source_refs, "", "")

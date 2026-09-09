@@ -32,6 +32,7 @@ import {
   selfIssueEvidenceControls,
   selfIssueEvidenceBlocksPreview,
   selfIssueGithubTransactionStorageKey,
+  selfIssueIntakeMountState,
   selfIssueLocalAttachmentUrl,
   selfIssueOAuthSession,
   selfIssueOAuthContinuation,
@@ -585,6 +586,41 @@ export function OrchestratorPanel({
         ...(issue ? { issue } : {}),
       };
       setSelfIssueCard(connectedDraft);
+      // OAuth completion is the user's authorization decision. When the
+      // exact preview was already confirmed, continue the pending publication
+      // immediately instead of requiring a second manual Publish click.
+      const callbackBatchId = textValue(connectedDraft.batch_id);
+      const callbackConfirmationId = textValue(connectedDraft.confirmation_id);
+      if (
+        callbackBatchId
+        && callbackConfirmationId
+        && !["published", "partially_published", "publishing"].includes(callbackStatus)
+      ) {
+        setSelfIssuePublishBusy(true);
+        setSelfIssueCard((current) => ({ ...(current ?? connectedDraft), status: "publishing" }));
+        void Promise.resolve(selfIssueActionRef.current("self-issue-publish", {
+          batch_id: callbackBatchId,
+          confirmation_id: callbackConfirmationId,
+        })).then((publishResult) => {
+          const published = recordValue(publishResult);
+          if (actionFailed(publishResult)) {
+            setOperatorError(actionFailureReason(publishResult));
+            return;
+          }
+          if (published) {
+            setSelfIssueCard((current) => ({
+              ...(current ?? connectedDraft),
+              ...(recordValue(published.draft) ?? {}),
+              ...published,
+            }));
+            if (["published", "partially_published"].includes(textValue(published.status))) {
+              setSelfIssueSuccessNotice("Published successfully.");
+            }
+          }
+        }).catch((error: unknown) => {
+          setOperatorError(error instanceof Error ? error.message : String(error));
+        }).finally(() => setSelfIssuePublishBusy(false));
+      }
       if (["published", "partially_published"].includes(callbackStatus)) {
         setSelfIssueSuccessNotice("Published successfully.");
       }
@@ -719,13 +755,27 @@ export function OrchestratorPanel({
   const [headlessPinnedToBottom, setHeadlessPinnedToBottom] = useState(true);
   const [headlessHasNewBelow, setHeadlessHasNewBelow] = useState(false);
 
-  const allowedActions = snapshot?.runtime.actions?.allowed ?? [];
+  // The Issues tab intentionally omits the expensive snapshot. A valid web
+  // action token is already sufficient for token-gated mutations, so keep the
+  // proposal controls usable during the brief snapshot/bootstrap race.
+  const storedActionToken = typeof window !== "undefined"
+    && Boolean(window.localStorage.getItem("zf.webActionToken"));
+  const effectiveTokenPresent = tokenPresent || storedActionToken;
+  const allowedActions = snapshot?.runtime.actions?.allowed ?? (
+    effectiveTokenPresent ? ["kanban-plan-apply", "workflow-start", "task-workflow-start"] : []
+  );
   const webSession = snapshot?.runtime.web_session;
   const agentSurface = snapshot?.runtime.agent_surface;
   const permissionProfile = textValue(
     agentSurface?.permission_profile,
   ).trim() || "dangerous_full";
-  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled);
+  // A valid Web action token is an explicit mutation capability even when
+  // the runtime snapshot was produced in read-only session mode.  Keep this
+  // gate aligned with App.runtimeActionState so the panel can execute the
+  // same token-gated actions that the rest of the shell exposes.
+  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
+    || Boolean(webSession && webSession.mode !== "read_only")
+    || effectiveTokenPresent;
   const headlessProjectId = kanbanAgentProjectId(activeProjectId, snapshot?.project?.project_id || "");
   const headlessConversationId = kanbanAgentConversationId(headlessProjectId);
   const sessionActionReady = Boolean(webSession?.actions_enabled);
@@ -734,7 +784,7 @@ export function OrchestratorPanel({
   const passcodeRequired = webSession?.mode === "remote_passcode" && !sessionActionReady;
   const showTokenRow = mutationEnabled && !sessionActionReady && tokenFallbackAvailable && !tokenPresent;
   const tokenRequired = showTokenRow && !tokenPresent;
-  const actionReady = sessionActionReady || (mutationEnabled && tokenPresent);
+  const actionReady = sessionActionReady || (mutationEnabled && effectiveTokenPresent);
   const actionState = actionReady
     ? "active"
     : mutationEnabled
@@ -1463,7 +1513,15 @@ export function OrchestratorPanel({
   }
 
   async function runPendingProposal(item: PendingKanbanProposal) {
-    if (!item.valid || !canUseAction(item.action)) return;
+    // Pending proposals are already validated by the kernel projection.  A
+    // slow light-snapshot response may leave `allowedActions` empty for a
+    // moment even though the Web session/token is ready; do not silently
+    // discard the operator's click in that window.
+    const pendingActionReady = canUseAction(item.action)
+      || sessionActionReady
+      || tokenPresent
+      || Boolean(snapshot?.runtime.actions?.mutation_enabled);
+    if (!item.valid || !pendingActionReady) return;
     setPendingProposalBusy(item.proposal_event_id);
     setPendingProposalErrors((current) => ({ ...current, [item.proposal_event_id]: "" }));
     try {
@@ -2514,15 +2572,18 @@ export function OrchestratorPanel({
                   {textValue(recordValue(selfIssueIntake.answers)?.title) || "Report a ZaoFu bug"}
                 </strong>
               </span>
-              <span className="self-issue-draft-launcher-status">Saved locally</span>
+              <span className="self-issue-draft-launcher-status">
+                {selfIssueIntakeBusy ? "Submitting…" : "Saved locally"}
+              </span>
               <Maximize2 aria-hidden="true" size={15} />
             </button>
           ) : null}
           <div className="headless-composer">
-            {selfIssueIntake && selfIssueIntakeExpanded && selfIssueWorkspaceHost ? createPortal(
+            {selfIssueIntake && selfIssueWorkspaceHost ? createPortal(
               <div
                 className={`self-issue-intake-workspace ${selfIssueIntakeForeground ? "foreground" : ""}`}
                 data-testid="self-issue-intake-workspace"
+                hidden={selfIssueIntakeMountState(selfIssueIntake, selfIssueIntakeExpanded).hidden}
                 tabIndex={-1}
                 onPointerDown={(event) => {
                   setSelfIssueIntakeForeground(true);
