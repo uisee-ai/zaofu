@@ -137,6 +137,14 @@ def _operator_backend_options(*, configured_backend: str = "") -> list[dict[str,
     ]
 
 
+def _light_operator_agent_surface(*, configured_backend: str = "") -> dict[str, Any]:
+    """Return just enough provider truth for the always-available Web chat."""
+    return {
+        "configured_backend": configured_backend,
+        "backends": _operator_backend_options(configured_backend=configured_backend),
+    }
+
+
 def _operator_backend_capabilities(backend: str) -> dict[str, Any]:
     capabilities = provider_capability_for_backend(backend)
     if backend in {"claude-headless", "codex-headless"}:

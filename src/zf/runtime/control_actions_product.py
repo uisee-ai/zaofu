@@ -236,6 +236,22 @@ class ProductActionsMixin:
                     config=self.config,
                 )
             )
+            if workflow_plan_warning and channel_authority:
+                # A canonical Channel PRD handoff promises a second, Task-bound
+                # Workflow Plan. Refuse a partial handoff when the active route
+                # catalog or parameters can no longer produce that Plan.
+                return self._failed(
+                    requested=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    task_id=task.id,
+                    reason=(
+                        "Channel PRD workflow handoff preflight failed: "
+                        + workflow_plan_warning
+                    ),
+                    status_code=422,
+                    status="channel_prd_handoff_invalid",
+                )
         try:
             created = store.add(task)
         except Exception as exc:

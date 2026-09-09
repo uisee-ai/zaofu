@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -32,13 +33,14 @@ ALLOWED_OVERRIDE_KEYS = {
     "budget",
     "discussion_mode",
 }
-ALLOWED_ROLE_OVERRIDE_KEYS = {"backend", "model", "enabled"}
+ALLOWED_ROLE_OVERRIDE_KEYS = {"backend", "model", "enabled", "profile_id"}
 ALLOWED_BUDGET_KEYS = {"max_rounds", "max_parallel_replies", "phase_deadline_seconds"}
 ALLOWED_DEADLINE_PHASES = {
     "phase1_blind",
     "phase2_relay",
     "phase3_synthesis",
 }
+PROFILE_ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
 
 
 def _member(
@@ -320,6 +322,15 @@ def materialize_channel_template(
             if not bool(by_role[role].get("optional")):
                 return None, f"required template role cannot be disabled: {role}"
             by_role[role]["enabled"] = False
+        if "profile_id" in raw:
+            profile_id = str(raw.get("profile_id") or "").strip()
+            if not PROFILE_ID_RE.fullmatch(profile_id):
+                return None, (
+                    f"role_overrides.{role}.profile_id must be a valid "
+                    "Channel profile id"
+                )
+            by_role[role]["profile_id"] = profile_id
+            by_role[role]["profile_selection_explicit"] = True
         role_backend = str(raw.get("backend") or backend).strip()
         if not normalize_provider(role_backend):
             return None, f"unsupported channel backend for {role}: {role_backend}"
@@ -335,7 +346,7 @@ def materialize_channel_template(
         member.setdefault("provider", provider)
         member.setdefault("model", model)
         member["member_type"] = "provider_agent"
-        member["profile_id"] = str(member["member_id"])
+        member.setdefault("profile_id", str(member["member_id"]))
         member["profile_revision"] = 1
         member["profile_provenance"] = "template_inline"
         member["permission_profile"] = "read_only"
@@ -383,15 +394,18 @@ def materialize_channel_template(
     unknown_budget = sorted(set(budget) - ALLOWED_BUDGET_KEYS)
     if unknown_budget:
         return None, f"unsupported channel budget override: {', '.join(unknown_budget)}"
-    max_rounds, error = _bounded_budget_int(
-        budget.get("max_rounds"),
-        default=max(8, len(enabled_members) * 4),
-        minimum=1,
-        maximum=256,
-        field="max_rounds",
-    )
-    if error:
-        return None, error
+    max_rounds_explicit = budget.get("max_rounds") not in (None, "")
+    max_rounds = 0
+    if max_rounds_explicit:
+        max_rounds, error = _bounded_budget_int(
+            budget.get("max_rounds"),
+            default=0,
+            minimum=1,
+            maximum=256,
+            field="max_rounds",
+        )
+        if error:
+            return None, error
     max_parallel_replies, error = _bounded_budget_int(
         budget.get("max_parallel_replies"),
         default=len(enabled_members),
@@ -417,6 +431,7 @@ def materialize_channel_template(
         or ""
     )
     discussion["max_rounds"] = max_rounds
+    discussion["max_rounds_explicit"] = max_rounds_explicit
     discussion["max_parallel_replies"] = max_parallel_replies
     if deadlines:
         discussion["phase_deadline_seconds"] = deadlines

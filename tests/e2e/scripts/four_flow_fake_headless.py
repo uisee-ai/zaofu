@@ -250,6 +250,60 @@ def _canonical_prd(context: Mapping[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _pending_task_workflow_plan(
+    *,
+    prompt: str,
+    marker: str,
+    flow_kind: str,
+) -> dict[str, Any]:
+    context = _prompt_context(prompt)
+    catalog = context.get("workflow_route_catalog")
+    routes = catalog.get("routes") if isinstance(catalog, Mapping) else []
+    route_id = FLOW_ROUTES[flow_kind]
+    if route_id not in {
+        str(route.get("route_id") or "")
+        for route in routes or []
+        if isinstance(route, Mapping)
+    }:
+        raise ValueError(f"workflow route is not active: {route_id}")
+
+    parameters: dict[str, Any] = {"backend": "mock"}
+    for line in prompt.splitlines():
+        if line.startswith("project_root: "):
+            parameters["target_root"] = line.removeprefix(
+                "project_root: "
+            ).strip()
+            break
+    if flow_kind == "refactor":
+        parameters["source_root"] = os.environ[
+            "ZF_FOUR_FLOW_SOURCE_ROOT"
+        ]
+    return {
+        "header": f"{flow_kind.title()} workflow route",
+        "question_id": f"{flow_kind}-workflow-route",
+        "question": f"How should {marker} execute the confirmed PRD?",
+        "options": [
+            {
+                "id": f"{flow_kind}-delivery",
+                "label": f"{flow_kind.title()} delivery (Recommended)",
+                "description": f"Start the active {route_id} route.",
+                "recommended": True,
+                "route_id": route_id,
+                "objective": f"Run {marker} through {route_id}.",
+                "parameters": parameters,
+            },
+            {
+                "id": "continue",
+                "label": "Do not start yet",
+                "description": "Keep the Task tracked without execution.",
+                "mode": "defer",
+            },
+        ],
+        "allow_other": False,
+        "reason": "Workflow ignition requires a separate confirmation.",
+    }
+
+
 def _task_create_plan(
     *,
     prompt: str,
@@ -296,6 +350,11 @@ def _task_create_plan(
                             ],
                             "explicit_non_goals": [],
                             "skills_required": [],
+                            "workflow_plan": _pending_task_workflow_plan(
+                                prompt=prompt,
+                                marker=marker,
+                                flow_kind=flow_kind,
+                            ),
                         },
                     },
                 },
@@ -318,67 +377,46 @@ def _task_workflow_plan(
     marker: str,
     flow_kind: str,
 ) -> dict[str, Any]:
-    context = _prompt_context(prompt)
     task_id = _prompt_task_id(prompt)
     if not task_id:
         raise ValueError("task_workflow Plan requires task_id")
-    catalog = context.get("workflow_route_catalog")
-    routes = catalog.get("routes") if isinstance(catalog, Mapping) else []
-    route_id = FLOW_ROUTES[flow_kind]
-    if route_id not in {
-        str(route.get("route_id") or "")
-        for route in routes or []
-        if isinstance(route, Mapping)
-    }:
-        raise ValueError(f"workflow route is not active: {route_id}")
-
-    parameters: dict[str, Any] = {"backend": "mock"}
-    project_root = ""
-    for line in prompt.splitlines():
-        if line.startswith("project_root: "):
-            project_root = line.removeprefix("project_root: ").strip()
-            break
-    if project_root:
-        parameters["target_root"] = project_root
-    if flow_kind == "refactor":
-        parameters["source_root"] = os.environ[
-            "ZF_FOUR_FLOW_SOURCE_ROOT"
-        ]
+    workflow_plan = _pending_task_workflow_plan(
+        prompt=prompt,
+        marker=marker,
+        flow_kind=flow_kind,
+    )
+    options = []
+    for option in workflow_plan["options"]:
+        option = dict(option)
+        if option.get("route_id"):
+            options.append({
+                "id": option["id"],
+                "label": option["label"],
+                "description": option["description"],
+                "recommended": option.get("recommended", False),
+                "effect": {
+                    "mode": "propose",
+                    "action": "workflow-start",
+                    "payload": {
+                        "task_id": task_id,
+                        "route_id": option["route_id"],
+                        "objective": option["objective"],
+                        "parameters": option.get("parameters", {}),
+                    },
+                },
+            })
+        else:
+            options.append({
+                "id": option["id"],
+                "label": option["label"],
+                "description": option["description"],
+                "effect": {"mode": "continue"},
+            })
 
     return {
         "plan_request": {
             "subject_type": "task_workflow",
-            "header": f"{flow_kind.title()} workflow route",
-            "question_id": f"{flow_kind}-workflow-route",
-            "question": f"How should {marker} execute the confirmed PRD?",
-            "options": [
-                {
-                    "id": f"{flow_kind}-delivery",
-                    "label": f"{flow_kind.title()} delivery (Recommended)",
-                    "description": f"Start the active {route_id} route.",
-                    "recommended": True,
-                    "effect": {
-                        "mode": "propose",
-                        "action": "workflow-start",
-                        "payload": {
-                            "task_id": task_id,
-                            "route_id": route_id,
-                            "objective": (
-                                f"Run {marker} through {route_id}."
-                            ),
-                            "parameters": parameters,
-                        },
-                    },
-                },
-                {
-                    "id": "continue",
-                    "label": "Do not start yet",
-                    "description": "Keep the Task tracked without execution.",
-                    "effect": {"mode": "continue"},
-                },
-            ],
-            "allow_other": False,
-            "reason": "Workflow ignition requires a separate confirmation.",
+            **workflow_plan,
         },
     }
 

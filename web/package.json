@@ -19,7 +19,7 @@
     "qa:visual": "node scripts/visual-product-qa.mjs",
     "test:observability-model": "node scripts/run-unit-tests.mjs tests/observabilityModel.test.ts",
     "test:goal-coverage-model": "node scripts/run-unit-tests.mjs tests/goalCoverageModel.test.ts tests/deliveryWorkModel.test.ts tests/deliveryWorkGraphModel.test.ts",
-    "test:agent-session": "node scripts/run-unit-tests.mjs tests/agentJsonDisplay.test.ts tests/agentToolOutput.test.ts tests/agentWorkState.test.ts tests/agentToolGrouping.test.ts tests/markdownGuard.test.ts tests/channelProjection.test.ts tests/contributionPresentation.test.ts tests/channelWorkflowPlanning.test.ts tests/kanbanSessionEvents.test.ts tests/notices.test.ts tests/liveRunIndicator.test.ts tests/channelLiveStream.test.ts",
+    "test:agent-session": "node scripts/run-unit-tests.mjs tests/agentJsonDisplay.test.ts tests/agentToolOutput.test.ts tests/agentWorkState.test.ts tests/agentToolGrouping.test.ts tests/markdownGuard.test.ts tests/channelProjection.test.ts tests/contributionPresentation.test.ts tests/channelWorkflowPlanning.test.ts tests/kanbanSessionEvents.test.ts tests/kanbanSessionNavigation.test.ts tests/notices.test.ts tests/liveRunIndicator.test.ts tests/channelLiveStream.test.ts",
     "smoke": "playwright test",
     "e2e": "playwright test"
   },

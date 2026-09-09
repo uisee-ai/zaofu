@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from zf.runtime.channel_question_gate import question_dedup_gate_state
+
 
 _ACTIVE_REPLY_STATUSES = {"pending", "queued", "running", "started"}
 _QUEUED_REPLY_STATUSES = {"pending", "queued"}
@@ -75,6 +77,16 @@ def project_discussion_attention(
             if str(item.get("status") or "") == "open"
         ]
         owner_questions = owner_questionnaires.get(thread_id, [])
+        question_consolidation_status = question_dedup_gate_state(
+            channel,
+            thread_id=thread_id,
+        )
+        question_consolidation_pending = (
+            question_consolidation_status != "open"
+        )
+        visible_owner_questions = (
+            [] if question_consolidation_pending else owner_questions
+        )
         synthesis_requests = [
             item for item in channel["synthesis_requests"]
             if isinstance(item, dict)
@@ -150,7 +162,8 @@ def project_discussion_attention(
         state, reason = _attention_state(
             phase=phase,
             outcome=outcome,
-            owner_questions=bool(owner_questions),
+            owner_questions=bool(visible_owner_questions),
+            question_consolidation_status=question_consolidation_status,
             owner_confirmation_required=owner_confirmation_required,
             has_replies=bool(replies),
             active_replies=bool(active_replies),
@@ -164,7 +177,8 @@ def project_discussion_attention(
         execution_state = _execution_state(
             phase=phase,
             outcome=outcome,
-            owner_questions=bool(owner_questions),
+            owner_questions=bool(visible_owner_questions),
+            question_consolidation_status=question_consolidation_status,
             owner_confirmation_required=owner_confirmation_required,
             has_replies=bool(replies),
             active_replies=bool(active_replies),
@@ -176,8 +190,10 @@ def project_discussion_attention(
             open_questions=bool(open_questions),
         )
         attention_kind = (
-            "question"
-            if owner_questions
+            "consolidating"
+            if question_consolidation_pending
+            else "question"
+            if visible_owner_questions
             else "review"
             if owner_confirmation_required
             else "none"
@@ -216,14 +232,14 @@ def project_discussion_attention(
             "attention_kind": attention_kind,
             "blocking_scope": (
                 "phase"
-                if attention_kind == "question"
+                if attention_kind in {"question", "consolidating"}
                 else "workflow"
                 if attention_kind == "review"
                 else "none"
             ),
             "blocks_transition": (
                 "synthesis"
-                if attention_kind == "question"
+                if attention_kind in {"question", "consolidating"}
                 else "consensus"
                 if attention_kind == "review"
                 else ""
@@ -253,9 +269,10 @@ def project_discussion_attention(
             ),
             "failed_reply_count": failed_count,
             "open_question_count": len(open_questions),
-            "owner_question_count": len(owner_questions),
+            "owner_question_count": len(visible_owner_questions),
             "total_question_count": len(questions),
             "resolved_question_count": len(questions) - len(open_questions),
+            "question_consolidation_status": question_consolidation_status,
             "last_activity_at": max(
                 (item for item in activity_times if item),
                 default="",
@@ -272,7 +289,7 @@ def project_discussion_attention(
                     and bool(replies)
                     and not active_replies
                     and not failed_count
-                    and not owner_questions
+                    and not visible_owner_questions
                     and not open_questions
                     and not latest_synthesis_status
                     and not syntheses
@@ -280,7 +297,7 @@ def project_discussion_attention(
                 )
             ),
             "can_restart": state == "blocked",
-            "can_review_questions": bool(owner_questions),
+            "can_review_questions": bool(visible_owner_questions),
             "can_review_result": reason == "owner_confirmation_required",
             "can_view_activity": bool(
                 session
@@ -299,6 +316,7 @@ def _attention_state(
     phase: str,
     outcome: str,
     owner_questions: bool,
+    question_consolidation_status: str,
     owner_confirmation_required: bool,
     has_replies: bool,
     active_replies: bool,
@@ -309,6 +327,10 @@ def _attention_state(
     owner_confirmed: bool,
     open_questions: bool,
 ) -> tuple[str, str]:
+    if question_consolidation_status == "consolidating":
+        return "running", "question_consolidation_active"
+    if question_consolidation_status == "blocked":
+        return "blocked", "question_consolidation_blocked"
     if owner_questions:
         return "needs_input", "owner_questions_open"
     if owner_confirmation_required:
@@ -358,6 +380,7 @@ def _execution_state(
     phase: str,
     outcome: str,
     owner_questions: bool,
+    question_consolidation_status: str,
     owner_confirmation_required: bool,
     has_replies: bool,
     active_replies: bool,
@@ -369,6 +392,10 @@ def _execution_state(
     open_questions: bool,
 ) -> str:
     """Project work progress independently from operator attention."""
+    if question_consolidation_status == "consolidating":
+        return "running"
+    if question_consolidation_status == "blocked":
+        return "blocked"
     if phase == "idle" and outcome == "consensus":
         return "done"
     if phase == "idle" and outcome == "stalled":

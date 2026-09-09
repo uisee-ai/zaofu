@@ -11,13 +11,16 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.rotation import list_archives
+
+if TYPE_CHECKING:
+    from zf.core.events.log import EventLog
 
 
 @dataclass(frozen=True)
@@ -335,7 +338,9 @@ def hydrate_event_at(
     offset: int,
     length: int,
     config: ZfConfig | None = None,
+    event_log: EventLog | None = None,
 ) -> ZfEvent | None:
+    """Decode one indexed event, optionally reusing a caller-owned decoder."""
     path = Path(state_dir) / segment
     try:
         with path.open("rb") as fh:
@@ -346,4 +351,5 @@ def hydrate_event_at(
     line = raw.decode("utf-8", "replace").strip()
     if not line:
         return None
-    return event_log_from_project(state_dir, config=config).decode_line(line)
+    decoder = event_log or event_log_from_project(state_dir, config=config)
+    return decoder.decode_line(line)

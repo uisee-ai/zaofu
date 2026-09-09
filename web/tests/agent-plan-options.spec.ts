@@ -59,3 +59,12 @@ test("Plan option cards use radio indicators instead of ordinal numbers", async 
   await firstCard.click();
   await expect(firstCard.locator('input[type="radio"]')).toBeChecked();
 });
+
+test("Adaptive Channel plan shows selected Profiles without an implicit round cap", async ({ page }) => {
+  await page.goto("/?fixture=agent-session");
+  const plan = page.getByTestId("fx-adaptive-channel-plan-options");
+  await expect(plan).toContainText("Synthesis-adaptive passes");
+  await expect(plan).toContainText("Architecture Codex");
+  await expect(plan).not.toContainText("0 rounds");
+  await expect(plan).not.toContainText("0 round cap");
+});

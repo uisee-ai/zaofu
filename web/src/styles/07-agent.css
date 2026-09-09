@@ -915,6 +915,14 @@
   font-size: var(--text-12);
 }
 
+.agent-plan-option-guidance {
+  margin-top: 5px !important;
+  border-left: 2px solid color-mix(in oklab, var(--brand) 42%, var(--line));
+  padding-left: 6px;
+  color: color-mix(in oklab, var(--text) 72%, var(--muted-foreground)) !important;
+  line-height: 1.35;
+}
+
 .agent-plan-option textarea {
   width: 100%;
   min-height: 48px;
@@ -1615,9 +1623,14 @@
   transform: rotate(45deg);
 }
 
-/* chat-e2e F2: durable pending-proposal strip above the composer */
+/* Durable pending actions stay visually separate from the message composer. */
 .headless-pending-proposals {
-  border-top: 1px solid var(--line);
+  flex: 0 0 auto;
+  width: var(--headless-lane-width);
+  max-width: var(--headless-lane-width);
+  margin: 0 auto 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: color-mix(in oklab, var(--brand) 5%, transparent);
   padding: 6px 10px;
   display: flex;

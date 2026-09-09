@@ -28,6 +28,8 @@ const detail = {
     thread_id: "main",
     artifact_ref: "channel-artifacts/ch-prd/prd.md",
     artifact_digest: "sha256:canonical",
+    readiness_ref: "channels/ch-prd/prd/r1-readiness.json",
+    readiness_digest: "sha256:readiness",
     readiness_verdict: "ready",
     implementation_start: true,
     open_questions: [],
@@ -39,6 +41,8 @@ const detail = {
       artifact_digest: "canonical",
       reached_event_id: "evt-consensus",
       prd_revision: 7,
+      readiness_ref: "channels/ch-prd/prd/r1-readiness.json",
+      readiness_digest: "readiness",
       readiness_verdict: "ready",
       implementation_start: true,
     },
@@ -89,8 +93,12 @@ assert(
   "empty task id should request a task_create Plan",
 );
 assert(
-  taskCreateRequest.message.includes("不要直接创建 Task 或启动 workflow"),
-  "Task-create request should preserve the proposal boundary",
+  taskCreateRequest.message.includes("workflow_plan 必须有 2-3 个选项"),
+  "Task-create request should prepare a bounded Workflow Plan",
+);
+assert(
+  taskCreateRequest.message.includes("Task 确认只能创建 Task 并发布第二个 Workflow Plan"),
+  "Task-create request should preserve the second confirmation boundary",
 );
 const { expected_output: _taskCreateOutput, ...taskCreateAuthority } = (
   taskCreateRequest.workflowContext
@@ -129,15 +137,62 @@ const implementationBlocked = {
   }],
 } as ChannelDetail;
 assert(
-  !canonicalChannelPrd(implementationBlocked).ready,
-  "implementation_start=false must block Task/workflow planning",
+  canonicalChannelPrd(implementationBlocked).ready,
+  "implementation_start=false should still allow Task/workflow planning",
 );
-assertEqual(buildChannelWorkflowPlanningRequest({
+assert(buildChannelWorkflowPlanningRequest({
   channelId: "ch-prd",
   detail: implementationBlocked,
-  objective: "Do not start implementation.",
+  objective: "Plan the approved work without starting implementation.",
   taskId: "",
-}), null, "non-ready PRD should not produce a Task-create request");
+}), "planning-ready PRD should produce a Task-create request");
+
+const ownerAcceptedReadiness = {
+  ...detail,
+  syntheses: [{
+    ...(detail.syntheses?.[0] ?? {}),
+    readiness_verdict: "needs_owner",
+    implementation_start: false,
+  }],
+  consensus: {
+    main: {
+      ...(detail.consensus?.main ?? {}),
+      readiness_verdict: "needs_owner",
+      implementation_start: false,
+      human_confirmed: true,
+      risk_accepted: true,
+      confirmed_readiness_ref: "channels/ch-prd/prd/r1-readiness.json",
+      confirmed_readiness_digest: "sha256:readiness",
+    },
+  },
+} as ChannelDetail;
+assert(
+  canonicalChannelPrd(ownerAcceptedReadiness).ready,
+  "exact owner risk acceptance should authorize the matching Channel PRD",
+);
+assert(
+  buildChannelWorkflowPlanningRequest({
+    channelId: "ch-prd",
+    detail: ownerAcceptedReadiness,
+    objective: "Create the accepted Task.",
+    taskId: "",
+  }),
+  "exact owner risk acceptance should enable Task planning",
+);
+
+const mismatchedOwnerAcceptance = {
+  ...ownerAcceptedReadiness,
+  consensus: {
+    main: {
+      ...(ownerAcceptedReadiness.consensus?.main ?? {}),
+      confirmed_readiness_digest: "sha256:other-readiness",
+    },
+  },
+} as ChannelDetail;
+assert(
+  !canonicalChannelPrd(mismatchedOwnerAcceptance).ready,
+  "a risk acceptance for another readiness artifact must not authorize planning",
+);
 
 assertEqual(resolveChannelWorkflowBackend({
   storedBackend: "claude-headless",

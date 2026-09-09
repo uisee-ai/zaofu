@@ -5,6 +5,7 @@ from pathlib import Path
 
 from zf.cli.main import main
 from zf.core.config.loader import load_config
+from zf.core.config.schema import WorkflowStageConfig
 from zf.core.events import EventLog, EventWriter
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
@@ -234,6 +235,55 @@ def test_channel_prd_task_marks_unbound_research_route_ineligible(
     assert research["task_eligibility"] == "blocked"
     assert preview["status"] == "workflow_route_ineligible"
     assert "Workflow Request binding" in preview["reason"]
+
+
+def test_channel_prd_task_binds_lineage_for_general_route(
+    tmp_path: Path,
+) -> None:
+    project_root, state_dir = _project(tmp_path)
+    config = load_config(project_root / "zf.yaml")
+    store = TaskStore(state_dir / "kanban.json")
+    task = store.get("TASK-WORKFLOW-START")
+    assert task is not None
+    task.contract.source_mode = "channel_prd"
+    task.contract.source_ref = "channel-artifacts/ch-prd/prd.md"
+    task.contract.source_revision = "3"
+    task.contract.evidence_contract = {
+        "channel_id": "ch-prd",
+        "thread_id": "main",
+        "prd_revision": 3,
+        "channel_prd_digest": "sha256:canonical",
+        "readiness_ref": "channel-artifacts/ch-prd/readiness.md",
+        "readiness_digest": "sha256:ready",
+    }
+    store.update(task.id, contract=task.contract)
+    config.workflow.stages.append(
+        WorkflowStageConfig(
+            id="scope",
+            trigger="workflow.invoke.requested",
+            topology="single_reader",
+            roles=["source_researcher"],
+        )
+    )
+    service = WorkflowStartService(state_dir, config)
+
+    preview = service.preview(
+        {
+            "task_id": task.id,
+            "route_id": "general:scope",
+            "objective": "Scope the confirmed Channel PRD.",
+        },
+        require_bindings=False,
+    )
+
+    assert preview["ok"] is True
+    assert preview["payload"]["task_input_binding"]
+    source_refs = preview["payload"]["parameters"]["source_refs"]
+    assert source_refs["channel_prd_ref"] == (
+        "channel-artifacts/ch-prd/prd.md"
+    )
+    assert source_refs["channel_prd_digest"] == "sha256:canonical"
+    assert source_refs["channel_prd_revision"] == "3"
 
 
 def test_delivery_route_rejects_incomplete_task_contract_before_invoke(

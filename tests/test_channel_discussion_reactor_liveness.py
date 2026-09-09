@@ -32,6 +32,9 @@ from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.state.session import SessionStore
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_prd_render import channel_requirement_text
+from zf.runtime.channel_reply_prompt import channel_reply_response_contract
+from zf.runtime.channel_sidecar import channel_message_event_payload
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.tmux import TmuxSession
 from zf.runtime.transport import TmuxTransport
@@ -81,6 +84,20 @@ def _seed_phase1_two_of_three_replied(log: EventLog) -> None:
         type="channel.created",
         actor="web",
         payload={"channel_id": CHANNEL_ID, "name": "disc", "source": "web"},
+        correlation_id=CHANNEL_ID,
+    ))
+    log.append(ZfEvent(
+        type="channel.message.posted",
+        actor="web",
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "message_id": TRIGGER,
+            "member_id": "web",
+            "role": "user",
+            "text": "Preserve the original closed product requirement.",
+            "source": "web",
+        },
         correlation_id=CHANNEL_ID,
     ))
     for member in ROSTER:
@@ -467,6 +484,276 @@ def test_synthesis_request_dispatches_live_through_layer2_kernel_path(
         and event.payload.get("request_id") == "synth-live-1"
     ]
     assert len(proposals) == 1
+
+
+def _seed_synthesis_waiting_for_selective_next_round(
+    log: EventLog,
+    *,
+    targets: list[str],
+) -> ZfEvent:
+    log.append(ZfEvent(
+        type="channel.created",
+        actor="web",
+        payload={"channel_id": CHANNEL_ID, "name": "disc", "source": "web"},
+        correlation_id=CHANNEL_ID,
+    ))
+    for member in ROSTER:
+        log.append(ZfEvent(
+            type="channel.member.added",
+            actor="web",
+            payload={
+                "channel_id": CHANNEL_ID,
+                "thread_id": "main",
+                "member_id": member,
+                "member_type": "provider_agent",
+                "provider": "fake",
+                "backend": "fake",
+                "permissions": ["read", "message"],
+                "source": "web",
+            },
+            correlation_id=CHANNEL_ID,
+        ))
+    # The projection still has a display fallback, but no explicit owner cap.
+    log.append(ZfEvent(
+        type="channel.discussion.mode.set",
+        actor="web",
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "mode": "multi_lens",
+            "source": "web",
+        },
+        correlation_id=CHANNEL_ID,
+    ))
+    log.append(ZfEvent(
+        type="channel.discussion.started",
+        actor="channel-discussion",
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "discussion_id": "discussion-selective",
+            # Deliberately past the projection-only display fallback. P0 must
+            # not impose a hidden automatic round budget.
+            "revision": 8,
+            "context_digest": "ctx-selective",
+            "roster": ROSTER,
+            "synthesizer": "pm-1",
+            "requirement_message_id": TRIGGER,
+            "source": "runtime",
+        },
+        correlation_id=CHANNEL_ID,
+    ))
+    log.append(ZfEvent(
+        type="channel.discussion.phase.changed",
+        actor="channel-discussion",
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "phase": "phase3_synthesis",
+            "reason": "test",
+            "source": "runtime",
+        },
+        correlation_id=CHANNEL_ID,
+    ))
+    synthesis = ZfEvent(
+        type="channel.synthesis.proposed",
+        actor="pm-1",
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "request_id": "synth-selective-1",
+            "summary": "Architecture and critic need one focused pass.",
+            "next_round": {
+                "action": "continue",
+                "reason": "Their replay-safety conclusions conflict.",
+                "objective": "Resolve the replay boundary with evidence.",
+                "target_member_ids": targets,
+            },
+            "source": "runtime",
+        },
+        correlation_id=CHANNEL_ID,
+    )
+    log.append(synthesis)
+    return synthesis
+
+
+def test_synthesis_next_round_dispatches_live_without_implicit_budget(
+    state_dir: Path,
+    config: ZfConfig,
+    transport: TmuxTransport,
+) -> None:
+    log = EventLog(state_dir / "events.jsonl")
+    synthesis = _seed_synthesis_waiting_for_selective_next_round(
+        log,
+        targets=["arch-1", "critic-1"],
+    )
+    log.append(ZfEvent(
+        type="channel.message.posted",
+        actor="web",
+        payload=channel_message_event_payload(
+            state_dir,
+            {
+                "channel_id": CHANNEL_ID,
+                "thread_id": "main",
+                "message_id": TRIGGER,
+                "member_id": "web",
+                "role": "user",
+                "text": "Preserve the original closed product requirement.",
+                "source": "web",
+            },
+            created_by="test",
+        ),
+        correlation_id=CHANNEL_ID,
+    ))
+    orch = Orchestrator(state_dir, config, transport)
+    proposed = orch.event_writer.emit(
+        "channel.discussion.next_round.proposed",
+        actor="pm-1",
+        causation_id=synthesis.id,
+        correlation_id=CHANNEL_ID,
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "synthesis_event_id": synthesis.id,
+            "synthesis_request_id": "synth-selective-1",
+            "discussion_id": "discussion-selective",
+            "expected_revision": 8,
+            "expected_context_digest": "ctx-selective",
+            "reason": "Their replay-safety conclusions conflict.",
+            "objective": "Resolve the replay boundary with evidence.",
+            "target_member_ids": ["arch-1", "critic-1"],
+            "source": "runtime",
+        },
+    )
+
+    orch.run_once(events=[proposed])
+
+    events = log.read_all()
+    continued = [
+        event for event in events
+        if event.type == "channel.discussion.continued"
+    ]
+    assert len(continued) == 1
+    assert continued[0].payload["revision"] == 9
+    assert continued[0].payload["roster"] == ["arch-1", "critic-1"]
+    assert continued[0].payload["synthesis_event_id"] == synthesis.id
+    detail = project_channel(state_dir, CHANNEL_ID) or {}
+    assert detail["discussion"]["max_rounds_explicit"] is False
+    # The focused fake providers reply inline. Once their contribution route is
+    # correctly selected, this same live reaction advances into phase 2.
+    assert detail["discussions"]["main"]["state"] == "phase2_relay"
+    assert detail["discussions"]["main"]["revision"] == 9
+    assert detail["discussions"]["main"]["requirement_message_id"] == TRIGGER
+    assert channel_requirement_text(state_dir, detail, "main") == (
+        "Preserve the original closed product requirement."
+    )
+    messages = [
+        event for event in events
+        if event.type == "channel.message.posted"
+        and event.payload.get("refs", {}).get("adaptive_next_round_id")
+    ]
+    assert len(messages) == 1
+    assert continued[0].payload["requirement_message_id"] == TRIGGER
+    assert (
+        continued[0].payload["adaptive_next_round_message_id"]
+        == messages[0].payload["message_id"]
+    )
+    assert messages[0].payload["mentions"] == ["arch-1", "critic-1"]
+    refs = messages[0].payload["refs"]
+    assert refs["originating_synthesis_event_id"] == synthesis.id
+    assert refs["originating_synthesis_request_id"] == "synth-selective-1"
+    assert "synthesis_request_id" not in refs
+
+    # Replay of the same proposal may re-drive delivery, never the state move.
+    orch.run_once(events=[proposed])
+    replayed = log.read_all()
+    assert len([
+        event for event in replayed
+        if event.type == "channel.discussion.continued"
+    ]) == 1
+    assert len([
+        event for event in replayed
+        if event.type == "channel.message.posted"
+        and event.payload.get("refs", {}).get("adaptive_next_round_id")
+    ]) == 1
+
+
+def test_adaptive_next_round_uses_contribution_contract_despite_synthesis_lineage() -> None:
+    """A next-pass member must not be mistaken for the Synthesizer."""
+    contract = channel_reply_response_contract(
+        {
+            "discussions": {
+                "main": {
+                    "state": "phase1_blind",
+                    "requirement_message_id": "msg-next-round",
+                },
+            },
+        },
+        {
+            "thread_id": "main",
+            "message_id": "msg-next-round",
+            "target_member_id": "arch-1",
+        },
+        {
+            "refs": {
+                "adaptive_next_round_id": "next-round-1",
+                "synthesis_event_id": "evt-synth-1",
+                "synthesis_request_id": "synth-1",
+            },
+        },
+    )
+
+    assert "channel_contribution" in contract
+    assert "one JSON object named channel_synthesis" not in contract
+    assert "not a Synthesizer turn" in contract
+
+
+def test_synthesis_next_round_rejects_target_outside_current_roster(
+    state_dir: Path,
+    config: ZfConfig,
+    transport: TmuxTransport,
+) -> None:
+    log = EventLog(state_dir / "events.jsonl")
+    synthesis = _seed_synthesis_waiting_for_selective_next_round(
+        log,
+        targets=["not-a-member"],
+    )
+    orch = Orchestrator(state_dir, config, transport)
+    proposed = orch.event_writer.emit(
+        "channel.discussion.next_round.proposed",
+        actor="pm-1",
+        causation_id=synthesis.id,
+        correlation_id=CHANNEL_ID,
+        payload={
+            "channel_id": CHANNEL_ID,
+            "thread_id": "main",
+            "synthesis_event_id": synthesis.id,
+            "synthesis_request_id": "synth-selective-1",
+            "discussion_id": "discussion-selective",
+            "expected_revision": 8,
+            "expected_context_digest": "ctx-selective",
+            "reason": "Their replay-safety conclusions conflict.",
+            "objective": "Resolve the replay boundary with evidence.",
+            "target_member_ids": ["not-a-member"],
+            "source": "runtime",
+        },
+    )
+
+    orch.run_once(events=[proposed])
+
+    events = log.read_all()
+    rejected = [
+        event for event in events
+        if event.type == "channel.discussion.next_round.rejected"
+    ]
+    assert len(rejected) == 1
+    assert rejected[0].payload["reason"] == (
+        "next_round_targets_not_in_current_roster"
+    )
+    assert not [
+        event for event in events
+        if event.type == "channel.discussion.continued"
+    ]
 
 
 def test_synthesis_replay_routes_message_left_before_reply_request(

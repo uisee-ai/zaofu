@@ -5,6 +5,9 @@ from __future__ import annotations
 import hashlib
 
 from zf.core.events import ZfEvent
+from zf.runtime.channel_adaptive_round_reactor import (
+    react_channel_synthesis_next_round_proposed,
+)
 from zf.runtime.channel_router import route_channel_message
 from zf.runtime.channel_sidecar import channel_message_event_payload
 
@@ -13,6 +16,9 @@ def react_channel_synthesis_requested(
     host,
     event: ZfEvent,
 ) -> None:
+    if event.type == "channel.discussion.next_round.proposed":
+        react_channel_synthesis_next_round_proposed(host, event)
+        return
     payload = event.payload if isinstance(event.payload, dict) else {}
     channel_id = str(
         payload.get("channel_id") or event.correlation_id or ""

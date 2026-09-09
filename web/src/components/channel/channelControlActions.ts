@@ -8,7 +8,6 @@ export function discussionModePayload(
     channel_id: channelId,
     thread_id: threadId,
     mode,
-    max_rounds: 6,
     default_responder_id: defaultResponderId,
     source: "web-channel-discussion",
   };

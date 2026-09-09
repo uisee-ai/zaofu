@@ -63,6 +63,11 @@ def validate_channel_contract(
         if freeze is not None and not isinstance(freeze, bool):
             return "freeze must be a boolean"
     else:
+        _, next_round_error = normalize_synthesis_next_round(
+            body.get("next_round")
+        )
+        if next_round_error:
+            return next_round_error
         workflow = body.get("recommended_workflow")
         if workflow is not None and not isinstance(workflow, dict):
             return "recommended_workflow must be an object"
@@ -102,6 +107,59 @@ def validate_channel_contract(
             ):
                 return "readiness.implementation_start requires verdict=ready"
     return ""
+
+
+def normalize_synthesis_next_round(
+    value: object,
+) -> tuple[dict[str, Any], str]:
+    """Normalize the optional semantic request for one selective next pass."""
+
+    default = {
+        "action": "finalize",
+        "reason": "",
+        "objective": "",
+        "target_member_ids": [],
+    }
+    if value in (None, ""):
+        return default, ""
+    if not isinstance(value, dict):
+        return {}, "next_round must be an object"
+    unknown = sorted(set(value) - set(default))
+    if unknown:
+        return {}, "next_round has unsupported field(s): " + ", ".join(unknown)
+    action = str(value.get("action") or "").strip().lower()
+    if action not in {"finalize", "continue"}:
+        return {}, "next_round.action must be finalize or continue"
+    reason = str(value.get("reason") or "").strip()
+    objective = str(value.get("objective") or "").strip()
+    raw_targets = value.get("target_member_ids")
+    if raw_targets is None:
+        raw_targets = []
+    if not isinstance(raw_targets, list):
+        return {}, "next_round.target_member_ids must be a list"
+    targets = [str(item).strip() for item in raw_targets if str(item).strip()]
+    if len(targets) != len(set(targets)):
+        return {}, "next_round.target_member_ids must not contain duplicates"
+    if action == "finalize":
+        if reason or objective or targets:
+            return {}, "next_round.finalize must not include reason, objective, or targets"
+        return default, ""
+    if not reason:
+        return {}, "next_round.reason is required when action=continue"
+    if not objective:
+        return {}, "next_round.objective is required when action=continue"
+    if not targets:
+        return {}, "next_round.target_member_ids is required when action=continue"
+    if len(reason) > 2000 or len(objective) > 4000:
+        return {}, "next_round reason or objective exceeds the bounded contract"
+    if len(targets) > 32:
+        return {}, "next_round.target_member_ids exceeds 32"
+    return {
+        "action": "continue",
+        "reason": reason,
+        "objective": objective,
+        "target_member_ids": targets,
+    }, ""
 
 
 def persist_channel_contract(
@@ -457,6 +515,7 @@ __all__ = [
     "CHANNEL_PRD_SCHEMA_VERSION",
     "CHANNEL_SEMANTIC_COVERAGE_SCHEMA_VERSION",
     "channel_template_binding",
+    "normalize_synthesis_next_round",
     "persist_channel_conclusion",
     "persist_channel_contract",
     "persist_channel_prd",

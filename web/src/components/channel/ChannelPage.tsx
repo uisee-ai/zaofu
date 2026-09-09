@@ -616,7 +616,13 @@ export function ChannelPage({
         askedBy: String(item.asked_by || ""),
       }))
       .filter((item) => item.text);
-    const ownerQuestions = openOwnerQuestionnaire(detail, threadId)
+    const questionConsolidationPending = (
+      attention.question_consolidation_status !== undefined
+      && attention.question_consolidation_status !== "open"
+    ) || attention.attention_kind === "consolidating";
+    const ownerQuestions = (questionConsolidationPending
+      ? []
+      : openOwnerQuestionnaire(detail, threadId))
       .slice(0, 3)
       .flatMap((item) => {
         const id = String(item.question_id || "").trim();
@@ -665,6 +671,7 @@ export function ChannelPage({
       threadId,
       openQuestions,
       ownerQuestions,
+      questionConsolidationPending,
       questionGraphDigest: detail?.question_graph_digests?.[threadId] || "",
     };
   }, [activeChannelThreadId, detail]);
@@ -672,6 +679,11 @@ export function ChannelPage({
     setOwnerQuestionsOpen(false);
     autoOpenedQuestionnaireRef.current = "";
   }, [activeChannelThreadId, selectedChannelId]);
+  useEffect(() => {
+    if (discussionBand?.questionConsolidationPending) {
+      setOwnerQuestionsOpen(false);
+    }
+  }, [discussionBand?.questionConsolidationPending]);
   useEffect(() => {
     if (!discussionBand?.ownerQuestions.length) return;
     const attentionKind = discussionBand.attention.attention_kind ?? (
@@ -1376,6 +1388,14 @@ export function ChannelPage({
       ));
       return;
     }
+    if (presentation.action === "result") {
+      // Chat intentionally starts from the lightweight conversation projection.
+      // A canonical result needs the full Channel detail before the owner can
+      // inspect its bound artifact and make the token-gated consensus decision.
+      setDrawer(null);
+      void onLoadDiagnostics();
+      return;
+    }
     setDrawer("attention");
   }
   function messageMember(memberId: string) {
@@ -1552,37 +1572,14 @@ export function ChannelPage({
   }
   function renderWorkflowRequestForm() {
     return (
-      <form
-        className="channel-control-panel channel-control-card"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void runControl(async () => {
-            await onWorkflowRequest(
-              workflowDraft.taskId.trim(),
-              workflowDraft.reason.trim() || "Execute the canonical Channel PRD.",
-              controlThreadId,
-            );
-            setWorkflowDraft({ taskId: "", reason: "" });
-          });
-        }}
-      >
+      <section className="channel-control-panel channel-control-card">
         <div className="inline-heading">
-          <h3>Workflow Request</h3>
+          <h3>Delivery handoff</h3>
           <span className={`metric-chip ${canonicalPrd.ready ? "" : "chip-warn"}`}>
             {canonicalPrd.ready ? "canonical PRD" : "PRD pending"}
           </span>
         </div>
         <div className="channel-control-form-grid">
-          <label className="channel-control-field">
-            <span>Task</span>
-            <input
-              className="filter-input"
-              data-testid="channel-workflow-task"
-              placeholder="task id"
-              value={workflowDraft.taskId}
-              onChange={(event) => setWorkflowDraft({ ...workflowDraft, taskId: event.target.value })}
-            />
-          </label>
           <label className="channel-control-field channel-control-field-wide">
             <span>Objective</span>
             <input
@@ -1596,7 +1593,7 @@ export function ChannelPage({
         </div>
         <div className="channel-control-actions">
           <button
-            className="icon-button"
+            className="icon-button primary"
             data-testid="channel-create-task-from-prd"
             disabled={!actionReady || controlsBusy || !canonicalPrd.ready}
             type="button"
@@ -1610,14 +1607,47 @@ export function ChannelPage({
             })}
           >
             <Plus size={16} />
-            Create Task from PRD
-          </button>
-          <button className="icon-button primary" data-testid="channel-plan-workflow" disabled={!actionReady || controlsBusy || !canonicalPrd.ready || !workflowDraft.taskId.trim()} type="submit">
-            <PlayCircle size={16} />
-            Plan workflow
+            Plan Task + Workflow
           </button>
         </div>
-      </form>
+        <details className="channel-workflow-existing-task">
+          <summary>Plan an existing Task</summary>
+          <form
+            className="channel-control-form-grid"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void runControl(async () => {
+                await onWorkflowRequest(
+                  workflowDraft.taskId.trim(),
+                  workflowDraft.reason.trim() || "Execute the canonical Channel PRD.",
+                  controlThreadId,
+                );
+                setWorkflowDraft({ taskId: "", reason: "" });
+              });
+            }}
+          >
+            <label className="channel-control-field">
+              <span>Task</span>
+              <input
+                className="filter-input"
+                data-testid="channel-workflow-task"
+                placeholder="task id"
+                value={workflowDraft.taskId}
+                onChange={(event) => setWorkflowDraft({ ...workflowDraft, taskId: event.target.value })}
+              />
+            </label>
+            <button
+              className="icon-button"
+              data-testid="channel-plan-workflow"
+              disabled={!actionReady || controlsBusy || !canonicalPrd.ready || !workflowDraft.taskId.trim()}
+              type="submit"
+            >
+              <PlayCircle size={16} />
+              Plan existing Task
+            </button>
+          </form>
+        </details>
+      </section>
     );
   }
   function renderResultReceipts() {

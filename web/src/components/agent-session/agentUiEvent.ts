@@ -201,6 +201,19 @@ function parsePlanOptions(value: unknown): AgentSessionPlanOption[] {
         memberCount: Number(submitDetails.member_count || members.length || 0),
         roles: members,
         maxRounds: Number(submitDetails.max_rounds || 0),
+        roundPolicy: textValue(submitDetails.round_policy).trim(),
+        profiles: Array.isArray(submitDetails.profiles)
+          ? submitDetails.profiles.flatMap((item) => {
+            const profile = recordValue(item);
+            if (!profile) return [];
+            return [{
+              memberId: textValue(profile.member_id).trim(),
+              channelRole: textValue(profile.channel_role).trim(),
+              profileId: textValue(profile.profile_id).trim(),
+              displayName: textValue(profile.display_name).trim(),
+            }];
+          })
+          : [],
         mode: textValue(submitDetails.mode).trim(),
         engineMode: textValue(submitDetails.engine_mode).trim(),
         routingStrategy: textValue(submitDetails.routing_strategy).trim(),
@@ -219,6 +232,10 @@ function parsePlanOptions(value: unknown): AgentSessionPlanOption[] {
           ? submitDetails.verify_roles.map(textValue).filter(Boolean)
           : [],
         laneCount: Number(submitDetails.lane_count || 0),
+        inputKeys: Array.isArray(submitDetails.input_keys)
+          ? submitDetails.input_keys.map(textValue).filter(Boolean)
+          : [],
+        preflight: textValue(submitDetails.preflight).trim(),
         outputProfile: textValue(submitDetails.output_profile).trim(),
       } : undefined,
     }];

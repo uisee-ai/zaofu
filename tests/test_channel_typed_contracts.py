@@ -10,7 +10,9 @@ from zf.core.events.log import EventLog
 from zf.runtime.channel_context import build_channel_context_pack
 from zf.runtime.channel_deliberation_contract import reply_question_records
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_prd_render import render_channel_prd_artifact
 from zf.runtime.channel_provider_prompt import build_channel_provider_prompt
+from zf.runtime.channel_provider_completion import _expected_channel_contract_key
 from zf.runtime.channel_reply_contract import emit_structured_reply_events
 from zf.runtime.channel_reply_prompt import channel_reply_response_contract
 from zf.runtime.channel_reply_stream import CHANNEL_CONTRACT_MARKER
@@ -173,6 +175,24 @@ def test_synthesis_prompt_states_mechanical_json_types() -> None:
     assert "All plural fields must be JSON arrays" in prompt
 
 
+def test_prd_render_keeps_primary_decision_when_decision_list_is_empty() -> None:
+    artifact = render_channel_prd_artifact(
+        channel={"name": "Channel PRD"},
+        channel_id="ch-render",
+        thread_id="main",
+        source_requirement="Keep the replay contract stable.",
+        synthesis={
+            "title": "Replay safety",
+            "decision": "Finalize the replay-safe protocol.",
+            "decisions": [],
+        },
+        summary="Persist one durable decision.",
+        source_refs=[],
+    )
+
+    assert "## Decisions\n- Finalize the replay-safe protocol." in artifact
+
+
 def test_contribution_prompt_states_exact_question_enums() -> None:
     prompt = channel_reply_response_contract(
         _channel(),
@@ -186,6 +206,123 @@ def test_contribution_prompt_states_exact_question_enums() -> None:
     assert "fact|owner_decision|tradeoff|clarification" in prompt
     assert "p0|p1|p2|p3" in prompt
     assert "critical, high, medium, or low" in prompt
+    assert "never operator or owner:operator" in prompt
+    assert "MUST target exactly one real member_id" in prompt
+    assert "finding, risk, or explicit assumption/gate" in prompt
+
+
+def test_adaptive_next_round_preserves_lineage_as_a_contribution_turn(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer = _writer(tmp_path)
+    channel = _channel()
+    request = {
+        "request_id": "reply-adaptive",
+        "thread_id": "main",
+        "message_id": "msg-adaptive",
+        "target_member_id": "researcher",
+    }
+    message = {
+        "message_id": "msg-adaptive",
+        "text": "Only contribute focused replay evidence.",
+        "refs": {
+            "adaptive_next_round_id": "next-round-1",
+            # Compatibility with state written before the lineage rename.
+            "synthesis_request_id": "synth-parent-1",
+        },
+    }
+    reply = "\n\n".join([
+        "Focused architecture contribution.",
+        CHANNEL_CONTRACT_MARKER,
+        json.dumps({"channel_contribution": {
+            "summary": "The continuation is replay-safe.",
+            "questions": [],
+            "findings": ["Use a stable continuation identity."],
+            "contradictions": [],
+            "risks": [],
+            "source_refs": [],
+            "evidence_refs": [],
+            "freeze": True,
+        }}),
+        # A provider may append an unauthorized synthesis after a valid
+        # contribution. The routing identity, not this trailing text, decides
+        # which state transition is accepted.
+        CHANNEL_CONTRACT_MARKER,
+        json.dumps({"channel_synthesis": {"summary": "must be ignored"}}),
+    ])
+
+    assert _expected_channel_contract_key(channel, request, message) == (
+        "channel_contribution"
+    )
+    emit_structured_reply_events(
+        state_dir=state_dir,
+        writer=writer,
+        channel=channel,
+        request=request,
+        message=message,
+        reply=reply,
+        reply_event_id="evt-adaptive-reply",
+        actor="test",
+        source="test",
+    )
+
+    types = [event.type for event in writer.event_log.read_all()]
+    assert "channel.finding.recorded" in types
+    assert "channel.synthesis.proposed" not in types
+
+
+def test_provider_prompt_places_authoritative_contract_after_trigger() -> None:
+    channel = _channel()
+    request = {
+        "thread_id": "main",
+        "message_id": "msg-adaptive",
+        "target_member_id": "researcher",
+    }
+    message = {
+        "text": "The next synthesis must finalize after this contribution.",
+        "refs": {"adaptive_next_round_id": "next-round-1"},
+    }
+    prompt = build_channel_provider_prompt(
+        channel=channel,
+        member={
+            "member_id": "researcher",
+            "channel_role": "arch",
+            "permission_profile": "read_only",
+        },
+        message=message,
+        request=request,
+    )
+
+    assert prompt.index("Trigger message:") < prompt.index(
+        "Response contract (authoritative for this reply):"
+    )
+    assert prompt.rstrip().endswith(
+        channel_reply_response_contract(channel, request, message)
+    )
+
+
+def test_provider_prompt_bounds_typed_phase_to_its_context_pack() -> None:
+    prompt = build_channel_provider_prompt(
+        channel=_channel(),
+        member={
+            "member_id": "synthesizer",
+            "channel_role": "synthesizer",
+            "permission_profile": "read_only",
+        },
+        message={
+            "text": "Deduplicate the supplied question ledger.",
+            "refs": {"question_dedup_request_id": "dedup-1"},
+        },
+        request={
+            "thread_id": "main",
+            "target_member_id": "synthesizer",
+        },
+    )
+
+    assert "typed_phase_constraint:" in prompt
+    assert "context_pack is the complete authoritative evidence set" in prompt
+    assert "Do not inspect the project filesystem" in prompt
+    assert "Do not call tools." in prompt
 
 
 def test_all_typed_reply_prompts_separate_markdown_from_machine_contract() -> None:
@@ -208,6 +345,18 @@ def test_all_typed_reply_prompts_separate_markdown_from_machine_contract() -> No
         assert "without quotes or code fences" in prompt
         assert "must be the final content" in prompt
         assert "do not wrap either in a Markdown fence" in prompt
+
+
+def test_question_dedup_contract_only_allows_open_questions() -> None:
+    prompt = channel_reply_response_contract(
+        {},
+        {},
+        {"refs": {"question_dedup_request_id": "dedup-1"}},
+    )
+
+    assert "currently open ledger item" in prompt
+    assert "Never use a resolved or merged question as a canonical target" in prompt
+    assert "never merge across question statuses" in prompt
 
 
 def test_consensus_review_prompt_pins_canonical_artifact_digest() -> None:
@@ -976,6 +1125,55 @@ def test_synthesis_malformed_json_requests_bounded_repair_and_recovers(
         if event.type == "channel.synthesis.repair.completed"
     )
     assert completed.payload["repair_id"] == repair.payload["repair_id"]
+
+
+def test_late_distinct_synthesis_cannot_replace_a_current_prd(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer = _writer(tmp_path)
+    channel = _channel()
+    channel["discussions"]["main"]["state"] = "phase3_synthesis"
+    request = {
+        "thread_id": "main",
+        "target_member_id": "synthesizer",
+    }
+
+    for request_id, reply_event_id in (
+        ("synth-current", "evt-synth-current"),
+        ("synth-late", "evt-synth-late"),
+    ):
+        emit_structured_reply_events(
+            state_dir=state_dir,
+            writer=writer,
+            channel=channel,
+            request=request,
+            message={"refs": {"synthesis_request_id": request_id}},
+            reply=json.dumps({
+                "channel_synthesis": {
+                    "summary": f"Synthesis {request_id} is complete.",
+                    "open_questions": [],
+                },
+            }),
+            reply_event_id=reply_event_id,
+            actor="test",
+            source="test",
+        )
+
+    events = writer.event_log.read_all()
+    proposals = [
+        event for event in events if event.type == "channel.synthesis.proposed"
+    ]
+    assert [event.payload["request_id"] for event in proposals] == [
+        "synth-current"
+    ]
+    stale = next(
+        event
+        for event in events
+        if event.type == "channel.synthesis.stale_ignored"
+    )
+    assert stale.payload["request_id"] == "synth-late"
+    assert stale.payload["superseded_by_request_id"] == "synth-current"
+    assert stale.payload["source_reply_event_id"] == "evt-synth-late"
 
 
 def test_synthesis_repair_exhaustion_blocks_and_ignores_late_revision(

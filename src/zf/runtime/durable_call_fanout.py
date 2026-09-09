@@ -1052,6 +1052,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                 task_item=task_item,
                 context=context,
                 project_path=plan.project_path,
+                dependency_result=dependency_result,
             )
             contract_dispatch_fields = {
                 **snapshot_payload_fields(contract_descriptor),

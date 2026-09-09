@@ -17,7 +17,15 @@ def valid_phase1_members(
         for member in session.get("roster") or []
         if str(member)
     }
-    trigger = str(session.get("requirement_message_id") or "")
+    # The original requirement remains the durable PRD provenance anchor. An
+    # adaptive pass, however, has its own current blind-turn message; use it
+    # for completion matching so preserving provenance does not strand the
+    # focused roster in phase 1.
+    trigger = str(
+        session.get("adaptive_next_round_message_id")
+        or session.get("requirement_message_id")
+        or ""
+    )
     if not roster or not trigger:
         return set()
     requests = {

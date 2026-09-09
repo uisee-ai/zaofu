@@ -7,6 +7,7 @@ shape. SSE streaming is exercised separately in test_web_sse.py.
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -21,8 +22,10 @@ from zf.core.config.loader import load_config
 from zf.core.config.project_context import ProjectContext
 from zf.core.config.schema import (
     FanoutAssignmentConfig,
+    OrchestratorConfig,
     ProjectConfig,
     RoleConfig,
+    SessionConfig,
     WorkflowAffinityLaneConfig,
     WorkflowAffinityLaneProfileConfig,
     WorkflowConfig,
@@ -43,7 +46,7 @@ from zf.core.workspace import stable_project_id
 from zf.runtime.project_spine_review import write_spine_review_artifact
 from zf.runtime.run_archive import archive_run
 from zf.web.operator_session import OperatorSessionManager
-from zf.web.server import create_app
+from zf.web.server import _project_runtime_state, create_app
 
 
 @pytest.fixture
@@ -650,6 +653,48 @@ class TestApiSnapshot:
         assert runtime["live"] is False
         assert runtime["runtime_state"] == "stopped"
 
+    def test_runtime_state_does_not_treat_recent_event_as_live_runtime(
+        self,
+        state_dir: Path,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "zf.core.workspace.runtime_manager._tmux_has_session",
+            lambda _session: False,
+        )
+        config = ZfConfig(
+            project=ProjectConfig(name="runtime-proof"),
+            session=SessionConfig(tmux_session="zf-runtime-proof-missing"),
+        )
+
+        assert _project_runtime_state(state_dir, config=config) == "stopped"
+
+    def test_runtime_state_accepts_an_active_watcher_as_host_proof(
+        self,
+        state_dir: Path,
+        monkeypatch,
+    ):
+        (state_dir / "session.yaml").write_text(
+            "runtime_state: active\n",
+            encoding="utf-8",
+        )
+        guard_dir = state_dir / "processes"
+        guard_dir.mkdir()
+        (guard_dir / "watcher.pid.json").write_text(
+            json.dumps({"owner_pid": os.getpid(), "component": "watcher"}),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "zf.core.workspace.runtime_manager._tmux_has_session",
+            lambda _session: False,
+        )
+        config = ZfConfig(
+            project=ProjectConfig(name="watcher-proof"),
+            session=SessionConfig(tmux_session="zf-watcher-proof-missing"),
+        )
+
+        assert _project_runtime_state(state_dir, config=config) == "running"
+
     def test_snapshot_uses_explicit_project_root_when_state_dir_is_external(
         self,
         tmp_path: Path,
@@ -729,6 +774,25 @@ class TestApiSnapshot:
         assert data["snapshot_slice"] == "light"
         assert data["runtime"]["mode"] == "snapshot-light"
         assert data["event_projection"]["schema_version"] == "event-read-model.v6"
+
+    def test_light_snapshot_preserves_configured_kanban_agent_backend(
+        self,
+        state_dir: Path,
+    ) -> None:
+        config = ZfConfig(
+            project=ProjectConfig(name="codex-project"),
+            orchestrator=OrchestratorConfig(backend="codex"),
+        )
+        local_client = TestClient(create_app(state_dir, config=config))
+
+        agent_surface = local_client.get("/api/snapshot/light").json()["runtime"][
+            "agent_surface"
+        ]
+
+        assert agent_surface["configured_backend"] == "codex"
+        assert next(
+            item for item in agent_surface["backends"] if item["id"] == "codex"
+        )["default"] is True
 
     def test_snapshot_includes_runtime_snapshot_projection(
         self,
@@ -1467,6 +1531,53 @@ class TestApiChannels:
         assert "recent_messages" not in data
         assert "linked_events" not in data
         assert "context_packs" not in data
+
+    def test_project_channel_conversation_prefers_channel_read_model_slice(
+        self,
+        state_dir: Path,
+        client: TestClient,
+        monkeypatch,
+    ) -> None:
+        from zf.web.projections import read_model
+
+        log = EventLog(state_dir / "events.jsonl")
+        log.append(ZfEvent(
+            type="channel.created",
+            actor="web",
+            payload={"channel_id": "ch-indexed", "name": "Indexed"},
+        ))
+        log.append(ZfEvent(
+            type="channel.message.posted",
+            actor="web",
+            payload={
+                "channel_id": "ch-indexed",
+                "message_id": "msg-indexed",
+                "thread_id": "main",
+                "member_id": "operator",
+                "role": "user",
+                "text": "Use the indexed slice.",
+            },
+        ))
+        read_model.rebuild(state_dir)
+        original = read_model.hydrate_events_by_ref
+        calls: list[tuple[str, str]] = []
+
+        def indexed_slice(*args, **kwargs):
+            calls.append((str(kwargs["ref_kind"]), str(kwargs["ref_id"])))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(read_model, "hydrate_events_by_ref", indexed_slice)
+        project_id = client.get("/api/workspace/projects").json()["active_project_id"]
+
+        response = client.get(
+            f"/api/projects/{project_id}/channels/ch-indexed/conversation"
+        )
+
+        assert response.status_code == 200
+        assert [item["message_id"] for item in response.json()["messages"]] == [
+            "msg-indexed"
+        ]
+        assert calls == [("channel", "ch-indexed")]
 
     def test_channel_projection_rebuilds_from_events_and_redacts(self, state_dir, client):
         log = EventLog(state_dir / "events.jsonl")

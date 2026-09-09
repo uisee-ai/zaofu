@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from zf.core.config.schema import ZfConfig
+from zf.core.events.factory import event_log_from_project
+from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.segments import (
     build_event_manifest,
@@ -1055,6 +1057,10 @@ def agent_session_history(
     except sqlite3.Error:
         return None
 
+    # Hydrating each raw row used to construct a new EventLog (and load its
+    # side index) per event. A long Kanban history can inspect thousands of
+    # candidate rows, so share one signer-aware decoder for the whole query.
+    decoder = event_log_from_project(state_dir, config=config, warn=False)
     out: list[dict[str, Any]] = []
     primary_oldest_seq: int | None = None
     for row in rows:
@@ -1065,6 +1071,7 @@ def agent_session_history(
             offset=int(row["raw_offset"]),
             length=int(row["raw_length"]),
             config=config,
+            event_log=decoder,
         )
         if event is None:
             continue
@@ -1092,6 +1099,7 @@ def agent_session_history(
         task_id=task_id,
         config=config,
         max_seq=selected_seq,
+        event_log=decoder,
     )
     items = _merge_full_events_by_seq(context_items, primary_items)
     next_before_seq = primary_oldest_seq if primary_items else before
@@ -1346,6 +1354,7 @@ def _kanban_agent_context_events(
     task_id: str,
     config: ZfConfig | None,
     max_seq: int,
+    event_log: EventLog,
 ) -> list[dict[str, Any]]:
     if not primary_items:
         return []
@@ -1381,6 +1390,7 @@ def _kanban_agent_context_events(
             offset=int(row["raw_offset"]),
             length=int(row["raw_length"]),
             config=config,
+            event_log=event_log,
         )
         if event is None:
             continue

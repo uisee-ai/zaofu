@@ -725,7 +725,7 @@ def _normalize_plan_submit_payload(
     if action == "create-task":
         return normalize_channel_task_submit_payload(raw_payload)
     if action == "channel-create-and-start":
-        return normalize_channel_setup_submit_payload(raw_payload)
+        return normalize_channel_setup_submit_payload(raw_payload, config=config)
     return {}, {}, f"unsupported Plan submit action: {action}"
 
 

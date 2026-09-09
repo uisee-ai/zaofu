@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from zf.core.events import ZfEvent
+from zf.core.state.locks import locked_path
 from zf.runtime.channel_adapter import dispatch_pending_replies
-from zf.runtime.channel_contracts import default_debate_max_rounds
+from zf.runtime.channel_synthesis_lock import (
+    channel_synthesis_lock_path,
+    synthesis_request_in_flight,
+)
 from zf.runtime.channel_handoff import request_channel_handoff
 from zf.runtime.channel_message_ingress import (
     dispatch_channel_replies_background,
@@ -436,47 +440,81 @@ class ChannelMessageActionsMixin:
     ) -> dict:
         channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         thread_id = _optional_str(payload.get("thread_id")) or "main"
-        channel = project_channel(self.state_dir, channel_id) or {}
-        target_member_id = (
-            _optional_str(payload.get("target_member_id"))
-            or _synthesis_target_member(channel)
-        )
-        if not target_member_id:
-            return self._failed(
-                requested=requested,
-                action=action,
-                requested_action=requested_action,
-                task_id=_task_id_from_payload(payload),
-                reason="target_member_id is required when no synthesizer/facilitator/default responder is available",
-                status_code=422,
-                status="invalid_payload",
+        with locked_path(
+            channel_synthesis_lock_path(self.state_dir, channel_id, thread_id)
+        ):
+            channel = project_channel(self.state_dir, channel_id) or {}
+            active_request = synthesis_request_in_flight(channel, thread_id)
+            if active_request is not None:
+                active_request_id = str(active_request.get("request_id") or "")
+                active_target_member_id = str(
+                    active_request.get("target_member_id") or ""
+                )
+                self._completed(
+                    requested=requested,
+                    event=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    status="already_requested",
+                    task_id=_task_id_from_payload(payload),
+                    extra={
+                        "channel_id": channel_id,
+                        "thread_id": thread_id,
+                        "request_id": active_request_id,
+                        "target_member_id": active_target_member_id,
+                    },
+                )
+                return {
+                    "_status_code": 200,
+                    "ok": True,
+                    "status": "already_requested",
+                    "action": action,
+                    "requested_action": requested_action,
+                    "channel_id": channel_id,
+                    "thread_id": thread_id,
+                    "request_id": active_request_id,
+                    "target_member_id": active_target_member_id,
+                }
+            target_member_id = (
+                _optional_str(payload.get("target_member_id"))
+                or _synthesis_target_member(channel)
             )
-        request_id = (
-            _optional_str(payload.get("request_id"))
-            or _stable_control_id("synth", requested.id, channel_id, thread_id, target_member_id)
-        )
-        prompt = (
-            _optional_str(payload.get("prompt"))
-            or _optional_str(payload.get("reason"))
-            or "Synthesize the current channel discussion into a concise decision draft, open questions, risks, and recommended next workflow action."
-        )
-        request_event = self.writer.emit(
-            "channel.synthesis.requested",
-            actor=self.actor,
-            task_id=_task_id_from_payload(payload),
-            causation_id=requested.id,
-            correlation_id=channel_id,
-            payload={
-                "channel_id": channel_id,
-                "thread_id": thread_id,
-                "request_id": request_id,
-                "target_member_id": target_member_id,
-                "status": "requested",
-                "reason": str(payload.get("reason") or "synthesis requested"),
-                "prompt": prompt,
-                "source": self.surface,
-            },
-        )
+            if not target_member_id:
+                return self._failed(
+                    requested=requested,
+                    action=action,
+                    requested_action=requested_action,
+                    task_id=_task_id_from_payload(payload),
+                    reason="target_member_id is required when no synthesizer/facilitator/default responder is available",
+                    status_code=422,
+                    status="invalid_payload",
+                )
+            request_id = (
+                _optional_str(payload.get("request_id"))
+                or _stable_control_id("synth", requested.id, channel_id, thread_id, target_member_id)
+            )
+            prompt = (
+                _optional_str(payload.get("prompt"))
+                or _optional_str(payload.get("reason"))
+                or "Synthesize the current channel discussion into a concise decision draft, open questions, risks, and recommended next workflow action."
+            )
+            request_event = self.writer.emit(
+                "channel.synthesis.requested",
+                actor=self.actor,
+                task_id=_task_id_from_payload(payload),
+                causation_id=requested.id,
+                correlation_id=channel_id,
+                payload={
+                    "channel_id": channel_id,
+                    "thread_id": thread_id,
+                    "request_id": request_id,
+                    "target_member_id": target_member_id,
+                    "status": "requested",
+                    "reason": str(payload.get("reason") or "synthesis requested"),
+                    "prompt": prompt,
+                    "source": self.surface,
+                },
+            )
         message_id = f"msg-{request_id}"
         message_payload = channel_message_event_payload(self.state_dir, {
             "channel_id": channel_id,
@@ -653,12 +691,10 @@ class ChannelMessageActionsMixin:
         channel_id = _normal_channel_id(_required_text(payload, "channel_id"))
         mode = _required_text(payload, "mode")
         channel = project_channel(self.state_dir, channel_id) or {}
-        default_max_rounds = default_debate_max_rounds(len(channel.get("members") or []))
         event_payload = {
             "channel_id": channel_id,
             "thread_id": str(payload.get("thread_id") or "main"),
             "mode": mode,
-            "max_rounds": int(payload.get("max_rounds") or default_max_rounds),
             "default_responder_id": str(payload.get("default_responder_id") or ""),
             "speaker_policy": payload.get("speaker_policy") if isinstance(payload.get("speaker_policy"), dict) else {},
             "provider_capabilities": (
@@ -667,6 +703,13 @@ class ChannelMessageActionsMixin:
             ),
             "source": self.surface,
         }
+        if payload.get("max_rounds") is not None:
+            try:
+                max_rounds = int(payload.get("max_rounds") or 0)
+            except (TypeError, ValueError):
+                max_rounds = 0
+            if max_rounds > 0:
+                event_payload["max_rounds"] = max_rounds
         # Forward the discussion-config fields the projection folds
         # (channel_projection._apply_discussion_mode) but that were previously
         # dropped here, so the operator could never tune the relay depth cap,

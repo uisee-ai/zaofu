@@ -269,6 +269,8 @@ def build_task_workflow_plan_request(
                 "output_profile": str(
                     route.get("output_profile") or ""
                 ),
+                "input_keys": sorted(parameters),
+                "preflight": "ready",
             },
         })
         options.append(option)

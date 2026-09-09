@@ -24,6 +24,16 @@ function planOptionDetails(option?: AgentSessionPlanOption): string {
       ? `${details.laneCount} lane${details.laneCount === 1 ? "" : "s"}`
       : "",
     (details.roles || []).map((role) => role.replaceAll("_", " ")).join(", "),
+    details.writerRoles?.length
+      ? `Write: ${details.writerRoles.map((role) => role.replaceAll("_", " ")).join(", ")}`
+      : "",
+    details.verifyRoles?.length
+      ? `Verify: ${details.verifyRoles.map((role) => role.replaceAll("_", " ")).join(", ")}`
+      : "",
+    details.inputKeys?.length
+      ? `Inputs: ${details.inputKeys.join(", ")}`
+      : "",
+    details.preflight ? `Preflight: ${details.preflight}` : "",
     details.outputProfile
       ? `Output: ${details.outputProfile.replaceAll("_", " ")}`
       : "",
@@ -41,9 +51,31 @@ function planOptionDetails(option?: AgentSessionPlanOption): string {
     routingDetail,
     `${details.memberCount || 0} members`,
     (details.roles || []).map((role) => role.replaceAll("_", " ")).join(", "),
-    `${details.maxRounds || 0} rounds`,
+    details.roundPolicy === "synthesis_adaptive"
+      ? "Synthesis-adaptive passes"
+      : details.maxRounds
+        ? `${details.maxRounds} round cap`
+        : "",
+    (details.profiles || [])
+      .map((profile) => profile.displayName || profile.profileId || profile.channelRole)
+      .filter(Boolean)
+      .join(", "),
   ] : [];
   return [...workflowDetails, ...channelDetails].filter(Boolean).join(" | ");
+}
+
+function channelPlanOptionGuidance(option?: AgentSessionPlanOption): string {
+  const mode = option?.submitDetails?.mode;
+  if (mode === "multi_lens") {
+    return "Independent multi-role review starts first; the synthesizer decides whether another round is needed before publishing a canonical PRD.";
+  }
+  if (mode === "clarification") {
+    return "Guided mode starts with one facilitator. It does not automatically fan out or publish a canonical PRD.";
+  }
+  if (mode === "conversation") {
+    return "One responder starts the conversation. Choose multi-lens when independent perspectives are required.";
+  }
+  return "";
 }
 
 function planQuestions(request: AgentSessionPlanRequest): AgentSessionPlanQuestion[] {
@@ -153,6 +185,11 @@ export function PlanInteractionForm({
           description: option.description,
           recommended: option.recommended,
           detail: planOptionDetails(option),
+          guidance: channelPlanOptionGuidance(option),
+          routeId: option.submitDetails?.routeId,
+          submitAction: option.submitAction,
+          submitMode: option.submitMode,
+          templateId: option.submitDetails?.templateId,
         })),
       }))}
       requestId={`${request.requestEventId}:${request.revision}`}

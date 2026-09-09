@@ -42,6 +42,9 @@ from zf.web.proposal_extraction import extract_action_proposal
 from zf.web.plan_extraction import extract_plan_request
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def _runtime(
     tmp_path: Path,
     *,
@@ -1086,7 +1089,11 @@ def _leader_plan_fixture(
     return state_dir, writer, service, authority
 
 
-def _task_create_plan_request(authority: dict[str, object]) -> dict:
+def _task_create_plan_request(
+    authority: dict[str, object],
+    *,
+    workflow_plan: dict | None = None,
+) -> dict:
     request = extract_plan_request(
         json.dumps({
             "plan_request": {
@@ -1108,6 +1115,8 @@ def _task_create_plan_request(authority: dict[str, object]) -> dict:
                                 "objective": "Implement the complete confirmed PRD.",
                                 "acceptance": "All acceptance checks pass.",
                                 "priority": 2,
+                                **({"workflow_plan": workflow_plan}
+                                   if workflow_plan is not None else {}),
                             },
                         },
                     },
@@ -1258,6 +1267,157 @@ def test_channel_task_proposal_reject_has_no_task_side_effect(
     })
 
     assert dismissed["ok"] is True, dismissed
+    assert TaskStore(state_dir / "kanban.json").list_all() == []
+
+
+def _channel_delivery_workflow_plan() -> dict:
+    return {
+        "header": "Choose delivery workflow",
+        "question_id": "channel-prd-delivery",
+        "question": "How should the confirmed Channel PRD execute?",
+        "options": [
+            {
+                "id": "delivery",
+                "label": "PRD delivery (Recommended)",
+                "description": "Run the standard PRD delivery route.",
+                "recommended": True,
+                "route_id": "delivery:prd:standard",
+                "objective": "Deliver the confirmed Channel PRD.",
+                "parameters": {"target_root": "."},
+            },
+            {
+                "id": "defer",
+                "label": "Do not start yet",
+                "description": "Keep the new Task tracked.",
+                "mode": "defer",
+            },
+        ],
+        "allow_other": False,
+    }
+
+
+def test_channel_prd_handoff_creates_task_then_task_bound_workflow_plan(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service, authority = _leader_plan_fixture(tmp_path)
+    service.config = load_config(ROOT / "zf.yaml")
+    service.project_root = ROOT
+    request = _task_create_plan_request(
+        authority,
+        workflow_plan=_channel_delivery_workflow_plan(),
+    )
+    requested_plan = ZfEvent(
+        type=PLAN_REQUESTED_EVENT,
+        actor="kanban-agent",
+        correlation_id="ch-plan",
+    )
+    request["request_event_id"] = requested_plan.id
+    requested_plan.payload = {"request": request, "plan_request": request}
+    writer.append(requested_plan)
+
+    proposed = _execute(service, writer, "kanban-plan-apply", {
+        "plan_response": {
+            "request_event_id": requested_plan.id,
+            "request_id": request["request_id"],
+            "revision": request["revision"],
+            "question_id": request["question_id"],
+            "option_id": "full",
+            "answer": "Full delivery (Recommended)",
+        },
+    })
+    assert proposed["status"] == "proposal_ready", proposed
+    create_proposal = next(
+        event.payload["proposal"]
+        for event in writer.event_log.read_all()
+        if event.type == "operator.action.proposed"
+        and event.payload["proposal"]["action"] == "create-task"
+    )
+
+    created = _execute(service, writer, "create-task", {
+        **create_proposal["payload"],
+        "proposal_event_id": create_proposal["proposal_event_id"],
+    })
+    assert created["ok"] is True, created
+    assert created["workflow_plan_event_id"]
+
+    events = writer.event_log.read_all()
+    task_created = next(
+        event for event in events
+        if event.type == "task.created" and event.task_id == created["task_id"]
+    )
+    workflow_event = next(
+        event for event in events
+        if event.id == created["workflow_plan_event_id"]
+    )
+    workflow_request = workflow_event.payload["request"]
+    assert workflow_event.type == PLAN_REQUESTED_EVENT
+    assert workflow_event.causation_id == task_created.id
+    assert workflow_request["subject_type"] == "task_workflow"
+    assert workflow_request["task_id"] == created["task_id"]
+    assert workflow_request["task_contract_digest"]
+    delivery = workflow_request["options"][0]
+    assert delivery["submit_action"] == "workflow-start"
+    assert delivery["submit_details"]["preflight"] == "ready"
+    assert delivery["submit_details"]["input_keys"] == ["target_root"]
+    assert not any(
+        event.type == "workflow.invoke.requested" for event in events
+    )
+
+    workflow_proposed = _execute(service, writer, "kanban-plan-apply", {
+        "plan_response": {
+            "request_event_id": workflow_event.id,
+            "request_id": workflow_request["request_id"],
+            "revision": workflow_request["revision"],
+            "question_id": workflow_request["question_id"],
+            "option_id": "delivery",
+            "answer": "PRD delivery (Recommended)",
+        },
+    })
+    assert workflow_proposed["status"] == "proposal_ready", workflow_proposed
+    assert workflow_proposed["proposed_action"] == "workflow-start"
+    assert not any(
+        event.type == "workflow.invoke.requested"
+        for event in writer.event_log.read_all()
+    )
+
+
+def test_channel_prd_handoff_fails_closed_when_workflow_plan_is_invalid(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer, service, authority = _leader_plan_fixture(tmp_path)
+    service.config = load_config(ROOT / "zf.yaml")
+    service.project_root = ROOT
+    invalid_plan = _channel_delivery_workflow_plan()
+    invalid_plan["options"][0]["route_id"] = "delivery:missing"
+    request = _task_create_plan_request(authority, workflow_plan=invalid_plan)
+    requested_plan = ZfEvent(type=PLAN_REQUESTED_EVENT, actor="kanban-agent")
+    request["request_event_id"] = requested_plan.id
+    requested_plan.payload = {"request": request, "plan_request": request}
+    writer.append(requested_plan)
+
+    proposed = _execute(service, writer, "kanban-plan-apply", {
+        "plan_response": {
+            "request_event_id": requested_plan.id,
+            "request_id": request["request_id"],
+            "revision": request["revision"],
+            "question_id": request["question_id"],
+            "option_id": "full",
+            "answer": "Full delivery (Recommended)",
+        },
+    })
+    assert proposed["status"] == "proposal_ready", proposed
+    proposal = next(
+        event.payload["proposal"]
+        for event in writer.event_log.read_all()
+        if event.type == "operator.action.proposed"
+    )
+
+    rejected = _execute(service, writer, "create-task", {
+        **proposal["payload"],
+        "proposal_event_id": proposal["proposal_event_id"],
+    })
+    assert rejected["ok"] is False
+    assert rejected["status"] == "channel_prd_handoff_invalid"
     assert TaskStore(state_dir / "kanban.json").list_all() == []
 
 

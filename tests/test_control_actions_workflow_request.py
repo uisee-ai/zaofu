@@ -441,6 +441,80 @@ def test_workflow_start_active_request_is_immutable_and_exact_replay_is_noop(
     ) == 1
 
 
+def test_channel_plan_only_prd_blocks_actual_workflow_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, log = _service(tmp_path)
+    task = Task(
+        id="TASK-CHANNEL-PLAN-ONLY",
+        title="Plan the confirmed public map",
+        contract=TaskContract(
+            behavior="Produce the approved public-map planning artifacts.",
+            verification="Review the generated planning artifacts.",
+            verification_tiers=["runtime"],
+            source_mode="channel_prd",
+            source_ref="channels/ch-plan-only/prd/r1.json",
+            source_revision="1",
+            evidence_contract={
+                "execution_owner": "workflow",
+                "channel_id": "ch-plan-only",
+                "thread_id": "main",
+                "channel_member_id": "product_pm",
+                "leader_revision": 1,
+                "prd_revision": 1,
+                "source_digest": "canonical-plan-only",
+                "readiness_ref": "channels/ch-plan-only/prd/r1-readiness.json",
+                "readiness_digest": "readiness-plan-only",
+                "readiness_verdict": "ready",
+                "implementation_start": False,
+                "readiness_risk_accepted": False,
+            },
+        ),
+    )
+    TaskStore(service.state_dir / "kanban.json").add(task)
+    route = {
+        "route_id": "delivery:issue:default",
+        "family": "delivery",
+        "kind": "issue",
+        "tier": "default",
+        "start_adapter": "delivery_request_submit",
+        "available": True,
+    }
+    catalog = {
+        "schema_version": "workflow-route-catalog.v1",
+        "config_digest": "sha256:plan-only",
+        "routes": [route],
+    }
+    monkeypatch.setattr(
+        "zf.runtime.workflow_start.workflow_route_catalog",
+        lambda _config: catalog,
+    )
+    monkeypatch.setattr(
+        "zf.runtime.workflow_start.resolve_workflow_route",
+        lambda _config, route_id, **_kwargs: (
+            route if route_id == route["route_id"] else None
+        ),
+    )
+    digest = task_workflow_binding_digest(task)
+
+    result = _execute(service, "workflow-start", {
+        "task_id": task.id,
+        "route_id": route["route_id"],
+        "objective": "Start delivery for the public map.",
+        "task_contract_digest": digest,
+        "config_digest": catalog["config_digest"],
+    })
+
+    assert result["ok"] is False
+    assert result["status"] == "channel_prd_execution_blocked"
+    assert "permits Task and Workflow planning" in result["reason"]
+    assert not any(
+        event.type == "workflow.invoke.requested"
+        for event in log.read_all()
+    )
+
+
 def test_intake_rejects_origin_change_before_overwriting_sidecars(
     tmp_path: Path,
 ) -> None:

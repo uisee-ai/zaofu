@@ -18,7 +18,9 @@ from zf.runtime.channel_discussion import discussion_roster
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_profiles import (
     bind_channel_member_profile,
+    channel_profile_selection_manifest,
     resolve_channel_role_definition,
+    template_profile_binding_payload,
     write_channel_profile_snapshot,
 )
 from zf.runtime.channel_owner_authority import normalize_owner_delegates
@@ -76,6 +78,42 @@ class ChannelTemplateActionsMixin:
                 status_code=409,
                 status="template_superseded",
             )
+        expected_profile_selection_digest = str(
+            payload.get("expected_profile_selection_digest") or ""
+        ).strip()
+        _, profile_selection_digest, profile_error = (
+            channel_profile_selection_manifest(
+                self.config,
+                template_id=template_id,
+                members=list(materialized.get("members") or []),
+            )
+        )
+        if profile_error:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=profile_error,
+                status_code=422,
+                status="invalid_template",
+            )
+        if (
+            expected_profile_selection_digest
+            and expected_profile_selection_digest != profile_selection_digest
+        ):
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=(
+                    "channel Profile selection changed after Plan selection was "
+                    "presented"
+                ),
+                status_code=409,
+                status="profile_selection_superseded",
+            )
         name = str(payload.get("name") or materialized["name"])
         channel_id = _normal_channel_id(
             payload.get("channel_id")
@@ -106,18 +144,12 @@ class ChannelTemplateActionsMixin:
         bound_members: list[dict] = []
         for raw_member in materialized["members"]:
             member = dict(raw_member)
-            unresolved, resolved = _materialize_channel_skill_refs(
-                list(member.get("skill_refs") or []),
-                project_root=self.project_root or self.state_dir.parent,
-                state_dir=self.state_dir,
-                config=self.config,
-            )
-            unresolved_skill_refs.extend(unresolved)
-            member["resolved_skill_refs"] = resolved
             bound, bind_error = bind_channel_member_profile(
                 self.config,
-                {**member, "template_id": template_id},
-                allow_inline_profile=True,
+                template_profile_binding_payload(member, template_id=template_id),
+                allow_inline_profile=not bool(
+                    member.get("profile_selection_explicit")
+                ),
             )
             if bind_error or bound is None:
                 return self._failed(
@@ -129,6 +161,13 @@ class ChannelTemplateActionsMixin:
                     status_code=422,
                     status="invalid_template",
                 )
+            unresolved, resolved = _materialize_channel_skill_refs(
+                list(bound.get("skill_refs") or []),
+                project_root=self.project_root or self.state_dir.parent,
+                state_dir=self.state_dir,
+                config=self.config,
+            )
+            unresolved_skill_refs.extend(unresolved)
             role_definition, role_error = resolve_channel_role_definition(
                 bound,
                 project_root=self.project_root or self.state_dir.parent,
@@ -270,8 +309,11 @@ class ChannelTemplateActionsMixin:
                     "channel_id": channel_id,
                     "thread_id": str(payload.get("thread_id") or "main"),
                     "member_id": str(member["member_id"]),
-                    "persona": str(member["member_id"]),
-                    "display_name": str(member["member_id"]).replace("_", " ").title(),
+                    "persona": str(member.get("persona") or member["member_id"]),
+                    "display_name": str(
+                        member.get("display_name")
+                        or str(member["member_id"]).replace("_", " ").title()
+                    ),
                     "profile_id": str(member.get("profile_id") or ""),
                     "profile_revision": int(
                         member.get("profile_revision") or 1
@@ -308,7 +350,7 @@ class ChannelTemplateActionsMixin:
                     "backend": str(member.get("backend") or provider),
                     "model": str(member.get("model") or ""),
                     "visibility_profile": normalize_visibility_profile(
-                        "",
+                        member.get("visibility_profile"),
                         channel_role=role,
                         member_type=member_type,
                     ),
@@ -354,6 +396,10 @@ class ChannelTemplateActionsMixin:
             discussion["mode"] = normalize_product_discussion_mode(
                 requested_mode
             )
+        discussion_event_payload = dict(discussion)
+        if discussion.get("max_rounds_explicit") is not True:
+            discussion_event_payload.pop("max_rounds", None)
+        discussion_event_payload.pop("max_rounds_explicit", None)
         event = self.writer.emit(
             "channel.discussion.mode.set",
             actor=self.actor,
@@ -363,7 +409,7 @@ class ChannelTemplateActionsMixin:
             payload={
                 "channel_id": channel_id,
                 "thread_id": str(payload.get("thread_id") or "main"),
-                **discussion,
+                **discussion_event_payload,
                 "source": self.surface,
             },
         )
@@ -402,6 +448,11 @@ class ChannelTemplateActionsMixin:
             "member_count": len(materialized["members"]),
             "participants": list(materialized["discussion"]["participants"]),
             "max_rounds": int(materialized["discussion"]["max_rounds"]),
+            "round_policy": (
+                "explicit_cap"
+                if materialized["discussion"].get("max_rounds_explicit") is True
+                else "synthesis_adaptive"
+            ),
             "mode": str(discussion.get("mode") or "conversation"),
             "engine_mode": discussion_engine_mode(
                 discussion.get("mode") or "conversation"
@@ -656,11 +707,12 @@ class ChannelTemplateActionsMixin:
                 status="stale_revision",
             )
         revision = current_revision + 1 if continuing else 1
-        max_rounds = int(
-            discussion_config.get("max_rounds")
-            or max(1, len(roster) * 4)
-        )
-        if continuing and revision > max_rounds:
+        max_rounds = int(discussion_config.get("max_rounds") or 0)
+        if (
+            continuing
+            and discussion_config.get("max_rounds_explicit") is True
+            and revision > max_rounds
+        ):
             closed = self.writer.emit(
                 "channel.discussion.closed",
                 actor=self.actor,

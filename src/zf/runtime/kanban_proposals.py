@@ -69,6 +69,36 @@ def proposal_payload_digest(action: str, payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _proposal_lineage_identity(payload: dict[str, Any]) -> str:
+    """Return the durable source identity when a proposal is source-bound.
+
+    A title is only an old compatibility fallback for raw, unthreaded Task
+    creation. Channel/PRD handoffs carry a source ref or digest and must never
+    be collapsed merely because an unrelated historical Task has the same
+    title.
+    """
+    candidates: list[dict[str, Any]] = [payload]
+    for key in ("contract", "source_artifact", "channel_authority"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            candidates.append(value)
+    contract = payload.get("contract")
+    if isinstance(contract, dict):
+        evidence_contract = contract.get("evidence_contract")
+        if isinstance(evidence_contract, dict):
+            candidates.append(evidence_contract)
+    for candidate in candidates:
+        for key in ("channel_prd_digest", "source_digest", "digest"):
+            value = str(candidate.get(key) or "").strip()
+            if value:
+                return f"digest:{value}"
+        for key in ("channel_prd_ref", "source_ref", "ref"):
+            value = str(candidate.get(key) or "").strip()
+            if value:
+                return f"ref:{value}"
+    return ""
+
+
 def pending_kanban_proposals(events: Iterable[ZfEvent]) -> list[dict[str, Any]]:
     event_list = list(events)
     pending: dict[str, dict[str, Any]] = {}
@@ -76,7 +106,10 @@ def pending_kanban_proposals(events: Iterable[ZfEvent]) -> list[dict[str, Any]]:
     resolved: set[str] = set()
     resolved_proposals: set[str] = set()
     superseded_proposals: set[str] = set()
-    created_titles: set[str] = set()
+    # Exact event/proposal references are primary. Title fallback remains only
+    # for historical raw API creates with no durable source identity.
+    created_title_fallbacks: set[str] = set()
+    created_source_lineages: set[tuple[str, str]] = set()
     for event in event_list:
         payload = event.payload if isinstance(event.payload, dict) else {}
         if event.type in PROPOSAL_EVENT_TYPES:
@@ -149,8 +182,11 @@ def pending_kanban_proposals(events: Iterable[ZfEvent]) -> list[dict[str, Any]]:
                     resolved_proposals.add(proposal_id)
             task = payload.get("task") if isinstance(payload.get("task"), dict) else {}
             title = str(request.get("title") or task.get("title") or "").strip()
-            if title:
-                created_titles.add(title)
+            lineage = _proposal_lineage_identity(request) or _proposal_lineage_identity(task)
+            if title and lineage:
+                created_source_lineages.add((title, lineage))
+            elif title:
+                created_title_fallbacks.add(title)
     out = []
     for proposal_id, record in pending.items():
         if (
@@ -165,12 +201,13 @@ def pending_kanban_proposals(events: Iterable[ZfEvent]) -> list[dict[str, Any]]:
             continue
         if _expired(str(record.get("expires_at") or "")):
             continue
-        if (
-            record["action"] in {"create-task", "idea-to-product"}
-            and record["title"]
-            and record["title"].strip() in created_titles
-        ):
-            continue
+        if record["action"] in {"create-task", "idea-to-product"} and record["title"]:
+            title = record["title"].strip()
+            lineage = _proposal_lineage_identity(record["payload"])
+            if lineage and (title, lineage) in created_source_lineages:
+                continue
+            if not lineage and title in created_title_fallbacks:
+                continue
         out.append(redact_obj(record))
     return sorted(
         out,

@@ -1209,7 +1209,50 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
                 "context_digest",
                 "source",
             ],
-            "optional": ["product_mode"],
+            "optional": [
+                "product_mode",
+                "roster",
+                "requirement_message_id",
+                "synthesis_event_id",
+                "synthesis_request_id",
+                "next_round_id",
+                "reason",
+                "target_member_ids",
+            ],
+        },
+        "channel.discussion.next_round.proposed": {
+            "required": [
+                "channel_id",
+                "thread_id",
+                "synthesis_event_id",
+                "synthesis_request_id",
+                "discussion_id",
+                "expected_revision",
+                "expected_context_digest",
+                "reason",
+                "objective",
+                "target_member_ids",
+                "source",
+            ],
+            "optional": [],
+        },
+        "channel.discussion.next_round.rejected": {
+            "required": [
+                "channel_id",
+                "thread_id",
+                "synthesis_event_id",
+                "reason",
+                "source",
+            ],
+            "optional": [
+                "synthesis_request_id",
+                "discussion_id",
+                "expected_revision",
+                "current_revision",
+                "expected_context_digest",
+                "current_context_digest",
+                "target_member_ids",
+            ],
         },
         "channel.leader.updated": {
             "required": [
@@ -1248,6 +1291,21 @@ def channel_event_schema_rules() -> dict[str, dict[str, Any]]:
                 "consumed_contribution_digests",
                 "confidence",
                 "dissent",
+                "next_round",
+            ],
+        },
+        "channel.synthesis.stale_ignored": {
+            "required": [
+                *base,
+                "request_id",
+                "source_reply_event_id",
+                "reason",
+            ],
+            "optional": [
+                "schema_version",
+                "superseded_by_request_id",
+                "canonical_artifact_ref",
+                "canonical_artifact_digest",
             ],
         },
         "channel.owner_report.requested": {

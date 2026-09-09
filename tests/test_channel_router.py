@@ -29,7 +29,8 @@ from zf.runtime.channel_roles import (
     load_role_definition_excerpt,
     normalize_role_context_ref,
 )
-from zf.web.headless_agent import HeadlessMessage, HeadlessTurnResult
+from zf.runtime.channel_reply_prompt import fake_channel_reply_text
+from zf.web.headless_agent import HeadlessMessage, HeadlessThreadStore, HeadlessTurnResult
 
 
 class _FakeHeadlessBackend:
@@ -990,6 +991,79 @@ def test_channel_synthesis_request_action_routes_to_synthesizer(tmp_path: Path) 
     assert "channel.agent.reply.completed" in event_types
 
 
+def test_channel_synthesis_request_action_reuses_an_active_turn(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    writer.emit(
+        "channel.member.invited",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={
+            "channel_id": "ch-zaofu",
+            "thread_id": "main",
+            "member_id": "synth-1",
+            "persona": "synth-1",
+            "member_type": "persona_agent",
+            "backend": "fake",
+            "channel_role": "synthesizer",
+            "visibility_profile": "planner",
+            "role_context_ref": "channel_roles/synthesizer.md",
+            "permissions": ["read", "message", "summarize"],
+            "source": "web",
+        },
+    )
+    service = ControlledActionService(
+        state_dir,
+        writer,
+        project_root=tmp_path,
+        actor="web",
+        source="web",
+        surface="web",
+    )
+    first_requested = writer.emit(
+        "runtime.action.requested",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={"action": "channel-synthesis-request"},
+    )
+    first = service.execute(
+        action="channel-synthesis-request",
+        requested_action="channel.synthesis.request",
+        requested=first_requested,
+        payload={"channel_id": "ch-zaofu", "thread_id": "main"},
+    )
+    second_requested = writer.emit(
+        "runtime.action.requested",
+        actor="web",
+        correlation_id="ch-zaofu",
+        payload={"action": "channel-synthesis-request"},
+    )
+    second = service.execute(
+        action="channel-synthesis-request",
+        requested_action="channel.synthesis.request",
+        requested=second_requested,
+        payload={"channel_id": "ch-zaofu", "thread_id": "main"},
+    )
+
+    syntheses = [
+        event
+        for event in EventLog(state_dir / "events.jsonl").read_all()
+        if event.type == "channel.synthesis.requested"
+    ]
+    assert first["status"] == "requested"
+    assert second["_status_code"] == 200
+    assert second["ok"] is True
+    assert second["status"] == "already_requested"
+    assert second["channel_id"] == "ch-zaofu"
+    assert second["thread_id"] == "main"
+    assert second["request_id"] == first["request_id"]
+    assert second["target_member_id"] == "synth-1"
+    assert len(syntheses) == 1
+
+
 def test_channel_router_dispatches_codex_provider_through_headless_backend(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -1056,6 +1130,79 @@ def test_channel_router_dispatches_codex_provider_through_headless_backend(tmp_p
     detail = project_channel(state_dir, "ch-zaofu")
     assert detail is not None
     assert detail["provider_runs"][0]["parts"]
+
+
+def test_channel_synthesis_phase_does_not_resume_member_discussion_session(
+    tmp_path: Path,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    writer = EventWriter(EventLog(state_dir / "events.jsonl"))
+    backend = _FakeHeadlessBackend()
+    writer.emit(
+        "channel.member.invited",
+        actor="web",
+        correlation_id="ch-phase-session",
+        payload={
+            "channel_id": "ch-phase-session",
+            "member_id": "synthesizer",
+            "member_type": "provider_agent",
+            "backend": "codex",
+            "channel_role": "synthesizer",
+            "permissions": ["read", "message", "summarize"],
+            "source": "web",
+        },
+    )
+    store = HeadlessThreadStore(state_dir=state_dir, project_root=tmp_path)
+    discussion_thread = store.load(
+        scope="project",
+        task_id="",
+        thread_key="channel:ch-phase-session:main:synthesizer",
+    )
+    store.pin_provider_session(
+        discussion_thread,
+        backend="codex-headless",
+        provider_session_id="stale-discussion-session",
+        workdir=str(tmp_path),
+        status="completed",
+    )
+    message = writer.emit(
+        "channel.message.posted",
+        actor="web",
+        correlation_id="ch-phase-session",
+        payload={
+            "channel_id": "ch-phase-session",
+            "thread_id": "main",
+            "message_id": "msg-synthesis-phase",
+            "member_id": "operator",
+            "role": "user",
+            "source": "web",
+            "text": "@synthesizer synthesize the canonical PRD",
+            "mentions": ["synthesizer"],
+            "refs": {"synthesis_request_id": "synth-phase-1"},
+        },
+    )
+    backend.reply = fake_channel_reply_text(
+        {"member_id": "synthesizer"},
+        message.payload,
+    )
+
+    route_channel_message(
+        state_dir=state_dir,
+        writer=writer,
+        message_event=message,
+        message_payload=message.payload,
+        actor="web",
+        source="web",
+        project_root=tmp_path,
+        headless_backends={"codex-headless": backend},
+    )
+
+    assert len(backend.calls) == 1
+    assert backend.calls[0]["provider_session_id"] == ""
+    assert backend.calls[0]["run_thread_id"].endswith(
+        ":phase:synthesis_request_id:synth-phase-1"
+    )
 
 
 def test_channel_incomplete_provider_turn_auto_continues_same_session(

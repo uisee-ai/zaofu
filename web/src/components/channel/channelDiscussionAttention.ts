@@ -74,6 +74,27 @@ export function presentChannelDiscussionAttention(
     attentionKind === "question" ? "synthesis" : "consensus"
   );
 
+  if (attentionKind === "consolidating") {
+    if (attention.question_consolidation_status === "blocked") {
+      return {
+        label: "Question consolidation blocked",
+        summary: "Restart the discussion to rebuild one canonical question ledger",
+        tone: "blocked",
+        action: "restart",
+        actionLabel: "Review blocker",
+        visible: true,
+      };
+    }
+    return {
+      label: "Consolidating questions",
+      summary: "Building one canonical decision ledger before owner input",
+      tone: "info",
+      action: "activity",
+      actionLabel: "",
+      visible: true,
+    };
+  }
+
   if (attentionKind === "question") {
     const decisions = countLabel(attention.owner_question_count, "decision");
     if (executionState === "running") {

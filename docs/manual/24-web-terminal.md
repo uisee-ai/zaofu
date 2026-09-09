@@ -134,7 +134,9 @@ Provider 屏幕状态，也不会把 Page Key 再重复发送为 raw input。
 被 xterm 编码成 CLI 按键或误转成 `terminal.scroll`。针对 xterm 6 在隐藏 textarea 被输入法
 整体替换后可能不产生 `onData` 的问题，Web Terminal 只在 xterm 没有提交任何数据时使用
 `compositionend` 的已提交文本补发一次；正常输入路径不会重复发送。自动化覆盖真实浏览器的
-composition 事件链，但不同 OS/输入法仍应进行宿主机人工资格验证。
+composition 事件链。若输入法只产生 `Process/keyCode=229` 后接普通 `insertText`、没有已确认的
+composition，Web Terminal 会保留 xterm 的 textarea recovery 路径。不同 OS/输入法仍应进行
+宿主机人工资格验证。
 
 Herdr viewport 是 controller 共享的终端状态，因此 controller 翻屏会通过后续 frame 反映到
 其他 attachment。Observe 不发送 scroll/resize/input，只能在本地查看 xterm 已保留的内容；

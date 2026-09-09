@@ -129,6 +129,7 @@ CHANNEL_EVENT_TYPES = {
     "channel.finding.recorded",
     "channel.summary.updated",
     "channel.synthesis.requested",
+    "channel.synthesis.stale_ignored",
     "channel.synthesis.repair.requested",
     "channel.synthesis.repair.completed",
     "channel.synthesis.repair.stale_ignored",
@@ -494,6 +495,8 @@ def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) 
             _apply_discussion_started(channel, event, payload)
         elif event.type == "channel.discussion.continued":
             _apply_discussion_continued(channel, event, payload)
+        elif event.type.startswith("channel.discussion.next_round."):
+            _apply_next_round(channel, event, payload)
         elif event.type == "channel.discussion.phase.changed":
             _apply_discussion_phase(channel, event, payload)
         elif event.type == "channel.discussion.closed":
@@ -529,6 +532,7 @@ def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) 
             channel["summary_event_id"] = event.id
         elif event.type in {
             "channel.synthesis.requested",
+            "channel.synthesis.stale_ignored",
             "channel.synthesis.repair.requested",
             "channel.synthesis.blocked",
         }:
@@ -602,6 +606,7 @@ def _empty_channel(channel_id: str) -> dict[str, Any]:
         "cross_reviews": {},
         "question_activity": [],
         "questions_frozen": {},
+        "next_rounds": [],
         "consensus": {},
         "rejected_resolutions": [],
         "question_resolve_rejections": [],
@@ -1736,10 +1741,50 @@ def _apply_discussion_continued(
         _payload_str(payload, "context_digest")
         or session.get("context_digest", "")
     )
+    if payload.get("roster") is not None:
+        session["roster"] = _string_list(payload.get("roster"))
+    if _payload_str(payload, "requirement_message_id"):
+        session["requirement_message_id"] = _payload_str(
+            payload, "requirement_message_id"
+        )
+    if _payload_str(payload, "adaptive_next_round_message_id"):
+        session["adaptive_next_round_message_id"] = _payload_str(
+            payload, "adaptive_next_round_message_id"
+        )
+    if _payload_str(payload, "synthesis_event_id"):
+        session["last_next_round_synthesis_event_id"] = _payload_str(
+            payload, "synthesis_event_id"
+        )
+    if _payload_str(payload, "synthesis_request_id"):
+        session["last_next_round_synthesis_request_id"] = _payload_str(
+            payload, "synthesis_request_id"
+        )
+    if _payload_str(payload, "next_round_id"):
+        session["last_next_round_id"] = _payload_str(payload, "next_round_id")
     session["continued_event_id"] = event.id
     session["phase_changed_at"] = event.ts
     if str(session.get("state") or "") == "idle":
         session["state"] = "active"
+
+
+def _apply_next_round(
+    channel: dict[str, Any],
+    event: ZfEvent,
+    payload: dict[str, Any],
+) -> None:
+    channel["next_rounds"].append({
+        "event_id": event.id,
+        "type": event.type,
+        "thread_id": _payload_str(payload, "thread_id") or "main",
+        "synthesis_event_id": _payload_str(payload, "synthesis_event_id"),
+        "synthesis_request_id": _payload_str(payload, "synthesis_request_id"),
+        "discussion_id": _payload_str(payload, "discussion_id"),
+        "expected_revision": int(payload.get("expected_revision") or 0),
+        "reason": _payload_str(payload, "reason"),
+        "objective": _payload_str(payload, "objective"),
+        "target_member_ids": _string_list(payload.get("target_member_ids")),
+        "source": _payload_str(payload, "source"),
+    })
 
 
 def _apply_discussion_phase(channel: dict[str, Any], event: ZfEvent, payload: dict[str, Any]) -> None:
@@ -1998,6 +2043,11 @@ def _apply_cross_review(
         "semantic_coverage_digest": _payload_str(
             payload, "semantic_coverage_digest"
         ),
+        "next_round": (
+            payload.get("next_round")
+            if isinstance(payload.get("next_round"), dict)
+            else {}
+        ),
         "updated_at": event.ts,
     }))
 
@@ -2221,10 +2271,27 @@ def _apply_consensus(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
 
 
 def _apply_synthesis_request(channel: dict[str, Any], event: ZfEvent, payload: dict[str, Any]) -> None:
+    request_id = _payload_str(payload, "request_id") or event.id
+    if event.type == "channel.synthesis.stale_ignored":
+        for item in reversed(channel["synthesis_requests"]):
+            if str(item.get("request_id") or "") == request_id:
+                item.update(redact_obj({
+                    "status": "stale_ignored",
+                    "reason": _payload_str(payload, "reason"),
+                    "stale_event_id": event.id,
+                    "source_reply_event_id": _payload_str(
+                        payload, "source_reply_event_id"
+                    ),
+                    "superseded_by_request_id": _payload_str(
+                        payload, "superseded_by_request_id"
+                    ),
+                    "updated_at": event.ts,
+                }))
+                return
     item = {
         "event_id": event.id,
         "thread_id": _payload_str(payload, "thread_id") or "main",
-        "request_id": _payload_str(payload, "request_id") or event.id,
+        "request_id": request_id,
         "target_member_id": _payload_str(payload, "target_member_id"),
         "status": _payload_str(payload, "status") or (
             "blocked"

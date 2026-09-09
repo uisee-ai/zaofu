@@ -4,6 +4,7 @@ import type { ActionResponse, RecentEvent, Snapshot } from "../../api/types";
 import { getAgentSessionHistory, getKanbanPendingProposals } from "../../api/client";
 import type { PendingKanbanProposal } from "../../api/client";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
+import { AgentThreadNavigation } from "../../components/agent-session/AgentThreadNavigation";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
 import { MarkdownText } from "../../components/agent-session/MarkdownText";
 import { SelfIssueIntakeWizard } from "./SelfIssueIntakeWizard";
@@ -45,6 +46,18 @@ import {
   selfIssueSlashAction,
   selfIssueTargetLocked,
 } from "./selfIssue";
+import {
+  initializeKanbanThreadReads,
+  kanbanThreadActivity,
+  kanbanThreadUnreadCounts,
+  loadKanbanThreadReadState,
+  loadKanbanThreadRefs,
+  markKanbanThreadRead,
+  saveKanbanThreadReadState,
+  saveKanbanThreadRefs,
+  storedActiveKanbanThread,
+} from "./kanbanSessionNavigation";
+import type { KanbanThreadActivity, KanbanThreadReadState } from "./kanbanSessionNavigation";
 import type {
   AgentConversation,
   AgentProviderCapability,
@@ -210,41 +223,23 @@ function newHeadlessThreadKey(): string {
 }
 
 
-function storedHeadlessThreadRefs(activeThreadId: string): AgentSessionThreadRef[] {
-  if (typeof window === "undefined") return [{ id: activeThreadId, title: "main" }];
-  try {
-    const parsed = JSON.parse(window.localStorage.getItem("zf.kanbanAgentThreads") || "[]") as unknown;
-    if (Array.isArray(parsed)) {
-      const refs = parsed
-        .map((item) => recordValue(item))
-        .filter((item): item is Record<string, unknown> => Boolean(item))
-        .map((item) => ({
-          id: textValue(item.id).trim(),
-          title: textValue(item.title).trim(),
-          createdAt: textValue(item.createdAt).trim(),
-        }))
-        .filter((item) => item.id);
-      if (refs.some((item) => item.id === activeThreadId)) return refs;
-      return [{ id: activeThreadId, title: "main" }, ...refs];
-    }
-  } catch {
-    // Local UI state only; a malformed value should not break the dashboard.
-  }
-  return [{ id: activeThreadId, title: "main" }];
-}
-
-
-function saveHeadlessThreadRefs(refs: AgentSessionThreadRef[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem("zf.kanbanAgentThreads", JSON.stringify(refs.slice(0, 8)));
-}
-
 // Mirrors ChannelPage: only auto-scroll to bottom when the user is already
 // pinned there. Without this the kanban-agent thread yanked the user back to
 // the bottom on every content change (new turn / 15s refresh / thinking-trace
 // collapse), so scrolling up to read earlier messages was impossible.
 function isScrollElementNearBottom(node: HTMLElement, thresholdPx = 96): boolean {
   return node.scrollHeight - node.scrollTop - node.clientHeight <= thresholdPx;
+}
+
+
+interface HeadlessThreadScrollPosition {
+  pinnedToBottom: boolean;
+  scrollTop: number;
+}
+
+
+function headlessThreadScrollKey(projectId: string, threadId: string): string {
+  return `${projectId}:${threadId}`;
 }
 
 
@@ -507,6 +502,11 @@ export function OrchestratorPanel({
   snapshot: Snapshot | null;
   tokenPresent: boolean;
 }) {
+  const headlessProjectId = kanbanAgentProjectId(
+    activeProjectId,
+    snapshot?.project?.project_id || "",
+  );
+  const localStorage = typeof window === "undefined" ? null : window.localStorage;
   const [passcodeInput, setPasscodeInput] = useState("");
   const [tokenInput, setTokenInput] = useState("");
   const [operatorBackend, setOperatorBackend] = useState<OperatorBackend>(() => (
@@ -550,7 +550,6 @@ export function OrchestratorPanel({
   const [pendingProposalExpanded, setPendingProposalExpanded] = useState<Record<string, boolean>>({});
   const [pendingProposalErrors, setPendingProposalErrors] = useState<Record<string, string>>({});
   const [pendingProposalNotice, setPendingProposalNotice] = useState("");
-
   useEffect(() => {
     setSelfIssueWorkspaceHost(document.getElementById("self-issue-workspace-host"));
   }, []);
@@ -721,20 +720,16 @@ export function OrchestratorPanel({
       window.clearInterval(timer);
     };
   }, [selfIssueAssessmentStatus, selfIssueEvidenceStatus, selfIssueDraftId]);
-  const [headlessThreadKey, setHeadlessThreadKey] = useState(() => {
-    // Default to the STABLE project-derived thread so a fresh browser/session
-    // lands on the existing kanban conversation instead of a random empty thread
-    // (channel-kanban E2E 2026-07-09). localStorage is project-scoped.
-    const projectDefault = defaultKanbanThreadKey(activeProjectId);
-    if (typeof window === "undefined") return projectDefault;
-    const stored = window.localStorage.getItem(kanbanThreadStorageKey(activeProjectId));
-    if (stored) return stored;
-    window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), projectDefault);
-    return projectDefault;
-  });
+  const [headlessThreadKey, setHeadlessThreadKey] = useState(() => (
+    storedActiveKanbanThread(localStorage, headlessProjectId)
+  ));
   const [headlessThreads, setHeadlessThreads] = useState<AgentSessionThreadRef[]>(() =>
-    storedHeadlessThreadRefs(headlessThreadKey),
+    loadKanbanThreadRefs(localStorage, headlessProjectId, headlessThreadKey),
   );
+  const [headlessReadState, setHeadlessReadState] = useState<KanbanThreadReadState>(() => (
+    loadKanbanThreadReadState(localStorage, headlessProjectId)
+  ));
+  const [headlessReadProjectId, setHeadlessReadProjectId] = useState(headlessProjectId);
   const [headlessQueue, setHeadlessQueue] = useState<HeadlessQueueItem[]>([]);
   const [headlessPendingMessages, setHeadlessPendingMessages] = useState<HeadlessPendingMessage[]>([]);
   const [headlessHistoryEvents, setHeadlessHistoryEvents] = useState<RecentEvent[]>([]);
@@ -742,6 +737,7 @@ export function OrchestratorPanel({
   const [headlessHistoryBeforeSeq, setHeadlessHistoryBeforeSeq] = useState<number | null>(null);
   const [headlessHistoryHasMore, setHeadlessHistoryHasMore] = useState(false);
   const [headlessHistoryLoading, setHeadlessHistoryLoading] = useState(false);
+  const [headlessHistoryReady, setHeadlessHistoryReady] = useState(false);
   const [headlessHistoryError, setHeadlessHistoryError] = useState("");
   const [headlessSplitThreadKey, setHeadlessSplitThreadKey] = useState("");
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
@@ -752,6 +748,9 @@ export function OrchestratorPanel({
   // automatically once the gate is known (2026-07-16 first-message race).
   const [pendingGateMessage, setPendingGateMessage] = useState<string | null>(null);
   const headlessThreadRef = useRef<HTMLDivElement | null>(null);
+  const headlessThreadScrollPositions = useRef(new Map<string, HeadlessThreadScrollPosition>());
+  const headlessThreadProjectRef = useRef(headlessProjectId);
+  const headlessActivityRef = useRef<KanbanThreadActivity>({});
   const [headlessPinnedToBottom, setHeadlessPinnedToBottom] = useState(true);
   const [headlessHasNewBelow, setHeadlessHasNewBelow] = useState(false);
 
@@ -776,7 +775,6 @@ export function OrchestratorPanel({
   const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
     || Boolean(webSession && webSession.mode !== "read_only")
     || effectiveTokenPresent;
-  const headlessProjectId = kanbanAgentProjectId(activeProjectId, snapshot?.project?.project_id || "");
   const headlessConversationId = kanbanAgentConversationId(headlessProjectId);
   const sessionActionReady = Boolean(webSession?.actions_enabled);
   const tokenFallbackAvailable = webSession?.mode === "token_required"
@@ -979,6 +977,55 @@ export function OrchestratorPanel({
     setOperatorBackend(preferredHeadlessBackend(headlessBackendOptions));
   }, [headlessBackendOptions, operatorBackendTouched]);
 
+  useEffect(() => {
+    const previousProjectId = headlessThreadProjectRef.current;
+    if (previousProjectId === headlessProjectId) return;
+    rememberHeadlessThreadScroll(previousProjectId, headlessThreadKey);
+    const placeholderUpgrade = previousProjectId === "default" && headlessProjectId !== "default";
+    const previousDefaultThread = defaultKanbanThreadKey(previousProjectId);
+    const storedThreadId = storedActiveKanbanThread(localStorage, headlessProjectId);
+    const nextThreadId = placeholderUpgrade && headlessThreadKey !== previousDefaultThread
+      ? headlessThreadKey
+      : storedThreadId;
+    const scopedRefs = loadKanbanThreadRefs(localStorage, headlessProjectId, storedThreadId);
+    const carriedRefs = placeholderUpgrade
+      ? headlessThreads.filter((thread) => thread.id !== previousDefaultThread)
+      : [];
+    const nextRefs = saveKanbanThreadRefs(
+      localStorage,
+      headlessProjectId,
+      nextThreadId,
+      [...scopedRefs, ...carriedRefs],
+    );
+    const previousScroll = headlessThreadScrollPositions.current.get(
+      headlessThreadScrollKey(previousProjectId, headlessThreadKey),
+    );
+    if (placeholderUpgrade && previousScroll) {
+      headlessThreadScrollPositions.current.set(
+        headlessThreadScrollKey(headlessProjectId, nextThreadId),
+        previousScroll,
+      );
+    }
+    headlessThreadProjectRef.current = headlessProjectId;
+    headlessActivityRef.current = {};
+    localStorage?.setItem(kanbanThreadStorageKey(headlessProjectId), nextThreadId);
+    setHeadlessThreadKey(nextThreadId);
+    setHeadlessThreads(nextRefs);
+    setHeadlessReadState(loadKanbanThreadReadState(localStorage, headlessProjectId));
+    setHeadlessReadProjectId(headlessProjectId);
+    setHeadlessHistoryEvents([]);
+    setHeadlessBufferedEvents([]);
+    setHeadlessHistoryBeforeSeq(null);
+    setHeadlessHistoryHasMore(false);
+    setHeadlessHistoryReady(false);
+    setHeadlessHistoryError("");
+    setHeadlessSplitThreadKey("");
+    setHeadlessQueue([]);
+    setHeadlessPendingMessages([]);
+    setHeadlessPlanDiscussion(null);
+    setHeadlessHasNewBelow(false);
+  }, [headlessProjectId]);
+
   // chat-e2e F2: pending proposals are ledger truth, not session state — a
   // fresh session must resurface them for approval/dismissal.
   useEffect(() => {
@@ -1000,6 +1047,7 @@ export function OrchestratorPanel({
   useEffect(() => {
     let cancelled = false;
     setHeadlessHistoryLoading(true);
+    setHeadlessHistoryReady(false);
     setHeadlessHistoryError("");
     const historyRequest = kanbanAgentHistoryParams({
       threadId: headlessThreadKey,
@@ -1031,7 +1079,10 @@ export function OrchestratorPanel({
         setHeadlessHistoryError(err instanceof Error ? err.message : String(err));
       }
     }).finally(() => {
-      if (!cancelled) setHeadlessHistoryLoading(false);
+      if (!cancelled) {
+        setHeadlessHistoryLoading(false);
+        setHeadlessHistoryReady(true);
+      }
     });
     return () => { cancelled = true; };
   }, [headlessConversationId, headlessProjectId, headlessThreadKey, operatorBackend]);
@@ -1069,6 +1120,18 @@ export function OrchestratorPanel({
     };
   }
 
+  function rememberHeadlessThreadScroll(projectId: string, threadId: string): void {
+    const node = headlessThreadRef.current;
+    if (!node || !projectId || !threadId) return;
+    headlessThreadScrollPositions.current.set(
+      headlessThreadScrollKey(projectId, threadId),
+      {
+        pinnedToBottom: isScrollElementNearBottom(node),
+        scrollTop: node.scrollTop,
+      },
+    );
+  }
+
   async function loadEarlierHeadlessHistory() {
     if (!headlessHistoryBeforeSeq || headlessHistoryLoading) return;
     const node = headlessThreadRef.current;
@@ -1101,20 +1164,18 @@ export function OrchestratorPanel({
   }
 
   function resetHeadlessThread() {
+    rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
     const next = newHeadlessThreadKey();
     setHeadlessThreadKey(next);
     setHeadlessThreads((current) => {
       const nextRefs = [
-        { id: next, title: current.length ? `chat ${current.length + 1}` : "main", createdAt: new Date().toISOString() },
         ...current,
-      ].slice(0, 8);
-      saveHeadlessThreadRefs(nextRefs);
-      return nextRefs;
+        { id: next, title: `chat ${current.length + 1}`, createdAt: new Date().toISOString() },
+      ];
+      return saveKanbanThreadRefs(localStorage, headlessProjectId, next, nextRefs);
     });
     setHeadlessSplitThreadKey("");
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), next);
-    }
+    localStorage?.setItem(kanbanThreadStorageKey(headlessProjectId), next);
     setHeadlessMessage("");
     setHeadlessPlanDiscussion(null);
     setOperatorError("");
@@ -1122,12 +1183,22 @@ export function OrchestratorPanel({
   }
 
   function selectHeadlessThread(threadId: string) {
+    if (threadId === headlessThreadKey) {
+      headlessInputRef.current?.focus();
+      return;
+    }
+    rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
+    const nextReadState = markKanbanThreadRead(
+      headlessReadState,
+      headlessActivityRef.current,
+      threadId,
+    );
+    saveKanbanThreadReadState(localStorage, headlessProjectId, nextReadState);
+    setHeadlessReadState(nextReadState);
     setHeadlessThreadKey(threadId);
     setHeadlessPlanDiscussion(null);
     if (headlessSplitThreadKey === threadId) setHeadlessSplitThreadKey("");
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(kanbanThreadStorageKey(activeProjectId), threadId);
-    }
+    localStorage?.setItem(kanbanThreadStorageKey(headlessProjectId), threadId);
     headlessInputRef.current?.focus();
   }
 
@@ -1652,6 +1723,27 @@ export function OrchestratorPanel({
     () => mergeEventsByIdentity(headlessHistoryEvents, headlessBufferedEvents, events),
     [events, headlessBufferedEvents, headlessHistoryEvents],
   );
+  const headlessActivity = useMemo(
+    () => kanbanThreadActivity(
+      kanbanAgentSessionEventsFromLive(headlessConversationEvents, {
+        conversationId: headlessConversationId,
+        projectId: headlessProjectId,
+      }),
+      headlessThreadKey,
+    ),
+    [headlessConversationEvents, headlessConversationId, headlessProjectId, headlessThreadKey],
+  );
+  headlessActivityRef.current = headlessActivity;
+  useEffect(() => {
+    if (!headlessHistoryReady || headlessReadProjectId !== headlessProjectId) return;
+    setHeadlessReadState((current) => {
+      const initialized = initializeKanbanThreadReads(current, headlessActivity);
+      const next = markKanbanThreadRead(initialized, headlessActivity, headlessThreadKey);
+      if (next === current) return current;
+      saveKanbanThreadReadState(localStorage, headlessProjectId, next);
+      return next;
+    });
+  }, [headlessActivity, headlessHistoryReady, headlessProjectId, headlessReadProjectId, headlessThreadKey]);
   const permissionEscalation = useMemo(() => latestPermissionEscalation(
     headlessConversationEvents,
     {
@@ -1683,8 +1775,21 @@ export function OrchestratorPanel({
   const visibleHeadlessConversation = useMemo(() => (
     withPendingHeadlessTurns(headlessConversation, headlessPendingMessages)
   ), [headlessConversation, headlessPendingMessages]);
-  const activeHeadlessThread = visibleHeadlessConversation.threads.find((thread) => thread.id === headlessThreadKey)
-    ?? visibleHeadlessConversation.threads[0];
+  const headlessUnreadCounts = useMemo(
+    () => headlessReadProjectId === headlessProjectId
+      ? kanbanThreadUnreadCounts(headlessReadState, headlessActivity)
+      : {},
+    [headlessActivity, headlessProjectId, headlessReadProjectId, headlessReadState],
+  );
+  const displayedHeadlessConversation = useMemo(() => ({
+    ...visibleHeadlessConversation,
+    threads: visibleHeadlessConversation.threads.map((thread) => ({
+      ...thread,
+      unseenCount: thread.id === headlessThreadKey ? 0 : headlessUnreadCounts[thread.id] ?? 0,
+    })),
+  }), [headlessThreadKey, headlessUnreadCounts, visibleHeadlessConversation]);
+  const activeHeadlessThread = displayedHeadlessConversation.threads.find((thread) => thread.id === headlessThreadKey)
+    ?? displayedHeadlessConversation.threads[0];
   const activeThreadBusy = Boolean(
     activeHeadlessThread
     && ["streaming", "submitted", "queued", "waiting_input"].includes(activeHeadlessThread.status),
@@ -1714,29 +1819,45 @@ export function OrchestratorPanel({
     headlessQueueCards,
   );
 
-  // Switching thread or (re)opening the panel re-pins to bottom and jumps there.
+  // Each thread owns its reading position. Restoring after history settles keeps
+  // switching sessions from discarding where the operator was reading.
   useEffect(() => {
-    setHeadlessPinnedToBottom(true);
-    setHeadlessHasNewBelow(false);
-    scrollElementToBottom(headlessThreadRef.current);
-  }, [headlessThreadKey, panelMode]);
+    if (!headlessHistoryReady || headlessHistoryLoading) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      const node = headlessThreadRef.current;
+      if (!node) return;
+      const saved = headlessThreadScrollPositions.current.get(
+        headlessThreadScrollKey(headlessProjectId, headlessThreadKey),
+      );
+      if (!saved || saved.pinnedToBottom) {
+        scrollElementToBottom(node);
+        setHeadlessPinnedToBottom(true);
+      } else {
+        node.scrollTop = Math.min(saved.scrollTop, Math.max(0, node.scrollHeight - node.clientHeight));
+        setHeadlessPinnedToBottom(isScrollElementNearBottom(node));
+      }
+      setHeadlessHasNewBelow(false);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [headlessHistoryLoading, headlessHistoryReady, headlessProjectId, headlessThreadKey, panelMode]);
   // Content changed (new turn / streamed delta / refresh). Only follow to the
   // bottom when the user is pinned there; otherwise surface a "New messages"
   // affordance instead of yanking their scroll position.
   useEffect(() => {
     const node = headlessThreadRef.current;
-    if (!node) return;
+    if (!node || !headlessHistoryReady || headlessHistoryLoading) return;
     if (headlessPinnedToBottom || isScrollElementNearBottom(node)) {
       scrollElementToBottom(node);
       setHeadlessHasNewBelow(false);
     } else {
       setHeadlessHasNewBelow(true);
     }
-  }, [headlessScrollSignature, headlessPinnedToBottom]);
+  }, [headlessHistoryLoading, headlessHistoryReady, headlessScrollSignature, headlessPinnedToBottom]);
   function showLatestHeadless() {
     setHeadlessPinnedToBottom(true);
     setHeadlessHasNewBelow(false);
     scrollElementToBottom(headlessThreadRef.current);
+    rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
   }
   useEffect(() => {
     if (activeThreadBusy || headlessSubmitting) return undefined;
@@ -2382,6 +2503,14 @@ export function OrchestratorPanel({
         </form> : null}
 
         <div className="headless-chat">
+          <AgentThreadNavigation
+            activeThreadId={headlessThreadKey}
+            allowSplit={fullscreen}
+            conversation={displayedHeadlessConversation}
+            onActiveThreadChange={selectHeadlessThread}
+            onSplitThreadChange={setHeadlessSplitThreadKey}
+            splitThreadId={headlessSplitThreadKey}
+          />
           <div
             className="headless-thread"
             ref={headlessThreadRef}
@@ -2389,6 +2518,7 @@ export function OrchestratorPanel({
               const nearBottom = isScrollElementNearBottom(event.currentTarget);
               setHeadlessPinnedToBottom(nearBottom);
               if (nearBottom) setHeadlessHasNewBelow(false);
+              rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
             }}
           >
             {headlessHistoryHasMore ? (
@@ -2413,7 +2543,7 @@ export function OrchestratorPanel({
               allowPreviewSplit={fullscreen}
               compact={!fullscreen}
               compactRunHeader
-              conversation={visibleHeadlessConversation}
+              conversation={displayedHeadlessConversation}
               collapseCompletedRunDetails
               emptyBody={headlessEmptyBody}
               emptyTitle={headlessEmptyTitle}
@@ -2437,7 +2567,7 @@ export function OrchestratorPanel({
               onSplitThreadChange={setHeadlessSplitThreadKey}
               showRunDetails={false}
               showRunProvider={false}
-              showThreadChips={fullscreen && headlessConversation.threads.length > 1}
+              showThreadChips={false}
               splitThreadId={headlessSplitThreadKey}
             />
           </div>

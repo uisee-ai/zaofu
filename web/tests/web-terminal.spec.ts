@@ -112,6 +112,44 @@ async function commitSyntheticImeCandidate(
   }, options);
 }
 
+async function commitSyntheticProcessImeText(
+  input: import("@playwright/test").Locator,
+  committed: string,
+) {
+  return input.evaluate(async (element, text) => {
+    const textarea = element as HTMLTextAreaElement;
+    const keydown = new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      code: "Space",
+      isComposing: false,
+      key: "Process",
+    });
+    Object.defineProperty(keydown, "keyCode", { configurable: true, value: 229 });
+    textarea.dispatchEvent(keydown);
+    textarea.value += text;
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+    textarea.dispatchEvent(new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      data: text,
+      inputType: "insertText",
+      isComposing: false,
+    }));
+    const keyup = new KeyboardEvent("keyup", {
+      bubbles: true,
+      cancelable: true,
+      code: "Space",
+      isComposing: false,
+      key: " ",
+    });
+    Object.defineProperty(keyup, "keyCode", { configurable: true, value: 32 });
+    textarea.dispatchEvent(keyup);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return keydown.defaultPrevented;
+  }, committed);
+}
+
 test("Web Terminal keeps native dock tabs mounted, maximizes, reconnects, and stops explicitly", async ({ page }) => {
   test.setTimeout(60_000);
   page.on("pageerror", (error) => console.error(`[pageerror] ${error.stack ?? error.message}`));
@@ -278,6 +316,14 @@ test("Web Terminal keeps native dock tabs mounted, maximizes, reconnects, and st
     .filter((command) => command.type === "terminal.scroll")).toHaveLength(0);
   await expect(drawer.locator(".web-terminal-session-panel.is-active .xterm-rows"))
     .toContainText("你好");
+
+  const processImeStart = terminalCommands.length;
+  expect(await commitSyntheticProcessImeText(firstInput, "界")).toBe(false);
+  await expect.poll(() => terminalCommands.slice(processImeStart)
+    .filter((command) => command.type === "terminal.input" && command.text)
+    .map((command) => command.text)).toEqual(["界"]);
+  await expect(drawer.locator(".web-terminal-session-panel.is-active .xterm-rows"))
+    .toContainText("你好界");
 
   const pageKeyStart = terminalCommands.length;
   await firstInput.press("PageUp");

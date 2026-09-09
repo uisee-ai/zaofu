@@ -134,6 +134,8 @@ def _expected_channel_contract_key(
         return "channel_consensus_review"
     if refs.get("question_dedup_request_id"):
         return "channel_question_dedup"
+    if refs.get("adaptive_next_round_id"):
+        return "channel_contribution"
     if refs.get("synthesis_request_id"):
         return "channel_synthesis"
     if channel_reply_response_contract(channel, request, message):

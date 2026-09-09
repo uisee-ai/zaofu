@@ -310,6 +310,9 @@ class PlanApplyActionsMixin:
             "expected_materialization_digest": str(
                 submit_details.get("materialization_digest") or ""
             ),
+            "expected_profile_selection_digest": str(
+                submit_details.get("profile_selection_digest") or ""
+            ),
             "task_id": str(
                 request.get("task_id")
                 or submit_payload.get("task_id")

@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import EventWriter
+from zf.core.state.locks import locked_path
 from zf.runtime.channel_projection import project_channel, project_channels
 from zf.runtime.channel_contracts import (
     discussion_engine_mode,
@@ -33,6 +34,10 @@ from zf.runtime.channel_contracts import (
 )
 from zf.runtime.channel_consensus_identity import consensus_reached_payload
 from zf.runtime.channel_discussion_contribution import valid_phase1_members
+from zf.runtime.channel_synthesis_lock import (
+    channel_synthesis_lock_path,
+    synthesis_request_in_flight,
+)
 from zf.runtime.channel_question_dedup import (
     question_ledger,
     question_ledger_digest,
@@ -487,42 +492,56 @@ def advance_discussion(
             channel_id=channel_id, thread_id=thread_id,
         ))
         if _ledger_converged(channel, session, thread_id):
-            synthesizer = str(session.get("synthesizer") or "")
-            request_id = _stable_synthesis_request_id(
-                channel_id,
-                thread_id,
-                str(session.get("started_event_id") or ""),
-                generation=_next_synthesis_generation(channel, thread_id),
-            )
-            if not _synthesis_already_requested(channel, request_id):
+            # The Web action and this tick can both observe the same ledger.
+            # Lock the observation-to-append interval to keep one request per
+            # synthesis generation.
+            with locked_path(
+                channel_synthesis_lock_path(state_dir, channel_id, thread_id)
+            ):
+                current = project_channel(Path(state_dir), channel_id) or channel
+                current_session = discussion_state(current, thread_id)
+                if (
+                    str(current_session.get("state") or "idle")
+                    != "phase2_relay"
+                    or not _ledger_converged(current, current_session, thread_id)
+                ):
+                    return emitted
+                synthesizer = str(current_session.get("synthesizer") or "")
+                request_id = _stable_synthesis_request_id(
+                    channel_id,
+                    thread_id,
+                    str(current_session.get("started_event_id") or ""),
+                    generation=_next_synthesis_generation(current, thread_id),
+                )
+                if not synthesis_request_in_flight(current, thread_id):
+                    writer.emit(
+                        "channel.synthesis.requested",
+                        actor=actor,
+                        correlation_id=channel_id,
+                        payload={
+                            "channel_id": channel_id,
+                            "thread_id": thread_id,
+                            "request_id": request_id,
+                            "target_member_id": synthesizer,
+                            "status": "requested",
+                            "reason": "ledger_converged",
+                            "source": source,
+                        },
+                    )
+                    emitted.append("channel.synthesis.requested")
                 writer.emit(
-                    "channel.synthesis.requested",
+                    "channel.discussion.phase.changed",
                     actor=actor,
                     correlation_id=channel_id,
                     payload={
                         "channel_id": channel_id,
                         "thread_id": thread_id,
-                        "request_id": request_id,
-                        "target_member_id": synthesizer,
-                        "status": "requested",
+                        "phase": "phase3_synthesis",
                         "reason": "ledger_converged",
                         "source": source,
                     },
                 )
-                emitted.append("channel.synthesis.requested")
-            writer.emit(
-                "channel.discussion.phase.changed",
-                actor=actor,
-                correlation_id=channel_id,
-                payload={
-                    "channel_id": channel_id,
-                    "thread_id": thread_id,
-                    "phase": "phase3_synthesis",
-                    "reason": "ledger_converged",
-                    "source": source,
-                },
-            )
-            emitted.append("channel.discussion.phase.changed")
+                emitted.append("channel.discussion.phase.changed")
             return emitted
         if overdue:
             emitted.extend(_close_stalled(
@@ -730,13 +749,6 @@ def _consensus_reached(
 def _question_exists(channel: dict[str, Any], question_id: str) -> bool:
     for question in channel.get("open_questions") or []:
         if isinstance(question, dict) and str(question.get("question_id") or "") == question_id:
-            return True
-    return False
-
-
-def _synthesis_already_requested(channel: dict[str, Any], request_id: str) -> bool:
-    for item in channel.get("synthesis_requests") or []:
-        if isinstance(item, dict) and str(item.get("request_id") or "") == request_id:
             return True
     return False
 

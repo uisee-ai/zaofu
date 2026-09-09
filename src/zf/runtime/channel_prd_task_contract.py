@@ -7,7 +7,10 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from zf.runtime.channel_projection import project_channel
-from zf.runtime.channel_readiness import owner_readiness_risk_accepted
+from zf.runtime.channel_readiness import (
+    channel_prd_planning_authorized,
+    owner_readiness_risk_accepted,
+)
 from zf.runtime.channel_workflow_authority import (
     channel_authority_context_from_submit_payload,
     channel_workflow_authority_error,
@@ -70,14 +73,13 @@ def compile_channel_prd_task_payload(
         readiness_ref=readiness_ref,
         readiness_digest=readiness_digest,
     )
-    if (
-        readiness_verdict != "ready"
-        or implementation_start is not True
-    ) and not risk_accepted:
+    if not channel_prd_planning_authorized(
+        readiness_verdict=readiness_verdict,
+        risk_accepted=risk_accepted,
+    ):
         raise ChannelPrdTaskContractError(
-            "Channel PRD is not implementation-ready: "
-            f"readiness_verdict={readiness_verdict!r}, "
-            f"implementation_start={implementation_start!r}"
+            "Channel PRD is not ready for Task planning: "
+            f"readiness_verdict={readiness_verdict!r}"
         )
     if _string_items(synthesis.get("open_questions")):
         raise ChannelPrdTaskContractError(
@@ -113,12 +115,12 @@ def compile_channel_prd_task_payload(
         authority=authority,
         label="Channel PRD readiness",
     )
-    if (
-        str(readiness_payload.get("verdict") or "") != "ready"
-        or readiness_payload.get("implementation_start") is not True
-    ) and not risk_accepted:
+    if not channel_prd_planning_authorized(
+        readiness_verdict=readiness_payload.get("verdict"),
+        risk_accepted=risk_accepted,
+    ):
         raise ChannelPrdTaskContractError(
-            "Channel PRD readiness artifact does not authorize implementation"
+            "Channel PRD readiness artifact does not authorize Task planning"
         )
     if _string_items(readiness_payload.get("gaps")) and not risk_accepted:
         raise ChannelPrdTaskContractError(
@@ -207,7 +209,7 @@ def compile_channel_prd_task_payload(
         "readiness_ref": readiness_ref,
         "readiness_digest": readiness_digest,
         "readiness_verdict": readiness_verdict,
-        "implementation_start": True,
+        "implementation_start": implementation_start is True,
         "declared_implementation_start": implementation_start is True,
         "readiness_risk_accepted": risk_accepted,
         "readiness_risk_confirmed_by": str(

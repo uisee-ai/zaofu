@@ -82,8 +82,8 @@ def test_threaded_task_created_resolves():
 
 
 def test_title_fallback_resolves_out_of_band_execution():
-    # The chat e2e executed proposals via raw API without threading the id —
-    # a same-title task.created still collapses the pending entry.
+    # Legacy raw API callers did not thread proposal IDs or source lineage;
+    # retain a title fallback for that unbound compatibility path.
     events = [
         _proposed("evt-p1", "实现 2048 核心棋盘逻辑"),
         ZfEvent(type="task.created", actor="operator",
@@ -91,6 +91,43 @@ def test_title_fallback_resolves_out_of_band_execution():
                          "request": {"title": "实现 2048 核心棋盘逻辑"}}),
     ]
     assert pending_kanban_proposals(events) == []
+
+
+def test_title_fallback_does_not_hide_distinct_channel_prd_lineage():
+    proposal = _proposed("evt-p1", "HKIA Delivery")
+    proposal.payload["proposal"]["payload"] = {
+        "title": "HKIA Delivery",
+        "contract": {
+            "source_ref": "channels/new/prd/r1.json",
+            "evidence_contract": {
+                "channel_id": "ch-new",
+                "channel_prd_digest": "digest-new",
+            },
+        },
+    }
+    events = [
+        proposal,
+        ZfEvent(
+            type="task.created",
+            actor="operator",
+            payload={
+                "task": {
+                    "id": "TASK-OLD",
+                    "title": "HKIA Delivery",
+                    "contract": {
+                        "source_ref": "channels/old/prd/r1.json",
+                        "evidence_contract": {
+                            "channel_id": "ch-old",
+                            "channel_prd_digest": "digest-old",
+                        },
+                    },
+                },
+                "request": {"title": "HKIA Delivery"},
+            },
+        ),
+    ]
+
+    assert [item["proposal_event_id"] for item in pending_kanban_proposals(events)] == ["evt-p1"]
 
 
 def test_unrelated_task_created_keeps_pending():

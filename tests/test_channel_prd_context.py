@@ -214,7 +214,7 @@ def test_context_exposes_exact_owner_accepted_readiness_risk(
     assert item["prd_revision"] == 3
     assert item["readiness_verdict"] == "needs_multi_lens"
     assert item["declared_implementation_start"] is False
-    assert item["implementation_start"] is True
+    assert item["implementation_start"] is False
     assert item["risk_accepted"] is True
     assert item["confirmed_by"] == "owner:web"
 

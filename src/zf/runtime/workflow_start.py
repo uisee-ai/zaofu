@@ -329,7 +329,12 @@ class WorkflowStartService:
                 status_code=422,
                 task_id=task_id,
             )
-        if str(route.get("family") or "") == "delivery":
+        is_delivery_route = str(route.get("family") or "") == "delivery"
+        is_channel_prd_task = (
+            str(getattr(task.contract, "source_mode", "") or "")
+            == "channel_prd"
+        )
+        if is_delivery_route:
             if self.config is None:
                 return _failure(
                     "workflow_route_unavailable",
@@ -350,6 +355,7 @@ class WorkflowStartService:
                     status_code=422,
                     task_id=task_id,
                 )
+        if is_delivery_route or is_channel_prd_task:
             parameters = dict(parameters)
             for key in ("artifact_refs", "source_refs"):
                 if key not in parameters and payload.get(key) not in (
@@ -525,8 +531,8 @@ class WorkflowStartService:
             "thread_key",
         ):
             if task_input_binding and key in {"artifact_refs", "source_refs"}:
-                # Delivery refs were already compiled into effective
-                # parameters.  Re-copying the raw top-level override here can
+                # Task-derived refs were already compiled into effective
+                # parameters. Re-copying a raw top-level override here can
                 # discard inherited Task refs after approval.
                 continue
             if (request_projection or terminal_rotation) and key in {

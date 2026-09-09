@@ -83,6 +83,13 @@ export interface AgentSessionPlanOption {
     memberCount?: number;
     roles?: string[];
     maxRounds?: number;
+    roundPolicy?: string;
+    profiles?: Array<{
+      memberId?: string;
+      channelRole?: string;
+      profileId?: string;
+      displayName?: string;
+    }>;
     mode?: string;
     engineMode?: string;
     routingStrategy?: string;
@@ -96,6 +103,8 @@ export interface AgentSessionPlanOption {
     verifyRoles?: string[];
     laneCount?: number;
     outputProfile?: string;
+    inputKeys?: string[];
+    preflight?: string;
   };
 }
 

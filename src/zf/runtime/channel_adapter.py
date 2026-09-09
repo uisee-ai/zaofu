@@ -81,6 +81,17 @@ HEADLESS_BACKENDS = {
 DISPATCHABLE_STATUSES = {"pending", "queued"}
 DEFAULT_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S = 30 * 60.0
 
+# These replies are self-contained phase operations.  Their context packs carry
+# the complete bounded evidence set, so resuming a member's open-ended
+# discussion session only replays stale tool history and can exhaust provider
+# context before the phase can publish its durable artifact.
+_PHASE_SESSION_REF_KEYS = (
+    "question_dedup_request_id",
+    "synthesis_request_id",
+    "cross_review_request_id",
+    "consensus_review_id",
+)
+
 
 @with_channel_reply_dispatch_claim
 def dispatch_reply_request(
@@ -689,7 +700,11 @@ def _run_headless_reply(
 
     store = HeadlessThreadStore(state_dir=state_dir, project_root=project_root)
     channel_id = str(channel.get("channel_id") or request.get("channel_id") or "")
-    thread_key = f"channel:{channel_id}:{request.get('thread_id') or 'main'}:{request.get('target_member_id') or ''}"
+    thread_key = _channel_provider_thread_key(
+        channel_id=channel_id,
+        request=request,
+        message=message,
+    )
     thread = store.load(scope="project", task_id="", thread_key=thread_key)
     thread_id = str(thread["thread_id"])
     timeout_s = _channel_provider_headless_timeout_s()
@@ -878,6 +893,30 @@ def _run_headless_reply(
         )
         store.record_turn(thread, result=result, workdir=str(project_root))
         return result
+
+
+def _channel_provider_thread_key(
+    *,
+    channel_id: str,
+    request: dict[str, Any],
+    message: dict[str, Any],
+) -> str:
+    """Return the durable provider-thread key for one Channel reply.
+
+    Conversational contributions retain a member-scoped provider session.  A
+    typed deliberation phase is different: it receives an authoritative,
+    complete context pack and must be isolated from prior agent tool history.
+    Repairs preserve continuity by retaining the original phase request id.
+    """
+    thread_id = str(request.get("thread_id") or "main")
+    member_id = str(request.get("target_member_id") or "")
+    base = f"channel:{channel_id}:{thread_id}:{member_id}"
+    refs = message.get("refs") if isinstance(message.get("refs"), dict) else {}
+    for ref_key in _PHASE_SESSION_REF_KEYS:
+        phase_id = str(refs.get(ref_key) or "").strip()
+        if phase_id:
+            return f"{base}:phase:{ref_key}:{phase_id}"
+    return base
 
 
 def _channel_provider_headless_timeout_s() -> float:

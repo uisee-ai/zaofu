@@ -12,6 +12,7 @@ from zf.runtime.channel_conversation_projection import (
 )
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_sidecar import channel_message_event_payload
+from zf.web.projections import read_model
 
 
 CHANNEL_ID = "ch-conversation"
@@ -226,6 +227,53 @@ def test_channel_conversation_paginates_without_duplicates(tmp_path: Path) -> No
     bounded = project_channel_conversation(state_dir, CHANNEL_ID, limit=999)
     assert bounded is not None
     assert len(bounded["messages"]) == MAX_CONVERSATION_LIMIT
+
+
+def test_channel_conversation_accepts_a_scoped_read_model_event_slice(tmp_path: Path) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    log = EventLog(state_dir / "events.jsonl")
+    _append(log, "channel.created", {"name": "Indexed"})
+    _append(log, "channel.discussion.started", {
+        "thread_id": "main",
+        "discussion_id": "discussion-indexed",
+        "roster": ["arch"],
+        "synthesizer": "arch",
+        "requirement_message_id": "msg-indexed",
+    })
+    _append(log, "channel.message.posted", {
+        "message_id": "msg-indexed",
+        "thread_id": "main",
+        "member_id": "operator",
+        "role": "user",
+        "text": "Use the channel index.",
+    })
+    log.append(ZfEvent(
+        type="task.created",
+        actor="test",
+        payload={"task_id": "unrelated"},
+    ))
+    read_model.rebuild(state_dir)
+
+    indexed_events = read_model.hydrate_events_by_ref(
+        state_dir,
+        ref_kind="channel",
+        ref_id=CHANNEL_ID,
+        require_fresh=False,
+    )
+    full = project_channel_conversation(state_dir, CHANNEL_ID)
+    indexed = project_channel_conversation(
+        state_dir,
+        CHANNEL_ID,
+        events=indexed_events,
+    )
+
+    assert indexed_events is not None
+    assert full is not None
+    assert indexed is not None
+    assert indexed["messages"] == full["messages"]
+    assert indexed["discussion_attention"] == full["discussion_attention"]
+    assert indexed["message_count"] == full["message_count"]
 
 
 def test_channel_conversation_omits_diagnostics_and_duplicate_payloads(

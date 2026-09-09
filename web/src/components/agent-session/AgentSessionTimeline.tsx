@@ -1,6 +1,6 @@
 import { createContext, Fragment, useContext, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
-import { AlertTriangle, Bot, Check, CheckCircle2, ChevronRight, CircleSlash, Clock3, Copy, FileText, GitCompare, Hourglass, Info, ListChecks, Loader2, Maximize2, MessageSquare, Minimize2, Paperclip, PauseCircle, Pin, Reply, SplitSquareHorizontal, XCircle } from "lucide-react";
+import { AlertTriangle, Bot, Check, CheckCircle2, ChevronRight, CircleSlash, Clock3, Copy, FileText, GitCompare, Hourglass, Info, ListChecks, Loader2, Maximize2, MessageSquare, Minimize2, Paperclip, PauseCircle, Pin, Reply, XCircle } from "lucide-react";
 import type {
   AgentConversation,
   AgentSessionActionProposal,
@@ -30,6 +30,7 @@ import { cleanToolTitle, iconForToolName } from "./toolIcon";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { runStartTimestamp, toolCallCount } from "./liveRunIndicator";
 import { ApproveInteractionActions, PlanInteractionForm } from "./AgentInteractionControls";
+import { AgentThreadNavigation } from "./AgentThreadNavigation";
 import {
   contributionReferencePresentation,
   contributionRowLabel,
@@ -108,8 +109,9 @@ export function AgentSessionTimeline({
   const [previewPart, setPreviewPart] = useState<AgentSessionPart | null>(null);
   const channelChatMode = conversation.surface === "channel_group";
   const activeThread = threadById(conversation, activeThreadId) ?? conversation.threads[0];
-  const splitThread = splitThreadId ? threadById(conversation, splitThreadId) : null;
-  const canSplit = allowSplit && !compact && conversation.threads.length > 1;
+  const splitThread = allowSplit && !compact && splitThreadId
+    ? threadById(conversation, splitThreadId)
+    : null;
   // Preview-split (chat | preview) takes priority over thread-split. Gated by
   // allowPreviewSplit (surfaces opt in when wide enough), not `compact`.
   const showPreview = Boolean(previewPart) && allowPreviewSplit;
@@ -127,39 +129,15 @@ export function AgentSessionTimeline({
 
   return (
     <div className={`agent-session ${compact ? "compact" : ""} ${channelChatMode ? "channel-chat-mode" : ""}`.trim()}>
-      {showThreadChips && conversation.threads.length > 1 ? (
-        <div className="agent-thread-bar">
-          <div className="agent-thread-chips" role="tablist" aria-label="Agent threads">
-            {conversation.threads.map((thread) => (
-              <button
-                aria-selected={thread.id === activeThread?.id}
-                className={`agent-thread-chip ${thread.id === activeThread?.id ? "active" : ""}`}
-                key={thread.id}
-                type="button"
-                onClick={() => onActiveThreadChange?.(thread.id)}
-              >
-                <span className={`agent-thread-dot ${statusClass(thread.status)}`} />
-                <span>{thread.title}</span>
-                {thread.unseenCount ? <span className="agent-thread-count">{thread.unseenCount}</span> : null}
-              </button>
-            ))}
-          </div>
-          {canSplit ? (
-            <label className="agent-split-control">
-              <SplitSquareHorizontal size={14} />
-              <select
-                aria-label="Compare with thread"
-                value={splitThreadId}
-                onChange={(event) => onSplitThreadChange?.(event.target.value)}
-              >
-                <option value="">single</option>
-                {conversation.threads.filter((thread) => thread.id !== activeThread?.id).map((thread) => (
-                  <option key={thread.id} value={thread.id}>{thread.title}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
+      {showThreadChips ? (
+        <AgentThreadNavigation
+          activeThreadId={activeThreadId}
+          allowSplit={allowSplit && !compact}
+          conversation={conversation}
+          onActiveThreadChange={onActiveThreadChange}
+          onSplitThreadChange={onSplitThreadChange}
+          splitThreadId={splitThreadId}
+        />
       ) : null}
 
       {chatPanes.length ? (

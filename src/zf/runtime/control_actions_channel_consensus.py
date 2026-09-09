@@ -10,6 +10,7 @@ from zf.runtime.channel_owner_authority import (
     channel_owner_authority_error,
 )
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_question_gate import question_dedup_gate_state
 from zf.runtime.control_actions_helpers import (
     _normal_channel_id,
     _optional_str,
@@ -35,6 +36,30 @@ class ChannelConsensusActionsMixin:
         question_id = _required_text(payload, "question_id")
         resolution = _required_text(payload, "resolution")
         channel = project_channel(self.state_dir, channel_id) or {}
+        dedup_gate_state = question_dedup_gate_state(
+            channel,
+            thread_id=thread_id,
+        )
+        if dedup_gate_state != "open":
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason=(
+                    "channel questions are being consolidated; wait for "
+                    "canonical questions before resolving"
+                    if dedup_gate_state == "consolidating"
+                    else "channel question consolidation is blocked; restart "
+                    "or repair the discussion before resolving"
+                ),
+                status_code=409,
+                status=(
+                    "question_consolidation_pending"
+                    if dedup_gate_state == "consolidating"
+                    else "question_consolidation_blocked"
+                ),
+            )
         question = next(
             (
                 item

@@ -101,17 +101,13 @@ from zf.runtime.writer_fanout_dependency_failure import (
 from zf.runtime.task_contract_snapshot import (
     TaskContractSnapshotError,
     build_target_snapshot,
-    build_task_contract_snapshot,
     contract_snapshot_identity_fields,
     current_task_contract_identity,
     descriptor_from_payload as contract_descriptor_from_payload,
     hydrate_task_contract_snapshot,
     hydrate_target_snapshot,
-    snapshot_payload_fields,
     target_descriptor_from_payload,
     target_payload_fields,
-    task_map_generation,
-    write_task_contract_snapshot,
     write_target_snapshot,
 )
 from zf.runtime.task_contract_authority_runtime import (
@@ -4257,75 +4253,24 @@ class FanoutCoordinationMixin(
         task_item: dict,
         context,
         project_path: str,
+        dependency_result=None,
     ) -> tuple[dict, dict]:
         task_id = str(task_item.get("task_id") or "")
         task = self.task_store.get(task_id) if task_id else None
-        if task is None:
-            raise TaskContractSnapshotError(
-                f"cannot snapshot missing canonical task {task_id!r}"
-            )
-        try:
-            descriptor = contract_descriptor_from_payload(task_item)
-        except TaskContractSnapshotError:
-            descriptor = {}
-        if descriptor:
-            snapshot = hydrate_task_contract_snapshot(
-                self.state_dir,
-                descriptor,
-                expected=current_task_contract_identity(
-                    task,
-                    task_map_ref=str(task_item.get("task_map_ref") or ""),
-                ),
-            )
-        else:
-            from zf.runtime.orchestrator_dispatch import (
-                _capture_head,
-                _git_rev_parse,
-            )
+        from zf.runtime.writer_contract_snapshot_dispatch import (
+            prepare_writer_fanout_contract_snapshot,
+        )
 
-            base_ref = str(
-                task_item.get("base_commit")
-                or task_item.get("source_commit")
-                or task_item.get("dispatch_base_commit")
-                or getattr(context, "target_ref", "")
-                or ""
-            ).strip()
-            base_commit = (
-                _git_rev_parse(self.project_root, base_ref)
-                if base_ref
-                else ""
-            ) or _capture_head(Path(project_path)) or _capture_head(
-                self.project_root
-            )
-            snapshot = build_task_contract_snapshot(
-                task,
-                workflow_run_id=str(
-                    task_item.get("workflow_run_id")
-                    or getattr(context, "trace_id", "")
-                    or ""
-                ),
-                task_map_generation_id=task_map_generation(
-                    task,
-                    task_map_ref=str(task_item.get("task_map_ref") or ""),
-                ),
-                base_commit=base_commit,
-                task_ref=f"{self.config.runtime.git.task_ref_prefix}/{task_id}",
-            )
-            descriptor = write_task_contract_snapshot(
-                self.state_dir,
-                snapshot,
-                source_event_id=str(getattr(context, "trigger_event_id", "") or ""),
-            )
-        fields = {
-            **snapshot_payload_fields(descriptor),
-            **contract_snapshot_identity_fields(snapshot),
-        }
-        task_item.update(fields)
-        task_payload = task_item.get("payload")
-        if isinstance(task_payload, dict):
-            for key, value in fields.items():
-                task_payload.setdefault(key, value)
-        return snapshot, descriptor
+        return prepare_writer_fanout_contract_snapshot(
+            state_dir=self.state_dir,
+            project_root=self.project_root,
+            config=self.config,
+            task=task,
+            task_item=task_item,
+            context=context,
+            project_path=project_path,
+            dependency_result=dependency_result,
+        )
 
     def _typed_task_contract_handoff_enabled(self, task_item: dict) -> bool:
         from zf.runtime.typed_handoff_policy import (

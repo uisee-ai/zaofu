@@ -13,6 +13,11 @@ export interface AskUserQuestionOption {
   description?: string;
   recommended?: boolean;
   detail?: string;
+  guidance?: string;
+  routeId?: string;
+  submitAction?: string;
+  submitMode?: string;
+  templateId?: string;
 }
 
 export interface AskUserQuestionItem {
@@ -239,6 +244,12 @@ export function AskUserQuestion({
                   <input
                     aria-label={option.label}
                     checked={currentSelected === option.id}
+                    data-option-id={option.id}
+                    data-recommended={option.recommended ? "true" : undefined}
+                    data-route-id={option.routeId || undefined}
+                    data-submit-action={option.submitAction || undefined}
+                    data-submit-mode={option.submitMode || undefined}
+                    data-template-id={option.templateId || undefined}
                     data-testid={`ask-user-option-${option.id}`}
                     name={`ask-${requestId}-${question.id}`}
                     type="radio"
@@ -259,6 +270,7 @@ export function AskUserQuestion({
                   </span>
                   {option.description ? <small>{option.description}</small> : null}
                   {option.detail ? <small className="agent-plan-option-details">{option.detail}</small> : null}
+                  {option.guidance ? <small className="agent-plan-option-guidance">{option.guidance}</small> : null}
                 </span>
               </label>
             ))}

@@ -172,6 +172,7 @@ _BUILTIN_HANDLER_METHODS: tuple[tuple[str, str], ...] = (
         "_on_channel_cross_review_requested",
     ),
     ("channel.synthesis.requested", "_on_channel_synthesis_requested"),
+    ("channel.discussion.next_round.proposed", "_on_channel_synthesis_requested"),
     (
         "channel.synthesis.repair.requested",
         "_on_channel_synthesis_repair_requested",

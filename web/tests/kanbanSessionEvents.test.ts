@@ -233,6 +233,80 @@ assert(
   explicitChannelDetails?.firstPassReplyCount === 5,
   "Channel Plan retains first-pass fanout count",
 );
+const taskWorkflowPlan = parsePlanRequest({
+  plan_request: {
+    request_event_id: "evt-task-workflow-plan",
+    request_id: "plan-task-workflow",
+    revision: 1,
+    header: "PRD workflow route",
+    question_id: "prd-workflow-route",
+    question: "Which route should execute the Task?",
+    options: [{
+      id: "delivery",
+      label: "Delivery (Recommended)",
+      submit_details: {
+        route_id: "delivery:prd:default",
+        input_keys: ["backend", "target_root"],
+        preflight: "ready",
+      },
+    }],
+  },
+});
+const taskWorkflowDetails = taskWorkflowPlan?.options[0]?.submitDetails;
+assert(
+  taskWorkflowDetails?.inputKeys?.join(",") === "backend,target_root",
+  "Task Workflow Plan retains input keys",
+);
+assert(
+  taskWorkflowDetails?.preflight === "ready",
+  "Task Workflow Plan retains preflight state",
+);
+const adaptiveChannelPlan = parsePlanRequest({
+  plan_request: {
+    request_event_id: "evt-channel-adaptive-plan",
+    request_id: "plan-channel-adaptive",
+    revision: 1,
+    header: "Channel setup",
+    question_id: "mode",
+    question: "Which discussion mode?",
+    options: [{
+      id: "prd-clarification",
+      label: "PRD clarification",
+      submit_details: {
+        template_id: "prd-clarification",
+        member_count: 4,
+        members: [
+          { role: "product_pm" },
+          { role: "arch" },
+          { role: "critic" },
+          { role: "synthesizer" },
+        ],
+        round_policy: "synthesis_adaptive",
+        profiles: [
+          {
+            member_id: "arch",
+            channel_role: "arch",
+            profile_id: "architecture-codex",
+            display_name: "Architecture Codex",
+          },
+        ],
+      },
+    }],
+  },
+});
+const adaptiveChannelDetails = adaptiveChannelPlan?.options[0]?.submitDetails;
+assert(
+  adaptiveChannelDetails?.roundPolicy === "synthesis_adaptive",
+  "Channel Plan retains the adaptive round policy without inventing a cap",
+);
+assert(
+  adaptiveChannelDetails?.maxRounds === 0,
+  "adaptive Channel Plan has no implicit max-rounds value",
+);
+assert(
+  adaptiveChannelDetails?.profiles?.[0]?.profileId === "architecture-codex",
+  "Channel Plan retains the selected role-compatible Profile",
+);
 const multiQuestionResponse = parsePlanResponse({
   request_event_id: "evt-plan-multi",
   request_id: "plan-multi",

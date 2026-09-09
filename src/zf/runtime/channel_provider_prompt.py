@@ -66,6 +66,25 @@ def build_channel_provider_prompt(
         if isinstance(member.get("write_policy"), dict)
         else permission_profile_write_policy(member.get("permission_profile"))
     )
+    response_contract = channel_reply_response_contract(
+        channel,
+        request,
+        message,
+    )
+    refs = message.get("refs") if isinstance(message.get("refs"), dict) else {}
+    typed_phase_ref = next(
+        (
+            key
+            for key in (
+                "question_dedup_request_id",
+                "synthesis_request_id",
+                "cross_review_request_id",
+                "consensus_review_id",
+            )
+            if str(refs.get(key) or "").strip()
+        ),
+        "",
+    )
     lines = [
         "ZaoFu Agent Channel reply request",
         f"channel_id: {channel_id}",
@@ -78,10 +97,18 @@ def build_channel_provider_prompt(
         f"skill_refs: {redact_obj(skill_refs)}",
         f"context_pack: {redact_obj(context_pack)}",
         f"agent_context: {redact_obj(agent_context)}",
-        f"response_contract: {channel_reply_response_contract(channel, request, message)}",
     ]
     if semantic_source_instruction:
         lines.append(f"semantic_source_instruction: {semantic_source_instruction}")
+    if typed_phase_ref:
+        lines.append(
+            "typed_phase_constraint: This is a self-contained, bounded "
+            f"{typed_phase_ref} operation. The supplied context_pack is the "
+            "complete authoritative evidence set. Do not inspect the project "
+            "filesystem, prior Channel state, event logs, skills, or external "
+            "sources. Do not call tools. Derive the required response solely "
+            "from the supplied context_pack and trigger message."
+        )
     if repair_context:
         lines.append(f"repair_context: {repair_context}")
     return "\n".join([
@@ -89,6 +116,9 @@ def build_channel_provider_prompt(
         "",
         "Trigger message:",
         str(message.get("text") or message.get("message") or ""),
+        "",
+        "Response contract (authoritative for this reply):",
+        response_contract,
     ])
 
 

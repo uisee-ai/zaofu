@@ -7,7 +7,10 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.channel_projection import project_channel, project_channels
-from zf.runtime.channel_readiness import owner_readiness_risk_accepted
+from zf.runtime.channel_readiness import (
+    channel_prd_planning_authorized,
+    owner_readiness_risk_accepted,
+)
 
 
 def canonical_channel_prd_context(
@@ -72,10 +75,10 @@ def canonical_channel_prd_context(
                 readiness_ref=readiness_ref,
                 readiness_digest=readiness_digest,
             )
-            if (
-                readiness_verdict != "ready"
-                or implementation_start is not True
-            ) and not risk_accepted:
+            if not channel_prd_planning_authorized(
+                readiness_verdict=readiness_verdict,
+                risk_accepted=risk_accepted,
+            ):
                 continue
             source_refs = list(dict.fromkeys([
                 *(
@@ -118,7 +121,7 @@ def canonical_channel_prd_context(
                 "readiness_ref": readiness_ref,
                 "readiness_digest": readiness_digest,
                 "readiness_verdict": readiness_verdict,
-                "implementation_start": True,
+                "implementation_start": implementation_start is True,
                 "declared_implementation_start": (
                     implementation_start is True
                 ),

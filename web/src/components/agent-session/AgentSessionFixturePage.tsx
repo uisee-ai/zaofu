@@ -251,14 +251,54 @@ function fixtureMultiPlan(): AgentSessionPlanRequest {
   };
 }
 
+function fixtureAdaptiveChannelPlan(): AgentSessionPlanRequest {
+  return {
+    requestEventId: "evt-adaptive-channel",
+    requestId: "request-adaptive-channel",
+    revision: 1,
+    header: "Channel setup",
+    subjectType: "channel_setup",
+    questionId: "channel-template",
+    question: "Which Channel template should start the discussion?",
+    options: [{
+      id: "prd-clarification",
+      label: "PRD clarification (Recommended)",
+      recommended: true,
+      submitAction: "channel-create-and-start",
+      submitMode: "apply",
+      submitDetails: {
+        templateId: "prd-clarification",
+        memberCount: 4,
+        roles: ["product_pm", "arch", "critic", "synthesizer"],
+        roundPolicy: "synthesis_adaptive",
+        profiles: [{
+          memberId: "arch",
+          channelRole: "arch",
+          profileId: "architecture-codex",
+          displayName: "Architecture Codex",
+        }],
+        mode: "multi_lens",
+        engineMode: "fanout_then_synthesis",
+        routingStrategy: "blind_fanout_then_synthesis",
+        firstPassReplyCount: 4,
+      },
+    }],
+    allowOther: false,
+    questions: [],
+    valid: true,
+  };
+}
+
 export function AgentSessionFixturePage() {
   const [interrupted, setInterrupted] = useState("");
   const [taskPlanResponse, setTaskPlanResponse] = useState<AgentSessionPlanResponse>();
   const [workflowPlanResponse, setWorkflowPlanResponse] = useState<AgentSessionPlanResponse>();
   const [multiPlanResponse, setMultiPlanResponse] = useState<AgentSessionPlanResponse>();
+  const [adaptiveChannelPlanResponse, setAdaptiveChannelPlanResponse] = useState<AgentSessionPlanResponse>();
   const taskPlan = fixturePlan("task_create");
   const workflowPlan = fixturePlan("task_workflow");
   const multiPlan = fixtureMultiPlan();
+  const adaptiveChannelPlan = fixtureAdaptiveChannelPlan();
   return (
     <div style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
       <h2>AgentSessionTimeline fixture</h2>
@@ -301,6 +341,14 @@ export function AgentSessionFixturePage() {
           request={{ ...multiPlan, response: multiPlanResponse }}
           onChatAbout={() => setInterrupted("plan discussion")}
           onSubmit={setMultiPlanResponse}
+        />
+      </div>
+
+      <h3 style={{ marginTop: 24 }}>Plan options - Adaptive Channel discussion</h3>
+      <div data-testid="fx-adaptive-channel-plan-options">
+        <PlanInteractionForm
+          request={{ ...adaptiveChannelPlan, response: adaptiveChannelPlanResponse }}
+          onSubmit={setAdaptiveChannelPlanResponse}
         />
       </div>
 

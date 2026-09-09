@@ -83,7 +83,13 @@ def default_validate_payload(action: str, payload: dict[str, Any]) -> str:
                 return "workflow Request binding requires execution_mode workflow"
         contract = payload.get("contract")
         if execution_mode == "workflow" and isinstance(contract, dict):
-            if payload.get("workflow_plan") is not None:
+            compilation_pending = _channel_prd_contract_compilation_pending(
+                payload
+            )
+            if (
+                payload.get("workflow_plan") is not None
+                and not compilation_pending
+            ):
                 if not str(contract.get("behavior") or "").strip():
                     return (
                         "contract.behavior is required when workflow_plan "
@@ -100,7 +106,7 @@ def default_validate_payload(action: str, payload: dict[str, Any]) -> str:
             )
             if (
                 has_semantic_contract
-                and not _channel_prd_contract_compilation_pending(payload)
+                and not compilation_pending
             ):
                 tiers = contract.get("verification_tiers")
                 if not isinstance(tiers, list) or not any(

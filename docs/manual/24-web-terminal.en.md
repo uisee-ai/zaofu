@@ -160,9 +160,11 @@ candidate keys, and candidate paging remain owned by the browser IME. xterm
 does not encode them as CLI keys or turn them into `terminal.scroll`. If xterm
 6 emits no `onData` after an IME replaces its hidden textarea, Web Terminal
 sends the committed `compositionend` text exactly once as a fallback. Healthy
-xterm commits stay on the normal path and are not duplicated. Browser
-automation covers the composition event lifecycle, but each supported host OS
-and IME still needs manual qualification.
+xterm commits stay on the normal path and are not duplicated. If an IME emits
+only `Process/keyCode=229` followed by a plain `insertText` without a confirmed
+composition, Web Terminal preserves xterm's textarea recovery path. Browser
+automation covers both event shapes, but each supported host OS and IME still
+needs manual qualification.
 
 The Herdr viewport is terminal state shared by the controller, so subsequent
 frames expose controller scrolling to other attachments. Observe never sends

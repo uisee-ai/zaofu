@@ -24,10 +24,10 @@ export function isTerminalImeKeyEvent(
   event: TerminalImeKeyboardEvent,
   compositionActive: boolean,
 ): boolean {
-  return compositionActive
-    || event.isComposing
-    || event.key === "Process"
-    || event.keyCode === 229;
+  // Process/keyCode 229 alone is not proof of an active composition. Some IMEs
+  // use that legacy key shape before a plain insertText event, which xterm must
+  // see so its textarea-diff recovery can emit the committed character.
+  return compositionActive || event.isComposing;
 }
 
 /**

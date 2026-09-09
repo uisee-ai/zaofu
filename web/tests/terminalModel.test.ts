@@ -103,7 +103,7 @@ function testBrowserModifiersMapToCrosstermBits(): void {
   );
 }
 
-function testImeCandidateKeysRemainOwnedByTheBrowser(): void {
+function testImeOwnershipRequiresConfirmedComposition(): void {
   const key = (overrides: Partial<{
     isComposing: boolean;
     key: string;
@@ -121,12 +121,12 @@ function testImeCandidateKeysRemainOwnedByTheBrowser(): void {
     "native composing candidate numbers should remain browser-owned",
   );
   assert(
-    isTerminalImeKeyEvent(key({ key: "Process", keyCode: 0 }), false),
-    "Process keys should remain browser-owned",
+    !isTerminalImeKeyEvent(key({ key: "Process", keyCode: 0 }), false),
+    "Process outside a confirmed composition should retain xterm's textarea recovery",
   );
   assert(
-    isTerminalImeKeyEvent(key({ key: "Unidentified", keyCode: 229 }), false),
-    "keyCode 229 should remain browser-owned",
+    !isTerminalImeKeyEvent(key({ key: "Unidentified", keyCode: 229 }), false),
+    "keyCode 229 outside a confirmed composition should retain xterm's textarea recovery",
   );
   assert(!isTerminalImeKeyEvent(key(), false), "ordinary spaces should still reach xterm");
 }
@@ -140,4 +140,4 @@ testFramesRequireFullBaselineAndMonotonicSequence();
 testWheelDeltasNormalizeToTerminalRows();
 testAccumulatedRowsBecomeBoundedHerdrScrollCommands();
 testBrowserModifiersMapToCrosstermBits();
-testImeCandidateKeysRemainOwnedByTheBrowser();
+testImeOwnershipRequiresConfirmedComposition();

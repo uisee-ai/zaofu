@@ -49,3 +49,46 @@ def test_channel_task_plan_accepts_path_scope_entries() -> None:
         "src/**",
         "tests/repro-grid-parser.mjs",
     ]
+
+
+def test_channel_task_plan_preserves_a_pending_workflow_plan() -> None:
+    workflow_plan = {
+        "header": "Choose delivery route",
+        "options": [
+            {
+                "id": "delivery",
+                "label": "Delivery (Recommended)",
+                "recommended": True,
+                "route_id": "delivery:prd:standard",
+                "objective": "Deliver the confirmed PRD.",
+                "parameters": {"target_root": "."},
+            },
+            {
+                "id": "defer",
+                "label": "Do not start yet",
+                "mode": "defer",
+            },
+        ],
+    }
+
+    payload, _details, error = normalize_channel_task_submit_payload({
+        "title": "Deliver the confirmed PRD",
+        "channel_authority": _authority(),
+        "workflow_plan": workflow_plan,
+    })
+
+    assert error == ""
+    assert payload["workflow_plan"] == workflow_plan
+    assert payload["workflow_plan"] is not workflow_plan
+
+
+def test_channel_task_plan_rejects_non_mapping_workflow_plan() -> None:
+    payload, details, error = normalize_channel_task_submit_payload({
+        "title": "Deliver the confirmed PRD",
+        "channel_authority": _authority(),
+        "workflow_plan": ["not", "a", "mapping"],
+    })
+
+    assert payload == {}
+    assert details == {}
+    assert error == "workflow_plan must be a mapping"

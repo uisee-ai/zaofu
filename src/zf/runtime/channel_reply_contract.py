@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
@@ -30,7 +29,11 @@ from zf.runtime.channel_prd_revision import (
     consensus_mode_and_required_signers,
     persist_synthesis_prd_revision,
 )
-from zf.runtime.channel_sidecar import hydrate_channel_message_text
+from zf.runtime.channel_prd_render import (
+    channel_prd_event_refs,
+    channel_requirement_text,
+    render_channel_prd_artifact,
+)
 from zf.runtime.channel_semantic_sources import (
     validate_semantic_source_coverage,
 )
@@ -42,7 +45,6 @@ from zf.runtime.channel_reply_prompt import (
 from zf.runtime.channel_reply_parsing import (
     display_value as _display_value,
     reply_question_texts as _reply_question_texts,
-    string_items as _string_items,
     structured_reply_payload as _structured_reply_payload,
     structured_reply_payload_with_error as _structured_reply_payload_with_error,
 )
@@ -53,6 +55,10 @@ from zf.runtime.channel_synthesis_repair import (
 from zf.runtime.channel_synthesis_coverage import (
     contract_coverage_error,
     synthesis_contract_sources,
+)
+from zf.runtime.channel_synthesis_next_round import (
+    emit_synthesis_next_round_proposal,
+    validate_synthesis_next_round,
 )
 from zf.runtime.channel_templates import CHANNEL_TEMPLATES
 
@@ -79,6 +85,7 @@ def emit_structured_reply_events(
         if isinstance(message.get("refs"), dict)
         else {}
     )
+    adaptive_next_round_id = str(refs.get("adaptive_next_round_id") or "")
     synthesis_request_id = str(refs.get("synthesis_request_id") or "")
     synthesis_repair_id = str(refs.get("synthesis_repair_id") or "")
     try:
@@ -167,7 +174,7 @@ def emit_structured_reply_events(
             task_id=str(request.get("task_id") or "") or None,
         )
         return
-    if synthesis_request_id:
+    if synthesis_request_id and not adaptive_next_round_id:
         _emit_synthesis(
             state_dir=state_dir,
             writer=writer,
@@ -270,6 +277,17 @@ def _emit_synthesis_locked(
         synthesis_repair_revision=synthesis_repair_revision,
         reply_event_id=reply_event_id,
         task_id=str(request.get("task_id") or ""),
+    ):
+        return
+    if _ignore_superseded_synthesis_reply(
+        writer=writer,
+        channel=channel,
+        channel_id=channel_id,
+        thread_id=thread_id,
+        synthesis_request_id=synthesis_request_id,
+        reply_event_id=reply_event_id,
+        task_id=str(request.get("task_id") or ""),
+        source=source,
     ):
         return
     synthesis, parse_error = _structured_reply_payload_with_error(
@@ -421,6 +439,30 @@ def _emit_synthesis_locked(
             synthesis_repair_revision=synthesis_repair_revision,
         )
         return
+    next_round, next_round_error = validate_synthesis_next_round(
+        synthesis,
+        channel=channel,
+        thread_id=thread_id,
+        question_records=question_records,
+    )
+    if next_round_error:
+        _reject_synthesis_contract(
+            state_dir=state_dir,
+            writer=writer,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            member_id=member_id,
+            request=request,
+            reply=reply,
+            reply_event_id=reply_event_id,
+            actor=actor,
+            source=source,
+            status="invalid_channel_synthesis_next_round",
+            reason=next_round_error,
+            synthesis_request_id=synthesis_request_id,
+            synthesis_repair_revision=synthesis_repair_revision,
+        )
+        return
     summary = str(synthesis.get("summary") or reply).strip()
     safe_channel_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", channel_id)
     safe_request_id = re.sub(
@@ -435,7 +477,7 @@ def _emit_synthesis_locked(
     )
     artifact_path = Path(state_dir) / artifact_ref
     source_refs = list(dict.fromkeys([
-        *_channel_prd_event_refs(channel, thread_id),
+        *channel_prd_event_refs(channel, thread_id),
         *string_refs(synthesis.get("source_refs")),
         f"event:{reply_event_id}",
         f"channel:{channel_id}/{thread_id}",
@@ -452,6 +494,7 @@ def _emit_synthesis_locked(
         "semantic_source_manifest_digest": coverage[
             "manifest_digest"
         ],
+        "next_round": next_round,
     }
     contract_descriptor = persist_channel_contract(
         state_dir,
@@ -483,11 +526,11 @@ def _emit_synthesis_locked(
         if coverage["required"]
         else {}
     )
-    artifact_body = _render_prd_artifact(
+    artifact_body = render_channel_prd_artifact(
         channel=channel,
         channel_id=channel_id,
         thread_id=thread_id,
-        source_requirement=_channel_requirement_text(
+        source_requirement=channel_requirement_text(
             state_dir,
             channel,
             thread_id,
@@ -565,6 +608,7 @@ def _emit_synthesis_locked(
             ),
             "confidence": _display_value(synthesis.get("confidence")),
             "dissent": typed_items(synthesis.get("dissent")),
+            "next_round": next_round,
             "source": source,
         },
     )
@@ -586,6 +630,20 @@ def _emit_synthesis_locked(
                 "source": source,
             },
         )
+    if next_round["action"] == "continue":
+        emit_synthesis_next_round_proposal(
+            writer=writer,
+            channel=channel,
+            channel_id=channel_id,
+            thread_id=thread_id,
+            synthesis_event=synthesis_event,
+            synthesis_request_id=synthesis_request_id,
+            next_round=next_round,
+            actor=member_id or actor,
+            source=source,
+            task_id=str(request.get("task_id") or ""),
+        )
+        return
     if question_records:
         for question_record in question_records:
             writer.emit(
@@ -667,6 +725,82 @@ def _emit_synthesis_locked(
                 "source": source,
             },
         )
+
+
+def _ignore_superseded_synthesis_reply(
+    *,
+    writer: EventWriter,
+    channel: dict[str, Any],
+    channel_id: str,
+    thread_id: str,
+    synthesis_request_id: str,
+    reply_event_id: str,
+    task_id: str,
+    source: str,
+) -> bool:
+    """Record and ignore a late distinct synthesis for the current PRD."""
+    discussions = channel.get("discussions")
+    session = discussions.get(thread_id, {}) if isinstance(discussions, dict) else {}
+    if (
+        str(session.get("state") or "") == "phase2_relay"
+        and str(session.get("phase_reason") or "")
+        in {"synthesis_questions_opened", "consensus_blocked"}
+    ):
+        return False
+    started_event_id = str(session.get("started_event_id") or "")
+    started = not started_event_id
+    prior = None
+    events = writer.event_log.read_all()
+    for event in events:
+        if event.id == started_event_id:
+            started = True
+            continue
+        if not started or event.type != "channel.synthesis.proposed":
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if (
+            str(payload.get("channel_id") or "") == channel_id
+            and str(payload.get("thread_id") or "main") == thread_id
+            and str(payload.get("request_id") or "") != synthesis_request_id
+        ):
+            prior = event
+    if prior is None:
+        return False
+    if any(
+        event.type == "channel.synthesis.stale_ignored"
+        and isinstance(event.payload, dict)
+        and str(event.payload.get("source_reply_event_id") or "")
+        == reply_event_id
+        for event in events
+    ):
+        return True
+    prior_payload = prior.payload if isinstance(prior.payload, dict) else {}
+    writer.emit(
+        "channel.synthesis.stale_ignored",
+        actor="zf-kernel",
+        task_id=task_id or None,
+        causation_id=reply_event_id,
+        correlation_id=channel_id,
+        payload={
+            "schema_version": "channel.synthesis.stale.v1",
+            "channel_id": channel_id,
+            "thread_id": thread_id,
+            "request_id": synthesis_request_id,
+            "superseded_by_request_id": str(
+                prior_payload.get("request_id") or ""
+            ),
+            "canonical_artifact_ref": str(
+                prior_payload.get("artifact_ref") or ""
+            ),
+            "canonical_artifact_digest": str(
+                prior_payload.get("artifact_digest") or ""
+            ),
+            "source_reply_event_id": reply_event_id,
+            "reason": "prior_synthesis_proposed",
+            "source": source,
+        },
+    )
+    return True
 
 
 def _emit_contribution(
@@ -837,156 +971,6 @@ def _emit_contribution(
                 "source": source,
             },
         )
-
-
-def _render_prd_artifact(
-    *,
-    channel: dict[str, Any],
-    channel_id: str,
-    thread_id: str,
-    source_requirement: str,
-    synthesis: dict[str, Any],
-    summary: str,
-    source_refs: list[str],
-) -> str:
-    title = str(
-        synthesis.get("title")
-        or channel.get("name")
-        or f"Channel requirement {channel_id}"
-    ).strip()
-    decisions = _string_items(synthesis.get("decisions"))
-    assumptions = _string_items(synthesis.get("assumptions"))
-    out_of_scope = _string_items(synthesis.get("out_of_scope"))
-    acceptance = _string_items(synthesis.get("acceptance_criteria"))
-    verification_commands = _string_items(synthesis.get("verification_commands"))
-    risks = _string_items(synthesis.get("risks"))
-    dissent = _string_items(synthesis.get("dissent"))
-    open_questions = _reply_question_texts(synthesis)
-    for question in channel.get("open_questions") or []:
-        if not isinstance(question, dict):
-            continue
-        if str(question.get("thread_id") or "main") != thread_id:
-            continue
-        if str(question.get("status") or "") != "resolved":
-            continue
-        question_text = str(question.get("question") or "").strip()
-        answer = str(question.get("answer") or "").strip()
-        resolved_decision = (
-            f"{question_text}: {answer}"
-            if question_text and answer
-            else ""
-        )
-        if resolved_decision and resolved_decision not in decisions:
-            decisions.append(resolved_decision)
-    workflow = (
-        synthesis.get("recommended_workflow")
-        if isinstance(synthesis.get("recommended_workflow"), dict)
-        else {}
-    )
-
-    def section(name: str, values: list[str]) -> list[str]:
-        return [
-            f"## {name}",
-            *([f"- {item}" for item in values] or ["- None."]),
-            "",
-        ]
-
-    lines = [
-        f"# {title}",
-        "",
-        "## Source Requirement",
-        source_requirement or "No source requirement supplied.",
-        "",
-        "## Requirement",
-        summary or "No summary supplied.",
-        "",
-        *section("Decisions", decisions),
-        *section("Assumptions", assumptions),
-        *section("Out of Scope", out_of_scope),
-        *section("Acceptance Criteria", acceptance),
-        *section(
-            "Verification Commands",
-            [f"`{command}`" for command in verification_commands],
-        ),
-        *section("Risks", risks),
-        *section("Dissent", dissent),
-        *section("Open Questions", open_questions),
-        "## Recommended Workflow",
-        "```json",
-        json.dumps(workflow, ensure_ascii=False, indent=2, sort_keys=True),
-        "```",
-        "",
-        "## Provenance",
-        f"- Channel: `{channel_id}`",
-        f"- Thread: `{thread_id}`",
-        *[f"- Source: `{ref}`" for ref in source_refs],
-        "",
-    ]
-    return "\n".join(lines)
-
-
-def _channel_requirement_text(
-    state_dir: Path,
-    channel: dict[str, Any],
-    thread_id: str,
-) -> str:
-    discussions = channel.get("discussions")
-    session = (
-        discussions.get(thread_id)
-        if isinstance(discussions, dict)
-        else {}
-    )
-    requirement_id = (
-        str(session.get("requirement_message_id") or "")
-        if isinstance(session, dict)
-        else ""
-    )
-    for message in channel.get("messages") or []:
-        if not isinstance(message, dict):
-            continue
-        if requirement_id and str(message.get("message_id") or "") != requirement_id:
-            continue
-        if str(message.get("thread_id") or "main") != thread_id:
-            continue
-        text = hydrate_channel_message_text(
-            state_dir,
-            message,
-            strict=False,
-        ).strip()
-        if text:
-            return text
-    return ""
-
-
-def _channel_prd_event_refs(
-    channel: dict[str, Any],
-    thread_id: str,
-) -> list[str]:
-    relevant_types = {
-        "channel.finding.recorded",
-        "channel.message.posted",
-        "channel.question.opened",
-        "channel.question.resolved",
-        "channel.questions.frozen",
-        "channel.synthesis.requested",
-    }
-    refs: list[str] = []
-    for event in channel.get("linked_events") or []:
-        if not isinstance(event, dict):
-            continue
-        payload = (
-            event.get("payload")
-            if isinstance(event.get("payload"), dict)
-            else {}
-        )
-        if str(payload.get("thread_id") or "main") != thread_id:
-            continue
-        if str(event.get("type") or "") not in relevant_types:
-            continue
-        event_id = str(event.get("id") or "").strip()
-        if event_id:
-            refs.append(f"event:{event_id}")
-    return list(dict.fromkeys(refs))[-64:]
 
 
 __all__ = [

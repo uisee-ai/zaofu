@@ -137,6 +137,7 @@ import {
 } from "./pageCompatibility";
 import { isRefreshNoiseEventType } from "./refreshEventPolicy";
 import { createChannelActionAdapter } from "./channelActionAdapter";
+import { useChannelLiveConvergence } from "./useChannelLiveConvergence";
 import { shouldRefreshChannelsAfterAction } from "./kanbanAgentInteractionPolicy";
 import { useProjectObservabilityData } from "./useProjectObservabilityData";
 import { useProjectStreamGapRecovery } from "./projectStreamGapRecovery";
@@ -1557,6 +1558,11 @@ export function App() {
     };
   }, [activeProjectId, page, selectedChannelId]);
 
+  useChannelLiveConvergence({
+    activeProjectId, channelDetail, channelDetailRequestGateRef, page, projectRequestScope,
+    selectedChannelId, selectedChannelIdRef, setChannelDetail,
+  });
+
   useEffect(() => {
     document.documentElement.dataset.theme = themeMode;
     window.localStorage.setItem("zf.themeMode", themeMode);
@@ -1872,9 +1878,9 @@ export function App() {
 
   const channelActions = createChannelActionAdapter({
     activeProjectId,
-    channelDetail,
+    channelDetail: channelDiagnosticsDetail ?? channelDetail,
     prepareTaskAgent: (taskId) => {
-      setSelectedTaskId(taskId);
+      if (taskId) setSelectedTaskId(taskId);
       openTaskAgent();
     },
     readStoredBackend: () => (

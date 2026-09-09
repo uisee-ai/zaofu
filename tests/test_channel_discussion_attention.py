@@ -29,6 +29,7 @@ def _channel() -> dict[str, object]:
         "synthesis_requests": [],
         "syntheses": [],
         "question_activity": [],
+        "question_dedup_requests": [],
     }
 
 
@@ -72,6 +73,43 @@ def test_owner_question_becomes_waiting_gate_after_agents_finish() -> None:
     assert projection["execution_state"] == "ready"
     assert projection["attention_kind"] == "question"
     assert projection["active_agent_count"] == 0
+
+
+def test_question_consolidation_hides_raw_owner_questions_until_applied() -> None:
+    channel = _channel()
+    channel["discussions"]["main"]["state"] = "phase2_relay"
+    channel["question_dedup_requests"] = [{
+        "thread_id": "main",
+        "request_id": "dedup-1",
+        "status": "requested",
+        "ts": "2026-08-19T02:03:00Z",
+    }]
+
+    pending = project_discussion_attention(
+        channel,
+        [],
+        {"main": [{"question_id": "question-1"}]},
+    )["main"]
+
+    assert pending["state"] == "running"
+    assert pending["reason"] == "question_consolidation_active"
+    assert pending["attention_kind"] == "consolidating"
+    assert pending["owner_question_count"] == 0
+    assert pending["can_review_questions"] is False
+
+    channel["question_dedup_requests"][0]["status"] = "applied"
+    channel["question_dedup_requests"][0]["updated_at"] = (
+        "2026-08-19T02:04:00Z"
+    )
+    applied = project_discussion_attention(
+        channel,
+        [],
+        {"main": [{"question_id": "question-1"}]},
+    )["main"]
+
+    assert applied["attention_kind"] == "question"
+    assert applied["owner_question_count"] == 1
+    assert applied["can_review_questions"] is True
 
 
 def test_active_conversation_becomes_quiet_after_reply_cycle_settles() -> None:

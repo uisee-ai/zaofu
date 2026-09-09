@@ -110,6 +110,7 @@ from zf.runtime.channel_prd_context import (
     workflow_context_for_project,
     workflow_context_from_payload,
 )
+from zf.runtime.channel_profiles import public_channel_profile_catalog
 from zf.runtime.channel_workflow_authority import (
     bind_task_channel_authority,
     channel_workflow_authority_error,
@@ -338,6 +339,7 @@ from zf.web.projections.operator import (  # noqa: F401
     _operator_skills_available,
     _operator_task_evidence,
     _operator_backend_options,
+    _light_operator_agent_surface,
     _operator_backend_capabilities,
     _default_operator_backend,
     _operator_backend_available,
@@ -2208,11 +2210,9 @@ def create_app(
         limit: int = 50,
         before: str = "",
     ) -> JSONResponse:
-        from zf.runtime.channel_conversation_projection import (
-            empty_channel_conversation,
-            project_channel_conversation,
-        )
+        from zf.runtime.channel_conversation_projection import empty_channel_conversation
         from zf.runtime.channel_projection import DEFAULT_CHANNEL_IDS
+        from zf.web.channel_conversation_route import build_channel_conversation_page
 
         context = _resolve_api_project(
             project_id,
@@ -2221,9 +2221,10 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        conversation = project_channel_conversation(
+        conversation = build_channel_conversation_page(
             context.state_dir,
             channel_id,
+            config=context.config,
             limit=limit,
             before=before,
         )
@@ -4449,39 +4450,53 @@ def _empty_runtime_projection() -> dict:
 def _project_runtime_state(state_dir: Path, *, config: ZfConfig | None = None) -> str:
     """Truthful project runtime state for read projections.
 
-    "archived" (state_dir carries an .archived marker), "running" (tmux session
-    alive), else "stopped". Costs at most one `tmux has-session` per call.
+    A fresh event only proves that something wrote the ledger, not that the
+    watcher still exists. Treat an active watcher guard or an exact configured
+    tmux session as host proof; otherwise report RuntimeManager's stopped/
+    unknown result.
     """
     if ".archived" in state_dir.name:
         return "archived"
-    # Activity beats session probing: configs parameterize tmux_session via env
-    # (${CANGJIE_ZF_TMUX_SESSION:-...}) that this server never sees, so probing
-    # the config default can mislabel a running run as stopped. A live
-    # orchestrator appends events continuously.
-    import time as _time
 
-    age_s: float | None = None
     try:
-        age_s = _time.time() - (state_dir / "events.jsonl").stat().st_mtime
-    except OSError:
-        age_s = None
-    if age_s is not None and age_s < 600:
+        session = yaml.safe_load(
+            (state_dir / "session.yaml").read_text(encoding="utf-8")
+        ) or {}
+        guard = json.loads(
+            (state_dir / "processes" / "watcher.pid.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        watcher_pid = int(guard.get("owner_pid") or 0)
+        watcher_active = (
+            str(session.get("runtime_state") or "") in {"active", "running"}
+            and str(guard.get("component") or "watcher") == "watcher"
+            and watcher_pid > 1
+        )
+        if watcher_active:
+            os.kill(watcher_pid, 0)
+            return "running"
+    except PermissionError:
+        # A process owned by another account is still valid host proof.
         return "running"
-    session = ""
-    try:
-        session = str(config.session.tmux_session or "") if config is not None else ""
-    except AttributeError:
-        session = ""
-    if session and session != "zf":
-        try:
-            from zf.core.workspace.runtime_manager import RuntimeManager
+    except (
+        FileNotFoundError,
+        OSError,
+        ValueError,
+        TypeError,
+        json.JSONDecodeError,
+        yaml.YAMLError,
+    ):
+        pass
 
-            return RuntimeManager().status(
-                state_dir=state_dir, config=config, project_id="",
-            ).state
-        except Exception:
-            return "unknown"
-    return "stopped" if age_s is not None else "unknown"
+    try:
+        from zf.core.workspace.runtime_manager import RuntimeManager
+
+        return RuntimeManager().status(
+            state_dir=state_dir, config=config, project_id="",
+        ).state
+    except Exception:
+        return "unknown"
 
 
 def _light_runtime_projection(
@@ -4509,6 +4524,12 @@ def _light_runtime_projection(
             "requires_token": web_session["mode"] == "token_required",
         },
         "web_session": web_session,
+        "agent_surface": _light_operator_agent_surface(
+            configured_backend=_canonical_operator_backend(
+                os.environ.get("ZF_KANBAN_AGENT_BACKEND", "")
+                or getattr(getattr(config, "orchestrator", None), "backend", "")
+            ),
+        ),
         "sessions": {
             "count": len(_role_session_ids(state_dir)),
             "tmux_session": getattr(config.session, "tmux_session", "")
@@ -7585,6 +7606,7 @@ def _run_headless_kanban_agent_turn(
                 "runtime_snapshot_ref": runtime_snapshot_ref,
                 "workflow_route_catalog": workflow_route_catalog(config),
                 "canonical_channel_prds": channel_prd_context,
+                "channel_profile_catalog": public_channel_profile_catalog(config),
                 "workflow_context": workflow_context,
                 "plan_discussion": payload.get("plan_discussion") or {},
             },

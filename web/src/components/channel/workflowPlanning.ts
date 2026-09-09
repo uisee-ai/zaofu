@@ -23,6 +23,25 @@ function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function bareDigest(value: unknown): string {
+  return text(value).replace(/^sha256:/, "");
+}
+
+function ownerReadinessRiskAccepted(
+  consensus: Record<string, unknown>,
+  readinessRef: string,
+  readinessDigest: string,
+): boolean {
+  return Boolean(
+    consensus.human_confirmed
+    && consensus.risk_accepted === true
+    && readinessRef
+    && readinessDigest
+    && text(consensus.confirmed_readiness_ref) === readinessRef
+    && bareDigest(consensus.confirmed_readiness_digest) === bareDigest(readinessDigest),
+  );
+}
+
 function headlessBackend(value: unknown): ChannelWorkflowBackend | null {
   const backend = text(value).toLowerCase();
   if (backend.includes("claude")) return "claude-headless";
@@ -71,6 +90,14 @@ export function canonicalChannelPrd(
   const implementationStart = (
     synthesis?.implementation_start ?? consensus.implementation_start
   ) === true;
+  const readinessRef = text(synthesis?.readiness_ref ?? consensus.readiness_ref);
+  const readinessDigest = text(
+    synthesis?.readiness_digest ?? consensus.readiness_digest,
+  );
+  // Task and Workflow planning are allowed for a confirmed, planning-ready
+  // PRD. Actual workflow execution has a separate backend gate.
+  const readinessAuthorized = readinessVerdict === "ready"
+    || ownerReadinessRiskAccepted(consensus, readinessRef, readinessDigest);
   const openQuestions = Array.isArray(synthesis?.open_questions)
     ? synthesis.open_questions.filter((item) => text(item))
     : [];
@@ -85,8 +112,7 @@ export function canonicalChannelPrd(
       && artifactDigest
       && consensusEventId
       && synthesis
-      && readinessVerdict === "ready"
-      && implementationStart
+      && readinessAuthorized
       && openQuestions.length === 0
     ),
     sourceRefs: Array.isArray(synthesis?.source_refs)
@@ -154,10 +180,10 @@ export function buildChannelWorkflowPlanningRequest(args: {
         lineage,
       ].filter(Boolean).join("\n\n")
     : [
-        "基于已确认的 canonical Channel PRD 提议创建一个 Task。",
+        "基于已确认的 canonical Channel PRD 提议创建一个 Task，并准备后续的 Workflow Plan。",
         objective ? `目标：${objective}` : "",
         "返回一个 subject_type=task_create 的 plan_request JSON，提供 2-3 个选项，其中一个标记 recommended。",
-        "创建选项必须使用 effect.mode=propose、effect.action=create-task；payload 只包含 title、objective、priority、scope、acceptance、acceptance_criteria、explicit_non_goals 和 skills_required。不要直接创建 Task 或启动 workflow。",
+        "创建选项必须使用 effect.mode=propose、effect.action=create-task；payload 只包含 title、objective、priority、scope、acceptance、acceptance_criteria、explicit_non_goals、skills_required 和 workflow_plan。workflow_plan 必须有 2-3 个选项，至少一个使用当前 workflow route catalog 中的 route_id；可执行项包含 id、label、description、recommended、route_id、objective 和可选 parameters，无执行项使用 mode=defer。不要在 workflow_plan 中填写 task_id、config_digest 或 task_contract_digest，Kernel 会在创建真实 Task 后重绑定。Task 确认只能创建 Task 并发布第二个 Workflow Plan；不要直接启动 workflow。",
         "Canonical Channel PRD lineage:",
         lineage,
       ].filter(Boolean).join("\n\n");

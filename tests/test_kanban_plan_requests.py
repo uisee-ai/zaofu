@@ -679,7 +679,12 @@ def test_action_bound_channel_plan_materializes_exact_member_and_round_summary()
     assert request["submit_label"] == "Create & start"
     assert request["allow_other"] is False
     quick = request["options"][0]
-    assert quick["submit_payload"] == {
+    submit_payload = quick["submit_payload"]
+    assert {
+        key: value
+        for key, value in submit_payload.items()
+        if key != "expected_profile_selection_digest"
+    } == {
         "template_id": "quick-change",
         "mode": "multi_lens",
         "overrides": {
@@ -687,6 +692,7 @@ def test_action_bound_channel_plan_materializes_exact_member_and_round_summary()
             "budget": {"max_rounds": 4},
         },
     }
+    assert len(submit_payload["expected_profile_selection_digest"]) == 64
     assert quick["submit_details"]["member_count"] == 3
     assert quick["submit_details"]["mode"] == "multi_lens"
     assert quick["submit_details"]["engine_mode"] == (
@@ -700,6 +706,8 @@ def test_action_bound_channel_plan_materializes_exact_member_and_round_summary()
         member["role"] for member in quick["submit_details"]["members"]
     ] == ["tech_leader", "dev_reviewer", "qa_analyst"]
     assert quick["submit_details"]["max_rounds"] == 4
+    assert quick["submit_details"]["round_policy"] == "explicit_cap"
+    assert len(quick["submit_details"]["profile_selection_digest"]) == 64
     assert len(quick["submit_details"]["materialization_digest"]) == 64
 
     source = ZfEvent(

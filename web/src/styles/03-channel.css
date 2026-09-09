@@ -390,6 +390,30 @@
   padding-top: 2px;
 }
 
+.channel-workflow-existing-task {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.channel-workflow-existing-task > summary {
+  width: fit-content;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  font-size: var(--text-12);
+  font-weight: 600;
+}
+
+.channel-workflow-existing-task > form {
+  align-items: end;
+}
+
+.channel-workflow-existing-task .icon-button {
+  justify-self: start;
+}
+
 .channel-control-form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -273,6 +273,18 @@ def test_web_preflight_defers_exact_channel_prd_contract_to_compiler() -> None:
         "digest": authority["source_digest"],
         "revision": authority["prd_revision"],
     }
+    payload["workflow_plan"] = {
+        "question": "Choose the delivery route after the Task is created.",
+        "options": [
+            {
+                "id": "delivery",
+                "label": "Delivery (Recommended)",
+                "route_id": "delivery:prd:default",
+                "objective": "Deliver the confirmed PRD.",
+            },
+            {"id": "defer", "label": "Do not start yet", "mode": "defer"},
+        ],
+    }
 
     assert default_validate_payload("create-task", payload) == ""
 
@@ -289,7 +301,9 @@ def test_web_preflight_keeps_plain_workflow_contract_strict() -> None:
     )
 
 
-def test_non_ready_channel_prd_cannot_create_task(tmp_path: Path) -> None:
+def test_plan_ready_channel_prd_can_create_task_without_implementation_start(
+    tmp_path: Path,
+) -> None:
     state_dir, writer, service, authority = _ready_prd_fixture(
         tmp_path,
         implementation_start=False,
@@ -297,14 +311,13 @@ def test_non_ready_channel_prd_cannot_create_task(tmp_path: Path) -> None:
 
     result = _execute(service, writer, "create-task", _task_payload(authority))
 
-    assert result["ok"] is False
-    assert result["status"] == "channel_prd_not_ready"
-    assert "implementation_start=False" in result["reason"]
-    assert TaskStore(state_dir / "kanban.json").list_all() == []
-    assert not any(
-        event.type == "task.created"
-        for event in writer.event_log.read_all()
-    )
+    assert result["ok"] is True, result
+    task = TaskStore(state_dir / "kanban.json").get("TASK-CHANNEL-PRD")
+    assert task is not None
+    evidence = task.contract.evidence_contract
+    assert evidence["readiness_verdict"] == "ready"
+    assert evidence["implementation_start"] is False
+    assert evidence["declared_implementation_start"] is False
 
 
 def test_ready_channel_prd_compiles_strict_workflow_parent_contract(
@@ -387,7 +400,7 @@ def test_exact_owner_readiness_risk_acceptance_authorizes_task(
     evidence = task.contract.evidence_contract
     assert evidence["readiness_verdict"] == "needs_multi_lens"
     assert evidence["declared_implementation_start"] is False
-    assert evidence["implementation_start"] is True
+    assert evidence["implementation_start"] is False
     assert evidence["readiness_risk_accepted"] is True
     assert evidence["readiness_risk_confirmed_by"] == "web"
 

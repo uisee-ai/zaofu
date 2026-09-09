@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 
@@ -110,6 +111,7 @@ def normalize_channel_task_submit_payload(
         "skills_required",
         "task_id",
         "title",
+        "workflow_plan",
     }
     unknown = sorted(set(raw_payload) - allowed_keys)
     if unknown:
@@ -221,6 +223,12 @@ def normalize_channel_task_submit_payload(
     skills = _string_values(raw_payload.get("skills_required"))
     if skills:
         payload["skills_required"] = skills
+    workflow_plan = raw_payload.get("workflow_plan")
+    if workflow_plan is not None:
+        if not isinstance(workflow_plan, dict):
+            return {}, {}, "workflow_plan must be a mapping"
+        # Real Task/config identity is injected only after controlled creation.
+        payload["workflow_plan"] = deepcopy(workflow_plan)
     return payload, {
         "title": title,
         "source_ref": str(authority["source_ref"]),

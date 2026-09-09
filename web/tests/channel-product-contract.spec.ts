@@ -91,8 +91,8 @@ test("Channel product contract stays durable across Web actions and reload", asy
   await discussionAttention.getByRole("button", {
     name: "Review result",
   }).click();
-  await expect(page.getByTestId("channel-discussion-activity")).toBeVisible();
-  await page.getByTitle("Close drawer").click();
+  await expect(page.locator(".channel-consensus-control")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Confirm" })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(discussionAttention).toBeVisible();

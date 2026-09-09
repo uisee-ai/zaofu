@@ -63,6 +63,7 @@ def bind_task_workflow_inputs(
         }.items()
         if str(value or "").strip()
     }
+    source_refs.update(_channel_prd_source_refs(input_contract))
     artifact_refs = list(dict.fromkeys([
         *([input_contract["source_ref"]] if input_contract["source_ref"] else []),
         *([input_contract["spec_ref"]] if input_contract["spec_ref"] else []),
@@ -250,6 +251,7 @@ def assert_task_workflow_input_coverage(
         }.items()
         if str(value or "").strip()
     }
+    expected_source_refs.update(_channel_prd_source_refs(input_contract))
     if "source_refs" not in overrides:
         for key, value in expected_source_refs.items():
             if str(source_refs.get(key) or "") != str(value):
@@ -297,6 +299,37 @@ def assert_task_workflow_input_coverage(
         errors.append("scope coverage is missing")
     if errors:
         raise TaskWorkflowInputCoverageError("; ".join(errors))
+
+
+def _channel_prd_source_refs(input_contract: Mapping[str, Any]) -> dict[str, str]:
+    """Project immutable Channel PRD lineage into a workflow input manifest."""
+
+    evidence = input_contract.get("evidence_contract")
+    evidence = dict(evidence) if isinstance(evidence, Mapping) else {}
+    channel_id = str(evidence.get("channel_id") or "").strip()
+    if not channel_id:
+        return {}
+    return {
+        key: value
+        for key, value in {
+            "channel_id": channel_id,
+            "channel_thread_id": str(evidence.get("thread_id") or "").strip(),
+            "channel_prd_ref": str(input_contract.get("source_ref") or "").strip(),
+            "channel_prd_digest": str(
+                evidence.get("channel_prd_digest")
+                or evidence.get("source_digest")
+                or ""
+            ).strip(),
+            "channel_prd_revision": str(evidence.get("prd_revision") or "").strip(),
+            "channel_prd_readiness_ref": str(
+                evidence.get("readiness_ref") or ""
+            ).strip(),
+            "channel_prd_readiness_digest": str(
+                evidence.get("readiness_digest") or ""
+            ).strip(),
+        }.items()
+        if value
+    }
 
 
 def _artifact_ref(value: Any) -> str:

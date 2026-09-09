@@ -1,7 +1,7 @@
 """Controlled Project Request creation and explicit workflow ignition."""
 
 from __future__ import annotations
-import hashlib
+
 from pathlib import Path
 
 from zf.core.events import ZfEvent
@@ -27,11 +27,13 @@ from zf.runtime.workflow_start_inputs import (
     ensure_workflow_managed_task,
     prepare_approved_workflow_start,
 )
+from zf.runtime.channel_readiness import channel_task_execution_authorization_error
 from zf.runtime.workflow_task_request_rotation import (
     WorkflowTaskRequestRotationError,
     apply_task_request_binding,
     fresh_task_request_origin_binding,
 )
+from zf.runtime.workflow_request_identity import project_ref, stable_request_id
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -129,6 +131,20 @@ class WorkflowRequestActionsMixin:
         route_id = str(normalized.get("route_id") or "")
         objective = str(normalized.get("objective") or "")
         route = dict(preview.get("route") or {})
+        workflow_task = TaskStore(self.state_dir / "kanban.json").get(task_id)
+        readiness_error = channel_task_execution_authorization_error(
+            workflow_task
+        )
+        if readiness_error:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=task_id,
+                reason=readiness_error,
+                status_code=409,
+                status="channel_prd_execution_blocked",
+            )
         try:
             prepared = prepare_approved_workflow_start(
                 state_dir=self.state_dir,
@@ -287,12 +303,12 @@ class WorkflowRequestActionsMixin:
             or _required_text(payload, "message")
             or _required_text(payload, "title")
         )
-        request_id = _required_text(payload, "request_id") or _stable_request_id(
+        request_id = _required_text(payload, "request_id") or stable_request_id(
             self.project_root,
             requested.id,
             objective,
         )
-        source_ref = _project_ref(
+        source_ref = project_ref(
             self.project_root,
             self.state_dir,
             _required_text(payload, "source_ref") or _required_text(payload, "artifact_ref"),
@@ -653,7 +669,6 @@ class WorkflowRequestActionsMixin:
             "synthesis_ref": {},
             "blockers": list(preview.get("blockers") or []),
         }
-
     def _workflow_submit(
         self,
         *,
@@ -999,22 +1014,3 @@ class WorkflowRequestActionsMixin:
             "proposal_digest": proposal_digest,
             "request": projection,
         }
-
-
-def _stable_request_id(project_root: Path, requested_event_id: str, objective: str) -> str:
-    digest = hashlib.sha256(
-        f"{project_root.resolve()}\0{requested_event_id}\0{objective}".encode("utf-8")
-    ).hexdigest()[:16]
-    return f"workflow-{digest}"
-
-
-def _project_ref(project_root: Path, state_dir: Path, raw: str) -> str:
-    if not raw:
-        return ""
-    path = Path(raw).expanduser()
-    if path.is_absolute():
-        return str(path)
-    for candidate in (project_root / path, state_dir / path):
-        if candidate.exists():
-            return str(candidate)
-    return raw

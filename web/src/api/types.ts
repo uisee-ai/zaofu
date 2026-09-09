@@ -1902,7 +1902,7 @@ export interface ChannelDiscussionAttention {
   reason: string;
   next_action: string;
   execution_state?: "running" | "ready" | "blocked" | "done";
-  attention_kind?: "none" | "question" | "review";
+  attention_kind?: "none" | "question" | "review" | "consolidating";
   blocking_scope?: "none" | "phase" | "workflow";
   blocks_transition?: string;
   kernel_phase: string;
@@ -1920,6 +1920,7 @@ export interface ChannelDiscussionAttention {
   owner_question_count: number;
   total_question_count: number;
   resolved_question_count: number;
+  question_consolidation_status?: "open" | "consolidating" | "blocked";
   last_activity_at: string;
   can_drain_replies: boolean;
   can_synthesize: boolean;
@@ -1950,6 +1951,7 @@ export interface ChannelSummary {
   discussion_attention?: Record<string, ChannelDiscussionAttention>;
   open_questions?: Array<Record<string, unknown>> | Record<string, Record<string, unknown>>;
   question_frontiers?: Record<string, Array<Record<string, unknown>>>;
+  question_dedup_requests?: Array<Record<string, unknown>>;
   owner_questionnaires?: Record<string, Array<Record<string, unknown>>>;
   question_graph_digests?: Record<string, string>;
   consensus?: Record<string, Record<string, unknown>>;

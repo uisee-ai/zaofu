@@ -361,11 +361,10 @@ function finalizeThreads(threads: Map<string, AgentSessionThread>, activeThreadI
       }
     }
   }
-  return out.sort((left, right) => {
-    if (left.id === activeThreadId) return -1;
-    if (right.id === activeThreadId) return 1;
-    return String(left.updatedAt || left.id).localeCompare(String(right.updatedAt || right.id));
-  });
+  // Preserve the insertion order supplied by the project-scoped thread index.
+  // Moving the active thread to the first slot made the navigation jump under
+  // the pointer on every switch.
+  return out;
 }
 
 export function buildKanbanConversation(args: {

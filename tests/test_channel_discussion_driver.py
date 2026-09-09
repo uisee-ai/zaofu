@@ -411,6 +411,44 @@ def test_convergence_requires_full_freeze(tmp_path: Path) -> None:
     assert len([e for e in events if e.type == "channel.synthesis.requested"]) == 1
 
 
+def test_convergence_does_not_duplicate_a_manual_synthesis_request(
+    tmp_path: Path,
+) -> None:
+    state_dir, writer = _run_to_phase2(tmp_path)
+    _open_question(writer, "q-1")
+    _resolve(writer, "q-1", resolution="answered", actor="operator")
+    for member in ("pm-1", "arch-1", "critic-1"):
+        _freeze(writer, member)
+    writer.emit(
+        "channel.synthesis.requested",
+        actor="web",
+        correlation_id=CH,
+        payload={
+            "channel_id": CH,
+            "thread_id": "main",
+            "request_id": "synth-manual",
+            "target_member_id": "pm-1",
+            "status": "requested",
+            "reason": "operator_requested",
+            "source": "web",
+        },
+    )
+
+    advance_discussion(state_dir, writer, channel_id=CH, thread_id="main")
+
+    syntheses = [
+        event
+        for event in EventLog(state_dir / "events.jsonl").read_all()
+        if event.type == "channel.synthesis.requested"
+    ]
+    assert [event.payload["request_id"] for event in syntheses] == [
+        "synth-manual"
+    ]
+    assert project_channel(state_dir, CH)["discussions"]["main"]["state"] == (
+        "phase3_synthesis"
+    )
+
+
 def test_open_question_blocks_convergence(tmp_path: Path) -> None:
     state_dir, writer = _run_to_phase2(tmp_path)
     _open_question(writer, "q-1")

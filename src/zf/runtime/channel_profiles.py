@@ -173,6 +173,104 @@ def bind_channel_member_profile(
     return _with_binding_digests(binding), ""
 
 
+def template_profile_binding_payload(
+    member: dict[str, Any],
+    *,
+    template_id: str,
+) -> dict[str, Any]:
+    """Prepare one fixed template role for catalog-profile binding.
+
+    A template defines the role slot and mechanical permissions. An explicitly
+    selected project Profile owns the semantic execution identity, so template
+    backend/model/context/skill defaults must not masquerade as overrides of
+    that Profile.
+    """
+
+    payload = {**member, "template_id": template_id}
+    if payload.get("profile_selection_explicit") is True:
+        for key in (
+            "backend",
+            "provider",
+            "model",
+            "role_context_ref",
+            "skill_refs",
+        ):
+            payload.pop(key, None)
+    return payload
+
+
+def channel_profile_selection_manifest(
+    config: Any,
+    *,
+    template_id: str,
+    members: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str, str]:
+    """Return the public, exact Profile bindings a template would use.
+
+    The manifest is safe for a Kanban Plan: it contains no secret or prompt
+    body, while its digest makes profile revision/provider/skill drift visible
+    at the controlled action boundary.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for raw_member in members:
+        if not isinstance(raw_member, dict):
+            return [], "", "channel template member must be a mapping"
+        binding, error = bind_channel_member_profile(
+            config,
+            template_profile_binding_payload(raw_member, template_id=template_id),
+            allow_inline_profile=not bool(
+                raw_member.get("profile_selection_explicit")
+            ),
+        )
+        if error or binding is None:
+            return [], "", error or "channel template profile binding failed"
+        rows.append({
+            "member_id": str(binding.get("member_id") or ""),
+            "channel_role": str(binding.get("channel_role") or ""),
+            "profile_id": str(binding.get("profile_id") or ""),
+            "profile_revision": int(binding.get("profile_revision") or 1),
+            "profile_provenance": str(
+                binding.get("profile_provenance") or ""
+            ),
+            "persona": str(binding.get("persona") or ""),
+            "display_name": str(binding.get("display_name") or ""),
+            "provider": str(binding.get("provider") or ""),
+            "backend": str(binding.get("backend") or ""),
+            "model": str(binding.get("model") or ""),
+            "skill_refs": list(binding.get("skill_refs") or []),
+            "profile_digest": str(binding.get("profile_digest") or ""),
+            "config_digest": str(binding.get("config_digest") or ""),
+        })
+    return rows, _stable_digest(rows), ""
+
+
+def public_channel_profile_catalog(config: Any) -> list[dict[str, Any]]:
+    """Expose project-owned Profile identity to a Kanban Agent without secrets."""
+
+    catalog = getattr(getattr(config, "channel", None), "agent_profiles", {})
+    if not isinstance(catalog, dict):
+        return []
+    rows: list[dict[str, Any]] = []
+    for profile_id, profile in sorted(catalog.items()):
+        rows.append({
+            "profile_id": str(profile_id),
+            "revision": int(getattr(profile, "revision", 1) or 1),
+            "channel_role": str(getattr(profile, "channel_role", "") or ""),
+            "persona": str(getattr(profile, "persona", "") or ""),
+            "display_name": str(getattr(profile, "display_name", "") or ""),
+            "provider": str(getattr(profile, "provider", "") or ""),
+            "backend": str(getattr(profile, "backend", "") or ""),
+            "model": str(getattr(profile, "model", "") or ""),
+            "role_context_ref": str(
+                getattr(profile, "role_context_ref", "") or ""
+            ),
+            "skill_refs": list(getattr(profile, "skill_refs", []) or []),
+            "lifecycle": str(getattr(profile, "lifecycle", "") or ""),
+        })
+    return rows
+
+
 def write_channel_profile_snapshot(
     state_dir: Path,
     *,
@@ -512,7 +610,10 @@ def _safe_segment(value: object) -> str:
 __all__ = [
     "CHANNEL_PROFILE_SNAPSHOT_SCHEMA_VERSION",
     "bind_channel_member_profile",
+    "channel_profile_selection_manifest",
     "load_channel_profile_role_definition",
+    "public_channel_profile_catalog",
     "resolve_channel_role_definition",
+    "template_profile_binding_payload",
     "write_channel_profile_snapshot",
 ]

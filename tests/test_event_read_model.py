@@ -411,6 +411,58 @@ def test_agent_session_history_exposes_tail_and_supports_fresh_follow_up(
     assert [item["id"] for item in fresh["items"]] == ["evt-user", "evt-reply"]
 
 
+def test_agent_session_history_reuses_one_event_decoder(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    base = {
+        "project_id": "proj-a",
+        "conversation_id": "kanban:proj-a",
+        "thread_key": "thread-a",
+        "backend": "codex-headless",
+    }
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="user.message",
+        id="evt-user",
+        payload={
+            **base,
+            "target": "kanban-agent",
+            "runtime_delivery": "headless",
+            "message": "question",
+        },
+    ))
+    _write_line(state_dir / "events.jsonl", ZfEvent(
+        type="kanban.agent.reply",
+        id="evt-reply",
+        payload={**base, "answer": "answer"},
+    ))
+    read_model.rebuild(state_dir)
+
+    real_factory = read_model.event_log_from_project
+    calls = 0
+
+    def counted_factory(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return real_factory(*args, **kwargs)
+
+    monkeypatch.setattr(read_model, "event_log_from_project", counted_factory)
+    page = read_model.agent_session_history(
+        state_dir,
+        surface="kanban_agent",
+        thread_id="thread-a",
+        project_id="proj-a",
+        conversation_id="kanban:proj-a",
+        backend="codex-headless",
+        limit=10,
+    )
+
+    assert page is not None
+    assert [item["id"] for item in page["items"]] == ["evt-user", "evt-reply"]
+    assert calls == 1
+
+
 def test_agent_session_history_body_is_bound_to_selected_watermark(
     tmp_path: Path,
     monkeypatch,

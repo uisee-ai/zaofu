@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.runtime.channel_contract_artifacts import CONTRIBUTION_SCHEMA_VERSION
 from zf.runtime.channel_projection import project_channel
@@ -62,13 +63,19 @@ def project_channel_conversation(
     *,
     limit: int = DEFAULT_CONVERSATION_LIMIT,
     before: str = "",
+    events: list[ZfEvent] | None = None,
 ) -> dict[str, Any] | None:
-    """Project one bounded chat page without diagnostic-heavy duplicates."""
+    """Project one bounded chat page without diagnostic-heavy duplicates.
+
+    ``events`` may be a channel-scoped slice from the rebuildable read model.
+    The caller keeps the full-ledger fallback when that projection is absent.
+    """
 
     state_dir = Path(state_dir)
     detail = project_channel(
         state_dir,
         channel_id,
+        events=events,
         include_linked_events=False,
     )
     if detail is None:

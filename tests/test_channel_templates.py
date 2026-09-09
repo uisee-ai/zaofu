@@ -4,9 +4,16 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
+from zf.core.config.schema import (
+    ChannelAgentProfileConfig,
+    ChannelConfig,
+    ProjectConfig,
+    ZfConfig,
+)
 from zf.core.events import EventWriter, ZfEvent
 from zf.core.events.log import EventLog
 from zf.runtime.channel_discussion import advance_discussion
+from zf.runtime.channel_contract_artifacts import normalize_synthesis_next_round
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_reply_contract import emit_structured_reply_events
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
@@ -28,10 +35,11 @@ from zf.runtime.kanban_plan_requests import (
     plan_requirement_digest,
 )
 from zf.runtime.orchestrator_reactor import EventReactorMixin
+from zf.web.channel_setup_plan import normalize_channel_setup_submit_payload
 from zf.web.plan_extraction import extract_plan_request
 
 
-def _runtime(tmp_path: Path):
+def _runtime(tmp_path: Path, *, config: ZfConfig | None = None):
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     log = EventLog(state_dir / "events.jsonl")
@@ -43,6 +51,7 @@ def _runtime(tmp_path: Path):
         actor="web",
         source="kanban-agent",
         surface="web",
+        config=config,
     )
     return state_dir, log, writer, service
 
@@ -239,6 +248,207 @@ def test_prd_template_persists_version_digest_roles_and_discussion(
         },
     )
     assert conflict["status"] == "conflict"
+
+
+def test_template_default_uses_synthesis_adaptive_round_policy(
+    tmp_path: Path,
+) -> None:
+    materialized, error = materialize_channel_template(
+        "quick-change",
+        overrides={"backend": "fake"},
+    )
+
+    assert error == ""
+    assert materialized is not None
+    assert materialized["discussion"]["max_rounds"] == 0
+    assert materialized["discussion"]["max_rounds_explicit"] is False
+
+    state_dir, _, writer, service = _runtime(tmp_path)
+    result = _execute(
+        service,
+        writer,
+        "channel-create-from-template",
+        {
+            "template_id": "quick-change",
+            "channel_id": "ch-adaptive-default",
+            "mode": "multi_lens",
+            "overrides": {"backend": "fake"},
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["round_policy"] == "synthesis_adaptive"
+    detail = project_channel(state_dir, "ch-adaptive-default") or {}
+    assert detail["discussion"]["max_rounds_explicit"] is False
+
+
+def test_template_profile_selection_is_slot_scoped_and_plan_pinned(
+    tmp_path: Path,
+) -> None:
+    profile_skills = [
+        "skills/zf-channel-discussion-participant/SKILL.md",
+        "skills/zf-cr/SKILL.md",
+    ]
+    config = ZfConfig(
+        project=ProjectConfig(name="channel-profile-selection"),
+        channel=ChannelConfig(agent_profiles={
+            "arch-specialist": ChannelAgentProfileConfig(
+                revision=2,
+                persona="Architecture specialist",
+                display_name="Architecture specialist",
+                channel_role="arch",
+                provider="fake",
+                backend="fake",
+                skill_refs=profile_skills,
+                visibility_ceiling="minimal",
+                permission_ceiling="read_only",
+            ),
+            "critic-specialist": ChannelAgentProfileConfig(
+                revision=1,
+                persona="Critic specialist",
+                display_name="Critic specialist",
+                channel_role="critic",
+                provider="fake",
+                backend="fake",
+                skill_refs=[
+                    "skills/zf-channel-discussion-participant/SKILL.md"
+                ],
+                visibility_ceiling="reviewer",
+                permission_ceiling="read_only",
+            ),
+        }),
+    )
+    raw_payload = {
+        "template_id": "prd-clarification",
+        "mode": "multi_lens",
+        "overrides": {
+            "backend": "fake",
+            "role_overrides": {
+                "arch": {"profile_id": "arch-specialist"},
+            },
+        },
+    }
+    submit_payload, details, error = normalize_channel_setup_submit_payload(
+        raw_payload,
+        config=config,
+    )
+
+    assert error == ""
+    assert submit_payload["expected_profile_selection_digest"] == (
+        details["profile_selection_digest"]
+    )
+    arch_profile = next(
+        profile
+        for profile in details["profiles"]
+        if profile["member_id"] == "arch"
+    )
+    assert arch_profile["profile_id"] == "arch-specialist"
+    assert arch_profile["skill_refs"] == profile_skills
+
+    state_dir, _, writer, service = _runtime(tmp_path, config=config)
+    created = _execute(
+        service,
+        writer,
+        "channel-create-from-template",
+        {**submit_payload, "channel_id": "ch-selected-profile"},
+    )
+    assert created["ok"] is True
+    detail = project_channel(state_dir, "ch-selected-profile") or {}
+    arch = next(
+        member for member in detail["members"]
+        if member["member_id"] == "arch"
+    )
+    assert arch["profile_id"] == "arch-specialist"
+    assert arch["display_name"] == "Architecture specialist"
+    assert arch["skill_refs"] == profile_skills
+    assert arch["visibility_profile"] == "minimal"
+
+    stale = _execute(
+        service,
+        writer,
+        "channel-create-from-template",
+        {
+            **submit_payload,
+            "channel_id": "ch-profile-stale",
+            "expected_profile_selection_digest": "0" * 64,
+        },
+    )
+    assert stale["status"] == "profile_selection_superseded"
+    assert project_channel(state_dir, "ch-profile-stale") is None
+
+    _, _, mismatch_error = normalize_channel_setup_submit_payload(
+        {
+            **raw_payload,
+            "overrides": {
+                "backend": "fake",
+                "role_overrides": {
+                    "arch": {"profile_id": "critic-specialist"},
+                },
+            },
+        },
+        config=config,
+    )
+    assert mismatch_error == "member channel_role cannot override its profile"
+
+
+def test_channel_setup_plan_normalizes_optional_disabled_roles_alias() -> None:
+    payload, details, error = normalize_channel_setup_submit_payload({
+        "template_id": "prd-clarification",
+        "mode": "multi_lens",
+        "overrides": {
+            "backend": "fake",
+            "disabled_roles": ["security_reviewer", "security_reviewer"],
+            "role_overrides": {
+                "arch": {"backend": "fake"},
+            },
+        },
+    })
+
+    assert error == ""
+    assert payload["overrides"] == {
+        "backend": "fake",
+        "role_overrides": {
+            "arch": {"backend": "fake"},
+            "security_reviewer": {"enabled": False},
+        },
+    }
+    assert "disabled_roles" not in payload["overrides"]
+    assert details["member_count"] == 4
+    _, _, required_error = normalize_channel_setup_submit_payload({
+        "template_id": "prd-clarification",
+        "mode": "multi_lens",
+        "overrides": {
+            "backend": "fake",
+            "disabled_roles": ["arch"],
+        },
+    })
+    assert required_error == "required template role cannot be disabled: arch"
+
+
+def test_synthesis_next_round_contract_is_explicit_and_bounded() -> None:
+    default, default_error = normalize_synthesis_next_round(None)
+    assert default_error == ""
+    assert default == {
+        "action": "finalize",
+        "reason": "",
+        "objective": "",
+        "target_member_ids": [],
+    }
+    continued, continued_error = normalize_synthesis_next_round({
+        "action": "continue",
+        "reason": "Architecture and critic findings conflict.",
+        "objective": "Resolve the replay boundary before finalizing.",
+        "target_member_ids": ["arch", "critic"],
+    })
+    assert continued_error == ""
+    assert continued["target_member_ids"] == ["arch", "critic"]
+    _, invalid_error = normalize_synthesis_next_round({
+        "action": "finalize",
+        "reason": "This must be empty.",
+    })
+    assert invalid_error == (
+        "next_round.finalize must not include reason, objective, or targets"
+    )
 
 
 def test_template_preflight_rejects_missing_skill_without_partial_channel(
@@ -589,6 +799,101 @@ def test_controlled_question_resolution_and_consensus_confirmation(
     assert len(signed) == 1
 
 
+def test_controlled_question_resolution_waits_for_canonical_dedup(
+    tmp_path: Path,
+) -> None:
+    state_dir, _, writer, service = _runtime(tmp_path)
+    created = _execute(service, writer, "channel-create-from-template", {
+        "template_id": "quick-change",
+        "channel_id": "ch-owner-dedup-gate",
+        "overrides": {"backend": "fake"},
+    })
+    assert created["ok"] is True
+    writer.emit(
+        "channel.discussion.started",
+        actor="runtime",
+        correlation_id="ch-owner-dedup-gate",
+        payload={
+            "channel_id": "ch-owner-dedup-gate",
+            "thread_id": "main",
+            "state": "phase2_relay",
+            "source": "test",
+        },
+    )
+    writer.emit(
+        "channel.discussion.phase.changed",
+        actor="runtime",
+        correlation_id="ch-owner-dedup-gate",
+        payload={
+            "channel_id": "ch-owner-dedup-gate",
+            "thread_id": "main",
+            "phase": "phase2_relay",
+            "source": "test",
+        },
+    )
+    writer.emit(
+        "channel.question.opened",
+        actor="tech_leader",
+        correlation_id="ch-owner-dedup-gate",
+        payload={
+            "channel_id": "ch-owner-dedup-gate",
+            "thread_id": "main",
+            "question_id": "q-scope",
+            "question": "Should the API remain backward compatible?",
+            "category": "clarification",
+            "asked_by": "tech_leader",
+            "source": "test",
+        },
+    )
+    writer.emit(
+        "channel.question.dedup.requested",
+        actor="runtime",
+        correlation_id="ch-owner-dedup-gate",
+        payload={
+            "channel_id": "ch-owner-dedup-gate",
+            "thread_id": "main",
+            "request_id": "dedup-1",
+            "source": "test",
+        },
+    )
+
+    pending = _execute(service, writer, "channel-question-resolve", {
+        "channel_id": "ch-owner-dedup-gate",
+        "thread_id": "main",
+        "question_id": "q-scope",
+        "resolution": "answered",
+        "answer": "Yes, preserve the current API.",
+    })
+
+    assert pending["ok"] is False
+    assert pending["status"] == "question_consolidation_pending"
+    assert project_channel(
+        state_dir,
+        "ch-owner-dedup-gate",
+    )["open_questions"][0]["status"] == "open"
+
+    writer.emit(
+        "channel.question.dedup.applied",
+        actor="runtime",
+        correlation_id="ch-owner-dedup-gate",
+        payload={
+            "channel_id": "ch-owner-dedup-gate",
+            "thread_id": "main",
+            "request_id": "dedup-1",
+            "source": "test",
+        },
+    )
+    resolved = _execute(service, writer, "channel-question-resolve", {
+        "channel_id": "ch-owner-dedup-gate",
+        "thread_id": "main",
+        "question_id": "q-scope",
+        "resolution": "answered",
+        "answer": "Yes, preserve the current API.",
+    })
+
+    assert resolved["status"] == "resolved"
+
+
 def test_action_bound_plan_selection_creates_channel_members_and_starts(
     tmp_path: Path,
 ):
@@ -910,6 +1215,77 @@ def test_synthesis_open_questions_block_consensus_and_preserve_requirement(
     ).read_text(encoding="utf-8")
     assert "SCENARIO-WITNESS original requirement" in artifact
     assert "- Which launch threshold is approved?" in artifact
+
+
+def test_synthesis_continue_emits_a_sidecar_bound_selective_round(
+    tmp_path: Path,
+) -> None:
+    state_dir, log, writer, _ = _runtime(tmp_path)
+    channel = {
+        "channel_id": "ch-selective",
+        "name": "Selective pass",
+        "messages": [{
+            "message_id": "msg-requirement",
+            "thread_id": "main",
+            "text": "Preserve deterministic replay across the next pass.",
+        }],
+        "discussions": {
+            "main": {
+                "discussion_id": "discussion-selective",
+                "revision": 3,
+                "context_digest": "ctx-selective",
+                "requirement_message_id": "msg-requirement",
+            },
+        },
+        "open_questions": [],
+        "linked_events": [],
+    }
+
+    emit_structured_reply_events(
+        state_dir=state_dir,
+        writer=writer,
+        channel=channel,
+        request={
+            "thread_id": "main",
+            "message_id": "msg-synthesis",
+            "target_member_id": "synthesizer",
+        },
+        message={
+            "message_id": "msg-synthesis",
+            "refs": {"synthesis_request_id": "synth-selective"},
+        },
+        reply=(
+            '{"channel_synthesis":{"title":"Selective pass",'
+            '"summary":"The architecture and critic evidence disagree.",'
+            '"open_questions":[],"risks":[],"recommended_workflow":{},'
+            '"confidence":"medium","next_round":{"action":"continue",'
+            '"reason":"The two replay analyses conflict.",'
+            '"objective":"Resolve replay invariants with exact evidence.",'
+            '"target_member_ids":["arch","critic"]}}}'
+        ),
+        reply_event_id="evt-synth-selective",
+        actor="test",
+        source="test",
+    )
+
+    events = log.read_all()
+    synthesis = next(
+        event for event in events
+        if event.type == "channel.synthesis.proposed"
+    )
+    proposed = next(
+        event for event in events
+        if event.type == "channel.discussion.next_round.proposed"
+    )
+    assert synthesis.payload["next_round"]["action"] == "continue"
+    assert proposed.causation_id == synthesis.id
+    assert proposed.payload["discussion_id"] == "discussion-selective"
+    assert proposed.payload["expected_revision"] == 3
+    assert proposed.payload["target_member_ids"] == ["arch", "critic"]
+    assert not [
+        event for event in events
+        if event.type == "channel.consensus.proposed"
+    ]
 
 
 def test_discussion_start_dispatches_participants_and_synthesis_once(

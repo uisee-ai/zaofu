@@ -135,5 +135,7 @@ def normalize_task_workflow_submit_payload(
         "verify_roles": list(route.get("verify_roles") or []),
         "lane_count": int(route.get("lane_count") or 0),
         "output_profile": str(route.get("output_profile") or ""),
+        "input_keys": sorted(payload["parameters"]),
+        "preflight": "ready",
     }
     return payload, details, ""
