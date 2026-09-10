@@ -11,3 +11,4 @@ new architecture routing should start here.
 - [146-external-issue-evidence-package.md](146-external-issue-evidence-package.md) — `defer` — External Issue 用户、worker 与运行时证据统一打包、校验和受控发布（暂不实现）
 - [147-self-issue-canonical-zaofu-root.md](147-self-issue-canonical-zaofu-root.md) — `accepted` — Self-Issue 运行状态与 ZaoFu v7 源码/Fix 目标根分离
 - [148-self-issue-external-issue-consolidated-pending-plan.md](148-self-issue-external-issue-consolidated-pending-plan.md) — `proposed` — Self-Issue 与 External Issue 待实现/修复功能、环境边界、证据、重试和全链路审查总清单
+- [149-github-oauth-device-attachment-publication.md](149-github-oauth-device-attachment-publication.md) — `accepted` — GitHub OAuth App Device Flow、附件上传授权、发布前兼容性校验与可恢复降级
