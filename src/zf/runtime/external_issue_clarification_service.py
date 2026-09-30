@@ -27,7 +27,10 @@ from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.external_issue_clarification import (
     hydrate_external_issue_clarification,
 )
-from zf.runtime.external_issue_ingress import ExternalIssueIngressService
+from zf.runtime.external_issue_ingress import (
+    ExternalIssueIngressService,
+    build_github_lifecycle_label_writer,
+)
 
 
 class ExternalIssueClarificationService:
@@ -111,11 +114,28 @@ class ExternalIssueClarificationService:
                 causation_id=causation_id or None,
                 correlation_id=pending["triage_id"],
             )
-        retriage = ExternalIssueIngressService(
+        ingress = ExternalIssueIngressService(
             self.state_dir,
             self.config,
             project_root=self.project_root,
-        ).start_manual_triage(int(pending["issue_number"]))
+            lifecycle_label_writer=build_github_lifecycle_label_writer(),
+        )
+        # The comment publication is the only required remote write here.
+        # Re-triage still refreshes the Issue so the new comment becomes part
+        # of the next source revision, but attachment materialization and the
+        # lifecycle label projection can wait for the normal ingress loop.
+        try:
+            retriage = ingress.start_manual_triage(
+                int(pending["issue_number"]),
+                defer_remote_sync=True,
+                defer_attachments=True,
+            )
+        except TypeError as exc:
+            # Keep lightweight provider/test doubles implementing the older
+            # one-argument method compatible with this edge adapter.
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            retriage = ingress.start_manual_triage(int(pending["issue_number"]))
         return {
             "ok": True,
             "status": "published_and_retriaged" if retriage.queued else "published_refresh_pending",
@@ -257,8 +277,6 @@ class ExternalIssueClarificationService:
         )
         if clarification is None:
             raise ValueError("needs_info clarification artifact is unavailable")
-        if clarification.get("status") == "needs_info_exhausted":
-            raise ValueError("automatic clarification limit has been reached")
         raw_answers = payload.get("answers")
         answers = dict(raw_answers) if isinstance(raw_answers, Mapping) else {}
         normalized_answers: dict[str, str] = {}
@@ -288,7 +306,7 @@ class ExternalIssueClarificationService:
         }
 
     def _comment_body(self, pending: Mapping[str, Any], *, marker: str) -> str:
-        lines = [marker, "## Information requested by ZaoFu Triage", ""]
+        lines = [marker, "## Information requested by maintainer Triage", ""]
         answers = pending.get("answers") if isinstance(pending.get("answers"), Mapping) else {}
         for question in pending.get("questions") or []:
             question_id = str(question.get("id") or "")
@@ -298,7 +316,7 @@ class ExternalIssueClarificationService:
                 "",
             ])
         lines.append(
-            f"_Submitted from ZaoFu after Triage {pending['triage_id']} · round {pending['round']}._"
+            f"_Submitted after Triage {pending['triage_id']} · round {pending['round']}._"
         )
         return "\n".join(lines)
 

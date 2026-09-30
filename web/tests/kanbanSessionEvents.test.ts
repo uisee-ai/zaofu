@@ -91,6 +91,33 @@ const retainedReply = conversationEvents.find((item) => item.type === "kanban.ag
 assert(retainedPrompt?.payload?.message === "review docs", "buffer should preserve user prompt after live events reset");
 assert(retainedReply?.payload?.answer === "done", "buffer should preserve reply after live events reset");
 
+const attachmentConversation = buildKanbanConversation({
+  activeThreadId: "thread-a",
+  backend: "codex-headless",
+  conversationId: "kanban:proj-a",
+  events: [event(6, "user.message", {
+    source: "kanban",
+    target: "kanban-agent",
+    runtime_delivery: "headless",
+    backend: "codex-headless",
+    project_id: "proj-a",
+    conversation_id: "kanban:proj-a",
+    thread_key: "thread-a",
+    message: "inspect this",
+    attachment_refs: [{
+      attachment_id: "ka-1",
+      filename: "screen.png",
+      content_type: "image/png",
+      byte_count: 2048,
+      ref: "artifacts/kanban-agent/attachments/hash/screen.png",
+    }],
+  })],
+  knownThreads: [],
+  projectId: "proj-a",
+});
+const attachmentRefs = attachmentConversation.threads[0]?.turns[0]?.user?.refs?.attachments;
+assert(Array.isArray(attachmentRefs), "Kanban user messages should preserve attachment refs for history chips");
+
 const bounded = mergeBoundedKanbanSessionEvents([], [
   event(10, "kanban.agent.reply", { backend: "codex-headless", answer: "a" }),
   event(11, "kanban.agent.reply", { backend: "codex-headless", answer: "b" }),

@@ -6,6 +6,7 @@ import type { Task } from "../../api/types";
 import type { TaskTelemetry } from "../../lib/task-display";
 import type { BoardColumnConfig } from "./board";
 import { TaskCard } from "./TaskCard";
+import { uiText } from "../../settings/uiText";
 
 export function BoardColumn({
   column,
@@ -26,7 +27,7 @@ export function BoardColumn({
 }) {
   return (
     <section
-      aria-label={`${column.title} column`}
+      aria-label={`${uiText(column.title)} column`}
       className={`board-column status-${column.id} tone-${column.tone} ${
         tasks.length ? "has-tasks" : "is-empty"
       } ${dragTaskId ? "drop-ready" : ""}`}
@@ -36,7 +37,7 @@ export function BoardColumn({
       <div className="column-header">
         <span className="column-title">
           <span className="column-accent-dot" aria-hidden="true" />
-          <h3>{column.title}</h3>
+          <h3>{uiText(column.title)}</h3>
         </span>
         <span className="count">{tasks.length}</span>
       </div>

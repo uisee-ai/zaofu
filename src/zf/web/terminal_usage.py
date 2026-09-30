@@ -170,9 +170,11 @@ class TerminalUsageService:
         wait_seconds: float = 2.0,
     ) -> TerminalUsageBinding:
         if launch.provider == "claude-code":
-            escaped = "-" + str(launch.project_root).lstrip("/").replace(
-                "/", "-"
-            ).replace(".", "-")
+            escaped = (
+                "-" + str(launch.project_root).lstrip("/").replace(
+                    "/", "-"
+                ).replace(".", "-").replace("_", "-")
+            )
             path = self.claude_projects_root / escaped / (
                 f"{launch.provider_session_id}.jsonl"
             )

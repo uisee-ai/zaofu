@@ -212,7 +212,10 @@ class ClaudeSessionReader(BackendSessionReader):
         # dir is "...hermes-agent--zf-cj-min-refactor-..." — without it the
         # disk reader never finds the session and claude-code roles report no
         # usage to the cost tracker.
-        escaped = "-" + project_root.lstrip("/").replace("/", "-").replace(".", "-")
+        escaped = (
+            "-" + project_root.lstrip("/").replace("/", "-")
+            .replace(".", "-").replace("_", "-")
+        )
         path = self.projects_root / escaped / f"{session_id}.jsonl"
         if path.exists():
             return path

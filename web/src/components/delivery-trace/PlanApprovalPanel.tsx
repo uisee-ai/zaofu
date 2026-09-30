@@ -1,4 +1,7 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatSettingsTime } from '../../settings/useSettingsPreferences';
 import type { KeyboardEvent } from "react";
 import {
   AlertTriangle,
@@ -46,6 +49,7 @@ const VIEW_OPTIONS: Array<{ value: InboxView; label: string }> = [
 export function PlanApprovalPanel(
   { projectId, autoOpenPlanId }: { projectId: string; autoOpenPlanId?: string | null },
 ) {
+  useSettingsPreferences();
   const [inbox, setInbox] = useState<OperatorInboxProjection | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [hasLoadedInbox, setHasLoadedInbox] = useState(false);
@@ -238,7 +242,7 @@ export function PlanApprovalPanel(
     >
       <div className="plan-approval-head operator-inbox-head">
         <div>
-          <h3>Inbox</h3>
+          <h3>{uiText("Inbox")}</h3>
           <span className="muted">
             {initialLoading ? "loading" : pendingCount ? `${pendingCount} decisions` : "clear"}
             {diagnosticCount ? ` / ${diagnosticCount} diagnostics` : ""}
@@ -252,7 +256,7 @@ export function PlanApprovalPanel(
             <input
               value={query}
               aria-label="Search inbox"
-              placeholder="Search"
+              placeholder={uiText("Search")}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
@@ -296,7 +300,7 @@ export function PlanApprovalPanel(
       {loadError ? <p className="error plan-approval-error">Inbox refresh failed: {loadError}</p> : null}
 
       {initialLoading ? (
-        <p className="muted plan-approval-empty operator-inbox-empty">Loading inbox...</p>
+        <p className="muted plan-approval-empty operator-inbox-empty">{uiText("Loading inbox...")}</p>
       ) : loadError && !inbox ? null : filteredItems.length === 0 ? (
         <p className="muted plan-approval-empty operator-inbox-empty">
           {query || kindFilter !== "all" ? "No matching inbox items." : "No inbox items in this view."}
@@ -366,7 +370,7 @@ export function PlanApprovalPanel(
                             disabled={Boolean(busy)}
                             onClick={(event) => { event.preventDefault(); event.stopPropagation(); ackAll(items); }}
                           >
-                            Ack all
+                            {uiText("Ack all")}
                           </button>
                         ) : null}
                       </summary>
@@ -513,14 +517,15 @@ function InboxRowActions({
   onRepair: () => void;
   onAction: (action: string) => void;
 }) {
+  useSettingsPreferences();
   if (item.kind === "plan_approval") {
     return (
       <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
         <button type="button" className="delivery-action-button" onClick={onPreview} disabled={!item.preview?.available}>
-          <Eye size={14} /> Preview
+          <Eye size={14} /> {uiText("Preview")}
         </button>
         <button type="button" className="delivery-action-button" onClick={onApprove} disabled={disabled}>
-          <Check size={14} /> Approve
+          <Check size={14} /> {uiText("Approve")}
         </button>
         <input
           className="operator-inbox-reject-input"
@@ -529,10 +534,10 @@ function InboxRowActions({
           onChange={(event) => onRejectReason(event.target.value)}
         />
         <button type="button" className="delivery-action-button" onClick={onReject} disabled={disabled || !rejectReason.trim()}>
-          <X size={14} /> Reject
+          <X size={14} /> {uiText("Reject")}
         </button>
         <button type="button" className="delivery-action-button" onClick={onRepair} disabled={disabled}>
-          <MessageSquare size={14} /> Repair
+          <MessageSquare size={14} /> {uiText("Repair")}
         </button>
       </div>
     );
@@ -584,18 +589,19 @@ function PlanPreviewOverlay({
   onReject: () => void;
   onRepair: () => void;
 }) {
+  useSettingsPreferences();
   const planId = preview?.plan_id || "";
   const disabled = Boolean(planId && busy.endsWith(`:${planId}`));
   return (
     <div className="plan-preview-overlay" role="dialog" aria-modal="true" aria-label="Plan preview">
       <div className="plan-preview-toolbar">
         <div>
-          <strong>Plan Preview</strong>
+          <strong>{uiText("Plan Preview")}</strong>
           <span className="mono">{planId || "loading"}</span>
         </div>
         <div className="plan-preview-toolbar-actions">
           <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || disabled}>
-            <Check size={14} /> Approve
+            <Check size={14} /> {uiText("Approve")}
           </button>
           <input
             value={rejectReason}
@@ -604,10 +610,10 @@ function PlanPreviewOverlay({
             disabled={!preview}
           />
           <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || disabled || !rejectReason.trim()}>
-            <X size={14} /> Reject
+            <X size={14} /> {uiText("Reject")}
           </button>
           <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled}>
-            <MessageSquare size={14} /> Repair
+            <MessageSquare size={14} /> {uiText("Repair")}
           </button>
           <button type="button" className="icon-button" title="Close preview" onClick={onClose}>
             <X size={16} />
@@ -616,7 +622,7 @@ function PlanPreviewOverlay({
       </div>
       <div className="plan-preview-body">
         <main className="plan-preview-markdown-pane">
-          {loading ? <p className="muted">Loading...</p> : <MarkdownText className="plan-preview-markdown" content={preview?.markdown || ""} />}
+          {loading ? <p className="muted">{uiText("Loading...")}</p> : <MarkdownText className="plan-preview-markdown" content={preview?.markdown || ""} />}
         </main>
         <aside className="plan-preview-context">
           <dl className="plan-approval-meta">
@@ -756,7 +762,7 @@ function compactTime(value?: string): string {
   const parsed = Date.parse(value);
   if (!Number.isFinite(parsed)) return value;
   const deltaMs = Date.now() - parsed;
-  if (deltaMs < 0) return new Date(parsed).toLocaleString();
+  if (deltaMs < 0) return formatSettingsTime(value);
   const minutes = Math.floor(deltaMs / 60000);
   if (minutes < 1) return "now";
   if (minutes < 60) return `${minutes}m`;
@@ -764,7 +770,7 @@ function compactTime(value?: string): string {
   if (hours < 24) return `${hours}h`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d`;
-  return new Date(parsed).toLocaleDateString();
+  return formatSettingsTime(value, { hour: undefined, minute: undefined, second: undefined });
 }
 
 function inboxDeepLink(value: string, projectId: string): string {

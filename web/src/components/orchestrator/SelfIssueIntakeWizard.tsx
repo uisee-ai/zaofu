@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { selfIssueIntakeSubmissionBlocker } from "./selfIssue";
 
@@ -27,6 +29,7 @@ export function SelfIssueIntakeWizard({
   onSave,
   onSubmit,
 }: SelfIssueIntakeWizardProps) {
+  useSettingsPreferences();
   const questions = useMemo(() => recordArray(intake.questions), [intake.questions]);
   const attachments = useMemo(() => recordArray(intake.attachments), [intake.attachments]);
   const intakeId = text(intake.intake_id);
@@ -289,8 +292,8 @@ export function SelfIssueIntakeWizard({
               </div>
             ) : null}
             <input
-              aria-label="Add screenshots videos or logs"
-              accept=".png,.jpg,.jpeg,.mp4,.webm,.txt,.log,.json"
+              aria-label="Add screenshots, videos, logs, documents, or data files"
+              accept=".png,.jpg,.jpeg,.mp4,.webm,.txt,.log,.json,.md,.xml,.yaml,.yml,.csv,.pdf,.doc,.docx,.xls,.xlsx"
               disabled={busy || uploading || attachments.length >= 5}
               multiple
               type="file"
@@ -319,7 +322,7 @@ export function SelfIssueIntakeWizard({
                     disabled={busy || uploading}
                     type="button"
                     onClick={() => void onRemoveAttachment(text(item.attachment_id))}
-                  >Remove</button>
+                  >{uiText("Remove")}</button>
                 </li>
               ))}
             </ul>
@@ -328,11 +331,11 @@ export function SelfIssueIntakeWizard({
       </div>
 
       <footer className="self-issue-intake-actions">
-        <button disabled={busy || uploading || submitting || submitted || step === 0} type="button" onClick={() => void move(step - 1)}>Back</button>
-        <button className="quiet" disabled={busy || uploading || submitting || submitted} type="button" onClick={() => void cancel()}>Cancel</button>
+        <button disabled={busy || uploading || submitting || submitted || step === 0} type="button" onClick={() => void move(step - 1)}>{uiText("Back")}</button>
+        <button className="quiet" disabled={busy || uploading || submitting || submitted} type="button" onClick={() => void cancel()}>{uiText("Cancel")}</button>
         <span>{submitted ? "Submitted" : saving ? "Saving…" : "Saved locally"}</span>
         {step < questions.length - 1 ? (
-          <button disabled={busy || uploading || submitting || submitted} type="button" onClick={() => void move(step + 1)}>Next</button>
+          <button disabled={busy || uploading || submitting || submitted} type="button" onClick={() => void move(step + 1)}>{uiText("Next")}</button>
         ) : (
           <button disabled={busy || uploading || submitting || submitted} type="button" onClick={() => void submit()}>{submitted ? "Submitted" : "Submit answers"}</button>
         )}

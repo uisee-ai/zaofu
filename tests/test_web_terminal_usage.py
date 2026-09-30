@@ -69,6 +69,19 @@ def test_provider_roots_follow_inherited_cli_config_dirs(
     )
 
 
+def test_claude_launch_escapes_underscored_project_path(tmp_path: Path) -> None:
+    service = TerminalUsageService(
+        state_dir=tmp_path / "state",
+        claude_projects_root=tmp_path / "claude-projects",
+    )
+    launch = service.prepare_launch("claude-code", Path("/tmp/project_name/.zf/run_1"))
+    binding = service.complete_launch(launch, wait_seconds=0)
+    assert Path(binding.provider_session_path) == (
+        tmp_path / "claude-projects" / "-tmp-project-name--zf-run-1"
+        / f"{launch.provider_session_id}.jsonl"
+    )
+
+
 def test_claude_launch_binding_and_snapshot_dedupes_message_identity(
     tmp_path: Path,
 ) -> None:

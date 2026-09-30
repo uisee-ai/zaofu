@@ -1,0 +1,64 @@
+name: ZaoFu TestKit
+
+on:
+  pull_request:
+  push:
+    branches:
+      - dev
+      - v7
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  testkit:
+    name: Deterministic TestKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install locked test dependencies
+        run: uv sync --locked --extra dev --extra web
+
+      - name: Install locked Web dependencies
+        run: npm ci --prefix web --ignore-scripts --no-audit --no-fund
+
+      - name: Run premerge sentinel
+        run: bash scripts/dev-premerge-gate.sh
+
+      - name: Run full deterministic TestKit
+        if: always()
+        run: >-
+          uv run python -m tests.testkit
+          --stage all
+          --output testkit-output
+          --timeout 1500
+
+      - name: Enforce TestKit verdict
+        run: |
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path("testkit-output/testkit-run.json").read_text())
+          verdict = report.get("verdict")
+          if verdict != "pass":
+              raise SystemExit(f"TestKit verdict is {verdict!r}; merge gate is fail-closed")
+          PY
+
+      - name: Upload TestKit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zaofu-testkit-${{ github.run_id }}
+          path: testkit-output/
+          if-no-files-found: error
+          retention-days: 14

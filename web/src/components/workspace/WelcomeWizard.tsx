@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // First-run host setup. Project admission starts after this wizard.
 import { useEffect, useMemo, useState } from "react";
 
@@ -32,6 +34,7 @@ export function WelcomeWizard({
   onSaveToken,
   tokenPresent,
 }: Props) {
+  useSettingsPreferences();
   const [status, setStatus] = useState<OnboardingStatus | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [backend, setBackend] = useState("");
@@ -204,7 +207,7 @@ export function WelcomeWizard({
                   onChange={(event) => setMixedEnabled(event.target.checked)}
                 />
                 <span>
-                  <strong style={{ display: "block", fontSize: 13 }}>Mixed team</strong>
+                  <strong style={{ display: "block", fontSize: 13 }}>{uiText("Mixed team")}</strong>
                   <span style={{ display: "block", marginTop: 2, fontSize: 11, color: TONE.faint }}>
                     {status.mixed_available
                       ? "独立 verify lane 使用另一 provider"
@@ -295,10 +298,10 @@ export function WelcomeWizard({
           {cur.id === "ready" ? (
             <div>
               <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 13, marginBottom: 16 }}>
-                <span>Provider <b>{backend || "未指定"}</b></span>
-                <span>Team <b>{mixedEnabled ? "mixed" : "single"}</b></span>
+                <span>{uiText("Provider")} <b>{backend || "未指定"}</b></span>
+                <span>{uiText("Team")} <b>{mixedEnabled ? "mixed" : "single"}</b></span>
                 <span>Environment {preflightOk ? "ready" : "skipped"}</span>
-                <span>Access {accessReady ? "granted" : "required"}</span>
+                <span>{uiText("Access")} {accessReady ? "granted" : "required"}</span>
               </div>
               <div style={{ fontSize: 13, color: TONE.muted, marginBottom: 8 }}>
                 完成后进入 Workspace。Project 可在需要时通过 Add Project 打开或初始化。

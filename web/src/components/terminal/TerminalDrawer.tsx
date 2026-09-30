@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import {
   Check,
   CircleStop,
@@ -117,6 +119,7 @@ function connectionTone(session: TerminalSession, connection?: TerminalConnectio
 }
 
 export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawerProps) {
+  useSettingsPreferences();
   const { page, loading, busy, error, refresh, create, rename, stop } = useTerminalSessions(projectId);
   const activeSessions = useMemo(
     () => activeTerminalSessions(page?.sessions ?? []),
@@ -462,7 +465,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
               );
             })}
             {openSessions.length === 0 ? (
-              <span className="web-terminal-tabs-empty">No terminal sessions</span>
+              <span className="web-terminal-tabs-empty">{uiText("No terminal sessions")}</span>
             ) : null}
           </div>
 
@@ -487,7 +490,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
             </button>
             {addMenuOpen ? (
               <div className="web-terminal-menu web-terminal-add-menu" role="menu">
-                <span className="web-terminal-menu-heading">New session</span>
+                <span className="web-terminal-menu-heading">{uiText("New session")}</span>
                 {(page?.allowed_providers ?? []).map((value) => (
                   <button
                     key={value}
@@ -495,12 +498,12 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                     role="menuitem"
                     onClick={() => void createSession(value)}
                   >
-                    <Plus aria-hidden="true" /> New {PROVIDER_LABELS[value]} terminal
+                    <Plus aria-hidden="true" /> {uiText("New")} {PROVIDER_LABELS[value]} terminal
                   </button>
                 ))}
                 {unopenedSessions.length > 0 ? (
                   <>
-                    <span className="web-terminal-menu-heading has-divider">Running sessions</span>
+                    <span className="web-terminal-menu-heading has-divider">{uiText("Running sessions")}</span>
                     {unopenedSessions.map((session) => (
                       <button
                         key={session.session_id}
@@ -509,7 +512,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                         onClick={() => openExistingSession(session.session_id)}
                       >
                         <SquareTerminal aria-hidden="true" />
-                        Open {session.title}
+                        {uiText("Open")} {session.title}
                       </button>
                     ))}
                   </>
@@ -547,7 +550,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                       : "Herdr tab rename is unavailable"}
                     onClick={() => beginRename(active)}
                   >
-                    <Pencil aria-hidden="true" /> Rename terminal
+                    <Pencil aria-hidden="true" /> {uiText("Rename terminal")}
                   </button>
                   <button
                     type="button"
@@ -576,7 +579,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                       title="Explicitly replace the current controller on another browser or device"
                       onClick={() => takeOver(active.session_id)}
                     >
-                      <Keyboard aria-hidden="true" /> Take over control
+                      <Keyboard aria-hidden="true" /> {uiText("Take over control")}
                     </button>
                   ) : null}
                   <button
@@ -590,7 +593,7 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
                       void stopActiveSession(active.session_id);
                     }}
                   >
-                    <CircleStop aria-hidden="true" /> Stop CLI
+                    <CircleStop aria-hidden="true" /> {uiText("Stop CLI")}
                   </button>
                 </div>
               ) : null}
@@ -628,10 +631,10 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
           </button>
         </header>
 
-        {loading ? <div className="web-terminal-notice">Loading terminal runtime…</div> : null}
+        {loading ? <div className="web-terminal-notice">{uiText("Loading terminal runtime…")}</div> : null}
         {!loading && page && !page.enabled ? (
           <div className="web-terminal-notice is-error">
-            Web Terminal is disabled by this Dashboard host.
+            {uiText("Web Terminal is disabled by this Dashboard host.")}
           </div>
         ) : null}
         {!loading && page?.enabled && !page.capability.available ? (
@@ -676,8 +679,8 @@ export function TerminalDrawer({ onClose, projectId, themeMode }: TerminalDrawer
           {openSessions.length === 0 ? (
             <div className="web-terminal-empty">
               <SquareTerminal aria-hidden="true" />
-              <p>No terminal attached</p>
-              <span>Use + to start a coding agent or reopen a running session.</span>
+              <p>{uiText("No terminal attached")}</p>
+              <span>{uiText("Use + to start a coding agent or reopen a running session.")}</span>
             </div>
           ) : null}
         </div>

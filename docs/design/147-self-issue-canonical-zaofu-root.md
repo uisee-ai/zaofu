@@ -1,4 +1,4 @@
-> 状态: accepted
+> 状态: superseded — 当前规则见 [152：上报源码与开发执行项目分离](152-issue-report-source-and-developer-execution.md)。以下保留历史决策。
 
 # Self-Issue 统一使用 ZaoFu v7 源码根
 

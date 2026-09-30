@@ -21,7 +21,9 @@ from zf.runtime.task_pipeline_reconciler import (
     task_pipeline_policy,
 )
 from zf.runtime.task_pipeline_runtime import (
+    TaskPipelineWaiting,
     TaskPipelineRuntimeError,
+    _ensure_task_pipeline_role_ready,
     admit_task_pipeline_generation,
     preflight_task_pipeline_generation,
 )
@@ -180,6 +182,57 @@ def test_workspace_base_rejects_divergent_candidate_history(
                 "task_map_generation": "map-new",
                 "dispatch_base_commit": divergent_base,
             },
+        )
+
+
+def test_provider_readiness_is_waiting_not_plan_admission_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class _ReadinessError(RuntimeError):
+        failure_class = "provider_launch_not_submitted"
+
+    runtime = SimpleNamespace(
+        _ensure_role_active=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            _ReadinessError("provider readiness failed: respawning")
+        )
+    )
+    monkeypatch.setattr(
+        "zf.runtime.transport.transport_error_diagnostics",
+        lambda exc: {"failure_class": exc.failure_class},
+    )
+
+    with pytest.raises(TaskPipelineWaiting) as caught:
+        _ensure_task_pipeline_role_ready(
+            runtime,
+            SimpleNamespace(instance_id="issue-fix-lane-0"),
+            task_id="ISSUE-READY-1",
+            spawn_cwd=tmp_path,
+            skill_runtime_root=tmp_path,
+        )
+
+    assert caught.value.reason == "waiting_for_provider_readiness"
+    assert "respawning" in caught.value.detail
+
+
+def test_non_readiness_role_activation_error_stays_fail_closed(
+    tmp_path: Path,
+) -> None:
+    class _ContractError(RuntimeError):
+        pass
+
+    runtime = SimpleNamespace(
+        _ensure_role_active=lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            _ContractError("workspace contract is stale")
+        )
+    )
+    with pytest.raises(_ContractError, match="workspace contract is stale"):
+        _ensure_task_pipeline_role_ready(
+            runtime,
+            SimpleNamespace(instance_id="issue-fix-lane-0"),
+            task_id="ISSUE-CONTRACT-1",
+            spawn_cwd=tmp_path,
+            skill_runtime_root=tmp_path,
         )
 
 

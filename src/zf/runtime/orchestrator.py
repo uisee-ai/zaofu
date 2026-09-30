@@ -100,7 +100,6 @@ from zf.core.cost.tracker import CostTracker
 from zf.core.memory.store import MemoryStore
 from zf.runtime.orchestrator_types import OrchestratorDecision
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
-from zf.runtime.self_issue_target import resolve_self_issue_target_root
 
 
 if TYPE_CHECKING:
@@ -375,10 +374,7 @@ class WorkflowRuntimeCoordinator(
         # entry point should resolve it explicitly via ProjectContext so
         # configurations like ``project.state_dir: .runtime/zf`` resolve to
         # the real project root rather than a nested directory.
-        self.project_root = resolve_self_issue_target_root(
-            project_root or state_dir.parent,
-            getattr(config, "self_issue", None),
-        )
+        self.project_root = Path(project_root or state_dir.parent).resolve()
         # Runtime-only roles spawned by autoscale (or other runtime decisions)
         # are tracked here instead of mutating ``self.config.roles``. Keeping
         # the original ZfConfig.roles list pristine preserves the
@@ -3040,7 +3036,11 @@ class WorkflowRuntimeCoordinator(
         """Layer 1 mechanical state writes — never decisions."""
         self._renew_task_attempt_lease(event)
         safe_auto_trigger_from_event(
-            event, self.state_dir, self.event_writer, self.project_root, self.config,
+            event,
+            self.state_dir,
+            self.event_writer,
+            getattr(self, "project_root", self.state_dir.parent),
+            self.config,
         )
         if event.type in {"run.goal.completed", "run.goal.blocked", "run.failed"}:
             try:

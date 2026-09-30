@@ -349,6 +349,38 @@ class WorkdirManager:
                 raise RuntimeError(
                     f"workdir project path exists but is not a git worktree: {project_path}"
                 )
+            # Writer/Fix worktrees are stateful and may outlive a project
+            # switch.  Reusing a path that belongs to another repository is
+            # especially dangerous here: the branch can have the expected
+            # name while the checkout contains only a placeholder or an
+            # unrelated source tree.  Reader worktrees already fail closed
+            # by replacing this shape; keep the writer path equally strict.
+            if not self._worktree_matches_source(project_path):
+                status = self._git(project_path, "status", "--porcelain").strip()
+                if status:
+                    raise RuntimeError(
+                        "writer worktree belongs to a different source repository "
+                        f"and is dirty; refusing to discard it: {project_path}"
+                    )
+                shutil.rmtree(project_path)
+            if not project_path.exists():
+                self._ensure_branch(branch)
+                self._git(
+                    self.project_root,
+                    "worktree",
+                    "add",
+                    str(project_path),
+                    branch,
+                )
+                provision_worktree_env(
+                    project_path,
+                    self.project_root,
+                    self.config.runtime.workdirs.provision_paths,
+                    bootstrap_uv_dev=True,
+                )
+                self._run_declared_setup(role, project_path)
+                self._write_metadata(role, plan, git_worktree_created=True)
+                return
             current = self._git(project_path, "rev-parse", "--abbrev-ref", "HEAD").strip()
             if current != branch:
                 status = self._git(project_path, "status", "--porcelain").strip()
@@ -378,6 +410,24 @@ class WorkdirManager:
         )
         self._run_declared_setup(role, project_path)
         self._write_metadata(role, plan, git_worktree_created=True)
+
+    def _worktree_matches_source(self, project_path: Path) -> bool:
+        """Return whether a managed worktree belongs to this source repo."""
+
+        try:
+            source_common = Path(
+                self._git(self.project_root, "rev-parse", "--git-common-dir")
+            )
+            worktree_common = Path(
+                self._git(project_path, "rev-parse", "--git-common-dir")
+            )
+            if not source_common.is_absolute():
+                source_common = self.project_root / source_common
+            if not worktree_common.is_absolute():
+                worktree_common = project_path / worktree_common
+            return source_common.resolve() == worktree_common.resolve()
+        except (OSError, RuntimeError):
+            return False
 
     def _prepare_reader_worktree(self, role: RoleConfig, plan: WorkdirPlan) -> None:
         self._require_git_repo()
@@ -428,20 +478,7 @@ class WorkdirManager:
 
     def _reader_worktree_matches_source(self, project_path: Path) -> bool:
         """Return whether an existing reader worktree uses this source repo."""
-        try:
-            source_common = Path(
-                self._git(self.project_root, "rev-parse", "--git-common-dir")
-            )
-            worktree_common = Path(
-                self._git(project_path, "rev-parse", "--git-common-dir")
-            )
-            if not source_common.is_absolute():
-                source_common = self.project_root / source_common
-            if not worktree_common.is_absolute():
-                worktree_common = project_path / worktree_common
-        except (OSError, RuntimeError):
-            return False
-        return source_common.resolve() == worktree_common.resolve()
+        return self._worktree_matches_source(project_path)
 
     def checkout_reader_task_ref(self, role: RoleConfig, task_id: str) -> str | None:
         plan = self.plan(role)

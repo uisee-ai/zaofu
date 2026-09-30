@@ -1,9 +1,15 @@
 // 通用格式化 helper —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT 地基,docs/design/67 §4)。
-// 纯函数,无依赖;App.tsx 与 kanban 组件共享。
+// App.tsx 与 kanban 组件共享，并遵循用户选择的显示时区。
+import { getSettingsPreferences } from '../settings/useSettingsPreferences.js';
 
-export function formatTime(value?: string | null): string {
+export function formatTime(value?: string | null, seconds = true): string {
   if (!value) return "";
-  return value.slice(11, 19) || value;
+  if (!Number.isFinite(Date.parse(value))) return value;
+  const prefs = getSettingsPreferences();
+  return new Intl.DateTimeFormat(({en:'en-GB',zh:'zh-CN',ko:'ko-KR',ja:'ja-JP'} as const)[prefs.language] || 'en-GB', {
+    hour: '2-digit', minute: '2-digit', ...(seconds ? { second: '2-digit' as const } : {}), hour12: false,
+    ...(prefs.timeZone === 'local' ? {} : { timeZone: prefs.timeZone }),
+  }).format(new Date(value));
 }
 
 export function formatTokens(value: number | undefined): string {

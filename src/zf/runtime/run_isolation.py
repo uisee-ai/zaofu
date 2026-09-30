@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import posixpath
+from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.run_contract import stable_json_sha256
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
 def concurrent_isolation_blocker(
@@ -53,6 +57,7 @@ def concurrent_isolation_blocker(
     active_scopes_by_run: dict[str, list[str]] = {
         run_id: [] for run_id in active_run_ids
     }
+    snapshot_identities: dict[str, str] = {}
     for candidate in events:
         body = _payload(candidate)
         candidate_run = run_id_for(candidate)
@@ -63,12 +68,22 @@ def concurrent_isolation_blocker(
         ).strip()
         if candidate_task:
             active_task_ids.add(candidate_task)
-        digest = str(body.get("effective_config_digest") or "").strip()
-        if digest:
-            active_digests_by_run[candidate_run].add(digest)
+        config_identity, config_error = _effective_config_identity(runtime, body)
+        if config_error:
+            return config_error
+        if config_identity:
+            active_digests_by_run[candidate_run].add(config_identity)
+            ref = body.get("effective_config_ref")
+            if isinstance(ref, Mapping):
+                snapshot_sha = str(ref.get("sha256") or "").strip()
+                if snapshot_sha:
+                    snapshot_identities[snapshot_sha] = config_identity
         contract_digest = str(body.get("run_contract_digest") or "").strip()
         if contract_digest:
             active_contracts_by_run[candidate_run].add(contract_digest)
+        target_root_error = _target_root_error(runtime, body)
+        if target_root_error:
+            return target_root_error
         if _invalid_scope_values(body):
             return (
                 "concurrent isolation has invalid work scope for active Run "
@@ -77,6 +92,12 @@ def concurrent_isolation_blocker(
         active_scopes_by_run[candidate_run].extend(_scope_paths(body))
     if task_id in active_task_ids:
         return f"concurrent task_id collision: {task_id}"
+    # Admission facts retain only the snapshot digest, not its full descriptor.
+    # Resolve those through verified bindings; unknown digests still diverge.
+    active_digests_by_run = {
+        run_id: {snapshot_identities.get(digest, digest) for digest in digests}
+        for run_id, digests in active_digests_by_run.items()
+    }
     missing_active_config = next(
         (
             run_id
@@ -134,7 +155,10 @@ def concurrent_isolation_blocker(
         for digests in active_digests_by_run.values()
         for digest in digests
     }
-    config_digest = str(payload.get("effective_config_digest") or "").strip()
+    config_digest, config_error = _effective_config_identity(runtime, payload)
+    if config_error:
+        return config_error
+    config_digest = snapshot_identities.get(config_digest, config_digest)
     if active_digests and config_digest not in active_digests:
         return "concurrent effective config digest mismatch"
     missing_active_scope = next(
@@ -152,6 +176,9 @@ def concurrent_isolation_blocker(
         )
     if _invalid_scope_values(payload):
         return "concurrent isolation has invalid work scope"
+    target_root_error = _target_root_error(runtime, payload)
+    if target_root_error:
+        return target_root_error
     new_scopes = _scope_paths(payload)
     if not new_scopes:
         return "concurrent isolation requires explicit work scope"
@@ -173,10 +200,63 @@ def _scope_values(payload: dict[str, Any]) -> list[str]:
             values.extend(part.strip() for part in raw.split(","))
         elif isinstance(raw, list):
             values.extend(str(item).strip() for item in raw)
-    refs = payload.get("source_refs")
-    if isinstance(refs, dict):
-        values.append(str(refs.get("target_root") or "").strip())
     return [value for value in values if value]
+
+
+def _target_root_error(runtime: Any, payload: Mapping[str, Any]) -> str:
+    """Validate project identity separately from the relative write scope."""
+    refs = payload.get("source_refs")
+    roots = [str(value).strip() for value in (
+        refs.get("target_root") if isinstance(refs, Mapping) else "",
+        payload.get("target_root"),
+    ) if value]
+    if not roots:
+        return ""
+    project_root = getattr(runtime, "project_root", None)
+    if project_root is None:
+        return "concurrent target_root requires project root identity"
+    try:
+        root = Path(project_root).resolve(strict=False)
+        for raw in roots:
+            if "\x00" in raw or any(ch in raw for ch in "*?[") or (len(raw) > 1 and raw[1] == ":"):
+                return "concurrent target_root is outside project root"
+            target = Path(raw).expanduser()
+            if not target.is_absolute():
+                target = root / target
+            target = target.resolve(strict=False)
+            target.relative_to(root)
+            for scope in _scope_paths(dict(payload)):
+                if not (root / scope).resolve(strict=False).is_relative_to(target):
+                    return "concurrent work scope is outside target_root"
+    except (OSError, RuntimeError, ValueError):
+        return "concurrent target_root is outside project root"
+    return ""
+
+
+def _effective_config_identity(runtime: Any, payload: Mapping[str, Any]) -> tuple[str, str]:
+    """Compare semantic config content while retaining snapshot binding checks."""
+    raw_digest = str(payload.get("effective_config_digest") or "").strip()
+    ref = payload.get("effective_config_ref")
+    if "effective_config_ref" not in payload:
+        return raw_digest, ""
+    if not isinstance(ref, Mapping) or not str(ref.get("ref") or "").strip():
+        return "", "concurrent effective config binding invalid"
+    expected = str(ref.get("sha256") or "").strip()
+    if not expected or (raw_digest and raw_digest != expected):
+        return "", "concurrent effective config binding invalid"
+    try:
+        hydrated = hydrate_sidecar_ref(runtime.state_dir, dict(ref))
+    except (OSError, ValueError):
+        return "", "concurrent effective config binding invalid"
+    if not hydrated.ok or not isinstance(hydrated.payload, Mapping):
+        return "", "concurrent effective config binding invalid"
+    body = hydrated.payload
+    if str(body.get("schema_version") or "") != "effective-config-snapshot.v1":
+        return "", "concurrent effective config binding invalid"
+    config = body.get("config")
+    if not isinstance(config, Mapping):
+        return "", "concurrent effective config binding invalid"
+    return stable_json_sha256(config), ""
 
 
 def _invalid_scope_values(payload: dict[str, Any]) -> list[str]:

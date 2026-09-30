@@ -1,0 +1,35 @@
+{
+  "capture_error": "",
+  "capture_point": "registered",
+  "captured_at_ns": 1790590924867962322,
+  "complete_for_declared_scope": true,
+  "consistency": "per-file checked; not an atomic cross-file snapshot",
+  "files": [],
+  "metadata": {
+    "forbidden": [
+      "duplicate or missing dispatch",
+      "replay sequence drift"
+    ],
+    "given": "independent baseline/fault roots with the same backlog task",
+    "identity": {
+      "attempt": null,
+      "generation": null,
+      "operation_id": null,
+      "reason": "No admitted Run or generated attempt/operation identity is asserted at registration; later identities are in raw state",
+      "run_id": null,
+      "task_id": "TASK-S4"
+    },
+    "identity_observation": "before_test_action",
+    "inputs": {
+      "child_mode": "crash",
+      "crash_exit": 71
+    },
+    "then": "canonical task and event-type sequence match clean dispatch",
+    "when": "real child exits after task.dispatched append, then another child resumes"
+  },
+  "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_dispatch_crash_restarts_to_baseline",
+  "original_root": "/tmp/pytest-of-uisee/pytest-187/test_real_orchestrator_dispatc0/dispatch-crash-case",
+  "schema_version": "zf-testkit-ordinary-evidence.v1",
+  "source": "/home/uisee/zaofu_v7/tests/conformance/test_zaofu_testkit_s4.py",
+  "source_digest": "6214cf03b5ab022eb62231a7c3c3fcd528f2cd09a3546a85eca7eeb0d1c69b93"
+}

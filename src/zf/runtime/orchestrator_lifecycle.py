@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import hashlib
 import time
-from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -310,49 +309,9 @@ class LifecycleManagerMixin(
         return self._spawn_coordinator
 
     def _role_spawn_cwd(self, role: "RoleConfig", *, source: str) -> Path | None:
-        """Resolve cwd for lifecycle-managed spawns.
+        from zf.runtime.lifecycle_workdir import role_spawn_cwd
 
-        Initial `zf start` launches workers from their configured worktree
-        project paths. Respawn/recycle must preserve that invariant; otherwise
-        a recovered writer silently falls back to the harness root.
-        """
-        workdirs = getattr(getattr(self.config, "runtime", None), "workdirs", None)
-        if workdirs is None or not getattr(workdirs, "enabled", False):
-            return None
-
-        from zf.runtime.workdirs import WorkdirManager
-
-        manager = WorkdirManager(
-            state_dir=self.state_dir,
-            project_root=self.project_root,
-            config=self.config,
-        )
-        plan = manager.prepare(role)
-        try:
-            payload = asdict(plan)
-            payload["source"] = source
-            self.event_writer.append(ZfEvent(
-                type="workdir.prepared",
-                actor="zf-cli",
-                payload=payload,
-            ))
-        except Exception:
-            pass
-
-        project_path = Path(plan.project_path)
-        if (
-            plan.enabled
-            and plan.mode == "worktree"
-            and plan.role_kind in {"writer", "reader"}
-        ):
-            if not project_path.exists():
-                raise RuntimeError(
-                    f"workdir project path missing for {role.instance_id}: "
-                    f"{project_path}"
-                )
-            return project_path
-        return None
-
+        return role_spawn_cwd(self, role, source=source)
 
     def _capture_logs(self) -> list[WorkflowRuntimeDecision]:
         """Capture agent output from all roles for debugging + stuck detection.
@@ -375,11 +334,28 @@ class LifecycleManagerMixin(
             # G-RESUME-4: liveness check. Both claude and codex are
             # persistent TUI processes in tmux panes — same watchdog
             # path applies to both.
-            alive = False
-            try:
-                alive = self.transport.is_alive(role.instance_id)
-            except Exception:
+            output: str | None = None
+            combined_observer = getattr(
+                self.transport, "liveness_and_capture_log", None,
+            )
+            combined = None
+            if callable(combined_observer):
+                try:
+                    combined = combined_observer(
+                        role.instance_id,
+                        liveness_lines=120,
+                        log_lines=200,
+                    )
+                except Exception:
+                    combined = None
+            if combined is not None:
+                (alive, _reason), output = combined
+            else:
                 alive = False
+                try:
+                    alive = self.transport.is_alive(role.instance_id)
+                except Exception:
+                    alive = False
             if not alive and safe_halted:
                 continue  # halted: no counter bump, no respawn churn
             if not alive:
@@ -485,10 +461,11 @@ class LifecycleManagerMixin(
                 if observed is not None:
                     observed.discard(role.instance_id)
 
-            try:
-                output = self.transport.capture_log(role.instance_id, lines=200)
-            except Exception:
-                continue  # pane might not exist yet
+            if output is None:
+                try:
+                    output = self.transport.capture_log(role.instance_id, lines=200)
+                except Exception:
+                    continue  # pane might not exist yet
             if output.strip():
                 log_path = logs_dir / f"{role.instance_id}.log"
                 log_path.write_text(output)
@@ -1008,12 +985,17 @@ class LifecycleManagerMixin(
         coordinator = self._get_spawn_coordinator()
         session_replacement: dict[str, str] = {}
         try:
+            context_exhausted = (
+                not force_fresh_session
+                and role.backend == "codex" and self._codex_context_exhausted(role)
+            )
+            self.transport.terminate(role.instance_id)
             if force_fresh_session:
                 session_replacement = self._replace_provider_session_for_recycle(
                     role,
                     reason=recovery_reason,
                 )
-            elif role.backend == "codex" and self._codex_context_exhausted(role):
+            elif context_exhausted:
                 reg = RoleSessionRegistry(
                     self.state_dir / "role_sessions.yaml",
                     project_root=str(self.project_root),
@@ -1043,11 +1025,6 @@ class LifecycleManagerMixin(
                     },
                 ))
                 self._route_context_critical_inline(critical)
-            # Terminate any lingering pane/window state
-            try:
-                self.transport.terminate(role.instance_id)
-            except Exception:
-                pass
             coordinator.spawn(
                 role,
                 cwd=self._role_spawn_cwd(
@@ -1866,6 +1843,11 @@ class LifecycleManagerMixin(
         recovery briefing containing memory + current task + progress +
         git state + causation chain so it can resume work without
         losing continuity."""
+        from zf.runtime.task_pipeline_recovery import inject_task_stage_recovery
+
+        stage_recovery = inject_task_stage_recovery(self, role)
+        if stage_recovery is not None:
+            return stage_recovery
         # Figure out the current task (if any) for this instance
         task = self._active_task_for_instance(role.instance_id)
         idle_recovery = task is None

@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import {
   ArrowLeft,
   Check,
@@ -75,6 +77,7 @@ export function AskUserQuestion({
   submitLabel = "Continue",
   variant = "embedded",
 }: AskUserQuestionProps) {
+  useSettingsPreferences();
   const [activeIndex, setActiveIndex] = useState(0);
   const [collapsed, setCollapsed] = useState(false);
   const [selected, setSelected] = useState<Record<string, string>>({});
@@ -173,7 +176,7 @@ export function AskUserQuestion({
         type="button"
         onClick={() => setCollapsed(false)}
       >
-        <span className="ask-user-state">Input needed</span>
+        <span className="ask-user-state">{uiText("Input needed")}</span>
         <span className="ask-user-collapsed-copy">
           <strong>{safeQuestions.length - activeIndex} question{safeQuestions.length - activeIndex === 1 ? "" : "s"} waiting</strong>
           <small>{question.question}</small>
@@ -265,7 +268,7 @@ export function AskUserQuestion({
                   <span className="ask-user-option-heading agent-plan-option-heading">
                     <strong>{displayOptionLabel(option.label)}</strong>
                     {option.recommended ? (
-                      <small className="ask-user-recommended agent-plan-recommended">Recommended</small>
+                      <small className="ask-user-recommended agent-plan-recommended">{uiText("Recommended")}</small>
                     ) : null}
                   </span>
                   {option.description ? <small>{option.description}</small> : null}
@@ -341,7 +344,7 @@ export function AskUserQuestion({
             onClick={() => setActiveIndex((index) => Math.max(index - 1, 0))}
           >
             <ArrowLeft aria-hidden="true" size={14} />
-            Back
+            {uiText("Back")}
           </button>
         ) : null}
         {onDiscuss ? (
@@ -368,7 +371,7 @@ export function AskUserQuestion({
             {question.skipLabel || "Skip"}
           </button>
         ) : (
-          <span className="ask-user-required">Required to continue</span>
+          <span className="ask-user-required">{uiText("Required to continue")}</span>
         )}
         <button
           className="agent-inline-button primary ask-user-submit"

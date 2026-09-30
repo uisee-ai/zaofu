@@ -1,28 +1,25 @@
-# Report a ZaoFu problem with Self-Issue
+# Report a problem with the generic Self-Issue skill
 
-Enter `/issue` in the Kanban Agent composer, or `/issue <title>` to seed the
-editable title. ZaoFu first presents an eight-step pre-Draft Intake: title, bug
-description, reproduction steps, expected behavior, attachments, OS/version,
-ZaoFu version, and additional context. Required answers are title, description,
-reproduction, and ZaoFu version. Back/Next edits one question at a time; final
-submission jumps to the first missing required answer.
-When files are selected, submission also requires the attachment-visibility
-checkbox. Required answers are validated first; no checkbox is required when
-the attachment list is empty.
+Enter `/issue <free-form description>` in the host's composer, or use an empty
+`/issue` and edit the generated Draft. The skill immediately creates an editable
+Draft with title, bug description, reproduction steps, expected behavior,
+attachment descriptions, operating system/version, project version, and an
+empty `additional_context`. It does not open the fixed eight-question form;
+that form is available only through an explicit legacy command/API.
 
-ZaoFu may also create a local `system_detected` Intake candidate for a small,
+The host may also create a local `system_detected` candidate for a small,
 explicit allowlist of strong internal failures or an evidence-backed
 `worker.self_issue.detected` event. It never creates a Draft, uploads, starts
 OAuth, or publishes automatically. Web polls for such candidates while Kanban
 Agent chat remains usable.
 
-Answers persist across refresh. Cancel permanently deletes the Intake and its
-local files. After submission the Kernel creates the canonical Draft, collects a
-bounded mechanical snapshot, and accepts verified sidecar refs from the worker
-that found the failure. Only a live Runtime Kernel Orchestrator may atomically
-claim the request and ask the existing configured orchestrator role for a
-read-only assessment in an isolated committed-source workspace. Web and CLI do
-not start that semantic Agent. Interrupt then
+Draft edits persist across refresh. Choose exactly one next action after Draft
+creation: **Continue with project assessment** or **Continue with limited report**.
+A live runtime, heartbeat, worker, or existing login is only an available
+execution carrier and never implies authorization. Only the first choice may
+invoke the generic read-only project-assessment agent in an isolated,
+revision-pinned source workspace; the second choice skips that agent and records
+the limitation. Web and CLI do not start assessment implicitly. Interrupt then
 offers both **Resume from checkpoint**, which keeps the same evidence snapshot
 and remaining reproduction budget, and **Restart with fresh evidence**, which
 creates a new run and recollects the current mechanical scene. The activity panel
@@ -31,17 +28,22 @@ preview and publication. The exact Markdown states either `Not collected because
 the user interrupted evidence collection.` or `No incident evidence was
 collected.`; partial raw output remains local.
 
-Use the Draft tab to edit the report and Save draft. User Intake is arranged in
+Use the Draft tab to edit the report and Save draft. User input is arranged in
 the left column; reporter and orchestrator assessment fields and activity are in
 the right column. Choose GitLab.com, GitHub, or both under Publish destination;
 both repository targets are centrally locked. Selecting Preview displays the
 exact Markdown for each selected provider. Attachments require a separate
-manifest preview and confirmation when GitLab is selected. GitHub has no
-supported Issue binary-upload API: GitHub-only publishes text with an explicit
-omission notice, while both uploads binaries to GitLab and sends text to GitHub.
-The final provider batch requires another preview and one-time confirmation.
-GitLab PKCE or GitHub App Device Flow resumes only that exact confirmed batch.
-Successful publication exposes one Published & View link per provider in new tabs.
+manifest preview and confirmation when GitLab is selected. GitHub has no normal
+REST Issue attachment API, so ZaoFu uses the supported GitHub CLI 2.99+ comment
+attachment path. Confirmed images and videos up to 20 MB are added to one marked
+Evidence comment; redacted, bounded text formats are included as comment text.
+The final provider batch is frozen by the single **Publish** action. If
+authorization is required, the button becomes **Connect** and shows the code;
+authorization success resumes that exact batch as **Publishing** without a
+second confirmation. Successful publication exposes a **View** link per
+provider in new tabs. If the Issue exists but label/attachment post-steps fail,
+the UI keeps the View link, shows the failure reason and **Retry label
+reconciliation**, and never creates a duplicate Issue.
 While the current canonical publication state is `published`, all Draft fields
 and Save draft, Safe preview, and Restart are read-only. A notice explains the
 immutability, while Published & View remains available. The exact published
@@ -54,7 +56,7 @@ The completed read-only collection may add a bounded redacted log/timing/event
 summary and existing trusted Playwright screenshots to that same attachment
 manifest. Nothing is disclosed until the user confirms the manifest. Uploaded
 items use clickable GitLab URLs; access follows the target project's visibility.
-The attachment manifest shows the absolute path of ZaoFu's controlled state-dir
+The attachment manifest shows the absolute path of the host's controlled local
 copy and links to a Draft-and-digest-verified local preview in a new tab. Browsers
 do not disclose the originally selected absolute path, and this local path never
 enters the Draft or provider payload. Final Markdown uses the provider's absolute
@@ -86,32 +88,50 @@ self_issue:
   browser_capture_base_url: http://127.0.0.1:8002  # optional Kernel-signal origin
 ```
 
-Intake is hosted in the board workspace, so Kanban Agent chat remains usable.
-If runtime is stopped, Web warns that Intake/Draft persistence and committed
+The intake UI is hosted in the host workspace, so the surrounding chat remains usable.
+If the execution carrier is stopped, Web warns that Draft persistence and committed
 source inspection still work while fresh events, logs, Traces, failure
 screenshots, and live reproduction evidence may be unavailable, and suggests
-`cd /path_to_project && zf start`.
-Runtime, evidence, and assessment are shown as separate states. **Check runtime
-again** rechecks liveness. **Continue with limited report** skips semantic
-assessment, fixes confidence to low, and explicitly discloses the missing live
-evidence in the final body.
+`cd /path_to_project && <host-start-command>`.
+Carrier, evidence, and assessment are shown as separate states. **Check runtime
+again** rechecks availability. **Continue with limited report** skips project
+assessment even when the carrier is already live, fixes confidence to low, and
+explicitly discloses the missing dynamic evidence in the final body.
 
 CLI uses the same state path:
 
 ```bash
 uv run zf issue report "Short title"
 uv run zf issue report "Short title" --non-interactive
+# Explicit legacy questionnaire only:
+uv run zf issue report "Short title" --legacy-intake --non-interactive
 uv run zf issue answer <intake_id> --answers-file answers.json
 uv run zf issue preview <draft_id> --provider gitlab  # github or both
 uv run zf issue confirm <batch_id> --payload-digest <digest>
 uv run zf issue publish <batch_id> --confirmation-id <confirmation_id>
 ```
 
-GitLab uses Authorization Code + PKCE with the broad `api` scope. GitHub uses
-the public ZaoFu GitHub App Device Flow with repository Metadata read and Issues
-read/write permissions; no client secret is distributed. Device transactions
-are owner-only Kernel state, and both providers' tokens remain isolated in the
-Secret Provider by user, workspace, provider, and authorization domain.
+GitLab uses Authorization Code + PKCE with the broad `api` scope. GitHub media
+publication uses a ZaoFu GitHub OAuth App Device Flow; no client secret is
+distributed. Enable Device Flow on the OAuth App, export its public client id as
+`ZF_GITHUB_OAUTH_CLIENT_ID`, and configure a public target with:
+
+```yaml
+github:
+  authorization_domain: github.com
+  project: owner/repository
+  oauth_client_id: ${ZF_GITHUB_OAUTH_CLIENT_ID}
+  auth_mode: oauth_device_flow
+  oauth_scope: public_repo
+```
+
+Private repositories require the explicit `repo` scope. Device transactions are
+owner-only Kernel state, and both providers' tokens remain isolated in the
+Secret Provider by user, workspace, provider, and authorization domain. A
+compatible credential is shared by projects in the same workspace. Legacy
+GitHub App `device_flow`/`ghu_` credentials cannot upload media and trigger one
+new Connect after the target switches to OAuth. Credential and read-only
+repository preflight checks complete before the Issue is created.
 
 Public reporters cannot directly apply repository labels. The official target
 repository should enable `.github/workflows/self-issue-labels.yml` and precreate

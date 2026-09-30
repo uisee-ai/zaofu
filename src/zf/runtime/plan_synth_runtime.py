@@ -152,6 +152,10 @@ class PlanSynthRuntimeMixin:
             if lost_event is None:
                 continue
             lost_index = event_index.get(lost_event.id, latest_index)
+            if self._fanout_dispatch_reinjected_after_launch(
+                events, latest_dispatch, lost_index,
+            ):
+                continue
             activity_index = (
                 latest_index
                 if lost_event.type == "cost.usage.capture_miss"

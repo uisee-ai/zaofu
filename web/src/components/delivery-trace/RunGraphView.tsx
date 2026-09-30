@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // RunGraphView (2026-06-11 S-E) — Airflow Graph View 风格的 run-chain.v1 渲染。
 // 纯 DOM + CSS grid(主链 ≤8 节点、组内 ≤6 children,不引第三方布局库):
 // 主链圆角节点、fanout TaskGroup 容器(⊞/⊟)、gate 加重边、backedge 虚线回边、
@@ -17,6 +19,7 @@ import type {
 } from "../../api/types";
 import { formatSeconds } from "../common/SegBar";
 import { seqRangeLabel } from "./DeliveryTraceViewUtils";
+import { formatTime } from "../../lib/format";
 import {
   lifecycleProjectionNotice,
   runChainProjectionNotice,
@@ -54,8 +57,7 @@ function clock(ts?: string | null): string {
   if (!ts) return "—";
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return "—";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return formatTime(ts, false);
 }
 
 function durBetween(from?: string | null, to?: string | null): string | null {
@@ -110,6 +112,7 @@ export function RunGraphView({
   projectId,
   trace,
 }: RunGraphViewProps) {
+  useSettingsPreferences();
   const chain = trace.run_chain;
   const stages = chain?.stages ?? [];
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
@@ -172,7 +175,7 @@ export function RunGraphView({
   if (!chain || chain.status === "no_stage_order" || !stages.length) {
     return (
       <div className="delivery-tab-empty" data-testid="run-graph-empty">
-        <strong>No run chain projected.</strong>
+        <strong>{uiText("No run chain projected.")}</strong>
         <span className="muted">run-chain.v1 appears once workflow.dag stage_order events land.</span>
       </div>
     );

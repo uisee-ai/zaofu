@@ -1,6 +1,7 @@
 import {
   ISSUE_TRIAGE_POLL_INTERVAL_MS,
   ISSUE_TRIAGE_MIRROR_POLL_INTERVAL_MS,
+  ISSUE_TRIAGE_PAGE_SIZE,
   ISSUE_STATE_STAGES,
   ISSUE_STATE_FILTERS,
   canManageIssueRun,
@@ -19,6 +20,8 @@ import {
   nextIssueStateSelection,
   nextIssueStageSelection,
   issueSyncPresentation,
+  issueSelectionQueryValues,
+  initialIssueClarificationAnswers,
 } from "../src/pages/issueTriageModel.js";
 import * as issueTriageModel from "../src/pages/issueTriageModel.js";
 import { snapshotLoadKindForPage } from "../src/app/pageLoadPolicy.js";
@@ -44,6 +47,7 @@ assert(issueTriageNeedsRefresh({ ...base, status: "never", last_success_at: "" }
 assert(issueTriageSourceLabel("self_issue") === "/issue", "Self-Issue origin must be recognizable");
 assert(issueTriageSourceLabel("github_web") === "GitHub", "GitHub-created Issues must be recognizable");
 assert(ISSUE_TRIAGE_MIRROR_POLL_INTERVAL_MS < ISSUE_TRIAGE_POLL_INTERVAL_MS, "Webhook mirror reads must be faster than GitHub API reconciliation");
+assert(ISSUE_TRIAGE_PAGE_SIZE === 100, "Issue pagination must use the fixed default page size");
 assert(snapshotLoadKindForPage("issue-triage") === "none", "the Issue Triage page must not trigger an expensive Kanban snapshot");
 assert(nextIssueLabelSelection(null, "p1")?.[0] === "p1", "clicking a label must select it as the sole filter");
 assert(nextIssueLabelSelection(["p1"], "p1") === null, "clicking the active label must return to all labels");
@@ -52,11 +56,12 @@ assert(issueLabelFoldCount(["a", "b", "c", "d", "e"]) === 2, "labels after the f
 assert(canManageIssueRun("triaging") && canManageIssueRun("triage_recovering") && canManageIssueRun("fix_recovering") && canManageIssueRun("fix_paused"), "active, recovering, and paused runs must expose Manage Run");
 assert(!canManageIssueRun("triage_blocked") && !canManageIssueRun("fix_blocked"), "terminal blocked runs must expose Start Triage instead of invalid Run controls");
 assert(!canManageIssueRun("verified_candidate"), "completed verification must not expose Run controls");
+assert(!canManageIssueRun("triage_queued") && !canManageIssueRun("fix_queued"), "queued work without a Run must not expose Run controls");
 assert(issueStateLabel("triage_queued") === "Triage queued", "queued Triage must use natural state wording");
 assert(issueStateLabel("fix_queued") === "Fix queued", "queued Fix must use natural state wording");
 assert(issueStateLabel("triage_cancelled") === "Triage cancelled", "raw state identifiers must never leak into the UI");
 assert(issueStateDescription("triage_cancelled").includes("cancelled"), "each state must have a concise English hint");
-assert(issueSyncPresentation("fresh", "", "stopped").tone === "unavailable", "stopped Runtime must not look like a GitHub outage");
+assert(issueSyncPresentation("fresh", "", "stopped").tone === "current", "a stopped Runtime must not hide a successful GitHub refresh");
 assert(issueSyncPresentation("failed", "GitHub request failed", "running").tone === "error", "GitHub sync failures must remain red");
 assert(issueSyncPresentation("fresh", "", "running").tone === "current", "running Runtime with a fresh mirror must remain current");
 assert(effectiveIssueState("open", "triaging") === "triaging", "workflow state must take precedence over repository state");
@@ -87,12 +92,12 @@ assert(isIssueStateSelected(null, "triaging"), "All states must visibly check ev
 assert(isIssueStateSelected(["triaging"], "triaging"), "An explicitly selected state must be checked");
 assert(!isIssueStateSelected([], "triaging"), "No states must leave individual states unchecked");
 assert(labelExplanation("performance") === "Performance, latency, or resource usage.", "Known label hints must be English");
-assert(labelExplanation("unknown") === "No specific classification was assigned because the Issue assessment is incomplete or inconclusive.", "Unknown classification must explain why it appears");
+assert(labelExplanation("unknown") === "Not classified yet.", "Unknown classification must explain why it appears");
 assert(labelExplanation("p0") === "P0 severity: active catastrophic or security impact.", "P0 severity must have an explicit explanation");
 assert(labelExplanation("P1") === "P1 severity: major blocking impact.", "P1 severity lookup must be case-insensitive");
 assert(labelExplanation("p2") === "P2 severity: material recoverable impact.", "P2 severity must have an explicit explanation");
 assert(labelExplanation("p3") === "P3 severity: minor impact.", "P3 severity must have an explicit explanation");
-assert(labelExplanation("custom") === "GitHub label “custom” (no ZaoFu-specific description).", "Unregistered labels must state that no ZaoFu description exists");
+assert(labelExplanation("custom") === "Filter by “custom”.", "Unregistered labels must state that no ZaoFu description exists");
 const queuedStates = filterIssueStateOptions("Queued").map(({ value }) => value);
 assert(queuedStates.join(",") === "triage_queued,fix_queued", "Queued search must return all queued states");
 assert(filterIssueStateOptions("Blocked").map(({ value }) => value).join(",") === "triage_blocked,fix_blocked,blocked", "Blocked search must include phase-specific terminal states");
@@ -118,3 +123,22 @@ assert(
   nextIssueStageSelection(withoutTriage, triageStates, allStates) === null,
   "clicking the deselected stage must restore every state",
 );
+assert(issueSelectionQueryValues(null, allStates) === null, "implicit all must omit the API filter");
+assert(issueSelectionQueryValues([], allStates) === null, "an empty visual selection must remain unrestricted at the API boundary");
+assert(issueSelectionQueryValues(allStates, allStates) === null, "an explicit full selection must remain unrestricted at the API boundary");
+assert(
+  issueSelectionQueryValues(["triaging", "fixing", "not-a-state"], allStates)?.join(",") === "triaging,fixing",
+  "a partial selection must send only supported values",
+);
+const clarificationQuestions = [
+  { id: "confirmed", type: "boolean" },
+  { id: "details", type: "long_text" },
+];
+assert(initialIssueClarificationAnswers(clarificationQuestions).confirmed === "Yes", "a new Yes/No answer must default to Yes");
+assert(initialIssueClarificationAnswers(clarificationQuestions).details === "", "text answers must not receive a synthetic default");
+assert(initialIssueClarificationAnswers(clarificationQuestions, { confirmed: "No" }).confirmed === "No", "a saved No answer must not be overwritten");
+
+assert(issueSyncPresentation("failed", "Request failed", "stopped").tone === "error", "a stopped runtime must not hide a mirror failure");
+assert(issueSyncPresentation("syncing", "").tone === "syncing", "refreshing must be amber");
+assert(issueSyncPresentation("never", "").tone === "unavailable", "not-yet-synced is neutral, not a failure");
+assert(issueSyncPresentation("unexpected", "").tone === "unavailable", "unknown status must not claim success");

@@ -40,6 +40,14 @@ from zf.core.events.model import ZfEvent
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.backend import get_adapter
 from zf.runtime.codex_hooks import codex_hook_trust_states, write_codex_hook_settings
+from zf.runtime.codex_runtime_hook_trust import _write_codex_runtime_hook_trust
+from zf.runtime.codex_restricted_runtime import (
+    guard_private_codex_home,
+    prepare_restricted_approval,
+    requires_restricted_codex_policy,
+    restricted_project_override,
+    verify_restricted_codex_config,
+)
 from zf.runtime.launch_artifact import write_launch_artifact
 from zf.runtime.provider_session_config import ProviderSessionPreparationMixin
 from zf.runtime.session_tailer import attach_codex_session_tailer
@@ -52,6 +60,11 @@ if TYPE_CHECKING:
 
 
 _MAX_FRESH_CLAUDE_SESSION_CANDIDATES = 8
+
+
+def _claude_config_path() -> Path:
+    """Return the Claude global config file used by the spawned CLI."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home()) / ".claude.json"
 
 
 class SpawnCoordinator(ProviderSessionPreparationMixin):
@@ -80,7 +93,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         self._codex_observe_inflight: set[str] = set()
         self._codex_hook_trust_cache: dict[Path, list[tuple[str, str]]] = {}
 
-    def _claude_session_exists(self, session_id: str) -> bool:
+    def _claude_session_exists(self, session_id: str, *, cwd: Path | None = None) -> bool:
         """B-W5-01 (2026-04-20): probe whether Claude already has a
         session file for this uuid. Needed to distinguish "true respawn"
         (pane crashed, session file survives, --resume will work) from
@@ -89,7 +102,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         found'). Mirrors `transport_stream_json._session_exists_on_disk`.
         """
         from zf.runtime.session_tailer import claude_session_path
-        return claude_session_path(self.project_root, session_id).exists()
+        return claude_session_path(str(cwd or self.project_root), session_id).exists()
 
     def _codex_session_exists(self, role: RoleConfig, session_id: str) -> bool:
         """Return True only when the cached Codex rollout still exists.
@@ -155,7 +168,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             session_id = str(self.registry.get_or_create(
                 role.instance_id, backend=role.backend,
             ))
-            is_respawn = meta_spawned and self._claude_session_exists(session_id)
+            is_respawn = meta_spawned and self._claude_session_exists(session_id, cwd=cwd)
         else:
             self.registry.mark_backend(role.instance_id, role.backend)
             is_respawn = meta_spawned
@@ -301,7 +314,19 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
                 role,
                 hook_project_root=spawn_cwd,
             )
-            env_prefix.append(f"CODEX_HOME={codex_home}")
+            env_prefix.append(f"CODEX_HOME={codex_home.resolve()}")
+            if requires_restricted_codex_policy(role):
+                argv[1:1] = ["-c", restricted_project_override(spawn_cwd)]
+                select_transport = getattr(self.transport, "for_role", None)
+                target = (
+                    select_transport(role.instance_id)
+                    if callable(select_transport)
+                    else self.transport
+                )
+                if getattr(target, "dry_run", False) is not True:
+                    verify_restricted_codex_config(
+                        codex_home=codex_home, project_root=spawn_cwd
+                    )
         argv = [*env_prefix, *argv]
         # Phase 1: if a hook settings file exists, wire it to the claude
         # backend. Codex loads project `.codex/hooks.json`; its per-role
@@ -431,7 +456,7 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             target = str(Path(cwd).resolve())
         except (OSError, RuntimeError):
             return
-        claude_config = Path.home() / ".claude.json"
+        claude_config = _claude_config_path()
         try:
             if claude_config.exists():
                 data = json.loads(claude_config.read_text(encoding="utf-8"))
@@ -544,6 +569,9 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
     ) -> Path:
         """Prepare per-role Codex runtime home before spawning Codex."""
         codex_home = self._codex_home(role)
+        restricted = requires_restricted_codex_policy(role)
+        if restricted:
+            guard_private_codex_home(codex_home, self.state_dir)
         codex_home.mkdir(parents=True, exist_ok=True)
         global_home = Path.home() / ".codex"
         hook_project_root = (
@@ -581,6 +609,19 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         if version_src.exists() and not version_dst.exists():
             shutil.copy2(version_src, version_dst)
         _dismiss_codex_update_prompt(codex_home)
+
+        if restricted:
+            prepare_restricted_approval(config_dst)
+            write_codex_hook_settings(self.state_dir, user_home=codex_home)
+            _write_codex_runtime_hook_trust(
+                config_dst,
+                project_root=hook_project_root,
+                trust_project=False,
+                hook_states=codex_hook_trust_states(
+                    self.state_dir, user_home=codex_home
+                ),
+            )
+            return codex_home
 
         stale_hooks = codex_home / "hooks.json"
         if stale_hooks.exists() or stale_hooks.is_symlink():
@@ -776,7 +817,7 @@ def purge_stale_claude_session_lock(session_id: str) -> dict[str, list[str]]:
     }
     if not session_id or _uuid_used_by_live_process(session_id):
         return result
-    claude_config = Path.home() / ".claude.json"
+    claude_config = _claude_config_path()
     if claude_config.exists():
         try:
             data = json.loads(claude_config.read_text(encoding="utf-8"))
@@ -860,87 +901,6 @@ def _dismiss_codex_update_prompt(codex_home: Path | None = None) -> None:
         path.write_text(json.dumps(data))
     except OSError:
         pass
-
-
-_ZAOFU_CODEX_RUNTIME_BEGIN = "# BEGIN ZaoFu runtime Codex hook trust\n"
-_ZAOFU_CODEX_RUNTIME_END = "# END ZaoFu runtime Codex hook trust\n"
-
-
-def _toml_basic_string(value: str) -> str:
-    """Return a TOML-compatible quoted string for simple runtime config."""
-    return json.dumps(value, ensure_ascii=False)
-
-
-def _strip_codex_runtime_hook_trust_block(text: str) -> str:
-    start = text.find(_ZAOFU_CODEX_RUNTIME_BEGIN)
-    end = text.find(_ZAOFU_CODEX_RUNTIME_END)
-    if start == -1 or end == -1 or end < start:
-        return text.rstrip() + ("\n" if text.strip() else "")
-    end += len(_ZAOFU_CODEX_RUNTIME_END)
-    stripped = (text[:start] + text[end:]).strip()
-    return stripped + ("\n" if stripped else "")
-
-
-def _write_codex_runtime_hook_trust(
-    config_path: Path,
-    *,
-    project_root: Path,
-    hook_states: list[tuple[str, str]],
-) -> None:
-    """Write per-runtime Codex project trust and hook hash state.
-
-    The hook key is the stable key returned by Codex `hooks/list`, for example
-    `/work/.codex/hooks.json:stop:0:0`. `trusted_hash` must match the
-    corresponding `currentHash`; otherwise Codex keeps the hook untrusted.
-    """
-    try:
-        current = config_path.read_text(encoding="utf-8")
-    except OSError:
-        current = ""
-    base = _strip_codex_runtime_hook_trust_block(current)
-
-    # The per-role config starts as a copy of the operator's global Codex
-    # config.  That file may already contain trust tables for this project;
-    # appending the generated block verbatim creates duplicate TOML table
-    # definitions and Codex refuses to start the worker.  Remove only the
-    # tables we are about to regenerate, preserving every unrelated setting.
-    hook_keys = {key for key, _ in hook_states}
-    if hook_keys:
-        lines = base.splitlines(keepends=True)
-        filtered: list[str] = []
-        skipping = False
-        for line in lines:
-            if line.startswith("[hooks.state."):
-                skipping = any(
-                    line.rstrip("\r\n") == f'[hooks.state.{_toml_basic_string(key)}]'
-                    for key in hook_keys
-                )
-                if skipping:
-                    continue
-            elif skipping and line.startswith("["):
-                skipping = False
-            if not skipping:
-                filtered.append(line)
-        base = "".join(filtered)
-
-    project_key = f'[projects.{_toml_basic_string(str(project_root))}]'
-    block_lines = [_ZAOFU_CODEX_RUNTIME_BEGIN.rstrip()]
-    if project_key not in base:
-        block_lines.extend([
-            project_key,
-            'trust_level = "trusted"',
-            "",
-        ])
-    for key, trusted_hash in hook_states:
-        block_lines.extend([
-            f"[hooks.state.{_toml_basic_string(key)}]",
-            f"trusted_hash = {_toml_basic_string(trusted_hash)}",
-            "",
-        ])
-    block_lines.append(_ZAOFU_CODEX_RUNTIME_END.rstrip())
-
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(base + "\n".join(block_lines) + "\n", encoding="utf-8")
 
 
 def _list_codex_project_hook_states(

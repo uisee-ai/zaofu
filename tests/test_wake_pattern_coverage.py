@@ -250,3 +250,15 @@ def test_layer2_noise_events_never_wake_agent_turn():
         "plan.approval.requested", "human.escalate",
     ):
         assert decision_event not in LAYER2_NOISE_EVENTS
+
+
+def test_mechanical_housekeeping_wakes_do_not_wake_layer2_agent_turn() -> None:
+    from zf.runtime.wake_patterns import LAYER2_NOISE_EVENTS, WAKE_PATTERNS
+
+    for event_type in (
+        "artifact.delivery.verified",
+        "run.resumed",
+        "self_issue.assessment.requested",
+    ):
+        assert event_type in WAKE_PATTERNS
+        assert event_type in LAYER2_NOISE_EVENTS

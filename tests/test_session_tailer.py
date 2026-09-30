@@ -42,6 +42,10 @@ class TestPathConstruction:
             "/-tmp-project--zf-workdirs-dev-project/abc-def.jsonl"
         )
 
+    def test_claude_session_path_escapes_underscores_like_claude(self):
+        p = claude_session_path("/tmp/zf-run_abc/project_name", "abc-def")
+        assert str(p).endswith("/-tmp-zf-run-abc-project-name/abc-def.jsonl")
+
 
 class TestAssistantMessageEvents:
     def _write(self, path: Path, lines: list[dict]):

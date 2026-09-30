@@ -277,6 +277,11 @@ def detect_structural_stalls(
         stage_id, trigger = str(stage_id), str(trigger)
         if not stage_id or not trigger:
             continue
+        # Workflow invocation is an external root entrypoint.  Its consumer
+        # has a dedicated verdict-less replay path; it is not a stage-local
+        # trigger eligible for structural redispatch.
+        if trigger == "workflow.invoke.requested":
+            continue
         # The latest *upstream* trigger is the active attempt.  A recovery
         # redispatch must never become a new root and renew its own stall.
         trigger_idx = None

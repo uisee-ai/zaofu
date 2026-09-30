@@ -37,6 +37,8 @@ _ALLOWED_COMMANDS = {
     ("base", "+record-search"),
     ("base", "+record-get"),
     ("base", "+record-upsert"),
+    ("base", "+record-batch-create"),
+    ("base", "+record-batch-update"),
     # Project Feishu group provisioning is intentionally limited to this small,
     # auditable IM surface.  Do not turn the runner into a generic CLI proxy.
     ("im", "+chat-create"),
@@ -78,12 +80,21 @@ class LarkCliRunner:
         self,
         *,
         executable: str = "lark-cli",
+        identity: str = "bot",
+        prefer_profile: bool = False,
         timeout_seconds: float = 60.0,
         environ: Mapping[str, str] | None = None,
         check_version: bool = True,
         tenant_token_provider: Callable[[str, str], str] | None = None,
     ) -> None:
+        if identity not in {"bot", "user"}:
+            raise ValueError("identity must be bot or user")
         self.executable = executable
+        self.identity = identity
+        # Some projections intentionally use the bot configured in lark-cli's
+        # profile.  This matters when the process environment also contains
+        # FEISHU_APP_ID/FEISHU_APP_SECRET for a different product bot.
+        self.prefer_profile = bool(prefer_profile)
         self.timeout_seconds = max(1.0, float(timeout_seconds))
         self.environ = dict(os.environ if environ is None else environ)
         self._tenant_token_provider = (
@@ -115,7 +126,7 @@ class LarkCliRunner:
             self._resolved,
             *command_tuple,
             "--as",
-            "bot",
+            self.identity,
             "--format",
             "json",
         ]
@@ -216,6 +227,21 @@ class LarkCliRunner:
 
     def _child_env(self, *, require_token: bool) -> dict[str, str]:
         env = dict(self.environ)
+        if self.identity == "user":
+            # User OAuth belongs to the CLI profile, not the project's bot App.
+            for key in (*_FEISHU_ENV_MAP, *_FEISHU_ENV_MAP.values()):
+                env.pop(key, None)
+            env["LARKSUITE_CLI_DEFAULT_AS"] = "user"
+            env["LARKSUITE_CLI_BRAND"] = "feishu"
+            return env
+        if self.prefer_profile:
+            # Let lark-cli resolve the selected identity from its profile.  Do
+            # not leak another application's credentials into this request.
+            for key in (*_FEISHU_ENV_MAP, *_FEISHU_ENV_MAP.values()):
+                env.pop(key, None)
+            env["LARKSUITE_CLI_BRAND"] = "feishu"
+            env["LARKSUITE_CLI_DEFAULT_AS"] = "bot"
+            return env
         for source, target in _FEISHU_ENV_MAP.items():
             value = env.get(source, "").strip()
             if value:
@@ -649,6 +675,7 @@ class LarkCliBitableClient:
             table_id,
             name_keys=("view_name", "name"),
         )
+        view_ids = self._list_view_ids(app_token, table_id)
         configured: list[str] = []
         skipped: list[str] = []
         for spec in layout_specs:
@@ -678,7 +705,7 @@ class LarkCliBitableClient:
                         "--table-id",
                         table_id.strip(),
                         "--view-id",
-                        name,
+                        view_ids.get(name, name),
                         "--json",
                         json.dumps(body, ensure_ascii=False, separators=(",", ":")),
                     ]
@@ -687,6 +714,19 @@ class LarkCliBitableClient:
             if applied:
                 configured.append(name)
         return {"configured": configured, "skipped": skipped}
+
+    def _list_view_ids(self, app_token: str, table_id: str) -> dict[str, str]:
+        payload = self.runner.run([
+            "base", "+view-list", "--base-token", app_token.strip(),
+            "--table-id", table_id.strip(), "--limit", "200",
+        ]).payload
+        result: dict[str, str] = {}
+        for item in _all_mappings(payload):
+            name = _first_string(item, "view_name", "name")
+            view_id = _first_string(item, "view_id", "id")
+            if name and view_id:
+                result[name] = view_id
+        return result
 
     def find_record_id(
         self,
@@ -727,6 +767,23 @@ class LarkCliBitableClient:
         self, app_token: str, table_id: str, fields: dict[str, Any]
     ) -> str:
         return self._upsert_record(app_token, table_id, fields=fields)
+
+    def batch_create_records(self, app_token: str, table_id: str, records: list[dict[str, Any]]) -> list[str]:
+        payload = self.runner.run([
+            "base", "+record-batch-create", "--base-token", app_token.strip(),
+            "--table-id", table_id.strip(), "--json",
+            json.dumps({"create_records": records}, ensure_ascii=False, separators=(",", ":")),
+        ]).payload
+        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        values = data.get("record_id_list") if isinstance(data, dict) else []
+        return [str(value) for value in values] if isinstance(values, list) else []
+
+    def batch_update_records(self, app_token: str, table_id: str, records: dict[str, dict[str, Any]]) -> None:
+        self.runner.run([
+            "base", "+record-batch-update", "--base-token", app_token.strip(),
+            "--table-id", table_id.strip(), "--json",
+            json.dumps({"update_records": records}, ensure_ascii=False, separators=(",", ":")),
+        ])
 
     def update_record(
         self,
@@ -837,6 +894,8 @@ def _field_json(spec: dict[str, object]) -> dict[str, Any]:
                 if isinstance(item, dict) and str(item.get("name") or "").strip():
                     options.append({"name": str(item["name"])})
         return {"name": name, "type": "select", "multiple": False, "options": options}
+    if field_type == 5:
+        return {"name": name, "type": "datetime"}
     return {"name": name, "type": "text"}
 
 

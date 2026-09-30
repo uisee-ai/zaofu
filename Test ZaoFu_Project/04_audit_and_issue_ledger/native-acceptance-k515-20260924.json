@@ -1,0 +1,34 @@
+{
+  "schema_version": "zf-native-acceptance-input.v1",
+  "evidence": [
+    {
+      "role": "normal_native",
+      "format": "native-run",
+      "ref": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+      "sha256": "dfab9562bc9c1ba63fc7113af078026429d1d39e35348d47089e5ccbc0718dad"
+    },
+    {
+      "role": "impl_recovery",
+      "format": "native-run",
+      "ref": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+      "sha256": "8d565a1b0d57aa415b50b13169d51e9eeaef1e666333c6e3a833219c108020ae"
+    },
+    {
+      "role": "verify_recovery",
+      "format": "native-run",
+      "ref": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+      "sha256": "e125867c0c23bebfedf18fb72f9cc912dd356c3d4388cf47b0333c7f50f4971c"
+    },
+    {
+      "role": "deterministic_mainline",
+      "ref": "/tmp/zf-k514-mainline-ledger-fixed-20260923/testkit-run.json",
+      "sha256": "09b045da60e38fc9a6cc9b50c0fe5d46521725ae16e1af1a9624e6c5532e5569"
+    },
+    {
+      "role": "premerge",
+      "format": "premerge-run",
+      "ref": "/tmp/zf-k514-premerge-final-20260923/premerge-run.json",
+      "sha256": "dfceefaf9e4d1f245fda9d4fbfa7f5c3175a6c312d733db62165032f9120e40d"
+    }
+  ]
+}

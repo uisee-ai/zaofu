@@ -7,6 +7,7 @@ export interface MarkdownTextProps {
   content: string;
   formatStandaloneJson?: boolean;
   isStreaming?: boolean;
+  showImageDownload?: boolean;
 }
 
 const RichMarkdownText = lazy(() => import("./RichMarkdownText"));
@@ -16,6 +17,7 @@ export const MarkdownText = memo(function MarkdownText({
   content,
   formatStandaloneJson = false,
   isStreaming = false,
+  showImageDownload = true,
 }: MarkdownTextProps) {
   // Defense-in-depth: a huge or unbroken-token payload (e.g. a base64 data
   // URL serialized into the stream) would lock the tab in the markdown
@@ -28,7 +30,12 @@ export const MarkdownText = memo(function MarkdownText({
     : content;
   return (
     <Suspense fallback={<MarkdownFallback className={className} content={renderedContent} />}>
-      <RichMarkdownText className={className} content={renderedContent} isStreaming={isStreaming} />
+      <RichMarkdownText
+        className={className}
+        content={renderedContent}
+        isStreaming={isStreaming}
+        showImageDownload={showImageDownload}
+      />
     </Suspense>
   );
 });

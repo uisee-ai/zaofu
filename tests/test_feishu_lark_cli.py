@@ -119,6 +119,37 @@ def test_runner_prefers_explicit_tenant_token(monkeypatch):
     assert calls[0][1]["env"]["LARKSUITE_CLI_TENANT_ACCESS_TOKEN"] == "explicit-token"
 
 
+def test_runner_can_use_profile_without_project_bot_credentials(monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        return subprocess.CompletedProcess(argv, 0, stdout='{"ok":true}', stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    runner = LarkCliRunner(
+        executable="/bin/true",
+        check_version=False,
+        prefer_profile=True,
+        environ={
+            "FEISHU_APP_ID": "different-app",
+            "FEISHU_APP_SECRET": "different-secret",
+            "FEISHU_TENANT_ACCESS_TOKEN": "different-token",
+            "LARKSUITE_CLI_APP_ID": "different-app",
+            "LARKSUITE_CLI_APP_SECRET": "different-secret",
+            "LARKSUITE_CLI_TENANT_ACCESS_TOKEN": "different-token",
+        },
+    )
+
+    runner.run(["base", "+record-search", "--json", "{}"])
+
+    env = calls[0][1]["env"]
+    assert "LARKSUITE_CLI_APP_ID" not in env
+    assert "LARKSUITE_CLI_APP_SECRET" not in env
+    assert "LARKSUITE_CLI_TENANT_ACCESS_TOKEN" not in env
+    assert env["LARKSUITE_CLI_DEFAULT_AS"] == "bot"
+
+
 def test_runner_rejects_commands_outside_allowlist():
     runner = LarkCliRunner(executable="/bin/true", check_version=False)
 

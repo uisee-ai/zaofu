@@ -155,6 +155,18 @@ def build_flow_submit_preview(
         flow_kind=resolved_kind,
     )
     resolved_task_id = _resolve_submit_task_id(task_id, request_id=request_id, kind=resolved_kind)
+    from zf.runtime.workflow_task_request_rotation import active_task_request_blocker
+
+    task_blocker = active_task_request_blocker(
+        event_log_from_project(state_dir, config=config).read_all(),
+        task_id=resolved_task_id, request_id=request_id,
+    )
+    if task_blocker:
+        request_blockers.append({
+            "severity": "STOP", "kind": "workflow_task_stale",
+            "title": "workflow Task 已属于其他活动 Run", "message": task_blocker,
+            "safe_auto_fix": False,
+        })
     workflow_tier = str(
         manifest.get("workflow_tier")
         or manifest.get("tier")
@@ -233,6 +245,11 @@ def build_flow_submit_preview(
         # E2(prd-goal e2e):objective 曾不入 submit payload,G0 铸造
         # 落到 reason(操作员备注被当成了 run 目标)。真源=manifest。
         "objective": str(manifest.get("objective") or ""),
+        "scope": [
+            str(item).strip()
+            for item in (manifest.get("scope") or [])
+            if str(item).strip()
+        ],
         **matrix_ref_payload,
         "source_refs": {
             **(
@@ -904,6 +921,11 @@ def _submit_payload_to_workflow_invoke(payload: dict[str, Any]) -> dict[str, Any
         "effective_config_digest": str(
             payload.get("effective_config_digest") or ""
         ),
+        "scope": [
+            str(item).strip()
+            for item in (payload.get("scope") or [])
+            if str(item).strip()
+        ],
         "run_contract_ref": str(payload.get("run_contract_ref") or ""),
         "run_contract_digest": str(
             payload.get("run_contract_digest") or ""

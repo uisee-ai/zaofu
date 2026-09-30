@@ -6,6 +6,7 @@ from typing import Any
 
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.runtime.writer_completed_tasks import completed_writer_task_ids
 
 
 def close_expired_queued_wait(
@@ -65,6 +66,10 @@ def close_expired_queued_wait(
             "reason": "queued_wait_timeout",
             "failure_kind": "scheduler_queue_timeout",
             "queued_children": queued_child_ids,
+            "completed_task_ids": (
+                completed_writer_task_ids(manifest)
+                if manifest.get("topology") == "fanout_writer_scoped" else []
+            ),
             "timeout_seconds": timeout_seconds,
             "semantic_attempt_consumed": False,
         },

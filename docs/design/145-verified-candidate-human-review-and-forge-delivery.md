@@ -25,6 +25,11 @@ GitHub，但身份、sidecar、事件和状态合同保持 provider-neutral，�
   验证，旧人工批准自动失效；
 - 首版由人工登记 PR URL，ZaoFu 通过只读 GitHub API Refresh 同步状态；不增加 GitHub
   写权限；
+- Web 与 Feishu Issue-only 操作的 Review、Prepare、Record PR 和 Refresh PR 先完成本地
+  handoff/event，再把 GitHub 生命周期标签作为后台投影同步；其中 Prepare 仍同步校验
+  远端 base，Record/Refresh 仍同步校验 PR 的仓库、分支和 SHA。PR 主体与 reviews 两个
+  只读请求并行发起，避免串行网络等待叠加。Feishu 的 Start/Cancel 也跳过请求路径中的
+  GitHub 刷新、附件下载和生命周期标签写入，使用已有镜像与事件账本快速返回。
 - merge 后不自动关闭 Issue、不自动评论，由人工确认发布结果后处理。
 
 ## 生命周期

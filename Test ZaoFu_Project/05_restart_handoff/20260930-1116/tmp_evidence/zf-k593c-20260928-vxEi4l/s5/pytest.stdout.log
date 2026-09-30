@@ -1,0 +1,24 @@
+........................................................................ [ 14%]
+........................................................................ [ 29%]
+........................................................................ [ 43%]
+........................................................................ [ 58%]
+........................................................................ [ 73%]
+........................................................................ [ 87%]
+...........................................................              [100%]
+=============================== warnings summary ===============================
+tests/testkit/test_tmux_probe_cost.py::test_pane_grid_liveness_and_capture_keep_identity_checks_observable
+  tests/testkit/test_tmux_probe_cost.py:15: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_pane_grid_liveness_and_capture_keep_identity_checks_observable(record_property):
+
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[default-home]
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[configured-home]
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[empty-override]
+  tests/conformance/test_zaofu_testkit_s5_claude_readiness.py:88: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("configured", [False, True, ""], ids=["default-home", "configured-home", "empty-override"])
+
+tests/conformance/test_zaofu_testkit_s5_claude_prompt_matrix.py::test_trust_blocker_fails_closed_before_task_pipeline_delivery
+  tests/conformance/test_zaofu_testkit_s5_claude_prompt_matrix.py:237: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_trust_blocker_fails_closed_before_task_pipeline_delivery(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+491 passed, 5 warnings in 154.84s (0:02:34)

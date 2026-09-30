@@ -49,6 +49,7 @@ _PERMISSION_RANK = {
     "project_writer": 3,
     "workspace_writer": 4,
     "isolated_writer": 4,
+    "issue_investigation": 4,
     "dangerous_full": 5,
 }
 

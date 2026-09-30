@@ -59,7 +59,9 @@ GitHub Issue
   -> 人工执行 push / 创建 PR / review / merge
 ```
 
-不自动 push、merge、部署或关闭 GitHub Issue。Feishu 和公网 webhook 暂不纳入本批次。
+不自动 push、merge、部署或关闭 GitHub Issue。公网 webhook 仍不纳入本批次；
+Feishu 已作为单独的投影/意图入口接入，但不获得绕过受控动作和
+canonical Store 的独立写权。
 
 ## 二、已完成或已有设计、无需重新发明的事项
 
@@ -281,6 +283,10 @@ failed + terminal run  -> 可创建新的 retry attempt
    远程 URL。
 5. GitHub 二进制附件发布采用受控证据目录和 manifest/comment 链接；不直接把二进制塞进
    Issue 正文，不写入 dev 源码分支。
+   GitHub CLI 自动上传图片/视频要求 `gh >= 2.99.0`，且 GitHub 当前只接受 OAuth
+   token、classic PAT 或 fine-grained PAT；GitHub App user token（`ghu_`）只能继续发布
+   Issue/文本 comment。能力不足时必须先发布带独立 fallback marker 的脱敏文本 comment，
+   把媒体状态保留为可恢复失败，不能静默丢失整个 comment 或重复创建 Issue。
 6. 下载失败、digest 不匹配、脱敏失败或权限不足必须 fail-closed，并给出具体证据缺口。
 
 验收：
@@ -403,3 +409,104 @@ Triage/Task attempt，而不复用旧运行身份。
 
 每个工作包都必须满足：源码变更、直接回归测试、事件/Store/API 边界测试，以及一条
 可操作的验收命令。未完成或仅保留设计的部分不能标记为已修复。
+
+## 七、Feishu 运行时边界收口（2026-09-15）
+
+### Issue 生命周期多维表格投影（2026-09-29）
+
+在现有 Feishu 卡片投影之外，`zf feishu sync-issue-table` 将 Portable
+Issue Session、外部 Issue/Triage、候选 PR 和 `delivery.merged` 投影到独立
+Issue 表。该投影只读取 Session/Issue Store 与 `events.jsonl`，通过
+`FeishuSyncLedger` 幂等更新，并由 `EventWriter` 记录同步事件；不会把 Feishu
+写入当作 Issue canonical state。Issue 表使用真实日期字段并提供 Grid 与
+Gantt 视图，详细报告继续通过卡片/Web 受控读取。
+
+- Feishu 的 Issue/Self-Issue 适配器只归一化不可信消息/卡片输入，只读查询读取
+  canonical 投影；所有写操作均经 `EventWriter` 和 `ControlledActionService`。
+- Issue Triage 控制卡片在首次发送和后续更新时均设置 `config.update_multi=true`，
+  满足飞书按消息 ID 更新共享卡片的要求。取消排队后，投影原位更新同一条消息，
+  显示取消状态并移除“取消排队”；接口回读正确不等同于客户端显示已完成验收。
+  历史非共享卡片不能仅依赖相同 PATCH 的成功回执认定修复，需要单独验证或替换。
+- `self_issue.assessment.requested`、`artifact.delivery.verified` 和 `run.resumed`
+  是外部/受控产生的机械边，必须唤醒 Layer 1 housekeeping；它们同时属于
+  `LAYER2_NOISE_EVENTS`，除非角色显式订阅，不得因投影/调度事实消耗 Layer 2 turn。
+- 同一 External Issue revision 的终态 Task 重试必须通过
+  `TaskContractAuthorityService.replace(..., reopen_terminal=True)` 的 CAS 和 receipt 边界；
+  禁止适配器直接调用 `TaskStore.reopen`。
+- 真实 Feishu 写入入口在建立 transport 前执行生产预检；凭据、签名、app-scoped
+  `open_id` 或精确项目群路由任一缺失时 fail-closed。Mock 验证不代表真实上线验收。
+- Feishu `/issue-merge` 投影跟随 Portable Issue Session：`self-issue-new` 创建
+  `self-issue-capture` 会话，卡片读取会话状态并只通过受控 Session action 继续调查、
+  确认报告和生成发布草稿；旧 Intake 命令继续作为兼容入口。
+  Feishu 支持 `/issue 描述`（可在前面 @机器人），统一归一化为 `self-issue-new`；
+  不支持 `/issue+描述`。描述保留换行、引号，当前消息附件及引用消息 ID 原样传递，
+  身份、精确群路由和去重检查不变。Webhook、bridge/watch、consume 与 Kanban Agent
+  入站均使用同一命令解析器。
+  会话从配置的 `state_dir/self-issues/portable-sessions` 读取，新建消息附件先落入
+  与 Web 相同的受校验私有 sidecar；下载失败会阻止新建，不静默丢弃附件。
+  飞书独立文件消息可先上传，再引用该消息发送 `self-issue-new` 或签名的
+  `self-issue-session-answer`。读取引用文件时校验同一群、同一 open_id 用户，
+  下载使用原文件消息 ID；批量消息也保留附件原消息和发送者，不依赖最后一条消息 ID。
+  Session 补充回答再次验证 sidecar，合计最多 5 个文件、单文件 20 MB；回答与附件
+  在 Session transaction 内通过 Store 一次保存，再恢复调查。只有附件时保存文件名说明，
+  不生成用户未陈述的诊断结论。附件仍为私有证据，不在接收时发布到远端 Issue。
+  创建后独立发送的图片/文件不会自动归入最近会话；等待补充时，上传后引用文件消息
+  发送卡片中的签名回答命令，明确绑定该 Session。新建时也可先上传，再引用发送
+  `/issue 基础 wheel 未声明 CLI 导入所需的 httpx 运行依赖`。
+- 等待回答时，卡片提供 `/zf self-issue-session-answer <session_id> --token <token> "回答"`。
+  token 绑定动作、会话、群、过期时间和一次性 nonce；身份和精确群路由检查仍生效。
+  空回答不消耗 nonce。卡片语义摘要排除 token，使正常轮询保持幂等、到期后重新签发。
+- Session 的“分析过程”只展示动作（含工具名）、命令与已记录状态
+  `running` / `failed` / `completed`，不展示结果正文或结果摘要，不生成分析过程续页。
+  项目群内的动作和命令保留用户本地路径，不替换为 `[REDACTED_PERSONAL_PATH]`；
+  凭据过滤仍生效，对外发布报告的脱敏规则不变。
+  命令保留换行，正常长度下不再限制最近 8 条或裁剪到 220 字；序列化元数据超出
+  卡片预算时保留最近的完整条目并明确提示省略，单条超长也显式标记。
+  Working Set 中可见动作/命令/状态变化触发同一张折叠卡片原位更新，不依赖
+  Session revision；仅工具输出变化不更新卡片。完整工具结果仍由 Web 受控读取入口提供。
+- 群内 Agent 回复默认折叠正文：普通回复使用“回复详情”，流式回复将文字、
+  思考和工具过程放进同一个外层折叠面板；当前状态和失败/中断提示保留在外部。
+  `/issue` 的分析过程、报告正文（含续页）与发布预览各自可展开/收起，问题提示和
+  受控操作按钮保持可见。使用飞书原生 `collapsible_panel`（客户端 V7.9+），
+  展开/收起不发送业务回调、不修改 Session/Event 状态、不截断原有正文。
+- 报告使用 Web 同源的 `stage_report_contract` 合并 `report/fields/gaps`，显示问题、
+  实际/预期行为、复现步骤、分析、证据和调查缺口。输出前脱敏，长报告按 3500 字符
+  分段为同群续页卡片，正文不截断；续页以 Session ID、报告内容摘要和段号幂等投影，
+  主卡标明当前报告版本，旧轮次续页保留为历史。
+- 报告确认同时提供签名文本命令 `/zf self-issue-session-confirm <session_id> --token <token>`，
+  与按钮共用 nonce；继续执行 approver、精确群路由、action/target/chat/expiry 校验。
+  确认报告不等于发布。按钮回调仅返回短 toast，禁止把完整报告 JSON 放入回调提示；
+  判断“回调服务未在线”时先检查事件和动作结果，避免已成功确认后误判离线或重复执行。
+- 发布预览投影直接读取 `PublicationIntent.payload` 的目标仓库、标题和正文，长正文分段
+  显示并绑定发布批次。发布动作的脱敏结果通过带源事件 ID 的不可变 sidecar 保存，
+  飞书按群/Draft 读取结果，明确区分尚未发布、授权等待、失败和已发布。
+- GitHub 设备授权复用受控 `self-issue-github-device-start/poll` 动作，两者均要求
+  approver、精确群路由和签名。授权绑定从可信飞书用户、群及 Draft 派生；输入不能
+  覆盖 credential subject、workspace 或 session binding。卡片只展示授权 URL、
+  用户设备码和有效期，绝不展示 device_code/access_token。用户完成授权后主动检查，
+  Kernel 按原确认批次继续发布。确认已过期则重新预览/确认，不能绕过时效校验。
+- 已过期的 confirmed intent 不参与新预览复用。签名按钮的幂等键纳入 token 摘要，
+  同一回调仍去重，而同卡片重新签发后的授权检查和失败重试可正常执行。
+  确认报告只冻结报告，生成草稿后仍需独立的发布预览、确认和发布动作。
+- `needs_info` 卡片只提供远端 GitHub Issue 链接和问题摘要，报告者在远端回复；
+  `triage_queued` 与 `fix_queued` 分别使用对应的取消动作，并绑定当前队列的 run 和 attempt。
+  没有本地可取消队列的远端标签不生成取消按钮；Fix 审批仍使用现有真实 proposal 卡片。
+  回归入口：`tests/test_feishu_issue_adapter.py`、`tests/test_feishu_issue_sessions.py`。
+
+### Feishu bridge 重启与遗留 Self-Issue Session
+
+- 每个 Portable Session 的后台调查由 `state_dir` 与 `session_id` 组成的跨进程执行锁保护；
+  同一 Session 在不同项目 state 目录中仍可并行，旧版 Headless provider thread lock
+  也会被探测，避免升级期间重复接管。
+- bridge 关闭先停止新调度，再排空消息 dispatch；仍在调查的 Feishu Session 通过
+  `ControlledActionService` 的 `self-issue-session-pause` 保存 Working Set 和证据检查点，
+  设置 `interruption_source=system`、`resume_after_restart=true`，随后取消 provider run，
+  最后执行有界 join。晚到的 Agent 结果由 Session revision/暂停门槛丢弃。
+- bridge 启动扫描配置解析出的精确项目 `state_dir`，只经受控
+  `self-issue-session-recover` 恢复 `execution_owner=feishu` 且状态为
+  `created`/`investigating`，或带 `resume_after_restart=true` 的 `paused` Session。
+  用户暂停、失败、取消、完成、等待补充和待确认会话不自动恢复；执行锁或旧 provider
+  锁仍被占用时保持原状态，待下一次启动重新检查。恢复继续使用 Session 保存的
+  `source_binding.repository_root`，不会跟随当前项目设置漂移。
+- 旧版本没有 `execution_owner` 的遗留 Session 不作来源猜测；需要人工通过 Web/受控
+  恢复动作明确接管，避免把 Web 会话误认成 Feishu 调查。

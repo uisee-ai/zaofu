@@ -1,0 +1,92 @@
+manual docs currentness: ok
+...............................F..FF.F.............                      [100%]
+=================================== FAILURES ===================================
+_ test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_fanout.py-8564] _
+
+rel_path = 'src/zf/runtime/orchestrator_fanout.py', cap = 8564
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+>       assert lines <= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: src/zf/runtime/orchestrator_fanout.py grew to 8649 lines (cap 8564). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 8649 <= 8564
+
+tests/test_structure_discipline.py:412: AssertionError
+_________ test_oversized_file_growth_frozen[src/zf/web/server.py-9360] _________
+
+rel_path = 'src/zf/web/server.py', cap = 9360
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+>       assert lines <= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: src/zf/web/server.py grew to 9554 lines (cap 9360). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 9554 <= 9360
+
+tests/test_structure_discipline.py:412: AssertionError
+_________ test_oversized_file_growth_frozen[web/src/app/App.tsx-3580] __________
+
+rel_path = 'web/src/app/App.tsx', cap = 3580
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+>       assert lines <= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: web/src/app/App.tsx grew to 3707 lines (cap 3580). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 3707 <= 3580
+
+tests/test_structure_discipline.py:412: AssertionError
+___________ test_unknown_oversized_source_files_are_not_silent_debt ____________
+
+    def test_unknown_oversized_source_files_are_not_silent_debt():
+        known = set(_OVERSIZED_FILE_CAPS) | _KNOWN_OVERSIZED_SOURCE_FILES
+        oversized = {
+            path.relative_to(_REPO).as_posix()
+            for path in _source_files()
+            if (
+                sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+                > _SOURCE_FILE_SOFT_LIMIT
+            )
+        }
+        unknown = sorted(oversized - known)
+>       assert not unknown, (
+            f"Unknown source files over the {_SOURCE_FILE_SOFT_LIMIT}-line "
+            f"soft limit: {unknown}. "
+            f"Split the file, or add an explicit debt entry with a concrete "
+            f"defer trigger in _KNOWN_OVERSIZED_SOURCE_FILES."
+        )
+E       AssertionError: Unknown source files over the 1000-line soft limit: ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']. Split the file, or add an explicit debt entry with a concrete defer trigger in _KNOWN_OVERSIZED_SOURCE_FILES.
+E       assert not ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']
+
+tests/test_structure_discipline.py:569: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_structure_discipline.py::test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_fanout.py-8564]
+FAILED tests/test_structure_discipline.py::test_oversized_file_growth_frozen[src/zf/web/server.py-9360]
+FAILED tests/test_structure_discipline.py::test_oversized_file_growth_frozen[web/src/app/App.tsx-3580]
+FAILED tests/test_structure_discipline.py::test_unknown_oversized_source_files_are_not_silent_debt
+4 failed, 47 passed in 6.82s

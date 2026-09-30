@@ -251,7 +251,8 @@ def test_workspace_bridge_cli_uses_exact_binding_for_one_shot_event(
     )
     received = {}
 
-    def fake_bridge(event, *, context):
+    def fake_bridge(event, *, context, transport=None):
+        assert transport is not None
         received["context"] = context
         received["route"] = event.route
         return {"status": "replied", "kind": "test"}
@@ -310,7 +311,8 @@ def test_provider_bridge_cli_routes_to_the_right_workspace_for_one_shot_event(
     )
     received = {}
 
-    def fake_bridge(event, *, context):
+    def fake_bridge(event, *, context, transport=None):
+        assert transport is not None
         received["context"] = context
         received["route"] = event.route
         return {"status": "replied", "kind": "provider-test"}

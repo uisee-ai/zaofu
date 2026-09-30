@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // ChannelPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { search } from "../../api/client";
 import type { ActionResponse, ChannelDetail, ChannelDiscussionAttention, ChannelHistorySearchResult, ChannelSummary, RecentEvent, Task } from "../../api/types";
@@ -490,6 +492,7 @@ export function ChannelPage({
   onWorkflowRequest: (taskId: string, reason: string, threadId: string) => Promise<void>;
   selectedChannelId: string;
 }) {
+  useSettingsPreferences();
   const [composerText, setComposerText] = useState("");
   const [postingCount, setPostingCount] = useState(0);
   const [composerError, setComposerError] = useState("");
@@ -1428,7 +1431,7 @@ export function ChannelPage({
             </span>
           </button>
         )) : (
-          <span className="empty-text">No matching members.</span>
+          <span className="empty-text">{uiText("No matching members.")}</span>
         )}
       </span>
     );
@@ -1470,7 +1473,7 @@ export function ChannelPage({
       ? rows.filter((member) => memberSearchText(member).includes(normalizedFilter))
       : rows;
     if (!visibleRows.length) {
-      return <p className="empty-text">No member projection loaded.</p>;
+      return <p className="empty-text">{uiText("No member projection loaded.")}</p>;
     }
     return (
       <div className="channel-member-list">
@@ -1508,7 +1511,7 @@ export function ChannelPage({
                       <div className="channel-member-menu">
                         <button type="button" onClick={() => messageMember(memberId)}>
                           <MessageSquare size={16} />
-                          Message
+                          {uiText("Message")}
                         </button>
                         <button
                           type="button"
@@ -1552,7 +1555,7 @@ export function ChannelPage({
                           }}
                         >
                           <Trash2 size={16} />
-                          Remove from channel
+                          {uiText("Remove from channel")}
                         </button>
                       </div>
                     ) : null}
@@ -1574,14 +1577,14 @@ export function ChannelPage({
     return (
       <section className="channel-control-panel channel-control-card">
         <div className="inline-heading">
-          <h3>Delivery handoff</h3>
+          <h3>{uiText("Delivery handoff")}</h3>
           <span className={`metric-chip ${canonicalPrd.ready ? "" : "chip-warn"}`}>
             {canonicalPrd.ready ? "canonical PRD" : "PRD pending"}
           </span>
         </div>
         <div className="channel-control-form-grid">
           <label className="channel-control-field channel-control-field-wide">
-            <span>Objective</span>
+            <span>{uiText("Objective")}</span>
             <input
               className="filter-input"
               data-testid="channel-workflow-objective"
@@ -1627,7 +1630,7 @@ export function ChannelPage({
             }}
           >
             <label className="channel-control-field">
-              <span>Task</span>
+              <span>{uiText("Task")}</span>
               <input
                 className="filter-input"
                 data-testid="channel-workflow-task"
@@ -1655,7 +1658,7 @@ export function ChannelPage({
     return (
       <div className="channel-result-receipts">
         <div className="inline-heading">
-          <h3>Linked results</h3>
+          <h3>{uiText("Linked results")}</h3>
           <span className="muted">{resultReceipts.length} receipts</span>
         </div>
         <div className="channel-result-receipt-list">
@@ -1713,7 +1716,7 @@ export function ChannelPage({
             {historySearching ? "Searching" : "Search"}
           </button>
           <button className="icon-button" disabled={!actionReady || controlsBusy} type="button" onClick={() => void markActiveThreadRead()}>
-            Mark Read
+            {uiText("Mark Read")}
           </button>
           <button
             className="icon-button"
@@ -1747,7 +1750,7 @@ export function ChannelPage({
             })}
           </div>
         ) : historyResult ? (
-          <div className="channel-history-empty">No messages found.</div>
+          <div className="channel-history-empty">{uiText("No messages found.")}</div>
         ) : null}
       </div>
     );
@@ -1756,7 +1759,7 @@ export function ChannelPage({
     return (
       <div className="channel-attention-section">
         <div className="inline-heading">
-          <h3>Reply Queue</h3>
+          <h3>{uiText("Reply Queue")}</h3>
           <span className="muted">{attentionReplyRows.length} active</span>
         </div>
         {attentionReplyRows.length ? (
@@ -1794,8 +1797,8 @@ export function ChannelPage({
           </div>
         ) : (
           <div className="channel-attention-empty">
-            <strong>No reply attention</strong>
-            <span>All requested agent replies have settled.</span>
+            <strong>{uiText("No reply attention")}</strong>
+            <span>{uiText("All requested agent replies have settled.")}</span>
           </div>
         )}
       </div>
@@ -1806,7 +1809,7 @@ export function ChannelPage({
     return (
       <div className="channel-attention-section">
         <div className="inline-heading">
-          <h3>Mention Events</h3>
+          <h3>{uiText("Mention Events")}</h3>
           <span className="muted">{mentionDigests.length} grouped</span>
         </div>
         {visibleMentions.length ? (
@@ -1833,7 +1836,7 @@ export function ChannelPage({
           </div>
         ) : (
           <div className="channel-attention-empty">
-            <strong>No mention events</strong>
+            <strong>{uiText("No mention events")}</strong>
             <span>Mentions will appear here once channel messages target members.</span>
           </div>
         )}
@@ -1940,7 +1943,7 @@ export function ChannelPage({
       <section className="channel-workspace-panel">
         <div className="channel-workspace-panel-head">
           <div>
-            <h3>Context Packs</h3>
+            <h3>{uiText("Context Packs")}</h3>
             <span className="muted">{contextPacks.length} packs · {profiles.size || 0} profiles</span>
           </div>
           <span className="metric-chip">{built} built</span>
@@ -1965,7 +1968,7 @@ export function ChannelPage({
             })}
           </div>
         ) : (
-          <div className="channel-workspace-empty">No context packs built.</div>
+          <div className="channel-workspace-empty">{uiText("No context packs built.")}</div>
         )}
       </section>
     );
@@ -1977,7 +1980,7 @@ export function ChannelPage({
       <details className="channel-workspace-diagnostics span-2" data-testid="channel-diagnostics">
         <summary>
           <span>
-            <strong>Diagnostics</strong>
+            <strong>{uiText("Diagnostics")}</strong>
             <small>Reply history, context construction and linked events</small>
           </span>
           <span className="channel-workspace-chip-row">
@@ -1999,7 +2002,7 @@ export function ChannelPage({
       <section className="channel-workspace-panel" data-testid="channel-workflow-surface">
         <div className="channel-workspace-panel-head">
           <div>
-            <h3>Workflow Surface</h3>
+            <h3>{uiText("Workflow Surface")}</h3>
             <span className="muted">{activeWorkflowItems.length} requests / handoffs</span>
           </div>
         </div>
@@ -2021,7 +2024,7 @@ export function ChannelPage({
             ))}
           </div>
         ) : (
-          <div className="channel-workspace-empty">No workflow requests or handoffs.</div>
+          <div className="channel-workspace-empty">{uiText("No workflow requests or handoffs.")}</div>
         )}
       </section>
     );
@@ -2031,7 +2034,7 @@ export function ChannelPage({
       <section className="channel-workspace-panel channel-workspace-controls">
         <div className="channel-workspace-panel-head">
           <div>
-            <h3>Controls</h3>
+            <h3>{uiText("Controls")}</h3>
             <span className="muted">kernel-gated actions</span>
           </div>
           <span className={`metric-chip ${actionReady ? "" : "chip-warn"}`}>
@@ -2040,14 +2043,14 @@ export function ChannelPage({
         </div>
         <div className="channel-control-panel flat channel-control-card">
           <div className="inline-heading">
-            <h3>Discussion</h3>
+            <h3>{uiText("Discussion")}</h3>
             <span className="muted">{discussionMode}</span>
           </div>
           <div className="channel-control-stack">
             <label className="channel-control-row">
               <span className="channel-control-copy">
-                <strong>Mode</strong>
-                <small>How channel messages choose speakers.</small>
+                <strong>{uiText("Mode")}</strong>
+                <small>{uiText("How channel messages choose speakers.")}</small>
               </span>
               <select
                 className="filter-input"
@@ -2065,8 +2068,8 @@ export function ChannelPage({
             </label>
             <label className="channel-control-row">
               <span className="channel-control-copy">
-                <strong>Default responder</strong>
-                <small>Handles messages without an explicit @mention.</small>
+                <strong>{uiText("Default responder")}</strong>
+                <small>{uiText("Handles messages without an explicit @mention.")}</small>
               </span>
               <select
                 className="filter-input"
@@ -2106,27 +2109,27 @@ export function ChannelPage({
               {discussionControls.startLabel}
             </button>
             <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies} type="button" onClick={() => void runControl(onDrainReplies)}>
-              Drain Replies
+              {uiText("Drain Replies")}
             </button>
             <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canSynthesize} type="button" onClick={() => void runControl(() => onRequestSynthesis(controlThreadId, defaultResponderId || undefined))}>
               <FileText size={16} />
-              Synthesize
+              {uiText("Synthesize")}
             </button>
           </div>
         </div>
         <div className="channel-control-panel flat channel-control-card">
           <div className="inline-heading">
-            <h3>Owner</h3>
+            <h3>{uiText("Owner")}</h3>
             <span className="muted">{ownerReports.length} reports</span>
           </div>
           <div className="channel-control-row read-only">
             <span className="channel-control-copy">
-              <strong>Brief</strong>
-              <small>Generate an owner-visible channel report.</small>
+              <strong>{uiText("Brief")}</strong>
+              <small>{uiText("Generate an owner-visible channel report.")}</small>
             </span>
             <button className="icon-button" disabled={!actionReady || controlsBusy} type="button" onClick={() => void runControl(() => onGenerateOwnerReport(controlThreadId))}>
               <FileText size={16} />
-              Report
+              {uiText("Report")}
             </button>
           </div>
         </div>
@@ -2139,7 +2142,7 @@ export function ChannelPage({
       return (
         <div className="channel-workspace-loading" data-testid="channel-details-loading">
           <Loader2 className="spin" size={18} />
-          <span>Loading channel details…</span>
+          <span>{uiText("Loading channel details…")}</span>
         </div>
       );
     }
@@ -2148,7 +2151,7 @@ export function ChannelPage({
         <div className="channel-workspace-loading is-error" data-testid="channel-details-error">
           <span>{diagnosticsError}</span>
           <button className="icon-button" type="button" onClick={() => void onLoadDiagnostics()}>
-            Retry
+            {uiText("Retry")}
           </button>
         </div>
       );
@@ -2202,16 +2205,16 @@ export function ChannelPage({
           <span><strong>{attention.failed_reply_count}</strong> failed replies</span>
         </div>
         <dl className="channel-discussion-activity-meta">
-          <dt>Thread</dt>
+          <dt>{uiText("Thread")}</dt>
           <dd className="mono">{attention.thread_id}</dd>
-          <dt>Runtime phase</dt>
+          <dt>{uiText("Runtime phase")}</dt>
           <dd className="mono">{attention.kernel_phase || "idle"}</dd>
-          <dt>Last activity</dt>
+          <dt>{uiText("Last activity")}</dt>
           <dd>{formatTime(attention.last_activity_at) || "-"}</dd>
         </dl>
         {discussionBand.openQuestions.length ? (
           <div className="channel-discussion-open-questions">
-            <strong>Open questions</strong>
+            <strong>{uiText("Open questions")}</strong>
             {discussionBand.openQuestions.slice(0, 5).map((question) => (
               <button
                 key={question.id}
@@ -2238,7 +2241,7 @@ export function ChannelPage({
                 setDrawer(null);
               }}
             >
-              Review decisions
+              {uiText("Review decisions")}
             </button>
           ) : null}
           <button
@@ -2247,7 +2250,7 @@ export function ChannelPage({
             type="button"
             onClick={() => void runControl(onDrainReplies)}
           >
-            Drain replies
+            {uiText("Drain replies")}
           </button>
           <button
             className="icon-button"
@@ -2259,7 +2262,7 @@ export function ChannelPage({
             ))}
           >
             <FileText size={15} />
-            Synthesize
+            {uiText("Synthesize")}
           </button>
           <button
             className="icon-button"
@@ -2286,7 +2289,7 @@ export function ChannelPage({
         <>
           <div className="channel-control-panel">
             <div className="inline-heading">
-              <h3>Members</h3>
+              <h3>{uiText("Members")}</h3>
               <span className="muted">{members.length}</span>
             </div>
             <input
@@ -2297,17 +2300,17 @@ export function ChannelPage({
             />
             <button className="channel-member-add-row" disabled={!actionReady} type="button" onClick={onAddAgent}>
               <Plus size={16} />
-              Add people
+              {uiText("Add people")}
             </button>
             {renderMemberList(members, { actions: true, filter: memberSearch })}
           </div>
           <div className="channel-control-panel">
             <div className="inline-heading">
-              <h3>Bound Runtime Sessions</h3>
+              <h3>{uiText("Bound Runtime Sessions")}</h3>
               <span className="muted">{boundMembers.length}</span>
             </div>
             {boundMembers.length ? renderMemberList(boundMembers) : (
-              <p className="muted">No runtime binding. Channel discussion stays separate from workflow execution.</p>
+              <p className="muted">{uiText("No runtime binding. Channel discussion stays separate from workflow execution.")}</p>
             )}
           </div>
         </>
@@ -2322,7 +2325,7 @@ export function ChannelPage({
             <span className={`metric-chip ${failedReplyRows.length ? "chip-warn" : ""}`}>{failedReplyRows.length} failed</span>
             <span className="metric-chip">{mentionDigests.length} mentions</span>
             <button className="icon-button" disabled={!actionReady || controlsBusy || !discussionControls.canDrainReplies} type="button" onClick={() => void runControl(onDrainReplies)}>
-              Drain Replies
+              {uiText("Drain Replies")}
             </button>
           </div>
           {renderReplyAttentionList()}
@@ -2333,7 +2336,7 @@ export function ChannelPage({
     if (activeDrawer === "context") {
       return (
         <>
-          <TablePage title="Context Packs" rows={contextPacks} embedded />
+          <TablePage title={uiText("Context Packs")} rows={contextPacks} embedded />
           <TablePage title="State Updates" rows={stateUpdates} embedded />
         </>
       );
@@ -2343,12 +2346,12 @@ export function ChannelPage({
         <>
           <div className="channel-control-panel">
             <div className="inline-heading">
-              <h3>Owner</h3>
+              <h3>{uiText("Owner")}</h3>
               <span className="muted">{ownerReports.length} reports</span>
             </div>
             <button className="icon-button" disabled={!actionReady || controlsBusy} type="button" onClick={() => void runControl(() => onGenerateOwnerReport(controlThreadId))}>
               <FileText size={16} />
-              Report
+              {uiText("Report")}
             </button>
           </div>
           <ChannelReportPreviewRefs rows={ownerReports} title="Owner Report Preview Refs" />
@@ -2372,7 +2375,7 @@ export function ChannelPage({
       <>
         <div className="channel-control-panel">
           <div className="inline-heading">
-            <h3>Channels</h3>
+            <h3>{uiText("Channels")}</h3>
             <span className="muted">{visibleChannels.length}</span>
           </div>
           <div className="compact-list">
@@ -2394,26 +2397,26 @@ export function ChannelPage({
           </div>
           <button className="channel-nav-row channel-nav-action" disabled={!actionReady} type="button" onClick={onNewChannel}>
             <Plus size={15} />
-            <span>New Channel</span>
+            <span>{uiText("New Channel")}</span>
           </button>
         </div>
         <div className="channel-control-panel">
           <div className="inline-heading">
-            <h3>Workflow</h3>
+            <h3>{uiText("Workflow")}</h3>
             <span className="muted">{workflowRequests.length} requests</span>
           </div>
           <button className="icon-button" type="button" onClick={() => setDrawer("workflow")}>
             <PlayCircle size={16} />
-            Workflow
+            {uiText("Workflow")}
           </button>
           <button className="icon-button" type="button" onClick={() => setDrawer("reports")}>
             <FileText size={16} />
-            Reports
+            {uiText("Reports")}
           </button>
         </div>
         <div className="channel-control-panel">
           <div className="inline-heading">
-            <h3>Discussion Mode</h3>
+            <h3>{uiText("Discussion Mode")}</h3>
             <span className="muted">{discussionMode}</span>
           </div>
           <select
@@ -2466,26 +2469,26 @@ export function ChannelPage({
         </div>
         <div className="channel-control-panel">
           <div className="inline-heading">
-            <h3>Danger Zone</h3>
+            <h3>{uiText("Danger Zone")}</h3>
             <span className="muted">event gated</span>
           </div>
           <button className="icon-button" disabled={!actionReady || controlsBusy} type="button" onClick={() => void runControl(() => onClearHistory(controlThreadId))}>
             <Archive size={16} />
-            Clear History
+            {uiText("Clear History")}
           </button>
           <button className="icon-button danger" disabled={!actionReady || controlsBusy} type="button" onClick={() => void runControl(onDeleteChannel)}>
             <Trash2 size={16} />
-            Delete Channel
+            {uiText("Delete Channel")}
           </button>
         </div>
         <dl className="detail-grid channel-settings-grid">
-          <dt>Channel</dt>
+          <dt>{uiText("Channel")}</dt>
           <dd>{activeChannelName}</dd>
           <dt>ID</dt>
           <dd className="mono">{selectedChannelId}</dd>
-          <dt>Status</dt>
+          <dt>{uiText("Status")}</dt>
           <dd>{activeChannel?.status || "open"}</dd>
-          <dt>Source</dt>
+          <dt>{uiText("Source")}</dt>
           <dd>event projection</dd>
           <dt>History clear</dt>
           <dd>{detail?.history_cleared_at ? "projection reset; events retained" : "events retained"}</dd>
@@ -2524,16 +2527,16 @@ export function ChannelPage({
                   />
                   {!normalizedChannelSearch ? (
                     <>
-                      <div className="channel-switch-section-title">Recent</div>
+                      <div className="channel-switch-section-title">{uiText("Recent")}</div>
                       <div className="channel-switch-list">
                         {recentChannels.map((channel) => renderChannelSwitchRow(channel))}
                       </div>
                     </>
                   ) : null}
-                  <div className="channel-switch-section-title">All Channels</div>
+                  <div className="channel-switch-section-title">{uiText("All Channels")}</div>
                   <div className="channel-switch-list">
                     {filteredChannels.length ? filteredChannels.map((channel) => renderChannelSwitchRow(channel)) : (
-                      <div className="empty-text">No channels found.</div>
+                      <div className="empty-text">{uiText("No channels found.")}</div>
                     )}
                   </div>
                   <button
@@ -2547,7 +2550,7 @@ export function ChannelPage({
                     }}
                   >
                     <Plus size={15} />
-                    New Channel
+                    {uiText("New Channel")}
                   </button>
                 </div>
               ) : null}
@@ -2563,7 +2566,7 @@ export function ChannelPage({
               onClick={() => setActiveTab("chat")}
             >
               <MessageSquare size={16} />
-              Chat
+              {uiText("Chat")}
             </button>
             <button
               aria-selected={activeTab === "workspace"}
@@ -2576,7 +2579,7 @@ export function ChannelPage({
               }}
             >
               <Info size={16} />
-              Details
+              {uiText("Details")}
             </button>
           </div>
         </div>
@@ -2593,7 +2596,7 @@ export function ChannelPage({
           <button
             aria-pressed={drawer === "members"}
             className={`channel-tool-button ${drawer === "members" ? "active" : ""}`}
-            title="Members"
+            title={uiText("Members")}
             type="button"
             onClick={() => toggleDrawer("members")}
           >
@@ -2613,7 +2616,7 @@ export function ChannelPage({
           <button
             aria-pressed={drawer === "context"}
             className={`channel-tool-button ${drawer === "context" ? "active" : ""}`}
-            title="Context"
+            title={uiText("Context")}
             type="button"
             onClick={() => toggleDrawer("context")}
           >
@@ -2622,7 +2625,7 @@ export function ChannelPage({
           <button
             aria-pressed={drawer === "settings"}
             className={`channel-tool-button ${drawer === "settings" ? "active" : ""}`}
-            title="More"
+            title={uiText("More")}
             type="button"
             onClick={() => toggleDrawer("settings")}
           >
@@ -2740,7 +2743,7 @@ export function ChannelPage({
                         ))}
                       >
                         <FileText size={14} />
-                        Confirm
+                        {uiText("Confirm")}
                       </button>
                       <button
                         className="icon-button"
@@ -2865,7 +2868,7 @@ export function ChannelPage({
               {channelHasNewBelow ? (
                 <button className="channel-scroll-latest" type="button" onClick={showLatestChannelMessages}>
                   <ChevronDown size={15} />
-                  New messages
+                  {uiText("New messages")}
                 </button>
               ) : null}
               <form
@@ -2878,7 +2881,7 @@ export function ChannelPage({
                 {replyTarget ? (
                   <div className="channel-composer-reply" data-testid="channel-reply-target">
                     <span>
-                      Replying to <strong>{replyTarget.label}</strong>
+                      {uiText("Replying to")} <strong>{replyTarget.label}</strong>
                     </span>
                     <button
                       aria-label="Cancel reply"
@@ -3022,7 +3025,7 @@ export function ChannelPage({
                       </button>
                       {emojiOpen ? (
                         <span className="channel-popover channel-emoji-popover">
-                          <Suspense fallback={<span className="muted">Loading emoji…</span>}>
+                          <Suspense fallback={<span className="muted">{uiText("Loading emoji…")}</span>}>
                             <ChannelEmojiPicker onEmojiSelect={handleEmojiSelect} />
                           </Suspense>
                         </span>

@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import type { ReactNode } from "react";
 
 import type { DeliveryTrace } from "../../api/types";
@@ -21,6 +23,7 @@ interface AttentionItem {
 }
 
 export function DeliveryOverview({ onOpenPage, trace, repairCount = 0 }: DeliveryOverviewProps) {
+  useSettingsPreferences();
   const tasks = taskSummary(trace);
   const run = runSummary(trace);
   const attention = attentionItems(trace);
@@ -71,7 +74,7 @@ export function DeliveryOverview({ onOpenPage, trace, repairCount = 0 }: Deliver
               ))}
             </div>
           ) : (
-            <p className="muted">No blocking delivery signals.</p>
+            <p className="muted">{uiText("No blocking delivery signals.")}</p>
           )}
         </OverviewCard>
 
@@ -82,9 +85,9 @@ export function DeliveryOverview({ onOpenPage, trace, repairCount = 0 }: Deliver
             <span className="blocked" style={{ width: `${tasks.blockedPct}%` }} />
           </div>
           <div className="delivery-overview-metrics">
-            <Metric label="Done" value={tasks.done} />
-            <Metric label="Running" value={tasks.active} />
-            <Metric label="Blocked" value={tasks.blocked} tone={tasks.blocked ? "err" : "muted"} />
+            <Metric label={uiText("Done")} value={tasks.done} />
+            <Metric label={uiText("Running")} value={tasks.active} />
+            <Metric label={uiText("Blocked")} value={tasks.blocked} tone={tasks.blocked ? "err" : "muted"} />
             <Metric label="Waiting" value={tasks.waiting} />
           </div>
         </OverviewCard>
@@ -94,10 +97,10 @@ export function DeliveryOverview({ onOpenPage, trace, repairCount = 0 }: Deliver
             {historical ? (
               <Metric label="Interrupted" value={run.running} tone={run.running ? "warn" : "muted"} />
             ) : (
-              <Metric label="Running" value={run.running} tone={run.running ? "info" : "muted"} />
+              <Metric label={uiText("Running")} value={run.running} tone={run.running ? "info" : "muted"} />
             )}
-            <Metric label="Failed" value={run.failed} tone={run.failed ? "err" : "muted"} />
-            <Metric label="Completed" value={run.completed} tone={run.completed ? "ok" : "muted"} />
+            <Metric label={uiText("Failed")} value={run.failed} tone={run.failed ? "err" : "muted"} />
+            <Metric label={uiText("Completed")} value={run.completed} tone={run.completed ? "ok" : "muted"} />
             {repairCount > 0 && <Metric label="RM Repairs" value={repairCount} tone="warn" />}
           </div>
           <p className="delivery-overview-note">{run.latestLabel}</p>

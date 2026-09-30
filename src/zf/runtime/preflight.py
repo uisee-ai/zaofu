@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from zf.core.config.backend_identity import canonical_backend_id
+from zf.runtime.task_pipeline_role_contract import configured_task_pipeline_role_errors
 
 # prompt_kinds actually passed by dispatch sites (orchestrator.py 2834/3329/4272
 # + normal dispatch). The signature must accept all of them.
@@ -63,6 +64,11 @@ def run_preflight_checks(
         _check_role_backends(config),
         _check_provider_session_configs(config),
     ]
+    pipeline_errors = configured_task_pipeline_role_errors(config)
+    results.append(CheckResult(
+        "task_pipeline_role_lifecycle", not pipeline_errors,
+        "; ".join(pipeline_errors) or "blocking Task Pipeline role lifecycles match dispatch",
+    ))
     if check_provider_auth:
         results.append(_check_provider_auth_readiness(config))
     return results

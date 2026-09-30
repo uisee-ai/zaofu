@@ -140,7 +140,8 @@ def auto_trigger_from_event(
     *, event: ZfEvent, state_dir: Any, writer: Any, project_root: Any, config: Any,
 ) -> dict[str, Any] | None:
     """Create/update one local Intake candidate; never creates a Draft or publishes."""
-    policy = getattr(config, "self_issue", None)
+    from zf.runtime.issue_settings import current_issue_policy
+    policy = current_issue_policy(project_root, getattr(config, "self_issue", None))
     if not (
         policy is not None
         and bool(getattr(policy, "enabled", False))

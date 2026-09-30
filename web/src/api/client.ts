@@ -59,6 +59,8 @@ import type {
   WorkspaceProjectsPage,
 } from "./types";
 import { cachedGetJson, clearGetCache } from "./queryClient";
+import { IssueReadCache } from "./issueReadCache";
+import { actionIsReadOnlySelfIssue, actionRequestDeadlineMs } from "./actionPolicy";
 
 async function requestJson<T>(
   path: string,
@@ -75,7 +77,7 @@ export function invalidateProjectReadCache(projectId: string): void {
   clearGetCache(projectPrefix(projectId));
 }
 
-function normalizeWebActionToken(value: string): string {
+export function normalizeWebActionToken(value: string): string {
   let base = value.trim();
   if (
     base.length >= 2
@@ -106,6 +108,63 @@ function webActionAuthHeaders(): Record<string, string> {
     "X-ZF-Web-Token": token,
     Authorization: `Bearer ${token}`,
   } : {};
+}
+
+function issueTriageAuthHeaders(): Record<string, string> {
+  const token = webActionToken();
+  return token ? {
+    ...webActionAuthHeaders(),
+    // Triage is a developer capability, deliberately separate from the
+    // reporter's ordinary Web action token on the server. Maintainers may
+    // store their developer token in the same local slot when operating both
+    // surfaces in one browser.
+    "X-ZF-Developer-Token": token,
+  } : {};
+}
+
+function issueDeveloperAction(action: string): boolean {
+  return action.startsWith("external-issue-")
+    || action === "kanban-proposal-dismiss"
+    || action === "workflow-invoke"
+    || action === "run-pause"
+    || action === "run-resume"
+    || action === "run-cancel";
+}
+
+const issueTriageCache = new IssueReadCache(300_000);
+let issueCacheToken = "";
+function ensureIssueCacheScope(): void {
+  const token = webActionToken();
+  if (token !== issueCacheToken) {
+    issueTriageCache.clear();
+    issueCacheToken = token;
+  }
+}
+
+// Cross-project owner projections can change in several views after one action.
+function clearIssueTriageCache(): void { issueTriageCache.clear(); }
+if (typeof window !== "undefined") {
+  window.addEventListener("zf:developer-access-changed", clearIssueTriageCache);
+}
+
+function peekIssueTriage<T>(path: string): T | null {
+  ensureIssueCacheScope();
+  return issueTriageCache.peek<T>(path);
+}
+
+function issueTriageGet<T>(path: string, fresh = false): Promise<T> {
+  ensureIssueCacheScope();
+  const load = fresh ? issueTriageCache.reload.bind(issueTriageCache) : issueTriageCache.load.bind(issueTriageCache);
+  return load(path, async () => {
+    const response = await fetch(path, {
+      headers: { Accept: "application/json", ...issueTriageAuthHeaders() },
+      cache: "no-store",
+    });
+    if (response.status === 401 || response.status === 403) clearIssueTriageCache();
+    const data = (await response.json()) as T & { reason?: string };
+    if (!response.ok) throw new Error(String(data.reason || `Issue Triage request failed: ${response.status}`));
+    return data;
+  });
 }
 
 export function getWorkspaceProjects(): Promise<WorkspaceProjectsPage> {
@@ -465,24 +524,42 @@ export function getSnapshotLight(projectId?: string): Promise<Snapshot> {
 }
 
 export function getIssueTriageSummary(projectId?: string): Promise<IssueTriageSummary> {
-  return requestJson<IssueTriageSummary>(`${projectPrefix(projectId)}/issue-triage/summary`);
+  return issueTriageGet<IssueTriageSummary>(`${projectPrefix(projectId)}/issue-triage/summary`);
 }
 
-export function getIssueTriage(projectId: string, filters: Record<string, string | number> = {}): Promise<IssueTriagePageData> {
+function issueTriageListPath(projectId: string, filters: Record<string, string | number>): string {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value !== "") params.set(key, String(value));
   const suffix = params.size ? `?${params.toString()}` : "";
-  return requestJson<IssueTriagePageData>(`${projectPrefix(projectId)}/issue-triage${suffix}`);
+  return `${projectPrefix(projectId)}/issue-triage${suffix}`;
+}
+
+export function getIssueTriage(projectId: string, filters: Record<string, string | number> = {}): Promise<IssueTriagePageData> {
+  return issueTriageGet<IssueTriagePageData>(issueTriageListPath(projectId, filters));
 }
 
 export function getIssueTriageDetail(projectId: string, issueNumber: number): Promise<IssueTriageDetail> {
-  return requestJson<IssueTriageDetail>(`${projectPrefix(projectId)}/issue-triage/${issueNumber}`);
+  // A selected Issue is an operator-facing action surface. Always revalidate
+  // its workflow projection so a newly queued request is not hidden by an old
+  // detail snapshot (the list and detail can otherwise disagree).
+  return issueTriageGet<IssueTriageDetail>(`${projectPrefix(projectId)}/issue-triage/${issueNumber}`, true);
+}
+
+export function peekIssueTriageSummary(projectId: string): IssueTriageSummary | null {
+  return peekIssueTriage(`${projectPrefix(projectId)}/issue-triage/summary`);
+}
+export function peekIssueTriagePage(projectId: string, filters: Record<string, string | number>): IssueTriagePageData | null {
+  return peekIssueTriage(issueTriageListPath(projectId, filters));
+}
+export function peekIssueTriageDetail(projectId: string, number: number): IssueTriageDetail | null {
+  return peekIssueTriage(`${projectPrefix(projectId)}/issue-triage/${number}`);
 }
 
 export async function refreshIssueTriage(projectId: string, force = false): Promise<Record<string, unknown>> {
-  const response = await fetch(`${projectPrefix(projectId)}/issue-triage/refresh${force ? "?force=true" : ""}`, { method: "POST", headers: { Accept: "application/json" } });
+  const response = await fetch(`${projectPrefix(projectId)}/issue-triage/refresh${force ? "?force=true" : ""}`, { method: "POST", headers: { Accept: "application/json", ...issueTriageAuthHeaders() } });
   const data = (await response.json()) as Record<string, unknown>;
   clearGetCache(`${projectPrefix(projectId)}/issue-triage`);
+  clearIssueTriageCache();
   if (!response.ok) throw new Error(String(data.error || data.reason || `refresh failed: ${response.status}`));
   return data;
 }
@@ -493,13 +570,27 @@ export async function startIssueTriage(projectId: string, issue: string): Promis
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...webActionAuthHeaders(),
+      ...issueTriageAuthHeaders(),
     },
     body: JSON.stringify({ issue }),
   });
   const data = (await response.json()) as IssueTriageStartResult & { reason?: string; error?: string };
   clearGetCache(`${projectPrefix(projectId)}/issue-triage`);
+  clearIssueTriageCache();
   if (!response.ok) throw new Error(String(data.reason || data.error || `start triage failed: ${response.status}`));
+  return data;
+}
+
+export async function cancelQueuedIssueTriage(projectId: string, issueNumber: number, triageId?: string): Promise<ActionResponse> {
+  const response = await fetch(`${projectPrefix(projectId)}/issue-triage/${issueNumber}/cancel-queued`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...issueTriageAuthHeaders() },
+    body: JSON.stringify({ triage_id: triageId || undefined, reason: "operator cancelled queued triage" }),
+  });
+  const data = (await response.json()) as ActionResponse;
+  clearGetCache(`${projectPrefix(projectId)}/issue-triage`);
+  clearIssueTriageCache();
+  if (!response.ok || !data.ok) throw new Error(String(data.reason || `queued cancel failed: ${response.status}`));
   return data;
 }
 
@@ -515,12 +606,13 @@ async function mutateIssueCandidate(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...webActionAuthHeaders(),
+      ...issueTriageAuthHeaders(),
     },
     body: JSON.stringify(payload),
   });
   const data = (await response.json()) as IssueCandidateDeliveryResult;
   clearGetCache(`${projectPrefix(projectId)}/issue-triage`);
+  clearIssueTriageCache();
   if (!response.ok || !data.ok) {
     throw new Error(data.reason || `candidate delivery action failed: ${response.status}`);
   }
@@ -1063,7 +1155,7 @@ async function mutateWorkflowRequest(
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
-      ...webActionAuthHeaders(),
+      ...(issueDeveloperAction(action) ? issueTriageAuthHeaders() : webActionAuthHeaders()),
     },
     body: JSON.stringify(payload),
   });
@@ -1077,7 +1169,7 @@ async function mutateWorkflowRequest(
 
 export async function getWebSession(): Promise<NonNullable<RuntimeSummary["web_session"]>> {
   const response = await fetch("/api/web-session", {
-    headers: { Accept: "application/json" },
+    headers: { Accept: "application/json", ...issueTriageAuthHeaders() },
     cache: "no-store",
   });
   if (!response.ok) throw new Error(`web session fetch returned ${response.status}`);
@@ -1193,22 +1285,86 @@ export async function postAction(
       payload,
     }
     : payload;
-  const response = await fetch(`${projectPrefix(projectId)}/actions/${encodeURIComponent(action)}`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...webActionAuthHeaders(),
-      "X-Idempotency-Key": idempotencyKey,
-    },
-    body: JSON.stringify(body),
-  });
-  const data = (await response.json()) as ActionResponse;
-  if (!response.ok && response.status >= 500 && action !== "chat-orchestrator") {
-    throw new Error(data.reason || `${action} returned ${response.status}`);
+  const deadline = actionRequestDeadlineMs(action);
+  const controller = new AbortController();
+  const timer = deadline ? setTimeout(() => controller.abort(), deadline) : undefined;
+  try {
+    const response = await fetch(`${projectPrefix(projectId)}/actions/${encodeURIComponent(action)}`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(issueDeveloperAction(action) ? issueTriageAuthHeaders() : webActionAuthHeaders()),
+        "X-Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = (await response.json()) as ActionResponse;
+    if (!response.ok && response.status >= 500 && action !== "chat-orchestrator") {
+      throw new Error(data.reason || `${action} returned ${response.status}`);
+    }
+    if (!actionIsReadOnlySelfIssue(action)) {
+      clearGetCache(projectPrefix(projectId));
+      clearIssueTriageCache();
+    }
+    return data;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`${action} timed out; 服务未及时响应，请检查连接与会话状态`);
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
-  clearGetCache(projectPrefix(projectId));
-  return data;
+}
+
+export interface KanbanAgentAttachmentRef {
+  attachment_id: string;
+  filename: string;
+  content_type: string;
+  byte_count: number;
+  ref: string;
+  sha256: string;
+  [key: string]: unknown;
+}
+
+async function fileContentBase64(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return window.btoa(binary);
+}
+
+export async function uploadKanbanAgentAttachment(
+  projectId: string,
+  file: File,
+): Promise<KanbanAgentAttachmentRef> {
+  const response = await fetch(
+    `${projectPrefix(projectId)}/kanban-agent/attachments`,
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...webActionAuthHeaders(),
+      },
+      body: JSON.stringify({
+        filename: file.name,
+        content_type: file.type || "application/octet-stream",
+        content_base64: await fileContentBase64(file),
+      }),
+    },
+  );
+  const data = (await response.json()) as {
+    attachment?: KanbanAgentAttachmentRef;
+    reason?: string;
+  };
+  if (!response.ok || !data.attachment) {
+    throw new Error(data.reason || `attachment upload returned ${response.status}`);
+  }
+  return data.attachment;
 }
 
 export async function postOperatorInput(text: string, projectId?: string): Promise<OperatorInputResponse> {

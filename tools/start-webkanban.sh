@@ -13,6 +13,9 @@ Options:
   --workspace-home PATH   Workspace registry root (default: ~/.zaofu)
   --token TOKEN           Web action token. If omitted, read .env, then reuse/create token file.
   --token-file PATH       Token file (default: <workspace-home>/web-action-token)
+  --developer-token TOKEN Developer/maintainer token. If omitted, read .env, then reuse/create a separate token file.
+  --developer-token-file PATH
+                          Developer token file (default: <workspace-home>/web-developer-token)
   --provider-token-envs N  Comma/space-separated provider token env names to load/pass.
                            Defaults to registry token_env values plus OPENCLAW_GATEWAY_TOKEN.
   --workspace-only        Start Web shell without binding default Project.
@@ -24,8 +27,9 @@ Options:
 
 Configuration:
   ZF_WEB_HOST, ZF_WEB_PORT, ZF_WEB_TMUX_SESSION, ZF_WORKSPACE_HOME,
-  repo .env: ZF_WORKSPACE_HOME, ZF_WEB_ACTION_TOKEN
-  env vars: ZF_WEB_ACTION_TOKEN, ZF_WEB_ACTION_TOKEN_FILE, ZF_WEB_NO_BUILD=1,
+  repo .env: ZF_WORKSPACE_HOME, ZF_WEB_ACTION_TOKEN, ZF_WEB_DEVELOPER_TOKEN
+  env vars: ZF_WEB_ACTION_TOKEN, ZF_WEB_ACTION_TOKEN_FILE,
+  ZF_WEB_DEVELOPER_TOKEN, ZF_WEB_DEVELOPER_TOKEN_FILE, ZF_WEB_NO_BUILD=1,
   ZF_WEB_NO_RESTART=1, ZF_WEB_WORKSPACE_ONLY=1, ZF_WEB_PROVIDER_TOKEN_ENVS
   Codex headless env: ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX,
   ZF_KANBAN_AGENT_CODEX_HEADLESS_APPROVAL_POLICY
@@ -51,6 +55,8 @@ workspace_home_cli=0
 session="${ZF_WEB_TMUX_SESSION:-}"
 token="${ZF_WEB_ACTION_TOKEN:-}"
 token_file="${ZF_WEB_ACTION_TOKEN_FILE:-}"
+developer_token="${ZF_WEB_DEVELOPER_TOKEN:-}"
+developer_token_file="${ZF_WEB_DEVELOPER_TOKEN_FILE:-}"
 provider_token_envs="${ZF_WEB_PROVIDER_TOKEN_ENVS:-}"
 codex_headless_sandbox="${ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX:-}"
 codex_headless_approval_policy="${ZF_KANBAN_AGENT_CODEX_HEADLESS_APPROVAL_POLICY:-}"
@@ -91,6 +97,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --token-file)
       token_file="${2:?--token-file requires a value}"
+      shift 2
+      ;;
+    --developer-token)
+      developer_token="${2:?--developer-token requires a value}"
+      shift 2
+      ;;
+    --developer-token-file)
+      developer_token_file="${2:?--developer-token-file requires a value}"
       shift 2
       ;;
     --provider-token-envs)
@@ -237,6 +251,7 @@ fi
 session="${session:-zf-web-${port}}"
 workspace_home="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser())' "$workspace_home")"
 token_file="${token_file:-$workspace_home/web-action-token}"
+developer_token_file="${developer_token_file:-$workspace_home/web-developer-token}"
 log_file="/tmp/${session}.log"
 runtime_env_file="$workspace_home/webkanban-${port}.env"
 workspace_env_file="$workspace_home/env"
@@ -244,6 +259,9 @@ workspace_env_file="$workspace_home/env"
 if [[ -f "$workspace_env_file" ]]; then
   # shellcheck source=/dev/null
   . "$workspace_env_file"
+fi
+if [[ -z "$developer_token" ]]; then
+  developer_token="${ZF_WEB_DEVELOPER_TOKEN:-}"
 fi
 
 mapfile -t provider_token_names < <(
@@ -255,11 +273,15 @@ mapfile -t provider_token_names < <(
 )
 load_interactive_shell_env \
   ZF_WEB_ACTION_TOKEN \
+  ZF_WEB_DEVELOPER_TOKEN \
   ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX \
   ZF_KANBAN_AGENT_CODEX_HEADLESS_APPROVAL_POLICY \
   "${provider_token_names[@]}"
 if [[ -z "$token" ]]; then
   token="${ZF_WEB_ACTION_TOKEN:-}"
+fi
+if [[ -z "$developer_token" ]]; then
+  developer_token="${ZF_WEB_DEVELOPER_TOKEN:-}"
 fi
 if [[ -z "$codex_headless_sandbox" ]]; then
   codex_headless_sandbox="$(first_nonempty_env_or_dotenv ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX)"
@@ -278,6 +300,7 @@ print_status() {
   echo "repo: $repo_root"
   echo "workspace_home: $workspace_home"
   echo "token_file: $token_file"
+  echo "developer_token_file: $developer_token_file"
   echo "workspace_env_file: $workspace_env_file"
   echo "session: $session"
   echo "url: http://${host}:${port}/"
@@ -295,10 +318,15 @@ print_status() {
   else
     echo "port: free"
   fi
-  if curl -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
+  if curl --noproxy '*' -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
     echo "api: ok"
   else
     echo "api: unavailable"
+  fi
+  if [[ -n "$developer_token" || -s "$developer_token_file" ]]; then
+    echo "developer_token: configured"
+  else
+    echo "developer_token: unavailable"
   fi
   local name loaded=()
   for name in "${provider_token_names[@]}"; do
@@ -341,9 +369,27 @@ PY
     printf '%s\n' "$token" > "$token_file"
   fi
 fi
+if [[ -z "$developer_token" ]]; then
+  developer_token="$(dotenv_value ZF_WEB_DEVELOPER_TOKEN || true)"
+fi
+if [[ -z "$developer_token" ]]; then
+  if [[ -s "$developer_token_file" ]]; then
+    developer_token="$(tr -d '[:space:]' < "$developer_token_file")"
+  else
+    umask 077
+    developer_token="$(python3 - <<'PY'
+import secrets
+print(secrets.token_hex(32))
+PY
+)"
+    printf '%s\n' "$developer_token" > "$developer_token_file"
+  fi
+fi
 umask 077
 printf '%s\n' "$token" > "$token_file"
 chmod 600 "$token_file"
+printf '%s\n' "$developer_token" > "$developer_token_file"
+chmod 600 "$developer_token_file"
 
 if tmux has-session -t "$session" 2>/dev/null; then
   if [[ "$restart" == "1" ]]; then
@@ -382,6 +428,7 @@ fi
 launch_env=(
   ZF_WORKSPACE_HOME="$workspace_home"
   ZF_WEB_ACTION_TOKEN="$token"
+  ZF_WEB_DEVELOPER_TOKEN="$developer_token"
   ZF_KANBAN_AGENT_CODEX_HEADLESS_SANDBOX="$codex_headless_sandbox"
   ZF_KANBAN_AGENT_CODEX_HEADLESS_APPROVAL_POLICY="$codex_headless_approval_policy"
 )
@@ -403,7 +450,7 @@ tmux new-session -d -s "$session" -c "$repo_root" \
   ". $(shell_quote "$runtime_env_file"); uv run --extra web zf ${web_args[*]} 2>&1 | tee $(shell_quote "$log_file")"
 
 for _ in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
+  if curl --noproxy '*' -fsS "http://127.0.0.1:${port}/api/workspace/projects" >/dev/null 2>&1; then
     break
   fi
   sleep 0.5

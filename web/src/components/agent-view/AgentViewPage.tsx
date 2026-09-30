@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // AgentViewPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { getAgentCockpit, getAgentLive, getAgents } from "../../api/client";
 import type { AgentSummary, ChannelSummary, CostSummary, ExecutionPatternProjection, FleetStats, MetricsSnapshotProjection, Task } from "../../api/types";
@@ -46,6 +48,7 @@ export function AgentViewPage({
   providerCapabilities: Record<string, unknown> | null;
   recovery: Record<string, unknown> | null;
 }) {
+  useSettingsPreferences();
   const [fallback, setFallback] = useState<{
     agentCockpit: Record<string, unknown> | null;
     agentLive: Record<string, unknown> | null;
@@ -450,7 +453,7 @@ export function AgentViewPage({
     <>
       <div className="section-heading">
         <div>
-          <h2>Agents</h2>
+          <h2>{uiText("Agents")}</h2>
           <span className="muted">
             {workers.length} backend workers
             {terminalPage?.enabled ? ` · ${activeTerminalCount} terminal tabs` : ""}
@@ -462,7 +465,7 @@ export function AgentViewPage({
 
       <div className="agent-fleet-summary-grid">
         <RuntimeSummaryCard
-          label="Workers"
+          label={uiText("Workers")}
           value={fleetMetrics.backendWorkers}
           meta={`${fleetMetrics.controlAgents} control / ${fleetMetrics.operatorAgents} operator`}
           tone={fleetMetrics.backendWorkers ? "info" : "muted"}
@@ -476,7 +479,7 @@ export function AgentViewPage({
           tone={fleetMetrics.stuck || fleetMetrics.silent ? "err" : fleetMetrics.drift ? "warn" : "ok"}
         />
         <RuntimeSummaryCard
-          label="Context"
+          label={uiText("Context")}
           value={contextPercent(fleetMetrics.maxContext)}
           meta={`${fleetMetrics.contextWarn} warning`}
           tone={fleetMetrics.contextWarn ? "warn" : "ok"}
@@ -501,7 +504,7 @@ export function AgentViewPage({
 
       <section className="subsection agent-attention-cockpit">
         <div className="inline-heading">
-          <h3 className="section-title">Attention Queue</h3>
+          <h3 className="section-title">{uiText("Attention Queue")}</h3>
           <span className="muted">{agentAttentionRows.length} signals</span>
         </div>
         {agentAttentionRows.length ? (
@@ -579,10 +582,10 @@ export function AgentViewPage({
       ) : (
         <section className="subsection">
           <div className="inline-heading">
-            <h3 className="section-title">Role Fleet</h3>
+            <h3 className="section-title">{uiText("Role Fleet")}</h3>
             <span className="muted">0 workers</span>
           </div>
-          <p className="empty-text">No backend worker projection data.</p>
+          <p className="empty-text">{uiText("No backend worker projection data.")}</p>
         </section>
       )}
 
@@ -592,7 +595,7 @@ export function AgentViewPage({
       {/* Stuck Cockpit deleted: same signal source as Attention Queue (counts in
           the Health card, detail rows in the queue) — the last duplicate surface. */}
       <RuntimeDetailSection
-        title="Advanced"
+        title={uiText("Advanced")}
         meta={`${assignmentRouteRows.length} routes / ${recoverySuggestionRows.length} recovery suggestions`}
         defaultOpen={false}
       >
@@ -617,11 +620,11 @@ export function AgentViewPage({
         {attentionWorkers.length > 0 && (
         <section className="subsection">
           <div className="inline-heading">
-            <h3 className="section-title">Attention Needed</h3>
+            <h3 className="section-title">{uiText("Attention Needed")}</h3>
             <span className="muted">{attentionWorkers.length} workers</span>
           </div>
           {attentionWorkers.length === 0 ? (
-            <p className="empty-text">No worker attention required.</p>
+            <p className="empty-text">{uiText("No worker attention required.")}</p>
           ) : (
             <div className="compact-list">
               {attentionWorkers.map((worker) => (
@@ -647,22 +650,22 @@ export function AgentViewPage({
       <div className="agent-view-layout">
         <section className="subsection agent-cockpit-panel">
           <div className="inline-heading">
-            <h3 className="section-title">Selected Worker</h3>
+            <h3 className="section-title">{uiText("Selected Worker")}</h3>
             <span className="muted">{selected.instance_id}</span>
             <button className="icon-button" type="button" onClick={() => setSelectedId("")}>
-              Close
+              {uiText("Close")}
             </button>
           </div>
           {selected ? (
             <>
-              <KeyValuePanel title="Runtime" rows={selectedRows} />
+              <KeyValuePanel title={uiText("Runtime")} rows={selectedRows} />
               <div className="agent-cockpit-grid">
                 {/* Controls only make sense against a live runtime; on
                     stale/archived workers they are dead buttons (F0-B ghosts). */}
                 {!selected.stale && (
                 <div className="subsection compact-subsection">
                   <div className="inline-heading">
-                    <h3 className="section-title">Worker Controls</h3>
+                    <h3 className="section-title">{uiText("Worker Controls")}</h3>
                     <span className="muted">token gated</span>
                   </div>
                   <div className="action-row">
@@ -672,7 +675,7 @@ export function AgentViewPage({
                       type="button"
                       onClick={() => runWorkerAction("reply")}
                     >
-                      Reply
+                      {uiText("Reply")}
                     </button>
                     <button
                       className="icon-button"
@@ -680,7 +683,7 @@ export function AgentViewPage({
                       type="button"
                       onClick={() => runWorkerAction("respawn")}
                     >
-                      Respawn
+                      {uiText("Respawn")}
                     </button>
                     <button
                       className="icon-button"
@@ -688,36 +691,36 @@ export function AgentViewPage({
                       type="button"
                       onClick={() => runWorkerAction("drain")}
                     >
-                      Drain
+                      {uiText("Drain")}
                     </button>
                     <button
                       className="icon-button"
                       type="button"
                       onClick={() => selected ? onAddAgentToChannel(selected) : undefined}
                     >
-                      Add to Channel
+                      {uiText("Add to Channel")}
                     </button>
                   </div>
                 </div>
                 )}
                 <div className="subsection compact-subsection">
                   <div className="inline-heading">
-                    <h3 className="section-title">Task / Evidence</h3>
+                    <h3 className="section-title">{uiText("Task / Evidence")}</h3>
                     <span className="muted">gate-owned</span>
                   </div>
                   {selectedTaskId ? (
                     <button className="icon-button mono" type="button" onClick={() => onSelectTask(selectedTaskId)}>
-                      Open Task {selectedTaskId}
+                      {uiText("Open Task")} {selectedTaskId}
                     </button>
                   ) : (
-                    <p className="empty-text">No active task.</p>
+                    <p className="empty-text">{uiText("No active task.")}</p>
                   )}
                   <p className="muted mono">{selected.worktree_path || selected.project_path || selected.workdir || ""}</p>
                 </div>
               </div>
             </>
           ) : (
-            <p className="empty-text">No backend worker projection data.</p>
+            <p className="empty-text">{uiText("No backend worker projection data.")}</p>
           )}
         </section>
       </div>

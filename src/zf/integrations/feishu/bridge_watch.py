@@ -24,11 +24,12 @@ import os
 import signal
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
 
 from zf.cli.feishu_consume import dispatch_inbound_async
 from zf.integrations.feishu.thread_scope import feishu_debounce_scope
-from zf.integrations.feishu.transport import MockFeishuTransport
+from zf.integrations.feishu.transport import MockFeishuTransport, extract_message_resources, merge_message_resources
 
 DEFAULT_DEBOUNCE_MS = 600
 DEFAULT_PROJECTION_INTERVAL_SECONDS = 1.0
@@ -39,13 +40,13 @@ def sdk_log_level(lark_module: Any) -> Any:
     log_level = getattr(lark_module, "LogLevel", None)
     return getattr(log_level, "WARNING", getattr(log_level, "ERROR", None))
 
-
 def workspace_message_is_addressed(
     *,
     mention_ids: list[str],
     bot_open_id: str,
     chat_type: str,
     resolution: Any | None,
+    issue_only: bool = False,
 ) -> bool:
     """Accept a group message for its primary responder when it has no @.
 
@@ -58,13 +59,19 @@ def workspace_message_is_addressed(
 
     if addressed_to_bot(mention_ids, bot_open_id, chat_type=chat_type):
         return True
+    # The Settings-owned Issue connection has one configured bot, one group,
+    # and one operator.  It must accept a plain ``/issue ...`` message in that
+    # group; requiring an @mention here would make the advertised shorthand
+    # unusable.  The exact chat/operator/app checks still happen in the command
+    # gateway before any Issue action is executed.
+    if issue_only and not mention_ids:
+        return True
     if resolution is None or chat_type == "p2p":
         return False
     return bool(
         not mention_ids
         and resolution.binding.primary_responder == resolution.index_route.purpose
     )
-
 
 def should_ignore_inbound_message(
     *,
@@ -88,6 +95,34 @@ def should_ignore_inbound_message(
     )
 
 
+def _safe_card_action_label(value: Any) -> str:
+    """Return a bounded, token-free label suitable for bridge logs."""
+    action = str(value.get("action") or "unknown") if isinstance(value, dict) else "unknown"
+    printable = "".join(char if char.isprintable() else "?" for char in action)
+    return printable[:160] or "unknown"
+
+
+def _card_action_toast(result: dict[str, Any]) -> tuple[str, str]:
+    """A callback toast is a short acknowledgement, never a report body."""
+    status = str(result.get("status") or "")
+    ok = bool(result.get("ok", status not in {"rejected", "error", "failed"}))
+    if status in {"authorization_required", "authorization_pending", "slow_down", "confirmation_expired", "published", "previewed", "confirmed"}:
+        from zf.integrations.feishu.publication_feedback import feedback_text
+        return ("success" if ok else "error"), feedback_text(status)[:80]
+    if ok:
+        return "success", "已处理，请查看更新后的卡片"
+    from zf.core.security.redaction import redact_text
+
+    message = str(result.get("message") or result.get("reason") or status or "处理失败")
+    if message.lstrip().startswith(("{", "[")):
+        message = status or "处理失败，请查看操作记录"
+    return "error", redact_text(message).replace("\n", " ")[:80]
+
+
+def _submit_card_action(executor: ThreadPoolExecutor, callback: Callable[[], Any]):
+    """Submit slow card work without making the WS callback wait for it."""
+    return executor.submit(callback)
+
 def merge_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     """Collapse a debounced batch of normalized inbound messages into one raw
     event dict (newline-joined text, last message's ids)."""
@@ -104,11 +139,11 @@ def merge_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                     "create_time": str(last.get("create_time") or ""),
                     "bot_open_id": str(last.get("bot_open_id") or ""),
                     "app_id": str(last.get("app_id") or ""),
-                    "mention_ids": list(last.get("mention_ids") or [])},
+                    "mention_ids": list(last.get("mention_ids") or []),
+                    "attachments": merge_message_resources(batch)},
         "user_id": str(last.get("user_id") or ""),
         "chat_id": str(last.get("chat_id") or ""),
     }
-
 
 class BridgeWatch:
     """Queue + dispatch core. Inject `dispatch` in tests to avoid a live backend."""
@@ -116,7 +151,8 @@ class BridgeWatch:
     def __init__(self, context, transport, *, debounce_ms: int = DEFAULT_DEBOUNCE_MS,
                  dispatch: Callable | None = None,
                  inbound_resolver: Callable[[Any], Any | None] | None = None,
-                 on_resolved: Callable[[Any, Any], None] | None = None) -> None:
+                 on_resolved: Callable[[Any, Any], None] | None = None,
+                 issue_lifecycle: Any | None = None) -> None:
         from zf.integrations.feishu.pending_queue import PendingQueue
 
         self.context = context
@@ -124,6 +160,7 @@ class BridgeWatch:
         self._dispatch = dispatch or dispatch_inbound_async
         self._inbound_resolver = inbound_resolver
         self._on_resolved = on_resolved
+        self._issue_lifecycle = issue_lifecycle
         self._futures: set[Any] = set()
         self._futures_lock = threading.Lock()
         self.queue = PendingQueue(debounce_ms, self._on_flush)
@@ -219,9 +256,12 @@ class BridgeWatch:
                 pass
 
     def shutdown(self) -> None:
+        if self._issue_lifecycle is not None:
+            self._issue_lifecycle.stop_accepting()
         self.queue.cancel_all()
         self.drain()
-
+        if self._issue_lifecycle is not None:
+            self._issue_lifecycle.shutdown()
 
 def _record_workspace_route(context, event, resolved) -> None:
     """Append route evidence in the selected project ledger, never globally."""
@@ -246,7 +286,6 @@ def _record_workspace_route(context, event, resolved) -> None:
             "message_id": str(event.payload.get("message_id") or ""),
         },
     )
-
 
 class BridgeProjectionLoop:
     """Wakeable projection loop owned by the bridge process.
@@ -277,6 +316,23 @@ class BridgeProjectionLoop:
         with self._targets_lock:
             self._targets.add(target)
         self._wake.set()
+
+    def project_now(self, chat_id: str) -> None:
+        """Start an independent projection for an operator callback.
+
+        A normal tick may be waiting on another provider request.  Card
+        callbacks must still converge the clicked card promptly, so do not
+        rely exclusively on the shared periodic worker here.
+        """
+        target = str(chat_id or "").strip()
+        if not target:
+            return
+        threading.Thread(
+            target=self._tick,
+            args=(target,),
+            name="feishu-bridge-urgent-projection",
+            daemon=True,
+        ).start()
 
     def tick_once(self) -> bool:
         with self._targets_lock:
@@ -321,7 +377,6 @@ class BridgeProjectionLoop:
             self._wake.wait(self._interval)
             self._wake.clear()
 
-
 def push_bridge_projections_once(
     context,
     transport,
@@ -348,6 +403,7 @@ def push_bridge_projections_once(
         push_kanban_proposal_cards_once,
     )
     from zf.integrations.feishu.stream_card import push_stream_card_once
+    from zf.integrations.feishu.issue_adapter import push_issue_cards_once, push_self_issue_cards_once
 
     identity = getattr(
         getattr(context.config, "integrations", None),
@@ -378,6 +434,22 @@ def push_bridge_projections_once(
             return {}
 
     if include_kanban_controls:
+        card_kwargs = {
+            "receive_id": fallback_receive_id,
+            "action_secret": action_secret,
+            "action_ttl_seconds": action_ttl,
+        }
+        project("issues", lambda: push_issue_cards_once(
+            state_dir, transport, project_root=getattr(context, "project_root", None),
+            config=getattr(context, "config", None), **card_kwargs,
+        ))
+        project("self_issues", lambda: push_self_issue_cards_once(
+            state_dir, transport, **card_kwargs,
+        ))
+        if counts.get("self_issues") == 0:
+            counts.pop("self_issues", None)
+        if counts.get("issues") == 0:
+            counts.pop("issues", None)
         project("plans", lambda: push_kanban_plan_cards_once(
             state_dir,
             transport,
@@ -395,6 +467,7 @@ def push_bridge_projections_once(
     else:
         counts["plans"] = 0
         counts["proposals"] = 0
+
     if include_channel_controls:
         project("questions", lambda: push_channel_question_cards_once(
             state_dir,
@@ -437,7 +510,6 @@ def push_bridge_projections_once(
         )
     return counts
 
-
 def _catchup_chat_id(route_key: str) -> str:
     key = str(route_key or "").strip()
     if not key or key == "*":
@@ -451,7 +523,6 @@ def _catchup_chat_id(route_key: str) -> str:
     if key == "*" or key.startswith("__") or key.endswith("_unset__"):
         return ""
     return key
-
 
 def _configured_projection_targets(context, app_id: str) -> list[str]:
     integrations = getattr(context.config, "integrations", None)
@@ -469,7 +540,6 @@ def _configured_projection_targets(context, app_id: str) -> list[str]:
         if chat_id and chat_id not in targets:
             targets.append(chat_id)
     return targets
-
 
 def _catchup_on_start(context, transport, bridge: BridgeWatch,
                       bot_open_id: str = "", app_id: str = "") -> None:
@@ -599,10 +669,11 @@ def run_bridge_watch(args) -> int:
     """`zf feishu bridge --watch` — in-process WS long-connection that drives the
     real agent reply for every inbound message, debounced per chat."""
     from zf.core.config.loader import ConfigError
-    from zf.core.config.project_context import resolve_project_context
+    from zf.core.config.project_context import load_project_env, resolve_project_context
     from zf.integrations.feishu.single_instance import (
         WS_LOCK_HEARTBEAT_SECONDS,
         acquire_provider_ws_lock,
+        refresh_ws_lock_until_stopped,
     )
     from zf.integrations.feishu.transport import FeishuHttpTransport
 
@@ -612,15 +683,36 @@ def run_bridge_watch(args) -> int:
         print("Error: --workspace and --all-workspaces are mutually exclusive.", file=sys.stderr)
         return 2
     context = None
-    if not workspace and not all_workspaces:
+    try:
+        # Bridge is a direct runtime entrypoint, so it must load the owning
+        # project's dotenv before resolving env-backed Feishu credentials and
+        # ${ENV:-sentinel} routes.  Resolve once to locate the project; then
+        # resolve again so the loaded values participate in config merging.
+        initial_context = resolve_project_context(
+            explicit_state_dir=getattr(args, "state_dir", None),
+            load_config_with_explicit=True,
+        )
+        load_project_env(initial_context.project_root)
+        resolved_context = resolve_project_context(
+            explicit_state_dir=getattr(args, "state_dir", None),
+            load_config_with_explicit=True,
+        )
+        if not workspace and not all_workspaces:
+            context = resolved_context
+    except ConfigError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    if getattr(args, "issue_merge", False):
+        from zf.integrations.feishu.issue_connection import prepare_issue_bridge
+        if context is None:
+            print("Error: Issue connection requires a single project.", file=sys.stderr)
+            return 2
         try:
-            context = resolve_project_context(
-                explicit_state_dir=getattr(args, "state_dir", None),
-                load_config_with_explicit=True,
-            )
-        except ConfigError as exc:
+            context = prepare_issue_bridge(context)
+        except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
-            return 1
+            return 2
 
     env_app_id = os.environ.get("FEISHU_APP_ID", "") or os.environ.get(
         "LARKSUITE_CLI_APP_ID", "")
@@ -683,6 +775,19 @@ def run_bridge_watch(args) -> int:
                 file=sys.stderr,
             )
             return 1
+
+    from zf.integrations.feishu.production import bridge_production_context_issues
+    startup_issues = bridge_production_context_issues(
+        context, inbound_resolver, routed_routes, app_id,
+    )
+    if startup_issues:
+        print(
+            "Error: Feishu bridge production preflight failed: "
+            + "; ".join(startup_issues),
+            file=sys.stderr,
+        )
+        return 2
+
     lock = acquire_provider_ws_lock(app_id)
     if lock is None:
         print("Error: another Feishu WS bridge is already running for this app "
@@ -697,11 +802,11 @@ def run_bridge_watch(args) -> int:
         lock.release()
         return 1
 
-    transport = FeishuHttpTransport()
+    transport = FeishuHttpTransport(app_id=app_id, app_secret=app_secret)
     bot_open_id = transport.bot_open_id()
     lock_heartbeat_stop = threading.Event()
     lock_heartbeat_thread = threading.Thread(
-        target=_refresh_ws_lock,
+        target=refresh_ws_lock_until_stopped,
         args=(lock, lock_heartbeat_stop, WS_LOCK_HEARTBEAT_SECONDS),
         name="feishu-ws-lock-heartbeat",
         daemon=True,
@@ -710,12 +815,25 @@ def run_bridge_watch(args) -> int:
     projection_contexts: dict[str, Any] = {}
     projection_purposes: dict[str, str] = {}
     projection_members: dict[str, str] = {}
+    from zf.integrations.feishu.self_issue_lifecycle import FeishuIssueLifecycle
+    issue_lifecycle = FeishuIssueLifecycle()
+    issue_lifecycle.add_context(context)
+    # Feishu expects a card callback response within a short deadline.  The
+    # actual action may append events, run a controlled action, or touch a
+    # provider and can take much longer.  Keep callback acknowledgement
+    # independent from that work so a successful click is not shown as a
+    # timeout while the action continues in the background.
+    card_action_executor = ThreadPoolExecutor(
+        max_workers=8,
+        thread_name_prefix="feishu-card-action",
+    )
 
     def _route_resolve(event):
         assert inbound_resolver is not None
         return inbound_resolver.resolve(app_id=app_id, chat_id=event.chat_id)
 
     def _on_workspace_resolved(resolved, event) -> None:
+        issue_lifecycle.add_context(resolved.context)
         projection_contexts[event.chat_id] = resolved.context
         projection_purposes[event.chat_id] = resolved.index_route.purpose
         projection_members[event.chat_id] = str(
@@ -729,6 +847,7 @@ def run_bridge_watch(args) -> int:
         debounce_ms=int(getattr(args, "debounce_ms", DEFAULT_DEBOUNCE_MS)),
         inbound_resolver=_route_resolve if inbound_resolver else None,
         on_resolved=_on_workspace_resolved if inbound_resolver else None,
+        issue_lifecycle=issue_lifecycle,
     )
 
     def _projection_tick(fallback: str) -> dict[str, int]:
@@ -737,6 +856,9 @@ def run_bridge_watch(args) -> int:
         )
         if selected_context is None:
             return {}
+        if getattr(selected_context.config, "_feishu_issue_only", False):
+            from zf.integrations.feishu.issue_connection import issue_projection
+            return issue_projection(selected_context, transport, fallback)
         return push_bridge_projections_once(
             selected_context,
             transport,
@@ -766,6 +888,8 @@ def run_bridge_watch(args) -> int:
                 chat_id=route.chat_id,
             )
             if resolved is not None:
+                if route.purpose == "kanban_agent":
+                    issue_lifecycle.add_context(resolved.context)
                 projection_contexts[route.chat_id] = resolved.context
                 projection_purposes[route.chat_id] = route.purpose
                 projection_members[route.chat_id] = str(
@@ -776,7 +900,6 @@ def run_bridge_watch(args) -> int:
         assert context is not None
         for target in _configured_projection_targets(context, app_id):
             projection_loop.add_target(target)
-    projection_loop.start()
 
     def _on_msg(data: Any) -> None:
         try:
@@ -785,9 +908,13 @@ def run_bridge_watch(args) -> int:
             if message.content:
                 import json
                 try:
-                    text = json.loads(message.content).get("text", "")
+                    content = json.loads(message.content)
+                    text = content.get("text", "") if isinstance(content, dict) else ""
                 except (ValueError, TypeError):
-                    text = message.content
+                    content = message.content
+                    text = content
+            else:
+                content = ""
             sender = getattr(data.event, "sender", None)
             user_id = ""
             if sender is not None and getattr(sender, "sender_id", None) is not None:
@@ -831,6 +958,7 @@ def run_bridge_watch(args) -> int:
                 bot_open_id=bot_open_id,
                 chat_type=chat_type,
                 resolution=resolution,
+                issue_only=bool(getattr(context.config, "_feishu_issue_only", False)),
             ):
                 print(f"[bridge] skip (not @us) chat={message.chat_id} "
                       f"mentions={mention_ids}", flush=True)
@@ -848,7 +976,9 @@ def run_bridge_watch(args) -> int:
                 "create_time": getattr(message, "create_time", "") or "",
                 "bot_open_id": bot_open_id,
                 "app_id": app_id,
-                "mention_ids": mention_ids})
+                "mention_ids": mention_ids,
+                "attachments": extract_message_resources(content),
+            })
             projection_loop.add_target(message.chat_id)
             print(f"[bridge] queued chat={message.chat_id} n={queued}", flush=True)
         except Exception as exc:  # noqa: BLE001 — a bad event must not kill the WS
@@ -857,7 +987,8 @@ def run_bridge_watch(args) -> int:
     def _on_card_action(data: Any) -> Any:
         """card.action.trigger (button click over the long-connection) → the
         same gated approve/reject path as a webhook (ingest → identity + A2 gate
-        → ControlledAction). Returns a toast so the button doesn't spin."""
+        → ControlledAction). Acknowledge immediately; the gated action runs in
+        the background because Feishu times out slow callback handlers."""
         from lark_oapi.event.callback.model.p2_card_action_trigger import (
             CallBackToast, P2CardActionTriggerResponse)
 
@@ -875,7 +1006,10 @@ def run_bridge_watch(args) -> int:
             chat_id = getattr(ctx, "open_chat_id", "") or ""
             message_id = getattr(ctx, "open_message_id", "") or ""
             raw = {
-                "header": {"event_type": "card.action.trigger"},
+                "header": {
+                    "event_type": "card.action.trigger",
+                    "app_id": app_id,
+                },
                 "event": {
                     "action": {"value": value, "tag": getattr(action, "tag", "")},
                     "operator": {"operator_id": {"open_id": open_id}},
@@ -898,13 +1032,34 @@ def run_bridge_watch(args) -> int:
                 )
             if action_context is None:
                 raise ValueError("missing bridge project context")
-            result = ingest_feishu_event(raw, context=action_context)
+            issue_lifecycle.add_context(action_context)
             projection_loop.add_target(chat_id)
-            ok = bool(result.get("ok", result.get("status") not in ("rejected", "error")))
-            toast.type = "success" if ok else "error"
-            toast.content = str(result.get("message") or result.get("status") or "已处理")
-            print(f"[bridge] card.action {value} by {open_id}: {result.get('status')}",
-                  flush=True)
+
+            action_label = _safe_card_action_label(value)
+
+            def _run_card_action() -> None:
+                try:
+                    result = ingest_feishu_event(
+                        raw,
+                        context=action_context,
+                        transport=transport,
+                    )
+                    projection_loop.project_now(chat_id)
+                    print(
+                        f"[bridge] card.action action={action_label} "
+                        f"by {open_id}: {result.get('status')}",
+                        flush=True,
+                    )
+                except Exception as exc:  # noqa: BLE001 - keep WS callback live.
+                    print(
+                        f"[bridge] card.action failed action={action_label}: {exc!r}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+
+            _submit_card_action(card_action_executor, _run_card_action)
+            toast.type = "success"
+            toast.content = "已接收，正在处理，请稍候查看卡片更新"
         except Exception as exc:  # noqa: BLE001 — a bad callback must not kill the WS
             toast.type = "error"
             toast.content = "处理失败"
@@ -930,40 +1085,33 @@ def run_bridge_watch(args) -> int:
     )
     print(f"[bridge] watch starting ({scope}app={app_id[:12]}…, bot={bot_open_id[:18] or '?'}, "
           f"debounce={bridge.queue._delay * 1000:.0f}ms)", flush=True)
-    if inbound_resolver is not None:
-        _catchup_routed_projects_on_start(
-            inbound_resolver,
-            routed_routes,
-            bridge.transport,
-            bridge,
-            bot_open_id,
-            app_id,
-        )
-    else:
-        assert context is not None
-        _catchup_on_start(context, bridge.transport, bridge, bot_open_id, app_id)
     try:
+        issue_lifecycle.start()
+        projection_loop.start()
+        if inbound_resolver is not None:
+            _catchup_routed_projects_on_start(
+                inbound_resolver,
+                routed_routes,
+                bridge.transport,
+                bridge,
+                bot_open_id,
+                app_id,
+            )
+        else:
+            assert context is not None
+            _catchup_on_start(context, bridge.transport, bridge, bot_open_id, app_id)
         client.start()  # blocking WS loop with internal reconnect
     except KeyboardInterrupt:
         print("[bridge] shutdown signal — draining in-flight runs…", flush=True)
     finally:
         projection_loop.stop()
         bridge.shutdown()
+        card_action_executor.shutdown(wait=True, cancel_futures=False)
         lock_heartbeat_stop.set()
         lock_heartbeat_thread.join(timeout=1.0)
         lock.release()
         print("[bridge] stopped.", flush=True)
     return 0
-
-
-def _refresh_ws_lock(lock, stop: threading.Event, interval_seconds: float) -> None:
-    """Keep the stale-lock TTL meaningful for a long-lived WS process."""
-    interval = max(1.0, float(interval_seconds))
-    while not stop.wait(interval):
-        try:
-            lock.refresh()
-        except Exception:  # noqa: BLE001 - a failed refresh must not kill WS.
-            pass
 
 
 def _message_ref(message: Any, *names: str) -> str:

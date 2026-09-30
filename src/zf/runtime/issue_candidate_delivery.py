@@ -11,18 +11,20 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.config.schema import ZfConfig
 from zf.core.events import EventWriter
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.issue_triage.models import IssueMirror
+from zf.core.issue_triage.store import IssueMirrorStore
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
-from zf.runtime.self_issue_target import resolve_self_issue_target_root
+from zf.runtime.issue_version_binding import validate_delivery_version_context
 
 
 HANDOFF_SCHEMA_VERSION = "candidate-publication-handoff.v1"
@@ -30,6 +32,7 @@ _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 _PR_PATH_RE = re.compile(r"^/([^/]+)/([^/]+)/pull/(\d+)$")
 PullRequestTransport = Callable[[str, dict[str, str]], tuple[int, bytes]]
 RemoteBaseReader = Callable[[str, str], str]
+LifecycleLabelWriter = Callable[[IssueMirror, str], Mapping[str, Any]]
 
 
 class CandidateDeliveryError(ValueError):
@@ -169,7 +172,24 @@ class GitHubPullRequestReader:
         access_token = _github_access_token()
         if access_token:
             headers["Authorization"] = f"Bearer {access_token}"
-        status, raw = self.transport(base, headers)
+        # The PR document and its reviews are independent GitHub requests.
+        # Fetch them together so a slow reviews endpoint does not add another
+        # full network timeout to the user-facing delivery action.
+        reviews_url = base + "/reviews"
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="zf-pr-read") as pool:
+            pr_future = pool.submit(self.transport, base, headers)
+            reviews_future = pool.submit(self.transport, reviews_url, headers)
+            status, raw = pr_future.result()
+            try:
+                reviews_result = reviews_future.result()
+            except CandidateDeliveryError:
+                # A non-successful PR response is already authoritative for
+                # the operation. Preserve that error/status instead of
+                # letting an independent reviews request mask it.
+                if status == 200:
+                    raise
+                reviews_result = (0, b"")
+            review_status, review_count = self._parse_reviews(*reviews_result)
         if status == 404:
             raise CandidateDeliveryError("GitHub pull request was not found")
         if status != 200:
@@ -181,7 +201,6 @@ class GitHubPullRequestReader:
         if not isinstance(value, dict):
             raise CandidateDeliveryError("GitHub pull request response is invalid")
 
-        review_status, review_count = self._reviews(base + "/reviews", headers)
         head = value.get("head") if isinstance(value.get("head"), dict) else {}
         base_value = value.get("base") if isinstance(value.get("base"), dict) else {}
         head_repo = head.get("repo") if isinstance(head.get("repo"), dict) else {}
@@ -214,8 +233,7 @@ class GitHubPullRequestReader:
             "updated_at": str(value.get("updated_at") or ""),
         }
 
-    def _reviews(self, url: str, headers: dict[str, str]) -> tuple[str, int]:
-        status, raw = self.transport(url, headers)
+    def _parse_reviews(self, status: int, raw: bytes) -> tuple[str, int]:
         if status != 200:
             return "pending", 0
         try:
@@ -252,18 +270,73 @@ class IssueCandidateDeliveryService:
         config: ZfConfig,
         pr_reader: GitHubPullRequestReader | None = None,
         remote_base_reader: RemoteBaseReader | None = None,
+        lifecycle_label_writer: LifecycleLabelWriter | None = None,
+        actor: str = "web-operator",
+        defer_remote_sync: bool = False,
     ) -> None:
         self.state_dir = Path(state_dir)
         self.config = config
         self.policy = config.self_issue.delivery
-        self.project_root = resolve_self_issue_target_root(
-            Path(project_root),
-            config.self_issue,
-        )
+        self.project_root = Path(project_root).resolve()
         self.event_log = event_log_from_project(self.state_dir, config=config)
         self.writer = EventWriter(self.event_log)
         self.pr_reader = pr_reader or GitHubPullRequestReader()
         self.remote_base_reader = remote_base_reader or _git_remote_base
+        self.lifecycle_label_writer = lifecycle_label_writer
+        self.actor = str(actor or "web-operator")
+        self.defer_remote_sync = bool(defer_remote_sync)
+
+    def _reconcile_remote_lifecycle_label(
+        self, issue: IssueMirror, state: str,
+    ) -> None:
+        """Delegate canonical label writes to the configured Forge adapter."""
+        if self.lifecycle_label_writer is None:
+            return
+        # Coordinate with refresh and batch publication. The handoff/event
+        # remains canonical; only a confirmed Forge result patches the mirror.
+        from zf.runtime.external_issue_label_sync import _workspace_lifecycle_targets, try_intake_lock
+
+        mirrors = IssueMirrorStore(self.state_dir)
+        with try_intake_lock(mirrors.refresh_lock_path) as acquired:
+            if not acquired:
+                result = {"status": "reconcile_pending", "reason": "mirror_refresh_in_progress"}
+            else:
+                targets, _ = _workspace_lifecycle_targets(self, mirrors=[issue])
+                expected = targets.get(issue.issue_key)
+                if expected and expected[0] and expected[1] != state:
+                    result = {"status": "reconcile_pending", "reason": "newer_issue_lifecycle"}
+                else:
+                    try:
+                        result = self.lifecycle_label_writer(issue, state)
+                    except Exception as exc:  # pragma: no cover - provider boundary
+                        result = {"status": "outcome_unknown", "reason": type(exc).__name__}
+                    targets, _ = _workspace_lifecycle_targets(self, mirrors=[issue])
+                    if targets.get(issue.issue_key) != expected:
+                        result = {"status": "reconcile_pending", "reason": "lifecycle_changed_during_sync"}
+                if result.get("status") == "reconciled":
+                    mirrors.project_lifecycle_label(
+                        issue.issue_key, state, dict(result.get("label_colors") or {}),
+                    )
+        status = str(result.get("status") or "outcome_unknown")
+        event_type = (
+            "external_issue.lifecycle_label.reconciled"
+            if status == "reconciled"
+            else "external_issue.lifecycle_label.reconcile_failed"
+        )
+        self.writer.emit(
+            event_type,
+            actor="issue-candidate-delivery",
+            payload={
+                "source_key": issue.issue_key,
+                "source_revision": str(result.get("source_revision") or ""),
+                "repository": issue.repository,
+                "issue_number": issue.number,
+                "state": state,
+                "status": status,
+                "reason": str(result.get("reason") or ""),
+            },
+            correlation_id=f"external-issue:{issue.issue_key}",
+        )
 
     def projection(self, issue: IssueMirror) -> dict[str, Any]:
         candidate = self._candidate(issue)
@@ -347,7 +420,7 @@ class IssueCandidateDeliveryService:
                 "status": status,
                 "owner_review": {
                     "verdict": verdict,
-                    "reviewer": "web-operator",
+                    "reviewer": self.actor,
                     "reason": normalized_reason,
                     "reviewed_at": _now(),
                 },
@@ -356,7 +429,7 @@ class IssueCandidateDeliveryService:
             descriptor = self._write_handoff(issue.number, handoff)
             event = self.writer.emit(
                 event_types[verdict],
-                actor="web-operator",
+                actor=self.actor,
                 task_id=candidate["task_id"],
                 correlation_id=candidate["workflow_run_id"] or None,
                 payload={
@@ -375,6 +448,8 @@ class IssueCandidateDeliveryService:
             )
             handoff["owner_review"]["event_id"] = event.id
             descriptor = self._write_handoff(issue.number, handoff)
+            if not self.defer_remote_sync:
+                self._reconcile_remote_lifecycle_label(issue, status)
             return {"ok": True, "idempotent": False, **handoff, **descriptor}
 
     def prepare(
@@ -461,6 +536,8 @@ class IssueCandidateDeliveryService:
             )
             handoff["publication_event_id"] = event.id
             descriptor = self._write_handoff(issue.number, handoff)
+            if not self.defer_remote_sync:
+                self._reconcile_remote_lifecycle_label(issue, "publication_prepared")
             return {"ok": True, "idempotent": False, **handoff, **descriptor}
 
     def record_pr(self, issue: IssueMirror, *, url: str) -> dict[str, Any]:
@@ -515,8 +592,23 @@ class IssueCandidateDeliveryService:
             handoff.update({
                 "status": remote["lifecycle"],
                 "pull_request": {**remote, "synced_at": _now()},
+                "version_context": {
+                    **dict(handoff.get("version_context") or {}),
+                    "pr_head": str(remote.get("head_sha") or "").lower(),
+                    "verification_revision": str(remote.get("head_sha") or "").lower(),
+                    "merge_sha": str(remote.get("merge_commit_sha") or "").lower(),
+                },
                 "updated_at": _now(),
             })
+            valid, failures = validate_delivery_version_context(
+                handoff["version_context"],
+                require_pr=True,
+                require_merge=remote["lifecycle"] == "merged",
+            )
+            if not valid:
+                raise CandidateDeliveryError(
+                    "Pull request revision binding failed: " + ", ".join(failures)
+                )
             descriptor = self._write_handoff(issue.number, handoff)
             event_type = (
                 "delivery.merged"
@@ -527,7 +619,7 @@ class IssueCandidateDeliveryService:
             )
             event = self.writer.emit(
                 event_type,
-                actor="github-pr-reader" if not first_record else "web-operator",
+                actor="github-pr-reader" if not first_record else self.actor,
                 task_id=candidate["task_id"],
                 correlation_id=candidate["workflow_run_id"] or None,
                 payload={
@@ -537,6 +629,8 @@ class IssueCandidateDeliveryService:
                     "issue_number": issue.number,
                     "candidate_head_sha": candidate["candidate_head_sha"],
                     "candidate_base_sha": candidate["candidate_base_sha"],
+                    "pr_head_revision": str(remote.get("head_sha") or "").lower(),
+                    "merge_revision": str(remote.get("merge_commit_sha") or "").lower(),
                     "delivery_provider": self.policy.provider,
                     "delivery_repository": self.policy.repository,
                     "pull_request_number": number,
@@ -550,6 +644,8 @@ class IssueCandidateDeliveryService:
             )
             handoff["pull_request_event_id"] = event.id
             descriptor = self._write_handoff(issue.number, handoff)
+            if not self.defer_remote_sync:
+                self._reconcile_remote_lifecycle_label(issue, str(remote["lifecycle"]))
             return {"ok": True, **handoff, **descriptor}
 
     def _candidate(self, issue: IssueMirror) -> dict[str, Any] | None:
@@ -557,6 +653,7 @@ class IssueCandidateDeliveryService:
         task_id = ""
         run_id = ""
         source_revision = ""
+        evaluated_source_revision = ""
         candidate_source_revision = ""
         candidate_event: ZfEvent | None = None
         judge_event: ZfEvent | None = None
@@ -575,6 +672,11 @@ class IssueCandidateDeliveryService:
                 task_id = str(event.task_id or "")
                 run_id = str(payload.get("workflow_run_id") or "")
                 source_revision = str(payload.get("source_revision") or source_revision)
+                evaluated_source_revision = str(
+                    payload.get("source_code_revision")
+                    or payload.get("target_commit")
+                    or evaluated_source_revision
+                ).lower()
             elif task_id and event.task_id == task_id and event.type == "workflow.invoke.requested":
                 if str(payload.get("flow_kind") or "") == "issue":
                     run_id = str(payload.get("workflow_run_id") or run_id)
@@ -628,6 +730,8 @@ class IssueCandidateDeliveryService:
             "candidate_ref": candidate_ref,
             "candidate_base_sha": base_sha,
             "candidate_head_sha": head_sha,
+            "evaluated_source_revision": str(payload.get("evaluated_source_revision") or payload.get("source_code_revision") or payload.get("target_commit") or evaluated_source_revision or base_sha).lower(),
+            "fix_based_on": str(payload.get("fix_based_on") or base_sha).lower(),
             "diff_ref": str(payload.get("diff_ref") or f"{base_sha}..{head_sha}"),
             "quality_status": str(payload.get("quality_status") or ""),
             "quality_gates_passed": self._string_list(payload.get("quality_gates_passed")),
@@ -656,6 +760,15 @@ class IssueCandidateDeliveryService:
         return candidate
 
     def _base_handoff(self, issue: IssueMirror, candidate: dict[str, Any]) -> dict[str, Any]:
+        version_context = {
+            "reported_source_revision": candidate["source_revision"],
+            "evaluated_against": candidate["evaluated_source_revision"],
+            "fix_based_on": candidate["fix_based_on"],
+            "candidate_head": candidate["candidate_head_sha"],
+            "pr_head": "",
+            "verification_revision": "",
+            "merge_sha": "",
+        }
         return {
             "schema_version": HANDOFF_SCHEMA_VERSION,
             "provider": issue.provider,
@@ -671,6 +784,9 @@ class IssueCandidateDeliveryService:
             "candidate_ref": candidate["candidate_ref"],
             "candidate_base_sha": candidate["candidate_base_sha"],
             "candidate_head_sha": candidate["candidate_head_sha"],
+            "version_context": version_context,
+            "evaluated_source_revision": candidate["evaluated_source_revision"],
+            "fix_based_on": candidate["fix_based_on"],
             "diff_ref": candidate["diff_ref"],
             "changed_paths": candidate["changed_paths"],
             "verification_commands": candidate["verification_commands"],
@@ -749,6 +865,8 @@ class IssueCandidateDeliveryService:
             f"Source issue: {issue.html_url}",
             f"Candidate: `{candidate['candidate_head_sha']}`",
             f"Base: `{candidate['candidate_base_sha']}`",
+            f"Evaluated against: `{candidate['evaluated_source_revision']}`",
+            f"Fix based on: `{candidate['fix_based_on']}`",
             f"Review branch: `{branch}`", "", "### Changed paths", "",
         ]
         lines.extend(f"- `{path}`" for path in candidate["changed_paths"] or ["Not reported"])

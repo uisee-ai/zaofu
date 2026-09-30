@@ -54,6 +54,7 @@ CHANNEL_PERMISSION_PROFILES = {
     "project_writer",
     "workspace_writer",
     "isolated_writer",
+    "issue_investigation",
     "dangerous_full",
 }
 CHANNEL_PERMISSION_PROFILE_DEFAULT = "read_only"
@@ -99,6 +100,13 @@ CHANNEL_PERMISSION_PROFILE_WRITE_POLICY = {
         "allowed_write_paths": ["*"],
         "requires_gate": True,
         "requires_isolated_worktree": True,
+    },
+    "issue_investigation": {
+        "mode": "issue_investigation",
+        "allowed_write_paths": [],
+        "requires_gate": True,
+        "investigation_only": True,
+        "dangerous": False,
     },
     "dangerous_full": {
         "mode": "dangerous_full",

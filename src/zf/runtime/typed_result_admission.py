@@ -97,6 +97,21 @@ def _implementation_issues(
     verdict = str(result.get("verdict") or "passed")
     if execution_status == "failed" or verdict in {"rejected", "blocked", "abstained"}:
         return []
+    target_commit = str(result.get("target_commit") or "")
+    if len(target_commit) not in {40, 64} or any(
+        char not in "0123456789abcdef" for char in target_commit
+    ):
+        return [_issue(
+            field="control_result.target_commit",
+            code="implementation_target_commit_invalid",
+            message=(
+                "passed contract-bound implementation requires the full lowercase "
+                "Git OID from git rev-parse HEAD (40 or 64 hex characters); "
+                "use that exact OID in self_check source/target and command receipts"
+            ),
+            owner="implementation_owner",
+            action="result_repair",
+        )]
     if not _strings(result.get("evidence_refs")):
         return [_issue(
             field="control_result.evidence_refs",

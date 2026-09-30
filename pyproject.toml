@@ -17,6 +17,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.8",
+    "hypothesis>=6.100",
+    "schemathesis>=4.26,<5",
     "ruff>=0.16.0",
 ]
 stream-json = ["claude-code-sdk>=0.0.25"]
@@ -40,7 +42,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-norecursedirs = ["tests/e2e/fixtures"]
+norecursedirs = [".hypothesis", "tests/e2e/fixtures"]
 addopts = "--cov=zf --cov-report=term-missing -m 'not perf and not host and not real_provider'"
 asyncio_mode = "auto"
 markers = [
@@ -49,6 +51,7 @@ markers = [
     "perf: opt-in performance budget smoke (run: pytest -m perf)",
     "real_provider: explicit real Claude/Codex provider exercise",
     "serial: process or fixed-resource test that must not run under xdist",
+    "integration: tests requiring external protocols, Docker, or a long-lived process",
 ]
 
 [tool.ruff]

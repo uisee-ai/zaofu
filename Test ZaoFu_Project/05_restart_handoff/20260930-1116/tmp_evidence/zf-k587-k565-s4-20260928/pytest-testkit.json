@@ -1,0 +1,3670 @@
+{
+  "collection_errors": [],
+  "deselected": [],
+  "items": [
+    "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[second_event]",
+    "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[batch_ack]",
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-synth]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-reader]",
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-synth]",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_restart_continues_dispatch_without_repeating_side_effect",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_dispatch_crash_restarts_to_baseline",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_pre_dispatch_crash_restarts_to_baseline",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_repeated_restart_recovery_keeps_one_dispatch_and_stable_snapshot",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_thousand_cycle_restart_soak_keeps_one_dispatch_and_event_snapshot",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_multi_task_restart_soak_preserves_dispatches_and_event_snapshot",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_crash_before_dispatch_event_leaves_task_for_one_retry",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_stale_retry_result_is_ignored_and_current_attempt_is_preserved",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_crash_after_dispatch_event_is_replay_safe",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[in_progress-run.goal.completed]",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[review-run.goal.completed]",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[blocked-task.dispatched]",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_deduplicates_retried_operation",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_is_at_most_once_under_concurrent_retries",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_allows_retry_after_failed_callback",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_rejects_missing_operation_identity",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_expired_canonical_attempt_routes_to_lifecycle_recovery",
+    "tests/conformance/test_zaofu_testkit_s4.py::test_store_replace_failure_preserves_last_complete_snapshot",
+    "tests/test_stall_redispatch.py::test_redispatch_reemits_trigger_with_same_payload_under_cap",
+    "tests/test_stall_redispatch.py::test_redispatch_hydrates_flow_kind_from_stage_scope",
+    "tests/test_stall_redispatch.py::test_redispatch_preserves_task_scope",
+    "tests/test_stall_redispatch.py::test_redispatch_returns_none_at_cap",
+    "tests/test_stall_redispatch.py::test_redispatch_attempt_increments",
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_redispatches_first",
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_escalates_at_cap",
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_does_not_redispatch_oa_owned_trigger",
+    "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_trigger_already_has_active_fanout",
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[runtime.attention.needed]",
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[orchestrator.decision.recorded]",
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[review-wave]",
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[missing-pattern]",
+    "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_descendant_redispatch_has_active_fanout",
+    "tests/test_stall_redispatch.py::test_redispatch_continues_when_descendant_fanout_is_terminal",
+    "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_fanout_already_terminal",
+    "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_started_no_fanout",
+    "tests/test_stall_redispatch.py::test_superseded_task_trigger_is_settled_without_redispatch_or_escalation",
+    "tests/test_tick_invoke_backlog_replay.py::test_backlog_invoke_replays_after_grace",
+    "tests/test_tick_invoke_backlog_replay.py::test_invoke_with_verdict_not_replayed",
+    "tests/test_tick_invoke_backlog_replay.py::test_fresh_invoke_left_for_live_watcher",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[tokens]",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[usd]",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[wall_clock]",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[pricing_unavailable]",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_unpriced_usage_is_not_invented_usd_without_fail_closed",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.009]",
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.01]",
+    "tests/test_workloop_resources.py::test_workloop_probe_observes_and_releases_owned_descriptors",
+    "tests/test_workloop_resources.py::test_workloop_probe_missing_process_is_not_zero_measurement",
+    "tests/test_workloop_resources.py::test_workloop_probe_attributes_owned_state_bytes",
+    "tests/test_workloop_resources.py::test_workloop_tcp_probe_distinguishes_listener_and_connections",
+    "tests/test_workloop_resources.py::test_workloop_probe_observes_bounded_python_allocations_and_event_caches",
+    "tests/test_workloop_resources.py::test_workloop_allocation_probe_requires_enabled_tracer",
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[0]",
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[-1]",
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[3]",
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[invalid]",
+    "tests/test_workloop_resources.py::test_workloop_exit_probe_rejects_running_worker",
+    "tests/test_workloop_resources.py::test_workloop_exit_probe_keeps_zombie_distinct_from_reaped",
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[None]",
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[no_frame]",
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[wall_reverse]",
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[mono_reverse]",
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[clock_jump]",
+    "tests/test_workloop_resources.py::test_cache_counts_do_not_require_or_start_tracemalloc",
+    "tests/test_workloop_resources.py::test_memray_observer_close_failure_cannot_claim_closed",
+    "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[0]",
+    "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[1]",
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[timeout]",
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[parser_exit]",
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[window_changed]",
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[capture_changed]",
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[empty_windows]",
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[uncompressed]",
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[corrupt]",
+    "tests/test_scheduler_task_attempt.py::test_dispatch_persists_attempt_before_transport_and_closes_identity",
+    "tests/test_scheduler_task_attempt.py::test_enforce_rejects_stale_attempt_lease_run_and_dispatch",
+    "tests/test_scheduler_task_attempt.py::test_enforce_does_not_renew_lease_with_partial_or_stale_identity",
+    "tests/test_scheduler_task_attempt.py::test_disk_usage_renews_unique_reader_attempt_without_task_store_row",
+    "tests/test_scheduler_task_attempt.py::test_disk_usage_does_not_guess_between_active_reader_attempts",
+    "tests/test_scheduler_task_attempt.py::test_shadow_allows_legacy_result_but_records_mismatch",
+    "tests/test_scheduler_task_attempt.py::test_transport_failure_schedules_one_retry_and_success_resets_series",
+    "tests/test_scheduler_task_attempt.py::test_repeated_transport_failures_deadletter_at_retry_cap",
+    "tests/test_scheduler_task_attempt.py::test_expired_lease_requeues_once_and_deadletters_at_cap",
+    "tests/test_scheduler_task_attempt.py::test_restart_does_not_recast_or_redeliver_claimed_attempt",
+    "tests/test_scheduler_task_attempt.py::test_restart_does_not_redeliver_sent_attempt",
+    "tests/test_scheduler_task_attempt.py::test_current_for_task_prefers_the_only_active_run_attempt",
+    "tests/test_scheduler_task_attempt.py::test_shadow_mode_never_blocks_legacy_dispatch_at_attempt_cap",
+    "tests/test_scheduler_task_attempt.py::test_retry_budget_is_scoped_to_logical_role",
+    "tests/test_scheduler_task_attempt.py::test_fanout_attempt_lanes_remain_independent_for_one_parent_task",
+    "tests/test_scheduler_task_attempt.py::test_retry_order_survives_sorted_json_reload",
+    "tests/test_scheduler_task_attempt.py::test_empty_store_keys_are_validated_fail_closed",
+    "tests/test_scheduler_task_attempt.py::test_current_scope_mismatch_is_validated_fail_closed",
+    "tests/test_scheduler_task_attempt.py::test_corrupt_canonical_store_fails_closed_before_transport",
+    "tests/test_scheduler_task_attempt.py::test_accepted_result_settles_attempt_and_shadow_compares",
+    "tests/test_scheduler_task_attempt.py::test_child_transport_events_wait_for_operation_admission",
+    "tests/test_scheduler_task_attempt.py::test_attempt_terminal_is_monotonic_in_shadow_mode",
+    "tests/test_scheduler_task_attempt.py::test_attempt_terminal_occurrence_clears_matching_active_dispatch",
+    "tests/test_scheduler_task_attempt.py::test_admitted_workflow_operation_settles_attempt_without_worker_identity",
+    "tests/test_scheduler_task_attempt.py::test_admitted_plan_synth_result_settles_attempt",
+    "tests/test_scheduler_task_attempt.py::test_operation_service_settlement_reconciles_after_canonical_result",
+    "tests/test_scheduler_task_attempt.py::test_reconcile_repairs_shadow_expiry_after_admitted_result",
+    "tests/test_scheduler_task_attempt.py::test_semantic_failure_remains_owned_by_workflow_recovery",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_event_append]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_event_append_before_projection]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_store_atomic_replace]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_store_atomic_replace]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_artifact_write_before_digest_event]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_external_effect_before_result_event]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[during_archive_rotation]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_lock_acquire]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_event_append]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_event_append_before_projection]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_store_atomic_replace]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_store_atomic_replace]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_artifact_write_before_digest_event]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[during_archive_rotation]",
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_lock_acquire]",
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_completed_replay_is_deduplicated_in_new_process",
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[before_store_update]",
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_store_update_before_task_updated]",
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_action_result_before_resolution]",
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_resolution]",
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_archive_collision_crash_recovers_without_duplicate_events",
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_atomic_snapshot_is_complete_after_replace_then_crash",
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_size_rotation_crash_after_rename_preserves_archive_and_restarts",
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[two-process]",
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[four-process]",
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[eight-process]",
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[sixteen-process]",
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[thirty-two-process]",
+    "tests/test_task_pipeline_fault_matrix.py::test_fault_matrix_has_one_decision_and_effect_owner_per_fault",
+    "tests/test_task_pipeline_fault_matrix.py::test_expired_operation_v2_waits_for_run_manager_then_redrives_once",
+    "tests/test_workflow_operation_resume.py::test_interrupted_operation_dry_run_then_cancel_is_idempotent",
+    "tests/test_workflow_operation_resume.py::test_interrupted_operation_with_newer_live_retry_is_not_actionable",
+    "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_new_live_retry_before_cancel",
+    "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[graceful_stop]",
+    "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[task_pipeline_attempt_lease_expired]",
+    "tests/test_workflow_operation_resume.py::test_later_successful_task_pipeline_stage_suppresses_old_interruption",
+    "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_later_task_pipeline_success",
+    "tests/test_workflow_operation_resume.py::test_legacy_cancelled_restart_operation_gets_bounded_redrive",
+    "tests/test_workflow_operation_resume.py::test_budget_blocked_task_pipeline_redrives_after_owner_amendment",
+    "tests/test_workflow_operation_resume.py::test_budget_blocked_operation_rejects_wrong_run_or_partial_amendment",
+    "tests/test_workflow_operation_resume.py::test_budget_amendment_before_block_does_not_authorize_redrive",
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_is_consistent_across_projection_web_and_cli",
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_fast_path_catches_up_active_tail",
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_unavailable",
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_corrupt",
+    "tests/test_workflow_operation_projection.py::test_workflow_resume_projection_rebuilds_stable_operation_state",
+    "tests/test_fanout_recovery_runtime.py::test_run_manager_recovers_unrecorded_writer_fanout_terminal",
+    "tests/test_fanout_recovery_runtime.py::test_handoff_identity_failure_reopens_result_for_one_recovery_attempt",
+    "tests/test_fanout_failure_recovery.py::test_plan_port_dependency_projects_planner_recovery",
+    "tests/test_fanout_failure_recovery.py::test_non_admitted_verification_body_cannot_select_rework_owner",
+    "tests/test_fanout_failure_recovery.py::test_canonical_plan_handoff_failure_routes_only_to_plan",
+    "tests/test_fanout_failure_recovery.py::test_repeated_worker_handoff_projects_bounded_safe_halt",
+    "tests/test_fanout_failure_recovery.py::test_nested_verification_rejection_preserves_requirement_findings",
+    "tests/test_fanout_failure_recovery.py::test_semantic_rejection_reason_never_falls_back_to_runtime_failure",
+    "tests/runtime/test_late_success_recovery.py::test_late_judge_success_after_orphan_closes_same_dispatch",
+    "tests/runtime/test_late_success_recovery.py::test_late_judge_success_with_stale_dispatch_is_not_closed",
+    "tests/runtime/test_late_success_recovery.py::test_duplicate_terminal_event_replays_from_dispatch_ledger",
+    "tests/runtime/test_late_success_recovery.py::test_stale_terminal_event_records_dispatch_rejection",
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_requeues_task",
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_green_check_requests_terminal",
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_manifest_requests_terminal",
+    "tests/runtime/test_provider_stop_recovery.py::test_auth_error_suspends_task_for_operator",
+    "tests/runtime/test_provider_stop_recovery.py::test_provider_policy_rejection_requeues_task",
+    "tests/runtime/test_provider_stop_recovery.py::test_rate_limit_updates_run_goal_usage_limited",
+    "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_and_attempt_lease",
+    "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_without_canonical_task",
+    "tests/runtime/test_provider_stop_recovery.py::test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives",
+    "tests/runtime/test_provider_stop_recovery.py::test_taskless_orchestrator_timeout_closes_durable_operation",
+    "tests/runtime/test_provider_stop_recovery.py::test_cost_budget_exceeded_updates_run_goal_budget_limited",
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_ignores_inflight_fanout_pending",
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_keeps_timed_out_fanout_request",
+    "tests/test_runtime_self_recovery_closures.py::test_orchestrator_skips_terminal_diagnosis_after_goal_reopen",
+    "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_requeues_task_once",
+    "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_ignores_stale_dispatch_id",
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_trigger_accepted_creates_single_maintenance_proposal",
+    "tests/test_runtime_self_recovery_closures.py::test_raw_autoresearch_trigger_waits_for_run_manager_intake",
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger",
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_is_kernel_owned_with_layer2_active",
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_request_bridges_to_loop_request",
+    "tests/test_runtime_self_recovery_closures.py::test_taskless_autoresearch_trigger_is_not_rejected_as_lifecycle_event",
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_rejects_direct_apply",
+    "tests/e2e/test_recovery_control_loop_serial.py::test_serial_recovery_chain_replans_restarts_and_verifies",
+    "tests/e2e/test_recovery_control_loop_serial.py::test_serial_advisor_timeout_returns_to_run_manager_diagnosis",
+    "tests/test_task_attempt_recovery.py::test_expired_open_attempt_becomes_worker_lifecycle_recover",
+    "tests/test_task_attempt_recovery.py::test_recent_open_attempt_stays_quiet",
+    "tests/test_task_attempt_recovery.py::test_recent_provider_activity_takes_precedence_over_old_heartbeat",
+    "tests/test_task_attempt_recovery.py::test_retryable_failed_attempt_routes_to_diagnosis",
+    "tests/test_task_attempt_recovery.py::test_deadletter_or_exhausted_attempt_routes_to_human",
+    "tests/test_task_attempt_recovery.py::test_canonical_store_wins_over_conflicting_projection",
+    "tests/test_task_attempt_recovery.py::test_canonical_recovery_keeps_same_task_in_distinct_runs",
+    "tests/test_task_attempt_recovery.py::test_canonical_semantic_failure_stays_owned_by_workflow",
+    "tests/test_task_attempt_recovery.py::test_corrupt_canonical_store_fails_closed_instead_of_projection_fallback",
+    "tests/test_control_actions_recovery.py::test_task_requeue_requires_dead_carrier",
+    "tests/test_control_actions_recovery.py::test_child_rebuild_preconditions",
+    "tests/test_control_actions_recovery.py::test_stage_retrigger_idempotent_and_generational",
+    "tests/test_control_actions_recovery.py::test_stage_replan_new_generation_reopens_run_and_parent_once",
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_requires_terminal_manifest_and_is_idempotent",
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_accepts_blocked_goal_closure_schema_event",
+    "tests/test_control_actions_recovery.py::test_goal_lineage_rebuild_targets_upstream_reader_aggregate",
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_fails_closed_for_invalid_source_state",
+    "tests/test_control_actions_recovery.py::test_rescan_grant_requires_exhaustion",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_requeue_recovery_events_are_known_types",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_requeued_on_stop",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_fast_stop_requeues_and_emits_run_teardown_without_snapshot",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_graceful_stop_suspends_active_workflow_operation",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_current_handoff_progress_not_requeued",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_old_dispatch_progress_still_requeued",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_empty_kanban_no_op",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_multiple_inflight_all_requeued",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_step_stale_inflight_cleanup_in_completed_steps",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_signals_both_lock_and_guard_pids",
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_skips_own_pid",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_has_budget_usd_default_none",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_explicit_budget",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_has_global_budget_usd_default_none",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_explicit_global_budget",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_budget_enforcement_defaults_enabled",
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_loader_reads_budget_enforcement_disabled",
+    "tests/test_cost_budget_enforcement.py::TestNoBudgetMeansNoBlocking::test_dispatch_works_when_no_budgets_configured",
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_closed_blocks_unpriced_usage",
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_open_allows_unpriced_usage_below_known_cost_cap",
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_budget_enforcement_disabled",
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_blocked_when_global_budget_exceeded",
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_global_budget_not_yet_exceeded",
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_role_unpriced_block_keeps_role_identity",
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_dispatch_blocked_when_role_budget_exceeded",
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_other_role_unaffected_by_role_budget",
+    "tests/test_cost_budget_enforcement.py::TestEventDedup::test_global_event_not_re_emitted_within_cooldown",
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_blocks_over_budget_before_send",
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_sends_when_under_budget",
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_no_budget_configured_never_blocks_primitive",
+    "tests/test_budget_sweep.py::test_budget_sweep_emits_exceeded_without_dispatch",
+    "tests/test_budget_sweep.py::test_budget_sweep_quiet_under_cap",
+    "tests/test_budget_sweep.py::test_budget_status_block_and_projection",
+    "tests/test_workflow_budget_guard.py::test_loader_reads_run_limits_and_rejects_unknown_keys",
+    "tests/test_workflow_budget_guard.py::test_run_token_budget_supports_long_horizon_aggregate_usage",
+    "tests/test_workflow_budget_guard.py::test_operation_budget_cancels_provider_and_blocks_attempt",
+    "tests/test_workflow_budget_guard.py::test_operation_budget_uses_per_dimension_cumulative_deltas",
+    "tests/test_workflow_budget_guard.py::test_run_timeout_cancels_active_operation_and_blocks_parent_task",
+    "tests/test_workflow_budget_guard.py::test_research_result_terminal_stops_run_and_operation_budget_watchdogs",
+    "tests/test_workflow_budget_guard.py::test_run_budget_uses_admission_limits_after_config_changes",
+    "tests/test_workflow_budget_guard.py::test_active_run_budget_amendment_rearms_guard_without_resetting_usage",
+    "tests/test_workflow_budget_guard.py::test_budget_guard_builds_run_aliases_once_per_sweep",
+    "tests/test_workflow_budget_guard.py::test_budget_guard_is_idempotent_below_and_after_limit",
+    "tests/test_workflow_budget_guard.py::test_operation_usage_sample_limit_is_relative_to_start_baseline"
+  ],
+  "results": {
+    "tests/conformance/test_zaofu_testkit_s4.py::test_crash_after_dispatch_event_is_replay_safe": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_crash_after_dispatch_event_is_replay_safe",
+      "phases": {
+        "call": {
+          "duration": 1.9356487820004986,
+          "longrepr": "tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-187/test_crash_after_dispatch_even0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c8584aec1d0>\n\n    @pytest.mark.xfail(\n        strict=True,\n        reason=\"ZF-TEST-002: dispatch context is not restored after post-event crash\",\n    )\n    def test_crash_after_dispatch_event_is_replay_safe(\n        tmp_path: Path,\n        monkeypatch: pytest.MonkeyPatch,\n    ) -> None:\n        project, _state_dir, store, log, new_orchestrator = _orchestrator_context(tmp_path)\n        store.add(Task(id=project.task_id, title=\"commit point\", status=\"backlog\"))\n        orchestrator = new_orchestrator()\n        original_append = orchestrator.event_writer.append\n    \n        def append_then_crash(event):  # noqa: ANN001\n            result = original_append(event)\n            if event.type == \"task.dispatched\":\n                raise InjectedFailure(\"after_event_append_before_cycle_return\")\n            return result\n    \n        monkeypatch.setattr(orchestrator.event_writer, \"append\", append_then_crash)\n        with pytest.raises(InjectedFailure, match=\"after_event_append\"):\n            orchestrator.run_once()\n    \n        assert store.get(project.task_id).status == \"in_progress\"\n        assert len([event for event in log.read_all() if event.type == \"task.dispatched\"]) == 1\n    \n        restarted = new_orchestrator()\n        assert [item for item in restarted.run_once() if item.action == \"dispatch\"] == []\n        assert len([event for event in log.read_all() if event.type == \"task.dispatched\"]) == 1\n        assert_no_duplicate_event_ids(log)\n    \n        baseline_root = tmp_path / \"baseline\"\n        baseline_root.mkdir()\n        baseline_project, _baseline_state, baseline_store, baseline_log, make_baseline = (\n            _orchestrator_context(baseline_root)\n        )\n        baseline_store.add(\n            Task(id=baseline_project.task_id, title=\"commit point\", status=\"backlog\"),\n        )\n        make_baseline().run_once()\n        assert store.get(project.task_id).status == baseline_store.get(\n            baseline_project.task_id,\n        ).status\n        assert store.get(project.task_id).active_dispatch_id\n        assert baseline_store.get(baseline_project.task_id).active_dispatch_id\n>       assert [event.type for event in log.read_all()] == [\n            event.type for event in baseline_log.read_all()\n        ]\nE       AssertionError: assert ['session.sta...started', ...] == ['session.sta...started', ...]\nE         \nE         Right contains 3 more items, first extra item: 'task.dispatch_context.bound'\nE         Use -v to get more diff\n\ntests/conformance/test_zaofu_testkit_s4.py:565: AssertionError",
+          "outcome": "skipped",
+          "wasxfail": "ZF-TEST-002: dispatch context is not restored after post-event crash"
+        },
+        "setup": {
+          "duration": 0.006996571999479784,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.003616915000748122,
+          "outcome": "passed"
+        }
+      },
+      "status": "xfailed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_crash_before_dispatch_event_leaves_task_for_one_retry": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_crash_before_dispatch_event_leaves_task_for_one_retry",
+      "phases": {
+        "call": {
+          "duration": 0.7841442860008101,
+          "longrepr": "tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-187/test_crash_before_dispatch_eve0')\nmonkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7c85849641d0>\n\n    @pytest.mark.xfail(\n        strict=True,\n        reason=\"ZF-TEST-007: dispatch mutates TaskStore before task.dispatched append\",\n    )\n    def test_crash_before_dispatch_event_leaves_task_for_one_retry(\n        tmp_path: Path,\n        monkeypatch: pytest.MonkeyPatch,\n    ) -> None:\n        \"\"\"A failure before the ledger append must not advance canonical state.\"\"\"\n        project, _state_dir, store, log, new_orchestrator = _orchestrator_context(tmp_path)\n        store.add(Task(id=project.task_id, title=\"pre-append crash\", status=\"backlog\"))\n        orchestrator = new_orchestrator()\n        original_append = orchestrator.event_writer.append\n    \n        def crash_before_append(event):  # noqa: ANN001\n            if event.type == \"task.dispatched\":\n                raise InjectedFailure(\"before_event_append\")\n            return original_append(event)\n    \n        monkeypatch.setattr(orchestrator.event_writer, \"append\", crash_before_append)\n        with pytest.raises(InjectedFailure, match=\"before_event_append\"):\n            orchestrator.run_once()\n    \n>       assert store.get(project.task_id).status == \"backlog\"\nE       AssertionError: assert 'in_progress' == 'backlog'\nE         \nE         - backlog\nE         + in_progress\n\ntests/conformance/test_zaofu_testkit_s4.py:469: AssertionError",
+          "outcome": "skipped",
+          "wasxfail": "ZF-TEST-007: dispatch mutates TaskStore before task.dispatched append"
+        },
+        "setup": {
+          "duration": 0.0016371650017390493,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002783551000902662,
+          "outcome": "passed"
+        }
+      },
+      "status": "xfailed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_expired_canonical_attempt_routes_to_lifecycle_recovery": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_expired_canonical_attempt_routes_to_lifecycle_recovery",
+      "phases": {
+        "call": {
+          "duration": 0.006652632000623271,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.003870176999043906,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008717429991520476,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_allows_retry_after_failed_callback": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_allows_retry_after_failed_callback",
+      "phases": {
+        "call": {
+          "duration": 0.0015835449994483497,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001957393997145118,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006489120023616124,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_deduplicates_retried_operation": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_deduplicates_retried_operation",
+      "phases": {
+        "call": {
+          "duration": 0.0017888419970404357,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0009912159985105973,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008199740004783962,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_is_at_most_once_under_concurrent_retries": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_is_at_most_once_under_concurrent_retries",
+      "phases": {
+        "call": {
+          "duration": 0.014726956997037632,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011176110019732732,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008897440020518843,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_rejects_missing_operation_identity": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_external_effect_spy_rejects_missing_operation_identity",
+      "phases": {
+        "call": {
+          "duration": 0.0010538079986872617,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0024510499970347155,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007123180002963636,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_multi_task_restart_soak_preserves_dispatches_and_event_snapshot": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_multi_task_restart_soak_preserves_dispatches_and_event_snapshot",
+      "phases": {
+        "call": {
+          "duration": 64.05133939000007,
+          "longrepr": "tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-187/test_multi_task_restart_soak_p0')\n\n    @pytest.mark.xfail(\n        strict=True,\n        reason=\"ZF-TEST-018: repeated restart appends unbounded worker.drift.detected events\",\n    )\n    def test_multi_task_restart_soak_preserves_dispatches_and_event_snapshot(\n        tmp_path: Path,\n    ) -> None:\n        \"\"\"Several independent tasks must survive repeated recovery together.\"\"\"\n        project = isolated_project(\n            tmp_path,\n            run_id=\"RUN-S4-MULTI-SOAK\",\n            task_id=\"TASK-S4-MULTI-0\",\n        )\n        state_dir = project.state_dir\n        (state_dir / \"memory\").mkdir()\n        (state_dir / \"logs\").mkdir()\n        log = EventLog(state_dir / \"events.jsonl\")\n        log.append(ZfEvent(type=\"session.started\", actor=\"zf-cli\"))\n        log.append(ZfEvent(type=\"loop.started\", actor=\"zf-cli\"))\n        SessionStore(state_dir / \"session.yaml\").create(project_root=str(tmp_path))\n        SessionStore(state_dir / \"session.yaml\").update(runtime_state=\"active\")\n        store = TaskStore(state_dir / \"kanban.json\")\n        task_ids = [f\"TASK-S4-MULTI-{index}\" for index in range(4)]\n        for task_id in task_ids:\n            store.add(Task(id=task_id, title=f\"multi-task {task_id}\", status=\"backlog\"))\n        config = ZfConfig(\n            project=ProjectConfig(name=\"s4-multi-soak\"),\n            session=SessionConfig(tmux_session=\"s4-multi-soak\"),\n            roles=[\n                RoleConfig(\n                    name=f\"dev-{index}\",\n                    instance_id=f\"dev-{index}\",\n                    backend=\"mock\",\n                    stages=[\"implement\"],\n                )\n                for index in range(len(task_ids))\n            ],\n        )\n    \n        def new_orchestrator() -> Orchestrator:\n            return Orchestrator(\n                state_dir,\n                config,\n                TmuxTransport(TmuxSession(session_name=\"s4-multi-soak\", dry_run=True)),\n                project_root=tmp_path,\n            )\n    \n        # Give each role a deterministic reconciliation opportunity, without\n        # relying on timing or sleeps to make all tasks ready.\n        for _ in range(len(task_ids) + 2):\n            new_orchestrator().run_once()\n        initial_rows = {task_id: store.get(task_id) for task_id in task_ids}\n        assert all(row is not None and row.status == \"in_progress\" for row in initial_rows.values())\n        baseline_events = [event.id for event in log.read_all()]\n        baseline_dispatches = [\n            event for event in log.read_all() if event.type == \"task.dispatched\"\n        ]\n        assert {event.task_id for event in baseline_dispatches} == set(task_ids)\n        assert len(baseline_dispatches) == len(task_ids)\n    \n        for _ in range(250):\n            new_orchestrator().run_once()\n            for task_id in task_ids:\n                current = store.get(task_id)\n                assert current is not None\n                assert current.status == \"in_progress\"\n                assert current.active_dispatch_id == initial_rows[task_id].active_dispatch_id\n    \n        # Evaluate drift after the complete soak instead of stopping at the first\n        # diagnostic event; this proves the long-run growth is bounded (or exposes\n        # the registered ZF-TEST-018 regression).\n>       assert [event.id for event in log.read_all()] == baseline_events\nE       AssertionError: assert ['evt-0e01585...fab46d2', ...] == ['evt-0e01585...fab46d2', ...]\nE         \nE         Left contains 250 more items, first extra item: 'evt-14bbd095f25c'\nE         Use -v to get more diff\n\ntests/conformance/test_zaofu_testkit_s4.py:437: AssertionError",
+          "outcome": "skipped",
+          "wasxfail": "ZF-TEST-018: repeated restart appends unbounded worker.drift.detected events"
+        },
+        "setup": {
+          "duration": 0.0018278979987371713,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007099180002114736,
+          "outcome": "passed"
+        }
+      },
+      "status": "xfailed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_dispatch_crash_restarts_to_baseline": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_dispatch_crash_restarts_to_baseline",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "last_committed_observations_not_exact_failure_instant",
+        "snapshots": {
+          "call-report": {
+            "complete": true,
+            "digest": "7fa58cad91c14d69a79cf1912e049a4b4de07a8c5a6188cefbcc3ad9e5049505",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/e0937b8bebcdd095e3e279f99c46ff923eb6749d22707f9e21e49042b0ccd402/call-report.json"
+          },
+          "checkpoint": {
+            "complete": true,
+            "digest": "233f6285c156d070c8fbe9719c68b6ea3252d3e32ce952eec2f7bb880f650057",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/e0937b8bebcdd095e3e279f99c46ff923eb6749d22707f9e21e49042b0ccd402/checkpoint.json"
+          },
+          "pre-teardown": {
+            "complete": true,
+            "digest": "eb7b5797de55f4ddab1abf3779038713f7357e219fca038d2bf3c3195f2e9c04",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/e0937b8bebcdd095e3e279f99c46ff923eb6749d22707f9e21e49042b0ccd402/pre-teardown.json"
+          },
+          "registered": {
+            "complete": true,
+            "digest": "acf600907e7ee45f67657f0ef420d8978dcb56f61845e7359390aca6b2b23991",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/e0937b8bebcdd095e3e279f99c46ff923eb6749d22707f9e21e49042b0ccd402/registered.json"
+          }
+        }
+      },
+      "phases": {
+        "call": {
+          "duration": 4.6531562649979605,
+          "longrepr": "tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-187/test_real_orchestrator_dispatc0')\nrequest = <FixtureRequest for <Function test_real_orchestrator_dispatch_crash_restarts_to_baseline>>\n\n    @pytest.mark.xfail(\n        strict=True,\n        reason=(\n            \"ZF-TEST-002: real Orchestrator dispatch crash after ledger append \"\n            \"does not replay to the no-fault event sequence\"\n        ),\n    )\n    def test_real_orchestrator_dispatch_crash_restarts_to_baseline(\n        tmp_path: Path, request,\n    ) -> None:\n        \"\"\"A production Kernel child crash must be equivalent to clean dispatch.\"\"\"\n        module = \"tests.conformance.test_zaofu_testkit_s4\"\n        case_root = tmp_path / \"dispatch-crash-case\"\n        case_root.mkdir()\n        evidence = attach_runtime_case_evidence(request, case_root, task_id=\"TASK-S4\",\n            given=\"independent baseline/fault roots with the same backlog task\",\n            when=\"real child exits after task.dispatched append, then another child resumes\",\n            then=\"canonical task and event-type sequence match clean dispatch\", forbidden=[\"duplicate or missing dispatch\", \"replay sequence drift\"],\n            inputs={\"crash_exit\": 71, \"child_mode\": \"crash\"})\n        baseline_root = case_root / \"baseline-runtime\"\n        baseline_project, _baseline_state, baseline_store, baseline_log, make_baseline = (\n            _orchestrator_context(baseline_root)\n        )\n        baseline_store.add(\n            Task(id=baseline_project.task_id, title=\"runtime crash\", status=\"backlog\")\n        )\n        make_baseline().run_once()\n        baseline_types = [event.type for event in baseline_log.read_all()]\n        baseline_task = baseline_store.get(baseline_project.task_id)\n        assert baseline_task is not None\n    \n        fault_root = case_root / \"fault-runtime\"\n        fault_project, _fault_state, fault_store, fault_log, _make_fault = (\n            _orchestrator_context(fault_root)\n        )\n        fault_store.add(\n            Task(id=fault_project.task_id, title=\"runtime crash\", status=\"backlog\")\n        )\n        if evidence is not None:\n            evidence.checkpoint()\n        crashed = subprocess.run(\n            [sys.executable, \"-m\", module, \"--runtime-child\", str(fault_root), \"crash\"],\n            check=False,\n            capture_output=True,\n            text=True,\n            timeout=15,\n        )\n        write_json_atomic(case_root / \"crash-receipt.json\", {\n            \"args\": crashed.args, \"returncode\": crashed.returncode, \"stdout\": crashed.stdout, \"stderr\": crashed.stderr,\n        })\n        assert crashed.returncode == 71, crashed.stderr\n    \n        recovered = subprocess.run(\n            [sys.executable, \"-m\", module, \"--runtime-child\", str(fault_root), \"resume\"],\n            check=False,\n            capture_output=True,\n            text=True,\n            timeout=15,\n        )\n        write_json_atomic(case_root / \"resume-receipt.json\", {\n            \"args\": recovered.args, \"returncode\": recovered.returncode, \"stdout\": recovered.stdout, \"stderr\": recovered.stderr,\n        })\n        assert recovered.returncode == 0, recovered.stderr\n        recovered_task = fault_store.get(fault_project.task_id)\n        assert recovered_task is not None\n        assert recovered_task.status == baseline_task.status\n        assert recovered_task.active_dispatch_id\n        assert len([\n            event for event in fault_log.read_all()\n            if event.type == \"task.dispatched\"\n        ]) == 1\n>       assert [event.type for event in fault_log.read_all()] == baseline_types\nE       AssertionError: assert ['session.sta...started', ...] == ['session.sta...started', ...]\nE         \nE         Right contains 3 more items, first extra item: 'task.dispatch_context.bound'\nE         Use -v to get more diff\n\ntests/conformance/test_zaofu_testkit_s4.py:220: AssertionError",
+          "outcome": "skipped",
+          "wasxfail": "ZF-TEST-002: real Orchestrator dispatch crash after ledger append does not replay to the no-fault event sequence"
+        },
+        "setup": {
+          "duration": 0.001976835999812465,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.05791051099731703,
+          "outcome": "passed"
+        }
+      },
+      "status": "xfailed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_pre_dispatch_crash_restarts_to_baseline": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_real_orchestrator_pre_dispatch_crash_restarts_to_baseline",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "last_committed_observations_not_exact_failure_instant",
+        "snapshots": {
+          "call-report": {
+            "complete": true,
+            "digest": "b61739b4a0191dccaea4a0d18960cef33babe22c7ecf6dd04f97e0e64645892e",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/cf1a6be5a1629505bc20061bdaa6d266a1dcffb710cbf2c701e92430afdb1486/call-report.json"
+          },
+          "checkpoint": {
+            "complete": true,
+            "digest": "35a6c49871cbf60cccfa55e37abe09813917654d078ac017226d63ea30fc8de8",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/cf1a6be5a1629505bc20061bdaa6d266a1dcffb710cbf2c701e92430afdb1486/checkpoint.json"
+          },
+          "pre-teardown": {
+            "complete": true,
+            "digest": "e140beee7d053cb05d9b95d0fc387ef3def91307b50e7e09d83723b4d638efa9",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/cf1a6be5a1629505bc20061bdaa6d266a1dcffb710cbf2c701e92430afdb1486/pre-teardown.json"
+          },
+          "registered": {
+            "complete": true,
+            "digest": "79847b18faded374f7035136462c680b1981bdcd5607b108ae602786e14ed104",
+            "path": "/tmp/zf-k587-k565-s4-20260928/case-evidence/cf1a6be5a1629505bc20061bdaa6d266a1dcffb710cbf2c701e92430afdb1486/registered.json"
+          }
+        }
+      },
+      "phases": {
+        "call": {
+          "duration": 6.35720523600321,
+          "longrepr": "tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-187/test_real_orchestrator_pre_dis0')\nrequest = <FixtureRequest for <Function test_real_orchestrator_pre_dispatch_crash_restarts_to_baseline>>\n\n    @pytest.mark.xfail(\n        strict=True,\n        reason=(\n            \"ZF-TEST-007: real Orchestrator crash before dispatch ledger append \"\n            \"persists a state transition that is not equivalent to baseline\"\n        ),\n    )\n    def test_real_orchestrator_pre_dispatch_crash_restarts_to_baseline(\n        tmp_path: Path, request,\n    ) -> None:\n        \"\"\"A child crash before ledger append must leave a retryable backlog task.\"\"\"\n        module = \"tests.conformance.test_zaofu_testkit_s4\"\n        case_root = tmp_path / \"pre-dispatch-crash-case\"\n        case_root.mkdir()\n        evidence = attach_runtime_case_evidence(request, case_root, task_id=\"TASK-S4\",\n            given=\"independent baseline/fault roots with the same backlog task\",\n            when=\"real child exits before task.dispatched append, then another child resumes\",\n            then=\"canonical task and event-type sequence match clean dispatch\", forbidden=[\"duplicate or missing dispatch\", \"unrecoverable pre-event transition\"],\n            inputs={\"crash_exit\": 72, \"child_mode\": \"before\"})\n        baseline_root = case_root / \"baseline-pre-runtime\"\n        baseline_project, _baseline_state, baseline_store, baseline_log, make_baseline = (\n            _orchestrator_context(baseline_root)\n        )\n        baseline_store.add(\n            Task(id=baseline_project.task_id, title=\"pre-dispatch crash\", status=\"backlog\")\n        )\n        make_baseline().run_once()\n        baseline_task = baseline_store.get(baseline_project.task_id)\n        assert baseline_task is not None\n        baseline_types = [event.type for event in baseline_log.read_all()]\n    \n        fault_root = case_root / \"fault-pre-runtime\"\n        fault_project, _fault_state, fault_store, fault_log, _make_fault = (\n            _orchestrator_context(fault_root)\n        )\n        fault_store.add(\n            Task(id=fault_project.task_id, title=\"pre-dispatch crash\", status=\"backlog\")\n        )\n        if evidence is not None:\n            evidence.checkpoint()\n        crashed = subprocess.run(\n            [sys.executable, \"-m\", module, \"--runtime-child\", str(fault_root), \"before\"],\n            check=False,\n            capture_output=True,\n            text=True,\n            timeout=15,\n        )\n        write_json_atomic(case_root / \"crash-receipt.json\", {\n            \"args\": crashed.args, \"returncode\": crashed.returncode, \"stdout\": crashed.stdout, \"stderr\": crashed.stderr,\n        })\n        assert crashed.returncode == 72, crashed.stderr\n    \n        recovered = subprocess.run(\n            [sys.executable, \"-m\", module, \"--runtime-child\", str(fault_root), \"resume\"],\n            check=False,\n            capture_output=True,\n            text=True,\n            timeout=15,\n        )\n        write_json_atomic(case_root / \"resume-receipt.json\", {\n            \"args\": recovered.args, \"returncode\": recovered.returncode, \"stdout\": recovered.stdout, \"stderr\": recovered.stderr,\n        })\n        assert recovered.returncode == 0, recovered.stderr\n        recovered_task = fault_store.get(fault_project.task_id)\n        assert recovered_task is not None\n        assert recovered_task.status == baseline_task.status\n        assert recovered_task.active_dispatch_id\n>       assert [event.type for event in fault_log.read_all()] == baseline_types\nE       AssertionError: assert ['session.sta...started', ...] == ['session.sta...started', ...]\nE         \nE         Right contains 4 more items, first extra item: 'task.dispatched'\nE         Use -v to get more diff\n\ntests/conformance/test_zaofu_testkit_s4.py:291: AssertionError",
+          "outcome": "skipped",
+          "wasxfail": "ZF-TEST-007: real Orchestrator crash before dispatch ledger append persists a state transition that is not equivalent to baseline"
+        },
+        "setup": {
+          "duration": 0.001786224001989467,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.027951452997513115,
+          "outcome": "passed"
+        }
+      },
+      "status": "xfailed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[blocked-task.dispatched]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[blocked-task.dispatched]",
+      "phases": {
+        "call": {
+          "duration": 0.07258441799785942,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0017653870017966256,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008260680006060284,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[in_progress-run.goal.completed]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[in_progress-run.goal.completed]",
+      "phases": {
+        "call": {
+          "duration": 0.11476133200267213,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0024008270011108834,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0019666569969558623,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[review-run.goal.completed]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_recovery_state_never_fabricates_terminal_or_dispatch_event[review-run.goal.completed]",
+      "phases": {
+        "call": {
+          "duration": 0.11186431600071955,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0017610400027479045,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0024657569992996287,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_repeated_restart_recovery_keeps_one_dispatch_and_stable_snapshot": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_repeated_restart_recovery_keeps_one_dispatch_and_stable_snapshot",
+      "phases": {
+        "call": {
+          "duration": 6.848382981999748,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0010507429979043081,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000605006000114372,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_restart_continues_dispatch_without_repeating_side_effect": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_restart_continues_dispatch_without_repeating_side_effect",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.894978940999863,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0013252450007712469,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.023335007001151098,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_stale_retry_result_is_ignored_and_current_attempt_is_preserved": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_stale_retry_result_is_ignored_and_current_attempt_is_preserved",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.178462550000404,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002463155000441475,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.02826169000036316,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_store_replace_failure_preserves_last_complete_snapshot": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_store_replace_failure_preserves_last_complete_snapshot",
+      "phases": {
+        "call": {
+          "duration": 0.009268134999729227,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0022693829996569548,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007534030009992421,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4.py::test_thousand_cycle_restart_soak_keeps_one_dispatch_and_event_snapshot": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4.py::test_thousand_cycle_restart_soak_keeps_one_dispatch_and_event_snapshot",
+      "phases": {
+        "call": {
+          "duration": 85.67871145699974,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011148859994136728,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008572359984100331,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_action_result_before_resolution]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_action_result_before_resolution]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_resolution]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_resolution]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_store_update_before_task_updated]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[after_store_update_before_task_updated]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[before_store_update]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_commit_window_recovers_without_duplicate_mutation[before_store_update]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_completed_replay_is_deduplicated_in_new_process": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_action_crash.py::test_controlled_action_completed_replay_is_deduplicated_in_new_process",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_unpriced_usage_is_not_invented_usd_without_fail_closed": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_unpriced_usage_is_not_invented_usd_without_fail_closed",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.1454063640012464,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016478080033266451,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.02958517600200139,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[pricing_unavailable]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[pricing_unavailable]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.8373898099998769,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.00384364099954837,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.02734219900230528,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[tokens]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[tokens]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 1.20012217600015,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.007769199000904337,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.055284944999584695,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[usd]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[usd]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 1.4646311049982614,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.013723160998779349,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0340541760015185,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[wall_clock]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_budget_tick_settles_attempt_and_task_across_rebuild[wall_clock]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.9155628440021246,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0035207069995522033,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.04511044099854189,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.009]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.009]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 1.1519698909978615,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0022571589979634155,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.032546682999964105,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.01]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_budget_runtime.py::test_usage_is_accounted_before_new_work_dispatch[0.01]",
+      "ordinary_evidence": {
+        "errors": [],
+        "registered": true,
+        "retention": "discarded_after_all_phases_passed",
+        "snapshots": {}
+      },
+      "phases": {
+        "call": {
+          "duration": 0.509059771997272,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0020493519987212494,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.02410100700217299,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_artifact_write_before_digest_event]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_artifact_write_before_digest_event]",
+      "phases": {
+        "call": {
+          "duration": 0.0530902899990906,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0021784849996038247,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0015916269985609688,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_event_append_before_projection]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_event_append_before_projection]",
+      "phases": {
+        "call": {
+          "duration": 0.04065414599972428,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0022702249989379197,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007548610010417178,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_external_effect_before_result_event]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_external_effect_before_result_event]",
+      "phases": {
+        "call": {
+          "duration": 0.03508097400117549,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002506164000806166,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006952959993213881,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_lock_acquire]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_lock_acquire]",
+      "phases": {
+        "call": {
+          "duration": 0.03868796099777683,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0019844499984174035,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007530799994128756,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_store_atomic_replace]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[after_store_atomic_replace]",
+      "phases": {
+        "call": {
+          "duration": 0.048920789999101544,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002045009001449216,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.00063036000210559,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_event_append]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_event_append]",
+      "phases": {
+        "call": {
+          "duration": 0.03804376600237447,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002657466000528075,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008412050010520034,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_store_atomic_replace]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[before_store_atomic_replace]",
+      "phases": {
+        "call": {
+          "duration": 0.04312378399845329,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0033649079996393993,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000761682000302244,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[during_archive_rotation]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_each_commit_point_recovers_to_baseline[during_archive_rotation]",
+      "phases": {
+        "call": {
+          "duration": 0.03691400900061126,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0018721949963946827,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.003037495000171475,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_artifact_write_before_digest_event]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_artifact_write_before_digest_event]",
+      "phases": {
+        "setup": {
+          "duration": 0.0021572160003415775,
+          "outcome": "passed"
+        }
+      },
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_event_append_before_projection]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_event_append_before_projection]",
+      "phases": {
+        "call": {
+          "duration": 2.2194128169976466,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002132907000486739,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0012234089990670327,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_lock_acquire]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_lock_acquire]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_store_atomic_replace]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[after_store_atomic_replace]",
+      "phases": {
+        "call": {
+          "duration": 2.5332459309975093,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001831457997468533,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0011076400005549658,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_event_append]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_event_append]",
+      "phases": {
+        "call": {
+          "duration": 3.0300547779988847,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0026471790006326046,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007561439997516572,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_store_atomic_replace]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[before_store_atomic_replace]",
+      "phases": {
+        "call": {
+          "duration": 2.1879699300006905,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0032406760001322255,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000586590998864267,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[during_archive_rotation]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_commit_matrix.py::test_pre_effect_commit_points_recover_in_fresh_process[during_archive_rotation]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[eight-process]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[eight-process]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[four-process]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[four-process]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[sixteen-process]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[sixteen-process]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[thirty-two-process]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[thirty-two-process]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[two-process]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_multiprocess.py::test_kernel_processes_accept_one_dispatch_for_shared_task[two-process]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_archive_collision_crash_recovers_without_duplicate_events": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_archive_collision_crash_recovers_without_duplicate_events",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_atomic_snapshot_is_complete_after_replace_then_crash": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_atomic_snapshot_is_complete_after_replace_then_crash",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_size_rotation_crash_after_rename_preserves_archive_and_restarts": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_persistence.py::test_size_rotation_crash_after_rename_preserves_archive_and_restarts",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[batch_ack]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[batch_ack]",
+      "phases": {
+        "call": {
+          "duration": 0.3767457050016674,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0015046519984025508,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005899169991607778,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[second_event]": {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[second_event]",
+      "phases": {
+        "call": {
+          "duration": 0.3885991639981512,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004124044000491267,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006005670002195984,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/e2e/test_recovery_control_loop_serial.py::test_serial_advisor_timeout_returns_to_run_manager_diagnosis": {
+      "nodeid": "tests/e2e/test_recovery_control_loop_serial.py::test_serial_advisor_timeout_returns_to_run_manager_diagnosis",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/e2e/test_recovery_control_loop_serial.py::test_serial_recovery_chain_replans_restarts_and_verifies": {
+      "nodeid": "tests/e2e/test_recovery_control_loop_serial.py::test_serial_recovery_chain_replans_restarts_and_verifies",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_late_success_recovery.py::test_duplicate_terminal_event_replays_from_dispatch_ledger": {
+      "nodeid": "tests/runtime/test_late_success_recovery.py::test_duplicate_terminal_event_replays_from_dispatch_ledger",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_late_success_recovery.py::test_late_judge_success_after_orphan_closes_same_dispatch": {
+      "nodeid": "tests/runtime/test_late_success_recovery.py::test_late_judge_success_after_orphan_closes_same_dispatch",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_late_success_recovery.py::test_late_judge_success_with_stale_dispatch_is_not_closed": {
+      "nodeid": "tests/runtime/test_late_success_recovery.py::test_late_judge_success_with_stale_dispatch_is_not_closed",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_late_success_recovery.py::test_stale_terminal_event_records_dispatch_rejection": {
+      "nodeid": "tests/runtime/test_late_success_recovery.py::test_stale_terminal_event_records_dispatch_rejection",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_auth_error_suspends_task_for_operator": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_auth_error_suspends_task_for_operator",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_green_check_requests_terminal": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_green_check_requests_terminal",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_manifest_requests_terminal": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_after_manifest_requests_terminal",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_requeues_task": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_completed_without_terminal_event_requeues_task",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_cost_budget_exceeded_updates_run_goal_budget_limited": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_cost_budget_exceeded_updates_run_goal_budget_limited",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_provider_policy_rejection_requeues_task": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_provider_policy_rejection_requeues_task",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_rate_limit_updates_run_goal_usage_limited": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_rate_limit_updates_run_goal_usage_limited",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_and_attempt_lease": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_and_attempt_lease",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_without_canonical_task": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_reader_transport_stop_closes_operation_without_canonical_task",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_task_pipeline_provider_stop_waits_for_run_manager_then_redrives",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/runtime/test_provider_stop_recovery.py::test_taskless_orchestrator_timeout_closes_durable_operation": {
+      "nodeid": "tests/runtime/test_provider_stop_recovery.py::test_taskless_orchestrator_timeout_closes_durable_operation",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_budget_sweep.py::test_budget_status_block_and_projection": {
+      "nodeid": "tests/test_budget_sweep.py::test_budget_status_block_and_projection",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_budget_sweep.py::test_budget_sweep_emits_exceeded_without_dispatch": {
+      "nodeid": "tests/test_budget_sweep.py::test_budget_sweep_emits_exceeded_without_dispatch",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_budget_sweep.py::test_budget_sweep_quiet_under_cap": {
+      "nodeid": "tests/test_budget_sweep.py::test_budget_sweep_quiet_under_cap",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_child_rebuild_preconditions": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_child_rebuild_preconditions",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_accepts_blocked_goal_closure_schema_event": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_accepts_blocked_goal_closure_schema_event",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_fails_closed_for_invalid_source_state": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_fails_closed_for_invalid_source_state",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_requires_terminal_manifest_and_is_idempotent": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_fanout_aggregate_rebuild_requires_terminal_manifest_and_is_idempotent",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_goal_lineage_rebuild_targets_upstream_reader_aggregate": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_goal_lineage_rebuild_targets_upstream_reader_aggregate",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_rescan_grant_requires_exhaustion": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_rescan_grant_requires_exhaustion",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_stage_replan_new_generation_reopens_run_and_parent_once": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_stage_replan_new_generation_reopens_run_and_parent_once",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_stage_retrigger_idempotent_and_generational": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_stage_retrigger_idempotent_and_generational",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_control_actions_recovery.py::test_task_requeue_requires_dead_carrier": {
+      "nodeid": "tests/test_control_actions_recovery.py::test_task_requeue_requires_dead_carrier",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_no_budget_configured_never_blocks_primitive": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_no_budget_configured_never_blocks_primitive",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_blocks_over_budget_before_send": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_blocks_over_budget_before_send",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_sends_when_under_budget": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestChargingPrimitiveGate::test_primitive_sends_when_under_budget",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestEventDedup::test_global_event_not_re_emitted_within_cooldown": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestEventDedup::test_global_event_not_re_emitted_within_cooldown",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_blocked_when_global_budget_exceeded": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_blocked_when_global_budget_exceeded",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_budget_enforcement_disabled": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_budget_enforcement_disabled",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_global_budget_not_yet_exceeded": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_dispatch_proceeds_when_global_budget_not_yet_exceeded",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_closed_blocks_unpriced_usage": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_closed_blocks_unpriced_usage",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_open_allows_unpriced_usage_below_known_cost_cap": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestGlobalBudgetBlocking::test_fail_open_allows_unpriced_usage_below_known_cost_cap",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestNoBudgetMeansNoBlocking::test_dispatch_works_when_no_budgets_configured": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestNoBudgetMeansNoBlocking::test_dispatch_works_when_no_budgets_configured",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_dispatch_blocked_when_role_budget_exceeded": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_dispatch_blocked_when_role_budget_exceeded",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_other_role_unaffected_by_role_budget": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_other_role_unaffected_by_role_budget",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_role_unpriced_block_keeps_role_identity": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestPerRoleBudgetBlocking::test_role_unpriced_block_keeps_role_identity",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_loader_reads_budget_enforcement_disabled": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_loader_reads_budget_enforcement_disabled",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_explicit_budget": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_explicit_budget",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_has_budget_usd_default_none": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_role_config_has_budget_usd_default_none",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_budget_enforcement_defaults_enabled": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_budget_enforcement_defaults_enabled",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_explicit_global_budget": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_explicit_global_budget",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_has_global_budget_usd_default_none": {
+      "nodeid": "tests/test_cost_budget_enforcement.py::TestSchemaFields::test_zfconfig_has_global_budget_usd_default_none",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_canonical_plan_handoff_failure_routes_only_to_plan": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_canonical_plan_handoff_failure_routes_only_to_plan",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_nested_verification_rejection_preserves_requirement_findings": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_nested_verification_rejection_preserves_requirement_findings",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_non_admitted_verification_body_cannot_select_rework_owner": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_non_admitted_verification_body_cannot_select_rework_owner",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_plan_port_dependency_projects_planner_recovery": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_plan_port_dependency_projects_planner_recovery",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_repeated_worker_handoff_projects_bounded_safe_halt": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_repeated_worker_handoff_projects_bounded_safe_halt",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_failure_recovery.py::test_semantic_rejection_reason_never_falls_back_to_runtime_failure": {
+      "nodeid": "tests/test_fanout_failure_recovery.py::test_semantic_rejection_reason_never_falls_back_to_runtime_failure",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12066153200066765,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0020156049977231305,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.00047650800115661696,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.22203394800089882,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0010601869980746415,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004920770006719977,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.1393008999984886,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016674670005158987,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005587300001934636,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.20502675700117834,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001289285999519052,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.00042472800123505294,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.13865019500008202,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0013738040033786092,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005843889994139317,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.23460147399964626,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0015222069996525533,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006846779979241546,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.2940410890005296,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.008497532999172108,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0011668990009638947,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.46569924199866364,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0048358720014221035,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008043929992709309,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.13237387199842487,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0020411500008776784,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005520999984582886,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.20905134700296912,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011751480014936533,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005950010017841123,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12360907800029963,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016596709974692203,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000621631999820238,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.21464265000031446,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016474309995828662,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005216979989199899,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.14464062199840555,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0022189880000951234,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006582569985766895,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.24973114900058135,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0020285310019971803,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007940470022731461,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12051323999912711,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001334272001258796,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005098309993627481,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.25343239799985895,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002763684999081306,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005817730016133282,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.21527581099871895,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.006793123000534251,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006267509997996967,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.2624392780016933,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0013414919994829688,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006452870002249256,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12950267699852702,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0015887400004430674,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006526519973704126,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.309678163001081,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001712032000796171,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000784903000749182,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12159917100143502,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011339560005581006,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.00058582899873727,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.18900564100113115,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011620700024650432,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005976930005999748,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.15827195100064273,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.00176252099845442,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007051329994283151,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.2710597340010281,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0018231499998364598,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0017793219994928222,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.12064509700212511,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0015745069977128878,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005064520009909756,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.19443662299818243,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0013649980028276332,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005513910000445321,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-reader]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-reader]",
+      "phases": {
+        "call": {
+          "duration": 0.120113704000687,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0012099010018573608,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004973520008206833,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-synth]": {
+      "nodeid": "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-synth]",
+      "phases": {
+        "call": {
+          "duration": 0.21523379700010992,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011790950011345558,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000605885998083977,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_fanout_recovery_runtime.py::test_handoff_identity_failure_reopens_result_for_one_recovery_attempt": {
+      "nodeid": "tests/test_fanout_recovery_runtime.py::test_handoff_identity_failure_reopens_result_for_one_recovery_attempt",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_fanout_recovery_runtime.py::test_run_manager_recovers_unrecorded_writer_fanout_terminal": {
+      "nodeid": "tests/test_fanout_recovery_runtime.py::test_run_manager_recovers_unrecorded_writer_fanout_terminal",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_is_kernel_owned_with_layer2_active": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_is_kernel_owned_with_layer2_active",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_rejects_direct_apply": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_rejects_direct_apply",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_autoresearch_invocation_request_accepts_l1_and_bridges_to_trigger",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_autoresearch_trigger_accepted_creates_single_maintenance_proposal": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_autoresearch_trigger_accepted_creates_single_maintenance_proposal",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_ignores_stale_dispatch_id": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_ignores_stale_dispatch_id",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_requeues_task_once": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_completion_schedule_requeues_task_once",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_orchestrator_skips_terminal_diagnosis_after_goal_reopen": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_orchestrator_skips_terminal_diagnosis_after_goal_reopen",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_raw_autoresearch_trigger_waits_for_run_manager_intake": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_raw_autoresearch_trigger_waits_for_run_manager_intake",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_ignores_inflight_fanout_pending": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_ignores_inflight_fanout_pending",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_keeps_timed_out_fanout_request": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_keeps_timed_out_fanout_request",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_request_bridges_to_loop_request": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_run_manager_autoresearch_request_bridges_to_loop_request",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_runtime_self_recovery_closures.py::test_taskless_autoresearch_trigger_is_not_rejected_as_lifecycle_event": {
+      "nodeid": "tests/test_runtime_self_recovery_closures.py::test_taskless_autoresearch_trigger_is_not_rejected_as_lifecycle_event",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_scheduler_task_attempt.py::test_accepted_result_settles_attempt_and_shadow_compares": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_accepted_result_settles_attempt_and_shadow_compares",
+      "phases": {
+        "call": {
+          "duration": 0.08560139000110212,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002115782001055777,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.001025229001243133,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_admitted_plan_synth_result_settles_attempt": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_admitted_plan_synth_result_settles_attempt",
+      "phases": {
+        "call": {
+          "duration": 0.22785788100009086,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.005082300998765277,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.001642674000322586,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_admitted_workflow_operation_settles_attempt_without_worker_identity": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_admitted_workflow_operation_settles_attempt_without_worker_identity",
+      "phases": {
+        "call": {
+          "duration": 0.10604731200146489,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002171185999031877,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0013597420002042782,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_attempt_terminal_is_monotonic_in_shadow_mode": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_attempt_terminal_is_monotonic_in_shadow_mode",
+      "phases": {
+        "call": {
+          "duration": 0.08061137500044424,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.005600509997748304,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008723329992790241,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_attempt_terminal_occurrence_clears_matching_active_dispatch": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_attempt_terminal_occurrence_clears_matching_active_dispatch",
+      "phases": {
+        "call": {
+          "duration": 0.06689865099906456,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0023077129990269896,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000922357001400087,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_child_transport_events_wait_for_operation_admission": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_child_transport_events_wait_for_operation_admission",
+      "phases": {
+        "call": {
+          "duration": 0.06634156300060567,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0027459260018076748,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008287390010082163,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_corrupt_canonical_store_fails_closed_before_transport": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_corrupt_canonical_store_fails_closed_before_transport",
+      "phases": {
+        "call": {
+          "duration": 0.032702684999094345,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004120459998375736,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009568929999659304,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_current_for_task_prefers_the_only_active_run_attempt": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_current_for_task_prefers_the_only_active_run_attempt",
+      "phases": {
+        "call": {
+          "duration": 0.0173410919996968,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.003486550001980504,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002687201998924138,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_current_scope_mismatch_is_validated_fail_closed": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_current_scope_mismatch_is_validated_fail_closed",
+      "phases": {
+        "call": {
+          "duration": 0.012137388999690302,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0043543329993553925,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0017252369980269577,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_disk_usage_does_not_guess_between_active_reader_attempts": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_disk_usage_does_not_guess_between_active_reader_attempts",
+      "phases": {
+        "call": {
+          "duration": 0.10450939499787637,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.006680170001345687,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0012582230010593776,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_disk_usage_renews_unique_reader_attempt_without_task_store_row": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_disk_usage_renews_unique_reader_attempt_without_task_store_row",
+      "phases": {
+        "call": {
+          "duration": 0.08433575100207236,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0027695520002453122,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002697001000342425,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_dispatch_persists_attempt_before_transport_and_closes_identity": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_dispatch_persists_attempt_before_transport_and_closes_identity",
+      "phases": {
+        "call": {
+          "duration": 0.0986009890002606,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002431808999972418,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0010107029993378092,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_empty_store_keys_are_validated_fail_closed": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_empty_store_keys_are_validated_fail_closed",
+      "phases": {
+        "call": {
+          "duration": 0.0019976770017819945,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004700964000221575,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0022918949980521575,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_enforce_does_not_renew_lease_with_partial_or_stale_identity": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_enforce_does_not_renew_lease_with_partial_or_stale_identity",
+      "phases": {
+        "call": {
+          "duration": 0.08385034000093583,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0023740990000078455,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009862430015346035,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_enforce_rejects_stale_attempt_lease_run_and_dispatch": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_enforce_rejects_stale_attempt_lease_run_and_dispatch",
+      "phases": {
+        "call": {
+          "duration": 0.25728431999959867,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.007270595000591129,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.004756076999910874,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_expired_lease_requeues_once_and_deadletters_at_cap": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_expired_lease_requeues_once_and_deadletters_at_cap",
+      "phases": {
+        "call": {
+          "duration": 0.09829904900107067,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0033136249985545874,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0017403569981979672,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_fanout_attempt_lanes_remain_independent_for_one_parent_task": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_fanout_attempt_lanes_remain_independent_for_one_parent_task",
+      "phases": {
+        "call": {
+          "duration": 0.13609716700011631,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0037932189989078324,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0013194700004532933,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_operation_service_settlement_reconciles_after_canonical_result": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_operation_service_settlement_reconciles_after_canonical_result",
+      "phases": {
+        "call": {
+          "duration": 0.1067375059974438,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001884750003227964,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0019155350018991157,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_reconcile_repairs_shadow_expiry_after_admitted_result": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_reconcile_repairs_shadow_expiry_after_admitted_result",
+      "phases": {
+        "call": {
+          "duration": 0.12212390000058804,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001978140000574058,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0014261459982662927,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_repeated_transport_failures_deadletter_at_retry_cap": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_repeated_transport_failures_deadletter_at_retry_cap",
+      "phases": {
+        "call": {
+          "duration": 0.1183752610013471,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0019341309998708311,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009213939993060194,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_restart_does_not_recast_or_redeliver_claimed_attempt": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_restart_does_not_recast_or_redeliver_claimed_attempt",
+      "phases": {
+        "call": {
+          "duration": 0.07095387699882849,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0030059540004003793,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008528430007572751,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_restart_does_not_redeliver_sent_attempt": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_restart_does_not_redeliver_sent_attempt",
+      "phases": {
+        "call": {
+          "duration": 0.11497408099967288,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004460916999960318,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008862100003170781,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_retry_budget_is_scoped_to_logical_role": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_retry_budget_is_scoped_to_logical_role",
+      "phases": {
+        "call": {
+          "duration": 0.02052648000244517,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002060456001345301,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0025253549974877387,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_retry_order_survives_sorted_json_reload": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_retry_order_survives_sorted_json_reload",
+      "phases": {
+        "call": {
+          "duration": 0.016705289999663364,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0021926849985902663,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0025096839999605436,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_semantic_failure_remains_owned_by_workflow_recovery": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_semantic_failure_remains_owned_by_workflow_recovery",
+      "phases": {
+        "call": {
+          "duration": 0.08704275800118921,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0026320549986849073,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0011587100016186014,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_shadow_allows_legacy_result_but_records_mismatch": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_shadow_allows_legacy_result_but_records_mismatch",
+      "phases": {
+        "call": {
+          "duration": 0.06345752700144658,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0028776630024367478,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008298870016005822,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_shadow_mode_never_blocks_legacy_dispatch_at_attempt_cap": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_shadow_mode_never_blocks_legacy_dispatch_at_attempt_cap",
+      "phases": {
+        "call": {
+          "duration": 0.14994783799920697,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.003677591001178371,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008858209985191934,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_scheduler_task_attempt.py::test_transport_failure_schedules_one_retry_and_success_resets_series": {
+      "nodeid": "tests/test_scheduler_task_attempt.py::test_transport_failure_schedules_one_retry_and_success_resets_series",
+      "phases": {
+        "call": {
+          "duration": 0.14565849300197442,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002279283002280863,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0010121359991899226,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_empty_kanban_no_op": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_empty_kanban_no_op",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_fast_stop_requeues_and_emits_run_teardown_without_snapshot": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_fast_stop_requeues_and_emits_run_teardown_without_snapshot",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_graceful_stop_suspends_active_workflow_operation": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_graceful_stop_suspends_active_workflow_operation",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_requeued_on_stop": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_requeued_on_stop",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_current_handoff_progress_not_requeued": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_current_handoff_progress_not_requeued",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_old_dispatch_progress_still_requeued": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_inflight_task_with_old_dispatch_progress_still_requeued",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_signals_both_lock_and_guard_pids": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_signals_both_lock_and_guard_pids",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_skips_own_pid": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_kill_watcher_skips_own_pid",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_multiple_inflight_all_requeued": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_multiple_inflight_all_requeued",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_requeue_recovery_events_are_known_types": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_requeue_recovery_events_are_known_types",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_shutdown_stale_inflight_cleanup.py::test_step_stale_inflight_cleanup_in_completed_steps": {
+      "nodeid": "tests/test_shutdown_stale_inflight_cleanup.py::test_step_stale_inflight_cleanup_in_completed_steps",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_does_not_redispatch_oa_owned_trigger": {
+      "nodeid": "tests/test_stall_redispatch.py::test_emit_stall_recoveries_does_not_redispatch_oa_owned_trigger",
+      "phases": {
+        "call": {
+          "duration": 0.0014907179975125473,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001775861997884931,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0024063709970505442,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_escalates_at_cap": {
+      "nodeid": "tests/test_stall_redispatch.py::test_emit_stall_recoveries_escalates_at_cap",
+      "phases": {
+        "call": {
+          "duration": 0.013917388001573272,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016066400021372829,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.000925448999623768,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_emit_stall_recoveries_redispatches_first": {
+      "nodeid": "tests/test_stall_redispatch.py::test_emit_stall_recoveries_redispatches_first",
+      "phases": {
+        "call": {
+          "duration": 0.005726963001507102,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0014912990009179339,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006628570008615497,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_attempt_increments": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_attempt_increments",
+      "phases": {
+        "call": {
+          "duration": 0.0009208510018652305,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0009460210021643434,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005596900009550154,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_continues_when_descendant_fanout_is_terminal": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_continues_when_descendant_fanout_is_terminal",
+      "phases": {
+        "call": {
+          "duration": 0.003990231001807842,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001297135000640992,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002803796000080183,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_fanout_already_terminal": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_fanout_already_terminal",
+      "phases": {
+        "call": {
+          "duration": 0.001293291999900248,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001092686998163117,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009035910006787162,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_started_no_fanout": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_fires_when_trigger_started_no_fanout",
+      "phases": {
+        "call": {
+          "duration": 0.00317133700082195,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0021354780001274776,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.004396779000671813,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_hydrates_flow_kind_from_stage_scope": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_hydrates_flow_kind_from_stage_scope",
+      "phases": {
+        "call": {
+          "duration": 0.0009375220033689402,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001938405002874788,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009300599995185621,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_preserves_task_scope": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_preserves_task_scope",
+      "phases": {
+        "call": {
+          "duration": 0.0011869539994222578,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007319429969356861,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005303949983499479,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_reemits_trigger_with_same_payload_under_cap": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_reemits_trigger_with_same_payload_under_cap",
+      "phases": {
+        "call": {
+          "duration": 0.0017519309985800646,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001216186999954516,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006970319991523866,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_returns_none_at_cap": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_returns_none_at_cap",
+      "phases": {
+        "call": {
+          "duration": 0.0008233629996539094,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0010669340008462314,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004936829973303247,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_descendant_redispatch_has_active_fanout": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_descendant_redispatch_has_active_fanout",
+      "phases": {
+        "call": {
+          "duration": 0.0022464440007752273,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002174320001358865,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0019150410007569008,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_trigger_already_has_active_fanout": {
+      "nodeid": "tests/test_stall_redispatch.py::test_redispatch_suppressed_when_trigger_already_has_active_fanout",
+      "phases": {
+        "call": {
+          "duration": 0.001561077999213012,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007530319999204949,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007291989968507551,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_superseded_task_trigger_is_settled_without_redispatch_or_escalation": {
+      "nodeid": "tests/test_stall_redispatch.py::test_superseded_task_trigger_is_settled_without_redispatch_or_escalation",
+      "phases": {
+        "call": {
+          "duration": 0.0025992259979830123,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.010579288998997072,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009641229989938438,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[orchestrator.decision.recorded]": {
+      "nodeid": "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[orchestrator.decision.recorded]",
+      "phases": {
+        "call": {
+          "duration": 0.001505096999608213,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0027781630014942493,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.00137934799931827,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[runtime.attention.needed]": {
+      "nodeid": "tests/test_stall_redispatch.py::test_workflow_entrypoint_is_not_redispatched_before_first_consumer_tick[runtime.attention.needed]",
+      "phases": {
+        "call": {
+          "duration": 0.0012813009998353664,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0018771239992929623,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008880160021362826,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[missing-pattern]": {
+      "nodeid": "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[missing-pattern]",
+      "phases": {
+        "call": {
+          "duration": 0.05581749900011346,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0021224760021141265,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0018190689988841768,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[review-wave]": {
+      "nodeid": "tests/test_stall_redispatch.py::test_workflow_entrypoint_recovery_retains_original_invoke_identity[review-wave]",
+      "phases": {
+        "call": {
+          "duration": 0.1760372910030128,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0016919269983191043,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008670079987496138,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_task_attempt_recovery.py::test_canonical_recovery_keeps_same_task_in_distinct_runs": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_canonical_recovery_keeps_same_task_in_distinct_runs",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_canonical_semantic_failure_stays_owned_by_workflow": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_canonical_semantic_failure_stays_owned_by_workflow",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_canonical_store_wins_over_conflicting_projection": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_canonical_store_wins_over_conflicting_projection",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_corrupt_canonical_store_fails_closed_instead_of_projection_fallback": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_corrupt_canonical_store_fails_closed_instead_of_projection_fallback",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_deadletter_or_exhausted_attempt_routes_to_human": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_deadletter_or_exhausted_attempt_routes_to_human",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_expired_open_attempt_becomes_worker_lifecycle_recover": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_expired_open_attempt_becomes_worker_lifecycle_recover",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_recent_open_attempt_stays_quiet": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_recent_open_attempt_stays_quiet",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_recent_provider_activity_takes_precedence_over_old_heartbeat": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_recent_provider_activity_takes_precedence_over_old_heartbeat",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_attempt_recovery.py::test_retryable_failed_attempt_routes_to_diagnosis": {
+      "nodeid": "tests/test_task_attempt_recovery.py::test_retryable_failed_attempt_routes_to_diagnosis",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_pipeline_fault_matrix.py::test_expired_operation_v2_waits_for_run_manager_then_redrives_once": {
+      "nodeid": "tests/test_task_pipeline_fault_matrix.py::test_expired_operation_v2_waits_for_run_manager_then_redrives_once",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_task_pipeline_fault_matrix.py::test_fault_matrix_has_one_decision_and_effect_owner_per_fault": {
+      "nodeid": "tests/test_task_pipeline_fault_matrix.py::test_fault_matrix_has_one_decision_and_effect_owner_per_fault",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_tick_invoke_backlog_replay.py::test_backlog_invoke_replays_after_grace": {
+      "nodeid": "tests/test_tick_invoke_backlog_replay.py::test_backlog_invoke_replays_after_grace",
+      "phases": {
+        "call": {
+          "duration": 0.009159217999695102,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.003916306002793135,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0022085070013417862,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_tick_invoke_backlog_replay.py::test_fresh_invoke_left_for_live_watcher": {
+      "nodeid": "tests/test_tick_invoke_backlog_replay.py::test_fresh_invoke_left_for_live_watcher",
+      "phases": {
+        "call": {
+          "duration": 0.02128053100022953,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.009584193001501262,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.006072374002542347,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_tick_invoke_backlog_replay.py::test_invoke_with_verdict_not_replayed": {
+      "nodeid": "tests/test_tick_invoke_backlog_replay.py::test_invoke_with_verdict_not_replayed",
+      "phases": {
+        "call": {
+          "duration": 0.014836153997748625,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004476101999898674,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0017209839970746543,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workflow_budget_guard.py::test_active_run_budget_amendment_rearms_guard_without_resetting_usage": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_active_run_budget_amendment_rearms_guard_without_resetting_usage",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_budget_guard_builds_run_aliases_once_per_sweep": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_budget_guard_builds_run_aliases_once_per_sweep",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_budget_guard_is_idempotent_below_and_after_limit": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_budget_guard_is_idempotent_below_and_after_limit",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_loader_reads_run_limits_and_rejects_unknown_keys": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_loader_reads_run_limits_and_rejects_unknown_keys",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_operation_budget_cancels_provider_and_blocks_attempt": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_operation_budget_cancels_provider_and_blocks_attempt",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_operation_budget_uses_per_dimension_cumulative_deltas": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_operation_budget_uses_per_dimension_cumulative_deltas",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_operation_usage_sample_limit_is_relative_to_start_baseline": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_operation_usage_sample_limit_is_relative_to_start_baseline",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_research_result_terminal_stops_run_and_operation_budget_watchdogs": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_research_result_terminal_stops_run_and_operation_budget_watchdogs",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_run_budget_uses_admission_limits_after_config_changes": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_run_budget_uses_admission_limits_after_config_changes",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_run_timeout_cancels_active_operation_and_blocks_parent_task": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_run_timeout_cancels_active_operation_and_blocks_parent_task",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_budget_guard.py::test_run_token_budget_supports_long_horizon_aggregate_usage": {
+      "nodeid": "tests/test_workflow_budget_guard.py::test_run_token_budget_supports_long_horizon_aggregate_usage",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_is_consistent_across_projection_web_and_cli": {
+      "nodeid": "tests/test_workflow_operation_projection.py::test_workflow_operation_is_consistent_across_projection_web_and_cli",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_corrupt": {
+      "nodeid": "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_corrupt",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_unavailable": {
+      "nodeid": "tests/test_workflow_operation_projection.py::test_workflow_operation_web_falls_back_when_read_model_is_unavailable",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_projection.py::test_workflow_operation_web_fast_path_catches_up_active_tail": {
+      "nodeid": "tests/test_workflow_operation_projection.py::test_workflow_operation_web_fast_path_catches_up_active_tail",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_projection.py::test_workflow_resume_projection_rebuilds_stable_operation_state": {
+      "nodeid": "tests/test_workflow_operation_projection.py::test_workflow_resume_projection_rebuilds_stable_operation_state",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_budget_amendment_before_block_does_not_authorize_redrive": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_budget_amendment_before_block_does_not_authorize_redrive",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_budget_blocked_operation_rejects_wrong_run_or_partial_amendment": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_budget_blocked_operation_rejects_wrong_run_or_partial_amendment",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_budget_blocked_task_pipeline_redrives_after_owner_amendment": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_budget_blocked_task_pipeline_redrives_after_owner_amendment",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_interrupted_operation_dry_run_then_cancel_is_idempotent": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_interrupted_operation_dry_run_then_cancel_is_idempotent",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_interrupted_operation_with_newer_live_retry_is_not_actionable": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_interrupted_operation_with_newer_live_retry_is_not_actionable",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[graceful_stop]": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[graceful_stop]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[task_pipeline_attempt_lease_expired]": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_interrupted_task_pipeline_operation_redrives_after_restart[task_pipeline_attempt_lease_expired]",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_later_successful_task_pipeline_stage_suppresses_old_interruption": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_later_successful_task_pipeline_stage_suppresses_old_interruption",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_legacy_cancelled_restart_operation_gets_bounded_redrive": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_legacy_cancelled_restart_operation_gets_bounded_redrive",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_later_task_pipeline_success": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_later_task_pipeline_success",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_new_live_retry_before_cancel": {
+      "nodeid": "tests/test_workflow_operation_resume.py::test_operation_resume_apply_rechecks_new_live_retry_before_cancel",
+      "phases": {},
+      "status": "not_run"
+    },
+    "tests/test_workloop_resources.py::test_cache_counts_do_not_require_or_start_tracemalloc": {
+      "nodeid": "tests/test_workloop_resources.py::test_cache_counts_do_not_require_or_start_tracemalloc",
+      "phases": {
+        "call": {
+          "duration": 0.008924493002268719,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002466351001203293,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009043030004249886,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[corrupt]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[corrupt]",
+      "phases": {
+        "call": {
+          "duration": 0.006186453003465431,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.006585570998140611,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0022558149976248387,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[empty_windows]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[empty_windows]",
+      "phases": {
+        "call": {
+          "duration": 0.007702761999098584,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0032458540008519776,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.003969018001953373,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[uncompressed]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_analysis_rejects_missing_windows_or_bad_capture[uncompressed]",
+      "phases": {
+        "call": {
+          "duration": 0.007297470001503825,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004535994001344079,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002505845000996487,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[capture_changed]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[capture_changed]",
+      "phases": {
+        "call": {
+          "duration": 0.011461672002042178,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.007770913001877489,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0030984170007286593,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[parser_exit]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[parser_exit]",
+      "phases": {
+        "call": {
+          "duration": 0.006437119998736307,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002985682000144152,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0025402270002814475,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[timeout]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[timeout]",
+      "phases": {
+        "call": {
+          "duration": 0.003363884999998845,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.008636645001388388,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009588009997969493,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[window_changed]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_finish_rejects_bad_analysis_and_stops_tracker[window_changed]",
+      "phases": {
+        "call": {
+          "duration": 0.021449882002343656,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.006951626000955002,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.001059024998539826,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_observer_close_failure_cannot_claim_closed": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_observer_close_failure_cannot_claim_closed",
+      "phases": {
+        "call": {
+          "duration": 0.0023766160011291504,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0059356189995014574,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.001287603001401294,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[None]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[None]",
+      "phases": {
+        "call": {
+          "duration": 0.0009323099984612782,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0012168920002295636,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008570550016884226,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[clock_jump]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[clock_jump]",
+      "phases": {
+        "call": {
+          "duration": 0.0010405569992144592,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0015543499976047315,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008265470023616217,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[mono_reverse]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[mono_reverse]",
+      "phases": {
+        "call": {
+          "duration": 0.000994543999695452,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001177373000246007,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008114550000755116,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[no_frame]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[no_frame]",
+      "phases": {
+        "call": {
+          "duration": 0.0009720799971546512,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001286917002289556,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0027046149989473633,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[wall_reverse]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_window_requires_strict_interior_and_consistent_clocks[wall_reverse]",
+      "phases": {
+        "call": {
+          "duration": 0.0010561369999777526,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0022105630014266353,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009180489978461992,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[0]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[0]",
+      "phases": {
+        "call": {
+          "duration": 0.0013840939973306376,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004391200000100071,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009800699990591966,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[1]": {
+      "nodeid": "tests/test_workloop_resources.py::test_memray_workloop_rejects_missing_lifecycle_or_output_before_setup[1]",
+      "phases": {
+        "call": {
+          "duration": 0.002048000998911448,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002363630999752786,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0023416889998770785,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_allocation_probe_requires_enabled_tracer": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_allocation_probe_requires_enabled_tracer",
+      "phases": {
+        "call": {
+          "duration": 0.0051953269976365846,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.007953059001010843,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.005792643001768738,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_exit_probe_keeps_zombie_distinct_from_reaped": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_exit_probe_keeps_zombie_distinct_from_reaped",
+      "phases": {
+        "call": {
+          "duration": 0.0811694730000454,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001195828997879289,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0009370350016979501,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_exit_probe_rejects_running_worker": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_exit_probe_rejects_running_worker",
+      "phases": {
+        "call": {
+          "duration": 0.009920640997734154,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0017124849982792512,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008633119978185277,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[-1]": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[-1]",
+      "phases": {
+        "call": {
+          "duration": 0.003826397001830628,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.004908107999654021,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.002540661000239197,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[0]": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[0]",
+      "phases": {
+        "call": {
+          "duration": 0.1952262190025067,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002295179001521319,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0011842500025522895,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[3]": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[3]",
+      "phases": {
+        "call": {
+          "duration": 0.0022840809979243204,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0017306499976257328,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.005571309000515612,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[invalid]": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_host_rejects_invalid_allocation_interval[invalid]",
+      "phases": {
+        "call": {
+          "duration": 0.004700077999586938,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0020049650011060294,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.003591861001041252,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_probe_attributes_owned_state_bytes": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_probe_attributes_owned_state_bytes",
+      "phases": {
+        "call": {
+          "duration": 0.001615942997887032,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.00154181999823777,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007112189996405505,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_probe_missing_process_is_not_zero_measurement": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_probe_missing_process_is_not_zero_measurement",
+      "phases": {
+        "call": {
+          "duration": 0.0009074370027519763,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002152311000827467,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006073000004107598,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_probe_observes_and_releases_owned_descriptors": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_probe_observes_and_releases_owned_descriptors",
+      "phases": {
+        "call": {
+          "duration": 0.004225598000630271,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.002275630002259277,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0007644709985470399,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_probe_observes_bounded_python_allocations_and_event_caches": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_probe_observes_bounded_python_allocations_and_event_caches",
+      "phases": {
+        "call": {
+          "duration": 0.22652972399737337,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001780241000233218,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0021477269983734004,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    "tests/test_workloop_resources.py::test_workloop_tcp_probe_distinguishes_listener_and_connections": {
+      "nodeid": "tests/test_workloop_resources.py::test_workloop_tcp_probe_distinguishes_listener_and_connections",
+      "phases": {
+        "call": {
+          "duration": 0.020572880002873717,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007413519997498952,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005882810000912286,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    }
+  },
+  "schema_version": "zf-testkit-pytest.v1",
+  "session_exitstatus": null,
+  "session_finished": false,
+  "testrun_uid": "single-process",
+  "worker_id": "master"
+}

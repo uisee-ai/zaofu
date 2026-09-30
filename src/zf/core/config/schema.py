@@ -1748,6 +1748,20 @@ class FeishuProjectGroupConfig:
 
 
 @dataclass
+class FeishuIssueMergeConfig:
+    """Opt-in Issue-only connection; secret values stay outside zf.yaml."""
+
+    enabled: bool = False
+    app_id: str = ""
+    bot_open_id: str = ""
+    chat_id: str = ""
+    operator_open_id: str = ""
+    bitable_app_token: str = ""
+    bitable_table_id: str = ""
+    bitable_view_id: str = ""
+
+
+@dataclass
 class IntegrationsConfig:
     openclaw_feishu_bridge: OpenClawFeishuBridgeConfig = field(
         default_factory=OpenClawFeishuBridgeConfig
@@ -1757,6 +1771,9 @@ class IntegrationsConfig:
     )
     feishu_project_group: FeishuProjectGroupConfig = field(
         default_factory=FeishuProjectGroupConfig
+    )
+    feishu_issue_merge: FeishuIssueMergeConfig = field(
+        default_factory=FeishuIssueMergeConfig
     )
     # doc 98 §4: chat_id → route. Unmapped chat = no route (caller drops).
     feishu_routing: dict[str, FeishuRouteConfig] = field(default_factory=dict)
@@ -1882,6 +1899,7 @@ class SelfIssueTargetConfig:
     oauth_client_id: str = ""
     oauth_redirect_uri: str = ""
     auth_mode: str = ""
+    oauth_scope: str = ""
 
 
 @dataclass
@@ -1924,11 +1942,22 @@ class SelfIssueConfig:
     authorization_domain: str = "gitlab.com"
     target_project: str = ""
     target_locked: bool = False
+    # Source checkout used for read-only Issue investigation.  This is
+    # deliberately independent from target_project, which only controls the
+    # external forge publication destination.
+    source_mode: str = "current_project"
+    source_root: str = ""
+    # Developer-side project ownership; empty means the reporting/current project.
+    execution_project_root: str = ""
     oauth_client_id: str = ""
     oauth_redirect_uri: str = ""
     automatic_detection_enabled: bool = True
     browser_capture_enabled: bool = True
     browser_capture_base_url: str = ""
+    browser_capture_denied_urls: list[str] = field(default_factory=list)
+    # Internal origin binding; not a user-configurable YAML field.
+    settings_config_path: str = field(default="", repr=False, compare=False)
+    structure_backend: str = ""
     targets: dict[str, SelfIssueTargetConfig] = field(default_factory=dict)
     default_publication_mode: str = "gitlab"
     ingress: ExternalIssueIngressConfig = field(

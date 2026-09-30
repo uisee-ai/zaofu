@@ -1,0 +1,901 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K515-native-normal",
+      "description": "原生主链正常 impl→verify→candidate",
+      "format": "native-run",
+      "role": "normal_native",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_start_dispatch_submit_verify_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+        "sha256": "dfab9562bc9c1ba63fc7113af078026429d1d39e35348d47089e5ccbc0718dad"
+      }
+    },
+    {
+      "id": "K515-native-impl-recovery",
+      "description": "原生 impl 在途中断恢复",
+      "format": "native-run",
+      "role": "impl_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[impl]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+        "sha256": "8d565a1b0d57aa415b50b13169d51e9eeaef1e666333c6e3a833219c108020ae"
+      }
+    },
+    {
+      "id": "K515-native-verify-recovery",
+      "description": "原生 verify 在途恢复",
+      "format": "native-run",
+      "role": "verify_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[verify]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+        "sha256": "e125867c0c23bebfedf18fb72f9cc912dd356c3d4388cf47b0333c7f50f4971c"
+      }
+    },
+    {
+      "id": "current-premerge",
+      "description": "2026-09-28历史完整premerge原红（040已后续修复）；保留原ref/SHA，不视为当前代码仍有040",
+      "format": "premerge-run",
+      "role": "premerge",
+      "nodeids": [],
+      "report": {
+        "ref": "attachments/premerge-20260928-023031/premerge-run.json",
+        "sha256": "d8c0b6f2065bbf69129e5a09e010c57431efc4f76e1f519b7f2c492fade06d0b"
+      }
+    },
+    {
+      "id": "K553-native-long",
+      "description": "原生长工具检查点停机恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_long_task.py::test_native_long_tool_cli_recovery_preserves_completed_chunk"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+        "sha256": "f83229dd12d6a6b7445ae1c6331d2fb30c8fcb9959e31734bbd1c714ef16d136"
+      }
+    },
+    {
+      "id": "K546-native-writer",
+      "description": "原生blocking writer批次恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_writer_batch.py::test_native_writer_batch_recovers_only_unfinished_task"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+        "sha256": "8f8807b8b5246f361434367f1b9219c958e2c7df45e825f7e2ec8a2d79467c51"
+      }
+    },
+    {
+      "id": "K548-native-network",
+      "description": "受控网络断流后的原生CLI恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_network.py::test_native_network_cut_cli_recovery_to_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+        "sha256": "7f7b3d4dcb501a626904ea4ffd2e8f2417358e0fdfdece8ecabfabb10bf3e652"
+      }
+    },
+    {
+      "id": "K552-F2-long-allocation",
+      "description": "32Task持续分配对照（保留失败）",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_workloop_host.py::test_sustained_task_pipeline_releases_owned_resources"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+        "sha256": "24739b50750f654f6ecaea1f870b833be9e366c5aa5178bc4b782f48d63b503e"
+      }
+    },
+    {
+      "id": "K547-native-legacy-queue",
+      "description": "原生legacy Provider排队超时恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_codex_legacy_queue.py::test_native_codex_legacy_queue_timeout_resumes_only_gap"
+      ],
+      "reason": "K594已补原生入口和离线合同；本轮codex login status仍exit1/Not logged in，Claude CLI未发现。ZF-TEST-048已由K595-B修复，但配置/hash/离线闭包不替代原生轮次、自然排队超时和恢复验收。"
+    },
+    {
+      "id": "K530-watchdog-root-cause",
+      "description": "Issue live watchdog首次异常根因",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "reason": "正常链通过但不证明历史watchdog根因，未将该正常节点作为根因关闭证据。"
+    },
+    {
+      "id": "OS-crash-takeover",
+      "description": "整机OS crash后恢复",
+      "nodeids": [],
+      "reason": "K571 owned-QEMU-SIGKILL和K591 guest kernel panic同盘完整CLI恢复已分别通过并独立列项；物理宿主掉电及其它OS故障模型未验证，不用两项扩大为全OS矩阵，不擅自执行宿主破坏性测试。"
+    },
+    {
+      "id": "PERF-05-full",
+      "description": "完整长期mock资源稳定性",
+      "nodeids": [],
+      "reason": "已有有限32Task及资源释放报告不是完整长期稳定性证明；F2追踪失败仍开放。"
+    },
+    {
+      "id": "current-deterministic-mainline",
+      "description": "K583当时完整MAINLINE，589 passed；当前注册面已扩展，旧报告不得冒充当前完整验收",
+      "format": "mainline-run",
+      "nodeids": [],
+      "report": {
+        "ref": "attachments/mainline-k583-20260928/testkit-run.json",
+        "sha256": "10d7e161808030bdb3d6b2b1b1702e491fdf808f9c456ac66dcbb90f60920643"
+      },
+      "source_profile": "acceptance"
+    },
+    {
+      "id": "final-unified-acceptance",
+      "description": "原五项主链/完整premerge与扩展需求最终同源验收",
+      "nodeids": [],
+      "reason": "048和040已有后续修复记录，K596前序闭包通过；旧premerge原红仍保留，较新普通premerge JUnit/局部源码摘要不是完整premerge-run证据。当前MAINLINE注册面尚无完整匹配报告，历史缺证、开放项及来源冲突仍在，不授权最终发布。"
+    },
+    {
+      "id": "K557-browser-general",
+      "description": "general来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_runtime.py::test_browser_general_start_is_driven_by_live_zf_start"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-general-20260928-025455/testkit-run.json",
+        "sha256": "8c2d97925a90b6c50630417d07a4b7d7ba0eb91826d620f5840785f2ec61cabd"
+      }
+    },
+    {
+      "id": "K557-browser-issue",
+      "description": "issue来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-issue-20260928-030237/testkit-run.json",
+        "sha256": "2bcb6a334a11899725c065cc2fc905660de5a950aadfc76c000210189d5dd898"
+      }
+    },
+    {
+      "id": "K557-browser-prd",
+      "description": "prd来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[prd]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-prd-k585-20260928/testkit-run.json",
+        "sha256": "dfd5cdc6d44aa1f63a7a6b3d679603c15fadbc0a9895fd901a65e2eabb3aada2"
+      }
+    },
+    {
+      "id": "K557-browser-refactor",
+      "description": "refactor来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-refactor-20260928-031524/testkit-run.json",
+        "sha256": "e21407a7d8328b0236e38e2bb34da345fa2811e05fb4c2334f3b92c63f650763"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-strong",
+      "description": "refactor-strong来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-strong]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-strong-k583-20260928/testkit-run.json",
+        "sha256": "7fd5e2ec6f0f08c537959f83e907b220ba9fbda709a0a4fe756102665fe2ca88"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-two-lane",
+      "description": "refactor-two-lane来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-two-lane-k584-20260928/testkit-run.json",
+        "sha256": "3d6ca8c9777bb92b2a4d945f34eb8e67d65cc831d9b2084425dac1f075f826af"
+      }
+    },
+    {
+      "id": "K557-refactor-original-timeout",
+      "description": "默认Refactor原轮150秒Task等待失败；独立对照成功不覆盖此红灯",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-20260925-EUDYZb/run/testkit-run.json",
+        "sha256": "3ed108cf7a22c7bf1649aa019e0489c04ab1676d759b535ce459a52fd836b74a"
+      }
+    },
+    {
+      "id": "K557-live-duration-root-cause",
+      "description": "默认及双lane超时的根因与稳定性回归",
+      "nodeids": [],
+      "reason": "默认独立对照通过，但双lane无MAINLINE并发仍超时；并行竞争不是已证实唯一根因。未改预算/断言、未宣称已修复。"
+    },
+    {
+      "id": "K558-two-lane-instrumented-red",
+      "description": "K558原预算双lane仪器红灯，保留超时证据",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k558-refactor-two-lane-timing-20260925-0WrPxj/run/testkit-run.json",
+        "sha256": "5b1b1310d5c36c5524011b8fe4d6f3f47ed85e061f4d25336a3cd3cb3d27b352"
+      }
+    },
+    {
+      "id": "K559-two-lane-instrumented-pass",
+      "description": "K559原预算分段仪器一次通过，不关闭K557-F2",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k559-refactor-two-lane-timing-20260925-KDg3Jk/testkit-run.json",
+        "sha256": "f9d5425009cd62b08622e046ed4c819050ffd689a092762de8c64181176d64f8"
+      }
+    },
+    {
+      "id": "K562-browser-refactor",
+      "description": "K562无仪器、原150秒等待的refactor候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-refactor-20260925-5s4onc/testkit-run.json",
+        "sha256": "e33c3e61de93ecc59af11429b82b4aee50eca4f9a67de92089d5f466e6019000"
+      }
+    },
+    {
+      "id": "K562-browser-refactor-two-lane",
+      "description": "K562无仪器、原150秒等待的refactor-two-lane候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-two-lane-20260925-BqBWFg/testkit-run.json",
+        "sha256": "ab25911e9d82ba020ee18283295543d7b546e34b77137e120ef1a78c1f9adaf3"
+      }
+    },
+    {
+      "id": "K563-browser-refactor",
+      "description": "K563无仪器、原150秒等待的refactor复验；不覆盖原红或关闭稳定性",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k563-refactor-20260925-KhX42H/run/testkit-run.json",
+        "sha256": "f0467684e24d077cc920c2da16ab89b4fd335c03791c00a11b4d581e928b8dc7"
+      }
+    },
+    {
+      "id": "K563-browser-refactor-two-lane",
+      "description": "K563无仪器、原150秒等待的refactor-two-lane复验；不覆盖原红或关闭稳定性",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k563-two-lane-20260925-mKbasm/run/testkit-run.json",
+        "sha256": "3409369cdf9fced6f42a44b4d682efcd0830b765d42eac9dc804dc8c33194223"
+      }
+    },
+    {
+      "id": "K565-host-recovery",
+      "description": "独立watcher两种接管与worker SIGKILL同Run交付；非K530历史根因",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_watcher_hard_exit_then_cli_takeover_finishes_same_run[full-start]",
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_watcher_hard_exit_then_cli_takeover_finishes_same_run[preserve-workers]",
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_worker_sigkill_respawn_preserves_same_run_terminal_evidence"
+      ],
+      "source_profile": "acceptance",
+      "report": {
+        "ref": "attachments/k587-k565-host-acceptance-20260928/testkit-run.json",
+        "sha256": "53c34df6276a4ecdfde14a9e0c4dd669a85bb5be3b1f324fa0a2766e11855245"
+      }
+    },
+    {
+      "id": "K565-closeout",
+      "description": "K565台账后S0/S9及28个handoff合同，共127节点；不代表全目标",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s0.py::test_all_named_testkit_files_are_registered_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_coverage_matrix_lists_every_stage_and_existing_test_entry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_explicit_host_tests_are_marked_and_excluded_from_default_registry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[None]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[closed_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[non_strict]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unknown_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unmapped]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_open_issues_declare_executable_reproduction_paths",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_paths_are_registered_for_execution_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_registry_points_to_real_test_nodes",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registered_xfails_are_strict_and_mapped_to_each_executing_stage",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[MissingClass::test_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_missing_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_respawn_finds_transcript_in_actual_spawn_cwd]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_stage_registry_and_coverage_matrix_have_the_same_test_surface",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_are_traceable_to_registered_issues",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_reference_open_issue_status",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_testkit_ci_workflow_runs_sentinel_and_full_runner",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_failed_case_becomes_replayable_regression_and_detects_rework",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_failed_case_is_traceable_into_self_issue_intake",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_issue_ledger_has_a_replayable_test_reference_for_each_known_bug",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_new_issue_revision_rejects_old_page_review_and_prepare",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_artifact_reference_survives_issue_intake_evidence_handoff",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_case_capture_does_not_leave_partial_artifact_on_write_crash[False]",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_case_capture_does_not_leave_partial_artifact_on_write_crash[True]",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_failed_candidate_regression_blocks_merge_side_effect",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_fix_run_candidate_preflight_blocks_incomplete_acceptance",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_fix_run_orders_regression_impact_closure_merge_and_post_merge",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_local_fix_run_replays_failure_before_candidate_and_bounds_merge",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_local_merge_runs_post_merge_regression_in_isolated_repository",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_runtime_issue_fix_run_dispatches_implementation_to_provider",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_runtime_issue_fix_run_without_git_baseline_is_environment_failure",
+        "tests/test_external_issue_ingress.py::test_active_delivery_binding_suppresses_duplicate_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_current_triage_contract_creates_exact_issue_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_failed_provider_sync_does_not_publish_ingress",
+        "tests/test_external_issue_ingress.py::test_fix_proposal_backfills_report_verification_command",
+        "tests/test_external_issue_ingress.py::test_historical_issue_is_mirrored_but_not_auto_triaged",
+        "tests/test_external_issue_ingress.py::test_ingress_config_is_provider_neutral_but_gitlab_adapter_is_disabled",
+        "tests/test_external_issue_ingress.py::test_ingress_poll_interval_is_bounded",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_binds_runtime_flow_identity",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_exposes_body_and_comments_as_controlled_inputs",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_materializes_github_image_attachment_refs",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_rotates_software_baseline_to_artifact_contract",
+        "tests/test_external_issue_ingress.py::test_new_issue_revision_queues_one_read_only_triage_run",
+        "tests/test_external_issue_ingress.py::test_operator_can_manually_queue_one_historical_issue_revision",
+        "tests/test_external_issue_ingress.py::test_operator_can_retry_cancelled_historical_issue_revision",
+        "tests/test_external_issue_ingress.py::test_operator_can_start_new_triage_after_terminal_disposition",
+        "tests/test_external_issue_ingress.py::test_ready_label_is_only_an_approval_intent",
+        "tests/test_external_issue_ingress.py::test_ready_triage_promotes_intake_contract_for_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_ready_triage_reopens_archived_intake_task",
+        "tests/test_external_issue_ingress.py::test_ready_triage_reopens_task_after_stale_cancellation",
+        "tests/test_external_issue_ingress.py::test_same_revision_reuses_task_and_changed_revision_gets_retry_suffix",
+        "tests/test_external_issue_ingress.py::test_semantic_triage_outcome_closes_run_admission",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-synth]",
+        "tests/test_issue_candidate_delivery.py::test_later_issue_revision_does_not_invalidate_bound_candidate",
+        "tests/test_issue_candidate_delivery.py::test_locked_self_issue_delivery_uses_canonical_zaofu_repository",
+        "tests/test_issue_candidate_delivery.py::test_owner_review_and_prepare_create_immutable_local_ref_without_push",
+        "tests/test_issue_candidate_delivery.py::test_owner_review_records_changes_and_rejection_with_reasons",
+        "tests/test_issue_candidate_delivery.py::test_pr_url_is_restricted_to_configured_github_repository",
+        "tests/test_issue_candidate_delivery.py::test_prepare_fails_closed_when_remote_base_drifted",
+        "tests/test_issue_candidate_delivery.py::test_previous_handoff_does_not_mark_new_verified_candidate_stale",
+        "tests/test_issue_candidate_delivery.py::test_pull_request_reader_uses_local_github_cli_credential",
+        "tests/test_issue_candidate_delivery.py::test_record_and_refresh_pr_require_exact_repo_base_and_candidate",
+        "tests/test_issue_candidate_delivery.py::test_taskless_candidate_from_another_fix_run_is_not_bound_to_issue",
+        "tests/test_issue_triage_mirror.py::test_attachment_proxy_only_serves_github_images",
+        "tests/test_issue_triage_mirror.py::test_candidate_delivery_routes_use_token_gate_and_deterministic_service",
+        "tests/test_issue_triage_mirror.py::test_create_app_registers_issue_triage_routes",
+        "tests/test_issue_triage_mirror.py::test_filter_requests_reuse_the_current_issue_workflow_projection",
+        "tests/test_issue_triage_mirror.py::test_fix_queue_is_not_regressed_by_replayed_delivery_proposal",
+        "tests/test_issue_triage_mirror.py::test_list_and_detail_project_external_issue_workflow_state",
+        "tests/test_issue_triage_mirror.py::test_list_filters_all_queued_workflow_states",
+        "tests/test_issue_triage_mirror.py::test_manual_refresh_forces_repository_metadata_sync",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_admits_one_historical_issue",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_inherits_locked_workspace_ingress",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_requires_mutation_authorization",
+        "tests/test_issue_triage_mirror.py::test_normalization_derives_group_and_rejects_pull_requests",
+        "tests/test_issue_triage_mirror.py::test_reconciler_can_fetch_one_unmirrored_issue",
+        "tests/test_issue_triage_mirror.py::test_reconciler_verifies_repository_filters_pr_and_debounces",
+        "tests/test_issue_triage_mirror.py::test_routes_list_detail_and_signed_webhook",
+        "tests/test_issue_triage_mirror.py::test_stage_failure_does_not_make_active_triage_run_restartable",
+        "tests/test_issue_triage_mirror.py::test_store_keeps_body_sidecar_and_rejects_older_revision",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_ready_to_fix_as_approval_state",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_unique_task_history_newest_first",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_unverified_candidate",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_leaves_triaging_after_terminal_success",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_tracks_candidate_delivery_lifecycle",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_tracks_pause_resume_and_fix_cancellation",
+        "tests/test_ship.py::test_candidate_conflict_after_integration_still_blocks",
+        "tests/test_ship.py::test_candidate_integration_completed_event_makes_candidate_ready",
+        "tests/test_ship.py::test_candidate_quality_failed_blocks_even_with_integration_event",
+        "tests/test_ship.py::test_candidate_ship_conflict_aborts_and_leaves_main_unchanged",
+        "tests/test_ship.py::test_clean_candidate_ship_merges_to_main_and_tags",
+        "tests/test_ship.py::test_main_lock_blocks_concurrent_ship",
+        "tests/test_ship.py::test_manifest_status_updated_with_quality_passed_marks_ready",
+        "tests/test_ship.py::test_missing_candidate_ref_blocks",
+        "tests/test_ship.py::test_repeated_identical_candidate_ship_is_idempotent",
+        "tests/test_ship.py::test_tracked_modification_still_blocks_ship",
+        "tests/test_ship.py::test_untracked_file_at_root_does_not_block_ship",
+        "tests/test_ship.py::test_web_ship_action_calls_deterministic_service"
+      ],
+      "source_profile": "acceptance",
+      "report": {
+        "ref": "attachments/k589-k565-closeout-20260928/testkit-run.json",
+        "sha256": "fb250a705900b4662fa287159a448833379f335c5852c00d538128f0758e612c"
+      }
+    },
+    {
+      "id": "K571-owned-vm-recovery",
+      "description": "owned-QEMU-SIGKILL同盘完整CLI恢复：六收据、唯一结算、交付与终态startup幂等；非全OS矩阵",
+      "source_profile": "acceptance",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_isolated_vm_recovery_host.py::test_owned_vm_inflight_run_recovers_through_full_cli_start"
+      ],
+      "report": {
+        "ref": "attachments/vm-k577-20260928/host-acceptance/testkit-run.json",
+        "sha256": "5756c9b2889c69e4bb22952c135d46b3e1f571c22efa2124863b9912d1ccdd7f"
+      }
+    },
+    {
+      "id": "K591-guest-panic-recovery",
+      "description": "真实 ZaoFu 在途 Run 的 guest kernel panic→同盘第二 boot→完整 CLI 恢复；独立 acceptance 来源，不扩称全 OS crash",
+      "source_profile": "acceptance",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_isolated_vm_recovery_host.py::test_guest_panic_inflight_run_recovers_through_full_cli_start"
+      ],
+      "report": {
+        "ref": "attachments/k591-guest-panic-recovery-20260928/host-acceptance/testkit-run.json",
+        "sha256": "6382888f4a5f482016e079fbd462c777f27826ec62aacf03aaa421b7c698ea2c"
+      }
+    },
+    {
+      "id": "K595B-restricted-impact-red",
+      "description": "048最小修复后的206节点前序闭包：196通过、10个旧hash期待值失败；保留原红，不代表原生验收",
+      "source_profile": "backend",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s0.py::test_all_named_testkit_files_are_registered_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_coverage_matrix_lists_every_stage_and_existing_test_entry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_explicit_host_tests_are_marked_and_excluded_from_default_registry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[None]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[closed_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[non_strict]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unknown_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unmapped]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_open_issues_declare_executable_reproduction_paths",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_paths_are_registered_for_execution_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_registry_points_to_real_test_nodes",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registered_xfails_are_strict_and_mapped_to_each_executing_stage",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[MissingClass::test_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_missing_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_respawn_finds_transcript_in_actual_spawn_cwd]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_stage_registry_and_coverage_matrix_have_the_same_test_surface",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_are_traceable_to_registered_issues",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_reference_open_issue_status",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_testkit_ci_workflow_runs_sentinel_and_full_runner",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[claude-code]",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[codex]",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_hook_held_queue_naturally_times_out_then_cli_recovers_only_gap",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_model_flag_when_set",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_no_model_flag_when_empty",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_no_model_flag_when_legacy_placeholder",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_build_command",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_clear_is_none",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_empty_model_reasoning_effort_preserves_cli_inheritance",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_enables_codex_hooks_feature_flag",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_get_adapter_codex",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_model_flag",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_model_reasoning_effort_overrides_global_codex_config",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_ready_pattern_is_unicode_chevron",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_allowlist_is_alias_for_restricted",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_bypass_keeps_dangerous_flag",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_default_maps_to_workspace_write_without_prompt",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_empty_permission_mode_defaults_to_workspace_write_without_prompt",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_honors_explicit_danger_full_access_override",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_ignores_unsupported_worker_sandbox_override",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_with_allowed_paths_uses_workspace_write",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_without_allowed_paths_uses_read_only",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_unknown_permission_mode_falls_through_to_workspace_write",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_worker_sandbox_does_not_inherit_kanban_headless_override",
+        "tests/test_backend_adapters_resume.py::TestBackwardCompat::test_claude_adapter_called_positionally_with_role_only_still_works",
+        "tests/test_backend_adapters_resume.py::TestBackwardCompat::test_get_adapter_still_returns_correct_type",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_explicit_none_session_id_same_as_omitted",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_first_spawn_no_session_id_omits_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_first_spawn_with_session_id_includes_session_id_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeResumeCommand::test_resume_true_with_session_id_uses_resume_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeResumeCommand::test_resume_without_session_id_is_error_free_noop",
+        "tests/test_backend_adapters_resume.py::TestCodexInitialCommand::test_first_spawn_ignores_session_id_argument",
+        "tests/test_backend_adapters_resume.py::TestCodexInitialCommand::test_first_spawn_uses_interactive_tui_with_bypass_flag",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_still_includes_bypass_flag",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_uses_resume_subcommand_with_uuid",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_without_session_id_falls_back_to_fresh",
+        "tests/test_backend_adapters_resume.py::TestMockAdapterIgnoresNewArgs::test_mock_adapter_accepts_extra_kwargs",
+        "tests/test_cli_start_task_stage_cwd.py::test_cli_restart_preserves_task_stage_spawn_cwd[None]",
+        "tests/test_cli_start_task_stage_cwd.py::test_cli_restart_preserves_task_stage_spawn_cwd[missing-workspace]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-post_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-pre_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-session_start]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-stop]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-user_prompt_submit]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-post_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-pre_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-session_start]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-stop]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-user_prompt_submit]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_all_five_events_have_type_command",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_command_binds_hook_recv",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_covers_five_events",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_generates_file",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_json_is_parseable",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_uses_configured_zf_cli_cmd",
+        "tests/test_codex_hook_settings.py::test_codex_hook_trust_states_dedups_identical_roots",
+        "tests/test_codex_hook_settings.py::test_codex_hook_trust_states_keys_both_roots",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths0-allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths0-restricted]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths1-allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths1-restricted]",
+        "tests/test_codex_restricted_runtime.py::test_dry_run_records_safe_argv_without_invoking_installed_cli[False]",
+        "tests/test_codex_restricted_runtime.py::test_dry_run_records_safe_argv_without_invoking_installed_cli[True]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[None]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[active-project]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[bad-layer]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[disabled-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[hook-cwd]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[hook-errors]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[missing-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[missing-policy]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[never]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[no-layers]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[on-request]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[untrusted-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[wrong-project-shape]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[wrong-trust]",
+        "tests/test_codex_restricted_runtime.py::test_failed_effective_policy_check_prevents_physical_spawn",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[[profiles.legacy]\\nmodel=\"keep\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[invalid = []",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[profile=\"legacy\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[child-timeout]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[malformed]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[oversize]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[rpc-error]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[success]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[timeout]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[wrong-home]",
+        "tests/test_codex_restricted_runtime.py::test_other_modes_do_not_migrate_approval_or_run_restricted_probe[bypass]",
+        "tests/test_codex_restricted_runtime.py::test_other_modes_do_not_migrate_approval_or_run_restricted_probe[default]",
+        "tests/test_codex_restricted_runtime.py::test_private_policy_replacement_breaks_hardlink_without_mutating_source",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[codex-home]",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[config.toml]",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[hooks.json]",
+        "tests/test_codex_restricted_runtime.py::test_resume_keeps_exact_session_cwd_and_strict_project_override",
+        "tests/test_codex_restricted_runtime.py::test_spawn_installs_user_hooks_and_preflights_private_approval[allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_spawn_installs_user_hooks_and_preflights_private_approval[restricted]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[\"approval_policy\" = \"on-request\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments['approval_policy' = '''untrusted'''\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[[approval_policy.granular]\\nsandbox_approval = true\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = \"\"\"\\nnever\"\"\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = \"never\" # old policy\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = { granular = { sandbox_approval = true } }\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy.granular.sandbox_approval = true\\n]",
+        "tests/test_codex_restricted_runtime.py::test_two_roles_keep_independent_user_hook_trust",
+        "tests/test_codex_runtime_hook_trust.py::test_spawn_rewrites_only_role_local_hook_trust_and_repeats_idempotently",
+        "tests/test_codex_runtime_hook_trust.py::test_writer_replaces_managed_hash_without_duplicate_toml_tables",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_session_meta_not_emitted",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_task_complete_emits_provider_turn_closed",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_token_count_not_emitted_as_agent_event",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_turn_aborted_emits_provider_turn_closed",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_assistant_message_emits_agent_text",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_function_call_emits_tool_use",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_function_call_output_emits_tool_result",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_reasoning_emits_thinking",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_user_message_skipped",
+        "tests/test_codex_session_tailer.py::TestCodexSessionPath::test_returns_none_when_no_match",
+        "tests/test_hook_recv_codex.py::test_bound_idle_role_hook_is_not_orphan",
+        "tests/test_hook_recv_codex.py::test_claude_cwd_resolves_fanout_actor_and_blocks_canonical_root_write",
+        "tests/test_hook_recv_codex.py::test_claude_hook_still_works_after_codex_routing_added",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_allows_only_current_result_scratch",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_allows_read_only_root_command_redirection",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_ignores_arrow_in_emit_payload",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_still_blocks_root_output_redirection",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_write_is_allowed",
+        "tests/test_hook_recv_codex.py::test_codex_allowed_paths_guard_allows_only_current_result_scratch",
+        "tests/test_hook_recv_codex.py::test_codex_apply_patch_allows_write_inside_allowed_paths",
+        "tests/test_hook_recv_codex.py::test_codex_apply_patch_blocks_write_outside_allowed_paths",
+        "tests/test_hook_recv_codex.py::test_codex_controlled_emit_allows_quoted_markdown_payload",
+        "tests/test_hook_recv_codex.py::test_codex_hook_extracts_codex_specific_fields",
+        "tests/test_hook_recv_codex.py::test_codex_hook_resolves_actor_from_role_local_transcript_path",
+        "tests/test_hook_recv_codex.py::test_codex_hook_stop_classifies_hook_review_required",
+        "tests/test_hook_recv_codex.py::test_codex_hook_stop_routes_with_namespace",
+        "tests/test_hook_recv_codex.py::test_codex_hook_transcript_path_repairs_stale_registry_binding",
+        "tests/test_hook_recv_codex.py::test_codex_hook_without_backend_flag_still_extracts_by_event_namespace",
+        "tests/test_hook_recv_codex.py::test_codex_plan_operation_scope_extends_parent_task_paths",
+        "tests/test_hook_recv_codex.py::test_codex_pre_tool_use_blocks_worker_runtime_task_doc_write",
+        "tests/test_hook_recv_codex.py::test_codex_pre_tool_use_blocks_worker_task_doc_ingest_command",
+        "tests/test_hook_recv_codex.py::test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch",
+        "tests/test_hook_recv_codex.py::test_controlled_zf_json_payload_is_not_shell_mutation",
+        "tests/test_hook_recv_codex.py::test_orchestrator_round_complete_unaffected",
+        "tests/test_hook_recv_codex.py::test_unresolved_session_emits_one_deduplicated_orphan",
+        "tests/test_provider_turn_liveness.py::test_loop_stop_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_on_demand_dormant_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_worker_launch_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_worker_respawn_closes_prior_codex_turn_generation",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_allowlist_uses_allowed_tools",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_allowlist_without_tools_falls_back_safely",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_basic",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_default_uses_dangerously_skip",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_clear_command",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_is_backend_adapter",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_ready_pattern",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_get_claude_code",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_get_mock",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_python_backend_returns_mock",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_unknown_backend_raises",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_build_command",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_clear_command",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_is_backend_adapter",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_ready_pattern",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[None]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[other-turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[turn_aborted]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_entry_skips_before_creating_fixture_without_opt_in",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_fixture_offline_timeout_and_cli_gap_recovery",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_fixture_reaches_legacy_dispatch_without_provider",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_preflight_refuses_global_update_mutation",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_preflight_rejects_missing_auth_before_version_state",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[context-cwd]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[cwd]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[early-terminal]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[no-call-id]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[no-tool]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[other-tool-turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[session]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[early-stop]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[early]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[extra-dispatch]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[lost-completed]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[semantic]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[wrong-hook]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[wrong-result]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_requires_causal_nonsemantic_timeout",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_transcript_oracle_binds_turn_before_and_after_real_terminal",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_transcript_resolution_rejects_wrong_metadata_and_symlink"
+      ],
+      "report": {
+        "ref": "attachments/k595b-codex-restricted-repair-20260929/impact-final/testkit-run.json",
+        "sha256": "23091d70d41105d76b49c8b694a28e3f2c73d4e745dd8ae61f07827dddc6899a"
+      }
+    },
+    {
+      "id": "K596-hash-repaired-impact",
+      "description": "独立Provider hash fixture修正后的191节点前序闭包；仅配置/离线调用方联调，不关闭实际hook执行或K547原生验收",
+      "source_profile": "acceptance",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s0.py::test_coverage_matrix_lists_every_stage_and_existing_test_entry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_stage_registry_and_coverage_matrix_have_the_same_test_surface",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_reference_open_issue_status",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[claude-code]",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[codex]",
+        "tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_hook_held_queue_naturally_times_out_then_cli_recovers_only_gap",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_model_flag_when_set",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_no_model_flag_when_empty",
+        "tests/test_backend_adapters.py::TestClaudeCodeAdapterFull::test_no_model_flag_when_legacy_placeholder",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_build_command",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_clear_is_none",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_empty_model_reasoning_effort_preserves_cli_inheritance",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_enables_codex_hooks_feature_flag",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_get_adapter_codex",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_model_flag",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_model_reasoning_effort_overrides_global_codex_config",
+        "tests/test_backend_adapters.py::TestCodexAdapter::test_ready_pattern_is_unicode_chevron",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_allowlist_is_alias_for_restricted",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_bypass_keeps_dangerous_flag",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_default_maps_to_workspace_write_without_prompt",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_empty_permission_mode_defaults_to_workspace_write_without_prompt",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_honors_explicit_danger_full_access_override",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_ignores_unsupported_worker_sandbox_override",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_with_allowed_paths_uses_workspace_write",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_restricted_without_allowed_paths_uses_read_only",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_unknown_permission_mode_falls_through_to_workspace_write",
+        "tests/test_backend_adapters.py::TestCodexPermissionMode::test_worker_sandbox_does_not_inherit_kanban_headless_override",
+        "tests/test_backend_adapters_resume.py::TestBackwardCompat::test_claude_adapter_called_positionally_with_role_only_still_works",
+        "tests/test_backend_adapters_resume.py::TestBackwardCompat::test_get_adapter_still_returns_correct_type",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_explicit_none_session_id_same_as_omitted",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_first_spawn_no_session_id_omits_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeInitialCommand::test_first_spawn_with_session_id_includes_session_id_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeResumeCommand::test_resume_true_with_session_id_uses_resume_flag",
+        "tests/test_backend_adapters_resume.py::TestClaudeResumeCommand::test_resume_without_session_id_is_error_free_noop",
+        "tests/test_backend_adapters_resume.py::TestCodexInitialCommand::test_first_spawn_ignores_session_id_argument",
+        "tests/test_backend_adapters_resume.py::TestCodexInitialCommand::test_first_spawn_uses_interactive_tui_with_bypass_flag",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_still_includes_bypass_flag",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_uses_resume_subcommand_with_uuid",
+        "tests/test_backend_adapters_resume.py::TestCodexResumeCommand::test_resume_without_session_id_falls_back_to_fresh",
+        "tests/test_backend_adapters_resume.py::TestMockAdapterIgnoresNewArgs::test_mock_adapter_accepts_extra_kwargs",
+        "tests/test_cli_start_task_stage_cwd.py::test_cli_restart_preserves_task_stage_spawn_cwd[None]",
+        "tests/test_cli_start_task_stage_cwd.py::test_cli_restart_preserves_task_stage_spawn_cwd[missing-workspace]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-post_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-pre_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-session_start]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-stop]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-user_prompt_submit]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-post_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-pre_tool_use]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-session_start]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-stop]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-user_prompt_submit]",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_all_five_events_have_type_command",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_command_binds_hook_recv",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_covers_five_events",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_generates_file",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_json_is_parseable",
+        "tests/test_codex_hook_settings.py::test_codex_hook_settings_uses_configured_zf_cli_cmd",
+        "tests/test_codex_hook_settings.py::test_codex_hook_trust_states_dedups_identical_roots",
+        "tests/test_codex_hook_settings.py::test_codex_hook_trust_states_keys_both_roots",
+        "tests/test_codex_hook_settings.py::test_recorded_hash_inputs_cover_two_paths_and_all_events",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths0-allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths0-restricted]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths1-allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_adapter_defers_approval_to_verified_project_policy[paths1-restricted]",
+        "tests/test_codex_restricted_runtime.py::test_dry_run_records_safe_argv_without_invoking_installed_cli[False]",
+        "tests/test_codex_restricted_runtime.py::test_dry_run_records_safe_argv_without_invoking_installed_cli[True]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[None]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[active-project]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[bad-layer]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[disabled-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[hook-cwd]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[hook-errors]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[missing-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[missing-policy]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[never]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[no-layers]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[on-request]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[untrusted-hook]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[wrong-project-shape]",
+        "tests/test_codex_restricted_runtime.py::test_effective_policy_gate_rejects_unproven_or_overridden_policy[wrong-trust]",
+        "tests/test_codex_restricted_runtime.py::test_failed_effective_policy_check_prevents_physical_spawn",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[[profiles.legacy]\\nmodel=\"keep\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[invalid = []",
+        "tests/test_codex_restricted_runtime.py::test_invalid_or_retired_config_fails_before_physical_spawn[profile=\"legacy\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[child-timeout]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[malformed]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[oversize]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[rpc-error]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[success]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[timeout]",
+        "tests/test_codex_restricted_runtime.py::test_metadata_protocol_uses_only_read_calls_and_reaps_process[wrong-home]",
+        "tests/test_codex_restricted_runtime.py::test_other_modes_do_not_migrate_approval_or_run_restricted_probe[bypass]",
+        "tests/test_codex_restricted_runtime.py::test_other_modes_do_not_migrate_approval_or_run_restricted_probe[default]",
+        "tests/test_codex_restricted_runtime.py::test_private_policy_replacement_breaks_hardlink_without_mutating_source",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[codex-home]",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[config.toml]",
+        "tests/test_codex_restricted_runtime.py::test_restricted_home_rejects_symlink_redirection[hooks.json]",
+        "tests/test_codex_restricted_runtime.py::test_resume_keeps_exact_session_cwd_and_strict_project_override",
+        "tests/test_codex_restricted_runtime.py::test_spawn_installs_user_hooks_and_preflights_private_approval[allowlist]",
+        "tests/test_codex_restricted_runtime.py::test_spawn_installs_user_hooks_and_preflights_private_approval[restricted]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[\"approval_policy\" = \"on-request\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments['approval_policy' = '''untrusted'''\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[[approval_policy.granular]\\nsandbox_approval = true\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = \"\"\"\\nnever\"\"\"\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = \"never\" # old policy\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy = { granular = { sandbox_approval = true } }\\n]",
+        "tests/test_codex_restricted_runtime.py::test_strip_policy_preserves_unrelated_toml_semantics_and_comments[approval_policy.granular.sandbox_approval = true\\n]",
+        "tests/test_codex_restricted_runtime.py::test_two_roles_keep_independent_user_hook_trust",
+        "tests/test_codex_runtime_hook_trust.py::test_spawn_rewrites_only_role_local_hook_trust_and_repeats_idempotently",
+        "tests/test_codex_runtime_hook_trust.py::test_writer_replaces_managed_hash_without_duplicate_toml_tables",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_session_meta_not_emitted",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_task_complete_emits_provider_turn_closed",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_token_count_not_emitted_as_agent_event",
+        "tests/test_codex_session_tailer.py::TestCodexEventMsgIgnored::test_turn_aborted_emits_provider_turn_closed",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_assistant_message_emits_agent_text",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_function_call_emits_tool_use",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_function_call_output_emits_tool_result",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_reasoning_emits_thinking",
+        "tests/test_codex_session_tailer.py::TestCodexResponseItemParsing::test_user_message_skipped",
+        "tests/test_codex_session_tailer.py::TestCodexSessionPath::test_returns_none_when_no_match",
+        "tests/test_hook_recv_codex.py::test_bound_idle_role_hook_is_not_orphan",
+        "tests/test_hook_recv_codex.py::test_claude_cwd_resolves_fanout_actor_and_blocks_canonical_root_write",
+        "tests/test_hook_recv_codex.py::test_claude_hook_still_works_after_codex_routing_added",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_allows_only_current_result_scratch",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_allows_read_only_root_command_redirection",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_ignores_arrow_in_emit_payload",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_guard_still_blocks_root_output_redirection",
+        "tests/test_hook_recv_codex.py::test_claude_workdir_write_is_allowed",
+        "tests/test_hook_recv_codex.py::test_codex_allowed_paths_guard_allows_only_current_result_scratch",
+        "tests/test_hook_recv_codex.py::test_codex_apply_patch_allows_write_inside_allowed_paths",
+        "tests/test_hook_recv_codex.py::test_codex_apply_patch_blocks_write_outside_allowed_paths",
+        "tests/test_hook_recv_codex.py::test_codex_controlled_emit_allows_quoted_markdown_payload",
+        "tests/test_hook_recv_codex.py::test_codex_hook_extracts_codex_specific_fields",
+        "tests/test_hook_recv_codex.py::test_codex_hook_resolves_actor_from_role_local_transcript_path",
+        "tests/test_hook_recv_codex.py::test_codex_hook_stop_classifies_hook_review_required",
+        "tests/test_hook_recv_codex.py::test_codex_hook_stop_routes_with_namespace",
+        "tests/test_hook_recv_codex.py::test_codex_hook_transcript_path_repairs_stale_registry_binding",
+        "tests/test_hook_recv_codex.py::test_codex_hook_without_backend_flag_still_extracts_by_event_namespace",
+        "tests/test_hook_recv_codex.py::test_codex_plan_operation_scope_extends_parent_task_paths",
+        "tests/test_hook_recv_codex.py::test_codex_pre_tool_use_blocks_worker_runtime_task_doc_write",
+        "tests/test_hook_recv_codex.py::test_codex_pre_tool_use_blocks_worker_task_doc_ingest_command",
+        "tests/test_hook_recv_codex.py::test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch",
+        "tests/test_hook_recv_codex.py::test_controlled_zf_json_payload_is_not_shell_mutation",
+        "tests/test_hook_recv_codex.py::test_orchestrator_round_complete_unaffected",
+        "tests/test_hook_recv_codex.py::test_unresolved_session_emits_one_deduplicated_orphan",
+        "tests/test_provider_turn_liveness.py::test_loop_stop_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_on_demand_dormant_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_worker_launch_closes_prior_codex_turn_generation",
+        "tests/test_provider_turn_liveness.py::test_worker_respawn_closes_prior_codex_turn_generation",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_allowlist_uses_allowed_tools",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_allowlist_without_tools_falls_back_safely",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_basic",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_build_command_default_uses_dangerously_skip",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_clear_command",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_is_backend_adapter",
+        "tests/test_runtime_backend.py::TestClaudeCodeAdapter::test_ready_pattern",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_get_claude_code",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_get_mock",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_python_backend_returns_mock",
+        "tests/test_runtime_backend.py::TestGetAdapter::test_unknown_backend_raises",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_build_command",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_clear_command",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_is_backend_adapter",
+        "tests/test_runtime_backend.py::TestMockAdapter::test_ready_pattern",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[None]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[other-turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_closed_turn_requires_its_own_successful_terminal[turn_aborted]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_entry_skips_before_creating_fixture_without_opt_in",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_fixture_offline_timeout_and_cli_gap_recovery",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_fixture_reaches_legacy_dispatch_without_provider",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_preflight_refuses_global_update_mutation",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_native_preflight_rejects_missing_auth_before_version_state",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[context-cwd]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[cwd]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[early-terminal]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[no-call-id]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[no-tool]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[other-tool-turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[session]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_open_turn_oracle_rejects_wrong_identity_or_closed_turn[turn]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[early-stop]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[early]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[extra-dispatch]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[lost-completed]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[semantic]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[wrong-hook]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_rejects_unproven_occupancy[wrong-result]",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_queue_oracle_requires_causal_nonsemantic_timeout",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_transcript_oracle_binds_turn_before_and_after_real_terminal",
+        "tests/test_testkit_native_codex_legacy_queue.py::test_transcript_resolution_rejects_wrong_metadata_and_symlink"
+      ],
+      "report": {
+        "ref": "attachments/k596-hook-hash-provenance-20260929/impact-final/testkit-run.json",
+        "sha256": "4fbed7a498c659cfcb8bc4048974390c781e56dea699d4a0f370fcdf20f9f160"
+      }
+    }
+  ]
+}

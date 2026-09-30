@@ -106,7 +106,14 @@ def test_register_role_does_not_claim_launch_readiness(
 def test_background_dispatch_returns_before_provider_turn_completes(
     state_dir: Path,
     registry: RoleSessionRegistry,
+    monkeypatch,
 ):
+    # This mock-query contract measures background dispatch, not the host's
+    # provider process/lock scan (covered by explicit lifecycle tests).
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: state_dir.parent))
+    monkeypatch.setattr(
+        "zf.runtime.transport_stream_json.purge_stale_claude_session_lock", lambda _sid: {},
+    )
     started = threading.Event()
     release = threading.Event()
 
@@ -124,24 +131,28 @@ def test_background_dispatch_returns_before_provider_turn_completes(
     )
     transport.spawn(RoleConfig(name="dev"), argv=[])
 
-    before = time.monotonic()
-    transport.send_task(
-        "dev",
-        briefing_path=state_dir / "briefings" / "dev.md",
-        prompt="go",
-    )
+    try:
+        before = time.monotonic()
+        transport.send_task(
+            "dev",
+            briefing_path=state_dir / "briefings" / "dev.md",
+            prompt="go",
+        )
 
-    assert time.monotonic() - before < 0.2
-    assert started.wait(1.0)
-    assert transport.poll_events() == []
-    release.set()
+        assert time.monotonic() - before < 0.2
+        assert started.wait(1.0)
+        assert transport.poll_events() == []
+        release.set()
 
-    events: list[Any] = []
-    deadline = time.monotonic() + 2.0
-    while time.monotonic() < deadline and not events:
-        events = transport.poll_events()
-        time.sleep(0.01)
-    assert any(event.type == "agent.text" for event in events)
+        events: list[Any] = []
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline and not events:
+            events = transport.poll_events()
+            time.sleep(0.01)
+        assert any(event.type == "agent.text" for event in events)
+    finally:
+        release.set()
+        transport.shutdown()
 
 
 def test_background_dispatch_serializes_turns_for_one_role(
@@ -456,7 +467,15 @@ def test_second_turn_waits_for_delayed_session_file_before_purge(
         )
 
     assert purge.call_count == 1
-    sleep.assert_called_once()
+    # ``time`` is a module-level object shared with ``SessionLock``.  A lock
+    # retry may therefore also call this patched sleep with its own interval;
+    # assert only the polling interval that belongs to the behavior under test.
+    polling_sleeps = [
+        call.args[0]
+        for call in sleep.call_args_list
+        if call.args and call.args[0] == 0.05
+    ]
+    assert polling_sleeps == [0.05]
     assert getattr(calls[0], "resume", None) is None
     assert getattr(calls[1], "resume", None) == str(
         registry.get_or_create("dev")

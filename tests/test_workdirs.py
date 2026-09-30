@@ -1229,6 +1229,56 @@ def test_reader_worktree_replaced_when_source_repository_changes(tmp_path: Path)
     assert (old_workdir / "marker.txt").read_text(encoding="utf-8") == "source"
 
 
+def test_writer_worktree_replaced_when_source_repository_changes(tmp_path: Path):
+    """A Fix writer must never reuse a clean worktree from another repo."""
+    source = tmp_path / "source"
+    old_source = tmp_path / "old-source"
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    for repo in (source, old_source):
+        repo.mkdir()
+        subprocess.run(["git", "init", "-q", str(repo)], check=True)
+        (repo / "marker.txt").write_text(repo.name, encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "add", "marker.txt"], check=True)
+        subprocess.run(
+            ["git", "-C", str(repo), "-c", "user.name=Test", "-c",
+             "user.email=test@example.com", "commit", "-qm", "init"],
+            check=True,
+        )
+    config = ZfConfig(
+        project=ProjectConfig(name="test"),
+        roles=[RoleConfig(name="fix", instance_id="issue-fix-lane-0", backend="mock", role_kind="writer")],
+        runtime=RuntimeConfig(
+            workdirs=WorkdirConfig(
+                enabled=True,
+                root=".zf/workdirs",
+                mode="worktree",
+            ),
+        ),
+    )
+    manager = WorkdirManager(
+        state_dir=state_dir / ".zf", project_root=source, config=config,
+    )
+    manager.state_dir.mkdir()
+    old_workdir = manager.root / "issue-fix-lane-0" / "project"
+    old_workdir.parent.mkdir(parents=True)
+    subprocess.run(
+        ["git", "-C", str(old_source), "worktree", "add", "--detach", str(old_workdir), "HEAD"],
+        check=True,
+    )
+    write_workdir_owner_marker(
+        old_workdir.parent,
+        project_name="test",
+        instance_id="issue-fix-lane-0",
+        project_root=source,
+        created_by="test",
+    )
+
+    manager.prepare(config.roles[0])
+
+    assert (old_workdir / "marker.txt").read_text(encoding="utf-8") == "source"
+
+
 def test_start_workdir_dry_run_prepares_runtime_dirs(
     tmp_path: Path,
     monkeypatch,

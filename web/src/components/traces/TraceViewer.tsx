@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { ArrowLeft } from "lucide-react";
 
 import type {
@@ -67,6 +69,7 @@ export function TraceViewer({
   spanView: TraceSpanView;
   traceId: string;
 }) {
+  useSettingsPreferences();
   const detail = resources.detail.data;
   const route = detail?.execution_route;
   const displayStatus = route && !route.empty ? route.status : detail?.status ?? "observed";
@@ -78,10 +81,10 @@ export function TraceViewer({
       <header className="trace-viewer-heading">
         <button aria-label="Back to traces" className="icon-button trace-viewer-back" type="button" onClick={actions.close}>
           <ArrowLeft aria-hidden="true" size={17} />
-          <span>Traces</span>
+          <span>{uiText("Traces")}</span>
         </button>
         <div className="trace-viewer-title">
-          <span className="muted">Trace</span>
+          <span className="muted">{uiText("Trace")}</span>
           <h3 className="mono">{traceId}</h3>
         </div>
         <div className="trace-viewer-summary" aria-label="Trace summary">
@@ -179,6 +182,7 @@ function SpanWorkspace({
   selectedSpanId: string;
   spanView: TraceSpanView;
 }) {
+  useSettingsPreferences();
   const page = resources.spans.data;
   const selectedSpan = page?.items.find((span) => span.span_id === selectedSpanId) ?? null;
   const node: TraceInspectorNode = selectedSpan ? { kind: "span", value: selectedSpan } : null;
@@ -188,7 +192,7 @@ function SpanWorkspace({
         <div className="trace-surface-toolbar">
           <div>
             <strong>Lifecycle spans</strong>
-            <span className="muted">Only stable, ledger-backed lifecycle boundaries are shown.</span>
+            <span className="muted">{uiText("Only stable, ledger-backed lifecycle boundaries are shown.")}</span>
           </div>
           <div aria-label="Span layout" className="trace-view-toggle" role="tablist">
             {(["tree", "waterfall"] as const).map((view) => (
@@ -210,7 +214,7 @@ function SpanWorkspace({
           ) : null}
         </div>
         <div className="trace-surface-scroll" aria-busy={resources.spans.loading}>
-          {resources.spans.loading ? <TraceState>Loading bounded lifecycle spans…</TraceState> : null}
+          {resources.spans.loading ? <TraceState>{uiText("Loading bounded lifecycle spans…")}</TraceState> : null}
           {resources.spans.error ? <p className="trace-load-error" role="alert">Span coverage unavailable: {resources.spans.error}</p> : null}
           {earlierError ? <p className="trace-load-error" role="alert">Earlier spans unavailable: {earlierError}</p> : null}
           {!resources.spans.loading && !resources.spans.error && page?.items.length ? (
@@ -241,19 +245,20 @@ function SpanWorkspace({
 }
 
 function TraceSpanCoverageEmpty({ actions, page }: { actions: TraceViewerActions; page: TraceSpanPage }) {
+  useSettingsPreferences();
   const coverage = page.coverage;
   return (
     <div className="trace-coverage-empty">
-      <strong>No lifecycle spans are proven for this trace.</strong>
+      <strong>{uiText("No lifecycle spans are proven for this trace.")}</strong>
       <p>{coverage.reason || "The bounded ledger window contains no paired lifecycle boundaries."}</p>
       <dl>
-        <div><dt>Collector</dt><dd>{coverage.collector || "not observed"}</dd></div>
-        <div><dt>Ledger</dt><dd>{coverage.ledger || "events.jsonl"}</dd></div>
-        <div><dt>Coverage</dt><dd>{coverage.status}</dd></div>
+        <div><dt>{uiText("Collector")}</dt><dd>{coverage.collector || "not observed"}</dd></div>
+        <div><dt>{uiText("Ledger")}</dt><dd>{coverage.ledger || "events.jsonl"}</dd></div>
+        <div><dt>{uiText("Coverage")}</dt><dd>{coverage.status}</dd></div>
       </dl>
       <div className="trace-coverage-actions">
-        <button className="icon-button" type="button" onClick={() => actions.selectMode("execution")}>Open Execution</button>
-        <button className="icon-button" type="button" onClick={() => actions.selectMode("events")}>Open Events</button>
+        <button className="icon-button" type="button" onClick={() => actions.selectMode("execution")}>{uiText("Open Execution")}</button>
+        <button className="icon-button" type="button" onClick={() => actions.selectMode("events")}>{uiText("Open Events")}</button>
       </div>
     </div>
   );
@@ -272,6 +277,7 @@ function ExecutionWorkspace({
   resources: TraceViewerResources;
   selectedStageId: string;
 }) {
+  useSettingsPreferences();
   const detail = resources.detail.data;
   const route = detail?.execution_route;
   const selectedStage = route?.linear.find((stage) => stageKey(stage.stage, stage.first_seq) === selectedStageId) ?? null;
@@ -280,13 +286,13 @@ function ExecutionWorkspace({
     <div className="trace-workspace" id="trace-execution-panel" role="tabpanel">
       <main className="trace-workspace-primary trace-execution-surface" aria-busy={resources.detail.loading}>
         <div className="trace-surface-toolbar">
-          <div><strong>Execution route</strong><span className="muted">ZaoFu stages remain distinct from lifecycle spans.</span></div>
+          <div><strong>{uiText("Execution route")}</strong><span className="muted">ZaoFu stages remain distinct from lifecycle spans.</span></div>
         </div>
         <div className="trace-surface-scroll">
-          {resources.detail.loading ? <TraceState>Loading bounded execution evidence…</TraceState> : null}
+          {resources.detail.loading ? <TraceState>{uiText("Loading bounded execution evidence…")}</TraceState> : null}
           {resources.detail.error ? <p className="trace-load-error" role="alert">Trace detail unavailable: {resources.detail.error}</p> : null}
           {!resources.detail.loading && !resources.detail.error && (!route || route.empty) ? (
-            <TraceState>No structured route is available for this trace.</TraceState>
+            <TraceState>{uiText("No structured route is available for this trace.")}</TraceState>
           ) : null}
           {route && !route.empty ? (
             <>
@@ -345,6 +351,7 @@ function EventsWorkspace({
   resources: TraceViewerResources;
   selectedEventId: string;
 }) {
+  useSettingsPreferences();
   const detail = resources.detail.data;
   const selectedEvent = detail?.timeline.find((event) => event.id === selectedEventId) ?? null;
   const node: TraceInspectorNode = selectedEvent ? { kind: "event", value: selectedEvent } : null;
@@ -352,7 +359,7 @@ function EventsWorkspace({
     <div className="trace-workspace" id="trace-events-panel" role="tabpanel">
       <main className="trace-workspace-primary" aria-busy={resources.detail.loading}>
         <div className="trace-surface-toolbar">
-          <div><strong>Event evidence</strong><span className="muted">Most recent bounded ledger window, oldest to newest.</span></div>
+          <div><strong>{uiText("Event evidence")}</strong><span className="muted">Most recent bounded ledger window, oldest to newest.</span></div>
           {detail?.has_more ? (
             <button className="icon-button" disabled={earlierLoading} type="button" onClick={actions.loadEarlierEvents}>
               {earlierLoading ? "Loading…" : "Load earlier"}
@@ -360,10 +367,10 @@ function EventsWorkspace({
           ) : null}
         </div>
         <div className="trace-surface-scroll">
-          {resources.detail.loading ? <TraceState>Loading bounded event evidence…</TraceState> : null}
+          {resources.detail.loading ? <TraceState>{uiText("Loading bounded event evidence…")}</TraceState> : null}
           {resources.detail.error ? <p className="trace-load-error" role="alert">Trace detail unavailable: {resources.detail.error}</p> : null}
           {earlierError ? <p className="trace-load-error" role="alert">Earlier events unavailable: {earlierError}</p> : null}
-          {!resources.detail.loading && !resources.detail.error && detail && !detail.timeline.length ? <TraceState>No events recorded for this trace.</TraceState> : null}
+          {!resources.detail.loading && !resources.detail.error && detail && !detail.timeline.length ? <TraceState>{uiText("No events recorded for this trace.")}</TraceState> : null}
           {detail?.timeline.length ? (
             <ol className="trace-event-list">
               {detail.timeline.map((event, index) => (

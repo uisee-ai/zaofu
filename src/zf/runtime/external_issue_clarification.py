@@ -15,8 +15,9 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_text
 
 
 SCHEMA_VERSION = "external-issue-clarification.v1"
-MAX_QUESTIONS = 5
-MAX_ROUNDS = 3
+# Ask every currently knowable Reporter-only blocker in one comment.  The
+# character budget is transport protection, not a semantic question/round cap.
+MAX_QUESTION_PAYLOAD_CHARS = 50_000
 QUESTION_TYPES = frozenset({"short_text", "long_text", "single_choice", "boolean"})
 DISPOSITION_OUTCOMES = frozenset({"ready_to_fix", "unverified_candidate", "needs_info"})
 NEEDS_INFO_REASON_CODES = frozenset({
@@ -37,6 +38,47 @@ FORBIDDEN_NEEDS_INFO_REASON_CODES = frozenset({
 _QUESTION_ID = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_GAP_CHARS = 500
 _REPORT_SCHEMA_VERSION = "external-issue-report.v1"
+REQUEST_MARKER_PREFIX = "<!-- zaofu-needs-info-request:"
+
+
+def clarification_request_marker(
+    source_key: str,
+    source_revision: str,
+    triage_id: str,
+    round_number: int,
+) -> str:
+    """Return the stable marker used for one remote reporter question set."""
+
+    digest = hashlib.sha256(
+        f"{source_key}:{source_revision}:{triage_id}:{round_number}".encode("utf-8")
+    ).hexdigest()[:24]
+    return f"{REQUEST_MARKER_PREFIX}{digest} -->"
+
+
+def clarification_request_body(
+    clarification: Mapping[str, Any], *, marker: str,
+) -> str:
+    """Render a bounded, user-facing request without internal worker details."""
+
+    lines = [
+        marker,
+        "## Additional information requested",
+        "",
+        "A maintainer is reviewing this Issue and needs the following information before continuing. "
+        "Please reply in this GitHub Issue; the original report will remain unchanged.",
+        "",
+    ]
+    for index, question in enumerate(clarification.get("questions") or [], start=1):
+        if not isinstance(question, Mapping):
+            continue
+        text = str(question.get("question") or "").strip()
+        if not text:
+            continue
+        required = " (required)" if bool(question.get("required", True)) else " (optional)"
+        lines.extend([f"{index}. {text}{required}", ""])
+    round_number = int(clarification.get("round") or 1)
+    lines.append(f"Clarification request {round_number}.")
+    return "\n".join(lines)
 
 
 def _report_ref_descriptor(
@@ -111,7 +153,7 @@ def normalize_external_issue_disposition(
     if (
         outcome == "needs_info"
         and reason_code not in FORBIDDEN_NEEDS_INFO_REASON_CODES
-        and not 1 <= len(questions) <= MAX_QUESTIONS
+        and len(questions) < 1
     ):
         issues.append(_issue(
             "external_issue_disposition.questions", "question_count_invalid",
@@ -123,7 +165,7 @@ def normalize_external_issue_disposition(
 
     normalized_questions: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for index, raw in enumerate(questions[:MAX_QUESTIONS]):
+    for index, raw in enumerate(questions):
         field = f"external_issue_disposition.questions[{index}]"
         if not isinstance(raw, Mapping):
             issues.append(_issue(field, "schema_invalid"))
@@ -153,6 +195,14 @@ def normalize_external_issue_disposition(
             "required": bool(raw.get("required", True)),
             **({"options": options} if options else {}),
         })
+    if sum(
+        len(str(item.get("question") or ""))
+        + sum(len(str(option)) for option in item.get("options") or ())
+        for item in normalized_questions
+    ) > MAX_QUESTION_PAYLOAD_CHARS:
+        issues.append(_issue(
+            "external_issue_disposition.questions", "payload_too_large",
+        ))
     if issues:
         return None, issues
     verification_gaps = value.get("verification_gaps")
@@ -290,7 +340,6 @@ def external_issue_triage_outcome_event(
         and str((event.payload or {}).get("source_key") or "") == source_key
         for event in rows
     )
-    exhausted = round_number >= MAX_ROUNDS
     body = {
         **disposition,
         "source_key": source_key,
@@ -298,8 +347,7 @@ def external_issue_triage_outcome_event(
         "workflow_run_id": run_id,
         "task_id": str(cause.task_id or invoke.task_id or ""),
         "round": round_number,
-        "max_rounds": MAX_ROUNDS,
-        "status": "needs_info_exhausted" if exhausted else "needs_info",
+        "status": "needs_info",
     }
     descriptor = write_immutable_json_sidecar(
         Path(state_dir),
@@ -311,10 +359,7 @@ def external_issue_triage_outcome_event(
         source_event_id=cause.id,
     )
     return ZfEvent(
-        type=(
-            "external_issue.triage.needs_info_exhausted"
-            if exhausted else "external_issue.triage.needs_info"
-        ),
+        type="external_issue.triage.needs_info",
         actor="kernel",
         task_id=cause.task_id or invoke.task_id,
         payload={
@@ -322,7 +367,6 @@ def external_issue_triage_outcome_event(
             "source_revision": source_revision,
             "workflow_run_id": run_id,
             "round": round_number,
-            "max_rounds": MAX_ROUNDS,
             "reason": str(disposition.get("reason") or ""),
             "clarification_ref": descriptor,
         },
@@ -373,6 +417,23 @@ def _producer_disposition(
             candidate = control["report"].get("external_issue_disposition")
         normalized = _normalize_producer_disposition(state_dir, candidate)
         if normalized is not None:
+            # A valid structured disposition and the complete Markdown report
+            # are independent protocol fields.  Older readers emitted the
+            # former but omitted ``report_ref`` even though the latter was
+            # present in ``output_artifacts``.  Preserve that immutable report
+            # binding before returning; downstream Fix contract synthesis
+            # needs it to extract executable verification commands.
+            report_ref = _control_report_ref(state_dir, control)
+            if report_ref and not normalized.get("report_ref"):
+                enriched = {
+                    **normalized,
+                    "report_ref": report_ref,
+                }
+                normalized, issues = normalize_external_issue_disposition(
+                    enriched,
+                )
+                if normalized is None or issues:
+                    continue
             return normalized
         # Older workflow readers materialized the semantic report as Markdown
         # under ``outputs.report`` instead of preserving the structured
@@ -409,6 +470,41 @@ def _producer_disposition(
                     )
                     if recovered is not None:
                         return recovered
+    return None
+
+
+def _control_report_ref(
+    state_dir: Path,
+    control: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Find the immutable Markdown report paired with a control result.
+
+    ``control`` has appeared in three shapes across reader generations:
+    top-level ``output_artifacts``, nested ``report.output_artifacts``, and
+    inline ``outputs.report``.  Resolve all three without treating the
+    human-readable report as canonical state.
+    """
+
+    containers: list[Mapping[str, Any]] = [control]
+    nested = control.get("report")
+    if isinstance(nested, Mapping):
+        containers.append(nested)
+    for container in containers:
+        artifacts = container.get("output_artifacts")
+        if isinstance(artifacts, list):
+            for artifact in artifacts:
+                if not isinstance(artifact, Mapping):
+                    continue
+                if str(artifact.get("kind") or "") != "report/markdown":
+                    continue
+                if str(artifact.get("ref") or "").strip() and str(
+                    artifact.get("sha256") or ""
+                ).strip():
+                    return dict(artifact)
+        outputs = container.get("outputs")
+        report_text = outputs.get("report") if isinstance(outputs, Mapping) else None
+        if isinstance(report_text, str) and report_text.strip():
+            return _report_ref_descriptor(state_dir, report_text)
     return None
 
 
@@ -553,9 +649,12 @@ def _issue(field: str, code: str) -> dict[str, str]:
 
 
 __all__ = [
-    "MAX_ROUNDS",
+    "MAX_QUESTION_PAYLOAD_CHARS",
+    "REQUEST_MARKER_PREFIX",
     "SCHEMA_VERSION",
     "DISPOSITION_OUTCOMES",
+    "clarification_request_body",
+    "clarification_request_marker",
     "external_issue_triage_outcome_event",
     "hydrate_external_issue_clarification",
     "normalize_external_issue_disposition",

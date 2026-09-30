@@ -20,11 +20,24 @@ from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.integrations.feishu.delivery_card import (
+    build_delivery_card,
     push_delivery_cards_once,
     sync_delivery_cards,
 )
 from zf.integrations.feishu.transport import MockFeishuTransport
 from zf.runtime.channel_sidecar import channel_message_event_payload
+
+
+def test_delivery_reply_collapses_complete_body_without_hiding_stop_control():
+    reply = "完整回复：\n\n```python\nprint('hello')\n```\n" + "详情。" * 500
+    done = build_delivery_card({"status": "done", "reply_text": reply})
+    panel = done["elements"][0]
+    assert panel["tag"] == "collapsible_panel"
+    assert panel["expanded"] is False
+    assert panel["elements"][0]["text"]["content"] == reply
+    assert done["config"]["update_multi"] is True
+    working = build_delivery_card({"status": "working", "request_id": "reply-test"})
+    assert working["elements"][-1]["actions"][0]["value"]["action"] == "agent-cancel:reply-test"
 
 
 def _writer(state_dir: Path) -> EventWriter:

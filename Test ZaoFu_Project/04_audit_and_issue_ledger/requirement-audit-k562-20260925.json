@@ -1,0 +1,280 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K515-native-normal",
+      "description": "原生主链正常 impl→verify→candidate",
+      "format": "native-run",
+      "role": "normal_native",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_start_dispatch_submit_verify_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+        "sha256": "dfab9562bc9c1ba63fc7113af078026429d1d39e35348d47089e5ccbc0718dad"
+      }
+    },
+    {
+      "id": "K515-native-impl-recovery",
+      "description": "原生 impl 在途中断恢复",
+      "format": "native-run",
+      "role": "impl_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[impl]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+        "sha256": "8d565a1b0d57aa415b50b13169d51e9eeaef1e666333c6e3a833219c108020ae"
+      }
+    },
+    {
+      "id": "K515-native-verify-recovery",
+      "description": "原生 verify 在途恢复",
+      "format": "native-run",
+      "role": "verify_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[verify]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+        "sha256": "e125867c0c23bebfedf18fb72f9cc912dd356c3d4388cf47b0333c7f50f4971c"
+      }
+    },
+    {
+      "id": "current-premerge",
+      "description": "K562来源绑定完整premerge；保留ZF-TEST-040结构红灯",
+      "format": "premerge-run",
+      "role": "premerge",
+      "nodeids": [],
+      "report": {
+        "ref": "/tmp/zf-k562-premerge-20260925-ncHWLQ/run/premerge-run.json",
+        "sha256": "3fe2d570166c052512c5e6992d385fe6ece43283c0a004128f5bb2672da94cbb"
+      }
+    },
+    {
+      "id": "K553-native-long",
+      "description": "原生长工具检查点停机恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_long_task.py::test_native_long_tool_cli_recovery_preserves_completed_chunk"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+        "sha256": "f83229dd12d6a6b7445ae1c6331d2fb30c8fcb9959e31734bbd1c714ef16d136"
+      }
+    },
+    {
+      "id": "K546-native-writer",
+      "description": "原生blocking writer批次恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_writer_batch.py::test_native_writer_batch_recovers_only_unfinished_task"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+        "sha256": "8f8807b8b5246f361434367f1b9219c958e2c7df45e825f7e2ec8a2d79467c51"
+      }
+    },
+    {
+      "id": "K548-native-network",
+      "description": "受控网络断流后的原生CLI恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_network.py::test_native_network_cut_cli_recovery_to_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+        "sha256": "7f7b3d4dcb501a626904ea4ffd2e8f2417358e0fdfdece8ecabfabb10bf3e652"
+      }
+    },
+    {
+      "id": "K552-F2-long-allocation",
+      "description": "32Task持续分配对照（保留失败）",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_workloop_host.py::test_sustained_task_pipeline_releases_owned_resources"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+        "sha256": "24739b50750f654f6ecaea1f870b833be9e366c5aa5178bc4b782f48d63b503e"
+      }
+    },
+    {
+      "id": "K547-native-legacy-queue",
+      "description": "原生legacy Provider排队超时恢复",
+      "nodeids": [],
+      "reason": "原生节点尚未实现，当前Codex未登录；离线hook/自然时钟证据不替代原生报告。"
+    },
+    {
+      "id": "K530-watchdog-root-cause",
+      "description": "Issue live watchdog首次异常根因",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "reason": "正常链通过但不证明历史watchdog根因，未将该正常节点作为根因关闭证据。"
+    },
+    {
+      "id": "OS-crash-takeover",
+      "description": "整机OS crash后恢复",
+      "nodeids": [],
+      "reason": "隔离虚拟机执行器未就绪；未实现/未执行整机OS crash，禁止崩溃共享宿主。"
+    },
+    {
+      "id": "PERF-05-full",
+      "description": "完整长期mock资源稳定性",
+      "nodeids": [],
+      "reason": "已有有限32Task及资源释放报告不是完整长期稳定性证明；F2追踪失败仍开放。"
+    },
+    {
+      "id": "current-deterministic-mainline",
+      "description": "K562当前完整MAINLINE（含同一pane身份/PID快照合同）",
+      "format": "mainline-run",
+      "nodeids": [],
+      "report": {
+        "ref": "/tmp/zf-k562-mainline-20260925-3B1876/testkit-run.json",
+        "sha256": "d33eac023f5cf691ebc887e00e706ce79f3fee896191cdc4a0e7dbc9af3bb63f"
+      },
+      "source_profile": "acceptance"
+    },
+    {
+      "id": "final-unified-acceptance",
+      "description": "原五项主链/完整premerge与扩展需求最终同源验收",
+      "nodeids": [],
+      "reason": "旧五项与扩展报告虽然可分别校验，但仍存在结构红灯、开放项和不同来源；不授权最终发布。"
+    },
+    {
+      "id": "K557-browser-general",
+      "description": "general来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_runtime.py::test_browser_general_start_is_driven_by_live_zf_start"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-general-fixed-20260925-k4SuYw/run/testkit-run.json",
+        "sha256": "a04240c0a0451d1b92dad74dce807e50401c88ce949ae11f77aeca4b8623161d"
+      }
+    },
+    {
+      "id": "K557-browser-issue",
+      "description": "issue来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-issue-20260925-fmnOzc/run/testkit-run.json",
+        "sha256": "b721991523175c9d1e161ecfa8b16c05d3ad638124a28ad3be95094c4672265c"
+      }
+    },
+    {
+      "id": "K557-browser-prd",
+      "description": "prd来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[prd]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-prd-20260925-2UiUSj/run/testkit-run.json",
+        "sha256": "d287027f34103baae7e83962688bf1a8f7a86b675ffa0752db5b26e3330f320c"
+      }
+    },
+    {
+      "id": "K557-browser-refactor",
+      "description": "refactor来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-serial-20260925-tNri2h/run/testkit-run.json",
+        "sha256": "9db18df73b6b900b95804778f033f5101f8c3ab4fc7f216d2d066157e99cc064"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-strong",
+      "description": "refactor-strong来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-strong]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-strong-20260925-yvWGj4/run/testkit-run.json",
+        "sha256": "70f51b40e57014a6929f36964e0f95bf9b9a3c6acd0c74397ce2a8b322239acd"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-two-lane",
+      "description": "refactor-two-lane来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-two-lane-20260925-PsytmA/run/testkit-run.json",
+        "sha256": "bcf89eb242b14dcd8fde4a7f656517c71a3458a768873dccc72d5624fedfb354"
+      }
+    },
+    {
+      "id": "K557-refactor-original-timeout",
+      "description": "默认Refactor原轮150秒Task等待失败；独立对照成功不覆盖此红灯",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-20260925-EUDYZb/run/testkit-run.json",
+        "sha256": "3ed108cf7a22c7bf1649aa019e0489c04ab1676d759b535ce459a52fd836b74a"
+      }
+    },
+    {
+      "id": "K557-live-duration-root-cause",
+      "description": "默认及双lane超时的根因与稳定性回归",
+      "nodeids": [],
+      "reason": "默认独立对照通过，但双lane无MAINLINE并发仍超时；并行竞争不是已证实唯一根因。未改预算/断言、未宣称已修复。"
+    },
+    {
+      "id": "K558-two-lane-instrumented-red",
+      "description": "K558原预算双lane仪器红灯，保留超时证据",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k558-refactor-two-lane-timing-20260925-0WrPxj/run/testkit-run.json",
+        "sha256": "5b1b1310d5c36c5524011b8fe4d6f3f47ed85e061f4d25336a3cd3cb3d27b352"
+      }
+    },
+    {
+      "id": "K559-two-lane-instrumented-pass",
+      "description": "K559原预算分段仪器一次通过，不关闭K557-F2",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k559-refactor-two-lane-timing-20260925-KDg3Jk/testkit-run.json",
+        "sha256": "f9d5425009cd62b08622e046ed4c819050ffd689a092762de8c64181176d64f8"
+      }
+    },
+    {
+      "id": "K562-browser-refactor",
+      "description": "K562无仪器、原150秒等待的refactor候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-refactor-20260925-5s4onc/testkit-run.json",
+        "sha256": "e33c3e61de93ecc59af11429b82b4aee50eca4f9a67de92089d5f466e6019000"
+      }
+    },
+    {
+      "id": "K562-browser-refactor-two-lane",
+      "description": "K562无仪器、原150秒等待的refactor-two-lane候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-two-lane-20260925-BqBWFg/testkit-run.json",
+        "sha256": "ab25911e9d82ba020ee18283295543d7b546e34b77137e120ef1a78c1f9adaf3"
+      }
+    }
+  ]
+}

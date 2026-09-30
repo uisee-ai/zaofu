@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from zf import __version__
 from zf.core.security.redaction import redact_obj
 
 
@@ -92,7 +91,7 @@ def intake_questions() -> list[dict[str, Any]]:
                 "Run `zf --version` in a terminal, or check the version shown in Settings. "
                 "ZaoFu fills the detected version when available."
             ),
-            default_value=__version__,
+        default_value="",
         ),
         _question(
             "additional_context",
@@ -141,7 +140,7 @@ def first_missing_required(answers: dict[str, Any]) -> str:
 def default_intake_answers(*, title_seed: str = "") -> dict[str, Any]:
     return normalize_intake_answers({
         "title": title_seed,
-        "zaofu_version": __version__,
+        "zaofu_version": "",
     }, complete=False)
 
 

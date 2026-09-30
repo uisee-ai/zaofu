@@ -103,6 +103,19 @@ def test_shipped_feishu_yaml_validates_green_without_secrets(tmp_path, monkeypat
     cfg = _write(tmp_path)
     # the sentinel open_id is inert (never matches a real Feishu principal)
     assert "__zf_feishu_openid_unset__" in cfg.integrations.feishu_identity.users
+    assert (
+        cfg.integrations.feishu_identity.action_token_secret_env
+        == "ZF_FEISHU_ACTION_TOKEN_SECRET"
+    )
+    assert (
+        cfg.integrations.feishu_identity.verification_token_env
+        == "FEISHU_ENCRYPT_KEY"
+    )
+    group = cfg.integrations.feishu_project_group
+    assert group.enabled is True
+    assert group.auto_provision is False
+    assert group.provisioner_purpose == "run_manager"
+    assert group.bot_purposes == ["kanban_agent", "run_manager"]
 
 
 def test_feishu_yaml_invalid_target_still_validated(tmp_path):

@@ -177,6 +177,17 @@ def build_task_workflow_input_contract(
         "handoff_artifacts": _strings(contract.handoff_artifacts),
         "acceptance_criteria": list(contract.acceptance_criteria or []),
         "acceptance": str(contract.acceptance or ""),
+        # Verification is part of the immutable Task input, not merely a
+        # presentation hint.  Omitting it forces the planner to reconstruct
+        # commands from prose and can produce a task-map that fails the
+        # task_contract_required admission gate.
+        "verification": str(contract.verification or ""),
+        "validation": (
+            dict(contract.validation)
+            if isinstance(contract.validation, Mapping)
+            else {}
+        ),
+        "verification_tiers": _strings(contract.verification_tiers),
         "scope": _strings(contract.scope),
         "exclusions": _strings(contract.exclusions),
         "explicit_non_goals": _strings(contract.explicit_non_goals),

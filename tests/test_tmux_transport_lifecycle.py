@@ -99,6 +99,23 @@ def test_tmux_transport_lifecycle_snapshot_marks_shell_as_not_agent() -> None:
     assert snapshot.current_command == "bash"
 
 
+def test_ready_deadline_during_liveness_check_keeps_timeout_diagnostics(monkeypatch) -> None:
+    now = 0.0
+    transport = TmuxTransport(_FakeTmux())
+    monkeypatch.setattr("zf.runtime.tmux_readiness.time.monotonic", lambda: now)
+
+    def slow_alive(_role):
+        nonlocal now
+        now = 2.0
+        return True
+
+    monkeypatch.setattr(transport, "_agent_process_alive", slow_alive)
+    assert transport.wait_ready("dev-1", r"[›>]", timeout=1.0) is False
+    diagnostics = transport.readiness_diagnostics("dev-1")
+    assert diagnostics["failure_class"] == "provider_ready_pattern_timeout"
+    assert diagnostics["effective_timeout_seconds"] == 1.0
+
+
 def test_tmux_transport_wait_ready_rejects_shell_even_if_prompt_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,6 +367,10 @@ def test_codex_ready_timeout_is_bounded_and_structured(
     }
     monkeypatch.setattr(TmuxTransport, "_CODEX_READY_TIMEOUT_CAP_SECONDS", 0.01)
     monkeypatch.setattr(TmuxTransport, "_READY_POLL_INTERVAL_SECONDS", 0.0)
+
+    # Exercise the readiness-pattern timeout branch deterministically.
+    monkeypatch.setattr(transport, "_agent_process_alive", lambda _role: True)
+    monkeypatch.setattr(tmux, "wait_for_prompt", lambda *_args, **_kwargs: False)
 
     assert transport.wait_ready("dev-1", r"[›>]", timeout=240.0) is False
     error = transport_readiness_error(

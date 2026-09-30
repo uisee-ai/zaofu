@@ -21,6 +21,19 @@ class FakeResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
+class FakeBinaryResponse:
+    headers = {"Content-Type": "text/plain; charset=utf-8"}
+
+    def __enter__(self) -> "FakeBinaryResponse":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def read(self) -> bytes:
+        return b"log line\n"
+
+
 def test_parse_feishu_v2_message_event():
     transport = FeishuHttpTransport(tenant_access_token="token")
     event = transport.parse_webhook({
@@ -267,3 +280,39 @@ def test_real_transport_list_recent_preserves_deleted_tombstone():
     assert rows[0]["message_id"] == "om_recalled"
     assert rows[0]["deleted"] is True
     assert rows[0]["updated"] is True
+
+
+def test_real_transport_downloads_message_resource_with_tenant_auth():
+    requests = []
+
+    def fake_urlopen(request, timeout=15):
+        requests.append((request, timeout))
+        return FakeBinaryResponse()
+
+    transport = FeishuHttpTransport(
+        base_url="https://open.feishu.cn/open-apis",
+        tenant_access_token="tenant-token",
+        request_func=fake_urlopen,
+    )
+    result = transport.download_message_resource("om_1", "file_1", resource_type="file")
+    assert result == (b"log line\n", "text/plain; charset=utf-8")
+    request, timeout = requests[0]
+    assert timeout == 30
+    assert request.full_url.endswith("/im/v1/messages/om_1/resources/file_1?type=file")
+    assert request.headers["Authorization"] == "Bearer tenant-token"
+
+
+def test_real_transport_reads_quoted_message_with_original_ownership():
+    requests = []
+    message = {"message_id": "om_file", "chat_id": "oc_project", "msg_type": "file",
+               "sender": {"id": "ou_owner", "id_type": "open_id", "sender_type": "user"},
+               "body": {"content": json.dumps({"file_key": "file_1", "file_name": "issue.md"})}}
+    def fake_urlopen(request, timeout=15):
+        requests.append(request)
+        return FakeResponse({"code": 0, "data": {"items": [message]}})
+    transport = FeishuHttpTransport(tenant_access_token="tenant-token", request_func=fake_urlopen)
+    assert transport.get_message("om_file") == message
+    assert requests[0].method == "GET"
+    assert requests[0].full_url.endswith("/im/v1/messages/om_file")
+    assert requests[0].headers["Authorization"] == "Bearer tenant-token"
+    assert transport.get_message("wrong-id") is None

@@ -596,6 +596,11 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
         contract=TaskContract(
             behavior="Implement the selected route.",
             verification="Run deterministic tests.",
+            validation={"commands": [{
+                "id": "route-tests",
+                "command": "uv run pytest tests/test_route.py -q --no-cov",
+                "tier": "task_non_smoke",
+            }]},
             verification_tiers=["runtime"],
             acceptance_criteria=[
                 {
@@ -671,6 +676,11 @@ def test_task_workflow_start_runs_delivery_request_and_submit(
     task_input_contract = json.loads(task_input_ref.read_text(encoding="utf-8"))
     assert task_input_contract["source_ref"] == "requirement.md"
     assert task_input_contract["spec_ref"] == "phase1-spec.md"
+    assert task_input_contract["verification"] == "Run deterministic tests."
+    assert task_input_contract["validation"]["commands"][0]["command"] == (
+        "uv run pytest tests/test_route.py -q --no-cov"
+    )
+    assert task_input_contract["verification_tiers"] == ["runtime"]
     assert task_input_contract["evidence_contract"] == {
         "required_source_outputs": ["implementation-report.md"],
     }

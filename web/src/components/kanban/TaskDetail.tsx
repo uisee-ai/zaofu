@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // TaskDetail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { DETAIL_TABS, OPERATOR_BACKENDS } from "../../app/sharedTypes";
 import type { ActionResponse, EventRecord, ExecutionRouteProjection, RecentEvent, SkillsSummary, Task, TaskDetail as TaskDetailModel, TaskDiff, TaskTimeline } from "../../api/types";
@@ -222,6 +224,7 @@ export function TaskDetail({
   timelineError: string | null;
   timelineLoading: boolean;
 }) {
+  useSettingsPreferences();
   const taskEvents = detail?.events?.length ? detail.events : events.slice(0, 40);
   const timelineRoute = timeline?.execution_route ?? detail?.execution_route ?? null;
   const timelineTraceId = timeline?.links?.trace || timeline?.trace_id || detail?.links?.trace || detail?.trace_id || task?.links?.trace || "";
@@ -230,9 +233,9 @@ export function TaskDetail({
     return (
       <section className="task-detail">
         <div className="section-heading">
-          <h2>Task</h2>
+          <h2>{uiText("Task")}</h2>
           <button className="icon-button" type="button" onClick={onBackToBoard}>
-            Board
+            {uiText("Board")}
           </button>
         </div>
         <p className="empty-text">
@@ -252,15 +255,15 @@ export function TaskDetail({
     <section className="task-detail">
       <div className="section-heading">
         <div>
-          <h2>Task</h2>
+          <h2>{uiText("Task")}</h2>
           <span className="mono">{task.id}</span>
         </div>
         <div className="button-row">
           <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>
-            Agent
+            {uiText("Agent")}
           </button>
           <button className="icon-button" type="button" onClick={onBackToBoard}>
-            Board
+            {uiText("Board")}
           </button>
           <span className="badge">{task.status}</span>
         </div>
@@ -338,24 +341,25 @@ function TaskSummaryPanel({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   task: Task;
 }) {
+  useSettingsPreferences();
   return (
     <div className="task-summary-view" data-testid="task-summary-view">
       <dl className="detail-grid">
         <dt>Title</dt>
         <dd>{task.title || "-"}</dd>
-        <dt>Phase</dt>
+        <dt>{uiText("Phase")}</dt>
         <dd>{task.phase ?? "-"}</dd>
-        <dt>Assignee</dt>
+        <dt>{uiText("Assignee")}</dt>
         <dd>{task.assigned_to || "-"}</dd>
-        <dt>Trace</dt>
+        <dt>{uiText("Trace")}</dt>
         <dd><EvidenceLink id={detail?.links?.trace || detail?.trace_id || ""} kind="trace" onOpen={onOpenProjection} /></dd>
-        <dt>Candidate</dt>
+        <dt>{uiText("Candidate")}</dt>
         <dd><EvidenceLink id={detail?.links?.candidate || ""} kind="candidate" onOpen={onOpenProjection} /></dd>
         <dt>Fanout</dt>
         <dd><EvidenceLink id={detail?.links?.fanout || ""} kind="fanout" onOpen={onOpenProjection} /></dd>
-        <dt>Workdir</dt>
+        <dt>{uiText("Workdir")}</dt>
         <dd>{detail?.role_instance || task.assigned_to || "-"}</dd>
-        <dt>Blocked By</dt>
+        <dt>{uiText("Blocked By")}</dt>
         <dd>{task.blocked_by?.length ? task.blocked_by.join(", ") : "-"}</dd>
       </dl>
       <HandoffSummaryPanel detail={detail} />
@@ -373,7 +377,7 @@ function TaskSummaryPanel({
         task={task}
       />
       <div className="action-row">
-        <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>Open Agent</button>
+        <button className="icon-button primary" type="button" onClick={onOpenOrchestrator}>{uiText("Open Agent")}</button>
         {["dispatch-task", "request-verify", "request-review", "ship-candidate"].map((action) => (
           <button className="icon-button" key={action} type="button" onClick={() => onAction(action)}>{action}</button>
         ))}
@@ -403,6 +407,7 @@ function TaskActivityPanel({
   timelineLoading: boolean;
   traceId: string;
 }) {
+  useSettingsPreferences();
   return (
     <div className="task-activity-view" data-testid="task-activity-view">
       <ExecutionRoutePanel
@@ -413,7 +418,7 @@ function TaskActivityPanel({
         traceId={traceId}
       />
       <section className="subsection">
-        <div className="inline-heading"><h3>Recent Task Events</h3><span className="muted">{events.length} events</span></div>
+        <div className="inline-heading"><h3>{uiText("Recent Task Events")}</h3><span className="muted">{events.length} events</span></div>
         <EventTable events={events} compact />
       </section>
       <TaskExecutionPanel detail={detail} onOpenProjection={onOpenProjection} />
@@ -423,6 +428,7 @@ function TaskActivityPanel({
 
 
 function TaskEvidencePanel({ detail, diff }: { detail: TaskDetailModel | null; diff: TaskDiff | null }) {
+  useSettingsPreferences();
   return (
     <div className="task-evidence-view" data-testid="task-evidence-view">
       <ArtifactLedgerPanel detail={detail} />
@@ -435,8 +441,8 @@ function TaskEvidencePanel({ detail, diff }: { detail: TaskDetailModel | null; d
         {diff?.error ? <p className="empty-text">{diff.error}</p> : null}
         {diff?.diff ? <pre className="text-block diff-block">{diff.diff}</pre> : null}
       </section>
-      <section className="subsection"><h3>Verify</h3><PreBlock value={detail?.verify ?? {}} /></section>
-      <section className="subsection"><h3>Review</h3><PreBlock value={detail?.review ?? {}} /></section>
+      <section className="subsection"><h3>{uiText("Verify")}</h3><PreBlock value={detail?.verify ?? {}} /></section>
+      <section className="subsection"><h3>{uiText("Review")}</h3><PreBlock value={detail?.review ?? {}} /></section>
     </div>
   );
 }
@@ -451,6 +457,7 @@ function TaskAdvancedPanel({
   skillsSummary: SkillsSummary | null;
   task: Task;
 }) {
+  useSettingsPreferences();
   const workdir = asRecord(detail?.workdir);
   const statusModel = asRecord(detail?.status_model);
   const evidenceModel = asRecord(detail?.evidence_model);
@@ -478,12 +485,12 @@ function TaskAdvancedPanel({
         <KeyValuePanel title="Status Model" rows={statusRows} />
       </div>
       <TaskEffectiveSkillsPanel skillsSummary={skillsSummary} task={task} />
-      <section className="subsection"><h3>Contract</h3><PreBlock value={detail?.contract ?? task} /></section>
+      <section className="subsection"><h3>{uiText("Contract")}</h3><PreBlock value={detail?.contract ?? task} /></section>
       <section className="subsection">
-        <h3>Briefing</h3>
-        {detail?.briefing.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">No briefing projection.</p>}
+        <h3>{uiText("Briefing")}</h3>
+        {detail?.briefing.text ? <pre className="text-block">{detail.briefing.text}</pre> : <p className="empty-text">{uiText("No briefing projection.")}</p>}
       </section>
-      <section className="subsection"><h3>Diagnostics</h3><PreBlock value={detail?.diagnostics ?? {}} /></section>
+      <section className="subsection"><h3>{uiText("Diagnostics")}</h3><PreBlock value={detail?.diagnostics ?? {}} /></section>
     </div>
   );
 }
@@ -498,6 +505,7 @@ function TaskRunSummaryPanel({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   task: Task;
 }) {
+  useSettingsPreferences();
   const panel = asRecord(detail?.task_run_panel);
   const active = asRecord(panel.active_operation);
   const lastEvent = asRecord(active.last_event);
@@ -531,14 +539,14 @@ function TaskRunSummaryPanel({
       <div className="task-run-header-main">
         <div className="task-run-title-row">
           <span className={`badge badge-${routeStatusTone(routeStatus)}`}>{stageLabel}</span>
-          <strong>Current run</strong>
+          <strong>{uiText("Current run")}</strong>
           <span className="muted truncate-value">{actorLabel}</span>
         </div>
         <div className="button-row task-run-actions">
           <span className={`badge badge-${operationStateTone(state)}`}>run {state || "unknown"}</span>
           {traceId ? (
             <button className="icon-button" type="button" onClick={() => onOpenProjection("trace", traceId)}>
-              Trace
+              {uiText("Trace")}
             </button>
           ) : null}
         </div>
@@ -578,6 +586,7 @@ function TaskRunSummaryPanel({
 
 
 function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
+  useSettingsPreferences();
   const summary = asRecord(detail?.handoff_summary);
   const owner = asRecord(summary.owner);
   const completed = asRecordArray(summary.completed).slice(0, 4);
@@ -590,7 +599,7 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
   return (
     <section className="subsection handoff-summary-panel">
       <div className="inline-heading">
-        <h3>Handoff Summary</h3>
+        <h3>{uiText("Handoff Summary")}</h3>
         <span className={`badge badge-${handoffTone(summary)}`}>
           {textValue(summary.current_state) || "unknown"}
         </span>
@@ -637,7 +646,7 @@ function HandoffSummaryPanel({ detail }: { detail: TaskDetailModel | null }) {
         </div>
       ) : null}
       {!completed.length && !missing.length && !blockers.length && !nextAction ? (
-        <p className="empty-text">No handoff summary yet.</p>
+        <p className="empty-text">{uiText("No handoff summary yet.")}</p>
       ) : null}
     </section>
   );
@@ -663,15 +672,16 @@ function TaskEffectiveSkillsPanel({
   skillsSummary: SkillsSummary | null;
   task: Task;
 }) {
+  useSettingsPreferences();
   const rows = buildTaskEffectiveSkillRows(task, skillsSummary);
   return (
     <section className="subsection task-effective-skills-panel">
       <div className="inline-heading">
-        <h3>Effective Skills</h3>
+        <h3>{uiText("Effective Skills")}</h3>
         <span className="muted">{rows.length} projected</span>
       </div>
       <TablePage
-        title="Effective Skills"
+        title={uiText("Effective Skills")}
         rows={rows}
         embedded
         emptyState={{
@@ -775,6 +785,7 @@ function boolish(value: unknown): boolean {
 
 
 function ArtifactLedgerPanel({ detail }: { detail: TaskDetailModel | null }) {
+  useSettingsPreferences();
   const ledger = asRecord(detail?.artifact_refs);
   const artifacts = Array.isArray(ledger.artifact_refs)
     ? ledger.artifact_refs.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
@@ -807,7 +818,7 @@ function ArtifactLedgerPanel({ detail }: { detail: TaskDetailModel | null }) {
   return (
     <div className="subsection">
       <div className="inline-heading">
-        <h3>Artifact Ledger</h3>
+        <h3>{uiText("Artifact Ledger")}</h3>
         <span className="muted">{accepted.length} accepted · {stale.length} stale</span>
       </div>
       {diagnostics.length ? (
@@ -833,19 +844,19 @@ function ArtifactLedgerPanel({ detail }: { detail: TaskDetailModel | null }) {
         </div>
       ) : null}
       <div className="detail-grid compact-detail-grid">
-        <dt>Manifest</dt>
+        <dt>{uiText("Manifest")}</dt>
         <dd className="mono">{stringify(ledger.manifest_event_id)}</dd>
-        <dt>Role</dt>
+        <dt>{uiText("Role")}</dt>
         <dd>{stringify(ledger.manifest_role)}</dd>
       </div>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Kind</th>
-              <th>Path</th>
-              <th>Version</th>
-              <th>Status</th>
+              <th>{uiText("Kind")}</th>
+              <th>{uiText("Path")}</th>
+              <th>{uiText("Version")}</th>
+              <th>{uiText("Status")}</th>
               <th>Hash</th>
             </tr>
           </thead>
@@ -897,15 +908,15 @@ function ArtifactLedgerPanel({ detail }: { detail: TaskDetailModel | null }) {
       {hasTaskMapSummary ? (
         <div className="subsection">
           <div className="inline-heading">
-            <h4>Final Task Map</h4>
+            <h4>{uiText("Final Task Map")}</h4>
             <span className={taskMapSummary.passed === false ? "badge badge-err" : "muted"}>
               {taskMapSummary.passed === false ? "validation failed" : "validated"}
             </span>
           </div>
           <div className="detail-grid compact-detail-grid">
-            <dt>Tasks</dt>
+            <dt>{uiText("Tasks")}</dt>
             <dd>{numberValue(taskMapSummary.task_count) ?? 0}</dd>
-            <dt>Waves</dt>
+            <dt>{uiText("Waves")}</dt>
             <dd>{numberValue(taskMapSummary.wave_count) ?? 0}</dd>
             <dt>Exclusive files</dt>
             <dd>{numberValue(taskMapSummary.exclusive_file_count) ?? 0}</dd>
@@ -944,6 +955,7 @@ function TaskEditPanel({
   onUpdate: (payload: Record<string, unknown>) => void;
   task: Task;
 }) {
+  useSettingsPreferences();
   const [draft, setDraft] = useState<TaskEditDraft>(() => taskEditDraft(task, detail));
 
   useEffect(() => {
@@ -976,7 +988,7 @@ function TaskEditPanel({
   return (
     <div className="subsection task-edit-panel">
       <div className="inline-heading">
-        <h3>Maintenance</h3>
+        <h3>{uiText("Maintenance")}</h3>
         <span className="muted">{actionReady ? "controlled action" : actionState}</span>
       </div>
       <div className="task-edit-grid">
@@ -985,7 +997,7 @@ function TaskEditPanel({
           <input className="filter-input" value={draft.title} onChange={(event) => update({ title: event.target.value })} />
         </label>
         <label>
-          <span>Status</span>
+          <span>{uiText("Status")}</span>
           <select className="filter-input" value={draft.status} onChange={(event) => update({ status: event.target.value })}>
             {["backlog", "in_progress", "review", "testing", "blocked", "done", "cancelled"].map((status) => (
               <option key={status} value={status}>{status}</option>
@@ -993,58 +1005,58 @@ function TaskEditPanel({
           </select>
         </label>
         <label>
-          <span>Priority</span>
+          <span>{uiText("Priority")}</span>
           <select className="filter-input" value={draft.priority} onChange={(event) => update({ priority: event.target.value })}>
             {[0, 1, 2, 3, 4, 5].map((priority) => <option key={priority} value={String(priority)}>P{priority}</option>)}
           </select>
         </label>
         <label>
-          <span>Assignee</span>
+          <span>{uiText("Assignee")}</span>
           <input className="filter-input" value={draft.assignedTo} onChange={(event) => update({ assignedTo: event.target.value })} />
         </label>
         <label>
-          <span>Skills</span>
+          <span>{uiText("Skills")}</span>
           <input className="filter-input" value={draft.skills} onChange={(event) => update({ skills: event.target.value })} />
         </label>
         <label>
-          <span>Blocked By</span>
+          <span>{uiText("Blocked By")}</span>
           <input className="filter-input" value={draft.blockedBy} onChange={(event) => update({ blockedBy: event.target.value })} />
         </label>
         <label className="wide-field">
-          <span>Blocked Reason</span>
+          <span>{uiText("Blocked Reason")}</span>
           <input className="filter-input" value={draft.blockedReason} onChange={(event) => update({ blockedReason: event.target.value })} />
         </label>
         <label className="wide-field">
-          <span>Behavior</span>
+          <span>{uiText("Behavior")}</span>
           <textarea className="textarea-input compact-textarea" value={draft.behavior} onChange={(event) => update({ behavior: event.target.value })} />
         </label>
         <label className="wide-field">
-          <span>Verification</span>
+          <span>{uiText("Verification")}</span>
           <textarea className="textarea-input compact-textarea" value={draft.verification} onChange={(event) => update({ verification: event.target.value })} />
         </label>
         <label>
-          <span>Scope</span>
+          <span>{uiText("Scope")}</span>
           <input className="filter-input" value={draft.scope} onChange={(event) => update({ scope: event.target.value })} />
         </label>
         <label>
-          <span>Exclusions</span>
+          <span>{uiText("Exclusions")}</span>
           <input className="filter-input" value={draft.exclusions} onChange={(event) => update({ exclusions: event.target.value })} />
         </label>
         <label>
-          <span>Acceptance</span>
+          <span>{uiText("Acceptance")}</span>
           <input className="filter-input" value={draft.acceptance} onChange={(event) => update({ acceptance: event.target.value })} />
         </label>
         <label>
-          <span>Rework To</span>
+          <span>{uiText("Rework To")}</span>
           <input className="filter-input" value={draft.reworkTo} onChange={(event) => update({ reworkTo: event.target.value })} />
         </label>
       </div>
       <div className="action-row flush-action-row">
         <button className="icon-button primary" disabled={!actionReady || !dirty} type="button" onClick={saveTaskEdit}>
-          Save Task
+          {uiText("Save Task")}
         </button>
         <button className="icon-button" disabled={!dirty} type="button" onClick={() => setDraft(taskEditDraft(task, detail))}>
-          Reset
+          {uiText("Reset")}
         </button>
       </div>
     </div>
@@ -1063,6 +1075,7 @@ function AssignmentIntentPanel({
   onPropose: (payload: Record<string, unknown>) => void;
   task: Task;
 }) {
+  useSettingsPreferences();
   const [role, setRole] = useState(task.assigned_to || "");
   const [backend, setBackend] = useState("");
   const [channelId, setChannelId] = useState("");
@@ -1092,16 +1105,16 @@ function AssignmentIntentPanel({
   return (
     <div className="subsection task-edit-panel">
       <div className="inline-heading">
-        <h3>Assignment Intent</h3>
+        <h3>{uiText("Assignment Intent")}</h3>
         <span className="muted">{actionReady ? "proposal only" : actionState}</span>
       </div>
       <div className="task-edit-grid">
         <label>
-          <span>Role</span>
+          <span>{uiText("Role")}</span>
           <input className="filter-input" value={role} onChange={(event) => setRole(event.target.value)} />
         </label>
         <label>
-          <span>Backend</span>
+          <span>{uiText("Backend")}</span>
           <select className="filter-input" value={backend} onChange={(event) => setBackend(event.target.value)}>
             <option value="">unchanged</option>
             {OPERATOR_BACKENDS.map((item) => (
@@ -1110,21 +1123,21 @@ function AssignmentIntentPanel({
           </select>
         </label>
         <label>
-          <span>Channel</span>
+          <span>{uiText("Channel")}</span>
           <input className="filter-input" value={channelId} onChange={(event) => setChannelId(event.target.value)} />
         </label>
         <label>
-          <span>Supervisor</span>
+          <span>{uiText("Supervisor")}</span>
           <input className="filter-input" value={supervisor} onChange={(event) => setSupervisor(event.target.value)} />
         </label>
         <label className="wide-field">
-          <span>Reason</span>
+          <span>{uiText("Reason")}</span>
           <input className="filter-input" value={reason} onChange={(event) => setReason(event.target.value)} />
         </label>
       </div>
       <div className="action-row flush-action-row">
         <button className="icon-button primary" disabled={!actionReady || !hasIntent} type="button" onClick={propose}>
-          Propose Assignment
+          {uiText("Propose Assignment")}
         </button>
       </div>
     </div>
@@ -1139,6 +1152,7 @@ function TaskExecutionPanel({
   detail: TaskDetailModel | null;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
 }) {
+  useSettingsPreferences();
   const runs = detail?.runs ?? [];
   const activeRuns = runs.filter((row) => !textValue(row.ended_at) && textValue(row.status) !== "completed");
   const historyRuns = runs.slice(0, 12);
@@ -1146,7 +1160,7 @@ function TaskExecutionPanel({
   return (
     <div className="subsection">
       <div className="inline-heading">
-        <h3>Execution</h3>
+        <h3>{uiText("Execution")}</h3>
         <span className="muted">{activeRuns.length} active · {historyRuns.length} history</span>
       </div>
       <div className="project-grid two compact-execution-grid">

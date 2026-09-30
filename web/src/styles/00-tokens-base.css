@@ -578,7 +578,7 @@ h3 {
 
 .agent-page-shell {
   position: fixed;
-  z-index: 30;
+  z-index: 200;
   pointer-events: none;
 }
 

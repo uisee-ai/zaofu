@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { getDeliveryTrace } from "../../api/client";
@@ -23,6 +25,7 @@ export function DeliveryMapView({
   projectId: string;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   const scopeKey = `${projectId}\u0000${trace.feature_id}`;
   const [lens, setLens] = useState<DeliveryMapLens>("coverage");
   const [selectionScope, setSelectionScope] = useState(scopeKey);
@@ -198,7 +201,7 @@ export function DeliveryMapView({
             >
               <strong>Work graph unavailable</strong>
               <span>{visibleWorkError}</span>
-              <button type="button" onClick={retryWork}>Retry</button>
+              <button type="button" onClick={retryWork}>{uiText("Retry")}</button>
             </div>
           ) : visibleWorkTrace && WorkViewComponent ? (
             <WorkViewComponent
@@ -237,18 +240,19 @@ function WorkGoalPicker({
   onSelect: (goalId: string) => void;
   selectedGoalId: string;
 }) {
+  useSettingsPreferences();
   return (
     <section className="delivery-work-goal-picker" data-testid="delivery-work-goal-picker">
       <header>
         <div>
-          <span className="eyebrow">Work scope</span>
-          <h3>Select a Goal to load Work</h3>
+          <span className="eyebrow">{uiText("Work scope")}</span>
+          <h3>{uiText("Select a Goal to load Work")}</h3>
         </div>
-        <span className="muted">Selecting a Goal loads its bounded Work tree.</span>
+        <span className="muted">{uiText("Selecting a Goal loads its bounded Work tree.")}</span>
       </header>
       {goals.length ? (
-        <fieldset aria-label="Work Goal">
-          <legend className="sr-only">Work Goal</legend>
+        <fieldset aria-label={uiText("Work Goal")}>
+          <legend className="sr-only">{uiText("Work Goal")}</legend>
           {goals.map((goal) => (
             <label
               className={selectedGoalId === goal.goalId ? "is-selected" : ""}
@@ -281,7 +285,7 @@ function WorkGoalPicker({
           ))}
         </fieldset>
       ) : (
-        <p className="delivery-work-goal-empty">No Goal summary is available for this feature.</p>
+        <p className="delivery-work-goal-empty">{uiText("No Goal summary is available for this feature.")}</p>
       )}
     </section>
   );

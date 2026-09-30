@@ -7,37 +7,47 @@ import hashlib
 import hmac
 import json
 import os
+import re
+from functools import lru_cache
 import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
-from fastapi import APIRouter, Header, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from zf.core.config.schema import ZfConfig
 from zf.core.config.self_issue_policy import inherit_workspace_self_issue_config
 from zf.core.events.factory import event_log_from_project
+from zf.core.events import EventWriter
 from zf.core.events.model import ZfEvent
 from zf.core.events.segments import build_event_manifest
 from zf.core.issue_triage.models import IssueMirror
+from zf.core.issue_triage.lifecycle_states import REMOTE_LIFECYCLE_STATE_SET
 from zf.core.issue_triage.store import IssueMirrorStore
 from zf.integrations.forge.github_issues import (
     GitHubIssueReconciler,
     normalize_github_issue,
 )
-from zf.runtime.external_issue_ingress import ExternalIssueIngressService
+from zf.runtime.external_issue_ingress import (
+    ExternalIssueIngressService,
+    build_github_lifecycle_label_writer,
+)
 from zf.runtime.external_issue_clarification import (
     hydrate_external_issue_clarification,
 )
 from zf.runtime.issue_candidate_delivery import (
     CandidateDeliveryError,
     IssueCandidateDeliveryService,
-    issue_candidate_event_matches,
 )
+
+from .issue_ingress_background import IssueIngressBackground
+from zf.runtime.issue_lifecycle_projection import _workflow_projection, issue_lifecycle_event_index
+from zf.runtime.external_issue_label_sync import _relevant_events
 
 ReconcilerFactory = Callable[[Any, str], GitHubIssueReconciler]
 MutationAuthorizer = Callable[..., dict[str, Any] | None]
@@ -51,24 +61,9 @@ _GITHUB_IMAGE_HOSTS = {
 }
 _MAX_GITHUB_IMAGE_BYTES = 20_000_000
 
-# Stage-level ``*.failed`` events describe a failed attempt or a rework
-# decision.  They do not release the workflow's run slot and therefore must
-# not make the Issue look restartable.  Only these run/admission events end the
-# current Triage Run for the mirror projection.
-_TERMINAL_RUN_FAILURE_EVENTS = {
-    "run.failed",
-    "run.abandoned",
-}
-
-_TRIAGE_ACTIVE_STATES = {
-    "triage_queued", "triaging", "triage_paused", "triage_recovering",
-}
-_FIX_ACTIVE_STATES = {
-    "fix_queued", "fixing", "fix_paused", "fix_recovering", "verifying",
-}
 
 
-def _is_github_image_url(value: str) -> bool:
+def _is_github_media_url(value: str) -> bool:
     try:
         parsed = urllib.parse.urlparse(value)
         port = parsed.port
@@ -85,18 +80,28 @@ def _is_github_image_url(value: str) -> bool:
     return parsed.hostname != "github.com" or parsed.path.startswith("/user-attachments/")
 
 
-def _read_github_image(value: str) -> tuple[bytes, str]:
+@lru_cache(maxsize=4)
+def _read_github_media(value: str) -> tuple[bytes, str]:
     request = urllib.request.Request(
         value,
-        headers={"Accept": "image/*", "User-Agent": "ZaoFu-Issue-Triage"},
+        headers={"Accept": "*/*", "User-Agent": "ZaoFu-Issue-Triage"},
     )
     with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310
         content_type = str(response.headers.get("Content-Type") or "").split(";", 1)[0]
-        if not content_type.startswith("image/"):
-            raise ValueError("GitHub attachment is not an image")
         raw = response.read(_MAX_GITHUB_IMAGE_BYTES + 1)
     if len(raw) > _MAX_GITHUB_IMAGE_BYTES:
-        raise ValueError("GitHub image exceeds the 20 MB safe limit")
+        raise ValueError("GitHub media exceeds the 20 MB safe limit")
+    if content_type == "application/octet-stream":
+        if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+            content_type = "image/png"
+        elif raw.startswith(b"\xff\xd8\xff"):
+            content_type = "image/jpeg"
+        elif raw.startswith(b"\x1aE\xdf\xa3"):
+            content_type = "video/webm"
+        elif len(raw) >= 12 and raw[4:8] == b"ftyp":
+            content_type = "video/mp4"
+    if not content_type.startswith(("image/", "video/")):
+        raise ValueError("GitHub attachment is not supported media")
     return raw, content_type
 
 
@@ -155,367 +160,6 @@ def _public(
     return value
 
 
-def _workflow_projection(
-    events: list[ZfEvent],
-    item: IssueMirror,
-) -> dict[str, Any] | None:
-    state = "mirrored"
-    task_id = ""
-    source_revision = ""
-    source_code_revision = ""
-    proposal_id = ""
-    run_id = ""
-    workflow_id = ""
-    fix_run_id = ""
-    paused_from = ""
-    terminal_state = ""
-    failure_event = ""
-    failure_reason = ""
-    candidate_identities: tuple[str, ...] = ()
-    clarification_ref: dict[str, Any] | None = None
-    disposition: str = ""
-    verification_status = ""
-    verification_gaps: list[str] = []
-    seen = False
-    triage_history: list[dict[str, Any]] = []
-    triage_by_id: dict[str, dict[str, Any]] = {}
-    task_history: list[dict[str, str]] = []
-    task_ids: set[str] = set()
-    for event in events:
-        payload = event.payload if isinstance(event.payload, dict) else {}
-        event_source_key = str(payload.get("source_key") or "")
-        same_source = event_source_key == item.issue_key
-        same_task = bool(task_id and event.task_id == task_id)
-        if event.type == "external_issue.received" and same_source:
-            seen = True
-            state = "mirrored"
-            source_revision = str(payload.get("source_revision") or "")
-        elif event.type == "external_issue.triage.queued" and same_source:
-            seen = True
-            state = "triage_queued"
-            terminal_state = ""
-            failure_event = ""
-            failure_reason = ""
-            task_id = str(event.task_id or "")
-            source_revision = str(payload.get("source_revision") or source_revision)
-            if task_id and task_id not in task_ids:
-                task_ids.add(task_id)
-                task_history.append({
-                    "task_id": task_id,
-                    "source_revision": source_revision,
-                })
-            run_id = str(payload.get("workflow_run_id") or "")
-            if run_id and run_id not in triage_by_id:
-                entry = {
-                    "triage_id": run_id,
-                    "source_revision": str(payload.get("source_revision") or ""),
-                    "attempt": int(payload.get("triage_attempt") or len(triage_history) + 1),
-                    "state": "triage_queued",
-                    "queued_at": event.ts,
-                    "retry_of": str(payload.get("retry_of_workflow_run_id") or ""),
-                }
-                triage_history.append(entry)
-                triage_by_id[run_id] = entry
-        elif (
-            event.type == "workflow.invoke.requested"
-            and same_source
-            and str(payload.get("flow_kind") or "") == "workflow"
-        ):
-            # External Issue intake pins the exact committed ZaoFu checkout
-            # separately from the Issue-content revision.  Keep that binding
-            # visible in the read projection so the UI cannot imply that the
-            # human-entered version string is a source commit.
-            task_id = str(payload.get("task_id") or task_id)
-            source_code_revision = str(
-                payload.get("source_code_revision")
-                or payload.get("target_commit")
-                or source_code_revision
-            )
-            workflow_id = str(
-                payload.get("workflow_id")
-                or payload.get("pattern_id")
-                or workflow_id
-            )
-        elif event.type == "workflow.invoke.accepted" and same_task:
-            event_run = str(
-                payload.get("workflow_run_id") or event.correlation_id or ""
-            )
-            if not run_id or event_run == run_id:
-                state = "triaging"
-                run_id = event_run or run_id
-                workflow_id = str(
-                    payload.get("workflow_id")
-                    or payload.get("pattern_id")
-                    or workflow_id
-                )
-                if event_run in triage_by_id:
-                    triage_by_id[event_run]["state"] = "triaging"
-        elif event.type in {
-            "external_issue.triage.needs_info",
-            "external_issue.triage.needs_info_exhausted",
-        } and same_source:
-            event_run = str(payload.get("workflow_run_id") or event.correlation_id or "")
-            if not run_id or not event_run or event_run == run_id:
-                state = (
-                    "needs_info_exhausted"
-                    if event.type.endswith("needs_info_exhausted")
-                    else "needs_info"
-                )
-                run_id = event_run or run_id
-                raw_ref = payload.get("clarification_ref")
-                clarification_ref = dict(raw_ref) if isinstance(raw_ref, dict) else None
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = state
-                disposition = state
-        elif event.type == "external_issue.triage.unverified_candidate" and same_source:
-            event_run = str(payload.get("workflow_run_id") or event.correlation_id or "")
-            if not run_id or not event_run or event_run == run_id:
-                state = "unverified_candidate"
-                run_id = event_run or run_id
-                clarification_ref = None
-                disposition = state
-                verification_status = str(payload.get("verification_status") or "")
-                verification_gaps = [
-                    str(item) for item in payload.get("verification_gaps") or []
-                    if str(item).strip()
-                ]
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = state
-        elif event.type == "external_issue.triage.ready_to_fix" and same_source:
-            # A verified artifact-delivery run may be rejected by the generic
-            # Goal completion projection (for example when a legacy claim is
-            # replayed), but the External Issue disposition is still a valid
-            # triage handoff.  Project it into the approval state so the
-            # operator can review the generated Fix proposal instead of
-            # leaving the Issue stuck at ``triaging``.
-            event_run = str(payload.get("workflow_run_id") or event.correlation_id or "")
-            if not run_id or not event_run or event_run == run_id:
-                state = "awaiting_fix_approval"
-                run_id = event_run or run_id
-                clarification_ref = None
-                disposition = "ready_to_fix"
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = state
-        elif event.type == "operator.action.proposed" and same_task:
-            proposal = payload.get("proposal")
-            proposal = proposal if isinstance(proposal, dict) else {}
-            proposal_payload = proposal.get("payload")
-            proposal_payload = (
-                proposal_payload if isinstance(proposal_payload, dict) else {}
-            )
-            if str(proposal_payload.get("route_id") or "").startswith(
-                "delivery:issue:"
-            ):
-                # Once a Fix workflow request has been submitted, a later
-                # poll may replay the same delivery proposal.  That replay
-                # must not regress the Issue from ``fix_queued`` back to the
-                # approval state while its Run is waiting for admission.
-                if not fix_run_id:
-                    state = "awaiting_fix_approval"
-                    proposal_id = str(proposal.get("proposal_id") or "")
-                    clarification_ref = None
-        elif event.type == "run.goal.completed":
-            # A successful External Issue workflow has no separate semantic
-            # "triage completed" event. Once the kernel-admitted run reaches
-            # its terminal success, the Issue must leave ``triaging`` so the
-            # operator can refresh and review the generated Fix proposal.
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if (
-                state in _TRIAGE_ACTIVE_STATES
-                and event_run
-                and (same_task or not run_id or event_run == run_id)
-            ):
-                state = "awaiting_fix_approval"
-                run_id = event_run
-                clarification_ref = None
-                disposition = ""
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = state
-        elif event.type == "workflow.invoke.requested" and same_task:
-            if str(payload.get("flow_kind") or "") == "issue":
-                state = "fix_queued"
-                fix_run_id = str(payload.get("workflow_run_id") or run_id)
-                run_id = fix_run_id or run_id
-                terminal_state = ""
-            elif str(payload.get("flow_kind") or "") == "workflow":
-                workflow_id = str(
-                    payload.get("workflow_id")
-                    or payload.get("pattern_id")
-                    or workflow_id
-                )
-        elif event.type == "run.cancelled":
-            cancelled_run_id = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and cancelled_run_id == run_id)) and (
-                not cancelled_run_id or not run_id or cancelled_run_id == run_id
-            ):
-                state = (
-                    "fix_cancelled"
-                    if state in _FIX_ACTIVE_STATES
-                    else "triage_cancelled"
-                )
-                terminal_state = state
-                if cancelled_run_id in triage_by_id:
-                    triage_by_id[cancelled_run_id]["state"] = "triage_cancelled"
-        elif event.type in {"workflow.invoke.rejected", "run.admission.rejected"}:
-            rejected_run_id = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and rejected_run_id == run_id)) and (
-                not rejected_run_id or not run_id or rejected_run_id == run_id
-            ):
-                # A rejected admission is terminal.  Do not leave the mirror
-                # looking queued (which incorrectly exposes Cancel queued and
-                # then fails with rejected -> run-cancel).
-                state = "failed"
-                terminal_state = state
-                run_id = rejected_run_id or run_id
-                if rejected_run_id in triage_by_id:
-                    triage_by_id[rejected_run_id]["state"] = "failed"
-        elif event.type == "run.paused":
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and event_run == run_id)) and (
-                not event_run or not run_id or event_run == run_id
-            ):
-                paused_from = state
-                state = (
-                    "fix_paused"
-                    if state in {"fix_queued", "fixing", "verifying"}
-                    else "triage_paused"
-                )
-        elif event.type == "run.resumed":
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and event_run == run_id)) and (
-                not event_run or not run_id or event_run == run_id
-            ):
-                state = paused_from or (
-                    "fixing" if state == "fix_paused" else "triaging"
-                )
-                paused_from = ""
-        elif (
-            event.type in {"task.dispatched", "fanout.child.dispatched"}
-            and same_task
-            and state in {"fix_queued", "fixing"}
-        ):
-            state = "fixing"
-        elif event.type == "candidate.ready" and issue_candidate_event_matches(
-            event,
-            task_id=task_id,
-            workflow_run_id=run_id,
-            require_candidate_identity=True,
-        ):
-            state = "verifying"
-            candidate_identities = tuple(
-                str(payload.get(key) or "").strip()
-                for key in ("pdd_id", "feature_id")
-                if str(payload.get(key) or "").strip()
-            )
-        elif event.type == "judge.passed" and issue_candidate_event_matches(
-            event,
-            task_id=task_id,
-            workflow_run_id=run_id,
-            candidate_identities=candidate_identities,
-        ):
-            state = "verified_candidate"
-        elif event.type == "candidate.owner_review.approved" and same_task:
-            state = "approved_for_pr"
-        elif event.type == "candidate.owner_review.changes_requested" and same_task:
-            state = "owner_changes_requested"
-        elif event.type == "candidate.owner_review.declined" and same_task:
-            state = "owner_rejected"
-        elif event.type == "candidate.publication.prepared" and same_task:
-            state = "publication_prepared"
-        elif event.type in {"forge.pull_request.recorded", "forge.pull_request.synced"} and same_task:
-            state = str(payload.get("status") or "pr_open")
-        elif event.type == "delivery.merged" and same_task:
-            state = "merged"
-        elif event.type == "run.goal.blocked":
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and event_run == run_id)) and (
-                not event_run or not run_id or event_run == run_id
-            ):
-                state = (
-                    "fix_blocked" if state in _FIX_ACTIVE_STATES
-                    else "triage_blocked" if state in _TRIAGE_ACTIVE_STATES
-                    else "blocked"
-                )
-                terminal_state = state
-                failure_event = event.type
-                failure_reason = str(payload.get("reason") or "")
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = state
-        elif event.type in _TERMINAL_RUN_FAILURE_EVENTS:
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (same_task or (run_id and event_run == run_id)) and (
-                not event_run or not run_id or event_run == run_id
-            ):
-                state = "failed"
-                terminal_state = state
-                failure_event = event.type
-                failure_reason = str(payload.get("reason") or "")
-                if run_id in triage_by_id:
-                    triage_by_id[run_id]["state"] = "failed"
-        elif event.type.endswith(".failed") and same_task:
-            # A stage/attempt failure may schedule recovery while the parent
-            # Run remains active.  Surface that distinction to operators so
-            # they use Manage Run instead of incorrectly starting a duplicate.
-            event_run = str(
-                payload.get("workflow_run_id") or payload.get("run_id")
-                or event.correlation_id or ""
-            )
-            if not terminal_state and (
-                not event_run or not run_id or event_run == run_id
-            ):
-                failure_event = event.type
-                failure_reason = str(payload.get("reason") or "")
-                if state in _TRIAGE_ACTIVE_STATES:
-                    state = "triage_recovering"
-                elif state in _FIX_ACTIVE_STATES:
-                    state = "fix_recovering"
-    if not seen:
-        return None
-    if terminal_state:
-        # Once the current Run has emitted a terminal event, later diagnostic
-        # or cleanup failures cannot reopen it as a recovering Run.
-        state = terminal_state
-    return {
-        "state": state,
-        "task_id": task_id,
-        "task_history": list(reversed(task_history)),
-        "source_revision": source_revision,
-        "source_code_revision": source_code_revision,
-        "proposal_id": proposal_id,
-        "run_id": run_id,
-        "workflow_id": workflow_id,
-        "triage_id": run_id,
-        "triage_history": list(reversed(triage_history)),
-        "failure_event": failure_event,
-        "failure_reason": failure_reason,
-        "clarification_ref": clarification_ref,
-        "disposition": disposition,
-        "verification_status": verification_status,
-        "verification_gaps": verification_gaps,
-    }
-
-
 def _matches_issue_states(
     item: IssueMirror,
     workflow: dict[str, Any] | None,
@@ -568,10 +212,13 @@ def build_issue_triage_router(
     reconciler_factory: ReconcilerFactory | None = None,
     webhook_secret: Callable[[], str] | None = None,
     mutation_auth_error: MutationAuthorizer | None = None,
+    triage_view_auth_error: MutationAuthorizer | None = None,
     session_cookie: SessionCookieReader | None = None,
     delivery_service_factory: DeliveryServiceFactory | None = None,
+    project_ids: Callable[[], list[str]] | None = None,
 ) -> APIRouter:
     router = APIRouter()
+    intake_background = IssueIngressBackground()
     build_reconciler = reconciler_factory or (
         lambda state_dir, repository: GitHubIssueReconciler(state_dir, repository)
     )
@@ -584,6 +231,7 @@ def build_issue_triage_router(
             state_dir=ctx.state_dir,
             project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
             config=config,
+            lifecycle_label_writer=build_github_lifecycle_label_writer(),
         )
     )
     projection_cache: dict[
@@ -591,6 +239,11 @@ def build_issue_triage_router(
         tuple[tuple[int, int, str], dict[str, dict[str, Any] | None]],
     ] = {}
     projection_cache_lock = threading.Lock()
+    single_projection_cache: dict[
+        str,
+        tuple[tuple[int, int, str, str, str, str], dict[str, Any] | None],
+    ] = {}
+    single_projection_cache_lock = threading.Lock()
 
     def effective_config(ctx: Any) -> ZfConfig | None:
         project_config = getattr(ctx, "config", None)
@@ -625,18 +278,104 @@ def build_issue_triage_router(
             cached = projection_cache.get(cache_key)
             if cached is not None and cached[0] == fingerprint:
                 return cached[1]
-            events = event_log_from_project(
-                ctx.state_dir,
-                config=effective_config(ctx),
-            ).read_all()
+            event_log = event_log_from_project(ctx.state_dir, config=effective_config(ctx))
+            issue_keys = {item.issue_key for item in items}
+            events = _relevant_events(event_log, issue_keys)
+            indexed = issue_lifecycle_event_index(events, issue_keys)
             projected = {
-                item.issue_key: _workflow_projection(events, item)
+                item.issue_key: _workflow_projection(indexed.get(item.issue_key, []), item)
                 for item in items
             }
             projection_cache[cache_key] = (fingerprint, projected)
             if len(projection_cache) > 8:
                 projection_cache.pop(next(iter(projection_cache)))
             return projected
+
+    def single_workflow_projection(
+        ctx: Any,
+        store: IssueMirrorStore,
+        item: IssueMirror,
+    ) -> dict[str, Any] | None:
+        try:
+            issues_stat = store.issues_path.stat()
+            issues_fingerprint = (int(issues_stat.st_size), int(issues_stat.st_mtime_ns))
+        except OSError:
+            issues_fingerprint = (0, 0)
+        fingerprint = (
+            *issues_fingerprint,
+            build_event_manifest(ctx.state_dir).digest,
+            item.issue_key,
+            item.body_digest,
+            item.comments_digest,
+        )
+        cache_key = str(ctx.state_dir.resolve())
+        with single_projection_cache_lock:
+            cached = single_projection_cache.get(cache_key)
+            if cached is not None and cached[0] == fingerprint:
+                return cached[1]
+            event_log = event_log_from_project(ctx.state_dir, config=effective_config(ctx))
+            events = _relevant_events(event_log, {item.issue_key})
+            projected = _workflow_projection(events, item)
+            single_projection_cache[cache_key] = (fingerprint, projected)
+            if len(single_projection_cache) > 8:
+                single_projection_cache.pop(next(iter(single_projection_cache)))
+            return projected
+
+    def owned_workflows(project_id: str, ctx: Any, store: IssueMirrorStore,
+                        items: list[IssueMirror]) -> dict[str, tuple[str, Any, dict[str, Any] | None]]:
+        """Resolve by repository-scoped issue identity, never a client-supplied owner.
+
+        A mirror alone is not ownership. Use the newest recorded admission across
+        registered projects, retaining terminal runs so lagging labels cannot
+        resurrect a cancelled request in another project's view.
+        """
+        local = workflow_projections(ctx, store, items)
+        results = {item.issue_key: (project_id, ctx, local.get(item.issue_key)) for item in items}
+        if not items:
+            return results
+        identities = {item.issue_key for item in items}
+        newest: dict[str, tuple[str, str]] = {}
+        visited: set[str] = set()
+        # Snapshot each registered project once per request, not once per Issue.
+        # All consumers (list, summary, detail, cancel) share the same owner rule.
+        for candidate_id in dict.fromkeys([project_id, *(project_ids() if project_ids else [])]):
+            try:
+                candidate_ctx = ctx if candidate_id == project_id else resolve_ctx(candidate_id)
+                state_key = str(candidate_ctx.state_dir.resolve())
+                if state_key in visited:
+                    continue
+                visited.add(state_key)
+                candidate_store = store if candidate_id == project_id else IssueMirrorStore(candidate_ctx.state_dir)
+                candidate_items = items if candidate_id == project_id else candidate_store.list()
+                projections = local if candidate_id == project_id else workflow_projections(candidate_ctx, candidate_store, candidate_items)
+                for candidate_item in candidate_items:
+                    if candidate_item.issue_key not in identities:
+                        continue
+                    workflow = projections.get(candidate_item.issue_key)
+                    if not workflow or not workflow.get("run_id"):
+                        continue
+                    admitted = max((str(entry.get("queued_at") or "") for entry in workflow.get("triage_history", [])), default="")
+                    rank = (admitted, candidate_id)
+                    if candidate_item.issue_key in newest and rank <= newest[candidate_item.issue_key]:
+                        continue
+                    newest[candidate_item.issue_key] = rank
+                    results[candidate_item.issue_key] = (candidate_id, candidate_ctx, {
+                        **workflow, "workflow_project_id": candidate_id,
+                        "workflow_project_name": getattr(getattr(candidate_ctx.config, "project", None), "name", candidate_id),
+                        "execution_project_root": str(getattr(candidate_ctx, "project_root", candidate_ctx.state_dir.parent)),
+                    })
+            except (OSError, ValueError):
+                # Stale registry entries cannot prevent access to a live project.
+                continue
+        return results
+
+    def owned_workflow(project_id: str, ctx: Any, store: IssueMirrorStore,
+                       item: IssueMirror) -> tuple[str, Any, dict[str, Any] | None]:
+        return owned_workflows(project_id, ctx, store, store.list())[item.issue_key]
+
+    def visible_workflows(project_id: str, ctx: Any, store: IssueMirrorStore,
+                          items: list[IssueMirror]) -> dict[str, dict[str, Any] | None]:
+        return {key: result[2] for key, result in owned_workflows(project_id, ctx, store, items).items()}
 
     def mutation_response(
         request: Request,
@@ -656,6 +395,33 @@ def build_issue_triage_router(
             action,
             authorization=authorization,
             x_zf_web_token=token,
+            x_zf_developer_token=request.headers.get("X-ZF-Developer-Token"),
+            web_session_token=read_session_cookie(request),
+        )
+        if error is None:
+            return None
+        body = dict(error)
+        return JSONResponse(body, status_code=int(body.pop("_status_code", 403)))
+
+    def view_response(
+        request: Request,
+        authorization: str | None,
+        token: str | None,
+    ) -> JSONResponse | None:
+        """Keep the developer-only Triage projection behind a capability.
+
+        The callback is optional for isolated projection tests and embedded
+        read-only fixtures. Production composition supplies the same session
+        authorizer used by controlled mutations, so a reporter cannot infer
+        maintainer access from the current project directory.
+        """
+        if triage_view_auth_error is None:
+            return None
+        error = triage_view_auth_error(
+            "issue-triage-view",
+            authorization=authorization,
+            x_zf_web_token=token,
+            x_zf_developer_token=request.headers.get("X-ZF-Developer-Token"),
             web_session_token=read_session_cookie(request),
         )
         if error is None:
@@ -664,12 +430,20 @@ def build_issue_triage_router(
         return JSONResponse(body, status_code=int(body.pop("_status_code", 403)))
 
     @router.get("/api/projects/{project_id}/issue-triage/summary")
-    def issue_triage_summary(project_id: str) -> JSONResponse:
+    def issue_triage_summary(
+        project_id: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        denied = view_response(request, authorization, x_zf_web_token)
+        if denied is not None:
+            return denied
         try:
             ctx, repository, store = context(project_id)
             items = store.list()
             sync = store.sync_state()
-            workflows = workflow_projections(ctx, store, items)
+            workflows = visible_workflows(project_id, ctx, store, items)
         except ValueError as exc:
             return JSONResponse({"ok": False, "status": "unconfigured", "reason": str(exc)}, status_code=409)
         groups = Counter(item.derived_group for item in items)
@@ -685,6 +459,7 @@ def build_issue_triage_router(
             for name, color in item.label_colors.items()
         }
         authors = Counter(item.author_login for item in items)
+        sources = Counter(item.source for item in items)
         author_states = {
             login: {
                 "open": sum(1 for item in items if item.author_login == login and item.github_state == "open"),
@@ -703,35 +478,59 @@ def build_issue_triage_router(
             "labels": dict(sorted(labels.items())),
             "label_colors": dict(sorted(label_colors.items())),
             "authors": dict(sorted(authors.items())),
+            "sources": dict(sorted(sources.items())),
             "author_states": dict(sorted(author_states.items())),
             "sync": sync.to_dict(),
+            "intake": intake_background.status(ctx.state_dir),
         })
 
     @router.get("/api/projects/{project_id}/issue-triage/attachment")
-    def issue_triage_attachment(project_id: str, url: str) -> Response:
+    def issue_triage_attachment(
+        project_id: str,
+        url: str,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> Response:
+        denied = view_response(request, authorization, x_zf_web_token)
+        if denied is not None:
+            return denied
         try:
-            context(project_id)
+            _, repository, _ = context(project_id)
         except ValueError as exc:
             return JSONResponse({"ok": False, "status": "unconfigured", "reason": str(exc)}, status_code=409)
-        if not _is_github_image_url(url):
+        parsed = urllib.parse.urlparse(url)
+        release_media = (parsed.scheme == "https" and parsed.netloc == "github.com"
+                         and parsed.path.startswith(f"/{repository}/releases/download/"))
+        if not _is_github_media_url(url) and not release_media:
             return JSONResponse({"ok": False, "status": "invalid_attachment_url"}, status_code=400)
         try:
-            raw, content_type = _read_github_image(url)
+            raw, content_type = _read_github_media(url)
         except (OSError, ValueError) as exc:
             return JSONResponse({
                 "ok": False,
                 "status": "attachment_unavailable",
                 "reason": str(exc),
             }, status_code=502)
-        return Response(
-            content=raw,
-            media_type=content_type,
-            headers={"Cache-Control": "private, max-age=300"},
-        )
+        headers = {"Cache-Control": "private, max-age=300", "Accept-Ranges": "bytes"}
+        requested_range = request.headers.get("range", "")
+        if requested_range:
+            match = re.fullmatch(r"bytes=(\d*)-(\d*)", requested_range)
+            if not match or not any(match.groups()):
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{len(raw)}"})
+            first, last = match.groups()
+            start = int(first) if first else max(0, len(raw) - int(last))
+            end = min(int(last), len(raw) - 1) if first and last else len(raw) - 1
+            if start > end or start >= len(raw):
+                return Response(status_code=416, headers={"Content-Range": f"bytes */{len(raw)}"})
+            headers["Content-Range"] = f"bytes {start}-{end}/{len(raw)}"
+            return Response(raw[start:end + 1], status_code=206, media_type=content_type, headers=headers)
+        return Response(content=raw, media_type=content_type, headers=headers)
 
     @router.get("/api/projects/{project_id}/issue-triage")
     def issue_triage_list(
         project_id: str,
+        request: Request,
         q: str = "",
         group: str = "",
         state: str = "",
@@ -741,16 +540,22 @@ def build_issue_triage_router(
         author: str = "",
         authors: str = "",
         source: str = "",
+        sources: str = "",
         order_by: str = "created",
         order_direction: str = "desc",
         cursor: int = Query(default=0, ge=0),
-        limit: int = Query(default=50, ge=1, le=100),
+        limit: int = Query(default=50, ge=1, le=500),
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
     ) -> JSONResponse:
+        denied = view_response(request, authorization, x_zf_web_token)
+        if denied is not None:
+            return denied
         try:
             ctx, repository, store = context(project_id)
             items = store.list()
             sync = store.sync_state()
-            workflow_by_issue = workflow_projections(ctx, store, items)
+            workflow_by_issue = visible_workflows(project_id, ctx, store, items)
         except ValueError as exc:
             return JSONResponse({"ok": False, "status": "unconfigured", "reason": str(exc)}, status_code=409)
         needle = q.strip().casefold()[:200]
@@ -788,6 +593,17 @@ def build_issue_triage_router(
                 for value in raw_authors
                 if str(value).strip()
             } if isinstance(raw_authors, list) else set()
+        requested_sources: set[str] | None = None
+        if sources:
+            try:
+                raw_sources = json.loads(sources)
+            except json.JSONDecodeError:
+                raw_sources = []
+            requested_sources = {
+                str(value).strip().casefold()
+                for value in raw_sources
+                if str(value).strip()
+            } if isinstance(raw_sources, list) else set()
         filtered = [item for item in items if (
             (not group or item.derived_group == group)
             and (not state or item.github_state == state)
@@ -796,6 +612,7 @@ def build_issue_triage_router(
             and (not author or item.author_login.casefold() == author.casefold())
             and (requested_authors is None or item.author_login.casefold() in requested_authors)
             and (not source or item.source == source)
+            and (requested_sources is None or item.source.casefold() in requested_sources)
             and _matches_issue_states(
                 item,
                 workflow_by_issue.get(item.issue_key),
@@ -809,7 +626,9 @@ def build_issue_triage_router(
         )]
         reverse = order_direction.strip().casefold() != "asc"
         order_key = order_by.strip().casefold()
-        if order_key in {"created_name", "updated_name", "name"}:
+        if order_key == "number":
+            filtered.sort(key=lambda item: item.number, reverse=reverse)
+        elif order_key in {"created_name", "updated_name", "name"}:
             # The mirror keeps the current title, not a title history.  Both
             # name views therefore sort the available title snapshot while
             # retaining the distinct API fields for future history support.
@@ -837,7 +656,16 @@ def build_issue_triage_router(
         })
 
     @router.get("/api/projects/{project_id}/issue-triage/{issue_number}")
-    def issue_triage_detail(project_id: str, issue_number: int) -> JSONResponse:
+    def issue_triage_detail(
+        project_id: str,
+        issue_number: int,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        denied = view_response(request, authorization, x_zf_web_token)
+        if denied is not None:
+            return denied
         try:
             ctx, _, store = context(project_id)
             item = store.get(issue_number)
@@ -845,8 +673,8 @@ def build_issue_triage_router(
                 return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
             body = store.read_body(item)
             comments = store.read_comments(item)
+            _, ctx, workflow = owned_workflow(project_id, ctx, store, item)
             config = effective_config(ctx)
-            workflows = workflow_projections(ctx, store, store.list())
             delivery = (
                 build_delivery_service(ctx, config).projection(item)
                 if config is not None else None
@@ -858,12 +686,20 @@ def build_issue_triage_router(
             "issue": _public(item, workflow=(lambda workflow: (
                 {
                     **workflow,
-                    "needs_info": hydrate_external_issue_clarification(
-                        ctx.state_dir, workflow.get("clarification_ref"),
+                    "needs_info": (
+                        {
+                            **clarification,
+                            "request_status": workflow.get("clarification_request_status") or "pending",
+                            **({"request_url": workflow.get("clarification_request_url")} if workflow.get("clarification_request_url") else {}),
+                        }
+                        if isinstance((clarification := hydrate_external_issue_clarification(
+                            ctx.state_dir, workflow.get("clarification_ref"),
+                        )), dict)
+                        else None
                     ),
                 }
                 if workflow and workflow.get("clarification_ref") else workflow
-            ))(workflows.get(item.issue_key))),
+            ))(workflow)),
             "body": body,
             "comments": [comment.to_dict() for comment in comments],
             "delivery": delivery,
@@ -873,8 +709,21 @@ def build_issue_triage_router(
     @router.post("/api/projects/{project_id}/issue-triage/refresh")
     async def issue_triage_refresh(
         project_id: str,
+        background_tasks: BackgroundTasks,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
         force: bool = Query(default=False),
+        full: bool = Query(default=False),
     ) -> JSONResponse:
+        denied = mutation_response(
+            request,
+            authorization,
+            x_zf_web_token,
+            action="issue-triage-refresh",
+        )
+        if denied is not None:
+            return denied
         try:
             ctx, repository, _ = context(project_id)
         except ValueError as exc:
@@ -886,26 +735,32 @@ def build_issue_triage_router(
                 config,
                 project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
                 reconciler=build_reconciler(ctx.state_dir, repository),
+                lifecycle_label_writer=build_github_lifecycle_label_writer(),
             )
-            outcome = await asyncio.to_thread(service.poll_once, force=force)
-            result = {
-                "ok": outcome.ok,
-                "status": outcome.status,
-                "changed": outcome.changed,
-                "received": outcome.received,
-                "triage_queued": outcome.triage_queued,
-                "error": outcome.error,
-            }
+            result = await asyncio.to_thread(service.refresh_mirror, force=force, full=full)
+            if result.get("ok") and result.get("status") != "syncing":
+                intake_background.schedule(service, background_tasks)
+            result["intake"] = intake_background.status(ctx.state_dir)
         else:
             result = await asyncio.to_thread(
                 build_reconciler(ctx.state_dir, repository).refresh,
                 force=force,
+                **({"full": True} if full else {}),
             )
+            if config is not None and result.get("ok") and result.get("status") != "syncing":
+                service = ExternalIssueIngressService(
+                    ctx.state_dir, config,
+                    project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
+                    lifecycle_label_writer=build_github_lifecycle_label_writer(),
+                )
+                label_sync = await asyncio.to_thread(service.reconcile_lifecycle_labels)
+                result["lifecycle_label_sync"] = label_sync
         return JSONResponse(result, status_code=200 if result.get("ok") else 502)
 
     @router.post("/api/projects/{project_id}/issue-triage/start-triage")
     async def issue_triage_start(
         project_id: str,
+        background_tasks: BackgroundTasks,
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
@@ -926,30 +781,67 @@ def build_issue_triage_router(
                 "reason": str(exc),
             }, status_code=422)
         config = effective_config(ctx)
-        if config is None or not config.self_issue.ingress.enabled:
+        # Manual Start Triage is an explicit developer mutation.  It may
+        # refresh and admit one selected Issue even when the background
+        # GitHub ingress/poller is disabled.  The ingress switch controls
+        # automatic synchronization only; binding this route to it made a
+        # cancelled queue entry impossible to restart.
+        if config is None or not config.self_issue.enabled:
             return JSONResponse({
                 "ok": False,
                 "status": "disabled",
-                "reason": "GitHub Issue ingress is disabled",
+                "reason": "Self-Issue is disabled",
             }, status_code=409)
         service = ExternalIssueIngressService(
             ctx.state_dir,
             config,
             project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
             reconciler=build_reconciler(ctx.state_dir, repository),
+            lifecycle_label_writer=build_github_lifecycle_label_writer(),
         )
-        outcome = await asyncio.to_thread(service.start_manual_triage, issue_number)
+        outcome = await asyncio.to_thread(
+            service.start_manual_triage,
+            issue_number,
+            # A selected Issue normally already has a mirror snapshot.  Keep
+            # the historical URL/number path working by fetching only when no
+            # local snapshot exists; the common path stays click-fast.
+            refresh=store.get(issue_number) is None,
+            defer_remote_sync=True,
+            defer_attachments=True,
+            lock_timeout_seconds=0.1,
+        )
         if not outcome.ok:
             status_code = 404 if "not found" in outcome.error.casefold() else 502
             if outcome.status in {"disabled", "syncing"}:
                 status_code = 409
+            elif outcome.status == "invalid_execution_project":
+                status_code = 422
             return JSONResponse({
                 "ok": False,
                 "status": outcome.status,
                 "issue_number": outcome.issue_number,
                 "reason": outcome.error,
             }, status_code=status_code)
+        owner_id = project_id
+        if outcome.execution_project_root and outcome.execution_project_root != str(service.project_root):
+            owner_id = outcome.workflow_project_id
+            from pathlib import Path
+            from zf.runtime.issue_execution import execution_context
+            ctx = execution_context(Path(outcome.execution_project_root), config)
+            config = effective_config(ctx)
+            store = IssueMirrorStore(ctx.state_dir)
+            service = ExternalIssueIngressService(ctx.state_dir, config, project_root=ctx.project_root,
+                reconciler=build_reconciler(ctx.state_dir, repository),
+                lifecycle_label_writer=build_github_lifecycle_label_writer())
         item = store.get(outcome.issue_number)
+        # The local queue event is durable at this point.  GitHub label
+        # convergence is a projection and can safely run after the response.
+        # Keep the mirror fresh without putting GitHub latency on the click.
+        # Starlette starts these tasks only after the response body is sent.
+        background_tasks.add_task(service.reconciler.refresh_issue, issue_number)
+        if item is not None:
+            background_tasks.add_task(service._issue_attachment_refs, item)
+        background_tasks.add_task(service.reconcile_lifecycle_labels)
         events = event_log_from_project(
             ctx.state_dir,
             config=config,
@@ -962,18 +854,101 @@ def build_issue_triage_router(
             "task_id": outcome.task_id,
             "workflow_run_id": outcome.workflow_run_id,
             "source_revision": outcome.source_revision,
-            "issue": _public(item, workflow=_workflow_projection(events, item)) if item else None,
+            "workflow_project_id": owner_id,
+            "workflow_project_name": outcome.workflow_project_name,
+            "execution_project_root": outcome.execution_project_root,
+            "issue": _public(item, workflow={**(_workflow_projection(events, item) or {}),
+                "workflow_project_id": owner_id,
+                "workflow_project_name": outcome.workflow_project_name,
+                "execution_project_root": outcome.execution_project_root}) if item else None,
         })
+
+    @router.post("/api/projects/{project_id}/issue-triage/{issue_number}/cancel-queued")
+    async def issue_triage_cancel_queued(
+        project_id: str,
+        issue_number: int,
+        background_tasks: BackgroundTasks,
+        request: Request,
+        authorization: str | None = Header(default=None),
+        x_zf_web_token: str | None = Header(default=None),
+    ) -> JSONResponse:
+        denied = mutation_response(request, authorization, x_zf_web_token,
+                                   action="issue-triage-queued-cancel")
+        if denied is not None:
+            return denied
+        try:
+            ctx, _, store = context(project_id)
+            item = store.get(issue_number)
+            if item is None:
+                return JSONResponse({"ok": False, "status": "not_found"}, status_code=404)
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Request body must be an object")
+            owner_id, ctx, resolved_workflow = owned_workflow(project_id, ctx, store, item)
+            workflow = resolved_workflow or {}
+            triage_id = str(workflow.get("triage_id") or "").strip()
+            workflow_state = str(workflow.get("state") or "")
+            if workflow_state not in {"triage_queued", "fix_queued"}:
+                return JSONResponse({"ok": False, "status": "invalid_transition",
+                                     "reason": "Issue is not queued for Triage"}, status_code=409)
+            if not triage_id or not workflow.get("queued_cancel_available"):
+                # A remote lifecycle label does not identify a current queue
+                # entry in this project's event ledger.
+                # It must not be turned into a fabricated run id or a generic
+                # "triage_id is required" error from the action service.
+                return JSONResponse({
+                    "ok": False,
+                    "status": "not_cancellable",
+                    "reason": "No cancellable queued request exists in this project. The displayed state may come from GitHub labels. Refresh or switch to the project that queued this Issue.",
+                }, status_code=409)
+            supplied_id = str(payload.get("triage_id") or "").strip()
+            if supplied_id and supplied_id != triage_id:
+                return JSONResponse({"ok": False, "status": "revision_conflict",
+                                     "reason": "The queued request changed. Refresh before cancelling."}, status_code=409)
+            writer = EventWriter(event_log_from_project(ctx.state_dir, config=effective_config(ctx)))
+            requested = writer.emit("external_issue.triage.queued_cancel_requested", actor="web",
+                                    task_id=str(workflow.get("task_id") or "") or None,
+                                    correlation_id=triage_id,
+                                    payload={"issue_number": issue_number, "triage_id": triage_id})
+            from zf.runtime.control_actions import ControlledActionService
+            action = "external-issue-fix-queued-cancel" if workflow_state == "fix_queued" else "external-issue-triage-queued-cancel"
+            service = ControlledActionService(
+                ctx.state_dir, writer, config=effective_config(ctx),
+                project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
+                actor="web", source="issue-triage", surface="web",
+            )
+            result = await asyncio.to_thread(service.execute, action=action,
+                      requested_action="issue-triage-queued-cancel",
+                      payload={
+                          **payload,
+                          "triage_id": triage_id,
+                          "defer_lifecycle_label_sync": True,
+                      }, requested=requested)
+            code = int(result.pop("_status_code", 200))
+            result["workflow_project_id"] = owner_id
+            if code < 300 and result.get("status") == "cancelled":
+                ingress = ExternalIssueIngressService(
+                    ctx.state_dir,
+                    effective_config(ctx),
+                    project_root=getattr(ctx, "project_root", ctx.state_dir.parent),
+                    lifecycle_label_writer=build_github_lifecycle_label_writer(),
+                )
+                background_tasks.add_task(ingress.reconcile_lifecycle_labels)
+            return JSONResponse(result, status_code=code)
+        except (json.JSONDecodeError, ValueError) as exc:
+            return JSONResponse({"ok": False, "status": "invalid_request", "reason": str(exc)}, status_code=422)
 
     def delivery_context(project_id: str, issue_number: int):
         ctx, _, store = context(project_id)
         item = store.get(issue_number)
         if item is None:
             raise CandidateDeliveryError("GitHub Issue was not found in the mirror")
+        _, ctx, _ = owned_workflow(project_id, ctx, store, item)
         config = effective_config(ctx)
         if config is None:
             raise CandidateDeliveryError("Issue candidate delivery is not configured")
-        return item, build_delivery_service(ctx, config)
+        owner_item = IssueMirrorStore(ctx.state_dir).get(issue_number)
+        return owner_item or item, build_delivery_service(ctx, config)
 
     async def delivery_payload(request: Request) -> dict[str, Any]:
         try:
@@ -984,10 +959,23 @@ def build_issue_triage_router(
             raise CandidateDeliveryError("Request body must be an object")
         return value
 
+    def _schedule_issue_label_sync(
+        service: Any,
+        item: IssueMirror,
+        result: Mapping[str, Any],
+        background_tasks: BackgroundTasks,
+    ) -> None:
+        """Project a completed local delivery transition after the response."""
+        writer = getattr(service, "_reconcile_remote_lifecycle_label", None)
+        state = str(result.get("status") or "").strip()
+        if callable(writer) and state:
+            background_tasks.add_task(writer, item, state)
+
     @router.post("/api/projects/{project_id}/issue-triage/{issue_number}/candidate-review")
     async def issue_candidate_review(
         project_id: str,
         issue_number: int,
+        background_tasks: BackgroundTasks,
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
@@ -1001,7 +989,10 @@ def build_issue_triage_router(
         try:
             payload = await delivery_payload(request)
             item, service = delivery_context(project_id, issue_number)
-            result = service.review(
+            if hasattr(service, "defer_remote_sync"):
+                service.defer_remote_sync = True
+            result = await asyncio.to_thread(
+                service.review,
                 item,
                 verdict=str(payload.get("verdict") or ""),
                 expected_candidate_sha=str(payload.get("candidate_sha") or ""),
@@ -1013,12 +1004,14 @@ def build_issue_triage_router(
                 {"ok": False, "status": "rejected", "reason": str(exc)},
                 status_code=409,
             )
+        _schedule_issue_label_sync(service, item, result, background_tasks)
         return JSONResponse(result)
 
     @router.post("/api/projects/{project_id}/issue-triage/{issue_number}/prepare-publication")
     async def issue_candidate_prepare_publication(
         project_id: str,
         issue_number: int,
+        background_tasks: BackgroundTasks,
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
@@ -1032,7 +1025,10 @@ def build_issue_triage_router(
         try:
             payload = await delivery_payload(request)
             item, service = delivery_context(project_id, issue_number)
-            result = service.prepare(
+            if hasattr(service, "defer_remote_sync"):
+                service.defer_remote_sync = True
+            result = await asyncio.to_thread(
+                service.prepare,
                 item,
                 expected_candidate_sha=str(payload.get("candidate_sha") or ""),
                 expected_source_revision=str(payload.get("source_revision") or ""),
@@ -1042,12 +1038,14 @@ def build_issue_triage_router(
                 {"ok": False, "status": "rejected", "reason": str(exc)},
                 status_code=409,
             )
+        _schedule_issue_label_sync(service, item, result, background_tasks)
         return JSONResponse(result)
 
     @router.post("/api/projects/{project_id}/issue-triage/{issue_number}/pull-request")
     async def issue_candidate_record_pr(
         project_id: str,
         issue_number: int,
+        background_tasks: BackgroundTasks,
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
@@ -1061,6 +1059,8 @@ def build_issue_triage_router(
         try:
             payload = await delivery_payload(request)
             item, service = delivery_context(project_id, issue_number)
+            if hasattr(service, "defer_remote_sync"):
+                service.defer_remote_sync = True
             result = await asyncio.to_thread(
                 service.record_pr,
                 item,
@@ -1071,12 +1071,14 @@ def build_issue_triage_router(
                 {"ok": False, "status": "rejected", "reason": str(exc)},
                 status_code=409,
             )
+        _schedule_issue_label_sync(service, item, result, background_tasks)
         return JSONResponse(result)
 
     @router.post("/api/projects/{project_id}/issue-triage/{issue_number}/pull-request/refresh")
     async def issue_candidate_refresh_pr(
         project_id: str,
         issue_number: int,
+        background_tasks: BackgroundTasks,
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
@@ -1089,12 +1091,15 @@ def build_issue_triage_router(
             return denied
         try:
             item, service = delivery_context(project_id, issue_number)
+            if hasattr(service, "defer_remote_sync"):
+                service.defer_remote_sync = True
             result = await asyncio.to_thread(service.refresh_pr, item)
         except CandidateDeliveryError as exc:
             return JSONResponse(
                 {"ok": False, "status": "rejected", "reason": str(exc)},
                 status_code=409,
             )
+        _schedule_issue_label_sync(service, item, result, background_tasks)
         return JSONResponse(result)
 
     @router.post("/api/projects/{project_id}/issue-triage/github-webhook")

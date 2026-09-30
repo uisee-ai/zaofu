@@ -4,6 +4,7 @@ import type {
   DeliveryTraceCycle,
   DeliveryTracePhase,
 } from "../../api/types";
+import { formatTime } from '../../lib/format.js';
 
 export function copyText(value: string): void {
   void navigator.clipboard?.writeText(value);
@@ -57,8 +58,7 @@ export function clockLabel(ts?: string | null): string {
   if (!ts) return "—";
   const date = new Date(ts);
   if (Number.isNaN(date.getTime())) return "—";
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return formatTime(ts, false);
 }
 
 export function parseTs(ts?: string | null): number | null {

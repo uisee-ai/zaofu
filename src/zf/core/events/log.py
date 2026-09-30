@@ -82,6 +82,9 @@ class EventLog:
             line = self._encode(event)
             with open(self.path, "a", encoding="utf-8") as f:
                 f.write(line + "\n")
+                # Sync before projection; see docs/impl/event-ledger-append-durability.md.
+                f.flush()
+                os.fsync(f.fileno())
         if self.index is not None:
             try:
                 self.index.observe(event)

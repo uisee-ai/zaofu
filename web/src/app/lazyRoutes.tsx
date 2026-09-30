@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../settings/useSettingsPreferences";
+import { uiText } from "../settings/uiText";
 import { lazy, Suspense, type ComponentProps } from "react";
 
 const LazyChannelPage = lazy(() => import("../components/channel/ChannelPage").then((module) => ({
@@ -14,9 +16,10 @@ const LazyTracesPage = lazy(() => import("../components/traces/TracesPage").then
 })));
 
 function RouteLoading({ label }: { label: string }) {
+  useSettingsPreferences();
   return (
     <section aria-busy="true" className="subsection route-loading">
-      <p className="muted">Loading {label}...</p>
+      <p className="muted">{uiText("Loading")} {label}...</p>
     </section>
   );
 }

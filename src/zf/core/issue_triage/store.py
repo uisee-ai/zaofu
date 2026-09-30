@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from zf.core.issue_triage.models import IssueComment, IssueMirror, SyncState
+from zf.core.issue_triage.lifecycle_states import reconcile_lifecycle_labels
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
 
@@ -31,6 +32,56 @@ class IssueMirrorStore:
 
     def get(self, number: int) -> IssueMirror | None:
         return next((item for item in self.list() if item.number == number), None)
+
+    def project_lifecycle_label(
+        self,
+        issue_key: str,
+        desired_state: str,
+        label_colors: dict[str, str] | None = None,
+    ) -> IssueMirror | None:
+        """Project a confirmed Forge lifecycle write into the local mirror.
+
+        This deliberately patches only managed lifecycle labels.  It keeps
+        the newest remote content and metadata already present in the mirror,
+        so a concurrent GitHub refresh cannot make a successful action look
+        stale merely because its ``updated_at`` won the normal upsert guard.
+        """
+
+        return self.project_lifecycle_labels({issue_key: (desired_state, label_colors or {})}).get(issue_key)
+
+    def project_lifecycle_labels(
+        self, updates: dict[str, tuple[str, dict[str, str]]],
+    ) -> dict[str, IssueMirror]:
+        """Publish confirmed names and colors for one batch in a single snapshot."""
+        if not updates:
+            return {}
+        with locked_path(self.issues_path):
+            rows = self.list()
+            projected: dict[str, IssueMirror] = {}
+            for current in rows:
+                if current.issue_key not in updates:
+                    continue
+                desired, confirmed_colors = updates[current.issue_key]
+                labels = reconcile_lifecycle_labels(current.labels, desired)
+                colors = {name: color for name, color in current.label_colors.items() if name in labels}
+                if desired in confirmed_colors:
+                    colors[desired] = confirmed_colors[desired]
+                item = replace(current, labels=labels, label_colors=colors)
+                item.validate()
+                projected[current.issue_key] = item
+            next_rows = [projected.get(row.issue_key, row) for row in rows]
+            if next_rows == rows:
+                return projected
+            atomic_write_text(
+                self.issues_path,
+                json.dumps(
+                    [row.to_dict() for row in next_rows],
+                    ensure_ascii=False,
+                    indent=2,
+                    sort_keys=True,
+                ) + "\n",
+            )
+            return projected
 
     def read_body(self, item: IssueMirror) -> str:
         path = (self.state_dir / item.body_ref).resolve()
@@ -127,6 +178,8 @@ class IssueMirrorStore:
             if (
                 existing.comments_digest == digest
                 and existing.comments_ref == comments_ref
+                and (self.state_dir / comments_ref).is_file()
+                and (self.state_dir / comments_ref).read_text(encoding="utf-8") == raw
             ):
                 return existing, False
             atomic_write_text(self.state_dir / comments_ref, raw)

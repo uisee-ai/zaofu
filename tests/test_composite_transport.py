@@ -39,6 +39,16 @@ def test_default_transport_is_tmux_for_all_roles(tmp_path: Path, monkeypatch):
     assert isinstance(transport.for_role("review"), TmuxTransport)
 
 
+def test_composite_transport_forwards_lifecycle_snapshot(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".zf").mkdir()
+    cfg = _config([RoleConfig(name="dev")])
+    transport = make_transport(cfg, dry_run=True)
+    snapshot = transport.lifecycle_snapshot("dev")
+    assert snapshot is not None
+    assert snapshot.role_name == "dev"
+
+
 def test_per_role_stream_json_opt_in(tmp_path: Path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / ".zf").mkdir()

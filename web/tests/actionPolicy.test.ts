@@ -1,11 +1,20 @@
 import {
   actionEventRefreshRunsInBackground,
   actionRequestDeadlineMs,
+  actionIsReadOnlySelfIssue,
 } from "../src/api/actionPolicy.js";
 
 function assert(condition: unknown, message: string): void {
   if (!condition) throw new Error(message);
 }
+
+for (const action of ["self-issue-get", "self-issue-intake-get", "self-issue-session-get",
+  "self-issue-session-activity-result", "self-issue-session-draft-version"]) {
+  assert(actionIsReadOnlySelfIssue(action), `${action} must not trigger whole-page refresh`);
+  assert(actionRequestDeadlineMs(action) === 10_000, `${action} must have a bounded read timeout`);
+}
+assert(!actionIsReadOnlySelfIssue("self-issue-capture"), "capture is a mutation");
+assert(!actionIsReadOnlySelfIssue("self-issue-session-save-draft"), "saving a draft is a mutation");
 
 assert(
   actionRequestDeadlineMs("self-issue-get") === 10_000,

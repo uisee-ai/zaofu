@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // BoardWorkbench + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { search } from "../../api/client";
 import type { ActionResponse, AgentSummary, FanoutSummary, Task } from "../../api/types";
@@ -143,6 +145,7 @@ export function BoardWorkbench({
   totalTaskCount: number;
   viewMode: ViewMode;
 }) {
+  useSettingsPreferences();
   const [dragTaskId, setDragTaskId] = useState("");
   const [boardNotice, setBoardNotice] = useState("");
   const [passcodeInput, setPasscodeInput] = useState("");
@@ -276,14 +279,14 @@ export function BoardWorkbench({
     <>
       <div className="section-heading">
         <div>
-          <h2>Tasks</h2>
+          <h2>{uiText("Tasks")}</h2>
           <span className="muted">{filteredTasks.length} visible tasks</span>
         </div>
       </div>
       <div className="task-toolbar">
         <div className="task-toolbar-row task-toolbar-primary-row">
           <div className="task-toolbar-control-group">
-            <span className="task-toolbar-control-label" aria-hidden="true">View</span>
+            <span className="task-toolbar-control-label" aria-hidden="true">{uiText("View")}</span>
             <div className="task-segmented-control" role="group" aria-label="Task view">
               <button
                 aria-pressed={viewMode === "board"}
@@ -292,7 +295,7 @@ export function BoardWorkbench({
                 onClick={() => setViewMode("board")}
               >
                 <Columns3 size={14} strokeWidth={1.8} aria-hidden="true" />
-                Board
+                {uiText("Board")}
               </button>
               <button
                 aria-pressed={viewMode === "list"}
@@ -301,12 +304,12 @@ export function BoardWorkbench({
                 onClick={() => setViewMode("list")}
               >
                 <List size={14} strokeWidth={1.8} aria-hidden="true" />
-                List
+                {uiText("List")}
               </button>
             </div>
           </div>
           <div className="task-toolbar-control-group task-focus-control-group">
-            <span className="task-toolbar-control-label" aria-hidden="true">Focus</span>
+            <span className="task-toolbar-control-label" aria-hidden="true">{uiText("Focus")}</span>
             <div className="task-segmented-control" role="group" aria-label="Task focus">
               {TASK_FOCUS_OPTIONS.map((option) => (
                 <button
@@ -316,7 +319,7 @@ export function BoardWorkbench({
                   type="button"
                   onClick={() => handleTaskFocus(option.value)}
                 >
-                  {option.label}
+                  {uiText(option.label)}
                 </button>
               ))}
             </div>
@@ -337,7 +340,7 @@ export function BoardWorkbench({
           >
             <option value="all">all status</option>
             {BOARD_COLUMNS.map((column) => (
-              <option value={column.id} key={column.id}>{column.title}</option>
+              <option value={column.id} key={column.id}>{uiText(column.title)}</option>
             ))}
           </select>
           <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
@@ -411,7 +414,7 @@ export function BoardWorkbench({
                   }}
                 />
                 <button className="icon-button" type="button" onClick={saveBoardToken}>
-                  Save
+                  {uiText("Save")}
                 </button>
                 <button
                   className="icon-button"
@@ -421,7 +424,7 @@ export function BoardWorkbench({
                     onSaveToken("");
                   }}
                 >
-                  Clear
+                  {uiText("Clear")}
                 </button>
               </>
             ) : null}
@@ -445,7 +448,7 @@ export function BoardWorkbench({
             type="button"
             onClick={() => onOpenFanout(activeFanout.fanout_id)}
           >
-            Open Fanout
+            {uiText("Open Fanout")}
           </button>
         </div>
       ) : null}
@@ -494,6 +497,7 @@ function TaskListView({
   selectedTaskId: string | null;
   onOpenTask: (taskId: string) => void;
 }) {
+  useSettingsPreferences();
   const [focusedTaskId, setFocusedTaskId] = useState(selectedTaskId || tasks[0]?.id || "");
   useEffect(() => {
     if (selectedTaskId && selectedTaskId !== focusedTaskId) {
@@ -515,7 +519,7 @@ function TaskListView({
     <div className="task-list-layout">
       <section className="subsection task-list-panel">
         <div className="inline-heading">
-          <h3>Task List</h3>
+          <h3>{uiText("Task List")}</h3>
           <span className="muted">{tasks.length} tasks</span>
         </div>
         <div className="task-list-view" role="list">
@@ -553,10 +557,10 @@ function TaskListView({
       </section>
       <aside className="subsection task-inspector" aria-label="Task inspector">
         <div className="inline-heading">
-          <h3>Inspector</h3>
+          <h3>{uiText("Inspector")}</h3>
           {selectedTask ? (
             <button className="icon-button" type="button" onClick={() => onOpenTask(selectedTask.id)}>
-              Open Detail
+              {uiText("Open Detail")}
             </button>
           ) : null}
         </div>
@@ -574,15 +578,15 @@ function TaskListView({
                   </span>
                 </div>
                 <dl className="key-value-grid compact-kv">
-                  <dt>Status</dt>
+                  <dt>{uiText("Status")}</dt>
                   <dd>{selectedTask.task_card?.lifecycle.display_status || selectedTask.display_status || "done"}</dd>
-                  <dt>Outcome</dt>
+                  <dt>{uiText("Outcome")}</dt>
                   <dd>{taskTerminalOutcome(selectedTask)}</dd>
-                  <dt>Owner</dt>
+                  <dt>{uiText("Owner")}</dt>
                   <dd>{selectedTask.task_card?.owner.actor_id || selectedTask.assigned_to || "-"}</dd>
-                  <dt>Latest activity</dt>
+                  <dt>{uiText("Latest activity")}</dt>
                   <dd>{selectedTask.task_card?.activity.kind || selectedTask.latest_event?.type || "-"}</dd>
-                  <dt>Activity age</dt>
+                  <dt>{uiText("Activity age")}</dt>
                   <dd>{latestEventAge(selectedTask)}</dd>
                 </dl>
               </>
@@ -598,21 +602,21 @@ function TaskListView({
                 </div>
                 <RouteSummaryStrip route={selectedTask.route_summary} />
                 <dl className="key-value-grid compact-kv">
-                  <dt>Status</dt>
+                  <dt>{uiText("Status")}</dt>
                   <dd>{selectedTask.status}</dd>
-                  <dt>Priority</dt>
+                  <dt>{uiText("Priority")}</dt>
                   <dd>P{taskPriority(selectedTask)}</dd>
-                  <dt>Assignee</dt>
+                  <dt>{uiText("Assignee")}</dt>
                   <dd>{selectedTask.assigned_to || "-"}</dd>
-                  <dt>Workers</dt>
+                  <dt>{uiText("Workers")}</dt>
                   <dd>{selectedTelemetry?.workerIds.join(", ") || "-"}</dd>
-                  <dt>Input tokens</dt>
+                  <dt>{uiText("Input tokens")}</dt>
                   <dd>{formatTokens(selectedTelemetry?.inputTokens)}</dd>
-                  <dt>Output tokens</dt>
+                  <dt>{uiText("Output tokens")}</dt>
                   <dd>{formatTokens(selectedTelemetry?.outputTokens)}</dd>
-                  <dt>Cost</dt>
+                  <dt>{uiText("Cost")}</dt>
                   <dd>{formatUsd(selectedTelemetry?.usd)}</dd>
-                  <dt>Latest event</dt>
+                  <dt>{uiText("Latest event")}</dt>
                   <dd>{selectedTask.latest_event?.type || "-"}</dd>
                 </dl>
                 {selectedTask.blocked_reason ? (
@@ -620,7 +624,7 @@ function TaskListView({
                 ) : null}
                 <div className="subsection compact-subsection">
                   <div className="inline-heading">
-                    <h3>Evidence</h3>
+                    <h3>{uiText("Evidence")}</h3>
                     <span className="muted">{selectedTask.evidence_badges?.length ?? 0}</span>
                   </div>
                   <div className="badge-row">
@@ -628,7 +632,7 @@ function TaskListView({
                       <span className={`badge badge-${badge.tone}`} key={`${selectedTask.id}-${badge.kind}-${badge.label}`}>
                         {badge.label}
                       </span>
-                    )) : <span className="muted">No evidence badges.</span>}
+                    )) : <span className="muted">{uiText("No evidence badges.")}</span>}
                     <BacklogRefsBadge task={selectedTask} />
                   </div>
                 </div>
@@ -636,7 +640,7 @@ function TaskListView({
             )}
           </>
         ) : (
-          <p className="empty-text">No task selected.</p>
+          <p className="empty-text">{uiText("No task selected.")}</p>
         )}
       </aside>
     </div>

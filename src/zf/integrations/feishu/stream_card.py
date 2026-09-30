@@ -20,6 +20,7 @@ from typing import Any
 
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
+from zf.integrations.feishu.reply_details import reply_details
 from zf.integrations.feishu.tool_render import tool_body, tool_header
 
 _REASONING_CAP = 1500       # truncate reasoning to defeat the ~30KB element limit
@@ -281,6 +282,9 @@ def render_streaming_card(state: dict[str, Any]) -> dict[str, Any]:
         else:
             elements.extend(_render_tool_group(group["tools"], finalized))
 
+    if elements:
+        elements = [reply_details(f"Agent 回复 · {_summary_text(state)}", elements)]
+
     if terminal == "interrupted":
         elements.append(_markdown("_⏹ 已被中断_", notation=True))
     elif terminal == "failed":
@@ -304,7 +308,7 @@ def render_streaming_card(state: dict[str, Any]) -> dict[str, Any]:
     # ledger keys off request_id independently (sync_stream_card).
     return {
         "schema": "2.0",
-        "config": {"streaming_mode": running, "summary": {"content": _summary_text(state)}},
+        "config": {"update_multi": True, "streaming_mode": running, "summary": {"content": _summary_text(state)}},
         "body": {"elements": elements},
     }
 

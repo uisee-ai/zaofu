@@ -9,6 +9,7 @@ from typing import Any
 
 from zf.core.config.schema import RoleConfig
 from zf.runtime.cli_command import zf_cli_cmd
+from zf.runtime.fanout_execution_boundary import fanout_task_id
 from zf.runtime.stage_failure_replan import reader_stage_lineage_payload
 from zf.runtime.workflow_inputs import render_workflow_input_briefing_section
 
@@ -224,10 +225,11 @@ def write_fanout_retry_briefing(
         ])
 
     lines: list[str] = []
-    if manifest.get("topology") == "fanout_writer_scoped":
-        task_id = str(child.get("task_id") or "")
-        if task_id:
-            lines.append(f"Active task: {task_id}")
+    task_id = str(child.get("task_id") or "").strip()
+    if not task_id and manifest.get("topology") == "fanout_reader":
+        task_id = fanout_task_id(child_payload, child_payload["trigger_payload"])
+    if task_id:
+        lines.append(f"Active task: {task_id}")
     lines.extend([
         f"# Fanout Retry: {child_id}",
         "",

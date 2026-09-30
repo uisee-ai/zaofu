@@ -49,7 +49,7 @@ async function testPrefixInvalidation(): Promise<void> {
   assert(calls === 3, `expected proj-a refetch after invalidation, got ${calls} calls`);
 }
 
-async function testBypassCacheStillSharesInFlightRequest(): Promise<void> {
+async function testBypassCacheDoesNotJoinAStaleInFlightRequest(): Promise<void> {
   clearGetCache();
   let calls = 0;
   let release: (() => void) | undefined;
@@ -68,15 +68,44 @@ async function testBypassCacheStillSharesInFlightRequest(): Promise<void> {
   const second = cachedGetJson<{ calls: number }>("/api/projects/p/channels/x/conversation", {
     bypassCache: true,
   });
-  assert(calls === 1, `bypass-cache GETs should still share one in-flight request, got ${calls}`);
+  assert(calls === 2, `bypass-cache GETs must be independent, got ${calls} calls`);
   release?.();
   const rows = await Promise.all([first, second]);
-  assert(rows.every((row) => row.calls === 1), "shared bypass request returned inconsistent data");
+  assert(rows.map((row) => row.calls).join(",") === "2,2", "bypass requests did not complete");
 
   await cachedGetJson<{ calls: number }>("/api/projects/p/channels/x/conversation", {
     bypassCache: true,
   });
-  assert(calls === 2, "a later bypass request must not reuse the completed cached response");
+  assert(calls === 3, "a later bypass request must not reuse a completed response");
+}
+
+async function testInvalidatedInFlightRequestCannotRepopulateCache(): Promise<void> {
+  clearGetCache();
+  let calls = 0;
+  let releaseStale: (() => void) | undefined;
+  const staleGate = new Promise<void>((resolve) => {
+    releaseStale = resolve;
+  });
+  globalThis.fetch = (async () => {
+    calls += 1;
+    const call = calls;
+    if (call === 1) await staleGate;
+    return new Response(JSON.stringify({ call }), { status: 200 });
+  }) as typeof fetch;
+
+  const path = "/api/projects/p/issue-triage";
+  const stale = cachedGetJson<{ call: number }>(path, { ttlMs: 2000 });
+  clearGetCache("/api/projects/p/issue-triage");
+  const fresh = await cachedGetJson<{ call: number }>(path, {
+    ttlMs: 2000,
+    bypassCache: true,
+  });
+  assert(fresh.call === 2, "post-action refresh should receive the fresh response");
+  releaseStale?.();
+  assert((await stale).call === 1, "the original caller should still settle normally");
+  const cached = await cachedGetJson<{ call: number }>(path, { ttlMs: 2000 });
+  assert(cached.call === 2, "a stale in-flight response repopulated the cleared cache");
+  assert(calls === 2, `expected the fresh response to remain cached, got ${calls} calls`);
 }
 
 async function testCallerAbortDoesNotCancelOrEvictSharedRequest(): Promise<void> {
@@ -143,6 +172,7 @@ async function testCallerOwnedRequestDoesNotReadOrWriteSharedCache(): Promise<vo
 
 await testSingleFlightAndTtlCache();
 await testPrefixInvalidation();
-await testBypassCacheStillSharesInFlightRequest();
+await testBypassCacheDoesNotJoinAStaleInFlightRequest();
+await testInvalidatedInFlightRequestCannotRepopulateCache();
 await testCallerAbortDoesNotCancelOrEvictSharedRequest();
 await testCallerOwnedRequestDoesNotReadOrWriteSharedCache();

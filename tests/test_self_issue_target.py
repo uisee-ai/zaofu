@@ -23,8 +23,18 @@ def _locked_policy() -> SelfIssueConfig:
     )
 
 
-def test_locked_self_issue_always_targets_running_zaofu_checkout(tmp_path: Path) -> None:
-    assert resolve_self_issue_target_root(tmp_path, _locked_policy()) == zaofu_v7_root()
+def test_locked_publication_target_keeps_current_project_source_root(tmp_path: Path) -> None:
+    assert resolve_self_issue_target_root(tmp_path, _locked_policy()) == tmp_path.resolve()
+
+
+def test_explicit_zaofu_source_mode_targets_running_checkout(tmp_path: Path) -> None:
+    policy = SelfIssueConfig(
+        enabled=True,
+        target_locked=True,
+        target_project="owner/zaofu-self-issue",
+        source_mode="zaofu_self_issue",
+    )
+    assert resolve_self_issue_target_root(tmp_path, policy) == zaofu_v7_root()
 
 
 def test_unconfigured_self_issue_keeps_isolated_caller_root(tmp_path: Path) -> None:

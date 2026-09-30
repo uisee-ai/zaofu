@@ -26,6 +26,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from zf.core.state.atomic_io import atomic_write_text
+
 REGRESSION_CASE_CAPTURED = "regression.case.captured"
 
 _OPS: dict[str, Callable[[float, float], bool]] = {
@@ -86,8 +88,9 @@ def capture_regression_case(
     )
     d = _cases_dir(state_dir)
     d.mkdir(parents=True, exist_ok=True)
-    (d / f"{case.case_id}.json").write_text(
-        json.dumps(asdict(case), ensure_ascii=False, indent=2), encoding="utf-8"
+    atomic_write_text(
+        d / f"{case.case_id}.json",
+        json.dumps(asdict(case), ensure_ascii=False, indent=2),
     )
     return case
 

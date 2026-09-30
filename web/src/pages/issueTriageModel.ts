@@ -1,7 +1,10 @@
-import type { IssueTriageSyncState } from "../api/types";
+import { repairGeneratedEvidenceComment } from "./issueEvidenceMarkdown.js";
+import { uiText } from '../settings/uiText.js';
+import type { IssueTriageSyncState, IssueTriageItem } from "../api/types";
 
 export const ISSUE_TRIAGE_POLL_INTERVAL_MS = 300_000;
 export const ISSUE_TRIAGE_MIRROR_POLL_INTERVAL_MS = 10_000;
+export const ISSUE_TRIAGE_PAGE_SIZE = 100;
 export const ISSUE_STATE_FILTERS = [
   ["open", "Open"],
   ["closed", "Closed"],
@@ -50,24 +53,26 @@ export type IssueSyncTone = "current" | "syncing" | "error" | "unavailable";
 export function issueSyncPresentation(
   syncStatus: string,
   error: string,
-  runtimeState: string,
+  _runtimeState?: string,
 ): { tone: IssueSyncTone; label: string } {
-  if (["stopped", "archived"].includes(runtimeState)) {
-    return { tone: "unavailable", label: "Runtime unavailable" };
-  }
-  if (error || ["failed", "rate_limited", "never"].includes(syncStatus)) {
-    return { tone: "error", label: "GitHub mirror sync failed" };
+  // Mirror refresh works even when the workflow runtime is stopped. The dot
+  // beside “Last synced” must describe the mirror, not runtime availability.
+  if (error || ["failed", "rate_limited"].includes(syncStatus)) {
+    return { tone: "error", label: "GitHub refresh failed. Try Refresh again." };
   }
   if (syncStatus === "syncing") {
-    return { tone: "syncing", label: "GitHub mirror syncing" };
+    return { tone: "syncing", label: "Refreshing GitHub Issues…" };
   }
-  return { tone: "current", label: "GitHub mirror is current" };
+  if (syncStatus === "fresh") {
+    return { tone: "current", label: "GitHub Issues are up to date." };
+  }
+  return { tone: "unavailable", label: "GitHub Issues have not been synchronized yet." };
 }
 
 const ISSUE_STATE_LABELS = Object.fromEntries(ISSUE_STATE_FILTERS) as Record<string, string>;
 
 export function issueStateLabel(state: string): string {
-  return ISSUE_STATE_LABELS[state]
+  return (ISSUE_STATE_LABELS[state] && uiText(ISSUE_STATE_LABELS[state]))
     ?? state.split("_").filter(Boolean).map((word, index) => (
       index === 0 ? word.charAt(0).toUpperCase() + word.slice(1) : word
     )).join(" ");
@@ -105,12 +110,57 @@ export function isIssueStateSelected(selected: string[] | null, state: string): 
   return selected === null || selected.includes(state);
 }
 
-export function issueStateDescription(state: string): string {
-  const stage = issueStateStage(state);
-  return `Issues currently in the ${issueStateLabel(state)} state of the ${stage.label} stage.`;
+/**
+ * Translate the filter's visual selection into the list API contract.
+ *
+ * The selection controls deliberately distinguish an explicit empty selection from
+ * an explicit full selection, but both mean "do not restrict this dimension".
+ * The API uses an omitted parameter for that meaning; sending [] would instead
+ * mean "match nothing" on current servers.
+ */
+export function issueSelectionQueryValues(
+  selected: readonly string[] | null,
+  supportedValues: readonly string[],
+): string[] | null {
+  if (selected === null || selected.length === 0) return null;
+  const supported = new Set(supportedValues);
+  const normalized = supportedValues.filter((value) => supported.has(value) && selected.includes(value));
+  return normalized.length === 0 || normalized.length === supportedValues.length ? null : normalized;
 }
 
-export function effectiveIssueState(repositoryState: string, workflowState?: string): string {
+export function initialIssueClarificationAnswers(
+  questions: ReadonlyArray<{ id: string; type: string }>,
+  saved: Readonly<Record<string, string>> = {},
+): Record<string, string> {
+  return Object.fromEntries(questions.map((question) => [
+    question.id,
+    saved[question.id] ?? (question.type === "boolean" ? "Yes" : ""),
+  ]));
+}
+
+const STATE_HELP: Record<string, string> = {
+  open: "Open on GitHub.", closed: "Closed on GitHub; history is retained.", mirrored: "Synced from GitHub; no workflow admitted.",
+  triage_queued: "Waiting to start read-only Triage.", triaging: "Collecting evidence and preparing a Fix proposal.",
+  triage_paused: "Triage paused; resume in Manage Run.", triage_recovering: "ZaoFu is recovering Triage automatically.",
+  needs_info: "Waiting for additional information.", needs_info_exhausted: "Clarification limit reached; maintainer action needed.",
+  unverified_candidate: "Verification is incomplete; maintainer review needed.", awaiting_fix_approval: "Waiting for approval before any code changes.",
+  fix_queued: "Approved Fix is waiting to start.", fixing: "Applying the approved change.", fix_paused: "Fix paused; resume in Manage Run.",
+  fix_recovering: "ZaoFu is recovering the Fix automatically.", verifying: "Checking the candidate against quality gates.",
+  verified_candidate: "Verified candidate is ready for Owner review.", approved_for_pr: "Owner approved this candidate for a PR.",
+  owner_changes_requested: "Owner requested changes.", owner_rejected: "Owner rejected this candidate.",
+  publication_prepared: "Review branch is ready for manual publication.", pr_open: "The pull request is open on GitHub.",
+  pr_changes_requested: "GitHub reviewers requested changes.", pr_approved: "Approved on GitHub; waiting for manual merge.",
+  pr_closed_without_merge: "The pull request closed without merging.", merged: "Merged on GitHub.",
+  triage_blocked: "Triage is blocked; check the recorded reason.", triage_cancelled: "Triage was cancelled; history is retained.",
+  fix_blocked: "Fix is blocked; check the recorded reason.", fix_cancelled: "Fix was cancelled; local files are not reverted.",
+  blocked: "A policy or dependency is blocking this workflow.", failed: "Automatic retries ended; manual investigation needed.",
+};
+export function issueStateDescription(state: string): string {
+  return STATE_HELP[state] ?? `Current state: ${issueStateLabel(state)}.`;
+}
+
+export function effectiveIssueState(repositoryState: string | IssueTriageItem, workflowState?: string): string {
+  if (typeof repositoryState !== "string") return repositoryState.workflow?.state?.trim() || repositoryState.github_state;
   return workflowState?.trim() || repositoryState;
 }
 
@@ -151,14 +201,14 @@ export function labelExplanation(label: string): string {
     // Self-Issue publication uses the classification and severity values as
     // GitHub labels. Keep these labels explicit so they do not look like
     // arbitrary/unknown repository labels in the Issue mirror.
-    unknown: "No specific classification was assigned because the Issue assessment is incomplete or inconclusive.",
+    unknown: "Not classified yet.",
     p0: "P0 severity: active catastrophic or security impact.",
     p1: "P1 severity: major blocking impact.",
     p2: "P2 severity: material recoverable impact.",
     p3: "P3 severity: minor impact.",
   };
   return explanations[label.toLocaleLowerCase()]
-    ?? `GitHub label “${label}” (no ZaoFu-specific description).`;
+    ?? `Filter by “${label}”.`;
 }
 
 export function filterIssueStateOptions(search: string): Array<{ value: string; label: string }> {
@@ -196,16 +246,21 @@ export function nextIssueStateSelectAll(
 }
 
 const MANAGEABLE_RUN_STATES = new Set([
-  "triage_queued", "triaging", "triage_paused", "triage_recovering",
-  "fix_queued", "fixing", "fix_paused", "fix_recovering", "verifying",
+  "triaging", "triage_paused", "triage_recovering",
+  "fixing", "fix_paused", "fix_recovering", "verifying",
 ]);
 
 export function canManageIssueRun(state: string): boolean {
   return MANAGEABLE_RUN_STATES.has(state);
 }
 
-export function nextIssueLabelSelection(current: string[] | null, label: string): string[] | null {
-  return current?.length === 1 && current[0] === label ? null : [label];
+export function nextIssueLabelSelection(current: string[] | null, label: string, available: string[] = []): string[] | null {
+  if (!available.length && current?.length === 1 && current[0] === label) return null;
+  const active = current === null ? (available.length ? available : []) : current;
+  const next = active.includes(label)
+    ? active.filter((item) => item !== label)
+    : [...active, label];
+  return available.length > 0 && next.length === available.length ? null : next;
 }
 
 export function issueLabelFoldCount(labels: string[]): number {
@@ -228,7 +283,26 @@ export function issueTriageSourceLabel(source: string): string {
 }
 
 export function githubMarkdownForDisplay(content: string, projectId: string): string {
-  const normalized = content.replace(/<img\b([^>]*)\/?\s*>/gi, (original, attributes: string) => {
+  const withVideos = repairGeneratedEvidenceComment(content).replace(/<video\b([^>]*)>([\s\S]*?)<\/video\s*>|<video\b([^>]*)\/?\s*>/gi, (original, attributes = "", inner = "", selfClosingAttributes = "") => {
+    const allAttributes = `${attributes} ${selfClosingAttributes}`;
+    const source = allAttributes.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2]
+      || inner.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2];
+    if (!source || !isAllowedGithubAttachmentUrl(source)) return original;
+    return `[▶ Play video](${source})`;
+  });
+  // GitHub's uploaded assets are often emitted as a bare UUID URL after a
+  // filename list (the URL has no .webm/.png suffix). Turn those links into
+  // the same inline media controls used for explicit HTML media tags. Keep
+  // URLs inside existing Markdown/HTML constructs untouched.
+  const withBareAttachments = withVideos.replace(/https:\/\/github\.com\/user-attachments\/assets\/[A-Za-z0-9._~-]+/gi, (url, offset: number, source: string) => {
+    const previous = source.slice(Math.max(0, offset - 1), offset);
+    if (/^[\[\("']$/.test(previous)) return url;
+    const context = source.slice(Math.max(0, offset - 260), offset);
+    if (/\.(?:mp4|webm|mov|m4v)\b/i.test(context)) return `[▶ Play video](${url})`;
+    if (/\.(?:png|jpe?g|gif|webp)\b/i.test(context)) return `![GitHub attachment](${url})`;
+    return url;
+  });
+  const normalized = withBareAttachments.replace(/<img\b([^>]*)\/?\s*>/gi, (original, attributes: string) => {
     const source = attributes.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2]
       ?.replaceAll("&amp;", "&");
     if (!source) return original;
@@ -238,34 +312,40 @@ export function githubMarkdownForDisplay(content: string, projectId: string): st
     } catch {
       return original;
     }
-    const allowed = (
-      url.protocol === "https:"
-      && (
-        (url.hostname === "github.com" && url.pathname.startsWith("/user-attachments/"))
-        || url.hostname === "user-images.githubusercontent.com"
-        || url.hostname === "camo.githubusercontent.com"
-      )
-    );
+    const allowed = isAllowedGithubAttachmentUrl(url.toString());
     if (!allowed) return original;
     const alt = (attributes.match(/\balt\s*=\s*(["'])(.*?)\1/i)?.[2] || "GitHub attachment")
       .replace(/[\[\]]/g, "")
       .replaceAll("&quot;", "\"");
     return `![${alt}](${url.toString()})`;
   });
-  return normalized.replace(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g, (original, alt: string, source: string) => {
+  const withVideoProxy = normalized.replace(/\[▶ Play video\]\((https:\/\/[^\s)]+)\)/g, (original, source:string) => {
+    if (!isAllowedGithubAttachmentUrl(source)) return original;
+    return `[▶ Play video](/api/projects/${encodeURIComponent(projectId)}/issue-triage/attachment?url=${encodeURIComponent(source)})`;
+  });
+  return withVideoProxy.replace(/!\[([^\]]*)\]\((https:\/\/[^\s)]+)\)/g, (original, alt: string, source: string) => {
     let url: URL;
     try {
       url = new URL(source);
     } catch {
       return original;
     }
-    const allowed = (
-      (url.hostname === "github.com" && url.pathname.startsWith("/user-attachments/"))
-      || url.hostname === "user-images.githubusercontent.com"
-      || url.hostname === "camo.githubusercontent.com"
-    );
+    const allowed = isAllowedGithubAttachmentUrl(url.toString());
     if (!allowed) return original;
     const proxy = `/api/projects/${encodeURIComponent(projectId)}/issue-triage/attachment?url=${encodeURIComponent(url.toString())}`;
     return `[![${alt}](${proxy})](${url.toString()})`;
   });
+}
+
+function isAllowedGithubAttachmentUrl(source: string): boolean {
+  try {
+    const url = new URL(source);
+    return url.protocol === "https:" && (
+      (url.hostname === "github.com" && (url.pathname.startsWith("/user-attachments/") || /^\/[^/]+\/[^/]+\/releases\/download\//.test(url.pathname)))
+      || url.hostname === "user-images.githubusercontent.com"
+      || url.hostname === "camo.githubusercontent.com"
+    );
+  } catch {
+    return false;
+  }
 }

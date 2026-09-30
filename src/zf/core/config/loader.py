@@ -177,6 +177,7 @@ from zf.core.config.schema import (  # noqa: E402
     ChannelConfig,
     FeishuIdentityConfig,
     FeishuIdentityUserConfig,
+    FeishuIssueMergeConfig,
     FeishuProjectGroupConfig,
     FeishuRouteConfig,
     OpenClawFeishuBridgeBindingConfig,
@@ -331,9 +332,10 @@ _KNOWN_TOP_LEVEL_KEYS = frozenset({
 _KNOWN_SELF_ISSUE_KEYS = frozenset({
     "enabled", "provider", "authorization_domain", "target_project",
     "target_locked", "oauth_client_id", "oauth_redirect_uri",
+    "source_mode", "source_root", "execution_project_root",
     "automatic_detection_enabled", "browser_capture_enabled",
-    "browser_capture_base_url", "targets", "default_publication_mode",
-    "ingress", "delivery",
+    "browser_capture_base_url", "browser_capture_denied_urls", "targets", "default_publication_mode",
+    "ingress", "delivery", "structure_backend",
 })
 _KNOWN_EXTERNAL_ISSUE_INGRESS_KEYS = frozenset({
     "enabled", "provider", "mode", "poll_interval_seconds",
@@ -345,7 +347,7 @@ _KNOWN_EXTERNAL_ISSUE_DELIVERY_KEYS = frozenset({
 })
 _KNOWN_SELF_ISSUE_TARGET_KEYS = frozenset({
     "authorization_domain", "project", "oauth_client_id",
-    "oauth_redirect_uri", "auth_mode",
+    "oauth_redirect_uri", "auth_mode", "oauth_scope",
 })
 _KNOWN_COST_KEYS = frozenset({
     "pricing_catalog_url",
@@ -2993,7 +2995,7 @@ def load_config(path: Path) -> ZfConfig:
         quality_gates=_build_quality_gates(raw.get("quality_gates")),
         security=_build_security(raw.get("security")),
         safety=_build_safety(raw.get("safety")),
-        self_issue=_build_self_issue(raw.get("self_issue")),
+        self_issue=replace(_build_self_issue(raw.get("self_issue")), settings_config_path=str(path.resolve())),
         verification=_build_verification(
             raw.get("verification"),
             contract_hardening_default=bool(
@@ -3280,6 +3282,7 @@ def _build_safety(data: dict | None) -> SafetyConfig:
 
 def _build_self_issue(data: dict | None) -> SelfIssueConfig:
     """Parse the additive, disabled-by-default Self-Issue policy."""
+    from zf.core.security.capture_urls import validate_capture_urls
     if not data:
         return SelfIssueConfig()
     if not isinstance(data, dict):
@@ -3287,13 +3290,22 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
     _reject_unknown_keys(data, _KNOWN_SELF_ISSUE_KEYS, "self_issue")
     enabled = _bool_value(data.get("enabled"), default=False)
     target_locked = _bool_value(data.get("target_locked"), default=False)
+    if data.get("source_root") is not None and not isinstance(data.get("source_root"), str):
+        raise ConfigError("self_issue.source_root must be text")
+    if data.get("execution_project_root") is not None and not isinstance(data["execution_project_root"], str):
+        raise ConfigError("self_issue.execution_project_root must be text")
+    source_mode = str(data.get("source_mode") or "current_project").strip().lower()
+    if source_mode not in {"current_project", "explicit_target", "zaofu_self_issue", "issue_repository"}:
+        raise ConfigError(
+            "self_issue.source_mode must be current_project, explicit_target, "
+            "zaofu_self_issue, or issue_repository"
+        )
     provider = str(data.get("provider") or "gitlab").strip().lower()
     authorization_domain = str(
         data.get("authorization_domain") or "gitlab.com"
     ).strip().lower()
     target_project = str(data.get("target_project") or "").strip()
-    if target_locked and not enabled:
-        raise ConfigError("self_issue.target_locked requires self_issue.enabled")
+    # Disabling reporting must preserve the locked destination for re-enabling.
     if target_project and not _valid_self_issue_project(target_project):
         raise ConfigError(
             "self_issue.target_project must be a namespace/project path"
@@ -3332,17 +3344,42 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
         auth_mode = str(
             raw_target.get("auth_mode") or expected_mode
         ).strip().lower()
-        if auth_mode != expected_mode:
+        allowed_modes = (
+            {"oauth_pkce"}
+            if name == "gitlab"
+            else {"device_flow", "oauth_device_flow"}
+        )
+        if auth_mode not in allowed_modes:
             raise ConfigError(
-                f"self_issue.targets.{name}.auth_mode must be {expected_mode}"
+                f"self_issue.targets.{name}.auth_mode must be one of "
+                f"{', '.join(sorted(allowed_modes))}"
+            )
+        oauth_client_id = str(raw_target.get("oauth_client_id") or "").strip()
+        oauth_scope = str(raw_target.get("oauth_scope") or "").strip()
+        if name == "github" and auth_mode == "oauth_device_flow":
+            if not oauth_client_id:
+                raise ConfigError(
+                    "self_issue.targets.github.oauth_client_id is required for "
+                    "oauth_device_flow"
+                )
+            oauth_scope = oauth_scope or "public_repo"
+            if oauth_scope not in {"public_repo", "repo"}:
+                raise ConfigError(
+                    "self_issue.targets.github.oauth_scope must be public_repo or repo"
+                )
+        elif oauth_scope:
+            raise ConfigError(
+                f"self_issue.targets.{name}.oauth_scope is only supported for "
+                "GitHub oauth_device_flow"
             )
         targets[name] = SelfIssueTargetConfig(
             provider=name,
             authorization_domain=domain,
             project=project,
-            oauth_client_id=str(raw_target.get("oauth_client_id") or "").strip(),
+            oauth_client_id=oauth_client_id,
             oauth_redirect_uri=str(raw_target.get("oauth_redirect_uri") or "").strip(),
             auth_mode=auth_mode,
+            oauth_scope=oauth_scope,
         )
     default_mode = str(
         data.get("default_publication_mode") or "gitlab"
@@ -3377,9 +3414,9 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
         raise ConfigError(
             "self_issue.ingress.poll_interval_seconds must be an integer"
         ) from exc
-    if not 60 <= poll_interval_seconds <= 86_400:
+    if not 60 <= poll_interval_seconds <= 604_800:
         raise ConfigError(
-            "self_issue.ingress.poll_interval_seconds must be between 60 and 86400"
+            "self_issue.ingress.poll_interval_seconds must be between 60 and 604800"
         )
     if ingress_provider not in {"github", "gitlab"}:
         raise ConfigError("self_issue.ingress.provider must be github or gitlab")
@@ -3469,12 +3506,22 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
         raise ConfigError("self_issue.delivery.merge_strategy currently supports squash only")
     if delivery_sync_mode != "manual_refresh":
         raise ConfigError("self_issue.delivery.pr_sync_mode currently supports manual_refresh only")
+    structure_backend = str(data.get("structure_backend") or "").strip()
+    if structure_backend not in {
+        "", "codex", "codex-headless", "claude", "claude-headless",
+    }:
+        raise ConfigError(
+            "self_issue.structure_backend must be codex, claude, or empty"
+        )
     return SelfIssueConfig(
         enabled=enabled,
         provider=provider,
         authorization_domain=authorization_domain,
         target_project=target_project,
         target_locked=target_locked,
+        source_mode=source_mode,
+        source_root=str(data.get("source_root") or "").strip(),
+        execution_project_root=str(data.get("execution_project_root") or "").strip(),
         oauth_client_id=str(data.get("oauth_client_id") or "").strip(),
         oauth_redirect_uri=str(data.get("oauth_redirect_uri") or "").strip(),
         automatic_detection_enabled=_bool_value(
@@ -3483,9 +3530,11 @@ def _build_self_issue(data: dict | None) -> SelfIssueConfig:
         browser_capture_enabled=_bool_value(
             data.get("browser_capture_enabled"), default=True
         ),
+        browser_capture_denied_urls=validate_capture_urls(data.get("browser_capture_denied_urls", [])),
         browser_capture_base_url=str(
             data.get("browser_capture_base_url") or ""
         ).strip().rstrip("/"),
+        structure_backend=structure_backend,
         targets=targets,
         default_publication_mode=default_mode,
         ingress=ExternalIssueIngressConfig(
@@ -4682,6 +4731,7 @@ _FEISHU_YAML_KEYS = (
     "feishu_routing",
     "feishu_identity",
     "feishu_project_group",
+    "feishu_issue_merge",
 )
 
 
@@ -4723,7 +4773,7 @@ def _merge_feishu_yaml(raw: dict, zf_yaml_path: Path) -> dict:
 
 def _build_integrations(data: object) -> IntegrationsConfig:
     if data in (None, ""):
-        return IntegrationsConfig()
+        data = {}
     if not isinstance(data, dict):
         raise ConfigError("integrations must be a mapping")
     return IntegrationsConfig(
@@ -4735,6 +4785,7 @@ def _build_integrations(data: object) -> IntegrationsConfig:
             data.get("feishu_project_group")
         ),
         feishu_routing=_build_feishu_routing(data.get("feishu_routing")),
+        feishu_issue_merge=_build_feishu_issue_merge(data.get("feishu_issue_merge")),
     )
 
 
@@ -4833,6 +4884,7 @@ _FEISHU_PERMISSION_PROFILES = {
     "project_writer",
     "workspace_writer",
     "isolated_writer",
+    "issue_investigation",
     "dangerous_full",
 }
 _FEISHU_PROJECT_GROUP_PURPOSES = {
@@ -5076,6 +5128,11 @@ def _build_feishu_identity(data: object) -> FeishuIdentityConfig:
         ),
         require_signed_actions=bool(data.get("require_signed_actions", False)),
     )
+
+
+def _build_feishu_issue_merge(data: object) -> FeishuIssueMergeConfig:
+    from zf.core.config.feishu_issue_merge import build_issue_merge_config
+    return build_issue_merge_config(data)
 
 
 def _build_openclaw_feishu_bridge(data: object) -> OpenClawFeishuBridgeConfig:

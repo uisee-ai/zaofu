@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import logging
+from time import perf_counter
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -19,6 +22,8 @@ from zf.core.issue_triage.models import (
 )
 from zf.core.issue_triage.store import IssueMirrorStore
 from zf.core.state.locks import locked_path
+
+_LOG = logging.getLogger(__name__)
 
 ResponseHeaders = Mapping[str, str]
 IssuesTransport = Callable[[str, str, dict[str, str]], tuple[int, bytes, ResponseHeaders]]
@@ -198,10 +203,10 @@ class GitHubIssueReconciler:
             headers["If-None-Match"] = etag
         return headers
 
-    def refresh(self, *, force: bool = False) -> dict[str, Any]:
+    def refresh(self, *, force: bool = False, full: bool = False) -> dict[str, Any]:
         try:
             with locked_path(self.store.refresh_lock_path, timeout_seconds=0.1):
-                return self._refresh_locked(force=force)
+                return self._refresh_locked(force=force, full=full)
         except TimeoutError:
             return {"ok": True, "status": "syncing", "changed": 0}
 
@@ -269,7 +274,9 @@ class GitHubIssueReconciler:
                 repository=self.repository,
                 repository_id=repository_id,
                 last_attempt_at=attempt_at,
-                last_success_at=attempt_at,
+                # A single-Issue lookup must not advance the repository cursor.
+                last_success_at=previous.last_success_at,
+                last_full_sync_at=previous.last_full_sync_at,
                 etag=previous.etag,
                 rate_limit_remaining=_header_int(normalized_headers, "x-ratelimit-remaining"),
                 rate_limit_reset_at=_rate_limit_reset(normalized_headers),
@@ -293,15 +300,21 @@ class GitHubIssueReconciler:
             ))
             return {"ok": False, "status": status, "changed": 0, "error": message}
 
-    def _refresh_locked(self, *, force: bool) -> dict[str, Any]:
+    def _refresh_locked(self, *, force: bool, full: bool = False) -> dict[str, Any]:
         now = self.now()
         previous = self.store.sync_state()
-        if not force and previous.last_attempt_at:
+        if not force and not full and previous.status == "fresh" and previous.last_attempt_at:
             last_attempt = datetime.fromisoformat(
                 previous.last_attempt_at.replace("Z", "+00:00")
             )
             if now - last_attempt < timedelta(seconds=self.minimum_interval_seconds):
                 return {"ok": True, "status": "fresh", "changed": 0, "debounced": True}
+        started = perf_counter()
+        # force bypasses debounce; full is a separate, explicit integrity check.
+        full = full or not previous.last_full_sync_at or (
+            now - datetime.fromisoformat(previous.last_full_sync_at.replace("Z", "+00:00"))
+            >= timedelta(hours=24)
+        )
         attempt_at = _iso(now)
         self.store.save_sync_state(replace(
             previous,
@@ -314,11 +327,12 @@ class GitHubIssueReconciler:
             repository_id, star_count = self._verify_repository()
             if previous.repository_id and previous.repository_id != repository_id:
                 raise ValueError("GitHub repository identity changed")
+            repository_seconds = perf_counter() - started
             changed, etag, response_headers = self._sync_issues(
                 repository_id,
                 previous=previous,
                 seen_at=attempt_at,
-                force=force,
+                force=full,
             )
             state = SyncState(
                 status="fresh",
@@ -326,12 +340,17 @@ class GitHubIssueReconciler:
                 repository_id=repository_id,
                 last_attempt_at=attempt_at,
                 last_success_at=attempt_at,
-                etag=etag or previous.etag,
+                last_full_sync_at=attempt_at if full else previous.last_full_sync_at,
+                etag=etag,
                 rate_limit_remaining=_header_int(response_headers, "x-ratelimit-remaining"),
                 rate_limit_reset_at=_rate_limit_reset(response_headers),
                 star_count=star_count,
             )
             self.store.save_sync_state(state)
+            _LOG.log(logging.WARNING if perf_counter() - started >= 5 else logging.INFO,
+                      "Issue refresh full=%s repository=%.3fs sync=%.3fs total=%.3fs changed=%d",
+                      full, repository_seconds, perf_counter() - started - repository_seconds,
+                      perf_counter() - started, changed)
             return {"ok": True, "status": "fresh", "changed": changed}
         except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
             message = str(exc)[:300] or type(exc).__name__
@@ -402,7 +421,7 @@ class GitHubIssueReconciler:
                 f"{self.base_url}/repos/{urllib.parse.quote(self.owner)}/"
                 f"{urllib.parse.quote(self.repo)}/issues?{query}"
             )
-            use_etag = previous.etag if page == 1 and not since else ""
+            use_etag = ""
             status, raw, response_headers = self.transport(
                 "GET", url, self._headers(etag=use_etag),
             )
@@ -413,23 +432,42 @@ class GitHubIssueReconciler:
                 raise ValueError("GitHub API rate limit reached")
             if status != 200:
                 raise ValueError(f"GitHub Issues sync failed: HTTP {status}")
-            if page == 1:
+            if page == 1 and not since:
                 first_etag = str(last_headers.get("etag") or "")
             values = _array(raw, "invalid GitHub Issues response")
-            for payload in values:
-                if "pull_request" in payload:
-                    continue
-                mirror, body = normalize_github_issue(
-                    payload,
-                    repository=self.repository,
-                    repository_id=repository_id,
-                    seen_at=seen_at,
+            normalized = [
+                normalize_github_issue(
+                    payload, repository=self.repository,
+                    repository_id=repository_id, seen_at=seen_at,
                 )
-                saved, did_change = self.store.upsert(mirror, body)
-                changed += int(did_change)
-                comments = self._comments(mirror.number) if mirror.comment_count else []
-                _, comments_changed = self.store.write_comments(saved, comments)
-                changed += int(comments_changed)
+                for payload in values if "pull_request" not in payload
+            ]
+            existing = {item.number: item for item in self.store.list()}
+            def needs_comments(mirror: IssueMirror) -> bool:
+                old = existing.get(mirror.number)
+                if force or old is None or old.updated_at != mirror.updated_at or old.comment_count != mirror.comment_count:
+                    return True
+                if not old.comments_ref or not old.comments_digest:
+                    return True
+                try:
+                    return len(self.store.read_comments(old)) != mirror.comment_count
+                except (ValueError, OSError):
+                    return True
+
+            # Only network reads run concurrently. Store updates retain list order
+            # on the reconciler thread, under the existing synchronization lock.
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                pending = {
+                    mirror.number: pool.submit(self._comments, mirror.number)
+                    for mirror, _ in normalized if mirror.comment_count and needs_comments(mirror)
+                }
+                for mirror, body in normalized:
+                    comments = pending[mirror.number].result() if mirror.number in pending else []
+                    saved, did_change = self.store.upsert(mirror, body)
+                    changed += int(did_change)
+                    if mirror.number in pending or not mirror.comment_count:
+                        _, comments_changed = self.store.write_comments(saved, comments)
+                        changed += int(comments_changed)
             if len(values) < 100:
                 break
             page += 1

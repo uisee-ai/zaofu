@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from zf.core.events.model import ZfEvent
 from zf.integrations.feishu.stream_card import (
     new_stream_state,
@@ -116,6 +118,26 @@ def test_card_has_only_valid_v2_top_level_keys():
     assert card["schema"] == "2.0"
 
 
+@pytest.mark.parametrize("terminal", ["running", "done", "failed", "interrupted"])
+def test_agent_reply_text_is_collapsed_by_default(terminal):
+    st = new_stream_state("R-collapse")
+    reduce(st, _delta("text", "这是一段较长的 Agent 回复。", request_id="R-collapse"))
+    st["terminal"] = terminal
+    card = render_streaming_card(st)
+    panels = [
+        element for element in card["body"]["elements"]
+        if element.get("tag") == "collapsible_panel"
+    ]
+    assert len(panels) == 1
+    assert panels[0]["expanded"] is False
+    assert "Agent 回复" in panels[0]["header"]["title"]["content"]
+    assert "较长的 Agent 回复" in json.dumps(panels[0], ensure_ascii=False)
+    assert "callback" not in json.dumps(panels[0])
+    assert card["config"]["update_multi"] is True
+    if terminal == "failed":
+        assert any("失败" in row.get("content", "") for row in card["body"]["elements"])
+
+
 # --- R1: interleaved block model (text/tool chronological) -------------------
 
 def test_blocks_preserve_text_tool_text_order():
@@ -126,9 +148,12 @@ def test_blocks_preserve_text_tool_text_order():
     reduce(st, _delta("text", "after"))
     kinds = [b["kind"] for b in st["blocks"]]
     assert kinds == ["text", "tool", "text"]
-    body = json.dumps(render_streaming_card(st), ensure_ascii=False)
-    # text appears before and after the tool panel; order preserved
-    assert body.index("before") < body.index("ls") < body.index("after")
+    panel = render_streaming_card(st)["body"]["elements"][0]
+    assert panel["expanded"] is False
+    before, tool, after = panel["elements"]
+    assert before["content"] == "before"
+    assert "ls" in tool["header"]["title"]["content"]
+    assert after["content"] == "after"
 
 
 def test_tool_result_closes_matching_tool():

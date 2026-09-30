@@ -5,6 +5,10 @@ const apiTarget = process.env.ZF_API_TARGET ?? "http://127.0.0.1:8001";
 
 function optionalFeatureChunk(id: string): string | undefined {
   const path = id.replaceAll("\\", "/");
+  // Keep the shell entry under the enforced budget. Board workbench is a
+  // substantial view that is only rendered on the board page; emitting it as
+  // its own ESM chunk does not change its static-import behaviour.
+  if (path.endsWith("/components/kanban/BoardWorkbench.tsx")) return "board-workbench";
   if (path.includes("/@emoji-mart/data/")) return "emoji-data";
   if (
     path.includes("/@emoji-mart/react/")

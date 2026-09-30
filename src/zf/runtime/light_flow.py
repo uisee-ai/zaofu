@@ -63,6 +63,7 @@ def synthesize_light_task_map(
     flow_kind: str = "prd",
     objective_ref: str = "",
     ready_plan_ports: list[str] | None = None,
+    scope: list[str] | None = None,
 ) -> dict[str, Any]:
     root = (target_root or ".").strip().rstrip("/") or "."
     scope_root = "." if Path(root).is_absolute() else root
@@ -118,6 +119,12 @@ def synthesize_light_task_map(
         "acceptance": [objective_text],
         "acceptance_criteria": acceptance_criteria,
     }
+    explicit_scope = _dedupe_strings(scope or [])
+    if explicit_scope:
+        # Verification may read the target tree without owning its writes.
+        task["verification_read_paths"] = task["allowed_paths"]
+        task["allowed_paths"] = explicit_scope
+        task["allowed_paths_reason"] = "explicit workflow request write scope"
     # Task contracts may carry human-oriented verification guidance (for
     # example "执行分诊报告中的验证命令...") rather than shell commands.
     # Never copy that prose into validation.commands: admission treats every
@@ -277,6 +284,7 @@ def maybe_synthesize_light_task_map(
         ]),
         flow_kind=flow_kind,
         ready_plan_ports=ready_plan_ports,
+        scope=payload.get("scope"),
     )
     # light goal 终态闭环(2026-07-08):最简配置只开 goal.enabled、无人发
     # run.goal.started → goal 投影永远是 loop.started 兜底(run_id 空),

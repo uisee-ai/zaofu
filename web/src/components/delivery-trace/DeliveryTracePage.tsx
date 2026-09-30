@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // Read-only Delivery workspace over the view-scoped delivery-trace.v2 API.
 // Overview, Runs, and Graph request bounded projections for one feature;
 // selection changes never mutate runtime state.
@@ -203,6 +205,7 @@ export function DeliveryTracePage({
   mode = "overview",
   totalUsd = 0,
 }: DeliveryTracePageProps) {
+  useSettingsPreferences();
   const primaryFeatures = features.filter((f) => !AUX_SOURCES.has(f.source || ""));
   const auxAll = features.filter((f) => AUX_SOURCES.has(f.source || ""));
   const auxTraces = auxAll.filter((f) => !isRepairTrace(f.id));
@@ -443,7 +446,7 @@ export function DeliveryTracePage({
     <div className={`delivery-trace-page mode-${mode}`} data-testid="delivery-trace-page">
       <div className="section-heading">
         <div>
-          <h2>{pageTitle}</h2>
+          <h2>{uiText(pageTitle)}</h2>
           <span className="muted">{pageSubtitle}</span>
         </div>
       </div>
@@ -492,7 +495,7 @@ export function DeliveryTracePage({
         </div>
       )}
 
-      {loading && <p className="muted">Loading…</p>}
+      {loading && <p className="muted">{uiText("Loading…")}</p>}
       {error && <p className="error" data-testid="dt-error">{error}</p>}
 
       {trace && (() => {
@@ -552,7 +555,7 @@ export function DeliveryTracePage({
                 <div className={`dt-verdict tone-${v.tone}`} data-testid="dt-verdict">{v.label}</div>
               ); })()}
               <div className="delivery-cockpit-metric">
-                <span>Status</span>
+                <span>{uiText("Status")}</span>
                 {metricValue(trace.status, dtTone(trace.status))}
               </div>
               <div className="delivery-cockpit-metric">
@@ -563,45 +566,45 @@ export function DeliveryTracePage({
                   一屏两报,2026-07-11 Playwright 评审;同数据不二渲染)。 */}
               {activeGate !== `ship:${trace.ship.status}` && (
                 <div className="delivery-cockpit-metric">
-                  <span>Gate</span>
+                  <span>{uiText("Gate")}</span>
                   {metricValue(activeGate, dtTone(activeGate))}
                 </div>
               )}
               {shipEvaluated ? (
                 <div className="delivery-cockpit-metric">
-                  <span>Ship</span>
+                  <span>{uiText("Ship")}</span>
                   {metricValue(trace.ship.status, dtTone(trace.ship.status))}
                 </div>
               ) : null}
               {heroDuration(trace) && (
                 <div className="delivery-cockpit-metric" data-testid="dt-duration">
-                  <span>Duration</span>
+                  <span>{uiText("Duration")}</span>
                   <strong>{heroDuration(trace)}</strong>
                 </div>
               )}
               {heroUsd > 0 && (
                 <div className="delivery-cockpit-metric" data-testid="dt-cost">
-                  <span title="project run cost (usage_by_role / workflow_graph total)">Cost</span>
+                  <span title="project run cost (usage_by_role / workflow_graph total)">{uiText("Cost")}</span>
                   <strong>${heroUsd.toFixed(2)}</strong>
                 </div>
               )}
               <div className="delivery-cockpit-metric">
-                <span title="operator-actionable (err) vs developer-info (info)">Drift</span>
+                <span title="operator-actionable (err) vs developer-info (info)">{uiText("Drift")}</span>
                 {metricValue(driftLabel, driftTone)}
               </div>
               <div className="delivery-cockpit-metric">
-                <span>Cursor</span>
+                <span>{uiText("Cursor")}</span>
                 {metricValue(cursorStatus, trace.cursor?.degraded ? "err" : "info")}
               </div>
               {flow.hasData && (
                 <div className="delivery-cockpit-metric" data-testid="dt-flow-backedges">
-                  <span>Backedges</span>
+                  <span>{uiText("Backedges")}</span>
                   {metricValue(String(flow.backedges), flow.backedges > 0 ? "warn" : "ok")}
                 </div>
               )}
               {flow.hasData && (
                 <div className="delivery-cockpit-metric" data-testid="dt-flow-rework">
-                  <span>Rework</span>
+                  <span>{uiText("Rework")}</span>
                   <span title="Σrework / Σ(wait+active+rework)">
                     {metricValue(
                       flow.reworkRatio === null ? "—" : `${Math.round(flow.reworkRatio * 100)}%`,
@@ -612,7 +615,7 @@ export function DeliveryTracePage({
               )}
               {(trace.score_summary?.scored_cycle_count ?? 0) > 0 && (
                 <div className="delivery-cockpit-metric" data-testid="dt-score-summary">
-                  <span>Score</span>
+                  <span>{uiText("Score")}</span>
                   <strong className={`badge badge-${(trace.score_summary?.latest?.score_delta ?? 0) >= 0 ? "ok" : "err"}`}>
                     {formatScoreDelta(trace.score_summary?.latest?.score_delta)}
                   </strong>
@@ -620,7 +623,7 @@ export function DeliveryTracePage({
               )}
               {trace.deposition_summary && trace.deposition_summary.replan_gate_status !== "none" && (
                 <div className="delivery-cockpit-metric" data-testid="dt-deposition-summary">
-                  <span>Replan</span>
+                  <span>{uiText("Replan")}</span>
                   <strong className={`badge badge-${trace.deposition_summary.owner_decision_required ? "err" : dtTone(trace.deposition_summary.replan_gate_status)}`}>
                     {trace.deposition_summary.replan_gate_status}
                     {trace.deposition_summary.owner_decision_required ? " · owner" : ""}
@@ -678,6 +681,7 @@ export function DeliveryTracePage({
 }
 
 function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePageProps["onOpenPage"] }) {
+  useSettingsPreferences();
   const emptyStages = [
     ["Plan", "waiting"],
     ["Impl", "waiting"],
@@ -689,8 +693,8 @@ function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePagePr
     <section className="delivery-empty-cockpit delivery-empty-state" data-testid="delivery-empty-cockpit">
       <div className="delivery-empty-cockpit-head">
         <div>
-          <span className="eyebrow">Delivery Cockpit</span>
-          <h3>No delivery trace yet</h3>
+          <span className="eyebrow">{uiText("Delivery Cockpit")}</span>
+          <h3>{uiText("No delivery trace yet")}</h3>
           <p className="muted">
             Feature traces appear after features, task execution, workflow spine events, or ship readiness records are written.
           </p>
@@ -698,21 +702,21 @@ function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePagePr
         <div className="projection-empty-actions">
           <button className="icon-button" type="button" onClick={() => onOpenPage?.("board")} disabled={!onOpenPage}>
             <ListTodo size={14} strokeWidth={1.8} aria-hidden="true" />
-            Open Tasks
+            {uiText("Open Tasks")}
           </button>
           <button className="icon-button" type="button" onClick={() => onOpenPage?.("runs")} disabled={!onOpenPage}>
             <PlayCircle size={14} strokeWidth={1.8} aria-hidden="true" />
-            Open Runs
+            {uiText("Open Runs")}
           </button>
           <button className="icon-button" type="button" onClick={() => onOpenPage?.("events")} disabled={!onOpenPage}>
             <Radio size={14} strokeWidth={1.8} aria-hidden="true" />
-            Open Events
+            {uiText("Open Events")}
           </button>
         </div>
       </div>
       <div className="delivery-main-tabs delivery-empty-tabs" aria-hidden="true">
         <span className="delivery-main-tab active">
-          <span>Run</span>
+          <span>{uiText("Run")}</span>
           <small>pending</small>
         </span>
       </div>
@@ -732,7 +736,7 @@ function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePagePr
           <section className="delivery-flow-stage-panel">
             <div className="delivery-stage-panel-head">
               <div>
-                <span className="eyebrow">Selected Stage</span>
+                <span className="eyebrow">{uiText("Selected Stage")}</span>
                 <h3>Impl</h3>
               </div>
               <div className="delivery-stage-panel-badges">
@@ -743,14 +747,14 @@ function DeliveryEmptyCockpit({ onOpenPage }: { onOpenPage?: DeliveryTracePagePr
             <div className="delivery-stage-empty-lane">
               <Route size={16} strokeWidth={1.8} aria-hidden="true" />
               <div>
-                <strong>No stage runs projected</strong>
+                <strong>{uiText("No stage runs projected")}</strong>
                 <p className="muted">Delivery will show run groups, fanout lanes, gates, and agent runs here.</p>
               </div>
             </div>
           </section>
           <aside className="delivery-flow-inspector">
             <div className="inline-heading">
-              <h3 className="section-title">Inspector</h3>
+              <h3 className="section-title">{uiText("Inspector")}</h3>
               <span className="badge">empty</span>
             </div>
             <p className="muted">Select a feature after runtime writes delivery trace evidence.</p>

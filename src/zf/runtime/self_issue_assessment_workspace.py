@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from zf.core.security.redaction import redact_text
-from zf.runtime.self_issue_target import zaofu_v7_root
 
 
 _ALLOWED_SUFFIXES = frozenset({
@@ -61,7 +60,7 @@ def build_assessment_workspace(
     shutil.copy2(input_path, root / "evidence-input.json")
     shutil.copytree(
         skill_root,
-        root / ".codex" / "skills" / "zf-self-issue-report",
+        root / ".codex" / "skills" / "issue",
     )
     evidence_files = _copy_intake_attachments(
         root=root,
@@ -71,7 +70,10 @@ def build_assessment_workspace(
 
     subject = _source_spec(Path(project_root))
     harness = _source_spec(
-        Path(harness_root) if harness_root is not None else _runtime_harness_root(),
+        # A missing harness is intentionally not filled with a ZaoFu checkout.
+        # Host adapters may provide one explicitly; otherwise assessment is
+        # over the selected project snapshot only.
+        Path(harness_root) if harness_root is not None else Path(project_root),
     )
     same_source = bool(
         subject is not None
@@ -183,10 +185,6 @@ def _copy_intake_attachments(
             "capture_kind": str(descriptor.get("capture_kind") or "user_supplied_scene"),
         })
     return copied
-
-
-def _runtime_harness_root() -> Path:
-    return zaofu_v7_root()
 
 
 def _source_spec(path: Path) -> tuple[Path, Path, str] | None:
@@ -580,7 +578,7 @@ command = [
     "-m", "not host and not real_provider and not real_gitlab", target,
 ]
 try:
-    completed = subprocess.run(command, cwd=source, env=env, text=True, timeout=90)
+    completed = subprocess.run(command, cwd=source, env=env, text=True, timeout=180)
 except subprocess.TimeoutExpired:
     print("REPRODUCTION_TIMEOUT: 90 seconds")
     finish_attempt(attempt, "timeout")

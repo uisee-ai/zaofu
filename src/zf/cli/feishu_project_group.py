@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from zf.core.config.loader import ConfigError
-from zf.core.config.project_context import resolve_project_context
+from zf.core.config.project_context import load_project_env, resolve_project_context
 from zf.core.workspace.feishu_binding_index import WorkspaceFeishuBindingIndex
 from zf.core.workspace.registry import WorkspaceRegistry
 from zf.integrations.feishu.project_group_binding import (
@@ -139,6 +139,17 @@ def run_attach(args: argparse.Namespace) -> int:
 
 def _context(args: argparse.Namespace):
     try:
+        # Resolve once to locate the owning project, load its dotenv, then
+        # resolve again so feishu.yaml's ${ENV:-sentinel} references compile
+        # with the real credentials.  Other Feishu CLI entrypoints already do
+        # this before loading config; group commands must preserve the same
+        # contract before provisioning or attaching a real chat.
+        initial = resolve_project_context(
+            cwd=Path.cwd(),
+            explicit_state_dir=getattr(args, "state_dir", None),
+            load_config_with_explicit=True,
+        )
+        load_project_env(initial.project_root)
         return resolve_project_context(
             cwd=Path.cwd(),
             explicit_state_dir=getattr(args, "state_dir", None),

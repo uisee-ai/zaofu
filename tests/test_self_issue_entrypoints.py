@@ -7,6 +7,8 @@ import httpx
 
 from zf.cli.main import main
 from zf.core.config.schema import ProjectConfig, SelfIssueConfig, ZfConfig
+from zf.runtime.control_actions_self_issue import SELF_ISSUE_ACTIONS
+from zf.web.operator_contract import PROJECT_OPERATOR_CONTROLLED_ACTIONS
 from zf.web.server import create_app
 
 
@@ -21,6 +23,8 @@ def _project(tmp_path: Path, *, locked: bool = False) -> Path:
             "self_issue:", "  enabled: true", "  target_locked: true",
             "  provider: gitlab", "  target_project: owner/central",
         ))
+    else:
+        config.append('self_issue: {enabled: true}')
     (tmp_path / "zf.yaml").write_text("\n".join(config) + "\n", encoding="utf-8")
     return state
 
@@ -34,7 +38,11 @@ def _answers() -> dict[str, object]:
     }
 
 
-def test_cli_report_starts_the_same_persistent_pre_draft_intake(
+def test_all_self_issue_actions_are_routed_to_the_controlled_service() -> None:
+    assert SELF_ISSUE_ACTIONS <= PROJECT_OPERATOR_CONTROLLED_ACTIONS
+
+
+def test_cli_report_starts_a_portable_session_without_starting_assessment(
     tmp_path: Path, monkeypatch, capsys,
 ) -> None:
     state = _project(tmp_path)
@@ -44,10 +52,33 @@ def test_cli_report_starts_the_same_persistent_pre_draft_intake(
     result = json.loads(capsys.readouterr().out)
 
     assert result["action"] == "self-issue-capture"
-    assert result["status"] == "intake_collecting"
-    assert result["intake"]["answers"]["title"] == "CLI title"
-    assert (state / "self-issues" / "intakes.json").is_file()
-    assert not (state / "self-issues" / "drafts.json").exists()
+    assert result["status"] in {"ready", "ask_user"}
+    assert result["session_id"].startswith("issue-session-")
+    assert (state / "self-issues" / "portable-sessions").is_dir()
+
+
+def test_cli_portable_session_answer_and_confirm_use_same_session(
+    tmp_path: Path, monkeypatch, capsys,
+) -> None:
+    _project(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert main(["issue", "report", "Refresh fails", "--non-interactive"]) == 0
+    started = json.loads(capsys.readouterr().out)
+    assert started["status"] == "ask_user"
+    session_id = started["session_id"]
+
+    assert main([
+        "issue", "session-answer", session_id,
+        "Reproduction:\n1. Open the page\n2. Click Refresh\n\nExpected:\nThe page updates",
+    ]) == 0
+    answered = json.loads(capsys.readouterr().out)
+    assert answered["session_id"] == session_id
+    assert answered["status"] == "ready"
+
+    assert main(["issue", "session-confirm", session_id, "--confirmed-by", "cli-user"]) == 0
+    confirmed = json.loads(capsys.readouterr().out)
+    assert confirmed["session_status"] == "completed"
+    assert confirmed["publication_snapshot_ref"].startswith("sha256:")
 
 
 def test_cli_publication_commands_expose_provider_batch_arguments(
@@ -78,7 +109,9 @@ def test_cli_answer_promotes_the_intake_and_uses_the_evidence_action(
 ) -> None:
     _project(tmp_path)
     monkeypatch.chdir(tmp_path)
-    assert main(["issue", "report", "CLI title", "--non-interactive"]) == 0
+    # The old eight-question flow remains an explicit compatibility option;
+    # the public report command itself follows the direct Draft contract.
+    assert main(["issue", "report", "CLI title", "--legacy-intake", "--non-interactive"]) == 0
     intake = json.loads(capsys.readouterr().out)["intake"]
     answer_file = tmp_path / "answers.json"
     answer_file.write_text(json.dumps({"answers": _answers()}), encoding="utf-8")
@@ -101,7 +134,7 @@ def test_cli_report_redacts_request_and_obeys_the_locked_target(
         "issue", "report", "failure TOKEN=private-value", "--non-interactive",
     ]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["intake"]["target_binding"]["project"] == "owner/central"
+    assert result["target_binding"]["project"] == "owner/central"
     assert "private-value" not in (state / "events.jsonl").read_text(encoding="utf-8")
 
     assert main([
@@ -126,7 +159,7 @@ async def test_web_slash_action_persists_answers_and_promotes_to_canonical_draft
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         started = await client.post(
             "/api/actions/self-issue-capture", headers=headers,
-            json={"description": "Web title", "target_binding": {"provider": "gitlab", "project": "a/b"}},
+            json={"description": "Web title", "target_binding": {"provider": "gitlab", "project": "a/b"}, "direct_report": False},
         )
         intake = started.json()["intake"]
         saved = await client.post(
@@ -229,15 +262,19 @@ async def test_web_evidence_start_waits_for_runtime_without_scheduling_an_agent(
             "/api/actions/self-issue-intake-submit", headers=headers,
             json={"intake_id": started["intake"]["intake_id"], "answers": _answers()},
         )).json()
-        evidence = (await client.post(
-            "/api/actions/self-issue-evidence-start", headers=headers,
+        evidence_response = await client.post(
+            "/api/actions/self-issue-evaluation-start", headers=headers,
             json={
                 "draft_id": promoted["draft"]["draft_id"],
                 "revision": promoted["draft"]["revision"],
                 "backend": "codex-headless",
+                "assessment_decision": "project_assessment",
+                "actor_capability": "user",
             },
-        )).json()
+        )
+        evidence = evidence_response.json()
 
+    assert evidence_response.status_code == 200
     assert evidence["status"] == "evidence_waiting_for_runtime"
     assert evidence["scheduled"] is False
     assert evidence["draft"]["runtime_status"] in {"stopped", "unknown"}

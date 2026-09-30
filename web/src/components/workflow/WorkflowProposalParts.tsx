@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import {
   ChevronRight,
   GitFork,
@@ -23,6 +25,7 @@ export function WorkflowExecutionPlan({
   levels: WorkflowRequest[][];
   stages: WorkflowRequest[];
 }) {
+  useSettingsPreferences();
   if (!stages.length) {
     return <span className="muted">No declared stages for this flow.</span>;
   }
@@ -43,7 +46,7 @@ export function WorkflowExecutionPlan({
       {levels.map((level, levelIndex) => (
         <Fragment key={`level-${levelIndex}`}>
           <div className="workflow-plan-level">
-            <small>Phase {levelIndex + 1}</small>
+            <small>{uiText("Phase")} {levelIndex + 1}</small>
             {level.map((stage, stageIndex) => (
               <WorkflowStage
                 key={`${textValue(stage.id)}-${stageIndex}`}
@@ -143,12 +146,13 @@ export function SectionHeading({
 }
 
 export function WorkflowList({ items, title }: { items: string[]; title: string }) {
+  useSettingsPreferences();
   return (
     <div>
       <strong>{title}</strong>
       {items.length ? (
         <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
-      ) : <span className="muted">None</span>}
+      ) : <span className="muted">{uiText("None")}</span>}
     </div>
   );
 }

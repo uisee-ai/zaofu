@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // LifecycleDrawerTabs (T-刀②) — Events / Artifacts / Briefing / Contract /
 // Usage tab bodies for the lifecycle drawer, plus the shared GateBadge.
 // 全部只读、空态降级:有什么数据渲染什么,缺数据显式说明,不造假。
@@ -133,6 +135,7 @@ export function LdArtifactsTab({
   traceId: string;
   tries: DeliveryTaskTry[];
 }) {
+  useSettingsPreferences();
   const snapshots = tries.filter((item) => item.snapshot_ref);
   return (
     <div className="ld-tab-body" data-testid="ld-artifacts">
@@ -145,7 +148,7 @@ export function LdArtifactsTab({
           </div>
         ))
       ) : (
-        <span className="muted">No gate evidence.</span>
+        <span className="muted">{uiText("No gate evidence.")}</span>
       )}
       {snapshots.map((item) => (
         <div className="ld-evidence-row" key={`snap-${item.try}`}>
@@ -187,12 +190,13 @@ export function LdBriefingTab({ tries }: { tries: DeliveryTaskTry[] }) {
 
 // Contract — render only what the execution-graph node actually carries.
 export function LdContractTab({ node }: { node?: DeliveryTraceNode }) {
+  useSettingsPreferences();
   const raw = node as unknown as Record<string, unknown> | undefined;
   const contract = raw?.contract ?? raw?.capsule ?? null;
   const empty = contract == null
     || (typeof contract === "object" && Object.keys(contract as object).length === 0);
   if (empty) {
-    return <p className="ld-tab-empty">No contract/capsule carried on the execution-graph node.</p>;
+    return <p className="ld-tab-empty">{uiText("No contract/capsule carried on the execution-graph node.")}</p>;
   }
   return (
     <div className="ld-tab-body" data-testid="ld-contract">
@@ -216,12 +220,13 @@ export function LdUsageTab({
   tokensOut: number | null;
   tries: DeliveryTaskTry[];
 }) {
+  useSettingsPreferences();
   const rows = tries.filter(
     (item) => item.tool_calls != null || item.tokens_in != null || item.tokens_out != null,
   );
   const hasAggregate = tokensIn !== null || tokensOut !== null || costUsd !== null;
   if (!rows.length && !hasAggregate) {
-    return <p className="ld-tab-empty">No usage recorded for this task.</p>;
+    return <p className="ld-tab-empty">{uiText("No usage recorded for this task.")}</p>;
   }
   return (
     <div className="ld-tab-body" data-testid="ld-usage">

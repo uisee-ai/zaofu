@@ -138,6 +138,47 @@ def test_action_text_also_enters_agent_conversation(tmp_path, monkeypatch):
     assert not _intent_created(ctx.state_dir)
 
 
+def test_mentioned_zf_command_uses_controlled_issue_gateway(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ctx = _project(tmp_path)
+    captured: dict = {}
+
+    def fake_handle(data, **kwargs):
+        captured.update(data)
+        return {"status": "intake_collecting"}
+
+    monkeypatch.setattr("zf.cli.feishu._handle_event_data", fake_handle)
+    result = bridge_inbound_message(
+        _event("@_user_1  Agent /zf self-issue new Feishu附件验收", "m-command"),
+        context=ctx,
+    )
+    assert result["status"] == "intake_collecting"
+    assert captured["payload"]["text"] == "/zf self-issue new Feishu附件验收"
+
+
+def test_issue_shorthand_uses_controlled_issue_gateway(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    ctx = _project(tmp_path)
+    captured: dict = {}
+
+    def fake_handle(data, **kwargs):
+        captured.update(data)
+        return {"status": "intake_collecting"}
+
+    monkeypatch.setattr("zf.cli.feishu._handle_event_data", fake_handle)
+    result = bridge_inbound_message(
+        _event(
+            "/issue 基础 wheel 导入失败",
+            "m-issue",
+            attachments=[{"resource_key": "report", "filename": "error.log"}],
+        ),
+        context=ctx,
+    )
+    assert result["status"] == "intake_collecting"
+    assert captured["payload"]["text"] == "/zf self-issue-new '基础 wheel 导入失败'"
+    assert captured["payload"]["attachments"][0]["resource_key"] == "report"
+
+
 def test_feishu_thread_ref_is_preserved_in_channel_conversation(
     tmp_path,
     monkeypatch,

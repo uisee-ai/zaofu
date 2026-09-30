@@ -18,6 +18,7 @@ import pytest
 from zf.core.config.schema import RoleConfig
 from zf.core.state.role_sessions import RoleSessionRegistry
 from zf.runtime.transport_stream_json import StreamJsonTransport
+from tests.test_transport_stream_json import FakeResultMessage
 
 
 @pytest.fixture
@@ -35,7 +36,7 @@ def registry(state_dir: Path) -> RoleSessionRegistry:
 
 def _make_query_fn(*, raise_exc: Exception | None = None, messages=None):
     """Build a fake claude_code_sdk.query async-generator."""
-    messages = messages or []
+    messages = [FakeResultMessage()] if messages is None else messages
 
     async def _fake(prompt: str, options=None):
         if raise_exc is not None:

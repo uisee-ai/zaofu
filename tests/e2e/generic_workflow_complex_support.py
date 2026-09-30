@@ -183,6 +183,7 @@ def _proposal(
     acceptance: list[str] | None = None,
     revision_reason: str = "requirement_update",
     source_event_id: str = "",
+    pattern_id: str = "",
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     request = revise_workflow_request(
         state_dir,
@@ -211,6 +212,7 @@ def _proposal(
         reason="generic workflow complex E2E",
         allow_missing_env=True,
         synthesis_result_ref=synthesis.result_ref,
+        pattern_id=pattern_id,
     )
     assert preview["status"] in {"GO", "WARN"}
     assert preview["proposal"]["approval_status"] == "approvable"
@@ -273,6 +275,7 @@ def _submit_proposal(
             "proposal_ref": proposal_ref,
             "proposal_digest": proposal["proposal_digest"],
             "kind": "workflow",
+            "pattern_id": str(preview["payload"].get("pattern_id") or ""),
             "reason": "approved Generic Workflow proposal",
             "allow_missing_env": True,
         },

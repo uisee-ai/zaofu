@@ -1,0 +1,47 @@
+import { IssueReadCache } from '../src/api/issueReadCache.js';
+function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+const cache = new IssueReadCache();
+const a = '/projects/a/issues?q=one', b = '/projects/b/issues?q=one';
+const first = deferred<string>();
+let calls = 0;
+const p = cache.load(a, () => { calls++; return first.promise; });
+assert(cache.load(a, () => { throw new Error('duplicate'); }) === p, 'share in-flight requests');
+first.resolve('old');
+await p;
+assert(calls === 1 && cache.peek(a) === 'old', 'cache completed response');
+assert(cache.peek(b) === null && cache.peek(a + 'two') === null, 'project and filter isolation');
+const next = deferred<string>();
+const revalidation = cache.load(a, () => next.promise);
+assert(cache.peek(a) === 'old', 'last-good data remains during revalidation');
+next.resolve('new'); await revalidation;
+assert(cache.peek(a) === 'new', 'GET revalidates even with a snapshot');
+await cache.load(a, async () => { throw new Error('offline'); }).catch(() => undefined);
+assert(cache.peek(a) === 'new', 'failed read retains last-good data');
+const stale = deferred<string>();
+const oldRequest = cache.load(a, () => stale.promise);
+cache.clear();
+assert(cache.peek(a) === null, 'mutation/authorization invalidation clears snapshots');
+const fresh = deferred<string>();
+const newRequest = cache.load(a, () => fresh.promise);
+stale.resolve('stale'); await oldRequest;
+assert(cache.peek(a) === null, 'pre-invalidation response cannot repopulate cache');
+assert(cache.load(a, () => { throw new Error('duplicate after invalidation'); }) === newRequest, 'old finally cannot remove new request');
+fresh.resolve('current'); await newRequest;
+assert(cache.peek(a) === 'current', 'new generation wins');
+const reloaded = deferred<string>();
+const reloadRequest = cache.reload(a, () => reloaded.promise);
+assert(cache.peek(a) === null, 'reload drops the selected Issue snapshot');
+reloaded.resolve('reloaded'); await reloadRequest;
+assert(cache.peek(a) === 'reloaded', 'reload stores the fresh selected Issue projection');
+const bounded = new IssueReadCache(300_000, 2);
+for (const key of ['a', 'b', 'c']) await bounded.load(key, async () => key);
+assert(bounded.peek('a') === null && bounded.peek('b') === 'b', 'bounded snapshot count');
+const expired = new IssueReadCache(-1);
+await expired.load('a', async () => 'a');
+assert(expired.peek('a') === null, 'expired snapshots are not restored');
+console.log('Issue read cache: deduplication, revalidation, scope, invalidation, race, bounds and expiry passed.');

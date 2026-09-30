@@ -161,3 +161,50 @@ class GitLabComProvider:
             and str(item.get("iid") or item.get("id") or "")
             and str(item.get("web_url") or "").startswith("https://gitlab.com/")
         )]
+
+    def reconcile_issue_labels(
+        self,
+        project: str,
+        issue_number: int,
+        labels: tuple[str, ...],
+        *,
+        access_token: str,
+    ) -> ForgeResult:
+        """Retry metadata labels on an existing GitLab Issue.
+
+        GitLab accepts ``add_labels`` on the issue update endpoint.  This is
+        deliberately separate from ``publish`` so a partial publication can
+        never create a second Issue.
+        """
+
+        if issue_number < 1:
+            return ForgeResult(
+                status="label_reconcile_failed", reason="invalid_issue_number",
+            )
+        payload = urllib.parse.urlencode({
+            "add_labels": ",".join(
+                dict.fromkeys(str(label).strip() for label in labels if str(label).strip())
+            ),
+        }).encode("utf-8")
+        url = (
+            f"{self.base_url}/api/v4/projects/{urllib.parse.quote(project, safe='')}/"
+            f"issues/{issue_number}"
+        )
+        try:
+            status, _ = self.transport(
+                "PUT", url,
+                {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                payload,
+            )
+        except (TimeoutError, ConnectionError, OSError) as exc:
+            return ForgeResult(status="outcome_unknown", reason=type(exc).__name__)
+        if status >= 500:
+            return ForgeResult(status="outcome_unknown", reason=f"gitlab_http_{status}")
+        if status == 401:
+            return ForgeResult(status="authorization_required", reason="credential_rejected")
+        if status != 200:
+            return ForgeResult(status="label_reconcile_pending", reason=f"gitlab_http_{status}")
+        return ForgeResult(status="reconciled", reason="updated")

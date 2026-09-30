@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { LoopViewTask } from "../../api/types";
+import { formatTime } from "../../lib/format";
 
 const ATTEMPT_BATCH_SIZE = 100;
 
@@ -12,7 +13,7 @@ const TONE = {
   muted: "var(--muted-foreground, #667)",
 };
 
-const hhmm = (iso: string) => (iso ? iso.slice(11, 16) : "");
+const hhmm = (iso: string) => formatTime(iso, false);
 
 export function LoopAttemptDrawer({ task }: { task: LoopViewTask }) {
   const [visibleCount, setVisibleCount] = useState(ATTEMPT_BATCH_SIZE);

@@ -21,6 +21,9 @@ class SelfIssueAttachmentMixin:
         self, payload: dict[str, Any], *, causation_id: str = "",
     ) -> dict[str, Any]:
         draft = self._required_draft(payload)
+        locked = self._evaluation_lock_response(draft, action="attachment_preview")
+        if locked is not None:
+            return locked
         if draft.evidence_status not in {"completed", "interrupted", "failed"}:
             return {
                 "ok": False, "status": f"evidence_{draft.evidence_status}",
@@ -117,6 +120,9 @@ class SelfIssueAttachmentMixin:
     ) -> dict[str, Any]:
         intent = self._required_attachment_intent(payload)
         draft = self._required_draft({"draft_id": intent.draft_id})
+        locked = self._evaluation_lock_response(draft, action="attachment_confirm")
+        if locked is not None:
+            return locked
         if intent.status != "previewed" or draft.revision != intent.draft_revision:
             return {"ok": False, "status": "stale_attachment_preview"}
         if str(payload.get("manifest_digest") or "") != intent.manifest_digest:
@@ -154,6 +160,9 @@ class SelfIssueAttachmentMixin:
     ) -> dict[str, Any]:
         intent = self._required_attachment_intent(payload)
         draft = self._required_draft({"draft_id": intent.draft_id})
+        locked = self._evaluation_lock_response(draft, action="attachment_prepare")
+        if locked is not None:
+            return locked
         if intent.status == "prepared":
             return {
                 "ok": True, "status": "attachments_prepared",
@@ -246,6 +255,9 @@ class SelfIssueAttachmentMixin:
                 "content_type": str(item["content_type"]),
                 "kind": str(item.get("kind") or "self_issue_user_attachment"),
                 "capture_source": str(item.get("capture_source") or "user"),
+                "source": str(item.get("source") or ("user" if str(item.get("kind") or "").startswith("self_issue_user_") else "agent")),
+                "description": str(item.get("description") or f"Attachment ({item.get('filename') or 'artifact'})."),
+                "purpose": str(item.get("purpose") or "Issue assessment evidence."),
             })
             intent.prepared_attachments = list(prepared)
             intent.updated_at = utc_now()
@@ -374,6 +386,9 @@ class SelfIssueAttachmentMixin:
                 "content_type": str(item.get("content_type") or ""),
                 "kind": str(item.get("kind") or "self_issue_user_attachment"),
                 "capture_source": str(item.get("capture_source") or "user"),
+                "source": str(item.get("source") or ("user" if str(item.get("kind") or "").startswith("self_issue_user_") else "agent")),
+                "description": str(item.get("description") or f"Attachment ({item.get('filename') or 'artifact'})."),
+                "purpose": str(item.get("purpose") or "Issue assessment evidence."),
             })
         if len({item["sha256"] for item in normalized}) != len(expected):
             raise ValueError("prepared attachment evidence has duplicate or missing digests")
@@ -389,6 +404,9 @@ class SelfIssueAttachmentMixin:
             "content_type": str(item.get("content_type") or ""),
             "kind": str(item.get("kind") or "self_issue_user_attachment"),
             "capture_source": str(item.get("capture_source") or "user"),
+            "source": str(item.get("source") or ("user" if str(item.get("kind") or "").startswith("self_issue_user_") else "agent")),
+            "description": str(item.get("description") or f"Attachment ({item.get('filename') or 'artifact'})."),
+            "purpose": str(item.get("purpose") or "Issue assessment evidence."),
             "redaction_applied": bool(item.get("redaction_applied")),
             "public_disclosure_confirmed": True,
         } for item in draft.attachment_refs]

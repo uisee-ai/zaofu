@@ -1,8 +1,12 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // OrchestratorPanel + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { OPERATOR_BACKENDS } from "../../app/sharedTypes";
+import { formatTime } from '../../lib/format';
 import type { ActionResponse, RecentEvent, Snapshot } from "../../api/types";
-import { getAgentSessionHistory, getKanbanPendingProposals } from "../../api/client";
-import type { PendingKanbanProposal } from "../../api/client";
+import { getAgentSessionHistory, getKanbanPendingProposals, uploadKanbanAgentAttachment } from "../../api/client";
+import { SelfIssueSessionWorkspace } from "./SelfIssueSessionWorkspace";
+import type { KanbanAgentAttachmentRef, PendingKanbanProposal } from "../../api/client";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
 import { AgentThreadNavigation } from "../../components/agent-session/AgentThreadNavigation";
 import { ComposerSubmitButton } from "../../components/agent-session/ComposerSubmitButton";
@@ -25,6 +29,7 @@ import {
 } from "./kanbanAgentHistoryPolicy";
 import {
   SELF_ISSUE_RUNTIME_STOPPED_WARNING,
+  detectBrowserEnvironment,
   selfIssueCardLayout,
   selfIssueCardLayoutStorageKey,
   selfIssueCompactText,
@@ -32,7 +37,12 @@ import {
   selfIssueDismissCutoffStorageKey,
   selfIssueEvidenceControls,
   selfIssueEvidenceBlocksPreview,
+  selfIssueEvaluationLocked,
   selfIssueGithubTransactionStorageKey,
+  selfIssueGithubAuthorizationPollCanStart,
+  selfIssueGithubAuthorizationPollShouldReset,
+  selfIssueGithubAuthorizationShouldForget,
+  selfIssueGithubEvidenceRetryTarget,
   selfIssueIntakeMountState,
   selfIssueLocalAttachmentUrl,
   selfIssueOAuthSession,
@@ -40,11 +50,14 @@ import {
   selfIssuePreviewIsReusable,
   selfIssueProviderLabel,
   selfIssuePublicationLocked,
+  selfIssuePublicationIsPartial,
   selfIssueRefreshErrorIsTransient,
+  selfIssueRestoreGithubAuthorization,
   selfIssueSelectDestination,
   selfIssuePublishedUrls,
   selfIssueSlashAction,
   selfIssueTargetLocked,
+  selfIssueUnderstandingStatus,
 } from "./selfIssue";
 import {
   initializeKanbanThreadReads,
@@ -72,7 +85,7 @@ import {
   mergeBoundedKanbanSessionEvents,
   mergeEventsByIdentity,
 } from "./kanbanSessionEvents";
-import { ChevronDown, LoaderCircle, Maximize2, MessageCircle, Minimize2, Minus, Play, Plus, RotateCcw, Send, ShieldAlert, Square, X } from "lucide-react";
+import { ChevronDown, FileText, LoaderCircle, Maximize2, MessageCircle, Minimize2, Minus, Paperclip, Play, Plus, RotateCcw, Send, ShieldAlert, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { AgentPanelMode, OrchestratorContext, OperatorBackend } from "../../app/sharedTypes";
@@ -98,13 +111,23 @@ async function fileAsBase64(file: File): Promise<string> {
   return window.btoa(binary);
 }
 
-function attachmentContentType(filename: string): string {
+function attachmentContentType(filename: string, browserType = ""): string {
   const suffix = filename.toLowerCase().split(".").pop() ?? "";
-  return {
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp",
-    gif: "image/gif", mp4: "video/mp4", webm: "video/webm", txt: "text/plain",
-    log: "text/plain", json: "application/json",
-  }[suffix] ?? "application/octet-stream";
+  const expected = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+    mp4: "video/mp4", webm: "video/webm", txt: "text/plain",
+    log: "text/plain", json: "application/json", md: "text/markdown",
+    xml: "application/xml", yaml: "application/yaml", yml: "application/yaml",
+    csv: "text/csv", pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+  }[suffix];
+  return expected ?? (
+    browserType.split(";", 1)[0].trim().toLowerCase()
+    || "application/octet-stream"
+  );
 }
 
 function selfIssueAssessmentText(value: unknown): string {
@@ -130,12 +153,14 @@ interface HeadlessQueueItem {
   message: string;
   createdAt: string;
   requestPatch?: Record<string, unknown>;
+  attachments?: HeadlessComposerAttachment[];
 }
 
 
 interface HeadlessPendingMessage extends HeadlessQueueItem {
   backend: OperatorBackend;
   turnId: string;
+  attachmentRefs?: KanbanAgentAttachmentRef[];
 }
 
 interface SubmitHeadlessOptions {
@@ -145,6 +170,23 @@ interface SubmitHeadlessOptions {
   permissionProfileOverride?: string;
   projectionFirst?: boolean;
   requestPatch?: Record<string, unknown>;
+  attachmentsOverride?: HeadlessComposerAttachment[];
+}
+
+interface HeadlessComposerAttachment {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+
+const MAX_HEADLESS_ATTACHMENTS = 5;
+const MAX_HEADLESS_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_HEADLESS_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024;
+
+function attachmentSizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 interface PermissionEscalation {
@@ -276,6 +318,7 @@ function withPendingHeadlessTurns(
           label: "You",
           content: item.message,
           ts: item.createdAt,
+          refs: item.attachmentRefs?.length ? { attachments: item.attachmentRefs } : undefined,
         },
         runs: [{
           id: item.turnId,
@@ -502,6 +545,7 @@ export function OrchestratorPanel({
   snapshot: Snapshot | null;
   tokenPresent: boolean;
 }) {
+  useSettingsPreferences();
   const headlessProjectId = kanbanAgentProjectId(
     activeProjectId,
     snapshot?.project?.project_id || "",
@@ -519,6 +563,7 @@ export function OrchestratorPanel({
   const [operatorError, setOperatorError] = useState("");
   const [dismissedPermissionEscalations, setDismissedPermissionEscalations] = useState<string[]>([]);
   const [headlessMessage, setHeadlessMessage] = useState("");
+  const [headlessAttachments, setHeadlessAttachments] = useState<HeadlessComposerAttachment[]>([]);
   const [selfIssueCard, setSelfIssueCard] = useState<Record<string, unknown> | null>(null);
   const [selfIssueIntake, setSelfIssueIntake] = useState<Record<string, unknown> | null>(null);
   const [selfIssueIntakeExpanded, setSelfIssueIntakeExpanded] = useState(true);
@@ -535,10 +580,13 @@ export function OrchestratorPanel({
   const [selfIssueSuccessNotice, setSelfIssueSuccessNotice] = useState("");
   const [selfIssueSavePreviewBusy, setSelfIssueSavePreviewBusy] = useState(false);
   const [selfIssueAttachmentBusy, setSelfIssueAttachmentBusy] = useState(false);
+  const [selfIssueDraftAttachmentBusy, setSelfIssueDraftAttachmentBusy] = useState(false);
+  const [selfIssueDraftVideoDisclosureConfirmed, setSelfIssueDraftVideoDisclosureConfirmed] = useState(false);
   const [selfIssueConfirmationBusy, setSelfIssueConfirmationBusy] = useState(false);
   const [selfIssuePublishBusy, setSelfIssuePublishBusy] = useState(false);
   const selfIssueActionRef = useRef(onAction);
   const selfIssueEvidencePollGenerationRef = useRef(0);
+  const selfIssueGithubPollInFlightRef = useRef("");
   const selfIssueEvidenceBusy = Boolean(selfIssueEvidenceBusyAction);
   const [selfIssueDraftTab, setSelfIssueDraftTab] = useState<"draft" | "preview">("draft");
   const [headlessPlanDiscussion, setHeadlessPlanDiscussion] = useState<AgentSessionPlanRequest | null>(null);
@@ -584,7 +632,7 @@ export function OrchestratorPanel({
         status: callbackStatus,
         ...(issue ? { issue } : {}),
       };
-      setSelfIssueCard(connectedDraft);
+      setSelfIssueCard((current) => ({ ...(current ?? {}), ...connectedDraft }));
       // OAuth completion is the user's authorization decision. When the
       // exact preview was already confirmed, continue the pending publication
       // immediately instead of requiring a second manual Publish click.
@@ -602,7 +650,7 @@ export function OrchestratorPanel({
           confirmation_id: callbackConfirmationId,
         })).then((publishResult) => {
           const published = recordValue(publishResult);
-          if (actionFailed(publishResult)) {
+          if (actionFailed(publishResult) && textValue(recordValue(publishResult)?.status) !== "partially_published") {
             setOperatorError(actionFailureReason(publishResult));
             return;
           }
@@ -612,7 +660,9 @@ export function OrchestratorPanel({
               ...(recordValue(published.draft) ?? {}),
               ...published,
             }));
-            if (["published", "partially_published"].includes(textValue(published.status))) {
+            if (textValue(published.status) === "partially_published") {
+              setSelfIssueSuccessNotice("Issue created; labels are still pending. Retry to finish publication.");
+            } else if (textValue(published.status) === "published") {
               setSelfIssueSuccessNotice("Published successfully.");
             }
           }
@@ -620,7 +670,9 @@ export function OrchestratorPanel({
           setOperatorError(error instanceof Error ? error.message : String(error));
         }).finally(() => setSelfIssuePublishBusy(false));
       }
-      if (["published", "partially_published"].includes(callbackStatus)) {
+      if (callbackStatus === "partially_published") {
+        setSelfIssueSuccessNotice("Issue created; labels are still pending. Retry to finish publication.");
+      } else if (callbackStatus === "published") {
         setSelfIssueSuccessNotice("Published successfully.");
       }
       setSelfIssueCardExpanded(true);
@@ -652,6 +704,38 @@ export function OrchestratorPanel({
     }
   }, [actionResult, activeProjectId]);
   const selfIssueDraftId = textValue(selfIssueCard?.draft_id);
+  const selfIssueSessionId = textValue(selfIssueCard?.session_id);
+  const selfIssuePortableSession = Boolean(selfIssueSessionId);
+  const selfIssueSessionStorageKey = `zf.selfIssueSession:${activeProjectId || "default"}`;
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // Do not clear the persisted Session during the initial render.  The
+    // restore effect runs after this effect on a full-page refresh; removing
+    // the key while the in-memory card is still null would make recovery
+    // impossible.  Terminal/cancelled Sessions are cleaned up by the restore
+    // path after their persisted status is read.
+    if (selfIssueSessionId) {
+      window.localStorage.setItem(selfIssueSessionStorageKey, selfIssueSessionId);
+    }
+  }, [selfIssueSessionId, selfIssueSessionStorageKey]);
+  const forgetSelfIssueSession = () => {
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(selfIssueSessionStorageKey);
+    }
+  };
+  const closePortableSelfIssue = () => {
+    const id = selfIssueSessionId;
+    const status = textValue(selfIssueCard?.session_status || selfIssueCard?.status);
+    if (id && ["investigating", "created", "waiting_for_user"].includes(status)) {
+      void Promise.resolve(onAction("self-issue-session-cancel", { session_id: id }))
+        .catch((error: unknown) => setOperatorError(String(error)));
+    }
+    selfIssueRestoreGenerationRef.current += 1;
+    markSelfIssueDismissed(activeProjectId);
+    forgetSelfIssueSession();
+    setSelfIssueCard(null);
+    setSelfIssueCardExpanded(false);
+  };
   const selfIssueIntakeId = textValue(selfIssueIntake?.intake_id);
   useEffect(() => {
     if (selfIssueIntakeId) {
@@ -664,6 +748,24 @@ export function OrchestratorPanel({
   const selfIssueRuntimeLive = selfIssueRuntimeStatus === "live"
     || selfIssueRuntimeActionNotice.startsWith("Runtime started");
   const selfIssueAssessmentStatus = textValue(selfIssueCard?.assessment_status) || "not_started";
+  const selfIssueDraftEvaluationLocked = selfIssueEvaluationLocked(selfIssueCard);
+  const selfIssueEnrichment = recordValue(selfIssueCard?.enrichment);
+  const selfIssueDraftDigest = textValue(selfIssueEnrichment?.draft_digest);
+  const selfIssueSuggestions = (Array.isArray(selfIssueEnrichment?.suggestions)
+    ? selfIssueEnrichment.suggestions : [])
+    .map((item) => recordValue(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item) && textValue(item?.status) === "pending");
+  const selfIssueClaims = new Map(
+    (Array.isArray(selfIssueEnrichment?.claims) ? selfIssueEnrichment.claims : [])
+      .map((item) => recordValue(item))
+      .filter((item): item is Record<string, unknown> => Boolean(item))
+      .map((item) => [textValue(item.claim_id), item]),
+  );
+  const selfIssueConflicts = (Array.isArray(selfIssueEnrichment?.conflicts)
+    ? selfIssueEnrichment.conflicts : [])
+    .map((item) => recordValue(item))
+    .filter((item): item is Record<string, unknown> => Boolean(item) && textValue(item?.status) === "unresolved");
+  const selfIssueUnderstandingFallback = selfIssueUnderstandingStatus(selfIssueCard) === "fallback";
   const evidenceControls = selfIssueEvidenceControls(selfIssueEvidenceStatus);
   useEffect(() => {
     if (!selfIssueCardExpanded || !selfIssueDraftId) return;
@@ -742,11 +844,15 @@ export function OrchestratorPanel({
   const [headlessSplitThreadKey, setHeadlessSplitThreadKey] = useState("");
   const [backendMenuOpen, setBackendMenuOpen] = useState(false);
   const headlessInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const headlessAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const selfIssueRestoreProjectRef = useRef("");
   const selfIssueRestoreGenerationRef = useRef(0);
   // Message typed before the first snapshot resolved the action gate — sent
   // automatically once the gate is known (2026-07-16 first-message race).
-  const [pendingGateMessage, setPendingGateMessage] = useState<string | null>(null);
+  const [pendingGateMessage, setPendingGateMessage] = useState<{
+    message: string;
+    attachments: HeadlessComposerAttachment[];
+  } | null>(null);
   const headlessThreadRef = useRef<HTMLDivElement | null>(null);
   const headlessThreadScrollPositions = useRef(new Map<string, HeadlessThreadScrollPosition>());
   const headlessThreadProjectRef = useRef(headlessProjectId);
@@ -802,6 +908,62 @@ export function OrchestratorPanel({
     setSelfIssueCard(null);
     setSelfIssueIntake(null);
     setSelfIssueCardExpanded(false);
+    const storedSessionId = window.localStorage.getItem(selfIssueSessionStorageKey) || "";
+    if (storedSessionId) {
+      void Promise.resolve(selfIssueActionRef.current("self-issue-session-get", {
+        session_id: storedSessionId,
+      })).then((result) => {
+        if (selfIssueRestoreGenerationRef.current !== generation) return;
+        const record = recordValue(result);
+        if (actionFailed(result)) {
+          // Keep the opaque Session ID so a transient API/service restart can
+          // be retried on the next refresh instead of losing the whole run.
+          setOperatorError(actionFailureReason(result));
+          return;
+        }
+        const sessionStatus = textValue(record?.session_status || record?.status);
+        if (sessionStatus === "cancelled") {
+          window.localStorage.removeItem(selfIssueSessionStorageKey);
+          return;
+        }
+        if (record) {
+          const restoredDraft = recordValue(record.draft);
+          const restoredCard: Record<string, unknown> = {
+            ...record,
+            ...(restoredDraft ?? {}),
+            session_status: textValue(record.session_status || record.status),
+            selected_publication_mode: textValue(
+              restoredDraft?.selected_publication_mode
+                || restoredDraft?.publication_mode
+                || record.selected_publication_mode,
+            ) || undefined,
+          };
+          setSelfIssueCard(restoredCard);
+          setSelfIssueCardExpanded(true);
+          const recoverableStatus = textValue(restoredCard.session_status || restoredCard.status);
+          if (["created", "investigating"].includes(recoverableStatus)) {
+            void Promise.resolve(selfIssueActionRef.current("self-issue-session-recover", {
+              session_id: storedSessionId,
+            })).then((recovered) => {
+              if (!actionFailed(recovered)) {
+                const recoveredRecord = recordValue(recovered);
+                if (recoveredRecord) {
+                  const recoveredDraft = recordValue(recoveredRecord.draft);
+                  setSelfIssueCard({
+                    ...recoveredRecord,
+                    ...(recoveredDraft ?? {}),
+                    session_status: textValue(recoveredRecord.session_status || recoveredRecord.status),
+                  });
+                }
+              }
+            }).catch(() => undefined);
+          }
+        }
+      }).catch((error: unknown) => {
+        setOperatorError(error instanceof Error ? error.message : String(error));
+      });
+      return;
+    }
     void Promise.resolve(selfIssueActionRef.current("self-issue-get", {}))
       .then((result) => {
         if (selfIssueRestoreGenerationRef.current !== generation) return;
@@ -814,9 +976,7 @@ export function OrchestratorPanel({
           ))
           : null;
         const draft = serverDraft && storedGithubTransaction
-          && !textValue(serverDraft.transaction_id)
-          && ["authorization_required", "authorization_pending", "slow_down"].includes(textValue(serverDraft.status))
-          ? { ...serverDraft, transaction_id: storedGithubTransaction }
+          ? selfIssueRestoreGithubAuthorization(serverDraft, storedGithubTransaction)
           : serverDraft;
         const intake = recordValue(record?.intake);
         const dismissCutoff = selfIssueDismissCutoff(activeProjectId);
@@ -831,12 +991,51 @@ export function OrchestratorPanel({
           setOperatorError("");
           setSelfIssueIntake(intake);
         } else if (draft && selfIssueCreatedAfterCutoff(draft, dismissCutoff)) {
-          setOperatorError("");
-          setSelfIssueCard(draft);
-          setSelfIssueCardExpanded(restoredSelfIssueCardExpanded(
-            activeProjectId,
-            textValue(draft.draft_id),
-          ));
+          const sessionStatus = textValue(draft.session_status || draft.status);
+          if (sessionStatus === "cancelled") {
+            // A cancelled Issue Session is terminal. Do not resurrect the
+            // stale card after reload; the user can start a new /issue.
+            setSelfIssueCard(null);
+            setSelfIssueCardExpanded(false);
+          } else {
+            const reporterContext = recordValue(draft.reporter_context);
+            const portableSessionId = textValue(reporterContext?.session_id || draft.session_id);
+            if (portableSessionId) {
+              // A portable `/issue` Draft can outlive the browser's Session
+              // key. Rehydrate the Session projection instead of resurrecting
+              // the legacy Draft editor as an old/duplicate page.
+              void Promise.resolve(selfIssueActionRef.current("self-issue-session-get", {
+                session_id: portableSessionId,
+              })).then((sessionResult) => {
+                if (selfIssueRestoreGenerationRef.current !== generation) return;
+                const sessionRecord = recordValue(sessionResult);
+                if (actionFailed(sessionResult) || !sessionRecord) {
+                  setOperatorError(actionFailed(sessionResult)
+                    ? actionFailureReason(sessionResult)
+                    : "Unable to restore the portable Issue Session");
+                  return;
+                }
+                const restoredSessionDraft = recordValue(sessionRecord.draft);
+                setOperatorError("");
+                setSelfIssueCard({
+                  ...sessionRecord,
+                  ...(restoredSessionDraft ?? {}),
+                  session_status: textValue(sessionRecord.session_status || sessionRecord.status),
+                });
+                setSelfIssueCardExpanded(true);
+                window.localStorage.setItem(selfIssueSessionStorageKey, portableSessionId);
+              }).catch((error: unknown) => {
+                setOperatorError(error instanceof Error ? error.message : String(error));
+              });
+            } else {
+              setOperatorError("");
+              setSelfIssueCard(draft);
+              setSelfIssueCardExpanded(restoredSelfIssueCardExpanded(
+                activeProjectId,
+                textValue(draft.draft_id),
+              ));
+            }
+          }
         }
       })
       .catch((error: unknown) => {
@@ -844,16 +1043,31 @@ export function OrchestratorPanel({
         selfIssueRestoreProjectRef.current = "";
         setOperatorError(error instanceof Error ? error.message : String(error));
       });
-  }, [activeProjectId, canRestoreSelfIssue, headlessProjectId, visible]);
+  }, [activeProjectId, canRestoreSelfIssue, headlessProjectId, selfIssueSessionStorageKey, visible]);
   useEffect(() => {
     if (!visible || !canRestoreSelfIssue || !headlessProjectId) return;
     const poller = new SelfIssueReadPoller({
-      intervalMs: 5000,
-      request: () => Promise.resolve(selfIssueActionRef.current("self-issue-get", {})),
+      intervalMs: selfIssueSessionId ? 2500 : 5000,
+      request: () => selfIssueSessionId
+        ? Promise.resolve(selfIssueActionRef.current("self-issue-session-get", {
+          session_id: selfIssueSessionId,
+        }))
+        : Promise.resolve(selfIssueActionRef.current("self-issue-get", {})),
       isEnabled: () => !document.hidden,
       onResult: (result) => {
         if (actionFailed(result)) return;
         const record = recordValue(result);
+        if (!record) return;
+        if (selfIssueSessionId && textValue(record?.session_id) === selfIssueSessionId) {
+          const refreshedDraft = recordValue(record?.draft);
+          setSelfIssueCard((current) => current?.session_id === selfIssueSessionId ? ({
+            ...current, ...record, ...(refreshedDraft ?? {}),
+            status: ["authorization_required", "authorization_pending", "slow_down"].includes(textValue(current.status))
+              ? current.status : record.status,
+            session_status: textValue(record.session_status || record.status),
+          }) : current);
+          return;
+        }
         const intake = recordValue(record?.intake);
         if (
           !intake
@@ -874,15 +1088,16 @@ export function OrchestratorPanel({
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       poller.stop();
     };
-  }, [activeProjectId, canRestoreSelfIssue, headlessProjectId, visible]);
+  }, [activeProjectId, canRestoreSelfIssue, headlessProjectId, selfIssueSessionId, visible]);
   useEffect(() => {
     if (pendingGateMessage === null || !snapshot) return;
-    const message = pendingGateMessage;
+    const parked = pendingGateMessage;
     setPendingGateMessage(null);
     if (actionReady && allowedActions.includes("chat-orchestrator")) {
-      void submitHeadlessMessage(message);
+      void submitHeadlessMessage(parked.message, { attachmentsOverride: parked.attachments });
     } else {
-      setHeadlessMessage(message);
+      setHeadlessMessage(parked.message);
+      setHeadlessAttachments(parked.attachments);
       setOperatorError(`${activeBackendTitle} message is ${actionState}; save a valid action token first.`);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -898,7 +1113,8 @@ export function OrchestratorPanel({
     const timer = window.setTimeout(() => {
       setPendingGateMessage((current) => {
         if (current === parked) {
-          setHeadlessMessage(parked);
+          setHeadlessMessage(parked.message);
+          setHeadlessAttachments(parked.attachments);
           setOperatorError(
             "Runtime snapshot unavailable for this project — message not sent. "
             + "Check the project selection (its root may be missing).",
@@ -1185,7 +1401,7 @@ export function OrchestratorPanel({
   function selectHeadlessThread(threadId: string) {
     if (threadId === headlessThreadKey) {
       headlessInputRef.current?.focus();
-      return;
+      return null;
     }
     rememberHeadlessThreadScroll(headlessProjectId, headlessThreadKey);
     const nextReadState = markKanbanThreadRead(
@@ -1202,9 +1418,61 @@ export function OrchestratorPanel({
     headlessInputRef.current?.focus();
   }
 
+  function releaseHeadlessAttachments(items: HeadlessComposerAttachment[]) {
+    for (const item of items) {
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+    }
+  }
+
+  function clearSentHeadlessAttachments(items: HeadlessComposerAttachment[]) {
+    releaseHeadlessAttachments(items);
+    const sentIds = new Set(items.map((item) => item.id));
+    setHeadlessAttachments((current) => current.filter((item) => !sentIds.has(item.id)));
+  }
+
+  function addHeadlessAttachments(files: File[]) {
+    if (!files.length) return;
+    const room = MAX_HEADLESS_ATTACHMENTS - headlessAttachments.length;
+    const candidates = files.slice(0, Math.max(0, room));
+    if (files.length > room) {
+      setOperatorError(`You can attach up to ${MAX_HEADLESS_ATTACHMENTS} files.`);
+    }
+    const accepted: HeadlessComposerAttachment[] = [];
+    let total = headlessAttachments.reduce((sum, item) => sum + item.file.size, 0);
+    for (const file of candidates) {
+      if (!file.size || file.size > MAX_HEADLESS_ATTACHMENT_BYTES) {
+        setOperatorError(`${file.name || "Attachment"} must be non-empty and no larger than 20 MB.`);
+        continue;
+      }
+      if (total + file.size > MAX_HEADLESS_ATTACHMENT_TOTAL_BYTES) {
+        setOperatorError("Attachment total must not exceed 100 MB.");
+        break;
+      }
+      total += file.size;
+      accepted.push({
+        id: `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl: file.type.startsWith("image/") ? URL.createObjectURL(file) : "",
+      });
+    }
+    if (accepted.length) {
+      setHeadlessAttachments((current) => [...current, ...accepted]);
+      setOperatorError("");
+    }
+  }
+
+  function removeHeadlessAttachment(id: string) {
+    setHeadlessAttachments((current) => {
+      const target = current.find((item) => item.id === id);
+      if (target?.previewUrl) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
   function queueHeadlessMessage(
     message: string,
     requestPatch?: Record<string, unknown>,
+    attachments: HeadlessComposerAttachment[] = [],
   ) {
     const item: HeadlessQueueItem = {
       id: `queue-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -1212,13 +1480,19 @@ export function OrchestratorPanel({
       message,
       createdAt: new Date().toISOString(),
       requestPatch,
+      attachments,
     };
     setHeadlessQueue((current) => [...current, item]);
     setHeadlessMessage("");
+    setHeadlessAttachments([]);
   }
 
   async function submitHeadlessMessage(messageOverride?: string, options: SubmitHeadlessOptions = {}) {
-    const message = (messageOverride ?? headlessMessage).trim();
+    const selectedAttachments = options.attachmentsOverride ?? headlessAttachments;
+    const typedMessage = (messageOverride ?? headlessMessage).trim();
+    const message = typedMessage || (selectedAttachments.length
+      ? "Please inspect the attached file(s)."
+      : "");
     const turnPermissionProfile = options.permissionProfileOverride ?? permissionProfile;
     const explicitRequestPatch = options.requestPatch ?? {};
     const discussionRequestPatch = (
@@ -1246,7 +1520,7 @@ export function OrchestratorPanel({
     const targetBackend = options.backendOverride ?? boundDiscussionBackend ?? operatorBackend;
     if (!message || !isChatBackend(targetBackend) || headlessSubmitting) return;
     if (activeThreadBusy && !options.force && !isPlanDiscussion) {
-      queueHeadlessMessage(message, requestPatch);
+      queueHeadlessMessage(message, requestPatch, selectedAttachments);
       return;
     }
     if (!canUseAction("chat-orchestrator")) {
@@ -1255,8 +1529,9 @@ export function OrchestratorPanel({
       // Park the message and let the snapshot effect below flush it instead
       // of erroring on a gate that is merely unknown.
       if (!snapshot) {
-        setPendingGateMessage(message);
+        setPendingGateMessage({ message, attachments: selectedAttachments });
         setHeadlessMessage("");
+        setHeadlessAttachments([]);
         setOperatorError("");
         return;
       }
@@ -1300,14 +1575,69 @@ export function OrchestratorPanel({
           return;
         }
         const payload = { ...directAction.payload };
+        if (directAction.action === "self-issue-capture" && directAction.payload.direct_report === true
+          && (!directAction.payload.environment
+            || typeof directAction.payload.environment !== "object"
+            || !String((directAction.payload.environment as Record<string, unknown>).os || "").trim()
+            || !String((directAction.payload.environment as Record<string, unknown>).version || "").trim())) {
+          payload.environment = detectBrowserEnvironment();
+        }
         if (!("task_id" in payload) && directAction.action !== "create-task" && context.taskId) {
           payload.task_id = context.taskId;
         }
-        const result = await Promise.resolve(onAction(directAction.action, payload));
+        let portableAttachmentRefs: KanbanAgentAttachmentRef[] = [];
+        if (directAction.action === "self-issue-capture"
+          && (directAction.payload.portable_session === true || directAction.payload.direct_report === true)
+          && selectedAttachments.length) {
+          portableAttachmentRefs = await Promise.all(
+            selectedAttachments.map((attachment) => (
+              uploadKanbanAgentAttachment(headlessProjectId, attachment.file)
+            )),
+          );
+          payload.attachments = portableAttachmentRefs;
+        }
+        let result = await Promise.resolve(onAction(directAction.action, payload));
         if (actionFailed(result)) {
           setOperatorError(actionFailureReason(result));
           setHeadlessMessage(message);
           return;
+        }
+        if (directAction.action === "self-issue-capture"
+          && directAction.payload.portable_session !== true
+          && directAction.payload.direct_report !== true
+          && selectedAttachments.length) {
+          let currentDraft = recordValue(recordValue(result)?.draft);
+          if (!currentDraft) {
+            setOperatorError("The Issue Draft was created, but attachments could not be added.");
+            setHeadlessMessage(message);
+            return;
+          }
+          setSelfIssueDraftAttachmentBusy(true);
+          try {
+            for (const attachment of selectedAttachments) {
+              const attachmentResult: unknown = await Promise.resolve(onAction(
+                "self-issue-draft-attachment-add",
+                {
+                  draft_id: textValue(currentDraft.draft_id),
+                  revision: Number(currentDraft.revision || 0),
+                  filename: attachment.file.name,
+                  content_type: attachmentContentType(attachment.file.name, attachment.file.type),
+                  content_base64: await fileAsBase64(attachment.file),
+                  video_disclosure_confirmed: false,
+                },
+              ));
+              if (actionFailed(attachmentResult)) {
+                setOperatorError(actionFailureReason(attachmentResult));
+                setHeadlessMessage(message);
+                return;
+              }
+              currentDraft = recordValue(recordValue(attachmentResult)?.draft) ?? currentDraft;
+            }
+            const resultRecord = recordValue(result) ?? {};
+            result = { ...resultRecord, draft: currentDraft };
+          } finally {
+            setSelfIssueDraftAttachmentBusy(false);
+          }
         }
         if (directAction.action.startsWith("self-issue-")) {
           const actionRecord = recordValue(result);
@@ -1325,7 +1655,7 @@ export function OrchestratorPanel({
             setOperatorError("");
             return;
           }
-          const nextCard = draft ?? (actionRecord ? { ...actionRecord, preview } : null);
+          const nextCard = actionRecord?.session_id ? { ...actionRecord, ...(draft ?? {}), preview } : draft ?? (actionRecord ? { ...actionRecord, preview } : null);
           if (nextCard && textValue(nextCard.status) !== "published") setSelfIssueSuccessNotice("");
           setSelfIssueCard(nextCard);
           if (nextCard) {
@@ -1337,9 +1667,15 @@ export function OrchestratorPanel({
             );
           }
         }
+        clearSentHeadlessAttachments(selectedAttachments);
         setOperatorError("");
         return;
       }
+      const attachmentRefs: KanbanAgentAttachmentRef[] = await Promise.all(
+        selectedAttachments.map((attachment) => (
+          uploadKanbanAgentAttachment(headlessProjectId, attachment.file)
+        )),
+      );
       const turnId = newHeadlessThreadKey();
       pendingTurnId = turnId;
       const pendingMessage: HeadlessPendingMessage = {
@@ -1348,6 +1684,7 @@ export function OrchestratorPanel({
         turnId,
         message,
         backend: targetBackend,
+        attachmentRefs,
         createdAt: new Date().toISOString(),
       };
       setHeadlessPendingMessages((current) => [
@@ -1365,6 +1702,7 @@ export function OrchestratorPanel({
         dangerous_ack: turnPermissionProfile === "dangerous_full" || undefined,
         scope: desiredOperatorScope,
         message,
+        attachment_refs: attachmentRefs,
         turn_id: turnId,
         // 快照按钮:强制确定性投影快答(server 端短路 headless 派发)
         mode: options.projectionFirst ? "projection_first" : undefined,
@@ -1380,6 +1718,7 @@ export function OrchestratorPanel({
         setHeadlessPendingMessages((current) => current.filter((item) => item.turnId !== turnId));
         return;
       }
+      clearSentHeadlessAttachments(selectedAttachments);
       setOperatorError("");
       if (isPlanDiscussion) {
         setHeadlessPlanDiscussion(null);
@@ -1809,7 +2148,9 @@ export function OrchestratorPanel({
       id: item.id,
       kind: "queue",
       title: "Queued message",
-      body: item.message,
+      body: item.attachments?.length
+        ? `${item.message}\n\nAttachments: ${item.attachments.map((attachment) => attachment.file.name).join(", ")}`
+        : item.message,
       status: "queued",
       threadId: item.threadId,
     }));
@@ -1868,6 +2209,7 @@ export function OrchestratorPanel({
       void submitHeadlessMessage(next.message, {
         force: true,
         requestPatch: next.requestPatch,
+        attachmentsOverride: next.attachments,
       });
     }, 650);
     return () => window.clearTimeout(timer);
@@ -1896,38 +2238,75 @@ export function OrchestratorPanel({
       : "Found a bug? Tab /issue to report.";
   const selfIssueTargetIsLocked = selfIssueTargetLocked(selfIssueCard);
   const selfIssuePublishedIssueUrls = selfIssuePublishedUrls(selfIssueCard);
+  // A portable Session restore may return the publication projection under
+  // `draft` (and the batch itself under `draft.publication_batch`) instead of
+  // flattening every field onto the Session card. Keep one canonical lookup
+  // here so refresh/reload cannot disable controls merely because the
+  // projection shape changed.
+  const selfIssueDraftProjection = recordValue(selfIssueCard?.draft);
   const selfIssueTargetPolicy = recordValue(selfIssueCard?.target_policy);
   const selfIssueTargets = recordValue(selfIssueTargetPolicy?.targets);
-  const selfIssuePublicationBatch = recordValue(selfIssueCard?.publication_batch);
+  const selfIssuePublicationBatch = recordValue(
+    selfIssueCard?.publication_batch
+      ?? selfIssueDraftProjection?.publication_batch,
+  );
+  const selfIssueBatchId = textValue(selfIssueCard?.batch_id)
+    || textValue(selfIssuePublicationBatch?.batch_id)
+    || textValue(selfIssueDraftProjection?.batch_id);
+  const selfIssuePayloadDigest = textValue(selfIssueCard?.payload_digest)
+    || textValue(selfIssuePublicationBatch?.payload_digest)
+    || textValue(selfIssueDraftProjection?.payload_digest);
+  const selfIssueConfirmationId = textValue(selfIssueCard?.confirmation_id)
+    || textValue(selfIssuePublicationBatch?.confirmation_id)
+    || textValue(selfIssueDraftProjection?.confirmation_id);
+  const selfIssueEvidenceRetryTarget = selfIssueGithubEvidenceRetryTarget(
+    selfIssueCard ?? {},
+  );
+  const selfIssueEvidenceRetryProvider = selfIssueEvidenceRetryTarget?.provider ?? "";
   const selfIssuePublicationMode = textValue(
     selfIssueCard?.selected_publication_mode
       ?? selfIssueCard?.publication_mode
       ?? selfIssuePublicationBatch?.publication_mode,
   ) || "github";
+  const selfIssueBinding = recordValue(selfIssueCard?.target_binding);
+  const selfIssueBindingProvider = textValue(selfIssueBinding?.provider)
+    || (selfIssuePublicationMode === "gitlab" ? "gitlab" : "github");
+  const selfIssueTargetOptions = Object.entries(selfIssueTargets ?? {})
+    .map(([provider, raw]) => ({ provider, project: textValue(recordValue(raw)?.project) }))
+    .filter((item) => item.project);
   const selfIssueAllowedModes = Array.isArray(selfIssueTargetPolicy?.allowed_modes)
     ? selfIssueTargetPolicy.allowed_modes.map((value) => textValue(value)).filter(Boolean)
     : ["github"];
   const selfIssuePreviews = recordValue(
-    selfIssueCard?.previews ?? selfIssuePublicationBatch?.previews,
+    selfIssueCard?.previews
+      ?? selfIssuePublicationBatch?.previews
+      ?? selfIssueDraftProjection?.previews,
   );
   const selfIssuePreview = recordValue(
     selfIssueCard?.preview
       ?? selfIssuePreviews?.[selfIssuePublicationMode === "both" ? "gitlab" : selfIssuePublicationMode],
   );
   const selfIssueEnvironment = recordValue(selfIssueCard?.environment);
+  const selfIssueDraftAttachments = Array.isArray(selfIssueCard?.attachment_refs)
+    ? selfIssueCard.attachment_refs.filter((item): item is Record<string, unknown> => (
+      Boolean(item) && typeof item === "object" && !Array.isArray(item)
+    ))
+    : [];
   const selfIssueAttachmentPreparation = recordValue(selfIssueCard?.attachment_preparation);
   const selfIssueRawStatus = textValue(selfIssueCard?.status);
   const selfIssueAuthorizationProvider = textValue(selfIssueCard?.provider);
   const selfIssueProviderStatuses = recordValue(selfIssueCard?.providers);
   const selfIssueIntentIds = recordValue(selfIssueCard?.intent_ids);
   const selfIssueRecoverProvider = Object.entries(selfIssueProviderStatuses ?? {}).find(
-    ([, status]) => ["publishing", "outcome_unknown"].includes(textValue(status)),
+    ([, status]) => ["publishing", "partially_published", "outcome_unknown"].includes(textValue(status)),
   )?.[0] ?? "";
   const selfIssueRecoverIntentId = textValue(
     selfIssueIntentIds?.[selfIssueRecoverProvider] ?? selfIssueCard?.intent_id,
   );
+  const selfIssueEvidenceRetryIntentId = selfIssueEvidenceRetryTarget?.intentId ?? "";
   const selfIssueGithubTransactionId = textValue(selfIssueCard?.transaction_id);
   const selfIssuePublished = selfIssuePublicationLocked(selfIssueCard);
+  const selfIssuePartiallyPublished = selfIssuePublicationIsPartial(selfIssueCard);
   const selfIssueAuthorizationPublishing = selfIssueRawStatus === "authorization_pending"
     && selfIssueAuthorizationProvider !== "github";
   const selfIssuePreparationId = textValue(
@@ -1942,6 +2321,21 @@ export function OrchestratorPanel({
     selfIssueCard?.attachment_confirmation_id
       ?? selfIssueAttachmentPreparation?.confirmation_id,
   );
+
+  useEffect(() => {
+    if (!selfIssueCard || !selfIssueDraftId || selfIssueGithubTransactionId) return;
+    const transactionId = window.localStorage.getItem(
+      selfIssueGithubTransactionStorageKey(activeProjectId, selfIssueDraftId),
+    );
+    if (!transactionId) return;
+    const restored = selfIssueRestoreGithubAuthorization(selfIssueCard, transactionId);
+    if (restored !== selfIssueCard) setSelfIssueCard(restored);
+  }, [
+    activeProjectId,
+    selfIssueCard,
+    selfIssueDraftId,
+    selfIssueGithubTransactionId,
+  ]);
   const selfIssueManifestDigest = textValue(
     selfIssueCard?.manifest_digest ?? selfIssueAttachmentPreparation?.manifest_digest,
   );
@@ -1972,6 +2366,11 @@ export function OrchestratorPanel({
     const retrySeconds = Math.max(1, Number(selfIssueCard?.retry_after || selfIssueCard?.interval || 5));
     let cancelled = false;
     const timer = window.setTimeout(() => {
+      if (!selfIssueGithubAuthorizationPollCanStart(
+        selfIssueGithubTransactionId,
+        selfIssueGithubPollInFlightRef.current,
+      )) return;
+      selfIssueGithubPollInFlightRef.current = selfIssueGithubTransactionId;
       void Promise.resolve(selfIssueActionRef.current("self-issue-github-device-poll", {
         transaction_id: selfIssueGithubTransactionId,
         session_id: selfIssueOAuthSession(),
@@ -1983,20 +2382,52 @@ export function OrchestratorPanel({
           setSelfIssueCard((current) => ({ ...(current ?? {}), ...(record ?? {}) }));
           return;
         }
+        if (selfIssueGithubAuthorizationShouldForget(status)) {
+          window.localStorage.removeItem(selfIssueGithubTransactionStorageKey(activeProjectId, selfIssueDraftId));
+        }
         if (actionFailed(result)) {
+          const reason = actionFailureReason(result);
+          if (selfIssueGithubAuthorizationPollShouldReset(status, reason)) {
+            window.localStorage.removeItem(selfIssueGithubTransactionStorageKey(activeProjectId, selfIssueDraftId));
+            setOperatorError("");
+            setSelfIssueCard((current) => {
+              if (["published", "partially_published"].includes(textValue(current?.status))) return current;
+              return {
+                ...(current ?? {}),
+                status: "authorization_required",
+                transaction_id: undefined,
+                user_code: undefined,
+                verification_uri: undefined,
+              };
+            });
+            return;
+          }
+          if (["access_denied", "expired_token"].includes(status)) {
+            setSelfIssueCard((current) => ({
+              ...(current ?? {}),
+              status: "authorization_required",
+              transaction_id: undefined,
+              user_code: undefined,
+              verification_uri: undefined,
+            }));
+          }
           setOperatorError(actionFailureReason(result));
           return;
         }
-        if (record) setSelfIssueCard((current) => ({
-          ...(current ?? {}),
-          ...(recordValue(record.draft) ?? {}),
-          ...record,
-        }));
-        if (record && ["published", "publish_failed"].includes(textValue(record.status))) {
-          window.localStorage.removeItem(selfIssueGithubTransactionStorageKey(activeProjectId, selfIssueDraftId));
+        if (record) {
+          setOperatorError("");
+          setSelfIssueCard((current) => ({
+            ...(current ?? {}),
+            ...(recordValue(record.draft) ?? {}),
+            ...record,
+          }));
         }
       }).catch((error: unknown) => {
         if (!cancelled) setOperatorError(error instanceof Error ? error.message : String(error));
+      }).finally(() => {
+        if (selfIssueGithubPollInFlightRef.current === selfIssueGithubTransactionId) {
+          selfIssueGithubPollInFlightRef.current = "";
+        }
       });
     }, retrySeconds * 1000);
     return () => {
@@ -2011,7 +2442,7 @@ export function OrchestratorPanel({
       if (textValue(completion?.type) !== "zf:self-issue-oauth-complete") return;
       const result = recordValue(completion?.result);
       if (!result) return;
-      if (actionFailed(result)) {
+      if (actionFailed(result) && textValue(recordValue(result)?.status) !== "partially_published") {
         setOperatorError(actionFailureReason(result));
         setSelfIssueCard((current) => current ? { ...current, status: "authorization_required" } : current);
         return;
@@ -2027,7 +2458,9 @@ export function OrchestratorPanel({
         ...result,
         ...(callbackStatus ? { status: callbackStatus } : {}),
       }));
-      if (["published", "partially_published"].includes(callbackStatus)) {
+      if (callbackStatus === "partially_published") {
+        setSelfIssueSuccessNotice("Issue created; labels are still pending. Retry to finish publication.");
+      } else if (callbackStatus === "published") {
         setSelfIssueSuccessNotice("Published successfully.");
       }
     };
@@ -2048,10 +2481,23 @@ export function OrchestratorPanel({
 
   const openSelfIssuePreview = async (
     draftCard: Record<string, unknown> | null = selfIssueCard,
+    force = false,
   ) => {
     if (!draftCard || selfIssuePreviewBusy) return;
     setSelfIssueDraftTab("preview");
-    if (selfIssuePreviewIsReusable(draftCard, selfIssuePublicationMode)) return;
+    // On a restored completed Session the caller may pass the canonical Draft
+    // projection while `selfIssueCard` still only contains the Session
+    // projection. Persist that merge before taking the reusable-preview fast
+    // path; otherwise the click changes no rendered state and the full body
+    // appears to be unresponsive.
+    if (!force && selfIssuePreviewIsReusable(draftCard, selfIssuePublicationMode)) {
+      setSelfIssueCard((current) => ({
+        ...(current ?? {}),
+        ...draftCard,
+        selected_publication_mode: selfIssuePublicationMode,
+      }));
+      return;
+    }
     setSelfIssuePreviewBusy(true);
     try {
       const needsPreparation = Array.isArray(draftCard.attachment_refs)
@@ -2120,25 +2566,29 @@ export function OrchestratorPanel({
         summary: textValue(current.summary),
         bug_description: textValue(current.bug_description || current.summary),
         reproduction_steps: textValue(current.reproduction_steps),
+        actual_behavior: textValue(current.actual_behavior),
         expected_behavior: textValue(current.expected_behavior),
         attachment_context: textValue(current.attachment_context),
         environment: {
           os: textValue(environment?.os),
           version: textValue(environment?.version),
+          arch: textValue(environment?.arch),
+          source: textValue(environment?.source),
+          detected_at: textValue(environment?.detected_at),
         },
-        zaofu_version: textValue(current.zaofu_version),
+        project_version: textValue(current.project_version || current.zaofu_version),
+        zaofu_version: textValue(current.zaofu_version || current.project_version),
         additional_context: textValue(current.additional_context),
         component: textValue(current.component) || "unknown",
         impact_scope: textValue(current.impact_scope) || "unknown",
         assessment_confidence: textValue(current.assessment_confidence) || "low",
         recommended_next_action: textValue(current.recommended_next_action),
         suggested_fix: textValue(current.recommended_next_action),
-        ...(selfIssueTargetIsLocked ? {} : {
-          target_binding: {
-            provider: "gitlab",
-            project: textValue(recordValue(current.target_binding)?.project),
-          },
-        }),
+        target_binding: {
+          provider: textValue(recordValue(current.target_binding)?.provider)
+            || (selfIssuePublicationMode === "gitlab" ? "gitlab" : "github"),
+          project: textValue(recordValue(current.target_binding)?.project),
+        },
       }));
       const record = recordValue(result);
       const draft = recordValue(record?.draft);
@@ -2162,14 +2612,14 @@ export function OrchestratorPanel({
 
   const runSelfIssueEvidence = async (
     draft: Record<string, unknown>,
-    action = "self-issue-evidence-start",
+    action = "self-issue-evaluation-start",
     extra: Record<string, unknown> = {},
   ) => {
     if (selfIssueEvidenceBusy) return;
     selfIssueEvidencePollGenerationRef.current += 1;
     setSelfIssueEvidenceBusyAction(action);
     setSelfIssueRuntimeActionNotice("");
-    if (action === "self-issue-evidence-interrupt") {
+    if (action === "self-issue-evaluation-cancel") {
       setSelfIssueCard((current) => current ? {
         ...current,
         evidence_status: "interrupting",
@@ -2179,6 +2629,11 @@ export function OrchestratorPanel({
       const result = await Promise.resolve(onAction(action, {
         draft_id: textValue(draft.draft_id),
         revision: Number(draft.revision || 0),
+        ...(action === "self-issue-evaluation-start"
+          ? { assessment_decision: "project_assessment", actor_capability: "user" }
+          : action === "self-issue-limited-continue"
+            ? { assessment_decision: "limited_report", actor_capability: "user" }
+            : {}),
         ...extra,
       }));
       const resultRecord = recordValue(result);
@@ -2187,7 +2642,7 @@ export function OrchestratorPanel({
       if (actionFailed(result)) {
         setOperatorError(actionFailureReason(result));
         setSelfIssueRuntimeActionNotice(actionFailureReason(result));
-        if (action === "self-issue-evidence-interrupt") setSelfIssueCard(draft);
+        if (action === "self-issue-evaluation-cancel") setSelfIssueCard(draft);
       }
       else if (updatedDraft) {
         setOperatorError("");
@@ -2195,8 +2650,10 @@ export function OrchestratorPanel({
         if (action === "self-issue-runtime-check") {
           const status = textValue(actionPayload?.status || updatedDraft.runtime_status);
           setSelfIssueRuntimeActionNotice(
-            status === "assessment_requested" || textValue(updatedDraft.runtime_status) === "live"
-              ? "Runtime started. Live evidence collection and Orchestrator assessment are queued."
+            status === "assessment_requested"
+              ? "Project assessment selected. Live evidence collection and assessment are queued."
+              : textValue(actionPayload?.status) === "runtime_live_assessment_choice_required"
+                ? "Runtime is live. Choose project assessment explicitly before the agent runs."
               : "Runtime is stopped. Static evidence remains saved locally.",
           );
         } else if (action === "self-issue-limited-continue") {
@@ -2265,13 +2722,86 @@ export function OrchestratorPanel({
     }
   };
 
+  const addSelfIssueDraftAttachment = async (
+    file: File,
+    draftOverride: Record<string, unknown> | null = selfIssueCard,
+  ): Promise<Record<string, unknown> | null> => {
+    if (!draftOverride || selfIssuePublished || selfIssueDraftAttachmentBusy) return null;
+    const isVideo = file.type.startsWith("video/");
+    if (isVideo && !selfIssueDraftVideoDisclosureConfirmed) {
+      setOperatorError("Confirm attachment visibility before adding a video.");
+      return null;
+    }
+    setSelfIssueDraftAttachmentBusy(true);
+    try {
+      const result = await Promise.resolve(onAction("self-issue-draft-attachment-add", {
+        draft_id: textValue(draftOverride.draft_id),
+        revision: Number(draftOverride.revision || 0),
+        filename: file.name,
+        content_type: attachmentContentType(file.name, file.type),
+        content_base64: await fileAsBase64(file),
+        video_disclosure_confirmed: selfIssueDraftVideoDisclosureConfirmed,
+      }));
+      const record = recordValue(result);
+      const draft = recordValue(record?.draft);
+      if (actionFailed(result)) {
+        setOperatorError(actionFailureReason(result));
+      } else if (draft) {
+        setOperatorError("");
+        const updated = { ...draft, selected_publication_mode: selfIssuePublicationMode };
+        setSelfIssueCard(updated);
+        return updated;
+      }
+    } catch (error: unknown) {
+      setOperatorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSelfIssueDraftAttachmentBusy(false);
+    }
+    return null;
+  };
+
+  const removeSelfIssueDraftAttachment = async (attachmentId: string) => {
+    if (!selfIssueCard || selfIssuePublished || selfIssueDraftAttachmentBusy) return;
+    setSelfIssueDraftAttachmentBusy(true);
+    try {
+      const result = await Promise.resolve(onAction("self-issue-draft-attachment-remove", {
+        draft_id: textValue(selfIssueCard.draft_id),
+        revision: Number(selfIssueCard.revision || 0),
+        attachment_id: attachmentId,
+      }));
+      const record = recordValue(result);
+      const draft = recordValue(record?.draft);
+      if (actionFailed(result)) {
+        setOperatorError(actionFailureReason(result));
+      } else if (draft) {
+        setOperatorError("");
+        setSelfIssueCard({ ...draft, selected_publication_mode: selfIssuePublicationMode });
+      }
+    } catch (error: unknown) {
+      setOperatorError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSelfIssueDraftAttachmentBusy(false);
+    }
+  };
+
   const confirmSelfIssuePreview = async () => {
     if (!selfIssueCard || selfIssueConfirmationBusy) return;
+    // A restored portable Session may have a Draft but no publication batch
+    // yet.  Do not leave the confirmation control looking dead in that state:
+    // materialize the exact preview first, then let the next click confirm it.
+    if (!selfIssueBatchId || !selfIssuePayloadDigest) {
+      await openSelfIssuePreview({
+        ...selfIssueCard,
+        ...(recordValue(selfIssueCard.draft) ?? {}),
+        draft_id: textValue(selfIssueCard.publication_draft_id || recordValue(selfIssueCard.draft)?.draft_id || selfIssueCard.draft_id),
+      });
+      return;
+    }
     setSelfIssueConfirmationBusy(true);
     try {
       const result = await Promise.resolve(onAction("self-issue-confirm", {
-        batch_id: textValue(selfIssueCard.batch_id ?? selfIssuePublicationBatch?.batch_id),
-        payload_digest: textValue(selfIssueCard.payload_digest),
+        batch_id: selfIssueBatchId,
+        payload_digest: selfIssuePayloadDigest,
       }));
       const record = recordValue(result);
       if (actionFailed(result)) setOperatorError(actionFailureReason(result));
@@ -2290,16 +2820,19 @@ export function OrchestratorPanel({
     if (!selfIssueCard || selfIssuePublishBusy) return;
     setSelfIssuePublishBusy(true);
     try {
-      const recovering = ["publishing", "outcome_unknown"].includes(
+      const recovering = ["publishing", "partially_published", "outcome_unknown"].includes(
         textValue(selfIssueCard.status),
-      );
+      ) || Boolean(selfIssueEvidenceRetryProvider);
       const result = await Promise.resolve(onAction(
         recovering ? "self-issue-recover" : "self-issue-publish", {
           ...(recovering ? {
-            intent_id: selfIssueRecoverIntentId,
+            intent_id: selfIssueEvidenceRetryProvider
+              ? selfIssueEvidenceRetryIntentId
+              : selfIssueRecoverIntentId,
           } : {
-            batch_id: textValue(selfIssueCard.batch_id ?? selfIssuePublicationBatch?.batch_id),
-            confirmation_id: textValue(selfIssueCard.confirmation_id),
+            batch_id: selfIssueBatchId,
+            confirmation_id: selfIssueConfirmationId,
+            implicit_publish: !selfIssueConfirmationId,
           }),
         },
       ));
@@ -2307,7 +2840,7 @@ export function OrchestratorPanel({
       if (record?.status === "authorization_required") {
         setOperatorError("");
         setSelfIssueCard({ ...selfIssueCard, ...record });
-      } else if (actionFailed(result)) {
+      } else if (actionFailed(result) && textValue(record?.status) !== "partially_published") {
         setOperatorError(actionFailureReason(result));
       } else if (record) {
         setOperatorError("");
@@ -2317,7 +2850,9 @@ export function OrchestratorPanel({
           ...record,
         };
         setSelfIssueCard(updated);
-        if (["published", "partially_published"].includes(textValue(record.status))) {
+        if (textValue(record.status) === "partially_published") {
+          setSelfIssueSuccessNotice("Issue created; labels are still pending. Retry to finish publication.");
+        } else if (textValue(record.status) === "published") {
           setSelfIssueSuccessNotice("Published successfully.");
         }
       }
@@ -2425,7 +2960,7 @@ export function OrchestratorPanel({
                           stream {supportLabel(capability.streaming)} · resume {supportLabel(capability.resume)} · interrupt {supportLabel(capability.interrupt)} · cost {supportLabel(capability.cost)} · context {supportLabel(capability.context_usage)}
                         </small>
                       </span>
-                      {backend.available === false ? <span className="agent-model-status">Unavailable</span> : null}
+                      {backend.available === false ? <span className="agent-model-status">{uiText("Unavailable")}</span> : null}
                     </button>
                   );
                 })}
@@ -2437,7 +2972,7 @@ export function OrchestratorPanel({
         <div className="agent-header-actions">
           {webSession?.mode === "remote_passcode" && sessionActionReady ? (
             <button className="agent-lock-button" type="button" onClick={onLockSession}>
-              Lock
+              {uiText("Lock")}
             </button>
           ) : null}
           <button
@@ -2476,7 +3011,7 @@ export function OrchestratorPanel({
             onChange={(event) => setPasscodeInput(event.target.value)}
           />
           <button className="icon-button" type="submit">
-            Unlock
+            {uiText("Unlock")}
           </button>
         </form> : null}
 
@@ -2495,10 +3030,10 @@ export function OrchestratorPanel({
             onChange={(event) => setTokenInput(event.target.value)}
           />
           <button className="icon-button" type="submit">
-            Save
+            {uiText("Save")}
           </button>
           <button className="icon-button" type="button" onClick={() => onSaveToken("")}>
-            Clear
+            {uiText("Clear")}
           </button>
         </form> : null}
 
@@ -2574,7 +3109,7 @@ export function OrchestratorPanel({
           {headlessHasNewBelow ? (
             <button className="channel-scroll-latest" type="button" onClick={showLatestHeadless}>
               <ChevronDown size={15} />
-              New messages
+              {uiText("New messages")}
             </button>
           ) : null}
           {pendingProposals.length || pendingProposalNotice ? (
@@ -2606,7 +3141,7 @@ export function OrchestratorPanel({
                         <strong>{item.title || presentation.title}</strong>
                         <small>
                           {item.action}
-                          {item.ts ? ` · ${item.ts.slice(11, 16)} UTC` : ""}
+                          {item.ts ? ` · ${formatTime(item.ts, false)}` : ""}
                           {!item.valid && item.validation_error ? ` · invalid: ${item.validation_error}` : ""}
                         </small>
                       </div>
@@ -2636,7 +3171,7 @@ export function OrchestratorPanel({
                         type="button"
                         onClick={() => void dismissPendingProposal(item)}
                       >
-                        Dismiss
+                        {uiText("Dismiss")}
                       </button>
                     </div>
                     {expanded ? (
@@ -2664,7 +3199,7 @@ export function OrchestratorPanel({
           ) : null}
           {selfIssueCard && !selfIssueCardExpanded ? (
             <button
-              aria-label="Open Self-Issue Draft"
+              aria-label={selfIssuePortableSession ? "Open Issue Agent session" : "Open Self-Issue Draft"}
               className="self-issue-draft-launcher"
               data-testid="self-issue-draft-launcher"
               type="button"
@@ -2674,13 +3209,15 @@ export function OrchestratorPanel({
               }}
             >
               <span className="self-issue-draft-launcher-main">
-                <small>Self-Issue Draft</small>
-                <strong title={textValue(selfIssueCard.title)}>
-                  {textValue(selfIssueCard.title) || "Observed ZaoFu issue"}
+                <small>{selfIssuePortableSession ? "Issue Agent" : "Self-Issue Draft"}</small>
+                <strong title={textValue(selfIssueCard.title || recordValue(selfIssueCard.report)?.title)}>
+                  {textValue(selfIssueCard.title || recordValue(selfIssueCard.report)?.title) || "Observed project issue"}
                 </strong>
               </span>
               <span className="self-issue-draft-launcher-status">
-                {selfIssueEvidenceStatus || textValue(selfIssueCard.publication_state) || "draft"}
+                {selfIssuePortableSession
+                  ? textValue(selfIssueCard.session_status || selfIssueCard.status) || "investigating"
+                  : selfIssueEvidenceStatus || textValue(selfIssueCard.publication_state) || "draft"}
               </span>
               <Maximize2 aria-hidden="true" size={15} />
             </button>
@@ -2699,7 +3236,7 @@ export function OrchestratorPanel({
               <span className="self-issue-draft-launcher-main">
                 <small>Self-Issue Report</small>
                 <strong title={textValue(recordValue(selfIssueIntake.answers)?.title)}>
-                  {textValue(recordValue(selfIssueIntake.answers)?.title) || "Report a ZaoFu bug"}
+                  {textValue(recordValue(selfIssueIntake.answers)?.title) || "Report a project issue"}
                 </strong>
               </span>
               <span className="self-issue-draft-launcher-status">
@@ -2725,7 +3262,7 @@ export function OrchestratorPanel({
               >
                 {selfIssueRuntimeWarning ? (
                   <div className="self-issue-runtime-warning" role="status">
-                    <strong>Runtime is stopped</strong>
+                    <strong>{uiText("Runtime is stopped")}</strong>
                     <span>{selfIssueRuntimeWarning}</span>
                   </div>
                 ) : null}
@@ -2758,7 +3295,7 @@ export function OrchestratorPanel({
                     const result = await Promise.resolve(onAction("self-issue-intake-attachment-add", {
                       intake_id: textValue(selfIssueIntake.intake_id),
                       filename: file.name,
-                      content_type: file.type || attachmentContentType(file.name),
+                      content_type: attachmentContentType(file.name, file.type),
                       content_base64: await fileAsBase64(file),
                       video_disclosure_confirmed: videoDisclosureConfirmed,
                     }));
@@ -2853,8 +3390,31 @@ export function OrchestratorPanel({
               </div>,
               selfIssueWorkspaceHost,
             ) : null}
-            {selfIssueCard && selfIssueCardExpanded ? (
-              <div
+          {selfIssueCard && selfIssuePortableSession ? (
+            <div hidden={!selfIssueCardExpanded}>
+              <SelfIssueSessionWorkspace
+                key={selfIssueSessionId}
+                card={selfIssueCard}
+                onAction={onAction}
+                publicationMode={selfIssuePublicationMode}
+                authorizationSessionId={selfIssueOAuthSession()}
+                onMinimize={() => setSelfIssueCardExpanded(false)}
+                onClose={closePortableSelfIssue}
+                onUpdate={(value) => {
+                  if (value.transaction_id) window.localStorage.setItem(
+                    selfIssueGithubTransactionStorageKey(activeProjectId, selfIssueDraftId), textValue(value.transaction_id),
+                  );
+                  setSelfIssueCard((current) => current?.session_id === selfIssueSessionId ? {
+                    ...current, ...value, ...(recordValue(value.draft) ?? {}),
+                    session_id: selfIssueSessionId,
+                    session_status: value.session_status || current.session_status,
+                  } : current);
+                }}
+              />
+            </div>
+          ) : null}
+          {selfIssueCard && selfIssueCardExpanded && !selfIssuePortableSession ? (
+            <div
                 aria-label="Self-Issue Draft"
                 aria-modal="false"
                 className="headless-pending-entry self-issue-draft-card expanded"
@@ -2949,7 +3509,7 @@ export function OrchestratorPanel({
                   <button
                     aria-selected={selfIssueDraftTab === "preview"}
                     className={selfIssueDraftTab === "preview" ? "active" : ""}
-                    disabled={selfIssueEvidenceBlocksPreview(selfIssueEvidenceStatus) || selfIssuePreviewBusy || selfIssueSavePreviewBusy}
+                    disabled={selfIssueDraftEvaluationLocked || selfIssueEvidenceBlocksPreview(selfIssueEvidenceStatus) || selfIssuePreviewBusy || selfIssueSavePreviewBusy}
                     role="tab"
                     type="button"
                     onClick={() => {
@@ -2958,9 +3518,53 @@ export function OrchestratorPanel({
                     }}
                   >{selfIssuePreviewBusy || selfIssueSavePreviewBusy ? "Preparing…" : "Preview"}</button>
                 </div>
+                {selfIssueUnderstandingFallback ? (
+                  <div className="self-issue-runtime-waiting" role="alert">
+                    <p><strong>Issue understanding is temporarily unavailable.</strong></p>
+                    <p>
+                      The original description and attachments are preserved, but the title and
+                      structured fields may be incomplete. Empty fields mean “not generated”, not
+                      that the information is absent. You can edit and publish this limited report.
+                    </p>
+                    {Boolean(
+                      selfIssueCard.understanding_retry_allowed
+                      ?? Number(selfIssueCard.revision || 0) === 1,
+                    ) ? (
+                      <button
+                        type="button"
+                        onClick={() => void Promise.resolve(onAction(
+                          "self-issue-understanding-retry",
+                          {
+                            draft_id: selfIssueDraftId,
+                            revision: Number(selfIssueCard.revision || 0),
+                          },
+                        )).then((result) => {
+                          const record = recordValue(result);
+                          const draft = recordValue(record?.draft);
+                          if (actionFailed(result)) setOperatorError(actionFailureReason(result));
+                          else if (draft) {
+                            setOperatorError("");
+                            setSelfIssueCard(draft);
+                          }
+                        }).catch((error: unknown) => {
+                          setOperatorError(error instanceof Error ? error.message : String(error));
+                        })}
+                      >Retry understanding</button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {selfIssueDraftEvaluationLocked ? (
+                  <div className="self-issue-runtime-waiting" role="status">
+                    <p><strong>Evaluation is running. This Draft is read-only.</strong></p>
+                    <p>
+                      The run is bound to Draft revision {Number(selfIssueCard.revision || 0)}.
+                      Cancel evaluation to edit, change attachments, resolve suggestions, or publish.
+                    </p>
+                  </div>
+                ) : null}
                 <fieldset
                   className={selfIssueDraftTab === "draft" ? "self-issue-draft-fields" : "self-issue-draft-fields hidden"}
-                  disabled={selfIssuePublished}
+                  disabled={selfIssuePublished || selfIssueDraftEvaluationLocked}
                 >
                 <div className="self-issue-draft-side self-issue-user-report-side">
                 <section className="self-issue-draft-column self-issue-user-report-core">
@@ -2990,22 +3594,43 @@ export function OrchestratorPanel({
                     ))}
                   </select>
                 </label>
-                {(["gitlab", "github"] as const).map((provider) => {
-                  const target = recordValue(selfIssueTargets?.[provider]);
-                  if (!target) return null;
-                  return (
-                    <label key={provider}>
-                      {selfIssueProviderLabel(provider)} project (centrally managed)
-                      <input
-                        aria-readonly="true"
-                        className="filter-input"
-                        readOnly
-                        title="This target is fixed by zf.yaml"
-                        value={textValue(target.project)}
-                      />
-                    </label>
-                  );
-                })}
+                <label>
+                  Issue repository
+                  {selfIssueTargetIsLocked && selfIssueTargetOptions.length ? (
+                    <select
+                      className="filter-input"
+                      value={`${selfIssueBindingProvider}:${textValue(selfIssueBinding?.project)}`}
+                      onChange={(event) => {
+                        const [provider, ...projectParts] = event.target.value.split(":");
+                        setSelfIssueCard({
+                          ...selfIssueCard,
+                          target_binding: { provider, project: projectParts.join(":") },
+                        });
+                      }}
+                    >
+                      {selfIssueTargetOptions.map((target) => (
+                        <option key={`${target.provider}:${target.project}`} value={`${target.provider}:${target.project}`}>
+                          {target.provider}: {target.project}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="filter-input"
+                      placeholder="owner/repository"
+                      value={textValue(selfIssueBinding?.project)}
+                      onChange={(event) => setSelfIssueCard({
+                        ...selfIssueCard,
+                        target_binding: { provider: selfIssueBindingProvider, project: event.target.value },
+                      })}
+                    />
+                  )}
+                  <small className="field-help">
+                    {selfIssueTargetIsLocked
+                      ? "Choose one repository allowed by the host adapter."
+                      : "You can edit the repository before publishing."}
+                  </small>
+                </label>
                 </section>
                 <section className="self-issue-draft-column self-issue-user-report-details">
                 <label>
@@ -3026,21 +3651,169 @@ export function OrchestratorPanel({
                     onChange={(event) => setSelfIssueCard({ ...selfIssueCard, reproduction_steps: event.target.value })}
                   />
                 </label>
+                <label>Actual behavior<textarea className="filter-input" value={textValue(selfIssueCard.actual_behavior)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, actual_behavior: event.target.value })} /></label>
                 <label>Expected behavior<textarea className="filter-input" value={textValue(selfIssueCard.expected_behavior)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, expected_behavior: event.target.value })} /></label>
                 <label>Attachment context<textarea className="filter-input" value={textValue(selfIssueCard.attachment_context)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, attachment_context: event.target.value })} /></label>
+                <div className="self-issue-draft-attachments" aria-label="Draft attachments">
+                  <strong>Attachments</strong>
+                  <small className="field-help">Add screenshots, videos, logs, or documents to this Draft. Files remain local until publication disclosure is confirmed.</small>
+                  <label className="self-issue-video-confirmation">
+                    <input
+                      checked={selfIssueDraftVideoDisclosureConfirmed}
+                      type="checkbox"
+                      onChange={(event) => setSelfIssueDraftVideoDisclosureConfirmed(event.target.checked)}
+                    />
+                    I understand attached files follow the destination project visibility.
+                  </label>
+                  <input
+                    aria-label="Add Draft attachments"
+                    accept=".png,.jpg,.jpeg,.mp4,.webm,.txt,.log,.json,.md,.xml,.yaml,.yml,.csv,.pdf,.doc,.docx,.xls,.xlsx"
+                    disabled={selfIssuePublished || selfIssueDraftAttachmentBusy || selfIssueDraftAttachments.length >= 5}
+                    multiple
+                    type="file"
+                    onChange={(event) => void (async () => {
+                      const files = Array.from(event.target.files ?? []);
+                      try {
+                        let current = selfIssueCard;
+                        for (const file of files) {
+                          const updated = await addSelfIssueDraftAttachment(file, current);
+                          if (updated) current = updated;
+                        }
+                      } finally {
+                        event.target.value = "";
+                      }
+                    })()}
+                  />
+                  {selfIssueDraftAttachments.length ? (
+                    <ul>
+                      {selfIssueDraftAttachments.map((item) => (
+                        <li key={textValue(item.attachment_id) || textValue(item.sha256)}>
+                          <span>{textValue(item.filename) || "attachment"} · {Number(item.byte_count || 0)} bytes</span>
+                          <button
+                            disabled={selfIssuePublished || selfIssueDraftAttachmentBusy}
+                            type="button"
+                            onClick={() => void removeSelfIssueDraftAttachment(textValue(item.attachment_id))}
+                          >{uiText("Remove")}</button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <small className="field-help">{uiText("No files attached.")}</small>}
+                </div>
                 <label>Operating system<input className="filter-input" value={textValue(selfIssueEnvironment?.os)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, environment: { ...(selfIssueEnvironment ?? {}), os: event.target.value } })} /></label>
                 <label>Operating system version<input className="filter-input" value={textValue(selfIssueEnvironment?.version)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, environment: { ...(selfIssueEnvironment ?? {}), version: event.target.value } })} /></label>
-                <label>Current ZaoFu version<input className="filter-input" value={textValue(selfIssueCard.zaofu_version)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, zaofu_version: event.target.value })} /></label>
+                <label>Architecture<input className="filter-input" value={textValue(selfIssueEnvironment?.arch)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, environment: { ...(selfIssueEnvironment ?? {}), arch: event.target.value, source: "user" } })} /></label>
+                <label>{uiText("Project version")}<input className="filter-input" value={textValue(selfIssueCard.project_version || selfIssueCard.zaofu_version)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, project_version: event.target.value, zaofu_version: event.target.value })} /></label>
                 <label>Additional context<textarea className="filter-input" value={textValue(selfIssueCard.additional_context)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, additional_context: event.target.value })} /></label>
                 </section>
                 </div>
                 <div className="self-issue-draft-side self-issue-assessment-side">
                 <section className="self-issue-draft-column self-issue-assessment-core">
                 <h3>Agent &amp; Orchestrator assessment</h3>
+                {selfIssueSuggestions.length ? (
+                  <section aria-label="Evaluation suggestions" className="headless-pending-details">
+                    <strong>Suggestions ({selfIssueSuggestions.length})</strong>
+                    {selfIssueSuggestions.map((suggestion) => {
+                      const suggestionId = textValue(suggestion.suggestion_id);
+                      const currentValue = selfIssueAssessmentText(suggestion.current_value);
+                      const proposedValue = selfIssueAssessmentText(suggestion.proposed_value);
+                      const applySuggestion = (resolution: "accepted" | "merged") => {
+                        const value = resolution === "merged"
+                          ? [currentValue === "Not provided." ? "" : currentValue, proposedValue]
+                            .filter(Boolean).join("\n")
+                          : undefined;
+                        void Promise.resolve(onAction("self-issue-suggestion-resolve", {
+                          draft_id: selfIssueDraftId,
+                          suggestion_id: suggestionId,
+                          revision: Number(selfIssueCard.revision || 0),
+                          draft_digest: selfIssueDraftDigest,
+                          resolution,
+                          ...(value === undefined ? {} : { value }),
+                        })).then((result) => {
+                          const draft = recordValue(recordValue(result)?.draft);
+                          if (actionFailed(result)) setOperatorError(actionFailureReason(result));
+                          else if (draft) setSelfIssueCard(draft);
+                        }).catch((error: unknown) => {
+                          setOperatorError(error instanceof Error ? error.message : String(error));
+                        });
+                      };
+                      return (
+                        <article key={suggestionId} className="self-issue-runtime-waiting">
+                          <strong>{textValue(suggestion.field_path).replaceAll("_", " ")}</strong>
+                          <div><span className="headless-pending-key">{uiText("Current")}</span>{currentValue}</div>
+                          <div><span className="headless-pending-key">{uiText("Proposed")}</span>{proposedValue}</div>
+                          <p>{textValue(suggestion.reason)}</p>
+                          <small>Confidence: {textValue(suggestion.confidence)} · Evidence: {
+                            Array.isArray(suggestion.evidence_refs) ? suggestion.evidence_refs.length : 0
+                          }</small>
+                          <div className="self-issue-runtime-actions">
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => applySuggestion("accepted")}>{uiText("Accept")}</button>
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => applySuggestion("merged")}>{uiText("Merge")}</button>
+                            <button
+                              disabled={selfIssueDraftEvaluationLocked}
+                              type="button"
+                              onClick={() => void Promise.resolve(onAction("self-issue-suggestion-dismiss", {
+                                draft_id: selfIssueDraftId,
+                                suggestion_id: suggestionId,
+                                revision: Number(selfIssueCard.revision || 0),
+                                draft_digest: selfIssueDraftDigest,
+                              })).then((result) => {
+                                const draft = recordValue(recordValue(result)?.draft);
+                                if (actionFailed(result)) setOperatorError(actionFailureReason(result));
+                                else if (draft) setSelfIssueCard(draft);
+                              }).catch((error: unknown) => {
+                                setOperatorError(error instanceof Error ? error.message : String(error));
+                              })}
+                            >{uiText("Dismiss")}</button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </section>
+                ) : null}
+                {selfIssueConflicts.length ? (
+                  <section aria-label="Evaluation conflicts" className="headless-pending-details">
+                    <strong>Conflicts ({selfIssueConflicts.length})</strong>
+                    {selfIssueConflicts.map((conflict) => {
+                      const conflictId = textValue(conflict.conflict_id);
+                      const left = selfIssueClaims.get(textValue(conflict.left_claim_ref));
+                      const right = selfIssueClaims.get(textValue(conflict.right_claim_ref));
+                      const resolve = (resolution: string) => void Promise.resolve(onAction(
+                        "self-issue-conflict-resolve",
+                        {
+                          draft_id: selfIssueDraftId,
+                          conflict_id: conflictId,
+                          revision: Number(selfIssueCard.revision || 0),
+                          draft_digest: selfIssueDraftDigest,
+                          resolution,
+                        },
+                      )).then((result) => {
+                        const draft = recordValue(recordValue(result)?.draft);
+                        if (actionFailed(result)) setOperatorError(actionFailureReason(result));
+                        else if (draft) setSelfIssueCard(draft);
+                      }).catch((error: unknown) => {
+                        setOperatorError(error instanceof Error ? error.message : String(error));
+                      });
+                      return (
+                        <article key={conflictId} className="self-issue-runtime-waiting">
+                          <strong>{textValue(conflict.field_path).replaceAll("_", " ")}</strong>
+                          <div><span className="headless-pending-key">Reported</span>{selfIssueAssessmentText(left?.value)}</div>
+                          <div><span className="headless-pending-key">{uiText("Observed")}</span>{selfIssueAssessmentText(right?.value)}</div>
+                          <p>{textValue(conflict.reason)}</p>
+                          <div className="self-issue-runtime-actions">
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => resolve("resolved_left")}>{uiText("Keep reported")}</button>
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => resolve("resolved_right")}>{uiText("Use observed")}</button>
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => resolve("resolved_both")}>{uiText("Keep both")}</button>
+                            <button disabled={selfIssueDraftEvaluationLocked} type="button" onClick={() => resolve("needs_reinvestigation")}>{uiText("Reinvestigate")}</button>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </section>
+                ) : null}
                 <label>
                   Classification
                   <select className="filter-input" value={textValue(selfIssueCard.classification) || "unknown"} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, classification: event.target.value })}>
-                    {["runtime", "kernel/state", "provider/integration", "web/ui", "configuration", "security", "performance", "test/regression", "unknown"].map((value) => <option key={value} value={value}>{value}</option>)}
+                    {["bug", "runtime", "kernel/state", "provider/integration", "web/ui", "configuration", "security", "performance", "test/regression", "unknown"].map((value) => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
                 <label>
@@ -3065,7 +3838,7 @@ export function OrchestratorPanel({
                     {["low", "medium", "high"].map((value) => <option key={value} value={value}>{value}</option>)}
                   </select>
                 </label>
-                <label>Recommended next action<textarea className="filter-input" value={textValue(selfIssueCard.recommended_next_action)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, recommended_next_action: event.target.value })} /></label>
+                <label>{uiText("Recommended next action")}<textarea className="filter-input" value={textValue(selfIssueCard.recommended_next_action)} onChange={(event) => setSelfIssueCard({ ...selfIssueCard, recommended_next_action: event.target.value })} /></label>
                 <div className="headless-pending-details">
                   <div><span className="headless-pending-key">classification</span>{textValue(selfIssueCard.classification) || "unknown"}</div>
                   <div><span className="headless-pending-key">severity</span>{textValue(selfIssueCard.severity) || "P2"}</div>
@@ -3167,7 +3940,11 @@ export function OrchestratorPanel({
                 <div className="headless-pending-item">
                   {selfIssueSuccessNotice || selfIssuePublished ? (
                     <div className="self-issue-success-notice" role="status">
-                      {selfIssueSuccessNotice || "Published successfully."}
+                      {selfIssueSuccessNotice || (
+                        selfIssuePartiallyPublished
+                          ? "Issue created; labels are still pending. Retry to finish publication."
+                          : "Published successfully."
+                      )}
                     </div>
                   ) : null}
                   <button
@@ -3185,7 +3962,42 @@ export function OrchestratorPanel({
                       <><LoaderCircle aria-hidden="true" className="self-issue-spinner" size={13} /> Saving &amp; preparing…</>
                     ) : "Save & preview"}
                   </button>
-                  {evidenceControls.map((evidenceControl) => (
+                  {(
+                    selfIssueEvidenceStatus === "pending"
+                    || (
+                      selfIssueRuntimeLive
+                      && selfIssueAssessmentStatus === "not_started"
+                      && selfIssueEvidenceStatus === "collecting_live"
+                    )
+                  ) ? (
+                    <div className="self-issue-assessment-choice" role="group" aria-label="Choose project assessment">
+                      <p className="headless-pending-details">
+                        Choose whether to run the project-assessment agent. A running environment is not assessed automatically.
+                      </p>
+                      {selfIssueRuntimeActionNotice ? (
+                        <p className="self-issue-runtime-action-notice stopped" role="alert">
+                          {selfIssueRuntimeActionNotice}
+                        </p>
+                      ) : null}
+                      <button
+                        className="headless-pending-run"
+                        disabled={selfIssuePublished || selfIssueEvidenceBusy}
+                        type="button"
+                        onClick={() => void runSelfIssueEvidence(selfIssueCard, "self-issue-evaluation-start")}
+                      >
+                        <Play aria-hidden="true" size={13} />
+                        {selfIssueEvidenceBusyAction === "self-issue-evaluation-start" ? "Starting assessment…" : "Continue with project assessment"}
+                      </button>
+                      <button
+                        className="headless-pending-run"
+                        disabled={selfIssuePublished || selfIssueEvidenceBusy}
+                        type="button"
+                        onClick={() => void runSelfIssueEvidence(selfIssueCard, "self-issue-limited-continue")}
+                      >
+                        {selfIssueEvidenceBusyAction === "self-issue-limited-continue" ? "Preparing limited report…" : "Continue with limited report"}
+                      </button>
+                    </div>
+                  ) : evidenceControls.map((evidenceControl) => (
                     <button
                       key={evidenceControl.action}
                       className="headless-pending-run"
@@ -3197,7 +4009,7 @@ export function OrchestratorPanel({
                         evidenceControl.force ? { force: true } : {},
                       )}
                     >
-                      {evidenceControl.action === "self-issue-evidence-interrupt"
+                      {evidenceControl.action === "self-issue-evaluation-cancel"
                         ? <Square aria-hidden="true" size={13} />
                         : <Play aria-hidden="true" size={13} />}
                       {selfIssueEvidenceBusyAction === evidenceControl.action
@@ -3217,16 +4029,20 @@ export function OrchestratorPanel({
                       ) : "Confirm & upload attachments to Gitlab"}
                     </button>
                   ) : null}
-                  {!selfIssuePublished && textValue(selfIssueCard.batch_id ?? selfIssuePublicationBatch?.batch_id) && !textValue(selfIssueCard.confirmation_id) ? (
+                  {!selfIssuePublished
+                    && textValue(selfIssueCard.batch_id ?? selfIssuePublicationBatch?.batch_id)
+                    && !textValue(selfIssueCard.confirmation_id)
+                    && !["authorization_required", "authorization_pending", "slow_down"].includes(selfIssueRawStatus)
+                    && textValue(selfIssuePublicationBatch?.status ?? selfIssueCard.status) === "previewed" ? (
                     <button
                       className="headless-pending-run"
-                      disabled={selfIssueConfirmationBusy}
+                      disabled={selfIssuePublishBusy || selfIssueDraftEvaluationLocked}
                       type="button"
-                      onClick={() => void confirmSelfIssuePreview()}
+                      onClick={() => void publishSelfIssue()}
                     >
-                      {selfIssueConfirmationBusy ? (
-                        <><LoaderCircle aria-hidden="true" className="self-issue-spinner" size={13} /> Confirming…</>
-                      ) : "Confirm this exact preview"}
+                      {selfIssuePublishBusy ? (
+                        <><LoaderCircle aria-hidden="true" className="self-issue-spinner" size={13} /> Publishing…</>
+                      ) : "Publish"}
                     </button>
                   ) : null}
                   {selfIssuePublished && Object.keys(selfIssuePublishedIssueUrls).length ? (
@@ -3244,7 +4060,7 @@ export function OrchestratorPanel({
                   ) : textValue(selfIssueCard.confirmation_id) || ["publishing", "outcome_unknown", "authorization_pending"].includes(textValue(selfIssueCard.status)) ? (
                     <button
                       className="headless-pending-run"
-                      disabled={selfIssuePublishBusy || selfIssueAuthorizationPublishing}
+                      disabled={selfIssuePublishBusy || selfIssueAuthorizationPublishing || selfIssueDraftEvaluationLocked}
                       type="button"
                       onClick={() => void publishSelfIssue()}
                     >
@@ -3253,6 +4069,28 @@ export function OrchestratorPanel({
                       ) : ["publishing", "outcome_unknown"].includes(textValue(selfIssueCard.status))
                         ? "Recover outcome by marker"
                         : `Publish to ${selfIssueProviderLabel(selfIssuePublicationMode)}`}
+                    </button>
+                  ) : null}
+                  {selfIssuePartiallyPublished && selfIssueRecoverIntentId ? (
+                    <button
+                      className="headless-pending-run"
+                      disabled={selfIssuePublishBusy}
+                      type="button"
+                      onClick={() => void publishSelfIssue()}
+                    >
+                      {selfIssuePublishBusy ? (
+                        <><LoaderCircle aria-hidden="true" className="self-issue-spinner" size={13} /> {uiText("Retrying…")}</>
+                      ) : "Retry label reconciliation"}
+                    </button>
+                  ) : null}
+                  {selfIssueEvidenceRetryProvider ? (
+                    <button
+                      className="headless-pending-run"
+                      disabled={selfIssuePublishBusy}
+                      type="button"
+                      onClick={() => void publishSelfIssue()}
+                    >
+                      Retry GitHub evidence comment
                     </button>
                   ) : null}
                   {textValue(selfIssueCard.status) === "authorization_required" && selfIssueAuthorizationProvider !== "github" ? (
@@ -3299,7 +4137,9 @@ export function OrchestratorPanel({
                   {["authorization_required", "authorization_pending", "slow_down"].includes(textValue(selfIssueCard.status)) && selfIssueAuthorizationProvider === "github" ? (
                     <div className="self-issue-github-device-flow">
                       <div className="headless-pending-details">
-                        GitHub authorization can create Issues in the installed repository. Binary files are not uploaded to GitHub.
+                        {textValue(selfIssueCard.scope_notice) || (
+                          "Authorize the Issue publisher to create this GitHub Issue and its evidence comments, including confirmed image and video uploads."
+                        )}
                       </div>
                       {selfIssueGithubTransactionId ? (
                         <>
@@ -3319,7 +4159,7 @@ export function OrchestratorPanel({
                         <button className="headless-pending-run" type="button" onClick={() => void (async () => {
                           const result = await Promise.resolve(onAction("self-issue-github-device-start", {
                             draft_id: textValue(selfIssueCard.draft_id),
-                            batch_id: textValue(selfIssueCard.batch_id ?? selfIssuePublicationBatch?.batch_id),
+                            batch_id: selfIssueBatchId,
                             confirmation_id: textValue(selfIssueCard.confirmation_id),
                             session_id: selfIssueOAuthSession(),
                           }));
@@ -3344,8 +4184,13 @@ export function OrchestratorPanel({
                 </div>
                 {selfIssuePublished ? (
                   <div className="self-issue-published-notice" role="status">
-                    This Issue has been published. Its Draft and publication snapshot are
-                    immutable; create a new Self-Issue report to make further changes.
+                    {selfIssuePartiallyPublished ? (
+                      <>This Issue was created, but metadata labels are still pending. The Draft and publication snapshot
+                        remain immutable; retry label reconciliation before treating publication as complete.</>
+                    ) : (
+                      <>This Issue has been published. Its Draft and publication snapshot are
+                        immutable; create a new Self-Issue report to make further changes.</>
+                    )}
                   </div>
                 ) : null}
                 {selfIssueDraftTab === "preview" && selfIssuePreparationId && selfIssuePreparationStatus !== "prepared" ? (
@@ -3460,7 +4305,7 @@ export function OrchestratorPanel({
                       permissionEscalation.failureEventId,
                     ])}
                   >
-                    Cancel
+                    {uiText("Cancel")}
                   </button>
                   <button
                     className="agent-inline-button primary"
@@ -3488,6 +4333,34 @@ export function OrchestratorPanel({
                   : "Connecting — messages send automatically once ready."}
               </div>
             ) : null}
+            {headlessAttachments.length ? (
+              <div className="headless-attachment-tray" aria-label="Pending attachments">
+                {headlessAttachments.map((attachment) => (
+                  <div className="headless-attachment-card" key={attachment.id}>
+                    {attachment.previewUrl ? (
+                      <img src={attachment.previewUrl} alt="" />
+                    ) : (
+                      <span className="headless-attachment-file-icon" aria-hidden="true">
+                        <FileText size={19} />
+                      </span>
+                    )}
+                    <span className="headless-attachment-copy">
+                      <strong>{attachment.file.name || "Pasted image"}</strong>
+                      <small>{attachmentSizeLabel(attachment.file.size)}</small>
+                    </span>
+                    <button
+                      type="button"
+                      className="headless-attachment-remove"
+                      aria-label={`Remove ${attachment.file.name || "attachment"}`}
+                      disabled={headlessSubmitting}
+                      onClick={() => removeHeadlessAttachment(attachment.id)}
+                    >
+                      <X size={15} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
             <textarea
               ref={headlessInputRef}
               className="headless-input"
@@ -3496,6 +4369,19 @@ export function OrchestratorPanel({
               disabled={headlessSubmitting || Boolean(permissionEscalation)}
               value={headlessMessage}
               onChange={(event) => setHeadlessMessage(event.target.value)}
+              onPaste={(event) => {
+                const clipboardFiles = Array.from(event.clipboardData.files);
+                const itemFiles = clipboardFiles.length ? [] : Array.from(event.clipboardData.items)
+                  .filter((item) => item.kind === "file")
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => Boolean(file));
+                const images = [...clipboardFiles, ...itemFiles].filter((file) => (
+                  file.type.startsWith("image/")
+                ));
+                if (!images.length) return;
+                event.preventDefault();
+                addHeadlessAttachments(images);
+              }}
               onKeyDown={(event) => {
                 if (
                   event.key === "Enter"
@@ -3508,9 +4394,33 @@ export function OrchestratorPanel({
               }}
             />
             <div className="headless-composer-footer">
+              <input
+                ref={headlessAttachmentInputRef}
+                className="headless-attachment-input"
+                type="file"
+                multiple
+                aria-label="Attach files"
+                accept="image/png,image/jpeg,image/webp,image/gif,.txt,.log,.json,.md,.xml,.yaml,.yml,.csv,.pdf,.doc,.docx,.xls,.xlsx"
+                onChange={(event) => {
+                  addHeadlessAttachments(Array.from(event.currentTarget.files ?? []));
+                  event.currentTarget.value = "";
+                }}
+              />
+              <button
+                type="button"
+                className="headless-attachment-button"
+                aria-label="Attach files"
+                title="Attach files or paste an image"
+                disabled={headlessSubmitting || Boolean(permissionEscalation)}
+                onClick={() => headlessAttachmentInputRef.current?.click()}
+              >
+                <Plus size={21} />
+                <Paperclip size={12} aria-hidden="true" />
+              </button>
+              <span className="headless-composer-spacer" />
               <ComposerSubmitButton
                 className="headless-send-button"
-                disabled={!headlessMessage.trim() || Boolean(permissionEscalation)}
+                disabled={(!headlessMessage.trim() && !headlessAttachments.length) || Boolean(permissionEscalation)}
                 iconSize={21}
                 status={deriveComposerStatus(activeHeadlessThread?.status, headlessSubmitting)}
                 onStop={activeHeadlessRun ? () => void cancelHeadlessRun(activeHeadlessRun.id) : undefined}

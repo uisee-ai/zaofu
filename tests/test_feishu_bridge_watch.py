@@ -26,10 +26,39 @@ from zf.integrations.feishu.bridge_watch import (
     _configured_projection_targets,
     merge_batch,
     push_bridge_projections_once,
+    _safe_card_action_label,
+    _card_action_toast,
+    _submit_card_action,
     sdk_log_level,
     should_ignore_inbound_message,
     workspace_message_is_addressed,
 )
+
+
+def test_card_action_ack_message_is_bounded_for_slow_background_work() -> None:
+    # Keep this assertion next to the bridge callback contract: the immediate
+    # toast is deliberately short and does not contain a provider/report body.
+    assert _card_action_toast({"ok": True, "status": "accepted"}) == (
+        "success",
+        "已处理，请查看更新后的卡片",
+    )
+
+
+def test_card_action_submission_does_not_wait_for_slow_action() -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_action() -> str:
+        started.set()
+        release.wait(2)
+        return "completed"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = _submit_card_action(executor, slow_action)
+        assert started.wait(1)
+        assert not future.done()
+        release.set()
+        assert future.result(timeout=1) == "completed"
 from zf.integrations.feishu.transport import MockFeishuTransport
 from zf.runtime.channel_projection import project_channel
 
@@ -76,6 +105,28 @@ def test_merge_batch_preserves_reply_context_refs():
     assert raw["payload"]["thread_id"] == "thread-1"
 
 
+def test_merge_batch_preserves_and_deduplicates_attachments():
+    raw = merge_batch([
+        {
+            "text": "请看附件",
+            "attachments": [
+                {"resource_key": "file-1", "resource_type": "file", "file_name": "a.txt"},
+            ],
+        },
+        {
+            "text": "补充",
+            "attachments": [
+                {"resource_key": "file-1", "resource_type": "file", "file_name": "a.txt"},
+                {"resource_key": "img-1", "resource_type": "image", "file_name": "a.png"},
+            ],
+        },
+    ])
+    assert raw["payload"]["attachments"] == [
+        {"resource_key": "file-1", "resource_type": "file", "file_name": "a.txt", "content_type": ""},
+        {"resource_key": "img-1", "resource_type": "image", "file_name": "a.png", "content_type": ""},
+    ]
+
+
 def test_sdk_log_level_avoids_info_urls():
     class FakeLogLevel:
         INFO = "info"
@@ -104,6 +155,22 @@ def test_bridge_ignores_app_cards_but_keeps_user_content() -> None:
         message_type="post",
         sender_type="user",
     )
+
+
+def test_card_action_log_label_never_contains_signed_token() -> None:
+    value = {"action": "issue-triage-start:1", "t": "zf1.secret-token"}
+    label = _safe_card_action_label(value)
+    assert label == "issue-triage-start:1"
+    assert "zf1.secret-token" not in label
+
+
+def test_card_callback_returns_short_ack_instead_of_report_json() -> None:
+    report = json.dumps({"report": {"analysis": "证据" * 5000}}, ensure_ascii=False)
+    assert _card_action_toast({"ok": True, "status": "completed", "message": report}) == (
+        "success", "已处理，请查看更新后的卡片",
+    )
+    kind, message = _card_action_toast({"ok": False, "message": "TOKEN=secret " + "错误" * 1000})
+    assert kind == "error" and len(message) <= 80 and "secret" not in message
 
 
 def test_workspace_primary_responder_accepts_unmentioned_group_message() -> None:
@@ -136,6 +203,13 @@ def test_workspace_primary_responder_accepts_unmentioned_group_message() -> None
     ) is True
 
 
+def test_issue_only_connection_accepts_plain_command_without_mention() -> None:
+    assert workspace_message_is_addressed(
+        mention_ids=[], bot_open_id="ou_bot", chat_type="group", resolution=None,
+        issue_only=True,
+    ) is True
+
+
 def test_bridge_projection_loop_is_wakeable_and_stoppable():
     calls: list[str] = []
     loop = BridgeProjectionLoop(calls.append, interval_seconds=10)
@@ -145,6 +219,20 @@ def test_bridge_projection_loop_is_wakeable_and_stoppable():
     assert calls == ["oc_owner"]
     loop.start()
     loop.stop()
+
+
+def test_bridge_projection_loop_can_start_urgent_projection():
+    calls: list[str] = []
+    done = threading.Event()
+
+    def tick(target: str) -> None:
+        calls.append(target)
+        done.set()
+
+    loop = BridgeProjectionLoop(tick, interval_seconds=10)
+    loop.project_now("oc_urgent")
+    assert done.wait(2)
+    assert calls == ["oc_urgent"]
 
 
 def test_bridge_projection_loop_round_robins_multiple_targets():

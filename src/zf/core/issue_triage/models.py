@@ -238,6 +238,7 @@ class SyncState:
     repository_id: str = ""
     last_attempt_at: str = ""
     last_success_at: str = ""
+    last_full_sync_at: str = ""
     etag: str = ""
     rate_limit_remaining: int | None = None
     rate_limit_reset_at: str = ""
@@ -255,6 +256,7 @@ class SyncState:
             repository_id=str(value.get("repository_id") or ""),
             last_attempt_at=str(value.get("last_attempt_at") or ""),
             last_success_at=str(value.get("last_success_at") or ""),
+            last_full_sync_at=str(value.get("last_full_sync_at") or ""),
             etag=str(value.get("etag") or ""),
             rate_limit_remaining=(
                 int(value["rate_limit_remaining"])

@@ -55,7 +55,7 @@ Recovery Coordinator 收敛和 OpenCode Provider SPI 仍是候选设计。配置
 - [入门](getting-started/README.md): 最短成功路径和完整安装路线。
 - [概念](concepts/README.md): 交付模型、运行权威和 Loop Engineering。
 - [工作流](workflows/README.md): Channel、PRD、Issue、Refactor、Research 与受控点火。
-- [Self-Issue 报告与 Issue Triage](workflows/self-issue-report.md): `/issue` 本地取证、人工确认发布，以及独立的 GitHub Issue 镜像看板。
+- [Self-Issue 报告与 Issue Triage](workflows/self-issue-report.md): `/issue` 自然语言 Draft、用户选择评估方式、Publish/Connect/View 发布，以及独立的 GitHub Issue 镜像看板。
 - [运维](operations/README.md): 观察、批准、恢复、上下文接力和 Web 维护验证。
 - [集成](integrations/README.md): 飞书、Automation、Provider 和外部入口。
 - [参考](reference/README.md): parser 生成的 CLI 目录、配置与 currentness 规则。

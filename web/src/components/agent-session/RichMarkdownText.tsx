@@ -37,6 +37,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
   className = "",
   content,
   isStreaming = false,
+  showImageDownload = true,
 }: MarkdownTextProps) {
   // Throttle only the streaming path; finalized text renders immediately so the
   // last token always appears (and a non-streaming bubble is never delayed).
@@ -50,11 +51,18 @@ const RichMarkdownText = memo(function RichMarkdownText({
     h4: ({ children, ...props }) => <h4 {...props}>{children}</h4>,
     h5: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
     h6: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
-    a: ({ children, href, ...props }) => (
-      <a href={href} rel="noreferrer" target="_blank" {...props}>
-        {children}
-      </a>
-    ),
+    a: ({ children, href, ...props }) => {
+      const label = String(children ?? "");
+      if (href && (label === "▶ Play video" || isGithubVideoUrl(href))) {
+        return (
+          <span className="agent-markdown-video-wrap">
+            <video className="agent-markdown-video" controls preload="metadata" src={href} />
+            <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>
+          </span>
+        );
+      }
+      return <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>;
+    },
     table: ({ children, ...props }) => (
       <div className="agent-markdown-table-wrap">
         <table {...props}>{children}</table>
@@ -70,7 +78,12 @@ const RichMarkdownText = memo(function RichMarkdownText({
       }
       return <CodeBlock code={trimTrailingNewline(value)} language={language} />;
     },
-  }), []);
+    img: showImageDownload
+      ? undefined
+      : ({ src, alt, className: imageClassName, ...props }) => (
+          <img src={src} alt={alt} className={imageClassName} {...props} />
+        ),
+  }), [showImageDownload]);
 
   return (
     <div className={`agent-markdown ${isStreaming ? "streaming" : ""} ${className}`.trim()}>
@@ -120,4 +133,18 @@ function languageFromClassName(className: string): string | undefined {
 
 function trimTrailingNewline(value: string): string {
   return value.replace(/\n$/, "");
+}
+
+function isGithubVideoUrl(value: string): boolean {
+  try {
+    const url = new URL(value, window.location.origin);
+    if (url.protocol !== "https:") return false;
+    return (
+      (url.hostname === "github.com" && url.pathname.startsWith("/user-attachments/"))
+      || url.hostname === "user-images.githubusercontent.com"
+      || url.hostname === "camo.githubusercontent.com"
+    ) && /\.(?:mp4|webm|mov|m4v)(?:$|[?#])/i.test(url.pathname);
+  } catch {
+    return false;
+  }
 }

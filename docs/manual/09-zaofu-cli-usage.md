@@ -354,6 +354,9 @@ Memory 和 skills 是 worker 上下文材料,不是第二控制面。修改 work
 | `uv run zf feishu sync-automation-insights-table --dry-run` | 预览 Automation insight 多维表格输出 |
 | `uv run zf feishu sync-kanban-table --dry-run` | 预览 Kanbanboard 飞书表格输出 |
 | `uv run zf feishu sync-kanban-table --backend lark-cli --app-token "$FEISHU_BITABLE_APP_TOKEN" --table-id "$FEISHU_BITABLE_TABLE_ID"` | 同步 Kanbanboard 到飞书多维表格 |
+| `uv run zf feishu sync-issue-table --dry-run` | 预览 `/issue` 与 Issue/Triage/Merge 生命周期表格输出 |
+| `uv run zf feishu sync-issue-table --backend lark-cli --app-token "$FEISHU_ISSUE_BITABLE_APP_TOKEN" --table-id "$FEISHU_ISSUE_BITABLE_TABLE_ID"` | 同步 Issue 生命周期到独立飞书多维表格并配置 Gantt 视图 |
+| `uv run zf feishu sync-issue-table --backend lark-cli --watch --poll-interval-seconds 5` | 独立常驻同步 Issue 生命周期；不会阻塞 Feishu bridge |
 | `uv run zf feishu project-kanban --once --backend lark-cli` | 单轮消费事件并投影 Kanban |
 | `uv run zf feishu project-kanban --once --create-target-if-missing --folder-token "$FEISHU_FOLDER_TOKEN"` | 为当前项目首次创建 Base/Table 后执行一轮事件投影 |
 | `uv run zf feishu project-kanban --watch --backend lark-cli` | 前台运行常驻 Kanban projector |

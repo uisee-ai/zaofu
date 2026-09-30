@@ -1489,6 +1489,7 @@ export interface RuntimeSummary {
     expires_at?: string | null;
     requires_token?: boolean;
     token_fallback_enabled?: boolean;
+    can_view_issue_triage?: boolean;
   };
   agent_surface?: {
     id: string;
@@ -2708,6 +2709,10 @@ export interface IssueTriageItem {
     run_id: string;
     workflow_id?: string;
     triage_id: string;
+    queued_cancel_available?: boolean;
+    workflow_project_id?: string;
+    workflow_project_name?: string;
+    execution_project_root?: string;
     triage_history: Array<{
       triage_id: string;
       source_revision: string;
@@ -2733,10 +2738,19 @@ export interface IssueTriageItem {
         required: boolean;
         options?: string[];
       }>;
+      request_status?: "published" | "authorization_required" | "pending" | "outcome_unknown" | string;
+      request_url?: string;
     };
+    clarification_request_status?: "published" | "authorization_required" | "pending" | "outcome_unknown" | string;
+    clarification_request_url?: string;
     disposition?: "ready_to_fix" | "needs_info" | "unverified_candidate" | string;
     verification_status?: "complete" | "partial" | "not_run" | string;
     verification_gaps?: string[];
+    lifecycle?: {
+      schema_version: string;
+      current: string;
+      stages: Record<string, { status: "recorded" | "unknown" | string; evidence_refs: string[]; state?: string; outcome?: "completed" | "active" | "attention" | "failed" | "unknown" | string }>;
+    };
   };
 }
 
@@ -2751,6 +2765,7 @@ export interface IssueTriagePageData {
 }
 
 export interface IssueTriageSummary {
+  intake?: { status: "idle" | "processing" | "ready" | "failed"; error?: string };
   schema_version: "issue-triage-summary.v1";
   repository: string;
   repository_url: string;
@@ -2761,6 +2776,7 @@ export interface IssueTriageSummary {
   labels: Record<string, number>;
   label_colors?: Record<string, string>;
   authors: Record<string, number>;
+  sources?: Record<string, number>;
   author_states?: Record<string, { open: number; closed: number }>;
   sync: IssueTriageSyncState;
 }
@@ -2830,6 +2846,9 @@ export interface IssueTriageStartResult {
   task_id: string;
   workflow_run_id: string;
   source_revision: string;
+  workflow_project_id?: string;
+  workflow_project_name?: string;
+  execution_project_root?: string;
   issue?: IssueTriageItem | null;
 }
 
@@ -3239,6 +3258,7 @@ export interface OperatorInputResponse {
 }
 
 export interface ActionResponse {
+  lifecycle_label_sync?: { status: string; reason?: string };
   ok: boolean;
   status: string;
   action: string;

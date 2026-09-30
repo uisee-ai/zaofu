@@ -340,26 +340,72 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         alive, _reason = self._agent_process_liveness(role_name)
         return alive
 
-    def _agent_process_liveness(self, role_name: str) -> tuple[bool, str]:
+    def _agent_process_liveness(
+        self, role_name: str, *, snapshot: tuple[str, str, str] | None = None,
+    ) -> tuple[bool, str]:
         if self.tmux.dry_run:
             return True, ""
-        if not self.tmux.pane_alive(role_name):
-            return False, "pane_dead"
-        command = self.pane_current_command(role_name).strip()
+        if snapshot is None:
+            snapshot_getter = getattr(self.tmux, "pane_liveness_snapshot", None)
+            snapshot = snapshot_getter(role_name) if callable(snapshot_getter) else None
+        status_getter = getattr(self.tmux, "pane_process_status", None)
+        process_status = None
+        if snapshot is not None or callable(status_getter):
+            process_status = snapshot[:2] if snapshot is not None else status_getter(role_name)
+            pid, command = process_status
+            if not pid:
+                return False, "pane_dead"
+        else:
+            if not self.tmux.pane_alive(role_name):
+                return False, "pane_dead"
+            command = self.pane_current_command(role_name).strip()
         leaf = command.rsplit("/", 1)[-1].strip().lower()
         if leaf in self._SHELL_COMMANDS:
             return False, "shell"
-        if self._pane_has_provider_context_exhausted(role_name):
+        exhausted = (
+            has_provider_context_exhausted(snapshot[2])
+            if snapshot is not None
+            else self._pane_has_provider_context_exhausted(role_name)
+        )
+        if exhausted:
             return False, "provider_context_exhausted"
         if leaf == "node":
-            probe = self._pane_process_probe(role_name)
+            probe = self._pane_process_probe(role_name, process_status=process_status)
             if self._probe_contains_codex(probe):
                 return True, ""
             if bool(probe.get("available")) and probe.get("processes"):
                 return False, "node_without_agent_wrapper"
         return True, ""
 
-    def _pane_process_probe(self, role_name: str) -> dict[str, object]:
+    def liveness_and_capture_log(
+        self,
+        role_name: str,
+        *,
+        liveness_lines: int = 120,
+        log_lines: int = 200,
+    ) -> tuple[tuple[bool, str], str] | None:
+        """Observe watchdog state and the independent diagnostic window once."""
+        getter = getattr(self.tmux, "pane_liveness_and_log_snapshot", None)
+        if not callable(getter):
+            return None
+        snapshot = getter(
+            role_name,
+            liveness_lines=liveness_lines,
+            log_lines=log_lines,
+        )
+        if snapshot is None:
+            return None
+        pid, command, context, output = snapshot
+        # Node wrappers require a process-tree probe before log capture.
+        # Keep their original ordering instead of consuming the early log.
+        if command.rsplit("/", 1)[-1].strip().lower() == "node":
+            return None
+        verdict = self._agent_process_liveness(role_name, snapshot=(pid, command, context))
+        return verdict, output
+
+    def _pane_process_probe(
+        self, role_name: str, *, process_status: tuple[str, str] | None = None,
+    ) -> dict[str, object]:
         probe = {
             "available": False,
             "pane_pid": "",
@@ -367,18 +413,24 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
             "processes": [],
             "agent_markers": [],
         }
-        try:
-            probe["pane_pid"] = str(getattr(self.tmux, "pane_pid")(role_name))
-        except Exception:
-            pass
-        try:
-            probe["current_command"] = self.pane_current_command(role_name).strip()
-        except Exception:
-            pass
+        if process_status is not None:
+            probe["pane_pid"], probe["current_command"] = process_status
+        else:
+            try:
+                probe["pane_pid"] = str(getattr(self.tmux, "pane_pid")(role_name))
+            except Exception:
+                pass
+            try:
+                probe["current_command"] = self.pane_current_command(role_name).strip()
+            except Exception:
+                pass
         getter = getattr(self.tmux, "pane_process_probe", None)
         if callable(getter):
             try:
-                raw = getter(role_name)
+                raw = (
+                    getter(role_name) if process_status is None
+                    else getter(role_name, process_status=process_status)
+                )
                 if isinstance(raw, dict):
                     probe.update(raw)
             except Exception:
@@ -642,6 +694,16 @@ class CompositeTransport(TransportAdapter):
 
     def is_alive(self, role_name: str) -> bool:
         return self.for_role(role_name).is_alive(role_name)
+
+    def lifecycle_snapshot(self, role_name: str) -> WorkerLifecycleSnapshot | None:
+        getter = getattr(self.for_role(role_name), "lifecycle_snapshot", None)
+        return getter(role_name) if callable(getter) else None
+
+    def liveness_and_capture_log(
+        self, role_name: str, *, liveness_lines: int = 120, log_lines: int = 200,
+    ) -> tuple[tuple[bool, str], str] | None:
+        getter = getattr(self.for_role(role_name), "liveness_and_capture_log", None)
+        return getter(role_name, liveness_lines=liveness_lines, log_lines=log_lines) if callable(getter) else None
 
     def wait_ready(self, role_name: str, pattern: str, timeout: float) -> bool:
         return self.for_role(role_name).wait_ready(role_name, pattern, timeout)

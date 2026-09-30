@@ -9,11 +9,9 @@ Background (Run 3 post-mortem 2026-04-17):
 
 These tests pin the new behaviour:
   - _drain returns (collected, DrainStatus)
-  - send_task emits agent.api_blocked when status==RATE_LIMITED with no
-    assistant messages
+  - send_task emits agent.api_blocked when status==RATE_LIMITED
   - send_task emits agent.timeout when status==TIMEOUT
-  - rate_limit AFTER assistant messages does NOT emit api_blocked
-    (B7's partial-progress contract preserved)
+  - partial assistant output is retained but cannot prove successful completion
 """
 
 from __future__ import annotations
@@ -33,6 +31,7 @@ from zf.runtime.transport_stream_json import (
     _complete_context,
 )
 from zf.runtime.transport import DispatchContext
+from tests.test_transport_stream_json import FakeResultMessage
 
 
 @dataclass
@@ -121,10 +120,38 @@ def _query_hanging():
 # -- _drain status outcomes --
 
 class TestDrainStatus:
+    @pytest.mark.parametrize("messages, expected", [
+        ([], DrainStatus.INCOMPLETE),
+        ([FakeAssistantMessage()], DrainStatus.INCOMPLETE),
+        ([FakeResultMessage(), FakeResultMessage()], DrainStatus.INCOMPLETE),
+        ([FakeResultMessage(), FakeAssistantMessage()], DrainStatus.INCOMPLETE),
+        ([FakeResultMessage(is_error=True)], DrainStatus.RESULT_ERROR),
+        ([FakeResultMessage(is_error=None)], DrainStatus.RESULT_ERROR),
+        ([FakeResultMessage(subtype="error_max_turns")], DrainStatus.RESULT_ERROR),
+    ])
+    def test_completion_requires_one_successful_terminal_result(
+        self, state_dir, registry, messages, expected,
+    ):
+        transport = StreamJsonTransport(
+            state_dir, registry, query_fn=_query_emitting(messages),
+        )
+        collected, status = asyncio.run(transport._drain(
+            prompt="x", session_id="result-contract", role=RoleConfig(name="dev"),
+        ))
+        assert collected == messages
+        assert status == expected
+        transport.send_task("dev", state_dir / "briefing.md", "x")
+        [blocked] = [e for e in transport.poll_events() if e.type == "agent.api_blocked"]
+        assert blocked.payload["drain_status"] == expected.value
+        assert blocked.payload["provider_stop_reason"] == "transport_error"
+        assert transport.is_alive("dev") is False
+
     def test_clean_stream_returns_ok(self, state_dir, registry):
         transport = StreamJsonTransport(
             state_dir, registry,
-            query_fn=_query_emitting([FakeAssistantMessage(content=[FakeTextBlock("hi")])]),
+            query_fn=_query_emitting([
+                FakeAssistantMessage(content=[FakeTextBlock("hi")]), FakeResultMessage(),
+            ]),
         )
         transport.spawn(RoleConfig(name="orchestrator"), argv=[])
         msgs, status = asyncio.run(transport._drain(
@@ -132,7 +159,7 @@ class TestDrainStatus:
             role=RoleConfig(name="orchestrator"), is_resume=False,
         ))
         assert status == DrainStatus.OK
-        assert len(msgs) == 1
+        assert len(msgs) == 2
 
     def test_rate_limit_event_returns_rate_limited(self, state_dir, registry):
         # Mid-stream rate_limit_event after assistant said something
@@ -211,11 +238,10 @@ class TestSendTaskExplicitSignals:
         # is_alive should now report False
         assert transport.is_alive("orchestrator") is False
 
-    def test_rate_limit_with_assistant_message_does_not_emit_api_blocked(
+    def test_rate_limit_with_assistant_message_preserves_progress_but_fails(
         self, state_dir, registry, tmp_path
     ):
-        # B7 partial-progress contract preserved: assistant said something
-        # before rate_limit hit → send_task treats it as success, no signal.
+        # Progress remains visible, but no successful terminal result exists.
         err = Exception("Unknown message type: rate_limit_event")
         transport = self._setup(
             state_dir, registry,
@@ -232,9 +258,9 @@ class TestSendTaskExplicitSignals:
         )
         events = transport.poll_events()
         types = [e.type for e in events]
-        assert "agent.api_blocked" not in types
+        assert "agent.api_blocked" in types
         assert "agent.text" in types
-        assert transport.is_alive("orchestrator") is True
+        assert transport.is_alive("orchestrator") is False
 
     def test_timeout_emits_agent_timeout(self, state_dir, registry, tmp_path):
         transport = self._setup(

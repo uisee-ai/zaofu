@@ -756,6 +756,10 @@ class FanoutCoordinationMixin(
                 if lost_event is None:
                     continue
                 lost_index = event_index.get(lost_event.id, latest_index)
+                if self._fanout_dispatch_reinjected_after_launch(
+                    events, latest_dispatch, lost_index,
+                ):
+                    continue
                 activity_index = (
                     latest_index
                     if lost_event.type == "cost.usage.capture_miss"
@@ -6256,11 +6260,9 @@ class FanoutCoordinationMixin(
         feature_id = str(manifest.get("feature_id") or pdd_id)
         task_map_ref = str(manifest.get("task_map_ref") or "")
         source_index_ref = str(manifest.get("source_index_ref") or "")
-        completed_task_ids = [
-            str(child.get("task_id") or "")
-            for child in children
-            if child.get("status") == "completed" and child.get("task_id")
-        ]
+        from zf.runtime.writer_completed_tasks import completed_writer_task_ids
+
+        completed_task_ids = completed_writer_task_ids(manifest)
         failed_children = [
             str(child.get("child_id") or "")
             for child in children

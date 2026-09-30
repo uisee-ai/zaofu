@@ -3081,6 +3081,21 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             recovery_policy="none",
             dedupe_key_fields=("challenge_id",),
         ),
+        *(EventProblemSpec(
+            event_type=event_type,
+            event_class="projection_only",
+            problem_class="self_issue_publication",
+            source="self_issue_runtime",
+            severity="low",
+            title=event_type,
+            action_policy="informational",
+            intervention_class="observe",
+            producer_kind="kernel",
+            notification_policy="trace_only",
+            recovery_policy="none",
+        ) for event_type in (
+            "self_issue.publication.evidence_comment.failed",
+        )),
     )
 }
 

@@ -295,6 +295,12 @@ def load_writer_task_map(
                 + "; ".join(task_map_validation.errors)
             )
     all_items = writer_task_items(data)
+    from zf.runtime.run_write_scope import validate_run_write_scopes
+
+    validate_run_write_scopes(
+        state_dir, run_id=str(payload.get("workflow_run_id") or event.correlation_id or pdd_id),
+        task_items=all_items,
+    )
     validate_writer_task_bases(all_items, project_root=project_root)
     policy_errors = writer_task_map_policy_errors(
         all_items,

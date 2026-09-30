@@ -101,10 +101,24 @@ class FeishuTransport(ABC):
         """Recall a message sent by this bot. Unsupported transports fail closed."""
         return False
 
+    def get_message(self, message_id: str) -> dict | None:
+        """Read a quoted message including ownership and resource metadata."""
+        return None
+
     def bot_open_id(self) -> str:
         """This app's bot open_id, for "was I the @-target" filtering in a
         multi-bot group. Empty when unknown (callers fail open)."""
         return ""
+
+    def download_message_resource(
+        self, message_id: str, resource_key: str, *, resource_type: str = "file"
+    ) -> tuple[bytes, str] | None:
+        """Download a user message resource into a caller-owned sidecar.
+
+        The base transport fails closed; integrations must not treat a
+        provider URL as durable evidence.
+        """
+        return None
 
 
 class MockFeishuTransport(FeishuTransport):
@@ -117,6 +131,8 @@ class MockFeishuTransport(FeishuTransport):
         self.deleted_message_ids: list[str] = []
         self.recent_messages: list[dict] = []  # catchup: inject list_recent rows
         self.bot_open_id_value: str = ""       # mention-filter: inject this bot's id
+        self.resources: dict[tuple[str, str], tuple[bytes, str]] = {}
+        self.messages: dict[str, dict] = {}
 
     def send_message(self, message: FeishuMessage) -> bool:
         self.sent_messages.append(message)
@@ -141,6 +157,9 @@ class MockFeishuTransport(FeishuTransport):
     def list_recent(self, chat_id: str, *, page_size: int = 50) -> list[dict]:
         return list(self.recent_messages)
 
+    def get_message(self, message_id: str) -> dict | None:
+        return self.messages.get(message_id)
+
     def delete_message(self, message_id: str) -> bool:
         self.deleted_message_ids.append(message_id)
         self.recent_messages = [
@@ -152,6 +171,9 @@ class MockFeishuTransport(FeishuTransport):
 
     def bot_open_id(self) -> str:
         return self.bot_open_id_value
+
+    def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str = "file") -> tuple[bytes, str] | None:
+        return self.resources.get((str(message_id), str(resource_key)))
 
 
 class FeishuHttpTransport(FeishuTransport):
@@ -200,6 +222,33 @@ class FeishuHttpTransport(FeishuTransport):
             body,
         )
         return True
+
+    def download_message_resource(
+        self, message_id: str, resource_key: str, *, resource_type: str = "file"
+    ) -> tuple[bytes, str] | None:
+        message_id = str(message_id or "").strip()
+        resource_key = str(resource_key or "").strip()
+        if not message_id or not resource_key or resource_type not in {"file", "image"}:
+            return None
+        if not self.tenant_access_token:
+            self.tenant_access_token = self._tenant_token()
+        url = (
+            f"{self.base_url}/im/v1/messages/{urllib.parse.quote(message_id, safe='')}/resources/"
+            f"{urllib.parse.quote(resource_key, safe='')}?type={resource_type}"
+        )
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Authorization": f"Bearer {self.tenant_access_token}",
+                "Content-Type": "application/json; charset=utf-8",
+            },
+            method="GET",
+        )
+        try:
+            with self._request_func(request, timeout=30) as response:  # noqa: S310
+                return response.read(), str(response.headers.get("Content-Type") or "application/octet-stream")
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError) as exc:
+            raise FeishuTransportError(f"message resource download failed: {exc}") from exc
 
     def update_message(self, message_id: str, content: str) -> bool:
         body = {
@@ -280,6 +329,13 @@ class FeishuHttpTransport(FeishuTransport):
     def delete_message(self, message_id: str) -> bool:
         self._request_json("DELETE", f"/im/v1/messages/{message_id}", None)
         return True
+
+    def get_message(self, message_id: str) -> dict | None:
+        response = self._request_json(
+            "GET", f"/im/v1/messages/{urllib.parse.quote(message_id, safe='')}", None,
+        )
+        return next((item for item in (response.get("data") or {}).get("items", [])
+                     if isinstance(item, dict) and item.get("message_id") == message_id), None)
 
     def bot_open_id(self) -> str:
         if getattr(self, "_bot_open_id", None) is None:
@@ -416,6 +472,7 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
                 "mentions": mentions,
                 "app_id": str(header.get("app_id") or header.get("app_id_v2") or ""),
                 "raw": event,
+                "attachments": extract_message_resources(message.get("content")),
             },
             user_id=str(sender_id.get("open_id") or sender_id.get("user_id") or ""),
             chat_id=str(message.get("chat_id") or ""),
@@ -447,6 +504,7 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
                 "message_id": message_id,
                 "open_message_id": message_id,
                 "action_id": str(action.get("tag") or header.get("event_id") or ""),
+                "app_id": str(header.get("app_id") or header.get("app_id_v2") or ""),
                 "raw": event,
             },
             user_id=str(operator_id.get("open_id") or operator_id.get("user_id") or ""),
@@ -454,6 +512,80 @@ def parse_webhook_payload(data: dict) -> FeishuWebhookEvent | None:
         )
 
     return None
+
+
+def extract_message_resources(content: Any) -> list[dict[str, str]]:
+    """Extract Feishu file/image keys without trusting provider URLs.
+
+    Rich-text message content is JSON and its shape differs between file and
+    image messages.  We retain only resource keys and bounded metadata; the
+    caller must download bytes through ``FeishuTransport`` before persisting.
+    """
+    if not isinstance(content, (str, dict, list)):
+        return []
+    value: Any = content
+    if isinstance(content, str):
+        try:
+            value = json.loads(content)
+        except (TypeError, ValueError):
+            return []
+    found: list[dict[str, str]] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        file_key = str(
+            node.get("file_key") or node.get("fileKey") or node.get("file_token")
+            or node.get("fileToken") or ""
+        ).strip()
+        image_key = str(
+            node.get("image_key") or node.get("imageKey") or ""
+        ).strip()
+        key = file_key or image_key
+        if key:
+            found.append({
+                "resource_key": key,
+                "resource_type": "image" if image_key and not file_key else "file",
+                "filename": str(node.get("file_name") or node.get("fileName") or node.get("name") or "")[:255],
+                "content_type": str(node.get("mime_type") or node.get("mimeType") or "")[:120],
+            })
+        for child in node.values():
+            walk(child)
+
+    walk(value)
+    unique: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in found:
+        marker = (item["resource_type"], item["resource_key"])
+        if marker not in seen:
+            seen.add(marker)
+            unique.append(item)
+    return unique[:10]
+
+
+def merge_message_resources(batch: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Merge normalized resource metadata from a debounced message batch."""
+    merged: dict[tuple[str, str], dict[str, str]] = {}
+    for item in batch:
+        for resource in item.get("attachments") or []:
+            if not isinstance(resource, dict):
+                continue
+            key = str(resource.get("resource_key") or resource.get("key") or "")
+            resource_type = str(resource.get("resource_type") or resource.get("type") or "file")
+            if key:
+                merged.setdefault((key, resource_type), {
+                    "resource_key": key,
+                    "resource_type": resource_type,
+                    "file_name": str(resource.get("file_name") or resource.get("filename") or ""),
+                    "content_type": str(resource.get("content_type") or ""),
+                    **({"message_id": str(item["message_id"])} if item.get("message_id") else {}),
+                    **({"user_id": str(item["user_id"])} if item.get("user_id") else {}),
+                })
+    return list(merged.values())[:10]
 
 
 def _card_form_values(event: dict[str, Any], action: dict[str, Any]) -> dict[str, str]:

@@ -502,6 +502,9 @@ export function buildKanbanConversation(args: {
       );
       const internalPermissionRetry = Boolean(payload.permission_escalation_retry_for);
       if (!internalPlanResponse && !internalPermissionRetry) {
+        const attachmentRefs = Array.isArray(payload.attachment_refs)
+          ? payload.attachment_refs
+          : [];
         turn.user = {
           id: textValue(event.id || event.seq),
           role: "user",
@@ -509,6 +512,9 @@ export function buildKanbanConversation(args: {
           content: textValue(payload.message),
           ts: event.ts,
           sourceEvent: event,
+          refs: eventSourceRefs(event, attachmentRefs.length
+            ? { attachments: attachmentRefs }
+            : undefined),
         };
       }
       thread.updatedAt = event.ts;

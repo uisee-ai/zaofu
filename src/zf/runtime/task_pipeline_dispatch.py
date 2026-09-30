@@ -75,10 +75,10 @@ def dispatch_task_pipeline_stage(
         raise TaskPipelineRuntimeError(
             "risk acceptance review requires a dedicated reader role and skill"
         )
-    if str(getattr(role.lifecycle, "mode", "") or "") != "on_demand":
-        raise TaskPipelineRuntimeError(
-            f"Task Pipeline role {role.instance_id} must be on_demand"
-        )
+    from zf.runtime.task_pipeline_role_contract import task_pipeline_role_lifecycle_error
+
+    if lifecycle_error := task_pipeline_role_lifecycle_error(role):
+        raise TaskPipelineRuntimeError(lifecycle_error)
 
     workspace_generation = 1
     from zf.runtime.task_workspaces import TaskWorkspaceManager

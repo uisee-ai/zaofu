@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -70,13 +72,14 @@ export function DeliveryFlowContext({ trace }: { trace: DeliveryTrace }) {
 }
 
 function DeliveryCyclesSection({ cycles, trace }: { cycles: DeliveryTraceCycle[]; trace: DeliveryTrace }) {
+  useSettingsPreferences();
   if (!cycles.length) {
     const taskCount = trace.task_map?.task_count ?? trace.execution_graph?.task_count ?? trace.execution_graph?.nodes.length ?? 0;
     const waveCount = trace.task_map?.wave_count
       ?? new Set(trace.execution_graph?.nodes.map((node) => node.planned.wave) ?? []).size;
     return (
       <section className="delivery-cycle-strip">
-        <div className="inline-heading"><h3 className="section-title">Cycles</h3><span className="muted">fallback</span></div>
+        <div className="inline-heading"><h3 className="section-title">{uiText("Cycles")}</h3><span className="muted">fallback</span></div>
         <div className="delivery-cycle-items">
           <div className="delivery-cycle-item active">
             <span className="delivery-cycle-id mono">trace</span>
@@ -90,7 +93,7 @@ function DeliveryCyclesSection({ cycles, trace }: { cycles: DeliveryTraceCycle[]
   const current = currentCycle(trace);
   return (
     <section className="delivery-cycle-strip" aria-label="Delivery cycles">
-      <div className="inline-heading"><h3 className="section-title">Cycles</h3><span className="muted">{cycles.length} projected</span></div>
+      <div className="inline-heading"><h3 className="section-title">{uiText("Cycles")}</h3><span className="muted">{cycles.length} projected</span></div>
       <div className="delivery-cycle-items">
         {cycles.map((item) => (
           <div key={item.cycle_id} className={`delivery-cycle-item ${item.cycle_id === current?.cycle_id ? "active" : ""}`}>
@@ -106,10 +109,11 @@ function DeliveryCyclesSection({ cycles, trace }: { cycles: DeliveryTraceCycle[]
 }
 
 function WorkflowSpineSection({ trace }: { trace: DeliveryTrace }) {
+  useSettingsPreferences();
   if (!trace.workflow_spine) return null;
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Workflow Spine</h3>
+      <h3 className="section-title">{uiText("Workflow Spine")}</h3>
       {trace.workflow_spine.nodes.length ? (
         <div className="delivery-trace-nodes">
           {trace.workflow_spine.nodes.slice(-24).map((node, index) => (
@@ -120,16 +124,17 @@ function WorkflowSpineSection({ trace }: { trace: DeliveryTrace }) {
             </div>
           ))}
         </div>
-      ) : <p className="muted">No workflow spine nodes.</p>}
+      ) : <p className="muted">{uiText("No workflow spine nodes.")}</p>}
     </section>
   );
 }
 
 function PhasesSection({ trace }: { trace: DeliveryTrace }) {
+  useSettingsPreferences();
   if (!(trace.phases?.length)) return null;
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Phases</h3>
+      <h3 className="section-title">{uiText("Phases")}</h3>
       <div className="delivery-trace-phases">
         {trace.phases.map((phase) => (
           <div key={phase.phase_id} className="delivery-trace-phase">
@@ -158,6 +163,7 @@ function ExecutionGraphSection({
   pulse?: OverviewPulse | null;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   const flowTasks = trace.flow_metrics?.tasks;
   const lifecycleTasks = trace.task_lifecycle?.tasks ?? {};
   // T-刀 Tasks 表同步 — why = overview-pulse why_not notifications joined on task_id.
@@ -173,7 +179,7 @@ function ExecutionGraphSection({
   }, [pulse]);
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Task Runtime</h3>
+      <h3 className="section-title">{uiText("Task Runtime")}</h3>
       {/* S-C 顺修: legend + 列头常显 — 无 flow_metrics 时行值显灰 "—",不再隐藏整列 */}
       <div className="dt-flow-legend muted" data-testid="dt-flow-legend">
         <span className="seg-chip seg-chip-wait" /> wait
@@ -185,7 +191,7 @@ function ExecutionGraphSection({
         /* R5 (2026-06-12): 空态自解释 —— diagnostics 升格进正文,空白必须说明
            自己(同 no-data ≠ 0 纪律);页脚小字保留。 */
         <div className="projection-empty-copy" data-testid="dt-graph-empty">
-          <p className="muted">No task runtime projection for this feature.</p>
+          <p className="muted">{uiText("No task runtime projection for this feature.")}</p>
           {trace.task_map?.status === "missing" && (
             <p className="muted">No accepted task_map yet — the graph appears after a plan/task_map is accepted.</p>
           )}
@@ -211,7 +217,7 @@ function ExecutionGraphSection({
           {trace.execution_graph.waves.map((wave) => (
             <div key={wave.wave} className="delivery-trace-wave">
               <div className="delivery-trace-wave-head">
-                <span className="wave-label">Wave {wave.wave}</span>
+                <span className="wave-label">{uiText("Wave")} {wave.wave}</span>
                 <span className={`badge badge-${dtTone(wave.status)}`}>{wave.status}</span>
               </div>
               <div className="delivery-trace-nodes">
@@ -350,6 +356,7 @@ function FlowFooter({ tasks }: { tasks?: Record<string, DeliveryFlowTaskMetrics>
 // S-C grid 形态 — 行=task,列=try/round(取 task_lifecycle.tries 最大数),
 // 格=try outcome 字符(✓/✗/◐/·),行尾 conv 迷你线;superseded 行格用 ▒。
 function TasksTryGridSection({ onSelectTask, trace }: { onSelectTask?: (taskId: string) => void; trace: DeliveryTrace }) {
+  useSettingsPreferences();
   const lifecycle = trace.task_lifecycle?.tasks ?? {};
   const nodes = trace.execution_graph?.nodes ?? [];
   const taskIds = nodes.map((node) => node.task_id);
@@ -362,9 +369,9 @@ function TasksTryGridSection({ onSelectTask, trace }: { onSelectTask?: (taskId: 
   };
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Task Attempts</h3>
+      <h3 className="section-title">{uiText("Task Attempts")}</h3>
       {taskIds.length === 0 ? (
-        <p className="muted">No tasks projected yet — grid fills in once task lifecycle events land.</p>
+        <p className="muted">{uiText("No tasks projected yet — grid fills in once task lifecycle events land.")}</p>
       ) : (
         <div className="dt-try-grid" data-testid="dt-try-grid">
           <div className="dt-try-row dt-try-head" style={columns} aria-hidden="true">
@@ -479,11 +486,12 @@ function ConvSpark({ rounds }: { rounds?: DeliveryFlowConvergenceRound[] }) {
 }
 
 function DriftSection({ trace }: { trace: DeliveryTrace }) {
+  useSettingsPreferences();
   return (
     <section className="delivery-trace-section">
-      <h3 className="section-title">Drift</h3>
+      <h3 className="section-title">{uiText("Drift")}</h3>
       {trace.drift_report.items.length === 0 ? (
-        <p className="muted">No drift.</p>
+        <p className="muted">{uiText("No drift.")}</p>
       ) : (
         <ul className="delivery-trace-drift">
           {trace.drift_report.items.map((item, idx) => (

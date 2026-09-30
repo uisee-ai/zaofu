@@ -17,6 +17,16 @@ Kanban Agent 或 Channel 中的 PRD 结论生成 exact `Create Task` proposal，
 确认 proposal 只会通过受控 `create-task` action 更新当前 Project 的 TaskStore 和事件账本，
 不会因为聊天文本、Channel 结论或页面选择而直接启动 Agent。
 
+### 在 Kanban Agent 中附加文件
+
+输入框左下角的 `+` 可以选择本地图片、日志、Markdown、JSON、Office/PDF 等文件；截图也可
+直接粘贴到输入框。发送前会显示可删除的附件卡片。单个文件上限 20 MB，每条消息最多 5 个、
+合计不超过 100 MB。
+
+普通对话先把附件写为当前 Project 下的受校验 sidecar，事件只保存引用和 digest；Codex 对图片
+使用原生图像输入，其他 Provider 可按提示中的本地只读路径检查文件。`/issue <描述>` 会把同一批
+附件写入 Self-Issue Draft，后续仍由用户决定是否公开发布。
+
 ## 从一个 Task 读回完整上下文
 
 Task 详情将长期任务需要的状态分成四个视图：

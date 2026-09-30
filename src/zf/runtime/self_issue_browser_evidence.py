@@ -34,6 +34,7 @@ def capture_self_issue_browser_evidence(
     reporter_context: dict[str, Any],
     enabled: bool,
     configured_base_url: str = "",
+    denied_urls: list[str] | None = None,
     runner: Any = subprocess.run,
 ) -> BrowserCaptureResult:
     """Capture one clean local viewport without clicks, input, cookies, or auth."""
@@ -48,7 +49,11 @@ def capture_self_issue_browser_evidence(
     base_url = str(hint.get("base_url") or configured_base_url or "").strip()
     project_id = str(hint.get("project_id") or "").strip()
     try:
+        from zf.core.security.capture_urls import validate_capture_urls, blocked_capture_url
+        rules = validate_capture_urls(denied_urls or [])
         url = _local_kanban_url(base_url, project_id=project_id)
+        if blocked_capture_url(url, rules):
+            return BrowserCaptureResult("blocked_by_policy", "This URL is excluded from browser evidence by project policy.")
     except ValueError as exc:
         return BrowserCaptureResult("not_available", str(exc))
 
@@ -58,7 +63,7 @@ def capture_self_issue_browser_evidence(
     os.chmod(output_dir, 0o700)
     script = output_dir / "capture.js"
     output = output_dir / "playwright-clean-incident.png"
-    script.write_text(_capture_script(), encoding="utf-8")
+    script.write_text(_capture_script(rules), encoding="utf-8")
     os.chmod(script, 0o600)
     command = [
         "docker", "run", "--rm", "--network", "host",
@@ -140,9 +145,10 @@ def _local_kanban_url(base_url: str, *, project_id: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, "/", query, ""))
 
 
-def _capture_script() -> str:
+def _capture_script(denied_urls: list[str] | None = None) -> str:
     config = json.dumps({
         "viewport": {"width": 1440, "height": 900},
+        "denied": denied_urls or [],
         "mask": (
             "input,textarea,[contenteditable=true],[data-sensitive],"
             "[class*=self-issue],[class*=agent-message],[class*=chat-message],"
@@ -158,13 +164,35 @@ const cfg = {config};
     executablePath: chromium.executablePath(),
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   }});
-  const context = await browser.newContext({{ viewport: cfg.viewport }});
+  const context = await browser.newContext({{ viewport: cfg.viewport, serviceWorkers: 'block' }});
+  let excludedContent = false;
+  function denied(raw) {{
+    try {{
+      const url = new URL(raw);
+      const path = decodeURIComponent(url.pathname).replace(/\\/+$/, '') || '/';
+      if (/%(?:2f|5c|00|25)/i.test(url.pathname)) return true;
+      return cfg.denied.some(rawRule => {{
+        const rule = new URL(rawRule);
+        const prefix = decodeURIComponent(rule.pathname).replace(/\\/+$/, '') || '/';
+        return url.origin === rule.origin && (prefix === '/' || path === prefix || path.startsWith(prefix + '/'));
+      }});
+    }} catch {{ return true; }}
+  }}
   const page = await context.newPage();
-  await page.route('**/*', async route => {{
+  await context.route('**/*', async route => {{
     const raw = route.request().url();
+    if (raw.startsWith('http:') || raw.startsWith('https:')) {{
+      if (denied(raw)) {{ excludedContent = true; return route.abort('blockedbyclient'); }}
+    }} else if (route.request().isNavigationRequest()) {{
+      excludedContent = true; return route.abort('blockedbyclient');
+    }}
     if (raw.startsWith('data:') || raw.startsWith('blob:')) return route.continue();
     const requested = new URL(raw);
-    if (requested.protocol === target.protocol && requested.hostname === target.hostname && requested.port === target.port) return route.continue();
+    if (requested.protocol === target.protocol && requested.hostname === target.hostname && requested.port === target.port) {{
+      // Fulfill a single hop so redirected navigation is checked again.
+      const response = await route.fetch({{ maxRedirects: 0 }});
+      return route.fulfill({{ response }});
+    }}
     return route.abort('blockedbyclient');
   }});
   await page.goto(target.href, {{ waitUntil: 'domcontentloaded', timeout: 10000 }});
@@ -173,6 +201,7 @@ const cfg = {config};
   const unsafe = /(?:Bearer\\s+[A-Za-z0-9._~-]{{12,}}|-----BEGIN [A-Z ]+PRIVATE KEY-----|(?:token|secret|password|api[_-]?key)\\s*[:=]\\s*\\S{{8,}})/i;
   if (unsafe.test(text)) {{ await browser.close(); process.exit(78); }}
   await page.addStyleTag({{ content: `${{cfg.mask}} {{ color: transparent !important; text-shadow: none !important; background: #d8dde6 !important; border-color: #d8dde6 !important; }} * {{ animation: none !important; transition: none !important; caret-color: transparent !important; }}` }});
+  if (excludedContent || page.frames().some(frame => denied(frame.url()))) {{ await browser.close(); process.exit(78); }}
   await page.screenshot({{ path: output, fullPage: false, animations: 'disabled' }});
   await browser.close();
 }})().catch(async error => {{

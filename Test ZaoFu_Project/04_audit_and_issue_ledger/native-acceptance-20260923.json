@@ -1,0 +1,30 @@
+{
+  "schema_version": "zf-native-acceptance-input.v1",
+  "evidence": [
+    {
+      "role": "normal_native",
+      "ref": "/tmp/zf-k501-native-1440-20260923.xml",
+      "sha256": "04acc96a3269bcdb55c15b1568fc9301e6529b4e763696d297dc27ae0e20c320"
+    },
+    {
+      "role": "impl_recovery",
+      "ref": "/tmp/zf-k510-native-recovery-impl-resume-fixed-20260923.xml",
+      "sha256": "ad56f27531b6155cbcb05b361ccd94d1c59e31034aa3dcb6e4cdbe216851d6b7"
+    },
+    {
+      "role": "verify_recovery",
+      "ref": "/tmp/zf-k510-native-recovery-verify-resume-fixed-20260923.xml",
+      "sha256": "1a65ed5fbf10f67d156973815d56842d3fc70971dba8422066a588b4973e8dfc"
+    },
+    {
+      "role": "deterministic_mainline",
+      "ref": "/tmp/zf-k511-mainline-20260923/testkit-run.json",
+      "sha256": "a0b54608cbfe6314018821ebd89cd4b26e3fa3fbdca2b3c70a55eebeefbc16e7"
+    },
+    {
+      "role": "premerge",
+      "ref": "/tmp/zf-k510-079-080-premerge-20260923.xml",
+      "sha256": "006e601e2335290011b4d50d7c2175501e692344702861c355695fc0214bdbf6"
+    }
+  ]
+}

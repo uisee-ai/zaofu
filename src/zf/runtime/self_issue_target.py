@@ -1,14 +1,14 @@
-"""Canonical source/target root for ZaoFu Self-Issue workflows.
+"""Resolve Issue source roots independently from external publication targets.
 
-Self-Issue may be viewed from a registered product project, but the issue is
-about the ZaoFu harness itself.  Keep the selected project's state directory
-as the run ledger while resolving source, assessment, worktree, and delivery
-paths to the repository that contains this runtime package.
+Warp's workspace model makes the active repository an explicit session
+context.  Self-Issue follows the same rule: ``target_project`` identifies the
+forge destination, while ``source_mode`` controls which checkout is inspected.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 from typing import Any
 
 
@@ -24,31 +24,57 @@ def zaofu_v7_root() -> Path:
 def resolve_self_issue_target_root(
     project_root: Path,
     policy: Any | None = None,
+    *,
+    source_root: Path | None = None,
+    source_mode: str | None = None,
 ) -> Path:
-    """Resolve the actual Self-Issue source/Fix root.
-
-    A locked Self-Issue policy deliberately cannot redirect repairs into a
-    product project's nested repository.  Unconfigured/unit-test callers keep
-    their supplied root so isolated tests remain hermetic.
-    """
+    """Resolve the user-side report source; developer execution is separate."""
 
     supplied = Path(project_root).resolve()
-    if policy is None:
-        return supplied
-    if (
-        bool(getattr(policy, "enabled", False))
-        and bool(getattr(policy, "target_locked", False))
-        and (
-            bool(getattr(policy, "target_project", ""))
-            or bool(getattr(policy, "targets", {}))
-        )
-    ):
+    mode = str(
+        source_mode
+        or getattr(policy, "source_mode", "")
+        or "current_project"
+    ).strip().lower()
+    if source_root is not None:
+        return Path(source_root).resolve()
+    configured_root = str(getattr(policy, "source_root", "") or "").strip()
+    if mode == "explicit_target" and configured_root:
+        candidate = Path(configured_root).expanduser()
+        return (candidate if candidate.is_absolute() else supplied / candidate).resolve()
+    if mode == "zaofu_self_issue":
         return zaofu_v7_root().resolve()
+    # current_project, explicit_target and issue_repository are resolved by the
+    # caller's workspace/repository binding.  Never infer ZaoFu from a locked
+    # publication target.
     return supplied
+
+
+def source_binding_for(root: Path, *, mode: str = "current_project") -> dict[str, str]:
+    """Return a durable, provider-neutral workspace/repository binding."""
+
+    resolved = Path(root).resolve()
+    revision = ""
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=resolved,
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+        if completed.returncode == 0:
+            revision = completed.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {
+        "mode": str(mode or "current_project"),
+        "workspace_root": str(resolved),
+        "repository_root": str(resolved),
+        "revision": revision,
+    }
 
 
 __all__ = [
     "SELF_ISSUE_TARGET_ROOT",
     "resolve_self_issue_target_root",
     "zaofu_v7_root",
+    "source_binding_for",
 ]

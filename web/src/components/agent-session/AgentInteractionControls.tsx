@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { Check, PencilLine, X } from "lucide-react";
 import {
   AskUserQuestion,
@@ -93,6 +95,7 @@ function PlanSummary({
 }: {
   request: AgentSessionPlanRequest;
 }) {
+  useSettingsPreferences();
   const questions = planQuestions(request);
   const answers = request.response?.answers?.length
     ? request.response.answers
@@ -123,7 +126,7 @@ function PlanSummary({
     <div className="agent-plan-summary" title={request.question}>
       <div className="agent-plan-summary-title">
         <Check aria-hidden="true" size={15} />
-        <strong>Plan summary</strong>
+        <strong>{uiText("Plan summary")}</strong>
         <span>{status}</span>
       </div>
       <div className="agent-plan-summary-answers">
@@ -247,6 +250,7 @@ export function ApproveInteractionActions({
   onRevise?: () => void;
   proposal: AgentSessionActionProposal;
 }) {
+  useSettingsPreferences();
   const presentation = actionPresentation(proposal.action);
   return (
     <div className="agent-approve-actions">
@@ -258,7 +262,7 @@ export function ApproveInteractionActions({
         onClick={onRevise}
       >
         <PencilLine aria-hidden="true" size={14} />
-        Edit
+        {uiText("Edit")}
       </button>
       <button
         className="agent-inline-button"
@@ -268,7 +272,7 @@ export function ApproveInteractionActions({
         onClick={onReject}
       >
         <X aria-hidden="true" size={14} />
-        Cancel
+        {uiText("Cancel")}
       </button>
       <button
         className="agent-inline-button primary agent-action-primary"

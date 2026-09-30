@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import "@xyflow/react/dist/style.css";
 import "../../styles/19-delivery-work-tree.css";
 
@@ -66,6 +68,7 @@ export function DeliveryWorkView({
   onSelectTask?: (taskId: string) => void;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   const model = useMemo(() => buildDeliveryWorkModel(trace), [trace]);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() => new Set());
   const [selectedNodeId, setSelectedNodeId] = useState("");
@@ -240,10 +243,10 @@ export function DeliveryWorkView({
     >
       <header className="delivery-work-toolbar">
         <div className="delivery-work-summary" data-testid="delivery-work-summary">
-          <WorkMetric label="Tasks" value={model.summary.total} />
-          <WorkMetric label="Done" value={model.summary.done} />
-          <WorkMetric label="Running" value={model.summary.running} />
-          <WorkMetric label="Blocked" value={model.summary.blocked} />
+          <WorkMetric label={uiText("Tasks")} value={model.summary.total} />
+          <WorkMetric label={uiText("Done")} value={model.summary.done} />
+          <WorkMetric label={uiText("Running")} value={model.summary.running} />
+          <WorkMetric label={uiText("Blocked")} value={model.summary.blocked} />
           <WorkMetric
             label={model.bounded.verificationPartial ? "Verified (visible)" : "Verified"}
             value={model.summary.verified}
@@ -306,7 +309,7 @@ export function DeliveryWorkView({
 
       {model.bounded.tasksOmitted > 0 || model.bounded.lifecyclePartial || model.bounded.relationsPartial ? (
         <div className="delivery-work-bounded-notice" data-testid="delivery-work-bounded-notice">
-          Bounded Work view
+          {uiText("Bounded Work view")}
           {model.bounded.tasksOmitted > 0 ? ` · ${model.bounded.tasksOmitted} tasks omitted` : ""}
           {model.bounded.lifecyclePartial ? " · attempt details partial" : ""}
           {model.bounded.relationsPartial ? " · relation or evidence refs partial" : ""}
@@ -434,16 +437,17 @@ function WorkInspector({
 }
 
 function GoalInspector({ model }: { model: ReturnType<typeof buildDeliveryWorkModel> }) {
+  useSettingsPreferences();
   const statusLabel = workClosureStatusLabel(model.goal?.status);
   return (
     <>
-      <InspectorGroup label="Delivery">
+      <InspectorGroup label={uiText("Delivery")}>
         {statusLabel ? (
-          <InspectorRow label="Status"><GoalCoverageStatus label={statusLabel} status={model.goal?.status} /></InspectorRow>
+          <InspectorRow label={uiText("Status")}><GoalCoverageStatus label={statusLabel} status={model.goal?.status} /></InspectorRow>
         ) : null}
-        <InspectorRow label="Tasks"><span>{model.summary.total}</span></InspectorRow>
+        <InspectorRow label={uiText("Tasks")}><span>{model.summary.total}</span></InspectorRow>
         <InspectorRow label="Implementation"><span>{model.summary.done}/{model.summary.total} done</span></InspectorRow>
-        <InspectorRow label="Verification">
+        <InspectorRow label={uiText("Verification")}>
           <span>
             {model.bounded.verificationPartial
               ? `${model.summary.verified} verified in visible evidence`
@@ -451,7 +455,7 @@ function GoalInspector({ model }: { model: ReturnType<typeof buildDeliveryWorkMo
           </span>
         </InspectorRow>
       </InspectorGroup>
-      <InspectorGroup label="Claims">
+      <InspectorGroup label={uiText("Claims")}>
         {model.claims.map((claim) => (
           <span className="delivery-work-inspector-ref" key={claim.claim.goal_claim_id}>
             <span>{claim.claim.title}</span>
@@ -466,19 +470,20 @@ function GoalInspector({ model }: { model: ReturnType<typeof buildDeliveryWorkMo
 }
 
 function ClaimInspector({ claim }: { claim: DeliveryWorkClaim }) {
+  useSettingsPreferences();
   const visibleTasks = [...claim.tasks, ...claim.linkedTasks];
   const closureLabel = workClosureStatusLabel(claim.claim.closure);
   return (
     <>
-      <InspectorGroup label="Coverage">
-        <InspectorRow label="Plan"><GoalCoverageStatus label={claim.claim.plan_coverage || "uncovered"} status={claim.claim.plan_coverage} /></InspectorRow>
+      <InspectorGroup label={uiText("Coverage")}>
+        <InspectorRow label={uiText("Plan")}><GoalCoverageStatus label={claim.claim.plan_coverage || "uncovered"} status={claim.claim.plan_coverage} /></InspectorRow>
         <InspectorRow label="Implementation"><GoalCoverageStatus label={claim.claim.execution || "pending"} status={claim.claim.execution} /></InspectorRow>
-        <InspectorRow label="Verification"><GoalCoverageStatus label={claim.claim.task_verification || "unverified"} status={claim.claim.task_verification} /></InspectorRow>
+        <InspectorRow label={uiText("Verification")}><GoalCoverageStatus label={claim.claim.task_verification || "unverified"} status={claim.claim.task_verification} /></InspectorRow>
         {closureLabel ? (
-          <InspectorRow label="Closure"><GoalCoverageStatus label={closureLabel} status={claim.claim.closure} /></InspectorRow>
+          <InspectorRow label={uiText("Closure")}><GoalCoverageStatus label={closureLabel} status={claim.claim.closure} /></InspectorRow>
         ) : null}
       </InspectorGroup>
-      <InspectorGroup label="Source">
+      <InspectorGroup label={uiText("Source")}>
         <span className="mono delivery-work-ref">{claim.claim.source_ref || "No source ref"}</span>
         <span>{claim.claim.mandatory === false ? "Optional" : "Mandatory"}</span>
       </InspectorGroup>
@@ -492,7 +497,7 @@ function ClaimInspector({ claim }: { claim: DeliveryWorkClaim }) {
           <span className="delivery-work-missing" data-testid="delivery-work-claim-tasks-omitted">
             Covering task details omitted by the bounded Work projection.
           </span>
-        ) : <span className="delivery-work-missing">No covering task · needs plan</span>}
+        ) : <span className="delivery-work-missing">{uiText("No covering task · needs plan")}</span>}
         {visibleTasks.length && claim.taskDetailsOmitted > 0 ? (
           <span className="muted" data-testid="delivery-work-claim-tasks-partial">
             Showing {visibleTasks.length} of {claim.taskTotal} covering tasks.
@@ -515,15 +520,16 @@ function TaskInspector({
   onSelectTask?: (taskId: string) => void;
   task: DeliveryWorkTask;
 }) {
+  useSettingsPreferences();
   const hasEvidence = Boolean(
     task.blockedBy.length || task.tries.length || task.results.length || task.evidenceRefs.length,
   );
   return (
     <>
-      <InspectorGroup label="Task">
-        <InspectorRow label="Status"><GoalCoverageStatus label={task.status} status={task.status} /></InspectorRow>
-        <InspectorRow label="Owner"><span>{task.owner}</span></InspectorRow>
-        <InspectorRow label="Claims"><span>{task.claimIds.length ? task.claimIds.join(", ") : "unmapped"}</span></InspectorRow>
+      <InspectorGroup label={uiText("Task")}>
+        <InspectorRow label={uiText("Status")}><GoalCoverageStatus label={task.status} status={task.status} /></InspectorRow>
+        <InspectorRow label={uiText("Owner")}><span>{task.owner}</span></InspectorRow>
+        <InspectorRow label={uiText("Claims")}><span>{task.claimIds.length ? task.claimIds.join(", ") : "unmapped"}</span></InspectorRow>
         {task.blockedBy.length ? <InspectorRow label="Blocked by"><span className="mono">{task.blockedBy.join(", ")}</span></InspectorRow> : null}
         {onSelectTask && !task.taskIdOpaque ? (
           <button className="delivery-work-open-task" onClick={() => onSelectTask(task.taskId)} type="button">
@@ -547,7 +553,7 @@ function TaskInspector({
         </InspectorGroup>
       ) : null}
       {task.results.length ? (
-        <InspectorGroup label="Verification">
+        <InspectorGroup label={uiText("Verification")}>
           {task.results.map((result) => (
             <div className="delivery-work-result" key={result.node_id}>
               <span><strong>{result.title}</strong><small className="mono">{result.result_ref || result.node_id}</small></span>
@@ -557,19 +563,19 @@ function TaskInspector({
         </InspectorGroup>
       ) : null}
       {task.evidenceRefs.length ? (
-        <InspectorGroup label="Evidence">
+        <InspectorGroup label={uiText("Evidence")}>
           {task.evidenceRefs.map((ref) => <span className="mono delivery-work-ref" key={ref}>{ref}</span>)}
         </InspectorGroup>
       ) : null}
       {task.lifecycleDetailsOmitted ? (
-        <InspectorGroup label="Activity">
+        <InspectorGroup label={uiText("Activity")}>
           <span className="muted" data-testid="delivery-work-lifecycle-omitted">
             Attempt details were omitted by the bounded Work projection.
           </span>
         </InspectorGroup>
       ) : !hasEvidence ? (
-        <InspectorGroup label="Activity">
-          <span className="muted">No implementation attempt or verification result recorded.</span>
+        <InspectorGroup label={uiText("Activity")}>
+          <span className="muted">{uiText("No implementation attempt or verification result recorded.")}</span>
         </InspectorGroup>
       ) : null}
     </>

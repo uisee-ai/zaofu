@@ -49,6 +49,7 @@ def build_feishu_inbound_command(
     workspace: str = "",
     app_id: str = "",
     all_workspaces: bool = False,
+    issue_merge: bool = False,
 ) -> list[str]:
     command = [
         *shlex.split(zf_cli_cmd()),
@@ -64,6 +65,8 @@ def build_feishu_inbound_command(
         command.extend(["--workspace", workspace])
     if all_workspaces:
         command.append("--all-workspaces")
+    if issue_merge:
+        command.append("--issue-merge")
     if app_id:
         command.extend(["--app-id", app_id])
     return command
@@ -96,6 +99,8 @@ def start_feishu_inbound_sidecar(
         return None
 
     integrations = getattr(config, "integrations", None)
+    issue = getattr(integrations, "feishu_issue_merge", None)
+    issue_only = bool(getattr(issue, "enabled", False))
     routing = getattr(integrations, "feishu_routing", None)
     from zf.integrations.feishu.project_group_binding import (
         ProjectFeishuGroupBindingStore,
@@ -123,7 +128,7 @@ def start_feishu_inbound_sidecar(
         )
         return None
     require_routing = bool(getattr(inbound, "require_routing", True))
-    if require_routing and not routing and not group_mode:
+    if require_routing and not routing and not group_mode and not issue_only:
         _append_event(
             event_log,
             "feishu.inbound_bridge.skipped",
@@ -132,12 +137,23 @@ def start_feishu_inbound_sidecar(
         return None
 
     from zf.integrations.feishu.bot_credentials import (
+        FeishuBotCredential,
         FeishuInboundBotSpec,
         credential_for_purpose,
         inbound_bot_specs_for_config,
     )
 
-    if group_mode:
+    if issue_only:
+        bot_specs = [FeishuInboundBotSpec(
+            purpose="issue_merge",
+            credential=FeishuBotCredential(
+                purpose="issue_merge", app_id=str(issue.app_id),
+                app_secret=os.environ.get("FEISHU_ISSUE_MERGE_APP_SECRET", ""),
+                app_id_env="FEISHU_ISSUE_MERGE_APP_ID",
+                app_secret_env="FEISHU_ISSUE_MERGE_APP_SECRET",
+            ), route_count=1,
+        )]
+    elif group_mode:
         assert group_binding is not None
         bot_specs = []
         for bot in group_binding.bots:
@@ -182,6 +198,7 @@ def start_feishu_inbound_sidecar(
             workspace="",
             app_id=(spec.credential.app_id if group_mode else ""),
             all_workspaces=group_mode,
+            issue_merge=issue_only,
         )
         base_payload = {
             "command": command,

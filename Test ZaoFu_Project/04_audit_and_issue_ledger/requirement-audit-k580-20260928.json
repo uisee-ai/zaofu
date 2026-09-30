@@ -1,0 +1,468 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K515-native-normal",
+      "description": "原生主链正常 impl→verify→candidate",
+      "format": "native-run",
+      "role": "normal_native",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_start_dispatch_submit_verify_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+        "sha256": "dfab9562bc9c1ba63fc7113af078026429d1d39e35348d47089e5ccbc0718dad"
+      }
+    },
+    {
+      "id": "K515-native-impl-recovery",
+      "description": "原生 impl 在途中断恢复",
+      "format": "native-run",
+      "role": "impl_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[impl]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+        "sha256": "8d565a1b0d57aa415b50b13169d51e9eeaef1e666333c6e3a833219c108020ae"
+      }
+    },
+    {
+      "id": "K515-native-verify-recovery",
+      "description": "原生 verify 在途恢复",
+      "format": "native-run",
+      "role": "verify_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[verify]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+        "sha256": "e125867c0c23bebfedf18fb72f9cc912dd356c3d4388cf47b0333c7f50f4971c"
+      }
+    },
+    {
+      "id": "current-premerge",
+      "description": "2026-09-28 当前候选源码的完整premerge，保留ZF-TEST-040结构红灯",
+      "format": "premerge-run",
+      "role": "premerge",
+      "nodeids": [],
+      "report": {
+        "ref": "attachments/premerge-20260928-023031/premerge-run.json",
+        "sha256": "d8c0b6f2065bbf69129e5a09e010c57431efc4f76e1f519b7f2c492fade06d0b"
+      }
+    },
+    {
+      "id": "K553-native-long",
+      "description": "原生长工具检查点停机恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_long_task.py::test_native_long_tool_cli_recovery_preserves_completed_chunk"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+        "sha256": "f83229dd12d6a6b7445ae1c6331d2fb30c8fcb9959e31734bbd1c714ef16d136"
+      }
+    },
+    {
+      "id": "K546-native-writer",
+      "description": "原生blocking writer批次恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_writer_batch.py::test_native_writer_batch_recovers_only_unfinished_task"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+        "sha256": "8f8807b8b5246f361434367f1b9219c958e2c7df45e825f7e2ec8a2d79467c51"
+      }
+    },
+    {
+      "id": "K548-native-network",
+      "description": "受控网络断流后的原生CLI恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_network.py::test_native_network_cut_cli_recovery_to_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+        "sha256": "7f7b3d4dcb501a626904ea4ffd2e8f2417358e0fdfdece8ecabfabb10bf3e652"
+      }
+    },
+    {
+      "id": "K552-F2-long-allocation",
+      "description": "32Task持续分配对照（保留失败）",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_workloop_host.py::test_sustained_task_pipeline_releases_owned_resources"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+        "sha256": "24739b50750f654f6ecaea1f870b833be9e366c5aa5178bc4b782f48d63b503e"
+      }
+    },
+    {
+      "id": "K547-native-legacy-queue",
+      "description": "原生legacy Provider排队超时恢复",
+      "nodeids": [],
+      "reason": "原生节点尚未实现，当前Codex未登录；离线hook/自然时钟证据不替代原生报告。"
+    },
+    {
+      "id": "K530-watchdog-root-cause",
+      "description": "Issue live watchdog首次异常根因",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "reason": "正常链通过但不证明历史watchdog根因，未将该正常节点作为根因关闭证据。"
+    },
+    {
+      "id": "OS-crash-takeover",
+      "description": "整机OS crash后恢复",
+      "nodeids": [],
+      "reason": "K571-F6已通过owned-QEMU-SIGKILL同盘General恢复，单独列项留证；guest kernel panic/物理宿主掉电及其他OS故障模型未验证，不以单路径代替全矩阵。"
+    },
+    {
+      "id": "PERF-05-full",
+      "description": "完整长期mock资源稳定性",
+      "nodeids": [],
+      "reason": "已有有限32Task及资源释放报告不是完整长期稳定性证明；F2追踪失败仍开放。"
+    },
+    {
+      "id": "current-deterministic-mainline",
+      "description": "2026-09-28 归档绑定修复后完整 MAINLINE，506 passed；含 EventLog、intake、Watcher、worker receipt 与归档回读注册面",
+      "format": "mainline-run",
+      "nodeids": [],
+      "report": {
+        "ref": "attachments/mainline-20260928-023131/testkit-run.json",
+        "sha256": "f8e363dafeb6e3c35b89b8c92fab7e6df7371566e4c64e34d9122b12ddf71da1"
+      },
+      "source_profile": "acceptance"
+    },
+    {
+      "id": "final-unified-acceptance",
+      "description": "原五项主链/完整premerge与扩展需求最终同源验收",
+      "nodeids": [],
+      "reason": "旧五项与扩展报告虽然可分别校验，但仍存在结构红灯、开放项和不同来源；不授权最终发布。"
+    },
+    {
+      "id": "K557-browser-general",
+      "description": "general来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_runtime.py::test_browser_general_start_is_driven_by_live_zf_start"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-general-20260928-025455/testkit-run.json",
+        "sha256": "8c2d97925a90b6c50630417d07a4b7d7ba0eb91826d620f5840785f2ec61cabd"
+      }
+    },
+    {
+      "id": "K557-browser-issue",
+      "description": "issue来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-issue-20260928-030237/testkit-run.json",
+        "sha256": "2bcb6a334a11899725c065cc2fc905660de5a950aadfc76c000210189d5dd898"
+      }
+    },
+    {
+      "id": "K557-browser-prd",
+      "description": "prd来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[prd]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-prd-20260928-030716/testkit-run.json",
+        "sha256": "1a4615a161791524590d669f480cbebd3982b7c33d63ecc5525482149938775b"
+      }
+    },
+    {
+      "id": "K557-browser-refactor",
+      "description": "refactor来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-refactor-20260928-031524/testkit-run.json",
+        "sha256": "e21407a7d8328b0236e38e2bb34da345fa2811e05fb4c2334f3b92c63f650763"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-strong",
+      "description": "refactor-strong来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-strong]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-strong-k580-20260928-072334/testkit-run.json",
+        "sha256": "12165574f356000b193b8393dadaf3608511707370128b6ad2b24cf0fd05bcfd"
+      }
+    },
+    {
+      "id": "K557-browser-refactor-two-lane",
+      "description": "refactor-two-lane来源绑定浏览器实时链；保留失败，不以较早Run替代Task/DOM终态",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "attachments/browser-refactor-two-lane-20260928-033000/testkit-run.json",
+        "sha256": "8a3f6144474e18479e5a83ae8007380e512e2c9e8a660fd86058528855ddb979"
+      }
+    },
+    {
+      "id": "K557-refactor-original-timeout",
+      "description": "默认Refactor原轮150秒Task等待失败；独立对照成功不覆盖此红灯",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k557-refactor-20260925-EUDYZb/run/testkit-run.json",
+        "sha256": "3ed108cf7a22c7bf1649aa019e0489c04ab1676d759b535ce459a52fd836b74a"
+      }
+    },
+    {
+      "id": "K557-live-duration-root-cause",
+      "description": "默认及双lane超时的根因与稳定性回归",
+      "nodeids": [],
+      "reason": "默认独立对照通过，但双lane无MAINLINE并发仍超时；并行竞争不是已证实唯一根因。未改预算/断言、未宣称已修复。"
+    },
+    {
+      "id": "K558-two-lane-instrumented-red",
+      "description": "K558原预算双lane仪器红灯，保留超时证据",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k558-refactor-two-lane-timing-20260925-0WrPxj/run/testkit-run.json",
+        "sha256": "5b1b1310d5c36c5524011b8fe4d6f3f47ed85e061f4d25336a3cd3cb3d27b352"
+      }
+    },
+    {
+      "id": "K559-two-lane-instrumented-pass",
+      "description": "K559原预算分段仪器一次通过，不关闭K557-F2",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "source_profile": "browser",
+      "report": {
+        "ref": "/tmp/zf-k559-refactor-two-lane-timing-20260925-KDg3Jk/testkit-run.json",
+        "sha256": "f9d5425009cd62b08622e046ed4c819050ffd689a092762de8c64181176d64f8"
+      }
+    },
+    {
+      "id": "K562-browser-refactor",
+      "description": "K562无仪器、原150秒等待的refactor候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-refactor-20260925-5s4onc/testkit-run.json",
+        "sha256": "e33c3e61de93ecc59af11429b82b4aee50eca4f9a67de92089d5f466e6019000"
+      }
+    },
+    {
+      "id": "K562-browser-refactor-two-lane",
+      "description": "K562无仪器、原150秒等待的refactor-two-lane候选复验；不覆盖K557原红",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k562-two-lane-20260925-BqBWFg/testkit-run.json",
+        "sha256": "ab25911e9d82ba020ee18283295543d7b546e34b77137e120ef1a78c1f9adaf3"
+      }
+    },
+    {
+      "id": "K563-browser-refactor",
+      "description": "K563无仪器、原150秒等待的refactor复验；不覆盖原红或关闭稳定性",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k563-refactor-20260925-KhX42H/run/testkit-run.json",
+        "sha256": "f0467684e24d077cc920c2da16ab89b4fd335c03791c00a11b4d581e928b8dc7"
+      }
+    },
+    {
+      "id": "K563-browser-refactor-two-lane",
+      "description": "K563无仪器、原150秒等待的refactor-two-lane复验；不覆盖原红或关闭稳定性",
+      "source_profile": "browser",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k563-two-lane-20260925-mKbasm/run/testkit-run.json",
+        "sha256": "3409369cdf9fced6f42a44b4d682efcd0830b765d42eac9dc804dc8c33194223"
+      }
+    },
+    {
+      "id": "K565-host-recovery",
+      "description": "独立watcher两种接管与worker SIGKILL同Run交付；非K530历史根因",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_watcher_hard_exit_then_cli_takeover_finishes_same_run[full-start]",
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_watcher_hard_exit_then_cli_takeover_finishes_same_run[preserve-workers]",
+        "tests/conformance/test_zaofu_testkit_s4_watcher_takeover_host.py::test_worker_sigkill_respawn_preserves_same_run_terminal_evidence"
+      ],
+      "source_profile": "acceptance",
+      "report": {
+        "ref": "/tmp/zf-k565-host-bound-20260925/testkit-run.json",
+        "sha256": "f99c8eea1fa423c5a98e05b2bcdc55f0d195ba7a6e983a00c3c31ff0adf6e69f"
+      }
+    },
+    {
+      "id": "K565-closeout",
+      "description": "K565台账后S0/S9及28个handoff合同，共127节点；不代表全目标",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s0.py::test_all_named_testkit_files_are_registered_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_coverage_matrix_lists_every_stage_and_existing_test_entry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_explicit_host_tests_are_marked_and_excluded_from_default_registry",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[None]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[closed_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[non_strict]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unknown_issue]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unmapped]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_open_issues_declare_executable_reproduction_paths",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_paths_are_registered_for_execution_or_explicit_host_tier",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_registry_points_to_real_test_nodes",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registered_xfails_are_strict_and_mapped_to_each_executing_stage",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[MissingClass::test_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_missing_probe]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_respawn_finds_transcript_in_actual_spawn_cwd]",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_stage_registry_and_coverage_matrix_have_the_same_test_surface",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_are_traceable_to_registered_issues",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_reference_open_issue_status",
+        "tests/conformance/test_zaofu_testkit_s0.py::test_testkit_ci_workflow_runs_sentinel_and_full_runner",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_failed_case_becomes_replayable_regression_and_detects_rework",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_failed_case_is_traceable_into_self_issue_intake",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_issue_ledger_has_a_replayable_test_reference_for_each_known_bug",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_new_issue_revision_rejects_old_page_review_and_prepare",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_artifact_reference_survives_issue_intake_evidence_handoff",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_case_capture_does_not_leave_partial_artifact_on_write_crash[False]",
+        "tests/conformance/test_zaofu_testkit_s9.py::test_regression_case_capture_does_not_leave_partial_artifact_on_write_crash[True]",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_failed_candidate_regression_blocks_merge_side_effect",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_fix_run_candidate_preflight_blocks_incomplete_acceptance",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_fix_run_orders_regression_impact_closure_merge_and_post_merge",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_local_fix_run_replays_failure_before_candidate_and_bounds_merge",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_local_merge_runs_post_merge_regression_in_isolated_repository",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_runtime_issue_fix_run_dispatches_implementation_to_provider",
+        "tests/conformance/test_zaofu_testkit_s9_fixrun.py::test_runtime_issue_fix_run_without_git_baseline_is_environment_failure",
+        "tests/test_external_issue_ingress.py::test_active_delivery_binding_suppresses_duplicate_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_current_triage_contract_creates_exact_issue_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_failed_provider_sync_does_not_publish_ingress",
+        "tests/test_external_issue_ingress.py::test_fix_proposal_backfills_report_verification_command",
+        "tests/test_external_issue_ingress.py::test_historical_issue_is_mirrored_but_not_auto_triaged",
+        "tests/test_external_issue_ingress.py::test_ingress_config_is_provider_neutral_but_gitlab_adapter_is_disabled",
+        "tests/test_external_issue_ingress.py::test_ingress_poll_interval_is_bounded",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_binds_runtime_flow_identity",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_exposes_body_and_comments_as_controlled_inputs",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_materializes_github_image_attachment_refs",
+        "tests/test_external_issue_ingress.py::test_issue_invoke_rotates_software_baseline_to_artifact_contract",
+        "tests/test_external_issue_ingress.py::test_new_issue_revision_queues_one_read_only_triage_run",
+        "tests/test_external_issue_ingress.py::test_operator_can_manually_queue_one_historical_issue_revision",
+        "tests/test_external_issue_ingress.py::test_operator_can_retry_cancelled_historical_issue_revision",
+        "tests/test_external_issue_ingress.py::test_operator_can_start_new_triage_after_terminal_disposition",
+        "tests/test_external_issue_ingress.py::test_ready_label_is_only_an_approval_intent",
+        "tests/test_external_issue_ingress.py::test_ready_triage_promotes_intake_contract_for_fix_proposal",
+        "tests/test_external_issue_ingress.py::test_ready_triage_reopens_archived_intake_task",
+        "tests/test_external_issue_ingress.py::test_ready_triage_reopens_task_after_stale_cancellation",
+        "tests/test_external_issue_ingress.py::test_same_revision_reuses_task_and_changed_revision_gets_retry_suffix",
+        "tests/test_external_issue_ingress.py::test_semantic_triage_outcome_closes_run_admission",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[reopen-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_successful_recovery_handoff_is_not_redispatched[same-runtime-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[actor-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[before_launch-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[briefing_path-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[child_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[closed_turn-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[fanout_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[later_launch-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[missing_run_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[run_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[send_failed-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[stage_id-synth]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-reader]",
+        "tests/test_fanout_recovery_handoff.py::test_unrelated_or_failed_handoff_does_not_hide_dispatch_loss[trace-synth]",
+        "tests/test_issue_candidate_delivery.py::test_later_issue_revision_does_not_invalidate_bound_candidate",
+        "tests/test_issue_candidate_delivery.py::test_locked_self_issue_delivery_uses_canonical_zaofu_repository",
+        "tests/test_issue_candidate_delivery.py::test_owner_review_and_prepare_create_immutable_local_ref_without_push",
+        "tests/test_issue_candidate_delivery.py::test_owner_review_records_changes_and_rejection_with_reasons",
+        "tests/test_issue_candidate_delivery.py::test_pr_url_is_restricted_to_configured_github_repository",
+        "tests/test_issue_candidate_delivery.py::test_prepare_fails_closed_when_remote_base_drifted",
+        "tests/test_issue_candidate_delivery.py::test_previous_handoff_does_not_mark_new_verified_candidate_stale",
+        "tests/test_issue_candidate_delivery.py::test_pull_request_reader_uses_local_github_cli_credential",
+        "tests/test_issue_candidate_delivery.py::test_record_and_refresh_pr_require_exact_repo_base_and_candidate",
+        "tests/test_issue_candidate_delivery.py::test_taskless_candidate_from_another_fix_run_is_not_bound_to_issue",
+        "tests/test_issue_triage_mirror.py::test_attachment_proxy_only_serves_github_images",
+        "tests/test_issue_triage_mirror.py::test_candidate_delivery_routes_use_token_gate_and_deterministic_service",
+        "tests/test_issue_triage_mirror.py::test_create_app_registers_issue_triage_routes",
+        "tests/test_issue_triage_mirror.py::test_filter_requests_reuse_the_current_issue_workflow_projection",
+        "tests/test_issue_triage_mirror.py::test_fix_queue_is_not_regressed_by_replayed_delivery_proposal",
+        "tests/test_issue_triage_mirror.py::test_list_and_detail_project_external_issue_workflow_state",
+        "tests/test_issue_triage_mirror.py::test_list_filters_all_queued_workflow_states",
+        "tests/test_issue_triage_mirror.py::test_manual_refresh_forces_repository_metadata_sync",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_admits_one_historical_issue",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_inherits_locked_workspace_ingress",
+        "tests/test_issue_triage_mirror.py::test_manual_start_triage_requires_mutation_authorization",
+        "tests/test_issue_triage_mirror.py::test_normalization_derives_group_and_rejects_pull_requests",
+        "tests/test_issue_triage_mirror.py::test_reconciler_can_fetch_one_unmirrored_issue",
+        "tests/test_issue_triage_mirror.py::test_reconciler_verifies_repository_filters_pr_and_debounces",
+        "tests/test_issue_triage_mirror.py::test_routes_list_detail_and_signed_webhook",
+        "tests/test_issue_triage_mirror.py::test_stage_failure_does_not_make_active_triage_run_restartable",
+        "tests/test_issue_triage_mirror.py::test_store_keeps_body_sidecar_and_rejects_older_revision",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_ready_to_fix_as_approval_state",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_unique_task_history_newest_first",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_exposes_unverified_candidate",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_leaves_triaging_after_terminal_success",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_tracks_candidate_delivery_lifecycle",
+        "tests/test_issue_triage_mirror.py::test_workflow_projection_tracks_pause_resume_and_fix_cancellation",
+        "tests/test_ship.py::test_candidate_conflict_after_integration_still_blocks",
+        "tests/test_ship.py::test_candidate_integration_completed_event_makes_candidate_ready",
+        "tests/test_ship.py::test_candidate_quality_failed_blocks_even_with_integration_event",
+        "tests/test_ship.py::test_candidate_ship_conflict_aborts_and_leaves_main_unchanged",
+        "tests/test_ship.py::test_clean_candidate_ship_merges_to_main_and_tags",
+        "tests/test_ship.py::test_main_lock_blocks_concurrent_ship",
+        "tests/test_ship.py::test_manifest_status_updated_with_quality_passed_marks_ready",
+        "tests/test_ship.py::test_missing_candidate_ref_blocks",
+        "tests/test_ship.py::test_repeated_identical_candidate_ship_is_idempotent",
+        "tests/test_ship.py::test_tracked_modification_still_blocks_ship",
+        "tests/test_ship.py::test_untracked_file_at_root_does_not_block_ship",
+        "tests/test_ship.py::test_web_ship_action_calls_deterministic_service"
+      ],
+      "source_profile": "acceptance",
+      "report": {
+        "ref": "/tmp/zf-k565-closeout-20260925/testkit-run.json",
+        "sha256": "a7c65959b012190c4f5f27021f0209ea7379b68a62f2ef2c5a7cc5a61259c76e"
+      }
+    },
+    {
+      "id": "K571-owned-vm-recovery",
+      "description": "owned-QEMU-SIGKILL同盘完整CLI恢复：六收据、唯一结算、交付与终态startup幂等；非全OS矩阵",
+      "source_profile": "acceptance",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_isolated_vm_recovery_host.py::test_owned_vm_inflight_run_recovers_through_full_cli_start"
+      ],
+      "report": {
+        "ref": "attachments/vm-k577-20260928/host-acceptance/testkit-run.json",
+        "sha256": "5756c9b2889c69e4bb22952c135d46b3e1f571c22efa2124863b9912d1ccdd7f"
+      }
+    }
+  ]
+}

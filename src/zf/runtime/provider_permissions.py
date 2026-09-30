@@ -24,6 +24,7 @@ KANBAN_AGENT_PERMISSION_PROFILES = (
     "operator",
     "workspace_writer",
     "isolated_writer",
+    "issue_investigation",
     "dangerous_full",
 )
 KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE = "dangerous_full"
@@ -47,6 +48,10 @@ def codex_security_config_for_profile(
         "project_writer": {"approvalPolicy": "never", "sandbox": "workspace-write"},
         "workspace_writer": {"approvalPolicy": "never", "sandbox": "workspace-write"},
         "isolated_writer": {"approvalPolicy": "never", "sandbox": "workspace-write"},
+        # Full filesystem visibility is needed to inspect a related checkout
+        # and create bounded repro venvs, but the provider contract forbids
+        # source edits.  File-change approvals remain denied by the adapter.
+        "issue_investigation": {"approvalPolicy": "never", "sandbox": "danger-full-access"},
         "dangerous_full": {"approvalPolicy": "never", "sandbox": "danger-full-access"},
     }[profile]
     return {

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +51,20 @@ class WsLock:
             return
         data["ts"] = time.time()
         atomic_write_text(self.path, json.dumps(data))
+
+
+def refresh_ws_lock_until_stopped(
+    lock: WsLock,
+    stop: threading.Event,
+    interval_seconds: float,
+) -> None:
+    """Keep the stale-lock TTL meaningful for a long-lived WS process."""
+    interval = max(1.0, float(interval_seconds))
+    while not stop.wait(interval):
+        try:
+            lock.refresh()
+        except Exception:  # noqa: BLE001 - a failed refresh must not kill WS.
+            pass
 
 
 def _pid_alive(pid: int) -> bool:

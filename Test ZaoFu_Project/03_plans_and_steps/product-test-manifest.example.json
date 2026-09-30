@@ -1,0 +1,39 @@
+{
+  "schema_version": "product-test-manifest.v1",
+  "project_type": "library",
+  "source_root": ".",
+  "target_commit": "<40-hex-commit>",
+  "setup": [],
+  "commands": [
+    {
+      "id": "unit",
+      "command": "<project test command>",
+      "domain_ids": ["P-01", "P-02", "P-03", "P-04", "P-05", "P-17", "P-18"],
+      "acceptance_ids": ["AC-1"],
+      "tier": "unit",
+      "mandatory": true,
+      "deterministic": true,
+      "reusable": true,
+      "timeout_seconds": 900
+    }
+  ],
+  "acceptances": [
+    {"id": "AC-1", "description": "<product acceptance criterion>"}
+  ],
+  "entrypoints": [],
+  "persistence_scenarios": [],
+  "recovery_scenarios": [],
+  "concurrency_scenarios": [],
+  "release_artifacts": [],
+  "release_scenarios": [],
+  "security_scans": [],
+  "capabilities": {"cli": false, "api": false, "web": false},
+  "budgets": {},
+  "runtime_paths": [],
+  "not_applicable": {
+    "cli": {"reason": "No CLI surface", "source": "project profile"},
+    "api": {"reason": "No HTTP/API surface", "source": "project profile"},
+    "web": {"reason": "No Web UI", "source": "project profile"}
+  },
+  "cleanup": []
+}

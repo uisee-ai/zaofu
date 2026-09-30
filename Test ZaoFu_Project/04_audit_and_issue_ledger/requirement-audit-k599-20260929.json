@@ -1,0 +1,17 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K598-current-deterministic-mainline",
+      "description": "当前 checkout 的完整 deterministic MAINLINE 注册面；不替代 native Provider 或最终统一验收",
+      "nodeids": [],
+      "format": "mainline-run",
+      "selection": "current",
+      "source_profile": "acceptance",
+      "report": {
+        "ref": "/tmp/zf-mainline-current-20260929/testkit-run.json",
+        "sha256": "1017aea14a0760de77002ba3e5728e338b53f09ec51c3a2b8fa318fe91c661de"
+      }
+    }
+  ]
+}

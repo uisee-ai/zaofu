@@ -437,6 +437,33 @@ def test_cli_feishu_sync_kanban_ensures_base_views(
     assert client.created[0][2]["Board Column"] == "Todo"
 
 
+def test_cli_feishu_sync_issue_ensures_date_fields_and_gantt_view(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    _project(tmp_path, monkeypatch)
+    state_dir = tmp_path / "runtime-state"
+    from issue_core import JsonIssueSessionStore
+    JsonIssueSessionStore(state_dir / "self-issues" / "portable-sessions").create("issue")
+    (tmp_path / ".env").write_text(
+        "FEISHU_BITABLE_APP_TOKEN=app-issue\nFEISHU_ISSUE_BITABLE_TABLE_ID=tbl-issue\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("FEISHU_BITABLE_TABLE_ID", raising=False)
+    client = MockFeishuBitableClient()
+    monkeypatch.setattr(cli_feishu, "_build_bitable_client", lambda kind: client)
+
+    assert main(["feishu", "sync-issue-table", "--transport", "mock", "--create-table"]) == 0
+    out = capsys.readouterr().out
+    assert "Issue Base layout" in out
+    fields = client.ensured_fields[-1][2]
+    assert {spec["field_name"] for spec in fields} >= {"Start Time", "End Time"}
+    assert all(spec["type"] == 5 for spec in fields if spec["field_name"] in {"Start Time", "End Time", "Created At", "Updated At", "Synced At"})
+    assert [view["view_name"] for view in client.created_views[-2:]] == ["ZaoFu Issues", "ZaoFu Issue Gantt"]
+    assert client.configured_layouts[-1]["timebar"]["start_time"] == "Start Time"
+
+
 def test_cli_feishu_sync_automation_insights_creates_missing_table(
     tmp_path: Path,
     monkeypatch,

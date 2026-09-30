@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from zf.cli.feishu import _handle_event_data
+from zf.cli.feishu import _handle_event_data, _issue_write_route_allowed
+from zf.cli.feishu import _verify_signed_action
 from zf.cli.main import main
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events.log import EventLog
@@ -16,6 +17,7 @@ from zf.integrations.feishu.callback_token import (
     sign_action,
     verify_action,
 )
+from zf.integrations.feishu.gateway import AuthLevel
 
 SECRET = b"hmac-secret-key"
 VERS = {"1": SECRET}
@@ -238,3 +240,62 @@ def test_require_on_rejects_forged_target(tmp_path, monkeypatch):
         context=ctx, user_levels={})
     assert result["status"] == "rejected"
     assert not [e for e in _events(ctx.state_dir) if e.type == "plan.approved"]
+
+
+def test_issue_mutation_signature_binds_all_card_arguments(tmp_path, monkeypatch):
+    """Multi-part Issue/Self-Issue card targets must not verify only arg 0."""
+    _project(tmp_path, monkeypatch, require_signed=True)
+    monkeypatch.setenv("ZF_FEISHU_ACTION_TOKEN_SECRET", "s3cr3t")
+    ctx = resolve_project_context()
+    captured: dict[str, str] = {}
+
+    def fake_verify(token, **kwargs):
+        captured.update({
+            "action": kwargs["expect_action"],
+            "target": kwargs["expect_target"],
+            "chat": kwargs["expect_chat_id"],
+        })
+        return True, "ok"
+
+    monkeypatch.setattr("zf.cli.feishu.verify_action", fake_verify)
+    envelope = type("E", (), {
+        "command": "self-issue-confirm", "args": ["batch-1", "digest-2"],
+        "chat_id": "c1", "user_id": "ou_app",
+    })()
+    event = type("Event", (), {"payload": {"action_token": "signed"}})()
+    assert _verify_signed_action(event, envelope, ctx) == (True, "ok")
+    assert captured == {
+        "action": "self-issue-confirm",
+        "target": "batch-1:digest-2",
+        "chat": "c1",
+    }
+
+
+def test_issue_write_requires_exact_project_chat_route(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "zf.yaml").write_text(yaml.dump({
+        "version": "1.0",
+        "project": {"name": "route-test", "state_dir": ".zf"},
+        "roles": [{"name": "dev", "backend": "mock"}],
+        "integrations": {
+            "feishu_routing": {
+                "oc_project": {"target": "channel", "channel_id": "dev"},
+                "*": {"target": "channel", "channel_id": "wildcard"},
+            },
+        },
+    }))
+    main(["init"])
+    ctx = resolve_project_context()
+    event = type("E", (), {
+        "chat_id": "oc_project", "payload": {},
+    })()
+    assert _issue_write_route_allowed(event, ctx) is True
+    event.chat_id = "oc_other"
+    assert _issue_write_route_allowed(event, ctx) is False
+    result = _handle_event_data(
+        _button("issue-triage-start:7:source-1", "route-m1"),
+        context=ctx,
+        user_levels={"ou_app": AuthLevel.OPERATOR},
+    )
+    assert result["status"] == "rejected"
+    assert "exact Feishu project chat route" in result["message"]

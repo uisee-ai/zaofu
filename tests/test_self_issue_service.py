@@ -111,9 +111,19 @@ class FakeGithubProvider:
     def __init__(self) -> None:
         self.requests: list[IssuePublishRequest] = []
         self.marker_matches: list[PublishedIssue] = []
+        self.comment_requests: list[dict[str, object]] = []
+        self.preflight_requests: list[str] = []
+        self.preflight_result = ForgeResult(status="ready")
+
+    def check_issue_publication_access(
+        self, project: str, *, access_token: str,
+    ) -> ForgeResult:
+        assert access_token == "gho_github-secret-token"
+        self.preflight_requests.append(project)
+        return self.preflight_result
 
     def publish(self, request: IssuePublishRequest, *, access_token: str) -> ForgeResult:
-        assert access_token == "github-secret-token"
+        assert access_token == "gho_github-secret-token"
         self.requests.append(request)
         return ForgeResult(status="published", issue=PublishedIssue(
             provider="github",
@@ -130,13 +140,43 @@ class FakeGithubProvider:
     def find_by_marker(
         self, project: str, marker: str, *, access_token: str,
     ) -> list[PublishedIssue]:
-        assert access_token == "github-secret-token"
+        assert access_token == "gho_github-secret-token"
         return list(self.marker_matches)
+
+    def publish_issue_comment_with_attachments(
+        self, project, issue_number, body, *, marker, attachments, access_token,
+    ):
+        assert access_token == "gho_github-secret-token"
+        self.comment_requests.append({
+            "project": project,
+            "issue_number": issue_number,
+            "body": body,
+            "marker": marker,
+            "attachments": attachments,
+        })
+        return {
+            "status": "published",
+            "url": "https://github.com/owner/repo/issues/23#issuecomment-42",
+            "id": "42",
+        }
+
+    def publish_issue_comment(self, project, issue_number, body, *, marker, access_token):
+        return self.publish_issue_comment_with_attachments(
+            project, issue_number, body, marker=marker, attachments=(), access_token=access_token,
+        )
+
+    def publish_release_assets(self, project, draft_id, attachments, **kwargs):
+        return {"assets": [{"sha256": digest, "url": f"https://github.com/owner/repo/releases/download/evidence/{filename}"}
+                           for filename, content_type, digest, raw in attachments]}
 
 
 class FakeGithubOAuth:
-    def start(self, *, client_id: str) -> dict[str, str]:
-        assert client_id == "Iv-client"
+    def __init__(self) -> None:
+        self.start_scopes: list[str] = []
+
+    def start(self, *, client_id: str, scope: str = "") -> dict[str, str]:
+        assert client_id == "oauth-client"
+        self.start_scopes.append(scope)
         return {
             "device_code": "device-code-secret",
             "user_code": "ABCD-EFGH",
@@ -146,21 +186,21 @@ class FakeGithubOAuth:
         }
 
     def poll(self, *, client_id: str, device_code: str) -> dict[str, str]:
-        assert client_id == "Iv-client"
+        assert client_id == "oauth-client"
         assert device_code == "device-code-secret"
         return {
             "status": "connected",
-            "access_token": "github-secret-token",
+            "access_token": "gho_github-secret-token",
             "refresh_token": "github-refresh-token",
-            "scope": "issues:write",
+            "scope": "public_repo",
         }
 
     def refresh(self, *, client_id: str, refresh_token: str) -> dict[str, str]:
         return {
             "status": "connected",
-            "access_token": "github-secret-token",
+            "access_token": "gho_github-secret-token",
             "refresh_token": "github-refresh-token",
-            "scope": "issues:write",
+            "scope": "public_repo",
         }
 
 def _service(
@@ -306,6 +346,7 @@ def _complete(service: SelfIssueService, draft: dict) -> dict:
         "draft_id": draft["draft_id"],
         "run_id": started["run_id"],
         "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"],
         "report": _assessment(),
     })
     assert result["status"] == "evidence_completed"
@@ -346,7 +387,6 @@ def test_intake_is_pre_draft_persistent_and_required_answers_fail_closed(tmp_pat
     assert question_by_id["title"]["options"] == []
     assert intake["answers"]["title"] == "Seed title"
     assert not (service.state_dir / "self-issues" / "drafts.json").exists()
-
     saved = service.save_intake({
         "intake_id": intake["intake_id"], "revision": intake["revision"],
         "current_step": 2, "answers": {"title": "Edited title", "zaofu_version": "0.0.3"},
@@ -365,6 +405,147 @@ def test_intake_is_pre_draft_persistent_and_required_answers_fail_closed(tmp_pat
     assert incomplete["missing_question_id"] == "bug_description"
     assert incomplete["reason"] == "This question can not be empty"
     assert "self_issue.intake.started" in [event.type for event in event_log.read_all()]
+
+
+def test_user_edit_locks_whole_field_even_when_cleared(tmp_path: Path) -> None:
+    service, _, _ = _service(tmp_path)
+    draft = _promote(service)
+    updated = service.update({
+        "draft_id": draft["draft_id"],
+        "revision": draft["revision"],
+        "expected_behavior": "",
+    })
+    assert updated["status"] == "draft_updated"
+    assert updated["draft"]["expected_behavior"] == ""
+    assert updated["draft"]["reported_expected_behavior"] == ""
+    metadata = updated["draft"]["enrichment"]["field_metadata"]
+    assert metadata["expected_behavior"]["user_locked"] is True
+    assert metadata["reported_expected_behavior"]["user_locked"] is True
+    assert metadata["expected_behavior"]["source"] == "reporter"
+    assert updated["draft"]["enrichment"]["revisions"][-1]["change_reason"] == "user_edit"
+
+
+def test_evaluation_auto_fills_only_empty_actual_then_respects_user_lock(tmp_path: Path) -> None:
+    service, _, _ = _service(tmp_path)
+    completed = _complete(service, _promote(service))
+    assert completed["actual_behavior"] == "The restore request returns the Draft."
+    metadata = completed["enrichment"]["field_metadata"]["actual_behavior"]
+    assert metadata["source"] == "investigation"
+    assert metadata["user_locked"] is False
+    assert completed["classification"] == "unknown"
+    assert any(
+        item["field_path"] == "classification"
+        for item in completed["enrichment"]["suggestions"]
+    )
+
+    edited = service.update({
+        "draft_id": completed["draft_id"], "revision": completed["revision"],
+        "actual_behavior": "Reporter correction.",
+    })["draft"]
+    requested = service.start_evidence({
+        "draft_id": edited["draft_id"], "revision": edited["revision"], "force": True,
+    })
+    assert requested["status"] == "assessment_requested"
+    claimed = _claim_assessment(service)
+    report = _assessment()
+    report["analysis"] = {
+        **report["analysis"],
+        "observations": ["A newer observed behavior."],
+    }
+    reevaluated = service.apply_evidence_assessment({
+        "draft_id": edited["draft_id"], "run_id": claimed["run_id"],
+        "expected_revision": claimed["expected_revision"],
+        "commit_capability": claimed["commit_capability"], "report": report,
+    })["draft"]
+    assert reevaluated["actual_behavior"] == "Reporter correction."
+    assert any(
+        item["field_path"] == "actual_behavior"
+        and item["proposed_value"] == "A newer observed behavior."
+        and item["status"] == "pending"
+        for item in reevaluated["enrichment"]["suggestions"]
+    )
+
+
+def test_suggestion_accept_and_content_free_dismissal(tmp_path: Path) -> None:
+    service, event_log, _ = _service(tmp_path)
+    completed = _complete(service, _promote(service))
+    projection = completed["enrichment"]
+    classification = next(
+        item for item in projection["suggestions"]
+        if item["field_path"] == "classification"
+    )
+    component = next(
+        item for item in projection["suggestions"]
+        if item["field_path"] == "component"
+    )
+    dismissed = service.dismiss_suggestion({
+        "draft_id": completed["draft_id"],
+        "suggestion_id": component["suggestion_id"],
+        "revision": completed["revision"],
+        "draft_digest": projection["draft_digest"],
+    })
+    assert dismissed["status"] == "suggestion_dismissed"
+    assert all(
+        item["suggestion_id"] != component["suggestion_id"]
+        for item in dismissed["draft"]["enrichment"]["suggestions"]
+    )
+    event = event_log.read_all()[-1]
+    assert event.type == "self_issue.suggestion.dismissed"
+    assert "proposed_value" not in event.payload
+    assert "reason" not in event.payload
+
+    current = dismissed["draft"]["enrichment"]
+    accepted = service.resolve_suggestion({
+        "draft_id": completed["draft_id"],
+        "suggestion_id": classification["suggestion_id"],
+        "revision": completed["revision"],
+        "draft_digest": current["draft_digest"],
+        "resolution": "accepted",
+    })
+    assert accepted["status"] == "suggestion_accepted"
+    assert accepted["draft"]["classification"] == "web/ui"
+    assert accepted["draft"]["enrichment"]["field_metadata"]["classification"]["user_locked"]
+    assert accepted["draft"]["enrichment"]["resolutions"][-1]["action"] == "accepted"
+
+
+def test_dismissed_suggestion_does_not_suppress_same_future_recommendation(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _service(tmp_path)
+    completed = _complete(service, _promote(service))
+    component = next(
+        item for item in completed["enrichment"]["suggestions"]
+        if item["field_path"] == "component"
+    )
+    dismissed = service.dismiss_suggestion({
+        "draft_id": completed["draft_id"],
+        "suggestion_id": component["suggestion_id"],
+        "revision": completed["revision"],
+        "draft_digest": completed["enrichment"]["draft_digest"],
+    })["draft"]
+
+    requested = service.start_evidence({
+        "draft_id": dismissed["draft_id"],
+        "revision": dismissed["revision"],
+        "force": True,
+    })
+    assert requested["status"] == "assessment_requested"
+    claimed = _claim_assessment(service)
+    reevaluated = service.apply_evidence_assessment({
+        "draft_id": dismissed["draft_id"],
+        "run_id": claimed["run_id"],
+        "expected_revision": claimed["expected_revision"],
+        "commit_capability": claimed["commit_capability"],
+        "report": _assessment(),
+    })["draft"]
+
+    regenerated = [
+        item for item in reevaluated["enrichment"]["suggestions"]
+        if item["field_path"] == "component"
+    ]
+    assert len(regenerated) == 1
+    assert regenerated[0]["proposed_value"] == component["proposed_value"]
+    assert regenerated[0]["suggestion_id"] != component["suggestion_id"]
 
 
 def test_promoted_draft_captures_exact_source_revision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -423,7 +604,8 @@ def test_web_reporter_capture_becomes_local_evidence_and_confirmation_candidate(
     started = _claim_assessment(service)
     completed = service.apply_evidence_assessment({
         "draft_id": draft["draft_id"], "run_id": started["run_id"],
-        "expected_revision": started["expected_revision"], "report": _assessment(),
+        "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"], "report": _assessment(),
     })
 
     candidates = completed["draft"]["attachment_refs"]
@@ -470,6 +652,7 @@ def test_playwright_capture_waits_for_orchestrator_web_target_approval(
     service.apply_evidence_assessment({
         "draft_id": draft["draft_id"], "run_id": started["run_id"],
         "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"],
         "report": _assessment(classification="runtime", component="runtime/worker"),
     })
 
@@ -671,27 +854,82 @@ def test_evidence_assessment_interrupt_resume_and_revision_conflict(tmp_path: Pa
     interrupted = service.interrupt_evidence({"draft_id": draft["draft_id"]})
     late = service.apply_evidence_assessment({
         "draft_id": draft["draft_id"], "run_id": started["run_id"],
-        "expected_revision": started["expected_revision"], "report": _assessment(),
+        "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"], "report": _assessment(),
     })
     resumed = service.resume_evidence({"draft_id": draft["draft_id"]})
     resumed = _claim_assessment(service)
     completed = service.apply_evidence_assessment({
         "draft_id": draft["draft_id"], "run_id": resumed["run_id"],
-        "expected_revision": resumed["expected_revision"], "report": _assessment(),
+        "expected_revision": resumed["expected_revision"],
+        "commit_capability": resumed["commit_capability"], "report": _assessment(),
     })
 
     assert interrupted["status"] == "evidence_interrupted"
     assert late["status"] == "evidence_conflict"
     assert resumed["status"] == "assessment_claimed"
-    assert resumed["run_id"] == started["run_id"]
+    assert resumed["run_id"] != started["run_id"]
     assert len(read_reproduction_ledger(ledger)["attempts"]) == 1
-    assert completed["draft"]["classification"] == "web/ui"
-    assert completed["draft"]["component"] == "web/orchestrator"
+    assert completed["draft"]["classification"] == "unknown"
+    assert completed["draft"]["component"] == "unknown"
+    suggestions = completed["draft"]["enrichment"]["suggestions"]
+    assert {item["field_path"] for item in suggestions} >= {"classification", "component"}
     assert completed["draft"]["evidence_activity"]["status"] == "completed"
     types = [event.type for event in event_log.read_all()]
     assert "self_issue.evidence.interrupted" in types
-    assert "self_issue.evidence.resumed" in types
+    assert "self_issue.evaluation.cancelled" in types
+    assert types.count("self_issue.evaluation.requested") == 2
     assert "self_issue.assessment.completed" in types
+
+
+def test_evaluation_lock_blocks_all_draft_mutations_and_cancel_unlocks_immediately(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _service(tmp_path)
+    draft = _promote(service)
+    _mark_runtime_live(service)
+    requested = service.start_evidence({
+        "draft_id": draft["draft_id"], "revision": draft["revision"],
+    })
+    locked_draft = requested["draft"]
+    assert locked_draft["enrichment"]["evaluation_locked"] is True
+    assert "commit_capability" not in str(locked_draft["enrichment"])
+
+    update = service.update({
+        "draft_id": draft["draft_id"],
+        "revision": locked_draft["revision"],
+        "title": "must not be written",
+    })
+    attachment = service.add_draft_attachment({
+        "draft_id": draft["draft_id"],
+        "revision": locked_draft["revision"],
+        "filename": "evidence.txt",
+        "content_type": "text/plain",
+        "content_base64": "dGVzdA==",
+    })
+    preview = service.preview({"draft_id": draft["draft_id"]})
+    dismissed = service.dismiss({"draft_id": draft["draft_id"]})
+    assert {
+        update["status"], attachment["status"], preview["status"], dismissed["status"],
+    } == {
+        "evaluation_locked",
+    }
+
+    cancelled = service.interrupt_evidence({"draft_id": draft["draft_id"]})
+    assert cancelled["draft"]["enrichment"]["evaluation_locked"] is False
+    edited = service.update({
+        "draft_id": draft["draft_id"],
+        "revision": cancelled["draft"]["revision"],
+        "title": "Reporter edit after cancel",
+    })
+    assert edited["status"] == "draft_updated"
+    restarted = service.start_evidence({
+        "draft_id": draft["draft_id"],
+        "revision": edited["draft"]["revision"],
+        "force": True,
+    })
+    assert restarted["run_id"] != requested["run_id"]
+    assert restarted["draft"]["enrichment"]["evaluation_locked"] is True
 
 
 def test_interrupted_evidence_restart_creates_a_fresh_reproduction_budget(
@@ -759,6 +997,7 @@ def test_evidence_input_contains_redacted_log_excerpts_and_screenshot_inventory(
         "draft_id": draft["draft_id"],
         "run_id": started["run_id"],
         "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"],
         "report": _assessment(),
     })["draft"]
     public_refs = [
@@ -823,6 +1062,7 @@ def test_semantically_selected_log_location_is_rendered_in_public_evidence(
         "draft_id": draft["draft_id"],
         "run_id": started["run_id"],
         "expected_revision": started["expected_revision"],
+        "commit_capability": started["commit_capability"],
         "report": assessment,
     })["draft"]
     summary_ref = next(
@@ -860,6 +1100,7 @@ def test_unknown_semantic_log_candidate_fails_closed(tmp_path: Path) -> None:
             "draft_id": draft["draft_id"],
             "run_id": started["run_id"],
             "expected_revision": started["expected_revision"],
+            "commit_capability": started["commit_capability"],
             "report": assessment,
         })
 
@@ -898,7 +1139,8 @@ def test_sanitized_runtime_evidence_is_uploaded_and_rendered_as_clickable_links(
     assert prepared["status"] == "attachments_prepared"
     assert len(provider.uploads) == 2
     assert "[incident-evidence-summary.md](<https://gitlab.com/a/b/-/uploads/abc/incident-evidence-summary.md>)" in body
-    assert "![playwright-incident-1.png](<https://gitlab.com/a/b/-/uploads/abc/playwright-incident-1.png>)" in body
+    assert "[playwright-incident-1.png](<https://gitlab.com/a/b/-/uploads/abc/playwright-incident-1.png>)" in body
+    assert "![playwright-incident-1.png]" not in body
     assert "](/uploads/" not in body
     assert "artifacts/self-issues/" not in body
 
@@ -916,9 +1158,10 @@ def test_markdown_preview_is_exact_snapshot_and_publication_is_idempotent(tmp_pa
     assert "{\"" not in body
     assert "private-token" not in body
     assert "## To reproduce" in body
-    assert "- **Impact scope:** Users with a saved Self-Issue Draft" in body
-    assert "- **Assessment confidence:** high" in body
-    assert "- **ZaoFu source commit:** 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in body
+    assert "- **Impact scope:** unknown" not in body
+    assert "- **Assessment confidence:** low" in body
+    assert "Investigation recommendation; Reporter Draft was not overwritten." not in body
+    assert "- **Project source commit:** 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" in body
     confirmed = service.confirm({
         "intent_id": preview["intent_id"], "payload_digest": preview["payload_digest"],
     })
@@ -933,6 +1176,22 @@ def test_markdown_preview_is_exact_snapshot_and_publication_is_idempotent(tmp_pa
     assert published["preview"] == preview["preview"]
     assert len(provider.requests) == 1
     assert provider.requests[0].body == body
+    intent = service.intents.get(preview["intent_id"])
+    assert intent is not None
+    snapshot = json.loads(
+        (service.state_dir / intent.publication_snapshot_ref["ref"]).read_text(encoding="utf-8")
+    )
+    handoff = json.loads(
+        (service.state_dir / intent.handoff_ref["ref"]).read_text(encoding="utf-8")
+    )
+    assert snapshot["draft_revision"] == preview["draft_revision"]
+    assert snapshot["payload_digest"] == preview["payload_digest"]
+    assert snapshot["unresolved_publication_policy"] == "handoff_private"
+    assert handoff["provider"] == "gitlab"
+    assert handoff["repository"] == "a/b"
+    assert handoff["remote_issue_id"] == "17"
+    assert handoff["publication_snapshot_digest"].startswith("sha256:")
+    assert "proposed_value" not in json.dumps(handoff)
     restored = service.get({"draft_id": draft["draft_id"]})["draft"]
     assert restored["preview"] == preview["preview"]
     assert service.update({
@@ -991,6 +1250,7 @@ def test_historical_published_ref_does_not_lock_a_restarted_draft(tmp_path: Path
         "draft_id": stored.draft_id,
         "run_id": claimed["run_id"],
         "expected_revision": claimed["expected_revision"],
+        "commit_capability": claimed["commit_capability"],
         "report": _assessment(),
     })
     assert completed["status"] == "evidence_completed"
@@ -1032,10 +1292,10 @@ def test_markdown_preview_keeps_empty_user_fields_and_normalizes_soft_line_break
     body = service.preview({"draft_id": draft["draft_id"]})["preview"]["body"]
 
     assert "The board waits even though the runtime is still active." in body
-    assert "## Expected behavior\n\n(User did not provide this information.)" in body
-    assert "## Attachment context\n\n(User did not provide this information.)" in body
-    assert "- **Operating system:** (User did not provide this information.)" in body
-    assert "## Additional context\n\n(User did not provide this information.)" in body
+    assert "## Expected behavior" not in body
+    assert "## Attachment context" not in body
+    assert "- **Operating system:** (User did not provide this information.)" not in body
+    assert "## Additional context" not in body
 
 
 def test_interrupted_evidence_can_be_previewed_with_an_explicit_gap(tmp_path: Path) -> None:
@@ -1196,6 +1456,32 @@ def test_attachment_is_sanitized_then_requires_separate_confirmation(tmp_path: P
     assert "screen.png" in final_preview["preview"]["body"]
 
 
+@pytest.mark.parametrize(("filename", "content_type", "content"), [
+    ("notes.md", "text/markdown", b"# Notes\n"),
+    ("config.xml", "application/xml", b"<config />\n"),
+    ("config.yaml", "application/yaml", b"enabled: true\n"),
+    ("config.yml", "application/yaml", b"enabled: true\n"),
+    ("rows.csv", "text/csv", b"name,value\nexample,1\n"),
+    ("report.pdf", "application/pdf", b"%PDF-1.7\n"),
+    ("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", b"PK\x03\x04docx"),
+    ("report.doc", "application/msword", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1doc"),
+    ("report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", b"PK\x03\x04xlsx"),
+    ("report.xls", "application/vnd.ms-excel", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1xls"),
+])
+def test_common_document_and_text_formats_are_accepted(
+    tmp_path: Path, filename: str, content_type: str, content: bytes,
+) -> None:
+    service, _, _ = _service(tmp_path)
+    intake = service.capture({"target_binding": {"provider": "gitlab", "project": "a/b"}})["intake"]
+    added = service.add_intake_attachment({
+        "intake_id": intake["intake_id"], "filename": filename,
+        "content_type": content_type,
+        "content_base64": base64.b64encode(content).decode(),
+    })
+    assert added["status"] == "attachment_added"
+    assert added["intake"]["attachments"][-1]["filename"] == filename
+
+
 def test_unicode_attachment_filename_keeps_extension_and_has_local_preview(
     tmp_path: Path,
 ) -> None:
@@ -1317,6 +1603,115 @@ def test_locked_target_is_applied_before_intake_and_cannot_be_redirected(tmp_pat
         })
 
 
+def test_locked_policy_allows_user_to_choose_an_authorized_target_repository(
+    tmp_path: Path,
+) -> None:
+    policy = SelfIssueConfig(
+        enabled=True,
+        target_locked=True,
+        provider="gitlab",
+        target_project="owner/central",
+        authorization_domain="gitlab.com",
+        targets={
+            "gitlab": SelfIssueTargetConfig(
+                provider="gitlab", project="owner/central",
+            ),
+            "github": SelfIssueTargetConfig(
+                provider="github", project="owner/public-issues",
+            ),
+        },
+    )
+    service, _, _ = _service(tmp_path, policy=policy)
+    draft = service.capture({
+        "direct_report": True,
+        "description": "The page freezes after Save.",
+        "target_binding": {"provider": "github", "project": "owner/public-issues"},
+    })["draft"]
+    assert draft["target_binding"] == {
+        "provider": "github", "project": "owner/public-issues",
+    }
+    with pytest.raises(ValueError, match="locked"):
+        service.capture({
+            "direct_report": True,
+            "description": "The page freezes after Save.",
+            "target_binding": {"provider": "github", "project": "attacker/repo"},
+        })
+
+
+def test_unlocked_draft_repository_edit_controls_the_actual_publish_target(
+    tmp_path: Path,
+) -> None:
+    provider = FakeProvider()
+    service, _, secrets = _service(tmp_path, provider)
+    draft = service.capture({
+        "direct_report": True,
+        "description": "The page freezes after Save.",
+        "target_binding": {"provider": "gitlab", "project": "owner/original"},
+    })["draft"]
+    limited = service.continue_limited({"draft_id": draft["draft_id"]})["draft"]
+    updated = service.update({
+        "draft_id": limited["draft_id"],
+        "revision": limited["revision"],
+        "target_binding": {"provider": "gitlab", "project": "user/project"},
+    })["draft"]
+    preview = service.preview({
+        "draft_id": updated["draft_id"], "publication_mode": "gitlab",
+    })
+    confirmed = service.confirm({
+        "intent_id": preview["intent_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    _put_secret(service, secrets, updated)
+    published = service.publish({
+        "intent_id": preview["intent_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+    assert published["status"] == "published"
+    assert provider.requests[0].project == "user/project"
+
+
+def test_direct_report_draft_attachment_is_sanitized_persisted_and_removed(
+    tmp_path: Path,
+) -> None:
+    service, _, _ = _service(tmp_path)
+    draft = service.capture({
+        "direct_report": True,
+        "description": "The page freezes after Save.",
+    })["draft"]
+    added = service.add_draft_attachment({
+        "draft_id": draft["draft_id"],
+        "revision": draft["revision"],
+        "filename": "runtime.log",
+        "content_type": "text/plain",
+        "content_base64": base64.b64encode(b"token=redacted-secret\n").decode(),
+    })
+    attached = added["draft"]
+    assert added["status"] == "draft_attachment_added"
+    assert attached["revision"] == draft["revision"] + 1
+    assert len(attached["attachment_refs"]) == 1
+    descriptor = attached["attachment_refs"][0]
+    path = service.state_dir / descriptor["ref"]
+    assert path.read_text(encoding="utf-8") == "token=[REDACTED_SECRET]\n"
+    assert descriptor["redaction_applied"] is True
+    stale = service.add_draft_attachment({
+        "draft_id": attached["draft_id"],
+        "revision": draft["revision"],
+        "filename": "stale.log",
+        "content_type": "text/plain",
+        "content_base64": base64.b64encode(b"stale\n").decode(),
+    })
+    assert stale["status"] == "revision_conflict"
+
+    removed = service.remove_draft_attachment({
+        "draft_id": attached["draft_id"],
+        "revision": attached["revision"],
+        "attachment_id": descriptor["attachment_id"],
+    })
+    assert removed["status"] == "draft_attachment_removed"
+    assert removed["draft"]["attachment_refs"] == []
+    assert not path.exists()
+
+
 def _dual_provider_service(
     tmp_path: Path,
 ) -> tuple[
@@ -1348,8 +1743,9 @@ def _dual_provider_service(
                 provider="github",
                 authorization_domain="github.com",
                 project="owner/repo",
-                oauth_client_id="Iv-client",
-                auth_mode="device_flow",
+                oauth_client_id="oauth-client",
+                auth_mode="oauth_device_flow",
+                oauth_scope="public_repo",
             ),
         },
         default_publication_mode="gitlab",
@@ -1404,7 +1800,11 @@ def test_publication_batch_can_publish_one_snapshot_to_both_providers(
     )
     secrets.put(
         service._secret_key({}, stored, provider="github"),
-        {"access_token": "github-secret-token", "scope": "issues:write"},
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "public_repo",
+            "auth_mode": "oauth_device_flow",
+        },
     )
 
     published = service.publish({
@@ -1422,7 +1822,7 @@ def test_publication_batch_can_publish_one_snapshot_to_both_providers(
 
 
 def test_github_device_flow_resumes_exact_confirmed_batch_once(tmp_path: Path) -> None:
-    service, _, _, github = _dual_provider_service(tmp_path)
+    service, secrets, _, github = _dual_provider_service(tmp_path)
     draft = _dual_provider_draft(service)
     preview = service.preview({
         "draft_id": draft["draft_id"],
@@ -1444,6 +1844,7 @@ def test_github_device_flow_resumes_exact_confirmed_batch_once(tmp_path: Path) -
         "session_id": "browser-session",
     })
     assert started["user_code"] == "ABCD-EFGH"
+    assert service.github_oauth.start_scopes == ["public_repo"]
     connected = service.github_device_poll({
         "transaction_id": started["transaction_id"],
         "session_id": "browser-session",
@@ -1452,6 +1853,16 @@ def test_github_device_flow_resumes_exact_confirmed_batch_once(tmp_path: Path) -
     assert connected["status"] == "published"
     assert connected["resumed_publication"] is True
     assert len(github.requests) == 1
+    assert github.preflight_requests == ["owner/repo", "owner/repo"]
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    saved_secret = secrets.reveal(
+        service._secret_key({}, stored, provider="github"),
+    )
+    assert saved_secret is not None
+    assert saved_secret["auth_mode"] == "oauth_device_flow"
+    assert saved_secret["token_kind"] == "oauth"
+    assert saved_secret["scope"] == "public_repo"
     with pytest.raises(ValueError, match="consumed"):
         service.github_device_poll({
             "transaction_id": started["transaction_id"],
@@ -1460,7 +1871,104 @@ def test_github_device_flow_resumes_exact_confirmed_batch_once(tmp_path: Path) -
     transaction_text = (
         service.state_dir / "self-issues" / "github-device-transactions.json"
     ).read_text(encoding="utf-8")
-    assert "github-secret-token" not in transaction_text
+    assert "gho_github-secret-token" not in transaction_text
+
+
+def test_github_oauth_start_reauthorizes_incompatible_shared_app_token(
+    tmp_path: Path,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    key = service._secret_key({}, stored, provider="github")
+    legacy = {
+        "access_token": "ghu_existing",
+        "scope": "issues:write",
+        "auth_mode": "device_flow",
+    }
+    secrets.put(key, legacy)
+
+    started = service.github_device_start({
+        "draft_id": draft["draft_id"],
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+        "session_id": "browser-session",
+    })
+
+    assert started["status"] == "authorization_required"
+    assert started["user_code"] == "ABCD-EFGH"
+    assert service.github_oauth.start_scopes == ["public_repo"]
+    assert secrets.reveal(key) == legacy
+    assert github.requests == []
+
+
+def test_github_oauth_poll_does_not_store_token_when_repo_preflight_fails(
+    tmp_path: Path,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    github.preflight_result = ForgeResult(
+        status="publish_failed", reason="github_issues_disabled",
+    )
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    started = service.github_device_start({
+        "draft_id": draft["draft_id"],
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+        "session_id": "browser-session",
+    })
+
+    result = service.github_device_poll({
+        "transaction_id": started["transaction_id"],
+        "session_id": "browser-session",
+    })
+
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    assert result["ok"] is False
+    assert result["status"] == "failed_before_remote_write"
+    assert result["provider"] == "github"
+    assert result["reason"] == "github_issues_disabled"
+    assert secrets.reveal(service._secret_key({}, stored, provider="github")) is None
+    assert github.requests == []
+
+
+def test_github_token_refresh_preserves_authorization_metadata(tmp_path: Path) -> None:
+    service, secrets, _, _ = _dual_provider_service(tmp_path)
+    draft = _dual_provider_draft(service)
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    key = service._secret_key({}, stored, provider="github")
+    secrets.put(key, {
+        "access_token": "gho_old",
+        "refresh_token": "refresh-old",
+        "client_id": "oauth-client",
+        "scope": "public_repo",
+        "auth_mode": "oauth_device_flow",
+        "token_kind": "oauth",
+        "expires_at": "2000-01-01T00:00:00+00:00",
+    })
+
+    refreshed = service._provider_secret(key, causation_id="")
+
+    assert refreshed is not None
+    assert refreshed["auth_mode"] == "oauth_device_flow"
+    assert refreshed["token_kind"] == "oauth"
+    assert refreshed["scope"] == "public_repo"
 
 
 def test_dual_provider_authorization_resumes_one_batch_without_early_publish(
@@ -1539,12 +2047,365 @@ def test_github_only_preview_omits_binary_attachments_without_blocking(
     })
 
     assert preview["status"] == "previewed"
-    assert "Binary attachments are not included" in preview["preview"]["body"]
+    assert "separate Evidence comment" in preview["preview"]["body"]
     assert attachment_result["status"] == "attachments_omitted_for_github"
     assert github.requests == []
 
 
-def test_draft_close_physically_deletes_draft_intents_and_artifacts(tmp_path: Path) -> None:
+@pytest.mark.parametrize("release_assets", [False, True])
+def test_github_publication_posts_bounded_text_and_media_evidence_comment(
+    tmp_path: Path, release_assets: bool,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    if release_assets:
+        github.publish_release_assets = lambda project, draft_id, attachments, **kwargs: {
+            "assets": [{"sha256": digest, "url": f"https://github.com/owner/repo/releases/download/evidence/{filename}"}
+                       for filename, content_type, digest, raw in attachments]
+        }
+    else:
+        github.publish_release_assets = None
+    intake = service.capture({"target_binding": {}})["intake"]
+    service.add_intake_attachment({
+        "intake_id": intake["intake_id"],
+        "filename": "large.md",
+        "content_type": "text/markdown",
+        "content_base64": base64.b64encode(b"```text\nnested example\n```\n" + b"safe line\n" * 20_000).decode(),
+    })
+    service.add_intake_attachment({
+        "intake_id": intake["intake_id"],
+        "filename": "screen.png",
+        "content_type": "image/png",
+        "content_base64": base64.b64encode(_png_with_text_metadata(b"safe")).decode(),
+    })
+    if release_assets:
+        service.add_intake_attachment({
+            "intake_id": intake["intake_id"], "filename": "report.pdf", "content_type": "application/pdf",
+            "content_base64": base64.b64encode(b"%PDF-1.7\n").decode(),
+        })
+    draft = _complete(service, service.submit_intake({
+        "intake_id": intake["intake_id"],
+        "answers": _answers(),
+        "attachment_disclosure_confirmed": True,
+    })["draft"])
+    preview = service.preview({
+        "draft_id": draft["draft_id"],
+        "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "public_repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+
+    published = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    results = published["evidence_comments"]["github"]["attachments"]
+    if release_assets:
+        assert published["status"] == "published"
+        assert len(github.comment_requests) == 1
+        comment = github.comment_requests[0]
+        assert comment["attachments"] == ()
+        assert len(str(comment["body"])) <= 60_000
+        assert "safe line" not in comment["body"]
+        assert "![" not in comment["body"]
+        assert "source=`user`" in comment["body"]
+        assert "purpose:" in comment["body"] and "SHA-256" in comment["body"]
+        assert "report.pdf](https://github.com/owner/repo/releases/download/evidence/report.pdf)" in str(comment["body"])
+        assert "GitHub CLI uploads images and videos only" not in str(comment["body"])
+        assert all(item["status"] == "published" for item in results)
+    else:
+        assert published["status"] == "partially_published"
+        assert github.comment_requests == []
+        assert all(item["status"] == "pending" for item in results)
+        assert all(not item.get("download_url") for item in results)
+        github.publish_release_assets = FakeGithubProvider.publish_release_assets.__get__(github)
+        recovered = service.recover({"intent_id": published["intent_ids"]["github"]})
+        assert recovered["status"] == "published"
+        assert len(github.requests) == 1  # No second Issue on an attachment retry.
+        assert len(github.comment_requests) == 1
+        assert all(item["status"] == "published" for item in recovered["evidence_comments"]["github"]["attachments"])
+
+
+def test_github_oauth_publication_rejects_app_token_before_issue_write(
+    tmp_path: Path,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    intake = service.capture({"target_binding": {}})["intake"]
+    service.add_intake_attachment({
+        "intake_id": intake["intake_id"],
+        "filename": "screen.png",
+        "content_type": "image/png",
+        "content_base64": base64.b64encode(_png_with_text_metadata(b"safe")).decode(),
+    })
+    draft = _complete(service, service.submit_intake({
+        "intake_id": intake["intake_id"],
+        "answers": _answers(),
+        "attachment_disclosure_confirmed": True,
+    })["draft"])
+    preview = service.preview({
+        "draft_id": draft["draft_id"],
+        "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "ghu_legacy-app-token",
+            "scope": "issues:write",
+            "auth_mode": "device_flow",
+        },
+    )
+
+    result = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    assert result["status"] == "authorization_required"
+    assert result["reason"] == "github_attachment_token_unsupported"
+    assert github.preflight_requests == []
+    assert github.requests == []
+    assert github.comment_requests == []
+
+
+def test_github_oauth_publication_accepts_repo_scope_for_public_target(
+    tmp_path: Path,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+
+    result = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    assert result["status"] == "published"
+    assert github.preflight_requests == ["owner/repo"]
+    assert len(github.requests) == 1
+
+
+def test_partial_github_publication_reconciles_existing_issue_without_duplicate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "public_repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+    original_publish = github.publish
+
+    def partial_publish(request, *, access_token):
+        result = original_publish(request, access_token=access_token)
+        return ForgeResult(
+            status="partially_published", issue=result.issue,
+            reason="github_labels_not_applied_http_503",
+        )
+
+    monkeypatch.setattr(github, "publish", partial_publish)
+    reconciled: list[tuple[str, int, tuple[str, ...]]] = []
+
+    def reconcile_issue_labels(project, issue_number, labels, *, access_token):
+        assert access_token == "gho_github-secret-token"
+        reconciled.append((project, issue_number, tuple(labels)))
+        return ForgeResult(status="reconciled", reason="updated")
+
+    monkeypatch.setattr(
+        github, "reconcile_issue_labels", reconcile_issue_labels, raising=False,
+    )
+
+    first = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    assert first["status"] == "partially_published"
+    assert first["issue"]["number"] == "23"
+    assert len(github.requests) == 1
+
+    recovered = service.recover({"intent_id": preview["intent_id"]})
+
+    assert recovered["status"] == "published"
+    assert recovered["issue"]["number"] == "23"
+    assert len(github.requests) == 1
+    assert reconciled == [("owner/repo", 23, tuple(github.requests[0].labels))]
+
+
+def test_github_oauth_preflight_failure_does_not_create_issue(tmp_path: Path) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    github.preflight_result = ForgeResult(
+        status="publish_failed", reason="github_issues_disabled",
+    )
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "public_repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+
+    result = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    assert result == {
+        "ok": False,
+        "status": "failed_before_remote_write",
+        "provider": "github",
+        "reason": "github_issues_disabled",
+    }
+    assert github.requests == []
+
+
+def test_github_evidence_retry_preflights_before_comment_write(tmp_path: Path) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    intake = service.capture({"target_binding": {}})["intake"]
+    service.add_intake_attachment({
+        "intake_id": intake["intake_id"],
+        "filename": "screen.png",
+        "content_type": "image/png",
+        "content_base64": base64.b64encode(_png_with_text_metadata(b"safe")).decode(),
+    })
+    draft = _complete(service, service.submit_intake({
+        "intake_id": intake["intake_id"],
+        "answers": _answers(),
+        "attachment_disclosure_confirmed": True,
+    })["draft"])
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "public_repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+    first = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+    assert first["status"] == "published"
+    intent = service.intents.get(preview["intent_id"])
+    assert intent is not None
+    intent.evidence_comment_status = "publish_failed"
+    service.intents.save(intent)
+    github.comment_requests.clear()
+    github.preflight_result = ForgeResult(
+        status="publish_failed", reason="github_repository_archived",
+    )
+
+    result = service.recover({"intent_id": intent.intent_id})
+
+    assert result["status"] == "failed_before_remote_write"
+    assert result["reason"] == "github_repository_archived"
+    assert github.comment_requests == []
+
+
+def test_github_authorization_snapshot_stales_when_scope_changes(tmp_path: Path) -> None:
+    service, secrets, _, github = _dual_provider_service(tmp_path)
+    draft = _dual_provider_draft(service)
+    preview = service.preview({
+        "draft_id": draft["draft_id"], "publication_mode": "github",
+    })
+    intent = service.intents.get(preview["intent_id"])
+    assert intent is not None
+    assert intent.permission_snapshot["auth_mode"] == "oauth_device_flow"
+    assert intent.permission_snapshot["scope"] == "public_repo"
+    confirmed = service.confirm({
+        "batch_id": preview["batch_id"],
+        "payload_digest": preview["payload_digest"],
+    })
+    stored = service.drafts.get(draft["draft_id"])
+    assert stored is not None
+    secrets.put(
+        service._secret_key({}, stored, provider="github"),
+        {
+            "access_token": "gho_github-secret-token",
+            "scope": "repo",
+            "auth_mode": "oauth_device_flow",
+        },
+    )
+    service.policy.targets["github"].oauth_scope = "repo"
+
+    result = service.publish({
+        "batch_id": preview["batch_id"],
+        "confirmation_id": confirmed["confirmation_id"],
+    })
+
+    assert result["status"] == "stale_confirmation"
+    assert result["reason"] == "permission snapshot changed"
+    assert github.preflight_requests == []
+    assert github.requests == []
+
+
+def test_draft_close_moves_private_content_to_seven_day_recovery_then_restores(tmp_path: Path) -> None:
     service, _, _ = _service(tmp_path)
     draft = _complete(service, _promote(service))
     service.preview({"draft_id": draft["draft_id"]})
@@ -1552,6 +2413,35 @@ def test_draft_close_physically_deletes_draft_intents_and_artifacts(tmp_path: Pa
     assert artifact_root.is_dir()
     dismissed = service.dismiss({"draft_id": draft["draft_id"]})
     assert dismissed["status"] == "draft_dismissed"
+    assert dismissed["recoverable"] is True
+    assert dismissed["recover_until"]
     assert service.drafts.get(draft["draft_id"]) is None
     assert not service.intents.for_draft(draft["draft_id"])
     assert not artifact_root.exists()
+    restored = service.restore_dismissed({"draft_id": draft["draft_id"]})
+    assert restored["status"] == "draft_restored"
+    assert service.drafts.get(draft["draft_id"]) is not None
+    assert artifact_root.is_dir()
+
+
+def test_permanent_delete_and_privacy_erasure_require_exact_confirmation(tmp_path: Path) -> None:
+    service, _, _ = _service(tmp_path)
+    draft = _promote(service)
+    with pytest.raises(ValueError, match="exact Draft id"):
+        service.dismiss({"draft_id": draft["draft_id"], "permanent": True})
+    deleted = service.dismiss({
+        "draft_id": draft["draft_id"], "permanent": True,
+        "confirmation": draft["draft_id"],
+    })
+    assert deleted["recoverable"] is False
+    assert service.restore_dismissed({"draft_id": draft["draft_id"]})["status"] == "recovery_not_found"
+
+    second = _promote(service)
+    with pytest.raises(ValueError, match="exact Draft id"):
+        service.privacy_erase({"draft_id": second["draft_id"], "confirmation": "wrong"})
+    erased = service.privacy_erase({
+        "draft_id": second["draft_id"], "confirmation": second["draft_id"],
+    })
+    assert erased["status"] == "privacy_erased"
+    assert erased["remote_cleanup_required"] is False
+    assert service.drafts.get(second["draft_id"]) is None

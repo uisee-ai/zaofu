@@ -205,6 +205,37 @@ class FanoutDispatchLivenessMixin:
         return None
 
     @staticmethod
+    def _fanout_dispatch_reinjected_after_launch(
+        events: list[ZfEvent],
+        dispatch: ZfEvent,
+        lost_index: int,
+    ) -> bool:
+        """Avoid resending a briefing already handed to the replacement worker."""
+        if not 0 <= lost_index < len(events):
+            return False
+        if events[lost_index].type != "worker.launch_artifact.written":
+            return False
+        expected = {key: str(dispatch.payload.get(key) or "") for key in (
+            "fanout_id", "child_id", "run_id", "stage_id", "briefing_path",
+        )}
+        role = str(dispatch.payload.get("role_instance") or "")
+        trace = str(dispatch.payload.get("trace_id") or dispatch.correlation_id or "")
+        required = ("fanout_id", "run_id", "stage_id", "briefing_path")
+        if not role or not trace or not all(expected[key] for key in required):
+            return False
+        if dispatch.type == "fanout.child.dispatched" and not expected["child_id"]:
+            return False
+        for event in events[lost_index + 1:]:
+            if (
+                event.type == "worker.recovery.injected"
+                and event.actor == role
+                and event.correlation_id == trace
+                and all(event.payload.get(key) == value for key, value in expected.items())
+            ):
+                return True
+        return False
+
+    @staticmethod
     def _fanout_dispatch_has_authoritative_result(
         events: list[ZfEvent],
         dispatch_event: ZfEvent,

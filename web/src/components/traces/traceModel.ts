@@ -1,4 +1,5 @@
 import type { TraceSummary, TraceTimelineEvent } from "../../api/types";
+import { formatSettingsTime } from '../../settings/useSettingsPreferences.js';
 
 export type TraceStatusFilter = "all" | "running" | "completed" | "failed" | "blocked" | "observed";
 export type TraceDurationFilter = "all" | "short" | "medium" | "long" | "unknown";
@@ -11,12 +12,6 @@ export interface TraceFilters {
   backend: string;
 }
 
-const TRACE_DATE_TIME_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  month: "short",
-});
 
 export function traceMatchesFilters(row: TraceSummary, filters: TraceFilters): boolean {
   if (filters.status !== "all" && traceStatus(row) !== filters.status) return false;
@@ -77,7 +72,7 @@ export function formatDuration(seconds: number | null | undefined): string {
 
 export function formatTimestamp(value: string): string {
   const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? TRACE_DATE_TIME_FORMATTER.format(timestamp) : "Unknown";
+  return Number.isFinite(timestamp) ? formatSettingsTime(new Date(timestamp).toISOString(), { year: undefined, day: '2-digit', month: 'short', second: undefined }) : "Unknown";
 }
 
 export function readInitialTraceFilters(): TraceFilters {

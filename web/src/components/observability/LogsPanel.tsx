@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // Diagnostics Logs tab (doc 82 §8.2/§9). Read-only rows from
 // /api/projects/{id}/diagnostics/logs; human-readable summary first,
 // raw event stays behind the event ref.
@@ -13,6 +15,7 @@ interface LogsPanelProps {
 }
 
 export function LogsPanel({ projectId }: LogsPanelProps) {
+  useSettingsPreferences();
   const [rows, setRows] = useState<DiagnosticsLogRow[]>([]);
   const [level, setLevel] = useState<string>("INFO");
   const [error, setError] = useState<string>("");
@@ -41,7 +44,7 @@ export function LogsPanel({ projectId }: LogsPanelProps) {
   return (
     <section className="subsection" data-testid="diagnostics-logs">
       <div className="inline-heading">
-        <h3>Event Logs</h3>
+        <h3>{uiText("Event Logs")}</h3>
         <span className="muted">event summaries · newest first</span>
         <select value={level} onChange={(e) => setLevel(e.target.value)} aria-label="Minimum level">
           {LEVELS.map((lv) => (
@@ -50,20 +53,20 @@ export function LogsPanel({ projectId }: LogsPanelProps) {
         </select>
       </div>
       {error && <p className="error">{error}</p>}
-      {loading && rows.length === 0 && <p className="muted">Loading…</p>}
+      {loading && rows.length === 0 && <p className="muted">{uiText("Loading…")}</p>}
       {!loading && rows.length === 0 && !error && (
-        <p className="muted">No log rows at this level yet.</p>
+        <p className="muted">{uiText("No log rows at this level yet.")}</p>
       )}
       {rows.length > 0 && (
         <table className="data-table">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Level</th>
-              <th>Source</th>
-              <th>Task</th>
-              <th>Role</th>
-              <th>Message</th>
+              <th>{uiText("Time")}</th>
+              <th>{uiText("Level")}</th>
+              <th>{uiText("Source")}</th>
+              <th>{uiText("Task")}</th>
+              <th>{uiText("Role")}</th>
+              <th>{uiText("Message")}</th>
             </tr>
           </thead>
           <tbody>

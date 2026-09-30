@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import fields
 from pathlib import Path
-from typing import Generic, TypeVar
+from typing import Callable, Generic, TypeVar
 
 from zf.core.self_issue.models import (
     AttachmentPreparationIntent,
@@ -92,8 +92,20 @@ class _JsonRecordStore(Generic[T]):
 
 
 class IssueDraftStore(_JsonRecordStore[IssueDraft]):
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        on_save: Callable[[IssueDraft], None] | None = None,
+    ) -> None:
         super().__init__(path, IssueDraft)
+        self.on_save = on_save
+
+    def save(self, record: IssueDraft) -> IssueDraft:
+        saved = super().save(record)
+        if self.on_save is not None:
+            self.on_save(saved)
+        return saved
 
     def list(self) -> list[IssueDraft]:
         """Read only the current Draft schema; historical diagnosis rows are ignored."""

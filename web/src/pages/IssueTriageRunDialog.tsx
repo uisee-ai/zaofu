@@ -1,118 +1,75 @@
-import { CircleX, Pause, Play } from "lucide-react";
-import { useState } from "react";
+import { useSettingsPreferences } from "../settings/useSettingsPreferences";
+import { uiText } from "../settings/uiText";
+import { useEffect, useRef, useState } from "react";
 import { postAction } from "../api/client";
 import type { IssueTriageItem } from "../api/types";
-
-const PAUSABLE_STATES = new Set(["triaging", "triage_recovering", "fixing", "fix_recovering", "verifying"]);
-const PAUSED_STATES = new Set(["triage_paused", "fix_paused"]);
-
-export function IssueTriageRunDialog({
-  projectId,
-  issue,
-  onClose,
-  onUpdated,
-}: {
-  projectId: string;
-  issue: IssueTriageItem;
-  onClose: () => void;
-  onUpdated: (notice: string) => Promise<void>;
+import type { IssueNotificationInput } from "./IssueTriageNotifications";
+import { IssueIcon } from "./IssueIcon";
+import { IssueDialog } from "./IssueOverlay";
+import { IssueStateValue } from "./IssueStateBadge";
+const PAUSABLE = new Set(['triaging', 'triage_recovering', 'fixing', 'fix_recovering', 'verifying']);
+const PAUSED = new Set(['triage_paused', 'fix_paused']);
+export function IssueTriageRunDialog({ open, projectId, issue, onClose, onNotification, onUpdated }: {
+    open: boolean;
+    projectId: string;
+    issue: IssueTriageItem | null;
+    onClose: () => void;
+    onNotification: (notice: IssueNotificationInput) => void;
+    onUpdated: (notice: string) => Promise<void>;
 }) {
-  const state = issue.workflow?.state ?? "";
-  const runId = issue.workflow?.run_id ?? "";
-  const queued = state === "triage_queued" || state === "fix_queued";
-  const paused = PAUSED_STATES.has(state);
-  const pausable = PAUSABLE_STATES.has(state);
-  const [busy, setBusy] = useState<"pause" | "resume" | "cancel" | "">("");
-  const [confirmed, setConfirmed] = useState(false);
-  const [error, setError] = useState("");
-
-  const apply = async (kind: "pause" | "resume" | "cancel") => {
-    if (!runId) {
-      setError("This Issue no longer has a manageable Run.");
-      return;
-    }
-    setBusy(kind);
-    setError("");
-    try {
-      const action = `run-${kind}`;
-      const result = await postAction(action, {
-        run_id: runId,
-        reason: `Operator ${kind} for GitHub Issue #${issue.number}`,
-      }, projectId);
-      if (!result.ok) {
-        // A stale mirror can outlive a rejected/expired Run.  Treat that as a
-        // refresh race instead of leaving the operator trapped in a red modal;
-        // the refreshed projection will expose Start Triage again.
-        if (result.status === "not_found" || /run not found/i.test(result.reason || "")) {
-          await onUpdated(`The ${queued ? "queued " : ""}Run was no longer available; Issue state refreshed.`);
-          onClose();
-          return;
+  useSettingsPreferences();
+    const state = issue?.workflow?.state ?? '';
+    const runId = state === 'triage_queued' ? '' : issue?.workflow?.run_id ?? '';
+    const [busy, setBusy] = useState('');
+    const [confirmed, setConfirmed] = useState(false);
+    const [error, setError] = useState('');
+    const inFlight = useRef(false);
+    useEffect(() => { if (open) {
+        setConfirmed(false);
+        setError('');
+    } }, [open, projectId, issue?.number, runId]);
+    const apply = async (kind: 'pause' | 'resume' | 'cancel') => {
+        if (!issue || !runId || inFlight.current || (kind === 'cancel' && !confirmed))
+            return;
+        if (kind === 'pause' && !PAUSABLE.has(state))
+            return;
+        if (kind === 'resume' && !PAUSED.has(state))
+            return;
+        inFlight.current = true;
+        setBusy(kind);
+        setError('');
+        try {
+            const result = await postAction(`run-${kind}`, { run_id: runId, reason: `Operator ${kind} for GitHub Issue #${issue.number}` }, projectId);
+            if (!result.ok) {
+                if (result.status === 'not_found' || result.status === 'invalid_transition') {
+                    await onUpdated('');
+                    const message = 'The Run changed. Review its latest state before trying again.';
+                    onNotification({ title: 'Run state updated', message, tone: 'info' });
+                    onClose();
+                    return;
+                }
+                throw new Error(result.reason || `Unable to ${kind} this Run.`);
+            }
+            onClose();
+            await onUpdated(kind === 'pause' ? `Pause requested for Issue #${issue.number}.` : kind === 'resume' ? `Run resumed for Issue #${issue.number}.` : `Run permanently cancelled for Issue #${issue.number}.`);
         }
-        if (result.status === "invalid_transition" || /invalid Run transition/i.test(result.reason || "")) {
-          await onUpdated("The Run changed in the background. The Issue state was refreshed; continue from its latest state.");
-          onClose();
-          return;
+        catch (cause) {
+            const message = cause instanceof Error ? cause.message : String(cause);
+            setError(message);
+            onNotification({ title: 'Run action failed', message, tone: 'danger', persistent: true });
         }
-        throw new Error(result.reason || `Unable to ${kind} this Run.`);
-      }
-      const notice = kind === "pause"
-        ? `Pause requested for GitHub Issue #${issue.number}; already-dispatched work may finish.`
-        : kind === "resume"
-          ? `Run resumed for GitHub Issue #${issue.number}.`
-          : `${queued ? "Queued Run" : "Run"} permanently cancelled for GitHub Issue #${issue.number}.`;
-      await onUpdated(notice);
-      onClose();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel issue-triage-start-modal" role="dialog" aria-modal="true" aria-labelledby="issue-run-title">
-        <header className="section-heading">
-          <div>
-            <h2 id="issue-run-title">{queued ? `Cancel queued ${state === "fix_queued" ? "Fix" : "Triage"}` : "Manage Run"}</h2>
-            <span className="muted">GitHub Issue #{issue.number} · {state}</span>
-          </div>
-          <button className="icon-button" disabled={Boolean(busy)} type="button" onClick={onClose}>Close</button>
-        </header>
-        <div className="modal-body issue-triage-start-body">
-          <div className="issue-triage-start-selection"><strong>{issue.title}</strong><code>{runId}</code></div>
-          {pausable ? (
-            <div className="issue-run-control-section">
-              <strong>Pause after current dispatch</strong>
-              <p>Pause blocks new dispatches. Work already dispatched may finish before the pause takes effect.</p>
-              <button className="icon-button" disabled={Boolean(busy)} type="button" onClick={() => void apply("pause")}>
-                <Pause aria-hidden="true" size={15} />{busy === "pause" ? "Pausing…" : "Pause Run"}
-              </button>
-            </div>
-          ) : null}
-          {paused ? (
-            <div className="issue-run-control-section">
-              <strong>Resume from checkpoint</strong>
-              <p>Resume reopens dispatch from the persisted Run state; completed work is not repeated.</p>
-              <button className="icon-button primary" disabled={Boolean(busy)} type="button" onClick={() => void apply("resume")}>
-                <Play aria-hidden="true" size={15} />{busy === "resume" ? "Resuming…" : "Resume Run"}
-              </button>
-            </div>
-          ) : null}
-          <div className="issue-run-permanent-warning">
-            <strong>Permanent cancellation</strong>
-            <p>This cannot be resumed. Cancellation does not roll back files already written to the local worktree.</p>
-            <label>
-              <input checked={confirmed} type="checkbox" onChange={(event) => setConfirmed(event.target.checked)} />
-              I understand this Run is permanently cancelled and local files are not reverted.
-            </label>
-            <button className="icon-button danger" disabled={Boolean(busy) || !confirmed} type="button" onClick={() => void apply("cancel")}>
-              <CircleX aria-hidden="true" size={15} />{busy === "cancel" ? "Cancelling…" : "Cancel permanently"}
-            </button>
-          </div>
-          {error ? <div className="issue-triage-start-error" role="alert">{error}</div> : null}
-        </div>
-      </section>
-    </div>
-  );
+        finally {
+            inFlight.current = false;
+            setBusy('');
+        }
+    };
+    return <IssueDialog open={open} busy={Boolean(busy)} className="manage-dialog" labelledBy="issue-manage-title" describedBy="issue-manage-description" initialFocus="[data-manage-done]" onClose={onClose}>
+    <header className="manage-dialog-head"><span className="manage-dialog-icon"><IssueIcon name="sliders" size="lg"/></span><div className="manage-dialog-title"><h3 id="issue-manage-title">{uiText("Manage Run")}</h3><p id="issue-manage-description">{uiText("Pause, resume, or permanently cancel the selected Run.")}</p></div><button className="dialog-close" type="button" disabled={Boolean(busy)} aria-label="Close dialog" onClick={onClose}><IssueIcon name="x"/></button></header>
+    <div className="manage-dialog-body"><div className="manage-issue-card"><span className="cancel-issue-mark"><IssueIcon name="dot"/></span><div className="cancel-issue-copy"><strong>{issue?.title}</strong><span>Issue #{issue?.number}</span>{runId ? <code>{runId}</code> : null}</div><span>{state ? <IssueStateValue state={state}/> : null}</span></div>
+      {PAUSED.has(state) ? <div className="manage-control-card"><strong>{uiText("Resume from checkpoint")}</strong><p>{uiText("Continue from the persisted Run state without repeating completed work.")}</p><button className="btn primary" type="button" disabled={Boolean(busy) || !runId} onClick={() => void apply('resume')}><IssueIcon name="play"/>{busy === 'resume' ? 'Resuming…' : 'Resume Run'}</button></div>
+            : PAUSABLE.has(state) ? <div className="manage-control-card"><strong>{uiText("Pause after current dispatch")}</strong><p>{uiText("Pause blocks new dispatches. Already-dispatched work may finish.")}</p><button className="btn" type="button" disabled={Boolean(busy) || !runId} onClick={() => void apply('pause')}><IssueIcon name="pause"/>{busy === 'pause' ? 'Pausing…' : 'Pause Run'}</button></div> : null}
+      <div className="manage-danger-card"><strong>{uiText("Permanent cancellation")}</strong><p>{uiText("This cannot be resumed. It does not roll back files already written to the local worktree.")}</p><label className="manage-confirm"><input type="checkbox" checked={confirmed} disabled={Boolean(busy) || !runId} onChange={event => setConfirmed(event.target.checked)}/>{uiText("I understand this Run is permanently cancelled and local files are not reverted.")}</label><button className="btn danger-solid" type="button" disabled={Boolean(busy) || !confirmed || !runId} onClick={() => void apply('cancel')}>{busy === 'cancel' ? <span className="button-spinner"/> : <IssueIcon name="xcircle"/>}{busy === 'cancel' ? 'Cancelling…' : 'Cancel permanently'}</button></div>
+      {error ? <p className="field-error" role="alert">{error}</p> : null}
+    </div><footer className="manage-dialog-actions"><button className="btn" type="button" data-manage-done disabled={Boolean(busy)} onClick={onClose}>{uiText("Done")}</button></footer>
+  </IssueDialog>;
 }

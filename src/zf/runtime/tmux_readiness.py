@@ -105,7 +105,7 @@ class TmuxReadinessMixin:
                 provider_seen = True
                 remaining = max(0.0, deadline - time.monotonic())
                 if remaining <= 0:
-                    return False
+                    break
                 if self.tmux.wait_for_prompt(
                     role_name,
                     pattern,

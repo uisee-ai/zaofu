@@ -1,36 +1,35 @@
-# 使用 Self-Issue 上报 ZaoFu 问题
+# 使用通用 Self-Issue 上报问题
 
-Self-Issue 用于“发现了 ZaoFu 异常，但不一定知道根因”的场景。它只读收集现场、组织
-Draft，并在你明确确认后发布到配置并锁定的 GitLab.com、GitHub 项目或同时发布到两者；
-不会修复代码或自动发布。
+Self-Issue 可用于任意本地项目。它把 `/issue` 后的自然语言整理为可编辑 Draft，并在用户
+明确选择评估方式、检查最终预览后发布到宿主配置的 GitLab、GitHub 或其他 Forge；不会
+自动修改代码、自动评估或自动发布。ZaoFu 只是一个可替换的 host adapter，不是 skill 的前置依赖。
 
-ZaoFu 也会对少量明确的内部强异常自动创建本地 Intake 候选。候选不会自动成为 Draft，
-不会自动上传附件或发布；Web 最多在约 5 秒内显示候选，用户仍需审阅并完成相同的 8 个问题。
+宿主也可以对少量明确的强异常创建本地候选。候选不会自动成为 Draft、上传附件或发布；
+用户必须审阅候选并显式确认后续动作。
 
 ## Web 完整流程
 
-1. 在 Kanban Agent 输入框输入 `/issue`；也可以输入 `/issue 标题内容` 预填标题。
-2. 逐个回答 8 个问题。左侧 **Back** 可返回编辑，右侧 **Next** 前进，右上角显示
-   `当前问题/8`。带红色 `*` 的问题必填。
-3. 第 5 步可上传 PNG、JPEG、MP4、WebM、TXT、LOG 或 JSON。最多 5 个，每个不超过
-   20 MB，总计不超过 50 MB。只要已经选择附件，提交前就必须勾选“附件遵循 GitLab
+1. 在宿主的输入框输入 `/issue <自然语言描述>`；也可以输入空 `/issue`，随后直接编辑 Draft。
+2. 系统立即生成可编辑 Draft：标题、Bug 描述、复现步骤、预期行为、附件描述、操作系统及版本、
+   项目版本和空的 `additional_context`。不再弹出固定八问；八问只允许通过显式 legacy 命令使用。
+3. 在 Draft 中编辑所有字段和目标仓库。浏览器/宿主检测到的 OS、版本和项目版本会标明来源，用户可以覆盖。
+4. 选择下一步：**Continue with project assessment** 或 **Continue with limited report**。运行中的
+   项目、heartbeat、worker 或已登录状态都不能替代该选择；limited 不调用 project-assessment agent。
+5. 需要上传时可选择 PNG、JPEG、MP4、WebM、TXT、LOG 或 JSON。最多 5 个，每个不超过
+   20 MB，总计不超过 100 MB。只要已经选择附件，提交前就必须勾选“附件遵循 GitLab
    项目可见性”；没有附件时该勾选不影响提交。若必填项和勾选都缺失，系统先定位第一个
    必填项，补齐后再定位附件确认。
-4. 最后一页点击 **Submit answers**。若必填项为空，界面跳到第一个缺失问题并显示
-   `This question can not be empty`。
-5. 系统创建 Draft 并先完成 Kernel 只读机械采集。只有项目 Runtime 存活时，Runtime
-   Orchestrator 才会原子 claim 请求并启动语义评估；Web/CLI 不会自行启动 Claude/Codex。
-   卡片分别显示 Runtime、证据与评估状态，以及发现者上下文、机械快照、源码检查、
-   有限复现和评估应用。
-6. 可用 **Interrupt** 中断。中断后可选 **Resume from checkpoint**，使用原 run、原证据
+6. 用户选择 project assessment 后，宿主才可在固定 revision 的只读 checkout/sandbox 中调用通用
+   project-assessment agent；Web/CLI 不会因为 runtime 在线而自行调用。卡片分别显示执行载体、证据与评估状态。
+7. 可用 **Interrupt** 中断。中断后可选 **Resume from checkpoint**，使用原 run、原证据
    快照和剩余复现预算继续；或选 **Restart with fresh evidence**，以新 run 重新采集当前
    现场并重置三次预算。中断保留本地 checkpoint，不会把部分输出当成结论。也可以不恢复
    而继续预览和发布；此时最终
    正文明确显示 `Not collected because the user interrupted evidence collection.`。非用户中断
    但采集失败时显示 `No incident evidence was collected.`，不会披露局部原始输出。
-7. 在 **Draft** 页编辑报告并点击 **Save draft**。左栏是用户 Intake，右栏是 Agent 上报、
+8. 在 **Draft** 页编辑报告并点击 **Save draft**。左栏是用户输入，右栏是 Agent 上报、
    orchestrator 分类、严重程度、组件、影响范围、置信度、建议和活动记录。
-8. 在 Draft 的 **Publish destination** 选择 GitLab.com、GitHub 或两者。目标仓库由
+9. 在 Draft 的 **Publish destination** 选择 GitLab.com、GitHub 或两者。目标仓库由
    `zf.yaml` 集中锁定，普通用户不能改成其他仓库。若所选模式包含 GitLab 且有附件，
    点击 **Safe preview** 查看附件清单，再点击
    **Confirm & prepare GitLab attachments**，随后 **Prepare attachments on GitLab.com**。
@@ -49,23 +48,22 @@ ZaoFu 也会对少量明确的内部强异常自动创建本地 Intake 候选。
    干净视口。它不是用户当前浏览器标签页的原始现场，不带 Cookie，
    不点击、不输入，阻断外网并遮罩输入/聊天/身份区域；失败不会阻止继续上报。成功截图
    仍要经过本步骤的附件确认，才会在 GitLab 中可见。
-   GitHub 没有本功能可使用的公开 Issue 二进制附件上传 API：GitHub-only 会保留完整文本并
-   在正文注明附件未上传；Both 只把经确认的二进制上传到 GitLab，GitHub 发布文本。
-9. 附件准备完成后再次点击 **Safe preview**，也可以直接点击 **Preview** 标签生成快照。
+   GitHub 不提供普通 REST Issue 附件上传 API。ZaoFu 使用 GitHub CLI 2.99+ 的受支持评论
+   附件路径，把已确认且不超过 20 MB 的图片/视频发到带稳定 marker 的 Evidence comment；
+   文本、Markdown、JSON、XML、YAML 和 CSV 经脱敏与有界截断后写入同一评论。其他二进制
+   只记录文件名、类型和 digest，不把本地路径或原始字节写进 GitHub。
+10. 附件准备完成后再次点击 **Safe preview**，也可以直接点击 **Preview** 标签生成快照。
    **Preview** 不使用 Draft 双栏，而是按每个 Provider 的最终 Markdown payload 排版；
    GitLab 与 GitHub 各自显示的内容就是各自最终发送内容。
-10. 点击 **Confirm this exact preview**，再点击对应的 Publish 按钮。GitLab 未授权时进入
-    PKCE 登录；授权固定在新标签页完成，原 ZaoFu 页面不跳转。回调成功后授权页自动关闭，
-    原页面显示 **Publishing…** 并只续发这一个已确认批次。GitHub 未授权时显示 Device
-    Flow code，点击链接在新标签页授权，当前页面自动轮询。两者都成功后分别显示 **Published on GitLab &
-    View**、**Published on GitHub & View**，均在新标签页打开。
-    发布后 Draft 进入只读，但 **Draft** 与 **Preview** 标签仍可无缝来回切换；Preview
+11. 点击唯一的 **Publish** 按钮即确认当前不可变预览。首次未授权时按钮替换为 **Connect** 并显示授权码；
+    授权回来后原页面进入 **Publishing…** 并只续发这一份冻结批次。成功后仅显示 **View**；如果 Issue
+    已创建但 label/附件等后置步骤失败，保留 **View** 链接并显示 **Retry label reconciliation**，
+    不得重新创建 Issue。发布后 Draft 进入只读，但 **Draft** 与 **Preview** 标签仍可无缝来回切换；Preview
     直接恢复实际发布的不可变 snapshot，不会再次 prepare。
 
-浏览器刷新会恢复未提交 Intake、已保存 Draft、卡片大小和正在运行的安全活动投影。
-Intake 中的答案会自动保存；Draft 编辑需点击 **Save draft**。右上角叉号会永久删除
-当前 Intake/Draft 及其本地受控附件；缩小只把卡片变成输入框上方的可见启动条。
-Intake 位于看板工作区而不是 Kanban Agent 对话框内，回答问题期间仍可继续使用聊天。
+浏览器刷新会恢复未发布 Draft、卡片大小和正在运行的安全活动投影。Draft 编辑需点击
+**Save draft**；右上角叉号会永久删除当前未发布 Draft 及其本地受控附件。旧版 Intake
+仅在显式 legacy 入口中出现，且位于宿主工作区而不是聊天对话框内。
 
 独立 **Triage** 页面默认打开 GitHub Issue 镜像。Repository 与 star 数来自同一次 GitHub
 同步；手动 **Refresh** 会绕过短时节流并立即重新读取仓库元数据。列表可按多个 label、
@@ -76,7 +74,7 @@ Issue 数。详情同时镜像 GitHub comments；评论中的 GitHub 图片直�
 打开或下载。GitHub 更新后点击 **Refresh** 会同时更新正文、评论、状态、label、头像与仓库
 star 元数据。
 
-如果 `/issue` 时 ZaoFu runtime 未运行，页面会说明仍可保存 Intake/Draft、检查 committed
+如果 `/issue` 时宿主执行载体未运行，页面会说明仍可保存 Draft、检查 committed
 source，但新鲜事件、日志、Trace、失败截图和实时复现证据可能不可用，并提示执行：
 
 ```bash
@@ -84,22 +82,22 @@ cd /path_to_project && zf start
 ```
 
 此时状态为 `evidence: waiting_for_runtime`、`assessment: waiting_for_runtime`，不会启动
-语义 Agent。可点击 **Check runtime again**；也可明确选择 **Continue with limited report**。
-有限报告允许预览和发布，但正文会写明 Runtime 未运行、动态证据未采集、语义评估未执行，
+评估 agent。可点击 **Check runtime again**；也可明确选择 **Continue with limited report**。
+有限报告允许预览和发布，即使载体后来在线也不会自动评估；正文会写明动态证据未采集、评估未执行，
 并固定为低置信度，不会伪装成完整评估。
 
 ## CLI
 
-交互式：
+自由文本（直接生成 Draft）：
 
 ```bash
 uv run zf issue report "简短标题"
 ```
 
-只创建并返回 Intake JSON：
+显式 legacy 模式只创建并返回 Intake JSON（公共 `/issue` 不走此路径）：
 
 ```bash
-uv run zf issue report "简短标题" --non-interactive
+uv run zf issue report "简短标题" --legacy-intake --non-interactive
 ```
 
 用 question-id keyed JSON 提交：
@@ -119,10 +117,13 @@ uv run zf issue publish <batch_id> --confirmation-id <confirmation_id>
 CLI 发布若返回 `authorization_required`，先在 Web 完成对应 Provider 授权，或沿用同一
 workspace 中尚未过期的既有凭据，再以新的 preview/confirmation 继续。Token 不会打印。
 
-Web 与 CLI 使用相同 `self-issue-capture`、Intake schema、SelfIssueService、Draft Store
+Web 与 CLI 使用相同 `self-issue-capture`、Draft schema、SelfIssueService、Draft Store
 和 evidence action，不存在第二套业务状态机。
 
-## 8 个问题
+## 旧版八问兼容入口（仅显式调用）
+
+公共 `/issue` 不会打开以下固定问卷。需要兼容旧客户端时，必须显式使用 `--legacy-intake` 或对应 legacy API；
+新实现应优先使用上面的自然语言 Draft 流程。
 
 1. Add a title（必填）
 2. Describe the bug（必填）
@@ -149,9 +150,9 @@ Web 与 CLI 使用相同 `self-issue-capture`、Intake schema、SelfIssueService
 - Worker 必须提供自己创建、带来源事件且 digest 不变的 local-only sidecar；Kernel 不接受
   只有模型判断、没有证据 ref 的自动触发。
 - 普通业务/项目测试失败、短暂且已恢复的超时不会自动创建 Self-Issue。
-- 同一诊断 fingerprint 24 小时内更新同一个 Intake；通知冷却为 6 小时，严重度升级除外。
+- 同一诊断 fingerprint 24 小时内更新同一个候选 Draft；通知冷却为 6 小时，严重度升级除外。
 - 同时最多 10 个活动自动候选；取消某候选后，相同 fingerprint 24 小时内不再弹出。
-- 自动触发永远停在本地审阅边界；提交 Intake、确认附件、OAuth、确认 Preview 和发布仍由
+- 自动触发永远停在本地审阅边界；确认附件、OAuth、查看 Preview 和 Publish 仍由
   用户逐步完成。
 
 可在 `zf.yaml` 中控制该行为：
@@ -195,11 +196,25 @@ sidecar 路径不会进入 Issue；只有已确认并上传的附件以可点击
 这些最终链接使用完整的 Provider HTTPS URL，因此在本地 Preview 与 GitLab 页面中都指向
 同一已上传字节；不会使用本地页面无法正确解析的相对 `/uploads/...` 地址。
 
-GitHub 使用公开 ZaoFu GitHub App 的 Device Flow，不需要把 client secret 分发给用户。
-App 只安装到固定官方上报仓库，权限为 Metadata read 与 Issues read/write。Device code
-保存在 0600 Kernel 事务文件，access/refresh token 仍只保存在 Secret Provider。发布出来
-的 Issue 由完成授权的真实 GitHub 用户身份创建。GitHub 与 GitLab 凭据按 user、workspace、
-provider 和 authorization domain 分开保存。
+GitHub 附件发布使用 ZaoFu GitHub OAuth App 的 Device Flow，不需要把 client secret 分发给
+用户。管理员需在 OAuth App 设置中启用 Device Flow，并把公开 client id 配置为
+`ZF_GITHUB_OAUTH_CLIENT_ID`；公开仓库使用 `oauth_scope: public_repo`，私有仓库必须显式使用
+`repo`。对应 target 示例：
+
+```yaml
+github:
+  authorization_domain: github.com
+  project: owner/repository
+  oauth_client_id: ${ZF_GITHUB_OAUTH_CLIENT_ID}
+  auth_mode: oauth_device_flow
+  oauth_scope: public_repo
+```
+
+Device code 保存在 0600 Kernel 事务文件，access/refresh token 仍只保存在 Secret Provider。
+发布出来的 Issue 由完成授权的真实 GitHub 用户身份创建。凭据按 user、workspace、provider
+和 authorization domain 保存，同一 workspace 的兼容项目只需授权一次。旧
+`device_flow`/`ghu_` 凭据可以继续支持旧 GitHub App 路径，但不能上传媒体；切换 target 后
+首次发布会要求重新 Connect。授权和 repository 只读 preflight 均通过后才创建 Issue。
 GitHub 公共用户创建的 Issue 不能直接附带仓库 label。仓库内的
 `.github/workflows/self-issue-labels.yml` 会在 Issue 创建后读取稳定 marker，只从白名单中
 补上分类与严重程度 label。目标 GitHub 仓库必须预先创建下列 label（名称必须完全一致）：

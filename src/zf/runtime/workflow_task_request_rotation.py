@@ -36,6 +36,20 @@ class WorkflowTaskRequestRotationError(ValueError):
     """A Task Request rotation cannot be proven safe."""
 
 
+def active_task_request_blocker(
+    events: Iterable[ZfEvent], *, task_id: str, request_id: str,
+) -> str:
+    """Protect active bootstrap anchors even without a revision binding."""
+    if not task_id:
+        return ""
+    projection = build_run_admission_projection(events)
+    for run_id in projection.active_run_ids:
+        owner = projection.runs[run_id]
+        if owner.task_id == task_id and owner.request_id != request_id:
+            return f"workflow Task {task_id} is owned by active Run {run_id}"
+    return ""
+
+
 def legacy_cli_origin_migration_allowed(
     prior: dict[str, Any],
     supplied: dict[str, Any],
@@ -220,6 +234,12 @@ def task_request_binding_decision(
     request_id = str(request_projection.get("request_id") or "").strip()
     request_revision = int(request_projection.get("revision") or 0)
     origin_digest = workflow_origin_digest(canonical_origin)
+    event_list = list(events)
+    blocker = active_task_request_blocker(
+        event_list, task_id=task.id, request_id=request_id,
+    )
+    if blocker:
+        raise WorkflowTaskRequestRotationError(blocker)
     task_request = workflow_task_request_binding(task)
     if not task_request:
         return TaskRequestBindingDecision(should_bind=True, rotation={})
@@ -235,7 +255,6 @@ def task_request_binding_decision(
         state_dir,
         task_request,
     )
-    event_list = list(events)
     new_admission = request_admission_view(
         event_list,
         request_id=request_id,

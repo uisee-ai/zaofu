@@ -22,6 +22,20 @@ Approval invokes the controlled `create-task` action for the current Project's
 TaskStore and event ledger. Chat text, a Channel conclusion, or a UI selection
 does not directly launch an Agent.
 
+### Attach Files in Kanban Agent
+
+Use the `+` at the lower-left of the composer to select local images, logs,
+Markdown, JSON, Office/PDF, and other supported files. You can also paste a
+screenshot directly into the composer. Removable attachment cards appear before
+sending. Each file is limited to 20 MB; one message accepts up to five files and
+100 MB in total.
+
+For an ordinary conversation, ZaoFu stores the bytes as verified sidecars under
+the selected Project and records only refs and digests in events. Codex receives
+images as native image input; other providers can inspect the prompted read-only
+local paths. With `/issue <description>`, the same files become attachments on
+the Self-Issue Draft and remain private until the user chooses to publish them.
+
 ## Read Complete Context from a Task
 
 Task detail separates long-running delivery state into four views:

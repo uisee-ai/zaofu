@@ -4,6 +4,8 @@ const chromiumExecutablePath = process.env.ZF_E2E_CHROMIUM_EXECUTABLE_PATH;
 
 export default defineConfig({
   testDir: "./tests",
+  // Isolated Issue UI tests start Vite through playwright.issue.config.ts.
+  testIgnore: ["issue-triage-controls.spec.ts", "issue-triage-actions.spec.ts", "issue-triage-loading.spec.ts", "settings-workspace.spec.ts", "issue-source-settings.spec.ts"],
   timeout: 20_000,
   expect: {
     timeout: 5_000,

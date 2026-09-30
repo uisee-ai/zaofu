@@ -7,6 +7,7 @@ import json
 import shlex
 from pathlib import Path
 
+from zf.core.state.atomic_io import atomic_write_text
 from zf.runtime.cli_command import zf_cli_cmd
 
 
@@ -73,10 +74,11 @@ def write_codex_hook_settings(
     state_dir: Path,
     *,
     project_root: Path | None = None,
+    user_home: Path | None = None,
 ) -> None:
     """Render ``<project>/.codex/hooks.json`` for Codex's hook engine."""
     project_root = (project_root or state_dir.parent).resolve()
-    codex_dir = project_root / ".codex"
+    codex_dir = user_home if user_home is not None else project_root / ".codex"
     codex_dir.mkdir(parents=True, exist_ok=True)
 
     hooks: dict[str, list[dict]] = {}
@@ -89,7 +91,7 @@ def write_codex_hook_settings(
             }],
         }]
 
-    (codex_dir / "hooks.json").write_text(
+    atomic_write_text(codex_dir / "hooks.json",
         json.dumps({"hooks": hooks}, indent=2),
         encoding="utf-8",
     )
@@ -131,6 +133,7 @@ def codex_hook_hash(state_dir: Path, engine_name: str, zf_event: str) -> str:
 def codex_hook_trust_states(
     state_dir: Path,
     *project_roots: Path,
+    user_home: Path | None = None,
 ) -> list[tuple[str, str]]:
     """Return ``(hook_state_key, trusted_hash)`` for every zaofu hook.
 
@@ -150,8 +153,10 @@ def codex_hook_trust_states(
             roots.append(resolved)
 
     states: list[tuple[str, str]] = []
-    for root in roots:
-        source_path = root / ".codex" / "hooks.json"
+    sources = [root / ".codex" / "hooks.json" for root in roots]
+    if user_home is not None:
+        sources.append(user_home.resolve() / "hooks.json")
+    for source_path in sources:
         for engine_name, zf_event in CODEX_HOOK_EVENTS:
             label = _codex_event_label(zf_event)
             # group_index/handler_index are always 0:0 — one matcher group with

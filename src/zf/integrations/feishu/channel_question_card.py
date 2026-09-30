@@ -83,8 +83,10 @@ def build_question_card(question: dict[str, Any], *, state: str = "open") -> dic
     question_id = str(question.get("question_id") or "")
     body = (
         f"**需求澄清提问**\n"
-        f"channel: `{question.get('channel_id')}`  thread: `{question.get('thread_id')}`\n"
-        f"提问人: `{question.get('asked_by')}`  类别: `{question.get('category') or '-'}`\n\n"
+        f"channel: `{question.get('channel_id')}`\n"
+        f"thread: `{question.get('thread_id')}`\n"
+        f"提问人: `{question.get('asked_by')}`\n"
+        f"类别: `{question.get('category') or '-'}`\n\n"
         f"{question.get('question')}"
     )
     suggestion = question_recommendation(question)

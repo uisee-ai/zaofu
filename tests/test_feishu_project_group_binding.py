@@ -15,6 +15,8 @@ from zf.integrations.feishu.project_group_binding import (
 )
 from zf.integrations.feishu.transport import FeishuTransportError
 
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 class FakeChatAdmin:
     def __init__(self) -> None:
@@ -90,6 +92,11 @@ def _env() -> dict[str, str]:
         "FEISHU_RUNM": "cli_runm",
         "FEISHU_RUNM_SECRET": "runm-secret",
     }
+
+
+def test_env_template_includes_project_group_owner_identity() -> None:
+    template = (_REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert "ZF_FEISHU_PROVISIONER_OWNER_OPEN_ID=" in template
 
 
 def test_binding_is_pending_without_explicit_external_provision(
@@ -306,6 +313,57 @@ def test_group_cli_provision_preserves_initialized_workspace_when_omitted(
     assert binding.status == "repair_required"
     assert WorkspaceRegistry(workspace="team").get(binding.project_id) is not None
     assert WorkspaceRegistry(workspace="default").get(binding.project_id) is None
+
+
+def test_group_cli_loads_project_dotenv_before_real_provision(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ZF_WORKSPACE_HOME", str(tmp_path / "workspace-home"))
+    for name in (
+        "ZF_TEST_OWNER_OPEN_ID",
+        "FEISHU_KANBAN",
+        "FEISHU_KANBAN_SECRET",
+        "FEISHU_RUNM",
+        "FEISHU_RUNM_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "zf.yaml").write_text(
+        'version: "1.0"\n'
+        "project:\n  name: binding-cli-dotenv\n  state_dir: runtime\n"
+        "integrations:\n"
+        "  feishu_project_group:\n"
+        "    enabled: true\n"
+        "    owner_open_id_env: ZF_TEST_OWNER_OPEN_ID\n"
+        "    bot_purposes: [kanban_agent, run_manager]\n",
+        encoding="utf-8",
+    )
+    (root / ".env").write_text(
+        "ZF_TEST_OWNER_OPEN_ID=ou_owner\n"
+        "FEISHU_KANBAN=cli_kanban\n"
+        "FEISHU_KANBAN_SECRET=kanban-secret\n"
+        "FEISHU_RUNM=cli_runm\n"
+        "FEISHU_RUNM_SECRET=runm-secret\n",
+        encoding="utf-8",
+    )
+    fake = FakeChatAdmin()
+    monkeypatch.setattr(
+        project_group_binding,
+        "_default_chat_client",
+        lambda _credential: fake,
+    )
+    monkeypatch.chdir(root)
+
+    assert main(["init", "--workspace", "team"]) == 0
+    assert main(["feishu", "group", "provision", "--confirm"]) == 0
+    binding = ProjectFeishuGroupBindingStore(root / "runtime").get(
+        "project-collaboration"
+    )
+    assert binding is not None and binding.status == "active"
+    assert binding.chat_id == "oc_project"
+    assert len(fake.created) == 1
 
 
 def test_init_auto_provisions_group_and_builds_workspace_route_index(

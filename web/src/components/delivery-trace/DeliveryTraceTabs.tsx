@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // Delivery Runs workbench. Run answers current state and causation; task
 // attempts and regression actions stay in the selected task's drawer.
 import { Fragment, useEffect, useState } from "react";
@@ -28,6 +30,7 @@ interface DeliveryTraceTabsProps {
 }
 
 export function DeliveryTraceTabs({ onOpenPage, projectId, trace }: DeliveryTraceTabsProps) {
+  useSettingsPreferences();
   const [selectedStageId, setSelectedStageId] = useState("");
   const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
   const [causal, setCausal] = useState<CausalState | null>(null);
@@ -56,7 +59,7 @@ export function DeliveryTraceTabs({ onOpenPage, projectId, trace }: DeliveryTrac
   return (
     <section className="delivery-tabbed-workbench" data-testid="delivery-tabs">
       <div className="delivery-run-surface-head" data-testid="delivery-run-surface-head">
-        <strong>Run</strong>
+        <strong>{uiText("Run")}</strong>
         <span className="muted">{stageCount} stage{stageCount === 1 ? "" : "s"} · select a task for attempts and evidence</span>
       </div>
       {hasRunGraph ? (
@@ -99,13 +102,14 @@ function DeliveryFlowTab({
   setSelectedStageId: (id: string) => void;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   const stages = trace.task_flow?.stages ?? [];
   const runGroups = trace.run_groups ?? [];
   const selected = stages.find((stage) => stage.stage_id === selectedStageId) ?? stages[0];
   if (!stages.length) {
     return (
       <div className="delivery-tab-empty">
-        <strong>No task-flow projection.</strong>
+        <strong>{uiText("No task-flow projection.")}</strong>
         <span className="muted">Run is limited to the available attempt and timeline evidence.</span>
       </div>
     );
@@ -123,7 +127,7 @@ function DeliveryFlowTab({
           <StageWorkPanel runGroups={runGroupsForStage(selected, runGroups)} stage={selected} />
         ) : (
           <section className="delivery-flow-stage-panel">
-            <p className="muted">Select a stage.</p>
+            <p className="muted">{uiText("Select a stage.")}</p>
           </section>
         )}
         <StageInspector
@@ -174,6 +178,7 @@ function StageWorkPanel({
   runGroups: DeliveryRunGroup[];
   stage: DeliveryTaskFlowStage;
 }) {
+  useSettingsPreferences();
   const [expandedRunId, setExpandedRunId] = useState("");
   useEffect(() => {
     const candidate =
@@ -189,7 +194,7 @@ function StageWorkPanel({
     <section className="delivery-flow-stage-panel">
       <div className="delivery-stage-panel-head">
         <div>
-          <span className="eyebrow">Selected Stage</span>
+          <span className="eyebrow">{uiText("Selected Stage")}</span>
           <h3>{stageDisplayLabel(stage)}</h3>
         </div>
         <div className="delivery-stage-panel-badges">
@@ -223,13 +228,14 @@ function StageWorkPanel({
 }
 
 function StageTaskList({ stage }: { stage: DeliveryTaskFlowStage }) {
+  useSettingsPreferences();
   if (!stage.tasks.length) {
     return (
       <div className="delivery-stage-empty-lane">
         <span className={`workflow-status-dot status-${dtTone(stage.status)}`} />
         <div>
           <strong>{stage.label || stage.stage_id}</strong>
-          <p className="muted">No tasks currently mapped to this stage.</p>
+          <p className="muted">{uiText("No tasks currently mapped to this stage.")}</p>
         </div>
         <span className={`badge badge-${dtTone(stage.status)}`}>{stage.status}</span>
       </div>
@@ -253,6 +259,7 @@ function StageTaskList({ stage }: { stage: DeliveryTaskFlowStage }) {
 }
 
 function FanoutDag({ run }: { run: DeliveryRunGroup }) {
+  useSettingsPreferences();
   const children = run.children.slice(0, 12);
   return (
     <div className="delivery-fanout-dag" data-testid="delivery-fanout-dag">
@@ -278,7 +285,7 @@ function FanoutDag({ run }: { run: DeliveryRunGroup }) {
           <div className="delivery-stage-empty-lane">
             <span className={`workflow-status-dot status-${dtTone(run.status)}`} />
             <div>
-              <strong>No child lanes projected</strong>
+              <strong>{uiText("No child lanes projected")}</strong>
               <p className="muted">This run group has source events but no fanout children.</p>
             </div>
             <span className={`badge badge-${dtTone(run.status)}`}>{run.status}</span>
@@ -306,11 +313,12 @@ function StageInspector({
   stage?: DeliveryTaskFlowStage;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   if (!stage) {
     return (
       <aside className="delivery-flow-inspector">
-        <h3 className="section-title">Stage Inspector</h3>
-        <p className="muted">Select a stage.</p>
+        <h3 className="section-title">{uiText("Stage Inspector")}</h3>
+        <p className="muted">{uiText("Select a stage.")}</p>
       </aside>
     );
   }
@@ -336,7 +344,7 @@ function StageInspector({
   return (
     <aside className="delivery-flow-inspector">
       <div className="inline-heading">
-        <h3 className="section-title">Stage Inspector</h3>
+        <h3 className="section-title">{uiText("Stage Inspector")}</h3>
         <span className={`badge badge-${dtTone(stage.status)}`}>{stage.status}</span>
       </div>
       <dl className="delivery-inspector-grid">
@@ -348,7 +356,7 @@ function StageInspector({
         ))}
       </dl>
       <div className="workflow-inspector-block">
-        <h4>Gate / Verdict</h4>
+        <h4>{uiText("Gate / Verdict")}</h4>
         <dl className="delivery-inspector-grid">
           <dt>verdict</dt>
           <dd>{workflowRun?.verdict?.status || String(stage.gate_summary?.status ?? "-")}</dd>
@@ -366,16 +374,16 @@ function StageInspector({
           ))}
           {workflowRun?.artifact_refs?.slice(0, 6).map((ref) => <code key={ref}>{ref}</code>)}
           {!(workflowRun?.source_event_ids?.length || stage.source_event_ids?.length || workflowRun?.artifact_refs?.length) && (
-            <span className="muted">No refs.</span>
+            <span className="muted">{uiText("No refs.")}</span>
           )}
         </div>
       </div>
       <DeliveryActionPlaceholders scope="stage" />
       <div className="workflow-inspector-block">
-        <h4>Run Groups</h4>
+        <h4>{uiText("Run Groups")}</h4>
         <div className="workflow-chip-list">
           {runGroups.slice(0, 8).map((run) => <code key={run.group_id}>{run.group_id}</code>)}
-          {!runGroups.length && <span className="muted">No run groups.</span>}
+          {!runGroups.length && <span className="muted">{uiText("No run groups.")}</span>}
         </div>
       </div>
     </aside>
@@ -435,12 +443,13 @@ function metricValue(metrics: Record<string, number | string | null> | undefined
 }
 
 function DeliveryActionPlaceholders({ scope }: { scope: "stage" | "run" }) {
+  useSettingsPreferences();
   const labels = scope === "stage"
     ? ["Retry stage", "Pause stage", "Resume stage"]
     : ["Rerun failed children", "Retry run", "Request fanout"];
   return (
     <div className="workflow-inspector-block">
-      <h4>Controlled Actions</h4>
+      <h4>{uiText("Controlled Actions")}</h4>
       <div className="delivery-inspector-actions">
         {labels.map((label) => (
           <button key={label} type="button" className="delivery-action-button" disabled>
@@ -449,7 +458,7 @@ function DeliveryActionPlaceholders({ scope }: { scope: "stage" | "run" }) {
         ))}
       </div>
       <small className="delivery-action-note">
-        Read-only placeholder. Requires token-gated deterministic kernel action path.
+        {uiText("Read-only placeholder. Requires token-gated deterministic kernel action path.")}
       </small>
     </div>
   );

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="51" time="6.801" timestamp="2026-09-28T21:22:52.389322+08:00" hostname="uisee"><testcase classname="tests.test_event_contracts" name="test_official_flow_profile_failure_events_have_consumer_contracts" time="0.033" /><testcase classname="tests.test_event_contracts" name="test_event_contract_report_includes_recovery_closeout" time="0.030" /><testcase classname="tests.test_event_contracts" name="test_prod_new_yaml_event_contracts_are_clean" time="0.081" /><testcase classname="tests.test_event_contracts" name="test_prod_controller_prd_accepts_lane_terminal_child_alias" time="0.045" /><testcase classname="tests.test_event_contracts" name="test_prod_controller_general_has_config_owned_failure_consumers" time="0.048" /><testcase classname="tests.test_event_contracts" name="test_generic_stage_failures_use_config_local_replan_consumer" time="0.045" /><testcase classname="tests.test_event_contracts" name="test_event_contract_report_flags_custom_actionable_stage_failure" time="0.005" /><testcase classname="tests.test_event_contracts" name="test_event_contract_report_enforces_stage_child_kernel_boundary" time="0.007" /><testcase classname="tests.test_event_contracts" name="test_event_scope_contract_diagnostics_require_actionable_scope" time="0.001" /><testcase classname="tests.test_event_contracts" name="test_doctor_event_contract_json_reports_errors" time="1.055" /><testcase classname="tests.test_event_contracts" name="test_validate_cold_start_strict_fails_on_event_contract_error" time="0.102" /><testcase classname="tests.test_manual_docs" name="test_generated_cli_inventory_tracks_parser_tree" time="0.182" /><testcase classname="tests.test_manual_docs" name="test_manual_docs_currentness_gate_is_green" time="1.268" /><testcase classname="tests.test_manual_docs" name="test_user_manual_does_not_depend_on_design_docs" time="0.107" /><testcase classname="tests.test_manual_docs" name="test_manual_cli_examples_and_execution_matrix_track_parser" time="0.394" /><testcase classname="tests.test_manual_docs" name="test_manual_command_contract_rejects_unknown_cli_option" time="0.106" /><testcase classname="tests.test_manual_docs" name="test_manual_smoke_terminal_evidence_is_tolerant_and_payload_specific" time="0.004" /><testcase classname="tests.test_manual_docs" name="test_manual_smoke_state_change_scope_is_explicit" time="0.003" /><testcase classname="tests.test_manual_docs" name="test_release_capability_template_passes_smoke_gate" time="0.047" /><testcase classname="tests.test_registry_forcing_closure" name="test_new_actionable_producers_must_register" time="0.304" /><testcase classname="tests.test_registry_forcing_closure" name="test_legacy_exemption_only_shrinks" time="0.002" /><testcase classname="tests.test_registry_forcing_closure" name="test_legacy_exemption_entries_still_emitted" time="0.338" /><testcase classname="tests.test_registry_forcing_closure" name="test_f_batch_events_registered_with_sane_specs" time="0.001" /><testcase classname="tests.test_registry_forcing_closure" name="test_known_event_types_actionable_must_register_or_be_frozen" time="0.001" /><testcase classname="tests.test_registry_forcing_closure" name="test_known_types_exemption_shrinks_only" time="0.001" /><testcase classname="tests.test_structure_discipline" name="test_00_index_links_resolve_to_existing_files" time="0.001" /><testcase classname="tests.test_structure_discipline" name="test_design_doc_numbering_has_no_duplicates" time="0.001" /><testcase classname="tests.test_structure_discipline" name="test_runtime_modules_have_callers_or_are_whitelisted" time="0.644" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/control_actions.py-577]" time="0.002" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/orchestrator.py-4944]" time="0.005" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_dispatch.py-5119]" time="0.006" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_fanout.py-8564]" time="0.008"><failure message="AssertionError: src/zf/runtime/orchestrator_fanout.py grew to 8649 lines (cap 8564). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.&#10;assert 8649 &lt;= 8564">rel_path = 'src/zf/runtime/orchestrator_fanout.py', cap = 8564
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+&gt;       assert lines &lt;= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: src/zf/runtime/orchestrator_fanout.py grew to 8649 lines (cap 8564). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 8649 &lt;= 8564
+
+tests/test_structure_discipline.py:412: AssertionError</failure></testcase><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_lifecycle.py-2750]" time="0.004" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/runtime/orchestrator_reactor.py-6977]" time="0.006" /><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[src/zf/web/server.py-9360]" time="0.007"><failure message="AssertionError: src/zf/web/server.py grew to 9554 lines (cap 9360). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.&#10;assert 9554 &lt;= 9360">rel_path = 'src/zf/web/server.py', cap = 9360
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+&gt;       assert lines &lt;= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: src/zf/web/server.py grew to 9554 lines (cap 9360). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 9554 &lt;= 9360
+
+tests/test_structure_discipline.py:412: AssertionError</failure></testcase><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[web/src/app/App.tsx-3580]" time="0.004"><failure message="AssertionError: web/src/app/App.tsx grew to 3707 lines (cap 3580). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.&#10;assert 3707 &lt;= 3580">rel_path = 'web/src/app/App.tsx', cap = 3580
+
+    @pytest.mark.parametrize("rel_path,cap", sorted(_OVERSIZED_FILE_CAPS.items()))
+    def test_oversized_file_growth_frozen(rel_path: str, cap: int):
+        path = _REPO / rel_path
+        if not path.exists():
+            pytest.skip(f"{rel_path} no longer exists (split? lower the cap map)")
+        lines = sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+&gt;       assert lines &lt;= cap, (
+            f"{rel_path} grew to {lines} lines (cap {cap}). AGENTS.md: add new "
+            f"behavior in a sibling module, do not append to known-oversized "
+            f"files. If a refactor legitimately moved code here, adjust the cap "
+            f"in the same PR with justification."
+        )
+E       AssertionError: web/src/app/App.tsx grew to 3707 lines (cap 3580). AGENTS.md: add new behavior in a sibling module, do not append to known-oversized files. If a refactor legitimately moved code here, adjust the cap in the same PR with justification.
+E       assert 3707 &lt;= 3580
+
+tests/test_structure_discipline.py:412: AssertionError</failure></testcase><testcase classname="tests.test_structure_discipline" name="test_oversized_file_growth_frozen[web/src/styles.css-200]" time="0.002" /><testcase classname="tests.test_structure_discipline" name="test_unknown_oversized_source_files_are_not_silent_debt" time="0.616"><failure message="AssertionError: Unknown source files over the 1000-line soft limit: ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']. Split the file, or add an explicit debt entry with a concrete defer trigger in _KNOWN_OVERSIZED_SOURCE_FILES.&#10;assert not ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']">def test_unknown_oversized_source_files_are_not_silent_debt():
+        known = set(_OVERSIZED_FILE_CAPS) | _KNOWN_OVERSIZED_SOURCE_FILES
+        oversized = {
+            path.relative_to(_REPO).as_posix()
+            for path in _source_files()
+            if (
+                sum(1 for _ in path.open(encoding="utf-8", errors="replace"))
+                &gt; _SOURCE_FILE_SOFT_LIMIT
+            )
+        }
+        unknown = sorted(oversized - known)
+&gt;       assert not unknown, (
+            f"Unknown source files over the {_SOURCE_FILE_SOFT_LIMIT}-line "
+            f"soft limit: {unknown}. "
+            f"Split the file, or add an explicit debt entry with a concrete "
+            f"defer trigger in _KNOWN_OVERSIZED_SOURCE_FILES."
+        )
+E       AssertionError: Unknown source files over the 1000-line soft limit: ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']. Split the file, or add an explicit debt entry with a concrete defer trigger in _KNOWN_OVERSIZED_SOURCE_FILES.
+E       assert not ['src/zf/runtime/external_issue_ingress.py', 'src/zf/web/issue_triage_routes.py', 'web/src/pages/IssueTriagePage.tsx', 'web/src/styles/24-issue-triage.css']
+
+tests/test_structure_discipline.py:569: AssertionError</failure></testcase><testcase classname="tests.test_structure_discipline" name="test_reactor_handlers_are_registered_or_referenced" time="0.036" /><testcase classname="tests.test_structure_discipline" name="test_builtin_handler_table_has_no_dangling_methods" time="0.031" /><testcase classname="tests.test_structure_discipline" name="test_skills_index_matches_directory" time="0.003" /><testcase classname="tests.test_structure_discipline" name="test_provider_skill_mirrors_stay_in_sync" time="0.012" /><testcase classname="tests.test_workflow_spine_projection" name="test_attempt_lifecycle_and_incremental_cursor" time="0.023" /><testcase classname="tests.test_workflow_spine_projection" name="test_standard_task_attempt_events_project_full_attempt_context" time="0.016" /><testcase classname="tests.test_workflow_spine_projection" name="test_generic_child_completed_closes_attempt" time="0.010" /><testcase classname="tests.test_workflow_spine_projection" name="test_provider_activity_advances_matching_open_attempt_watermark" time="0.010" /><testcase classname="tests.test_workflow_spine_projection" name="test_new_dispatch_supersedes_prior_open_attempt_and_late_terminal_is_matched" time="0.011" /><testcase classname="tests.test_workflow_spine_projection" name="test_stage_rounds_and_status" time="0.011" /><testcase classname="tests.test_workflow_spine_projection" name="test_health_counters" time="0.022" /><testcase classname="tests.test_workflow_spine_projection" name="test_run_level_milestones" time="0.022" /><testcase classname="tests.test_workflow_spine_projection" name="test_corrupt_projection_rebuilds_from_zero" time="0.014" /></testsuite></testsuites>

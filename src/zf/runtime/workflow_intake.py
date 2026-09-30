@@ -17,6 +17,7 @@ from zf.core.skills import (
     AdapterSkillResolverInput,
     build_project_adapter_skill_plan,
 )
+from zf.core.state.atomic_io import atomic_write_text
 from zf.core.workflow.request_policy import (
     default_lanes_for_kind,
     missing_fields_for_kind,
@@ -184,11 +185,13 @@ def build_flow_intake(
         "task_input_contract_digest": task_input.contract_digest,
         "created_at": now,
     }
-    intake_json_path.write_text(
+    atomic_write_text(
+        intake_json_path,
         json.dumps(intake_payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
-    intake_markdown_path.write_text(
+    atomic_write_text(
+        intake_markdown_path,
         _render_intake_markdown(intake_payload, source_text=source_text),
         encoding="utf-8",
     )
@@ -199,7 +202,8 @@ def build_flow_intake(
         strictness=strictness,
         parity_scope=parity_scope,
     )
-    skill_plan_path.write_text(
+    atomic_write_text(
+        skill_plan_path,
         json.dumps(skill_plan, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
@@ -262,7 +266,8 @@ def build_flow_intake(
         "created_at": now,
     }
     manifest["workflow_input_manifest_ref"] = str(manifest_path)
-    manifest_path.write_text(
+    atomic_write_text(
+        manifest_path,
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )

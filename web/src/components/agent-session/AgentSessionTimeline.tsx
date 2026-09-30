@@ -1,6 +1,9 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { createContext, Fragment, useContext, useEffect, useMemo, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Bot, Check, CheckCircle2, ChevronRight, CircleSlash, Clock3, Copy, FileText, GitCompare, Hourglass, Info, ListChecks, Loader2, Maximize2, MessageSquare, Minimize2, Paperclip, PauseCircle, Pin, Reply, XCircle } from "lucide-react";
+import { formatTime } from '../../lib/format';
 import type {
   AgentConversation,
   AgentSessionActionProposal,
@@ -244,6 +247,7 @@ function ThreadPane({
   showRunProvider: boolean;
   thread: AgentSessionThread;
 }) {
+  useSettingsPreferences();
   return (
     <section className="agent-session-pane" aria-label={thread.title}>
       {!compact ? (
@@ -290,7 +294,7 @@ function ThreadPane({
                       <button
                         aria-label="Reply to message"
                         className="icon-button"
-                        title="Reply"
+                        title={uiText("Reply")}
                         type="button"
                         onClick={() => onReplyMessage(turn.user!, thread.id)}
                       >
@@ -395,6 +399,7 @@ function RunBlock({
   showRunDetails: boolean;
   showRunProvider: boolean;
 }) {
+  useSettingsPreferences();
   const capability = providerCapabilities.find((item) => item.provider === run.provider);
   const canCancel = (
     onCancelRun
@@ -519,7 +524,7 @@ function RunBlock({
         {canCancel ? (
           <div className="agent-run-actions">
             <button className="agent-inline-button" type="button" onClick={() => onCancelRun?.(run.id)}>
-              Cancel
+              {uiText("Cancel")}
             </button>
           </div>
         ) : null}
@@ -828,6 +833,7 @@ function ToolStepsSegment({
   runStatus: AgentSessionStatus;
   segment: ToolRunSegment;
 }) {
+  useSettingsPreferences();
   const renderParts = (parts: AgentSessionPart[]) =>
     parts.map((part) => (
       <PartRenderer channelChatMode={channelChatMode} key={part.id} part={part} runStatus={runStatus} />
@@ -837,7 +843,7 @@ function ToolStepsSegment({
   // of a black box. Completed runs keep the plain "See N steps" fold.
   const liveCallCount = segment.live ? toolCallCount([...segment.grouped, ...segment.standalone]) : 0;
   const liveCountLine = liveCallCount > 0 ? (
-    <div className="agent-tool-live-count mono">Tool call {liveCallCount}</div>
+    <div className="agent-tool-live-count mono">{uiText("Tool call")} {liveCallCount}</div>
   ) : null;
   if (segment.grouped.length === 0) return <>{liveCountLine}{renderParts(segment.standalone)}</>;
   const n = segment.total;
@@ -968,6 +974,7 @@ function PreviewPart({ part }: { part: AgentSessionPart }) {
 // Fullscreen side pane: renders a single preview (code/diff/artifact) beside
 // the chat, so the conversation stays readable while the artifact is inspected.
 function PreviewPane({ part, onClose, projectId }: { part: AgentSessionPart; onClose: () => void; projectId?: string }) {
+  useSettingsPreferences();
   const profile = previewProfileOf(part);
   const rawOutput = rawOutputRefFromRefs(part.refs);
   const rawRef = part.contentRef || rawOutput?.raw_ref || "";
@@ -1014,7 +1021,7 @@ function PreviewPane({ part, onClose, projectId }: { part: AgentSessionPart; onC
     }).catch(() => undefined);
   };
   return (
-    <section className="agent-preview-pane" aria-label="Preview">
+    <section className="agent-preview-pane" aria-label={uiText("Preview")}>
       <header className="agent-preview-pane-head">
         {profile === "diff" ? <GitCompare size={14} /> : <FileText size={14} />}
         <strong className="truncate">{part.title || profile}</strong>
@@ -1031,7 +1038,7 @@ function PreviewPane({ part, onClose, projectId }: { part: AgentSessionPart; onC
         {part.summary ? <p className="muted">{part.summary}</p> : null}
         {rawRef ? (
           <>
-            {rawLoading && !rawContent ? <p className="muted">Loading raw output...</p> : null}
+            {rawLoading && !rawContent ? <p className="muted">{uiText("Loading raw output...")}</p> : null}
             {rawError ? <p className="agent-action-warning">{rawError}</p> : null}
             {rawContent ? (
               <div className="agent-tool-output raw">
@@ -1047,9 +1054,9 @@ function PreviewPane({ part, onClose, projectId }: { part: AgentSessionPart; onC
                   </div>
                 ) : null}
               </div>
-            ) : !rawLoading ? <p className="muted">No raw output content.</p> : null}
+            ) : !rawLoading ? <p className="muted">{uiText("No raw output content.")}</p> : null}
           </>
-        ) : part.content ? <MarkdownText content={part.content} /> : <p className="muted">No preview content.</p>}
+        ) : part.content ? <MarkdownText content={part.content} /> : <p className="muted">{uiText("No preview content.")}</p>}
         <AttachmentChips refs={part.refs} />
       </div>
     </section>
@@ -1095,6 +1102,7 @@ function StackedCards({
   onCancelQueued?: (cardId: string) => void;
   onAdoptResearchResult?: (card: AgentSessionCard, cardId: string) => void;
 }) {
+  useSettingsPreferences();
   return (
     <div className="agent-stacked-cards">
       {cards.map((card) => {
@@ -1109,7 +1117,7 @@ function StackedCards({
               <div className="agent-action-receipt muted">
                 <Loader2 aria-hidden="true" className="spin" size={14} />
                 <span className="agent-plan-receipt-copy">
-                  <small>Preparing</small>
+                  <small>{uiText("Preparing")}</small>
                   <strong>{card.title}</strong>
                 </span>
               </div>
@@ -1219,7 +1227,7 @@ function StackedCards({
           ) : null}
           {card.kind === "queue" && onCancelQueued ? (
             <button className="agent-inline-button" type="button" onClick={() => onCancelQueued(card.id)}>
-              Cancel
+              {uiText("Cancel")}
             </button>
           ) : null}
           {isResult ? (
@@ -1228,7 +1236,7 @@ function StackedCards({
                 <Check aria-hidden="true" size={14} />
                 <span className="agent-plan-receipt-copy">
                   <small>{card.title}</small>
-                  <strong>Adopted</strong>
+                  <strong>{uiText("Adopted")}</strong>
                 </span>
               </div>
             ) : onAdoptResearchResult ? (
@@ -1241,7 +1249,7 @@ function StackedCards({
                 {actionBusyId === card.id
                   ? <Loader2 className="spin" size={14} />
                   : <CheckCircle2 size={14} />}
-                Adopt result
+                {uiText("Adopt result")}
               </button>
             ) : null
           ) : null}
@@ -1333,6 +1341,7 @@ function WorkflowResultIdentity({
 }
 
 function ActionPreviewBody({ proposal, refs }: { proposal: AgentSessionActionProposal; refs?: Record<string, unknown> }) {
+  useSettingsPreferences();
   const rows = actionImpactRows(proposal.action, proposal.payload);
   const summaryLabels = new Set([
     "channel",
@@ -1365,7 +1374,7 @@ function ActionPreviewBody({ proposal, refs }: { proposal: AgentSessionActionPro
       {isPatch ? <p className="agent-action-warning">Patch apply is gated: preview, dirty-tree guard, audit, and rollback artifact are required before execution.</p> : null}
       {detailRows.length || hasRefs ? (
         <details className="agent-interaction-details">
-          <summary>Details</summary>
+          <summary>{uiText("Details")}</summary>
           {detailRows.length ? <dl>
             {detailRows.map((row) => (
               <Fragment key={`${row.label}-${row.value}`}>
@@ -1455,7 +1464,7 @@ function statusLabel(status: AgentSessionStatus): string {
 }
 
 function timeLabel(value?: string): string {
-  return value ? value.slice(11, 19) || value : "";
+  return formatTime(value);
 }
 
 function elapsedLabel(startedAt?: string, tick = 0): string {

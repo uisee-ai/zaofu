@@ -23,9 +23,46 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 from zf.runtime.external_issue_clarification import (
     _disposition_from_report_markdown,
     _producer_disposition,
+    clarification_request_body,
+    clarification_request_marker,
     external_issue_triage_outcome_event,
     normalize_external_issue_disposition,
 )
+
+
+def test_remote_clarification_request_is_stable_and_contains_only_reporter_questions() -> None:
+    marker = clarification_request_marker("github:1:2", "sha256:revision", "TRIAGE-1", 1)
+    body = clarification_request_body({
+        "round": 1,
+        "questions": [
+            {"question": "What exact action reproduces this?", "required": True},
+            {"question": "Which OS version is affected?", "required": False},
+        ],
+    }, marker=marker)
+    assert marker in body
+    assert "What exact action reproduces this? (required)" in body
+    assert "Which OS version is affected? (optional)" in body
+    assert "source_revision" not in body
+    assert marker == clarification_request_marker("github:1:2", "sha256:revision", "TRIAGE-1", 1)
+    assert marker != clarification_request_marker("github:1:2", "sha256:other", "TRIAGE-1", 1)
+    assert "Clarification request 1." in body
+
+
+def test_needs_info_accepts_all_current_reporter_only_questions_at_once() -> None:
+    normalized, issues = normalize_external_issue_disposition({
+        "outcome": "needs_info",
+        "reason": "Several reporter-only facts are absent.",
+        "questions": [
+            {
+                "id": f"fact_{index}", "type": "long_text",
+                "question": f"Please provide missing fact {index}.", "required": True,
+            }
+            for index in range(8)
+        ],
+    })
+    assert not issues
+    assert normalized is not None
+    assert len(normalized["questions"]) == 8
 
 
 def _clarification_config() -> ZfConfig:
@@ -77,6 +114,29 @@ def test_needs_info_rejects_invalid_question_shape() -> None:
     assert {item["code"] for item in issues} >= {
         "invalid_or_duplicate", "invalid_value",
     }
+
+
+def test_needs_info_rejects_only_an_oversized_combined_question_payload() -> None:
+    disposition, issues = normalize_external_issue_disposition({
+        "outcome": "needs_info",
+        "reason": "missing indispensable reporter facts",
+        "questions": [
+            {
+                "id": f"missing_fact_{index}",
+                "type": "long_text",
+                "question": f"Fact {index}: " + "x" * 470,
+            }
+            for index in range(1, 111)
+        ],
+    })
+    assert disposition is None
+    assert {
+        (item["field"], item["code"])
+        for item in issues
+    } >= {(
+        "control_result.external_issue_disposition.questions",
+        "payload_too_large",
+    )}
 
 
 def test_unverified_candidate_is_a_valid_bounded_disposition() -> None:
@@ -238,6 +298,49 @@ def test_output_artifact_markdown_report_recovers_disposition(
     result = _producer_disposition(tmp_path, [{}])
     assert result is not None
     assert result["outcome"] == "unverified_candidate"
+
+
+def test_structured_disposition_inherits_report_ref_from_output_artifact(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """A structured disposition must retain the paired report binding."""
+
+    import zf.runtime.external_issue_clarification as module
+
+    report = write_sidecar_text(
+        tmp_path,
+        "artifacts/generic-workflow/report.md",
+        "## Verification\n`uv run pytest tests/test_issue.py -q --no-cov`\n",
+        kind="report/markdown",
+        schema_version="generic-workflow-output.v1",
+        created_by="test",
+    )
+    control = write_immutable_json_sidecar(
+        tmp_path,
+        {
+            "external_issue_disposition": {
+                "outcome": "ready_to_fix",
+                "reason": "范围与验证目标明确",
+                "questions": [],
+            },
+            "output_artifacts": [report],
+        },
+        root="generic-workflow/control",
+        kind="call_control_result",
+        schema_version="workflow-read-result.v1",
+        created_by="test",
+    )
+    monkeypatch.setattr(
+        module,
+        "hydrate_call_result_envelope",
+        lambda _state_dir, _descriptor: {"control_result": control},
+    )
+
+    result = module._producer_disposition(tmp_path, [{}])
+
+    assert result is not None
+    assert result["outcome"] == "ready_to_fix"
+    assert result["report_ref"] == report
 
 
 def test_forbidden_needs_info_reason_is_downgraded_to_unverified_candidate(

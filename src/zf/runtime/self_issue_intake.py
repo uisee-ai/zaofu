@@ -33,7 +33,7 @@ from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 
 MAX_ATTACHMENTS = 5
 MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-MAX_TOTAL_ATTACHMENT_BYTES = 50 * 1024 * 1024
+MAX_TOTAL_ATTACHMENT_BYTES = 100 * 1024 * 1024
 ALLOWED_ATTACHMENTS = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -43,6 +43,16 @@ ALLOWED_ATTACHMENTS = {
     ".txt": "text/plain",
     ".log": "text/plain",
     ".json": "application/json",
+    ".md": "text/markdown",
+    ".xml": "application/xml",
+    ".yaml": "application/yaml",
+    ".yml": "application/yaml",
+    ".csv": "text/csv",
+    ".pdf": "application/pdf",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".doc": "application/msword",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".xls": "application/vnd.ms-excel",
 }
 _UNSAFE_FILENAME = re.compile(r"[\x00-\x1f\x7f/\\]+")
 _VOLATILE_SIGNAL_TOKEN = re.compile(
@@ -359,7 +369,7 @@ class SelfIssueIntakeMixin:
                 raise ValueError("attachment must be non-empty and no larger than 20 MB")
             total = sum(int(item.get("byte_count") or 0) for item in intake.attachment_refs)
             if total + len(content) > MAX_TOTAL_ATTACHMENT_BYTES:
-                raise ValueError("attachment total exceeds 50 MB")
+                raise ValueError("attachment total exceeds 100 MB")
             sanitized, redaction_applied = sanitize_attachment_for_disclosure(
                 content, suffix=suffix, content_type=expected_type,
             )
@@ -381,6 +391,7 @@ class SelfIssueIntakeMixin:
                 "schema_version": "self-issue-attachment.v1",
                 "encoding": "binary",
                 "created_by": str(intake.reporter_context.get("reported_by") or "user"),
+                "source": "user",
                 "source_event_id": str(payload.get("source_event_id") or ""),
                 "access_scope": {"external_disclosure": False},
                 "retention": {"class": "user_controlled"},
@@ -388,6 +399,8 @@ class SelfIssueIntakeMixin:
                 "preview": filename,
                 "attachment_id": attachment_id,
                 "filename": filename,
+                "description": str(payload.get("description") or f"User-provided attachment ({filename}).")[:500],
+                "purpose": str(payload.get("purpose") or "Provide user-supplied context for Issue assessment.")[:500],
                 "redaction_applied": redaction_applied,
                 "video_disclosure_confirmed": bool(payload.get("video_disclosure_confirmed")),
             }
@@ -561,6 +574,7 @@ class SelfIssueIntakeMixin:
                 bug_description=str(answers["bug_description"]),
                 reproduction_steps=str(answers["reproduction_steps"]),
                 expected_behavior=str(answers["expected_behavior"]),
+                reported_expected_behavior=str(answers["expected_behavior"]),
                 environment={
                     "os": str(environment.get("os") or ""),
                     "version": str(environment.get("version") or ""),
@@ -611,10 +625,13 @@ class SelfIssueIntakeMixin:
             bug_description=str(answers["bug_description"]),
             reproduction_steps=str(answers["reproduction_steps"]),
             expected_behavior=str(answers["expected_behavior"]),
+            reported_expected_behavior=str(answers["expected_behavior"]),
             environment={
                 "os": str(environment.get("os") or ""),
                 "version": str(environment.get("version") or ""),
+                "arch": str(environment.get("arch") or ""),
             },
+            project_version=str(answers["zaofu_version"]),
             zaofu_version=str(answers["zaofu_version"]),
             source_code_revision=self._git_head(),
             additional_context=str(answers["additional_context"]),
@@ -627,8 +644,8 @@ class SelfIssueIntakeMixin:
             reporter_context=dict(intake.reporter_context),
             evidence_status="pending",
             disclosure_fields=[
-                "bug_description", "reproduction_steps", "expected_behavior",
-                "environment", "zaofu_version", "additional_context",
+                "bug_description", "reproduction_steps", "actual_behavior", "expected_behavior",
+                "environment", "project_version", "zaofu_version", "additional_context",
                 "attachment_context",
                 "classification", "severity", "reproduction_status", "component",
                 "impact_scope", "assessment_confidence", "analysis",
@@ -638,6 +655,7 @@ class SelfIssueIntakeMixin:
             last_notified_at=utc_now(),
         )
         self.drafts.save(draft)
+        self._seed_field_metadata(draft, source="reporter", user_locked=True)
         return draft
 
     def _validated_reporter_evidence_refs(
@@ -750,7 +768,7 @@ class SelfIssueIntakeMixin:
         targets = self._configured_targets()
         value["target_policy"] = {
             "locked": bool(self.policy.enabled and self.policy.target_locked),
-            "targets": {name: dict(target) for name, target in targets.items()},
+            "targets": self._configured_target_policy(),
             "allowed_modes": [
                 mode for mode in ("gitlab", "github", "both")
                 if self._mode_supported(mode)
@@ -831,7 +849,7 @@ def _safe_filename(value: object) -> str:
 def sanitize_attachment_for_disclosure(
     content: bytes, *, suffix: str, content_type: str,
 ) -> tuple[bytes, bool]:
-    if content_type in {"text/plain", "application/json"}:
+    if content_type.startswith("text/") or content_type in {"application/json", "application/xml", "application/yaml"}:
         try:
             text = content.decode("utf-8")
         except UnicodeDecodeError as exc:
@@ -859,7 +877,16 @@ def _matches_magic(content: bytes, suffix: str) -> bool:
         ".jpeg": content.startswith(b"\xff\xd8\xff"),
         ".mp4": len(content) >= 12 and b"ftyp" in content[4:12],
         ".webm": content.startswith(b"\x1aE\xdf\xa3"),
+        ".pdf": content.startswith(b"%PDF-"),
+        ".docx": content.startswith(b"PK\x03\x04"),
+        ".xlsx": content.startswith(b"PK\x03\x04"),
+        ".doc": content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
+        ".xls": content.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"),
     }
+    # Text formats are validated as UTF-8 above; their structure is allowed
+    # to be interpreted by the receiving triage workflow.
+    if suffix in {".md", ".xml", ".yaml", ".yml", ".csv", ".txt", ".log", ".json"}:
+        return True
     return bool(checks.get(suffix))
 
 

@@ -89,7 +89,7 @@ def _verification_was_consumed(
     verification_event_id: str,
 ) -> bool:
     return any(
-        event.type == "flow.discovery.requested"
+        event.type in {"flow.discovery.requested", "flow.goal.closed"}
         and (
             _text(_payload(event), "verification_event_id") == verification_event_id
             or _text(_payload(event), "source_event_id") == verification_event_id

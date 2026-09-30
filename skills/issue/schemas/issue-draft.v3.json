@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zaofu.dev/schemas/issue-draft.v3.json",
+  "title": "Issue Draft v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "draft_id",
+    "revision",
+    "digest",
+    "fields",
+    "claim_refs",
+    "understanding_status"
+  ],
+  "properties": {
+    "schema_version": {"const": "issue-draft.v3"},
+    "draft_id": {"type": "string", "minLength": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "understanding_status": {
+      "enum": ["completed", "fallback", "failed"]
+    },
+    "claim_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1}
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/fieldState"}
+    }
+  },
+  "$defs": {
+    "fieldState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "field_path",
+        "value",
+        "source",
+        "user_locked",
+        "confidence",
+        "evidence_refs",
+        "last_changed_revision"
+      ],
+      "properties": {
+        "schema_version": {"const": "draft-field-state.v1"},
+        "field_path": {"type": "string", "minLength": 1},
+        "value": {},
+        "source": {
+          "enum": ["unknown", "reporter", "structure", "investigation"]
+        },
+        "user_locked": {"type": "boolean"},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "evidence_refs": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "last_changed_revision": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

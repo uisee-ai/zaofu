@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // ObservabilityPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import { search } from "../../api/client";
 import type { EventRecord, EventsPage, IntegrationQueueEntry, IntegrationQueueProjection, LongRunTruthMilestone, LongRunTruthProjection, RepairActionProjection, RepairActionRecord, SearchResult, Snapshot, TaskPipelineProjection, TraceSummary } from "../../api/types";
@@ -176,6 +178,7 @@ export function ObservabilityPage({
   setEventFilter: (value: string) => void;
   snapshot: Snapshot | null;
 }) {
+  useSettingsPreferences();
   const [tab, setTab] = useState<ObservabilityTab>(() => readInitialObservabilityTab(activePage));
   const [traceFilters, setTraceFilters] = useState<TraceFilters>(() => readInitialTraceFilters());
   const [foldNoiseEvents, setFoldNoiseEvents] = useState(() => readInitialBooleanQuery("obs_fold_noise", true));
@@ -402,7 +405,7 @@ export function ObservabilityPage({
     <div className="observability-page" data-testid="observability-page">
       <div className="section-heading projection-page-heading">
         <div>
-          <h2>Observability</h2>
+          <h2>{uiText("Observability")}</h2>
           <span className="muted">events, logs, and read-only operational signals</span>
         </div>
         <span className={`metric-chip tone-${streamTone}`}>{liveState}</span>
@@ -414,10 +417,10 @@ export function ObservabilityPage({
         truncatedEventCount={truncatedEventCount}
       />
       <div className="runtime-health-strip observability-strip" aria-label="Observability scope">
-        <span><strong>Project</strong><em className="mono">{activeProjectId || snapshot?.project.project_id || "default"}</em></span>
-        <span><strong>Stream</strong><em className={`badge badge-${streamTone}`}>{liveState}</em></span>
-        <span><strong>Runtime</strong><em>{snapshot?.runtime.live ? "live" : "stopped"}</em></span>
-        <span><strong>Truth</strong><em>EventLog / TaskStore</em></span>
+        <span><strong>{uiText("Project")}</strong><em className="mono">{activeProjectId || snapshot?.project.project_id || "default"}</em></span>
+        <span><strong>{uiText("Stream")}</strong><em className={`badge badge-${streamTone}`}>{liveState}</em></span>
+        <span><strong>{uiText("Runtime")}</strong><em>{snapshot?.runtime.live ? "live" : "stopped"}</em></span>
+        <span><strong>{uiText("Truth")}</strong><em>EventLog / TaskStore</em></span>
       </div>
       <LongRunTruthBand projection={snapshot?.long_run_truth} snapshotReady={snapshotReady} />
       <ProjectionMetricGrid metrics={metrics} />
@@ -429,7 +432,7 @@ export function ObservabilityPage({
             type="button"
             onClick={() => openTab(item.id)}
           >
-            {item.label}{typeof item.count === "number" ? <span className="muted"> {item.count}</span> : null}
+            {uiText(item.label)}{typeof item.count === "number" ? <span className="muted"> {item.count}</span> : null}
           </button>
         ))}
       </div>
@@ -446,7 +449,7 @@ export function ObservabilityPage({
           </section>
           <section className="subsection observability-main-pane">
             <div className="inline-heading">
-              <h3>Trace Detail</h3>
+              <h3>{uiText("Trace Detail")}</h3>
               <span className="muted">{traceDetailReady ? selectedTraceId : "select a trace"}</span>
             </div>
             {traceDetailReady && projectionDetail ? (
@@ -472,7 +475,7 @@ export function ObservabilityPage({
         <div className="observability-workbench events-workbench">
           <section className="subsection observability-left-pane event-control-pane">
             <div className="inline-heading">
-              <h3>Event Views</h3>
+              <h3>{uiText("Event Views")}</h3>
               <span className="muted">{eventItems.length} loaded</span>
             </div>
             <div className="event-saved-view-list" aria-label="Event saved views">
@@ -484,7 +487,7 @@ export function ObservabilityPage({
                   onClick={() => setEventFilter(view.filter)}
                 >
                   <span>
-                    <strong>{view.label}</strong>
+                    <strong>{uiText(view.label)}</strong>
                     <small>{view.description}</small>
                   </span>
                   <em>{view.count}</em>
@@ -493,7 +496,7 @@ export function ObservabilityPage({
             </div>
             <div className="event-filter-panel">
               <label>
-                <span>Query</span>
+                <span>{uiText("Query")}</span>
                 <input
                   className="filter-input observability-filter"
                   placeholder="task:TASK actor:dev-1 type:test.failed"
@@ -527,14 +530,14 @@ export function ObservabilityPage({
                 <strong>{mutationAuditCount}</strong>
               </div>
               <div className={worktreeActionCount ? "needs-action" : ""}>
-                <span>Worktree action</span>
+                <span>{uiText("Worktree action")}</span>
                 <strong>{worktreeActionCount}</strong>
               </div>
             </div>
           </section>
           <section className="subsection observability-main-pane">
             <div className="inline-heading">
-              <h3>Event Stream</h3>
+              <h3>{uiText("Event Stream")}</h3>
               <span className="muted">{renderedEventItems.length}/{eventItems.length} read-only</span>
             </div>
             <EventReplayControls
@@ -578,7 +581,7 @@ export function ObservabilityPage({
         <div className="run-dossier-workspace">
           <ProjectionList
             emptyState={{ title: "No workflow runs yet", description: "Runs appear after zf start, workflow invoke events, or archived runtime execution records.", icon: PlayCircle, compact: true }}
-            title="Runs"
+            title={uiText("Runs")}
             rows={runs}
             idKey="run_id"
             onOpen={(id) => onOpenProjection("run", id)}
@@ -595,7 +598,7 @@ export function ObservabilityPage({
       {tab === "fanouts" ? (
         <ProjectionList
           emptyState={{ title: "No fanout executions yet", description: "Fanout lanes appear after task_map.ready, STAR fanout dispatch, or workflow fan-out events.", icon: GitFork, compact: true }}
-          title="Fanouts"
+          title={uiText("Fanouts")}
           rows={fanouts}
           idKey="fanout_id"
           onOpen={(id) => onOpenProjection("fanout", id)}
@@ -605,7 +608,7 @@ export function ObservabilityPage({
       {tab === "candidates" ? (
         <ProjectionList
           emptyState={{ title: "No candidates yet", description: "Candidate projections appear after writer fanout, integration, or ship-candidate events are recorded.", icon: Boxes, compact: true }}
-          title="Candidates"
+          title={uiText("Candidates")}
           rows={candidates}
           idKey="pdd_id"
           onOpen={(id) => onOpenProjection("candidate", id)}
@@ -639,11 +642,12 @@ function LongRunTruthBand({
   projection?: LongRunTruthProjection;
   snapshotReady: boolean;
 }) {
+  useSettingsPreferences();
   if (!projection || projection.status === "empty") {
     return (
       <section className="long-run-truth" data-testid="long-run-truth" data-state={snapshotReady ? "empty" : "loading"}>
         <div className="long-run-truth-heading">
-          <strong>Current Run Truth</strong>
+          <strong>{uiText("Current Run Truth")}</strong>
           <span>{snapshotReady ? "No scoped workflow run" : "Loading event authority"}</span>
         </div>
       </section>
@@ -661,21 +665,21 @@ function LongRunTruthBand({
   return (
     <section className="long-run-truth" data-testid="long-run-truth" data-state={projection.status}>
       <div className="long-run-truth-heading">
-        <strong>Current Run Truth</strong>
+        <strong>{uiText("Current Run Truth")}</strong>
         <span className="mono">{projection.current.run_id || "unobserved"}</span>
         <em className={`badge badge-${projection.status === "ready" ? "ok" : "warn"}`}>{projection.status}</em>
       </div>
       <div className="long-run-truth-facts">
-        <span><small>Generation</small><strong className="mono">{projection.current.task_map_generation || "unobserved"}</strong></span>
-        <span><small>Candidate</small><strong className="mono">{projection.current.candidate_ref || projection.current.candidate_digest || "unobserved"}</strong></span>
-        <span><small>Events</small><strong>{projection.counts.raw_events.toLocaleString()}</strong></span>
-        <span><small>Operations</small><strong>{projection.counts.unique_operations.toLocaleString()}</strong></span>
+        <span><small>{uiText("Generation")}</small><strong className="mono">{projection.current.task_map_generation || "unobserved"}</strong></span>
+        <span><small>{uiText("Candidate")}</small><strong className="mono">{projection.current.candidate_ref || projection.current.candidate_digest || "unobserved"}</strong></span>
+        <span><small>{uiText("Events")}</small><strong>{projection.counts.raw_events.toLocaleString()}</strong></span>
+        <span><small>{uiText("Operations")}</small><strong>{projection.counts.unique_operations.toLocaleString()}</strong></span>
         <span className={projection.gate.status === "blocked" ? "is-alert" : ""}>
-          <small>Gate</small>
+          <small>{uiText("Gate")}</small>
           <strong>{projection.gate.status === "blocked" ? `${projection.gate.owner}: ${projection.gate.reason}` : "clear"}</strong>
         </span>
         <span className={projection.no_progress.status === "tripped" ? "is-alert" : ""}>
-          <small>No progress</small>
+          <small>{uiText("No progress")}</small>
           <strong>{fingerprint ? `${fingerprint} x${noProgressCount}` : "clear"}</strong>
         </span>
       </div>
@@ -693,6 +697,7 @@ function LongRunTruthBand({
 }
 
 function TaskPipelinePanel({ projection }: { projection: TaskPipelineProjection | null }) {
+  useSettingsPreferences();
   const closure = projection?.closure;
   const taskRows = (projection?.tasks ?? []).map((task) => ({
     task_id: task.task_id,
@@ -752,18 +757,18 @@ function TaskPipelinePanel({ projection }: { projection: TaskPipelineProjection 
   return (
     <div className="task-pipeline-panel">
       <div className="runtime-health-strip task-pipeline-strip" aria-label="Task Pipeline summary">
-        <span><strong>Mode</strong><em>{projection?.mode ?? "-"}</em></span>
-        <span><strong>Profile</strong><em className="mono">{projection?.profile_id || "-"}</em></span>
-        <span><strong>Tasks</strong><em>{projection?.summary.task_count ?? 0}</em></span>
-        <span><strong>Operations</strong><em>{projection?.summary.operation_count ?? 0}</em></span>
-        <span><strong>Workers</strong><em>{projection?.summary.active_worker_count ?? 0}</em></span>
-        <span><strong>Closure</strong><em>{closure?.status ?? "-"}</em></span>
+        <span><strong>{uiText("Mode")}</strong><em>{projection?.mode ?? "-"}</em></span>
+        <span><strong>{uiText("Profile")}</strong><em className="mono">{projection?.profile_id || "-"}</em></span>
+        <span><strong>{uiText("Tasks")}</strong><em>{projection?.summary.task_count ?? 0}</em></span>
+        <span><strong>{uiText("Operations")}</strong><em>{projection?.summary.operation_count ?? 0}</em></span>
+        <span><strong>{uiText("Workers")}</strong><em>{projection?.summary.active_worker_count ?? 0}</em></span>
+        <span><strong>{uiText("Closure")}</strong><em>{closure?.status ?? "-"}</em></span>
       </div>
 
       {closure?.residuals.length ? (
         <section className="subsection task-pipeline-residuals">
           <div className="inline-heading">
-            <h3>Terminal Residuals</h3>
+            <h3>{uiText("Terminal Residuals")}</h3>
             <span className="muted">{closure.residuals.length} active objects</span>
           </div>
           <div className="compact-list mono">
@@ -817,6 +822,7 @@ function TaskPipelinePanel({ projection }: { projection: TaskPipelineProjection 
 
 
 function IntegrationQueuePanel({ queue }: { queue: IntegrationQueueProjection | null }) {
+  useSettingsPreferences();
   const summary = queue?.summary;
   const arbiter = queue?.arbiter;
   const entries = queue?.entries ?? [];
@@ -892,7 +898,7 @@ function IntegrationQueuePanel({ queue }: { queue: IntegrationQueueProjection | 
       {needsReview.length ? (
         <section className="subsection integration-review-strip">
           <div className="inline-heading">
-            <h3>Needs Review</h3>
+            <h3>{uiText("Needs Review")}</h3>
             <span className="muted">{needsReview.length} entries</span>
           </div>
           <div className="compact-list">
@@ -969,6 +975,7 @@ function integrationQueueEvidenceCount(entry: IntegrationQueueEntry): number {
 
 
 function RepairActionsPanel({ projection }: { projection: RepairActionProjection | null }) {
+  useSettingsPreferences();
   const summary = projection?.summary;
   const actions = projection?.actions ?? [];
   const issues = projection?.issues ?? [];
@@ -1015,7 +1022,7 @@ function RepairActionsPanel({ projection }: { projection: RepairActionProjection
       {attentionActions.length ? (
         <section className="subsection repair-attention-strip">
           <div className="inline-heading">
-            <h3>Action Attention</h3>
+            <h3>{uiText("Action Attention")}</h3>
             <span className="muted">{attentionActions.length} actions</span>
           </div>
           <div className="compact-list">
@@ -1092,6 +1099,7 @@ function TraceFilterBar({
   onChange: (filters: TraceFilters) => void;
   rows: TraceSummary[];
 }) {
+  useSettingsPreferences();
   const roles = uniqueSorted(rows.flatMap((row) => row.actors ?? [])).slice(0, 12);
   const backends = uniqueSorted(rows.flatMap((row) => row.backends ?? [])).slice(0, 12);
   return (
@@ -1104,28 +1112,28 @@ function TraceFilterBar({
       />
       <div className="observability-filter-grid">
         <label>
-          <span>Status</span>
+          <span>{uiText("Status")}</span>
           <select value={filters.status} onChange={(event) => onChange({ ...filters, status: event.target.value as TraceStatusFilter })}>
-            <option value="all">All</option>
-            <option value="running">Running</option>
-            <option value="completed">Completed</option>
-            <option value="failed">Failed</option>
-            <option value="blocked">Blocked</option>
-            <option value="observed">Observed</option>
+            <option value="all">{uiText("All")}</option>
+            <option value="running">{uiText("Running")}</option>
+            <option value="completed">{uiText("Completed")}</option>
+            <option value="failed">{uiText("Failed")}</option>
+            <option value="blocked">{uiText("Blocked")}</option>
+            <option value="observed">{uiText("Observed")}</option>
           </select>
         </label>
         <label>
-          <span>Duration</span>
+          <span>{uiText("Duration")}</span>
           <select value={filters.duration} onChange={(event) => onChange({ ...filters, duration: event.target.value as TraceDurationFilter })}>
-            <option value="all">All</option>
+            <option value="all">{uiText("All")}</option>
             <option value="short">&lt; 1m</option>
             <option value="medium">1m - 10m</option>
             <option value="long">&gt; 10m</option>
-            <option value="unknown">Unknown</option>
+            <option value="unknown">{uiText("Unknown")}</option>
           </select>
         </label>
         <label>
-          <span>Role</span>
+          <span>{uiText("Role")}</span>
           <input
             list="observability-role-options"
             value={filters.role}
@@ -1137,7 +1145,7 @@ function TraceFilterBar({
           </datalist>
         </label>
         <label>
-          <span>Backend</span>
+          <span>{uiText("Backend")}</span>
           <input
             list="observability-backend-options"
             value={filters.backend}
@@ -1156,7 +1164,7 @@ function TraceFilterBar({
           type="button"
           onClick={() => onChange(defaultTraceFilters())}
         >
-          Reset
+          {uiText("Reset")}
         </button>
       </div>
     </div>
@@ -1187,6 +1195,7 @@ function EventReplayControls({
   position: number;
   total: number;
 }) {
+  useSettingsPreferences();
   const disabled = total === 0;
   return (
     <div className="observability-replay-bar" aria-label="Event replay controls">
@@ -1204,18 +1213,18 @@ function EventReplayControls({
         <button className="icon-button" disabled={disabled} type="button" onClick={() => onJump(position + 1)} title="Next event">
           <ChevronRight size={14} aria-hidden="true" />
         </button>
-        <button className="icon-button" disabled={disabled} type="button" onClick={() => onJump(total - 1)} title="Latest event">
+        <button className="icon-button" disabled={disabled} type="button" onClick={() => onJump(total - 1)} title={uiText("Latest event")}>
           <SkipForward size={14} aria-hidden="true" />
         </button>
       </div>
       <span className="muted mono">{disabled ? "0/0" : `${Math.min(position + 1, total)}/${total}`}</span>
       <label className="observability-toggle">
         <input type="checkbox" checked={autoFollow} onChange={(event) => onAutoFollowChange(event.target.checked)} />
-        <span>Auto-follow</span>
+        <span>{uiText("Auto-follow")}</span>
       </label>
       <label className="observability-toggle">
         <input type="checkbox" checked={foldNoise} onChange={(event) => onFoldNoiseChange(event.target.checked)} />
-        <span>Fold heartbeat</span>
+        <span>{uiText("Fold heartbeat")}</span>
       </label>
       {hiddenNoiseCount ? <span className="badge badge-muted">{hiddenNoiseCount} folded</span> : null}
     </div>
@@ -1476,15 +1485,16 @@ function EventInspector({
   event: EventRecord | null;
   onOpenChannel: (channelId: string) => void;
 }) {
+  useSettingsPreferences();
   const channelId = eventChannelId(event);
   const payloadRows = eventPayloadHighlights(event);
   return (
     <aside className="subsection event-inspector" aria-label="Event inspector">
       <div className="inline-heading">
-        <h3>JSON Inspector</h3>
+        <h3>{uiText("JSON Inspector")}</h3>
         {channelId ? (
           <button className="icon-button" type="button" onClick={() => onOpenChannel(channelId)}>
-            Open Channel
+            {uiText("Open Channel")}
           </button>
         ) : null}
       </div>
@@ -1522,12 +1532,12 @@ function EventInspector({
             </div>
           ) : null}
           <details className="event-raw-json">
-            <summary>Raw JSON</summary>
+            <summary>{uiText("Raw JSON")}</summary>
             <PreBlock value={event} />
           </details>
         </>
       ) : (
-        <p className="empty-text">No event selected.</p>
+        <p className="empty-text">{uiText("No event selected.")}</p>
       )}
     </aside>
   );

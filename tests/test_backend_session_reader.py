@@ -25,6 +25,19 @@ CODEX_SAMPLE = FIXTURES / "codex_session_sample.jsonl"
 
 
 class TestClaudeReader:
+    def test_session_path_escapes_underscored_workdir(self, tmp_path, monkeypatch):
+        projects = tmp_path / "projects"
+        reader = ClaudeSessionReader(projects_root=projects)
+        workdir = "/tmp/zf-run_abc/project_name"
+        uuid_str = "77777777-7777-7777-7777-777777777777"
+        disk = projects / "-tmp-zf-run-abc-project-name" / f"{uuid_str}.jsonl"
+        disk.parent.mkdir(parents=True)
+        disk.write_text("{}")
+        monkeypatch.setattr(
+            "zf.runtime.backend_session_reader.glob.glob",
+            lambda *args, **kwargs: pytest.fail("unexpected UUID glob fallback"),
+        )
+        assert reader.session_path(workdir, uuid_str) == disk
     def test_parses_latest_assistant_usage_from_real_sample(self):
         reader = ClaudeSessionReader()
         report = reader.read_latest_usage(

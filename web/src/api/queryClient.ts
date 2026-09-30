@@ -6,6 +6,7 @@ type CacheEntry<T> = {
 const DEFAULT_TTL_MS = 750;
 const cache = new Map<string, CacheEntry<unknown>>();
 const inFlight = new Map<string, Promise<unknown>>();
+const generations = new Map<string, number>();
 
 export async function cachedGetJson<T>(
   path: string,
@@ -13,6 +14,7 @@ export async function cachedGetJson<T>(
 ): Promise<T> {
   const ttlMs = options.ttlMs ?? ttlForPath(path);
   const now = Date.now();
+  const generation = generations.get(path) ?? 0;
   if (ttlMs > 0) {
     if (!options.bypassCache && !options.signal) {
       const cached = cache.get(path);
@@ -20,7 +22,7 @@ export async function cachedGetJson<T>(
     }
     // A caller-owned AbortSignal cannot safely share a promise: aborting one
     // consumer would otherwise abort every consumer of the same cache key.
-    if (!options.signal) {
+    if (!options.bypassCache && !options.signal) {
       const pending = inFlight.get(path);
       if (pending) return pending as Promise<T>;
     }
@@ -37,7 +39,7 @@ export async function cachedGetJson<T>(
       // Signal-owned requests have an independent lifecycle and can race a
       // shared request for the same key. Keep them out of the shared cache so
       // an older response cannot overwrite a newer caller-owned result.
-      if (ttlMs > 0 && !options.signal) {
+      if (ttlMs > 0 && !options.signal && (generations.get(path) ?? 0) === generation) {
         cache.set(path, { value, expiresAt: Date.now() + ttlMs });
       }
       return value;
@@ -51,11 +53,24 @@ export async function cachedGetJson<T>(
 
 export function clearGetCache(prefix = ""): void {
   if (!prefix) {
+    for (const key of new Set([...cache.keys(), ...inFlight.keys()])) {
+      generations.set(key, (generations.get(key) ?? 0) + 1);
+    }
     cache.clear();
+    inFlight.clear();
     return;
   }
   for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) cache.delete(key);
+    if (key.startsWith(prefix)) {
+      cache.delete(key);
+      generations.set(key, (generations.get(key) ?? 0) + 1);
+    }
+  }
+  for (const key of inFlight.keys()) {
+    if (key.startsWith(prefix)) {
+      inFlight.delete(key);
+      generations.set(key, (generations.get(key) ?? 0) + 1);
+    }
   }
 }
 

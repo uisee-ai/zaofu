@@ -8,6 +8,59 @@ from typing import Any, Mapping
 from zf.core.state.role_sessions import RoleSessionRegistry
 
 
+def task_stage_spawn_cwd(runtime: Any, role_instance: str) -> Path | None:
+    """Keep lifecycle spawns in the workspace of the activated Task-stage."""
+    registry = RoleSessionRegistry(
+        Path(runtime.state_dir) / "role_sessions.yaml",
+        project_root=str(runtime.project_root),
+    )
+    key = registry.instance_meta().get(role_instance, {}).get("active_task_stage_binding_key")
+    if not key:
+        return None
+    binding = registry.task_stage_bindings().get(str(key))
+    if not binding or binding.get("status") != "active" or (
+        binding.get("current_role_instance") != role_instance
+    ):
+        raise RuntimeError(f"Task-stage spawn binding is not current: {role_instance}")
+    identity = {
+        "task_stage_session_binding": key,
+        "role_instance": role_instance,
+        "workflow_run_id": binding["workflow_run_id"],
+        "task_id": binding["task_id"],
+        "task_pipeline_stage": binding["stage"],
+        "workspace_generation": binding["workspace_generation"],
+        "placement_epoch": binding["current_placement_epoch"],
+    }
+    dispatch = next((event.payload for event in reversed(runtime.event_log.read_all())
+                     if event.type == "task.pipeline.stage.dispatched"
+                     and event.origin == "kernel"
+                     and all(event.payload.get(k) == v for k, v in identity.items())), None)
+    if dispatch is None:
+        raise RuntimeError(f"Task-stage spawn placement is unproven: {role_instance}")
+    from zf.core.safety import PathGuard
+    from zf.runtime.task_workspaces import TaskWorkspaceManager
+
+    manager = TaskWorkspaceManager(
+        state_dir=Path(runtime.state_dir), project_root=Path(runtime.project_root),
+        config=runtime.config,
+    )
+    plan = manager.plan(
+        workflow_run_id=binding["workflow_run_id"], task_id=binding["task_id"],
+        task_map_generation=dispatch["task_map_generation"],
+        workspace_generation=binding["workspace_generation"],
+        base_ref=dispatch["base_commit"],
+    )
+    project_path = Path(plan.project_path)
+    PathGuard.assert_under(project_path, Path(runtime.state_dir))
+    if (not plan.enabled or plan.mode != "worktree" or not project_path.is_dir()
+            or project_path.resolve() != project_path
+            or str(project_path) != dispatch.get("workdir")):
+        raise RuntimeError(f"Task-stage spawn workspace is missing or mismatched: {role_instance}")
+    manager._assert_owned(Path(plan.workdir))
+    manager._assert_metadata_current(plan)
+    return project_path
+
+
 def task_pipeline_preferred_roles(
     runtime: Any,
     *,

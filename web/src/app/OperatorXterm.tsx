@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../settings/useSettingsPreferences";
+import { uiText } from "../settings/uiText";
 import "@xterm/xterm/css/xterm.css";
 
 import { FitAddon } from "@xterm/addon-fit";
@@ -62,6 +64,7 @@ export function OperatorXterm({
   session,
   statusLabel,
 }: OperatorXtermProps) {
+  useSettingsPreferences();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -224,7 +227,7 @@ export function OperatorXterm({
   return (
     <div className="xterm-shell">
       <div className="terminal-head">
-        <span>Operator Terminal</span>
+        <span>{uiText("Operator Terminal")}</span>
         <span className="mono">{statusLabel}</span>
       </div>
       <div className="xterm-host" ref={containerRef} aria-label="Operator xterm" />
@@ -235,7 +238,7 @@ export function OperatorXterm({
           type="button"
           onClick={() => onStart(currentGeometry())}
         >
-          Start
+          {uiText("Start")}
         </button>
         <button
           className="icon-button"
@@ -243,14 +246,14 @@ export function OperatorXterm({
           type="button"
           onClick={() => void onStop()}
         >
-          Stop
+          {uiText("Stop")}
         </button>
         <button
           className="icon-button"
           type="button"
           onClick={() => terminalRef.current?.clear()}
         >
-          Clear
+          {uiText("Clear")}
         </button>
         {lastError ? <span className="empty-text compact-error">{lastError}</span> : null}
       </div>

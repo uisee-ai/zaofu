@@ -28,6 +28,7 @@ from zf.core.task.store import TaskStore
 from zf.runtime.orchestrator import Orchestrator
 from zf.runtime.transport import (
     AttachHandle,
+    CompositeTransport,
     TransportAdapter,
     WorkerLifecycleSnapshot,
 )
@@ -62,7 +63,7 @@ class _AliveControllableTransport(TransportAdapter):
 
     def wait_ready(self, role_name, pattern, timeout): return True
 
-    def send_task(self, role_name, briefing_path, prompt): pass
+    def send_task(self, role_name, briefing_path, prompt, *, context=None): pass
 
     def capture_log(self, role_name, lines=200):
         return "some output"
@@ -206,10 +207,12 @@ class TestWatchdogEvents:
         ]
         assert deferred[-1].payload["respawn_action"] == "respawn"
 
+    @pytest.mark.parametrize("composite", [False, True])
     def test_dead_watchdog_emits_runner_failed_with_lifecycle(
         self,
         state_dir,
         config,
+        composite,
     ):
         store = TaskStore(state_dir / "kanban.json")
         store.update("TASK-LIVENESS-DEV", status="done")  # fixture seed out of the way
@@ -223,7 +226,8 @@ class TestWatchdogEvents:
         transport = _AliveControllableTransport()
         transport.spawn(RoleConfig(name="dev"), argv=[])
         transport.spawn(RoleConfig(name="review"), argv=[])
-        orch = Orchestrator(state_dir, config, transport)
+        routed = CompositeTransport({"dev": transport, "review": transport}) if composite else transport
+        orch = Orchestrator(state_dir, config, routed)
         orch._dead_threshold = 1
         transport.alive_flags["dev"] = False
 

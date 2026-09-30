@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
@@ -47,6 +49,7 @@ export function TracesPage({
   liveState: LiveState;
   projectId: string;
 }) {
+  useSettingsPreferences();
   const [filters, setFilters] = useState<TraceFilters>(readInitialTraceFilters);
   const [rows, setRows] = useState<TraceSummary[]>([]);
   const [listLoading, setListLoading] = useState(true);
@@ -404,7 +407,7 @@ export function TracesPage({
       >
         <header className="traces-heading">
           <div>
-            <h2>Traces</h2>
+            <h2>{uiText("Traces")}</h2>
             <p className="muted">Scoped execution history, loaded from a bounded trace index.</p>
           </div>
         </header>
@@ -425,7 +428,7 @@ export function TracesPage({
         <section className="trace-index-panel" aria-busy={listLoading}>
           {listError ? <p className="trace-load-error" role="alert">Trace index unavailable: {listError}</p> : null}
           {listLoading ? (
-            <p className="trace-table-state muted">Loading traces...</p>
+            <p className="trace-table-state muted">{uiText("Loading traces...")}</p>
           ) : visibleRows.length ? (
             <TraceTable rows={visibleRows} selectedTraceId={selectedTraceId} onOpen={openTrace} />
           ) : (
@@ -444,7 +447,7 @@ export function TracesPage({
       </div>
 
       {selectedTraceId ? (
-        <Suspense fallback={<section aria-label={`Trace ${selectedTraceId}`} className="trace-viewer-route-loading"><p className="muted">Loading trace viewer…</p></section>}>
+        <Suspense fallback={<section aria-label={`Trace ${selectedTraceId}`} className="trace-viewer-route-loading"><p className="muted">{uiText("Loading trace viewer…")}</p></section>}>
           <LazyTraceViewer
             actions={viewerActions}
             earlierError={earlierError}
@@ -482,14 +485,15 @@ function TraceToolbar({
   onChange: (filters: TraceFilters) => void;
   roles: string[];
 }) {
+  useSettingsPreferences();
   const moreActive = Boolean(filters.role || filters.backend);
   return (
     <div className="trace-toolbar" aria-label="Trace filters">
       <label className="trace-search-field">
         <Search aria-hidden="true" size={15} />
-        <span className="sr-only">Search traces</span>
+        <span className="sr-only">{uiText("Search traces")}</span>
         <input
-          aria-label="Search traces"
+          aria-label={uiText("Search traces")}
           placeholder="Search trace, task, actor"
           type="search"
           value={filters.query}
@@ -497,56 +501,56 @@ function TraceToolbar({
         />
       </label>
       <label className="trace-filter-field">
-        <span>Status</span>
+        <span>{uiText("Status")}</span>
         <select
           aria-label="Trace status"
           value={filters.status}
           onChange={(event) => onChange({ ...filters, status: event.target.value as TraceStatusFilter })}
         >
-          <option value="all">All</option>
-          <option value="running">Running</option>
-          <option value="completed">Completed</option>
-          <option value="failed">Failed</option>
-          <option value="blocked">Blocked</option>
-          <option value="observed">Observed</option>
+          <option value="all">{uiText("All")}</option>
+          <option value="running">{uiText("Running")}</option>
+          <option value="completed">{uiText("Completed")}</option>
+          <option value="failed">{uiText("Failed")}</option>
+          <option value="blocked">{uiText("Blocked")}</option>
+          <option value="observed">{uiText("Observed")}</option>
         </select>
       </label>
       <label className="trace-filter-field">
-        <span>Duration</span>
+        <span>{uiText("Duration")}</span>
         <select
           aria-label="Trace duration"
           value={filters.duration}
           onChange={(event) => onChange({ ...filters, duration: event.target.value as TraceDurationFilter })}
         >
-          <option value="all">All</option>
+          <option value="all">{uiText("All")}</option>
           <option value="short">Under 1m</option>
           <option value="medium">1–10m</option>
           <option value="long">Over 10m</option>
-          <option value="unknown">Unknown</option>
+          <option value="unknown">{uiText("Unknown")}</option>
         </select>
       </label>
       <details className="trace-more-filters" open={moreActive || undefined}>
-        <summary>More{moreActive ? " · 1+" : ""}</summary>
+        <summary>{uiText("More")}{moreActive ? " · 1+" : ""}</summary>
         <div className="trace-more-popover">
           <label>
-            <span>Role / actor</span>
+            <span>{uiText("Role / actor")}</span>
             <select
               aria-label="Trace role"
               value={filters.role}
               onChange={(event) => onChange({ ...filters, role: event.target.value })}
             >
-              <option value="">All roles</option>
+              <option value="">{uiText("All roles")}</option>
               {optionValues(roles, filters.role).map((role) => <option key={role} value={role}>{role}</option>)}
             </select>
           </label>
           <label>
-            <span>Backend</span>
+            <span>{uiText("Backend")}</span>
             <select
               aria-label="Trace backend"
               value={filters.backend}
               onChange={(event) => onChange({ ...filters, backend: event.target.value })}
             >
-              <option value="">All backends</option>
+              <option value="">{uiText("All backends")}</option>
               {optionValues(backends, filters.backend).map((backend) => (
                 <option key={backend} value={backend}>{backend}</option>
               ))}
@@ -567,16 +571,17 @@ function TraceTable({
   rows: TraceSummary[];
   selectedTraceId: string;
 }) {
+  useSettingsPreferences();
   return (
     <div className="trace-table-scroll">
       <table className="trace-table" aria-label="Trace index">
         <thead>
           <tr>
-            <th>Status</th>
-            <th>Trace / Task</th>
+            <th>{uiText("Status")}</th>
+            <th>{uiText("Trace / Task")}</th>
             <th>Started</th>
-            <th>Duration</th>
-            <th>Events</th>
+            <th>{uiText("Duration")}</th>
+            <th>{uiText("Events")}</th>
           </tr>
         </thead>
         <tbody>

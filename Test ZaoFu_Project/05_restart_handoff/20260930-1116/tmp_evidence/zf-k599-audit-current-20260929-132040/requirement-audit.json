@@ -1,0 +1,102 @@
+{
+  "gate_exit": 0,
+  "manifest_sha256": "b5ae58d36746e8c22a1bc225b904785ea7315c95e6829b43f2b03c6bdb243f3f",
+  "release_authorized": false,
+  "requirements": [
+    {
+      "bound_evidence": [
+        {
+          "digest": "18deba0b62c222c7d825b9453bfa59ca7dd7020ba9dc61497227756ec3a4d8cf",
+          "ref": "/tmp/zf-mainline-current-20260929/source-before.json",
+          "snapshot": "K598-current-deterministic-mainline/deterministic_mainline-before.json"
+        },
+        {
+          "digest": "f20b334a1718b682f514459a865774999f1d064f5ae737dbe94c99b374839c34",
+          "ref": "/tmp/zf-mainline-current-20260929/source-after.json",
+          "snapshot": "K598-current-deterministic-mainline/deterministic_mainline-after.json"
+        },
+        {
+          "digest": "c0cc5dbdc3cfb59d084384ce108d7da937513753a20a81ee579ed5423a4eaa75",
+          "ref": "/tmp/zf-mainline-current-20260929/pytest-testkit.json",
+          "snapshot": "K598-current-deterministic-mainline/deterministic_mainline-phases.json"
+        },
+        {
+          "digest": "79d4508b545137f12b3cf6928572bc4f06010e5dbb849b160307fdc2da77a1c6",
+          "ref": "/tmp/zf-mainline-current-20260929/pytest-junit.xml",
+          "snapshot": "K598-current-deterministic-mainline/deterministic_mainline-junit.xml"
+        }
+      ],
+      "description": "当前 checkout 的完整 deterministic MAINLINE 注册面；不替代 native Provider 或最终统一验收",
+      "format": "mainline-run",
+      "full_source": {
+        "files_sha256": "3e2c28d41aee83218fd2c9b18f6f17fe87fbdf43c3e0ec985a8fe79a3da8c585",
+        "git_head": "142a62ac763b148cbe2b401ac1cd7ae0f8d1c072",
+        "scope": [
+          "src",
+          "tests",
+          "scripts",
+          "skills",
+          ".claude/skills",
+          ".codex/skills",
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".claude/rules",
+          "pyproject.toml",
+          "uv.lock",
+          "zf.yaml",
+          "awesome-zaofu/New_function/Test ZaoFu_Project/ZaoFu_issue.md"
+        ]
+      },
+      "id": "K598-current-deterministic-mainline",
+      "nodeids": [],
+      "nonpassing": [],
+      "observed_verdict": "pass",
+      "report_ref": "/tmp/zf-mainline-current-20260929/testkit-run.json",
+      "report_sha256": "1017aea14a0760de77002ba3e5728e338b53f09ec51c3a2b8fa318fe91c661de",
+      "role": null,
+      "scope_digests": {
+        ".claude/rules": "141690a449d1067f7cc7740d57b37786b489c0c6d0c40f5b98aa18b81099390a",
+        ".claude/skills": "32afe9d3af5802b707cd080ac6540dfe38847bbfd6bca158d209b5a2fe3f4793",
+        ".codex/skills": "da730157f93de7e4f278cf56975307d55b16fbba5a20ddac4dc3021a8675e98a",
+        "AGENTS.md": "56603da06e18a24d193fadf6ebcc17e41acaf1a2a8707b63d71077cd52299984",
+        "CLAUDE.md": "4144159830838ae5deb3d5baf79dbe8bd26888a0f5df1fccaa8f487e2a1d3be0",
+        "awesome-zaofu/New_function/Test ZaoFu_Project/ZaoFu_issue.md": "1e13e20f79038a114a9b18de537dfe5f1ee6c8b4587344b94735e14861035391",
+        "pyproject.toml": "c25890ad8803c2f9b2a477eb6cf9815ccdd450773044cde8e8c1022aaaa9e5b2",
+        "scripts": "508bb5fdd5e91846a01c28a5fca501d5c48766bab7cb58a47888f1bd69758893",
+        "skills": "ce7ba57330b11b641c0409eb51be1e1978fbd2e4ead0532015e85f3bd0634395",
+        "src": "963919880b19115b44b22c24fb860b36b476a4e4f821b4fb39b2c2b0943143d8",
+        "tests": "1ef6381b393ff739738bb9666ab62bdf6ad5ad04ee0bf95d7dac393b62dbc3b1",
+        "uv.lock": "504df5656bca3ee3401d64982cadf2cddd2f03eb352ee6931bad6b61610dd591",
+        "zf.yaml": "651ac36e3745067e04e64295af86108ac06d22eb986d1f1b6adc6eb3df88538c"
+      },
+      "selection": "current",
+      "snapshot": "K598-current-deterministic-mainline/testkit-run.json",
+      "source": {
+        "files_sha256": "84681abdfbb502e3ea9bdf9c08892bd9bb4f88291eb024b367f8d422227b6bd5",
+        "git_head": "142a62ac763b148cbe2b401ac1cd7ae0f8d1c072",
+        "scope": [
+          "src",
+          "tests",
+          "scripts",
+          "skills",
+          ".claude/skills",
+          ".codex/skills",
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".claude/rules",
+          "pyproject.toml",
+          "uv.lock",
+          "zf.yaml"
+        ]
+      },
+      "source_verified": true,
+      "status": "pass"
+    }
+  ],
+  "same_revision_verified": true,
+  "schema_version": "zf-requirement-audit.v1",
+  "scope": "Only explicitly listed requirements; no overall coverage or current-checkout assertion.",
+  "source_scope_conflicts": [],
+  "source_variant_count": 1,
+  "verdict": "pass"
+}

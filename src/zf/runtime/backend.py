@@ -325,7 +325,7 @@ class CodexAdapter(BackendAdapter):
         # not a tool allowlist. Map zaofu's permission_mode to Codex flags:
         #   bypass            → --dangerously-bypass-approvals-and-sandbox
         #   default / ""      → -a never -s workspace-write
-        #   restricted /      → -a untrusted + sandbox choice:
+        #   restricted /      → project-derived approval + sandbox choice:
         #   allowlist            · no allowed_paths → -s read-only
         #                        · has allowed_paths → -s workspace-write
         #                          + --add-dir <p> for each extra path
@@ -347,12 +347,12 @@ class CodexAdapter(BackendAdapter):
             if sandbox_override == "danger-full-access":
                 cmd.extend(["-a", "never", "-s", "danger-full-access"])
             elif role.constraints.allowed_paths:
-                cmd.extend(["-a", "untrusted"])
+                # SpawnCoordinator binds an untrusted project and verifies
+                # the prepared role-local policy before physical spawn.
                 cmd.extend(["-s", "workspace-write"])
                 for path in role.constraints.allowed_paths:
                     cmd.extend(["--add-dir", path])
             else:
-                cmd.extend(["-a", "untrusted"])
                 cmd.extend(["-s", "read-only"])
         else:
             # Codex CLI 0.130 removed the legacy --full-auto alias.

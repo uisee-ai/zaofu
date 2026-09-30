@@ -33,6 +33,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import re
+import shlex
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -109,6 +111,28 @@ class TmuxLayout(ABC):
         pane layouts override this with a stable tmux pane identity check.
         """
         return target.pane is None and target.window == instance_id
+
+    def owned_pane_pid(
+        self, session: "TmuxSession", target: PaneTarget, instance_id: str,
+    ) -> str:
+        """Read a PID only after this layout validates its target ownership."""
+        if not self.target_owned_by(session, target, instance_id):
+            return ""
+        return session._pane_pid_for_target(target)
+
+    def owned_pane_process_status(
+        self, session: "TmuxSession", target: PaneTarget, instance_id: str,
+    ) -> tuple[str, str]:
+        """Keep legacy window reads; pane layouts provide an owned snapshot."""
+        pid = self.owned_pane_pid(session, target, instance_id)
+        return (pid, session.pane_current_command(instance_id)) if pid else ("", "")
+
+    def owned_pane_process_status_for_instance(
+        self, session: "TmuxSession", instance_id: str,
+    ) -> tuple[str, str]:
+        """Observe one instance while retaining the layout safety boundary."""
+        target = self.resolve(session, instance_id)
+        return self.owned_pane_process_status(session, target, instance_id)
 
 
 class WindowPerRoleLayout(TmuxLayout):
@@ -361,6 +385,248 @@ class PaneGridLayout(TmuxLayout):
             return self._panes.get(instance_id) == target.pane
         pane_exists, owner = self._pane_owner(session, str(target.pane))
         return pane_exists and owner == instance_id
+
+    def owned_pane_pid(
+        self, session: "TmuxSession", target: PaneTarget, instance_id: str,
+    ) -> str:
+        """Bind the final owner check and PID to one tmux server snapshot."""
+        if session.dry_run or target.pane is None:
+            return ""
+        result = session._run(
+            ["tmux", "display-message", "-p", "-t", target.address(),
+             "#{pane_id}\t#{@zf_instance_id}\t#{pane_pid}"],
+            check=False, capture=True,
+        )
+        if result.returncode != 0 or result.stderr.strip():
+            return ""
+        fields = result.stdout.rstrip("\r\n").split("\t")
+        if len(fields) != 3:
+            return ""
+        pane, owner, pid = fields
+        if pane != str(target.pane) or owner.strip() != instance_id:
+            return ""
+        pid = pid.strip()
+        return pid if pid.isdigit() else ""
+
+    def owned_pane_process_status(
+        self, session: "TmuxSession", target: PaneTarget, instance_id: str,
+    ) -> tuple[str, str]:
+        """Read owner, PID and foreground command in the same tmux query."""
+        if session.dry_run or target.pane is None:
+            return "", ""
+        result = session._run(
+            ["tmux", "display-message", "-p", "-t", target.address(),
+             "#{pane_id}\t#{@zf_instance_id}\t#{pane_pid}\t#{pane_current_command}"],
+            check=False, capture=True,
+        )
+        if result.returncode != 0 or result.stderr.strip():
+            return "", ""
+        fields = result.stdout.rstrip("\r\n").split("\t")
+        if len(fields) != 4:
+            return "", ""
+        pane, owner, pid, command = fields
+        if pane != str(target.pane) or owner.strip() != instance_id:
+            return "", ""
+        pid = pid.strip()
+        return (pid, command.strip()) if pid.isdigit() else ("", "")
+
+    def owned_pane_process_status_for_instance(
+        self, session: "TmuxSession", instance_id: str,
+    ) -> tuple[str, str]:
+        """Validate a cached address with a fresh owner/PID/command snapshot."""
+        pane = self._panes.get(instance_id)
+        if pane is not None and not session.dry_run:
+            target = PaneTarget(session.session_name, self.window_name, pane)
+            status = self.owned_pane_process_status(session, target, instance_id)
+            if status[0]:
+                return status
+        # Cold/stale/invalid observations retain normal binding invalidation,
+        # discovery and the final ownership guard; no liveness result is cached.
+        return super().owned_pane_process_status_for_instance(session, instance_id)
+
+    def pane_liveness_snapshot(
+        self,
+        session: "TmuxSession",
+        instance_id: str,
+        *,
+        lines: int = 120,
+    ) -> tuple[str, str, str] | None:
+        """Read fresh ownership/process state and bounded context in one tmux call.
+
+        ``None`` deliberately preserves the legacy resolver path.  The result
+        is never cached: callers must treat it as one observation only.
+        """
+        if (
+            session.dry_run
+            or not self._SAFE_FORMAT_INSTANCE.fullmatch(instance_id)
+            or lines <= 0
+        ):
+            return None
+        pane = self._panes.get(instance_id)
+        if not isinstance(pane, str) or not re.fullmatch(r"%[0-9]+", pane):
+            return None
+        target = PaneTarget(session.session_name, self.window_name, pane)
+        guard = (
+            "#{&&:#{==:#{pane_id}," + str(pane) + "},"
+            "#{==:#{@zf_instance_id}," + instance_id + "}}"
+        )
+        capture = shlex.join(["display-message", "-p", self._CAPTURE_SENTINEL])
+        capture += " ; " + shlex.join([
+            "capture-pane", "-p", "-t", target.address(), "-S", str(-lines),
+        ])
+        command = shlex.join([
+            "display-message", "-p", "-t", target.address(),
+            "#{pane_id}\t#{@zf_instance_id}\t#{pane_pid}\t#{pane_current_command}",
+        ]) + " ; " + shlex.join([
+            "if-shell", "-F", "-t", target.address(), guard, capture,
+            "display-message -p __ZF_LIVENESS_REJECTED__",
+        ])
+        result = session._run(
+            [
+                "tmux", "if-shell", "-F", "-t", target.address(), guard,
+                command, "display-message -p __ZF_LIVENESS_REJECTED__",
+            ],
+            check=False,
+            capture=True,
+        )
+        if result.returncode != 0 or result.stderr.strip():
+            return None
+        header, separator, body = result.stdout.partition("\n")
+        if not separator or not body.startswith(self._CAPTURE_SENTINEL + "\n"):
+            return None
+        fields = header.split("\t")
+        if len(fields) != 4:
+            return None
+        observed_pane, owner, pid, command_name = fields
+        if observed_pane != pane or owner.strip() != instance_id or not pid.isdigit():
+            return None
+        return pid, command_name.strip(), body[len(self._CAPTURE_SENTINEL) + 1:]
+
+    def pane_liveness_and_log_snapshot(
+        self,
+        session: "TmuxSession",
+        instance_id: str,
+        *,
+        liveness_lines: int = 120,
+        log_lines: int = 200,
+    ) -> tuple[str, str, str, str] | None:
+        """Read the watchdog's two independent windows in one tmux client."""
+        if (
+            session.dry_run
+            or not self._SAFE_FORMAT_INSTANCE.fullmatch(instance_id)
+            or liveness_lines <= 0
+            or log_lines <= 0
+        ):
+            return None
+        pane = self._panes.get(instance_id)
+        if not isinstance(pane, str) or not re.fullmatch(r"%[0-9]+", pane):
+            return None
+        target = PaneTarget(session.session_name, self.window_name, pane)
+        guard = (
+            "#{&&:#{==:#{pane_id}," + str(pane) + "},"
+            "#{==:#{@zf_instance_id}," + instance_id + "}}"
+        )
+        marker_120 = "__ZF_CAPTURE_120_OK__"
+        marker_200 = "__ZF_CAPTURE_200_OK__"
+        marker_end = "__ZF_CAPTURE_PAIR_END__"
+        capture_120 = shlex.join(["display-message", "-p", marker_120])
+        capture_120 += " ; " + shlex.join([
+            "capture-pane", "-p", "-t", target.address(),
+            "-S", str(-liveness_lines),
+        ])
+        capture_200 = shlex.join(["display-message", "-p", marker_200])
+        capture_200 += " ; " + shlex.join([
+            "capture-pane", "-p", "-t", target.address(),
+            "-S", str(-log_lines),
+        ])
+        capture_200 += " ; " + shlex.join(["display-message", "-p", marker_end])
+        command = shlex.join([
+            "display-message", "-p", "-t", target.address(),
+            "#{pane_id}\t#{@zf_instance_id}\t#{pane_pid}\t#{pane_current_command}",
+        ])
+        command += " ; " + shlex.join([
+            "if-shell", "-F", "-t", target.address(), guard,
+            capture_120, "display-message -p __ZF_CAPTURE_120_REJECTED__",
+        ])
+        command += " ; " + shlex.join([
+            "if-shell", "-F", "-t", target.address(), guard,
+            capture_200, "display-message -p __ZF_CAPTURE_200_REJECTED__",
+        ])
+        result = session._run(
+            [
+                "tmux", "if-shell", "-F", "-t", target.address(), guard,
+                command, "display-message -p __ZF_LIVENESS_REJECTED__",
+            ],
+            check=False,
+            capture=True,
+        )
+        if result.returncode != 0 or result.stderr.strip():
+            return None
+        header, separator, remainder = result.stdout.partition("\n")
+        fields = header.split("\t")
+        if not separator or len(fields) != 4:
+            return None
+        observed_pane, owner, pid, command_name = fields
+        if observed_pane != pane or owner.strip() != instance_id or not pid.isdigit():
+            return None
+        marker120 = marker_120 + "\n"
+        marker200 = marker_200 + "\n"
+        end = marker_end + "\n"
+        # A pane can print protocol-looking text. Reject ambiguous framing
+        # instead of silently cutting context or assigning it to the log.
+        if (
+            not remainder.startswith(marker120)
+            or not remainder.endswith(end)
+            or any(remainder.count(marker) != 1 for marker in (marker120, marker200, end))
+        ):
+            return None
+        context_and_log = remainder[len(marker120):-len(end)]
+        context, marker_separator, log = context_and_log.partition(marker200)
+        if not marker_separator:
+            return None
+        return pid, command_name.strip(), context, log
+
+    _SAFE_FORMAT_INSTANCE = re.compile(r"^[A-Za-z0-9_.-]+$")
+    _CAPTURE_SENTINEL = "__ZF_CAPTURE_OK__"
+
+    def capture_owned_pane(
+        self,
+        session: "TmuxSession",
+        instance_id: str,
+        *,
+        lines: int,
+    ) -> str | None:
+        """Fresh server-side guard; None retains normal resolver recovery."""
+        if session.dry_run or not self._SAFE_FORMAT_INSTANCE.fullmatch(instance_id):
+            return None
+        pane = self._panes.get(instance_id)
+        if not isinstance(pane, str) or not re.fullmatch(r"%[0-9]+", pane):
+            return None
+        target = PaneTarget(session.session_name, self.window_name, pane)
+        guard = (
+            "#{&&:#{==:#{pane_id}," + str(pane) + "},"
+            "#{==:#{@zf_instance_id}," + instance_id + "}}"
+        )
+        sentinel = self._CAPTURE_SENTINEL
+        capture = shlex.join(["display-message", "-p", sentinel]) + " ; "
+        capture += shlex.join([
+            "capture-pane", "-p", "-t", target.address(), "-S", str(-lines),
+        ])
+        result = session._run(
+            [
+                "tmux", "if-shell", "-F", "-t", target.address(), guard,
+                capture, "display-message -p __ZF_CAPTURE_REJECTED__",
+            ],
+            check=False,
+            capture=True,
+        )
+        if result.returncode != 0 or result.stderr.strip():
+            return None
+        marker = sentinel + "\n"
+        output = result.stdout
+        if not output.startswith(marker):
+            return None
+        return output[len(marker):]
 
     def record_cwd(
         self,

@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useEffect, useRef, useState } from "react";
 
 import { getRegressionCases, postAction } from "../../api/client";
@@ -26,6 +28,7 @@ export function RunRegressionActions({
   taskId: string;
   trace: DeliveryTrace;
 }) {
+  useSettingsPreferences();
   const [cases, setCases] = useState<RegressionCase[]>([]);
   const [casesStatus, setCasesStatus] = useState<"loading" | "ready" | "error">("loading");
   const [casesError, setCasesError] = useState("");
@@ -162,7 +165,7 @@ export function RunRegressionActions({
   return (
     <section className="run-regression-actions" data-testid="run-regression-actions">
       <div className="run-regression-head">
-        <strong>Task evidence</strong>
+        <strong>{uiText("Task evidence")}</strong>
         <div>
           {canonicalTraceId ? (
             <button data-testid="run-open-trace" onClick={openTrace} type="button">Open in Trace</button>
@@ -198,7 +201,7 @@ export function RunRegressionActions({
           ))}
         </div>
       ) : casesStatus === "loading" ? (
-        <span className="muted">Loading regression cases…</span>
+        <span className="muted">{uiText("Loading regression cases…")}</span>
       ) : casesStatus === "ready" ? (
         <span className="muted">
           No regression case captured for this task.

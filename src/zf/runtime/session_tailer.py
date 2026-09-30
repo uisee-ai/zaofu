@@ -374,7 +374,10 @@ def claude_session_path(project_root: str, session_uuid: str) -> Path:
     hidden runtime directories such as ``.zf`` resolve to the file Claude
     actually writes.
     """
-    escaped = "-" + project_root.lstrip("/").replace("/", "-").replace(".", "-")
+    escaped = (
+        "-" + project_root.lstrip("/").replace("/", "-")
+        .replace(".", "-").replace("_", "-")
+    )
     return Path.home() / ".claude" / "projects" / escaped / f"{session_uuid}.jsonl"
 
 

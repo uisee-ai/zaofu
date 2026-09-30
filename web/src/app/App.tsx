@@ -1,4 +1,7 @@
+import { uiText } from "../settings/uiText";
+import { useDeveloperAccess, refreshDeveloperAccess } from "../settings/developerAccess";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
+import { actionEventRefreshRunsInBackground, actionIsReadOnlySelfIssue } from "../api/actionPolicy";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -124,6 +127,7 @@ import { useProjectRequestScope } from "./useProjectRequestScope";
 import { resolveWorkspaceProjectId } from "./workspaceProjectSelection";
 import { ChannelRoute, OrchestratorRoute, ProjectionRoute, TracesRoute } from "./lazyRoutes";
 import type { TriageTab } from "../pages/IssueTriagePage";
+import { useSettingsPreferences } from '../settings/useSettingsPreferences';
 import {
   selfIssueOAuthCallback,
   selfIssueOAuthSession,
@@ -622,6 +626,14 @@ function runtimeActionState(
 }
 
 export function App() {
+  useSettingsPreferences();
+  const developerAccess = useDeveloperAccess();
+  useEffect(() => {
+    void refreshDeveloperAccess();
+    const visible = () => { if (!document.hidden) void refreshDeveloperAccess(); };
+    document.addEventListener("visibilitychange", visible);
+    return () => document.removeEventListener("visibilitychange", visible);
+  }, []);
   const initial = useMemo(() => readInitialQuery(), []);
   const initialSelfIssueOAuthCallback = useMemo(
     () => selfIssueOAuthCallback(window.location.search),
@@ -777,13 +789,39 @@ export function App() {
   }, []);
   useEffect(() => {
     let cancelled = false;
+    // Revoke the previous capability while a newly supplied token is being
+    // checked. This prevents a developer Triage view from flashing when the
+    // browser switches back to a reporter token.
+    setWebSessionStatus(null);
     getWebSession()
       .then((session) => {
         if (!cancelled) setWebSessionStatus(session);
       })
-      .catch(() => undefined);
+      .catch(() => {
+        if (!cancelled) {
+          setWebSessionStatus({
+            mode: "read_only",
+            unlocked: false,
+            actions_enabled: false,
+            can_view_issue_triage: false,
+          });
+        }
+      });
     return () => { cancelled = true; };
+  }, [webActionTokenPresent]);
+  useEffect(() => {
+    const update = () => { void getWebSession().then(setWebSessionStatus).catch(() => setWebSessionStatus(null)); };
+    window.addEventListener("zf:developer-access-changed", update);
+    return () => window.removeEventListener("zf:developer-access-changed", update);
   }, []);
+  useEffect(() => {
+    if (page !== "issue-triage" || webSessionStatus === null || developerAccess.loading) return;
+    if (developerAccess.mode === "developer" && developerAccess.verified && webSessionStatus.can_view_issue_triage === true) return;
+    // A query-string route is not an authorization boundary. Redirect a
+    // reporter who manually enters ?page=issue-triage back to the board after
+    // the server has denied the developer capability.
+    setPage("board");
+  }, [page, webSessionStatus, developerAccess.mode, developerAccess.verified, developerAccess.loading]);
   const [orchestratorFocusSignal, setOrchestratorFocusSignal] = useState(0);
   const [liveState, setLiveState] = useState<LiveState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -1675,14 +1713,20 @@ export function App() {
       window.localStorage.removeItem("zf.webActionToken");
       setWebActionTokenPresent(false);
     }
+    // Polls update their own component, not every projection on the page.
+    if (actionIsReadOnlySelfIssue(action)) return result;
     setActionResult(result);
-    try {
-      const recent = await getRecentEvents(60, requestedProjectId || undefined);
-      if (!projectRequestScope.isCurrent(ticket)) return result;
-      setEvents(recent.slice().reverse());
-    } catch {
-      // SSE remains the primary live path; this fallback only tightens action feedback.
-    }
+    // Do not hold the action response on an unrelated history refresh. A
+    // Self-Issue capture is already reflected by its action result; waiting
+    // for a large event projection made the composer spin for minutes and
+    // caused a second overlapping refresh during memory pressure.
+    const eventRefresh = getRecentEvents(60, requestedProjectId || undefined)
+      .then((recent) => {
+        if (projectRequestScope.isCurrent(ticket)) setEvents(recent.slice().reverse());
+      })
+      .catch(() => undefined);
+    if (!actionEventRefreshRunsInBackground(action)) await eventRefresh;
+    if (!projectRequestScope.isCurrent(ticket)) return result;
     if (shouldRefreshChannelsAfterAction(action, result)) {
       void loadChannels();
     } else {
@@ -2266,7 +2310,7 @@ export function App() {
             <button
               className="topbar-search-button"
               type="button"
-              aria-label="Search"
+              aria-label={uiText("Search")}
               title="Search workspace"
               onClick={() => void runSearch()}
             >
@@ -2285,7 +2329,7 @@ export function App() {
             <button
               className="topbar-tool-button topbar-refresh-button"
               type="button"
-              aria-label="Refresh"
+              aria-label={uiText("Refresh")}
               title="Refresh dashboard"
               onClick={() => void refresh()}
             >
@@ -2314,6 +2358,7 @@ export function App() {
           actionResult={actionResult}
           activePage={page}
           activeProjectId={activeProjectId}
+          canViewIssueTriage={developerAccess.mode === "developer" && developerAccess.verified && actionGate.actionReady && Boolean(webSessionStatus?.can_view_issue_triage)}
           channels={channelsPage?.channels ?? []}
           channelsLoaded={channelsPage !== null}
           inboxPendingCount={projectHealth?.runtime_state === "archived" ? 0 : inboxPendingCount}
@@ -2397,30 +2442,36 @@ export function App() {
               tasks={snapshot ? allBoardTasks(snapshot) : []}
             />
           ) : page === "issue-triage" ? (
-            <Suspense fallback={<section className="subsection"><p className="muted">Loading Issue Triage…</p></section>}>
-              <IssueTriagePage
-                projectId={activeProjectId}
-                tab={issueTriageTab}
-                onTabChange={setIssueTriageTab}
-                onOpenTask={openTask}
-                onOpenProjection={(kind, id) => void openProjection(kind, id)}
-                runtimeInterventions={(
-                  <TriagePage
-                    actionResult={actionResult}
-                    events={events}
-                    pendingProposals={kanbanPendingProposals}
-                    onAction={(action, payload) => void submitAction(action, payload)}
-                    onOpenTask={openTask}
-                    tasks={snapshot ? allBoardTasks(snapshot) : []}
-                  />
-                )}
-              />
-            </Suspense>
+            developerAccess.mode === "developer" && developerAccess.verified && webSessionStatus?.can_view_issue_triage === true ? (
+              <Suspense fallback={<section className="subsection"><p className="muted">{uiText("Loading Issue Triage…")}</p></section>}>
+                <IssueTriagePage
+                  projectId={activeProjectId}
+                  tab={issueTriageTab}
+                  onTabChange={setIssueTriageTab}
+                  onOpenTask={openTask}
+                  onOpenProjection={(kind, id) => void openProjection(kind, id)}
+                  runtimeInterventions={(
+                    <TriagePage
+                      actionResult={actionResult}
+                      events={events}
+                      pendingProposals={kanbanPendingProposals}
+                      onAction={(action, payload) => void submitAction(action, payload)}
+                      onOpenTask={openTask}
+                      tasks={snapshot ? allBoardTasks(snapshot) : []}
+                    />
+                  )}
+                />
+              </Suspense>
+            ) : (
+              <section className="subsection" aria-label="Triage access">
+                <p className="muted">{uiText("Checking developer Triage access…")}</p>
+              </section>
+            )
           ) : page === "board" && !snapshot ? (
             /* P0-B: loading must not impersonate an empty board ("0 tasks" for
                2s then 9 blocked appears — the trust-killer zero). */
             <section className="subsection">
-              <p className="muted">Loading board…</p>
+              <p className="muted">{uiText("Loading board…")}</p>
             </section>
           ) : page === "board" ? (
             <BoardWorkbench
@@ -2485,7 +2536,7 @@ export function App() {
               <TracesRoute projectId={activeProjectId} liveState={liveState} />
             </section>
           ) : (
-            <section className="projection-scroll">
+            <section className={page === "settings" ? "projection-scroll settings-host" : "projection-scroll"}>
                 <ProjectionRoute
                   activeProjectId={activeProjectId}
                   eventsPage={eventsPage}
@@ -2538,7 +2589,7 @@ export function App() {
           )}
         </section>
         {terminalOpen && activeProjectId ? (
-          <Suspense fallback={<div className="web-terminal-loading">Loading terminal UI…</div>}>
+          <Suspense fallback={<div className="web-terminal-loading">{uiText("Loading terminal UI…")}</div>}>
             <TerminalDrawer
               key={activeProjectId}
               projectId={activeProjectId}
@@ -2645,6 +2696,7 @@ export function App() {
       {commandOpen ? (
         <CommandPalette
           actionReady={actionGate.actionReady}
+          canViewIssueTriage={developerAccess.mode === "developer" && developerAccess.verified && actionGate.actionReady && Boolean(webSessionStatus?.can_view_issue_triage)}
           events={events}
           onAction={(action, payload) => void submitAction(action, payload)}
           onClose={() => setCommandOpen(false)}
@@ -2672,11 +2724,12 @@ export function App() {
 }
 
 function WorkspaceEmptyPanel({ onAddProject }: { onAddProject: () => void }) {
+  useSettingsPreferences();
   return (
     <section className="panel project-init-panel">
       <div className="section-heading">
         <div>
-          <h2>Workspace</h2>
+          <h2>{uiText("Workspace")}</h2>
           <span className="muted">no active project</span>
         </div>
       </div>
@@ -2685,7 +2738,7 @@ function WorkspaceEmptyPanel({ onAddProject }: { onAddProject: () => void }) {
       </p>
       <button className="primary-action" type="button" onClick={onAddProject}>
         <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
-        Add Project
+        {uiText("Add Project")}
       </button>
     </section>
   );
@@ -2702,13 +2755,14 @@ function ProjectInitPanel({
   onInit: () => void;
   project: WorkspaceProject;
 }) {
+  useSettingsPreferences();
   const reason = projectLifecycleReason(project);
   return (
     <section className="panel project-init-panel">
       <div className="section-heading">
         <div>
           <h2>{project.name || project.project_id}</h2>
-          <span className="muted">Project needs initialization</span>
+          <span className="muted">{uiText("Project needs initialization")}</span>
         </div>
       </div>
       <dl className="compact-definition-list">
@@ -2727,10 +2781,10 @@ function ProjectInitPanel({
       </dl>
       <div className="action-row">
         <button className="primary-action" disabled={!actionReady} type="button" onClick={onInit}>
-          Initialize Project
+          {uiText("Initialize Project")}
         </button>
         <button className="icon-button" type="button" onClick={onAddProject}>
-          Open Wizard
+          {uiText("Open Wizard")}
         </button>
       </div>
       {!actionReady ? (
@@ -2777,6 +2831,7 @@ function ProjectHomePage({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onOpenTask: (taskId: string) => void;
 }) {
+  useSettingsPreferences();
   // overview-pulse.v1 is an independent project-scoped projection. A project
   // already pinned by the URL can render its pulse while workspace discovery
   // and the auxiliary light snapshot continue in parallel.
@@ -3020,7 +3075,7 @@ function ProjectHomePage({
     <section className="project-home">
       <div className="project-overview-hero">
         <div>
-          <span className="badge badge-info">Project Overview</span>
+          <span className="badge badge-info">{uiText("Project Overview")}</span>
           <h2>{snapshot?.project.name || "Project"}</h2>
           {snapshot?.project.description ? (
             <p data-testid="project-description">{snapshot.project.description}</p>
@@ -3089,6 +3144,7 @@ function ProjectHomePage({
 }
 
 function SpineReviewInsightCard({ insight }: { insight: Record<string, unknown> }) {
+  useSettingsPreferences();
   const status = textValue(insight.status);
   const verdict = textValue(insight.verdict);
   const confidence = textValue(insight.confidence);
@@ -3115,8 +3171,8 @@ function SpineReviewInsightCard({ insight }: { insight: Record<string, unknown> 
         <>
           <div className="spine-review-status-grid">
             <span>Design <strong>{textValue(insight.design_status) || "-"}</strong></span>
-            <span>Delivery <strong>{textValue(insight.delivery_status) || "-"}</strong></span>
-            <span>Runtime <strong>{textValue(insight.runtime_status) || "-"}</strong></span>
+            <span>{uiText("Delivery")} <strong>{textValue(insight.delivery_status) || "-"}</strong></span>
+            <span>{uiText("Runtime")} <strong>{textValue(insight.runtime_status) || "-"}</strong></span>
             <span>Confidence <strong>{confidence || "-"}</strong></span>
           </div>
           <p className="spine-review-solution">
@@ -3143,23 +3199,24 @@ function SpineReviewInsightCard({ insight }: { insight: Record<string, unknown> 
           </p>
         </>
       ) : (
-        <p className="project-empty-state">No spine review artifact yet.</p>
+        <p className="project-empty-state">{uiText("No spine review artifact yet.")}</p>
       )}
     </section>
   );
 }
 
 function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
+  useSettingsPreferences();
   const visibleItems = items.slice(0, 3);
   const hiddenCount = Math.max(0, items.length - visibleItems.length);
   return (
     <section className="project-focus-section">
       <div className="inline-heading">
-        <h3 className="section-title">Focus Now</h3>
+        <h3 className="section-title">{uiText("Focus Now")}</h3>
         <span className="muted">{visibleItems.length}/{items.length} signal(s)</span>
       </div>
       {items.length === 0 ? (
-        <p className="project-empty-state">No project-level attention signal.</p>
+        <p className="project-empty-state">{uiText("No project-level attention signal.")}</p>
       ) : (
         <div className="compact-list">
           {visibleItems.map((item) => {
@@ -3184,8 +3241,8 @@ function ProjectFocusPanel({ items }: { items: ProjectFocusItem[] }) {
           {hiddenCount ? (
             <div className="inline-row project-focus-more">
               <span className="badge badge-info">+{hiddenCount}</span>
-              <strong>More signals</strong>
-              <span className="project-focus-body">Open Agents, Delivery, or Observability for the full attention queue.</span>
+              <strong>{uiText("More signals")}</strong>
+              <span className="project-focus-body">{uiText("Open Agents, Delivery, or Observability for the full attention queue.")}</span>
               <span className="muted">triage later</span>
             </div>
           ) : null}
@@ -3204,26 +3261,27 @@ function ProjectRunsOverview({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   recentRuns: RunSummary[];
 }) {
+  useSettingsPreferences();
   const [runsTab, setRunsTab] = useState<"active" | "recent">(activeRuns.length ? "active" : "recent");
   const showActive = runsTab === "active";
   return (
     <div className="project-runs-overview">
       <div className="inline-heading">
-        <h3 className="section-title">Runs</h3>
+        <h3 className="section-title">{uiText("Runs")}</h3>
         <span className="tab-strip">
           <button
             className={`tab-chip${showActive ? " active" : ""}`}
             type="button"
             onClick={() => setRunsTab("active")}
           >
-            Active {activeRuns.length}
+            {uiText("Active")} {activeRuns.length}
           </button>
           <button
             className={`tab-chip${showActive ? "" : " active"}`}
             type="button"
             onClick={() => setRunsTab("recent")}
           >
-            Recent {recentRuns.length}
+            {uiText("Recent")} {recentRuns.length}
           </button>
         </span>
       </div>
@@ -3317,6 +3375,7 @@ function TriagePage({
   onOpenTask: (taskId: string) => void;
   tasks: Task[];
 }) {
+  useSettingsPreferences();
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const failedEvents = events.filter((event) => (
     event.type.includes("failed")
@@ -3407,13 +3466,13 @@ function TriagePage({
     <section className="triage-page">
       <div className="section-heading">
         <div>
-          <h2>Triage</h2>
+          <h2>{uiText("Triage")}</h2>
           <span className="muted">proposal-only queue</span>
         </div>
         <div className="button-row">
           {dismissed.size ? (
             <button className="icon-button" type="button" onClick={() => setDismissed(new Set())}>
-              Restore {dismissed.size}
+              {uiText("Restore")} {dismissed.size}
             </button>
           ) : null}
           {actionResult ? <span className="badge">{actionResult.status}</span> : null}
@@ -3426,7 +3485,7 @@ function TriagePage({
           items={autopilotItems}
         />
         <TriageList
-          title="Blocked"
+          title={uiText("Blocked")}
           empty="No blocked tasks."
           items={blocked.map((task) => ({
             id: `blocked:${task.id}`,
@@ -3509,6 +3568,7 @@ function TriageList({
 
 function CommandPalette({
   actionReady,
+  canViewIssueTriage,
   events,
   onAction,
   onClose,
@@ -3519,6 +3579,7 @@ function CommandPalette({
   snapshot,
 }: {
   actionReady: boolean;
+  canViewIssueTriage: boolean;
   events: RecentEvent[];
   onAction: (action: string, payload: Record<string, unknown>) => void;
   onClose: () => void;
@@ -3528,6 +3589,7 @@ function CommandPalette({
   onOpenTask: (taskId: string) => void;
   snapshot: Snapshot | null;
 }) {
+  useSettingsPreferences();
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
   const tasks = (snapshot ? allBoardTasks(snapshot) : [])
@@ -3549,13 +3611,13 @@ function CommandPalette({
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel command-palette" role="dialog" aria-modal="true" aria-label="Command Palette">
+      <section className="modal-panel command-palette" role="dialog" aria-modal="true" aria-label={uiText("Command Palette")}>
         <div className="section-heading">
           <div>
-            <h2>Command Palette</h2>
+            <h2>{uiText("Command Palette")}</h2>
             <span className="muted">workspace actions and search</span>
           </div>
-          <button className="icon-button" type="button" onClick={onClose}>Close</button>
+          <button className="icon-button" type="button" onClick={onClose}>{uiText("Close")}</button>
         </div>
         <div className="modal-body">
           <input
@@ -3567,12 +3629,12 @@ function CommandPalette({
           />
           <div className="command-actions">
             <button className="icon-button" type="button" onClick={onOpenAgent}>Kanban Agent</button>
-            <button className="icon-button" type="button" onClick={() => onOpenPage("issue-triage")}>Triage</button>
-            <button className="icon-button" type="button" onClick={() => onOpenPage("board")}>Board</button>
+            {canViewIssueTriage ? <button className="icon-button" type="button" onClick={() => onOpenPage("issue-triage")}>{uiText("Triage")}</button> : null}
+            <button className="icon-button" type="button" onClick={() => onOpenPage("board")}>{uiText("Board")}</button>
           </div>
           <div className="command-grid">
             <div className="subsection command-section">
-              <h3>Tasks</h3>
+              <h3>{uiText("Tasks")}</h3>
               {tasks.length ? tasks.map((task) => (
                 <div className="command-item" key={task.id}>
                   <button className="link-button" type="button" onClick={() => onOpenTask(task.id)}>
@@ -3580,7 +3642,7 @@ function CommandPalette({
                   </button>
                   <div className="button-row">
                     <span className="badge">P{taskPriority(task)}</span>
-                    <button className="icon-button" type="button" onClick={() => onOpenTask(task.id)}>Open</button>
+                    <button className="icon-button" type="button" onClick={() => onOpenTask(task.id)}>{uiText("Open")}</button>
                     <button
                       className="icon-button"
                       disabled={!actionReady}
@@ -3595,14 +3657,14 @@ function CommandPalette({
                       type="button"
                       onClick={() => onAction("request-review", { task_id: task.id })}
                     >
-                      Review
+                      {uiText("Review")}
                     </button>
                   </div>
                 </div>
-              )) : <p className="empty-text compact-error">No tasks.</p>}
+              )) : <p className="empty-text compact-error">{uiText("No tasks.")}</p>}
             </div>
             <div className="subsection command-section">
-              <h3>Execution</h3>
+              <h3>{uiText("Execution")}</h3>
               {runRows.map((row) => (
                 <button className="inline-row" key={`run:${textValue(row.run_id)}`} type="button" onClick={() => onOpenProjection("run", textValue(row.run_id))}>
                   <span>run</span>
@@ -3617,17 +3679,17 @@ function CommandPalette({
                   <span>{textValue(row.status)}</span>
                 </button>
               ))}
-              {!runRows.length && !fanoutRows.length ? <p className="empty-text compact-error">No execution rows.</p> : null}
+              {!runRows.length && !fanoutRows.length ? <p className="empty-text compact-error">{uiText("No execution rows.")}</p> : null}
             </div>
             <div className="subsection command-section">
-              <h3>Events</h3>
+              <h3>{uiText("Events")}</h3>
               {eventRows.length ? eventRows.map((event) => (
                 <button className="inline-row" key={String(event.id ?? event.seq)} type="button" onClick={() => onOpenPage("events")}>
                   <span className="mono">{event.seq ?? "-"}</span>
                   <span>{event.type}</span>
                   <span>{formatTime(event.ts)}</span>
                 </button>
-              )) : <p className="empty-text compact-error">No events.</p>}
+              )) : <p className="empty-text compact-error">{uiText("No events.")}</p>}
             </div>
           </div>
         </div>
@@ -3649,17 +3711,18 @@ function NewChannelModal({
   onDraftChange: (draft: NewChannelDraft) => void;
   onSubmit: () => void;
 }) {
+  useSettingsPreferences();
   const update = (patch: Partial<NewChannelDraft>) => onDraftChange({ ...draft, ...patch });
   const name = draft.name.trim();
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="modal-panel" role="dialog" aria-modal="true" aria-label="New Channel">
+      <section className="modal-panel" role="dialog" aria-modal="true" aria-label={uiText("New Channel")}>
         <div className="section-heading">
           <div>
-            <h2>New Channel</h2>
+            <h2>{uiText("New Channel")}</h2>
             <span className="muted">event-backed channel; no side state file</span>
           </div>
-          <button className="icon-button" type="button" onClick={onClose}>Close</button>
+          <button className="icon-button" type="button" onClick={onClose}>{uiText("Close")}</button>
         </div>
         <div className="modal-body">
           <input
@@ -3678,10 +3741,10 @@ function NewChannelModal({
         </div>
         <div className="action-row">
           <button className="icon-button primary" disabled={!actionReady || !name || name === "#"} type="button" onClick={onSubmit}>
-            Create Channel
+            {uiText("Create Channel")}
           </button>
           <button className="icon-button" type="button" onClick={() => onDraftChange(emptyNewChannelDraft())}>
-            Reset
+            {uiText("Reset")}
           </button>
         </div>
       </section>
@@ -3690,9 +3753,10 @@ function NewChannelModal({
 }
 
 function SearchResults({ result, onSelectTask }: { result: SearchResult; onSelectTask: (taskId: string) => void }) {
+  useSettingsPreferences();
   return (
     <div className="subsection">
-      <h3>Search</h3>
+      <h3>{uiText("Search")}</h3>
       <div className="compact-list">
         {result.tasks.map((task) => (
           <button className="inline-row" type="button" key={task.id} onClick={() => onSelectTask(task.id)}>

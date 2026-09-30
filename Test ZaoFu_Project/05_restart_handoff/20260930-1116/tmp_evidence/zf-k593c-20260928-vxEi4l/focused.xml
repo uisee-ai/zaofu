@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="11" skipped="0" tests="71" time="5.257" timestamp="2026-09-28T21:07:09.259831+08:00" hostname="uisee"><testcase classname="tests.test_spawn_coordinator.TestClaudeFirstSpawn" name="test_first_spawn_uses_session_id_flag" time="0.206" /><testcase classname="tests.test_spawn_coordinator.TestClaudeFirstSpawn" name="test_first_spawn_prepares_claude_workspace_trust" time="0.106"><properties><property name="trust_prepared_before_spawn" value="/tmp/pytest-of-uisee/pytest-220/test_first_spawn_prepares_clau0/worktree" /></properties></testcase><testcase classname="tests.test_spawn_coordinator.TestClaudeFirstSpawn" name="test_spawn_passes_worktree_cwd_to_transport" time="0.103" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_respawn_finds_transcript_in_actual_spawn_cwd" time="0.148" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_respawn_uses_resume_flag" time="0.159" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_launch_event_records_attempt_and_resume" time="0.175" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_fresh_spawn_rotates_session_id_when_live_process_holds_it" time="0.197" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_rotation_purges_stale_lock_for_the_rotated_candidate" time="0.177" /><testcase classname="tests.test_spawn_coordinator.TestClaudeRespawn" name="test_second_spawn_without_session_file_uses_session_id" time="0.225" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_first_spawn_calls_transport_spawn_with_interactive_argv" time="0.056" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_spawn_injects_runtime_env_for_claude" time="0.106" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_explicit_claude_effort_overrides_host_environment" time="0.096" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_home_does_not_copy_project_hooks" time="0.053" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_home_uses_role_local_sessions_dir" time="0.082" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_home_records_project_hook_trust_state" time="0.003" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_home_replaces_existing_global_hook_trust_state" time="0.003" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_codex_spawn_trusts_workdir_project_hooks" time="0.067" /><testcase classname="tests.test_spawn_coordinator.TestCodexFirstSpawn" name="test_fanout_synth_spawn_uses_pure_aggregator_policy" time="0.061" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithCachedUuid" name="test_codex_respawn_uses_cached_session_id" time="0.059" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithCachedUuid" name="test_codex_respawn_replaces_session_ending_with_provider_error" time="0.066" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithCachedUuid" name="test_codex_respawn_rejects_session_owned_by_another_role_home" time="0.068" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithCachedUuid" name="test_codex_respawn_with_missing_cached_session_starts_fresh" time="0.070" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithoutCachedUuid" name="test_codex_respawn_without_uuid_starts_fresh_no_resume" time="0.054" /><testcase classname="tests.test_spawn_coordinator.TestCodexRespawnWithoutCachedUuid" name="test_codex_respawn_without_uuid_emits_warning_event" time="0.060" /><testcase classname="tests.test_spawn_coordinator.TestCodexUpdatePromptDismissal" name="test_spawn_dismisses_update_prompt" time="0.055" /><testcase classname="tests.test_spawn_coordinator.TestCodexUpdatePromptDismissal" name="test_spawn_skips_when_already_dismissed" time="0.066" /><testcase classname="tests.test_spawn_coordinator.TestCodexUpdatePromptDismissal" name="test_spawn_handles_missing_version_file_gracefully" time="0.059" /><testcase classname="tests.test_spawn_coordinator.TestCodexUpdatePromptDismissal" name="test_non_codex_role_does_not_touch_version_file" time="0.102" /><testcase classname="tests.test_spawn_coordinator.TestNotifyFirstDispatch" name="test_non_codex_role_is_noop" time="0.002" /><testcase classname="tests.test_spawn_coordinator.TestNotifyFirstDispatch" name="test_codex_with_cached_uuid_is_noop" time="0.005" /><testcase classname="tests.test_spawn_coordinator.TestNotifyFirstDispatch" name="test_codex_without_cached_uuid_schedules_observation" time="0.569" /><testcase classname="tests.test_spawn_coordinator.TestNotifyFirstDispatch" name="test_background_observe_uses_role_local_sessions_root" time="0.004" /><testcase classname="tests.test_spawn_coordinator.TestNotifyFirstDispatch" name="test_observed_role_local_rollout_is_tailed_from_first_turn" time="0.217" /><testcase classname="tests.test_spawn_coordinator.TestMarkSpawnedSemantics" name="test_first_spawn_marks_and_returns_initial_command" time="0.153" /><testcase classname="tests.test_spawn_coordinator.TestMarkSpawnedSemantics" name="test_fresh_registry_mark_spawned_is_false" time="0.005" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_purge_clears_lastSessionId_when_no_live_process" time="0.065" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_purge_skipped_when_live_process_holds_uuid" time="0.078" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_purge_skipped_on_respawn" time="0.169" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_uuid_used_by_live_process_negative" time="0.002" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_uuid_used_by_live_process_positive" time="0.002" /><testcase classname="tests.test_spawn_coordinator.TestPurgeStaleClaudeSession" name="test_uuid_used_by_live_process_fail_closed" time="0.002" /><testcase classname="tests.test_dismiss_codex_update_prompt" name="test_missing_version_file_is_noop" time="0.002" /><testcase classname="tests.test_dismiss_codex_update_prompt" name="test_malformed_json_is_noop" time="0.003" /><testcase classname="tests.test_dismiss_codex_update_prompt" name="test_latest_version_unset_is_noop" time="0.004" /><testcase classname="tests.test_dismiss_codex_update_prompt" name="test_new_latest_triggers_dismiss" time="0.007" /><testcase classname="tests.test_dismiss_codex_update_prompt" name="test_already_dismissed_is_idempotent" time="0.002" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_generates_file" time="0.038" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_covers_five_events" time="0.004" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_command_binds_hook_recv" time="0.002" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_uses_configured_zf_cli_cmd" time="0.003" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_json_is_parseable" time="0.003" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_settings_all_five_events_have_type_command" time="0.006" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-pre_tool_use]" time="0.002"><failure message="AssertionError: assert 'sha256:6b7b8...b8d3d57f42ffb' == 'sha256:a9bdc...48a19029e3231'&#10;  &#10;  - sha256:a9bdc376f3404497be9b879de763ead26782087852a2c4273b748a19029e3231&#10;  + sha256:6b7b8ce28186dee1b528e5833ac03b5de0fef6929a3c31fbb9eb8d3d57f42ffb">state_dir = '/path/to/example-project/.zf-mixed', label = 'pre_tool_use'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dbd3d0&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:6b7b8...b8d3d57f42ffb' == 'sha256:a9bdc...48a19029e3231'
+E         
+E         - sha256:a9bdc376f3404497be9b879de763ead26782087852a2c4273b748a19029e3231
+E         + sha256:6b7b8ce28186dee1b528e5833ac03b5de0fef6929a3c31fbb9eb8d3d57f42ffb
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-post_tool_use]" time="0.004"><failure message="AssertionError: assert 'sha256:5e9bc...75d9152b14d0c' == 'sha256:22849...b8e17418e5262'&#10;  &#10;  - sha256:22849323caaedf088f0e39ebd11d8dce908b6acc11c3fa74a45b8e17418e5262&#10;  + sha256:5e9bc17739803c12c26a88ddd5c7eb5312ebaa1c0fc82dbeaee75d9152b14d0c">state_dir = '/path/to/example-project/.zf-mixed', label = 'post_tool_use'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x76965a0d5890&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:5e9bc...75d9152b14d0c' == 'sha256:22849...b8e17418e5262'
+E         
+E         - sha256:22849323caaedf088f0e39ebd11d8dce908b6acc11c3fa74a45b8e17418e5262
+E         + sha256:5e9bc17739803c12c26a88ddd5c7eb5312ebaa1c0fc82dbeaee75d9152b14d0c
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-session_start]" time="0.002"><failure message="AssertionError: assert 'sha256:87f8c...ed961151811eb' == 'sha256:6c2f3...1667e56094756'&#10;  &#10;  - sha256:6c2f3bf7f920f880dc0f46c75e43e0572a5202c9613630964c61667e56094756&#10;  + sha256:87f8c890ae91d4725509575bcdc4ecbf1a78e58d9c029d79022ed961151811eb">state_dir = '/path/to/example-project/.zf-mixed', label = 'session_start'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dbd690&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:87f8c...ed961151811eb' == 'sha256:6c2f3...1667e56094756'
+E         
+E         - sha256:6c2f3bf7f920f880dc0f46c75e43e0572a5202c9613630964c61667e56094756
+E         + sha256:87f8c890ae91d4725509575bcdc4ecbf1a78e58d9c029d79022ed961151811eb
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-user_prompt_submit]" time="0.002"><failure message="AssertionError: assert 'sha256:0dbf9...3527c11c15d4d' == 'sha256:02e8a...03d0b5df976a2'&#10;  &#10;  - sha256:02e8a4dc851ce229812888fedcde8be970ff0df943460d8506403d0b5df976a2&#10;  + sha256:0dbf978d17aa4f494997ec527c58fa6c4bb4b813a81eb1d02763527c11c15d4d">state_dir = '/path/to/example-project/.zf-mixed', label = 'user_prompt_submit'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dd35d0&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:0dbf9...3527c11c15d4d' == 'sha256:02e8a...03d0b5df976a2'
+E         
+E         - sha256:02e8a4dc851ce229812888fedcde8be970ff0df943460d8506403d0b5df976a2
+E         + sha256:0dbf978d17aa4f494997ec527c58fa6c4bb4b813a81eb1d02763527c11c15d4d
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-stop]" time="0.002"><failure message="AssertionError: assert 'sha256:cf55f...7aced0847a35b' == 'sha256:13ef7...7aa124f4203fe'&#10;  &#10;  - sha256:13ef7a211a9003f1f6037914aa704816b5e38dad383a0ab2f807aa124f4203fe&#10;  + sha256:cf55f0e35d84ba4e5a32e7209e0e9c83dc51536bb12c48dad297aced0847a35b">state_dir = '/path/to/example-project/.zf-mixed', label = 'stop'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dfc210&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:cf55f...7aced0847a35b' == 'sha256:13ef7...7aa124f4203fe'
+E         
+E         - sha256:13ef7a211a9003f1f6037914aa704816b5e38dad383a0ab2f807aa124f4203fe
+E         + sha256:cf55f0e35d84ba4e5a32e7209e0e9c83dc51536bb12c48dad297aced0847a35b
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-pre_tool_use]" time="0.003"><failure message="AssertionError: assert 'sha256:388d0...ee2d58a672eb1' == 'sha256:cc036...bd92c76827551'&#10;  &#10;  - sha256:cc0367dbf0faf6d2395b7e9810ddb96ab4fccf6d82452932fdebd92c76827551&#10;  + sha256:388d086d8c1460207b1ca478d9239bf2ffbaa30603b1e973265ee2d58a672eb1">state_dir = '/path/to/example-project/.zf', label = 'pre_tool_use'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659bf0b90&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:388d0...ee2d58a672eb1' == 'sha256:cc036...bd92c76827551'
+E         
+E         - sha256:cc0367dbf0faf6d2395b7e9810ddb96ab4fccf6d82452932fdebd92c76827551
+E         + sha256:388d086d8c1460207b1ca478d9239bf2ffbaa30603b1e973265ee2d58a672eb1
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-post_tool_use]" time="0.002"><failure message="AssertionError: assert 'sha256:eb760...5bf585419a870' == 'sha256:aae2f...5cfb3d96bcd3e'&#10;  &#10;  - sha256:aae2f3c9df9245f60a78180a3aceb14c88794650376abfcead35cfb3d96bcd3e&#10;  + sha256:eb7607e10fbae301ee4fb9733876148945427477eab3e76a2ad5bf585419a870">state_dir = '/path/to/example-project/.zf', label = 'post_tool_use'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dc6f10&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:eb760...5bf585419a870' == 'sha256:aae2f...5cfb3d96bcd3e'
+E         
+E         - sha256:aae2f3c9df9245f60a78180a3aceb14c88794650376abfcead35cfb3d96bcd3e
+E         + sha256:eb7607e10fbae301ee4fb9733876148945427477eab3e76a2ad5bf585419a870
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-session_start]" time="0.002"><failure message="AssertionError: assert 'sha256:87c10...56ec5402fc46c' == 'sha256:68125...e5f1c246c53a3'&#10;  &#10;  - sha256:68125e329c1e9c5bd8fbb2c1da2090f9e3f9d4605436b8fbc7ce5f1c246c53a3&#10;  + sha256:87c10035fecaa85a02828f4370d81b0bfb440846ac2888b7cc856ec5402fc46c">state_dir = '/path/to/example-project/.zf', label = 'session_start'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dd5110&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:87c10...56ec5402fc46c' == 'sha256:68125...e5f1c246c53a3'
+E         
+E         - sha256:68125e329c1e9c5bd8fbb2c1da2090f9e3f9d4605436b8fbc7ce5f1c246c53a3
+E         + sha256:87c10035fecaa85a02828f4370d81b0bfb440846ac2888b7cc856ec5402fc46c
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-user_prompt_submit]" time="0.004"><failure message="AssertionError: assert 'sha256:d65f0...82535d161be5a' == 'sha256:1991f...f8c4fd428f014'&#10;  &#10;  - sha256:1991ff9f6fb7816c398746dfe3dbfb3b7c1007345f21e53fe80f8c4fd428f014&#10;  + sha256:d65f030726fc203d0431c93467bbd947e93b30a4b8f626bdb9482535d161be5a">state_dir = '/path/to/example-project/.zf', label = 'user_prompt_submit'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dfe790&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:d65f0...82535d161be5a' == 'sha256:1991f...f8c4fd428f014'
+E         
+E         - sha256:1991ff9f6fb7816c398746dfe3dbfb3b7c1007345f21e53fe80f8c4fd428f014
+E         + sha256:d65f030726fc203d0431c93467bbd947e93b30a4b8f626bdb9482535d161be5a
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-stop]" time="0.002"><failure message="AssertionError: assert 'sha256:e12a1...b87697b8bc82f' == 'sha256:9f8dc...81153fdd73310'&#10;  &#10;  - sha256:9f8dc49d2866898fb0f5bda3e5ddf1012bc442fed660d2e287881153fdd73310&#10;  + sha256:e12a1f95f78709526886dac0df4829f4a83d77c16e8a021b0ebb87697b8bc82f">state_dir = '/path/to/example-project/.zf', label = 'stop'
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x769659dd18d0&gt;
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+&gt;       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:e12a1...b87697b8bc82f' == 'sha256:9f8dc...81153fdd73310'
+E         
+E         - sha256:9f8dc49d2866898fb0f5bda3e5ddf1012bc442fed660d2e287881153fdd73310
+E         + sha256:e12a1f95f78709526886dac0df4829f4a83d77c16e8a021b0ebb87697b8bc82f
+
+tests/test_codex_hook_settings.py:156: AssertionError</failure></testcase><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_trust_states_keys_both_roots" time="0.002" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_hook_trust_states_dedups_identical_roots" time="0.003" /><testcase classname="tests.test_codex_hook_settings" name="test_codex_version_matches_hash_baseline" time="0.063"><failure message="AssertionError: codex 0.155 differs from the version codex_hook_hash was verified against (0.144). Re-verify codex_hook_hash against this codex (the bypass flag still protects spawns) and bump CODEX_HASH_VERIFIED_VERSION.&#10;assert '0.155' == '0.144'&#10;  &#10;  - 0.144&#10;  + 0.155">@pytest.mark.host
+    def test_codex_version_matches_hash_baseline():
+        import shutil
+        import subprocess
+    
+        from zf.runtime.codex_hooks import CODEX_HASH_VERIFIED_VERSION
+    
+        codex = shutil.which("codex")
+        if not codex:
+            pytest.skip("codex not on PATH; hash-drift sensor inactive")
+        try:
+            out = subprocess.run(
+                [codex, "--version"], capture_output=True, text=True, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pytest.skip("could not run `codex --version`")
+    
+        import re
+        m = re.search(r"(\d+)\.(\d+)", (out.stdout or "") + (out.stderr or ""))
+        if not m:
+            pytest.skip(f"could not parse codex version from {out.stdout!r}")
+        running = f"{m.group(1)}.{m.group(2)}"
+&gt;       assert running == CODEX_HASH_VERIFIED_VERSION, (
+            f"codex {running} differs from the version codex_hook_hash was verified "
+            f"against ({CODEX_HASH_VERIFIED_VERSION}). Re-verify codex_hook_hash "
+            f"against this codex (the bypass flag still protects spawns) and bump "
+            f"CODEX_HASH_VERIFIED_VERSION."
+        )
+E       AssertionError: codex 0.155 differs from the version codex_hook_hash was verified against (0.144). Re-verify codex_hook_hash against this codex (the bypass flag still protects spawns) and bump CODEX_HASH_VERIFIED_VERSION.
+E       assert '0.155' == '0.144'
+E         
+E         - 0.144
+E         + 0.155
+
+tests/test_codex_hook_settings.py:220: AssertionError</failure></testcase><testcase classname="tests.test_wire_codex_hook" name="test_write_codex_hook_settings_is_called_from_start" time="0.002" /><testcase classname="tests.test_wire_codex_hook" name="test_codex_adapter_enables_feature_flag" time="0.001" /><testcase classname="tests.test_wire_codex_hook" name="test_hook_recv_accepts_backend_flag" time="0.001" /><testcase classname="tests.test_wire_codex_hook" name="test_hook_recv_extracts_codex_specific_fields" time="0.002" /><testcase classname="tests.test_wire_codex_hook" name="test_reactor_registers_codex_hook_handlers" time="0.093" /><testcase classname="tests.test_wire_codex_hook" name="test_codex_hook_events_are_in_wake_patterns" time="0.002" /></testsuite></testsuites>

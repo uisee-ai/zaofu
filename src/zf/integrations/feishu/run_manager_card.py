@@ -108,10 +108,11 @@ def build_run_manager_status_card(projection: dict[str, Any]) -> dict[str, Any]:
     active_lane = str(status_explain.get("active_lane") or "")
     phase = str(status_explain.get("current_phase") or monitor.get("current_phase") or "")
     if active_task:
-        ctx = f"正在做:`{active_task}`" + (f" @{active_lane}" if active_lane else "")
+        lines.append(f"正在做：`{active_task}`")
+        if active_lane:
+            lines.append(f"执行车道：`{active_lane}`")
         if phase and phase != "unknown":
-            ctx += f"(阶段 {phase})"
-        lines.append(ctx)
+            lines.append(f"阶段：`{phase}`")
 
     # Why it is waiting / blocked (human, not the raw wait code).
     wait_human = _map_substr(
@@ -173,7 +174,8 @@ def build_run_manager_escalation_card(
 
     body = (
         f"**需要人工决策**\n"
-        f"run: `{run_id}`  failure: `{failure_class}`\n"
+        f"run: `{run_id}`\n"
+        f"failure: `{failure_class}`\n"
         f"checkpoint: `{checkpoint}`"
     )
     if task_id:

@@ -1,0 +1,2 @@
+/* Use production shell/layout sizing; no fixture-only Settings height override. */
+html,body,#root{height:100%;margin:0}

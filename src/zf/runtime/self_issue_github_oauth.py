@@ -14,6 +14,7 @@ from zf.core.security.secret_provider import SecretKey, forge_credential_workspa
 from zf.core.self_issue.models import IssueDraft, PublicationBatch, utc_now
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.state.locks import locked_path
+from zf.integrations.forge.github_auth import assess_github_credential
 
 
 class SelfIssueGitHubOAuthMixin:
@@ -25,9 +26,16 @@ class SelfIssueGitHubOAuthMixin:
         draft = self._required_draft(payload)
         batch = self._optional_github_batch(payload, draft=draft)
         target = self._target_config("github")
+        auth_mode = str(getattr(target, "auth_mode", "") or "device_flow")
+        required_scope = self._permission_scope("github")
+        client_id_env = (
+            "ZF_GITHUB_OAUTH_CLIENT_ID"
+            if auth_mode == "oauth_device_flow"
+            else "ZF_GITHUB_APP_CLIENT_ID"
+        )
         client_id = str(
             getattr(target, "oauth_client_id", "")
-            or os.environ.get("ZF_GITHUB_APP_CLIENT_ID")
+            or os.environ.get(client_id_env)
             or ""
         ).strip()
         session_id = str(payload.get("session_id") or "").strip()
@@ -35,7 +43,7 @@ class SelfIssueGitHubOAuthMixin:
             raise ValueError("GitHub client_id and session_id are required")
         key = self._secret_key(payload, draft, provider="github")
         existing = self._provider_secret(key, causation_id=causation_id)
-        if existing:
+        if existing and self._github_credential_assessment(draft, existing).compatible:
             return self._resume_github_batch(
                 draft=draft,
                 batch=batch,
@@ -44,7 +52,10 @@ class SelfIssueGitHubOAuthMixin:
                 causation_id=causation_id,
             )
 
-        response = self.github_oauth.start(client_id=client_id)
+        response = self.github_oauth.start(
+            client_id=client_id,
+            scope=required_scope if auth_mode == "oauth_device_flow" else "",
+        )
         now = datetime.now(timezone.utc)
         expires_in = max(1, int(response.get("expires_in") or 900))
         interval = max(5, int(response.get("interval") or 5))
@@ -56,6 +67,8 @@ class SelfIssueGitHubOAuthMixin:
             "confirmation_id": batch.confirmation_id if batch else "",
             "session_binding_digest": hashlib.sha256(session_id.encode()).hexdigest(),
             "client_id": client_id,
+            "auth_mode": auth_mode,
+            "required_scope": required_scope,
             "device_code": str(response["device_code"]),
             "user_code": str(response["user_code"]),
             "verification_uri": str(response["verification_uri"]),
@@ -95,10 +108,13 @@ class SelfIssueGitHubOAuthMixin:
             "verification_uri": transaction["verification_uri"],
             "expires_at": transaction["expires_at"],
             "interval": interval,
-            "scope": "issues:write",
+            "scope": required_scope,
             "scope_notice": (
-                "GitHub authorization is limited to creating Issues in the installed "
-                "repository; binary attachments are not uploaded."
+                "Authorize ZaoFu to create this GitHub Issue and its evidence "
+                "comments, including confirmed image and video uploads."
+                if auth_mode == "oauth_device_flow"
+                else "GitHub App authorization can create Issues and text comments; "
+                "media attachments require GitHub OAuth authorization."
             ),
         }
 
@@ -173,6 +189,58 @@ class SelfIssueGitHubOAuthMixin:
                 authorization_domain=str(transaction["authorization_domain"]),
             )
             result["client_id"] = str(transaction["client_id"])
+            result["auth_mode"] = str(transaction.get("auth_mode") or "device_flow")
+            draft = self._required_draft({"draft_id": str(transaction["draft_id"])})
+            assessment = assess_github_credential(
+                result,
+                auth_mode=result["auth_mode"],
+                required_scope=str(transaction.get("required_scope") or "issues:write"),
+                require_media=any(
+                    str(item.get("content_type") or "").lower().startswith(
+                        ("image/", "video/")
+                    )
+                    for item in draft.attachment_refs
+                    if isinstance(item, dict)
+                ),
+            )
+            if not assessment.compatible:
+                transaction["consumed"] = True
+                self._write_github_device_transactions(rows)
+                return {
+                    "ok": False,
+                    "status": "authorization_required",
+                    "provider": "github",
+                    "reason": assessment.reason,
+                }
+            result["token_kind"] = assessment.token_kind
+            forge = self._forge_for("github")
+            preflight_method = getattr(forge, "check_issue_publication_access", None)
+            if preflight_method is None:
+                transaction["consumed"] = True
+                self._write_github_device_transactions(rows)
+                return {
+                    "ok": False,
+                    "status": "failed_before_remote_write",
+                    "provider": "github",
+                    "reason": "github_publication_preflight_unavailable",
+                }
+            preflight = preflight_method(
+                str(self._target_for_provider("github", draft=draft).get("project") or ""),
+                access_token=str(result["access_token"]),
+            )
+            if preflight.status != "ready":
+                transaction["consumed"] = True
+                self._write_github_device_transactions(rows)
+                return {
+                    "ok": False,
+                    "status": (
+                        "authorization_required"
+                        if preflight.status == "authorization_required"
+                        else "failed_before_remote_write"
+                    ),
+                    "provider": "github",
+                    "reason": preflight.reason,
+                }
             self.secrets.put(key, result)
             transaction["consumed"] = True
             self._write_github_device_transactions(rows)

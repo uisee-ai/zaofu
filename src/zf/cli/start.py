@@ -1127,8 +1127,23 @@ def run(args: argparse.Namespace) -> int:
                 and not resume_obligation
             )
             spawn_cwd: Path | None = None
+            task_cwd = None
+            if resume_obligation and not control_plane_only:
+                from types import SimpleNamespace
+                from zf.runtime.task_pipeline_affinity import task_stage_spawn_cwd
+
+                try:
+                    task_cwd = task_stage_spawn_cwd(SimpleNamespace(
+                        state_dir=state_dir, project_root=project_root,
+                        config=config, event_log=event_log,
+                    ), role.instance_id)
+                except RuntimeError as exc:
+                    raise TmuxError(f"Task-stage restart preflight failed: {exc}") from exc
+                if task_cwd is not None:
+                    spawn_cwd = task_cwd
             if (
                 workdir_manager is not None
+                and task_cwd is None
                 and not headless_orchestrator
                 and not defer_spawn
                 and not control_plane_only
@@ -1244,7 +1259,7 @@ def run(args: argparse.Namespace) -> int:
             if role.backend == "claude-code":
                 uuid = registry.get(role.instance_id)
                 if uuid is not None:
-                    path = claude_session_path(str(project_root), str(uuid))
+                    path = claude_session_path(str(spawn_cwd or project_root), str(uuid))
                     claude_tailer.tail(role.instance_id, path)
             elif role.backend == "codex":
                 uuid = registry.get(role.instance_id)

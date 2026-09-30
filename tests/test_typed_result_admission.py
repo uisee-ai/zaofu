@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -86,7 +88,7 @@ def _implementation_result(contract: dict, descriptor: dict) -> dict:
         "contract_snapshot_digest": descriptor["sha256"],
         "execution_status": "completed",
         "verdict": "passed",
-        "target_commit": "target-1",
+        "target_commit": "c" * 40,
         "evidence_refs": ["event:impl-completed"],
         "self_check": {
             "schema_version": "impl-self-check.v1",
@@ -95,15 +97,15 @@ def _implementation_result(contract: dict, descriptor: dict) -> dict:
             "attempt_id": "attempt-1",
             "contract_revision": "contract-r1",
             "task_map_generation": "task-map-g1",
-            "source_commit": "target-1",
-            "target_commit": "target-1",
+            "source_commit": "c" * 40,
+            "target_commit": "c" * 40,
             "contract_snapshot_ref": descriptor["ref"],
             "contract_snapshot_digest": descriptor["sha256"],
             "command_receipts": [{
                 "receipt_id": "receipt-unit",
                 "command_id": "unit-test",
                 "command_digest": command["command_digest"],
-                "target_commit": "target-1",
+                "target_commit": "c" * 40,
                 "status": "passed",
                 "exit_code": 0,
                 "evidence_refs": ["event:npm-test"],
@@ -117,6 +119,41 @@ def _implementation_result(contract: dict, descriptor: dict) -> dict:
             "evidence_refs": ["event:impl-completed"],
         },
     }
+
+
+@pytest.mark.parametrize("oid", ["a" * 40, "a" * 64, "a" * 7, "a" * 39,
+                                    "a" * 41, "a" * 63, "a" * 65, "HEAD",
+                                    "g" * 40, "A" * 40, " " + "a" * 40, ""])
+def test_impl_exact_oid_admission(tmp_path: Path, oid: str) -> None:
+    contract, descriptor, _ = _descriptors(tmp_path)
+    result = _implementation_result(contract, descriptor)
+    result["target_commit"] = oid
+    result["self_check"].update(source_commit=oid, target_commit=oid)
+    result["self_check"]["command_receipts"][0]["target_commit"] = oid
+    issues = typed_result_admission_issues(
+        tmp_path, schema_version="implementation-result.v1", result=result,
+        semantic_submit=True,
+    )
+    expected = [] if oid in {"a" * 40, "a" * 64} else ["implementation_target_commit_invalid"]
+    assert [issue["code"] for issue in issues] == expected
+
+
+@pytest.mark.parametrize("boundary", ["legacy", "non-semantic", "failed", "blocked"])
+def test_impl_oid_gate_preserves_non_success_and_legacy(tmp_path: Path, boundary: str) -> None:
+    contract, descriptor, _ = _descriptors(tmp_path)
+    result = _implementation_result(contract, descriptor)
+    result["target_commit"] = "abc123"
+    if boundary == "legacy":
+        result.pop("contract_snapshot_ref")
+        result.pop("contract_snapshot_digest")
+    elif boundary == "failed":
+        result["execution_status"] = "failed"
+    elif boundary == "blocked":
+        result["verdict"] = "blocked"
+    assert typed_result_admission_issues(
+        tmp_path, schema_version="implementation-result.v1", result=result,
+        semantic_submit=boundary != "non-semantic",
+    ) == []
 
 
 def _verification_result(

@@ -43,6 +43,7 @@ import yaml
 from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     PlainTextResponse,
     Response,
@@ -162,6 +163,12 @@ from zf.web.self_issue_actions import (
     build_self_issue_attachment_router,
     prepare_self_issue_web_payload,
     validate_self_issue_web_action,
+)
+from zf.web.kanban_agent_attachments import (
+    attachment_prompt_context,
+    build_kanban_agent_attachment_router,
+    native_image_paths,
+    normalize_kanban_agent_attachments,
 )
 from zf.web.project_init_policy import draft_project_init_config
 from zf.web import project_init_service
@@ -416,6 +423,7 @@ from zf.web.projections.tasks import (  # noqa: F401
     _task_index_with_archive,
     _task_views,
 )
+from zf.web.developer_access import developer_request_allowed, install_developer_access
 from zf.web.projections.workspace import (  # noqa: F401
     _workspace_project_payload,
     _workspace_projects_payload,
@@ -890,15 +898,15 @@ def create_app(
     # ---- HTML root ----
 
     @app.get("/")
-    def root() -> FileResponse:
+    def root() -> HTMLResponse:
         index = _ui_index()
         if not index.exists():
             raise HTTPException(500, "web UI index missing")
         # no-cache: index.html references hashed bundles; a heuristically
         # cached index keeps serving week-old JS after a rebuild ("页面还是旧的").
         # Hashed assets under /assets stay long-cacheable.
-        return FileResponse(
-            index,
+        return HTMLResponse(
+            _inject_developer_token(index),
             media_type="text/html",
             headers={"Cache-Control": "no-cache"},
         )
@@ -3350,7 +3358,15 @@ def create_app(
 
     @app.get("/api/web-session")
     def web_session(request: Request) -> JSONResponse:
-        return JSONResponse(_web_session_projection(_web_session_cookie(request)))
+        session = _web_session_projection(_web_session_cookie(request))
+        session["can_view_issue_triage"] = _web_triage_auth_error(
+            "issue-triage-view",
+            authorization=request.headers.get("Authorization"),
+            x_zf_web_token=request.headers.get("X-ZF-Web-Token"),
+            x_zf_developer_token=request.headers.get("X-ZF-Developer-Token"),
+            web_session_token=_web_session_cookie(request),
+        ) is None
+        return JSONResponse(session)
 
     @app.post("/api/web-session/unlock")
     async def web_session_unlock(request: Request) -> JSONResponse:
@@ -3552,6 +3568,7 @@ def create_app(
         request: Request,
         authorization: str | None = Header(default=None),
         x_zf_web_token: str | None = Header(default=None),
+        x_zf_developer_token: str | None = Header(default=None),
         x_idempotency_key: str | None = Header(default=None),
     ) -> JSONResponse:
         payload = await _request_json(request)
@@ -3564,6 +3581,7 @@ def create_app(
             payload=payload,
             authorization=authorization,
             x_zf_web_token=x_zf_web_token,
+            x_zf_developer_token=x_zf_developer_token,
             web_session_token=_web_session_cookie(request),
             x_idempotency_key=x_idempotency_key,
             config=config,
@@ -3714,6 +3732,10 @@ def create_app(
     app.include_router(build_self_issue_attachment_router(
         resolve_ctx=_delivery_trace_ctx,
     ))
+    app.include_router(build_kanban_agent_attachment_router(
+        resolve_ctx=_delivery_trace_ctx,
+        authorize_mutation=_web_mutation_auth_error,
+    ))
 
     # Overview pulse bands (overview-pulse.v1) — same sibling-router pattern.
     from zf.web.overview_pulse import build_overview_pulse_router
@@ -3730,22 +3752,41 @@ def create_app(
     # remain untouched; mutations still flow through provider/runtime actions.
     from zf.web.issue_triage_routes import build_issue_triage_router
 
+    def _issue_project_ids() -> list[str]:
+        from zf.core.workspace import WorkspaceRegistry, project_lifecycle
+        scope = _workspace_scope_root(project_root)
+        return list(dict.fromkeys([
+            default_project_id,
+            *(row.project_id for row in WorkspaceRegistry().list_projects()
+              if _project_in_scope(row, scope) and project_lifecycle(row).can_open_board),
+        ]))
+
     app.include_router(build_issue_triage_router(
         resolve_ctx=_delivery_trace_ctx,
+        project_ids=_issue_project_ids,
         workspace_config=config,
-        mutation_auth_error=_web_mutation_auth_error,
+        mutation_auth_error=_web_triage_auth_error,
+        triage_view_auth_error=_web_triage_auth_error,
         session_cookie=_web_session_cookie,
     ))
 
+    install_developer_access(app, state_dir)
+    from zf.web.settings_routes import build_settings_router
+    app.include_router(build_settings_router(
+        resolve_ctx=_delivery_trace_ctx, workspace_root=project_root,
+        workspace_config=config, authorize=_web_mutation_auth_error,
+        authorize_developer=_web_triage_auth_error, session_cookie=_web_session_cookie,
+    ))
+
     @app.get("/{full_path:path}")
-    def spa_fallback(full_path: str) -> FileResponse:
+    def spa_fallback(full_path: str) -> HTMLResponse:
         if full_path.startswith(("api/", "assets/", "static/")):
             raise HTTPException(404, "not found")
         index = _ui_index()
         if not index.exists():
             raise HTTPException(500, "web UI index missing")
-        return FileResponse(
-            index,
+        return HTMLResponse(
+            _inject_developer_token(index),
             media_type="text/html",
             headers={"Cache-Control": "no-cache"},
         )
@@ -3863,6 +3904,12 @@ def _ui_index() -> Path:
         print("warning: react dist not found; serving static fallback", file=sys.stderr)
         _react_dist_missing_warned = True
     return _STATIC_DIR / "index.html"
+
+
+def _inject_developer_token(index: Path) -> str:
+    # Public HTML must never contain a privileged credential. Settings exchanges
+    # the explicitly entered token for an HttpOnly, revocable server session.
+    return index.read_text(encoding="utf-8")
 
 
 def _workspace_overview_payload(
@@ -5296,6 +5343,9 @@ def _runtime(
 
 
 def _web_session_projection(web_session_token: str | None = None) -> dict:
+    if developer_request_allowed():
+        return {"mode": "developer_session", "unlocked": True, "actions_enabled": True,
+                "expires_at": None, "requires_token": False, "token_fallback_enabled": True}
     trusted = os.environ.get("ZF_WEB_TRUSTED_SESSION", "").strip().lower()
     if trusted in {"1", "true", "yes", "local_trusted"}:
         return {
@@ -5304,7 +5354,7 @@ def _web_session_projection(web_session_token: str | None = None) -> dict:
             "actions_enabled": True,
             "expires_at": None,
             "requires_token": False,
-            "token_fallback_enabled": _web_action_token_configured(),
+            "token_fallback_enabled": bool(_web_control_tokens()),
         }
     if _web_passcode_configured():
         expires_at = _web_session_expires_at(web_session_token)
@@ -5315,9 +5365,9 @@ def _web_session_projection(web_session_token: str | None = None) -> dict:
             "actions_enabled": unlocked,
             "expires_at": expires_at,
             "requires_token": False,
-            "token_fallback_enabled": _web_action_token_configured(),
+            "token_fallback_enabled": bool(_web_control_tokens()),
         }
-    if _web_action_token_configured():
+    if _web_control_tokens():
         return {
             "mode": "token_required",
             "unlocked": False,
@@ -5650,6 +5700,72 @@ def _operator_stop(state_dir: Path, *, project_root: Path, reason: str) -> dict:
 
 
 
+def _web_action_requires_issue_triage_capability(
+    state_dir: Path,
+    canonical_action: str,
+    payload: dict[str, Any],
+) -> bool:
+    """Return whether a generic action is operating on the developer Issue lane.
+
+    The dedicated Issue Triage router has its own capability gate, but several
+    older UI controls still submit through ``/api/actions/{action}``.  Keep the
+    distinction at this shared boundary too: a reporter token may publish a
+    Draft, but it must not start/cancel Triage, answer maintainer questions,
+    approve a Fix proposal, or control an Issue Run.
+    """
+    if canonical_action in EXTERNAL_ISSUE_ACTIONS:
+        return True
+    if canonical_action == "workflow-invoke":
+        return str(payload.get("flow_kind") or "").strip().lower() == "issue"
+
+    if canonical_action not in {"kanban-proposal-dismiss", "run-pause", "run-resume", "run-cancel"}:
+        return False
+
+    try:
+        events = EventLog(state_dir / "events.jsonl").read_all()
+    except (OSError, ValueError, TypeError):
+        events = []
+
+    if canonical_action == "kanban-proposal-dismiss":
+        proposal_event_id = str(payload.get("proposal_event_id") or "").strip()
+        if not proposal_event_id:
+            return False
+        proposal_event = next(
+            (event for event in events if event.id == proposal_event_id),
+            None,
+        )
+        proposal = (proposal_event.payload or {}).get("proposal", {}) if proposal_event else {}
+        if not isinstance(proposal, dict):
+            return False
+        proposal_action = str(proposal.get("action") or "").strip()
+        proposal_payload = proposal.get("payload")
+        return proposal_action in EXTERNAL_ISSUE_ACTIONS or (
+            isinstance(proposal_payload, dict)
+            and str(proposal_payload.get("flow_kind") or "").strip().lower() == "issue"
+        )
+
+    if canonical_action in {"run-pause", "run-resume", "run-cancel"}:
+        run_id = str(payload.get("run_id") or "").strip()
+        if not run_id:
+            return False
+        for event in events:
+            event_payload = event.payload or {}
+            if not isinstance(event_payload, dict):
+                continue
+            linked_run = str(
+                event_payload.get("workflow_run_id")
+                or event_payload.get("run_id")
+                or event.correlation_id
+                or ""
+            ).strip()
+            if linked_run != run_id:
+                continue
+            if str(event_payload.get("flow_kind") or "").strip().lower() == "issue":
+                return True
+        return False
+    return False
+
+
 def _web_action(
     state_dir: Path,
     action_name: str,
@@ -5657,6 +5773,7 @@ def _web_action(
     payload: dict,
     authorization: str | None,
     x_zf_web_token: str | None,
+    x_zf_developer_token: str | None = None,
     web_session_token: str | None = None,
     x_idempotency_key: str | None = None,
     config: ZfConfig | None = None,
@@ -5675,10 +5792,9 @@ def _web_action(
             "reason": "action is not in the web action allowlist",
         }
 
-    configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     trusted_session = _web_trusted_session_enabled()
-    passcode_session = _web_session_token_valid(web_session_token)
-    if not configured_token and not trusted_session and not _web_passcode_configured():
+    passcode_session = _web_session_token_valid(web_session_token) or developer_request_allowed()
+    if not _web_control_tokens() and not trusted_session and not _web_passcode_configured():
         return {
             "_status_code": 403,
             "ok": False,
@@ -5688,7 +5804,7 @@ def _web_action(
         }
 
     supplied = x_zf_web_token or _bearer_token(authorization)
-    token_ok = bool(configured_token and supplied == configured_token)
+    token_ok = supplied in _web_control_tokens()
     if not trusted_session and not passcode_session and not token_ok:
         return {
             "_status_code": 403,
@@ -5714,29 +5830,50 @@ def _web_action(
         )
     if canonical_action.startswith("workflow-"):
         request_payload = _action_payload(payload, preserve_request_id=True)
+    if canonical_action == "chat-orchestrator":
+        try:
+            request_payload["attachment_refs"] = normalize_kanban_agent_attachments(
+                state_dir,
+                request_payload.get("attachment_refs"),
+            )
+        except ValueError as exc:
+            return {
+                "_status_code": 422,
+                "ok": False,
+                "status": "invalid_attachment",
+                "action": canonical_action,
+                "requested_action": action_name,
+                "reason": str(exc),
+            }
+    if _web_action_requires_issue_triage_capability(
+        state_dir,
+        canonical_action,
+        request_payload,
+    ):
+        triage_error = _web_triage_auth_error(
+            canonical_action,
+            authorization=authorization,
+            x_zf_web_token=x_zf_web_token,
+            x_zf_developer_token=x_zf_developer_token,
+            web_session_token=web_session_token,
+        )
+        if triage_error is not None:
+            return triage_error
     payload_hash = _payload_hash(request_payload)
 
-    # ``self-issue-get`` is a pure read used by the panel's periodic restore
-    # poll.  Do not put it on the audited mutation path: emitting request /
-    # accepted / attempt events on every poll changes events.jsonl's
-    # fingerprint continuously, invalidates the snapshot cache, and leaves
-    # the Kanban Agent without a snapshot during its first-message gate.
-    if canonical_action in {"self-issue-get", "self-issue-intake-get"}:
-        from zf.runtime.self_issue_service import SelfIssueService
+    # Polling is not a mutation. Persisting full reports every five seconds
+    # grew the receipt log to 1.5GB; replay scans then exhausted server memory.
+    from zf.web.self_issue_actions import SELF_ISSUE_READ_ACTIONS, read_self_issue_web_action
 
-        service = SelfIssueService(
-            state_dir,
-            EventWriter(event_log_from_project(state_dir, config=config)),
-            project_root=_resolve_project_root_for_state(state_dir, project_root),
-            policy=config.self_issue if config is not None else None,
-        )
-        operation = (
-            service.get
-            if canonical_action == "self-issue-get"
-            else service.get_intake
-        )
+    if canonical_action in SELF_ISSUE_READ_ACTIONS:
         try:
-            result = operation(request_payload, causation_id="")
+            result = read_self_issue_web_action(
+                canonical_action, request_payload, state_dir=state_dir,
+                project_root=_resolve_project_root_for_state(state_dir, project_root), config=config,
+            )
+        except FileNotFoundError:
+            return {"_status_code": 404, "ok": False, "status": "not_found", "action": canonical_action,
+                    "reason": "Self-Issue session or artifact no longer exists"}
         except (ValueError, PermissionError) as exc:
             return {
                 "_status_code": 422,
@@ -5748,15 +5885,7 @@ def _web_action(
             }
         result.setdefault("action", canonical_action)
         result.setdefault("requested_action", action_name)
-        response = {"ok": True, **redact_obj(result)}
-        _complete_idempotency_key(
-            state_dir,
-            key=idempotency_key,
-            action=canonical_action,
-            payload_hash=payload_hash,
-            response=response,
-        )
-        return response
+        return {"ok": True, **redact_obj(result)}
 
     if idempotency_key:
         idempotency_state = _reserve_idempotency_key(
@@ -7139,6 +7268,7 @@ def _handle_chat_orchestrator(
     if terminal is not None:
         return terminal
     message = str(payload.get("message") or "").strip()
+    attachment_refs = list(payload.get("attachment_refs") or [])
     headless_backend = canonical_headless_backend(str(payload.get("backend") or ""))
     permission_profile = normalize_permission_profile(payload.get("permission_profile"))
     user_message = writer.emit(
@@ -7157,6 +7287,7 @@ def _handle_chat_orchestrator(
             "conversation_id": str(payload.get("conversation_id") or ""),
             "thread_key": str(payload.get("thread_key") or ""),
             "permission_escalation_retry_for": str(payload.get("permission_escalation_retry_for") or ""),
+            "attachment_refs": attachment_refs,
             "request": redact_obj(payload),
         },
     )
@@ -7582,6 +7713,7 @@ def _run_headless_kanban_agent_turn(
             project_root=project_root,
             config=config,
         )
+        attachment_refs = list(payload.get("attachment_refs") or [])
         result = agent.run_turn(
             backend=backend,
             message=message,
@@ -7609,6 +7741,9 @@ def _run_headless_kanban_agent_turn(
                 "channel_profile_catalog": public_channel_profile_catalog(config),
                 "workflow_context": workflow_context,
                 "plan_discussion": payload.get("plan_discussion") or {},
+                "attachment_refs": attachment_refs,
+                "attachment_context": attachment_prompt_context(state_dir, attachment_refs),
+                "native_image_paths": native_image_paths(state_dir, attachment_refs),
             },
             on_message=delta_emitter.emit,
             thinking_level=thinking_level,
@@ -9018,6 +9153,17 @@ def _web_action_token_configured() -> bool:
     return bool(os.environ.get("ZF_WEB_ACTION_TOKEN", ""))
 
 
+def _web_control_tokens() -> tuple[str, ...]:
+    """Return configured Web control tokens without exposing their values."""
+
+    return tuple(
+        token for token in (
+            os.environ.get("ZF_WEB_ACTION_TOKEN", ""),
+            os.environ.get("ZF_WEB_DEVELOPER_TOKEN", ""),
+        ) if token
+    )
+
+
 
 
 def _web_session_ttl_seconds() -> int:
@@ -9034,7 +9180,6 @@ def _web_session_cookie(request: Request) -> str | None:
 
 
 def _operator_websocket_authorized(websocket: WebSocket) -> bool:
-    configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")
         or websocket.query_params.get("token")
@@ -9043,7 +9188,7 @@ def _operator_websocket_authorized(websocket: WebSocket) -> bool:
     return (
         _web_trusted_session_enabled()
         or _web_session_token_valid(websocket.cookies.get(_WEB_SESSION_COOKIE))
-        or bool(configured_token and supplied == configured_token)
+        or supplied in _web_control_tokens()
     )
 
 
@@ -9166,7 +9311,7 @@ def validate_trusted_session_host(host: str) -> None:
 
 
 def _web_mutation_mode() -> str:
-    if _web_action_token_configured():
+    if _web_control_tokens():
         return "token"
     if _web_passcode_configured():
         return "passcode"
@@ -9177,7 +9322,7 @@ def _web_mutation_mode() -> str:
 
 def _web_action_authorization_available() -> bool:
     return (
-        _web_action_token_configured()
+        bool(_web_control_tokens())
         or _web_trusted_session_enabled()
         or _web_passcode_configured()
     )
@@ -9189,11 +9334,12 @@ def _web_mutation_auth_error(
     authorization: str | None,
     x_zf_web_token: str | None,
     web_session_token: str | None = None,
+    x_zf_developer_token: str | None = None,
 ) -> dict | None:
-    configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
+    del x_zf_developer_token
     trusted_session = _web_trusted_session_enabled()
-    passcode_session = _web_session_token_valid(web_session_token)
-    if not configured_token and not trusted_session and not _web_passcode_configured():
+    passcode_session = _web_session_token_valid(web_session_token) or developer_request_allowed()
+    if not _web_control_tokens() and not trusted_session and not _web_passcode_configured():
         return {
             "_status_code": 403,
             "ok": False,
@@ -9202,7 +9348,7 @@ def _web_mutation_auth_error(
             "reason": "mutation disabled; set ZF_WEB_ACTION_TOKEN, ZF_WEB_PASSCODE, or ZF_WEB_TRUSTED_SESSION=1 to enable controlled actions",
         }
     supplied = x_zf_web_token or _bearer_token(authorization)
-    token_ok = bool(configured_token and supplied == configured_token)
+    token_ok = supplied in _web_control_tokens()
     if not trusted_session and not passcode_session and not token_ok:
         return {
             "_status_code": 403,
@@ -9212,6 +9358,50 @@ def _web_mutation_auth_error(
             "reason": "missing or invalid web action token/session",
         }
     return None
+
+
+def _web_triage_auth_error(
+    action_name: str,
+    *,
+    authorization: str | None,
+    x_zf_web_token: str | None,
+    web_session_token: str | None = None,
+    x_zf_developer_token: str | None = None,
+) -> dict | None:
+    """Authorize developer/maintainer-only Issue Triage operations.
+
+    The ordinary Web action token intentionally does not satisfy this check.
+    A distinct developer token or an explicitly local trusted session is
+    required, so a reporter who can publish an Issue cannot see or mutate the
+    developer Triage surface.
+    """
+
+    del authorization, x_zf_web_token, web_session_token
+    if developer_request_allowed() or _web_trusted_session_enabled():
+        return None
+    configured = os.environ.get("ZF_WEB_DEVELOPER_TOKEN", "")
+    if not configured:
+        return {
+            "_status_code": 403,
+            "ok": False,
+            "status": "developer_capability_unconfigured",
+            "action": action_name,
+            "reason": (
+                "developer Triage capability is not configured; set "
+                "ZF_WEB_DEVELOPER_TOKEN or enable a loopback trusted session"
+            ),
+        }
+    if x_zf_developer_token and secrets.compare_digest(
+        x_zf_developer_token, configured,
+    ):
+        return None
+    return {
+        "_status_code": 403,
+        "ok": False,
+        "status": "developer_capability_required",
+        "action": action_name,
+        "reason": "a developer/maintainer Triage capability is required",
+    }
 
 
 def _web_mutation_auth_response(

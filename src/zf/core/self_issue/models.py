@@ -10,6 +10,7 @@ from typing import Any
 
 
 CLASSIFICATIONS = frozenset({
+    "bug",
     "runtime", "kernel/state", "provider/integration", "web/ui",
     "configuration", "security", "performance", "test/regression", "unknown",
 })
@@ -136,6 +137,7 @@ class IssueDraft:
     incident_fingerprint: str
     title: str
     summary: str
+    schema_version: str = "issue-draft.v2"
     revision: int = 1
     classification: str = "unknown"
     severity: str = "P2"
@@ -144,10 +146,18 @@ class IssueDraft:
     disclosure_fields: list[str] = field(default_factory=list)
     analysis: dict[str, Any] = field(default_factory=dict)
     suggested_fix: str = ""
+    # Explicit user-edited publication Markdown; None uses the report renderer.
+    markdown_body: str | None = None
     bug_description: str = ""
     reproduction_steps: str = ""
+    actual_behavior: str = ""
     expected_behavior: str = ""
+    reported_expected_behavior: str = ""
+    canonical_expected_behavior: str = ""
     environment: dict[str, str] = field(default_factory=dict)
+    # Provider-neutral project version. ``zaofu_version`` remains a legacy
+    # wire alias so existing Drafts can be replayed without migration loss.
+    project_version: str = ""
     zaofu_version: str = ""
     # Exact canonical checkout captured when the intake is promoted.  Keep
     # this separate from ``zaofu_version``: the latter is the user-facing
@@ -171,6 +181,7 @@ class IssueDraft:
     evidence_run_id: str = ""
     evidence_base_revision: int = 0
     evidence_input_ref: dict[str, Any] = field(default_factory=dict)
+    investigation_plan_ref: dict[str, Any] = field(default_factory=dict)
     evidence_result_ref: dict[str, Any] = field(default_factory=dict)
     evidence_checkpoint_ref: dict[str, Any] = field(default_factory=dict)
     evidence_error: str = ""
@@ -189,6 +200,8 @@ class IssueDraft:
     def validate(self) -> None:
         if not self.draft_id or not self.subject_scope or not self.incident_fingerprint:
             raise ValueError("draft_id, subject_scope, and incident_fingerprint are required")
+        if self.schema_version != "issue-draft.v2":
+            raise ValueError("unsupported Issue Draft schema_version")
         if self.classification not in CLASSIFICATIONS:
             raise ValueError("unsupported classification")
         if self.severity not in SEVERITIES:
@@ -209,6 +222,7 @@ class IssueDraft:
             raise ValueError("assessment_owner_pid must not be negative")
         for name, ref in (
             ("evidence_input_ref", self.evidence_input_ref),
+            ("investigation_plan_ref", self.investigation_plan_ref),
             ("evidence_result_ref", self.evidence_result_ref),
             ("evidence_checkpoint_ref", self.evidence_checkpoint_ref),
         ):
@@ -225,6 +239,8 @@ class IssueDraft:
             raise ValueError("evidence_refs must contain ref descriptors")
         if not isinstance(self.analysis, dict):
             raise ValueError("analysis must be an object")
+        if self.markdown_body is not None and not isinstance(self.markdown_body, str):
+            raise ValueError("markdown_body must be text or null")
         if not isinstance(self.environment, dict) or not all(
             isinstance(key, str) and isinstance(value, str)
             for key, value in self.environment.items()
@@ -248,6 +264,10 @@ class IssueDraft:
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "IssueDraft":
         migrated = dict(value)
+        migrated.setdefault(
+            "reported_expected_behavior",
+            str(migrated.get("expected_behavior") or ""),
+        )
         legacy_evidence_status = str(migrated.get("evidence_status") or "")
         if legacy_evidence_status == "running":
             migrated["evidence_status"] = "collecting_live"
@@ -273,12 +293,20 @@ class PublicationIntent:
     credential_subject: str
     permission_snapshot: dict[str, Any]
     marker: str
+    publication_snapshot_ref: dict[str, Any] = field(default_factory=dict)
+    handoff_ref: dict[str, Any] = field(default_factory=dict)
     batch_id: str = ""
     status: str = "previewed"
     confirmation_id: str = ""
     confirmation_expires_at: str = ""
     confirmed_at: str = ""
     published_issue_ref: dict[str, str] = field(default_factory=dict)
+    evidence_comment_status: str = "not_required"
+    evidence_comment_id: str = ""
+    evidence_comment_url: str = ""
+    evidence_comment_digest: str = ""
+    evidence_comment_attachments: list[dict[str, Any]] = field(default_factory=list)
+    evidence_comment_failure_reason: str = ""
     outcome_evidence_refs: list[str] = field(default_factory=list)
     failure_reason: str = ""
     created_at: str = field(default_factory=utc_now)
@@ -293,6 +321,12 @@ class PublicationIntent:
             self.target_binding
         ) <= TARGET_BINDING_FIELDS:
             raise ValueError("publication target must be provider-neutral")
+        for name, ref in (
+            ("publication_snapshot_ref", self.publication_snapshot_ref),
+            ("handoff_ref", self.handoff_ref),
+        ):
+            if not isinstance(ref, dict) or (ref and not str(ref.get("ref") or "")):
+                raise ValueError(f"{name} must be an empty object or sidecar ref")
 
     def to_dict(self) -> dict[str, Any]:
         self.validate()

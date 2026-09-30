@@ -1324,6 +1324,7 @@
 .headless-composer {
   display: grid;
   gap: 0;
+  flex: 0 0 auto;
   width: var(--headless-lane-width);
   max-width: var(--headless-lane-width);
   min-height: 116px;
@@ -1439,11 +1440,136 @@
 }
 
 .headless-composer-footer {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
   padding: 0 7px 7px;
+  background: var(--card);
+}
+
+.headless-attachment-input {
+  display: none;
+}
+
+.headless-attachment-tray {
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  padding: 9px 9px 0;
+  scrollbar-width: thin;
+}
+
+.headless-attachment-card {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 min(240px, calc(100% - 6px));
+  min-width: 190px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 5px;
+}
+
+.headless-attachment-card img,
+.headless-attachment-file-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+}
+
+.headless-attachment-card img {
+  display: block;
+  object-fit: cover;
+  background: var(--panel);
+}
+
+.headless-attachment-file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklab, var(--brand) 9%, var(--panel));
+  color: var(--brand);
+}
+
+.headless-attachment-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.headless-attachment-copy strong,
+.headless-attachment-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headless-attachment-copy strong {
+  font-size: var(--text-12);
+  font-weight: 620;
+}
+
+.headless-attachment-copy small {
+  color: var(--muted-foreground);
+  font-size: var(--text-10);
+}
+
+.headless-attachment-remove,
+.headless-attachment-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.headless-attachment-remove {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+}
+
+.headless-attachment-remove:hover,
+.headless-attachment-button:hover {
+  background: color-mix(in oklab, var(--muted-foreground) 10%, transparent);
+  color: var(--text);
+}
+
+.headless-attachment-button {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.headless-attachment-button > svg:last-child {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  padding: 1px;
+  border-radius: 999px;
+  background: var(--card);
+}
+
+.headless-attachment-button:disabled,
+.headless-attachment-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.headless-composer-spacer {
+  flex: 1 1 auto;
 }
 
 .headless-send-button {
@@ -1850,6 +1976,10 @@
 .self-issue-intake-actions button:disabled { cursor: not-allowed; opacity: 0.45; }
 .self-issue-intake-actions span { flex: 1; color: #64748b; font-size: 12px; text-align: center; }
 .self-issue-attachment-picker { display: grid; gap: 10px; min-width: 0; }
+.self-issue-draft-attachments { display: grid; gap: 8px; min-width: 0; }
+.self-issue-draft-attachments ul { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.self-issue-draft-attachments li { align-items: center; background: #f8fafc; border-radius: 5px; display: flex; gap: 8px; justify-content: space-between; padding: 7px 9px; }
+.self-issue-draft-attachments li > span { min-width: 0; overflow-wrap: anywhere; }
 .self-issue-attachment-picker > input[type="file"] { min-height: 46px; overflow: hidden; }
 .self-issue-video-confirmation { align-items: center; color: #475569; display: flex; font-size: 12px !important; font-weight: 500 !important; gap: 8px; }
 .self-issue-video-confirmation input { min-height: auto; width: auto; }
@@ -1877,6 +2007,15 @@
 .self-issue-draft-column .filter-input { box-sizing: border-box; width: 100%; }
 .self-issue-draft-column textarea.filter-input { min-height: 74px; resize: vertical; }
 .self-issue-markdown-preview, .self-issue-runtime-state, .self-issue-evidence-activity { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); }
+.self-issue-progress { display: grid; gap: 5px; margin-top: 10px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--brand) 38%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--brand) 6%, var(--panel-2)); }
+.self-issue-progress small { color: var(--muted-foreground); }
+.self-issue-publication-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.self-issue-activity-log { display: grid; gap: 6px; margin-top: 8px; }
+.self-issue-activity-item { padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 12px; }
+.self-issue-activity-item code { display: block; margin-top: 5px; padding: 6px; overflow-x: auto; white-space: pre-wrap; background: var(--panel-2); }
+.self-issue-activity-result { display: grid; gap: 6px; }
+.self-issue-activity-result details { margin-left: 72px; }
+.self-issue-activity-result pre { max-height: 360px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel-2); font: 11px/1.45 var(--font-mono); }
 .self-issue-preview-heading { justify-content: space-between; gap: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
 .self-issue-preview-heading > strong { font-size: var(--text-20); }
 .self-issue-runtime-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -1927,3 +2066,11 @@
   .self-issue-card-header { top: -10px; }
   .self-issue-draft-fields { grid-template-columns: minmax(0, 1fr); }
 }
+.self-issue-workspace { display: flex; flex-direction: column; overflow: hidden; max-height: 80vh; }
+.self-issue-workspace-scroll { min-height: 0; overflow: auto; padding: 12px; }
+.self-issue-workspace-actions { flex-shrink: 0; padding: 12px; border-top: 1px solid var(--border, #555); background: var(--bg, #181b21); }
+.self-issue-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; }
+.self-issue-workspace textarea, .self-issue-workspace input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; }
+.self-issue-report-field { margin-block: 12px; }
+.self-issue-report-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 700px) { .self-issue-report-comparison { grid-template-columns: 1fr; } }

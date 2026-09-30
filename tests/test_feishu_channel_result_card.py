@@ -85,7 +85,8 @@ def test_sync_uses_exact_chat_and_origin_message_once(tmp_path: Path) -> None:
     assert len(sent) == 1
     assert sent[0][0:2] == ("oc-product", "om-root")
     rendered = json.dumps(sent[0][2], ensure_ascii=False)
-    assert "任务 **TASK-1** 已完成" in rendered
+    assert "任务：**TASK-1**" in rendered
+    assert "状态：已完成" in rendered
     assert "交付结果" in rendered
     for internal in ("artifact", "receipt", "run-1", "kind:", "status:"):
         assert internal not in rendered

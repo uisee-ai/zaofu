@@ -80,6 +80,42 @@ def prepare_public_evidence_attachments(
             capture_source="playwright",
             redaction_applied=True,
         ))
+    # Assessment adapters may expose additional bounded artifacts (logs,
+    # videos, traces, or test outputs).  Preserve them as downloadable
+    # agent evidence instead of embedding their contents in the Issue body.
+    extra_refs: list[dict[str, Any]] = []
+    for key in ("artifact_refs", "evidence_files", "tool_artifacts", "video_refs"):
+        value = mechanical_evidence.get(key)
+        if isinstance(value, list):
+            extra_refs.extend(item for item in value if isinstance(item, dict))
+    seen = {str(item.get("sha256") or "") for item in descriptors}
+    for index, raw in enumerate(extra_refs, start=1):
+        if len(descriptors) >= 8:
+            break
+        relative = Path(str(raw.get("ref") or ""))
+        source = (root / relative).resolve()
+        digest = str(raw.get("sha256") or "")
+        content_type = str(raw.get("content_type") or "application/octet-stream").split(";", 1)[0].lower()
+        if (
+            not digest or digest in seen or relative.is_absolute()
+            or not source.is_relative_to(root) or not source.is_file()
+            or source.stat().st_size > 20 * 1024 * 1024
+            or hashlib.sha256(source.read_bytes()).hexdigest() != digest
+        ):
+            continue
+        suffix = source.suffix.lower()
+        data = source.read_bytes()
+        if content_type.startswith(("text/", "application/json")):
+            data, _ = sanitize_attachment_for_disclosure(data, suffix=suffix, content_type=content_type)
+        path = destination / f"agent-evidence-{index}{suffix or '.bin'}"
+        _atomic_write(path, data)
+        descriptors.append(_descriptor(
+            root, path, content_type=content_type,
+            kind="self_issue_public_evidence_artifact",
+            capture_source="assessment_agent",
+            redaction_applied=content_type.startswith(("text/", "application/json")),
+        ))
+        seen.add(hashlib.sha256(data).hexdigest())
     return descriptors
 
 
@@ -242,6 +278,10 @@ def _descriptor(
         "schema_version": "self-issue-public-evidence.v1",
         "encoding": "utf-8" if content_type.startswith("text/") else "binary",
         "created_by": "kernel",
+        # ``source`` is the stable disclosure identity used by publication
+        # projections.  ``capture_source`` remains the more detailed
+        # provenance (for example ``playwright``).
+        "source": "agent",
         "access_scope": {"external_disclosure": False},
         "retention": {"class": "user_controlled"},
         "required": False,
@@ -250,8 +290,26 @@ def _descriptor(
         "filename": path.name,
         "redaction_applied": redaction_applied,
         "capture_source": capture_source,
+        "description": _description_for(kind, path.name),
+        "purpose": _purpose_for(kind),
         "public_disclosure_confirmed": False,
     }
+
+
+def _description_for(kind: str, filename: str) -> str:
+    if kind == "self_issue_public_evidence_screenshot":
+        return f"Agent-captured browser evidence ({filename})."
+    if kind == "self_issue_public_evidence_summary":
+        return "Redacted summary of evidence collected during assessment."
+    return f"Agent-collected evidence artifact ({filename})."
+
+
+def _purpose_for(kind: str) -> str:
+    if kind == "self_issue_public_evidence_screenshot":
+        return "Support the reported behavior with a clean, passive browser capture."
+    if kind == "self_issue_public_evidence_summary":
+        return "Preserve the redacted evidence inventory and verification context."
+    return "Provide a downloadable artifact for Issue triage and verification."
 
 
 def _atomic_write(path: Path, content: bytes) -> None:

@@ -98,6 +98,14 @@ def transport():
     return _RecordingTransport()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_claude_config_override(monkeypatch, tmp_path):
+    provider_home = tmp_path / "provider-home"
+    provider_home.mkdir()
+    monkeypatch.setattr(Path, "home", staticmethod(lambda: provider_home))
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+
+
 @pytest.fixture
 def coordinator(state_dir, registry, transport):
     return SpawnCoordinator(
@@ -137,6 +145,32 @@ class TestClaudeFirstSpawn:
 
 
 class TestClaudeRespawn:
+    def test_respawn_finds_transcript_in_actual_spawn_cwd(
+        self, coordinator, transport, registry, tmp_path, monkeypatch,
+    ):
+        """Respawn must locate the transcript under the actual spawn cwd."""
+        from zf.runtime.session_tailer import claude_session_path
+
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        role = RoleConfig(name="dev", backend="claude-code", permission_mode="bypass")
+        workspace = tmp_path / "task_workspace"
+        workspace.mkdir()
+        coordinator.spawn(role, cwd=workspace)
+        session_id = str(registry.get(role.instance_id))
+        transcript = claude_session_path(str(workspace), session_id)
+        transcript.parent.mkdir(parents=True, exist_ok=True)
+        transcript.write_text("{}\n", encoding="utf-8")
+        assert not claude_session_path(coordinator.project_root, session_id).exists()
+
+        coordinator.spawn(role, cwd=workspace)
+
+        _, argv, cwd = transport.spawn_calls[-1]
+        assert cwd == workspace
+        assert "--resume" in argv and "--session-id" not in argv
+        assert argv[argv.index("--resume") + 1] == session_id
+        assert str(registry.get(role.instance_id)) == session_id
+
     def test_respawn_uses_resume_flag(
         self, coordinator, transport, registry, monkeypatch,
     ):
@@ -150,7 +184,7 @@ class TestClaudeRespawn:
         # Simulate pane crash recovery: meta says spawned_at exists
         # (it does after first spawn) AND session file is still on disk.
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: True,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: True,
         )
         coordinator.spawn(role)   # second (true respawn)
 
@@ -178,7 +212,7 @@ class TestClaudeRespawn:
 
         coordinator.spawn(role)
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: True,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: True,
         )
         coordinator.spawn(role)
 
@@ -203,7 +237,7 @@ class TestClaudeRespawn:
 
         # Re-dispatch: not a resume (session file gone), but the old process
         # still holds first_id.
-        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid: False)
+        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False)
         monkeypatch.setattr(
             "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
             lambda uuid: uuid == first_id,
@@ -243,7 +277,7 @@ class TestClaudeRespawn:
             "projects": {"/previous-run": {"lastSessionId": rotated_id}},
         }), encoding="utf-8")
 
-        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid: False)
+        monkeypatch.setattr(coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False)
         monkeypatch.setattr(
             "zf.runtime.spawn_coordinator._uuid_used_by_live_process",
             lambda candidate: candidate == first_id,
@@ -269,7 +303,7 @@ class TestClaudeRespawn:
 
         # File probe returns False — no session file on disk.
         monkeypatch.setattr(
-            coordinator, "_claude_session_exists", lambda _sid: False,
+            coordinator, "_claude_session_exists", lambda _sid, **_kwargs: False,
         )
         coordinator.spawn(role)
 
@@ -1126,7 +1160,7 @@ class TestPurgeStaleClaudeSession:
         assert len(purge_calls) == 1
 
         # Second spawn (registry now marked, and claude session "exists")
-        monkeypatch.setattr(coord, "_claude_session_exists", lambda sid: True)
+        monkeypatch.setattr(coord, "_claude_session_exists", lambda sid, **_kwargs: True)
         coord.spawn(role)
         # is_respawn=True so purge must NOT run again
         assert len(purge_calls) == 1

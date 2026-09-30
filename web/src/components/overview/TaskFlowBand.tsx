@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // TASK FLOW band on Overview — overview-pulse.v1 task_flow. Main chain
 // Todo → In Progress → Verify → Done with transition rates and the WIP cap;
 // blocked is a side pocket, never a chain stage; Verify→Done is gated.
@@ -77,6 +79,7 @@ export function TaskFlowBand({
   onOpenTask,
   tasks,
 }: TaskFlowBandProps) {
+  useSettingsPreferences();
   if (!flow) {
     const countFor = (id: BoardColumnId) => fallbackCounts.find((item) => item.id === id)?.count ?? 0;
     const allZero = fallbackCounts.every((item) => !item.count) && tasks.length === 0;
@@ -84,7 +87,7 @@ export function TaskFlowBand({
       // An all-zero flow rail is pure chrome; keep one quiet line instead of a band.
       return (
         <section className="pulse-band-section" data-testid="overview-task-flow-band">
-          <span className="muted">No task flow yet.</span>
+          <span className="muted">{uiText("No task flow yet.")}</span>
         </section>
       );
     }
@@ -102,18 +105,18 @@ export function TaskFlowBand({
             <span className="pulse-band-label section-title">TASK FLOW</span>
             {/* ③ 等宽节点单行轨道:窄屏横滚,禁换行挤压。 */}
             <div className="task-flow-chain-rail">
-              <FlowNode count={fmtCount(countFor("ready"))} label="Todo" onClick={() => openColumn("ready")} />
+              <FlowNode count={fmtCount(countFor("ready"))} label={uiText("Todo")} onClick={() => openColumn("ready")} />
               <FlowEdge label="start" />
               <FlowNode
                 age={inProgressAge ? `oldest ${inProgressAge}` : null}
                 count={fmtCount(countFor("in_progress"))}
-                label="In Progress"
+                label={uiText("In Progress")}
                 onClick={() => openColumn("in_progress")}
               />
               <FlowEdge label="handoff" />
-              <FlowNode count={fmtCount(countFor("testing"))} label="Verify" onClick={() => openColumn("testing")} />
+              <FlowNode count={fmtCount(countFor("testing"))} label={uiText("Verify")} onClick={() => openColumn("testing")} />
               <FlowEdge label="gate" tone="gate" />
-              <FlowNode count={fmtCount(countFor("done"))} label="Done" onClick={() => openColumn("done")} />
+              <FlowNode count={fmtCount(countFor("done"))} label={uiText("Done")} onClick={() => openColumn("done")} />
             </div>
           </div>
           <div className="task-flow-meta">
@@ -166,21 +169,21 @@ export function TaskFlowBand({
           <span className="pulse-band-label section-title">TASK FLOW</span>
           {/* ③ 等宽节点单行轨道:窄屏横滚,禁换行挤压。 */}
           <div className="task-flow-chain-rail">
-            <FlowNode age={ageOf(oldest.todo)} count={fmtCount(columns.todo)} label="Todo" onClick={openBoard} />
+            <FlowNode age={ageOf(oldest.todo)} count={fmtCount(columns.todo)} label={uiText("Todo")} onClick={openBoard} />
             <FlowEdge label={fmtRate(rates.todo_to_in_progress)} title={rateHint} />
             <FlowNode
               age={ageOf(oldest.in_progress)}
               count={fmtCount(columns.in_progress)}
               extra={wipExtra}
-              label="In Progress"
+              label={uiText("In Progress")}
               onClick={openBoard}
             />
             <FlowEdge label={fmtRate(rates.in_progress_to_verify)} title={rateHint} />
-            <FlowNode age={ageOf(oldest.verify)} count={fmtCount(columns.verify)} label="Verify" onClick={openBoard} />
+            <FlowNode age={ageOf(oldest.verify)} count={fmtCount(columns.verify)} label={uiText("Verify")} onClick={openBoard} />
             <FlowEdge label="gate" title={`done gate: ${flow.done_gate || "unknown"}`} tone="gate" />
-            <FlowNode count={fmtCount(columns.done)} label="Done" onClick={openBoard} />
+            <FlowNode count={fmtCount(columns.done)} label={uiText("Done")} onClick={openBoard} />
             <span className={`task-flow-rework mono${reworkWarn ? " is-warn" : ""}`}>
-              <span>Rework</span>
+              <span>{uiText("Rework")}</span>
               <strong>{fmtRate(rework)}</strong>
             </span>
           </div>

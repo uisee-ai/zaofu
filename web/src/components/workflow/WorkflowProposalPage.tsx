@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import {
   AlertTriangle,
   Check,
@@ -76,6 +78,7 @@ export function WorkflowProposalPage({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   projectId: string;
 }) {
+  useSettingsPreferences();
   const [requests, setRequests] = useState<WorkflowRequest[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<WorkflowRequestDetail | null>(null);
@@ -249,7 +252,7 @@ export function WorkflowProposalPage({
     <div className="workflow-proposal-page" data-testid="workflow-proposal-page">
       <header className="workflow-proposal-toolbar">
         <div>
-          <h2>Workflows</h2>
+          <h2>{uiText("Workflows")}</h2>
           <span className="muted">
             {requests.length} workflows
             {requestsByView.decision.length
@@ -260,7 +263,7 @@ export function WorkflowProposalPage({
         <button
           aria-label="Refresh workflow proposals"
           className="icon-button"
-          title="Refresh"
+          title={uiText("Refresh")}
           type="button"
           onClick={() => {
             void loadRequests();
@@ -327,9 +330,9 @@ export function WorkflowProposalPage({
                   </span>
                   <small title={requestId}>
                     <span>{textValue(request.kind) || "flow"}</span>
-                    <span>Revision {textValue(request.revision) || "1"}</span>
+                    <span>{uiText("Revision")} {textValue(request.revision) || "1"}</span>
                     {["queued", "running"].includes(synthesisStatus) ? (
-                      <span>Synthesis {synthesisStatus}</span>
+                      <span>{uiText("Synthesis")} {synthesisStatus}</span>
                     ) : null}
                   </small>
                 </button>
@@ -397,6 +400,7 @@ function WorkflowProposalDetail({
   onRunPause: (payload: Record<string, unknown>) => void;
   onRunResume: (payload: Record<string, unknown>) => void;
 }) {
+  useSettingsPreferences();
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const request = detail.result;
   const requirement = detail.requirement;
@@ -515,7 +519,7 @@ function WorkflowProposalDetail({
           <span className="eyebrow">
             {textValue(proposal.flow_family) || textValue(request.kind) || "Workflow"}
             {" / "}
-            Revision {textValue(request.revision)}
+            {uiText("Revision")} {textValue(request.revision)}
           </span>
           <h3>{textValue(requirement.objective) || requestId}</h3>
           <div className="workflow-proposal-meta">
@@ -572,7 +576,7 @@ function WorkflowProposalDetail({
               onClick={() => onOpenRuns(runId)}
             >
               <ExternalLink aria-hidden="true" size={16} />
-              Open Run
+              {uiText("Open Run")}
             </button>
           ) : null}
           {hasOverflowActions ? (
@@ -668,7 +672,7 @@ function WorkflowProposalDetail({
           <CheckCircle2 aria-hidden="true" size={19} />
         )}
         <div>
-          <span className="eyebrow">Readiness</span>
+          <span className="eyebrow">{uiText("Readiness")}</span>
           <strong>{readiness.title}</strong>
           <small>
             {blockerCount} blockers
@@ -692,7 +696,7 @@ function WorkflowProposalDetail({
               });
             }}
           >
-            Review details
+            {uiText("Review details")}
           </button>
         ) : null}
       </section>
@@ -715,7 +719,7 @@ function WorkflowProposalDetail({
         <section className="workflow-expected-output">
           <PackageCheck aria-hidden="true" size={19} />
           <div>
-            <span className="eyebrow">Expected output</span>
+            <span className="eyebrow">{uiText("Expected output")}</span>
             {expectedOutputs.map((output, index) => (
               <strong key={`${textValue(output.name)}-${index}`}>
                 {expectedOutputLabel(output)}
@@ -741,10 +745,10 @@ function WorkflowProposalDetail({
       <section className="workflow-proposal-section workflow-requirements">
         <SectionHeading icon={Check} meta="confirmed requirement" title="Requirements" />
         <div>
-          <WorkflowList title="Acceptance" items={asStringArray(requirement.acceptance)} />
-          <WorkflowList title="Constraints" items={asStringArray(requirement.constraints)} />
+          <WorkflowList title={uiText("Acceptance")} items={asStringArray(requirement.acceptance)} />
+          <WorkflowList title={uiText("Constraints")} items={asStringArray(requirement.constraints)} />
           {asStringArray(requirement.open_questions).length ? (
-            <WorkflowList title="Open questions" items={asStringArray(requirement.open_questions)} />
+            <WorkflowList title={uiText("Open questions")} items={asStringArray(requirement.open_questions)} />
           ) : null}
         </div>
       </section>
@@ -782,17 +786,17 @@ function WorkflowProposalDetail({
             <section className="workflow-proposal-section">
               <SectionHeading icon={Check} meta={`${roles.length} roles`} title="Execution Closure" />
               <dl className="workflow-proposal-kv">
-                <dt>Profiles</dt>
+                <dt>{uiText("Profiles")}</dt>
                 <dd>{profiles.map(([id]) => id).join(", ") || "direct-v1"}</dd>
-                <dt>Delivery policy</dt>
+                <dt>{uiText("Delivery policy")}</dt>
                 <dd>{textValue(completionProfile.delivery_policy) || "report_only"}</dd>
-                <dt>Stages</dt>
+                <dt>{uiText("Stages")}</dt>
                 <dd>{textValue(estimated.stages) || stages.length}</dd>
-                <dt>Roles</dt>
+                <dt>{uiText("Roles")}</dt>
                 <dd>{textValue(estimated.roles) || roles.length}</dd>
               </dl>
               <details className="workflow-advanced-subsection">
-                <summary>Role mapping <span>{roles.length}</span></summary>
+                <summary>{uiText("Role mapping")} <span>{roles.length}</span></summary>
                 <div className="workflow-proposal-role-list">
                   {roles.map((role, index) => {
                     const execution = asRecord(role.execution);
@@ -811,22 +815,22 @@ function WorkflowProposalDetail({
             <section className="workflow-proposal-section">
               <SectionHeading icon={ShieldCheck} meta={changeMode} title="Decision Binding" />
               <dl className="workflow-proposal-kv">
-                <dt>Proposal</dt>
+                <dt>{uiText("Proposal")}</dt>
                 <dd className="mono">{shortDigest(proposalDigest)}</dd>
-                <dt>Requirement</dt>
+                <dt>{uiText("Requirement")}</dt>
                 <dd className="mono">{shortDigest(textValue(request.requirement_spec_digest))}</dd>
-                <dt>Effective config</dt>
+                <dt>{uiText("Effective config")}</dt>
                 <dd className="mono">{shortDigest(textValue(asRecord(proposal.effective_config_ref).sha256))}</dd>
-                <dt>Config apply</dt>
+                <dt>{uiText("Config apply")}</dt>
                 <dd>{changeMode === "config_change" ? (configApplied ? "applied" : "required") : "not required"}</dd>
-                <dt>Run</dt>
+                <dt>{uiText("Run")}</dt>
                 <dd>{terminal || (submitted ? "submitted" : "not started")}</dd>
               </dl>
             </section>
           </div>
 
           <details className="workflow-advanced-subsection">
-            <summary>Effective topology <span>{stages.length} stages</span></summary>
+            <summary>{uiText("Effective topology")} <span>{stages.length} stages</span></summary>
             <div className="workflow-effective-topology">
               {stages.map((stage, index) => (
                 <div key={`${textValue(stage.id)}-${index}`}>

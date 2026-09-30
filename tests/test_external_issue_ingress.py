@@ -23,6 +23,9 @@ from zf.core.issue_triage.store import IssueMirrorStore
 from zf.core.task.schema import TaskExecutionBinding
 from zf.runtime.external_issue_ingress import ExternalIssueIngressService
 from zf.runtime.run_admission import build_run_admission_projection
+from zf.runtime.sidecar_refs import write_sidecar_text
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.external_issue_clarification import clarification_request_marker
 from zf.runtime.task_contract_authority import TaskContractAuthorityService
 
 
@@ -101,6 +104,8 @@ def _service(
     mirror: IssueMirror,
     *,
     auto_triage_new_only: bool = True,
+    lifecycle_label_writer=None,
+    clarification_comment_writer=None,
 ) -> tuple[ExternalIssueIngressService, _Reconciler]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -112,9 +117,235 @@ def _service(
         _config(auto_triage_new_only=auto_triage_new_only),
         project_root=tmp_path,
         reconciler=reconciler,  # type: ignore[arg-type]
+        lifecycle_label_writer=lifecycle_label_writer,
+        clarification_comment_writer=clarification_comment_writer,
         now=lambda: datetime(2026, 8, 31, tzinfo=timezone.utc),
     )
     return service, reconciler
+
+
+def test_needs_info_is_published_to_remote_issue_once(tmp_path: Path) -> None:
+    published: list[tuple[int, str, str]] = []
+
+    def write_comment(mirror: IssueMirror, body: str, marker: str) -> dict[str, str]:
+        published.append((mirror.number, body, marker))
+        return {"status": "published", "url": "https://github.com/comment/1"}
+
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+        clarification_comment_writer=write_comment,
+    )
+    clarification = write_immutable_json_sidecar(
+        service.state_dir,
+        {
+            "schema_version": "external-issue-clarification.v1",
+            "status": "needs_info",
+            "source_key": "github:123:8",
+            "source_revision": "sha256:source",
+            "workflow_run_id": "TRIAGE-1",
+            "round": 1,
+            "max_rounds": 3,
+            "questions": [{
+                "id": "repro", "type": "long_text",
+                "question": "What exact action reproduces this?", "required": True,
+            }],
+        },
+        root="external-issues/clarifications",
+        kind="external_issue_clarification",
+        schema_version="external-issue-clarification.v1",
+        created_by="test",
+    )
+    outcome = ZfEvent(
+        type="external_issue.triage.needs_info",
+        task_id="TASK-1",
+        correlation_id="TRIAGE-1",
+        payload={
+            "source_key": "github:123:8",
+            "source_revision": "sha256:source",
+            "workflow_run_id": "TRIAGE-1",
+            "round": 1,
+            "clarification_ref": clarification,
+        },
+    )
+    service._publish_clarification_request(outcome)
+    service._publish_clarification_request(outcome)
+    assert len(published) == 1
+    assert published[0][0] == 8
+    assert "What exact action reproduces this? (required)" in published[0][1]
+    events = service.writer.event_log.read_all()
+    assert sum(event.type == "external_issue.clarification.request_published" for event in events) == 1
+
+
+def test_own_clarification_comment_is_not_treated_as_reporter_follow_up(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+    )
+    mirror = service.mirrors.get(8)
+    assert mirror is not None
+    marker = clarification_request_marker(
+        mirror.issue_key, "sha256:source", "TRIAGE-1", 1,
+    )
+    mirror, _ = service.mirrors.write_comments(mirror, [IssueComment(
+        id=1,
+        node_id="comment-1",
+        html_url="https://github.com/owner/repo/issues/8#issuecomment-1",
+        author_login="zaofu-bot",
+        author_avatar_url="https://avatars.githubusercontent.com/u/1",
+        body=f"{marker}\nQuestion",
+        created_at="2026-09-01T00:00:01+00:00",
+        updated_at="2026-09-01T00:00:01+00:00",
+    )])
+    assert service._is_latest_clarification_request(mirror) is True
+
+
+def test_reporter_follow_up_comment_creates_new_revision_and_retriages(
+    tmp_path: Path,
+) -> None:
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+    )
+    first = service.poll_once()
+    assert first.triage_queued == 1
+    mirror = service.mirrors.get(8)
+    assert mirror is not None
+    bot_marker = clarification_request_marker(
+        mirror.issue_key, "sha256:question", "TRIAGE-1", 1,
+    )
+    bot = IssueComment(
+        id=1,
+        node_id="comment-1",
+        html_url="https://github.com/owner/repo/issues/8#issuecomment-1",
+        author_login="zaofu-bot",
+        author_avatar_url="https://avatars.githubusercontent.com/u/1",
+        body=f"{bot_marker}\nPlease provide steps.",
+        created_at="2026-09-01T00:00:01+00:00",
+        updated_at="2026-09-01T00:00:01+00:00",
+    )
+    mirror, _ = service.mirrors.write_comments(mirror, [bot])
+    own = service.process_mirrors()
+    assert own.received == 1
+    assert own.triage_queued == 0
+
+    reporter = IssueComment(
+        id=2,
+        node_id="comment-2",
+        html_url="https://github.com/owner/repo/issues/8#issuecomment-2",
+        author_login="reporter",
+        author_avatar_url="https://avatars.githubusercontent.com/u/2",
+        body="It reproduces after clicking Save twice.",
+        created_at="2026-09-01T00:00:02+00:00",
+        updated_at="2026-09-01T00:00:02+00:00",
+    )
+    service.mirrors.write_comments(mirror, [bot, reporter])
+    follow_up = service.process_mirrors()
+    assert follow_up.received == 1
+    assert follow_up.triage_queued == 1
+    invokes = [
+        event for event in service.writer.event_log.read_all()
+        if event.type == "workflow.invoke.requested"
+        and str((event.payload or {}).get("source") or "") == "external_issue"
+    ]
+    assert len(invokes) == 2
+
+
+def test_triage_queue_reconciles_remote_lifecycle_label_and_records_result(
+    tmp_path: Path,
+) -> None:
+    calls: list[tuple[str, int, str]] = []
+
+    def write_label(mirror: IssueMirror, state: str) -> dict[str, str]:
+        calls.append((mirror.repository, mirror.number, state))
+        return {"status": "reconciled", "reason": "updated"}
+
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+        lifecycle_label_writer=write_label,
+    )
+
+    service.poll_once()
+
+    assert calls == [("rzwu-uisee/zaofu-self-issue", 8, "triage_queued")]
+    projected = service.mirrors.get(8)
+    assert projected is not None
+    assert projected.labels == ("triage_queued",)
+    event = next(
+        event for event in service.writer.event_log.read_all()
+        if event.type == "external_issue.lifecycle_label.reconciled"
+    )
+    assert event.payload["state"] == "triage_queued"
+    assert event.payload["status"] == "reconciled"
+
+
+def test_remote_lifecycle_label_failure_is_retryable_and_does_not_change_local_state(
+    tmp_path: Path,
+) -> None:
+    attempts = 0
+
+    def write_label(_mirror: IssueMirror, _state: str) -> dict[str, str]:
+        nonlocal attempts
+        attempts += 1
+        return {
+            "status": "outcome_unknown" if attempts == 1 else "reconciled",
+            "reason": "network_timeout" if attempts == 1 else "updated",
+        }
+
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+        lifecycle_label_writer=write_label,
+    )
+    service.poll_once()
+    service.lifecycle_label_writer = write_label
+    # Force the same desired state through the explicit retry hook; the
+    # canonical mirror/task state remains owned by the local event projection.
+    mirror = service.mirrors.get(8)
+    assert mirror is not None
+    service._reconcile_remote_lifecycle_label(mirror, "triage_queued", revision="retry")
+
+    failures = [
+        event for event in service.writer.event_log.read_all()
+        if event.type == "external_issue.lifecycle_label.reconcile_failed"
+    ]
+    assert failures and failures[-1].payload["reason"] == "network_timeout"
+    assert attempts == 2
+
+
+def test_projected_fix_state_is_reconciled_to_remote_lifecycle_label(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def write_label(_mirror: IssueMirror, state: str) -> dict[str, str]:
+        calls.append(state)
+        return {"status": "reconciled", "reason": "updated"}
+
+    service, _ = _service(
+        tmp_path,
+        _mirror(created_at="2026-09-01T00:00:00+00:00"),
+        lifecycle_label_writer=write_label,
+    )
+    # A reader hint is not a state transition. Reconcile from durable events,
+    # including when the mirror still carries the old Triage label.
+    service.poll_once()
+    queued = next(e for e in service.writer.event_log.read_all() if e.type == "external_issue.triage.queued")
+    service.writer.emit("workflow.invoke.requested", actor="test", task_id=queued.task_id,
+                        payload={"source_key": "github:123:8", "workflow_run_id": "FIX", "flow_kind": "issue"})
+    service.writer.emit("task.dispatched", actor="test", task_id=queued.task_id,
+                        payload={"workflow_run_id": "FIX"})
+    service.poll_once()
+
+    assert calls == ["triage_queued", "fixing"]
+    reconciled = [
+        event for event in service.writer.event_log.read_all()
+        if event.type == "external_issue.lifecycle_label.reconciled"
+    ]
+    assert [event.payload["state"] for event in reconciled] == calls
 
 
 def test_new_issue_revision_queues_one_read_only_triage_run(tmp_path: Path) -> None:
@@ -131,6 +362,8 @@ def test_new_issue_revision_queues_one_read_only_triage_run(tmp_path: Path) -> N
     assert first.triage_queued == 1
     assert second.received == 0
     assert reconciler.calls == [False, False]
+    # Each poll performs one repository refresh. A confirmed lifecycle write
+    # is projected locally and does not require a second provider round trip.
     events = EventLog(service.state_dir / "events.jsonl").read_all()
     assert sum(event.type == "external_issue.received" for event in events) == 1
     invokes = [event for event in events if event.type == "workflow.invoke.requested"]
@@ -144,6 +377,58 @@ def test_new_issue_revision_queues_one_read_only_triage_run(tmp_path: Path) -> N
     assert tasks[0].contract.source_key == "github:123:8"
     assert tasks[0].contract.scope == []
     assert tasks[0].contract.exclusions
+
+
+def test_managed_lifecycle_label_does_not_change_issue_content_revision(
+    tmp_path: Path,
+) -> None:
+    mirror = _mirror(
+        created_at="2026-09-01T00:00:00+00:00", labels=("bug",),
+    )
+    service, _ = _service(tmp_path, mirror)
+    source, revision = service._source_revision(mirror)
+    with_lifecycle = replace(
+        mirror,
+        labels=("bug", "fixing"),
+        # GitHub bumps updated_at whenever our lifecycle label changes.
+        updated_at="2026-09-01T00:05:00+00:00",
+    )
+    lifecycle_source, lifecycle_revision = service._source_revision(with_lifecycle)
+    with_metadata = replace(mirror, labels=("bug", "priority:high"))
+    _, metadata_revision = service._source_revision(with_metadata)
+
+    assert source["labels"] == lifecycle_source["labels"] == ["bug"]
+    assert lifecycle_revision == revision
+    assert metadata_revision != revision
+
+
+def test_remote_advanced_lifecycle_suppresses_cross_project_auto_triage(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def write_label(_mirror: IssueMirror, state: str) -> dict[str, str]:
+        calls.append(state)
+        return {"status": "reconciled", "reason": "updated"}
+
+    service, _ = _service(
+        tmp_path,
+        replace(_mirror(
+            created_at="2026-09-01T00:00:00+00:00",
+            labels=("bug", "merged"),
+        ), label_colors={"merged": "6F42C1"}),
+        lifecycle_label_writer=write_label,
+    )
+
+    result = service.poll_once()
+
+    assert result.ok is True
+    assert result.triage_queued == 0
+    assert calls == []
+    assert not any(
+        event.type == "workflow.invoke.requested"
+        for event in service.writer.event_log.read_all()
+    )
 
 
 def test_same_revision_reuses_task_and_changed_revision_gets_retry_suffix(
@@ -161,6 +446,44 @@ def test_same_revision_reuses_task_and_changed_revision_gets_retry_suffix(
     changed = service.start_manual_triage(8)
     assert changed.task_id != first.task_id
     assert changed.task_id.endswith("-R1")
+
+
+def test_fast_manual_triage_uses_mirror_and_defers_remote_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, reconciler = _service(
+        tmp_path, _mirror(created_at="2026-09-01T00:00:00+00:00"),
+    )
+    monkeypatch.setattr(
+        service, "_issue_attachment_refs",
+        lambda mirror: (_ for _ in ()).throw(AssertionError("remote attachment capture must be deferred")),
+    )
+
+    result = service.start_manual_triage(
+        8,
+        refresh=False,
+        defer_remote_sync=True,
+        defer_attachments=True,
+        lock_timeout_seconds=0.1,
+    )
+
+    assert result.ok is True
+    assert result.status == "queued"
+    assert reconciler.calls == []
+    assert not [
+        event for event in service.writer.event_log.read_all()
+        if event.type == "external_issue.lifecycle_label.reconciled"
+    ]
+
+
+def test_manual_triage_rejects_stale_expected_source_revision(tmp_path: Path) -> None:
+    service, _ = _service(tmp_path, _mirror(created_at="2026-09-01T00:00:00+00:00"))
+    result = service.start_manual_triage(8, expected_source_revision="stale-card-revision")
+    assert result.ok is False
+    assert result.status == "revision_conflict"
+    assert result.source_revision
+    events = EventLog(service.state_dir / "events.jsonl").read_all()
+    assert not [event for event in events if event.type == "external_issue.received"]
 
 
 def test_issue_invoke_binds_runtime_flow_identity(tmp_path: Path) -> None:
@@ -364,7 +687,37 @@ def test_operator_can_manually_queue_one_historical_issue_revision(tmp_path: Pat
     assert invokes[0].payload["requested_by"] == "web-operator"
 
 
-def test_operator_can_retry_cancelled_historical_issue_revision(tmp_path: Path) -> None:
+def test_manual_triage_replaces_awaiting_fix_approval_in_remote_and_local_projection(
+    tmp_path: Path,
+) -> None:
+    calls: list[str] = []
+
+    def write_label(_mirror: IssueMirror, state: str) -> dict[str, str]:
+        calls.append(state)
+        return {"status": "reconciled", "reason": "updated"}
+
+    service, _ = _service(
+        tmp_path,
+        _mirror(
+            created_at="2026-08-30T00:00:00+00:00",
+            labels=("bug", "awaiting_fix_approval"),
+        ),
+        lifecycle_label_writer=write_label,
+    )
+
+    result = service.start_manual_triage(8)
+
+    assert result.status == "queued"
+    assert calls == ["triage_queued"]
+    projected = service.mirrors.get(8)
+    assert projected is not None
+    assert projected.labels == ("bug", "triage_queued")
+
+
+@pytest.mark.parametrize("terminal_event", ["run.cancelled", "external_issue.triage.queued_cancelled"])
+def test_operator_can_retry_cancelled_historical_issue_revision(
+    tmp_path: Path, terminal_event: str,
+) -> None:
     service, _ = _service(
         tmp_path,
         _mirror(created_at="2026-08-30T00:00:00+00:00"),
@@ -374,7 +727,7 @@ def test_operator_can_retry_cancelled_historical_issue_revision(tmp_path: Path) 
     events = EventLog(service.state_dir / "events.jsonl")
     writer = service.writer
     writer.emit(
-        "run.cancelled",
+        terminal_event,
         actor="web",
         task_id=first.task_id,
         payload={
@@ -383,6 +736,8 @@ def test_operator_can_retry_cancelled_historical_issue_revision(tmp_path: Path) 
         },
         correlation_id=first.workflow_run_id,
     )
+    archived = service.tasks.update(first.task_id, status="cancelled")
+    assert archived is not None and archived.status == "cancelled"
 
     retry = service.start_manual_triage(8)
 
@@ -401,6 +756,36 @@ def test_operator_can_retry_cancelled_historical_issue_revision(tmp_path: Path) 
     assert queued[1].payload["workflow_run_id"] == retry.workflow_run_id
     assert queued[1].payload["retry_of_workflow_run_id"] == first.workflow_run_id
     assert queued[1].payload["triage_attempt"] == 2
+    authority_receipts = [
+        event for event in events.read_all()
+        if event.type == "task.contract.revision.applied"
+        and event.task_id == first.task_id
+        and event.payload.get("source") == "external_issue_triage_retry"
+    ]
+    assert len(authority_receipts) == 1
+
+
+@pytest.mark.parametrize("self_issue_enabled", [True, False])
+def test_manual_triage_does_not_enable_automatic_ingress(
+    tmp_path: Path, self_issue_enabled: bool,
+) -> None:
+    service, reconciler = _service(
+        tmp_path, _mirror(created_at="2026-08-30T00:00:00+00:00"),
+    )
+    service.config.self_issue.enabled = self_issue_enabled
+    service.policy.enabled = False
+
+    assert service.poll_once().status == "disabled"
+    assert reconciler.calls == []
+    result = service.start_manual_triage(8)
+    assert result.ok is self_issue_enabled
+    assert result.status == ("queued" if self_issue_enabled else "disabled")
+    assert reconciler.calls == ([True] if self_issue_enabled else [])
+    assert service.policy.enabled is False
+    assert service.poll_once().status == "disabled"
+    assert reconciler.calls == ([True] if self_issue_enabled else [])
+    if not self_issue_enabled:
+        assert service.writer.event_log.read_all() == []
 
 
 def test_operator_can_start_new_triage_after_terminal_disposition(tmp_path: Path) -> None:
@@ -543,7 +928,7 @@ self_issue:
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigError, match="between 60 and 86400"):
+    with pytest.raises(ConfigError, match="between 60 and 604800"):
         load_config(config_path)
 
 
@@ -570,7 +955,7 @@ def test_current_triage_contract_creates_exact_issue_fix_proposal(
     contract.update({
         "schema_version": "task-contract.v1",
         "behavior": "修复该 Issue 描述的确定性回归。",
-        "verification": "运行聚焦回归测试并保存输出证据。",
+        "verification": "pytest -q tests/test_external_issue_ingress.py",
         "verification_tiers": ["static", "runtime"],
         "scope": ["src/zf/runtime/external_issue_ingress.py"],
         "acceptance_criteria": ["复现先失败，修复后通过"],
@@ -605,6 +990,14 @@ def test_current_triage_contract_creates_exact_issue_fix_proposal(
     assert proposal["action"] == "workflow-start"
     assert proposal["payload"]["route_id"] == "delivery:issue:default"
     assert "external_issue" in str(proposal["payload"])
+    request_payload = proposal["payload"]
+    parameters = request_payload["parameters"]
+    assert parameters["source_root"] == str(service.project_root.resolve())
+    assert parameters["target_root"] == str(service.project_root.resolve())
+    assert parameters["allowed_paths"] == ["src/zf/runtime/external_issue_ingress.py"]
+    assert parameters["verification_commands"][0]["command"] == (
+        "pytest -q tests/test_external_issue_ingress.py"
+    )
 
     # A resolved proposal must not suppress approval for a later retry with
     # the same TaskContract/source revision.
@@ -633,6 +1026,62 @@ def test_current_triage_contract_creates_exact_issue_fix_proposal(
     assert retry_proposal["proposal_id"].endswith("-r2")
 
 
+def test_ready_triage_without_bounded_scope_does_not_create_fix_proposal(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "zf.yaml")
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    mirror = _mirror(created_at="2026-09-01T00:00:00+00:00")
+    IssueMirrorStore(state_dir).upsert(mirror, "Untrusted issue body")
+    service = ExternalIssueIngressService(
+        state_dir,
+        config,
+        project_root=root,
+        reconciler=_Reconciler(),  # type: ignore[arg-type]
+        now=lambda: datetime(2026, 8, 31, tzinfo=timezone.utc),
+    )
+    service.poll_once()
+    task = service.tasks.list_all()[0]
+    contract = asdict(task.contract)
+    contract.update({
+        "schema_version": "task-contract.v1",
+        "behavior": "修复该 Issue 描述的确定性回归。",
+        "verification": "pytest -q tests/test_external_issue_ingress.py",
+        "verification_tiers": ["static", "runtime"],
+        "scope": [],
+        "affected_files": [],
+        "exclusive_files": [],
+        "acceptance_criteria": ["复现先失败，修复后通过"],
+        "owner_role": "issue-fix-lane-0",
+        "spec_skip_reason": "分诊报告仍缺少受控写入范围",
+    })
+    contract["evidence_contract"] = {
+        **contract["evidence_contract"],
+        "external_issue_triage_status": "ready_to_fix",
+        "external_issue_revision": contract["source_revision"],
+    }
+    TaskContractAuthorityService(
+        task_store=service.tasks,
+        event_writer=service.writer,
+        state_dir=state_dir,
+    ).replace(
+        task,
+        contract=contract,
+        source="external_issue_triage",
+        actor="external-issue-triage",
+    )
+
+    service.poll_once()
+
+    assert not any(
+        event.type == "operator.action.proposed"
+        for event in EventLog(state_dir / "events.jsonl").read_all()
+    )
+
+
 def test_ready_triage_reopens_task_after_stale_cancellation(
     tmp_path: Path,
 ) -> None:
@@ -649,6 +1098,36 @@ def test_ready_triage_reopens_task_after_stale_cancellation(
     )
     service.poll_once()
     task = service.tasks.list_all()[0]
+    valid_contract = replace(
+        task.contract,
+        schema_version="task-contract.v1",
+        verification="pytest -q tests/test_external_issue_ingress.py",
+        verification_tiers=["runtime"],
+        scope=["src/zf/runtime/external_issue_ingress.py"],
+        evidence_contract={
+            **task.contract.evidence_contract,
+            "external_issue_triage_status": "ready_to_fix",
+            "external_issue_revision": str(
+                next(
+                    event.payload["source_revision"]
+                    for event in service.writer.event_log.read_all()
+                    if event.type == "external_issue.triage.queued"
+                ),
+            ),
+        },
+    )
+    TaskContractAuthorityService(
+        task_store=service.tasks,
+        event_writer=service.writer,
+        state_dir=state_dir,
+    ).replace(
+        task,
+        contract=valid_contract,
+        source="external_issue_triage_fixture",
+        actor="test",
+    )
+    task = service.tasks.get(task.id)
+    assert task is not None
     task = service.tasks.update(task.id, status="cancelled")
     assert task is not None
     queued = [
@@ -712,6 +1191,49 @@ def test_ready_triage_promotes_intake_contract_for_fix_proposal(tmp_path: Path) 
     assert promoted.contract.schema_version == "task-contract.v1"
     assert promoted.contract.evidence_contract["external_issue_triage_status"] == "ready_to_fix"
     assert promoted.contract.evidence_contract["verification_gaps"] == ["dynamic validation not run"]
+
+
+def test_ready_triage_promotes_executable_report_verification(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "zf.yaml")
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    mirror = _mirror(created_at="2026-09-01T00:00:00+00:00")
+    IssueMirrorStore(state_dir).upsert(mirror, "Untrusted issue body")
+    service = ExternalIssueIngressService(
+        state_dir, config, project_root=root, reconciler=_Reconciler(),
+        now=lambda: datetime(2026, 8, 31, tzinfo=timezone.utc),
+    )
+    service.poll_once()
+    task = service.tasks.list_all()[0]
+    report_ref = write_sidecar_text(
+        state_dir,
+        "artifacts/external-issues/reports/triage.md",
+        "## Verification\n`uv run pytest tests/test_regression.py -q --no-cov`\n",
+        kind="external_issue_report",
+        schema_version="external-issue-report.v1",
+        created_by="test",
+    )
+    service._promote_ready_triage_task(ZfEvent(
+        type="external_issue.triage.ready_to_fix",
+        task_id=task.id,
+        correlation_id="TRIAGE-READY",
+        payload={
+            "source_revision": task.contract.source_revision,
+            "report_ref": report_ref,
+        },
+    ))
+
+    promoted = service.tasks.get(task.id)
+    assert promoted is not None
+    assert promoted.contract.verification == (
+        "uv run pytest tests/test_regression.py -q --no-cov"
+    )
+    assert promoted.contract.validation["commands"][0]["command"] == (
+        "uv run pytest tests/test_regression.py -q --no-cov"
+    )
+    assert promoted.contract.verification_tiers == ["runtime"]
 
 
 def test_fix_proposal_backfills_report_verification_command(tmp_path: Path) -> None:

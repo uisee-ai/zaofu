@@ -58,6 +58,45 @@ class TaskPipelineWaiting(TaskPipelineRuntimeError):
         self.detail = detail or reason
 
 
+def _ensure_task_pipeline_role_ready(
+    runtime: Any,
+    role: Any,
+    *,
+    task_id: str,
+    spawn_cwd: Path,
+    skill_runtime_root: Path,
+) -> None:
+    """Treat provider readiness as a level-triggered prerequisite.
+
+    A Task-stage binding may be valid while a freshly spawned Codex/tmux
+    provider is still starting or respawning.  Letting that readiness error
+    escape as a plan/admission failure strands an approved Issue at the wrong
+    lifecycle state.  Convert only structured provider-readiness failures to
+    ``TaskPipelineWaiting``; contract, workspace, and generic programming
+    errors remain fail-closed and propagate normally.
+    """
+
+    try:
+        runtime._ensure_role_active(
+            role,
+            task_id=task_id,
+            spawn_cwd=spawn_cwd,
+            skill_runtime_root=skill_runtime_root,
+        )
+    except Exception as exc:  # noqa: BLE001 - classify transport boundary
+        from zf.runtime.transport import transport_error_diagnostics
+
+        diagnostics = transport_error_diagnostics(exc)
+        failure_class = str(diagnostics.get("failure_class") or "")
+        if failure_class.startswith("provider_") or "readiness" in failure_class:
+            detail = str(exc).strip() or failure_class or "provider readiness is not proven"
+            raise TaskPipelineWaiting(
+                "waiting_for_provider_readiness",
+                detail,
+            ) from exc
+        raise
+
+
 @dataclass(frozen=True)
 class TaskPipelineGenerationPreflight:
     """Resolved immutable inputs for one generation admission."""
@@ -759,7 +798,7 @@ def _activate_task_stage_binding(
         != project_path.resolve(strict=False)
     )
     binding_switch = bool(
-        alive
+        (alive or previous_binding_key)
         and (
             not next_binding_key
             or previous_binding_key != next_binding_key
@@ -797,7 +836,8 @@ def _activate_task_stage_binding(
                 "waiting_for_slot_settlement",
                 "physical slot still owns an active WorkflowOperation",
             )
-        runtime.transport.terminate(role.instance_id)
+        if alive:
+            runtime.transport.terminate(role.instance_id)
         now = _now_iso()
         registry.update_instance_meta(
             role.instance_id,
@@ -824,15 +864,16 @@ def _activate_task_stage_binding(
         placement_epoch=placement_epoch,
         backend=role.backend,
     )
-    registry.activate_task_stage_session(
-        binding_key=str(binding.get("binding_key") or ""),
-        role_instance=role.instance_id,
-    )
-    runtime._ensure_role_active(
+    _ensure_task_pipeline_role_ready(
+        runtime,
         role,
         task_id=str(task.id),
         spawn_cwd=project_path,
         skill_runtime_root=workspace_root,
+    )
+    registry.activate_task_stage_session(
+        binding_key=str(binding.get("binding_key") or ""),
+        role_instance=role.instance_id,
     )
     try:
         snapshot = runtime.transport.lifecycle_snapshot(role.instance_id)

@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { useState } from "react";
 import { Code2, FolderOpen, KeyRound, LoaderCircle, Search, X } from "lucide-react";
 
@@ -46,6 +48,7 @@ export function ProjectAdmissionModal({
   onInspect,
   onSubmit,
 }: Props) {
+  useSettingsPreferences();
   const [authorizationBusy, setAuthorizationBusy] = useState(false);
   const [authorizationError, setAuthorizationError] = useState("");
   const [credential, setCredential] = useState("");
@@ -98,20 +101,20 @@ export function ProjectAdmissionModal({
   return (
     <div className="modal-backdrop" role="presentation">
       <section
-        aria-label="Add/Open Project"
+        aria-label={uiText("Add/Open Project")}
         aria-modal="true"
         className="modal-panel project-admission-modal"
         role="dialog"
       >
         <div className="section-heading project-admission-heading">
           <div>
-            <h2>Add/Open Project</h2>
+            <h2>{uiText("Add/Open Project")}</h2>
             <span className="muted">default workspace</span>
           </div>
           <button
-            aria-label="Close"
+            aria-label={uiText("Close")}
             className="icon-button"
-            title="Close"
+            title={uiText("Close")}
             type="button"
             onClick={onClose}
           >
@@ -152,7 +155,7 @@ export function ProjectAdmissionModal({
                 ) : (
                   <Search aria-hidden="true" size={16} strokeWidth={1.8} />
                 )}
-                Inspect
+                {uiText("Inspect")}
               </button>
             </div>
           </label>
@@ -166,7 +169,7 @@ export function ProjectAdmissionModal({
               <div className="project-admission-access-label">
                 <KeyRound aria-hidden="true" size={16} strokeWidth={1.8} />
                 <span>
-                  <strong>Project access</strong>
+                  <strong>{uiText("Project access")}</strong>
                   <span className="muted">
                     {accessMode === "passcode"
                       ? "Web session locked"
@@ -268,7 +271,7 @@ export function ProjectAdmissionModal({
                 >
                   <div className="project-admission-field-grid">
                     <label>
-                      <span>Project name</span>
+                      <span>{uiText("Project name")}</span>
                       <input
                         className="filter-input"
                         data-testid="project-name-input"
@@ -278,7 +281,7 @@ export function ProjectAdmissionModal({
                       />
                     </label>
                     <label>
-                      <span>Project stack</span>
+                      <span>{uiText("Project stack")}</span>
                       <select
                         className="filter-input"
                         data-testid="project-stack-select"
@@ -293,7 +296,7 @@ export function ProjectAdmissionModal({
                       </select>
                     </label>
                     <label className="project-admission-description">
-                      <span>Project brief <span className="muted">optional</span></span>
+                      <span>{uiText("Project brief")} <span className="muted">optional</span></span>
                       <textarea
                         className="filter-input"
                         data-testid="project-description-input"
@@ -306,7 +309,7 @@ export function ProjectAdmissionModal({
                     </label>
                   </div>
                   <fieldset className="project-provider-policy">
-                    <legend>Primary provider</legend>
+                    <legend>{uiText("Primary provider")}</legend>
                     <div className="project-provider-options">
                       {providerOptions.map((provider) => (
                         <button
@@ -337,7 +340,7 @@ export function ProjectAdmissionModal({
                       onChange={(event) => update({ mixedEnabled: event.target.checked })}
                     />
                     <span>
-                      <strong>Mixed team</strong>
+                      <strong>{uiText("Mixed team")}</strong>
                       <span className="muted">
                         {mixedAvailable
                           ? "Independent verify lanes use the other provider."
@@ -351,14 +354,14 @@ export function ProjectAdmissionModal({
           ) : (
             <div className="project-admission-empty" data-testid="project-admission-empty">
               <FolderOpen aria-hidden="true" size={18} strokeWidth={1.6} />
-              <span className="muted">No path inspected</span>
+              <span className="muted">{uiText("No path inspected")}</span>
             </div>
           )}
         </div>
 
         <div className="action-row project-admission-actions">
           <button className="icon-button" type="button" onClick={onClose}>
-            Cancel
+            {uiText("Cancel")}
           </button>
           {admission && admission.action !== "blocked" ? (
             <button

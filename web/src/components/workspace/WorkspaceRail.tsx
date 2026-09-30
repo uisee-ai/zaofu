@@ -1,3 +1,5 @@
+import { uiText } from "../../settings/uiText";
+import { useSettingsPreferences } from '../../settings/useSettingsPreferences';
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
 import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListFilter, ListTodo, Menu, MessageSquare, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
@@ -24,6 +26,7 @@ export function WorkspaceRail({
   actionResult,
   activePage,
   activeProjectId,
+  canViewIssueTriage = false,
   channels,
   channelsLoaded,
   inboxPendingCount = 0,
@@ -42,6 +45,7 @@ export function WorkspaceRail({
   actionResult: ActionResponse | null;
   activePage: PageId;
   activeProjectId: string;
+  canViewIssueTriage?: boolean;
   channels: ChannelSummary[];
   channelsLoaded: boolean;
   inboxPendingCount?: number;
@@ -58,6 +62,7 @@ export function WorkspaceRail({
   snapshot: Snapshot | null;
 }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  useSettingsPreferences();
   const openPage = (nextPage: PageId) => {
     onOpenPage(nextPage);
     setMobileOpen(false);
@@ -98,21 +103,21 @@ export function WorkspaceRail({
   // Act vs watch: Workspace = what I do (decide/assign/intervene);
   // Monitoring = what the system is doing (delivery + deep-dive).
   const workspaceNav: RailNavItem[] = [
-    { id: "project", icon: Home, label: "Overview" },
-    { id: "inbox", icon: Inbox, label: "Inbox", badge: inboxPendingCount },
-    { id: "issue-triage", icon: ListFilter, label: "Triage" },
-    { id: "board", icon: ListTodo, label: "Tasks" },
-    { id: "workflows", icon: GitFork, label: "Workflows" },
-    { id: "agents", icon: Bot, label: "Agents" },
-    { id: "automations", icon: CalendarClock, label: "Automations" },
+    { id: "project", icon: Home, label: uiText("Overview") },
+    { id: "inbox", icon: Inbox, label: uiText("Inbox"), badge: inboxPendingCount },
+    ...(canViewIssueTriage ? [{ id: "issue-triage" as PageId, icon: ListFilter, label: "Triage" }] : []),
+    { id: "board", icon: ListTodo, label: uiText("Tasks") },
+    { id: "workflows", icon: GitFork, label: uiText("Workflows") },
+    { id: "agents", icon: Bot, label: uiText("Agents") },
+    { id: "automations", icon: CalendarClock, label: uiText("Automations") },
   ];
   const monitoringNav: RailNavItem[] = [
-    { id: "delivery", icon: Route, label: "Delivery" },
-    { id: "behavior-loop", icon: GitFork, label: "Loop" },
-    { id: "traces", icon: Radio, label: "Traces" },
+    { id: "delivery", icon: Route, label: uiText("Delivery") },
+    { id: "behavior-loop", icon: GitFork, label: uiText("Loop") },
+    { id: "traces", icon: Radio, label: uiText("Traces") },
   ];
   const systemNav: RailNavItem[] = [
-    { id: "settings", icon: Settings, label: "Settings" },
+    { id: "settings", icon: Settings, label: uiText("Settings") },
   ];
   const railActivePage = isObservabilityPage(activePage)
     ? "traces"
@@ -145,12 +150,12 @@ export function WorkspaceRail({
       </div>
       <div className="project-rail-body" id="workspace-navigation">
         <div className="rail-group workspace-context-group">
-          <span className="rail-nav-title">Workspace</span>
+          <span className="rail-nav-title">{uiText("Workspace")}</span>
           {projectOptions.length ? (
             <div className="project-switcher">
               <div className="project-switcher-row">
                 <select
-                  aria-label="Project"
+                  aria-label={uiText("Project")}
                   title={selectedProject?.root || selectedProjectValue}
                   value={selectedProjectValue}
                   onChange={(event) => {
@@ -164,7 +169,7 @@ export function WorkspaceRail({
                     </option>
                   ))}
                 </select>
-                <button className="project-switcher-add" title="Add Project" type="button" onClick={onAddProject}>
+                <button className="project-switcher-add" title={uiText("Add Project")} type="button" onClick={onAddProject}>
                   <Plus aria-hidden="true" size={16} strokeWidth={1.8} />
                 </button>
                 <button
@@ -184,18 +189,18 @@ export function WorkspaceRail({
             <button className="rail-nav-button muted-action" type="button" onClick={onAddProject}>
               <span className="rail-nav-label">
                 <Plus aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
-                <span>Add Project</span>
+                <span>{uiText("Add Project")}</span>
               </span>
             </button>
           )}
           <RailNav title="" items={workspaceNav} activePage={railActivePage} onOpenPage={openPage} />
         </div>
         <div className="rail-group">
-          <span className="rail-nav-title">Monitoring</span>
+          <span className="rail-nav-title">{uiText("Monitoring")}</span>
           <RailNav title="" items={monitoringNav} activePage={railActivePage} onOpenPage={openPage} />
         </div>
         <div className="rail-group">
-          <span className="rail-nav-title">Channels</span>
+          <span className="rail-nav-title">{uiText("Channels")}</span>
           <div className="rail-nav channel-rail-list">
             {channels.length ? channels.slice(0, 8).map((channel) => (
               <button
@@ -211,26 +216,26 @@ export function WorkspaceRail({
                 <span className="muted">{channel.members?.length ?? 0}</span>
             </button>
           )) : channelsLoaded ? (
-            <span className="empty-text">No channels</span>
+            <span className="empty-text">{uiText("No channels")}</span>
           ) : (
             <button className="rail-nav-button" type="button" onClick={() => openPage("channels")}>
               <span className="rail-nav-label">
                 <MessageSquare aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
-                <span>Open Channels</span>
+                <span>{uiText("Open Channels")}</span>
               </span>
             </button>
           )}
           <button className="rail-nav-button muted-action" type="button" onClick={onNewChannel}>
             <span className="rail-nav-label">
               <Plus aria-hidden="true" className="rail-nav-icon" size={16} strokeWidth={1.8} />
-              <span>New Channel</span>
+              <span>{uiText("New Channel")}</span>
             </span>
           </button>
         </div>
         </div>
         <details className="rail-section" open>
           <summary>
-            <span>System</span>
+            <span>{uiText("System")}</span>
             <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
           </summary>
           <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} />

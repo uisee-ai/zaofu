@@ -103,7 +103,11 @@ def verify_action(
         return False, "unknown_key_version"
     if not EventSigner(secret).verify(body, sig):
         return False, "signature_mismatch"
-    if int(payload.get("x") or 0) <= int(now):
+    try:
+        expires_at = int(payload.get("x") or 0)
+    except (TypeError, ValueError):
+        return False, "bad_payload"
+    if expires_at <= int(now):
         return False, "expired"
     if str(payload.get("a") or "") != expect_action:
         return False, "action_mismatch"

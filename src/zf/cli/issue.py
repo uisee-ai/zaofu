@@ -12,6 +12,7 @@ import argparse
 import base64
 import json
 import sys
+import time
 from pathlib import Path
 
 import yaml
@@ -24,6 +25,7 @@ from zf.core.config.project_context import resolve_project_context
 from zf.core.task.schema import Task, TaskContract
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.self_issue_session_host import SelfIssueSessionHost
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -31,11 +33,19 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "issue", help="Validate or ingest an issue/bug candidate",
     )
     sub = parser.add_subparsers(dest="issue_cmd", required=True)
-    report = sub.add_parser("report", help="Start the canonical eight-step Self-Issue intake")
+    report = sub.add_parser("report", help="Run a continuous Issue Agent from a free-form report")
     report.add_argument("description", nargs="?", default="", help="Optional title seed")
     report.add_argument("--target-project", default="")
     report.add_argument("--state-dir", default=None)
     report.add_argument("--attachment", action="append", default=[], metavar="PATH")
+    report.add_argument(
+        "--legacy-intake", action="store_true",
+        help="Use the deprecated eight-question intake explicitly (compatibility only)",
+    )
+    report.add_argument(
+        "--legacy-draft", action="store_true",
+        help="Use the legacy Draft flow explicitly (compatibility only)",
+    )
     report.add_argument(
         "--non-interactive", action="store_true",
         help="Return the Intake JSON instead of prompting",
@@ -48,6 +58,26 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     answer.add_argument("--answers-file", required=True)
     answer.add_argument("--state-dir", default=None)
     answer.set_defaults(func=_run_answer)
+    session_answer = sub.add_parser("session-answer", help="Answer a Portable Issue Session question")
+    session_answer.add_argument("session_id")
+    session_answer.add_argument("answer")
+    session_answer.add_argument("--state-dir", default=None)
+    session_answer.set_defaults(func=_run_session_action)
+    session_confirm = sub.add_parser("session-confirm", help="Confirm a Portable Issue Report")
+    session_confirm.add_argument("session_id")
+    session_confirm.add_argument("--confirmed-by", default="operator")
+    session_confirm.add_argument("--provider", default="")
+    session_confirm.add_argument("--target", default="")
+    session_confirm.add_argument("--state-dir", default=None)
+    session_confirm.set_defaults(func=_run_session_action)
+    session_cancel = sub.add_parser("session-cancel", help="Cancel a Portable Issue Session")
+    session_cancel.add_argument("session_id")
+    session_cancel.add_argument("--state-dir", default=None)
+    session_cancel.set_defaults(func=_run_session_action)
+    session_get = sub.add_parser("session-get", help="Read a Portable Issue Session")
+    session_get.add_argument("session_id")
+    session_get.add_argument("--state-dir", default=None)
+    session_get.set_defaults(func=_run_session_action)
     preview = sub.add_parser(
         "preview", help="Create an immutable provider publication preview",
     )
@@ -89,6 +119,8 @@ def _run_report(args: argparse.Namespace) -> int:
     writer = EventWriter(event_log_from_project(ctx.state_dir, config=ctx.config))
     payload = {
         "description": str(args.description or ""),
+        "direct_report": not bool(args.legacy_intake or args.legacy_draft),
+        "portable_session": not bool(args.legacy_intake or args.legacy_draft),
         "reporter_context": {
             "discovered_by": "user", "reported_by": "user",
             "collected_by": "kernel", "assessed_by": "orchestrator", "role": "user",
@@ -110,6 +142,32 @@ def _run_report(args: argparse.Namespace) -> int:
         action="self-issue-capture", requested_action="zf issue report",
         payload=payload, requested=requested,
     )
+    # CLI --non-interactive is commonly used by scripts that expect the first
+    # durable decision, while the Web surface intentionally returns immediately
+    # and streams progress.  Wait briefly for the background Session only on
+    # this CLI surface; never block the Web/API request on model work.
+    if (
+        result.get("ok")
+        and bool(args.non_interactive)
+        and result.get("status") == "investigating"
+        and result.get("session_id")
+    ):
+        host = SelfIssueSessionHost(
+            ctx.state_dir,
+            ctx.project_root,
+            policy=ctx.config.self_issue,
+        )
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            current = host.get(str(result["session_id"]))
+            if current.get("status") != "investigating":
+                result = {**result, **current}
+                if result.get("status") == "waiting_for_user":
+                    # Preserve the historical CLI vocabulary while the
+                    # portable Session uses an explicit lifecycle status.
+                    result["status"] = "ask_user"
+                break
     if (
         result.get("ok")
         and result.get("status") == "intake_collecting"
@@ -122,6 +180,56 @@ def _run_report(args: argparse.Namespace) -> int:
             writer=writer,
             attachment_paths=[Path(value) for value in args.attachment],
         )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0 if result.get("ok") else 1
+
+
+def _run_session_action(args: argparse.Namespace) -> int:
+    try:
+        ctx = resolve_project_context(explicit_state_dir=getattr(args, "state_dir", None))
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    action = {
+        "session-answer": "self-issue-session-answer",
+        "session-confirm": "self-issue-session-confirm",
+        "session-cancel": "self-issue-session-cancel",
+        "session-get": "self-issue-session-get",
+    }[str(args.issue_cmd)]
+    payload = {"session_id": str(args.session_id)}
+    if action == "self-issue-session-answer":
+        payload["answer"] = str(args.answer)
+    elif action == "self-issue-session-confirm":
+        payload.update({
+            "confirmed_by": str(args.confirmed_by),
+            "provider": str(args.provider),
+            "target": str(args.target),
+        })
+    writer = EventWriter(event_log_from_project(ctx.state_dir, config=ctx.config))
+    result = _execute_self_issue_action(
+        ctx=ctx,
+        writer=writer,
+        action=action,
+        payload=payload,
+        requested_action=f"zf issue {args.issue_cmd}",
+    )
+    if result.get("status") == "investigating" and result.get("session_id"):
+        host = SelfIssueSessionHost(
+            ctx.state_dir,
+            ctx.project_root,
+            policy=ctx.config.self_issue,
+        )
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            time.sleep(0.05)
+            current = host.get(str(result["session_id"]))
+            if current.get("status") != "investigating":
+                result = {**result, **current}
+                break
+    if result.get("status") == "waiting_for_user":
+        result["status"] = "ask_user"
+    elif result.get("status") == "ready_for_confirmation":
+        result["status"] = "ready"
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") else 1
 

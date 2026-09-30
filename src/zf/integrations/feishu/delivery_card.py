@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 from zf.runtime.provider_capabilities import provider_capability_for_backend
+from zf.integrations.feishu.reply_details import reply_details
 
 # event type → projected card state. Terminal states win over "working".
 _WORKING = "working"
@@ -57,6 +58,8 @@ def build_delivery_card(state: dict[str, Any]) -> dict[str, Any]:
     elements: list[dict[str, Any]] = [
         {"tag": "div", "text": {"tag": "lark_md", "content": body}},
     ]
+    if status == "done" and state.get("reply_text"):
+        elements = [reply_details("回复详情", elements)]
     if status == _WORKING and request_id:
         elements.append({"tag": "action", "actions": [{
             "tag": "button",
@@ -65,7 +68,7 @@ def build_delivery_card(state: dict[str, Any]) -> dict[str, Any]:
             "value": {"action": f"agent-cancel:{request_id}"},
         }]})
     return {
-        "config": {"wide_screen_mode": True},
+        "config": {"wide_screen_mode": True, "update_multi": True},
         "header": {
             "title": {
                 "tag": "plain_text",

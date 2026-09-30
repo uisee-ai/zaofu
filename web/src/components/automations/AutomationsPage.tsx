@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // AutomationsPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse } from "../../api/types";
 import { Bell, CalendarClock, FileText, PlayCircle } from "lucide-react";
@@ -26,6 +28,7 @@ export function AutomationsPage({
   automations: Record<string, unknown> | null;
   onRun: (automationId: string) => Promise<ActionResponse>;
 }) {
+  useSettingsPreferences();
   const items = Array.isArray(automations?.items)
     ? automations.items.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
     : [];
@@ -121,8 +124,8 @@ export function AutomationsPage({
     <>
       <div className="section-heading">
         <div>
-          <h2>Automations</h2>
-          <span className="muted">Project-scoped reports, alerts, and proposals</span>
+          <h2>{uiText("Automations")}</h2>
+          <span className="muted">{uiText("Project-scoped reports, alerts, and proposals")}</span>
         </div>
         <span className="metric-chip">projection only</span>
       </div>
@@ -163,7 +166,7 @@ export function AutomationsPage({
             <div className="automation-control-head">
               <div className="automation-control-title">
                 <h3>{selectedTitle}</h3>
-                <span className="muted">Manual trigger and current execution health</span>
+                <span className="muted">{uiText("Manual trigger and current execution health")}</span>
               </div>
               <button
                 className="icon-button primary"
@@ -186,13 +189,13 @@ export function AutomationsPage({
             ) : null}
             <div className="automation-control-grid">
               <section className="automation-detail-card">
-                <span className="eyebrow">Schedule</span>
+                <span className="eyebrow">{uiText("Schedule")}</span>
                 <dl>
-                  <dt>Window</dt>
+                  <dt>{uiText("Window")}</dt>
                   <dd>{selectedWindow}</dd>
-                  <dt>Next Run</dt>
+                  <dt>{uiText("Next Run")}</dt>
                   <dd>{nextRunLabel}</dd>
-                  <dt>Trigger</dt>
+                  <dt>{uiText("Trigger")}</dt>
                   <dd>
                     <span className="automation-trigger-list">
                       {triggerLabels.map((trigger) => (
@@ -203,31 +206,31 @@ export function AutomationsPage({
                 </dl>
               </section>
               <section className="automation-detail-card">
-                <span className="eyebrow">Execution Health</span>
+                <span className="eyebrow">{uiText("Execution Health")}</span>
                 <dl>
-                  <dt>Status</dt>
+                  <dt>{uiText("Status")}</dt>
                   <dd><span className={`badge badge-${automationStatusTone(selectedStatus)}`}>{selectedStatus}</span></dd>
-                  <dt>Last Run</dt>
+                  <dt>{uiText("Last Run")}</dt>
                   <dd className="mono" title={lastRunId || "none"}>{lastRunLabel}</dd>
-                  <dt>Success Rate</dt>
+                  <dt>{uiText("Success Rate")}</dt>
                   <dd>{successLabel}</dd>
-                  <dt>Terminal Runs</dt>
+                  <dt>{uiText("Terminal Runs")}</dt>
                   <dd>{stringify(runSummary.terminal_total ?? 0)}</dd>
                 </dl>
               </section>
               <section className="automation-detail-card">
-                <span className="eyebrow">Project</span>
+                <span className="eyebrow">{uiText("Project")}</span>
                 <dl>
-                  <dt>Workspace Project</dt>
+                  <dt>{uiText("Workspace Project")}</dt>
                   <dd>
                     <span>{projectLabel}</span>
                     {projectId && projectId !== projectLabel ? <small className="mono">{projectId}</small> : null}
                   </dd>
-                  <dt>Run Events</dt>
+                  <dt>{uiText("Run Events")}</dt>
                   <dd>{stringify(runSummary.events_total ?? 0)}</dd>
-                  <dt>Outputs</dt>
+                  <dt>{uiText("Outputs")}</dt>
                   <dd>{outputs.length}</dd>
-                  <dt>Proposals</dt>
+                  <dt>{uiText("Proposals")}</dt>
                   <dd>{proposals.length}</dd>
                 </dl>
               </section>
@@ -236,7 +239,7 @@ export function AutomationsPage({
           <AutomationReportNav />
           <section className="subsection automation-insight-section" id="automation-insights">
             <div className="inline-heading">
-              <h3>Insights</h3>
+              <h3>{uiText("Insights")}</h3>
               <span className="muted">{insights.length}</span>
             </div>
             <AutomationInsights insights={insights} />
@@ -248,7 +251,7 @@ export function AutomationsPage({
           </div>
           {allRuns.length > runs.length ? <TablePage title="Run Ledger" rows={allRuns} embedded /> : null}
           <div id="automation-proposals" className="automation-anchor-target">
-            <TablePage title="Proposals" rows={proposals} embedded />
+            <TablePage title={uiText("Proposals")} rows={proposals} embedded />
           </div>
         </div>
       ) : (
@@ -285,6 +288,7 @@ function AutomationGlance({
   runSummary: Record<string, unknown>;
   selected: Record<string, unknown>;
 }) {
+  useSettingsPreferences();
   const title = String(selected.title || selected.automation_id || "Automation");
   const status = String(selected.status || "idle");
   const windowLabel = String(selected.window || "current");
@@ -304,7 +308,7 @@ function AutomationGlance({
   return (
     <section className={`automation-glance-section tone-${tone}`}>
       <div className="automation-glance-head">
-        <span className={`badge badge-${tone}`}>At a Glance</span>
+        <span className={`badge badge-${tone}`}>{uiText("At a Glance")}</span>
         <span className="muted">{title} · {windowLabel}</span>
       </div>
       <p>
@@ -407,6 +411,7 @@ function commitsLabel(commits: unknown, perFeature: unknown): string {
 
 
 function AutomationArchetypeMatrix({ matrix }: { matrix: Record<string, unknown> }) {
+  useSettingsPreferences();
   const rows = ["feature", "refactor", "bugfix"]
     .map((key) => ({ key, data: asRecord(matrix[key]) }))
     .filter((row) => Object.keys(row.data).length > 0);
@@ -420,9 +425,9 @@ function AutomationArchetypeMatrix({ matrix }: { matrix: Record<string, unknown>
       <div className="automation-archetype-grid">
         <div className="automation-archetype-row automation-archetype-head">
           <span>场景</span>
-          <span>Features</span>
-          <span>Done</span>
-          <span>Cycle p50/p90</span>
+          <span>{uiText("Features")}</span>
+          <span>{uiText("Done")}</span>
+          <span>{uiText("Cycle p50/p90")}</span>
           <span>FPY</span>
           <span>Commits/feat</span>
         </div>
@@ -511,10 +516,11 @@ function AutomationDecisionPanel({ panel }: { panel: Record<string, unknown> }) 
 
 
 function AutomationOutputs({ outputs }: { outputs: Record<string, unknown>[] }) {
+  useSettingsPreferences();
   return (
     <section className="subsection automation-output-section" id="automation-outputs">
       <div className="inline-heading">
-        <h3>Outputs</h3>
+        <h3>{uiText("Outputs")}</h3>
         <span className="muted">{outputs.length}</span>
       </div>
       {outputs.length === 0 ? (
@@ -616,11 +622,12 @@ function AutomationRunCounts({ rows }: { rows: Record<string, unknown>[] }) {
 
 
 function AutomationRecentRuns({ runs }: { runs: Record<string, unknown>[] }) {
+  useSettingsPreferences();
   const recent = [...runs].reverse();
   return (
     <section className="subsection automation-recent-runs-section">
       <div className="inline-heading">
-        <h3>Recent Runs</h3>
+        <h3>{uiText("Recent Runs")}</h3>
         <span className="muted">{runs.length} runs</span>
       </div>
       {recent.length === 0 ? (

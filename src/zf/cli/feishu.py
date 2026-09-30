@@ -63,8 +63,16 @@ from zf.integrations.feishu.kanban_plan_card import (
 )
 from zf.integrations.feishu.replan_approval_card import push_replan_cards_once
 from zf.integrations.feishu.run_manager_card import push_run_manager_cards_once
+from zf.integrations.feishu.issue_adapter import (
+    ISSUE_COMMANDS,
+    ISSUE_MUTATION_COMMANDS,
+    handle_issue_command,
+    push_issue_cards_once,
+    push_self_issue_cards_once,
+)
 from zf.integrations.feishu.stream_card import push_stream_card_once
 from zf.integrations.feishu.projection import ProjectionRouter, RoutingConfig
+from zf.integrations.feishu.production import production_config_issues
 from zf.integrations.feishu.queries import QueryExecutor
 from zf.integrations.feishu.storage import IdempotencyStore, OffsetStore
 from zf.integrations.feishu.sync import (
@@ -134,6 +142,28 @@ SIGNED_ACTION_COMMANDS = (
     | ATTENTION_ACK_COMMANDS
 )
 ATTENTION_COMMANDS = {"attention"}
+ISSUE_MUTATION_SIGNED_COMMANDS = ISSUE_MUTATION_COMMANDS | {
+    "self-issue-session-answer", "self-issue-session-confirm",
+    "self-issue-session-cancel", "self-issue-session-retry",
+    "self-issue-session-pause", "self-issue-session-reanalyze",
+    "self-issue-session-materialize",
+    "self-issue-github-device-start", "self-issue-github-device-poll",
+    "self-issue-save", "self-issue-intake-save", "self-issue-submit",
+    "self-issue-intake-submit", "self-issue-dismiss", "self-issue-intake-dismiss",
+    "self-issue-preview", "self-issue-confirm", "self-issue-publish",
+    "self-issue-recover", "self-issue-resolve-unknown",
+    "self-issue-attachment-add", "self-issue-attachment-remove",
+    "self-issue-intake-attachment-add", "self-issue-intake-attachment-remove",
+    "self-issue-evidence-start", "self-issue-evidence-interrupt",
+    "self-issue-evidence-resume", "self-issue-evidence-apply",
+    "self-issue-evidence-fail", "self-issue-limited-continue",
+    "self-issue-attachment-preview", "self-issue-attachment-confirm",
+    "self-issue-attachment-prepare", "self-issue-attachment-resolve-unknown",
+}
+ISSUE_WRITE_COMMANDS = ISSUE_MUTATION_SIGNED_COMMANDS | {
+    "self-issue-new", "self-issue-intake-start",
+}
+SIGNED_ACTION_COMMANDS = SIGNED_ACTION_COMMANDS | ISSUE_MUTATION_SIGNED_COMMANDS
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -212,6 +242,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     bridge.add_argument("--event-json", default="-",
                         help="Inbound event JSON (inline object or file path)")
+    bridge.add_argument("--issue-merge", action="store_true", help="Use the Settings Issue-only connection")
     bridge.add_argument("--watch", action="store_true",
                         help="Run the in-process WS long-connection (always-on "
                              "bridge) instead of a one-shot reply")
@@ -459,6 +490,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     sync_kanban.add_argument("--dry-run", action="store_true")
     sync_kanban.set_defaults(func=run_sync_kanban_table)
 
+    from zf.cli.feishu_issue_projection import register as register_issue_projection
+
+    register_issue_projection(feishu_subparsers)
+
     project_kanban = feishu_subparsers.add_parser(
         "project-kanban",
         help="Project task.status_changed events into Feishu Base",
@@ -555,7 +590,7 @@ def _run_root(args: argparse.Namespace) -> int:
     print(
         "Usage: zf feishu "
         "{handle,push,serve,send-test,live-smoke,sync-automations,"
-        "sync-automation-insights-table,sync-kanban-table,project-kanban,"
+        "sync-automation-insights-table,sync-kanban-table,sync-issue-table,project-kanban,"
         "init-targets,cron-template} ...",
         file=sys.stderr,
     )
@@ -649,6 +684,17 @@ def run_push(args: argparse.Namespace) -> int:
         return 1
 
     _load_project_env(context.project_root)
+    if str(getattr(args, "transport", "mock") or "mock") == "real":
+        production_issues = production_config_issues(
+            context.config, require_enabled=True,
+        )
+        if production_issues:
+            print(
+                "Error: Feishu real transport production preflight failed: "
+                + "; ".join(production_issues),
+                file=sys.stderr,
+            )
+            return 2
     channels, receive_id_types = _parse_channel_targets(
         args.channel,
         default_to=getattr(args, "to", ""),
@@ -679,6 +725,51 @@ def run_push(args: argparse.Namespace) -> int:
             context.state_dir,
         )
         pushed = sum(1 for event in events if router.route_event(event))
+        issue_cards_sent = issue_cards_updated = 0
+        self_issue_cards_sent = self_issue_cards_updated = 0
+        issue_target = str(getattr(args, "to", "") or "") or (
+            next(iter(channels.values())) if channels else ""
+        )
+        if issue_target:
+            try:
+                _identity_for_issue = _feishu_identity(context.config)
+                _issue_secret = (
+                    os.environ.get(_identity_for_issue.action_token_secret_env, "").encode() or None
+                    if _identity_for_issue is not None and _identity_for_issue.enabled
+                    else None
+                )
+                issue_result = push_issue_cards_once(
+                    context.state_dir,
+                    transport,
+                    receive_id=issue_target,
+                    receive_id_type=str(getattr(args, "receive_id_type", "chat_id") or "chat_id"),
+                    project_root=context.project_root,
+                    config=context.config,
+                    web_base_url=os.environ.get("ZF_WEB_BASE_URL", ""),
+                    action_secret=_issue_secret,
+                    action_ttl_seconds=(
+                        int(getattr(_identity_for_issue, "action_token_ttl_seconds", 86400) or 86400)
+                        if _identity_for_issue is not None else 86400
+                    ),
+                )
+                issue_cards_sent = len(issue_result.get("sent", []))
+                issue_cards_updated = len(issue_result.get("updated", []))
+                self_issue_result = push_self_issue_cards_once(
+                    context.state_dir,
+                    transport,
+                    receive_id=issue_target,
+                    receive_id_type=str(getattr(args, "receive_id_type", "chat_id") or "chat_id"),
+                    web_base_url=os.environ.get("ZF_WEB_BASE_URL", ""),
+                    action_secret=_issue_secret,
+                    action_ttl_seconds=(
+                        int(getattr(_identity_for_issue, "action_token_ttl_seconds", 86400) or 86400)
+                        if _identity_for_issue is not None else 86400
+                    ),
+                )
+                self_issue_cards_sent = len(self_issue_result.get("sent", []))
+                self_issue_cards_updated = len(self_issue_result.get("updated", []))
+            except Exception as exc:
+                print(f"issue-card push failed (workflow unaffected): {exc}", file=sys.stderr)
         owner_log = event_log_from_project(context.state_dir, config=context.config)
         try:
             owner_delivery = deliver_owner_visible_messages_once(
@@ -937,6 +1028,8 @@ def run_push(args: argparse.Namespace) -> int:
             f"Pushed {pushed} Feishu message(s); "
             f"owner_visible_delivered={owner_delivery.delivered} "
             f"owner_visible_failed={owner_delivery.failed}; "
+            f"issue_cards_sent={issue_cards_sent} issue_cards_updated={issue_cards_updated}; "
+            f"self_issue_cards_sent={self_issue_cards_sent} self_issue_cards_updated={self_issue_cards_updated}; "
             f"plan_cards_sent={plan_sent} plan_cards_updated={plan_updated}; "
             f"replan_cards_sent={replan_sent} replan_cards_updated={replan_updated}; "
             f"delivery_cards_sent={delivery_sent} delivery_cards_updated={delivery_updated}; "
@@ -1175,6 +1268,19 @@ def run_serve(args: argparse.Namespace) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 
+    production_issues = production_config_issues(
+        context.config,
+        require_enabled=True,
+        require_callback_signature=True,
+    )
+    if production_issues:
+        print(
+            "Error: Feishu webhook production preflight failed: "
+            + "; ".join(production_issues),
+            file=sys.stderr,
+        )
+        return 2
+
     no_idempotency = bool(getattr(args, "no_idempotency", False))
     identity = _feishu_identity(context.config)
     verify_token = (
@@ -1319,6 +1425,26 @@ def _audit_signature_invalid(
         pass
 
 
+def _issue_write_route_allowed(event, context) -> bool:
+    """Require an exact configured Feishu project chat for Issue mutations."""
+    integrations = getattr(context.config, "integrations", None)
+    routing = getattr(integrations, "feishu_routing", None)
+    if not isinstance(routing, dict) or not routing:
+        # Compatibility fixtures and disabled local integrations have no route
+        # table; real transport preflight refuses those configurations.
+        return True
+    chat_id = str(getattr(event, "chat_id", "") or "").strip()
+    payload = getattr(event, "payload", {}) or {}
+    app_id = str(payload.get("app_id") or "").strip()
+    bot_open_id = str(payload.get("bot_open_id") or "").strip()
+    candidates = [chat_id]
+    if app_id:
+        candidates.append(f"{app_id}:{chat_id}")
+    if bot_open_id:
+        candidates.extend((f"{chat_id}#{bot_open_id}", f"{chat_id}@{bot_open_id}"))
+    return any(key in routing for key in candidates if key and key != "*")
+
+
 def _verify_signed_action(
     event,
     envelope: FeishuCommandEnvelope,
@@ -1334,7 +1460,11 @@ def _verify_signed_action(
     identity = _feishu_identity(context.config)
     if identity is None or not identity.enabled:
         return True, "no_identity"
-    token = str(getattr(event, "payload", {}).get("action_token") or "")
+    token = str(
+        getattr(envelope, "action_token", "")
+        or getattr(event, "payload", {}).get("action_token")
+        or ""
+    )
     secret = os.environ.get(identity.action_token_secret_env, "").encode()
     require = bool(identity.require_signed_actions)
     if not (secret and token):
@@ -1344,7 +1474,12 @@ def _verify_signed_action(
     store = IdempotencyStore(
         context.state_dir / "integrations" / "feishu" / "token_nonce.jsonl",
     )
-    target = envelope.args[0] if envelope.args else ""
+    target = (
+        ":".join(envelope.args)
+        if envelope.command in ISSUE_MUTATION_SIGNED_COMMANDS
+        and envelope.command != "self-issue-session-answer"
+        else (envelope.args[0] if envelope.args else "")
+    )
     return verify_action(
         token,
         secrets_by_version={"1": secret},
@@ -1365,6 +1500,7 @@ def _handle_event_data(
     context: ProjectContext,
     user_levels: dict[str, AuthLevel],
     no_idempotency: bool = False,
+    transport: FeishuTransport | None = None,
 ) -> dict:
     event = MockFeishuTransport().parse_webhook(data)
     if event is None:
@@ -1383,6 +1519,11 @@ def _handle_event_data(
     if envelope is None:
         return {"ok": True, "status": "ignored", "message": "Ignored: unsupported Feishu command"}
 
+    from zf.integrations.feishu.issue_connection import issue_scope_rejection
+    rejection = issue_scope_rejection(context.config, event, envelope.command)
+    if rejection:
+        return rejection
+
     if not gateway.is_authorized(envelope):
         reject_reason = "identity.unmapped"
         if identity is not None and identity.enabled:
@@ -1400,6 +1541,14 @@ def _handle_event_data(
             f"is not authorized for /zf {envelope.command}"
         )
         return {"ok": False, "status": "rejected", "message": message}
+
+    if envelope.command in ISSUE_WRITE_COMMANDS and not _issue_write_route_allowed(event, context):
+        _audit_callback_rejected(context, envelope, reason="route.unmapped_or_wildcard")
+        return {
+            "ok": False,
+            "status": "rejected",
+            "message": "Rejected: Issue write requires an exact Feishu project chat route",
+        }
 
     idempotency_store = None
     if not no_idempotency:
@@ -1420,13 +1569,40 @@ def _handle_event_data(
     )
     if form_preflight is not None:
         return form_preflight
+    if envelope.command == "self-issue-session-answer" and not (
+        str(envelope.form_values.get("answer") or "").strip()
+        or " ".join(envelope.args[1:]).strip()
+        or envelope.attachments
+        or envelope.attachment_message_id
+    ):
+        return {"ok": False, "status": "invalid_payload", "message": "answer is required"}
 
     # feishu-A2: mutation buttons must carry a valid signed action token bound to
     # (action, target, chat, expiry, nonce). Composes with the identity gate
     # above — both must pass. The nonce store also makes a signed click single-use.
     # Exact duplicate callbacks are returned above before consuming the nonce
     # again; new callbacks with a replayed token still fail closed here.
-    if envelope.command in SIGNED_ACTION_COMMANDS:
+    # The legacy client cannot render form containers, so Self-Issue answer
+    # JSON is accepted as a text command. It remains constrained by the
+    # operator identity gate and exact project-chat route above; all other
+    # mutation text commands still require a signed action token.
+    text_intake_save = (
+        os.environ.get("ZF_FEISHU_ALLOW_TEXT_INTAKE_SAVE", "").lower()
+        in {"1", "true", "yes", "on"}
+        and
+        envelope.source == "text"
+        and envelope.command in {
+            "self-issue-save", "self-issue-intake-save",
+            "self-issue-submit", "self-issue-intake-submit",
+        }
+        and len(envelope.args) > (2 if "save" in envelope.command else 1)
+    )
+    if text_intake_save and "save" in envelope.command:
+        try:
+            text_intake_save = isinstance(json.loads(str(envelope.args[2])), dict)
+        except (TypeError, ValueError):
+            text_intake_save = False
+    if envelope.command in SIGNED_ACTION_COMMANDS and not text_intake_save:
         token_ok, token_reason = _verify_signed_action(event, envelope, context)
         if not token_ok:
             _audit_callback_rejected(
@@ -1456,6 +1632,15 @@ def _handle_event_data(
     if envelope.command in QUERY_COMMANDS:
         message = QueryExecutor(context.state_dir).execute(envelope)
         return {"ok": True, "status": "completed", "message": message}
+
+    if envelope.command in ISSUE_COMMANDS:
+        return handle_issue_command(
+            envelope,
+            state_dir=context.state_dir,
+            config=context.config,
+            project_root=context.project_root,
+            transport=transport,
+        )
 
     if envelope.command in CONTROL_COMMANDS:
         message = ControlHandler(context.state_dir).execute(envelope)

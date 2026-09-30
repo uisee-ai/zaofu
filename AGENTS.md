@@ -279,6 +279,25 @@ Multiple agent sessions may work this repo concurrently. Four hard rules:
 - Clean temporary tmux sessions, Web processes, and state dirs after the run or
   after diagnosis; stale `/tmp` state can hide silent runtime bugs.
 
+<!-- ZF:PROJECT-CONTEXT:START -->
+## Project Context (managed by ZaoFu)
+
+- 项目名: `zaofu`
+<!-- ZF:PROJECT-CONTEXT:END -->
+
+<!-- ZF:PROFILE:START -->
+## 探测到的项目栈 (managed by zf profile)
+
+- layout: single · confidence: high
+- `.` — python · backend · 有测试
+  - test: `pytest`
+- `web` — node (react, react-dom, vite) · frontend · 有测试
+  - build: `npm run build`
+  - test: `npm test`
+
+- 建议 gate: ruff check ., pytest, npm run typecheck, npm test
+<!-- ZF:PROFILE:END -->
+
 <!-- ZF:START -->
 ## Worker Protocol (managed by ZaoFu — do not edit between markers)
 

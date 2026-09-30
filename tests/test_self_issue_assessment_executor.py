@@ -84,7 +84,7 @@ def _started(tmp_path: Path):
     return state, writer, service, started
 
 
-def test_existing_orchestrator_role_assesses_in_read_only_workspace(
+def test_existing_orchestrator_role_assesses_with_full_workspace_access(
     tmp_path: Path, monkeypatch,
 ) -> None:
     state, writer, service, started = _started(tmp_path)
@@ -111,7 +111,7 @@ def test_existing_orchestrator_role_assesses_in_read_only_workspace(
             observed["turn"] = kwargs
             kwargs["on_message"](HeadlessMessage(type="tool_use", tool="Read"))
             assert "not a diagnosis Agent" in kwargs["message"]
-            assert kwargs["permission_profile"] == "read_only"
+            assert kwargs["permission_profile"] == "issue_investigation"
             return HeadlessTurnResult(
                 ok=True, status="completed", backend="codex-headless",
                 thread_id="thread", provider_session_id="session",
@@ -128,9 +128,27 @@ def test_existing_orchestrator_role_assesses_in_read_only_workspace(
     assert result["status"] == "evidence_completed"
     stored = service.drafts.get(started["draft"]["draft_id"])
     assert stored is not None
-    assert stored.component == "runtime/worker"
+    assert stored.component == "unknown"
+    projection = service.enrichment.get(stored.draft_id)
+    assert projection is not None
+    assert any(
+        item.field_path == "component" and item.proposed_value == "runtime/worker"
+        for item in projection.suggestions
+    )
     assert stored.evidence_result_ref["kind"] == "self_issue_assessment"
+    assert observed["agent_kwargs"]["timeout_s"] == 1200  # type: ignore[index]
     assert observed["turn"]["context"]["role"] == "orchestrator"  # type: ignore[index]
+
+
+def test_observer_stops_the_twenty_first_tool_call(tmp_path: Path) -> None:
+    state = tmp_path / ".state"
+    state.mkdir()
+    activity = EvidenceActivityStore(state, draft_id="draft-1", run_id="run-1")
+    observer = _AssessmentObserver(activity)
+    for _ in range(20):
+        observer(HeadlessMessage(type="tool_use", tool="Read"))
+    with pytest.raises(RuntimeError, match="tool budget exhausted"):
+        observer(HeadlessMessage(type="tool_use", tool="Read"))
 
 
 def test_codex_sandbox_failure_falls_back_to_claude_read_only(
@@ -184,7 +202,7 @@ def test_codex_sandbox_failure_falls_back_to_claude_read_only(
     assert "host detail" not in (state / "events.jsonl").read_text(encoding="utf-8")
 
 
-def test_malformed_or_secret_bearing_reply_uses_safe_low_confidence_fallback(
+def test_malformed_or_secret_bearing_reply_fails_without_applying_a_result(
     tmp_path: Path, monkeypatch,
 ) -> None:
     state, writer, service, started = _started(tmp_path)
@@ -217,11 +235,12 @@ def test_malformed_or_secret_bearing_reply_uses_safe_low_confidence_fallback(
         project_root=tmp_path, start_result=started, backend="codex-headless",
         surface="web", agent_factory=FakeAgent, workspace_builder=workspace_builder,
     )
-    assert result["status"] == "evidence_completed"
+    assert result["status"] == "evidence_failed"
     stored = service.drafts.get(started["draft"]["draft_id"])
     assert stored is not None
-    assert stored.assessment_confidence == "low"
-    assert stored.classification == "unknown"
+    assert stored.assessment_status == "failed"
+    assert stored.evidence_status == "failed"
+    assert not stored.evidence_result_ref
     assert "should-never-persist" not in json.dumps(stored.to_dict())
     assert "should-never-persist" not in (state / "events.jsonl").read_text(encoding="utf-8")
     activity = read_evidence_activity(state, started["draft"]["draft_id"])
@@ -232,7 +251,7 @@ def test_malformed_or_secret_bearing_reply_uses_safe_low_confidence_fallback(
     )
 
 
-def test_provider_failure_after_three_attempts_uses_low_confidence_fallback(
+def test_provider_failure_after_three_attempts_fails_without_fabricated_result(
     tmp_path: Path, monkeypatch,
 ) -> None:
     state, writer, service, started = _started(tmp_path)
@@ -280,9 +299,10 @@ def test_provider_failure_after_three_attempts_uses_low_confidence_fallback(
         surface="web", agent_factory=FakeAgent, workspace_builder=workspace_builder,
     )
 
-    assert result["status"] == "evidence_completed"
+    assert result["status"] == "evidence_failed"
     stored = service.drafts.get(started["draft"]["draft_id"])
-    assert stored is not None and stored.assessment_confidence == "low"
+    assert stored is not None and stored.assessment_status == "failed"
+    assert not stored.evidence_result_ref
     assert "unsafe provider detail" not in json.dumps(stored.to_dict())
 
 

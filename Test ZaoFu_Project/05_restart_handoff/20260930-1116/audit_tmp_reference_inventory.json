@@ -1,0 +1,707 @@
+{
+  "captured_at": "2026-09-30T03:20:28.269Z",
+  "note": "Only explicit ref fields; missing does not mean a new test failure.",
+  "references": [
+    {
+      "source": "/tmp/zf-k501-native-1440-20260923.xml",
+      "exists": false,
+      "manifests": [
+        "coverage_matrix.json",
+        "native-acceptance-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k510-native-recovery-impl-resume-fixed-20260923.xml",
+      "exists": false,
+      "manifests": [
+        "coverage_matrix.json",
+        "native-acceptance-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k510-native-recovery-verify-resume-fixed-20260923.xml",
+      "exists": false,
+      "manifests": [
+        "coverage_matrix.json",
+        "native-acceptance-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k510-079-registered-mainline-20260923/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "coverage_matrix.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k511-mainline-20260923/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k510-079-080-premerge-20260923.xml",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k512-native-normal-20260923/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k512-20260923.json",
+        "native-acceptance-k513-20260923.json",
+        "native-acceptance-k514-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k512-native-impl-20260923-rerun/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k512-20260923.json",
+        "native-acceptance-k513-20260923.json",
+        "native-acceptance-k514-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k512-native-verify-20260923/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k512-20260923.json",
+        "native-acceptance-k513-20260923.json",
+        "native-acceptance-k514-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k512-mainline-20260923/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k512-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k512-premerge-20260923.xml",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k512-20260923.json",
+        "native-acceptance-k513-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k513-mainline-source-20260923/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k513-20260923.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k514-mainline-ledger-fixed-20260923/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k514-20260923.json",
+        "native-acceptance-k515-20260924.json",
+        "requirement-audit-k555-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k514-premerge-final-20260923/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k514-20260923.json",
+        "native-acceptance-k515-20260924.json",
+        "requirement-audit-k555-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k515-20260924.json",
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k515-20260924.json",
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+      "exists": false,
+      "manifests": [
+        "native-acceptance-k515-20260924.json",
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k554-20260925.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k554-20260925.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k554-20260925.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k554-20260925.json",
+        "requirement-audit-k555-20260925.json",
+        "requirement-audit-k556-20260925.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-refactor-20260925-EUDYZb/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k558-refactor-two-lane-timing-20260925-0WrPxj/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k559-refactor-two-lane-timing-20260925-KDg3Jk/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k562-refactor-20260925-5s4onc/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k562-two-lane-20260925-BqBWFg/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k563-refactor-20260925-KhX42H/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k563-two-lane-20260925-mKbasm/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json",
+        "requirement-audit-k589-20260928.json",
+        "requirement-audit-k591-20260928.json",
+        "requirement-audit-k594-20260929.json",
+        "requirement-audit-k597-20260929.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k565-host-bound-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k565-closeout-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-current-20260928.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json",
+        "requirement-audit-k577-20260928.json",
+        "requirement-audit-k578-20260928.json",
+        "requirement-audit-k580-20260928.json",
+        "requirement-audit-k581-20260928.json",
+        "requirement-audit-k582-20260928.json",
+        "requirement-audit-k583-20260928.json",
+        "requirement-audit-k584-20260928.json",
+        "requirement-audit-k585-20260928.json",
+        "requirement-audit-k587-20260928.json",
+        "requirement-audit-k588-20260928.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k556-premerge-20260925-Cxk3rZ/run/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k556-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k556-mainline-rerun-20260925-131sVP/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k556-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-premerge-20260925-MbO23v/run/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-mainline-20260925-HvyaLz/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-general-fixed-20260925-k4SuYw/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-issue-20260925-fmnOzc/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-prd-20260925-2UiUSj/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-refactor-serial-20260925-tNri2h/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-refactor-strong-20260925-yvWGj4/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k557-refactor-two-lane-20260925-PsytmA/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k557-20260925.json",
+        "requirement-audit-k561-20260925.json",
+        "requirement-audit-k562-20260925.json",
+        "requirement-audit-k563-20260925.json",
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k560-mainline-20260925-MhruYP/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k561-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k562-premerge-20260925-ncHWLQ/run/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k562-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k562-mainline-20260925-3B1876/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k562-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k563-premerge-20260925-DvfqiX/run/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k563-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k563-mainline-20260925-v5rxOY/run/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k563-20260925.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k566-premerge-fixed-20260925/premerge-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k566-mainline-fixed-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k566-20260925.json",
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-k571-f6-host-20260925/testkit-run.json",
+      "exists": false,
+      "manifests": [
+        "requirement-audit-k571-20260926.json"
+      ]
+    },
+    {
+      "source": "/tmp/zf-mainline-current-20260929/testkit-run.json",
+      "exists": true,
+      "manifests": [
+        "requirement-audit-k599-20260929.json"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -14,6 +16,7 @@ export function RunDossierPanel({
   projectId: string;
   runId: string;
 }) {
+  useSettingsPreferences();
   const [section, setSection] = useState<DossierSection>("goal");
   const [dossier, setDossier] = useState<GoalDossier | null>(null);
   const [loading, setLoading] = useState(false);
@@ -54,7 +57,7 @@ export function RunDossierPanel({
     { id: "closure", label: "Closure" },
   ];
   if (loading) {
-    return <section className="subsection run-dossier-panel"><p className="muted">Loading Goal Dossier...</p></section>;
+    return <section className="subsection run-dossier-panel"><p className="muted">{uiText("Loading Goal Dossier...")}</p></section>;
   }
   if (error || !dossier) {
     return (
@@ -81,7 +84,7 @@ export function RunDossierPanel({
     <section className="subsection run-dossier-panel" data-testid="run-goal-dossier">
       <div className="inline-heading">
         <div>
-          <h3>Goal Dossier</h3>
+          <h3>{uiText("Goal Dossier")}</h3>
           <span className="muted mono">{dossier.run_id}</span>
         </div>
         <span className={`badge badge-${textValue(terminal.status || goal.status) === "completed" ? "ok" : "warn"}`}>
@@ -104,12 +107,12 @@ export function RunDossierPanel({
         <div className="run-dossier-summary">
           <p className="run-dossier-objective">{textValue(goal.objective) || "Objective not recorded"}</p>
           <dl>
-            <div><dt>Tasks</dt><dd>{textValue(counts.terminal) || "0"}/{textValue(counts.total) || "0"}</dd></div>
-            <div><dt>Claims</dt><dd>{textValue(claimSummary.closed_claims) || "0"}/{textValue(claimSummary.mandatory_claims) || "0"}</dd></div>
-            <div><dt>Gaps</dt><dd>{dossier.gaps.length}</dd></div>
-            <div><dt>Evidence</dt><dd>{dossier.evidence_index.length}</dd></div>
-            <div><dt>Freshness</dt><dd>{dossier.freshness.status || "unknown"}</dd></div>
-            <div><dt>Fingerprint</dt><dd className="mono">{dossier.source_fingerprint.slice(0, 20)}</dd></div>
+            <div><dt>{uiText("Tasks")}</dt><dd>{textValue(counts.terminal) || "0"}/{textValue(counts.total) || "0"}</dd></div>
+            <div><dt>{uiText("Claims")}</dt><dd>{textValue(claimSummary.closed_claims) || "0"}/{textValue(claimSummary.mandatory_claims) || "0"}</dd></div>
+            <div><dt>{uiText("Gaps")}</dt><dd>{dossier.gaps.length}</dd></div>
+            <div><dt>{uiText("Evidence")}</dt><dd>{dossier.evidence_index.length}</dd></div>
+            <div><dt>{uiText("Freshness")}</dt><dd>{dossier.freshness.status || "unknown"}</dd></div>
+            <div><dt>{uiText("Fingerprint")}</dt><dd className="mono">{dossier.source_fingerprint.slice(0, 20)}</dd></div>
           </dl>
         </div>
       ) : null}
@@ -173,7 +176,8 @@ export function RunDossierPanel({
 }
 
 function DossierTable({ columns, rows }: { columns: string[]; rows: string[][] }) {
-  if (!rows.length) return <p className="muted run-dossier-empty">No entries.</p>;
+  useSettingsPreferences();
+  if (!rows.length) return <p className="muted run-dossier-empty">{uiText("No entries.")}</p>;
   return (
     <div className="run-dossier-table-wrap">
       <table className="run-dossier-table">

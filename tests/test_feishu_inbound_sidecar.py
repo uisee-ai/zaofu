@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from zf.core.config.schema import (
+    FeishuIssueMergeConfig,
     FeishuProjectGroupConfig,
     FeishuRouteConfig,
     IntegrationsConfig,
@@ -149,6 +150,40 @@ def test_feishu_inbound_sidecar_starts_and_stops(
     assert sidecar.process.terminated is True
     assert not sidecar.pid_path.exists()
     assert events.events[-1].type == "feishu.inbound_bridge.stopped"
+
+
+def test_issue_merge_settings_start_issue_only_bridge(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("ZF_CLI_CMD", "zf")
+    monkeypatch.setenv("FEISHU_ISSUE_MERGE_APP_SECRET", "secret_issue")
+    started = {}
+
+    def fake_popen(command, **kwargs):
+        started["command"] = command
+        started["env"] = kwargs["env"]
+        return FakeProcess()
+
+    monkeypatch.setattr(
+        "zf.runtime.feishu_inbound_sidecar._start_bridge_process", fake_popen,
+    )
+    cfg = ZfConfig(
+        runtime=RuntimeConfig(
+            feishu_inbound=RuntimeFeishuInboundConfig(enabled=True),
+        ),
+        integrations=IntegrationsConfig(
+            feishu_issue_merge=FeishuIssueMergeConfig(
+                enabled=True, app_id="cli_issue", chat_id="oc_issue",
+                operator_open_id="ou_operator",
+            ),
+        ),
+    )
+    sidecar = start_feishu_inbound_sidecar(
+        config=cfg, state_dir=tmp_path / ".zf", project_root=tmp_path,
+    )
+    assert sidecar is not None
+    assert "--issue-merge" in started["command"]
+    assert started["env"]["FEISHU_APP_ID"] == "cli_issue"
+    assert started["env"]["FEISHU_APP_SECRET"] == "secret_issue"
+    stop_feishu_inbound_sidecar(sidecar)
 
 
 def test_feishu_inbound_sidecar_starts_one_bridge_per_bot(

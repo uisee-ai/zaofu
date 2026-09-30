@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, TaskPipelineProjection } from "../../api/types";
 import { DeliveryTracePage } from "../../components/delivery-trace/DeliveryTracePage";
@@ -10,6 +12,7 @@ import { ObservabilityPage } from "../observability/ObservabilityPage";
 import { AutomationsPage } from "../automations/AutomationsPage";
 import { getProjectAutomations } from "../../api/client";
 import { WorkflowProposalPage } from "../workflow/WorkflowProposalPage";
+import { SettingsPage } from "../../settings/SettingsPage";
 
 const LazyLoopPageV2 = lazy(() => import("../../components/delivery-trace/LoopPageV2").then((module) => ({
   default: module.LoopPageV2,
@@ -72,6 +75,7 @@ export function ProjectionPage({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onSelectTask: (taskId: string) => void;
 }) {
+  useSettingsPreferences();
   const eventItems = eventsPage?.items ?? [];
   const [selectedEventKey, setSelectedEventKey] = useState("");
   useEffect(() => {
@@ -146,7 +150,7 @@ export function ProjectionPage({
 
   if (page === "behavior-loop") {
     return (
-      <Suspense fallback={<div className="loop-v2-page loop-v2-state">Loading loop view…</div>}>
+      <Suspense fallback={<div className="loop-v2-page loop-v2-state">{uiText("Loading loop view…")}</div>}>
         <LazyLoopPageV2 liveEvents={recentEvents} liveState={liveState} projectId={activeProjectId} />
       </Suspense>
     );
@@ -224,7 +228,7 @@ export function ProjectionPage({
       <>
         <div className="section-heading">
           <div>
-            <h2>Backlogs</h2>
+            <h2>{uiText("Backlogs")}</h2>
             <span className="muted">planning drift and sprint boundary</span>
           </div>
         </div>
@@ -233,52 +237,8 @@ export function ProjectionPage({
     );
   }
   if (page === "settings") {
-    const themeOptions: Array<{ id: ThemeMode; label: string }> = [
-      { id: "light", label: "Light" },
-      { id: "dark", label: "Dark" },
-      { id: "system", label: "System" },
-    ];
-    const runtimeRows = [
-      { key: "control_plane", value: "zf.yaml" },
-      { key: "runtime_truth", value: "TaskStore/EventWriter" },
-      { key: "web_mutation", value: snapshot?.runtime.actions?.mutation_enabled ? "token/session gated" : "read-only" },
-      { key: "project_state_dir", value: snapshot?.project.state_dir ?? "-" },
-    ];
-    return (
-      <>
-        <div className="section-heading">
-          <div>
-            <h2>Settings</h2>
-            <span className="muted">appearance and local web preferences</span>
-          </div>
-        </div>
-        <div className="settings-grid">
-          <section className="subsection settings-panel">
-            <div className="inline-heading">
-              <h3>Appearance</h3>
-              <span className="muted">Theme</span>
-            </div>
-            <div className="theme-options" role="radiogroup" aria-label="Theme">
-              {themeOptions.map((option) => (
-                <button
-                  className={`theme-option ${themeMode === option.id ? "active" : ""}`}
-                  key={option.id}
-                  role="radio"
-                  aria-checked={themeMode === option.id}
-                  aria-label={`Select ${option.label} theme`}
-                  type="button"
-                  onClick={() => onThemeModeChange(option.id)}
-                >
-                  <ThemePreview mode={option.id} />
-                  <span className="theme-option-label">{option.label}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-          <KeyValuePanel title="Runtime Boundary" rows={runtimeRows} />
-        </div>
-      </>
-    );
+    return <SettingsPage key={activeProjectId} projectId={activeProjectId} actionReady={actionReady}
+      themeMode={themeMode} onThemeModeChange={onThemeModeChange} snapshot={snapshot}/>;
   }
   return (
     <ProjectionEmptyState

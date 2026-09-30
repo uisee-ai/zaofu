@@ -17,6 +17,8 @@ from __future__ import annotations
 KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Session / loop lifecycle (kernel)
     "session.started",
+    "settings.issue.updated",
+    "settings.feishu_issue_merge.updated",
     # Deterministic regression eval case (design 101 §8 C/E)
     "regression.case.captured",
     "regression.case.replayed",
@@ -95,6 +97,10 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "evolution.skill_optimizer.execution.started",
     "evolution.skill_optimizer.execution.completed",
     "evolution.skill_optimizer.execution.failed",
+    "self_issue.publication.evidence_comment.requested",
+    "self_issue.publication.evidence_comment.published",
+    "self_issue.publication.evidence_comment.failed",
+    "self_issue.publication.evidence_comment.outcome_unknown",
     "candidate.result.superseded",
     "execution.route.selection.applied", "execution.route.switch.completed",
     "challenge.candidate.materialized", "challenge.promoted",
@@ -110,11 +116,22 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "user.message", "user.intent.submitted",
     # Provider-neutral External Issue ingress and controlled Fix admission.
     "external_issue.received", "external_issue.triage.queued",
+    "external_issue.triage.queued_cancelled",
+    "external_issue.fix.queued_cancelled",
     "external_issue.triage.needs_info",
     "external_issue.triage.needs_info_exhausted",
     "external_issue.triage.unverified_candidate",
     "external_issue.clarification.published",
     "external_issue.fix_approval.intent",
+    "external_issue.lifecycle_label.reconcile_requested",
+    "external_issue.lifecycle_label.reconciled",
+    "external_issue.lifecycle_label.reconcile_failed",
+    "self_issue.assessment.decision.recorded",
+    "self_issue.understanding.completed",
+    "self_issue.evaluation.requested", "self_issue.evaluation.cancelled",
+    "self_issue.evaluation.completed", "self_issue.evaluation.failed",
+    "self_issue.evaluation.timed_out",
+    "self_issue.draft.attachment_added", "self_issue.draft.attachment_removed",
     # Observability for orphan user.message: emitted by orchestrator
     # _scan_inline_overrides when a human-actor user.message produced no
     # inline-override match AND no downstream task creation, so the
@@ -393,8 +410,11 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "ship.blocked", "ship.conflict", "ship.completed", "ship.done", "ship.failed",
     "web.action.requested", "web.action.completed", "web.action.failed",
     "feishu.command.enveloped", "feishu.message.received", "feishu.message.sent",
+    "feishu.issue.command.received",
+    "feishu.notification.failed",
     "feishu.document.synced", "feishu.bitable.synced",
     "feishu.automation_bitable.synced",
+    "feishu.issue_bitable.synced",
     "feishu.kanban_projection.started",
     "feishu.kanban_projection.target_created",
     "feishu.kanban_projection.synced",

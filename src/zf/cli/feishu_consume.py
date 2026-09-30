@@ -28,9 +28,11 @@ from zf.core.config.project_context import resolve_project_context
 from zf.core.events import EventWriter
 from zf.core.events.factory import event_log_from_project
 from zf.integrations.feishu.routing import resolve_feishu_route
+from zf.integrations.feishu.gateway import extract_zf_command_text
 from zf.integrations.feishu.storage import IdempotencyStore
 from zf.integrations.feishu.thread_scope import feishu_thread_id
-from zf.integrations.feishu.transport import MockFeishuTransport
+from zf.integrations.feishu.transport import FeishuHttpTransport, MockFeishuTransport
+from zf.integrations.feishu.production import production_config_issues
 from zf.runtime.channel_contracts import normalize_permission_profile
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_sidecar import channel_message_event_payload
@@ -38,7 +40,7 @@ from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.channel_reply_turn import run_channel_reply_turn
 
 
-def ingest_feishu_event(raw_event: dict, *, context) -> dict:
+def ingest_feishu_event(raw_event: dict, *, context, transport=None) -> dict:
     """Dispatch one parsed Feishu event to its ZaoFu target. Returns a status dict."""
     from zf.cli.feishu import _handle_event_data  # local: cli/feishu is large
 
@@ -47,9 +49,9 @@ def ingest_feishu_event(raw_event: dict, *, context) -> dict:
         return {"status": "ignored", "reason": "unsupported_event"}
     if event.event_type == "button_action":
         # card.action.trigger — approve/reject/interrupt, fully gated by B + A2.
-        return _handle_event_data(raw_event, context=context, user_levels={})
+        return _handle_event_data(raw_event, context=context, user_levels={}, transport=transport)
     if event.event_type == "message":
-        return _route_inbound_message(event, context=context)
+        return _route_inbound_message(event, context=context, transport=transport)
     return {"status": "ignored", "reason": event.event_type}
 
 
@@ -124,7 +126,9 @@ def _route_sender_blocked(event, route, *, context) -> bool:
     return True
 
 
-def _route_inbound_message(event, *, context) -> dict:
+def _route_inbound_message(event, *, context, transport=None) -> dict:
+    if getattr(context.config, "_feishu_issue_only", False):
+        return bridge_inbound_message(event, context=context, transport=transport)
     route = getattr(event, "route", None) or resolve_feishu_route(
         context.config,
         event.chat_id,
@@ -140,6 +144,9 @@ def _route_inbound_message(event, *, context) -> dict:
     if _route_sender_blocked(event, route, context=context):
         return {"status": "dropped", "reason": "sender_not_allowed_for_route",
                 "chat_id": event.chat_id}
+
+    if extract_zf_command_text(event.payload.get("text", "")):
+        return bridge_inbound_message(event, context=context, transport=transport)
 
     message_id = str(event.payload.get("message_id") or "")
     store = IdempotencyStore(
@@ -165,6 +172,7 @@ def _route_inbound_message(event, *, context) -> dict:
             context.config,
             event,
             writer,
+            context=context,
         )
     if route.target == "run_manager":
         writer = EventWriter(
@@ -214,7 +222,7 @@ def _post_to_channel(event, route, *, context) -> dict:
               payload=payload, requested=requested)
 
 
-def bridge_inbound_message(event, *, context) -> dict:
+def bridge_inbound_message(event, *, context, transport=None) -> dict:
     """B4 turnkey reply: post an inbound Feishu message into its bound channel
     and drive the REAL agent reply (route → dispatch), replacing the canned echo.
 
@@ -247,6 +255,33 @@ def bridge_inbound_message(event, *, context) -> dict:
         return {"status": "dropped", "reason": "sender_not_allowed_for_route",
                 "chat_id": event.chat_id}
 
+    # Slash commands are handled by the same authenticated command gateway as
+    # webhook/card callbacks. They must not be sent to an agent as free text.
+    text = extract_zf_command_text(event.payload.get("text", ""))
+    if text:
+        from zf.cli.feishu import _handle_event_data
+
+        raw = {
+            "type": "message",
+            "payload": {
+                **dict(event.payload),
+                "text": text,
+                "message_id": str(event.payload.get("message_id") or ""),
+                "app_id": str(event.payload.get("app_id") or ""),
+            },
+            "user_id": event.user_id,
+            "chat_id": event.chat_id,
+        }
+        return _handle_event_data(
+            raw,
+            context=context,
+            user_levels={},
+            transport=transport,
+        )
+
+    if getattr(context.config, "_feishu_issue_only", False):
+        return {"status": "ignored", "reason": "issue_merge_only", "chat_id": event.chat_id}
+
     # W5 dedup: gate live + catchup-replay on the Feishu message_id so a restart
     # replay (or a re-delivered WS frame) never re-fires a reply. message_id-less
     # events dedup on a content digest (2026-07-03 audit B2).
@@ -267,7 +302,8 @@ def bridge_inbound_message(event, *, context) -> dict:
         from zf.integrations.feishu.kanban_agent_inbound import (
             kanban_agent_inbound_reply)
         return kanban_agent_inbound_reply(
-            context.state_dir, context.config, event, writer)
+            context.state_dir, context.config, event, writer,
+            transport=transport, context=context)
 
     if route.target == "run_manager":
         from zf.integrations.feishu.run_manager_inbound import (
@@ -385,8 +421,8 @@ def dispatch_inbound_async(event, *, context, transport=None, executor=None):
     ).strip()
 
     def _work():
-        if transport is None:
-            return bridge_inbound_message(event, context=context)
+        if transport is None or getattr(context.config, "_feishu_issue_only", False):
+            return bridge_inbound_message(event, context=context, transport=transport)
 
         import threading
 
@@ -422,7 +458,7 @@ def dispatch_inbound_async(event, *, context, transport=None, executor=None):
                                   daemon=True)
         ticker.start()
         try:
-            result = bridge_inbound_message(event, context=context)
+            result = bridge_inbound_message(event, context=context, transport=transport)
         finally:
             done.set()
             ticker.join(timeout=5)
@@ -469,7 +505,7 @@ def dispatch_inbound_async(event, *, context, transport=None, executor=None):
     return pool.submit(_work)
 
 
-def consume_stream(lines: Iterable[str], *, context) -> dict:
+def consume_stream(lines: Iterable[str], *, context, transport=None) -> dict:
     """Ingest a stream of NDJSON event lines. Returns counts by status."""
     counts: dict[str, int] = {}
     for line in lines:
@@ -483,7 +519,7 @@ def consume_stream(lines: Iterable[str], *, context) -> dict:
             continue
         if not isinstance(raw, dict):
             continue
-        result = ingest_feishu_event(raw, context=context)
+        result = ingest_feishu_event(raw, context=context, transport=transport)
         status = str(result.get("status") or "ok")
         counts[status] = counts.get(status, 0) + 1
     return counts
@@ -562,11 +598,12 @@ def run_bridge(args) -> int:
         setattr(event, "route", resolved.route)
         setattr(event, "feishu_binding_id", resolved.binding.binding_id)
     assert context is not None
+    transport = FeishuHttpTransport()
     if event.event_type == "button_action":
         from zf.cli.feishu import _handle_event_data
-        result = _handle_event_data(data, context=context, user_levels={})
+        result = _handle_event_data(data, context=context, user_levels={}, transport=transport)
     else:
-        result = bridge_inbound_message(event, context=context)
+        result = bridge_inbound_message(event, context=context, transport=transport)
     print(json.dumps(result, ensure_ascii=False))
     return 0
 
@@ -586,6 +623,17 @@ def run_consume(args) -> int:
     except ConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+
+    production_issues = production_config_issues(
+        context.config, require_enabled=True,
+    )
+    if production_issues:
+        print(
+            "Error: Feishu consume production preflight failed: "
+            + "; ".join(production_issues),
+            file=sys.stderr,
+        )
+        return 2
 
     # Project-group bindings require the workspace-aware in-process bridge so
     # the single WS lock and exact `(app_id, chat_id)` resolver stay in force.
@@ -637,11 +685,12 @@ def run_consume(args) -> int:
             proc.wait(timeout=10)
             return 1
 
+    transport = FeishuHttpTransport()
     counts: dict[str, int] = {}
     try:
         assert proc.stdout is not None
         for line in proc.stdout:
-            result = ingest_feishu_event(json.loads(line), context=context) \
+            result = ingest_feishu_event(json.loads(line), context=context, transport=transport) \
                 if line.strip() else {"status": "blank"}
             status = str(result.get("status") or "ok")
             counts[status] = counts.get(status, 0) + 1

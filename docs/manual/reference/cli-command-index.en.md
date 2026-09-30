@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **301** addressable command paths.
+The parser currently exposes **69** top-level families and **306** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -324,6 +324,7 @@ Handle Feishu bridge commands
 | `zf feishu serve` | Run a small webhook server that wraps zf feishu handle |
 | `zf feishu sync-automation-insights-table` | Mirror Automation summaries and insights to a Feishu Bitable table |
 | `zf feishu sync-automations` | Publish Automation daily/weekly/project reports to a Feishu document |
+| `zf feishu sync-issue-table` | Project /issue sessions and Issue/Triage/Merge lifecycle into Feishu Bitable |
 | `zf feishu sync-kanban-table` | Mirror the current Kanban projection to a Feishu Bitable table |
 
 ## `zf flow`
@@ -406,7 +407,11 @@ Validate or ingest an issue/bug candidate
 | `zf issue ingest` | Ingest a candidate as a Kanban TaskContract |
 | `zf issue preview` | Create an immutable provider publication preview |
 | `zf issue publish` | Publish a confirmed provider batch |
-| `zf issue report` | Start the canonical eight-step Self-Issue intake |
+| `zf issue report` | Run a continuous Issue Agent from a free-form report |
+| `zf issue session-answer` | Answer a Portable Issue Session question |
+| `zf issue session-cancel` | Cancel a Portable Issue Session |
+| `zf issue session-confirm` | Confirm a Portable Issue Report |
+| `zf issue session-get` | Read a Portable Issue Session |
 | `zf issue validate` | Validate a candidate without changing state |
 
 ## `zf kanban`

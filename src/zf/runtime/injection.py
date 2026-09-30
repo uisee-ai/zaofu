@@ -1877,6 +1877,15 @@ def build_task_prompt(
             "look for a task.md unless the briefing explicitly names one. "
             f"Also read your role instructions at {instructions_path} for constraints."
         )
+    if prompt_kind == "task_pipeline_stage":
+        return (
+            f"Read the Task Pipeline stage briefing at {briefing_path}. Use its "
+            "stage contract, required artifacts, success command, failure command, "
+            "and output contract as authoritative; do not look for an unreferenced "
+            "task.md. Submit the stage's typed result; do not substitute a generic "
+            "role completion event. "
+            f"Also read your role instructions at {instructions_path} for constraints."
+        )
     return (
         f"Read the task briefing at {briefing_path}; follow its Read Order to "
         "load the kernel-managed task.md before you work. "

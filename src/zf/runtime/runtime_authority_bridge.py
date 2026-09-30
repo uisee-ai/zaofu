@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events.model import ZfEvent
+from zf.core.state.locks import locked_path
 from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 from zf.runtime.transport import DispatchContext
 
@@ -469,16 +470,26 @@ class RuntimeAuthorityMixin:
             value = payload.get(key)
             if value not in (None, ""):
                 rejection_payload[key] = value
-        self.event_writer.append(ZfEvent(
-            type="workflow.invoke.rejected",
-            actor="zf-cli",
-            task_id=task_id or event.task_id,
-            payload=rejection_payload,
-            causation_id=event.id,
-            correlation_id=event.correlation_id,
-        ))
+        with locked_path(Path(self.state_dir) / "locks" / "workflow-invoke-rejection"):
+            prior = next((
+                row for row in self.event_log.read_all()
+                if row.type == "workflow.invoke.rejected"
+                and (row.payload or {}).get("source_event_id") == event.id
+            ), None)
+            if prior is None:
+                self.event_writer.append(ZfEvent(
+                    type="workflow.invoke.rejected",
+                    actor="zf-cli",
+                    task_id=task_id or event.task_id,
+                    payload=rejection_payload,
+                    causation_id=event.id,
+                    correlation_id=event.correlation_id,
+                ))
+            else:
+                reason = str(prior.payload.get("reason") or reason)
         from zf.runtime.run_admission import reject_workflow_invoke_admission
 
+        # Replay must still repair a crash between the two verdict writes.
         reject_workflow_invoke_admission(self, event, reason=reason)
 
 

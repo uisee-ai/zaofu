@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // Loop page v2 — timeline + business-loop cards over loop-view.v1.
 // Design lineage: doc130 (stage-loop contract), doc131 §3.3/§8 (promise,
 // spine), 2026-07 five-run dry-run (mock v12 + gen3 reference prototypes).
@@ -9,6 +11,7 @@ import type { LiveState } from "../../app/sharedTypes";
 import "../../styles/20-loop-v2.css";
 import { LoopAttemptDrawer } from "./LoopAttemptDrawer";
 import { useLoopViewResource } from "./useLoopViewResource";
+import { formatTime } from "../../lib/format";
 
 const GAP_BREAK_MS = 30 * 60 * 1000;
 const BREAK_W = 4;
@@ -73,7 +76,7 @@ function makeX(spans: Span[]): (t: number) => number {
   };
 }
 
-const hhmm = (iso: string) => (iso ? iso.slice(11, 16) : "");
+const hhmm = (iso: string) => formatTime(iso, false);
 const ts = (iso: string) => (iso ? Date.parse(iso) : NaN);
 function fmtDur(ms: number): string {
   const s = Math.round(ms / 1000);
@@ -252,6 +255,7 @@ const HEALTH_TONE: Record<string, string> = {
 };
 
 export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: Props) {
+  useSettingsPreferences();
   const { error, view } = useLoopViewResource({ liveEvents, liveState, projectId });
   const [openLoop, setOpenLoop] = useState<string>("");
   const [openTask, setOpenTask] = useState<string>("");
@@ -293,7 +297,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
   if (error) {
     return <div className="loop-v2-page loop-v2-state tone-err">loop-view failed: {error}</div>;
   }
-  if (!view) return <div className="loop-v2-page loop-v2-state">Loading loop view…</div>;
+  if (!view) return <div className="loop-v2-page loop-v2-state">{uiText("Loading loop view…")}</div>;
 
   const { run, loops, stages, tasks, faults, companions, pump } = view;
   const backflows = view.backflows ?? [];
@@ -321,14 +325,14 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
     >
       <div className="section-heading loop-v2-page-heading">
         <div>
-          <h2>Loop</h2>
+          <h2>{uiText("Loop")}</h2>
           <span className="muted">convergence, rework, and recovery</span>
         </div>
       </div>
 
       {view.scope.kind === "project_recovery" ? (
         <div style={card} data-testid="loop-project-recovery-scope">
-          <div style={h3}>Project recovery</div>
+          <div style={h3}>{uiText("Project recovery")}</div>
           <div style={{ color: TONE.muted, fontSize: 12, marginTop: 6 }}>
             No business delivery run is active. Recovery and operator activity remain observable below.
           </div>
@@ -337,7 +341,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
 
       {/* completion promise */}
       <div style={card} data-testid="loop-promise">
-        <div style={h3}>Completion promise
+        <div style={h3}>{uiText("Completion promise")}
           <span style={{ textTransform: "none", letterSpacing: 0, color: TONE.faint }}>
             {" "}· {run.promise.source} · chain {run.promise.satisfied}/{run.promise.chain.length}
           </span>
@@ -358,7 +362,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
 
       {/* main loop stepper with hover card */}
       <div className="loop-v2-main-loop" style={card}>
-        <div style={h3}>Main loop
+        <div style={h3}>{uiText("Main loop")}
           <span style={{ textTransform: "none", letterSpacing: 0, color: TONE.faint }}>
             {" "}· stage chain discovered from events · hover a node for its stage-loop card
           </span>
@@ -398,7 +402,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
               }}>
                 <b>{s.id}</b>
                 <div style={{ color: TONE.muted }}>rounds {s.rounds} · {s.last_status || "active"}</div>
-                <div style={{ color: TONE.faint }}>last activity {hhmm(s.last_ts)} UTC</div>
+                <div style={{ color: TONE.faint }}>last activity {hhmm(s.last_ts)}</div>
                 <div style={{ color: TONE.faint, marginTop: 4, fontSize: 10 }}>summary of timeline data</div>
               </div>
             </div>
@@ -461,7 +465,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
 
       {/* business loops: chips + accordion cards */}
       <div style={card}>
-        <div style={h3}>Business loops
+        <div style={h3}>{uiText("Business loops")}
           <span style={{ textTransform: "none", letterSpacing: 0, color: TONE.faint }}>
             {" "}· zero-state: absent families render no chip · click = expand card
           </span>
@@ -569,7 +573,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
 
       {/* attempt timeline */}
       <div style={card}>
-        <div style={h3}>Loop timeline
+        <div style={h3}>{uiText("Loop timeline")}
           <span style={{ textTransform: "none", letterSpacing: 0, color: TONE.faint }}>
             {" "}· one row per task · one segment per counted attempt · idle gaps compressed
             {tasks[0]?.source === "task_attempts.json" ? " · source: attempt ledger (spine)" : " · source: events"}
@@ -590,12 +594,12 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
                   .filter((s) => { if (s.xa - lastX >= MIN_GAP) { lastX = s.xa; return true; } return false; })
                   .map((s) => (
                     <span key={s.xa} style={{ position: "absolute", left: `${s.xa}%`, whiteSpace: "nowrap" }}>
-                      {new Date(s.a).toISOString().slice(11, 16)}
+                      {hhmm(new Date(s.a).toISOString())}
                     </span>
                   ));
               })()}
               <span style={{ position: "absolute", right: 0, whiteSpace: "nowrap" }}>
-                {run.latched ? "end" : "now"} {new Date(timeline.endT).toISOString().slice(11, 16)} UTC
+                {run.latched ? "end" : "now"} {hhmm(new Date(timeline.endT).toISOString())}
               </span>
             </div>
             <div style={{ position: "relative" }}>
@@ -689,7 +693,7 @@ export function LoopPageV2({ liveEvents = [], liveState = "live", projectId }: P
       {/* companions (zero-state absent) */}
       {Object.keys(companions).length ? (
         <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={h3}>Companions</span>
+          <span style={h3}>{uiText("Companions")}</span>
           {companions.learning ? (
             <span style={chip}>learning · reflect ×{companions.learning.reflections}</span>
           ) : null}

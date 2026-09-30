@@ -112,7 +112,7 @@ class TestCodexPermissionMode:
         """Pure restricted (no writable paths declared) → read-only sandbox."""
         role = RoleConfig(name="test", permission_mode="restricted")
         cmd = CodexAdapter().build_command(role)
-        assert "-a" in cmd and "untrusted" in cmd
+        assert "-a" not in cmd  # Strict project policy is prepared/verified by spawn.
         assert "-s" in cmd and "read-only" in cmd
         assert "--add-dir" not in cmd, \
             "--add-dir must NOT appear alongside -s read-only (B-1203-01)"
@@ -123,7 +123,7 @@ class TestCodexPermissionMode:
         `restricted` for codex (no tool allowlist exists upstream)."""
         role = RoleConfig(name="test", permission_mode="allowlist")
         cmd = CodexAdapter().build_command(role)
-        assert "untrusted" in cmd
+        assert "-a" not in cmd
         assert "read-only" in cmd
 
     def test_restricted_honors_explicit_danger_full_access_override(self, monkeypatch):

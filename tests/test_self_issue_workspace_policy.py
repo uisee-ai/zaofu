@@ -13,7 +13,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
 from zf.cli.main import main
-from zf.core.config.loader import load_config
+from zf.core.config.loader import ConfigError, load_config
 from zf.core.config.project_context import resolve_project_context
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -51,8 +51,9 @@ self_issue:
     github:
       authorization_domain: github.com
       project: rzwu-uisee/zaofu-self-issue
-      oauth_client_id: github-public-client-id
-      auth_mode: device_flow
+      oauth_client_id: github-oauth-client-id
+      auth_mode: oauth_device_flow
+      oauth_scope: public_repo
 """
 
 _OLD_PROJECT_POLICY = """\
@@ -136,6 +137,8 @@ def test_registered_project_inherits_web_servers_locked_self_issue_policy(
     assert target_policy["targets"]["github"]["project"] == (
         "rzwu-uisee/zaofu-self-issue"
     )
+    assert target_policy["targets"]["github"]["auth_mode"] == "oauth_device_flow"
+    assert target_policy["targets"]["github"]["oauth_scope"] == "public_repo"
     assert json.loads(
         (child_state / "self-issues" / "intakes.json").read_text(encoding="utf-8")
     )[-1]["target_binding"]["project"] == "runze.wu/zaofu-selfissue"
@@ -180,6 +183,8 @@ def test_web_created_project_materializes_policy_for_its_cli(
     assert config.self_issue.delivery.repository == "rzwu-uisee/zaofu-self-issue"
     assert config.self_issue.delivery.base_branch == "dev"
     assert config.self_issue.delivery.auto_close_issue is False
+    assert config.self_issue.targets["github"].auth_mode == "oauth_device_flow"
+    assert config.self_issue.targets["github"].oauth_scope == "public_repo"
     assert {
         role.name
         for role in config.roles
@@ -224,10 +229,11 @@ def test_web_created_project_materializes_policy_for_its_cli(
     monkeypatch.chdir(target)
     assert main(["issue", "report", "Created project CLI failure"]) == 0
     result = json.loads(capsys.readouterr().out)
-    assert result["status"] == "intake_collecting"
-    assert result["intake"]["target_binding"]["project"] == (
-        "runze.wu/zaofu-selfissue"
-    )
+    # `/issue` now starts the portable continuous Session.  The publication
+    # target remains locked independently from the source workspace.
+    assert result["status"] in {"investigating", "ask_user", "ready"}
+    assert result["source_binding"]["repository_root"] == str(target.resolve())
+    assert result["target_binding"]["project"] == "runze.wu/zaofu-selfissue"
 
 
 def test_cli_project_init_inherits_locked_policy_from_invocation_project(
@@ -250,3 +256,45 @@ def test_cli_project_init_inherits_locked_policy_from_invocation_project(
     config = load_config(target / "zf.yaml")
     assert config.self_issue.target_locked is True
     assert config.self_issue.target_project == "runze.wu/zaofu-selfissue"
+
+
+@pytest.mark.parametrize(("github_target", "message"), [
+    (
+        "{authorization_domain: github.com, project: owner/repo, "
+        "oauth_client_id: client, auth_mode: oauth_device_flow, "
+        "oauth_scope: issues:write}",
+        "oauth_scope",
+    ),
+    (
+        "{authorization_domain: github.com, project: owner/repo, "
+        "auth_mode: oauth_device_flow, oauth_scope: public_repo}",
+        "oauth_client_id",
+    ),
+    (
+        "{authorization_domain: github.com, project: owner/repo, "
+        "oauth_client_id: client, auth_mode: device_flow, "
+        "oauth_scope: public_repo}",
+        "oauth_scope",
+    ),
+])
+def test_github_oauth_target_rejects_incompatible_configuration(
+    tmp_path: Path,
+    github_target: str,
+    message: str,
+) -> None:
+    config_path = tmp_path / "zf.yaml"
+    config_path.write_text(
+        "version: '1.0'\n"
+        "project: {name: oauth-policy, state_dir: .zf}\n"
+        "self_issue:\n"
+        "  enabled: true\n"
+        "  target_locked: true\n"
+        "  target_project: owner/repo\n"
+        "  default_publication_mode: github\n"
+        "  targets:\n"
+        f"    github: {github_target}\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match=message):
+        load_config(config_path)

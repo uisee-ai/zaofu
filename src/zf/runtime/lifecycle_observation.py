@@ -421,7 +421,13 @@ class LifecycleObservationMixin:
         misses[role.instance_id] = n
         if n != _USAGE_CAPTURE_MISS_THRESHOLD:
             return  # below threshold, or already emitted on the crossing tick
-        escaped = "-" + usage_cwd.lstrip("/").replace("/", "-").replace(".", "-")
+        escaped = (
+            "-"
+            + usage_cwd.lstrip("/")
+            .replace("/", "-")
+            .replace(".", "-")
+            .replace("_", "-")
+        )
         event = ZfEvent(
             type="cost.usage.capture_miss",
             actor=role.instance_id,

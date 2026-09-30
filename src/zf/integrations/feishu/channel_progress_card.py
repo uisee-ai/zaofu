@@ -238,7 +238,7 @@ def build_channel_progress_card(item: dict[str, Any]) -> dict[str, Any]:
     if item.get("summary"):
         details.extend(("", str(item["summary"])[:900]))
     if task_id:
-        details.append(f"\nTask: `{task_id}`")
+        details.append(f"Task: `{task_id}`")
     elements: list[dict[str, Any]] = [
         {
             "tag": "div",

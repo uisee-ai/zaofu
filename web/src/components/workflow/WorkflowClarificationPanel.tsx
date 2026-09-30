@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 import { Check, FileDiff } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -33,6 +35,7 @@ export function WorkflowClarificationPanel({
   requirement: Record<string, unknown>;
   requirementDigest: string;
 }) {
+  useSettingsPreferences();
   const [objective, setObjective] = useState(textValue(requirement.objective));
   const [sourceRoot, setSourceRoot] = useState(textValue(requirement.source_root));
   const [targetRoot, setTargetRoot] = useState(textValue(requirement.target_root));
@@ -66,7 +69,7 @@ export function WorkflowClarificationPanel({
       <section className="workflow-clarification compact" data-testid="workflow-ready-to-prepare">
         <div className="workflow-clarification-head">
           <div>
-            <span className="eyebrow">Requirement revision</span>
+            <span className="eyebrow">{uiText("Requirement revision")}</span>
             <strong>Confirmed and ready</strong>
           </div>
           <button
@@ -98,13 +101,13 @@ export function WorkflowClarificationPanel({
     <section className="workflow-clarification" data-testid="workflow-clarification">
       <div className="workflow-clarification-head">
         <div>
-          <span className="eyebrow">Requirement revision</span>
+          <span className="eyebrow">{uiText("Requirement revision")}</span>
           <strong>Clarify request</strong>
         </div>
         <StatusBadge status={requestStatus} />
       </div>
       <label>
-        <span>Objective</span>
+        <span>{uiText("Objective")}</span>
         <textarea
           rows={3}
           value={objective}
@@ -114,7 +117,7 @@ export function WorkflowClarificationPanel({
       <div className="workflow-clarification-paths">
         {requestKind === "refactor" ? (
           <label>
-            <span>Source root</span>
+            <span>{uiText("Source root")}</span>
             <input
               value={sourceRoot}
               onChange={(event) => setSourceRoot(event.target.value)}
@@ -123,7 +126,7 @@ export function WorkflowClarificationPanel({
         ) : null}
         {["prd", "refactor"].includes(requestKind) ? (
           <label>
-            <span>Target root</span>
+            <span>{uiText("Target root")}</span>
             <input
               value={targetRoot}
               onChange={(event) => setTargetRoot(event.target.value)}
@@ -133,7 +136,7 @@ export function WorkflowClarificationPanel({
       </div>
       <div className="workflow-clarification-columns">
         <label>
-          <span>Acceptance</span>
+          <span>{uiText("Acceptance")}</span>
           <textarea
             rows={4}
             value={acceptance}
@@ -141,7 +144,7 @@ export function WorkflowClarificationPanel({
           />
         </label>
         <label>
-          <span>Constraints</span>
+          <span>{uiText("Constraints")}</span>
           <textarea
             rows={4}
             value={constraints}

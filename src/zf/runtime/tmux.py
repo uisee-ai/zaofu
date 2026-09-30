@@ -177,6 +177,17 @@ class TmuxSession:
         return True
 
     def kill_session(self) -> None:
+        if not self.dry_run:
+            from zf.runtime.tmux_process_cleanup import terminate_pane_descendants
+
+            panes = self._run(
+                ["tmux", "list-panes", "-s", "-t", f"={self.session_name}", "-F", "#{pane_pid} #{pane_dead}"],
+                check=False, capture=True,
+            )
+            if panes.returncode == 0:
+                roots = {int(parts[0]) for row in panes.stdout.splitlines()
+                         if len(parts := row.split()) == 2 and parts[0].isdecimal() and parts[1] == "0"}
+                terminate_pane_descendants(roots)
         self._run(["tmux", "kill-session", "-t", self.session_name], check=False)
 
     def has_session(self) -> bool:
@@ -373,6 +384,11 @@ class TmuxSession:
         self._run(["tmux", "send-keys", "-t", target, "C-u"])
 
     def capture_pane(self, window: str, *, lines: int = 3000) -> str:
+        guarded = getattr(self.layout, "capture_owned_pane", None)
+        if callable(guarded):
+            output = guarded(self, window, lines=lines)
+            if output is not None:
+                return output
         target = self._target(window)
         result = self._run(
             ["tmux", "capture-pane", "-t", target, "-p", "-S", str(-lines)],
@@ -389,9 +405,41 @@ class TmuxSession:
         if self.dry_run:
             return ""
         target = self.layout.resolve(self, window)
-        if not self.layout.target_owned_by(self, target, window):
-            return ""
-        return self._pane_pid_for_target(target)
+        return self.layout.owned_pane_pid(self, target, window)
+
+    def pane_process_status(self, window: str) -> tuple[str, str]:
+        if self.dry_run:
+            return "", ""
+        return self.layout.owned_pane_process_status_for_instance(self, window)
+
+    def pane_liveness_snapshot(self, window: str) -> tuple[str, str, str] | None:
+        getter = getattr(self.layout, "pane_liveness_snapshot", None)
+        if not callable(getter):
+            return None
+        try:
+            return getter(self, window, lines=120)
+        except TmuxError:
+            return None
+
+    def pane_liveness_and_log_snapshot(
+        self,
+        window: str,
+        *,
+        liveness_lines: int = 120,
+        log_lines: int = 200,
+    ) -> tuple[str, str, str, str] | None:
+        getter = getattr(self.layout, "pane_liveness_and_log_snapshot", None)
+        if not callable(getter):
+            return None
+        try:
+            return getter(
+                self,
+                window,
+                liveness_lines=liveness_lines,
+                log_lines=log_lines,
+            )
+        except TmuxError:
+            return None
 
     def _pane_pid_for_target(self, target: object) -> str:
         if self.dry_run:
@@ -428,10 +476,14 @@ class TmuxSession:
             return ""
         return result.stdout.strip()
 
-    def pane_process_probe(self, window: str, *, max_entries: int = 8) -> dict:
+    def pane_process_probe(
+        self, window: str, *, max_entries: int = 8,
+        process_status: tuple[str, str] | None = None,
+    ) -> dict:
         """Return a bounded process-tree summary for one pane."""
-        pane_pid = self.pane_pid(window)
-        current_command = self.pane_current_command(window)
+        pane_pid, current_command = (
+            self.pane_process_status(window) if process_status is None else process_status
+        )
         probe = {
             "available": False,
             "pane_pid": pane_pid,

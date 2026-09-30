@@ -1,4 +1,5 @@
 import type { PageId } from "./sharedTypes";
+import { uiText } from "../settings/uiText";
 
 const PAGE_TITLES: Record<PageId, string> = {
   project: "Overview",
@@ -32,5 +33,5 @@ const PAGE_TITLES: Record<PageId, string> = {
 };
 
 export function pageTitle(page: PageId): string {
-  return PAGE_TITLES[page] ?? page;
+  return uiText(PAGE_TITLES[page] ?? page);
 }

@@ -17,6 +17,74 @@ from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 
 TASK_PIPELINE_FAULT_MATRIX_SCHEMA = "task-pipeline-fault-matrix.v1"
 
+
+def inject_task_stage_recovery(runtime: Any, role: Any) -> bool | None:
+    """Use the current stage contract, or wait for admitted redrive without a prompt."""
+    from zf.core.safety import PathGuard
+    from zf.core.state.role_sessions import RoleSessionRegistry
+    from zf.runtime.injection import build_task_prompt
+    from zf.runtime.transport import DispatchContext
+
+    registry = RoleSessionRegistry(
+        Path(runtime.state_dir) / "role_sessions.yaml", str(runtime.project_root),
+    )
+    key = registry.instance_meta().get(role.instance_id, {}).get("active_task_stage_binding_key")
+    if not key:
+        return None
+    binding = registry.task_stage_bindings().get(str(key), {})
+    if binding.get("status") != "active" or binding.get("current_role_instance") != role.instance_id:
+        return False
+    events = runtime.event_log.read_all()
+    operations = [row for row in reduce_workflow_operations(events).values()
+                  if row.get("task_stage_session_binding") == key
+                  and row.get("role_instance") == role.instance_id
+                  and row.get("status") in {"running", "suspended"}]
+    if len(operations) != 1:
+        return False
+    [operation] = operations
+    if operation["status"] == "suspended":
+        runtime.event_writer.append(ZfEvent(
+            type="worker.recovery.skipped", actor=role.instance_id,
+            task_id=operation["task_id"], correlation_id=operation["workflow_run_id"],
+            payload={"reason": "task_pipeline_waiting_for_redrive",
+                     "operation_id": operation["operation_id"]},
+        ))
+        return True
+    attempt = task_attempt_store(runtime).get(operation["active_attempt_id"])
+    if not attempt or attempt.get("status") != "sent":
+        return False
+    dispatch = next((event for event in reversed(events)
+                     if event.type == "task.pipeline.stage.dispatched" and event.origin == "kernel"
+                     and event.payload.get("operation_id") == operation["operation_id"]
+                     and event.payload.get("attempt_id") == operation["active_attempt_id"]
+                     and event.payload.get("dispatch_id") == operation["dispatch_id"]
+                     and event.payload.get("task_stage_session_binding") == key
+                     and event.payload.get("role_instance") == role.instance_id), None)
+    if dispatch is None:
+        return False
+    path = Path(str(dispatch.payload.get("briefing") or ""))
+    PathGuard.assert_under(path, Path(runtime.state_dir))
+    if not path.is_file():
+        return False
+    # This is a continuation of the sent attempt, not a new scheduler dispatch.
+    context = DispatchContext(
+        role_name=role.name, instance_id=role.instance_id, backend=role.backend,
+        briefing_path=path, task_id=operation["task_id"],
+        trace_id=operation["workflow_run_id"], run_id=operation["workflow_run_id"],
+        operation_id=operation["operation_id"],
+    )
+    runtime._send_transport_task(
+        role.instance_id, path, build_task_prompt(role.instance_id, path, "task_pipeline_stage"), context,
+    )
+    runtime.event_writer.append(ZfEvent(
+        type="worker.recovery.injected", actor=role.instance_id,
+        task_id=operation["task_id"], correlation_id=operation["workflow_run_id"],
+        payload={"reason": "task_pipeline_current_stage", "briefing_path": str(path),
+                 "operation_id": operation["operation_id"], "attempt_id": operation["active_attempt_id"]},
+    ))
+    return True
+
+
 _FAULT_CONTRACTS: dict[str, dict[str, Any]] = {
     "pane_dead": {
         "decision_owner": "run_manager",

@@ -1,0 +1,387 @@
+{
+  "capture_guard": {},
+  "cases": [
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_all_named_testkit_files_are_registered_or_explicit_host_tier",
+      "phases": {
+        "call": {
+          "duration": 0.0474988150090212,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006884110043756664,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004481229989323765,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_coverage_matrix_lists_every_stage_and_existing_test_entry",
+      "phases": {
+        "call": {
+          "duration": 0.05144156799360644,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0005152550002094358,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0003898900031344965,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_explicit_host_tests_are_marked_and_excluded_from_default_registry",
+      "phases": {
+        "call": {
+          "duration": 0.2681118799955584,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0011342500074533746,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006198510091053322,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[None]",
+      "phases": {
+        "call": {
+          "duration": 6.223295568997855,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0005860139935975894,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006209939892869443,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[closed_issue]",
+      "phases": {
+        "call": {
+          "duration": 11.937017737989663,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007955640030559152,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006246230041142553,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[non_strict]",
+      "phases": {
+        "call": {
+          "duration": 19.843781275994843,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0010971659939968958,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006894569960422814,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unknown_issue]",
+      "phases": {
+        "call": {
+          "duration": 13.247141514002578,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.001312132997554727,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005064110009698197,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_host_issue_audit_rejects_corrupt_metadata[unmapped]",
+      "phases": {
+        "call": {
+          "duration": 12.079933633998735,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007564190018456429,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0006416319956770167,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_open_issues_declare_executable_reproduction_paths",
+      "phases": {
+        "call": {
+          "duration": 0.04462633300863672,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006599869957426563,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004899960040347651,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_paths_are_registered_for_execution_or_explicit_host_tier",
+      "phases": {
+        "call": {
+          "duration": 0.009931274005793966,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006888380012242123,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0010154360061278567,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_p0_case_registry_points_to_real_test_nodes",
+      "phases": {
+        "call": {
+          "duration": 0.020635820997995324,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0005629910010611638,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005052979977335781,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_registered_xfails_are_strict_and_mapped_to_each_executing_stage",
+      "phases": {
+        "call": {
+          "duration": 1.867196748004062,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0005390089936554432,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004199329996481538,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[MissingClass::test_probe]",
+      "phases": {
+        "call": {
+          "duration": 0.0456560150050791,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006717149954056367,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005433769983937964,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_missing_probe]",
+      "phases": {
+        "call": {
+          "duration": 0.014038749999599531,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006319929962046444,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005586990009760484,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_registry_node_selector_is_checked_not_treated_as_a_filename[TestClaudeRespawn::test_respawn_finds_transcript_in_actual_spawn_cwd]",
+      "phases": {
+        "call": {
+          "duration": 0.012008301011519507,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0006728439911967143,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004571539902826771,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_stage_registry_and_coverage_matrix_have_the_same_test_surface",
+      "phases": {
+        "call": {
+          "duration": 0.052040463997400366,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0007461290078936145,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0008003969996934757,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_are_traceable_to_registered_issues",
+      "phases": {
+        "call": {
+          "duration": 1.916120656998828,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0005138600099598989,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004528729914454743,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_strict_testkit_xfails_reference_open_issue_status",
+      "phases": {
+        "call": {
+          "duration": 2.0850078810035484,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.000657144992146641,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0004928619891870767,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    },
+    {
+      "nodeid": "tests/conformance/test_zaofu_testkit_s0.py::test_testkit_ci_workflow_runs_sentinel_and_full_runner",
+      "phases": {
+        "call": {
+          "duration": 0.04386841200175695,
+          "outcome": "passed"
+        },
+        "setup": {
+          "duration": 0.0035963889968115836,
+          "outcome": "passed"
+        },
+        "teardown": {
+          "duration": 0.0005050879990449175,
+          "outcome": "passed"
+        }
+      },
+      "status": "passed"
+    }
+  ],
+  "collection_errors": [],
+  "command": [
+    "/home/uisee/zaofu_v7/.venv/bin/python3",
+    "-m",
+    "pytest",
+    "-p",
+    "tests.testkit.pytest_plugin",
+    "-o",
+    "addopts=",
+    "-q",
+    "--junitxml=/tmp/zf-s0-k599-final/pytest-junit.xml",
+    "--testkit-report=/tmp/zf-s0-k599-final/pytest-testkit.json",
+    "tests/conformance/test_zaofu_testkit_s0.py"
+  ],
+  "command_digest": "2bdcca93d3ae93655e6a76e442c729cecd0e76725424543da0da77a35f6faeeb",
+  "config_digest": "fa6e577b8902874ca1acd0591a5f790942d1081ec16b3da7c5985564041422c8",
+  "config_path": "/home/uisee/zaofu_v7/zf.yaml",
+  "deselected": [],
+  "duration_seconds": 73.35435,
+  "evidence_errors": [],
+  "exit_code": 0,
+  "failure_bundle_error": "",
+  "failure_bundle_path": "",
+  "git_dirty": true,
+  "git_head": "142a62ac763b148cbe2b401ac1cd7ae0f8d1c072",
+  "junit_path": "/tmp/zf-s0-k599-final/pytest-junit.xml",
+  "lock_digest": "6d16fb7b7a0845f3bdfef9ac6e190a07dedd6f0f33298bc646209b3055c700c8",
+  "lock_path": "/home/uisee/zaofu_v7/uv.lock",
+  "ordinary_diagnostics": [],
+  "output_dir": "/tmp/zf-s0-k599-final",
+  "project_root": "/home/uisee/zaofu_v7",
+  "report_path": "/tmp/zf-s0-k599-final/pytest-testkit.json",
+  "session_finished": true,
+  "source_evidence": {},
+  "stage": "S0",
+  "startup_error": "",
+  "stderr_path": "/tmp/zf-s0-k599-final/pytest.stderr.log",
+  "stdout_path": "/tmp/zf-s0-k599-final/pytest.stdout.log",
+  "timed_out": false,
+  "verdict": "pass"
+}

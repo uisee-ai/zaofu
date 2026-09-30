@@ -17,10 +17,12 @@ Threat model — external attack surface "Feishu click → mutation":
 | Cross-chat injection            | identity keyed on open_id/user_id, not chat | ``resolve_identity``  |
 | Duplicate / double-click submit  | idempotency key dedup (existing store)   | ``IdempotencyStore`` (caller) |
 
-App secret storage/rotation: the verification token is read from an env var
-(``verification_token_env``), never committed; rotating it is an env change, no
-code change. Identity grants live in zf.yaml — same trust level as the kernel
-config; "who can change it" is "who can change the control plane".
+Signature-key storage/rotation: the Feishu Encrypt Key is read from the legacy
+``verification_token_env`` config field, never committed; rotating it is an env
+change, no code change.  The field name is retained for config compatibility,
+but ``X-Lark-Signature`` uses Encrypt Key rather than Verification Token.
+Identity grants live in zf.yaml — same trust level as the kernel config; "who
+can change it" is "who can change the control plane".
 
 Pure functions only; wiring (HTTP boundary, audit events) lives in the CLI.
 """

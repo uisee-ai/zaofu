@@ -262,7 +262,9 @@ def evaluate_workdir_write_guard(
 ) -> int:
     if not event_type.endswith(".pre_tool_use") or not should_check_actor(actor):
         return 0
-    assigned_root = state_dir / "workdirs" / actor / "project"
+    assigned_root = _task_pipeline_workdir(state_dir, event_log, actor) or (
+        state_dir / "workdirs" / actor / "project"
+    )
     if not assigned_root.is_dir():
         return 0
     tool_input = event_payload.get("tool_input")
@@ -327,3 +329,34 @@ def evaluate_workdir_write_guard(
         file=sys.stderr,
     )
     return 2
+
+
+def _task_pipeline_workdir(state_dir: Path, event_log: EventLog, actor: str) -> Path | None:
+    """Resolve current placement from Kernel dispatch, never provider hook cwd."""
+    from zf.runtime.result_submit import _current_running_operation_request
+
+    current = _current_running_operation_request(
+        state_dir.resolve(), event_log, role_instance=actor,
+    )
+    if current is None:
+        return None
+    operation, request = current
+    if not request.get("task_pipeline_stage"):
+        return None
+    raw = None
+    for event in reversed(event_log.read_all()):
+        if event.type != "task.pipeline.stage.dispatched" or event.origin != "kernel":
+            continue
+        payload = event.payload
+        if (
+            payload.get("operation_id") == operation.get("operation_id")
+            and payload.get("attempt_id") == operation.get("active_attempt_id")
+            and payload.get("dispatch_id") == operation.get("dispatch_id")
+            and payload.get("role_instance") == actor
+        ):
+            raw = payload.get("workdir")
+            break
+    if not raw or not Path(str(raw)).is_absolute():
+        return None
+    path = Path(str(raw))
+    return path if _path_is_within(path, state_dir) else None

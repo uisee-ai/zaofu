@@ -341,11 +341,59 @@ Gantt 视图暂不默认创建。飞书 Gantt 需要明确的日期型 `start_ti
 uv run zf feishu sync-kanban-table --backend lark-cli --active-only
 ```
 
-如果只想写记录,不自动补字段和视图,使用:
+### Issue / Triage / Merge 多维表格与 Gantt
+
+当前 `/issue <描述>` Portable Session、外部 Issue Triage、候选 PR 和
+`delivery.merged` 生命周期可以投影到独立的 `Issue` 表。该表不会写回
+Issue Session、Issue Mirror 或事件状态，只读取 canonical Store 和
+`events.jsonl`，再通过 `EventWriter` 记录同步事件。
+
+先确认目标表（推荐使用独立表，不要复用 Kanban 表）:
 
 ```bash
-uv run zf feishu sync-automation-insights-table --backend lark-cli --no-ensure-views
-uv run zf feishu sync-kanban-table --backend lark-cli --no-ensure-views
+export FEISHU_ISSUE_BITABLE_APP_TOKEN="$FEISHU_BITABLE_APP_TOKEN"
+export FEISHU_ISSUE_BITABLE_TABLE_ID="tbl_issue_xxx"
+uv run zf feishu sync-issue-table --backend lark-cli
+```
+
+需要持续刷新时单独运行 Issue projector；它按轮询间隔读取 canonical state，
+不会阻塞 `feishu bridge --watch` 的群消息和卡片刷新：
+
+```bash
+uv run zf feishu sync-issue-table --backend lark-cli --watch \
+  --poll-interval-seconds 5
+```
+
+`--watch` 需要保持该进程运行；bridge 本身不会隐式访问 Bitable。
+
+也可以先本地查看即将写入的行:
+
+```bash
+uv run zf feishu sync-issue-table --dry-run
+```
+
+首次使用现有 Base 时可让命令创建 `Issue` 表并补齐字段和视图:
+
+```bash
+uv run zf feishu sync-issue-table \
+  --backend lark-cli \
+  --app-token "$FEISHU_ISSUE_BITABLE_APP_TOKEN" \
+  --create-table
+```
+
+命令会创建 `ZaoFu Issues` Grid 和 `ZaoFu Issue Gantt` 视图。时间轴字段
+`Start Time` / `End Time` / `Created At` / `Updated At` / `Synced At` 使用
+Feishu `datetime` 字段；如果当前 lark-cli 版本或应用权限不支持 `gantt` 视图，
+命令会报告初始化失败。确认权限或升级 CLI 后重试；只需同步记录和字段时可加
+`--no-ensure-views`。
+
+长报告正文仍通过 Feishu 卡片/Web 详情查看，表格只保存摘要、状态、引用和
+生命周期字段。
+
+如果只想写记录和字段、不自动创建或调整视图,使用:
+
+```bash
+uv run zf feishu sync-issue-table --backend lark-cli --no-ensure-views
 ```
 
 如果要保留飞书页面里手工调整过的视图布局,但仍希望补齐字段和缺失视图,使用:
@@ -461,3 +509,15 @@ uv run zf feishu cron-template --daily-time 09:00 --hourly-minute 5
 - 日志写到 `project.state_dir/logs/feishu-automation-sync.log` 和 `project.state_dir/logs/feishu-kanban-sync.log`。
 
 安装时把输出粘贴到 `crontab -e`。cron 运行目录会固定到当前项目根目录,并显式带 `--state-dir`,不会误写到 `$PWD/.zf`。
+# Settings 中的 /issue-merge 接入
+
+Web Settings 的“飞书 Issue-merge”页只配置这一条流程，不会改动 task、Kanban
+Agent 或 Run Manager 的接入。填写飞书 App ID、App Secret、Issue-merge 群
+Chat ID、操作者 Open ID，以及 Issue Base 的 app_token/table_id；保存后密钥只
+写入项目 `.env`，接口不会回显。保存会自动生成按钮回调签名密钥，并开启
+`zf start` 管理的 Feishu inbound bridge。
+
+“测试连接”只执行只读检查：租户凭证、机器人信息、目标群和 Bitable 字段读取。
+飞书开发者后台的事件订阅、机器人入群及 Base 权限仍需由项目管理员配置。
+配置生效后重启 `zf start`（或现有 bridge）；Issue Bitable 同步进程也应重新加载
+项目环境变量。

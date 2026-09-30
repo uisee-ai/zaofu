@@ -118,6 +118,10 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "judge.failed",
     "goal.closure.synthesized",
     "goal.closure.synthesis.failed",
+    # Generic workflow fanout may publish this after the provider callback
+    # cycle.  Completion housekeeping and External Issue disposition
+    # projection must not wait for an unrelated periodic tick.
+    "artifact.delivery.verified",
     "run.goal.completion.claimed",
     "run.delivery.requested",
     "run.delivery.settled",
@@ -143,6 +147,9 @@ WAKE_PATTERNS: tuple[str, ...] = (
     # Controlled run-cancel actions emit this outside run_once. Wake
     # housekeeping immediately so resource reconciliation cannot wait on tick.
     "run.cancelled",
+    # Controlled resume is likewise emitted outside run_once and must wake
+    # lifecycle reconciliation immediately.
+    "run.resumed",
     "fanout.cancelled",
     "flow.discovery.failed",
     "task.done.blocked",
@@ -357,6 +364,10 @@ WAKE_PATTERNS: tuple[str, ...] = (
     "task.contract.update",
     "task.contract.change.requested",
     "task.contract.invalid",
+    # Self-Issue evidence collection emits assessment requests outside the
+    # orchestrator loop. Wake the scheduler so assessment cannot strand until
+    # some unrelated event arrives.
+    "self_issue.assessment.requested",
     # 1202-T3: Codex hook engine (`--enable hooks`) bridges
     # through hook_recv under the codex.hook.* namespace. All five wake
     # run_once so the reactor handler (even a no-op observational one)
@@ -388,6 +399,9 @@ LAYER2_NOISE_EVENTS: frozenset[str] = frozenset({
     "task.doc.updated",
     # Mechanical completion reconciliation only; never spend a Layer 2 turn.
     "run.manager.tick.completed",
+    "artifact.delivery.verified",
+    "run.resumed",
+    "self_issue.assessment.requested",
 })
 
 

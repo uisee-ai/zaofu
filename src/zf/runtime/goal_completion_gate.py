@@ -137,6 +137,10 @@ def _pre_closeout_allows_claim(
 
 
 def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
+    from zf.runtime.artifact_delivery_result import (
+        ArtifactDeliveryResultError,
+        load_bound_run_contract,
+    )
     from zf.runtime.run_contract import load_run_contract
     from zf.runtime.run_manager import (
         RUN_GOAL_COMPLETION_CLAIMED,
@@ -144,15 +148,6 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
         run_goal_completion_gate_event,
     )
 
-    contract = load_run_contract(runtime.state_dir) or {}
-    protocols = contract.get("protocols") if isinstance(contract.get("protocols"), dict) else {}
-    operation = protocols.get("workflow_operation") if isinstance(protocols.get("workflow_operation"), dict) else {}
-    required_operation_ids = [
-        str(item)
-        for item in operation.get("required_operation_ids", [])
-        if str(item).strip()
-    ]
-    goal_protocol = protocols.get("goal_closure") if isinstance(protocols.get("goal_closure"), dict) else {}
     terminals = {
         str((event.payload or {}).get("claim_id") or "")
         for event in events
@@ -170,6 +165,23 @@ def _evaluate_active_claims(runtime: Any, events: list[ZfEvent]) -> None:
     for claim in claims.values():
         from zf.core.workflow.flow_metadata import flow_metadata_for
 
+        body = claim.payload
+        if body.get("run_contract_ref") or body.get("run_contract_digest"):
+            try:
+                contract = load_bound_run_contract(runtime.state_dir, body)
+            except ArtifactDeliveryResultError:
+                # A broken pinned binding must never fall back to another Run.
+                continue
+        else:
+            contract = load_run_contract(runtime.state_dir) or {}
+        protocols = contract.get("protocols") if isinstance(contract.get("protocols"), dict) else {}
+        operation = protocols.get("workflow_operation") if isinstance(protocols.get("workflow_operation"), dict) else {}
+        required_operation_ids = [
+            str(item)
+            for item in operation.get("required_operation_ids", [])
+            if str(item).strip()
+        ]
+        goal_protocol = protocols.get("goal_closure") if isinstance(protocols.get("goal_closure"), dict) else {}
         metadata = flow_metadata_for(runtime.config, payload=claim.payload)
         delivery_policy = str(
             goal_protocol.get("delivery_policy")

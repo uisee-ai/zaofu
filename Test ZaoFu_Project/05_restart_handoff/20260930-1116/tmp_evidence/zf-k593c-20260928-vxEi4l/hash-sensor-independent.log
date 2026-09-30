@@ -1,0 +1,264 @@
+......FFFFFFFFFF..                                                       [100%]
+=================================== FAILURES ===================================
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-pre_tool_use] _
+
+state_dir = '/path/to/example-project/.zf-mixed', label = 'pre_tool_use'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9e9c0b50>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:6b7b8...b8d3d57f42ffb' == 'sha256:a9bdc...48a19029e3231'
+E         
+E         - sha256:a9bdc376f3404497be9b879de763ead26782087852a2c4273b748a19029e3231
+E         + sha256:6b7b8ce28186dee1b528e5833ac03b5de0fef6929a3c31fbb9eb8d3d57f42ffb
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-post_tool_use] _
+
+state_dir = '/path/to/example-project/.zf-mixed', label = 'post_tool_use'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9eba6d90>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:5e9bc...75d9152b14d0c' == 'sha256:22849...b8e17418e5262'
+E         
+E         - sha256:22849323caaedf088f0e39ebd11d8dce908b6acc11c3fa74a45b8e17418e5262
+E         + sha256:5e9bc17739803c12c26a88ddd5c7eb5312ebaa1c0fc82dbeaee75d9152b14d0c
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-session_start] _
+
+state_dir = '/path/to/example-project/.zf-mixed', label = 'session_start'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9e9c3510>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:87f8c...ed961151811eb' == 'sha256:6c2f3...1667e56094756'
+E         
+E         - sha256:6c2f3bf7f920f880dc0f46c75e43e0572a5202c9613630964c61667e56094756
+E         + sha256:87f8c890ae91d4725509575bcdc4ecbf1a78e58d9c029d79022ed961151811eb
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-user_prompt_submit] _
+
+state_dir = '/path/to/example-project/.zf-mixed', label = 'user_prompt_submit'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9ea30490>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:0dbf9...3527c11c15d4d' == 'sha256:02e8a...03d0b5df976a2'
+E         
+E         - sha256:02e8a4dc851ce229812888fedcde8be970ff0df943460d8506403d0b5df976a2
+E         + sha256:0dbf978d17aa4f494997ec527c58fa6c4bb4b813a81eb1d02763527c11c15d4d
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-stop] _
+
+state_dir = '/path/to/example-project/.zf-mixed', label = 'stop'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9ea2e150>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:cf55f...7aced0847a35b' == 'sha256:13ef7...7aa124f4203fe'
+E         
+E         - sha256:13ef7a211a9003f1f6037914aa704816b5e38dad383a0ab2f807aa124f4203fe
+E         + sha256:cf55f0e35d84ba4e5a32e7209e0e9c83dc51536bb12c48dad297aced0847a35b
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-pre_tool_use] _
+
+state_dir = '/path/to/example-project/.zf', label = 'pre_tool_use'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9e9c3010>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:388d0...ee2d58a672eb1' == 'sha256:cc036...bd92c76827551'
+E         
+E         - sha256:cc0367dbf0faf6d2395b7e9810ddb96ab4fccf6d82452932fdebd92c76827551
+E         + sha256:388d086d8c1460207b1ca478d9239bf2ffbaa30603b1e973265ee2d58a672eb1
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-post_tool_use] _
+
+state_dir = '/path/to/example-project/.zf', label = 'post_tool_use'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9ea46d90>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:eb760...5bf585419a870' == 'sha256:aae2f...5cfb3d96bcd3e'
+E         
+E         - sha256:aae2f3c9df9245f60a78180a3aceb14c88794650376abfcead35cfb3d96bcd3e
+E         + sha256:eb7607e10fbae301ee4fb9733876148945427477eab3e76a2ad5bf585419a870
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-session_start] _
+
+state_dir = '/path/to/example-project/.zf', label = 'session_start'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9e9c3fd0>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:87c10...56ec5402fc46c' == 'sha256:68125...e5f1c246c53a3'
+E         
+E         - sha256:68125e329c1e9c5bd8fbb2c1da2090f9e3f9d4605436b8fbc7ce5f1c246c53a3
+E         + sha256:87c10035fecaa85a02828f4370d81b0bfb440846ac2888b7cc856ec5402fc46c
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-user_prompt_submit] _
+
+state_dir = '/path/to/example-project/.zf', label = 'user_prompt_submit'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9ea2d090>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:d65f0...82535d161be5a' == 'sha256:1991f...f8c4fd428f014'
+E         
+E         - sha256:1991ff9f6fb7816c398746dfe3dbfb3b7c1007345f21e53fe80f8c4fd428f014
+E         + sha256:d65f030726fc203d0431c93467bbd947e93b30a4b8f626bdb9482535d161be5a
+
+tests/test_codex_hook_settings.py:156: AssertionError
+_ test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-stop] _
+
+state_dir = '/path/to/example-project/.zf', label = 'stop'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x772c9ea45c50>
+
+    @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
+    def test_codex_hook_hash_matches_real_codex_values(
+        state_dir: str,
+        label: str,
+        monkeypatch,
+    ):
+        from zf.runtime.codex_hooks import codex_hook_hash
+    
+        # Other launcher tests intentionally persist the process-wide command.
+        # The captured Codex vectors below were recorded with the default `zf`.
+        monkeypatch.delenv("ZF_CLI_CMD", raising=False)
+        engine_name, zf_event = _EVENT_META[label]
+>       assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
+            _REAL_HASHES[(state_dir, label)]
+E       AssertionError: assert 'sha256:e12a1...b87697b8bc82f' == 'sha256:9f8dc...81153fdd73310'
+E         
+E         - sha256:9f8dc49d2866898fb0f5bda3e5ddf1012bc442fed660d2e287881153fdd73310
+E         + sha256:e12a1f95f78709526886dac0df4829f4a83d77c16e8a021b0ebb87697b8bc82f
+
+tests/test_codex_hook_settings.py:156: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-pre_tool_use]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-post_tool_use]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-session_start]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-user_prompt_submit]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-mixed-stop]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-pre_tool_use]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-post_tool_use]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-session_start]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-user_prompt_submit]
+FAILED tests/test_codex_hook_settings.py::test_codex_hook_hash_matches_real_codex_values[/path/to/example-project/.zf-stop]
+10 failed, 8 passed, 1 deselected in 0.66s

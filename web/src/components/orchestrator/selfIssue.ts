@@ -19,12 +19,12 @@ export function selfIssueIntakeMountState(
 }
 
 export const SELF_ISSUE_RUNTIME_STOPPED_WARNING =
-  "ZaoFu runtime is stopped. Intake, Draft persistence, and committed-source inspection still work, "
+  "Project runtime is stopped. Intake, Draft persistence, and committed-source inspection still work, "
   + "but fresh runtime events, logs, Traces, failure screenshots, and live reproduction evidence may be unavailable. "
   + "Start it with: cd /path_to_project && zf start";
 
 export interface SelfIssueEvidenceControl {
-  action: "self-issue-evidence-start" | "self-issue-evidence-interrupt" | "self-issue-evidence-resume";
+  action: "self-issue-evaluation-start" | "self-issue-evaluation-cancel" | "self-issue-limited-continue";
   label: string;
   busyLabel: string;
   force?: boolean;
@@ -32,6 +32,28 @@ export interface SelfIssueEvidenceControl {
 
 export function selfIssueCompactText(value: unknown): string {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+export function selfIssueUnderstandingStatus(card: unknown): string {
+  if (!card || typeof card !== "object" || Array.isArray(card)) return "unknown";
+  const analysis = (card as Record<string, unknown>).analysis;
+  if (!analysis || typeof analysis !== "object" || Array.isArray(analysis)) return "unknown";
+  const understanding = (analysis as Record<string, unknown>).understanding;
+  if (!understanding || typeof understanding !== "object" || Array.isArray(understanding)) {
+    return "unknown";
+  }
+  return selfIssueCompactText((understanding as Record<string, unknown>).status) || "unknown";
+}
+
+export function selfIssueEvaluationLocked(card: unknown): boolean {
+  if (!card || typeof card !== "object" || Array.isArray(card)) return false;
+  const enrichment = (card as Record<string, unknown>).enrichment;
+  return Boolean(
+    enrichment
+    && typeof enrichment === "object"
+    && !Array.isArray(enrichment)
+    && (enrichment as Record<string, unknown>).evaluation_locked === true
+  );
 }
 
 export function selfIssueRefreshErrorIsTransient(error: unknown): boolean {
@@ -69,14 +91,18 @@ export function selfIssueSelectDestination(
 export function selfIssuePreviewIsReusable(card: unknown, mode: string): boolean {
   if (!card || typeof card !== "object" || Array.isArray(card)) return false;
   const value = card as Record<string, unknown>;
-  const rawBatch = value.publication_batch;
+  const draft = value.draft && typeof value.draft === "object" && !Array.isArray(value.draft)
+    ? value.draft as Record<string, unknown>
+    : undefined;
+  const rawBatch = value.publication_batch ?? draft?.publication_batch;
   const batch = rawBatch && typeof rawBatch === "object" && !Array.isArray(rawBatch)
     ? rawBatch as Record<string, unknown>
-    : value;
+    : (draft ?? value);
   if (!["previewed", "confirmed", "published"].includes(String(batch.status || ""))) return false;
   if (String(batch.publication_mode || "") !== mode) return false;
-  if (Number(batch.draft_revision || 0) !== Number(value.revision || 0)) return false;
-  const rawPreviews = batch.previews ?? value.previews;
+  const cardRevision = Number(value.revision || draft?.revision || 0);
+  if (Number(batch.draft_revision || 0) !== cardRevision) return false;
+  const rawPreviews = batch.previews ?? value.previews ?? draft?.previews;
   if (!rawPreviews || typeof rawPreviews !== "object" || Array.isArray(rawPreviews)) return false;
   const previews = rawPreviews as Record<string, unknown>;
   const providers = mode === "both" ? ["gitlab", "github"] : [mode];
@@ -113,23 +139,18 @@ export function selfIssueIntakeSubmissionBlocker(
 }
 
 export function selfIssueEvidenceControls(status: string): SelfIssueEvidenceControl[] {
-  if (["collecting_static", "collecting_live"].includes(status)) {
+  if (["collecting_static", "collecting_live", "waiting_for_runtime"].includes(status)) {
     return [{
-      action: "self-issue-evidence-interrupt",
-      label: "Interrupt",
-      busyLabel: "Interrupting…",
+      action: "self-issue-evaluation-cancel",
+      label: "Cancel evaluation",
+      busyLabel: "Cancelling…",
     }];
   }
   if (status === "interrupted") {
     return [
       {
-        action: "self-issue-evidence-resume",
-        label: "Resume from checkpoint",
-        busyLabel: "Resuming…",
-      },
-      {
-        action: "self-issue-evidence-start",
-        label: "Restart with fresh evidence",
+        action: "self-issue-evaluation-start",
+        label: "Start a new evaluation",
         busyLabel: "Restarting…",
         force: true,
       },
@@ -137,14 +158,14 @@ export function selfIssueEvidenceControls(status: string): SelfIssueEvidenceCont
   }
   if (status === "pending") {
     return [{
-      action: "self-issue-evidence-start",
+      action: "self-issue-evaluation-start",
       label: "Start",
       busyLabel: "Starting…",
     }];
   }
   if (["failed", "completed"].includes(status)) {
     return [{
-      action: "self-issue-evidence-start",
+      action: "self-issue-evaluation-start",
       label: "Restart",
       busyLabel: "Starting…",
       force: true,
@@ -244,6 +265,14 @@ export function selfIssuePublicationLocked(card: unknown): boolean {
   ));
 }
 
+export function selfIssuePublicationIsPartial(card: unknown): boolean {
+  if (!card || typeof card !== "object" || Array.isArray(card)) return false;
+  const value = card as Record<string, unknown>;
+  return [value.publication_state, value.status].some((status) => (
+    String(status || "") === "partially_published"
+  ));
+}
+
 export function selfIssueTargetLocked(card: unknown): boolean {
   if (!card || typeof card !== "object" || Array.isArray(card)) return false;
   const policy = (card as Record<string, unknown>).target_policy;
@@ -284,7 +313,44 @@ export function selfIssueSlashAction(message: string): SelfIssueSlashAction | nu
     action: "self-issue-capture",
     payload: {
       description: argument,
+      direct_report: true,
+      portable_session: true,
     },
+  };
+}
+
+/** Detect the reporter's browser platform without coupling the skill to a host. */
+export function detectBrowserEnvironment(): Record<string, string> {
+  if (typeof navigator === "undefined") {
+    return { os: "unknown", version: "unknown", arch: "unknown", source: "browser_detector" };
+  }
+  const userAgent = String(navigator.userAgent || "");
+  const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  const platform = String(
+    userAgentData?.platform
+      || navigator.platform || "",
+  );
+  const os = /android/i.test(userAgent) ? "Android"
+    : /iphone|ipad|ipod/i.test(userAgent) ? "iOS"
+      : /mac/i.test(platform) || /mac os/i.test(userAgent) ? "macOS"
+        : /win/i.test(platform) || /windows/i.test(userAgent) ? "Windows"
+          : /linux/i.test(platform) || /linux/i.test(userAgent) ? "Linux"
+            : platform || "unknown";
+  const version = os === "Windows"
+    ? ((/Windows NT\s+([0-9.]+)/i.exec(userAgent)?.[1]) || "unknown")
+    : os === "macOS"
+      ? ((/Mac OS X\s*([0-9_\.]+)/i.exec(userAgent)?.[1]?.replaceAll("_", ".")) || "unknown")
+      : os === "Android"
+        ? ((/Android\s+([0-9.]+)/i.exec(userAgent)?.[1]) || "unknown")
+        : os === "iOS"
+          ? ((/OS\s+([0-9_]+)/i.exec(userAgent)?.[1]?.replaceAll("_", ".")) || "unknown")
+          : "unknown";
+  return {
+    os,
+    version,
+    arch: String(userAgentData?.platform || navigator.platform || "unknown"),
+    source: "browser_detector",
+    detected_at: new Date().toISOString(),
   };
 }
 
@@ -317,4 +383,79 @@ export function selfIssueOAuthSession(): string {
 
 export function selfIssueGithubTransactionStorageKey(projectId: string, draftId: string): string {
   return `zf.selfIssueGithubTransaction:${encodeURIComponent(projectId)}:${encodeURIComponent(draftId)}`;
+}
+
+export function selfIssueRestoreGithubAuthorization(
+  draft: Record<string, unknown>, transactionId: string,
+): Record<string, unknown> {
+  const rawBatch = draft.publication_batch;
+  const batch = rawBatch && typeof rawBatch === "object" && !Array.isArray(rawBatch)
+    ? rawBatch as Record<string, unknown>
+    : {};
+  const publicationState = String(draft.publication_state || batch.status || "");
+  const publicationMode = String(draft.publication_mode || batch.publication_mode || "");
+  if (
+    !transactionId
+    || draft.transaction_id
+    || publicationState !== "confirmed"
+    || !["github", "both"].includes(publicationMode)
+  ) return draft;
+  return {
+    ...draft,
+    provider: "github",
+    status: "authorization_pending",
+    transaction_id: transactionId,
+  };
+}
+
+export function selfIssueGithubAuthorizationShouldForget(status: string): boolean {
+  return [
+    "access_denied",
+    "expired_token",
+    "confirmation_expired",
+    "stale_confirmation",
+    "published",
+    "partially_published",
+    "publish_failed",
+    "outcome_unknown",
+  ].includes(status);
+}
+
+export function selfIssueGithubAuthorizationPollCanStart(
+  transactionId: string, inFlightTransactionId: string,
+): boolean {
+  return Boolean(transactionId) && transactionId !== inFlightTransactionId;
+}
+
+export function selfIssueGithubAuthorizationPollShouldReset(
+  status: string, reason: string,
+): boolean {
+  return status === "invalid_self_issue_request"
+    && reason.includes("GitHub Device Flow transaction is invalid");
+}
+
+export function selfIssueGithubEvidenceRetryTarget(
+  card: Record<string, unknown>,
+): { provider: string; intentId: string } | null {
+  const rawBatch = card.publication_batch;
+  const batch = rawBatch && typeof rawBatch === "object" && !Array.isArray(rawBatch)
+    ? rawBatch as Record<string, unknown>
+    : {};
+  const rawComments = batch.evidence_comments;
+  const comments = rawComments && typeof rawComments === "object" && !Array.isArray(rawComments)
+    ? rawComments as Record<string, unknown>
+    : {};
+  const rawGithub = comments.github;
+  const github = rawGithub && typeof rawGithub === "object" && !Array.isArray(rawGithub)
+    ? rawGithub as Record<string, unknown>
+    : {};
+  if (!["publish_failed", "outcome_unknown"].includes(String(github.status || ""))) {
+    return null;
+  }
+  const rawIntentIds = card.intent_ids ?? batch.intent_ids;
+  const intentIds = rawIntentIds && typeof rawIntentIds === "object" && !Array.isArray(rawIntentIds)
+    ? rawIntentIds as Record<string, unknown>
+    : {};
+  const intentId = String(intentIds.github || card.intent_id || "").trim();
+  return intentId ? { provider: "github", intentId } : null;
 }

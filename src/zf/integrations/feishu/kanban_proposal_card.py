@@ -42,8 +42,8 @@ def build_kanban_proposal_card(item: dict[str, Any]) -> dict[str, Any]:
                     "content": (
                         f"**action:** `{action}`\n"
                         f"**reason:** {reason or '(未提供)'}\n"
-                        f"**proposal:** `{proposal_id}` rev "
-                        f"{int(item.get('revision') or 1)}\n"
+                        f"**proposal:** `{proposal_id}`\n"
+                        f"**revision:** `{int(item.get('revision') or 1)}`\n"
                         f"**digest:** `{str(item.get('proposal_digest') or '')[:16]}`"
                     ),
                 },

@@ -26,7 +26,6 @@ from __future__ import annotations
 import asyncio
 from collections import deque
 from dataclasses import dataclass
-from enum import Enum
 import json
 from pathlib import Path
 import threading
@@ -46,6 +45,12 @@ from zf.runtime.provider_stop import classify_provider_stop
 from zf.runtime.runtime_logs import write_runtime_log
 from zf.runtime.session_mutex import SessionLock
 from zf.runtime.session_tailer import claude_session_path
+from zf.runtime.stream_result_contract import (
+    DrainStatus, failure_reason, is_result_message,
+)
+from zf.runtime.stream_query_lifecycle import (
+    ActiveStreamTurn, StreamQueryLifecycleMixin, drain_messages,
+)
 from zf.runtime.spawn_coordinator import purge_stale_claude_session_lock
 from zf.runtime.transport import AttachHandle, DispatchContext, TransportAdapter
 
@@ -62,19 +67,6 @@ class _QueuedDispatch:
     briefing_path: Path
     prompt: str
     context: DispatchContext | None
-
-
-class DrainStatus(str, Enum):
-    """Outcome of a single _drain pass.
-
-    OK            — stream completed cleanly (or with rate_limit_event AFTER
-                    assistant produced messages — B7 partial-progress case)
-    RATE_LIMITED  — rate_limit_event hit before assistant said anything
-    TIMEOUT       — exceeded transport_timeout_s without finishing
-    """
-    OK = "ok"
-    RATE_LIMITED = "rate_limited"
-    TIMEOUT = "timeout"
 
 
 def _stringify(content: Any) -> str:
@@ -130,12 +122,12 @@ def _latest_claude_api_error(cwd: Path, session_id: str) -> dict[str, object]:
 
 
 def _real_query() -> QueryFn:
-    """Lazy import of claude_code_sdk.query so the module loads without the SDK."""
-    from claude_code_sdk import query  # type: ignore
-    return query
+    """Lazy SDK boundary with query-owned process-group cleanup."""
+    from zf.runtime.stream_owned_process import owned_query
+    return owned_query
 
 
-class StreamJsonTransport(TransportAdapter):
+class StreamJsonTransport(StreamQueryLifecycleMixin, TransportAdapter):
     def __init__(
         self,
         state_dir: Path,
@@ -183,6 +175,7 @@ class StreamJsonTransport(TransportAdapter):
         self._dispatch_queues: dict[str, deque[_QueuedDispatch]] = {}
         self._dispatch_threads: dict[str, threading.Thread] = {}
         self._closing = False
+        self._init_query_lifecycle()
 
     # -- TransportAdapter interface --
 
@@ -204,9 +197,11 @@ class StreamJsonTransport(TransportAdapter):
         # Stream-json has no long-lived process, but SpawnCoordinator's argv
         # carries role-scoped capability credentials. Preserve that leading
         # ``env KEY=VALUE ...`` block for the SDK subprocess.
-        self.register_role(role, cwd=cwd)
-        self._env_by_role[role.instance_id] = _leading_env_assignments(argv)
-        self._last_query_ok[role.instance_id] = True
+        with self._dispatch_lock:
+            self._prepare_stream_spawn(role.instance_id)
+            self.register_role(role, cwd=cwd)
+            self._env_by_role[role.instance_id] = _leading_env_assignments(argv)
+            self._last_query_ok[role.instance_id] = True
 
     def register_role(self, role: RoleConfig, *, cwd: Path | None = None) -> None:
         """Record role config without spawning a long-lived process."""
@@ -257,8 +252,7 @@ class StreamJsonTransport(TransportAdapter):
         )
         start_thread: threading.Thread | None = None
         with self._dispatch_lock:
-            if self._closing:
-                raise RuntimeError("stream-json transport is shutting down")
+            self._check_stream_dispatch(role_name)
             queue = self._dispatch_queues.setdefault(role_name, deque())
             if len(queue) >= _MAX_QUEUED_TURNS_PER_ROLE:
                 raise RuntimeError(
@@ -274,11 +268,10 @@ class StreamJsonTransport(TransportAdapter):
                     daemon=True,
                 )
                 self._dispatch_threads[role_name] = start_thread
-        if start_thread is not None:
-            try:
-                start_thread.start()
-            except Exception:
-                with self._dispatch_lock:
+            if start_thread is not None:
+                try:
+                    start_thread.start()
+                except Exception:
                     self._dispatch_threads.pop(role_name, None)
                     queued = self._dispatch_queues.get(role_name)
                     if queued:
@@ -286,13 +279,13 @@ class StreamJsonTransport(TransportAdapter):
                             queued.remove(dispatch)
                         except ValueError:
                             pass
-                raise
+                    raise
 
     def _dispatch_loop(self, role_name: str) -> None:
         while True:
             with self._dispatch_lock:
                 queue = self._dispatch_queues.get(role_name)
-                if self._closing or not queue:
+                if self._closing or role_name in self._stopped_roles or not queue:
                     self._dispatch_queues.pop(role_name, None)
                     self._dispatch_threads.pop(role_name, None)
                     return
@@ -351,13 +344,14 @@ class StreamJsonTransport(TransportAdapter):
             },
         )])
 
-    def _send_task_sync(
+    def _send_task_turn(
         self,
         role_name: str,
         briefing_path: Path,
         prompt: str,
         *,
         context: DispatchContext | None = None,
+        turn: ActiveStreamTurn,
     ) -> None:
         session_id = str(self.registry.get_or_create(role_name))
         role = self._roles.get(role_name) or RoleConfig(name=role_name)
@@ -419,6 +413,7 @@ class StreamJsonTransport(TransportAdapter):
                         role=role, is_resume=resume,
                         cwd=role_cwd,
                         env=role_env,
+                        turn=turn,
                     )
                 )
 
@@ -456,6 +451,17 @@ class StreamJsonTransport(TransportAdapter):
                 )
                 raise
 
+        with self._dispatch_lock:
+            if turn.cancelled.is_set():
+                messages, status = [], DrainStatus.CANCELLED
+            self._publish_stream_turn(
+                role_name, session_id, role, context, messages, status, started_at,
+            )
+
+    def _publish_stream_turn(
+        self, role_name: str, session_id: str, role: RoleConfig,
+        context: DispatchContext, messages: list[Any], status: DrainStatus, started_at: float,
+    ) -> None:
         self._session_used.add(role_name)
         self._messages.setdefault(role_name, []).extend(messages)
         if messages:
@@ -468,16 +474,8 @@ class StreamJsonTransport(TransportAdapter):
             model_context_window=role.context_window_tokens,
         )
 
-        # B11: if drain hit rate_limit / timeout AND assistant never produced
-        # any meaningful event (only SystemMessage init), surface an explicit
-        # signal instead of silent fail. The orchestrator's cool-down handler
-        # will pause Layer 2 dispatch until the cool-down expires.
-        had_assistant_event = any(
-            e.type in {"agent.thinking", "agent.text", "agent.tool.use",
-                       "agent.tool.result", "agent.usage"}
-            for e in agent_events
-        )
-        if status == DrainStatus.RATE_LIMITED and not had_assistant_event:
+        if status not in {DrainStatus.OK, DrainStatus.TIMEOUT}:
+            reason = failure_reason(status)
             agent_events.append(ZfEvent(
                 type="agent.api_blocked",
                 actor=role_name,
@@ -485,10 +483,12 @@ class StreamJsonTransport(TransportAdapter):
                 correlation_id=context.trace_id,
                 payload={
                     **context.to_payload(),
-                    "reason": "rate_limit_event before assistant turn",
+                    "reason": reason,
+                    "drain_status": status.value,
                     "provider_stop_reason": classify_provider_stop(
-                        {"reason": "rate_limit_event before assistant turn"},
-                        status=status.value,
+                        {"reason": reason},
+                        status="rate_limited" if status == DrainStatus.RATE_LIMITED
+                        else "transport_error",
                     ),
                     "session_id": session_id,
                 },
@@ -521,7 +521,7 @@ class StreamJsonTransport(TransportAdapter):
             failure_class=(
                 "provider_rate_limited"
                 if status == DrainStatus.RATE_LIMITED
-                else "provider_timeout" if status == DrainStatus.TIMEOUT else ""
+                else f"provider_{status.value}" if status != DrainStatus.OK else ""
             ),
             duration_s=time.monotonic() - started_at,
         )
@@ -648,6 +648,7 @@ class StreamJsonTransport(TransportAdapter):
         is_resume: bool = False,
         cwd: Path | None = None,
         env: dict[str, str] | None = None,
+        turn: ActiveStreamTurn | None = None,
     ) -> tuple[list[Any], DrainStatus]:
         query_fn = self._query_fn or _real_query()
         options = self._build_options(
@@ -657,25 +658,9 @@ class StreamJsonTransport(TransportAdapter):
             cwd=cwd or self.cwd,
             env=env,
         )
-        collected: list[Any] = []
-        status = DrainStatus.OK
-        try:
-            async with asyncio.timeout(self._timeout_s):
-                async for msg in query_fn(prompt=prompt, options=options):
-                    collected.append(msg)
-        except asyncio.TimeoutError:
-            status = DrainStatus.TIMEOUT
-        except Exception as e:
-            # Claude SDK raises MessageParseError on rate_limit_event — the
-            # SDK doesn't know this stream-end marker. B7 used to swallow it
-            # silently; B11 changed that to a status flag so send_task can
-            # decide whether to surface a signal (RATE_LIMITED if no
-            # assistant message was collected) or treat the partial drain
-            # as success (if assistant did produce messages first).
-            if "rate_limit_event" not in str(e):
-                raise
-            status = DrainStatus.RATE_LIMITED
-        return collected, status
+        return await drain_messages(
+            query_fn, prompt=prompt, options=options, timeout_s=self._timeout_s, turn=turn,
+        )
 
     def _build_options(
         self,
@@ -800,13 +785,10 @@ class StreamJsonTransport(TransportAdapter):
         out: list[ZfEvent] = []
         observed_model = ""
         for m in messages:
-            cls = type(m).__name__
             message_model = str(getattr(m, "model", "") or "")
             if message_model:
                 observed_model = message_model
-            if cls == "ResultMessage" or all(
-                hasattr(m, f) for f in ("session_id", "total_cost_usd", "usage")
-            ):
+            if is_result_message(m):
                 usage = getattr(m, "usage", {})
                 payload = {
                     "session_id": getattr(m, "session_id", ""),
@@ -884,27 +866,14 @@ class StreamJsonTransport(TransportAdapter):
         )
 
     def terminate(self, role_name: str) -> None:
-        with self._dispatch_lock:
-            self._dispatch_queues.pop(role_name, None)
-            self._messages.pop(role_name, None)
-            self._roles.pop(role_name, None)
-            self._cwd_by_role.pop(role_name, None)
-            self._env_by_role.pop(role_name, None)
-            self._last_query_ok.pop(role_name, None)
-            self._heartbeat.pop(role_name, None)
-            self._session_used.discard(role_name)
+        self._stop_stream_roles({role_name})
 
     def shutdown(self, *, exclude_roles: set[str] | None = None) -> None:
         with self._dispatch_lock:
             self._closing = True
-            self._dispatch_queues.clear()
-            self._messages.clear()
-            self._roles.clear()
-            self._cwd_by_role.clear()
-            self._env_by_role.clear()
-            self._last_query_ok.clear()
-            self._heartbeat.clear()
-            self._session_used.clear()
+            roles = (set(self._roles) | set(self._active_turns)
+                     | set(self._dispatch_threads) | set(self._last_query_ok))
+        self._stop_stream_roles(roles)
 
 
 def _leading_env_assignments(argv: list[str]) -> dict[str, str]:

@@ -571,11 +571,11 @@ class GracefulShutdown:
             if role.name == "orchestrator":
                 continue
             try:
-                output = self.transport.capture_log(role.name, lines=2000)
+                output = self.transport.capture_log(role.instance_id, lines=2000)
             except Exception:
                 continue
             if output:
-                (logs_dir / f"{role.name}.log").write_text(output, encoding="utf-8")
+                (logs_dir / f"{role.instance_id}.log").write_text(output, encoding="utf-8")
 
     def _snapshot_memory(self) -> None:
         # A staleness sweep would require StalenessChecker + per-entry rewrite,

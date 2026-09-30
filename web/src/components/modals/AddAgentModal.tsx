@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // AddAgentModal + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ChannelSummary } from "../../api/types";
 import { Code } from "lucide-react";
@@ -39,6 +41,7 @@ export function AddAgentModal({
   selectedChannelId: string;
   skillOptions: string[];
 }) {
+  useSettingsPreferences();
   const update = (patch: Partial<AddAgentDraft>) => onDraftChange({ ...draft, ...patch });
   const channelOptions = channels.length
     ? channels
@@ -50,10 +53,10 @@ export function AddAgentModal({
       <section className="modal-panel" role="dialog" aria-modal="true" aria-label="Add Agent to Channel">
         <div className="section-heading">
           <div>
-            <h2>Add Agent</h2>
+            <h2>{uiText("Add Agent")}</h2>
             <span className="muted">channel member only; execution stays kernel gated</span>
           </div>
-          <button className="icon-button" type="button" onClick={onClose}>Close</button>
+          <button className="icon-button" type="button" onClick={onClose}>{uiText("Close")}</button>
         </div>
         <div className="modal-body">
           <select className="filter-input" value={selectedChannelId} onChange={(event) => onChannelChange(event.target.value)}>
@@ -73,13 +76,13 @@ export function AddAgentModal({
               value={draft.memberType}
               onChange={(event) => update({ memberType: event.target.value as ChannelMemberType })}
             >
-              <option value="provider_agent">Provider agent</option>
-              <option value="persona_agent">Persona agent</option>
-              <option value="owner_delegate">Owner delegate</option>
-              <option value="runtime_role_binding">Runtime role binding</option>
-              <option value="observer">Observer</option>
-              <option value="automation_reporter">Automation reporter</option>
-              <option value="human">Human</option>
+              <option value="provider_agent">{uiText("Provider agent")}</option>
+              <option value="persona_agent">{uiText("Persona agent")}</option>
+              <option value="owner_delegate">{uiText("Owner delegate")}</option>
+              <option value="runtime_role_binding">{uiText("Runtime role binding")}</option>
+              <option value="observer">{uiText("Observer")}</option>
+              <option value="automation_reporter">{uiText("Automation reporter")}</option>
+              <option value="human">{uiText("Human")}</option>
             </select>
           </div>
           <div className="field-row">
@@ -92,8 +95,8 @@ export function AddAgentModal({
               <option value="claude-code">Claude Code</option>
               <option value="hermes">Hermes</option>
               <option value="openclaw">OpenClaw</option>
-              <option value="runtime-role">Runtime role</option>
-              <option value="fake">Fake/persona</option>
+              <option value="runtime-role">{uiText("Runtime role")}</option>
+              <option value="fake">{uiText("Fake/persona")}</option>
             </select>
             <select
               className="filter-input"
@@ -105,18 +108,18 @@ export function AddAgentModal({
               }}
             >
               <option value="arch">Arch</option>
-              <option value="facilitator">Facilitator</option>
-              <option value="tech_leader">Tech Leader</option>
-              <option value="product_pm">Product PM</option>
-              <option value="researcher">Researcher</option>
-              <option value="synthesizer">Synthesizer</option>
-              <option value="security_reviewer">Security Reviewer</option>
-              <option value="qa_analyst">QA Analyst</option>
-              <option value="dev_reviewer">Dev Reviewer</option>
+              <option value="facilitator">{uiText("Facilitator")}</option>
+              <option value="tech_leader">{uiText("Tech Leader")}</option>
+              <option value="product_pm">{uiText("Product PM")}</option>
+              <option value="researcher">{uiText("Researcher")}</option>
+              <option value="synthesizer">{uiText("Synthesizer")}</option>
+              <option value="security_reviewer">{uiText("Security Reviewer")}</option>
+              <option value="qa_analyst">{uiText("QA Analyst")}</option>
+              <option value="dev_reviewer">{uiText("Dev Reviewer")}</option>
               <option value="critic">Critic</option>
-              <option value="owner_delegate">Owner Delegate</option>
-              <option value="automation_reporter">Automation Reporter</option>
-              <option value="observer">Observer</option>
+              <option value="owner_delegate">{uiText("Owner Delegate")}</option>
+              <option value="automation_reporter">{uiText("Automation Reporter")}</option>
+              <option value="observer">{uiText("Observer")}</option>
             </select>
           </div>
           <div className="field-row">
@@ -183,18 +186,18 @@ export function AddAgentModal({
           />
           <input className="filter-input" placeholder="reason" value={draft.reason} onChange={(event) => update({ reason: event.target.value })} />
           <div className="checkbox-grid">
-            <label><input type="checkbox" checked readOnly /> Read</label>
-            <label><input type="checkbox" checked={draft.canMessage} onChange={(event) => update({ canMessage: event.target.checked })} /> Message</label>
-            <label><input type="checkbox" checked={draft.canSummarize} onChange={(event) => update({ canSummarize: event.target.checked })} /> Summarize</label>
-            <label><input type="checkbox" checked={draft.canProposeWorkflow} onChange={(event) => update({ canProposeWorkflow: event.target.checked })} /> Propose workflow</label>
+            <label><input type="checkbox" checked readOnly /> {uiText("Read")}</label>
+            <label><input type="checkbox" checked={draft.canMessage} onChange={(event) => update({ canMessage: event.target.checked })} /> {uiText("Message")}</label>
+            <label><input type="checkbox" checked={draft.canSummarize} onChange={(event) => update({ canSummarize: event.target.checked })} /> {uiText("Summarize")}</label>
+            <label><input type="checkbox" checked={draft.canProposeWorkflow} onChange={(event) => update({ canProposeWorkflow: event.target.checked })} /> {uiText("Propose workflow")}</label>
           </div>
         </div>
         <div className="action-row">
           <button className="icon-button primary" disabled={!canSubmit} type="button" onClick={onSubmit}>
-            Add to Channel
+            {uiText("Add to Channel")}
           </button>
           <button className="icon-button" type="button" onClick={() => onDraftChange(emptyAddAgentDraft())}>
-            Reset
+            {uiText("Reset")}
           </button>
         </div>
       </section>

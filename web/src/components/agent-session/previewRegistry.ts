@@ -27,7 +27,7 @@ export function previewItemsFromRefs(refs?: Record<string, unknown>): PreviewIte
       kind,
       id,
       name: name || id || kind,
-      meta: [profile, mime, refSizeLabel(Number(item.size ?? item.bytes ?? 0))].filter(Boolean).join(" / "),
+      meta: [profile, mime, refSizeLabel(Number(item.size ?? item.bytes ?? item.byte_count ?? 0))].filter(Boolean).join(" / "),
       profile,
       ref: item,
     });

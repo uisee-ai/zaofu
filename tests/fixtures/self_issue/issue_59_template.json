@@ -1,0 +1,199 @@
+{
+  "source": "https://github.com/rzwu-uisee/zaofu-self-issue/issues/59",
+  "marker": "845329052ec1235d9a03a028",
+  "disclosed": {
+    "actual_behavior": "CLI 在解析参数前因缺少 httpx 终止，help 无法显示。",
+    "additional_context": "",
+    "analysis": {
+      "external_issue_disposition": "needs_triage",
+      "investigation_gaps": [
+        {
+          "blocking": false,
+          "description": "The wheel has no embedded build commit; filename and HEAD cannot prove its build revision.",
+          "field": "wheel_source_revision",
+          "kind": "provenance_limitation"
+        },
+        {
+          "blocking": true,
+          "description": "No automated test was found that builds and installs the base wheel in isolation before invoking the CLI.",
+          "field": "clean_install_regression_test",
+          "kind": "verification_gap"
+        }
+      ],
+      "downstream_verification_tasks": [
+        "Correct the runtime dependency declaration or decouple the optional import.",
+        "Rebuild the wheel and verify `zf --help` and representative commands in fresh Python 3.11 and 3.12 environments.",
+        "Add a clean-install packaging regression test."
+      ],
+      "evidence_summary": [
+        {
+          "artifact": "attached clean-install log",
+          "conclusion": "Reported Python 3.12 clean install reaches the CLI and fails on missing httpx.",
+          "locations": [
+            "clean-install-output.log"
+          ],
+          "metadata_ref": "68002a055b74eb324175c76118162b0680950108b0d2b8aa1f9835f574db7995",
+          "ref": "artifacts/kanban-agent/attachments/68002a055b74eb324175c76118162b0680950108b0d2b8aa1f9835f574db7995/clean-install-output.log"
+        },
+        {
+          "artifact": "wheel metadata",
+          "conclusion": "The dependency is optionalized under dev.",
+          "locations": [
+            "Requires-Dist entries"
+          ],
+          "metadata_ref": "fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27",
+          "ref": "artifacts/kanban-agent/attachments/fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27/wheel-METADATA.txt"
+        },
+        {
+          "artifact": "independent bounded reproduction",
+          "conclusion": "The failure reproduces after the declared base dependency is installed.",
+          "locations": [
+            "command",
+            "stderr"
+          ],
+          "metadata_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json",
+          "ref": "parser-reproduction.json"
+        },
+        {
+          "artifact": "read-only source excerpts",
+          "conclusion": "These locations establish the packaging and import-chain cause.",
+          "locations": [
+            "pyproject.toml:11-16",
+            "src/zf/cli/main.py:25-32",
+            "src/zf/cli/restart.py:14",
+            "src/zf/core/cost/catalog.py:14"
+          ],
+          "metadata_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json",
+          "ref": "source-evidence.json"
+        },
+        {
+          "artifact": "wheel provenance inspection",
+          "conclusion": "The wheel digest is recorded and relevant files match HEAD, but no build commit is embedded.",
+          "locations": [
+            "wheel",
+            "sha256",
+            "metadata_matches_attachment"
+          ],
+          "metadata_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/wheel-manifest.json",
+          "ref": "wheel-manifest.json"
+        }
+      ],
+      "claims": [
+        {
+          "claim": "httpx is omitted from the base wheel dependency set.",
+          "confidence": "high",
+          "status": "observed",
+          "support": [
+            {
+              "conclusion": "PyYAML is a base requirement while httpx is declared only with extra == dev.",
+              "evidence_ref": "artifacts/kanban-agent/attachments/fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27/wheel-METADATA.txt"
+            },
+            {
+              "conclusion": "pyproject.toml at source revision 5c5fe055 has the same declaration.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json"
+            }
+          ]
+        },
+        {
+          "claim": "The CLI eagerly reaches an unconditional httpx import before help parsing completes.",
+          "confidence": "high",
+          "status": "reproduced",
+          "support": [
+            {
+              "conclusion": "A clean environment with PyYAML installed fails during build_parser with ModuleNotFoundError for httpx.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json"
+            },
+            {
+              "conclusion": "main.py imports restart; restart imports workflow_runtime; the cost catalog imports httpx unconditionally.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json"
+            }
+          ]
+        },
+        {
+          "claim": "Existing CLI tests do not cover base-wheel clean installation.",
+          "confidence": "high",
+          "status": "observed",
+          "support": [
+            {
+              "conclusion": "Two CLI smoke tests pass only in the development environment, where httpx 0.28.1 is installed.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/existing-tests.json"
+            },
+            {
+              "conclusion": "No focused packaging clean-install test was found.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/test-search.json"
+            }
+          ]
+        }
+      ],
+      "hypotheses": [
+        {
+          "confidence": "high",
+          "hypothesis": "httpx was incorrectly placed in the dev extra despite being required by the default CLI import graph.",
+          "status": "supported",
+          "support": [
+            {
+              "conclusion": "The packaging declaration and unconditional catalog import conflict.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json"
+            }
+          ]
+        },
+        {
+          "confidence": "high",
+          "hypothesis": "Eager subcommand registration turns the optional pricing implementation into a hard startup dependency.",
+          "status": "supported",
+          "support": [
+            {
+              "conclusion": "Failure occurs while constructing the parser, before command dispatch.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json"
+            }
+          ]
+        }
+      ],
+      "conflicts": [
+        {
+          "resolution": "That attempt was excluded from the issue conclusion; after PyYAML was installed, the parser independently reproduced the reported missing-httpx failure.",
+          "subject": "Initial investigator attempt used --no-deps and first failed on PyYAML.",
+          "support": [
+            {
+              "conclusion": "PyYAML installation completed before the parser reproduction.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/install.json"
+            },
+            {
+              "conclusion": "The remaining failure was specifically missing httpx.",
+              "evidence_ref": "/tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json"
+            }
+          ]
+        }
+      ],
+      "version_context": {
+        "investigation_checkout_revision": "5c5fe055a59999e058b182b90acbc7b9f8c68cb0",
+        "issue_project_root": "fd643cadb437e22bfde10c281b4855e2aa934293",
+        "reproduction_artifact_source": "/tmp/zaofu-issue-046-dist/zaofu-0.0.7-py3-none-any.whl",
+        "reproduction_version": "0.0.7"
+      },
+      "severity_status": "provisional",
+      "classification_status": "provisional",
+      "severity_reason": "基础安装使整个 CLI 入口不可用，而不是仅影响可选价格功能。"
+    },
+    "assessment_confidence": "high",
+    "assessment_status": "completed",
+    "bug_description": "0.0.7 基础 wheel 只声明 PyYAML；CLI 构建解析器时通过 restart、workflow runtime 和 cost catalog 导入 httpx，因此默认安装后无法运行 help。",
+    "classification": "configuration",
+    "component": "Python 打包与 CLI 导入链",
+    "environment": {},
+    "evidence_collection_mode": "static_plus_bounded_reproduction",
+    "evidence_collection_status": "completed",
+    "evidence_limit_reason": "",
+    "expected_behavior": "基础 wheel 安装完成后，`zf --help` 和 CLI 入口应能启动。",
+    "impact_scope": "unknown",
+    "project_version": "",
+    "recommended_next_action": "",
+    "reproduction_status": "reproduced",
+    "reproduction_steps": "1. 创建全新 Python 虚拟环境。\n2. 安装 zaofu-0.0.7 基础 wheel，使 PyYAML 按元数据安装。\n3. 运行 `from zf.cli.main import build_parser; build_parser()` 或 `zf --help`。\n4. 观察 `ModuleNotFoundError: No module named 'httpx'`。",
+    "runtime_status": "unknown",
+    "severity": "P1",
+    "source_code_revision": "",
+    "binary_attachments_omitted": true
+  },
+  "body": "## Describe the bug\n\n0.0.7 基础 wheel 只声明 PyYAML；CLI 构建解析器时通过 restart、workflow runtime 和 cost catalog 导入 httpx，因此默认安装后无法运行 help。\n\n## To reproduce\n\n1. 创建全新 Python 虚拟环境。\n2. 安装 zaofu-0.0.7 基础 wheel，使 PyYAML 按元数据安装。\n3. 运行 `from zf.cli.main import build_parser; build_parser()` 或 `zf --help`。\n4. 观察 `ModuleNotFoundError: No module named 'httpx'`。\n\n## Actual behavior\n\nCLI 在解析参数前因缺少 httpx 终止，help 无法显示。\n\n## Expected behavior\n\n基础 wheel 安装完成后，`zf --help` 和 CLI 入口应能启动。\n\n## Triage\n\n- **Classification:** configuration\n- **Classification status:** provisional\n- **Severity:** P1\n- **Reproduction status:** reproduced\n- **Component:** Python 打包与 CLI 导入链\n- **Assessment confidence:** high\n- **Evidence collection:** static_plus_bounded_reproduction\n- **Evidence collection status:** completed\n- **Assessment:** completed\n\n## Analysis\n\n### 一、Claims\n\n1. **Claim:** httpx is omitted from the base wheel dependency set.\n\n   (1) **Confidence:** high\n\n   (2) **Status:** observed\n\n   (3) **Support:** a. artifacts/kanban-agent/attachments/fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27/wheel-METADATA.txt：PyYAML is a base requirement while httpx is declared only with extra == dev.\n   \n   b. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json：pyproject.toml at source revision 5c5fe055 has the same declaration.\n\n2. **Claim:** The CLI eagerly reaches an unconditional httpx import before help parsing completes.\n\n   (1) **Confidence:** high\n\n   (2) **Status:** reproduced\n\n   (3) **Support:** a. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json：A clean environment with PyYAML installed fails during build_parser with ModuleNotFoundError for httpx.\n   \n   b. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json：main.py imports restart; restart imports workflow_runtime; the cost catalog imports httpx unconditionally.\n\n3. **Claim:** Existing CLI tests do not cover base-wheel clean installation.\n\n   (1) **Confidence:** high\n\n   (2) **Status:** observed\n\n   (3) **Support:** a. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/existing-tests.json：Two CLI smoke tests pass only in the development environment, where httpx 0.28.1 is installed.\n   \n   b. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/test-search.json：No focused packaging clean-install test was found.\n\n### 二、Conflicts\n\n1. **Conflict:** Initial investigator attempt used --no-deps and first failed on PyYAML.\n\n   (1) **Support:** a. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/install.json：PyYAML installation completed before the parser reproduction.\n   \n   b. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json：The remaining failure was specifically missing httpx.\n\n   (2) **Resolution:** That attempt was excluded from the issue conclusion; after PyYAML was installed, the parser independently reproduced the reported missing-httpx failure.\n\n### 三、Hypotheses\n\n1. **Hypothesis:** httpx was incorrectly placed in the dev extra despite being required by the default CLI import graph.\n\n   (1) **Confidence:** high\n\n   (2) **Support:** a. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json：The packaging declaration and unconditional catalog import conflict.\n\n   (3) **Status:** supported\n\n2. **Hypothesis:** Eager subcommand registration turns the optional pricing implementation into a hard startup dependency.\n\n   (1) **Confidence:** high\n\n   (2) **Support:** a. /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json：Failure occurs while constructing the parser, before command dispatch.\n\n   (3) **Status:** supported\n\n### 四、其他分析\n\n1. **External issue disposition:** needs_triage\n\n2. **Severity status:** provisional\n\n3. **Severity reason:** 基础安装使整个 CLI 入口不可用，而不是仅影响可选价格功能。\n\n## Evidence summary\n\n1. **Locations:** a. clean-install-output.log\n\n   (1) **Artifact:** attached clean-install log\n\n   (2) **Ref:** artifacts/kanban-agent/attachments/68002a055b74eb324175c76118162b0680950108b0d2b8aa1f9835f574db7995/clean-install-output.log\n\n   (3) **Metadata ref:** 68002a055b74eb324175c76118162b0680950108b0d2b8aa1f9835f574db7995\n\n   (4) **Conclusion:** Reported Python 3.12 clean install reaches the CLI and fails on missing httpx.\n\n2. **Locations:** a. Requires-Dist entries\n\n   (1) **Artifact:** wheel metadata\n\n   (2) **Ref:** artifacts/kanban-agent/attachments/fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27/wheel-METADATA.txt\n\n   (3) **Metadata ref:** fc42d2ba098fb2a7f81e275d604b8f945b2460bef6327f59663aef99aed68f27\n\n   (4) **Conclusion:** The dependency is optionalized under dev.\n\n3. **Locations:** a. command\n   \n   b. stderr\n\n   (1) **Artifact:** independent bounded reproduction\n\n   (2) **Ref:** parser-reproduction.json\n\n   (3) **Metadata ref:** /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/parser-reproduction.json\n\n   (4) **Conclusion:** The failure reproduces after the declared base dependency is installed.\n\n4. **Locations:** a. pyproject.toml:11-16\n   \n   b. src/zf/cli/main.py:25-32\n   \n   c. src/zf/cli/restart.py:14\n   \n   d. src/zf/core/cost/catalog.py:14\n\n   (1) **Artifact:** read-only source excerpts\n\n   (2) **Ref:** source-evidence.json\n\n   (3) **Metadata ref:** /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/source-evidence.json\n\n   (4) **Conclusion:** These locations establish the packaging and import-chain cause.\n\n5. **Locations:** a. wheel\n   \n   b. sha256\n   \n   c. metadata_matches_attachment\n\n   (1) **Artifact:** wheel provenance inspection\n\n   (2) **Ref:** wheel-manifest.json\n\n   (3) **Metadata ref:** /tmp/zf-issue-httpx-20260924T015145Z-bpcer210/wheel-manifest.json\n\n   (4) **Conclusion:** The wheel digest is recorded and relevant files match HEAD, but no build commit is embedded.\n\n## Investigation gaps\n\n1. **Description:** The wheel has no embedded build commit; filename and HEAD cannot prove its build revision.\n\n   (1) **Field:** wheel_source_revision\n\n   (2) **Kind:** provenance_limitation\n\n   (3) **Blocking:** No\n2. **Description:** No automated test was found that builds and installs the base wheel in isolation before invoking the CLI.\n\n   (1) **Field:** clean_install_regression_test\n\n   (2) **Kind:** verification_gap\n\n   (3) **Blocking:** Yes\n\n## Downstream verification tasks\n\n1. Correct the runtime dependency declaration or decouple the optional import.\n2. Rebuild the wheel and verify `zf --help` and representative commands in fresh Python 3.11 and 3.12 environments.\n3. Add a clean-install packaging regression test.\n\n## Version context\n\n- **Investigation checkout revision:** 5c5fe055a59999e058b182b90acbc7b9f8c68cb0\n- **Issue project root:** fd643cadb437e22bfde10c281b4855e2aa934293\n- **Reproduction artifact source:** /tmp/zaofu-issue-046-dist/zaofu-0.0.7-py3-none-any.whl\n- **Reproduction version:** 0.0.7\n\n## Binary attachments\n\nBinary attachments are not embedded in the Issue body. After publication, the host publishes download links, sources, descriptions and purposes in a separate Evidence comment.\n\n<!-- zf-self-issue:845329052ec1235d9a03a028 -->"
+}

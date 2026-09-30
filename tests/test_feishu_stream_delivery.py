@@ -330,7 +330,10 @@ def test_stream_card_uses_the_committed_reply_feishu_thread(tmp_path):
     assert len(transport.sent_messages) == 1
     message = transport.sent_messages[0]
     assert (message.chat_id, message.thread_id) == ("oc-origin", "om-root")
-    assert "最终可读回复。" in json.loads(message.content)["body"]["elements"][0]["content"]
+    card = json.loads(message.content)
+    assert "最终可读回复。" in json.dumps(card["body"]["elements"][0], ensure_ascii=False)
+    assert card["body"]["elements"][0]["tag"] == "collapsible_panel"
+    assert card["body"]["elements"][0]["expanded"] is False
 
 
 def test_member_scoped_stream_ledger_seeds_from_legacy_without_replay(tmp_path):

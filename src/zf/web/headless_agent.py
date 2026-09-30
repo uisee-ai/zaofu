@@ -172,6 +172,7 @@ class HeadlessBackend(Protocol):
         project_id: str = "",
         conversation_id: str = "",
         permission_profile: str = "read_only",
+        image_paths: list[str] | None = None,
     ) -> HeadlessTurnResult:
         ...
 
@@ -730,6 +731,7 @@ class CodexHeadlessBackend:
         project_id: str = "",
         conversation_id: str = "",
         permission_profile: str = "read_only",
+        image_paths: list[str] | None = None,
     ) -> HeadlessTurnResult:
         args = self.build_args()
         security_config = _codex_security_config(permission_profile)
@@ -808,9 +810,14 @@ class CodexHeadlessBackend:
                     raise RuntimeError("codex app-server returned no thread id")
                 client.thread_id = codex_thread_id
                 on_session_id(codex_thread_id)
+                turn_input: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+                turn_input.extend(
+                    {"type": "localImage", "path": path}
+                    for path in (image_paths or [])
+                )
                 turn_params: dict[str, Any] = {
                     "threadId": codex_thread_id,
-                    "input": [{"type": "text", "text": prompt}],
+                    "input": turn_input,
                 }
                 if thinking_level:
                     turn_params["effort"] = thinking_level
@@ -1008,40 +1015,36 @@ class KanbanHeadlessAgent:
                 context=context,
             )
             started_at = time.monotonic()
+            backend_turn_kwargs: dict[str, Any] = {
+                "prompt": prompt,
+                "cwd": self.project_root,
+                "system_prompt": self._system_prompt(permission_profile),
+                "thread_id": thread_id,
+                "provider_session_id": provider_session_id,
+                "on_session_id": pin,
+                "on_message": on_message,
+                "timeout_s": self.timeout_s,
+                "thinking_level": thinking_level,
+                "run_id": str(context.get("turn_id") or ""),
+                "run_thread_id": str(context.get("run_thread_id") or thread_key),
+                "project_id": str(context.get("project_id") or ""),
+                "conversation_id": str(context.get("conversation_id") or ""),
+                "permission_profile": permission_profile,
+            }
+            if isinstance(adapter, CodexHeadlessBackend):
+                backend_turn_kwargs["image_paths"] = [
+                    str(path) for path in context.get("native_image_paths", [])
+                    if str(path).strip()
+                ]
             result = adapter.run_turn(
-                prompt=prompt,
-                cwd=self.project_root,
-                system_prompt=self._system_prompt(permission_profile),
-                thread_id=thread_id,
-                provider_session_id=provider_session_id,
-                on_session_id=pin,
-                on_message=on_message,
-                timeout_s=self.timeout_s,
-                thinking_level=thinking_level,
-                run_id=str(context.get("turn_id") or ""),
-                run_thread_id=str(context.get("run_thread_id") or thread_key),
-                project_id=str(context.get("project_id") or ""),
-                conversation_id=str(context.get("conversation_id") or ""),
-                permission_profile=permission_profile,
+                **backend_turn_kwargs,
             )
             if result.status != "cancelled" and not result.ok and provider_session_id and not result.provider_session_id:
                 fallback_reason = result.fallback_reason or "resume failed; retried fresh"
-                retry = adapter.run_turn(
-                    prompt=prompt,
-                    cwd=self.project_root,
-                    system_prompt=self._system_prompt(permission_profile),
-                    thread_id=thread_id,
-                    provider_session_id="",
-                    on_session_id=pin,
-                    on_message=on_message,
-                    timeout_s=self.timeout_s,
-                    thinking_level=thinking_level,
-                    run_id=str(context.get("turn_id") or ""),
-                    run_thread_id=str(context.get("run_thread_id") or thread_key),
-                    project_id=str(context.get("project_id") or ""),
-                    conversation_id=str(context.get("conversation_id") or ""),
-                    permission_profile=permission_profile,
-                )
+                retry = adapter.run_turn(**{
+                    **backend_turn_kwargs,
+                    "provider_session_id": "",
+                })
                 if retry.fallback_reason:
                     fallback_reason = retry.fallback_reason
                 result = replace(retry, fallback_reason=fallback_reason)
@@ -1192,6 +1195,12 @@ class KanbanHeadlessAgent:
                 "The operator explicitly authorized full project shell and Git "
                 "access for this turn. Follow the request directly while preserving "
                 "ZaoFu state ownership and repository safety rules."
+            ),
+            "issue_investigation": (
+                "The operator authorized full read/execute access for evidence investigation. "
+                "You may inspect related checkouts, build artifacts, logs, tests and create "
+                "temporary isolated repro environments, but MUST NOT edit source files, "
+                "configuration, tests, Git refs, or Kernel-owned state."
             ),
         }[profile]
         return (
@@ -1411,7 +1420,8 @@ class KanbanHeadlessAgent:
         task_id: str,
         context: dict[str, Any],
     ) -> str:
-        return "\n".join([
+        attachment_context = str(context.get("attachment_context") or "").strip()
+        sections = [
             "ZaoFu Kanban Agent turn",
             f"project_root: {self.project_root}",
             f"state_dir: {self.state_dir}",
@@ -1419,10 +1429,15 @@ class KanbanHeadlessAgent:
             f"thread_key: {str(context.get('thread_key') or '')}",
             f"zf_cli_cmd: {_headless_zf_cli_cmd()}",
             f"context: {json.dumps(context, ensure_ascii=False, sort_keys=True)}",
+        ]
+        if attachment_context:
+            sections.extend(["", attachment_context])
+        sections.extend([
             "",
             "User message:",
             message,
         ])
+        return "\n".join(sections)
 
 
 def _permission_drift_block_reason(drift: dict[str, Any]) -> str:
@@ -2169,6 +2184,10 @@ class _CodexRpcClient:
             return False
         if self.permission_profile == "dangerous_full":
             return True
+        if self.permission_profile == "issue_investigation":
+            return method == "execCommandApproval" or method.endswith(
+                "item/commandExecution/requestApproval"
+            )
         if method == "applyPatchApproval":
             return _codex_file_changes_allowed(
                 params,

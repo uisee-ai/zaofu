@@ -49,9 +49,13 @@ def build_channel_result_card(receipt: dict[str, Any]) -> dict[str, Any]:
     )
     task_id = str(receipt.get("task_id") or "")
     if task_id:
-        body = f"{kind_label}：任务 **{task_id}** {status_label}。"
+        body = (
+            f"{kind_label}\n"
+            f"任务：**{task_id}**\n"
+            f"状态：{status_label}"
+        )
     else:
-        body = f"{kind_label}，当前状态：{status_label}。"
+        body = f"{kind_label}\n状态：{status_label}"
     return {
         "config": {"wide_screen_mode": True},
         "header": {

@@ -1,0 +1,154 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K515-native-normal",
+      "description": "原生主链正常 impl→verify→candidate",
+      "format": "native-run",
+      "role": "normal_native",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_start_dispatch_submit_verify_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-normal-20260923/native-run.json",
+        "sha256": "dfab9562bc9c1ba63fc7113af078026429d1d39e35348d47089e5ccbc0718dad"
+      }
+    },
+    {
+      "id": "K515-native-impl-recovery",
+      "description": "原生 impl 在途中断恢复",
+      "format": "native-run",
+      "role": "impl_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[impl]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-impl-20260923/native-run.json",
+        "sha256": "8d565a1b0d57aa415b50b13169d51e9eeaef1e666333c6e3a833219c108020ae"
+      }
+    },
+    {
+      "id": "K515-native-verify-recovery",
+      "description": "原生 verify 在途恢复",
+      "format": "native-run",
+      "role": "verify_recovery",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_claude_pipeline.py::test_native_claude_interrupted_stage_recovers_to_candidate[verify]"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k515-native-verify-20260924/native-run.json",
+        "sha256": "e125867c0c23bebfedf18fb72f9cc912dd356c3d4388cf47b0333c7f50f4971c"
+      }
+    },
+    {
+      "id": "current-premerge",
+      "description": "K556当前完整premerge脚本；保留ZF-TEST-040结构红灯",
+      "format": "premerge-run",
+      "role": "premerge",
+      "nodeids": [],
+      "report": {
+        "ref": "/tmp/zf-k556-premerge-20260925-Cxk3rZ/run/premerge-run.json",
+        "sha256": "788d0ee794c0b27b1cd8b738d8e7f0a29041e026483844957b2773c8b4187138"
+      }
+    },
+    {
+      "id": "K553-native-long",
+      "description": "原生长工具检查点停机恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_long_task.py::test_native_long_tool_cli_recovery_preserves_completed_chunk"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+        "sha256": "f83229dd12d6a6b7445ae1c6331d2fb30c8fcb9959e31734bbd1c714ef16d136"
+      }
+    },
+    {
+      "id": "K546-native-writer",
+      "description": "原生blocking writer批次恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_writer_batch.py::test_native_writer_batch_recovers_only_unfinished_task"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+        "sha256": "8f8807b8b5246f361434367f1b9219c958e2c7df45e825f7e2ec8a2d79467c51"
+      }
+    },
+    {
+      "id": "K548-native-network",
+      "description": "受控网络断流后的原生CLI恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_network.py::test_native_network_cut_cli_recovery_to_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+        "sha256": "7f7b3d4dcb501a626904ea4ffd2e8f2417358e0fdfdece8ecabfabb10bf3e652"
+      }
+    },
+    {
+      "id": "K552-F2-long-allocation",
+      "description": "32Task持续分配对照（保留失败）",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_workloop_host.py::test_sustained_task_pipeline_releases_owned_resources"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+        "sha256": "24739b50750f654f6ecaea1f870b833be9e366c5aa5178bc4b782f48d63b503e"
+      }
+    },
+    {
+      "id": "K547-native-legacy-queue",
+      "description": "原生legacy Provider排队超时恢复",
+      "nodeids": [],
+      "reason": "原生节点尚未实现，当前Codex未登录；离线hook/自然时钟证据不替代原生报告。"
+    },
+    {
+      "id": "K530-watchdog-root-cause",
+      "description": "Issue live watchdog首次异常根因",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "reason": "正常链通过但不证明历史watchdog根因，未将该正常节点作为根因关闭证据。"
+    },
+    {
+      "id": "OS-crash-takeover",
+      "description": "整机OS crash后恢复",
+      "nodeids": [],
+      "reason": "隔离虚拟机执行器未就绪；未实现/未执行整机OS crash，禁止崩溃共享宿主。"
+    },
+    {
+      "id": "PERF-05-full",
+      "description": "完整长期mock资源稳定性",
+      "nodeids": [],
+      "reason": "已有有限32Task及资源释放报告不是完整长期稳定性证明；F2追踪失败仍开放。"
+    },
+    {
+      "id": "current-deterministic-mainline",
+      "description": "当前完整MAINLINE registry来源绑定验收",
+      "format": "mainline-run",
+      "nodeids": [],
+      "report": {
+        "ref": "/tmp/zf-k556-mainline-rerun-20260925-131sVP/run/testkit-run.json",
+        "sha256": "e59cf50d45a6681960cff870fe390982ecc5606c4a853e5c7f3e39c39b378afc"
+      }
+    },
+    {
+      "id": "four-flow-live-source-bound",
+      "description": "General/Issue/PRD/Refactor与双lane浏览器实时链的执行时来源绑定",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_runtime.py::test_browser_general_start_is_driven_by_live_zf_start",
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]",
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[prd]",
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor]",
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-strong]",
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[refactor-two-lane]"
+      ],
+      "reason": "历史JUnit/browser-gate保留通过/重启/清理观察，但未找到testkit-run/source-before/source-after/phase绑定；禁止用当前摘要回填。浏览器重验还需覆盖web来源，普通SOURCE_SCOPE不包含web。"
+    },
+    {
+      "id": "final-unified-acceptance",
+      "description": "原五项主链/完整premerge与扩展需求最终同源验收",
+      "nodeids": [],
+      "reason": "旧五项与扩展报告虽然可分别校验，但仍存在结构红灯、开放项和不同来源；不授权最终发布。"
+    }
+  ]
+}

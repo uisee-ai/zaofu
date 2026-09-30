@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../../settings/useSettingsPreferences";
+import { uiText } from "../../settings/uiText";
 // Kanban TaskCard + 卡内子组件 —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT slice 3,docs/design/67 §4.1)。
 // 纯展示组件:消费 board 列模型 + lib 的 format/task-display helper,只读 projection,不持 truth。
 import type { CSSProperties, PointerEvent } from "react";
@@ -151,8 +153,9 @@ export function RouteSummaryStrip({
   compact?: boolean;
   route?: Task["route_summary"] | null;
 }) {
+  useSettingsPreferences();
   if (!route || route.empty || !route.summary) {
-    return compact ? null : <p className="empty-text route-empty">No execution route yet.</p>;
+    return compact ? null : <p className="empty-text route-empty">{uiText("No execution route yet.")}</p>;
   }
   const steps = route.summary.split(" -> ").filter(Boolean);
   return (

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/project-assessment-result.v1.json",
+  "title": "Provider-neutral Project Assessment Result v1",
+  "type": "object",
+  "required": ["schema_version", "status", "summary", "findings", "reason"],
+  "properties": {
+    "schema_version": { "const": "project-assessment-result.v1" },
+    "status": { "enum": ["completed", "failed", "not_run"] },
+    "summary": { "type": "string", "maxLength": 12000 },
+    "findings": {
+      "type": "array",
+      "maxItems": 200,
+      "items": {
+        "type": "object",
+        "required": ["kind", "summary", "evidence_refs"],
+        "properties": {
+          "kind": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 4000 },
+          "evidence_refs": { "type": "array", "items": { "type": "string" }, "maxItems": 50 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "reason": { "type": "string", "maxLength": 2000 }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,81 @@
+{
+  "schema_version": "zf-requirement-audit-input.v1",
+  "requirements": [
+    {
+      "id": "K553-native-long",
+      "description": "原生长工具检查点停机恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_long_task.py::test_native_long_tool_cli_recovery_preserves_completed_chunk"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k553-native-long-bound-20260925/testkit-run.json",
+        "sha256": "f83229dd12d6a6b7445ae1c6331d2fb30c8fcb9959e31734bbd1c714ef16d136"
+      }
+    },
+    {
+      "id": "K546-native-writer",
+      "description": "原生 blocking writer 批次恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_writer_batch.py::test_native_writer_batch_recovers_only_unfinished_task"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k546-native-writer-third-20260924-81__n4k0/testkit-run.json",
+        "sha256": "8f8807b8b5246f361434367f1b9219c958e2c7df45e825f7e2ec8a2d79467c51"
+      }
+    },
+    {
+      "id": "K548-native-network",
+      "description": "受控网络断流后的原生 CLI 恢复",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s5_native_network.py::test_native_network_cut_cli_recovery_to_candidate"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k548-native-cli-third-20260924-oirz2cya/testkit-run.json",
+        "sha256": "7f7b3d4dcb501a626904ea4ffd2e8f2417358e0fdfdece8ecabfabb10bf3e652"
+      }
+    },
+    {
+      "id": "K552-F2-long-allocation",
+      "description": "32Task 持续分配对照（保留失败）",
+      "nodeids": [
+        "tests/conformance/test_zaofu_testkit_s4_workloop_host.py::test_sustained_task_pipeline_releases_owned_resources"
+      ],
+      "report": {
+        "ref": "/tmp/zf-k552-workloop-allocation-32-20260925/testkit-run.json",
+        "sha256": "24739b50750f654f6ecaea1f870b833be9e366c5aa5178bc4b782f48d63b503e"
+      }
+    },
+    {
+      "id": "K547-native-legacy-queue",
+      "description": "原生 legacy Provider 排队超时恢复",
+      "nodeids": [],
+      "reason": "原生节点尚未实现，当前 Codex 未登录；离线 hook/自然时钟证据不替代原生报告。"
+    },
+    {
+      "id": "K530-watchdog-root-cause",
+      "description": "Issue live watchdog 首次异常根因",
+      "nodeids": [
+        "tests/e2e/test_testkit_browser_live_issue.py::test_browser_issue_start_is_driven_by_live_zf_start[issue]"
+      ],
+      "reason": "本次正常链通过但不证明历史 watchdog 根因，不将该正常节点作为根因已关闭的证据。"
+    },
+    {
+      "id": "OS-crash-takeover",
+      "description": "整机 OS crash 后恢复",
+      "nodeids": [],
+      "reason": "隔离虚拟机执行器未就绪；未实现/未执行整机 OS crash，禁止崩溃共享宿主。"
+    },
+    {
+      "id": "PERF-05-full",
+      "description": "完整长期 mock 资源稳定性",
+      "nodeids": [],
+      "reason": "已有有限32Task及资源释放报告不是完整长期稳定性证明；F2追踪失败仍开放。"
+    },
+    {
+      "id": "final-unified-acceptance",
+      "description": "原五项主链/完整premerge与扩展需求的最终同源验收",
+      "nodeids": [],
+      "reason": "本清单只接入四份扩展报告，不替代原五项汇总、四流程或全部需求审计；040结构红灯和最新同源最终报告仍未闭合。"
+    }
+  ]
+}

@@ -11,7 +11,8 @@ from zf.core.security.redaction import redact_obj
 from zf.core.state.locks import locked_path
 import json
 import os
-from zf.web.projections.common import _append_jsonl, _line_count, _read_jsonl_dicts
+from zf.web.projections.common import _append_jsonl, _line_count
+from zf.web.idempotency_index import latest_record, open_idempotency_index, pending_records
 
 
 async def _request_json(request: Request) -> dict:
@@ -38,10 +39,9 @@ def _reserve_idempotency_key(
     path = _idempotency_path(state_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     with locked_path(path):
-        records = _read_jsonl_dicts(path)
-        matches = [record for record in records if record.get("key") == key]
-        if matches:
-            latest = matches[-1]
+        with open_idempotency_index(path) as index:
+            latest = latest_record(index, path, key)
+        if latest is not None:
             if latest.get("action") != action or latest.get("payload_hash") != payload_hash:
                 return {"status": "conflict", "record": latest}
             if latest.get("state") == "completed" and isinstance(latest.get("response"), dict):
@@ -91,36 +91,28 @@ def reconcile_pending_idempotency_keys(state_dir: Path) -> int:
     if not path.exists():
         return 0
     with locked_path(path):
-        records = _read_jsonl_dicts(path)
-        latest: dict[str, dict] = {}
-        for record in records:
-            key = str(record.get("key") or "")
-            if key:
-                latest[key] = record
-        pending = [
-            record
-            for record in latest.values()
-            if record.get("state") == "pending"
-        ]
-        for record in pending:
-            action = str(record.get("action") or "")
-            _append_jsonl(path, {
-                "key": str(record.get("key") or ""),
-                "action": action,
-                "payload_hash": str(record.get("payload_hash") or ""),
-                "state": "completed",
-                "ts": datetime.now(timezone.utc).isoformat(),
-                "response": {
-                    "ok": False,
-                    "status": "interrupted_by_server_restart",
+        count = 0
+        with open_idempotency_index(path) as index:
+            for record in pending_records(index, path):
+                action = str(record.get("action") or "")
+                _append_jsonl(path, {
+                    "key": str(record.get("key") or ""),
                     "action": action,
-                    "reason": (
-                        "the prior server stopped before this controlled action "
-                        "recorded a terminal response"
-                    ),
-                },
-            })
-    return len(pending)
+                    "payload_hash": str(record.get("payload_hash") or ""),
+                    "state": "completed",
+                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "response": {
+                        "ok": False,
+                        "status": "interrupted_by_server_restart",
+                        "action": action,
+                        "reason": (
+                            "the prior server stopped before this controlled action "
+                            "recorded a terminal response"
+                        ),
+                    },
+                })
+                count += 1
+    return count
 
 
 def _web_passcode_configured() -> bool:

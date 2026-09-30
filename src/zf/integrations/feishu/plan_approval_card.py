@@ -68,21 +68,23 @@ def build_plan_approval_card(
     elements: list[dict[str, Any]] = [
         {"tag": "div", "text": {"tag": "lark_md", "content": (
             f"**待审 plan**(第 {attempt} 轮)\n"
-            f"stage: {event_payload.get('stage_id')}  "
-            f"tasks: {event_payload.get('task_count')}  "
-            f"pdd: {event_payload.get('pdd_id')}\n{status_line}"
+            f"stage: {event_payload.get('stage_id')}\n"
+            f"tasks: {event_payload.get('task_count')}\n"
+            f"pdd: {event_payload.get('pdd_id')}\n"
+            f"{status_line}"
         )}},
     ]
     # inline the actual tasks (what's being approved) — the primary review surface
     for task in (tasks or []):
         head = task.get("task_id") or "task"
-        if task.get("affinity"):
-            head = f"{head} · {task['affinity']}"
-        title = f" — {task['title']}" if task.get("title") else ""
         scope = "，".join(task.get("paths") or [])
-        content = f"• **{head}**{title}"
+        content = f"任务：**{head}**"
+        if task.get("affinity"):
+            content += f"\n归属：`{task['affinity']}`"
+        if task.get("title"):
+            content += f"\n标题：{task['title']}"
         if scope:
-            content += f"\n  scope: `{scope}`"
+            content += f"\n范围：`{scope}`"
         elements.append({"tag": "div", "text": {"tag": "lark_md", "content": content}})
     for warning in warnings[:5]:
         elements.append({"tag": "div", "text": {

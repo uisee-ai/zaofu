@@ -1,0 +1,61 @@
+........................................................................ [ 14%]
+........................................................................ [ 28%]
+........................................................................ [ 42%]
+........................................................................ [ 57%]
+........................................................................ [ 71%]
+........................................................................ [ 85%]
+........................................................................ [ 99%]
+.                                                                        [100%]
+=============================== warnings summary ===============================
+tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[second_event]
+tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py::test_startup_recovers_mid_batch_failure_without_duplicate_task_settlement[batch_ack]
+  tests/conformance/test_zaofu_testkit_s4_watcher_batch_recovery.py:32: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("failure_at", ["second_event", "batch_ack"])
+
+tests/testkit/test_tmux_probe_cost.py::test_pane_grid_liveness_and_capture_keep_identity_checks_observable
+  tests/testkit/test_tmux_probe_cost.py:14: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_pane_grid_liveness_and_capture_keep_identity_checks_observable(record_property):
+
+tests/conformance/test_zaofu_testkit_s3_plan_approval.py::test_operator_approval_admits_raw_plan_and_reaches_candidate
+  tests/conformance/test_zaofu_testkit_s3_plan_approval.py:106: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_operator_approval_admits_raw_plan_and_reaches_candidate(planning_runtime, record_property):
+
+tests/conformance/test_zaofu_testkit_s3_respawn_termination.py::test_run_manager_respawn_requires_old_worker_termination[terminated]
+tests/conformance/test_zaofu_testkit_s3_respawn_termination.py::test_run_manager_respawn_requires_old_worker_termination[still-live]
+  tests/conformance/test_zaofu_testkit_s3_respawn_termination.py:27: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize(
+
+tests/conformance/test_zaofu_testkit_s3_cli_full_preflight.py::test_cli_full_preflight_rejects_eager_task_pipeline_before_start
+  tests/conformance/test_zaofu_testkit_s3_cli_full_preflight.py:35: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_cli_full_preflight_rejects_eager_task_pipeline_before_start(
+
+tests/conformance/test_zaofu_testkit_s3_writer_batch_resume.py::test_writer_queue_timeout_resume_preserves_completed_task_in_candidate
+  tests/conformance/test_zaofu_testkit_s3_writer_batch_resume.py:123: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_writer_queue_timeout_resume_preserves_completed_task_in_candidate(
+
+tests/conformance/test_zaofu_testkit_s3_writer_batch_resume.py::test_writer_batch_resume_across_independent_processes[clean-exit]
+tests/conformance/test_zaofu_testkit_s3_writer_batch_resume.py::test_writer_batch_resume_across_independent_processes[abrupt-exit]
+  tests/conformance/test_zaofu_testkit_s3_writer_batch_resume.py:287: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("abrupt_exit", [False, True], ids=["clean-exit", "abrupt-exit"])
+
+tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[claude-code]
+tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_completed_writer_turn_uses_provider_lifecycle_not_stub[codex]
+  tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py:84: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("backend", ["claude-code", "codex"])
+
+tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py::test_hook_held_queue_naturally_times_out_then_cli_recovers_only_gap
+  tests/conformance/test_zaofu_testkit_s3_writer_queue_provider_turn.py:111: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_hook_held_queue_naturally_times_out_then_cli_recovers_only_gap(tmp_path, record_property):
+
+tests/conformance/test_zaofu_testkit_s5_claude_prompt_matrix.py::test_trust_blocker_fails_closed_before_task_pipeline_delivery
+  tests/conformance/test_zaofu_testkit_s5_claude_prompt_matrix.py:237: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    def test_trust_blocker_fails_closed_before_task_pipeline_delivery(
+
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[default-home]
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[configured-home]
+tests/conformance/test_zaofu_testkit_s5_claude_readiness.py::test_spawn_trust_uses_effective_claude_config_directory[empty-override]
+  tests/conformance/test_zaofu_testkit_s5_claude_readiness.py:88: PytestWarning: record_property is incompatible with junit_family 'xunit2' (use 'legacy' or 'xunit1')
+    @pytest.mark.parametrize("configured", [False, True, ""], ids=["default-home", "configured-home", "empty-override"])
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+505 passed, 17 warnings in 540.11s (0:09:00)

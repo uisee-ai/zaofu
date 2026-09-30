@@ -1,3 +1,5 @@
+import { useSettingsPreferences } from "../settings/useSettingsPreferences";
+import { uiText } from "../settings/uiText";
 // Shared helpers/components extracted verbatim from App.tsx (P1 split).
 import type { PageId, ParsedEventFilter, AddAgentDraft, ProjectionKind, EmptyStateSpec, ProjectionMetricSpec } from "./sharedTypes";
 import type { ActionResponse, ChannelSummary, EventRecord, ExecutionRouteProjection, Snapshot, Task, TraceSummary } from "../api/types";
@@ -376,14 +378,15 @@ export function ExecutionRoutePanel({
   route: ExecutionRouteProjection | null;
   traceId: string;
 }) {
+  useSettingsPreferences();
   if (loading && !route) {
     return (
       <div className="subsection route-panel">
         <div className="inline-heading">
-          <h3>Execution Route</h3>
+          <h3>{uiText("Execution Route")}</h3>
           <span className="muted">loading timeline</span>
         </div>
-        <p className="empty-text">Loading route events...</p>
+        <p className="empty-text">{uiText("Loading route events...")}</p>
       </div>
     );
   }
@@ -392,7 +395,7 @@ export function ExecutionRoutePanel({
     return (
       <div className="subsection route-panel">
         <div className="inline-heading">
-          <h3>Execution Route</h3>
+          <h3>{uiText("Execution Route")}</h3>
           <span className="badge badge-failed">error</span>
         </div>
         <p className="empty-text">Timeline unavailable: {error}</p>
@@ -404,10 +407,10 @@ export function ExecutionRoutePanel({
     return (
       <div className="subsection route-panel">
         <div className="inline-heading">
-          <h3>Execution Route</h3>
+          <h3>{uiText("Execution Route")}</h3>
           <span className="muted">events projection</span>
         </div>
-        <p className="empty-text">No route events yet.</p>
+        <p className="empty-text">{uiText("No route events yet.")}</p>
       </div>
     );
   }
@@ -416,7 +419,7 @@ export function ExecutionRoutePanel({
     <div className="route-panel">
       <div className="subsection route-summary-panel">
         <div className="inline-heading">
-          <h3>Execution Route</h3>
+          <h3>{uiText("Execution Route")}</h3>
           <div className="button-row">
             <span className={`badge badge-${routeStatusTone(route.status)}`}>{route.status}</span>
             {traceId ? (
@@ -425,7 +428,7 @@ export function ExecutionRoutePanel({
                 type="button"
                 onClick={() => onOpenProjection("trace", traceId)}
               >
-                Open Trace
+                {uiText("Open Trace")}
               </button>
             ) : null}
           </div>
@@ -435,7 +438,7 @@ export function ExecutionRoutePanel({
       <div className="route-layout">
         <section className="subsection">
           <div className="inline-heading">
-            <h3>Linear Timeline</h3>
+            <h3>{uiText("Linear Timeline")}</h3>
             <span className="muted">{route.linear.length} stages</span>
           </div>
           <LinearRouteTimeline route={route} />
@@ -450,7 +453,7 @@ export function ExecutionRoutePanel({
       </div>
       <section className="subsection">
         <div className="inline-heading">
-          <h3>Swimlanes</h3>
+          <h3>{uiText("Swimlanes")}</h3>
           <span className="muted">{route.swimlanes.length} actors</span>
         </div>
         <RouteSwimlanes route={route} />
@@ -522,8 +525,9 @@ export function RouteDAGView({ route }: { route: ExecutionRouteProjection }) {
 
 
 export function RouteSwimlanes({ route }: { route: ExecutionRouteProjection }) {
+  useSettingsPreferences();
   if (!route.swimlanes.length) {
-    return <p className="empty-text route-empty">No swimlane data.</p>;
+    return <p className="empty-text route-empty">{uiText("No swimlane data.")}</p>;
   }
   return (
     <div className="route-swimlanes">
@@ -593,12 +597,13 @@ export function ProjectionList({
   rows: object[];
   title: string;
 }) {
+  useSettingsPreferences();
   return (
     <>
       <TablePage title={title} rows={rows} onOpen={(row) => onOpen(String(row[idKey] ?? ""))} emptyState={emptyState} />
       {detail ? (
         <div className="subsection">
-          <h3>Detail</h3>
+          <h3>{uiText("Detail")}</h3>
           {idKey === "fanout_id" ? (
             <FanoutDetailPanel detail={detail} />
           ) : idKey === "run_id" ? (
@@ -616,6 +621,7 @@ export function ProjectionList({
 
 
 export function TraceDetailPanel({ detail }: { detail: Record<string, unknown> }) {
+  useSettingsPreferences();
   const route = asExecutionRoute(detail.execution_route);
   const timeline = Array.isArray(detail.timeline)
     ? (detail.timeline as EventRecord[])
@@ -639,11 +645,11 @@ export function TraceDetailPanel({ detail }: { detail: Record<string, unknown> }
           onOpenProjection={() => undefined}
         />
       ) : (
-        <p className="empty-text">No route projection for this trace.</p>
+        <p className="empty-text">{uiText("No route projection for this trace.")}</p>
       )}
       <div className="subsection">
         <div className="inline-heading">
-          <h3>Trace Events</h3>
+          <h3>{uiText("Trace Events")}</h3>
           <span className="muted">{timeline.length}</span>
         </div>
         <EventTable events={timeline.slice(-80)} compact />
@@ -664,6 +670,7 @@ export function asExecutionRoute(value: unknown): ExecutionRouteProjection | nul
 
 
 export function FanoutDetailPanel({ detail }: { detail: Record<string, unknown> }) {
+  useSettingsPreferences();
   const progress = asRecord(detail.progress);
   const laneProjection = asRecord(detail.lane_projection);
   const trigger = asRecord(detail.trigger);
@@ -681,41 +688,41 @@ export function FanoutDetailPanel({ detail }: { detail: Record<string, unknown> 
       <dl className="detail-grid">
         <dt>Fanout</dt>
         <dd className="mono">{stringify(detail.fanout_id)}</dd>
-        <dt>Topology</dt>
+        <dt>{uiText("Topology")}</dt>
         <dd>{stringify(detail.topology)}</dd>
-        <dt>Target</dt>
+        <dt>{uiText("Target")}</dt>
         <dd className="mono">{stringify(detail.target_ref)}</dd>
-        <dt>Progress</dt>
+        <dt>{uiText("Progress")}</dt>
         <dd>{stringify(progress.done)}/{stringify(progress.total)}</dd>
         {hasLaneProjection ? (
           <>
-            <dt>Lanes</dt>
+            <dt>{uiText("Lanes")}</dt>
             <dd>
               planned {stringify(laneProjection.planned_lane_count)} / active {stringify(laneProjection.active_child_count)}
               {laneProjection.scope ? ` (${stringify(laneProjection.scope)})` : ""}
             </dd>
           </>
         ) : null}
-        <dt>Requested</dt>
+        <dt>{uiText("Requested")}</dt>
         <dd>{stringify(trigger.requested_by)}</dd>
-        <dt>Triggered</dt>
+        <dt>{uiText("Triggered")}</dt>
         <dd>{stringify(trigger.triggered_by)}</dd>
         <dt>Started</dt>
         <dd>{stringify(trigger.started_by)}</dd>
-        <dt>Aggregate</dt>
+        <dt>{uiText("Aggregate")}</dt>
         <dd>{stringify(aggregate.status)} {aggregate.mode ? `(${stringify(aggregate.mode)})` : ""}</dd>
       </dl>
       <div className="table-scroll">
         <table className="data-table">
           <thead>
             <tr>
-              <th>Child</th>
-              <th>Role</th>
-              <th>Status</th>
-              <th>Task</th>
-              <th>Task Status</th>
-              <th>Run</th>
-              <th>Evidence</th>
+              <th>{uiText("Child")}</th>
+              <th>{uiText("Role")}</th>
+              <th>{uiText("Status")}</th>
+              <th>{uiText("Task")}</th>
+              <th>{uiText("Task Status")}</th>
+              <th>{uiText("Run")}</th>
+              <th>{uiText("Evidence")}</th>
             </tr>
           </thead>
           <tbody>
@@ -725,7 +732,7 @@ export function FanoutDetailPanel({ detail }: { detail: Record<string, unknown> 
           </tbody>
         </table>
       </div>
-      {children.length === 0 ? <p className="empty-text">No child projection data.</p> : null}
+      {children.length === 0 ? <p className="empty-text">{uiText("No child projection data.")}</p> : null}
     </div>
   );
 }
@@ -748,6 +755,7 @@ export function FanoutChildRow({ child, index }: { child: Record<string, unknown
 
 
 export function RunDetailPanel({ detail }: { detail: Record<string, unknown> }) {
+  useSettingsPreferences();
   const run = asRecord(detail.run);
   const manifest = asRecord(detail.manifest);
   const artifacts = Array.isArray(detail.artifacts)
@@ -756,17 +764,17 @@ export function RunDetailPanel({ detail }: { detail: Record<string, unknown> }) 
   return (
     <div className="fanout-panel">
       <dl className="detail-grid">
-        <dt>Run</dt>
+        <dt>{uiText("Run")}</dt>
         <dd className="mono">{stringify(detail.run_id)}</dd>
-        <dt>Status</dt>
+        <dt>{uiText("Status")}</dt>
         <dd>{stringify(run.status ?? manifest.status)}</dd>
-        <dt>Scenario</dt>
+        <dt>{uiText("Scenario")}</dt>
         <dd>{stringify(run.scenario_id)}</dd>
-        <dt>Task</dt>
+        <dt>{uiText("Task")}</dt>
         <dd className="mono">{stringify(run.test_task_id)}</dd>
-        <dt>Trace</dt>
+        <dt>{uiText("Trace")}</dt>
         <dd className="mono">{stringify(run.trace_id)}</dd>
-        <dt>Archive</dt>
+        <dt>{uiText("Archive")}</dt>
         <dd className="mono">{stringify(detail.artifact_dir)}</dd>
         <dt>Missing</dt>
         <dd>{Array.isArray(manifest.missing) ? manifest.missing.length : 0}</dd>
@@ -777,8 +785,8 @@ export function RunDetailPanel({ detail }: { detail: Record<string, unknown> }) 
         <table className="data-table">
           <thead>
             <tr>
-              <th>Artifact</th>
-              <th>Kind</th>
+              <th>{uiText("Artifact")}</th>
+              <th>{uiText("Kind")}</th>
               <th>Bytes</th>
               <th>Missing</th>
               <th>Redacted</th>
@@ -797,7 +805,7 @@ export function RunDetailPanel({ detail }: { detail: Record<string, unknown> }) 
           </tbody>
         </table>
       </div>
-      {artifacts.length === 0 ? <p className="empty-text">No archived artifact manifest.</p> : null}
+      {artifacts.length === 0 ? <p className="empty-text">{uiText("No archived artifact manifest.")}</p> : null}
     </div>
   );
 }
@@ -844,10 +852,11 @@ export function TraceIndexList({
   onOpen: (id: string) => void;
   rows: TraceSummary[];
 }) {
+  useSettingsPreferences();
   return (
     <div className="trace-index-panel">
       <div className="inline-heading">
-        <h3>Trace Index</h3>
+        <h3>{uiText("Trace Index")}</h3>
         <span className="muted">{rows.length} traces</span>
       </div>
       <div className="trace-index-list">

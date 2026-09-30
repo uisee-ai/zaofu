@@ -41,6 +41,88 @@ FLOW_MARKERS = {
 }
 
 
+def summarize_flow_run(events: list[Any], invoke: Any) -> dict[str, Any]:
+    """Summarize admission and terminal truth without upgrading an invoke."""
+    payload = invoke.payload if hasattr(invoke, "payload") else {}
+    payload = payload if isinstance(payload, dict) else {}
+    run_id = str(
+        payload.get("workflow_run_id")
+        or payload.get("run_id")
+        or payload.get("request_id")
+        or ""
+    ).strip()
+
+    def belongs(event: Any) -> bool:
+        event_payload = event.payload if hasattr(event, "payload") else {}
+        event_payload = event_payload if isinstance(event_payload, dict) else {}
+        identities = {
+            str(event_payload[key]).strip()
+            for key in ("workflow_run_id", "run_id")
+            if event_payload.get(key)
+        }
+        # A trace/request alias must not override an explicit conflicting run.
+        source = str(event_payload.get("source_event_id") or "")
+        return bool(run_id and identities == {run_id} and (
+            not source or not event.type.startswith("run.admission.") or source == invoke.id
+        ))
+
+    position = next((i for i, event in enumerate(events) if event.id == invoke.id), None)
+    observed = events[position + 1:] if position is not None else []
+
+    admission = next(
+        (
+            event
+            for event in reversed(observed)
+            if belongs(event)
+            and str(getattr(event, "type", "") or "")
+            in {
+                "run.admission.admitted",
+                "run.admission.queued",
+                "run.admission.rejected",
+            }
+        ),
+        None,
+    )
+    terminal = next(
+        (
+            event
+            for event in reversed(observed)
+            if belongs(event)
+            and str(getattr(event, "type", "") or "")
+            in {
+                "run.goal.completed",
+                "run.goal.blocked",
+                "run.completed",
+                "run.failed",
+                "run.cancelled",
+                "run.abandoned",
+            }
+        ),
+        None,
+    )
+    admission_type = str(getattr(admission, "type", "") or "")
+    admission_status = {
+        "run.admission.admitted": "admitted",
+        "run.admission.queued": "queued",
+        "run.admission.rejected": "rejected",
+    }.get(admission_type, "missing")
+    terminal_type = str(getattr(terminal, "type", "") or "")
+    terminal_status = (
+        "completed" if terminal_type in {"run.goal.completed", "run.completed"}
+        else "blocked" if terminal_type == "run.goal.blocked"
+        else "failed" if terminal_type in {"run.failed", "run.cancelled", "run.abandoned"}
+        else "missing"
+    )
+    return {
+        "run_id": run_id,
+        "admission_status": admission_status,
+        "admission_event_id": str(getattr(admission, "id", "") or ""),
+        "terminal_status": terminal_status,
+        "terminal_event_id": str(getattr(terminal, "id", "") or ""),
+        "terminal_event_observed": terminal is not None,
+    }
+
+
 def _run(*args: str, cwd: Path) -> None:
     subprocess.run(
         list(args),

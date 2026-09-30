@@ -103,11 +103,10 @@ def test_codex_hook_settings_all_five_events_have_type_command(tmp_path: Path):
 
 
 # --- P1-CODEX-HOOK-TRUST: deterministic trust-hash computation -------------
-# codex 0.133 broke the `app-server hooks/list` RPC zaofu used to fetch hook
-# `currentHash` values, so workers stalled at the interactive `/hooks` review.
-# These vectors are real `trusted_hash` values codex itself persisted to
-# CODEX_HOME/config.toml on "Trust all" for two live projects; they lock the
-# replicated hash (codex_hook_hash) against codex's own algorithm.
+# Exact literal commands + currentHash captured independently from Codex 0.155.1
+# hooks/list, without calling codex_hook_hash to construct expected values.
+# K596 retains the raw private replies/history in TestKit attachments. Discovery
+# is not hook execution: CODEX_HASH_VERIFIED_VERSION remains a separate sensor.
 
 _EVENT_META = {
     "session_start": ("SessionStart", "codex.hook.session_start"),
@@ -117,28 +116,24 @@ _EVENT_META = {
     "stop": ("Stop", "codex.hook.stop"),
 }
 
+_HASH_RECEIPT = json.loads(
+    (Path(__file__).parent / 'fixtures/codex_hook_hashes_0_155_1.json').read_text(encoding='utf-8')
+)
+_RECORDED_HASH_VECTORS = _HASH_RECEIPT['vectors']
 _REAL_HASHES = {
-    ("/path/to/example-project/.zf-mixed", "pre_tool_use"):
-        "sha256:a9bdc376f3404497be9b879de763ead26782087852a2c4273b748a19029e3231",
-    ("/path/to/example-project/.zf-mixed", "post_tool_use"):
-        "sha256:22849323caaedf088f0e39ebd11d8dce908b6acc11c3fa74a45b8e17418e5262",
-    ("/path/to/example-project/.zf-mixed", "session_start"):
-        "sha256:6c2f3bf7f920f880dc0f46c75e43e0572a5202c9613630964c61667e56094756",
-    ("/path/to/example-project/.zf-mixed", "user_prompt_submit"):
-        "sha256:02e8a4dc851ce229812888fedcde8be970ff0df943460d8506403d0b5df976a2",
-    ("/path/to/example-project/.zf-mixed", "stop"):
-        "sha256:13ef7a211a9003f1f6037914aa704816b5e38dad383a0ab2f807aa124f4203fe",
-    ("/path/to/example-project/.zf", "pre_tool_use"):
-        "sha256:cc0367dbf0faf6d2395b7e9810ddb96ab4fccf6d82452932fdebd92c76827551",
-    ("/path/to/example-project/.zf", "post_tool_use"):
-        "sha256:aae2f3c9df9245f60a78180a3aceb14c88794650376abfcead35cfb3d96bcd3e",
-    ("/path/to/example-project/.zf", "session_start"):
-        "sha256:68125e329c1e9c5bd8fbb2c1da2090f9e3f9d4605436b8fbc7ce5f1c246c53a3",
-    ("/path/to/example-project/.zf", "user_prompt_submit"):
-        "sha256:1991ff9f6fb7816c398746dfe3dbfb3b7c1007345f21e53fe80f8c4fd428f014",
-    ("/path/to/example-project/.zf", "stop"):
-        "sha256:9f8dc49d2866898fb0f5bda3e5ddf1012bc442fed660d2e287881153fdd73310",
+    (row['state_dir'], row['label']): row['current_hash'] for row in _RECORDED_HASH_VECTORS
 }
+
+
+def test_recorded_hash_inputs_cover_two_paths_and_all_events():
+    assert _HASH_RECEIPT['schema_version'] == 'zaofu-codex-hook-hash-receipt.v1'
+    assert _HASH_RECEIPT['capture_methods'] == ['initialize', 'initialized', 'config/read', 'hooks/list']
+    assert len(_RECORDED_HASH_VECTORS) == len(_REAL_HASHES) == 10
+    assert set(_REAL_HASHES) == {
+        (path, label) for path in ('/path/to/example-project/.zf', '/path/to/example-project/.zf-mixed')
+        for label in _EVENT_META
+    }
+    assert all(row['engine'] == _EVENT_META[row['label']][0] for row in _RECORDED_HASH_VECTORS)
 
 
 @pytest.mark.parametrize(("state_dir", "label"), list(_REAL_HASHES.keys()))
@@ -147,12 +142,15 @@ def test_codex_hook_hash_matches_real_codex_values(
     label: str,
     monkeypatch,
 ):
-    from zf.runtime.codex_hooks import codex_hook_hash
+    from zf.runtime.codex_hooks import _hook_command, codex_hook_hash
 
     # Other launcher tests intentionally persist the process-wide command.
     # The captured Codex vectors below were recorded with the default `zf`.
     monkeypatch.delenv("ZF_CLI_CMD", raising=False)
     engine_name, zf_event = _EVENT_META[label]
+    [recorded] = [row for row in _RECORDED_HASH_VECTORS
+                  if (row['state_dir'], row['label']) == (state_dir, label)]
+    assert _hook_command(Path(state_dir), zf_event) == recorded['command']
     assert codex_hook_hash(Path(state_dir), engine_name, zf_event) == \
         _REAL_HASHES[(state_dir, label)]
 
@@ -191,7 +189,7 @@ def test_codex_hook_trust_states_dedups_identical_roots(tmp_path: Path):
 
 # --- F3 decision B: codex version-drift sensor for the deterministic hash ----
 # codex_hook_hash replicates codex_rs internals (version-coupled). The static
-# byte-exact vectors above only prove correctness for the verified version;
+# byte-exact vectors above prove only the recorded metadata/command mapping;
 # they cannot catch codex changing its algorithm in a newer build. This sensor
 # fails (does not silently pass) when a codex on PATH drifts from the verified
 # baseline, prompting re-verification. Skipped when codex is absent / unparsable.
