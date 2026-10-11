@@ -17,7 +17,7 @@ test("Codex headless Kanban Agent replies through the hidden thread", async ({ p
   await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: /Agent backend: Codex/ })).toBeVisible();
 
-  const input = page.locator(".headless-input");
+  const input = page.locator("textarea.headless-input");
   await expect(input).toBeVisible();
   await input.fill("Reply with exactly ZF_CODEX_HEADLESS_OK. Do not modify files.");
   await page.getByRole("button", { name: "Send message" }).click();

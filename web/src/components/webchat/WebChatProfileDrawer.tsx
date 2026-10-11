@@ -33,6 +33,17 @@ export function WebChatProfileDrawer({
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
+  const validation = record(proposal?.validation);
+  const validationErrors = Array.isArray(validation.errors)
+    ? validation.errors.flatMap((item) => {
+      const row = record(item);
+      const field = String(row.field || "profile");
+      const reason = String(row.reason || "invalid value");
+      return [`${field}: ${reason}`];
+    })
+    : [];
+  const proposalValid = proposal !== null && validation.valid !== false;
+
   useEffect(() => {
     void getAgentProfileCatalog(projectId).then((next) => {
       setCatalog(next);
@@ -144,10 +155,16 @@ export function WebChatProfileDrawer({
         </fieldset>
         <p className="webchat-profile-boundary"><ShieldCheck size={15} /> Proposal only. No secret or direct <code>zf.yaml</code> write.</p>
         {error ? <p className="webchat-resource-error" role="alert">{error}</p> : null}
+        {proposal && !proposalValid ? (
+          <div className="webchat-resource-error" role="alert">
+            <strong>Proposal rejected</strong>
+            {validationErrors.map((item) => <div key={item}>{item}</div>)}
+          </div>
+        ) : null}
         {diff ? <pre className="webchat-profile-diff">{diff}</pre> : null}
         <div className="webchat-profile-actions">
           <button disabled={Boolean(busy)} type="button" onClick={() => void propose()}><Settings2 size={14} /> Preview proposal</button>
-          {proposal ? <button disabled={Boolean(busy)} type="button" onClick={() => void apply()}><Check size={14} /> Controlled apply</button> : null}
+          {proposal ? <button disabled={Boolean(busy) || !proposalValid} type="button" onClick={() => void apply()}><Check size={14} /> Controlled apply</button> : null}
         </div>
       </div>
     </aside>

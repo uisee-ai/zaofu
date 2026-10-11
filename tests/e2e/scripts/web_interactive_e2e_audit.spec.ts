@@ -185,7 +185,7 @@ test("Channel Group and Kanban Agent real interaction audit", async ({ page, req
   await expect(page.getByRole("dialog", { name: "Kanban Agent" })).toBeVisible();
   await expect(page.getByRole("button", { name: /Agent backend: Claude/ })).toBeVisible();
 
-  const input = page.getByPlaceholder("Tell me what to do...");
+  const input = page.locator("textarea.headless-input");
   const sendButton = page.getByRole("button", { name: "Send message" });
   await input.fill("请总结当前 Kanban 上有哪些任务,以及下一步建议。");
   await expect(sendButton).toHaveAttribute("title", "Send", { timeout: 60_000 });

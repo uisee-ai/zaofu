@@ -452,6 +452,69 @@ assert(
   "Kanban result card exposes the immutable artifact ref and digest",
 );
 
+const forkConversation = buildKanbanConversation({
+  events: [],
+  activeThreadId: "fork-1",
+  projectId: "proj-a",
+  conversationId: "kanban:proj-a",
+  durableMessages: [
+    {
+      message_id: "parent-user",
+      thread_id: "fork-1",
+      role: "user",
+      content: "Inherited request",
+      created_at: "2026-10-10T00:00:00Z",
+      inherited: true,
+      inherited_from_thread_id: "main",
+    },
+    {
+      message_id: "parent-assistant",
+      thread_id: "fork-1",
+      parent_message_id: "parent-user",
+      role: "assistant",
+      content: "Inherited answer",
+      created_at: "2026-10-10T00:00:01Z",
+      inherited: true,
+      inherited_from_thread_id: "main",
+    },
+  ],
+});
+const forkTurns = forkConversation.threads[0]?.turns || [];
+assert(forkTurns.length === 1, "fork inherited messages share the parent turn");
+assert(forkTurns[0]?.user?.content === "Inherited request", "fork renders inherited user message");
+assert(forkTurns[0]?.runs[0]?.parts.some((part) => part.content === "Inherited answer"), "fork renders inherited assistant reply");
+
+const sourceThreadForkConversation = buildKanbanConversation({
+  events: [],
+  activeThreadId: "fork-2",
+  projectId: "proj-a",
+  conversationId: "kanban:proj-a",
+  durableMessages: [
+    {
+      message_id: "source-user",
+      thread_id: "main",
+      role: "user",
+      content: "Source-thread request",
+      created_at: "2026-10-10T00:00:00Z",
+      inherited: true,
+      inherited_from_thread_id: "main",
+    },
+    {
+      message_id: "source-assistant",
+      thread_id: "main",
+      parent_message_id: "source-user",
+      role: "assistant",
+      content: "Source-thread answer",
+      created_at: "2026-10-10T00:00:01Z",
+      inherited: true,
+      inherited_from_thread_id: "main",
+    },
+  ],
+});
+const sourceThreadFork = sourceThreadForkConversation.threads.find((thread) => thread.id === "fork-2");
+assert(sourceThreadFork?.turns.length === 1, "inherited rows target the active fork, not the source thread");
+assert(!sourceThreadForkConversation.threads.some((thread) => thread.id === "main" && thread.turns.length), "source thread does not receive duplicate inherited turns");
+
 // A resumed Plan answer can make the provider reply part of the hidden answer
 // turn while the durable Plan remains bound to the original owner message.
 // Both events carry the same request_event_id; render the canonical request

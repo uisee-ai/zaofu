@@ -61,6 +61,11 @@ def test_private_child_scope_publish_adopt_and_stale_digest(tmp_path: Path) -> N
     )
     assert adopted["visibility"] == "adopted"
     assert adopted["adopted_target"]["revision"] == 3
+    with pytest.raises(ValueError, match="unsupported artifact adoption target kind"):
+        store.mark_adopted(
+            published["version_id"], expected_digest=published["digest"],
+            target={"kind": "plan", "revision": 1}, principal="kanban-agent",
+        )
 
 
 def test_private_expiry_and_path_traversal_fail_closed(tmp_path: Path) -> None:

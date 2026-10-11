@@ -19,7 +19,7 @@ export function WebChatActivityDrawer({
 }: {
   activities: WebChatChildActivity[];
   onClose: () => void;
-  onOpenThread: (threadId: string) => void;
+  onOpenThread: (activity: WebChatChildActivity) => void;
   onUpdated: () => Promise<void> | void;
   projectId: string;
 }) {
@@ -110,7 +110,7 @@ export function WebChatActivityDrawer({
               {(selected.capabilities || []).map((item) => <span key={item}>{item}</span>)}
             </div>
             {selected.thread_id ? (
-              <button className="webchat-child-open" type="button" onClick={() => onOpenThread(selected.thread_id || "")}>
+              <button className="webchat-child-open" type="button" onClick={() => onOpenThread(selected)}>
                 <ExternalLink size={14} /> Open child thread
               </button>
             ) : null}

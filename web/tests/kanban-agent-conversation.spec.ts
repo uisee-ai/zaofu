@@ -125,7 +125,7 @@ async function openKanbanAgent(page: Page, id: string, withToken = true): Promis
 }
 
 async function sendMessage(page: Page, message: string): Promise<void> {
-  const input = page.getByPlaceholder("Tell me what to do...");
+  const input = page.locator("textarea.headless-input");
   await input.fill(message);
   await page.getByRole("button", { name: "Send message" }).click();
 }

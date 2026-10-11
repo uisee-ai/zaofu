@@ -24,6 +24,7 @@ export interface WebChatQuestionAnswerDraft {
 
 export interface WebChatInteractionDraft {
   answers: Record<string, WebChatQuestionAnswerDraft>;
+  questionIndex?: number;
 }
 
 function text(value: unknown): string {
@@ -130,7 +131,13 @@ export function loadInteractionDrafts(
             }]];
           }),
         );
-        return [[interaction, { answers: normalizedAnswers }]];
+        const questionIndex = Number((raw as Record<string, unknown>).questionIndex);
+        return [[interaction, {
+          answers: normalizedAnswers,
+          ...(Number.isSafeInteger(questionIndex) && questionIndex >= 0
+            ? { questionIndex }
+            : {}),
+        }]];
       }),
     );
   } catch {

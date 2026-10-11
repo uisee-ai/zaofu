@@ -43,6 +43,7 @@ def test_runtime_route_is_wired_and_read_only(client: tuple[TestClient, Path]) -
     body = response.json()
     assert body["schema_version"] == "webchat-runtime.v1"
     assert body["rollout"]["mode"] == "durable"
+    assert body["messages"] == []
     assert body["rollout"]["store_schema"] == "agent-webchat-runtime.v1"
     assert body["turns"][0]["turn_id"] == turn["turn_id"]
     assert body["capabilities"]["completion_authority"] is False
@@ -296,16 +297,29 @@ def test_artifact_publish_and_adopt_are_separate_exact_digest_actions(client: tu
     assert published.status_code == 200
     assert published.json()["artifact"]["visibility"] == "published"
     assert (state / "kanban.json").read_bytes() == kanban_before
+    TaskStore(state / "kanban.json").add(Task(
+        id="TASK-ADOPT-EXACT", title="Adopt exact", contract_authority_revision="authority-r1",
+    ))
+    unsupported = web.post(
+        f"/api/projects/default/webchat/artifacts/{artifact['version_id']}/adopt",
+        headers={"x-zf-web-token": "test-token"},
+        json={"digest": artifact["digest"], "target": {"kind": "plan", "revision": 1}},
+    )
+    assert unsupported.status_code == 409
+    target = {
+        "kind": "task_input", "task_id": "TASK-ADOPT-EXACT",
+        "contract_authority_revision": "authority-r1",
+    }
     stale = web.post(
         f"/api/projects/default/webchat/artifacts/{artifact['version_id']}/adopt",
         headers={"x-zf-web-token": "test-token"},
-        json={"digest": "sha256:stale", "target": {"kind": "plan"}},
+        json={"digest": "sha256:stale", "target": target},
     )
     assert stale.status_code == 409
     adopted = web.post(
         f"/api/projects/default/webchat/artifacts/{artifact['version_id']}/adopt",
         headers={"x-zf-web-token": "test-token"},
-        json={"digest": artifact["digest"], "target": {"kind": "plan", "revision": 1}},
+        json={"digest": artifact["digest"], "target": target},
     )
     assert adopted.status_code == 200
     assert adopted.json()["artifact"]["visibility"] == "adopted"

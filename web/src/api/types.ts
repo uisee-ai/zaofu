@@ -2698,6 +2698,7 @@ export interface WebChatChildActivity {
   parent_turn_id?: string;
   task_id?: string;
   channel_id?: string;
+  conversation_id?: string;
   thread_id?: string;
   role?: string;
   provider?: string;
@@ -2758,6 +2759,19 @@ export interface WebChatRuntime {
   queue: WebChatQueueItem[];
   control_receipts?: WebChatControlReceipt[];
   threads: Array<Record<string, unknown>>;
+  messages?: Array<{
+    message_id: string;
+    project_id: string;
+    conversation_id: string;
+    thread_id: string;
+    parent_message_id?: string;
+    role: "user" | "assistant" | "system" | string;
+    content?: string;
+    created_at: string;
+    inherited?: boolean;
+    inherited_from_thread_id?: string;
+    refs?: Record<string, unknown>;
+  }>;
   artifacts: WebChatArtifact[];
   tool_catalog: WebChatToolCatalog;
   agent_profile?: {

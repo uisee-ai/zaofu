@@ -43,6 +43,25 @@ def _identity(event_type: str, payload: Mapping[str, Any]) -> str:
     return f"activity:{event_type}"
 
 
+def _has_child_identity(event_type: str, payload: Mapping[str, Any]) -> bool:
+    """Do not classify the root Kanban turn as a child just because it has a role."""
+
+    # Headless Kanban runs carry member_id=kanban-agent for attribution, but
+    # they are the root conversation, not a child worker activity.
+    if (
+        event_type.startswith("agent.session.")
+        and str(payload.get("source") or "").strip() == "kanban-agent.headless"
+    ):
+        return False
+    if any(str(payload.get(key) or "").strip() for key in (
+        "child_id", "member_id", "worker_id", "operation_id", "attempt_id",
+    )):
+        return True
+    if event_type.startswith("kanban.agent.turn."):
+        return False
+    return bool(str(payload.get("role_instance") or "").strip())
+
+
 _CONTROL_OPERATIONS = frozenset({"queue", "steer", "interrupt", "cancel"})
 
 
@@ -135,14 +154,11 @@ def build_child_activity_projection(
         parent = str(payload.get("parent_turn_id") or payload.get("parent_run_id") or "")
         if parent_turn_id and parent != parent_turn_id:
             continue
-        if not any(
-            key in payload
-            for key in ("child_id", "member_id", "role_instance", "worker_id", "operation_id", "attempt_id")
-        ):
+        if not _has_child_identity(event_type, payload):
             continue
         identity = _identity(event_type, payload)
         kind = _activity_kind(event_type, payload)
-        task_id = str(payload.get("task_id") or _value(event, "task_id"))
+        task_id = str(payload.get("task_id") or _value(event, "task_id") or "").strip()
         controls = _control_descriptors(
             kind, payload, identity=identity, task_id=task_id,
         )
@@ -160,6 +176,7 @@ def build_child_activity_projection(
             "task_id": task_id,
             "channel_id": str(payload.get("channel_id") or ""),
             "thread_id": str(payload.get("thread_id") or ""),
+            "conversation_id": str(payload.get("conversation_id") or ""),
             "role": str(payload.get("role") or payload.get("role_instance") or ""),
             "provider": str(payload.get("provider") or payload.get("backend") or ""),
             "model": str(payload.get("model") or ""),

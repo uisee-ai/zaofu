@@ -1899,6 +1899,14 @@ export function App() {
     setPage("channels");
   }
 
+  function openChannelThread(channelId: string, threadId: string) {
+    if (channelId && threadId) {
+      const key = `zf.channelThread:v1:${JSON.stringify([activeProjectId, channelId])}`;
+      window.localStorage.setItem(key, threadId);
+    }
+    openChannel(channelId);
+  }
+
   function backToBoard() {
     setPage("board");
   }
@@ -2426,6 +2434,8 @@ export function App() {
               onAction={submitAction}
               onPanelModeChange={setAgentPanelMode}
               onLockSession={() => void lockSession()}
+              onOpenChannelThread={openChannelThread}
+              onOpenTask={openTask}
               onSaveToken={saveWebActionToken}
               onUnlockSession={unlockSession}
               snapshot={snapshot}

@@ -401,6 +401,8 @@ export function OrchestratorPanel({
   onAction,
   onPanelModeChange,
   onLockSession,
+  onOpenChannelThread,
+  onOpenTask,
   onSaveToken,
   onUnlockSession,
   snapshot,
@@ -416,6 +418,8 @@ export function OrchestratorPanel({
   onAction: (action: string, payload: Record<string, unknown>) => void | Promise<unknown>;
   onPanelModeChange: (mode: AgentPanelMode) => void;
   onLockSession: () => void;
+  onOpenChannelThread?: (channelId: string, threadId: string) => void;
+  onOpenTask?: (taskId: string) => void;
   onSaveToken: (token: string) => void;
   onUnlockSession: (passcode: string) => Promise<{ ok: boolean; status: string; reason?: string }>;
   snapshot: Snapshot | null;
@@ -459,6 +463,7 @@ export function OrchestratorPanel({
   const [headlessReadProjectId, setHeadlessReadProjectId] = useState(headlessProjectId);
   const [headlessQueue, setHeadlessQueue] = useState<WebChatQueueItem[]>([]);
   const [webChatRuntime, setWebChatRuntime] = useState<WebChatRuntime | null>(null);
+  const [headlessDurableMessages, setHeadlessDurableMessages] = useState<NonNullable<WebChatRuntime["messages"]>>([]);
   const [webChatArtifacts, setWebChatArtifacts] = useState<WebChatArtifact[]>([]);
   const [webChatActivities, setWebChatActivities] = useState<WebChatChildActivity[]>([]);
   const [webChatAttachments, setWebChatAttachments] = useState<WebChatArtifact[]>([]);
@@ -676,6 +681,7 @@ export function OrchestratorPanel({
     setHeadlessSplitThreadKey("");
     setHeadlessQueue([]);
     setWebChatRuntime(null);
+    setHeadlessDurableMessages([]);
     setWebChatArtifacts([]);
     setWebChatActivities([]);
     setWebChatAttachments([]);
@@ -715,6 +721,24 @@ export function OrchestratorPanel({
       setWebChatRuntime(runtime);
       setHeadlessQueue(runtime.queue ?? []);
       setWebChatArtifacts(runtime.artifacts ?? []);
+      setHeadlessDurableMessages(runtime.messages ?? []);
+      const durableRefs = (runtime.threads ?? []).flatMap((raw) => {
+        const threadId = textValue(raw.thread_id).trim();
+        if (!threadId) return [];
+        return [{
+          id: threadId,
+          title: textValue(raw.title).trim() || (threadId === "main" ? "main" : `chat ${threadId.slice(0, 4)}`),
+          createdAt: textValue(raw.created_at).trim() || undefined,
+        }];
+      });
+      if (durableRefs.length) {
+        setHeadlessThreads((current) => saveKanbanThreadRefs(
+          localStorage,
+          headlessProjectId,
+          headlessThreadKey,
+          [...current, ...durableRefs],
+        ));
+      }
     } catch {
       // Legacy history remains usable while the candidate resource API is
       // unavailable during rollout.
@@ -1806,9 +1830,10 @@ export function OrchestratorPanel({
     backend: operatorBackend,
     conversationId: headlessConversationId,
     events: headlessConversationEvents,
+    durableMessages: headlessDurableMessages,
     knownThreads: headlessThreads,
     projectId: headlessProjectId,
-  }), [headlessConversationEvents, headlessConversationId, headlessProjectId, headlessThreadKey, headlessThreads, operatorBackend]);
+  }), [headlessConversationEvents, headlessConversationId, headlessDurableMessages, headlessProjectId, headlessThreadKey, headlessThreads, operatorBackend]);
   useEffect(() => {
     setHeadlessPendingMessages((current) => (
       current.filter((item) => !conversationHasHeadlessTurn(headlessConversation, item))
@@ -2252,14 +2277,23 @@ export function OrchestratorPanel({
               activities={webChatActivities}
               projectId={headlessProjectId}
               onClose={() => setWebChatDrawer("")}
-              onOpenThread={(threadId) => {
-                setHeadlessThreads((current) => saveKanbanThreadRefs(
-                  localStorage,
-                  headlessProjectId,
-                  threadId,
-                  [...current, { id: threadId, title: "Child activity", createdAt: new Date().toISOString() }],
-                ));
-                selectHeadlessThread(threadId);
+              onOpenThread={(activity) => {
+                const threadId = activity.thread_id || "";
+                if (threadId) {
+                  setHeadlessThreads((current) => saveKanbanThreadRefs(
+                    localStorage,
+                    headlessProjectId,
+                    threadId,
+                    [...current, { id: threadId, title: "Child activity", createdAt: new Date().toISOString() }],
+                  ));
+                }
+                if (activity.channel_id && onOpenChannelThread) {
+                  onOpenChannelThread(activity.channel_id, threadId || "main");
+                } else if (activity.task_id && onOpenTask) {
+                  onOpenTask(activity.task_id);
+                } else if (threadId) {
+                  selectHeadlessThread(threadId);
+                }
                 setWebChatDrawer("");
               }}
               onUpdated={refreshWebChatResources}

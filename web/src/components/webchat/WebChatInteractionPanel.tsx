@@ -59,8 +59,10 @@ export function WebChatInteractionPanel({
   onRespond: (response: Record<string, unknown>) => void;
 }) {
   const questions = useMemo(() => normalizeWebChatQuestions(interaction), [interaction]);
-  const [step, setStep] = useState(0);
-  useEffect(() => setStep(0), [interaction.interaction_id, interaction.revision]);
+  const [step, setStep] = useState(() => draft.questionIndex ?? 0);
+  useEffect(() => {
+    setStep(Math.min(draft.questionIndex ?? 0, Math.max(questions.length - 1, 0)));
+  }, [draft.questionIndex, interaction.interaction_id, interaction.revision, questions.length]);
   const question = questions[Math.min(step, Math.max(questions.length - 1, 0))];
   const title = interactionTitle(interaction);
   const askUser = interaction.kind === "ask_user";
@@ -71,7 +73,14 @@ export function WebChatInteractionPanel({
         ...draft.answers,
         [questionId]: { optionIds, text },
       },
+      questionIndex: step,
     });
+  };
+
+  const setQuestionStep = (next: number) => {
+    const bounded = Math.min(Math.max(next, 0), Math.max(questions.length - 1, 0));
+    setStep(bounded);
+    onDraftChange({ ...draft, questionIndex: bounded });
   };
 
   const allAnswered = questions.length > 0
@@ -117,7 +126,7 @@ export function WebChatInteractionPanel({
                     className={index === step ? "active" : ""}
                     key={item.id}
                     type="button"
-                    onClick={() => setStep(index)}
+                    onClick={() => setQuestionStep(index)}
                   >
                     <span />
                   </button>
@@ -194,7 +203,7 @@ export function WebChatInteractionPanel({
                   className="icon"
                   disabled={busy || step === 0}
                   type="button"
-                  onClick={() => setStep((value) => Math.max(0, value - 1))}
+                  onClick={() => setQuestionStep(step - 1)}
                 >
                   <ChevronLeft size={16} />
                 </button>
@@ -203,7 +212,7 @@ export function WebChatInteractionPanel({
                     className="primary"
                     disabled={busy || !isQuestionAnswered(draft, question)}
                     type="button"
-                    onClick={() => setStep((value) => Math.min(questions.length - 1, value + 1))}
+                    onClick={() => setQuestionStep(step + 1)}
                   >
                     Next <ChevronRight size={15} />
                   </button>

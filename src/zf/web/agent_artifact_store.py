@@ -11,7 +11,7 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
-from typing import Any
+from typing import Any, Mapping
 
 from zf.core.security.redaction import redact_text
 from zf.web.agent_runtime_db import connect, dumps, loads, transaction, utc_now
@@ -37,6 +37,24 @@ class AgentArtifactAccessDenied(PermissionError):
 
 class AgentArtifactNotFound(KeyError):
     pass
+
+
+def validate_adoption_target(target: Mapping[str, Any]) -> dict[str, Any]:
+    """Validate the small, versioned target contract before changing visibility."""
+
+    if not isinstance(target, Mapping):
+        raise ValueError("artifact adoption target must be an object")
+    normalized = dict(target)
+    if str(normalized.get("kind") or "") != "task_input":
+        raise ValueError("unsupported artifact adoption target kind")
+    if not str(normalized.get("task_id") or "").strip():
+        raise ValueError("artifact adoption target task_id is required")
+    authority_revision = normalized.get(
+        "contract_authority_revision", normalized.get("revision"),
+    )
+    if not str(authority_revision or "").strip():
+        raise ValueError("artifact adoption target authority revision is required")
+    return normalized
 
 
 def _sha256(data: bytes) -> str:
@@ -293,6 +311,7 @@ class AgentArtifactStore:
         principal: str,
         project_id: str = "",
     ) -> dict[str, Any]:
+        target = validate_adoption_target(target)
         item = self.get(version_id, project_id=project_id)
         if str(item["digest"]) != expected_digest:
             raise AgentArtifactConflict("artifact digest changed")

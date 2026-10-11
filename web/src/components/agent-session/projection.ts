@@ -239,6 +239,83 @@ function shortThreadTitle(threadId: string): string {
   return `chat ${threadId.slice(0, 4)}`;
 }
 
+type DurableWebChatMessage = {
+  message_id: string;
+  thread_id: string;
+  parent_message_id?: string;
+  role: string;
+  content?: string;
+  created_at: string;
+  inherited?: boolean;
+  inherited_from_thread_id?: string;
+  refs?: Record<string, unknown>;
+};
+
+function inheritedMessageEvents(
+  messages: DurableWebChatMessage[],
+  activeThreadId: string,
+): EventRecord[] {
+  const events: EventRecord[] = [];
+  for (const message of messages) {
+    if (!message.inherited || !message.message_id || !message.content) continue;
+    const messageId = `durable:${message.message_id}`;
+    const parentMessageId = textValue(message.parent_message_id).trim();
+    const turnId = `durable-turn:${parentMessageId || message.message_id}`;
+    // Inherited rows retain the source thread for lineage, but this runtime
+    // response has already projected them into the active fork. Fold them
+    // into that fork or the fork appears empty and the parent gets duplicates.
+    const targetThreadId = activeThreadId || message.thread_id || "main";
+    const refs = {
+      ...(message.refs || {}),
+      inherited: true,
+      inherited_from_thread_id: message.inherited_from_thread_id || "",
+    };
+    if (message.role === "user") {
+      events.push({
+        id: messageId,
+        ts: message.created_at,
+        type: "user.message",
+        payload: {
+          target: "kanban-agent",
+          runtime_delivery: "headless",
+          thread_key: targetThreadId,
+          message: message.content,
+          refs,
+        },
+      });
+      continue;
+    }
+    if (message.role !== "assistant") continue;
+    events.push({
+      id: `durable-start:${message.message_id}`,
+      ts: message.created_at,
+      type: "kanban.agent.turn.created",
+      payload: {
+        turn_id: turnId,
+        message_event_id: parentMessageId ? `durable:${parentMessageId}` : "",
+        thread_key: targetThreadId,
+        backend: "codex-headless",
+        refs,
+      },
+    });
+    events.push({
+      id: messageId,
+      ts: message.created_at,
+      type: "kanban.agent.reply",
+      payload: {
+        turn_id: turnId,
+        message_event_id: parentMessageId ? `durable:${parentMessageId}` : "",
+        thread_key: targetThreadId,
+        backend: "codex-headless",
+        status: "completed",
+        answer: message.content,
+        refs,
+      },
+    });
+  }
+  return events;
+}
+
 function applyDelta(run: AgentSessionRun, event: EventRecord, payload: Record<string, unknown>): void {
   const kind = uiDeltaKind(payload);
   const type = textValue(payload.message_type || payload.type).trim();
@@ -375,6 +452,7 @@ export function buildKanbanConversation(args: {
   backend?: string;
   projectId?: string;
   conversationId?: string;
+  durableMessages?: DurableWebChatMessage[];
 }): AgentConversation {
   const threads = new Map<string, AgentSessionThread>();
   const turnToMessage = new Map<string, string>();
@@ -388,7 +466,7 @@ export function buildKanbanConversation(args: {
   // (`seq ?? 0`) made the first delta create the run's turn BEFORE the
   // user.message turn existed, so the question rendered below the answer
   // (operator report 2026-07-16).
-  const accepted = args.events
+  const accepted = [...args.events, ...inheritedMessageEvents(args.durableMessages || [], args.activeThreadId)]
     .filter((event) => {
       if (
         event.type !== "workflow.result.available"

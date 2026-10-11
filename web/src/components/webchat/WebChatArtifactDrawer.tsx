@@ -21,6 +21,23 @@ function sizeLabel(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+async function copyToClipboard(value: string): Promise<void> {
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "true");
+  input.style.position = "fixed";
+  input.style.opacity = "0";
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand("copy");
+  input.remove();
+  if (!copied) throw new Error("Clipboard access is unavailable on this connection.");
+}
+
 export function WebChatArtifactDrawer({
   artifacts,
   onClose,
@@ -40,6 +57,7 @@ export function WebChatArtifactDrawer({
   const [compareId, setCompareId] = useState("");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const selected = artifacts.find((item) => item.version_id === selectedId) ?? artifacts[0];
   const siblings = useMemo(
     () => artifacts.filter((item) => item.artifact_id === selected?.artifact_id && item.version_id !== selected?.version_id),
@@ -50,6 +68,7 @@ export function WebChatArtifactDrawer({
     setSelectedId(item.version_id);
     setBusy("preview");
     setError("");
+    setNotice("");
     try {
       const detail = await getWebChatArtifact(projectId, item.version_id);
       setPreview(detail.preview || `${item.media_type} · ${sizeLabel(item.size_bytes)}`);
@@ -63,6 +82,7 @@ export function WebChatArtifactDrawer({
   async function publish(item: WebChatArtifact) {
     setBusy("publish");
     setError("");
+    setNotice("");
     try {
       await publishWebChatArtifact(projectId, item.version_id, item.digest);
       await onChanged();
@@ -76,10 +96,10 @@ export function WebChatArtifactDrawer({
   async function adopt(item: WebChatArtifact) {
     setBusy("adopt");
     setError("");
+    setNotice("");
     try {
-      const target = taskId
-        ? await getWebChatTaskAdoptionTarget(projectId, taskId)
-        : { kind: "plan" };
+      if (!taskId) throw new Error("Select a task before adopting an artifact.");
+      const target = await getWebChatTaskAdoptionTarget(projectId, taskId);
       await adoptWebChatArtifact(projectId, item.version_id, item.digest, target);
       await onChanged();
     } catch (err) {
@@ -93,6 +113,7 @@ export function WebChatArtifactDrawer({
     if (!selected || !compareId) return;
     setBusy("compare");
     setError("");
+    setNotice("");
     try {
       setPreview((await compareWebChatArtifacts(projectId, compareId, selected.version_id)).diff || "No differences");
     } catch (err) {
@@ -139,11 +160,22 @@ export function WebChatArtifactDrawer({
             <div className="webchat-resource-actions">
               <button type="button" onClick={() => void inspect(selected)}><Eye size={14} /> Preview</button>
               <a href={webChatArtifactContentUrl(projectId, selected.version_id)} download><Download size={14} /> Download</a>
-              <button type="button" onClick={() => void navigator.clipboard.writeText(selected.storage_uri)}><Copy size={14} /> Copy ref</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBusy("copy");
+                  setError("");
+                  setNotice("");
+                  void copyToClipboard(selected.storage_uri).then(
+                    () => setNotice("Artifact reference copied."),
+                    (err) => setError(err instanceof Error ? err.message : String(err)),
+                  ).finally(() => setBusy(""));
+                }}
+              ><Copy size={14} /> Copy ref</button>
               {selected.visibility === "private" ? (
                 <button disabled={Boolean(busy)} type="button" onClick={() => void publish(selected)}><Send size={14} /> Publish</button>
               ) : null}
-              {selected.visibility === "published" ? (
+              {selected.visibility === "published" && taskId ? (
                 <button disabled={Boolean(busy)} type="button" onClick={() => void adopt(selected)}><CheckCircle2 size={14} /> Adopt</button>
               ) : null}
             </div>
@@ -157,6 +189,7 @@ export function WebChatArtifactDrawer({
               </div>
             ) : null}
             {error ? <p className="webchat-resource-error" role="alert">{error}</p> : null}
+            {notice ? <p className="webchat-child-control-notice" role="status">{notice}</p> : null}
             <pre className="webchat-artifact-preview">{busy === "preview" ? "Loading..." : preview || "Select Preview to inspect this version."}</pre>
           </section>
         ) : null}

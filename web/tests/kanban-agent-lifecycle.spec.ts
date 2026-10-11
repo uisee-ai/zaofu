@@ -25,7 +25,7 @@ test("Kanban Agent defaults to hidden headless thread even with legacy terminal 
   await expect(backendTrigger).toContainText(/Claude|Codex/);
   await expect(backendTrigger).not.toContainText("headless");
   await expect(page.locator(".orchestrator-panel .chat-surface-head")).toHaveCount(0);
-  await expect(page.locator(".headless-input")).toBeVisible();
+  await expect(page.locator("textarea.headless-input")).toBeVisible();
   await expect(page.getByLabel("Operator xterm")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Start", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Stop", exact: true })).toHaveCount(0);

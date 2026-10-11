@@ -206,7 +206,7 @@ async function sendCodingTurn(
   message: string,
   replyMarker: string,
 ): Promise<void> {
-  const input = page.getByPlaceholder("Tell me what to do...");
+  const input = page.locator("textarea.headless-input");
   await input.fill(message);
   const dialogs: string[] = [];
   const recordUnexpectedDialog = async (dialog: Dialog) => {

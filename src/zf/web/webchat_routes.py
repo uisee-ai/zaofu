@@ -19,6 +19,7 @@ from zf.web.agent_artifact_store import (
     AgentArtifactConflict,
     AgentArtifactNotFound,
     AgentArtifactStore,
+    validate_adoption_target,
 )
 from zf.web.agent_child_activity import build_child_activity_projection
 from zf.web.agent_conversation_store import (
@@ -143,6 +144,12 @@ def build_webchat_router(
                 project_id=project_id,
                 conversation_id=conversation_id,
             ) if conversation_id else [],
+            "messages": conversations.list_messages(
+                project_id=project_id,
+                conversation_id=conversation_id,
+                thread_id=thread_id,
+                limit=500,
+            )["items"] if conversation_id and thread_id else [],
             "artifacts": artifacts.list_versions(
                 project_id=project_id,
                 conversation_id=conversation_id,
@@ -584,7 +591,10 @@ def build_webchat_router(
             return denied
         ctx, _, _, artifacts = services(project_id)
         payload = await _request_json(request)
-        target = dict(payload.get("target") or {})
+        try:
+            target = validate_adoption_target(payload.get("target") or {})
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
         task_id = str(target.get("task_id") or "")
         if task_id:
             task = TaskStore(ctx.state_dir / "kanban.json").get(task_id)
@@ -607,7 +617,7 @@ def build_webchat_router(
             raise HTTPException(404, "artifact not found") from None
         except AgentArtifactAccessDenied:
             raise HTTPException(403, "artifact access denied") from None
-        except AgentArtifactConflict as exc:
+        except (AgentArtifactConflict, ValueError) as exc:
             raise HTTPException(409, str(exc)) from exc
         emit(ctx, "agent.artifact.adopted", {
             "version_id": version_id, "artifact_id": item["artifact_id"],

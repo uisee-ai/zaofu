@@ -324,6 +324,50 @@ def test_child_activity_drops_empty_artifact_refs() -> None:
     assert projection["items"][0]["artifact_refs"] == ["artifact://v1"]
 
 
+def test_child_activity_excludes_root_kanban_turn_and_normalizes_missing_task_id() -> None:
+    projection = build_child_activity_projection([
+        {
+            "id": "root",
+            "type": "kanban.agent.turn.completed",
+            "task_id": None,
+            "payload": {"role_instance": "kanban-agent", "status": "completed"},
+        },
+        {
+            "id": "child",
+            "type": "child.completed",
+            "task_id": None,
+            "payload": {"child_id": "child-1", "task_id": None},
+        },
+    ])
+    assert [item["activity_id"] for item in projection["items"]] == ["child-1"]
+    assert projection["items"][0]["task_id"] == ""
+
+
+def test_child_activity_excludes_headless_root_run_with_member_identity() -> None:
+    projection = build_child_activity_projection([
+        {
+            "id": "root-run",
+            "type": "agent.session.run.completed",
+            "payload": {
+                "source": "kanban-agent.headless",
+                "member_id": "kanban-agent",
+                "run_id": "run-1",
+                "thread_id": "kanban:project-1",
+            },
+        },
+        {
+            "id": "child-run",
+            "type": "agent.session.run.completed",
+            "payload": {
+                "source": "channel-member",
+                "member_id": "reviewer",
+                "run_id": "run-2",
+            },
+        },
+    ])
+    assert [item["activity_id"] for item in projection["items"]] == ["reviewer"]
+
+
 def test_child_activity_keeps_three_authorities_distinct_and_controls_declared() -> None:
     events = [
         {"id": "e1", "type": "child.started", "ts": "2026-09-30T00:09:00Z", "payload": {
