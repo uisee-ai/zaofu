@@ -83,6 +83,15 @@ class ChannelConsensusActionsMixin:
                 status="question_not_open",
             )
         answer = str(payload.get("answer") or "").strip()
+        if resolution == "out_of_scope" and question.get("kind") == "fact" and not answer:
+            return self._failed(
+                requested=requested,
+                action=action,
+                requested_action=requested_action,
+                task_id=_task_id_from_payload(payload),
+                reason="scope exclusion reason is required for a fact question",
+                status="invalid_payload",
+            )
         if resolution in {"answered", "assumption"} and not answer:
             return self._failed(
                 requested=requested,

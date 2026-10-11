@@ -277,3 +277,13 @@
 
 .channel-readiness-risks { grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere; }
 .channel-readiness-risks label { display: flex; align-items: flex-start; gap: 8px; }
+.channel-fact-scope-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.channel-fact-scope-form textarea {
+  width: 100%;
+  resize: vertical;
+}

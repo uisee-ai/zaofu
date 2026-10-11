@@ -22,6 +22,7 @@ import { channelFlow, channelMemberLabel, channelSourceThreadId, FLOW_LABELS, ty
 import { ChannelFlowNavigation, ChannelFlowPreview } from "./ChannelFlowNavigation";
 import { ChannelMemberIdentity, memberColor } from "./ChannelMemberIdentity";
 import { ChannelQuestionCard } from "./ChannelQuestionCard";
+import { ChannelFactScopeControl } from "./ChannelFactScopeControl";
 import { ChannelDecisionQueue, type ChannelDecisionItem } from "./ChannelDecisionQueue";
 import { ChannelMemberInvitations } from "./ChannelMemberInvitations";
 import { channelReplyHealth, replyFailurePresentation } from "./replyHealth";
@@ -585,6 +586,8 @@ export function ChannelPage({
       .map((item) => ({
         id: String(item.question_id || ""),
         threadId: channelThreadId(String(item.thread_id || "main")),
+        sourceThreadId: String(item.thread_id || "main"),
+        kind: String(item.kind || ""),
         text: String(item.question || ""),
         category: String(item.category || ""),
         askedBy: String(item.asked_by || ""),
@@ -2129,6 +2132,13 @@ export function ChannelPage({
             ))}
           </div>
         ) : null}
+        {discussionBand.openQuestions.filter((question) => question.kind === "fact").map((question) => (
+          <ChannelFactScopeControl key={JSON.stringify([selectedChannelId, question.sourceThreadId, question.id])}
+            question={question} busy={controlsBusy}
+            disabled={!actionReady || discussionBand.questionConsolidationPending}
+            onExclude={(questionId, threadId, reason) => runControl(() =>
+              onResolveQuestion(questionId, threadId, "out_of_scope", reason))} />
+        ))}
         {presentation.action === "result" && presentation.actionLabel ? (
           <button
             className="icon-button primary"

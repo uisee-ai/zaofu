@@ -41,7 +41,10 @@ def bind_requirement_sources(raw: dict[str, Any], context: dict[str, Any]) -> tu
     if not isinstance(catalog, list):
         return context, "explicit requirement refs need ledger context" if selected is not None else ""
     origin = str(context.get("originating_message_event_id") or "")
-    refs = set(selected or [origin]) | {origin}
+    current = str(context.get("requirement_source_cutoff_event_id") or origin)
+    # A continuation has a stable origin and a new operator input. Bind both;
+    # source selection may not silently discard either side of that intent.
+    refs = set(selected or [origin]) | {origin, current}
     available = {row["event_id"] for row in catalog}
     if refs - available:
         return context, "requirement refs must identify existing earlier messages in this project, conversation and thread"

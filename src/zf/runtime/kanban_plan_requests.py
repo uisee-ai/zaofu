@@ -247,6 +247,32 @@ def plan_response_gate(
         revision=revision,
     )
     if not request_gate.get("ok"):
+        # A later revision may supersede the request after its answer has
+        # already been recorded. Preserve retry idempotency for that exact
+        # answered request while still rejecting unanswered stale responses.
+        if request_gate.get("status") == "plan_request_superseded":
+            historical_events = [
+                event
+                for event in event_list
+                if not (
+                    event.type == PLAN_REQUESTED_EVENT
+                    and event.id != request_event_id
+                    and _request_revision_for_event(event) > _revision(revision)
+                    and _request_id_for_event(event) == request_id
+                )
+            ]
+            historical_gate = plan_response_gate(
+                historical_events,
+                request_event_id=request_event_id,
+                request_id=request_id,
+                revision=revision,
+                question_id=question_id,
+                option_id=option_id,
+                answer=answer,
+                answers=answers,
+            )
+            if historical_gate.get("status") == "already_answered":
+                return historical_gate
         return request_gate
     source = request_gate["source"]
     request = request_gate["request"]
@@ -538,6 +564,18 @@ def _event_request(payload: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, dict):
             return value
     return {}
+
+
+def _request_id_for_event(event: ZfEvent) -> str:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    request = _event_request(payload)
+    return str(request.get("request_id") or event.id)
+
+
+def _request_revision_for_event(event: ZfEvent) -> int:
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    request = _event_request(payload)
+    return _revision(request.get("revision"))
 
 
 def _expired(value: str) -> bool:

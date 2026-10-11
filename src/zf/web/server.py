@@ -7494,6 +7494,7 @@ def _run_headless_kanban_agent_turn(
         turn_id=turn_id, backend=backend,
         provider_session_id=result.provider_session_id,
         originating_message_event_id=origin_message_event_id or user_message.id,
+        requirement_source_cutoff_event_id=user_message.id,
         task_id=task_id,
         task_binding_digests=task_binding_digests,
         workflow_route_eligibility=workflow_route_eligibility,

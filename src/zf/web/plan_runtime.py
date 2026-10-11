@@ -451,15 +451,17 @@ def prepare_headless_plan_draft(
     workflow_context: dict[str, Any] | None = None,
     canonical_channel_prds: dict[str, Any] | None = None,
     correlation_id: str | None,
+    requirement_source_cutoff_event_id: str = "",
     config: Any | None = None,
 ) -> tuple[HeadlessPlanDraft | None, dict[str, Any] | None]:
     event_list = list(events)
     effective_task_contract_digest = task_contract_digest or str(
         (task_binding_digests or {}).get(task_id or "") or ""
     )
+    source_cutoff = requirement_source_cutoff_event_id or originating_message_event_id
     source_messages = requirement_source_messages(
         event_list,
-        originating_message_event_id=originating_message_event_id,
+        originating_message_event_id=source_cutoff,
         project_id=project_id,
         conversation_id=conversation_id,
         thread_key=thread_key or fallback_thread_id,
@@ -479,6 +481,7 @@ def prepare_headless_plan_draft(
             "backend": backend,
             "provider_session_id": provider_session_id,
             "originating_message_event_id": originating_message_event_id,
+            "requirement_source_cutoff_event_id": source_cutoff,
             "requirement_source_messages": source_messages,
             "workflow_parameters": workflow_context or {},
             "canonical_channel_prds": canonical_channel_prds or {},

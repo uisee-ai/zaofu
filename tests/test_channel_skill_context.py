@@ -1,5 +1,6 @@
 """Typed provider turns receive pinned methods without filesystem tools."""
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -61,3 +62,30 @@ def test_project_owned_skill_and_legacy_empty_refs_remain_supported(tmp_path):
            "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
     assert load_channel_skill_guidance([ref], state_dir=tmp_path / "state", project_root=tmp_path)[0]["content"] == "Project method"
     assert load_channel_skill_guidance([], state_dir=tmp_path / "state", project_root=None) == []
+
+
+@pytest.mark.parametrize("skill,refs", [
+    ("zf-channel-discussion-synthesizer", {"synthesis_request_id": "s1"}),
+    ("zf-channel-discussion-participant", {"consensus_review_id": "r1"}),
+])
+def test_canonical_quotation_method_reaches_actual_typed_provider_prompt(tmp_path, monkeypatch, skill, refs):
+    root = Path(__file__).resolve().parents[1]
+    path = root / "skills" / skill / "SKILL.md"
+    body = path.read_text()
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    channel = {"channel_id": "ch", "messages": [{"message_id": "trigger", "thread_id": "main",
+        "member_id": "operator", "text": "Review the original quotation requirement.", "refs": refs}]}
+    pack = build_channel_context_pack(channel, channel_id="ch", thread_id="main",
+        target_member_id="synthesizer", trigger_message_id="trigger", state_dir=tmp_path,
+        project_root=root, resolved_skill_refs=[{"logical_ref": f"skills/{skill}/SKILL.md",
+                                                 "resolved_path": str(path), "sha256": digest}])
+    assert pack["skill_guidance"][0]["content"] == body
+    monkeypatch.setattr("zf.runtime.channel_provider_prompt.channel_context_pack_by_id", lambda *a, **k: pack)
+    prompt = build_channel_provider_prompt(channel=channel, member={"member_id": "synthesizer"},
+        request={"context_pack_id": pack["context_pack_id"]}, message={"refs": refs}, state_dir=tmp_path)
+    assert "直接引用" in prompt or "原文引文" in prompt
+    assert pack["skill_guidance"][0]["sha256"] == digest
+    for provider in [".codex", ".claude"]:
+        distribution = root / provider / "skills" / skill / "SKILL.md"
+        if distribution.exists():
+            assert distribution.read_bytes() == path.read_bytes()

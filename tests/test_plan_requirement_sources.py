@@ -16,7 +16,7 @@ def message(event_id, text, **scope):
     })
 
 
-def draft(events, refs=None):
+def draft(events, refs=None, *, cutoff=""):
     request = {"header": "Route", "subject_type": "clarification", "question": "Which scope?",
                "options": [{"id": "a", "label": "Small (Recommended)"}, {"id": "b", "label": "Large"}]}
     if refs is not None:
@@ -26,6 +26,7 @@ def draft(events, refs=None):
         project_id="p", conversation_id="kanban:p", thread_key="main", fallback_thread_id="main",
         originating_message_event_id="current", turn_id="turn", backend="codex-headless",
         provider_session_id="session", task_id=None, correlation_id="trace",
+        requirement_source_cutoff_event_id=cutoff,
     )
     assert result is not None
     return result.request
@@ -61,3 +62,31 @@ def test_explicit_refs_reject_cross_scope_and_missing_scope(scope):
 def test_invalid_and_future_refs_are_rejected(refs):
     result = draft([message("current", "new requirement"), message("future", "later")], refs)
     assert not result["valid"]
+
+
+@pytest.mark.parametrize("refs", [None, ["current"], ["continued"]])
+def test_continuation_keeps_origin_and_current_input(refs):
+    original = message("current", "Plan the editor.")
+    continued = message("continued", "Keep replace in the small scope.")
+    result = draft([original, continued], refs, cutoff="continued")
+    assert result["valid"], result["validation_error"]
+    assert result["originating_message_event_id"] == "current"
+    assert result["originating_message_event_ids"] == ["current", "continued"]
+    assert result["requirement_digest"] == plan_requirement_digest([
+        ("current", original.payload["message"]), ("continued", continued.payload["message"]),
+    ])
+
+
+@pytest.mark.parametrize("scope", [{"project_id": "other"}, {"conversation_id": "other"},
+                                  {"thread_key": "other"}])
+def test_continuation_still_rejects_cross_scope_refs(scope):
+    result = draft([message("current", "Plan"), message("foreign", "Private", **scope),
+                    message("continued", "Small scope")], ["foreign"], cutoff="continued")
+    assert not result["valid"]
+
+
+def test_continuation_rejects_future_source_and_unknown_cutoff():
+    events = [message("current", "Plan"), message("continued", "Small scope"),
+              message("future", "Unseen later requirement")]
+    assert not draft(events, ["future"], cutoff="continued")["valid"]
+    assert not draft(events, cutoff="missing")["valid"]
