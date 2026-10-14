@@ -541,6 +541,7 @@ _ACTION_ALIASES = {
     "channel.leader.set",
     "channel-post-message",
     "channel-invite-member",
+    "channel-profile-register",
     "channel.add_member",
     "channel-add-member",
     "channel-update-member-permission",
@@ -6488,6 +6489,9 @@ def _validate_action_payload(
     *,
     config: ZfConfig | None = None,
 ) -> str:
+    if action == "channel-profile-register":
+        from zf.runtime.channel_profile_registration import validate_registration_payload
+        return validate_registration_payload(payload)
     collaboration_error = validate_collaboration_action_payload(
         action,
         payload,
@@ -7326,10 +7330,12 @@ def _run_headless_kanban_agent_turn(
         commit_callback=durable_part_recorder,
         flush_interval_s=stream_flush_interval_s,
     )
+    from zf.runtime.channel_profile_registration import registration_context
+
     channel_prd_context = canonical_channel_prd_context(state_dir)
     channel_group_context = kanban_channel_group_context(
         state_dir, channel_id=payload.get("channel_id"),
-        thread_id=thread_key or payload.get("thread_id") or "main")
+        thread_id=payload.get("channel_thread_id") or thread_key or payload.get("thread_id") or "main")
     context_completed_at = time.monotonic()
     provider_started_at = time.monotonic()
     try:
@@ -7358,6 +7364,7 @@ def _run_headless_kanban_agent_turn(
                 "workflow_route_catalog": workflow_route_catalog(config),
                 "canonical_channel_prds": channel_prd_context,
                 "channel_profile_catalog": public_channel_profile_catalog(config),
+                "channel_profile_registration": registration_context(project_root, state_dir, config),
                 "current_channel_group": channel_group_context,
                 "workflow_context": workflow_context,
                 "attachment_refs": payload.get("attachment_refs") or [],

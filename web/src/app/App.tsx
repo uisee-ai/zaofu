@@ -2261,6 +2261,7 @@ export function App() {
                 onCancelProviderRun={channelActions.cancelProviderRun}
                 onSetMemberPermission={(memberId, permissionProfile) => setChannelMemberPermission(memberId, permissionProfile)}
                 onWorkflowRequest={channelActions.submitWorkflowRequest}
+                onRequestProjectProfile={channelActions.requestProjectProfile}
                 selectedChannelId={selectedChannelId}
                 projectId={activeProjectId}
                 onReviewPlans={() => openTaskAgent()}

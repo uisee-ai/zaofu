@@ -193,7 +193,7 @@ def normalize_provider(value: object) -> str:
 
 def normalize_channel_role(value: object, *, member_type: str = "") -> str:
     raw = _normalize_role_token(value)
-    if raw in CHANNEL_ROLES:
+    if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", raw):
         return raw
     return CHANNEL_MEMBER_ROLE_DEFAULTS.get(member_type, "dev_reviewer")
 
@@ -356,7 +356,8 @@ def validate_channel_member_contract(payload: dict[str, Any]) -> str:
         return "provider_binding_id must start with a letter and contain only letters, digits, dot, underscore, or hyphen"
     channel_role = str(payload.get("channel_role") or "").strip()
     if channel_role and _normalize_role_token(channel_role) not in CHANNEL_ROLES:
-        return "channel_role must be one of " + ", ".join(sorted(CHANNEL_ROLES))
+        if not payload.get("profile_id") or not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", _normalize_role_token(channel_role)):
+            return "custom channel_role requires a registered project profile_id"
     visibility = str(payload.get("visibility_profile") or "").strip()
     if visibility and visibility not in CHANNEL_VISIBILITY_PROFILES:
         return "visibility_profile must be one of " + ", ".join(sorted(CHANNEL_VISIBILITY_PROFILES))

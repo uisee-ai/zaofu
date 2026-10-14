@@ -83,6 +83,19 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
     if (action === "channel-create-and-start") {
       push("requirement", payload.message || payload.objective || payload.text);
     }
+  } else if (action === "channel-profile-register") {
+    const profile = payload.profile as Record<string, unknown> | undefined;
+    push("项目角色", payload.profile_id);
+    push("名称", profile?.display_name);
+    push("职责", profile?.persona);
+    push("Provider", profile?.provider);
+    push("权限", profile?.permission_ceiling || "read_only");
+    push("角色说明", payload.role_markdown);
+    push("技能", Array.isArray(profile?.skill_refs) ? profile.skill_refs.join(", ") : "无");
+    push("参评频道", payload.channel_id);
+    push("讨论线程", payload.origin_thread_id);
+    push("参评任务", payload.objective);
+    push("最终复审", payload.channel_id ? payload.required_reviewer ? "参与" : "专项意见" : "仅注册");
   } else if (action === "channel-discussion-start") {
     push("channel", payload.channel_id);
     push("objective", payload.objective);

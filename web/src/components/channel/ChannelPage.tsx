@@ -428,6 +428,7 @@ export function ChannelPage({
   onStartDiscussion,
   onConsensusDecision,
   onWorkflowRequest,
+  onRequestProjectProfile,
   selectedChannelId,
   projectId = "",
   onReviewPlans,
@@ -443,6 +444,7 @@ export function ChannelPage({
   events?: RecentEvent[];
   loadError: string | null;
   onAddAgent: () => void;
+  onRequestProjectProfile?: (objective: string, threadId: string) => Promise<void>;
   onClearHistory: (threadId: string) => Promise<void>;
   onDeleteChannel: () => Promise<void>;
   onDrainReplies: () => Promise<void>;
@@ -480,6 +482,7 @@ export function ChannelPage({
   onReviewPlans: () => void;
 }) {
   const composerRef = useRef<HTMLDivElement | null>(null);
+  const [profileObjective, setProfileObjective] = useState("");
   const [activeChannelThreadId, setActiveChannelThreadId] = useChannelThreadSelection(projectId || "", selectedChannelId, detail);
   const { composerText, setComposerText, composerAttachments, setComposerAttachments,
     composerRefs, setComposerRefs,
@@ -2239,6 +2242,17 @@ export function ChannelPage({
               <Plus size={16} />
               Add role / member
             </button>
+            {onRequestProjectProfile ? <div className="channel-control-panel">
+              <label htmlFor="channel-profile-objective">缺少合适角色？交给 Kanban Agent 生成项目级配置</label>
+              <textarea id="channel-profile-objective" className="filter-input" value={profileObjective}
+                placeholder="说明需要的角色、职责和交付物，例如页面布局、交互与可视化设计"
+                onChange={(event) => setProfileObjective(event.target.value)} />
+              <button type="button" className="icon-button" disabled={!actionReady || controlsBusy || !profileObjective.trim()}
+                onClick={() => void runControl(() => onRequestProjectProfile(profileObjective.trim(), controlThreadId))}>
+                生成项目角色
+              </button>
+              <small>优先复用项目配置；新增配置需审核。批准后返回当前讨论参评。</small>
+            </div> : null}
             {renderMemberList(members, { actions: true, filter: memberSearch })}
           </div>
           <div className="channel-control-panel">

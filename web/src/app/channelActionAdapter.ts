@@ -297,6 +297,24 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     }
   }
 
+  async function requestProjectProfile(objective: string, threadId: string) {
+    const projectId = kanbanAgentProjectId(args.activeProjectId, args.snapshot?.project?.project_id || "");
+    const threadKey = defaultKanbanThreadKey(args.activeProjectId, args.snapshot?.project?.project_id || "");
+    const backend = resolveChannelWorkflowBackend({ storedBackend: args.readStoredBackend() });
+    args.prepareTaskAgent();
+    const result = await args.submitAction("chat-orchestrator", {
+      backend, permission_profile: "read_only", scope: "project", project_id: projectId,
+      conversation_id: kanbanAgentConversationId(projectId), thread_key: threadKey,
+      channel_id: channelId(), channel_thread_id: threadId,
+      message: `请为当前项目生成或复用 Channel Profile。角色需求：${objective}\n`
+        + `来源频道 ${channelId()}，讨论线程 ${threadId}。先检查项目目录；无合适配置时生成 channel-profile-register 提案，`
+        + "包括项目角色 prompt 和有效 Skill 引用。提案需绑定原频道、原线程及主席版本，批准后注册并参评。"
+        + "不要自行修改配置、声称已入群、创建 Task 或启动 Workflow。",
+      source: "web-channel-project-profile",
+    });
+    if (!result.ok) throw new Error(result.reason || "项目角色生成请求失败");
+  }
+
   async function adoptResearchResult(payload: Record<string, unknown>) {
     await args.submitAction("research-adopt", {
       ...payload,
@@ -317,5 +335,6 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     setDiscussionMode,
     startDiscussion,
     submitWorkflowRequest,
+    requestProjectProfile,
   };
 }

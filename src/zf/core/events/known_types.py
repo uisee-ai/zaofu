@@ -441,6 +441,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "channel.created", "channel.archived",
     "channel.member.added", "channel.member.add.rejected",
     "channel.member.connected", "channel.member.invited",
+    "channel.profile.registration.prepared", "channel.profile.registered",
     "channel.member.invitation.proposed", "channel.member.invitation.decided",
     "channel.member.removed", "channel.member.resumed",
     "channel.member.suspended",

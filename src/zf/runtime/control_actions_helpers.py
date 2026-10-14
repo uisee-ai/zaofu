@@ -350,6 +350,9 @@ def validate_shared_action_payload(
     *,
     config: ZfConfig | None = None,
 ) -> str:
+    if action == "channel-profile-register":
+        from zf.runtime.channel_profile_registration import validate_registration_payload
+        return validate_registration_payload(payload)
     if action == "create-task":
         if not str(payload.get("title") or "").strip():
             return "title is required"

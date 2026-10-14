@@ -48,6 +48,7 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
     "channel-discussion-start",
     "channel-set-leader",
     "channel-invite-member",
+    "channel-profile-register",
     "channel-remove-member",
     "channel-pin-message",
     "channel-question-resolve",
@@ -82,6 +83,7 @@ KANBAN_AGENT_ALLOWED_ACTIONS = (
 )
 
 PROJECT_OPERATOR_CONTROLLED_ACTIONS = frozenset({
+    "channel-profile-register",
     "operator-intent-create",
     "operator-intent-approve",
     "operator-intent-reject",

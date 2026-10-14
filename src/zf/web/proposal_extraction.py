@@ -64,6 +64,9 @@ def label_is_recommended(label: str) -> bool:
 
 def default_validate_payload(action: str, payload: dict[str, Any]) -> str:
     """Minimal portable validation: mirrors the controlled-action hard gate."""
+    if action == "channel-profile-register":
+        from zf.runtime.channel_profile_registration import validate_registration_payload
+        return validate_registration_payload(payload)
     if action == "create-task":
         if not str(payload.get("title") or "").strip():
             return "title is required"

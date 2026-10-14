@@ -6,6 +6,9 @@ export interface ActionPresentation {
 }
 
 const ACTION_PRESENTATIONS: Record<string, ActionPresentation> = {
+  "channel-profile-register": {
+    title: "注册项目角色", confirmLabel: "注册角色", busyLabel: "注册中", completedLabel: "项目角色已注册",
+  },
   "apply-patch-proposal": {
     title: "Apply code changes",
     confirmLabel: "Apply changes",
