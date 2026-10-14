@@ -708,6 +708,8 @@ def create_app(
         mutation_auth_error=_web_mutation_auth_error,
         session_cookie=_web_session_cookie,
     ))
+    from zf.web.channel_attachment_routes import build_channel_attachment_router
+    app.include_router(build_channel_attachment_router(resolve_ctx=lambda project_id: _resolve_api_project(project_id, default_project_id=default_project_id, default_state_dir=state_dir, default_config=config, default_project_root=project_root), mutation_auth_error=_web_mutation_auth_error, session_cookie=_web_session_cookie))
     from zf.web.webchat_routes import build_webchat_router
     from zf.web.webchat_runtime import durable_webchat_enabled
 

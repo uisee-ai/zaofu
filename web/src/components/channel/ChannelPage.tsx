@@ -1,7 +1,7 @@
 import { useChannelComposerDraft, useChannelThreadSelection, channelDraftStorageKey, type ComposerAttachment, type ChannelComposerDraft } from "./useChannelConversationState";
 import { ChannelContextFailures } from "./ChannelContextFailures";
 // ChannelPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import { search } from "../../api/client";
+import { search, uploadChannelAttachment } from "../../api/client";
 import type { ActionResponse, ChannelDetail, ChannelHistorySearchResult, ChannelSummary, RecentEvent } from "../../api/types";
 import { AgentSessionTimeline } from "../../components/agent-session/AgentSessionTimeline";
 import type { AgentSessionMessage, AgentSessionRun, AgentSessionTurn } from "../../components/agent-session/types";
@@ -1366,14 +1366,26 @@ export function ChannelPage({
   }
   function addAttachmentFiles(files: FileList | null) {
     if (!files?.length) return;
-    const added = Array.from(files).map((file) => ({
+    if (composerAttachments.length + files.length > 8) {
+      setComposerError("每条消息最多 8 个附件");
+      return;
+    }
+    const added: ComposerAttachment[] = Array.from(files).map((file) => ({
       id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(16).slice(2)}`,
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      lastModified: file.lastModified,
+      name: file.name, size: file.size, type: file.type, lastModified: file.lastModified,
+      uploadStatus: "uploading",
     }));
     setComposerAttachments((current) => [...current, ...added]);
+    Array.from(files).forEach((file, index) => {
+      const id = added[index].id;
+      void (file.size > 10 * 1024 * 1024
+        ? Promise.reject(new Error("附件不能超过 10 MiB"))
+        : uploadChannelAttachment(projectId || "", selectedChannelId, activeChannelThreadId, file))
+        .then((uploadedRef) => setComposerAttachments((current) => current.map((item) => item.id === id
+          ? { ...item, uploadStatus: "uploaded", uploadedRef } : item)))
+        .catch((error) => setComposerAttachments((current) => current.map((item) => item.id === id
+          ? { ...item, uploadStatus: "failed", uploadError: error instanceof Error ? error.message : "上传失败" } : item)));
+    });
     focusComposer();
   }
   function removeAttachment(id: string) {
@@ -1383,8 +1395,8 @@ export function ChannelPage({
     if (!composerAttachments.length && !evaluationSourceDocument) return undefined;
     return {
       ...(evaluationSourceDocument ? { evaluation_source_document: true } : {}),
-      ...(composerAttachments.length ? { attachments: composerAttachments.map(({ id: _id, ...attachment }) => ({
-        ...attachment,
+      ...(composerAttachments.length ? { attachments: composerAttachments.map((attachment) => ({
+        ...attachment.uploadedRef,
         source: "browser-file-picker",
       })) } : {}),
     };
@@ -1432,6 +1444,10 @@ export function ChannelPage({
     const plainText = syncComposerFromEditor().trim();
     const markdownText = channelComposerMarkdownFromElement(composerRef.current);
     if ((!plainText && !composerAttachments.length) || !actionReady) return;
+    if (composerAttachments.some((item) => !item.uploadedRef)) {
+      setComposerError("附件尚未上传完成或正文丢失，请等待或移除后重新上传");
+      return;
+    }
     const refs = attachmentRefs();
     const messageText = markdownText || composerAttachments.map((attachment) => `[attachment] ${attachment.name}`).join("\n");
     const pendingText = plainText;
@@ -2848,6 +2864,7 @@ export function ChannelPage({
                       <span className="channel-attachment-chip" key={attachment.id}>
                         <span>{attachment.name}</span>
                         <span className="muted">{formatBytes(attachment.size)}</span>
+                        <span title={attachment.uploadError}>{attachment.uploadedRef ? "已上传" : attachment.uploadStatus === "uploading" ? "上传中…" : attachment.uploadError || "正文不可用，请移除后重新上传"}</span>
                         <button aria-label={`Remove ${attachment.name}`} type="button" onClick={() => removeAttachment(attachment.id)}>
                           <X size={12} />
                         </button>
@@ -2916,7 +2933,7 @@ export function ChannelPage({
                   <button
                     aria-label="Send message"
                     className="channel-send-button"
-                    disabled={!actionReady || (!composerText.trim() && !composerAttachments.length)}
+                    disabled={!actionReady || composerAttachments.some((item) => !item.uploadedRef) || (!composerText.trim() && !composerAttachments.length)}
                     title={posting ? "Sending in background" : "Send"}
                     type="submit"
                   >

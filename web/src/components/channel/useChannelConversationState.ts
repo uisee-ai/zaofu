@@ -7,6 +7,9 @@ export interface ComposerAttachment {
   size: number;
   type: string;
   lastModified: number;
+  uploadStatus?: "uploading" | "uploaded" | "failed";
+  uploadError?: string;
+  uploadedRef?: Record<string, unknown>;
 }
 
 export interface ChannelComposerDraft {
@@ -30,7 +33,9 @@ function readDraft(key: string, threadId: string): ChannelComposerDraft {
   try {
     const value = JSON.parse(window.localStorage.getItem(key) || "null") as ChannelComposerDraft | null;
     return value?.schemaVersion === empty.schemaVersion && value.threadId === threadId
-      && typeof value.text === "string" && Array.isArray(value.attachments) ? value : empty;
+      && typeof value.text === "string" && Array.isArray(value.attachments)
+      ? { ...value, attachments: value.attachments.map((item) => item.uploadedRef ? item : { ...item, uploadStatus: "failed", uploadError: "正文不可用，请移除后重新上传" }) }
+      : empty;
   } catch { return empty; }
 }
 

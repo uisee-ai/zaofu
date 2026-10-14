@@ -1233,6 +1233,8 @@ def test_channel_post_message_action_emits_attachment_upload_events(tmp_path: Pa
         surface="web",
     )
 
+    from zf.runtime.channel_attachments import capture_channel_attachment
+    attachment = capture_channel_attachment(state_dir, channel_id="ch-zaofu", thread_id="main", name="notes.md", mime="text/markdown", data=b"notes")
     response = service.execute(
         action="channel-post-message",
         requested_action="channel.post_message",
@@ -1245,12 +1247,7 @@ def test_channel_post_message_action_emits_attachment_upload_events(tmp_path: Pa
             "text": "see attached",
             "refs": {
                 "attachments": [
-                    {
-                        "name": "notes.md",
-                        "type": "text/markdown",
-                        "size": 42,
-                        "source": "browser-file-picker",
-                    },
+                    {**attachment, "source": "browser-file-picker"},
                 ],
             },
         },
@@ -1263,7 +1260,7 @@ def test_channel_post_message_action_emits_attachment_upload_events(tmp_path: Pa
     assert len(response["attachment_event_ids"]) == 1
     assert "channel.attachment.uploaded" in event_types
     assert detail is not None
-    assert detail["attachments"][0]["attachment_id"] == "att-msg-1-1"
+    assert detail["attachments"][0]["attachment_id"] == attachment["attachment_id"]
     assert detail["attachments"][0]["name"] == "notes.md"
 
 

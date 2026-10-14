@@ -167,6 +167,7 @@ class HeadlessBackend(Protocol):
         on_message: MessageCallback | None,
         timeout_s: float,
         execution_deadline: float | None = None,
+        image_inputs: list[dict[str, str]] | None = None,
         thinking_level: str = "",
         run_id: str = "",
         run_thread_id: str = "",
@@ -434,6 +435,7 @@ class ClaudeHeadlessBackend:
         on_message: MessageCallback | None,
         timeout_s: float,
         execution_deadline: float | None = None,
+        image_inputs: list[dict[str, str]] | None = None,
         thinking_level: str = "",
         run_id: str = "",
         run_thread_id: str = "",
@@ -474,6 +476,7 @@ class ClaudeHeadlessBackend:
                     parsed, stderr, timed_out = _stream_claude_process(
                         process,
                         prompt=prompt,
+                        image_inputs=image_inputs,
                         timeout_s=timeout_s,
                         execution_deadline=execution_deadline,
                         on_session_id=on_session_id,
@@ -732,6 +735,7 @@ class CodexHeadlessBackend:
         on_message: MessageCallback | None,
         timeout_s: float,
         execution_deadline: float | None = None,
+        image_inputs: list[dict[str, str]] | None = None,
         thinking_level: str = "",
         run_id: str = "",
         run_thread_id: str = "",
@@ -819,7 +823,10 @@ class CodexHeadlessBackend:
                 on_session_id(codex_thread_id)
                 turn_params: dict[str, Any] = {
                     "threadId": codex_thread_id,
-                    "input": [{"type": "text", "text": prompt}],
+                    "input": [{"type": "text", "text": prompt}] + [
+                        {"type": "image", "url": f"data:{image['mime']};base64,{image['data']}"}
+                        for image in image_inputs or []
+                    ],
                 }
                 if thinking_level:
                     turn_params["effort"] = thinking_level
@@ -1563,12 +1570,15 @@ def _cancelled_result(
     )
 
 
-def _build_claude_input(prompt: str) -> str:
+def _build_claude_input(prompt: str, image_inputs: list[dict[str, str]] | None = None) -> str:
     return json.dumps({
         "type": "user",
         "message": {
             "role": "user",
-            "content": [{"type": "text", "text": prompt}],
+            "content": [{"type": "text", "text": prompt}] + [
+                {"type": "image", "source": {"type": "base64", "media_type": image["mime"], "data": image["data"]}}
+                for image in image_inputs or []
+            ],
         },
     }, ensure_ascii=False) + "\n"
 
@@ -1831,6 +1841,7 @@ def _stream_claude_process(
     process: subprocess.Popen[str],
     *,
     prompt: str,
+    image_inputs: list[dict[str, str]] | None = None,
     timeout_s: float,
     execution_deadline: float | None = None,
     on_session_id: SessionCallback,
@@ -1864,7 +1875,7 @@ def _stream_claude_process(
     if process.stdin is None:
         raise OSError("claude stdin pipe is unavailable")
     try:
-        process.stdin.write(_build_claude_input(prompt))
+        process.stdin.write(_build_claude_input(prompt, image_inputs))
         process.stdin.close()
     except BrokenPipeError:
         # The backend closed stdin before we finished writing the prompt

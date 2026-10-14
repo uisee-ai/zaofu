@@ -97,6 +97,9 @@ def build_channel_provider_prompt(
     )
     lines = [
         "ZaoFu Agent Channel reply request",
+        "Attachment contract: native image inputs are supplied only for verified stored images in context_pack.artifact_refs. "
+        "Their order matches those image refs. If an attachment has content_unavailable status or no stored URI, "
+        "you only have metadata: ask the user to upload it again and never claim to have read it.",
         f"channel_id: {channel_id}",
         f"thread_id: {request.get('thread_id') or 'main'}",
         f"target_member_id: {request.get('target_member_id') or member.get('member_id') or ''}",

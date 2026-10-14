@@ -258,6 +258,22 @@ def _post_channel_message_once(
         reply_to_message_id=reply_to_message_id,
         refs=source_refs,
     )
+    if not ingress_error:
+        from zf.runtime.channel_attachments import URI_PREFIX, read_channel_attachment
+
+        attachments = source_refs.get("attachments")
+        for attachment in attachments if isinstance(attachments, list) else []:
+            uri = str(attachment.get("uri") or "")
+            try:
+                if uri.startswith(URI_PREFIX):
+                    body, _ = read_channel_attachment(service.state_dir, attachment, channel_id=channel_id, thread_id=thread_id)
+                    attachment["body_ref"] = body["body_ref"]
+                    attachment["attachment_id"] = "att-" + uri[len(URI_PREFIX):]
+                elif attachment.get("source") == "browser-file-picker":
+                    raise ValueError("Attachment has no stored content; please upload it again")
+            except ValueError as exc:
+                ingress_error = str(exc)
+                break
     if ingress_error:
         return service._failed(
             requested=requested,
@@ -485,6 +501,9 @@ def _emit_attachment_events(
     for index, attachment in enumerate(attachments):
         if not isinstance(attachment, dict):
             continue
+        from zf.runtime.channel_attachments import URI_PREFIX
+        if not str(attachment.get("uri") or "").startswith(URI_PREFIX):
+            continue
         attachment_id = (
             _optional_str(attachment.get("attachment_id"))
             or _optional_str(attachment.get("id"))
@@ -522,6 +541,7 @@ def _emit_attachment_events(
                 )
                 or "",
                 "uri": _optional_str(attachment.get("uri")) or "",
+                "body_ref": attachment.get("body_ref") or {},
                 "refs": redact_obj({
                     "source": (
                         attachment.get("source")

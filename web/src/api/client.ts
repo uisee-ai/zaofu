@@ -108,6 +108,16 @@ function webActionAuthHeaders(): Record<string, string> {
   } : {};
 }
 
+export async function uploadChannelAttachment(projectId: string, channelId: string, threadId: string, file: File): Promise<Record<string, unknown>> {
+  const query = new URLSearchParams({ name: file.name, thread_id: threadId });
+  const response = await fetch(`${projectPrefix(projectId)}/channels/${encodeURIComponent(channelId)}/attachments?${query}`, {
+    method: "POST", headers: { ...webActionAuthHeaders(), "Content-Type": file.type || "application/octet-stream" }, body: file,
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(String(result.detail || result.reason || "附件上传失败，请重新选择文件"));
+  return result.attachment;
+}
+
 export function getWorkspaceProjects(): Promise<WorkspaceProjectsPage> {
   return requestJson<WorkspaceProjectsPage>("/api/workspace/projects");
 }

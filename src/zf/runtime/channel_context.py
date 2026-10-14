@@ -620,7 +620,8 @@ def _select_artifact_refs(
 
     def add(ref: dict[str, Any]) -> None:
         key = (
-            str(ref.get("artifact_id") or "")
+            str(ref.get("uri") or "")
+            or str(ref.get("artifact_id") or "")
             or str(ref.get("attachment_id") or "")
             or f"{ref.get('type')}:{ref.get('message_id')}:{ref.get('name')}"
         )
@@ -701,7 +702,7 @@ def _attachment_ref(item: dict[str, Any], *, message: dict[str, Any] | None = No
         "size": _safe_int(item.get("size") if item.get("size") is not None else item.get("bytes")),
         "hash": str(item.get("hash") or item.get("sha256") or ""),
         "uri": str(item.get("uri") or ""),
-        "status": str(item.get("status") or "uploaded"),
+        "status": "uploaded" if str(item.get("uri") or "").startswith("channel://attachments/") else "content_unavailable",
     }
 
 

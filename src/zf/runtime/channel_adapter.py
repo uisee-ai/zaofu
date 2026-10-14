@@ -809,6 +809,9 @@ def _run_headless_reply(
         visible_stream = ChannelVisibleMessageEmitter(stream.emit_message)
         system_prompt = _build_channel_system_prompt(member, channel=channel)
 
+        from zf.runtime.channel_attachments import channel_image_inputs
+        image_inputs = channel_image_inputs(Path(state_dir), channel=channel, request=request)
+
         def run_provider_turn(turn_prompt: str, session_id: str) -> Any:
             remaining = deadline - monotonic()
             if remaining <= 0:
@@ -818,6 +821,7 @@ def _run_headless_reply(
                     resumed=bool(session_id), error="channel provider execution budget exhausted",
                 )
             return adapter.run_turn(
+                **({"image_inputs": image_inputs} if image_inputs else {}),
                 prompt=turn_prompt,
                 cwd=project_root,
                 system_prompt=system_prompt,
