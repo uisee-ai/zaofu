@@ -69,3 +69,5 @@ Owner 确认和 readiness 决定。修复回合保留原来源快照，延迟/�
 不得截断来源、删除异议、伪造消耗声明或为通过测试放宽 Owner/Workflow 审批。
 新增回归：`test_channel_synthesis_routing.py`、`test_channel_provider_config.py`、
 PRD 刷新后错误提示的 Docker Playwright 用例。
+
+历史重放同时检查 synthesis requested reactor 与通用消息路由入口；旧的失败请求及其消息不能在新请求之后重新派发。
