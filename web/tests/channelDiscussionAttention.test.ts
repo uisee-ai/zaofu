@@ -206,3 +206,13 @@ const missingContribution = presentChannelDiscussionAttention(attention("blocked
 }));
 assert(missingContribution.summary.includes("dba") && missingContribution.action === "restart",
   "missing role has an actionable recovery without bypassing the contribution gate");
+
+const rejectedRound = presentChannelDiscussionAttention(attention("blocked", {
+  reason: "next_round_rejected", next_round_rejection_reason: "next_round_targets_not_in_current_roster",
+}));
+assert(rejectedRound.label.includes("PRD 已生成"), "a rejected next round must retain the existing PRD");
+assert(rejectedRound.summary.includes("冻结名单"), "explain the actual roster rejection");
+assert(rejectedRound.action === "restart", "roster recovery uses an explicit restart");
+const pendingReview = presentChannelDiscussionAttention(attention("blocked", {reason: "synthesis_review_pending"}));
+assert(pendingReview.label.includes("评审尚未启动"), "do not describe a present PRD as missing");
+assert(pendingReview.action === "result", "keep the PRD reviewable");

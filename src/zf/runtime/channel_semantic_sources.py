@@ -136,7 +136,12 @@ def build_semantic_source_bundle(
     errors: list[str] = []
     source_chars = 0
 
-    for message in thread_messages[start:end]:
+    # Explicit original sources remain authoritative across restart messages.
+    original_sources = [
+        message for message in thread_messages[:start]
+        if (message.get("refs") or {}).get("evaluation_source_document") is True
+    ]
+    for message in [*original_sources, *thread_messages[start:end]]:
         if not _is_semantic_source_message(
             message,
             requirement_message_id=requirement_message_id,
@@ -196,6 +201,45 @@ def build_semantic_source_bundle(
         documents.append({**entry, "content": text})
 
     if state_dir is not None:
+        # Attachments remain durable requirements across an explicit restart.
+        # The restart's message copies the objective, not the uploaded bytes.
+        from zf.runtime.channel_attachments import read_channel_attachment
+
+        seen_attachments: set[str] = set()
+        for message in thread_messages[:end + 1]:
+            message_refs = message.get("refs") or {}
+            for attachment in _dict_rows(message_refs.get("attachments")):
+                mime = str(attachment.get("mime") or "")
+                uri = str(attachment.get("uri") or "")
+                if (
+                    not (mime.startswith("text/") or mime == "application/json")
+                    or uri in seen_attachments
+                ):
+                    continue
+                seen_attachments.add(uri)
+                try:
+                    body, data = read_channel_attachment(
+                        Path(state_dir), attachment,
+                        channel_id=str(channel.get("channel_id") or ""), thread_id=thread_id,
+                    )
+                    text = data.decode("utf-8")
+                except (ValueError, KeyError, UnicodeError) as exc:
+                    errors.append(f"attachment:{uri}:{exc}")
+                    continue
+                entry = {
+                    "kind": "channel_attachment",
+                    "message_id": message.get("message_id", ""),
+                    "artifact_ref": body["body_ref"]["ref"],
+                    "artifact_digest": body["body_ref"]["sha256"],
+                    "message_body_ref": uri,
+                    "message_body_digest": body["hash"],
+                    "message_body_byte_count": len(data),
+                    "name": body["name"],
+                }
+                manifest.append(entry)
+                documents.append({**entry, "content": text})
+                source_chars += len(text)
+
         membership_kinds = {
             "channel.member.invitation.proposed": "member_invitation_proposal",
             "channel.member.invitation.decided": "member_invitation_decision",

@@ -333,8 +333,9 @@ def start_discussion(
     product_mode: str = "",
 ) -> list[str]:
     """Emit discussion.started + phase1 transition; returns the blind roster."""
-    previous = discussion_state(channel, thread_id)
-    roster = list(previous.get("participants") or discussion_roster(channel))
+    # A new discussion freezes current membership. Selective continuation uses
+    # discussion.continued and preserves its own participant/review roster.
+    roster = discussion_roster(channel)
     synthesizer = discussion_synthesizer(channel, roster)
     discussion_id = "discussion-" + hashlib.sha1(
         f"{channel_id}:{thread_id}:{trigger_message_id}".encode("utf-8")
@@ -362,7 +363,7 @@ def start_discussion(
             "trigger": trigger,
             "roster": roster,
             "participants": roster,
-            "review_roster": list(previous.get("review_roster") or roster),
+            "review_roster": list(roster),
             "synthesizer": synthesizer,
             "requirement_message_id": trigger_message_id,
             "source": source,

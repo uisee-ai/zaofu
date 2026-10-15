@@ -93,6 +93,30 @@ synthesizer 技能整理进 PRD，不在 Runtime 中匹配“暂不考虑”等�
 现有 Kernel 路径触发新 PRD；同版本独立 review、Owner 确认、Task/Workflow 门分别保留。
 PRD 可带暂缓项进入 review，受影响工作的 `implementation_start=false` 不被自动提升。
 
+显式重启使用当前配置的有效参与者重新冻结 `participants` 与 `review_roster`，不会复制
+旧讨论的成员快照。普通定向续轮仍受当前讨论冻结名单约束，不会隐式纳入新成员。
+新讨论只有当前 trigger/request/generation 的冻结贡献才计入完成；旧贡献和已回答的
+Owner 决定继续作为历史证据保留。`next_round.proposed/rejected` 纳入 Channel 投影，
+当前 discussion/revision/synthesis 的续轮拒绝显示具体原因和重启入口，旧轮次拒绝不污染
+新轮次。有正式 PRD 但尚无评审时显示评审待启动，不再显示 `synthesis_missing`。
+最终回复把盲答推进到 relay 后，真实 reactor 立即再检查一次该阶段的正常收敛门禁。
+零开放问题的定向补充不再等待最长五分钟的 sweep；有问题、待交叉核验或待成员批准时
+仍停在对应门禁。重放最后一条回复不会重复创建综合请求。
+轻量聊天投影保留原始需求标记、review/restart 来源引用与附件元数据，并从 sidecar
+恢复完整用户消息；否则前端重启选择器会错选旧需求，长需求还可能被摘要截断。
+
+同线程上传的文本附件（包括重启前上传的原始需求）经既有附件读取器验证归属、sidecar
+与内容摘要后，以 `channel_attachment` 纳入完整语义来源包。正文严格 UTF-8 解码并计入
+既有来源预算；损坏、错线程或超预算失败关闭。重复附件只计一次，二进制附件沿用引用
+路径。对应回归见 `tests/test_channel_restart_roster.py`、
+`tests/test_channel_semantic_attachments.py` 和 `web/tests/channel-review-restart.spec.ts`。
+重启前明确标记的原始需求消息也保留完整正文，不能只依赖后续 agent 对 Owner 决定的转述。
+完整来源超过 `channel.semantic_source_max_chars` 时保持拒绝，不自动截断或放宽预算。
+操作员可在 `zf.yaml` 按实际来源规模及 provider 容量调整有界预算，再重试绑定原 ref/digest
+的评审。相同线程、成员和文档 ref/digest 的后续完整 context 构建成功后，旧拒绝仍留在
+历史中，但不再覆盖当前 attention；其他成员、版本或不完整重试不能清除该阻塞。
+对应回归见 `tests/test_channel_context_attention.py`。
+
 长文件修改可返回 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`。
 ref/digest 必须匹配本次不可变上下文的 `channel_prd_source` manifest；不接受 anchors，
 始终保留完整文件再应用唯一匹配、不重叠的精确 edits。此模式减少重复输出，不截断必读

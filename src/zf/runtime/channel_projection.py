@@ -107,6 +107,8 @@ CHANNEL_EVENT_TYPES = {
     "channel.discussion.mode.set",
     "channel.discussion.started",
     "channel.discussion.continued",
+    "channel.discussion.next_round.proposed",
+    "channel.discussion.next_round.rejected",
     "channel.member.invitation.proposed",
     "channel.member.invitation.decided",
     "channel.discussion.phase.changed",

@@ -1895,6 +1895,7 @@ export interface ChannelDiscussionActiveAgent {
 }
 
 export interface ChannelDiscussionAttention {
+  next_round_rejection_reason?: string;
   missing_frozen_members?: string[];
   deferred_question_count?: number;
   schema_version: "channel.discussion-attention.v1" | string;

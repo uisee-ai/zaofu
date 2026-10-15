@@ -296,8 +296,9 @@ def _conversation_message(
             "ZaoFu retried synthesis after contract validation failed "
             f"(revision {revision})."
         )
-    if role == "assistant" or request_id:
+    if role in {"assistant", "user"} or request_id:
         text = hydrate_channel_message_text(state_dir, message)
+    if role == "assistant" or request_id:
         text = structured_reply_display_text(text, "channel_contribution")
     out = {
         key: message.get(key)
@@ -413,9 +414,20 @@ def _compact_refs(refs: dict[str, Any]) -> dict[str, Any]:
             "synthesis_request_id",
             "synthesis_repair_id",
             "synthesis_repair_revision",
+            "evaluation_source_document",
+            "source_requirement_message_id",
+            "consensus_review_id",
         )
         if refs.get(key) not in (None, "")
     }
+    attachments = refs.get("attachments")
+    if isinstance(attachments, list):
+        out["attachments"] = [
+            {key: item[key] for key in (
+                "attachment_id", "name", "mime", "size", "hash", "uri", "status",
+            ) if key in item}
+            for item in attachments if isinstance(item, dict)
+        ]
     body = refs.get("message_body")
     if isinstance(body, dict):
         out["message_body"] = {

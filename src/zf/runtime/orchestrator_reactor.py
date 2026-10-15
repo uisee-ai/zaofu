@@ -5876,7 +5876,7 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             return None
         from zf.runtime.channel_discussion import advance_discussion
 
-        advance_discussion(
+        emitted = advance_discussion(
             self.state_dir,
             self.event_writer,
             channel_id=channel_id,
@@ -5885,6 +5885,20 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             config=getattr(self, "config", None),
             project_root=getattr(self, "project_root", None),
         )
+        if event.type == "channel.agent.reply.completed" and "channel.discussion.phase.changed" in (emitted or []):
+            # The final reply may be the last wake event. Apply phase 2's
+            # ordinary gates once now instead of waiting for the deadline sweep.
+            from zf.runtime.channel_projection import project_channel
+
+            current = project_channel(self.state_dir, channel_id) or {}
+            thread_id = str(payload.get("thread_id") or "main")
+            if (current.get("discussions", {}).get(thread_id) or {}).get("state") == "phase2_relay":
+                advance_discussion(
+                    self.state_dir, self.event_writer, channel_id=channel_id,
+                    thread_id=thread_id, source="runtime", channel=current,
+                    config=getattr(self, "config", None),
+                    project_root=getattr(self, "project_root", None),
+                )
         from zf.runtime.channel_reply_remediation import drain_terminal_channel_reply
 
         drain_terminal_channel_reply(self, event, channel_id)
