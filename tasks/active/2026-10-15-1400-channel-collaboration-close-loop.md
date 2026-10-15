@@ -46,3 +46,8 @@ serial 10 passed；sentinel 50 passed / 1 skipped；flow mock E2E 10 passed。
 对应控制动作调用链 36 文件：716 passed / 2 skipped；直接新回归与 PRD/模板 52 passed；
 sentinel 50 passed / 1 skipped；flow smoke 10 passed。
 v4 QA 发现验证命令可能复用历史成功文件，系统自动修订 v5；仍等待最终真实验收，任务不归档。
+
+真实替代 Task 验证复现同 PRD 的 `task_created` 回执被去重吞掉：新增 Task id 幂等维度，
+兼容旧 Task 回执，重启真实 runtime 自动补回 TASK-6A988A 回执 evt-31e3125d14a3；
+旧 TASK-1CF93C 的回执和取消历史不变。新回归先红后绿；8 文件调用链 87 passed，
+sentinel 50 passed / 1 skipped，flow smoke 10 passed。证据 26-replacement-task-receipts.json。

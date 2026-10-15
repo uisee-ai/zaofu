@@ -120,6 +120,10 @@ Owner 决定继续作为历史证据保留。`next_round.proposed/rejected` 纳�
 Owner 确认也不能通过幂等重放掩盖后来发现的缺陷。新版仍需独立评审与新的 Owner 确认；
 Owner 决定不替代角色签名。回归见 `tests/test_channel_owner_revision_gate.py`。
 
+同一确认 PRD 可创建多个独立 Task；`task_created` 回执的幂等键包含 Task id，不能仅按
+PRD 摘要和版本合并。旧键只对其原 Task 继续去重，重启 reconciliation 会补回其他 Task
+缺失的回执，不改写历史事件。回归见 `tests/test_channel_result_receipts.py`。
+
 长文件修改可返回 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`。
 ref/digest 必须匹配本次不可变上下文的 `channel_prd_source` manifest；不接受 anchors，
 始终保留完整文件再应用唯一匹配、不重叠的精确 edits。此模式减少重复输出，不截断必读
