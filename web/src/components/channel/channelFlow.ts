@@ -77,6 +77,9 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
     : activeDiscussion ? "Discussing" : ["ready", "completed", "awaiting_consensus"].includes(discussionState) ? "Converged"
     : hasDiscussion ? "Unknown" : "Not started";
   const synthesisRequest = (detail?.synthesis_requests ?? []).filter((row) => inThread(row, threadId)).at(-1);
+  const generationError = ["blocked", "failed"].includes(flowText(synthesisRequest?.status))
+    ? flowText(synthesisRequest?.reason) || flowText(synthesisRequest?.contract_error) || "PRD generation failed"
+    : "";
   const generating = (attention?.kernel_phase || discussion?.state) === "phase3_synthesis"
     && attention?.execution_state === "running"
     && !["proposed", "blocked", "failed", "cancelled"].includes(flowText(synthesisRequest?.status));
@@ -112,7 +115,7 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
   };
   return { canonical, artifactRef, artifactDigest, revision, ready, latest, requirements,
     openQuestions, questionCount, tasks, workflows, current, statuses, complete, plans: [...taskPlans, ...workflowPlans],
-    hasArtifact: Boolean(artifactRef), loading: !detail };
+    hasArtifact: Boolean(artifactRef), generationError, loading: !detail };
 }
 export type ChannelFlow = ReturnType<typeof channelFlow>;
 

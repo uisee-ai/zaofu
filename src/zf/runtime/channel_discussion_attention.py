@@ -8,6 +8,7 @@ from zf.runtime.channel_contracts import discussion_engine_mode
 from zf.runtime.channel_question_gate import question_dedup_gate_state
 from zf.runtime.channel_member_proposals import pending_member_proposals
 from zf.runtime.channel_synthesis_lock import retired_synthesis_reply_ids
+from zf.runtime.channel_synthesis_routing import retired_synthesis_message_ids
 
 
 _QUEUED_REPLY_STATUSES = {"pending", "queued"}
@@ -240,10 +241,12 @@ def project_discussion_attention(
         )
         invitation_count = len(pending_member_proposals(channel, thread_id))
         packs = channel.get("context_packs") or {}
+        retired_messages = retired_synthesis_message_ids(channel, thread_id)
         context_rejections = [
             {key: row.get(key, "") for key in ("context_pack_id", "target_member_id", "trigger_message_id", "reason", "ts")}
             for row in (packs.values() if isinstance(packs, dict) else packs)
             if row.get("status") == "rejected" and current_session_item(row, time_keys=("ts",))
+            and row.get("trigger_message_id") not in retired_messages
         ]
         if invitation_count:
             state, reason, next_action = "needs_input", "member_invitation_pending", "review_members"

@@ -598,6 +598,20 @@ class ChannelMessageActionsMixin:
             openclaw_client=self.openclaw_client,
             dispatch_inline=False,
         )
+        from zf.runtime.channel_synthesis_routing import synthesis_route_error
+        route = route_result.as_dict()
+        route_error = synthesis_route_error(
+            route, project_channel(self.state_dir, channel_id) or {}, message_id,
+        )
+        if route_error:
+            self.writer.emit("channel.synthesis.blocked", actor=self.actor,
+                             causation_id=request_event.id, correlation_id=channel_id,
+                             payload={"channel_id": channel_id, "thread_id": thread_id,
+                                      "request_id": request_id, "target_member_id": target_member_id,
+                                      "reason": route_error, "source": self.surface})
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                task_id=_task_id_from_payload(payload), reason=route_error,
+                                status_code=409, status="synthesis_blocked")
         if route_result.reply_requests:
             dispatch_channel_replies_background(
                 state_dir=self.state_dir,

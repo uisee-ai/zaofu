@@ -159,7 +159,8 @@ def dispatch_reply_request(
                 }])
         backend = str(member.get("backend") or request.get("backend") or "").strip().lower()
         if backend in HEADLESS_BACKENDS and not (_worker_session(member) or request.get("worker_session_id")) and deterministic_reply is None:
-            request = {**request, "provider_timeout_seconds": _channel_provider_headless_timeout_s()}
+            request = {**request, "provider_timeout_seconds": _channel_provider_headless_timeout_s(),
+                       "codex_context_window_tokens": config.channel.codex_context_window_tokens if config else 0}
         run_fields = provider_run_fields_for_request(channel_id, request)
         started = writer.emit(
             "channel.agent.reply.started",
@@ -179,6 +180,7 @@ def dispatch_reply_request(
                 "remote_agent_id": str(member.get("remote_agent_id") or ""),
                 "worker_session_id": _worker_session(member) or str(request.get("worker_session_id") or ""),
                 "provider_timeout_seconds": request.get("provider_timeout_seconds", 0),
+                "codex_context_window_tokens": request.get("codex_context_window_tokens", 0),
                 **run_fields,
                 "source": source,
             },
@@ -670,14 +672,14 @@ def _run_headless_reply(
     # optional headless provider runtime unless a real provider is requested.
     from zf.web.headless_agent import (
         ClaudeHeadlessBackend,
-        CodexHeadlessBackend,
         HeadlessTurnResult,
         HeadlessThreadStore,
     )
 
+    from zf.runtime.channel_provider_config import channel_codex_backend
     adapters = backends or {
         "claude-headless": ClaudeHeadlessBackend(),
-        "codex-headless": CodexHeadlessBackend(),
+        "codex-headless": channel_codex_backend(int(request.get("codex_context_window_tokens") or 0)),
     }
     adapter = adapters.get(backend)
     if adapter is None:

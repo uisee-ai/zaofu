@@ -81,3 +81,12 @@ assert(channelFlow({ ...reviewing, synthesis_requests: [...reviewing.synthesis_r
 
 assert(channelFlow(reviewing, "main").current === "prd", "same-version review belongs to the published PRD stage");
 assert(channelFlow({ ...reviewing, synthesis_requests: [...reviewing.synthesis_requests!, { thread_id: "main", status: "requested" }] }, "main").current === "discussion", "new generation must not inherit the previous PRD stage");
+
+{
+  const detail = { synthesis_requests: [{ thread_id: "main", request_id: "blocked", status: "blocked",
+    reason: "semantic_source_budget_exceeded:342979>120000" }] } as unknown as ChannelDetail;
+  assert(channelFlow(detail, "main").generationError.includes("342979>120000"), "blocked synthesis retains its rejection reason");
+  assert(channelFlow(detail, "other").generationError === "", "rejection stays in its source thread");
+  detail.synthesis_requests!.push({ thread_id: "main", request_id: "retry", status: "requested" });
+  assert(channelFlow(detail, "main").generationError === "", "explicit retry retires the prior error");
+}

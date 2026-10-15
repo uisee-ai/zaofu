@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from zf.core.events import EventLog, EventWriter
+from zf.core.config.schema import ChannelConfig, ZfConfig
 from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_reply_contract import emit_structured_reply_events
@@ -36,7 +37,8 @@ def setup(tmp_path, monkeypatch):
     file.write_text(body)
     writer.emit("channel.message.posted", actor="synth", payload={"channel_id": "ch-file", "thread_id": "main",
                 "message_id": "delivery", "member_id": "synth", "text": f"Saved [PRD]({file})"})
-    service = ControlledActionService(state, writer, project_root=tmp_path, actor="web", source="web", surface="web")
+    service = ControlledActionService(state, writer, project_root=tmp_path, actor="web", source="web", surface="web",
+                                     config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000)))
     return state, writer, service, file, body
 
 

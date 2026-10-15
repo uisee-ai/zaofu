@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from zf.runtime.channel_member_proposals import apply_member_proposal_event
 from zf.runtime.channel_synthesis_lock import mark_exhausted_synthesis
+from zf.runtime.channel_synthesis_routing import mark_rejected_synthesis
 
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -1575,6 +1576,8 @@ def _apply_context_pack(
     *,
     state_dir: Path | None = None,
 ) -> None:
+    if event.type == "channel.context_pack.rejected":
+        mark_rejected_synthesis(channel, event)
     if state_dir is not None and event.type == "channel.context_pack.built":
         payload = hydrate_channel_context_pack_payload(state_dir, payload)
     context_pack_id = _payload_str(payload, "context_pack_id") or event.id
