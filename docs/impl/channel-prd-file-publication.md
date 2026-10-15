@@ -71,3 +71,5 @@ Owner 确认和 readiness 决定。修复回合保留原来源快照，延迟/�
 PRD 刷新后错误提示的 Docker Playwright 用例。
 
 历史重放同时检查 synthesis requested reactor 与通用消息路由入口；旧的失败请求及其消息不能在新请求之后重新派发。
+
+实机运行还需核对 tmux 子进程的网络环境。Web 启动器将显式设置的大小写 HTTP/HTTPS/ALL/NO_PROXY 写入受限权限运行环境文件；不会输出代理值。继承该文件的控制进程使用相同网络配置。
