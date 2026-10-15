@@ -128,6 +128,11 @@ def fake_channel_reply_text(
                 "freeze": True,
             },
         }
+    if "channel_synthesis" in contract and refs.get("prd_source_file"):
+        contract["channel_synthesis"].pop("prd_markdown", None)
+        contract["channel_synthesis"]["prd_file"] = {
+            key: refs["prd_source_file"][key] for key in ("ref", "sha256")
+        }
     return (
         summary
         + "\n"
@@ -246,8 +251,10 @@ def channel_reply_response_contract(
     if refs.get("adaptive_next_round_id"):
         return _channel_contribution_response_contract(adaptive_next_pass=True)
     if refs.get("synthesis_request_id"):
+        selected_source = ("Selected immutable prd_source_file: " + json.dumps(refs["prd_source_file"]) + ". "
+                           if refs.get("prd_source_file") else "")
         return _contract_response_instruction(
-            "one JSON object named channel_synthesis containing "
+            selected_source + "one JSON object named channel_synthesis containing "
             "title, decision, summary, prd_markdown, requirement_coverage, decision_log, decisions, assumptions, out_of_scope, "
             "acceptance_criteria, verification_commands, open_questions, risks, "
             "recommended_workflow, source_refs, evidence_refs, "
@@ -256,7 +263,13 @@ def channel_reply_response_contract(
             "Your deliverable now is the complete standalone PRD, not a decision draft, "
             "outline, or recommendation that a later workflow write the PRD. Concision applies "
             "to the chat summary, never to omission of required artifact content. "
-            "Provide prd_markdown OR prd_composition, never both. For a long existing PRD, "
+            "A read_only agent can publish through this structured reply: Runtime writes the artifact. "
+            "Do not request filesystem write permission merely to publish a PRD. "
+            "If request refs include prd_source_file, read that immutable snapshot completely. "
+            "You may return prd_file:{ref,sha256} matching it exactly instead of retyping the body; "
+            "the remaining contract, source coverage, independent review and Owner gates still apply. "
+            "A local file link or success summary alone is not a published PRD. "
+            "Provide exactly one of prd_file, prd_markdown or prd_composition. For a long existing PRD, "
             "prefer prd_composition to preserve its complete source without retyping it: "
             "{source_message_id, source_message_digest, start_anchor, end_anchor, "
             "edits:[{old,new}], appendix_markdown}. Select one requirement/owner_input document "

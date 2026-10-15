@@ -212,3 +212,11 @@ function refSizeLabel(value: number): string {
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
   return `${(value / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/** A Channel-local document target, never a URL or an application route. */
+export function localDocumentLink(href: string): PreviewItem | null {
+  if (!href || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(href) || /[?#]/.test(href)) return null;
+  if (!/\.(?:md|markdown|txt|json|yaml|yml|csv|log|py|ts|tsx|js|css|html)$/i.test(href)) return null;
+  return { kind: "artifact", id: href, name: href.split("/").at(-1) || href,
+    meta: "", profile: /\.(md|markdown)$/i.test(href) ? "markdown" : "text", ref: { path: href } };
+}

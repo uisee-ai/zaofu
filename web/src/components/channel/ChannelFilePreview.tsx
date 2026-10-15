@@ -7,9 +7,12 @@ import { previewFileRef } from "../agent-session/referencePreview";
 import type { PreviewItem } from "../agent-session/previewRegistry";
 
 type Document = { name: string; ref: string; content: string; format: string; sha256: string; byte_count: number };
-export function ChannelFilePreview({ item, projectId, channelId, threadId, onClose }: {
+export function ChannelFilePreview({ item, projectId, channelId, threadId, onClose, onPublish, publishDisabled }: {
+  onPublish?: (source: { ref: string; sha256: string }) => Promise<void>; publishDisabled?: boolean;
   item: PreviewItem; projectId: string; channelId: string; threadId: string; onClose: () => void;
 }) {
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState("");
   const [document, setDocument] = useState<Document>();
   const [error, setError] = useState("");
   const [source, setSource] = useState(false);
@@ -55,6 +58,15 @@ export function ChannelFilePreview({ item, projectId, channelId, threadId, onClo
         <details className="channel-document-evidence"><summary>File information</summary><code>{document.ref}</code><code>sha256:{document.sha256}</code><span>{document.byte_count} bytes · current file contents</span></details>
       </> : null}
     </div>
-    <footer className="channel-document-footer"><p role="status">{copyStatus || "只读文件预览 · 文件不是已确认的 canonical PRD，不提供 Process。"}</p></footer>
+    <footer className="channel-document-footer">
+      <p role="status">{copyStatus || "项目文件尚未登记为 PRD。生成草案后仍需独立评审与 Owner 确认。"}</p>
+      {publishError ? <p role="alert">{publishError}</p> : null}
+      {document?.format === "markdown" && onPublish ? <button type="button" className="icon-button primary"
+        disabled={publishDisabled || publishing} onClick={() => {
+          setPublishing(true); setPublishError("");
+          void onPublish({ ref: document.ref, sha256: document.sha256 })
+            .catch((reason) => setPublishError(String(reason))).finally(() => setPublishing(false));
+        }}>{publishing ? "正在提交…" : "生成正式 PRD 草案"}</button> : null}
+    </footer>
   </section>;
 }

@@ -458,6 +458,10 @@ class ChannelMessageActionsMixin:
                                     status_code=409, status="member_invitation_pending")
             active_request = synthesis_request_in_flight(channel, thread_id)
             if active_request is not None:
+                if "source_file" in payload:
+                    return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                        task_id=requested.task_id, status_code=409,
+                                        reason="PRD generation is already running; wait before selecting another file")
                 active_request_id = str(active_request.get("request_id") or "")
                 active_target_member_id = str(
                     active_request.get("target_member_id") or ""
@@ -510,6 +514,29 @@ class ChannelMessageActionsMixin:
                 or _optional_str(payload.get("reason"))
                 or "Synthesize the current channel discussion into a concise decision draft, open questions, risks, and recommended next workflow action."
             )
+            source_file = {}
+            if "source_file" in payload:
+                from zf.runtime.channel_prd_file import snapshot_prd_file
+                from zf.runtime.channel_document_source import ChannelDocumentError
+                from zf.runtime.sidecar_refs import SidecarRefError
+                try:
+                    source_file = snapshot_prd_file(
+                        project_root=self.project_root, state_dir=self.state_dir,
+                        channel=channel, thread_id=thread_id, selection=payload["source_file"],
+                        created_by=self.actor, event_id=requested.id,
+                    )
+                except (ChannelDocumentError, SidecarRefError) as exc:
+                    return self._failed(requested=requested, action=action, requested_action=requested_action,
+                                        task_id=requested.task_id, reason=str(exc),
+                                        status_code=getattr(exc, "status_code", 409))
+                prompt = (
+                    "Publish the selected complete Markdown as a PRD draft through channel_synthesis. "
+                    "Read the immutable prd_source_file snapshot in the request refs in full, reconcile it "
+                    "with the discussion, and supply the complete requirement/acceptance mapping and source "
+                    "attestation. Use prd_file with its exact ref/sha256 to retain the selected body, "
+                    "or prd_markdown if revisions are required. This requests a draft, not approval; "
+                    "all independent reviews and Owner confirmation still apply. " + prompt
+                )
             request_event = self.writer.emit(
                 "channel.synthesis.requested",
                 actor=self.actor,
@@ -526,9 +553,18 @@ class ChannelMessageActionsMixin:
                     "status": "requested",
                     "reason": str(payload.get("reason") or "synthesis requested"),
                     "prompt": prompt,
+                    **({"prd_source_file": source_file} if source_file else {}),
                     "source": self.surface,
                 },
             )
+            if source_file and (channel.get("discussions") or {}).get(thread_id):
+                # An explicit file-to-draft action enters the existing review lifecycle.
+                # Preserve the roster, ledger and failed-request evidence; no signatures are granted.
+                self.writer.emit("channel.discussion.phase.changed", actor=self.actor,
+                                 causation_id=request_event.id, correlation_id=channel_id,
+                                 payload={"channel_id": channel_id, "thread_id": thread_id,
+                                          "phase": "phase3_synthesis", "reason": "operator_file_synthesis",
+                                          "source": self.surface})
         message_id = f"msg-{request_id}"
         message_payload = channel_message_event_payload(self.state_dir, {
             "channel_id": channel_id,
@@ -539,7 +575,8 @@ class ChannelMessageActionsMixin:
             "source": self.surface,
             "text": f"@{target_member_id} {prompt}",
             "mentions": [target_member_id],
-            "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1"},
+            "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
+                     **({"prd_source_file": source_file} if source_file else {})},
         }, created_by=f"channel-synthesis:{self.surface}")
         message = self.writer.emit(
             "channel.message.posted",
