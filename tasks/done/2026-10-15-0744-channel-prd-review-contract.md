@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — 6121aae fix: close channel collaboration decision and review gaps
 
 # PRD、评审、就绪与授权分离
 
@@ -31,3 +31,5 @@
 ## 实跑边界
 
 未在真实 newloshu 群组重启讨论或重跑付费 provider，未改 8001 服务。暂缓继承和提问质量的语义判断由增强后的技能与 prompt 承担，单次确定性测试不等价于真实模型质量保证；文件 composition 证明全文保留与减少输出重抄的机制，不声称已测得真实 token/耗时下降。历史设计索引未包含在当前 checkout，本批以现行代码、tests 与已有 impl 文档核验。
+
+补充验证：discussion tick / reactor / question dedup / long review / closure 最终回归 73 passed；临时 fixture 的 graceful shutdown 已验证写入 simulation.done 并清理进程与状态。

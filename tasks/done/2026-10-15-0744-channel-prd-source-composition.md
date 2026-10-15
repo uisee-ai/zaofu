@@ -1,16 +1,16 @@
-> 状态: active
+> 状态: done — 6121aae fix: close channel collaboration decision and review gaps
 
-# 协作闭环验收与运行手册
+# 完整来源复用与生成成本
 
 来源：2026-10-15 Channel Group 实跑评估；用户已授权“生成 backlog，基于 backlog 实施”。
 
 ## 范围
 
-补 deterministic 生命周期与 Docker Playwright：暂缓→新 PRD→同版本评审→Owner 关口，重放、缺失贡献、错误恢复。沿用已有执行与交付测试验证证据链，记录真实 provider 未复跑限制。
+把已有不可变来源 composition 扩展至选中的 PRD 文件；保留全文、精确 edits 和 digest 校验，减少输出重抄；不截断输入冒充完整阅读。
 
 ## 验收
 
-运行相关 impact closure 与 sentinel → verify: 通过；Docker 浏览器验证暂缓/回执和 review/restart → verify: 通过；逐项归档验证与实现 commit。
+选中文件 + 少量 edits → verify: 完整 canonical Markdown、覆盖与 review 绑定，歧义/损坏/跨 thread 来源拒绝；记录这是输出复用，不宣称真实 provider 成本下降已测。
 
 ## 边界
 
@@ -31,3 +31,5 @@
 ## 实跑边界
 
 未在真实 newloshu 群组重启讨论或重跑付费 provider，未改 8001 服务。暂缓继承和提问质量的语义判断由增强后的技能与 prompt 承担，单次确定性测试不等价于真实模型质量保证；文件 composition 证明全文保留与减少输出重抄的机制，不声称已测得真实 token/耗时下降。历史设计索引未包含在当前 checkout，本批以现行代码、tests 与已有 impl 文档核验。
+
+补充验证：discussion tick / reactor / question dedup / long review / closure 最终回归 73 passed；临时 fixture 的 graceful shutdown 已验证写入 simulation.done 并清理进程与状态。

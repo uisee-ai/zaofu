@@ -1,16 +1,16 @@
-> 状态: active
+> 状态: done — 6121aae fix: close channel collaboration decision and review gaps
 
-# 自动推进与等待原因
+# 协作闭环验收与运行手册
 
 来源：2026-10-15 Channel Group 实跑评估；用户已授权“生成 backlog，基于 backlog 实施”。
 
 ## 范围
 
-修复 synthesis_questions_opened 无 dedup 请求却锁住 Owner 的状态；盲答去重仍 fail closed。缺角色冻结时保留 gate，显示成员和受控重启路径；恢复与 replay 不重复派发。
+补 deterministic 生命周期与 Docker Playwright：暂缓→新 PRD→同版本评审→Owner 关口，重放、缺失贡献、错误恢复。沿用已有执行与交付测试验证证据链，记录真实 provider 未复跑限制。
 
 ## 验收
 
-PRD 问答回退 → verify: 可回答/暂缓；全部处置且角色齐备 → verify: 只派发一次新 synthesis；缺失角色 → verify: 不越过完整性门，界面明确恢复动作。
+运行相关 impact closure 与 sentinel → verify: 通过；Docker 浏览器验证暂缓/回执和 review/restart → verify: 通过；逐项归档验证与实现 commit。
 
 ## 边界
 
@@ -31,3 +31,5 @@ PRD 问答回退 → verify: 可回答/暂缓；全部处置且角色齐备 → 
 ## 实跑边界
 
 未在真实 newloshu 群组重启讨论或重跑付费 provider，未改 8001 服务。暂缓继承和提问质量的语义判断由增强后的技能与 prompt 承担，单次确定性测试不等价于真实模型质量保证；文件 composition 证明全文保留与减少输出重抄的机制，不声称已测得真实 token/耗时下降。历史设计索引未包含在当前 checkout，本批以现行代码、tests 与已有 impl 文档核验。
+
+补充验证：discussion tick / reactor / question dedup / long review / closure 最终回归 73 passed；临时 fixture 的 graceful shutdown 已验证写入 simulation.done 并清理进程与状态。
