@@ -179,6 +179,12 @@ def test_channel_projection_derives_discussion_attention_and_actions(tmp_path: P
         reason="question_ledger_settled",
     )
 
+    incomplete = project_channel(state_dir, "ch-attention")["discussion_attention"]["main"]
+    assert incomplete["state"] == "blocked"
+    assert incomplete["missing_frozen_members"] == ["arch-1", "pm-1"]
+    assert incomplete["can_restart"] is True
+    for member in ("pm-1", "arch-1"):
+        append("channel.questions.frozen", member_id=member)
     ready = project_channel(state_dir, "ch-attention")
     assert ready is not None
     attention = ready["discussion_attention"]["main"]

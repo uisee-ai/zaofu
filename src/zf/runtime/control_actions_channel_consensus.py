@@ -82,6 +82,20 @@ class ChannelConsensusActionsMixin:
                 status_code=409,
                 status="question_not_open",
             )
+        resolved_by = str(payload.get("resolved_by") or "owner:operator")
+        agent_ids = {
+            str(member.get("member_id") or "")
+            for member in channel.get("members") or []
+            if member.get("member_type") in {"provider_agent", "persona_agent", "persona"}
+        }
+        if resolution in {"answered", "deferred"} and (
+            self.actor in agent_ids or resolved_by in agent_ids
+        ):
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=_task_id_from_payload(payload), status_code=403,
+                status="owner_decision_required", reason="only the Owner may answer or defer a question",
+            )
         answer = str(payload.get("answer") or "").strip()
         if resolution == "out_of_scope" and question.get("kind") == "fact" and not answer:
             return self._failed(
@@ -92,13 +106,13 @@ class ChannelConsensusActionsMixin:
                 reason="scope exclusion reason is required for a fact question",
                 status="invalid_payload",
             )
-        if resolution in {"answered", "assumption"} and not answer:
+        if resolution in {"answered", "assumption", "deferred"} and not answer:
             return self._failed(
                 requested=requested,
                 action=action,
                 requested_action=requested_action,
                 task_id=_task_id_from_payload(payload),
-                reason="answer is required for answered or assumption resolution",
+                reason="answer is required for answered, assumption, or deferred resolution",
                 status="invalid_payload",
             )
         event = self.writer.emit(

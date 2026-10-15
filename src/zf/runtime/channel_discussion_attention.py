@@ -268,6 +268,16 @@ def project_discussion_attention(
             next_action = "synthesize"
         if coverage_required and not coverage_complete and state == "ready":
             next_action = "supplement_roles"
+        frozen = (channel.get("questions_frozen") or {}).get(thread_id) or {}
+        missing_frozen_members = sorted(set(session.get("roster") or []) - set(frozen))
+        contribution_missing = bool(
+            phase == "phase2_relay" and missing_frozen_members
+            and not work_replies and not open_questions
+            and not invitation_count and not context_rejections
+        )
+        if contribution_missing:
+            state, reason, next_action = "blocked", "contribution_missing", "restart_discussion"
+            execution_state = "blocked"
         activity_times = [
             str(session.get(key) or "")
             for key in ("started_at", "phase_changed_at", "closed_at")
@@ -334,6 +344,8 @@ def project_discussion_attention(
             ),
             "failed_reply_count": failed_count,
             "context_rejections": context_rejections,
+            "missing_frozen_members": missing_frozen_members,
+            "deferred_question_count": sum(item.get("resolution") == "deferred" for item in questions),
             "open_question_count": len(open_questions),
             "owner_question_count": len(visible_owner_questions),
             "total_question_count": len(questions),
@@ -368,6 +380,7 @@ def project_discussion_attention(
                 and (not coverage_required or coverage_complete)
                 and not invitation_count
                 and not context_rejections
+                and not contribution_missing
             ),
             "coverage_required": coverage_required,
             "coverage_complete": coverage_complete,

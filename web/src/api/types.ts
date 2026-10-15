@@ -1895,6 +1895,8 @@ export interface ChannelDiscussionActiveAgent {
 }
 
 export interface ChannelDiscussionAttention {
+  missing_frozen_members?: string[];
+  deferred_question_count?: number;
   schema_version: "channel.discussion-attention.v1" | string;
   is_derived_projection: boolean;
   thread_id: string;

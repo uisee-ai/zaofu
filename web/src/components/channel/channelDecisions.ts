@@ -8,7 +8,7 @@ interface RunRow { run: AgentSessionRun; turn: AgentSessionTurn }
 
 export const DECISION_CATEGORIES = {
   evidence: "事实核证", test: "测试假设", clarification: "阶段澄清",
-  answer: "已答复", assumption: "假设", out_of_scope: "范围排除", other: "其他处置",
+  answer: "已答复", deferred: "本轮暂缓", assumption: "假设", out_of_scope: "范围排除", other: "其他处置",
 } as const;
 export type DecisionCategory = keyof typeof DECISION_CATEGORIES;
 export interface DecisionReceipt extends QuestionSource {
@@ -19,6 +19,7 @@ export interface DecisionReceipt extends QuestionSource {
 export interface DecisionGroup { id: string; category: DecisionCategory; receipts: DecisionReceipt[] }
 
 function decisionCategory(resolution: string, answer: string): DecisionCategory {
+  if (resolution === "deferred") return "deferred";
   if (resolution === "evidence") return "evidence";
   if (resolution === "assumption") return "assumption";
   if (resolution === "out_of_scope") return "out_of_scope";

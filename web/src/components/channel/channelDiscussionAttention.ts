@@ -93,6 +93,10 @@ export function presentChannelDiscussionAttention(
     return { label: "评审来源需要处理", summary: "来源上下文未通过检查，后续评审尚未派发。请查看 Activity 中的具体原因。",
       tone: "blocked", action: "activity", actionLabel: "查看原因", visible: true };
   }
+  if (attention.reason === "contribution_missing") {
+    return { label: "角色贡献尚未完成", summary: `缺少 ${attention.missing_frozen_members?.join("、") || "必需角色"} 的冻结贡献；可重启讨论补齐，已有 Owner 决定仍保留。`,
+      tone: "blocked", action: "restart", actionLabel: "恢复讨论", visible: true };
+  }
   if (attention.reason === "discussion_stalled") {
     return { label: "PRD review blocked", summary: "Review revisions need diagnosis before another discussion",
       tone: "blocked", action: "restart", actionLabel: "Review blocker", visible: true };

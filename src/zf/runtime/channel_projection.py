@@ -1984,6 +1984,8 @@ def _apply_question(channel: dict[str, Any], event: ZfEvent, payload: dict[str, 
         _question_activity(channel, event, thread_id)
         return
     if event.type == "channel.question.resolved":
+        if question.get("status") != "open" or str(question.get("thread_id") or "main") != thread_id:
+            return
         resolution = _payload_str(payload, "resolution")
         if resolution not in {
             "answered",
@@ -1991,12 +1993,13 @@ def _apply_question(channel: dict[str, Any], event: ZfEvent, payload: dict[str, 
             "out_of_scope",
             "evidence",
             "revision_requested",
+            "deferred",
         }:
             return
         resolved_by = _payload_str(payload, "resolved_by") or event.actor
         agent_ids = _channel_agent_member_ids(channel)
-        if resolution == "answered" and (event.actor in agent_ids or resolved_by in agent_ids):
-            # doc 122 §12-4: `answered` is owner-only; agent attempts leave the
+        if resolution in {"answered", "deferred"} and (event.actor in agent_ids or resolved_by in agent_ids):
+            # Owner decisions, including deferral, are owner-only; agent attempts leave the
             # question open and are surfaced for a rejection event.
             channel["rejected_resolutions"].append({
                 "question_id": question_id,

@@ -688,7 +688,7 @@ def _emit_synthesis_locked(
                     "source": source,
                 },
             )
-        return
+        channel = project_channel(state_dir, channel_id) or channel
 
     if any(
         isinstance(question, dict)

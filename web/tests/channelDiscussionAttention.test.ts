@@ -200,3 +200,9 @@ assert(idlePolicy.startLabel === "Start discussion", "idle thread uses start cop
 console.log("channelDiscussionAttention.test.ts OK");
 
 assert(selectChannelDiscussionAttention(detail, "new-thread") === null, "new threads do not inherit another conversation status");
+
+const missingContribution = presentChannelDiscussionAttention(attention("blocked", {
+  reason: "contribution_missing", missing_frozen_members: ["dba"], can_restart: true,
+}));
+assert(missingContribution.summary.includes("dba") && missingContribution.action === "restart",
+  "missing role has an actionable recovery without bypassing the contribution gate");

@@ -28,7 +28,25 @@ def repair_rejected_question_dedup(
         for item in channel.get("question_dedup_requests") or []
         if isinstance(item, dict)
         and str(item.get("thread_id") or "main") == thread_id
+        and (not session.get("started_at") or not (item.get("updated_at") or item.get("ts"))
+             or str(item.get("updated_at") or item.get("ts")) >= str(session["started_at"]))
     ]
+    if (not requests and session.get("phase_reason") == "blind_round_complete"
+            and session.get("synthesizer")):
+        ledger = question_ledger(channel, thread_id=thread_id)
+        if any(item["status"] == "open" for item in ledger):
+            writer.emit(
+                "channel.question.dedup.requested", actor=actor, correlation_id=channel_id,
+                payload={
+                    "schema_version": "channel.question.dedup.v1", "channel_id": channel_id,
+                    "thread_id": thread_id, "request_id": stable_question_dedup_request_id(
+                        channel_id, thread_id, str(session.get("started_event_id") or "")),
+                    "target_member_id": str(session["synthesizer"]),
+                    "ledger_digest": question_ledger_digest(channel, thread_id=thread_id),
+                    "question_count": len(ledger), "generation": 1, "source": source,
+                },
+            )
+            return ["channel.question.dedup.requested"]
     if not requests or any(
         str(item.get("status") or "") == "applied"
         for item in requests

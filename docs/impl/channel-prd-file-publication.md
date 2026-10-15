@@ -73,3 +73,47 @@ PRD 刷新后错误提示的 Docker Playwright 用例。
 历史重放同时检查 synthesis requested reactor 与通用消息路由入口；旧的失败请求及其消息不能在新请求之后重新派发。
 
 实机运行还需核对 tmux 子进程的网络环境。Web 启动器将显式设置的大小写 HTTP/HTTPS/ALL/NO_PROXY 写入受限权限运行环境文件；不会输出代理值。继承该文件的控制进程使用相同网络配置。
+
+## 暂缓决定与协作恢复
+
+`channel-question-resolve` 新增显式 `resolution=deferred`，必须带非空 `answer`。
+Owner 问答卡“本轮暂缓”提交此处置；范围排除仍使用独立 `out_of_scope` 操作。
+已处置问题的回调重放和跨 thread 更新不得覆盖第一次决定；已注册 agent 不能代表 Owner
+答复或暂缓。投影保留 `resolved_event_id`、回答和风险，完整台账进入后续综合上下文。
+暂缓不是批准、删除原始需求或执行授权；具体语义、影响与重开条件由 participant /
+synthesizer 技能整理进 PRD，不在 Runtime 中匹配“暂不考虑”等关键词推断业务结论。
+
+综合提出问题后回退 `synthesis_questions_opened` 不会启动盲答去重，因此无去重请求时
+允许 Owner 处理；存在实际去重请求时仍遵守其 pending/blocked gate。盲答阶段转换后
+崩溃遗漏的初始去重请求由下一次 discussion tick 补发，仍沿用稳定 ID 与有界 retry。
+
+全部问题处置后，缺少 roster 成员冻结贡献仍阻止自动综合。attention 暴露
+`missing_frozen_members`、`contribution_missing` 和受控重启入口，不虚构角色贡献。
+重启补齐贡献沿用原有讨论路径；此前 Owner 决定保留。角色齐备、交叉核验完成后由
+现有 Kernel 路径触发新 PRD；同版本独立 review、Owner 确认、Task/Workflow 门分别保留。
+PRD 可带暂缓项进入 review，受影响工作的 `implementation_start=false` 不被自动提升。
+
+长文件修改可返回 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`。
+ref/digest 必须匹配本次不可变上下文的 `channel_prd_source` manifest；不接受 anchors，
+始终保留完整文件再应用唯一匹配、不重叠的精确 edits。此模式减少重复输出，不截断必读
+输入，也不等价于测得真实模型成本下降。消息来源继续使用原有 source_message_id / anchors。
+
+语义验收由 `skills/zf-channel-discussion-synthesizer/SKILL.md` 与 participant 协议承担：
+逐项核对决定继承、暂缓语义、需求章节及验收、异议处置、重问依据、评审版本。
+自动化验证见 `tests/test_channel_collaboration_closure.py`、`tests/test_channel_prd_file.py`
+（包括带暂缓草案进入真实 review reactor / fake provider 后仍被 Owner 风险门拦住），
+以及 `web/tests/channel-owner-deferral.spec.ts`。真实模型语义质量与长期成本仍需独立实跑评估。
+
+隔离浏览器复现（依赖 dev/web 环境、已构建 `web/dist`，无需真实 provider）：
+
+```bash
+PYTHONPATH=src:. .venv/bin/python tests/e2e/channel_collaboration_browser_fixture.py \
+  --root /tmp/zf-channel-collaboration-<新的UTC时间> --port 8002
+```
+
+另一个终端用 `mcp/playwright:latest`、`--network host` 挂载 repo 与前端依赖，在
+`web/` 运行 `node node_modules/@playwright/test/cli.js test tests/channel-owner-deferral.spec.ts`；
+设置 `ZF_WEB_BASE_URL=http://127.0.0.1:8002`、`ZF_COLLABORATION_BROWSER_FIXTURE=1`，
+`ZF_E2E_CHROMIUM_EXECUTABLE_PATH` 指向容器内 `/ms-playwright/chromium-*/chrome-linux64/chrome`。
+测试使用固定的隔离测试 token，不读取生产 token。结束时 SIGTERM fixture 进程，
+fixture 会写入 `simulation.done`；保留需要的证据后删除临时 state/workspace。

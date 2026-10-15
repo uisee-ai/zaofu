@@ -62,6 +62,10 @@ def question_dedup_gate_state(
         )
     ]
     if not requests:
+        if str(session.get("phase_reason") or "") == "synthesis_questions_opened":
+            # These questions came from the single structured synthesis. This
+            # rollback does not schedule blind-round dedup work.
+            return "open"
         # The phase transition is appended before its dedup request. Fail
         # closed during that short projection window as well.
         return "consolidating"

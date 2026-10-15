@@ -23,28 +23,40 @@ def expand_prd_composition(
     pack, error = _bound_prd_context(channel, request, state_dir)
     if error:
         return synthesis, error
-    message_id = recipe.get("source_message_id")
-    digest = str(recipe.get("source_message_digest") or "").removeprefix("sha256:")
+    file_source = "source_ref" in recipe
+    if file_source and ("source_message_id" in recipe or "source_message_digest" in recipe):
+        return synthesis, "prd_composition must select exactly one source identity"
+    identity_key = "artifact_ref" if file_source else "message_id"
+    digest_key = "artifact_digest" if file_source else "message_body_digest"
+    identity = recipe.get("source_ref" if file_source else "source_message_id")
+    digest = str(recipe.get("source_digest" if file_source else "source_message_digest") or "").removeprefix("sha256:")
+    kinds = {"channel_prd_source"} if file_source else {"requirement", "owner_input"}
     sources = [row for row in pack.get("semantic_source_documents") or []
-               if isinstance(row, dict) and row.get("message_id") == message_id
-               and row.get("kind") in {"requirement", "owner_input"}
-               and row.get("message_body_digest") == digest and digest]
+               if isinstance(row, dict) and row.get(identity_key) == identity
+               and row.get("kind") in kinds and row.get(digest_key) == digest and digest]
     if len(sources) != 1 or not any(
-        row.get("message_id") == message_id and row.get("message_body_digest") == digest
+        row.get(identity_key) == identity and row.get(digest_key) == digest and row.get("kind") in kinds
         for row in pack.get("semantic_source_manifest") or [] if isinstance(row, dict)
     ):
         return synthesis, "prd_composition source identity/digest is not in the bound manifest"
     content = sources[0].get("content")
     if not isinstance(content, str):
         return synthesis, "prd_composition source body is unavailable"
-    start, end = recipe.get("start_anchor"), recipe.get("end_anchor")
-    if (not isinstance(start, str) or not start or not isinstance(end, str) or not end
-            or content.count(start) != 1 or content.count(end) != 1):
-        return synthesis, "prd_composition anchors must each match exactly once"
-    left, right = content.index(start), content.index(end) + len(end)
-    if left >= right or content.index(end) < left:
-        return synthesis, "prd_composition source anchors are reversed"
-    body = content[left:right]
+    if file_source:
+        # A selected file is already the product document: preserve its full
+        # body, never silently select a partial range from that snapshot.
+        if "start_anchor" in recipe or "end_anchor" in recipe:
+            return synthesis, "file-source composition preserves the complete file; omit anchors"
+        body = content
+    else:
+        start, end = recipe.get("start_anchor"), recipe.get("end_anchor")
+        if (not isinstance(start, str) or not start or not isinstance(end, str) or not end
+                or content.count(start) != 1 or content.count(end) != 1):
+            return synthesis, "prd_composition anchors must each match exactly once"
+        left, right = content.index(start), content.index(end) + len(end)
+        if left >= right or content.index(end) < left:
+            return synthesis, "prd_composition source anchors are reversed"
+        body = content[left:right]
     edits = recipe.get("edits")
     appendix = recipe.get("appendix_markdown")
     if not isinstance(edits, list) or not isinstance(appendix, str):

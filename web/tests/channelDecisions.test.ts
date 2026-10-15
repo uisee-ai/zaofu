@@ -47,3 +47,6 @@ assert(history([receipt("ordinary", { answer: "正式答复中提到测试决定
 assert(history([receipt("ordinary", { answer: "本轮阶段澄清（当前范围）：正文", resolution: "out_of_scope" })]).groups[0].category === "out_of_scope",
   "structured resolution takes precedence over a prose label");
 console.log("channelDecisions tests passed");
+
+assert(history([receipt("deferred", { resolution: "deferred", answer: "本轮暂缓" })]).groups[0].category === "deferred",
+  "explicit deferral is neither approval nor scope exclusion");

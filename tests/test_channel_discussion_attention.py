@@ -289,6 +289,7 @@ def test_multi_lens_all_structured_roles_unlock_synthesis() -> None:
         }
         for index, member in enumerate(("pm", "architect"))
     }
+    channel["questions_frozen"] = {"main": {"pm": "2026-08-19T02:03:00Z", "architect": "2026-08-19T02:04:00Z"}}
     channel["open_questions"] = {}
     channel["consensus"] = {}
     projection = project_discussion_attention(
