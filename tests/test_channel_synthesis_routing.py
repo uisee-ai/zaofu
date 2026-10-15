@@ -20,6 +20,15 @@ def test_budget_rejection_is_failed_action_and_retry_keeps_original_evidence(tmp
     assert rejected['synthesis_requests'][-1]['status'] == 'blocked'
     assert rejected['discussion_attention']['main']['reason'] == 'context_pack_rejected'
     assert not rejected['syntheses']
+    from types import SimpleNamespace
+    from zf.runtime.channel_synthesis_reactor import react_channel_synthesis_requested
+    routed = []
+    monkeypatch.setattr('zf.runtime.channel_synthesis_reactor._route_runtime_message',
+                        lambda *args: routed.append(args))
+    host = SimpleNamespace(state_dir=state, event_log=writer.event_log, event_writer=writer)
+    original = next(e for e in writer.event_log.read_all() if e.type == 'channel.synthesis.requested')
+    react_channel_synthesis_requested(host, original)
+    assert not routed, 'watcher startup must not retry rejected generation without a new request'
     count = len([e for e in writer.event_log.read_all() if e.type == 'channel.context_pack.rejected'])
 
     service.config = ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000))
@@ -28,6 +37,8 @@ def test_budget_rejection_is_failed_action_and_retry_keeps_original_evidence(tmp
     current = project_channel(state, 'ch-file')
     assert synthesis_request_in_flight(current, 'main')['request_id'] == accepted['request_id']
     assert current['discussion_attention']['main']['context_rejections'] == []
+    react_channel_synthesis_requested(host, original)
+    assert not routed, 'a superseded rejected request cannot race the explicit retry'
     assert len([e for e in writer.event_log.read_all() if e.type == 'channel.context_pack.rejected']) == count
     message_id = 'msg-' + accepted['request_id']
     bundle = build_semantic_source_bundle(current, thread_id='main', trigger_message_id=message_id,

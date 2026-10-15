@@ -10,6 +10,8 @@ from zf.runtime.channel_adaptive_round_reactor import (
 )
 from zf.runtime.channel_router import route_channel_message
 from zf.runtime.channel_sidecar import channel_message_event_payload
+from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_synthesis_lock import synthesis_request_in_flight
 
 
 def react_channel_synthesis_requested(
@@ -26,6 +28,11 @@ def react_channel_synthesis_requested(
     request_id = str(payload.get("request_id") or "")
     target_member_id = str(payload.get("target_member_id") or "")
     if not channel_id or not request_id or not target_member_id:
+        return
+    channel = project_channel(host.state_dir, channel_id) or {}
+    active = synthesis_request_in_flight(channel, str(payload.get("thread_id") or "main"))
+    if not active or active.get("request_id") != request_id:
+        # Starting a watcher must not silently retry a rejected or superseded request.
         return
     message = None
     for prior in host.event_log.read_all():
