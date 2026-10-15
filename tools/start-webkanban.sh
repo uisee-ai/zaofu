@@ -400,6 +400,13 @@ for name in "${provider_token_names[@]}"; do
   fi
 done
 
+# tmux servers can predate the operator's network environment.
+for name in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy; do
+  if [[ -v "$name" ]]; then
+    launch_env+=("$name=${!name}")
+  fi
+done
+
 umask 077
 : > "$runtime_env_file"
 for item in "${launch_env[@]}"; do
