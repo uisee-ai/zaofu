@@ -193,7 +193,8 @@ def emit_structured_reply_events(
             channel_id=channel_id,
             thread_id=thread_id,
             member_id=member_id,
-            request={**request, "prd_document_contract": refs.get("prd_document_contract")},
+            request={**request, "prd_document_contract": refs.get("prd_document_contract"),
+                     "prd_source_file": refs.get("prd_source_file")},
             reply=reply,
             reply_event_id=reply_event_id,
             synthesis_request_id=synthesis_request_id,
@@ -327,6 +328,10 @@ def _emit_synthesis_locked(
     synthesis, validation_error = expand_prd_source_attestation(
         synthesis, channel=channel, request=request, state_dir=state_dir,
     )
+    if not validation_error:
+        from zf.runtime.channel_prd_file import expand_prd_file
+        synthesis, validation_error = expand_prd_file(synthesis, request={**request, "channel_id": channel_id,
+                                                               "synthesis_request_id": synthesis_request_id}, state_dir=state_dir)
     if not validation_error:
         synthesis, validation_error = expand_prd_composition(
             synthesis, channel=channel, request=request, state_dir=state_dir,
@@ -497,7 +502,10 @@ def _emit_synthesis_locked(
         / f"{safe_request_id}.md"
     )
     artifact_path = Path(state_dir) / artifact_ref
+    selected_source = request.get("prd_source_file")
+    selected_source = selected_source if isinstance(selected_source, dict) else {}
     source_refs = list(dict.fromkeys([
+        *([str(selected_source["ref"])] if selected_source.get("ref") else []),
         *channel_prd_event_refs(channel, thread_id),
         *string_refs(synthesis.get("source_refs")),
         f"event:{reply_event_id}",

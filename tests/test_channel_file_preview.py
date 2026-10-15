@@ -139,3 +139,23 @@ def test_fail_closed(tmp_path, case, code):
     with pytest.raises(HTTPException) as error:
         preview(tmp_path, ref, **kwargs)
     assert error.value.status_code == code
+
+
+@pytest.mark.parametrize("link", ["[PRD](docs/PRD.md)", '[PRD](docs/PRD.md "Draft")', "[PRD](<docs/PRD.md>)"])
+def test_markdown_message_link_authorizes_only_the_same_thread(tmp_path, link):
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/PRD.md").write_text("# Complete\nLast line")
+    channel = {"messages": [{"thread_id": "main", "text": link}]}
+    args = dict(project_root=tmp_path, state_dir=tmp_path / "state", channel=channel, ref="docs/PRD.md")
+    assert channel_file_preview(**args, thread_id="main")["content"].endswith("Last line")
+    with pytest.raises(HTTPException) as error:
+        channel_file_preview(**args, thread_id="other")
+    assert error.value.status_code == 403
+
+
+@pytest.mark.parametrize("text", ["docs/PRD.md", "![image](docs/PRD.md)", "[remote](https://host/docs/PRD.md)"])
+def test_plain_paths_images_and_remote_urls_do_not_grant_file_access(tmp_path, text):
+    with pytest.raises(HTTPException) as error:
+        channel_file_preview(project_root=tmp_path, state_dir=tmp_path / "state",
+                             channel={"messages": [{"text": text}]}, thread_id="main", ref="docs/PRD.md")
+    assert error.value.status_code == 403

@@ -61,7 +61,8 @@ def react_channel_synthesis_requested(
                 "source": "runtime",
                 "text": f"@{target_member_id} {prompt}",
                 "mentions": [target_member_id],
-                "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1"},
+                "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
+                         **({"prd_source_file": payload["prd_source_file"]} if payload.get("prd_source_file") else {})},
             },
             created_by="channel-synthesis:runtime",
             source_event_id=event.id,
@@ -135,6 +136,7 @@ def react_channel_synthesis_repair_requested(
                     "synthesis_request_id": synthesis_request_id,
                     "synthesis_repair_id": repair_id,
                     "prd_document_contract": "full.v1",
+                    **_synthesis_source_refs(host, synthesis_request_id, channel_id, thread_id),
                     "synthesis_repair_revision": revision,
                     "synthesis_invalid_reply": invalid_reply_ref,
                     "synthesis_contract_error": contract_error,
@@ -440,3 +442,13 @@ __all__ = [
     "react_channel_question_dedup_requested",
     "react_channel_synthesis_requested",
 ]
+
+
+def _synthesis_source_refs(host, request_id: str, channel_id: str, thread_id: str) -> dict:
+    for event in host.event_log.read_all():
+        p = event.payload
+        if (event.type == "channel.synthesis.requested" and p.get("request_id") == request_id
+                and p.get("channel_id") == channel_id and str(p.get("thread_id") or "main") == thread_id
+                and isinstance(p.get("prd_source_file"), dict)):
+            return {"prd_source_file": p["prd_source_file"]}
+    return {}

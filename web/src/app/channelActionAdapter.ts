@@ -121,11 +121,18 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
   async function requestSynthesis(
     threadId: string,
     targetMemberId?: string,
+    sourceFile?: { ref: string; sha256: string },
   ) {
-    await args.submitAction(
+    const result = await args.submitAction(
       "channel.synthesis.request",
-      synthesisRequestPayload(channelId(), threadId, targetMemberId),
+      synthesisRequestPayload(channelId(), threadId, targetMemberId, sourceFile),
     );
+    if (!result.ok) throw new Error(result.reason || "PRD generation was not accepted; refresh and retry.");
+    try {
+      await args.refreshChannelDetail();
+    } catch {
+      // An accepted request remains durable; the live projection can recover.
+    }
   }
 
   async function generateOwnerReport(threadId: string) {

@@ -273,3 +273,25 @@ await riskAdapter.decideConsensus("block", "main", "prd.json", "digest", "missin
 assert(riskCalls[0].accept_readiness_risk !== true, "ordinary confirmation must not infer risk acceptance");
 assert(riskCalls[1].accept_readiness_risk === true, "explicit confirmation preserves risk choice");
 assert(riskCalls[2].accept_readiness_risk !== true, "blocking never accepts a risk");
+
+let synthesisRefreshes = 0;
+let synthesisAccepted = true;
+const publicationCalls: Record<string, unknown>[] = [];
+const publicationAdapter = createChannelActionAdapter({
+  activeProjectId: "project", channelDetail: detail, selectedChannelId: "ch-thread", snapshot: null,
+  prepareTaskAgent: () => {}, readStoredBackend: () => "",
+  refreshChannelDetail: async () => { synthesisRefreshes += 1; },
+  submitAction: async (_action, payload) => {
+    publicationCalls.push(payload);
+    return { ok: synthesisAccepted, reason: "Source changed" } as ActionResponse;
+  },
+});
+const fileSelection = { ref: "docs/PRD.md", sha256: "current-file" };
+await publicationAdapter.requestSynthesis("feature/api", undefined, fileSelection);
+assert(publicationCalls[0].source_file === fileSelection, "file publication retains the preview digest through the adapter");
+assert(synthesisRefreshes === 1, "accepted synthesis refreshes the phase without waiting for an event stream");
+synthesisAccepted = false;
+let publicationRejected = false;
+try { await publicationAdapter.requestSynthesis("feature/api", undefined, fileSelection); }
+catch (error) { publicationRejected = String(error).includes("Source changed"); }
+assert(publicationRejected && synthesisRefreshes === 1, "rejected publication stays actionable instead of opening an empty PRD");

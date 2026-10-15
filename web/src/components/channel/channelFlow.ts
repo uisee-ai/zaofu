@@ -91,7 +91,9 @@ export function channelFlow(detail: ChannelDetail | null, threadId: string, deli
     || { status: "unknown" }) : []);
   const planningStatus = planning?.status === "planning" || planning?.status === "requested" ? "Planning"
     : planning?.status === "failed" ? "Failed" : "Unknown";
-  const current: ChannelFlowNode = questionCount || activeDiscussion ? "discussion"
+  const reviewingPrd = Boolean(artifactRef && currentConsensus && !generating
+    && (attention?.kernel_phase || discussion?.state) === "phase3_synthesis");
+  const current: ChannelFlowNode = questionCount || (activeDiscussion && !reviewingPrd) ? "discussion"
     : workflows.length || workflowPlans.length || (planning?.status && planningTask === "workflow") ? "workflow"
     : tasks.length || taskPlans.length || planning?.status ? "task"
     : artifactRef ? "prd" : hasDiscussion ? "discussion" : "requirement";

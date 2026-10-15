@@ -74,7 +74,10 @@ console.log("channelFlow tests passed");
 const reviewing = { ...empty, syntheses: [{ ...prd, readiness_verdict: "needs_multi_lens" }],
   consensus: { main: { ...prd, status: "proposed" } },
   synthesis_requests: [{ thread_id: "main", status: "proposed" }],
-  discussion_attention: { main: { kernel_phase: "phase3_synthesis", execution_state: "running" } },
+  discussion_attention: { main: { state: "running", kernel_phase: "phase3_synthesis", execution_state: "running" } },
 } as unknown as ChannelDetail;
 assert(channelFlow(reviewing, "main").statuses.prd === "In review", "active reviewers do not make the already published PRD still Generating");
 assert(channelFlow({ ...reviewing, synthesis_requests: [...reviewing.synthesis_requests!, { thread_id: "main", status: "requested" }] }, "main").statuses.prd === "Generating", "a newer synthesis still displays generation while the old PRD is retained");
+
+assert(channelFlow(reviewing, "main").current === "prd", "same-version review belongs to the published PRD stage");
+assert(channelFlow({ ...reviewing, synthesis_requests: [...reviewing.synthesis_requests!, { thread_id: "main", status: "requested" }] }, "main").current === "discussion", "new generation must not inherit the previous PRD stage");

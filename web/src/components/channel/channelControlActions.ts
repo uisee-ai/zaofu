@@ -17,11 +17,13 @@ export function synthesisRequestPayload(
   channelId: string,
   threadId: string,
   targetMemberId?: string,
+  sourceFile?: { ref: string; sha256: string },
 ): Record<string, unknown> {
   return {
     channel_id: channelId,
     thread_id: threadId,
     target_member_id: targetMemberId || undefined,
+    ...(sourceFile ? { source_file: sourceFile } : {}),
     reason: "operator requested channel synthesis",
     source: "web-channel-synthesis",
   };

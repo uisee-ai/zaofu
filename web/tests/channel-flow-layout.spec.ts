@@ -63,6 +63,11 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
         await route.fulfill({ status: 202, json: { ok: true, status: "confirmed" } });
       } else if (path.endsWith("/actions/channel.synthesis.request") && state.allowSynthesis) {
         state.payloads.push(req.postDataJSON().payload);
+        if (req.postDataJSON().payload.source_file) {
+          detail.syntheses.push({ thread_id: "main", prd_revision: 1, artifact_ref: "channels/prd.json", artifact_digest: "published-digest" });
+          detail.consensus.main = { artifact_ref: "channels/prd.json", artifact_digest: "published-digest", prd_revision: 1, status: "proposed" };
+          detail.seq += 1;
+        }
         await route.fulfill({ status: 202, json: { ok: true, status: "requested", request_id: "new-synthesis" } });
       } else if (path.endsWith("/actions/channel.owner_report.request") && state.allowReports) {
         state.ownerReports.push({ report_id: "report-current", status: "generated", summary: "Current report without conversation change" });
@@ -1073,4 +1078,31 @@ test("published PRD shows review while reviewers run and a new synthesis still s
   detail.seq += 1;
   await page.reload();
   await expect(page.getByTestId("channel-flow-prd")).toHaveAttribute("aria-label", "PRD · Generating");
+});
+
+
+test("local Markdown delivery previews and explicitly publishes a draft without granting Process", async ({ page, request }) => {
+  const detail = fixture();
+  detail.open_questions = [];
+  detail.owner_questionnaires.main = [];
+  Object.assign(detail.discussion_attention.main, { state: "blocked", owner_question_count: 0, open_question_count: 0, failed_reply_count: 1 });
+  detail.provider_runs[0].parts[0].content = "Saved [完整 PRD r2](/home/project/PRD.r2.md).";
+  const state = await setup(page, request, detail);
+  state.allowSynthesis = true;
+  const initialUrl = page.url();
+  await page.getByRole("button", { name: "完整 PRD r2", exact: true }).click();
+  const file = page.getByTestId("channel-file-preview");
+  await expect(file.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  expect(page.url()).toBe(initialUrl);
+  expect(state.writes).toEqual([]);
+  await file.getByRole("button", { name: "生成正式 PRD 草案" }).click();
+  await expect.poll(() => state.payloads.length).toBe(1);
+  expect(state.payloads[0].source_file).toEqual({ ref: "outputs/generated.md", sha256: "file-digest" });
+  const prd = page.getByTestId("channel-prd-preview");
+  await expect(prd).toContainText("In review");
+  await expect(prd.getByRole("heading", { name: "Canonical PRD" })).toBeVisible();
+  await expect(prd.getByRole("button", { name: "Process", exact: true })).toBeDisabled();
+  expect(state.writes).toHaveLength(1);
+  expect(state.errors).toEqual([]);
+  expect(state.unexpected).toEqual([]);
 });

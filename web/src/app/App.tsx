@@ -2251,7 +2251,7 @@ export function App() {
                   pinChannelMessage(messageId, threadId, pinned)
                 )}
                 onSearchHistory={(query, threadId) => runChannelHistorySearch(query, threadId)}
-                onRequestSynthesis={(threadId, targetMemberId) => channelActions.requestSynthesis(threadId, targetMemberId)}
+                onRequestSynthesis={channelActions.requestSynthesis}
                 onResolveQuestion={channelActions.resolveQuestion}
                 onSetDiscussionMode={(threadId, mode, defaultResponderId) => channelActions.setDiscussionMode(threadId, mode, defaultResponderId)}
                 onStartDiscussion={(threadId, message, messageId, mode, restart) => channelActions.startDiscussion(threadId, message, messageId, mode, restart)}

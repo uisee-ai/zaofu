@@ -469,7 +469,7 @@ export function ChannelPage({
   onRemoveMember: (memberId: string) => Promise<void>;
   onResearchAdopt: (payload: Record<string, unknown>) => Promise<void>;
   onCancelProviderRun: (runId: string) => Promise<void>;
-  onRequestSynthesis: (threadId: string, targetMemberId?: string) => Promise<void>;
+  onRequestSynthesis: (threadId: string, targetMemberId?: string, sourceFile?: { ref: string; sha256: string }) => Promise<void>;
   onResolveQuestion: (questionId: string, threadId: string, resolution: string, answer: string) => Promise<void>;
   onSetMemberPermission: (memberId: string, permissionProfile: ChannelPermissionProfile) => Promise<void>;
   onSearchHistory: (query: string, threadId?: string) => Promise<ChannelHistorySearchResult>;
@@ -2223,6 +2223,11 @@ export function ChannelPage({
     if (activeDrawer === "file" && previewFile) return <ChannelFilePreview
       key={`${projectId}:${selectedChannelId}:${controlThreadId}:${previewFile.id}:${previewFile.name}`}
       item={previewFile} projectId={projectId || "default"} channelId={selectedChannelId} threadId={controlThreadId}
+      publishDisabled={!actionReady || controlsBusy}
+      onPublish={async (sourceFile) => {
+        await onRequestSynthesis(controlThreadId, undefined, sourceFile);
+        setDrawer("prd");
+      }}
       onClose={() => setDrawer(null)} />;
     if (activeDrawer === "members") {
       return (

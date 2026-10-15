@@ -1,7 +1,10 @@
 import { Check, Copy } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Streamdown, type StreamdownProps } from "streamdown";
 import type { MarkdownTextProps } from "./MarkdownText";
+
+import { ReferencePreviewContext } from "./referencePreview";
+import { localDocumentLink } from "./previewRegistry";
 
 type MarkdownComponents = NonNullable<StreamdownProps["components"]>;
 
@@ -40,6 +43,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
 }: MarkdownTextProps) {
   // Throttle only the streaming path; finalized text renders immediately so the
   // last token always appears (and a non-streaming bubble is never delayed).
+  const openReference = useContext(ReferencePreviewContext);
   const throttledContent = useThrottledValue(content, STREAM_MARKDOWN_THROTTLE_MS);
   const text = isStreaming ? throttledContent : content;
   const normalized = useMemo(() => text.trim() || "-", [text]);
@@ -50,11 +54,13 @@ const RichMarkdownText = memo(function RichMarkdownText({
     h4: ({ children, ...props }) => <h4 {...props}>{children}</h4>,
     h5: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
     h6: ({ children, ...props }) => <h5 {...props}>{children}</h5>,
-    a: ({ children, href, ...props }) => (
-      <a href={href} rel="noreferrer" target="_blank" {...props}>
-        {children}
-      </a>
-    ),
+    a: ({ children, href, ...props }) => {
+      const item = localDocumentLink(href || "");
+      return openReference && item
+        ? <button type="button" className="agent-inline-button" title="Preview file"
+            onClick={() => openReference(item)}>{children}</button>
+        : <a href={href} rel="noreferrer" target="_blank" {...props}>{children}</a>;
+    },
     table: ({ children, ...props }) => (
       <div className="agent-markdown-table-wrap">
         <table {...props}>{children}</table>
@@ -70,7 +76,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
       }
       return <CodeBlock code={trimTrailingNewline(value)} language={language} />;
     },
-  }), []);
+  }), [openReference]);
 
   return (
     <div className={`agent-markdown ${isStreaming ? "streaming" : ""} ${className}`.trim()}>
