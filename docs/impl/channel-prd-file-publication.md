@@ -116,6 +116,9 @@ Owner 决定继续作为历史证据保留。`next_round.proposed/rejected` 纳�
 的评审。相同线程、成员和文档 ref/digest 的后续完整 context 构建成功后，旧拒绝仍留在
 历史中，但不再覆盖当前 attention；其他成员、版本或不完整重试不能清除该阻塞。
 对应回归见 `tests/test_channel_context_attention.py`。
+当前 PRD 存在 `revision_request` 评审阻塞时，Owner 确认动作返回 409，即使该版本曾有
+Owner 确认也不能通过幂等重放掩盖后来发现的缺陷。新版仍需独立评审与新的 Owner 确认；
+Owner 决定不替代角色签名。回归见 `tests/test_channel_owner_revision_gate.py`。
 
 长文件修改可返回 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`。
 ref/digest 必须匹配本次不可变上下文的 `channel_prd_source` manifest；不接受 anchors，

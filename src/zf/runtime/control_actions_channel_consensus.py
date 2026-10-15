@@ -275,6 +275,16 @@ class ChannelConsensusActionsMixin:
                 status="forbidden",
             )
         member_id = self.actor
+        if decision == "confirm" and any(
+            row.get("blocker_kind") == "revision_request"
+            for row in consensus.get("blocked") or []
+        ):
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=_task_id_from_payload(payload), status_code=409,
+                status="review_revision_required",
+                reason="review blockers require a new PRD revision before Owner confirmation",
+            )
         idempotency_key = str(
             payload.get("idempotency_key")
             or _stable_control_id(

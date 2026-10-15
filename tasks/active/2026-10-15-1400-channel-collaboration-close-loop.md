@@ -38,3 +38,11 @@ serial 10 passed；sentinel 50 passed / 1 skipped；flow mock E2E 10 passed。
 新增 context 恢复和直接 projection 调用链 70 passed。最终 331 个选定影响文件重跑 4400 passed / 11 skipped（153.06 秒）。
 最终 dev-verify 其余自动层全部 passed，receipt `/tmp/zf-channel-close-loop-verification-final.json`。
 未把全量 pytest 或 mock E2E 声称为真实 provider 证明。
+
+
+后续真实负例发现：v4 存在 QA 的 `revision_request` 时，直接 Owner 确认动作仍返回 202，
+虽然 multi-lens 共识并未 reached。补上后端 409 门禁（含旧确认幂等重放），Playwright 原请求
+复测返回 `review_revision_required`。原错误事件保留为历史证据，不手改状态。
+对应控制动作调用链 36 文件：716 passed / 2 skipped；直接新回归与 PRD/模板 52 passed；
+sentinel 50 passed / 1 skipped；flow smoke 10 passed。
+v4 QA 发现验证命令可能复用历史成功文件，系统自动修订 v5；仍等待最终真实验收，任务不归档。
