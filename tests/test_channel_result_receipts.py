@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -196,6 +198,54 @@ def test_receipt_reconcile_is_restart_safe_and_idempotent(
         / "channel-result-receipts"
         / "cursor.json"
     ).exists()
+
+
+@pytest.mark.parametrize("legacy_receipt", [False, True])
+def test_same_prd_tasks_have_distinct_restart_safe_receipts(
+    tmp_path: Path, legacy_receipt: bool,
+) -> None:
+    state_dir, log, writer = _runtime(tmp_path)
+    _channel(writer)
+    for task_id in ("TASK-ORIGINAL", "TASK-REPLACEMENT"):
+        source = writer.emit(
+            "task.created",
+            actor="web",
+            task_id=task_id,
+            payload={
+                "source": "channel",
+                "task": {"id": task_id},
+                "request": {"channel_authority": _authority()},
+                "proposal_event_id": f"proposal-{task_id}",
+            },
+        )
+        if legacy_receipt and task_id == "TASK-ORIGINAL":
+            writer.emit(
+                "channel.result.receipt.recorded",
+                actor="zf-channel-result-reconciler",
+                task_id=task_id,
+                causation_id=source.id,
+                payload={
+                    "channel_id": "ch-product", "thread_id": "main",
+                    "receipt_kind": "task_created", "task_id": task_id,
+                    "source_event_id": source.id,
+                    "idempotency_key": f"ch-product|main|task_created|{'a' * 64}|2",
+                },
+            )
+
+    first = reconcile_channel_result_receipts(
+        state_dir=state_dir, event_log=log, writer=writer,
+    )
+    assert first.recorded == (1 if legacy_receipt else 2)
+    reopened = EventLog(state_dir / "events.jsonl")
+    assert reconcile_channel_result_receipts(
+        state_dir=state_dir, event_log=reopened, writer=EventWriter(reopened),
+    ).recorded == 0
+    receipts = [e for e in reopened.read_all()
+                if e.type == "channel.result.receipt.recorded"]
+    assert len(receipts) == 2
+    assert {e.payload["task_id"] for e in receipts} == {
+        "TASK-ORIGINAL", "TASK-REPLACEMENT",
+    }
 
 
 def test_feishu_origin_is_bound_to_the_exact_root_message(

@@ -73,3 +73,78 @@ PRD 刷新后错误提示的 Docker Playwright 用例。
 历史重放同时检查 synthesis requested reactor 与通用消息路由入口；旧的失败请求及其消息不能在新请求之后重新派发。
 
 实机运行还需核对 tmux 子进程的网络环境。Web 启动器将显式设置的大小写 HTTP/HTTPS/ALL/NO_PROXY 写入受限权限运行环境文件；不会输出代理值。继承该文件的控制进程使用相同网络配置。
+
+## 暂缓决定与协作恢复
+
+`channel-question-resolve` 新增显式 `resolution=deferred`，必须带非空 `answer`。
+Owner 问答卡“本轮暂缓”提交此处置；范围排除仍使用独立 `out_of_scope` 操作。
+已处置问题的回调重放和跨 thread 更新不得覆盖第一次决定；已注册 agent 不能代表 Owner
+答复或暂缓。投影保留 `resolved_event_id`、回答和风险，完整台账进入后续综合上下文。
+暂缓不是批准、删除原始需求或执行授权；具体语义、影响与重开条件由 participant /
+synthesizer 技能整理进 PRD，不在 Runtime 中匹配“暂不考虑”等关键词推断业务结论。
+
+综合提出问题后回退 `synthesis_questions_opened` 不会启动盲答去重，因此无去重请求时
+允许 Owner 处理；存在实际去重请求时仍遵守其 pending/blocked gate。盲答阶段转换后
+崩溃遗漏的初始去重请求由下一次 discussion tick 补发，仍沿用稳定 ID 与有界 retry。
+
+全部问题处置后，缺少 roster 成员冻结贡献仍阻止自动综合。attention 暴露
+`missing_frozen_members`、`contribution_missing` 和受控重启入口，不虚构角色贡献。
+重启补齐贡献沿用原有讨论路径；此前 Owner 决定保留。角色齐备、交叉核验完成后由
+现有 Kernel 路径触发新 PRD；同版本独立 review、Owner 确认、Task/Workflow 门分别保留。
+PRD 可带暂缓项进入 review，受影响工作的 `implementation_start=false` 不被自动提升。
+
+显式重启使用当前配置的有效参与者重新冻结 `participants` 与 `review_roster`，不会复制
+旧讨论的成员快照。普通定向续轮仍受当前讨论冻结名单约束，不会隐式纳入新成员。
+新讨论只有当前 trigger/request/generation 的冻结贡献才计入完成；旧贡献和已回答的
+Owner 决定继续作为历史证据保留。`next_round.proposed/rejected` 纳入 Channel 投影，
+当前 discussion/revision/synthesis 的续轮拒绝显示具体原因和重启入口，旧轮次拒绝不污染
+新轮次。有正式 PRD 但尚无评审时显示评审待启动，不再显示 `synthesis_missing`。
+最终回复把盲答推进到 relay 后，真实 reactor 立即再检查一次该阶段的正常收敛门禁。
+零开放问题的定向补充不再等待最长五分钟的 sweep；有问题、待交叉核验或待成员批准时
+仍停在对应门禁。重放最后一条回复不会重复创建综合请求。
+轻量聊天投影保留原始需求标记、review/restart 来源引用与附件元数据，并从 sidecar
+恢复完整用户消息；否则前端重启选择器会错选旧需求，长需求还可能被摘要截断。
+
+同线程上传的文本附件（包括重启前上传的原始需求）经既有附件读取器验证归属、sidecar
+与内容摘要后，以 `channel_attachment` 纳入完整语义来源包。正文严格 UTF-8 解码并计入
+既有来源预算；损坏、错线程或超预算失败关闭。重复附件只计一次，二进制附件沿用引用
+路径。对应回归见 `tests/test_channel_restart_roster.py`、
+`tests/test_channel_semantic_attachments.py` 和 `web/tests/channel-review-restart.spec.ts`。
+重启前明确标记的原始需求消息也保留完整正文，不能只依赖后续 agent 对 Owner 决定的转述。
+完整来源超过 `channel.semantic_source_max_chars` 时保持拒绝，不自动截断或放宽预算。
+操作员可在 `zf.yaml` 按实际来源规模及 provider 容量调整有界预算，再重试绑定原 ref/digest
+的评审。相同线程、成员和文档 ref/digest 的后续完整 context 构建成功后，旧拒绝仍留在
+历史中，但不再覆盖当前 attention；其他成员、版本或不完整重试不能清除该阻塞。
+对应回归见 `tests/test_channel_context_attention.py`。
+当前 PRD 存在 `revision_request` 评审阻塞时，Owner 确认动作返回 409，即使该版本曾有
+Owner 确认也不能通过幂等重放掩盖后来发现的缺陷。新版仍需独立评审与新的 Owner 确认；
+Owner 决定不替代角色签名。回归见 `tests/test_channel_owner_revision_gate.py`。
+
+同一确认 PRD 可创建多个独立 Task；`task_created` 回执的幂等键包含 Task id，不能仅按
+PRD 摘要和版本合并。旧键只对其原 Task 继续去重，重启 reconciliation 会补回其他 Task
+缺失的回执，不改写历史事件。回归见 `tests/test_channel_result_receipts.py`。
+
+长文件修改可返回 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`。
+ref/digest 必须匹配本次不可变上下文的 `channel_prd_source` manifest；不接受 anchors，
+始终保留完整文件再应用唯一匹配、不重叠的精确 edits。此模式减少重复输出，不截断必读
+输入，也不等价于测得真实模型成本下降。消息来源继续使用原有 source_message_id / anchors。
+
+语义验收由 `skills/zf-channel-discussion-synthesizer/SKILL.md` 与 participant 协议承担：
+逐项核对决定继承、暂缓语义、需求章节及验收、异议处置、重问依据、评审版本。
+自动化验证见 `tests/test_channel_collaboration_closure.py`、`tests/test_channel_prd_file.py`
+（包括带暂缓草案进入真实 review reactor / fake provider 后仍被 Owner 风险门拦住），
+以及 `web/tests/channel-owner-deferral.spec.ts`。真实模型语义质量与长期成本仍需独立实跑评估。
+
+隔离浏览器复现（依赖 dev/web 环境、已构建 `web/dist`，无需真实 provider）：
+
+```bash
+PYTHONPATH=src:. .venv/bin/python tests/e2e/channel_collaboration_browser_fixture.py \
+  --root /tmp/zf-channel-collaboration-<新的UTC时间> --port 8002
+```
+
+另一个终端用 `mcp/playwright:latest`、`--network host` 挂载 repo 与前端依赖，在
+`web/` 运行 `node node_modules/@playwright/test/cli.js test tests/channel-owner-deferral.spec.ts`；
+设置 `ZF_WEB_BASE_URL=http://127.0.0.1:8002`、`ZF_COLLABORATION_BROWSER_FIXTURE=1`，
+`ZF_E2E_CHROMIUM_EXECUTABLE_PATH` 指向容器内 `/ms-playwright/chromium-*/chrome-linux64/chrome`。
+测试使用固定的隔离测试 token，不读取生产 token。结束时 SIGTERM fixture 进程，
+fixture 会写入 `simulation.done`；保留需要的证据后删除临时 state/workspace。

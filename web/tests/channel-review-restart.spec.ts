@@ -86,3 +86,33 @@ test("discussion restart sends the original requirement through the controlled a
     requirement_message_id: "original", message: detail.messages[0].text });
   expect(state.errors).toEqual([]);
 });
+
+test("rejected continuation explains roster mismatch and preserves restart recovery", async ({ page, request }) => {
+  const detail = fixture(false);
+  Object.assign(detail.discussion_attention.main, {
+    reason: "next_round_rejected", next_round_rejection_reason: "next_round_targets_not_in_current_roster",
+  });
+  const state = await setup(page, request, detail);
+  await page.getByTestId("channel-flow-discussion").click();
+  const activity = page.getByTestId("channel-discussion-activity");
+  await expect(activity).toContainText("PRD 已生成，补充讨论受阻");
+  await expect(activity).toContainText("续轮成员不在本轮冻结名单中");
+  await activity.getByRole("button", { name: "Restart discussion", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].payload).toMatchObject({ restart: true, requirement_message_id: "original" });
+  expect(state.errors).toEqual([]);
+});
+
+test("restart uses the latest explicitly marked Owner requirement", async ({ page, request }) => {
+  const detail = fixture(true);
+  detail.messages.push({ message_id: "amended", thread_id: "main", role: "user", ts,
+    text: "Preserve PostgreSQL. Permit only an isolated verification Task.",
+    refs: { evaluation_source_document: true } });
+  const state = await setup(page, request, detail);
+  await page.getByTestId("channel-flow-discussion").click();
+  await page.getByRole("button", { name: "Restart discussion", exact: true }).click();
+  await expect.poll(() => state.writes.length).toBe(1);
+  expect(state.writes[0].payload).toMatchObject({ restart: true,
+    requirement_message_id: "amended", message: detail.messages.at(-1)?.text });
+  expect(state.errors).toEqual([]);
+});

@@ -49,8 +49,18 @@ def request(service, writer, file, body):
                                "ref": str(file), "sha256": hashlib.sha256(body.encode()).hexdigest()}})
 
 
-def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp_path, monkeypatch):
+@pytest.mark.parametrize("deferred", [False, True])
+def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp_path, monkeypatch, deferred):
     state, writer, service, file, body = setup(tmp_path, monkeypatch)
+    if deferred:
+        writer.emit("channel.question.opened", actor="dba", payload={
+            "channel_id": "ch-file", "thread_id": "main", "question_id": "q-db",
+            "question": "Choose databases?", "asked_by": "dba", "kind": "owner_decision"})
+        event = writer.emit("web.action.requested", actor="web", payload={"action": "channel-question-resolve"})
+        resolved = service.execute(action="channel-question-resolve", requested_action="channel-question-resolve",
+            requested=event, payload={"channel_id": "ch-file", "question_id": "q-db",
+            "resolution": "deferred", "answer": "本轮暂缓，保留原始需求"})
+        assert resolved["ok"], resolved
     result = request(service, writer, file, body)
     assert result["ok"], result
     channel = project_channel(state, "ch-file")
@@ -67,6 +77,12 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp
                  "requirement_coverage": [{"id": "REQ-1", "section": "Behavior", "source_refs": [str(file)],
                                            "acceptance_ids": ["AC-1"], "status": "covered"}],
                  "acceptance_criteria": [{"id": "AC-1", "criterion": "Full source is preserved."}], "decision_log": []}
+    if deferred:
+        synthesis.pop("prd_file")
+        synthesis["prd_composition"] = {"source_ref": selected["ref"], "source_digest": selected["sha256"],
+            "edits": [], "appendix_markdown": "## Deferred decisions\nq-db: 本轮暂缓数据库选择；实施前由 Owner 决定。"}
+        synthesis["readiness"] = {"verdict": "needs_owner", "implementation_start": False,
+            "gaps": ["Database choice deferred"], "risks": [], "evidence_refs": ["q-db"], "reason": "Owner deferred database choice"}
     emit_structured_reply_events(state_dir=state, writer=writer, channel=channel, request=reply_request,
                                  message=message, reply=json.dumps({"channel_synthesis": synthesis}),
                                  reply_event_id="reply-file", actor="synth", source="test")
@@ -113,6 +129,14 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp
                                 requested=requested, payload={"channel_id": "ch-file", "thread_id": "main",
                                 "artifact_ref": proposed[0]["artifact_ref"], "artifact_digest": proposed[0]["artifact_digest"],
                                 "prd_revision": 1})
+    if deferred:
+        assert confirmed["status"] == "readiness_risk_unaccepted"
+        assert not project_channel(state, "ch-file")["consensus"]["main"].get("human_confirmed")
+        assert not any(e.type in {"channel.consensus.reached", "task.created", "workflow.started"} for e in writer.event_log.read_all())
+        # Deferred product decisions can be reviewed without granting execution.
+        assert "q-db" in prd["body"]["markdown"]
+        assert project_channel(state, "ch-file")["open_questions"][0]["resolution"] == "deferred"
+        return
     assert confirmed["ok"], confirmed
     advance_discussion(state, writer, channel_id="ch-file", thread_id="main")
     assert project_channel(state, "ch-file")["discussions"]["main"]["state"] == "idle"

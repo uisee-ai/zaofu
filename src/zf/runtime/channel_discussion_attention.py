@@ -239,14 +239,31 @@ def project_discussion_attention(
             reason=reason,
             has_result=bool(syntheses or consensus),
         )
+        next_round_rejection_reason = ""
+        if phase == "phase3_synthesis" and syntheses and not work_replies and not open_questions:
+            current_rounds = [
+                row for row in channel.get("next_rounds", [])
+                if row.get("thread_id", "main") == thread_id
+                and row.get("discussion_id") == session.get("discussion_id")
+                and row.get("expected_revision") == session.get("revision")
+                and row.get("synthesis_event_id") == syntheses[-1].get("event_id")
+            ]
+            if current_rounds and current_rounds[-1].get("type") == "channel.discussion.next_round.rejected":
+                next_round_rejection_reason = str(current_rounds[-1].get("reason") or "")
+                state, reason, next_action = "blocked", "next_round_rejected", "restart"
+                execution_state = "blocked"
         invitation_count = len(pending_member_proposals(channel, thread_id))
         packs = channel.get("context_packs") or {}
+        from zf.runtime.channel_context_attention import superseded_review_contexts
+
+        superseded_contexts = superseded_review_contexts(channel)
         retired_messages = retired_synthesis_message_ids(channel, thread_id)
         context_rejections = [
             {key: row.get(key, "") for key in ("context_pack_id", "target_member_id", "trigger_message_id", "reason", "ts")}
             for row in (packs.values() if isinstance(packs, dict) else packs)
             if row.get("status") == "rejected" and current_session_item(row, time_keys=("ts",))
             and row.get("trigger_message_id") not in retired_messages
+            and row.get("context_pack_id") not in superseded_contexts
         ]
         if invitation_count:
             state, reason, next_action = "needs_input", "member_invitation_pending", "review_members"
@@ -268,6 +285,16 @@ def project_discussion_attention(
             next_action = "synthesize"
         if coverage_required and not coverage_complete and state == "ready":
             next_action = "supplement_roles"
+        frozen = (channel.get("questions_frozen") or {}).get(thread_id) or {}
+        missing_frozen_members = sorted(set(session.get("roster") or []) - set(frozen))
+        contribution_missing = bool(
+            phase == "phase2_relay" and missing_frozen_members
+            and not work_replies and not open_questions
+            and not invitation_count and not context_rejections
+        )
+        if contribution_missing:
+            state, reason, next_action = "blocked", "contribution_missing", "restart_discussion"
+            execution_state = "blocked"
         activity_times = [
             str(session.get(key) or "")
             for key in ("started_at", "phase_changed_at", "closed_at")
@@ -292,6 +319,7 @@ def project_discussion_attention(
             "thread_id": thread_id,
             "state": state,
             "reason": reason,
+            "next_round_rejection_reason": next_round_rejection_reason,
             "next_action": next_action,
             "execution_state": execution_state,
             "attention_kind": attention_kind,
@@ -334,6 +362,8 @@ def project_discussion_attention(
             ),
             "failed_reply_count": failed_count,
             "context_rejections": context_rejections,
+            "missing_frozen_members": missing_frozen_members,
+            "deferred_question_count": sum(item.get("resolution") == "deferred" for item in questions),
             "open_question_count": len(open_questions),
             "owner_question_count": len(visible_owner_questions),
             "total_question_count": len(questions),
@@ -368,6 +398,7 @@ def project_discussion_attention(
                 and (not coverage_required or coverage_complete)
                 and not invitation_count
                 and not context_rejections
+                and not contribution_missing
             ),
             "coverage_required": coverage_required,
             "coverage_complete": coverage_complete,
@@ -858,7 +889,7 @@ def _attention_state(
             return "running", "synthesis_active"
         if open_questions:
             return "blocked", "unresolved_questions"
-        return "blocked", "synthesis_missing"
+        return "blocked", "synthesis_review_pending" if has_synthesis else "synthesis_missing"
     if phase == "active":
         return (
             ("done", "discussion_idle")

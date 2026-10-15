@@ -362,3 +362,33 @@ def test_conversation_keeps_formal_review_status_without_large_review_bodies(tmp
     assert row["status"] == "rejected"
     assert row["reason"] == "cross_review_needs_owner_requires_question_and_recommendation"
     assert "answer" not in row
+
+
+def test_restart_source_and_attachments_survive_public_conversation(tmp_path: Path) -> None:
+    from zf.runtime.channel_attachments import capture_channel_attachment
+
+    state = tmp_path / '.zf'
+    state.mkdir()
+    log = EventLog(state / 'events.jsonl')
+    _append(log, 'channel.created', {'name': 'Restart sources'})
+    attachment = capture_channel_attachment(state, channel_id=CHANNEL_ID, thread_id='main',
+        name='PRD.md', mime='text/markdown', data=b'# Full requirement\nEND')
+    text = 'Original requirement\n' + ('full source ' * 500) + 'END-OF-OWNER-DECISION'
+    _append(log, 'channel.message.posted', channel_message_event_payload(state, {
+        'channel_id': CHANNEL_ID, 'thread_id': 'main', 'message_id': 'original',
+        'role': 'user', 'member_id': 'operator', 'text': text,
+        'refs': {'evaluation_source_document': True, 'attachments': [attachment]},
+    }, created_by='test'))
+    _append(log, 'channel.message.posted', {
+        'message_id': 'review', 'role': 'user', 'text': 'Review the draft',
+        'refs': {'consensus_review_id': 'review-1', 'source_requirement_message_id': 'original'},
+    })
+    result = project_channel_conversation(state, CHANNEL_ID)
+    original, review = result['messages']
+    assert original['text'] == text
+    assert original['refs']['evaluation_source_document'] is True
+    assert original['refs']['attachments'][0]['uri'] == attachment['uri']
+    assert original['refs']['attachments'][0]['hash'] == attachment['hash']
+    assert 'data_base64' not in original['refs']['attachments'][0]
+    assert review['refs']['consensus_review_id'] == 'review-1'
+    assert review['refs']['source_requirement_message_id'] == 'original'

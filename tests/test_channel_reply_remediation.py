@@ -608,7 +608,8 @@ def test_invalid_contribution_self_heals_and_advances_discussion(
 
     detail = project_channel(state_dir, CH)
     assert detail is not None
-    assert detail["discussions"]["main"]["state"] == "phase2_relay"
+    assert detail["discussions"]["main"]["state"] == "phase3_synthesis"
+    assert len([e for e in log.read_all() if e.type == "channel.synthesis.requested"]) == 1
     assert detail["reply_requests"][0]["run_generation"] == 2
 
 

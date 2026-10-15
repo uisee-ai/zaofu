@@ -239,8 +239,9 @@ def _valid_contribution(
     ))
 
 
+@pytest.mark.parametrize("owner_question", [False, True])
 def test_final_reply_completed_advances_phase_live_not_via_deadline_sweep(
-    state_dir: Path, config: ZfConfig, transport: TmuxTransport,
+    state_dir: Path, config: ZfConfig, transport: TmuxTransport, owner_question: bool,
 ) -> None:
     """The last roster member's `channel.agent.reply.completed`, dispatched
     through the real `run_once` loop, must transition the discussion to
@@ -250,6 +251,11 @@ def test_final_reply_completed_advances_phase_live_not_via_deadline_sweep(
     """
     log = EventLog(state_dir / "events.jsonl")
     _seed_phase1_two_of_three_replied(log)
+    if owner_question:
+        log.append(ZfEvent(type="channel.question.opened", actor="pm-1", payload={
+            "channel_id": CHANNEL_ID, "thread_id": "main", "question_id": "owner-gate",
+            "kind": "owner_decision", "question": "Choose the delivery scope.",
+        }))
     prior_completed = {
         event.payload["target_member_id"]: event
         for event in log.read_all()
@@ -306,7 +312,15 @@ def test_final_reply_completed_advances_phase_live_not_via_deadline_sweep(
     assert to_phase2[0].payload.get("reason") == "blind_round_complete"
 
     detail = project_channel(state_dir, CHANNEL_ID)
-    assert detail["discussions"]["main"]["state"] == "phase2_relay"
+    assert detail["discussions"]["main"]["state"] == (
+        "phase2_relay" if owner_question else "phase3_synthesis"
+    )
+    # With no unresolved questions there may be no further wake event. Do not
+    # strand the completed round until the five-minute supervisor sweep.
+    requests = [e for e in log.read_all() if e.type == "channel.synthesis.requested"]
+    assert len(requests) == (0 if owner_question else 1)
+    orch.run_once(events=[final])
+    assert len([e for e in log.read_all() if e.type == "channel.synthesis.requested"]) == len(requests)
 
 
 def test_transport_completion_without_valid_contribution_does_not_advance(
@@ -685,7 +699,7 @@ def test_synthesis_next_round_dispatches_live_without_implicit_budget(
     assert len(live_phase2) == 1
     assert live_phase2[0].payload["reason"] == "blind_round_complete"
     assert live_phase2[0].payload["source"] != "deadline-sweep"
-    assert detail["discussions"]["main"]["state"] in {"phase2_relay", "phase3_synthesis"}
+    assert detail["discussions"]["main"]["state"] == "phase3_synthesis"
     assert detail["discussions"]["main"]["revision"] == 9
     assert detail["discussions"]["main"]["requirement_message_id"] == TRIGGER
     assert channel_requirement_text(state_dir, detail, "main") == (

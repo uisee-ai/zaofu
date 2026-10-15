@@ -497,8 +497,9 @@ def validate_shared_action_payload(
             "answered",
             "assumption",
             "out_of_scope",
+            "deferred",
         }:
-            return "resolution must be answered, assumption, or out_of_scope"
+            return "resolution must be answered, assumption, out_of_scope, or deferred"
     if action in {
         "channel-consensus-confirm",
         "channel-consensus-block",

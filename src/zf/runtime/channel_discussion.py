@@ -60,6 +60,7 @@ MAX_AUTOMATIC_REVISION_REQUESTS = 3
 AGENT_MEMBER_TYPES = {"provider_agent", "persona_agent", "persona"}
 QUESTION_RESOLUTIONS = {
     "answered",
+    "deferred",
     "assumption",
     "out_of_scope",
     "evidence",
@@ -332,8 +333,9 @@ def start_discussion(
     product_mode: str = "",
 ) -> list[str]:
     """Emit discussion.started + phase1 transition; returns the blind roster."""
-    previous = discussion_state(channel, thread_id)
-    roster = list(previous.get("participants") or discussion_roster(channel))
+    # A new discussion freezes current membership. Selective continuation uses
+    # discussion.continued and preserves its own participant/review roster.
+    roster = discussion_roster(channel)
     synthesizer = discussion_synthesizer(channel, roster)
     discussion_id = "discussion-" + hashlib.sha1(
         f"{channel_id}:{thread_id}:{trigger_message_id}".encode("utf-8")
@@ -361,7 +363,7 @@ def start_discussion(
             "trigger": trigger,
             "roster": roster,
             "participants": roster,
-            "review_roster": list(previous.get("review_roster") or roster),
+            "review_roster": list(roster),
             "synthesizer": synthesizer,
             "requirement_message_id": trigger_message_id,
             "source": source,
@@ -484,6 +486,10 @@ def advance_discussion(
         return emitted
 
     if state == "phase2_relay":
+        emitted.extend(_reject_invalid_resolutions(
+            writer, channel, actor=actor, source=source,
+            channel_id=channel_id, thread_id=thread_id,
+        ))
         dedup_repair = repair_rejected_question_dedup(
             writer,
             channel,
@@ -494,7 +500,7 @@ def advance_discussion(
             thread_id=thread_id,
         )
         if dedup_repair:
-            return dedup_repair
+            return emitted + dedup_repair
         late_blockers = open_unseen_consensus_blockers(
             writer,
             channel,
@@ -506,11 +512,7 @@ def advance_discussion(
             synthesizer=str(session.get("synthesizer") or ""),
         )
         if late_blockers:
-            return late_blockers
-        emitted.extend(_reject_invalid_resolutions(
-            writer, channel, actor=actor, source=source,
-            channel_id=channel_id, thread_id=thread_id,
-        ))
+            return emitted + late_blockers
         if _ledger_converged(channel, session, thread_id):
             if (
                 str(session.get("phase_reason") or "") == "consensus_blocked"

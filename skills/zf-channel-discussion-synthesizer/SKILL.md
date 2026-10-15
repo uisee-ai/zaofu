@@ -19,7 +19,9 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 正式 synthesis 由 Runtime 保存 PRD，`read_only` 不妨碍结构化交付，无需因此请求提权。
 若请求给出 `prd_source_file`，完整阅读该不可变快照与所需讨论来源。保留全文时返回
 `prd_file: {ref, sha256}`（与该 descriptor 精确一致），同时提供完整需求覆盖、验收、
-决策和来源声明；需要修改时输出完整 `prd_markdown`。三种正文形式
+决策和来源声明；需要修改长文件时优先 `prd_composition: {source_ref, source_digest, edits, appendix_markdown}`，
+从 `channel_prd_source` 复制 artifact_ref/digest，不带 anchors；Runtime 保留整份文件后应用
+精确且不重叠的 edits。无法表达为精确 edits 时输出完整 `prd_markdown`。三种正文形式
 `prd_file` / `prd_markdown` / `prd_composition` 只能选一种。所有原有评审和批准要求仍适用。
 
 实现与操作约束见 `docs/impl/channel-prd-file-publication.md`。
@@ -181,3 +183,22 @@ artifact 当成待澄清产品问题。已合并问题只表示去重，不表�
 只有确实审阅了当前完整 pack 的全部必需来源、贡献和已完成审查时才可声明 true；
 三组名单须省略。Runtime 核验 immutable pack 摘要后展开原有来源引用与摘要，再走
 现有来源覆盖校验。该声明和逐个回填摘要同样只是作者阅读声明，不是理解或质量证明。
+
+## Owner 决定、阶段交付与暂缓继承
+
+- 每次先读取完整 `question_ledger`；以 question_id、resolved_event_id 和原始回答为决定来源。
+  `resolution=deferred` 表示本轮暂缓，不是推荐方案获批、需求移出范围或执行授权。
+  历史 `answered` 中的“暂不考虑”按其原始语义保留，不自行改写事件。
+- 对暂缓事项在 PRD 决策表逐项记录来源、影响范围、尚未选择的方案及重新讨论条件；
+  原文已明确的行为继续保留。没有新证据或 Owner 重开要求，不把同一暂缓事项再次塞回问卷。
+  必须重问时说明新证据、旧问题 ID 和为何当前阶段无法继续。
+- 问题只询问现在必须由 Owner 决定的事；每题给 why_it_matters、recommended_answer、
+  可比较选项及后果。事实核验先交给具备职责的成员，不能把缺少角色贡献伪装成 Owner 决策。
+- 阶段交付依次为有来源的角色贡献、已处置的决策台账、完整 PRD、绑定相同 ref/digest 的
+  独立评审、Owner 确认、受控 Task/Workflow。消息数量和文档字数不代替完成证据。
+- 草案完整性、独立评审、实施就绪和执行授权分别报告。包含暂缓事项的完整草案可以评审；
+  受影响工作保留 readiness.gaps 与 implementation_start=false，不能为了推进伪造 ready。
+  未受影响的范围是否可实施由明确范围与证据判断，不以“全部问题关闭”自动批准。
+- 评估时逐项核对：Owner 决定是否全部继承；暂缓是否被当成批准或删除；新问题是否有新增
+  证据；每条需求是否有章节与验收；异议是否有处置；review 是否绑定当前版本。
+  输出具体反例及 source_refs，区分文档修订、Owner 决策与缺少证据，禁止无差别重跑所有角色。

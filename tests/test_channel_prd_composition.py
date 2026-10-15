@@ -113,3 +113,27 @@ def test_attestation_expands_only_artifacts_in_the_attested_snapshot(tmp_path):
     assert expanded["consumed_contribution_digests"] == ["m", "r"]
     assert expanded["consumed_message_digests"] == original["semantic_source_required_digests"]
     assert "consumed_message_digests" not in body
+
+
+@pytest.mark.parametrize("fault", ["", "digest", "anchors", "mixed", "foreign_kind"])
+def test_selected_file_composition_preserves_entire_source_and_requires_bound_identity(tmp_path, fault):
+    channel, request, body = fixture()
+    pack = channel["context_packs"]["ctx"]
+    source = pack["semantic_source_documents"][0]
+    digest = source.pop("message_body_digest")
+    source.pop("message_id")
+    source.update(kind="channel_prd_source", artifact_ref="sources/immutable.md", artifact_digest=digest)
+    pack["semantic_source_manifest"] = [{k: v for k, v in source.items() if k != "content"}]
+    body["prd_composition"] = {"source_ref": source["artifact_ref"], "source_digest": digest,
+        "edits": [{"old": "Old rule.", "new": "Owner deferred database choice."}], "appendix_markdown": "## Deferred\nq-db"}
+    if fault == "digest": body["prd_composition"]["source_digest"] = "wrong"
+    if fault == "anchors": body["prd_composition"]["start_anchor"] = "# Product"
+    if fault == "mixed": body["prd_composition"]["source_message_id"] = "source"
+    if fault == "foreign_kind": source["kind"] = "contribution"
+    result, error = expand_prd_composition(body, channel=channel, request=request, state_dir=tmp_path)
+    if fault:
+        assert error
+    else:
+        assert not error
+        assert result["prd_markdown"] == source["content"].replace("Old rule.", "Owner deferred database choice.") + "\n\n## Deferred\nq-db"
+        assert result["prd_markdown"].count("| field | required |") == 3000

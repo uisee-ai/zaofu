@@ -67,6 +67,17 @@ export function selectChannelDiscussionAttention(
 export function presentChannelDiscussionAttention(
   attention: ChannelDiscussionAttention,
 ): ChannelDiscussionAttentionPresentation {
+  if (attention.reason === "next_round_rejected") {
+    const rosterMismatch = attention.next_round_rejection_reason === "next_round_targets_not_in_current_roster";
+    return { label: "PRD 已生成，补充讨论受阻", summary: rosterMismatch
+      ? "续轮成员不在本轮冻结名单中。请核对参与成员并重启讨论；已有 Owner 决定保留。"
+      : `续轮请求被拒绝：${attention.next_round_rejection_reason || "请查看诊断"}`,
+      tone: "blocked", action: "restart", actionLabel: "查看阻塞", visible: true };
+  }
+  if (attention.reason === "synthesis_review_pending") {
+    return { label: "PRD 已生成，评审尚未启动", summary: "请查看当前 PRD 和讨论诊断，完成补充讨论后继续评审。",
+      tone: "blocked", action: "result", actionLabel: "查看 PRD", visible: true };
+  }
   const executionState = attention.execution_state ?? (
     attention.active_agent_count > 0
       ? "running"
@@ -92,6 +103,10 @@ export function presentChannelDiscussionAttention(
   if (attention.reason === "context_pack_rejected") {
     return { label: "评审来源需要处理", summary: "来源上下文未通过检查，后续评审尚未派发。请查看 Activity 中的具体原因。",
       tone: "blocked", action: "activity", actionLabel: "查看原因", visible: true };
+  }
+  if (attention.reason === "contribution_missing") {
+    return { label: "角色贡献尚未完成", summary: `缺少 ${attention.missing_frozen_members?.join("、") || "必需角色"} 的冻结贡献；可重启讨论补齐，已有 Owner 决定仍保留。`,
+      tone: "blocked", action: "restart", actionLabel: "恢复讨论", visible: true };
   }
   if (attention.reason === "discussion_stalled") {
     return { label: "PRD review blocked", summary: "Review revisions need diagnosis before another discussion",

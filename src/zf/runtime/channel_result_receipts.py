@@ -124,6 +124,10 @@ def record_channel_result_receipt(
         source_digest=source_digest,
         revision=revision,
     )
+    legacy_key = idempotency_key
+    task_id = str(candidate.get("task_id") or source_event.task_id or "")
+    if receipt_kind == "task_created" and task_id:
+        idempotency_key += f"|task:{task_id}"
     receipt_id = "channel-receipt-" + hashlib.sha1(
         idempotency_key.encode("utf-8")
     ).hexdigest()[:16]
@@ -131,6 +135,14 @@ def record_channel_result_receipt(
     events = writer.event_log.read_all()
     if _recorded_event(events, idempotency_key) is not None:
         return "duplicate"
+    # Older receipts used only PRD identity. Preserve the original Task's
+    # receipt while allowing other Tasks from that same PRD to reconcile.
+    if receipt_kind == "task_created" and task_id:
+        legacy = _recorded_event(events, legacy_key)
+        if legacy is not None and str(
+            legacy.payload.get("task_id") or legacy.task_id or ""
+        ) == task_id:
+            return "duplicate"
 
     validation_error = _origin_validation_error(
         Path(state_dir),

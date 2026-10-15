@@ -640,7 +640,7 @@ export function ChannelPage({
             ? `Recommended: ${recommendedAnswer}`
             : "Answer this owner decision.",
           required: false,
-          skipLabel: "Out of scope",
+          skipLabel: "本轮暂缓",
           askedBy,
           priority: String(item.priority || "p1").trim().toLowerCase(),
           sourceThreadId: String(item.thread_id || attention.thread_id || activeChannelThreadId || "main"),
@@ -782,8 +782,8 @@ export function ChannelPage({
                 await onResolveQuestion(
                   answer.questionId,
                   question.sourceThreadId,
-                  answer.skipped ? "out_of_scope" : "answered",
-                  answer.answer,
+                  answer.skipped ? "deferred" : "answered",
+                  answer.skipped ? "本轮暂缓；保留原始需求，不代表批准推荐方案或授权实施。" : answer.answer,
                 );
               }
             });
