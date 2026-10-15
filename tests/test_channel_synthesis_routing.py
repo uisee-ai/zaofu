@@ -39,6 +39,16 @@ def test_budget_rejection_is_failed_action_and_retry_keeps_original_evidence(tmp
     assert current['discussion_attention']['main']['context_rejections'] == []
     react_channel_synthesis_requested(host, original)
     assert not routed, 'a superseded rejected request cannot race the explicit retry'
+    from zf.runtime.channel_router import route_channel_message
+    old_message = next(e for e in writer.event_log.read_all()
+                       if e.type == 'channel.message.posted'
+                       and (e.payload.get('refs') or {}).get('synthesis_request_id') == original.payload['request_id'])
+    before_replay = writer.event_log.path.read_bytes()
+    replay = route_channel_message(state_dir=state, writer=writer, message_event=old_message,
+                                   message_payload=old_message.payload, actor='test', source='runtime',
+                                   config=service.config, dispatch_inline=False)
+    assert replay.skipped == [{'reason': 'synthesis_request_inactive'}]
+    assert writer.event_log.path.read_bytes() == before_replay
     assert len([e for e in writer.event_log.read_all() if e.type == 'channel.context_pack.rejected']) == count
     message_id = 'msg-' + accepted['request_id']
     bundle = build_semantic_source_bundle(current, thread_id='main', trigger_message_id=message_id,

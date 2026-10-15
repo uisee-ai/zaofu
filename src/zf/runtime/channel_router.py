@@ -153,6 +153,10 @@ def route_channel_message(
         )
         return ChannelRouteResult(skipped=[{"reason": "auto_route_not_allowed"}])
     channel = project_channel(Path(state_dir), channel_id) or {}
+    from zf.runtime.channel_synthesis_routing import inactive_synthesis_message
+
+    if inactive_synthesis_message(channel, message_payload):
+        return ChannelRouteResult(skipped=[{"reason": "synthesis_request_inactive"}])
     reason = emit_setup_pending_route_block(
         channel=channel, writer=writer, actor=actor, channel_id=channel_id,
         thread_id=thread_id, message_id=message_id, source=source,

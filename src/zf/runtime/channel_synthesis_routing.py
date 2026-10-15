@@ -43,3 +43,15 @@ def synthesis_route_error(route: dict[str, Any], channel: dict[str, Any], messag
         if pack.get("trigger_message_id") == message_id and pack.get("status") == "rejected":
             return str(pack.get("reason") or "context_pack_rejected")
     return "; ".join(str(row.get("reason") or "not_dispatched") for row in route.get("skipped") or []) or "synthesis_not_dispatched"
+
+
+def inactive_synthesis_message(channel: dict[str, Any], message: dict[str, Any]) -> bool:
+    """Do not resurrect a terminal or superseded formal request through message replay."""
+    from zf.runtime.channel_synthesis_lock import synthesis_request_in_flight
+
+    request_id = (message.get("refs") or {}).get("synthesis_request_id")
+    if not request_id or not any(r.get("request_id") == request_id
+                                 for r in channel.get("synthesis_requests", [])):
+        return False
+    active = synthesis_request_in_flight(channel, str(message.get("thread_id") or "main"))
+    return not active or active.get("request_id") != request_id
