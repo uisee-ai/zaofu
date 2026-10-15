@@ -1,6 +1,6 @@
 # Channel 协作 1–5 闭环修复与验证
 
-> 状态: active
+> 状态: done
 
 用户批准在 `zaofu-channel-collaboration` 修复并用 Playwright 验证贡献、续轮、同版评审、Owner 确认、Task/Workflow 交接。
 
@@ -51,3 +51,16 @@ v4 QA 发现验证命令可能复用历史成功文件，系统自动修订 v5�
 兼容旧 Task 回执，重启真实 runtime 自动补回 TASK-6A988A 回执 evt-31e3125d14a3；
 旧 TASK-1CF93C 的回执和取消历史不变。新回归先红后绿；8 文件调用链 87 passed，
 sentinel 50 passed / 1 skipped，flow smoke 10 passed。证据 26-replacement-task-receipts.json。
+
+## 最终验收与提交
+
+- `c0c667a fix: preserve channel collaboration sources and review progress`
+- `1117d75 fix: reject owner confirmation while PRD revision is required`
+- `ae7fbcd fix: distinguish task receipts from the same channel PRD`
+
+1–4真实验收通过：四角色贡献、DBA定向续轮、独立评审两次自动返工、v5同版签名及Owner确认。v5完整预览和下载74262字节，双摘要独立核对。
+5按本任务的启动/交接验收标准通过：Playwright创建替代Task TASK-6A988A，独立批准workflow-bdb148f7b067c107，Codex tmux reader实际读取并输出10392字节追溯报告；child结果被Kernel接受，fanout聚合产生review.approved。原Task因fixture错误transport失败取消，历史保留。
+
+本批不声称零干预自治或根Goal最终交付通过：来源预算两次人工有界调整、同版评审重试及计划schema反馈均记录；隔离reader路由没有Goal交付收尾，根运行仍Running，测试取证后受控取消清理。worker不能修改immutable completion payload，按原模板回报，详细报告单独保留，未内嵌结果引用。8002 Web保留复查。
+
+最终证据：`/tmp/zf-channel-close-loop-20261015/验收报告.md`、`report.json`、`33-reader-accepted-evidence.json`、Playwright screenshots/actions；worker报告 `TASK-6A988A-worker-report.md`。不修改生产Loshu，不合并、不push。
