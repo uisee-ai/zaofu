@@ -123,15 +123,15 @@ export function createChannelActionAdapter(args: ChannelActionAdapterArgs) {
     targetMemberId?: string,
     sourceFile?: { ref: string; sha256: string },
   ) {
-    const result = await args.submitAction(
-      "channel.synthesis.request",
-      synthesisRequestPayload(channelId(), threadId, targetMemberId, sourceFile),
-    );
-    if (!result.ok) throw new Error(result.reason || "PRD generation was not accepted; refresh and retry.");
     try {
-      await args.refreshChannelDetail();
-    } catch {
-      // An accepted request remains durable; the live projection can recover.
+      const result = await args.submitAction(
+        "channel.synthesis.request",
+        synthesisRequestPayload(channelId(), threadId, targetMemberId, sourceFile),
+      );
+      if (!result.ok) throw new Error(result.reason || "PRD generation was not accepted; refresh and retry.");
+    } finally {
+      // A rejected route also has durable diagnostic evidence; keep its original error.
+      await args.refreshChannelDetail().catch(() => {});
     }
   }
 

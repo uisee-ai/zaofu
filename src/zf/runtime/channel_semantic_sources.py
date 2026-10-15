@@ -85,10 +85,12 @@ def build_semantic_source_bundle(
         ),
         {},
     )
-    stage = semantic_stage(trigger.get("refs"))
+    refs = trigger.get("refs") or {}
+    stage = semantic_stage(refs)
     session = _discussion_session(channel, thread_id)
     requirement_message_id = str(session.get("requirement_message_id") or "")
-    required = stage == "consensus_review" or bool(stage and requirement_message_id)
+    selected_file = refs.get("prd_source_file") if stage == "synthesis" else None
+    required = stage == "consensus_review" or bool(stage and requirement_message_id) or bool(selected_file)
     empty = {
         "schema_version": SEMANTIC_SOURCE_SCHEMA_VERSION,
         "required": required,
@@ -214,6 +216,26 @@ def build_semantic_source_bundle(
             manifest.append(entry)
             documents.append({**entry, "content": body})
             source_chars += len(json.dumps(body, ensure_ascii=False))
+
+    if selected_file:
+        from zf.runtime.channel_prd_file import expand_prd_file
+
+        if not isinstance(selected_file, dict) or state_dir is None:
+            errors.append("prd_source_file:invalid_snapshot")
+        else:
+            expanded, error = expand_prd_file(
+                {"prd_file": {key: selected_file.get(key) for key in ("ref", "sha256")}},
+                request={**refs, "channel_id": channel.get("channel_id"), "thread_id": thread_id},
+                state_dir=state_dir,
+            )
+            if error:
+                errors.append(f"prd_source_file:{error}")
+            else:
+                entry = {"kind": "channel_prd_source", "artifact_ref": selected_file["ref"],
+                         "artifact_digest": selected_file["sha256"]}
+                manifest.append(entry)
+                documents.append({**entry, "content": expanded["prd_markdown"]})
+                source_chars += len(expanded["prd_markdown"])
 
     if stage == "consensus_review":
         refs = trigger.get("refs") or {}

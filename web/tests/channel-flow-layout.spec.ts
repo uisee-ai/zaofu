@@ -13,7 +13,7 @@ function fixture() {
       parts: [{ id: "response", kind: "text", state: "completed", content: "A complete analysis." }] }],
     member_invitation_proposals: [] as Record<string, unknown>[],
     cross_reviews: [] as Record<string, unknown>[],
-    workflow_requests: [] as Record<string, unknown>[], syntheses: [] as Record<string, unknown>[],
+    synthesis_requests: [] as Record<string, unknown>[], workflow_requests: [] as Record<string, unknown>[], syntheses: [] as Record<string, unknown>[],
     result_receipts: [] as Record<string, unknown>[], consensus: {} as Record<string, unknown>,
     open_questions: [{ question_id: "q1", thread_id: "main", status: "open", question: "Who approves execution?", asked_by: "product_pm", source_run_id: "r1", answer: "", resolution: "", resolved_by: "" }],
     owner_questionnaires: { main: [{ question_id: "q1", question: "Who approves execution?", asked_by: "product_pm", source_run_id: "r1",
@@ -29,7 +29,7 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
     previewMode: "data", markdown: "# Canonical PRD\n\n## Acceptance\n\n| Criterion | Result |\n|---|---|\n| Full body | Required |\n\n**Last paragraph preserved.**",
     questionOk: true, allowInvitations: false, allowPlanning: false, allowMessages: false, planningOk: true, planningPayload: {} as Record<string, unknown>, runs: [] as Record<string, unknown>[],
     plans: [] as Record<string, unknown>[], deliveryError: false, fileCalls: 0, allowReports: false, allowSynthesis: false, allowConsensus: false, readiness: undefined as Record<string, unknown> | undefined,
-    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true,
+    ownerReports: [] as Record<string, unknown>[], allowEvaluation: false, allowCancel: false, cancelOk: true, synthesisError: "",
     evaluationRows: [] as Array<Record<string, unknown>> };
   page.on("pageerror", (error) => state.errors.push(error.message));
   // Intercept every write, including unexpected actions. These tests cannot
@@ -63,7 +63,13 @@ async function setup(page: Page, request: APIRequestContext, detail: ReturnType<
         await route.fulfill({ status: 202, json: { ok: true, status: "confirmed" } });
       } else if (path.endsWith("/actions/channel.synthesis.request") && state.allowSynthesis) {
         state.payloads.push(req.postDataJSON().payload);
+        if (state.synthesisError) {
+          detail.synthesis_requests.push({ thread_id: "main", status: "blocked", reason: state.synthesisError });
+          await route.fulfill({ status: 409, json: { ok: false, status: "synthesis_blocked", reason: state.synthesisError } });
+          return;
+        }
         if (req.postDataJSON().payload.source_file) {
+          detail.synthesis_requests.push({ thread_id: "main", request_id: "retry", status: "proposed" });
           detail.syntheses.push({ thread_id: "main", prd_revision: 1, artifact_ref: "channels/prd.json", artifact_digest: "published-digest" });
           detail.consensus.main = { artifact_ref: "channels/prd.json", artifact_digest: "published-digest", prd_revision: 1, status: "proposed" };
           detail.seq += 1;
@@ -1105,4 +1111,41 @@ test("local Markdown delivery previews and explicitly publishes a draft without 
   expect(state.writes).toHaveLength(1);
   expect(state.errors).toEqual([]);
   expect(state.unexpected).toEqual([]);
+});
+
+test("blocked PRD generation keeps its reason after reload without enabling Process", async ({ page, request }) => {
+  const detail = fixture();
+  detail.synthesis_requests = [{ thread_id: "main", request_id: "blocked", status: "blocked", reason: "semantic_source_budget_exceeded:342979>120000" }];
+  const state = await setup(page, request, detail);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (attempt) await page.reload();
+    await page.getByTestId("channel-flow-prd").click();
+    await expect(page.getByTestId("channel-prd-generation-error")).toContainText("342979>120000");
+    await expect(page.getByTestId("channel-prd-generation-error")).toContainText("重新打开原文件");
+    await expect(page.getByTestId("channel-create-task-from-prd")).toBeDisabled();
+  }
+  expect(state.writes).toEqual([]);
+});
+
+test("rejected file publication retains preview and retries after the cause is resolved", async ({ page, request }) => {
+  const detail = fixture();
+  Object.assign(detail.discussion_attention.main, { owner_question_count: 0, open_question_count: 0 });
+  detail.open_questions = [];
+  detail.owner_questionnaires.main = [];
+  detail.provider_runs[0].parts[0].content = "Saved [完整 PRD r2](/home/project/PRD.r2.md).";
+  const state = await setup(page, request, detail);
+  state.allowSynthesis = true;
+  state.synthesisError = "semantic_source_budget_exceeded:342979>120000";
+  await page.getByRole("button", { name: "完整 PRD r2", exact: true }).click();
+  const file = page.getByTestId("channel-file-preview");
+  await file.getByRole("button", { name: "生成正式 PRD 草案" }).click();
+  await expect(file.getByRole("alert")).toContainText(state.synthesisError);
+  await expect(file.getByRole("button", { name: "生成正式 PRD 草案" })).toBeEnabled();
+  expect(detail.syntheses).toHaveLength(0);
+  state.synthesisError = "";
+  await file.getByRole("button", { name: "生成正式 PRD 草案" }).click();
+  await expect(page.getByTestId("channel-prd-preview")).toContainText("In review");
+  await expect(page.getByRole("button", { name: "Process", exact: true })).toBeDisabled();
+  expect(state.payloads).toHaveLength(2);
+  expect(state.payloads[0].source_file).toEqual(state.payloads[1].source_file);
 });

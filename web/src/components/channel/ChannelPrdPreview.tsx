@@ -110,6 +110,10 @@ export function ChannelPrdPreview({ selection, flow, actionReady, busy, onProces
         <button type="button" className="icon-button" title="Close drawer" onClick={onClose}><X size={14} /></button></div>
     </div>
     <div ref={bodyRef} className="channel-document-body">
+      {flow.generationError ? <div role="alert" data-testid="channel-prd-generation-error">
+        <p>PRD 生成受阻：{flow.generationError}</p>
+        <p>请处理该原因后重试；从文件生成的草案，请重新打开原文件并选择“生成正式 PRD 草案”。</p>
+      </div> : null}
       {!flow.hasArtifact ? <p role="status">{generating ? "正在生成完整 PRD。请等待当前综合结果，无需重复触发。" : "尚无完整 PRD。请先完成当前讨论与审查。"}</p>
         : !document && !error ? <p role="status">Loading full PRD…</p> : null}
       {error ? <div role="alert"><p>Preview unavailable. No summary has been substituted for the document.</p><small>{error}</small>

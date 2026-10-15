@@ -294,4 +294,4 @@ synthesisAccepted = false;
 let publicationRejected = false;
 try { await publicationAdapter.requestSynthesis("feature/api", undefined, fileSelection); }
 catch (error) { publicationRejected = String(error).includes("Source changed"); }
-assert(publicationRejected && synthesisRefreshes === 1, "rejected publication stays actionable instead of opening an empty PRD");
+assert(publicationRejected && Number(synthesisRefreshes) === 2, "rejected publication refreshes durable errors and stays actionable instead of opening an empty PRD");
