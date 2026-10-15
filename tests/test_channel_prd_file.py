@@ -83,6 +83,10 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp
                                  request=reply_request, message=message, reply=json.dumps({"channel_synthesis": synthesis}),
                                  reply_event_id="reply-file", actor="synth", source="test")
     assert len([e for e in writer.event_log.read_all() if e.type == "channel.synthesis.proposed"]) == 1
+    writer.emit("channel.agent.reply.completed", actor="test", payload={
+        "channel_id": "ch-file", "thread_id": "main", "request_id": reply_request["request_id"],
+        "target_member_id": "synth", "reason": "validated source-file contract delivered",
+    })
 
     # Exercise the actual review reactor and fake provider transport; do not forge signatures.
     import time
