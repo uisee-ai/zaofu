@@ -34,6 +34,7 @@ class AgentSessionIdentity:
     backend: str = ""
     provider_session_id: str = ""
     snapshot_ref: str = ""
+    run_generation: int = 1
 
 
 class AgentSessionStreamEmitter:
@@ -216,6 +217,7 @@ class AgentSessionStreamEmitter:
         provider_session_id: str = "",
     ) -> ZfEvent:
         self.flush()
+        self._discard_live_scratch()
         return self.writer.emit(
             "agent.session.run.cancelled",
             actor=self.identity.actor,
@@ -270,7 +272,7 @@ class AgentSessionStreamEmitter:
                 bus.publish(
                     "agent.session.part.delta",
                     payload,
-                    key=self.identity.run_id or self.identity.thread_id or "run",
+                    key=self._live_scratch_key(),
                     actor=self.identity.actor,
                     task_id=self.identity.task_id,
                     causation_id=self.started_event_id or self.identity.causation_id,
@@ -311,12 +313,19 @@ class AgentSessionStreamEmitter:
         drop it so new SSE subscribers never replay a finished turn."""
         bus = live_delta_bus_for_writer(self.writer)
         if bus is not None:
-            bus.discard(self.identity.run_id or self.identity.thread_id or "run")
+            bus.discard(self._live_scratch_key())
+
+    def _live_scratch_key(self) -> str:
+        key = self.identity.run_id or self.identity.thread_id or "run"
+        # Channel retries reuse run_id; an older terminal must not delete a
+        # retry's scratch or cause its SSE cursor to skip a reused file.
+        return f"{key}-g{self.identity.run_generation}" if self.identity.channel_id else key
 
     def _base_payload(self, *, provider_session_id: str = "") -> dict[str, Any]:
         session_id = provider_session_id or self.identity.provider_session_id
         return {
             "run_id": self.identity.run_id,
+            "run_generation": self.identity.run_generation,
             "thread_id": self.identity.thread_id,
             "source": self.identity.source,
             "project_id": self.identity.project_id,

@@ -45,8 +45,10 @@ from zf.runtime.channel_question_graph import (
 )
 from zf.runtime.channel_run_owner import (
     RUN_ACTIVE_STATUSES,
+    RUN_TERMINAL_STATUSES,
     provider_run_record,
     stable_provider_run_id,
+    stale_reply_transition,
 )
 from zf.runtime.channel_sidecar import hydrate_channel_context_pack_payload
 from zf.runtime.provider_usage import sum_turn_usage
@@ -1146,17 +1148,13 @@ def _apply_reply(channel: dict[str, Any], event: ZfEvent, payload: dict[str, Any
     })
     incoming_generation = _payload_int(payload.get("run_generation"), _payload_int(item.get("run_generation"), 1))
     current_generation = _payload_int(item.get("run_generation"), 1)
-    if (
-        event.type.endswith((".started", ".completed", ".failed"))
-        and "run_generation" in payload
-        and incoming_generation < current_generation
-    ):
+    if stale_reply_transition(item, generation=incoming_generation, status=status):
         item.setdefault("stale_events", []).append(redact_obj({
             "event_id": event.id,
             "type": event.type,
             "run_generation": incoming_generation,
             "current_generation": current_generation,
-            "reason": _payload_str(payload, "reason") or "stale run generation",
+            "reason": _payload_str(payload, "reason") or "stale or terminal run generation",
             "ts": event.ts,
         }))
         return
@@ -1376,6 +1374,14 @@ def _session_run(channel: dict[str, Any], event: ZfEvent, payload: dict[str, Any
     run_id = _run_id_from_payload(channel, payload)
     if not run_id:
         return {}
+    generation = _payload_int(payload.get("run_generation"), 1)
+    previous = channel["agent_session_runs"].get(run_id, {})
+    previous_generation = _payload_int(previous.get("run_generation"), 1)
+    if generation < previous_generation:
+        return {}
+    if generation > previous_generation:
+        # A retry has its own parts, timing, and provider session metadata.
+        channel["agent_session_runs"].pop(run_id, None)
     run = channel["agent_session_runs"].setdefault(run_id, {
         "run_id": run_id,
         "provider_run_id": run_id,
@@ -1390,7 +1396,7 @@ def _session_run(channel: dict[str, Any], event: ZfEvent, payload: dict[str, Any
     run.update({
         "run_id": run_id,
         "provider_run_id": _payload_str(payload, "provider_run_id") or run_id,
-        "run_generation": _payload_int(payload.get("run_generation"), _payload_int(run.get("run_generation"), 1)),
+        "run_generation": generation,
         "request_id": _payload_str(payload, "request_id") or str(run.get("request_id") or ""),
         "thread_id": _payload_str(payload, "thread_id") or str(run.get("thread_id") or "main"),
         "message_id": _payload_str(payload, "message_id") or str(run.get("message_id") or ""),
@@ -2712,7 +2718,9 @@ def _public_channel(
         channel["artifacts"][key]
         for key in sorted(channel["artifacts"], key=lambda item: str(channel["artifacts"][item].get("ts", "")))
     ]
-    agent_session_runs = _public_agent_session_runs(channel["agent_session_runs"])
+    agent_session_runs = _public_agent_session_runs(
+        channel["agent_session_runs"], reply_requests,
+    )
     typing = sorted(
         channel["typing"].values(),
         key=lambda item: (str(item.get("thread_id", "")), str(item.get("member_id", ""))),
@@ -3079,10 +3087,22 @@ def _members_with_runtime(
     return enriched
 
 
-def _public_agent_session_runs(runs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _public_agent_session_runs(
+    runs: dict[str, dict[str, Any]],
+    reply_requests: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    requests_by_run = {
+        str(reply.get("run_id") or reply.get("provider_run_id") or ""): reply
+        for reply in reply_requests
+    }
     out: list[dict[str, Any]] = []
     for run_id in sorted(runs, key=lambda key: str(runs[key].get("created_at", ""))):
         run = dict(runs[run_id])
+        reply = requests_by_run.get(run_id, {})
+        if reply and _payload_int(run.get("run_generation"), 1) != _payload_int(reply.get("run_generation"), 1):
+            # A retry owns the stable run id; older session progress cannot
+            # supply its status, presence or parts before the retry starts.
+            continue
         parts = run.get("parts") if isinstance(run.get("parts"), dict) else {}
         run["parts"] = [
             redact_obj(parts[key])
@@ -3096,6 +3116,18 @@ def _public_agent_session_runs(runs: dict[str, dict[str, Any]]) -> list[dict[str
             {},
         )
         run["active_part_id"] = str(active_part.get("part_id") or "")
+        terminal = str(reply.get("status") or "")
+        if terminal in RUN_TERMINAL_STATUSES:
+            # A reply can end without a transport terminal (e.g. supervisor
+            # supersession). Reconcile the read projection, never the ledger.
+            ended_at = str(reply.get("ended_at") or reply.get("updated_at") or "")
+            run.update(
+                status=terminal, reason=str(reply.get("reason") or run.get("reason") or ""),
+                ended_at=ended_at, updated_at=ended_at, active_part_id="",
+            )
+            for part in run["parts"]:
+                if str(part.get("state") or "") in {"streaming", "submitted", "running", "started", "delta"}:
+                    part["state"] = terminal
         out.append(redact_obj(run))
     return out
 
@@ -3148,7 +3180,7 @@ def _merge_provider_session(base: dict[str, Any], session: dict[str, Any]) -> di
         "provider": str(out.get("provider") or session.get("provider") or ""),
         "backend": str(out.get("backend") or session.get("backend") or ""),
         "provider_session_id": str(out.get("provider_session_id") or session.get("provider_session_id") or ""),
-        "live_status": session_status,
+        "live_status": base_status if base_status in terminal else session_status,
         "status": base_status if base_status in terminal else (session_status or base_status),
         "parts": session.get("parts") if isinstance(session.get("parts"), list) else [],
         "active_part_id": str(session.get("active_part_id") or ""),

@@ -538,6 +538,11 @@ def _dispatch_headless_reply(
             backends=headless_backends,
         )
     except Exception as exc:
+        if close_superseded_reply(
+            writer=writer, request=request, request_id=request_id, channel_id=channel_id,
+            started_event_id=started_event_id, actor=actor, source=source, provider_session_id="",
+        ):
+            return ChannelDispatchResult(dispatched=[request_id], skipped=[request_id])
         emit_channel_reply_failed(
             writer=writer,
             request=request,
@@ -736,6 +741,7 @@ def _run_headless_reply(
             commit_final_text=False,
             identity=AgentSessionIdentity(
                 run_id=str(run_fields["run_id"]),
+                run_generation=int(run_fields["run_generation"]),
                 thread_id=thread_id,
                 source="channel.headless",
                 actor=actor,
@@ -841,21 +847,28 @@ def _run_headless_reply(
                 permission_profile=permission_profile,
             )
 
-        result = run_channel_provider_with_continuations(
-            run_turn=run_provider_turn,
-            initial_prompt=_build_channel_prompt(
+        try:
+            result = run_channel_provider_with_continuations(
+                run_turn=run_provider_turn,
+                initial_prompt=_build_channel_prompt(
+                    channel=channel,
+                    member=member,
+                    message=message,
+                    request=request,
+                    state_dir=Path(state_dir),
+                ),
+                provider_session_id=provider_session_id,
                 channel=channel,
-                member=member,
-                message=message,
                 request=request,
-                state_dir=Path(state_dir),
-            ),
-            provider_session_id=provider_session_id,
-            channel=channel,
-            request=request,
-            message=message,
-        )
-        visible_stream.finish()
+                message=message,
+            )
+            visible_stream.finish()
+        except Exception as exc:
+            stream.fail(
+                reason=str(exc), provider_session_id=provider_session_id,
+                permission_snapshot=base_snapshot, permission_drift=drift,
+            )
+            raise
         final_snapshot = snapshot_with_provider_session(
             base_snapshot,
             str(getattr(result, "provider_session_id", "") or ""),

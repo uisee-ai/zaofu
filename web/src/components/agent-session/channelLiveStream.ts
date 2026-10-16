@@ -45,7 +45,7 @@ const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "stal
 
 /**
  * Compact a live-row buffer that outgrew its cap: text/thinking delta rows
- * merge into ONE accumulated row per (run, kind) — dropping the oldest rows
+ * merge into ONE accumulated row per (run, generation, kind) — dropping the oldest rows
  * blindly lost the reply's opening tokens on very long turns (P2c). Non-delta
  * rows (tool activity) pass through untouched.
  */
@@ -62,7 +62,7 @@ export function compactChannelLiveRows(rows: EventRecord[], limit: number): Even
       continue;
     }
     const runKey = textValue(payload.run_id) || textValue(payload.request_id);
-    const key = `${runKey}|${kind}`;
+    const key = `${runKey}|${Number(payload.run_generation ?? 1)}|${kind}`;
     const existing = merged.get(key);
     if (!existing) {
       const clone: EventRecord = { ...event, payload: { ...payload } };
@@ -115,6 +115,7 @@ export function foldChannelLiveStream(
       ?? (requestId ? runsById.get(requestId) : undefined);
     if (!entry) continue;
     const { run } = entry;
+    if (Number(payload.run_generation ?? 1) !== (run.runGeneration ?? 1)) continue;
     // Key accumulation by the RESOLVED run id (the row may have matched via
     // request_id while its run_id field is empty or diverges).
     const runKey = run.id;

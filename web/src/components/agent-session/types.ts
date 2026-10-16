@@ -191,6 +191,7 @@ export interface AgentProviderCapability {
 
 export interface AgentSessionRun {
   id: string;
+  runGeneration?: number;
   threadId: string;
   provider?: string;
   memberId?: string;
