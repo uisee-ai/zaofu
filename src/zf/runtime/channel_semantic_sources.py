@@ -7,13 +7,14 @@ import json
 from pathlib import Path
 from typing import Any
 
+from zf.core.config.schema import DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
 from zf.core.events import EventLog, EventWriter
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
 
 
 SEMANTIC_SOURCE_SCHEMA_VERSION = "channel.semantic_sources.v1"
-DEFAULT_MAX_SEMANTIC_SOURCE_CHARS = 120_000
+DEFAULT_MAX_SEMANTIC_SOURCE_CHARS = DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
 
 
 def reject_incomplete_semantic_source_bundle(
