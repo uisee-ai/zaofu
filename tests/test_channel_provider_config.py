@@ -39,7 +39,9 @@ def test_dispatch_passes_project_budget_to_actual_codex_adapter_factory(tmp_path
     writer.emit('channel.member.invited',actor='web',payload={'channel_id':'ch-file','member_id':'synth',
                 'channel_role':'synthesizer','member_type':'provider_agent','backend':'codex',
                 'permission_profile':'read_only'})
-    service.config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000,codex_context_window_tokens=650000))
+    service.config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000,codex_context_window_tokens=650000,
+                                               provider_timeout_seconds=3600))
+    monkeypatch.setenv('ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S', '180')
     result=request(service,writer,file,body)
     assert result['ok'],result
     reply=project_channel(state,'ch-file')['reply_requests'][-1]
@@ -51,4 +53,31 @@ def test_dispatch_passes_project_budget_to_actual_codex_adapter_factory(tmp_path
     assert 'model_context_window=650000' in shlex.split(adapter.command)
     started=next(e for e in writer.event_log.read_all() if e.type=='channel.agent.reply.started' and e.payload['request_id']==reply['request_id'])
     assert started.payload['codex_context_window_tokens']==650000
+    assert started.payload['provider_timeout_seconds']==3600
+    assert 1800 < adapter.calls[0]['timeout_s'] <= 3600
     assert body.rstrip() in adapter.calls[0]['prompt'].replace('\\n','\n')
+
+
+@pytest.mark.parametrize('value', [True, -1, 7201, '3600', 1.5])
+def test_invalid_provider_timeout_rejected_in_yaml_and_direct_config(tmp_path, value):
+    import json
+    path = tmp_path / 'zf.yaml'
+    path.write_text("version: '1.0'\nproject:\n  name: review\nchannel:\n  provider_timeout_seconds: "
+                    + json.dumps(value) + '\n')
+    with pytest.raises(ConfigError, match='provider_timeout_seconds'):
+        load_config(path)
+    with pytest.raises(ValueError, match='provider_timeout_seconds'):
+        ChannelConfig(provider_timeout_seconds=value)
+
+
+@pytest.mark.parametrize('value', [0, 1, 3600, 7200])
+def test_project_provider_timeout_loads_and_default_preserves_runtime_fallback(tmp_path, monkeypatch, value):
+    from zf.runtime.channel_adapter import _channel_provider_headless_timeout_s
+    path = tmp_path / 'zf.yaml'
+    path.write_text("version: '1.0'\nproject:\n  name: review\nchannel:\n  provider_timeout_seconds: "
+                    + str(value) + '\n')
+    config = load_config(path)
+    assert config.channel.provider_timeout_seconds == value
+    monkeypatch.setenv('ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S', '420')
+    assert _channel_provider_headless_timeout_s(config) == (value or 420)
+    assert ChannelConfig().provider_timeout_seconds == 0

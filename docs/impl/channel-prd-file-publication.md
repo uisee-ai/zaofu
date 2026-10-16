@@ -63,6 +63,10 @@ Owner 确认和 readiness 决定。修复回合保留原来源快照，延迟/�
 不能把该值解释为模型必定支持的容量。它仅传给 Channel 创建的 Codex app-server，
 对应 `model_context_window`，并将 `model_auto_compact_token_limit` 设为窗口的 90%。
 其他 provider、Kanban Agent、全局 Codex 设置保持原配置。实际覆盖值写入 reply.started 事件。
+`channel.provider_timeout_seconds` 单独约束一次 Channel headless provider 调用的总期限，
+允许 0–7200 的整数秒；0 保留既有运行时回退（未覆盖时1800秒），非零项目配置优先。
+同一个值传给provider并写入reply.started，供超时watchdog采用相同期限及已有回执宽限。
+增大期限不改变来源完整性、模型窗口、审批或重试次数，也不保证provider能返回结果。
 配置依据：[Codex 官方配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 
 长文档需分别核算完整生成输入和后续同版 review 输入，为输出、推理和系统提示留余量。
@@ -173,3 +177,12 @@ JSON 塞入 RPC 文本。文件通过现有 sidecar 路径、大小及摘要校�
 内联。typed phase 仅允许只读读取该指定文件，不允许探索其他文件或修改运行状态。
 agent 必须完整读取来源后才能声明消费完成；文件丢失、篡改或未读完整均不得声明通过。
 这不增加模型 token 窗口，也不取消已有 sidecar 大小限制或同版复审门禁。
+
+## 独立评估的原始文本附件
+
+同版 PRD 评估的来源阶段包含原始需求消息，以及 Owner 显式标记
+`evaluation_source_document=true` 的消息正文和它们的完整文本／JSON 附件。
+附件沿用 Channel 的线程范围、存储摘要、字节数与正文摘要校验；缺失、损坏、
+跨线程或无法按 UTF-8 解码时，评估失败，不以消息中的文件名或摘要代替正文。
+来源集合的摘要同时绑定消息与附件身份。普通讨论消息和作者候选附件不因此
+成为原始需求，仍保持先读取来源、再读取决定、最后评估目标的阶段隔离。

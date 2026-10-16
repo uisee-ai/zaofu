@@ -159,7 +159,7 @@ def dispatch_reply_request(
                 }])
         backend = str(member.get("backend") or request.get("backend") or "").strip().lower()
         if backend in HEADLESS_BACKENDS and not (_worker_session(member) or request.get("worker_session_id")) and deterministic_reply is None:
-            request = {**request, "provider_timeout_seconds": _channel_provider_headless_timeout_s(),
+            request = {**request, "provider_timeout_seconds": _channel_provider_headless_timeout_s(config),
                        "codex_context_window_tokens": config.channel.codex_context_window_tokens if config else 0}
         run_fields = provider_run_fields_for_request(channel_id, request)
         started = writer.emit(
@@ -911,7 +911,9 @@ def _run_headless_reply(
 
 
 
-def _channel_provider_headless_timeout_s() -> float:
+def _channel_provider_headless_timeout_s(config: ZfConfig | None = None) -> float:
+    if config is not None and config.channel.provider_timeout_seconds:
+        return float(config.channel.provider_timeout_seconds)
     raw = os.environ.get("ZF_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S")
     if raw is None:
         raw = os.environ.get("ZF_KANBAN_AGENT_HEADLESS_TIMEOUT_S")

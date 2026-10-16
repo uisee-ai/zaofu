@@ -10,6 +10,7 @@ from typing import Any
 
 from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
+from zf.runtime.channel_attachments import read_channel_attachment
 from zf.runtime.channel_projection import project_channel
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.output_evaluation import EvaluationInput, evaluate_output
@@ -141,6 +142,25 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
             raise ValueError("original requirement source body is incomplete")
         source_parts.append(f"[channel message {message_id}; body sha256 {digest}]\n{content}")
         source_identity.append({"message_id": message_id, "digest": digest})
+        # Original requirement attachments belong to the source stage. Ordinary
+        # conversation/author attachments must not leak the target into it.
+        for attachment in (message.get("refs") or {}).get("attachments") or []:
+            mime = str(attachment.get("mime") or attachment.get("type") or "")
+            if not (mime.startswith("text/") or mime == "application/json"):
+                continue
+            body, data = read_channel_attachment(
+                Path(host.state_dir), attachment, channel_id=channel_id, thread_id=thread_id,
+            )
+            text = data.decode("utf-8")
+            if not text.strip():
+                raise ValueError("original requirement attachment body is empty")
+            source_parts.append(
+                f"[channel source attachment {body['name']}; message {message_id}; "
+                f"sha256 {body['hash']}]\n{text}"
+            )
+            source_identity.append({"message_id": message_id, "digest": digest,
+                                    "attachment_ref": attachment["uri"],
+                                    "attachment_digest": body["hash"]})
     source = "\n\n".join(source_parts)
     source_ids = {row["message_id"] for row in source_identity}
     source_ref = "channel-source-bundle:sha256:" + hashlib.sha256(
