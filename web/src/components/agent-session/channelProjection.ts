@@ -15,6 +15,8 @@ import {
   agentRunStatus,
 } from "./agentUiEvent.js";
 
+const TERMINAL_CHANNEL_STATUSES = new Set(["completed", "failed", "cancelled", "stale"]);
+
 function textValue(value: unknown): string {
   if (value === null || value === undefined) return "";
   return String(value);
@@ -92,6 +94,12 @@ function finalizeThreads(threads: Map<string, AgentSessionThread>, activeThreadI
   const out = [...threads.values()];
   for (const thread of out) {
     const runs = thread.turns.flatMap((turn) => turn.runs);
+    for (const run of runs) {
+      if (!TERMINAL_CHANNEL_STATUSES.has(run.status)) continue;
+      for (const part of run.parts) {
+        if (["streaming", "submitted", "queued", "waiting_input"].includes(part.state)) part.state = run.status;
+      }
+    }
     const activeRun = [...runs].reverse().find((run) => ["streaming", "submitted", "queued", "waiting_input"].includes(run.status));
     const latestRun = latestRunByUpdatedAt(runs);
     thread.activeRunId = activeRun?.id;
@@ -118,7 +126,7 @@ function latestRunByUpdatedAt(runs: AgentSessionRun[]): AgentSessionRun | undefi
 function latestCompletedChannelRunsByTarget(rows: Record<string, unknown>[]): Map<string, string> {
   const latest = new Map<string, string>();
   for (const row of rows) {
-    const status = channelRunStatus(recordString(row, "live_status") || recordString(row, "status"));
+    const status = channelRunStatus(channelProviderStatus(row));
     if (status !== "completed") continue;
     const target = recordString(row, "target_member_id") || recordString(row, "member_id");
     if (!target) continue;
@@ -133,7 +141,7 @@ function isStaleFailedChannelRun(
   currentMemberIds: Set<string>,
   latestCompletedByTarget: Map<string, string>,
 ): boolean {
-  const status = channelRunStatus(recordString(row, "live_status") || recordString(row, "status"));
+  const status = channelRunStatus(channelProviderStatus(row));
   if (status !== "failed") return false;
   const target = recordString(row, "target_member_id") || recordString(row, "member_id");
   if (!target) return false;
@@ -282,6 +290,7 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
     const status = channelWorkingStatus(recordString(request, "status", "pending"));
     const run = ensureRun(turn, runId, {
       provider: recordString(request, "provider") || recordString(request, "backend"),
+      runGeneration: Number(request.run_generation ?? 1),
       memberId: recordString(request, "target_member_id"),
       status,
       updatedAt: recordString(request, "updated_at") || recordString(request, "created_at"),
@@ -375,9 +384,10 @@ export function buildChannelConversation(detail: ChannelDetail | null, selectedC
       recordString(providerRun, "message_id") || requestId,
       recordString(providerRun, "created_at") || recordString(providerRun, "started_at"),
     );
-    const status = channelWorkingStatus(recordString(providerRun, "live_status") || recordString(providerRun, "status", "pending"));
+    const status = channelWorkingStatus(channelProviderStatus(providerRun));
     const run = ensureRun(turn, runId, {
       provider: recordString(providerRun, "provider") || recordString(providerRun, "backend"),
+      runGeneration: Number(providerRun.run_generation ?? 1),
       memberId: recordString(providerRun, "target_member_id") || recordString(providerRun, "member_id"),
       status,
       updatedAt: recordString(providerRun, "updated_at") || recordString(providerRun, "started_at"),
@@ -546,6 +556,14 @@ function findRunByMessagePart(threads: Map<string, AgentSessionThread>, messageI
 
 function channelRunStatus(value: string): AgentSessionStatus {
   return agentRunStatus(value);
+}
+
+function channelProviderStatus(row: Record<string, unknown>): string {
+  const status = recordString(row, "status");
+  // Business terminal facts outrank transport progress, including older API
+  // snapshots where live_status still says streaming after supersession.
+  if (TERMINAL_CHANNEL_STATUSES.has(status)) return status;
+  return recordString(row, "live_status") || status || "pending";
 }
 
 // pending/queued on a reply-request or provider-run row means the member is

@@ -21,6 +21,7 @@ from typing import Any, Callable, Iterable
 from zf.core.events import EventWriter, ZfEvent
 from zf.runtime.channel_reply_queue import current_review_reply_bindings
 from zf.runtime.channel_cross_review_outcomes import rejected_review_reply
+from zf.runtime.channel_run_owner import stale_reply_transition
 
 CHANNEL_REPLY_STUCK_AFTER_SECONDS = 900
 CHANNEL_REPLY_MAX_GENERATION = 3
@@ -206,7 +207,7 @@ def fold_channel_reply_states(events: Iterable[ZfEvent]) -> dict[tuple[str, str]
         })
         current = _positive_int(item.get("run_generation"), default=1)
         incoming = _positive_int(payload.get("run_generation"), default=current)
-        if event.type != _REQUESTED and "run_generation" in payload and incoming < current:
+        if stale_reply_transition(item, generation=incoming, status=status):
             continue
         if event.type == _REQUESTED and incoming > current:
             item.update({

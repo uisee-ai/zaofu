@@ -112,10 +112,18 @@ def close_superseded_reply(
     provider_session_id: str,
 ) -> bool:
     """Close a late attempt before it can publish a reply body or contract."""
-    if reply_generation_is_current(
-        writer.event_log.read_all(), channel_id=channel_id, request=request,
-    ):
-        return False
+    events = writer.event_log.read_all()
+    if reply_generation_is_current(events, channel_id=channel_id, request=request):
+        from zf.runtime.channel_projection import project_channel
+        from zf.runtime.channel_run_owner import RUN_TERMINAL_STATUSES
+
+        channel = project_channel(writer.event_log.path.parent, channel_id, events=events) or {}
+        # Supervisor/cancel can settle this very generation while the provider
+        # is still returning. Its late answer must not reopen the request.
+        return any(
+            item.get("request_id") == request_id and item.get("status") in RUN_TERMINAL_STATUSES
+            for item in channel.get("reply_requests", [])
+        )
     emit_channel_reply_failed(
         writer=writer, request=request, request_id=request_id,
         started_event_id=started_event_id, actor=actor, source=source,

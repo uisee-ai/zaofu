@@ -11,6 +11,22 @@ RUN_BUSY_STATUSES = frozenset({"running", "started"})
 RUN_TERMINAL_STATUSES = frozenset({"completed", "failed", "cancelled", "stale"})
 
 
+def stale_reply_transition(
+    current: dict[str, Any], *, generation: int, status: str,
+) -> bool:
+    """Share terminal/generation ordering between UI and recovery folds.
+
+    A completed transport may still receive a contract failure verdict.
+    Preserve failure updates, but require a new generation to resume work.
+    """
+    current_generation = _positive_int(current.get("run_generation"), default=1)
+    return generation < current_generation or (
+        generation == current_generation
+        and current.get("status") in RUN_TERMINAL_STATUSES
+        and status != "failed"
+    )
+
+
 def stable_provider_run_id(
     *,
     channel_id: str,
