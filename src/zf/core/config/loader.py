@@ -168,6 +168,8 @@ from zf.core.config.schema import (  # noqa: E402
     IntegrationsConfig,
     ChannelAgentProfileConfig,
     ChannelConfig,
+    DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS,
+    MAX_CHANNEL_SEMANTIC_SOURCE_CHARS,
     FeishuIdentityConfig,
     FeishuIdentityUserConfig,
     FeishuProjectGroupConfig,
@@ -4541,9 +4543,12 @@ def _build_channel(data: object) -> ChannelConfig:
             )
         except (TypeError, ValueError) as exc:
             raise ConfigError(f"{context}: {exc}") from exc
-    budget = data.get("semantic_source_max_chars", 120_000)
-    if type(budget) is not int or not 1 <= budget <= 1_000_000:
-        raise ConfigError("channel.semantic_source_max_chars must be an integer between 1 and 1000000")
+    budget = data.get("semantic_source_max_chars", DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS)
+    if type(budget) is not int or not 1 <= budget <= MAX_CHANNEL_SEMANTIC_SOURCE_CHARS:
+        raise ConfigError(
+            "channel.semantic_source_max_chars must be an integer between 1 and "
+            f"{MAX_CHANNEL_SEMANTIC_SOURCE_CHARS}"
+        )
     context_window = data.get("codex_context_window_tokens", 0)
     if type(context_window) is not int or not 0 <= context_window <= 1_000_000:
         raise ConfigError("channel.codex_context_window_tokens must be an integer between 0 and 1000000")

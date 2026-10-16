@@ -14,7 +14,15 @@ from zf.runtime.channel_contracts import (
     permission_profile_write_policy,
 )
 from zf.runtime.channel_reply_contract import channel_reply_response_contract
-from zf.runtime.channel_sidecar import hydrate_channel_context_pack_payload
+from zf.runtime.channel_sidecar import (
+    channel_payload_sidecar_descriptor,
+    hydrate_channel_context_pack_payload,
+)
+from zf.runtime.sidecar_refs import safe_sidecar_ref, sidecar_path, verify_sidecar_ref
+
+
+# Leave room for the response contract below the provider's text-input limit.
+MAX_INLINE_CONTEXT_CHARS = 750_000
 
 
 def build_channel_provider_prompt(
@@ -95,6 +103,26 @@ def build_channel_provider_prompt(
         ),
         "",
     )
+    context_view = redact_obj(_intern_cross_review_coverage(context_pack))
+    source_file = ""
+    if (state_dir is not None and context_pack.get("context_pack_ref")
+            and len(str(context_view)) > MAX_INLINE_CONTEXT_CHARS):
+        # channel_context_pack_by_id strictly verifies this immutable sidecar.
+        # Reuse its complete body; do not summarize or rewrite canonical sources.
+        descriptor = channel_payload_sidecar_descriptor(context_pack, "context_pack") or {
+            "ref": context_pack["context_pack_ref"],
+            "sha256": context_pack.get("context_pack_sha256"),
+            "byte_count": context_pack.get("context_pack_byte_count"),
+        }
+        verified = verify_sidecar_ref(state_dir, descriptor)
+        source_file = str(sidecar_path(
+            state_dir, safe_sidecar_ref(verified["ref"]),
+        ).resolve())
+        context_view = {
+            "context_pack_id": context_pack.get("context_pack_id"),
+            "context_pack_sha256": verified["sha256"],
+            "complete_context_file": source_file,
+        }
     lines = [
         "ZaoFu Agent Channel reply request",
         "Attachment contract: native image inputs are supplied only for verified stored images in context_pack.artifact_refs. "
@@ -108,18 +136,37 @@ def build_channel_provider_prompt(
         f"permission_profile: {normalize_permission_profile(member.get('permission_profile'))}",
         f"write_policy: {redact_obj(write_policy)}",
         f"skill_refs: {redact_obj(skill_refs)}",
-        f"context_pack: {redact_obj(_intern_cross_review_coverage(context_pack))}",
+        f"context_pack: {context_view}",
         f"agent_context: {redact_obj(agent_context)}",
     ]
     if semantic_source_instruction:
         lines.append(f"semantic_source_instruction: {semantic_source_instruction}")
+    if source_file:
+        lines.append(
+            "context_file_instruction: The complete context_pack is supplied in the exact "
+            "complete_context_file above, bound by context_pack_sha256. Read that JSON file "
+            "with read-only tools in bounded chunks, including every semantic_source_documents "
+            "body and all manifests, before responding. Verify its SHA256; if it is missing, "
+            "changed, unreadable, or not fully consumed, report the failure and do not attest "
+            "all_required_sources_read. No source has been omitted or summarized. The inline "
+            "context_pack identity/digest binds the file; references below to context_pack "
+            "fields mean its full JSON contents. This grants read access to this supplied "
+            "evidence only, not permission to edit it or explore other project/runtime files."
+        )
     if typed_phase_ref:
+        tool_constraint = (
+            "Use read-only tools only to read and verify complete_context_file as instructed "
+            "above. Do not inspect any other project files, prior Channel state, event logs, "
+            "skills, or external sources. "
+            if source_file else
+            "Do not inspect the project filesystem, prior Channel state, event logs, skills, "
+            "or external sources. Do not call tools. "
+        )
         lines.append(
             "typed_phase_constraint: This is a self-contained, bounded "
             f"{typed_phase_ref} operation. The supplied context_pack is the "
-            "complete authoritative evidence set. Do not inspect the project "
-            "filesystem, prior Channel state, event logs, skills, or external "
-            "sources. Do not call tools. Apply the supplied context_pack.skill_guidance "
+            "complete authoritative evidence set. "
+            f"{tool_constraint}Apply the supplied context_pack.skill_guidance "
             "as methods within the response contract and source requirements; "
             "method guidance does not add product scope or grant actions. Derive the required response solely "
             "from the supplied context_pack and trigger message."

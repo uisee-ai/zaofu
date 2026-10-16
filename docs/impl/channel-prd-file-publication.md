@@ -148,3 +148,28 @@ PYTHONPATH=src:. .venv/bin/python tests/e2e/channel_collaboration_browser_fixtur
 `ZF_E2E_CHROMIUM_EXECUTABLE_PATH` 指向容器内 `/ms-playwright/chromium-*/chrome-linux64/chrome`。
 测试使用固定的隔离测试 token，不读取生产 token。结束时 SIGTERM fixture 进程，
 fixture 会写入 `simulation.done`；保留需要的证据后删除临时 state/workspace。
+
+## 大型完整来源的配置预算
+
+`channel.semantic_source_max_chars` 限制一次完整语义来源集合的字符数，包含讨论正文、
+文本附件、选中文件和复审工件，不只是单个 PRD 的大小。全局默认为 `2000000`，可配置
+范围为 `1..10000000` 的整数；YAML loader 与直接构造 `ChannelConfig` 使用相同上限。
+较大的项目可按实际 rejection 中的来源总量设置，例如 `2000000`；复审还会携带完整
+PRD 工件，需为其预留容量。超过项目配置值仍拒绝整次请求，不截断正文或省略来源。
+
+未显式设置该字段的所有项目、直接构造的配置和无配置运行时路径均采用同一默认值；
+项目显式覆盖值仍优先，不自动重写已有配置。提高此值不会提高 provider 的 token 窗口、取消
+文件预览大小限制、跳过摘要校验、独立复审或 Owner 门禁。字符预算不是 token 预算；
+较大上下文可能增加内存、模型读取时间和费用，应按实际业务量配置。修改允许范围的
+代码后须重启使用该代码的 Web/运行时，再加载项目配置；仅更新磁盘文件不代表常驻
+进程已经更新。
+
+回归覆盖：YAML/typed 边界与默认值、超过100万字符的完整来源保留，以及大文件经过
+受控发布、不可变快照、review reactor/fake provider、Owner 风险门和幂等重放的流程。
+
+Codex 实测另有单次文本输入长度限制。Channel 完整上下文超过750000字符时，本地
+headless provider 使用已有的不可变 context-pack 文件与 SHA256 读取全文，避免把整个
+JSON 塞入 RPC 文本。文件通过现有 sidecar 路径、大小及摘要校验后才交付；普通输入仍
+内联。typed phase 仅允许只读读取该指定文件，不允许探索其他文件或修改运行状态。
+agent 必须完整读取来源后才能声明消费完成；文件丢失、篡改或未读完整均不得声明通过。
+这不增加模型 token 窗口，也不取消已有 sidecar 大小限制或同版复审门禁。

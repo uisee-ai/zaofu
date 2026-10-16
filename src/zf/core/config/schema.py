@@ -1789,6 +1789,10 @@ class ChannelAgentProfileConfig:
             )
 
 
+DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS = 2_000_000
+MAX_CHANNEL_SEMANTIC_SOURCE_CHARS = 10_000_000
+
+
 @dataclass
 class ChannelConfig:
     """Project-level Channel product configuration."""
@@ -1796,12 +1800,18 @@ class ChannelConfig:
     agent_profiles: dict[str, ChannelAgentProfileConfig] = field(
         default_factory=dict
     )
-    semantic_source_max_chars: int = 120_000
+    semantic_source_max_chars: int = DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
     codex_context_window_tokens: int = 0  # 0 preserves the provider's model default.
 
     def __post_init__(self) -> None:
-        if type(self.semantic_source_max_chars) is not int or not 1 <= self.semantic_source_max_chars <= 1_000_000:
-            raise ValueError("channel.semantic_source_max_chars must be an integer between 1 and 1000000")
+        if (
+            type(self.semantic_source_max_chars) is not int
+            or not 1 <= self.semantic_source_max_chars <= MAX_CHANNEL_SEMANTIC_SOURCE_CHARS
+        ):
+            raise ValueError(
+                "channel.semantic_source_max_chars must be an integer between 1 and "
+                f"{MAX_CHANNEL_SEMANTIC_SOURCE_CHARS}"
+            )
         if type(self.codex_context_window_tokens) is not int or not 0 <= self.codex_context_window_tokens <= 1_000_000:
             raise ValueError("channel.codex_context_window_tokens must be an integer between 0 and 1000000")
 

@@ -16,7 +16,7 @@ from zf.runtime.channel_document_source import ChannelDocumentError
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
 
 
-def setup(tmp_path, monkeypatch):
+def setup(tmp_path, monkeypatch, *, source_rows=10_000, source_budget=1_000_000):
     monkeypatch.setattr("zf.runtime.control_actions_channel_msg.dispatch_channel_replies_background", lambda **kw: None)
     state = tmp_path / "custom-state"
     writer = EventWriter(EventLog(state / "events.jsonl"))
@@ -33,12 +33,12 @@ def setup(tmp_path, monkeypatch):
     writer.emit("channel.agent.reply.failed", actor="test", payload={"channel_id": "ch-file", "thread_id": "main",
                 "request_id": "old-dba", "status": "cancelled", "reason": "cancelled by operator"})
     file = tmp_path / "PRD.r2.md"
-    body = "# Complete PRD\n\n## Behavior\n" + "Full source row.\n" * 10000 + "\nEND OF FILE\n"
+    body = "# Complete PRD\n\n## Behavior\n" + "Full source row.\n" * source_rows + "\nEND OF FILE\n"
     file.write_text(body)
     writer.emit("channel.message.posted", actor="synth", payload={"channel_id": "ch-file", "thread_id": "main",
                 "message_id": "delivery", "member_id": "synth", "text": f"Saved [PRD]({file})"})
     service = ControlledActionService(state, writer, project_root=tmp_path, actor="web", source="web", surface="web",
-                                     config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000)))
+                                     config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=source_budget)))
     return state, writer, service, file, body
 
 
@@ -50,8 +50,13 @@ def request(service, writer, file, body):
 
 
 @pytest.mark.parametrize("deferred", [False, True])
-def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp_path, monkeypatch, deferred):
-    state, writer, service, file, body = setup(tmp_path, monkeypatch)
+@pytest.mark.parametrize("source_rows, source_budget", [(10_000, 1_000_000), (90_000, 4_000_000)])
+def test_controlled_file_publication_preserves_full_body_and_requires_review(
+    tmp_path, monkeypatch, deferred, source_rows, source_budget,
+):
+    state, writer, service, file, body = setup(
+        tmp_path, monkeypatch, source_rows=source_rows, source_budget=source_budget,
+    )
     if deferred:
         writer.emit("channel.question.opened", actor="dba", payload={
             "channel_id": "ch-file", "thread_id": "main", "question_id": "q-db",
@@ -111,7 +116,7 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(tmp
     from zf.runtime.channel_synthesis_reactor import react_channel_consensus_proposed
     from zf.runtime.channel_discussion import advance_discussion
     host = SimpleNamespace(state_dir=state, event_log=writer.event_log, event_writer=writer,
-                           project_root=tmp_path, config=ZfConfig(channel=ChannelConfig(semantic_source_max_chars=1_000_000)),
+                           project_root=tmp_path, config=service.config,
                            openclaw_client=None)
     proposal = next(e for e in events if e.type == "channel.consensus.proposed")
     react_channel_consensus_proposed(host, proposal)
