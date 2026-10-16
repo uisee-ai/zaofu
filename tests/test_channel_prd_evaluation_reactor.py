@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from zf.core.events import EventLog, EventWriter
+from zf.runtime.channel_attachments import capture_channel_attachment
 from zf.runtime.channel_contract_artifacts import persist_channel_prd, persist_channel_prd_readiness
 from zf.runtime.channel_prd_evaluation_reactor import _version_evidence, react_channel_prd_evaluation_requested
 from zf.runtime.channel_sidecar import channel_message_event_payload
@@ -18,7 +19,8 @@ from zf.runtime.channel_prd_document import render_prd_document
 from zf.runtime.orchestrator_reactor import EventReactorMixin
 
 
-def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeypatch):
+@pytest.mark.parametrize("attachment_fault", ["", "missing", "tampered", "scope"])
+def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeypatch, attachment_fault):
     state = tmp_path / "state"
     state.mkdir()
     log = EventLog(state / "events.jsonl")
@@ -36,15 +38,29 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
     writer.emit("channel.discussion.started", actor="web", correlation_id=channel_id, payload={
         "channel_id": channel_id, "thread_id": thread_id,
         "requirement_message_id": "source-1", "mode": "multi_lens"})
+    attachment_text = "# 原始业务附件\n完整保留车辆转移与库存回滚规则。\nEND-OF-REQUIREMENT"
+    attachment = capture_channel_attachment(
+        state, channel_id=channel_id,
+        thread_id="other" if attachment_fault == "scope" else thread_id,
+        name="original.md", mime="text/markdown", data=attachment_text.encode())
+    attachment_path = state / attachment["body_ref"]["ref"]
+    if attachment_fault == "missing":
+        attachment_path.unlink()
+    elif attachment_fault == "tampered":
+        attachment_path.write_text("tampered")
     full_source = channel_message_event_payload(state, {
         "channel_id": channel_id, "thread_id": thread_id, "message_id": "source-2",
         "member_id": "operator", "role": "user", "text": "完整来源：权限之外还有失败回滚。",
-        "refs": {"evaluation_source_document": True}}, created_by="test")
+        "refs": {"evaluation_source_document": True, "attachments": [attachment]}}, created_by="test")
     writer.emit("channel.message.posted", actor="web", correlation_id=channel_id,
                 payload=full_source)
+    target_attachment = capture_channel_attachment(
+        state, channel_id=channel_id, thread_id=thread_id, name="candidate.md",
+        mime="text/markdown", data=b"AUTHOR-TARGET-MUST-NOT-ENTER-SOURCE")
     ordinary = channel_message_event_payload(state, {
         "channel_id": channel_id, "thread_id": thread_id, "message_id": "owner-comment",
-        "member_id": "operator", "role": "user", "text": "稍后考虑其他问题。"},
+        "member_id": "operator", "role": "user", "text": "稍后考虑其他问题。",
+        "refs": {"attachments": [target_attachment]}},
         created_by="test")
     writer.emit("channel.message.posted", actor="web", correlation_id=channel_id,
                 payload=ordinary)
@@ -97,12 +113,31 @@ def test_reactor_dispatches_independent_source_and_target_once(tmp_path, monkeyp
         return {"verdict": "INDETERMINATE"}
 
     monkeypatch.setattr("zf.runtime.channel_prd_evaluation_reactor.evaluate_output", fake_evaluate_output)
+    if attachment_fault:
+        class InlineThread:
+            def __init__(self, *, target, **kwargs):
+                self.target = target
+
+            def start(self):
+                self.target()
+
+        monkeypatch.setattr("zf.runtime.channel_prd_evaluation_reactor.threading.Thread", InlineThread)
     EventReactorMixin._on_channel_prd_evaluation_requested(host, request)
+    if attachment_fault:
+        assert not captured
+        failures = [row for row in log.read_all() if row.type == "output.evaluation.failed"]
+        assert len(failures) == 1
+        assert failures[0].payload["verdict"] == "INDETERMINATE"
+        assert "attachment" in failures[0].payload["reason"].lower()
+        return
     assert called.wait(3)
     EventReactorMixin._on_channel_prd_evaluation_requested(host, request)
     assert len(captured) == 1
     assert "原始要求：必须保留权限。" in captured[0].source_text
     assert "完整来源：权限之外还有失败回滚。" in captured[0].source_text
+    assert attachment_text in captured[0].source_text
+    assert attachment["hash"] in captured[0].source_text
+    assert "AUTHOR-TARGET-MUST-NOT-ENTER-SOURCE" not in captured[0].source_text
     assert "稍后考虑其他问题。" not in captured[0].source_text
     assert "稍后考虑其他问题。" in captured[0].decision_text
     assert "CANONICAL MARKDOWN:\n# 最终 PRD" in captured[0].target_text

@@ -1802,6 +1802,7 @@ class ChannelConfig:
     )
     semantic_source_max_chars: int = DEFAULT_CHANNEL_SEMANTIC_SOURCE_CHARS
     codex_context_window_tokens: int = 0  # 0 preserves the provider's model default.
+    provider_timeout_seconds: int = 0  # 0 preserves the existing runtime default.
 
     def __post_init__(self) -> None:
         if (
@@ -1814,6 +1815,8 @@ class ChannelConfig:
             )
         if type(self.codex_context_window_tokens) is not int or not 0 <= self.codex_context_window_tokens <= 1_000_000:
             raise ValueError("channel.codex_context_window_tokens must be an integer between 0 and 1000000")
+        if type(self.provider_timeout_seconds) is not int or not 0 <= self.provider_timeout_seconds <= 7200:
+            raise ValueError("channel.provider_timeout_seconds must be an integer between 0 and 7200")
 
 
 @dataclass
