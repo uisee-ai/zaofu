@@ -12,6 +12,7 @@ from zf.core.events import ZfEvent
 from zf.core.state.locks import locked_path
 from zf.runtime.channel_attachments import read_channel_attachment
 from zf.runtime.channel_projection import project_channel
+from zf.runtime.channel_prd_quality import validate_prd_quality_contract
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.output_evaluation import EvaluationInput, evaluate_output
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -83,6 +84,12 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
         purpose="independent-prd-evaluation", actor="output-evaluator",
     ).payload
     body = document.get("body") if isinstance(document, dict) else {}
+    synthesis = body.get("synthesis") if isinstance(body, dict) else {}
+    quality_error = validate_prd_quality_contract(
+        synthesis if isinstance(synthesis, dict) else {}
+    )
+    if quality_error:
+        raise ValueError(f"canonical PRD quality contract invalid: {quality_error}")
     target = _evaluation_target(body if isinstance(body, dict) else {})
     if any(document.get(key) != value for key, value in {
         "channel_id": channel_id, "thread_id": thread_id,

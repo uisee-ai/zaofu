@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.channel_sidecar import hydrate_channel_context_pack_payload
+from zf.runtime.channel_prd_quality import contribution_ledgers
 from zf.runtime.sidecar_refs import SidecarRefError
 
 
@@ -122,7 +123,10 @@ def expand_prd_source_attestation(
                   if isinstance(row, dict) and row.get("status") == "completed"]
     # Use only identities from the attested pack. The existing current-source
     # gate still rejects newly required artifacts absent from this snapshot.
+    consumed_refs = list(dict.fromkeys(str(row["artifact_ref"]) for row in artifacts if row.get("artifact_ref")))
+    ledgers = contribution_ledgers(pack, consumed_refs)
     return {**synthesis,
             "consumed_message_digests": list(pack.get("semantic_source_required_digests") or []),
-            "consumed_contribution_refs": list(dict.fromkeys(str(row["artifact_ref"]) for row in artifacts if row.get("artifact_ref"))),
-            "consumed_contribution_digests": list(dict.fromkeys(str(row["artifact_digest"]) for row in artifacts if row.get("artifact_digest")))}, ""
+            "consumed_contribution_refs": consumed_refs,
+            "consumed_contribution_digests": list(dict.fromkeys(str(row["artifact_digest"]) for row in artifacts if row.get("artifact_digest"))),
+            **ledgers}, ""

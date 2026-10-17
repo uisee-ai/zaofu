@@ -34,6 +34,19 @@ Owner 确认和 Task/Workflow 权限门禁。没有新建另一套 PRD 状态机
 Owner 确认和 readiness 决定。修复回合保留原来源快照，延迟/重复回复继续遵守
 既有 currentness 和幂等规则。
 
+## 跨层质量合同
+
+质量增强版 synthesis 使用 `quality_contract=channel-prd-quality.v1`。Runtime 在发布和
+独立评估前执行同一组机械校验：`source_attestation` 必须与来源读取状态及附件可读状态
+一致；`requirement_coverage` 每行必须有直接 `evidence_refs`；研究行必须写明采用结论和
+适用边界；`consumed_contribution_refs` 必须由互斥的 `canonical_cross_review_refs` 与
+`supporting_contribution_refs` 完整分账；权限审计必须声明拒绝默认、事件字段、查询字段、
+留存策略和责任人。校验失败不会进入 provider 评估，避免评估器在冻结清单与目标 PRD
+互相矛盾时产生误导性结果。
+
+Owner 未决问题仍可发布可评审草案，但 synthesis 会标记 `owner_gate=blocked`、
+`canonical_status=draft`，不会自动提出同版 consensus；问题解决后必须重新生成当前版本。
+
 文件快照减少重复输出长正文，但不降低语义来源上下文预算，也不替代独立内容评审。
 如果历史讨论超出已配置来源预算，仍应报告具体 context 拒绝原因，不能忽略来源门禁。
 

@@ -1392,6 +1392,8 @@ def test_synthesis_open_questions_block_consensus_and_preserve_requirement(
         event.type == "channel.consensus.proposed"
         for event in events
     )
+    assert synthesis.payload["owner_gate"] == "blocked"
+    assert synthesis.payload["canonical_status"] == "draft"
     artifact = (
         state_dir / synthesis.payload["artifact_ref"]
     ).read_text(encoding="utf-8")
