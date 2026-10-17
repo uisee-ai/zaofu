@@ -525,6 +525,17 @@ def _emit_synthesis_locked(
         ],
         "next_round": next_round,
     }
+    open_thread_questions = any(
+        isinstance(question, dict)
+        and str(question.get("thread_id") or "main") == thread_id
+        and str(question.get("status") or "") == "open"
+        for question in channel.get("open_questions") or []
+    )
+    owner_gate = "blocked" if question_records or open_thread_questions else "clear"
+    typed_synthesis.update({
+        "owner_gate": owner_gate,
+        "canonical_status": "draft" if owner_gate == "blocked" else "reviewable",
+    })
     contract_descriptor = persist_channel_contract(
         state_dir,
         channel_id=channel_id,
@@ -622,6 +633,12 @@ def _emit_synthesis_locked(
             "consumed_contribution_digests": typed_synthesis[
                 "consumed_contribution_digests"
             ],
+            "canonical_cross_review_refs": typed_synthesis.get(
+                "canonical_cross_review_refs", []
+            ),
+            "supporting_contribution_refs": typed_synthesis.get(
+                "supporting_contribution_refs", []
+            ),
             "consumed_message_digests": typed_synthesis[
                 "consumed_message_digests"
             ],
@@ -638,6 +655,8 @@ def _emit_synthesis_locked(
             "confidence": _display_value(synthesis.get("confidence")),
             "dissent": typed_items(synthesis.get("dissent")),
             "next_round": next_round,
+            "owner_gate": typed_synthesis["owner_gate"],
+            "canonical_status": typed_synthesis["canonical_status"],
             "source": source,
         },
     )

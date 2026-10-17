@@ -26,6 +26,13 @@ PRD、review 或 Workflow 阶段；如已有完整文件，给出群内可预览
 
 实现与操作约束见 `docs/impl/channel-prd-file-publication.md`。
 
+质量增强版 synthesis 必须声明 `quality_contract=channel-prd-quality.v1`。需求覆盖表逐行
+提供直接 `evidence_refs`，研究项补充 `adopted_conclusion` 与 `applicability_limit`；来源
+attestation 的读取状态不能与 partial/不可读 artifact 同时出现。贡献物分为互斥的
+`canonical_cross_review_refs` 和 `supporting_contribution_refs`，两者并集必须等于消费列表。
+同时提供 `permission_audit_contract`，明确 `deny_by_default`、审计事件字段、查询字段、
+留存策略和责任人。Owner 问题未解决时允许交付草案用于评审，但不得把草案当作最终共识。
+
 ## Phase 2 开场:台账去重
 
 盲答后的问题可能重叠。收到去重请求后，读取 context pack 中完整问题台账，

@@ -494,3 +494,6 @@ def test_channel_synthesis_prompt_requires_readiness_and_verification() -> None:
     assert "instead of relying on downstream defaults" in prompt
     assert "Pending Owner/consensus confirmation is not a product readiness gap" in prompt
     assert "explicit planning-only restriction" in prompt
+    assert "direct evidence_refs" in prompt
+    assert "permission_audit_contract" in prompt
+    assert "canonical_cross_review_refs" in prompt

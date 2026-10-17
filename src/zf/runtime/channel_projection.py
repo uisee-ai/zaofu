@@ -2520,6 +2520,12 @@ def _apply_synthesis(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
         "consumed_contribution_digests": _string_list(
             payload.get("consumed_contribution_digests")
         ),
+        "canonical_cross_review_refs": _string_list(
+            payload.get("canonical_cross_review_refs")
+        ),
+        "supporting_contribution_refs": _string_list(
+            payload.get("supporting_contribution_refs")
+        ),
         "consumed_message_digests": _string_list(
             payload.get("consumed_message_digests")
         ),
@@ -2537,6 +2543,8 @@ def _apply_synthesis(channel: dict[str, Any], event: ZfEvent, payload: dict[str,
         ),
         "confidence": _payload_str(payload, "confidence"),
         "dissent": payload.get("dissent") if isinstance(payload.get("dissent"), list) else [],
+        "owner_gate": _payload_str(payload, "owner_gate"),
+        "canonical_status": _payload_str(payload, "canonical_status"),
     }
     channel["syntheses"].append(redact_obj(item))
 

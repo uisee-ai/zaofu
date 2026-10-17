@@ -67,6 +67,10 @@ def validate_channel_contract(
         document_error = validate_prd_document(body)
         if document_error:
             return document_error
+        from zf.runtime.channel_prd_quality import validate_prd_quality_contract
+        quality_error = validate_prd_quality_contract(body)
+        if quality_error:
+            return quality_error
         _, next_round_error = normalize_synthesis_next_round(
             body.get("next_round")
         )
