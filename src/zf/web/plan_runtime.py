@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from zf.core.events import EventWriter, ZfEvent
 from zf.core.security.redaction import redact_obj
@@ -27,6 +27,34 @@ from zf.web.projections.common import _action_failed
 class HeadlessPlanDraft:
     request: dict[str, Any]
     event: ZfEvent
+
+
+def prepare_headless_action_reply(
+    result: Any, *, events: Iterable[ZfEvent], payload: dict[str, Any], message: str,
+    project_id: str, conversation_id: str, thread_key: str, turn_id: str,
+    message_event_id: str, validate_payload: Callable[[str, dict[str, Any]], str],
+) -> tuple[Any, dict[str, Any] | None]:
+    """Bind action output to its owner input and expose malformed envelopes."""
+    from zf.web.proposal_extraction import extract_action_proposal, action_proposal_format_error
+
+    proposal = extract_action_proposal(
+        result.reply,
+        user_message=plan_proposal_user_message(events, payload=payload, message=message),
+        proposal_context={
+            "project_id": project_id,
+            "conversation_id": conversation_id,
+            "thread_id": thread_key or result.thread_id,
+            "run_id": turn_id,
+            "causation_id": message_event_id,
+            "plan_continuation": payload.get("plan_response") or payload.get("plan_discussion") or {},
+        },
+        validate_payload=validate_payload,
+    )
+    if result.ok and proposal is None:
+        error = action_proposal_format_error(result.reply)
+        if error:
+            result = replace(result, ok=False, status="failed", error=error)
+    return result, proposal
 
 
 def task_contract_context_for_plan(
@@ -164,7 +192,7 @@ def prepare_web_plan_discussion(
         request_event_id=str(discussion.get("request_event_id") or ""),
         request_id=str(gate.get("request_id") or ""),
         revision=int(gate.get("revision") or 1),
-    ):
+    ) and not _answered_plan_can_continue(events, str(discussion.get("request_event_id") or "")):
         return payload, _action_failed(
             writer,
             requested=requested,
@@ -212,6 +240,11 @@ def prepare_web_plan_discussion(
         "request_valid": bool(request.get("valid")),
         "validation_error": str(request.get("validation_error") or ""),
         "validation_errors": redact_obj(request.get("validation_errors") or []),
+        "submitted_answers": redact_obj(next((
+            event.payload.get("answers") or [] for event in events
+            if event.type == PLAN_ANSWERED_EVENT
+            and event.payload.get("request_event_id") == discussion.get("request_event_id")
+        ), [])),
     }
     return {
         **payload,
@@ -492,7 +525,7 @@ def prepare_headless_plan_draft(
         return None, action_proposal
     discussion = _origin_plan_discussion(
         event_list,
-        originating_message_event_id,
+        source_cutoff,
     )
     if discussion:
         discussion_gate = plan_request_gate(
@@ -619,6 +652,25 @@ def _bound_plan_context_patch(
     return context_patch, ""
 
 
+def _answered_plan_can_continue(events: list[ZfEvent], request_event_id: str) -> bool:
+    """Revalidate the recorded answer; only non-executing choices can continue."""
+    answered = next((event for event in events
+                     if event.type == PLAN_ANSWERED_EVENT
+                     and event.payload.get("request_event_id") == request_event_id), None)
+    if answered is None:
+        return False
+    response = answered.payload
+    gate = plan_response_gate(
+        [event for event in events if event.id != answered.id],
+        request_event_id=request_event_id,
+        request_id=str(response.get("request_id") or ""), revision=response.get("revision"),
+        question_id=str(response.get("question_id") or ""),
+        option_id=str(response.get("option_id") or ""), answer=str(response.get("answer") or ""),
+        answers=response.get("answers"),
+    )
+    return bool(gate.get("ok") and gate.get("submit_mode") == "continue" and not gate.get("submit_action"))
+
+
 def _plan_already_answered(
     events: Iterable[ZfEvent],
     *,
@@ -668,7 +720,16 @@ def _origin_plan_discussion(
         else {}
     )
     discussion = request.get("plan_discussion")
-    return discussion if isinstance(discussion, dict) else {}
+    if isinstance(discussion, dict):
+        return discussion
+    response = request.get("plan_response")
+    if isinstance(response, dict) and any(
+        row.get("option_id") == "other"
+        for row in response.get("answers") or [response]
+        if isinstance(row, dict)
+    ):
+        return response
+    return {}
 
 
 __all__ = [

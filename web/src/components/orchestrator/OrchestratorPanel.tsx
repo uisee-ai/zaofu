@@ -38,7 +38,7 @@ import {
 } from "../../components/webchat/webChatInteractionModel";
 import { buildKanbanConversation } from "../../components/agent-session/projection";
 import { proposalRunNotice } from "../../app/triageProposals";
-import { planDiscussionBackend } from "../../app/kanbanAgentInteractionPolicy";
+import { planDiscussionBackend, profileRegistrationContinuation } from "../../app/kanbanAgentInteractionPolicy";
 import { projectionNeedsFresh } from "../../app/pageLoadPolicy";
 import {
   defaultKanbanThreadKey,
@@ -1294,12 +1294,22 @@ export function OrchestratorPanel({
         await refreshWebChatResources();
       }
       setOperatorError("");
+      await continueChannelSetup(proposal.action, proposal.payload);
     } catch (err) {
       setOperatorError(err instanceof Error ? err.message : String(err));
     } finally {
       setHeadlessProposalRunning("");
       setPendingProposalsRefresh((value) => value + 1);
     }
+  }
+
+  async function continueChannelSetup(action: string, payload: Record<string, unknown>) {
+    const plan = profileRegistrationContinuation(action, payload);
+    if (!plan) return;
+    await submitHeadlessMessage(
+      "The requested Channel Profile registration has succeeded. Continue the original Channel setup using the owner's custom answer and return updated confirmation options.",
+      { force: true, requestPatch: { plan_discussion: plan } },
+    );
   }
 
   async function rejectHeadlessProposal(proposal: AgentSessionActionProposal, key: string) {
@@ -1388,12 +1398,13 @@ export function OrchestratorPanel({
       const selectedOption = request.options.find(
         (option) => option.id === response.optionId,
       );
-      const submitAction = (
+      const customAnswer = response.answers.some((answer) => answer.optionId === "other");
+      const submitAction = customAnswer ? "" : (
         selectedOption?.submitAction
         || request.submitAction
         || ""
       );
-      const submitMode = (
+      const submitMode = customAnswer ? "continue" : (
         selectedOption?.submitMode
         || request.submitMode
         || (submitAction ? "apply" : "continue")
@@ -1528,6 +1539,20 @@ export function OrchestratorPanel({
       } else {
         const taskId = textValue((result as Record<string, unknown> | undefined)?.task_id);
         setPendingProposalNotice(proposalRunNotice(item.action, item.title || item.action, taskId));
+        const pending = await findPendingDurableInteraction((interaction) => (
+          interaction.kind === "action_approval"
+          && interaction.request.proposal_event_id === item.proposal_event_id
+        ));
+        if (pending) {
+          await answerWebChatInteraction(headlessProjectId, pending.interaction_id, {
+            revision: pending.revision,
+            response: { decision: "approved", applied_action: item.action },
+            currentness: pending.currentness || {},
+            resume: false,
+          });
+          await refreshWebChatResources();
+        }
+        await continueChannelSetup(item.action, item.payload);
       }
     } catch (err) {
       setPendingProposalErrors((current) => ({

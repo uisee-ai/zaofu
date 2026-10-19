@@ -1,5 +1,7 @@
 # Channel 文件预览与 PRD 草案发布
 
+群组设置、自定义 Other 回答及问题整理恢复见 [Channel 设置的 Other 回答与恢复](channel-setup-other-recovery.md)。
+
 群聊中的本地 Markdown 文件是交付来源，不是已登记或已批准的 PRD。对应实现为
 `channel_document_source.py`、`channel_prd_file.py` 和既有 `channel-synthesis-request`。
 

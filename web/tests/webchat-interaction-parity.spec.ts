@@ -19,13 +19,13 @@ test("Ask User keeps one active surface and preserves its multi-question draft",
 
   await expect(composer.getByTestId("webchat-interaction-composer")).toBeVisible();
   await expect(thread.getByRole("button", { name: "Answering below" })).toBeVisible();
-  await composer.getByRole("radio", { name: /Direct change/ }).click();
+  await composer.getByRole("radio", { name: /Other/ }).click();
   await composer.getByLabel("Answer for How should this change be delivered?").fill("Keep the public contract");
 
   await composer.getByRole("button", { name: "Move question to conversation" }).click();
   await expect(composer.getByTestId("webchat-interaction-composer")).toHaveCount(0);
   const threadPanel = thread.getByTestId("webchat-interaction-thread");
-  await expect(threadPanel.getByRole("radio", { name: /Direct change/ })).toHaveAttribute("aria-checked", "true");
+  await expect(threadPanel.getByRole("radio", { name: /Other/ })).toHaveAttribute("aria-checked", "true");
   await expect(threadPanel.getByLabel("Answer for How should this change be delivered?")).toHaveValue("Keep the public contract");
 
   await threadPanel.getByRole("button", { name: "Move question to composer" }).click();
@@ -66,5 +66,5 @@ test("interaction controls remain inside a mobile viewport", async ({ page }) =>
   const bounds = await panel.boundingBox();
   expect(bounds?.x).toBeGreaterThanOrEqual(0);
   expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(390);
-  await expect(panel.getByRole("radio")).toHaveCount(2);
+  await expect(panel.getByRole("radio")).toHaveCount(3);
 });

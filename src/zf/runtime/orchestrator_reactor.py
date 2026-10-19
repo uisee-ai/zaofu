@@ -5982,10 +5982,9 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         return None
 
     def _check_channel_reply_remediation(self) -> None:
-        """Tick housekeeping (2026-07-03 audit B1): channel replies must not
-        dead-end. Bounded redispatch for failed/stuck replies via
-        `channel_reply_remediation`; at the generation cap the exhausted
-        event surfaces as a run-manager diagnose-attention action.
+        """Recover unstarted consolidation and failed/stuck Channel replies.
+
+        Reply remediation caps redispatch and exposes exhausted recovery to RM.
         """
         from zf.runtime.channel_reply_remediation import remediate_channel_replies
 
@@ -5993,6 +5992,9 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
             events = self.event_log.read_all()
         except Exception:
             return
+        from zf.runtime.channel_dedup_recovery import resume_unstarted_question_dedup
+
+        resume_unstarted_question_dedup(self, events)
         if not any(event.type.startswith("channel.agent.reply.") for event in events):
             return
 

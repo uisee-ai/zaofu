@@ -30,7 +30,7 @@ _SEMANTIC_INTENT_REQUIRED_ACTIONS = frozenset({
     "idea-to-product",
 })
 _FINAL_ACTION_FENCE = re.compile(
-    r"```(?:json)?[ \t]*\r?\n?((?:(?!```)[\s\S])*?)```[ \t]*$",
+    r"```(?:json)?[ \t]*\r?\n?((?:(?!```)[\s\S])*?)(?:```[ \t]*|$)$",
     re.IGNORECASE,
 )
 
@@ -324,7 +324,11 @@ def json_candidates(text: str) -> list[str]:
 
 
 def action_json_candidates(text: str) -> list[str]:
-    """Return only a dedicated action envelope, never JSON embedded in prose."""
+    """Accept a final envelope, including a complete JSON body at an open EOF fence.
+
+    JSON decoding still rejects truncated objects and trailing prose; this does
+    not scan arbitrary prose for executable examples.
+    """
     stripped = str(text or "").strip()
     candidates: list[str] = []
     if stripped.startswith("{"):
@@ -335,6 +339,15 @@ def action_json_candidates(text: str) -> list[str]:
         if body and body not in candidates:
             candidates.append(body)
     return candidates
+
+
+def action_proposal_format_error(answer: str) -> str:
+    """Expose malformed dedicated control output instead of completing silently."""
+    for candidate in action_json_candidates(answer):
+        if re.match(r'\s*\{\s*"action_proposal"\s*:', candidate):
+            if extract_action_proposal(answer) is None:
+                return "Invalid action proposal output. Retry the reply to regenerate the confirmation."
+    return ""
 
 
 def _decode_action_candidate(candidate: str) -> Any | None:
@@ -445,6 +458,9 @@ def normalize_action_proposal(
     if not isinstance(payload, dict):
         return None
     payload = dict(payload)
+    if proposal_context is not None and "plan_continuation" in proposal_context:
+        # A provider cannot redirect the post-approval continuation to another Plan.
+        payload.pop("plan_continuation", None)
     if action == "create-task" and not str(
         payload.get("execution_mode") or ""
     ).strip():

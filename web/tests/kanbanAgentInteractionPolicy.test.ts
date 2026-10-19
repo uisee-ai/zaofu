@@ -1,5 +1,6 @@
 import {
   planDiscussionBackend,
+  profileRegistrationContinuation,
   shouldRefreshChannelsAfterAction,
 } from "../src/app/kanbanAgentInteractionPolicy.js";
 
@@ -48,3 +49,9 @@ assert(
 );
 
 console.log("kanbanAgentInteractionPolicy tests passed");
+
+const continuation = { request_event_id: "evt-plan", request_id: "plan", revision: 2 };
+assert(profileRegistrationContinuation("channel-profile-register", { plan_continuation: continuation })?.revision === 2,
+  "successful prerequisite registration resumes the bound setup");
+assert(profileRegistrationContinuation("channel-profile-register", {}) === null, "standalone registration does not invent a setup");
+assert(profileRegistrationContinuation("create-task", { plan_continuation: continuation }) === null, "other approvals do not start Channel setup");

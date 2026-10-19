@@ -1257,6 +1257,11 @@ class KanbanHeadlessAgent:
             "message naturally against that exact pending Plan. Keep the Plan pending "
             "and do not repeat its JSON unless the discussion requires a revised "
             "question or options. "
+            "An Other plan_response is a submitted custom answer, not an approval. "
+            "Use it to revise the same request and return updated confirmation options. "
+            "If a required Profile must be registered first, propose registration and "
+            "continue the original setup after its confirmed result; do not claim the "
+            "requested mode or roster is already applied. "
             "If a state change is needed, describe the exact controlled action for "
             "the Web action gate. Only when the operator explicitly asks to create, "
             "track, or schedule work should you propose create-task. Decide that "
@@ -2265,7 +2270,7 @@ class _CodexRpcClient:
                     request.update({
                         key: value for key, value in questions[0].items()
                         if key in {
-                            "header", "id", "question", "text", "options", "allow_other",
+                            "header", "id", "question", "text", "options", "allow_other", "isOther",
                         }
                     })
                 on_message(HeadlessMessage(
