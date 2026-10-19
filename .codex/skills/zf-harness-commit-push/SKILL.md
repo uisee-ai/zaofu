@@ -104,7 +104,10 @@ this skill.
      then confirm it is clean, current, and has no unrelated staged files;
    - run `bash scripts/dev-premerge-gate.sh` against the source branch before
      merging; red means do not merge;
-   - merge from the `dev` checkout with `git merge --no-ff <source_branch>`;
+   - merge from the `dev` checkout with `git merge --no-ff -m "<type>: <English landed-change summary>" <source_branch>`;
+     use an allowed type (`chore`, `docs`, `feat`, `fix`, `refactor`, `style`,
+     or `test`), never Git's generated `Merge branch ...` subject, and do not
+     mention the source worktree or branch in the merge commit message;
      on conflict, abort the merge and retain the source worktree and branch;
    - run the required post-merge verification and re-run the dev pre-merge
      sentinel gate on the merged `dev` checkout;
@@ -273,6 +276,10 @@ Return:
 
 Commit subjects and bodies must be in English by default. Select the prefix
 according to the change type:
+
+For merge commits, describe the landed change with one of the allowed types:
+`chore`, `docs`, `feat`, `fix`, `refactor`, `style`, or `test`. Do not use a
+`Merge branch ...` subject or mention a worktree in the commit message.
 
 - `feat:` for user-facing capability or TDD feature work;
 - `fix:` for user-facing bug fixes;
