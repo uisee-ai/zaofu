@@ -201,6 +201,9 @@ code and tests.
 
 - Use one conventional prefix: `feat:`, `fix:`, `docs:`, `style:`,
   `refactor:`, `test:`, `chore:`.
+- Write commit subjects and bodies in English by default. This applies to Git
+  commit metadata only; repository-facing reports and explanations remain
+  Chinese unless the user requests otherwise.
 - `feat:` / `fix:` are user-facing; build/tooling-only work is `chore:`.
 - TDD commits that include test + implementation for one feature use `feat:`.
 - Sprint plans use `docs:`.

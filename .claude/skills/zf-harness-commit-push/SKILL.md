@@ -14,6 +14,8 @@ unrelated work, leaking secrets, bypassing hooks, colliding with a parallel
 driver, deleting unlanded work, or violating repository rules.
 
 Default repository-facing output is Chinese unless the user asks otherwise.
+Git commit subjects and bodies are English by default; this language rule
+applies to commit metadata, not the surrounding operator report.
 
 ## Relationship to `yoke/git-evidence`
 
@@ -83,6 +85,8 @@ this skill.
 5. Commit:
    - choose one conventional prefix: `feat:`, `fix:`, `docs:`, `style:`,
      `refactor:`, `test:`, or `chore:`;
+   - write the commit subject and body in English unless the user explicitly
+     requests another language;
    - stage explicit paths with `git add -- <path> ...`;
    - before committing, self-check `git diff --cached --name-only` contains no
      other driver's files;
@@ -267,7 +271,8 @@ Return:
 
 ## Message Selection
 
-Use:
+Commit subjects and bodies must be in English by default. Select the prefix
+according to the change type:
 
 - `feat:` for user-facing capability or TDD feature work;
 - `fix:` for user-facing bug fixes;
