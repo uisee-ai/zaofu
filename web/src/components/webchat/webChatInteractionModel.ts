@@ -61,7 +61,8 @@ function normalizeQuestion(
   parent: Record<string, unknown>,
 ): WebChatQuestion {
   const options = normalizeOptions(raw.options ?? raw.choices ?? parent.options ?? parent.choices);
-  const explicitOther = bool(raw.allowOther ?? raw.allow_other ?? parent.allowOther ?? parent.allow_other);
+  const explicitOther = bool(raw.allowOther ?? raw.allow_other ?? raw.isOther ?? raw.is_other
+    ?? parent.allowOther ?? parent.allow_other ?? parent.isOther);
   return {
     id: text(raw.id) || text(raw.question_id) || `question-${index + 1}`,
     header: text(raw.header) || text(parent.header) || `Question ${index + 1}`,
@@ -165,7 +166,11 @@ export function isQuestionAnswered(
   question: WebChatQuestion,
 ): boolean {
   const answer = questionAnswer(draft, question.id);
-  return answer.optionIds.length > 0 || answer.text.trim().length > 0;
+  if (!question.options.length) return Boolean(answer.text.trim());
+  if (answer.optionIds.includes("other")) {
+    return question.allowOther && Boolean(answer.text.trim());
+  }
+  return answer.optionIds.some((id) => question.options.some((option) => option.id === id));
 }
 
 export function buildQuestionResponse(
@@ -174,14 +179,17 @@ export function buildQuestionResponse(
 ): Record<string, unknown> {
   const answers = questions.map((question) => {
     const value = questionAnswer(draft, question.id);
-    const labels = value.optionIds.map((id) => (
-      question.options.find((option) => option.id === id)?.label ?? id
-    ));
-    const parts = [...labels, value.text.trim()].filter(Boolean);
+    const other = question.allowOther && value.optionIds.includes("other");
+    const optionIds = other && !question.multiSelect ? ["other"] : value.optionIds;
+    const labels = optionIds.flatMap((id) => {
+      const option = question.options.find((option) => option.id === id);
+      return option ? [option.label] : [];
+    });
+    const parts = [...labels, other || !question.options.length ? value.text.trim() : ""].filter(Boolean);
     return {
       question_id: question.id,
-      option_id: value.optionIds[0] ?? "",
-      option_ids: value.optionIds,
+      option_id: optionIds[0] ?? "",
+      option_ids: optionIds,
       answer: parts.join(", "),
     };
   });

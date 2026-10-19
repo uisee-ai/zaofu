@@ -176,13 +176,35 @@ export function WebChatInteractionPanel({
                   </button>
                 );
               })}
+              {question.allowOther ? (
+                <button
+                  aria-checked={questionAnswer(draft, question.id).optionIds.includes("other")}
+                  className={questionAnswer(draft, question.id).optionIds.includes("other") ? "selected" : ""}
+                  disabled={busy}
+                  role={question.multiSelect ? "checkbox" : "radio"}
+                  type="button"
+                  onClick={() => {
+                    const current = questionAnswer(draft, question.id);
+                    const optionIds = question.multiSelect
+                      ? current.optionIds.includes("other")
+                        ? current.optionIds.filter((id) => id !== "other")
+                        : [...current.optionIds, "other"]
+                      : ["other"];
+                    setQuestionDraft(question.id, optionIds, current.text);
+                  }}
+                >
+                  {questionAnswer(draft, question.id).optionIds.includes("other") ? <CheckCircle2 size={17} /> : <Circle size={17} />}
+                  <span><strong>Other</strong><small>Provide your own answer</small></span>
+                </button>
+              ) : null}
             </div>
           ) : null}
-          {question.allowOther ? (
+          {question.allowOther && (!question.options.length || questionAnswer(draft, question.id).optionIds.includes("other")) ? (
             <textarea
+              autoFocus
               aria-label={`Answer for ${question.question}`}
               disabled={busy}
-              placeholder={question.options.length ? "Add another answer or context" : "Type your answer"}
+              placeholder="Type your answer"
               rows={2}
               value={questionAnswer(draft, question.id).text}
               onChange={(event) => {

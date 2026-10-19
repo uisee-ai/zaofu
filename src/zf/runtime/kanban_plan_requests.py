@@ -302,7 +302,14 @@ def plan_response_gate(
         row = by_question_id.get(current_question_id)
         if row is None:
             return {"ok": False, "status": "plan_question_id_mismatch"}
-        canonical, selected, error = _canonical_plan_answer(question, row)
+        canonical, selected, error = _canonical_plan_answer(
+            question, row,
+            allow_revision=bool(request.get("submit_action") or any(
+                option.get("submit_action")
+                for option in question.get("options") or []
+                if isinstance(option, dict)
+            )),
+        )
         if error:
             return {"ok": False, "status": error}
         canonical_answers.append(canonical)
@@ -342,6 +349,12 @@ def plan_response_gate(
         and isinstance(selected.get("submit_payload"), dict)
         else {}
     )
+    # Other answers revise the request; they never approve an inherited action,
+    # including when another question selected an executable option.
+    if any(row["option_id"] == "other" for row in canonical_answers):
+        selected_submit_action = ""
+        selected_submit_mode = "continue"
+        selected_submit_payload = {}
     for event in event_list:
         if event.type != PLAN_ANSWERED_EVENT:
             continue
@@ -520,6 +533,8 @@ def _response_answer_rows(
 def _canonical_plan_answer(
     question: dict[str, Any],
     response: dict[str, str],
+    *,
+    allow_revision: bool = False,
 ) -> tuple[dict[str, str], dict[str, Any] | None, str]:
     normalized_answer = str(response.get("answer") or "").strip()
     normalized_option_id = str(response.get("option_id") or "").strip()
@@ -536,7 +551,7 @@ def _canonical_plan_answer(
         None,
     )
     if normalized_option_id == "other":
-        if not bool(question.get("allow_other", True)):
+        if not allow_revision and not bool(question.get("allow_other", True)):
             return {}, None, "plan_other_not_allowed"
         if not normalized_answer:
             return {}, None, "plan_answer_required"

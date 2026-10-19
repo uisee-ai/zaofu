@@ -253,6 +253,19 @@ assert(
   "proposal fenced JSON is removed while explanatory prose remains",
 );
 
+const recoveredProposal = buildKanbanConversation({
+  activeThreadId: "main",
+  events: [{ id: "evt-open-fence", type: "kanban.agent.reply", payload: {
+    turn_id: "open-fence", thread_key: "main",
+    answer: `第一段。\n\n第二段。\n\n\`\`\`json\n${proposalEnvelope}`,
+    action_proposal: proposalPayload,
+  } }],
+});
+const recoveredTurn = recoveredProposal.threads[0]!.turns[0]!;
+assert(recoveredTurn.runs[0]!.parts.find((part) => part.kind === "text")?.content === "第一段。\n\n第二段。",
+  "recovered open fence retains prose line breaks and hides raw control JSON");
+assert(recoveredTurn.cards.some((card) => card.kind === "approve"), "recovered proposal remains reviewable");
+
 const resolvedProposal = buildKanbanConversation({
   activeThreadId: "main",
   events: [

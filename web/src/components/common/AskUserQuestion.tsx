@@ -301,6 +301,7 @@ export function AskUserQuestion({
             ) : null}
             {currentSelected === "other" ? (
               <textarea
+                autoFocus
                 aria-label="Custom answer"
                 className="ask-user-textarea"
                 placeholder={question.inputPlaceholder || "Describe the answer you want to use."}

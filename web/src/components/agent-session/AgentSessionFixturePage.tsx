@@ -200,7 +200,7 @@ const webChatInteraction: WebChatInteraction = {
         { id: "direct", label: "Direct change", description: "Keep the scope narrow." },
         { id: "workflow", label: "Workflow", description: "Track the work through delivery gates." },
       ],
-      allow_other: true,
+      isOther: true,
     }, {
       id: "evidence",
       header: "Evidence",

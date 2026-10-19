@@ -27,8 +27,7 @@ test("Multiple Plan questions advance one at a time and submit atomically", asyn
   const plan = page.getByTestId("fx-multi-plan-options");
 
   await expect(plan).toContainText("1 of 2");
-  await expect(plan).toContainText("Customize");
-  await expect(plan).not.toContainText("Other");
+  await expect(plan.getByLabel("Other", { exact: true })).toBeVisible();
   await expect(plan.getByRole("button", { name: "Chat about" })).toBeEnabled();
   await plan.getByRole("button", { name: "Chat about" }).click();
   await expect(plan.getByTestId("ask-user-question")).toBeVisible();
@@ -67,4 +66,18 @@ test("Adaptive Channel plan shows selected Profiles without an implicit round ca
   await expect(plan).toContainText("Architecture Codex");
   await expect(plan).not.toContainText("0 rounds");
   await expect(plan).not.toContainText("0 round cap");
+});
+
+test("Channel setup Other stays inside the question and submits a custom answer", async ({ page }) => {
+  await page.goto("/?fixture=agent-session");
+  const plan = page.getByTestId("fx-adaptive-channel-plan-options");
+  await plan.getByLabel("Other", { exact: true }).check();
+  await expect(plan.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
+  const custom = plan.getByLabel("Custom answer");
+  await expect(custom).toBeFocused();
+  await custom.fill("使用 multi_lens\n加入 UI/UX 和后端开发");
+  await plan.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(plan).toContainText("加入 UI/UX 和后端开发");
+  await expect(plan.getByTestId("ask-user-question")).toHaveCount(0);
+  await expect(plan).not.toContainText("Plan applied");
 });

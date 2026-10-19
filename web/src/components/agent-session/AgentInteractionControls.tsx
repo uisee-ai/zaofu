@@ -177,7 +177,8 @@ export function PlanInteractionForm({
         id: question.id,
         header: question.header,
         question: question.question,
-        allowOther: question.allowOther,
+        allowOther: question.allowOther || Boolean(request.submitAction)
+          || question.options.some((option) => Boolean(option.submitAction)),
         required: true,
         options: question.options.map((option) => ({
           id: option.id,
@@ -194,7 +195,7 @@ export function PlanInteractionForm({
       }))}
       requestId={`${request.requestEventId}:${request.revision}`}
       otherDescription=""
-      otherLabel="Customize"
+      otherLabel="Other"
       submitLabel={(answers) => planSubmitLabel(request, questions, answers)}
     />
   );
@@ -205,6 +206,7 @@ function planSubmitLabel(
   questions: AgentSessionPlanQuestion[],
   answers: AskUserQuestionAnswer[],
 ): string {
+  if (answers.some((answer) => answer.optionId === "other")) return "Continue";
   const selectedOption = answers.flatMap((answer) => (
     questions
       .find((question) => question.id === answer.questionId)

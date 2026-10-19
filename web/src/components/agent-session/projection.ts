@@ -51,7 +51,7 @@ function proposalDisplayAnswer(answer: string, proposal: AgentSessionActionPropo
     }
   };
 
-  let visible = answer.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (block, body: string) => (
+  let visible = answer.replace(/```(?:json)?\s*((?:(?!```)[\s\S])*?)(?:```|$)/gi, (block, body: string) => (
     matchesProposalEnvelope(body.trim()) ? "" : block
   )).trim();
   if (!visible || matchesProposalEnvelope(visible)) return "";
@@ -868,7 +868,7 @@ export function buildKanbanConversation(args: {
           ?? undefined
         ),
       } : undefined;
-      const rawAnswer = textValue(payload.answer || payload.error).trim();
+      const rawAnswer = textValue(payload.error || payload.answer).trim();
       const answer = !payload.error && proposal
         ? proposalDisplayAnswer(rawAnswer, proposal)
         : !payload.error && planRequest

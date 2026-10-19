@@ -412,6 +412,7 @@ def settle_durable_reply(
                 attempt_id=run.claim.attempt_id,
                 kind="ask_user",
                 interaction_id=(f"{request_id}:{run.turn_id}" if request_id else ""),
+                revision=int(plan_request.get("revision") or 1),
                 request=dict(plan_request),
                 currentness={
                     "attempt_id": run.claim.attempt_id,

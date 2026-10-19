@@ -7461,7 +7461,6 @@ def _run_headless_kanban_agent_turn(
             "queue_dispatch": dispatch_next_queue(),
         }
     provider_completed_at = time.monotonic()
-    turn_outcome = classify_headless_result(result)
     from zf.web.observability import emit_headless_telemetry_events
 
     emit_headless_telemetry_events(
@@ -7474,20 +7473,13 @@ def _run_headless_kanban_agent_turn(
     plan_started_at = provider_completed_at
     origin_message_event_id = str(payload.get("plan_origin_message_event_id") or "")
     prior_events = writer.event_log.read_all()
-    action_proposal = _headless_action_proposal(
-        result.reply,
-        user_message=plan_runtime.plan_proposal_user_message(
-            prior_events, payload=payload, message=message,
-        ),
-        proposal_context={
-            "project_id": project_id,
-            "conversation_id": conversation_id,
-            "thread_id": thread_key or result.thread_id,
-            "run_id": turn_id,
-            "causation_id": user_message.id,
-        },
-        config=config,
+    result, action_proposal = plan_runtime.prepare_headless_action_reply(
+        result, events=prior_events, payload=payload, message=message,
+        project_id=project_id, conversation_id=conversation_id,
+        thread_key=thread_key, turn_id=turn_id, message_event_id=user_message.id,
+        validate_payload=lambda action, body: _validate_action_payload(action, body, config=config),
     )
+    turn_outcome = classify_headless_result(result)
     task_candidates = TaskStore(state_dir / "kanban.json").list_all()
     task_binding_digests, task_contract_errors, workflow_route_eligibility = (
         plan_runtime.task_contract_context_for_plan(
