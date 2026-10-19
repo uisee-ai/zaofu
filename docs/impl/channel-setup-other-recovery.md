@@ -9,6 +9,7 @@ Other 是问题卡片内提交的自由回答：选择后聚焦输入框，空�
 - 固定选项仍按精确配置走受控 Apply。action-bound Plan 的 Other 只提交修订意图；即使请求含顶层 `submit_action`，也强制得到空 action、空 payload 和 `continue`，不会执行旧选项。
 - 记录 `kanban.agent.plan.answered`，恢复同一 durable turn；新版设置单沿用 request id、递增 revision，durable interaction 同步 revision。旧问题不会悬挂，也不会因默认 revision 1 与新版内容冲突。
 - 当修订需要先注册缺少的 Channel Profile，提案绑定原设置单。用户批准且受控注册成功后，Web 继续原设置流程，要求 Agent 生成新版确认项；独立注册不自动生成群组。Other 和注册成功均不等于新群已经创建。
+- 默认项目的 API 和兼容动作入口每次读取当前 `zf.yaml`，注册成功后下一轮立即看到新 Profile，避免启动时的配置缓存造成重复注册。运行中若修改 `project.state_dir`，要求重启 Web，不将新配置混入旧状态目录。
 - 保留 Chat about 作为提问入口；与提交 Other 回答区分。已用 Other 或非执行型 continue 选项回答的当前设置单可继续修订，支持确认候选后注册角色再续接。续接重新校验账本中原回答对应的执行语义；已选择执行项的设置单不可再次讨论或应用。
 
 ## 操作输出

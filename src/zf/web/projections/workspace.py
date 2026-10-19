@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from pathlib import Path
 from typing import Any
 from zf.core.config.project_context import ProjectContext
+from zf.core.config.loader import load_config
 from zf.core.config.schema import ZfConfig
 from zf.core.workspace import ProjectResolver
 from zf.core.workspace import WorkspaceProject
@@ -119,10 +120,21 @@ def _resolve_api_project(
     if project_id == "default" and not default_project_id:
         raise HTTPException(409, _no_default_project_payload())
     if project_id in {"default", default_project_id}:
+        config_path = default_project_root / "zf.yaml"
+        current_config = default_config
+        if default_config is not None and config_path.is_file():
+            try:
+                current_config = load_config(config_path)
+            except Exception as exc:
+                raise HTTPException(422, str(exc)) from exc
+            before = (default_project_root / default_config.project.state_dir).resolve()
+            after = (default_project_root / current_config.project.state_dir).resolve()
+            if before != after:
+                raise HTTPException(409, "project.state_dir changed; restart Web before using this project")
         context = ProjectContext(
             project_root=default_project_root,
-            config_path=default_project_root / "zf.yaml",
-            config=default_config,
+            config_path=config_path,
+            config=current_config,
             state_dir=default_state_dir,
         )
         if require_initialized:
