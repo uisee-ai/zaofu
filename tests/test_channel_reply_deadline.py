@@ -15,7 +15,7 @@ def test_running_reply_respects_its_recorded_provider_execution_budget():
     events = [_evt("channel.agent.reply.requested", age=1001),
               _evt("channel.agent.reply.started", age=1000, provider_timeout_seconds=1800)]
     assert channel_reply_remediation_candidates(events, now=NOW) == []
-    assert channel_reply_remediation_candidates(events, now=NOW + timedelta(seconds=861))[0]["kind"] == "redispatch"
+    assert channel_reply_remediation_candidates(events, now=NOW + timedelta(seconds=861))[0]["kind"] == "exhaust"
 
 
 def test_pending_retry_does_not_inherit_the_previous_provider_budget():

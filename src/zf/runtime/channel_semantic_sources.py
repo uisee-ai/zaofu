@@ -71,9 +71,8 @@ def build_semantic_source_bundle(
 ) -> dict[str, Any]:
     """Build a fail-closed source bundle for deliberation and PRD review.
 
-    Ordinary conversation deliberately returns ``required=False`` and keeps the
-    existing excerpt-only context path. Deliberation turns carry every relevant
-    prior message ref/digest plus its complete, sidecar-verified body.
+    Conversation and deliberation both carry complete, verified sources up to
+    the triggering message. Blind contributions expose only user input.
     """
 
     channel = channel or {}
@@ -90,8 +89,12 @@ def build_semantic_source_bundle(
     stage = semantic_stage(refs)
     session = _discussion_session(channel, thread_id)
     requirement_message_id = str(session.get("requirement_message_id") or "")
+    blind = bool(requirement_message_id and trigger_message_id == requirement_message_id
+                 or refs.get("adaptive_next_round_id"))
+    if not stage and trigger:
+        stage = "blind_contribution" if blind else "relay"
     selected_file = refs.get("prd_source_file") if stage == "synthesis" else None
-    required = stage == "consensus_review" or bool(stage and requirement_message_id) or bool(selected_file)
+    required = bool(stage)
     empty = {
         "schema_version": SEMANTIC_SOURCE_SCHEMA_VERSION,
         "required": required,
@@ -117,10 +120,12 @@ def build_semantic_source_bundle(
         str(item.get("message_id") or ""): index
         for index, item in enumerate(thread_messages)
     }
-    start = message_positions.get(requirement_message_id, 0)
+    start = 0 if stage in {"relay", "blind_contribution"} else message_positions.get(requirement_message_id, 0)
     end = message_positions.get(trigger_message_id, len(thread_messages))
     if end < start:
         start = 0
+    if stage in {"relay", "blind_contribution"} and trigger_message_id in message_positions:
+        end += 1
     reply_requests = {
         str(item.get("request_id") or ""): item
         for item in _dict_rows(channel.get("reply_requests"))
@@ -143,6 +148,8 @@ def build_semantic_source_bundle(
         if (message.get("refs") or {}).get("evaluation_source_document") is True
     ]
     for message in [*original_sources, *thread_messages[start:end]]:
+        if blind and message.get("role") != "user":
+            continue
         if not _is_semantic_source_message(
             message,
             requirement_message_id=requirement_message_id,
@@ -207,7 +214,10 @@ def build_semantic_source_bundle(
         from zf.runtime.channel_attachments import read_channel_attachment
 
         seen_attachments: set[str] = set()
-        for message in thread_messages[:end + 1]:
+        attachment_end = message_positions.get(trigger_message_id, len(thread_messages) - 1) + 1
+        for message in thread_messages[:attachment_end]:
+            if blind and message.get("role") != "user":
+                continue
             message_refs = message.get("refs") or {}
             for attachment in _dict_rows(message_refs.get("attachments")):
                 mime = str(attachment.get("mime") or "")

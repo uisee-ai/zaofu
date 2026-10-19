@@ -45,3 +45,24 @@ def test_contract_repair_never_reuses_another_requests_native_attempt(tmp_path):
  assert len(backend.calls)==3
  assert backend.calls[2]['provider_session_id']=='', 'repair generation 1 resumed failed original generation 1 session'
  assert len({call['run_thread_id'] for call in backend.calls})==3
+
+
+def test_blind_pack_never_resumes_conversation_or_another_blind_round(tmp_path):
+    state = tmp_path / "state"
+    writer = EventWriter(EventLog(state / "events.jsonl"))
+    backend = Backend()
+    for index, pack_id in enumerate(["", "blind-1", "blind-2"]):
+        channel = {"channel_id": "ch-1", "context_packs": [
+            {"context_pack_id": pack_id, "semantic_source_stage": "blind_contribution"}
+        ] if pack_id else []}
+        request = {"request_id": f"reply-{index}", "target_member_id": "critic", "thread_id": "main",
+                   "message_id": f"m-{index}", "context_pack_id": pack_id}
+        _run_headless_reply(state_dir=state, project_root=tmp_path, writer=writer, channel=channel,
+            member={"member_id": "critic", "backend": "codex", "permission_profile": "read_only"},
+            message={"text": "independent review"}, request=request, request_id=request["request_id"],
+            started_event_id=f"start-{index}", actor="test", source="test", backend="codex-headless",
+            backends={"codex-headless": backend})
+    assert len(backend.calls) == 3
+    assert all(call["provider_session_id"] == "" for call in backend.calls)
+    assert len({call["run_thread_id"] for call in backend.calls}) == 3
+    assert "Do not call tools" in backend.calls[-1]["prompt"]

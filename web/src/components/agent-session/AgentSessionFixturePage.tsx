@@ -4,6 +4,7 @@
 // target. Not linked from the app UI; harmless if hit in prod.
 
 import { useState } from "react";
+import { MarkdownText } from "./MarkdownText";
 import { AgentSessionTimeline } from "./AgentSessionTimeline";
 import { PlanInteractionForm } from "./AgentInteractionControls";
 import { ComposerSubmitButton } from "./ComposerSubmitButton";
@@ -423,6 +424,9 @@ export function AgentSessionFixturePage() {
   const adaptiveChannelPlan = fixtureAdaptiveChannelPlan();
   return (
     <div style={{ padding: 24, maxWidth: 980, margin: "0 auto" }}>
+      {new URLSearchParams(window.location.search).has("long") && (
+      <section data-testid="fx-long-message"><MarkdownText content={"完整原文\n".repeat(39_999) + "边界汉字😀\nTAIL-181-😀"} /></section>
+      )}
       <h2>AgentSessionTimeline fixture</h2>
       <p className="muted">Dev-only render harness — streaming run (fold + tail), completed run (long output / 4-state tools), thinking.</p>
 

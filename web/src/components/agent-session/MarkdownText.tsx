@@ -1,6 +1,6 @@
-import { lazy, memo, Suspense } from "react";
+import { lazy, memo, Suspense, useState } from "react";
 import { standaloneJsonMarkdown } from "./jsonDisplay.js";
-import { clampPlainText, isPathologicalText } from "./markdownGuard";
+import { MAX_PLAINTEXT_DISPLAY_LENGTH, isPathologicalText } from "./markdownGuard";
 
 export interface MarkdownTextProps {
   className?: string;
@@ -34,13 +34,34 @@ export const MarkdownText = memo(function MarkdownText({
 });
 
 function PlainTextGuard({ className = "", content }: Pick<MarkdownTextProps, "className" | "content">) {
-  const { shown, hiddenCount } = clampPlainText(content);
+  const [selectedPage, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(content.length / MAX_PLAINTEXT_DISPLAY_LENGTH));
+  const page = Math.min(selectedPage, pages - 1);
+  const boundary = (index: number) => {
+    const offset = index * MAX_PLAINTEXT_DISPLAY_LENGTH;
+    const code = content.charCodeAt(offset);
+    return code >= 0xdc00 && code <= 0xdfff ? offset - 1 : offset;
+  };
+  const shown = content.slice(boundary(page), boundary(page + 1));
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "channel-message.md";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  };
   return (
     <div className={`agent-markdown ${className}`.trim()}>
-      <pre className="agent-markdown-plain-guard">
-        {shown}
-        {hiddenCount > 0 ? `\n… [${hiddenCount.toLocaleString()} more characters not shown]` : ""}
-      </pre>
+      {pages > 1 && (
+        <nav aria-label="长消息分页">
+          <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)}>上一页</button>
+          <span>完整正文，第 {page + 1} / {pages} 页</span>
+          <button type="button" disabled={page + 1 === pages} onClick={() => setPage(page + 1)}>下一页</button>
+          <button type="button" onClick={download}>下载完整正文</button>
+        </nav>
+      )}
+      <pre className="agent-markdown-plain-guard">{shown}</pre>
     </div>
   );
 }

@@ -18,14 +18,15 @@ description: "Use for every active lens in a ZaoFu fanout-then-synthesis Channel
 - 每个问题只承载一个决定；先给推荐答案和理由，再问 owner 是否接受。
 - 主动检查反例、失败场景、术语歧义、范围边界和证据缺口。
 - 不同意时保留具体 dissent，不用“少数服从多数”抹掉重要风险。
-- 具体 lens 由同一角色加载的领域 Skill 定义；本 Skill 不硬编码项目语义。
+- 具体 lens 优先由角色职责定义；领域 Skill 按本次任务需要选用，不强制所有角色加载同一种方法。
 - Phase 1/2 尚未生成 canonical PRD 或 synthesis artifact。不得把本讨论后续才会
   生成的 artifact、版本或 digest 当作前置阻塞问题；应以当前 requirement、context
   pack 与其 digest 为审查基线，把“未来输出尚不存在”记录为 finding/assumption。
 
 ## Phase 1 盲答(收到需求简报时)
 
-一次回复提供 3-5 句 lens summary，再返回 runtime 要求的
+按角色职责完整回答，保留证据、取舍、反例和未决约束；不限制句数或用摘要替代正文。
+`summary` 字段仅用于导航，正文长度由任务需要决定。随后返回 runtime 要求的
 `channel_contribution`。`questions` 使用 typed item：
 
 ```json

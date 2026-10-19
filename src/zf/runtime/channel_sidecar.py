@@ -56,6 +56,8 @@ def channel_message_event_payload(
         "role": str(payload.get("role") or ""),
         "source": str(payload.get("source") or ""),
         "text": full_text,
+        **({"public_output_items": payload["public_output_items"]}
+           if isinstance(payload.get("public_output_items"), list) else {}),
         "mentions": payload.get("mentions") if isinstance(payload.get("mentions"), list) else [],
         "mention_tokens": (
             payload.get("mention_tokens") if isinstance(payload.get("mention_tokens"), list) else []
@@ -91,6 +93,7 @@ def channel_message_event_payload(
     refs = dict(payload.get("refs") if isinstance(payload.get("refs"), dict) else {})
     refs["message_body"] = descriptor
     envelope = dict(payload)
+    envelope.pop("public_output_items", None)
     envelope.update({
         "schema_version": CHANNEL_MESSAGE_POSTED_SCHEMA_VERSION,
         "message_id": message_id,

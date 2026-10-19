@@ -109,7 +109,9 @@ def active_reply_for_target(
             continue
         if exclude_request_id and str(item.get("request_id") or "") == exclude_request_id:
             continue
-        if str(item.get("status") or "") in wanted:
+        if str(item.get("status") or "") in wanted or (
+            item.get("status") == "failed" and item.get("failure_status") == "delivery_unknown"
+        ):
             return item
     return {}
 
@@ -156,6 +158,7 @@ def _positive_int(value: object, *, default: int) -> int:
 
 
 _PHASE_SESSION_REF_KEYS = (
+    "adaptive_next_round_id",
     "synthesis_repair_id",
     "question_dedup_request_id",
     "synthesis_request_id",
@@ -169,6 +172,7 @@ def channel_provider_thread_key(
     channel_id: str,
     request: dict[str, Any],
     message: dict[str, Any],
+    blind_contribution_id: str = "",
 ) -> str:
     """Return the durable provider-thread key for one Channel reply.
 
@@ -182,6 +186,9 @@ def channel_provider_thread_key(
     thread_id = str(request.get("thread_id") or "main")
     member_id = str(request.get("target_member_id") or "")
     base = f"channel:{channel_id}:{thread_id}:{member_id}"
+    if blind_contribution_id:
+        generation = provider_run_fields_for_request(channel_id, request)["run_generation"]
+        return f"{base}:phase:blind_contribution:{blind_contribution_id}:attempt:{generation}"
     refs = message.get("refs") if isinstance(message.get("refs"), dict) else {}
     for ref_key in _PHASE_SESSION_REF_KEYS:
         phase_id = str(refs.get(ref_key) or "").strip()

@@ -144,7 +144,7 @@ def fake_channel_reply_text(
 
 def _contract_response_instruction(contract: str) -> str:
     return (
-        "First write a concise user-facing Markdown response with the useful "
+        "First write a complete user-facing Markdown response with the useful "
         "answer. Never expose the machine contract as prose. Then, on its own "
         "line, write the exact marker below without quotes or code fences:\n"
         f"{CHANNEL_CONTRACT_MARKER}\n"
@@ -261,8 +261,7 @@ def channel_reply_response_contract(
             "source-consumption evidence (source_attestation OR all three consumed_* lists), "
             "classification, dissent, confidence, readiness, and next_round. "
             "Your deliverable now is the complete standalone PRD, not a decision draft, "
-            "outline, or recommendation that a later workflow write the PRD. Concision applies "
-            "to the chat summary, never to omission of required artifact content. "
+            "outline, or recommendation that a later workflow write the PRD. Keep only the summary field concise; never omit required answer or artifact content. "
             "A read_only agent can publish through this structured reply: Runtime writes the artifact. "
             "Do not request filesystem write permission merely to publish a PRD. "
             "If request refs include prd_source_file, its complete verified body is supplied as "
@@ -363,7 +362,7 @@ def channel_reply_response_contract(
             "Read every semantic_source_document. If using the explicit consumed_* lists "
             "instead of source_attestation, copy every required digest from "
             "semantic_source_manifest into consumed_message_digests; never invent a digest. All plural fields must "
-            "be JSON arrays. Keep the preceding Markdown concise."
+            "be JSON arrays. The preceding Markdown must preserve the complete answer."
         )
     thread_id = str(request.get("thread_id") or "main")
     sessions = channel.get("discussions")

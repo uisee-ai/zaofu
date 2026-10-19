@@ -35,15 +35,13 @@ from zf.runtime.channel_provider_completion import (
 )
 from zf.runtime.channel_provider_prompt import (
     build_channel_provider_prompt as _build_channel_prompt,
+    build_channel_system_prompt as _build_channel_system_prompt,
     channel_context_pack_by_id,
 )
 from zf.runtime.channel_reply_remediation import emit_channel_reply_failed
 from zf.runtime.channel_reply_stream import ChannelVisibleMessageEmitter
 from zf.runtime.channel_contracts import (
-    active_channel_resolved_skill_refs,
-    active_channel_skill_refs,
     normalize_permission_profile,
-    permission_profile_write_policy,
 )
 from zf.runtime.channel_provider_profile import (
     channel_profile_permission_fields,
@@ -565,6 +563,10 @@ def _dispatch_headless_reply(
         return ChannelDispatchResult(dispatched=[request_id], skipped=[request_id])
 
     if not bool(getattr(result, "ok", False)):
+        from zf.runtime.channel_reply_output import persist_partial_reply
+        persist_partial_reply(state_dir=state_dir, writer=writer, result=result, request=request,
+                              channel_id=channel_id, request_id=request_id, actor=actor,
+                              started_event_id=started_event_id, backend=headless_backend)
         reason = str(getattr(result, "error", "") or getattr(result, "status", "") or "headless provider failed")
         emit_channel_reply_failed(
             writer=writer,
@@ -576,11 +578,11 @@ def _dispatch_headless_reply(
             channel_id=channel_id,
             reason=reason,
             provider_session_id=str(getattr(result, "provider_session_id", "") or ""),
-            failure_status=str(getattr(result, "status", "") or "failed"),
+            failure_status=("delivery_unknown" if (getattr(result, "telemetry", {}) or {}).get("input_delivery") == "unknown" else str(getattr(result, "status", "") or "failed")),
         )
         return ChannelDispatchResult(dispatched=[request_id], failed=[request_id])
 
-    reply = str(getattr(result, "reply", "") or "").strip()
+    reply = str(getattr(result, "reply", "") or "")
     if not reply:
         reply = "(provider completed without text)"
     thread_id = str(request.get("thread_id") or "main")
@@ -595,6 +597,8 @@ def _dispatch_headless_reply(
         "role": "assistant",
         "source": str(getattr(result, "backend", "") or headless_backend),
         "text": reply,
+        "public_output_items": [item.to_dict() for item in getattr(result, "messages", [])
+                                if hasattr(item, "to_dict") and item.type in {"text", "status"}],
         "mentions": [],
         "refs": {
             "request_id": request_id,
@@ -694,10 +698,13 @@ def _run_headless_reply(
 
     store = HeadlessThreadStore(state_dir=state_dir, project_root=project_root)
     channel_id = str(channel.get("channel_id") or request.get("channel_id") or "")
+    frozen = channel_context_pack_by_id(channel, str(request.get("context_pack_id") or ""), state_dir=state_dir)
     thread_key = _channel_provider_thread_key(
         channel_id=channel_id,
         request=request,
         message=message,
+        blind_contribution_id=(str(frozen.get("context_pack_id") or "")
+                               if frozen.get("semantic_source_stage") == "blind_contribution" else ""),
     )
     thread = store.load(scope="project", task_id="", thread_key=thread_key)
     thread_id = str(thread["thread_id"])
@@ -819,8 +826,13 @@ def _run_headless_reply(
 
         from zf.runtime.channel_attachments import channel_image_inputs
         image_inputs = channel_image_inputs(Path(state_dir), channel=channel, request=request)
+        provider_turns = 0
 
         def run_provider_turn(turn_prompt: str, session_id: str) -> Any:
+            nonlocal provider_turns
+            if provider_turns:
+                visible_stream.begin_continuation()
+            provider_turns += 1
             remaining = deadline - monotonic()
             if remaining <= 0:
                 return HeadlessTurnResult(
@@ -862,7 +874,7 @@ def _run_headless_reply(
                 request=request,
                 message=message,
             )
-            visible_stream.finish()
+            visible_stream.finish(str(getattr(result, "reply", "") or ""))
         except Exception as exc:
             stream.fail(
                 reason=str(exc), provider_session_id=provider_session_id,
@@ -924,60 +936,6 @@ def _channel_provider_headless_timeout_s(config: ZfConfig | None = None) -> floa
     except (TypeError, ValueError):
         return DEFAULT_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S
     return timeout_s if 0 < timeout_s < float("inf") else DEFAULT_CHANNEL_PROVIDER_HEADLESS_TIMEOUT_S
-
-
-def _build_channel_system_prompt(
-    member: dict[str, Any],
-    *,
-    channel: dict[str, Any] | None = None,
-) -> str:
-    member_id = str(member.get("member_id") or "agent")
-    role = str(member.get("channel_role") or member.get("role") or "channel member")
-    provider = str(member.get("backend") or member.get("provider") or "agent")
-    permission_profile = normalize_permission_profile(member.get("permission_profile"))
-    write_policy = (
-        member.get("write_policy")
-        if isinstance(member.get("write_policy"), dict)
-        else permission_profile_write_policy(permission_profile)
-    )
-    discussion = (
-        channel.get("discussion")
-        if isinstance(channel, dict)
-        and isinstance(channel.get("discussion"), dict)
-        else {}
-    )
-    mode = discussion.get("mode") or discussion.get("product_mode") or "conversation"
-    skill_refs = active_channel_skill_refs(
-        member.get("skill_refs") or [],
-        discussion_mode=mode,
-    )
-    resolved_skill_refs = active_channel_resolved_skill_refs(
-        member.get("resolved_skill_refs") or [],
-        discussion_mode=mode,
-    )
-    prompt = (
-        f"You are {member_id}, a {provider} agent participating in a ZaoFu Agent Channel. "
-        f"Your channel role is {role}. Reply as a channel teammate. Keep the chat summary concise; "
-        "produce all artifact content required by the current response contract in full. Stay "
-        "grounded in the provided channel context, and do not mutate runtime state directly. "
-        "Do not include step-by-step progress narration such as 'I will check' or "
-        "'I will write' in the final reply; ZaoFu renders runtime activity separately. "
-        "Use concise Markdown. When reporting completed work, prefer sections like "
-        "Result, Path, Changes, Not changed, Risks, and Next step when applicable. "
-        f"Your channel permission_profile is {permission_profile}. "
-        f"Write policy: {redact_obj(write_policy)}. "
-        f"Channel skill refs: {redact_obj(skill_refs)}. "
-        f"Resolved channel skill refs: {redact_obj(resolved_skill_refs)}. "
-        "If work should be executed by ZaoFu, recommend a controlled workflow/action request. "
-        "Only write files when the permission_profile and write policy explicitly allow it."
-    )
-    # Member-declared reply-output contract (folded from channel.member.invited
-    # payload.reply_contract): the inviter owns the semantics, the kernel only
-    # relays it — e.g. the Feishu kanban agent's action-proposal JSON contract.
-    reply_contract = str(member.get("reply_contract") or "").strip()
-    if reply_contract:
-        prompt = f"{prompt}\n\n{reply_contract}"
-    return prompt
 
 
 def _project_root_for_state(state_dir: Path, project_root: Path | None) -> Path:

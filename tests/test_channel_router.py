@@ -1825,6 +1825,10 @@ def test_channel_handoff_guard_accepts_and_rejects(tmp_path: Path) -> None:
         source="web",
         depth=4,
     )
+    writer.emit("channel.message.posted", actor="web", payload={
+        "channel_id": "ch-zaofu", "thread_id": "main", "message_id": "msg-2",
+        "member_id": "dev-1", "role": "assistant", "text": "Please verify the evidence.",
+    })
     accepted = request_channel_handoff(
         state_dir=state_dir,
         writer=writer,
@@ -1847,7 +1851,7 @@ def test_channel_handoff_guard_accepts_and_rejects(tmp_path: Path) -> None:
     assert detail["reply_requests"][0]["status"] == "completed"
 
 
-def test_channel_adapter_drains_latest_queued_reply(tmp_path: Path) -> None:
+def test_channel_adapter_drains_every_queued_reply(tmp_path: Path) -> None:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     writer = EventWriter(EventLog(state_dir / "events.jsonl"))
@@ -1910,13 +1914,13 @@ def test_channel_adapter_drains_latest_queued_reply(tmp_path: Path) -> None:
 
     detail = project_channel(state_dir, "ch-zaofu")
 
-    assert result.failed == ["reply-old"]
-    assert result.completed == ["reply-new"]
+    assert result.failed == []
+    assert result.completed == ["reply-old", "reply-new"]
     assert detail is not None
     statuses = {item["request_id"]: item["status"] for item in detail["reply_requests"]}
     reasons = {item["request_id"]: item["reason"] for item in detail["reply_requests"]}
-    assert statuses == {"reply-old": "failed", "reply-new": "completed"}
-    assert reasons["reply-old"] == "superseded by latest queued mention"
+    assert statuses == {"reply-old": "completed", "reply-new": "completed"}
+    assert "superseded" not in reasons["reply-old"]
 
 
 def test_all_targets_are_queued_instead_of_truncated_by_parallel_limit(

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from zf.core.config.schema import ZfConfig
-from zf.core.events import EventWriter
+from zf.core.events import EventWriter, ZfEvent
+from zf.core.state.locks import locked_path
 from zf.runtime.channel_adapter import dispatch_reply_request
 from zf.runtime.channel_context import build_channel_context_pack
 from zf.runtime.channel_projection import project_channel
@@ -34,6 +36,21 @@ class HandoffResult:
         }
 
 
+def _handoff_claim(call: Callable[..., HandoffResult]) -> Callable[..., HandoffResult]:
+    @wraps(call)
+    def locked(**kwargs: Any) -> HandoffResult:
+        identity = ":".join(str(kwargs.get(key) or "") for key in
+                            ("channel_id", "thread_id", "message_id", "target_member_id"))
+        target = Path(kwargs["state_dir"]) / "locks" / "channel-handoff" / hashlib.sha256(identity.encode()).hexdigest()
+        try:
+            with locked_path(target, timeout_seconds=0.05):
+                return call(**kwargs)
+        except TimeoutError:
+            return HandoffResult(skipped=[{"target_member_id": kwargs["target_member_id"], "reason": "handoff_claim_busy"}])
+    return locked
+
+
+@_handoff_claim
 def request_channel_handoff(
     *,
     state_dir: Path,
@@ -54,9 +71,11 @@ def request_channel_handoff(
     headless_backends: dict[str, Any] | None = None,
     config: ZfConfig | None = None,
     openclaw_client: OpenClawGatewayClient | None = None,
+    resume_requested: ZfEvent | None = None,
+    dispatch_inline: bool = True,
 ) -> HandoffResult:
     channel = project_channel(Path(state_dir), channel_id) or {}
-    requested = writer.emit(
+    requested = resume_requested or writer.emit(
         "channel.handoff.requested",
         actor=actor,
         causation_id=message_id if message_id.startswith("evt-") else None,
@@ -70,6 +89,8 @@ def request_channel_handoff(
             "reason": reason,
             "depth": depth,
             "round": round_no,
+            "max_depth": max_depth,
+            "max_rounds": max_rounds,
             "source": source,
         },
     )
@@ -78,6 +99,7 @@ def request_channel_handoff(
         member_id=member_id,
         target_member_id=target_member_id,
         message_id=message_id,
+        thread_id=thread_id or "main",
         depth=depth,
         round_no=round_no,
         max_depth=max_depth,
@@ -103,7 +125,10 @@ def request_channel_handoff(
         )
         return HandoffResult(skipped=[{"target_member_id": target_member_id, "reason": reject_reason}])
 
-    accepted = writer.emit(
+    prior_accepted = next((event for event in writer.event_log.read_all()
+                           if event.type == "channel.handoff.accepted"
+                           and event.causation_id == requested.id), None)
+    accepted = prior_accepted or writer.emit(
         "channel.handoff.accepted",
         actor=actor,
         causation_id=requested.id,
@@ -121,24 +146,34 @@ def request_channel_handoff(
         },
     )
     member = _member_by_id(channel, target_member_id)
+    packs = channel.get("context_packs") or {}
+    rows = packs.values() if isinstance(packs, dict) else packs
+    frozen = next((p for p in rows if p.get("trigger_message_id") == message_id
+                   and p.get("target_member_id") == target_member_id
+                   and p.get("thread_id", "main") == (thread_id or "main")), None)
     try:
-        context_pack = build_channel_context_pack(
-            channel,
-            channel_id=channel_id,
-            thread_id=thread_id or "main",
-            target_member_id=target_member_id,
-            trigger_message_id=message_id,
-            visibility_profile=str(member.get("visibility_profile") or ""),
-            channel_role=str(member.get("channel_role") or ""),
-            role_context_ref=str(member.get("role_context_ref") or ""),
-            skill_refs=member.get("skill_refs", []),
-            resolved_skill_refs=member.get("resolved_skill_refs", []),
-            permission_profile=str(member.get("permission_profile") or ""),
-            profile_binding=member,
-            config=config,
-            state_dir=Path(state_dir),
-            project_root=project_root,
-        )
+        if frozen:
+            from zf.runtime.channel_provider_prompt import channel_context_pack_by_id
+
+            context_pack = channel_context_pack_by_id(channel, frozen["context_pack_id"], state_dir=Path(state_dir))
+        else:
+            context_pack = build_channel_context_pack(
+                channel,
+                channel_id=channel_id,
+                thread_id=thread_id or "main",
+                target_member_id=target_member_id,
+                trigger_message_id=message_id,
+                visibility_profile=str(member.get("visibility_profile") or ""),
+                channel_role=str(member.get("channel_role") or ""),
+                role_context_ref=str(member.get("role_context_ref") or ""),
+                skill_refs=member.get("skill_refs", []),
+                resolved_skill_refs=member.get("resolved_skill_refs", []),
+                permission_profile=str(member.get("permission_profile") or ""),
+                profile_binding=member,
+                config=config,
+                state_dir=Path(state_dir),
+                project_root=project_root,
+            )
     except SidecarRefError as exc:
         kind = "skill_guidance" if exc.ref.startswith("skills/") else "profile_snapshot"
         writer.emit(
@@ -162,18 +197,28 @@ def request_channel_handoff(
                 "reason": f"{kind}_{exc.code}",
             }]
         )
-    writer.emit(
-        "channel.context_pack.built",
-        actor=actor,
-        causation_id=accepted.id,
-        correlation_id=channel_id,
-        payload=channel_context_pack_event_payload(
-            Path(state_dir),
-            {**context_pack, "source": source},
-            created_by=f"channel-handoff:{source}",
-            source_event_id=accepted.id,
-        ),
-    )
+    if context_pack.get("semantic_source_required") and not context_pack.get("semantic_source_complete"):
+        writer.emit("channel.handoff.failed", actor=actor, causation_id=requested.id,
+                    correlation_id=channel_id, payload={
+                        "channel_id": channel_id, "thread_id": thread_id or "main",
+                        "message_id": message_id, "member_id": member_id,
+                        "target_member_id": target_member_id,
+                        "reason": context_pack.get("semantic_source_reason"), "source": source})
+        return HandoffResult(skipped=[{"target_member_id": target_member_id,
+                                      "reason": str(context_pack.get("semantic_source_reason"))}])
+    if not frozen:
+        writer.emit(
+            "channel.context_pack.built",
+            actor=actor,
+            causation_id=accepted.id,
+            correlation_id=channel_id,
+            payload=channel_context_pack_event_payload(
+                Path(state_dir),
+                {**context_pack, "source": source},
+                created_by=f"channel-handoff:{source}",
+                source_event_id=accepted.id,
+            ),
+        )
     request_id = _stable_reply_request_id(channel_id, thread_id or "main", message_id, target_member_id)
     busy = _member_busy(channel, target_member_id)
     reply = writer.emit(
@@ -189,7 +234,7 @@ def request_channel_handoff(
             "target_member_id": target_member_id,
             "member_id": member_id,
             "status": "queued" if busy else "pending",
-            "queue_state": "latest_only" if busy else "ready",
+            "queue_state": "ordered" if busy else "ready",
             "context_pack_id": context_pack["context_pack_id"],
             "member_type": str(member.get("member_type") or ""),
             "backend": str(member.get("backend") or ""),
@@ -208,7 +253,7 @@ def request_channel_handoff(
             "source": source,
         },
     )
-    if not busy:
+    if not busy and dispatch_inline:
         dispatch_reply_request(
             state_dir=state_dir,
             writer=writer,
@@ -234,6 +279,7 @@ def _handoff_reject_reason(
     member_id: str,
     target_member_id: str,
     message_id: str,
+    thread_id: str,
     depth: int,
     round_no: int,
     max_depth: int,
@@ -250,6 +296,13 @@ def _handoff_reject_reason(
         return "target member cannot receive handoff"
     if _has_duplicate_request(channel, message_id, target_member_id):
         return "duplicate handoff target"
+    if channel.get("status") in {"closed", "archived", "deleted"}:
+        return "channel is closed"
+    if ((channel.get("discussions") or {}).get(thread_id) or {}).get("state") == "closed":
+        return "discussion is closed"
+    message = next((m for m in channel.get("messages") or [] if m.get("message_id") == message_id), None)
+    if not message or (message.get("thread_id") or "main") != thread_id:
+        return "handoff source is missing or belongs to another thread"
     return ""
 
 

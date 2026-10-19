@@ -131,7 +131,7 @@ def test_unroutable_turn_does_not_drain_an_unrelated_pending_reply(tmp_path: Pat
     assert detail["reply_requests"][0]["status"] == "pending"
 
 
-def test_turn_drains_latest_queued_reply_behind_stale_pending(tmp_path: Path):
+def test_turn_drains_all_queued_replies_behind_stale_pending(tmp_path: Path):
     """A bridge-only channel has no reactor to rescue a queued reply later."""
     state_dir, writer = _setup(tmp_path)
     writer.emit(
@@ -192,14 +192,14 @@ def test_turn_drains_latest_queued_reply_behind_stale_pending(tmp_path: Path):
         str(item["request_id"]): str(item["status"])
         for item in detail["reply_requests"]
     }
-    assert states["reply-old"] == "failed"
+    assert states["reply-old"] == "completed"
     latest_request_id = next(
         request_id
         for request_id in states
         if request_id != "reply-old"
     )
     assert states[latest_request_id] == "completed"
-    assert [request_id for request_id, _ in out["dispatched"]] == [latest_request_id]
+    assert [request_id for request_id, _ in out["dispatched"]] == ["reply-old", latest_request_id]
 def test_fake_synthesis_is_task_compilable() -> None:
     reply = fake_channel_reply_text(
         {"member_id": "synthesizer"},
