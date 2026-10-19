@@ -73,6 +73,7 @@ def open_unseen_consensus_blockers(
         opened = writer.emit(
             "channel.question.opened",
             actor=actor,
+            causation_id=str(item.get("event_id") or "") or None,
             correlation_id=channel_id,
             payload={
                 "channel_id": channel_id,

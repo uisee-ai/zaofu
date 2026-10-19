@@ -113,16 +113,46 @@ synthesizer。本轮真实聚合仅由产品经理执行，不代表五次真实
 Owner 回答后的再聚合、全员独立复审与最终确认。multi-lens 初轮须有五人直接回应同一
 原始要求的贡献；仅有纯串行接力的五份消息不满足该门槛。
 
-**已知未修复：问题卡来源跳转。** 聚合产生的三张 Owner 问题卡显示
+**补充验收发现的问题：问题卡来源跳转。** 聚合产生的三张 Owner 问题卡曾显示
 `Review question · source unavailable`。问题事件/投影缺少 `source_run_id` /
 `source_message_id`，同一产品成员有原始贡献和聚合两条 run，前端
 `channelDecisions.ts` 无法唯一绑定来源。PRD 与问题正文仍完整，但不能从问题卡跳回
-聚合回复。后续应补明确来源身份及 API/UI 回归；此处记录不代表问题已修复。
+聚合回复。当次只记录，后续修复与验证见下节。
 
 详细证据保留在本机 `/tmp/zf-channel181-ab-20261019T123306Z/REPORT.md` 和
 `/tmp/zf-channel181-synthesis-20261019T130752Z/REPORT.md`，含日志、输入清单、
 截图与 trace。首次聚合浏览器脚本对 consensus 和 request_id 投影的错误假设已修正，
 失败记录保留，最终回读通过；未因此重新调用模型或修改产品代码。
+
+## 后续修复：问题来源关联
+
+- 普通贡献和 synthesis 创建问题时，由运行时绑定 `source_run_id` 和
+  `source_message_id`，不使用模型提供的来源身份。后者指触发 run 的输入消息，
+  与前端 turn 定位契约一致，不是 assistant 正文消息 ID。
+- [来源恢复](../../src/zf/runtime/channel_question_provenance.py)通过问题的因果链，
+  从已经出现的 reply completion 恢复历史来源；限定同频道、同线程和提问成员，
+  拒绝未来事件、缺失链和循环。已有明确来源保持权威，更新/回答不会改挂新回复。
+  Review blocker 新建问题也保留其评审事件的因果引用。缺少可证明因果链时不补写
+  来源；前端保留既有单候选兼容，多候选或明确来源未加载时仍提示来源不可用。
+- 投影在问题语义标准化之后保留来源元数据；来源补全不参与问题图摘要，避免改变
+  已有去重/回答 frontier。回放不重写事件日志。前端来源可用性与卡片是否展开分离。
+- [后端回归](../../tests/test_channel_question_provenance.py)覆盖新贡献/聚合、历史
+  恢复、跨频道/线程/成员拒绝、更新/回答、摘要兼容及真实 API 刷新；
+  [Playwright](../../web/tests/channel-question-provenance.spec.ts)覆盖多次发言、分页
+  加载、回答后来源保留和上轮真实 PRD 的三张问题卡。
+
+验证：planner 选择 178 个测试文件，另加现有 181 mock E2E；执行全部选中闭包，
+4 workers、600 秒预算，排除 serial/perf/host/real_provider，2284 通过、9 跳过。
+自动层另有 serial 10、sentinel 51、flow-smoke 10 通过；Web typecheck/unit、
+临时目录 Vite build 和 bundle budget 通过。未跑全量 pytest。
+
+Docker Playwright 共 14 个相关用例：首轮 12 通过；两个新增用例的选择器同时匹配
+卡片和内部表单，明确选择卡片后复验 2 通过。上轮真实 provider 的历史状态复制到
+隔离 8004 服务，三个问题均恢复到原聚合 run；原始日志摘要不变。本轮没有再次调用
+真实模型，也没有替真实项目的 Owner 作答。完整日志、截图、trace 和隔离服务驱动
+保留于 `/tmp/zf-question-provenance-20261019T134143Z/`；浏览器 fixture 使用该目录的
+`serve.py` 和测试文件中的 `seed_question`，新用例通过
+`ZF_QUESTION_PROVENANCE_PROJECT`、`ZF_WEB_ACTION_TOKEN_FOR_TEST` 指定隔离实例。
 
 ## 部署与边界
 

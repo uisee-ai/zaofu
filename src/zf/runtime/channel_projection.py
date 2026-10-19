@@ -51,6 +51,9 @@ from zf.runtime.channel_run_owner import (
     stale_reply_transition,
 )
 from zf.runtime.channel_sidecar import hydrate_channel_context_pack_payload
+from zf.runtime.channel_question_provenance import (
+    QUESTION_SOURCE_EVENT_TYPES, question_source_fields, recover_question_source,
+)
 from zf.runtime.provider_usage import sum_turn_usage
 
 
@@ -416,7 +419,10 @@ def _with_seq(events: list[ZfEvent]) -> list[tuple[int, ZfEvent]]:
 
 def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) -> dict[str, dict[str, Any]]:
     channels: dict[str, dict[str, Any]] = {}
+    source_events: dict[str, ZfEvent] = {}
     for seq, event in events:
+        if event.type in QUESTION_SOURCE_EVENT_TYPES:
+            source_events[event.id] = event
         if event.type not in CHANNEL_EVENT_TYPES:
             continue
         payload = event.payload if isinstance(event.payload, dict) else {}
@@ -549,6 +555,8 @@ def _build(events: list[tuple[int, ZfEvent]], *, state_dir: Path | None = None) 
         elif event.type.startswith("channel.cross_review."):
             _apply_cross_review(channel, event, payload)
         elif event.type.startswith("channel.question."):
+            if event.type == "channel.question.opened":
+                payload = {**payload, **recover_question_source(event, source_events)}
             _apply_question(channel, event, payload)
         elif event.type.startswith("channel.consensus."):
             _apply_consensus(channel, event, payload)
@@ -1952,6 +1960,7 @@ def _apply_question(channel: dict[str, Any], event: ZfEvent, payload: dict[str, 
             **normalized,
             "status": "open",
             "opened_event_id": event.id,
+            **question_source_fields(payload),
             "ts": event.ts,
         })
         _question_activity(channel, event, thread_id)
