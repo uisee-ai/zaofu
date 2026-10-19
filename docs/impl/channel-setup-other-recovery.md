@@ -16,6 +16,8 @@ Other 是问题卡片内提交的自由回答：选择后聚焦输入框，空�
 
 仅对最终专用 JSON envelope 容忍缺少 Markdown 结束围栏；JSON 本体必须完整，尾随说明和正文中的例子不会被提取。恢复后仍经过语义 intent、payload、token 和提案绑定校验，前端展示确认卡片并隐藏控制 JSON，保留说明正文的换行。损坏的专用提案输出显式失败，可重新生成，不再伪装成正常完成。
 
+修复前已落盘且没有受控提案事件的历史回复仍是只读正文；其中有效 JSON 代码块按字段缩进展示，包括缺少结束围栏的完整 JSON。显示格式化不会创建可执行确认卡、修改原始事件或重放旧操作。
+
 ## 问题整理恢复
 
 Kernel 的 Channel reply housekeeping 检查仍处于 phase2 的最新 requested 整理请求。超过 60 秒且没有 reply request 时，重放原请求到既有 reactor/router；复用消息、保持 request id，不铸造新一代。已经派发的回复继续由 reply remediation 管理；新请求、已关闭讨论、已解决问题及被替换请求不重启。单次最多补派 8 个请求。
