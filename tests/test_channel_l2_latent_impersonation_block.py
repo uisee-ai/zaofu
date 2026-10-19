@@ -18,6 +18,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+from tests.channel_provider_fixtures import unavailable_headless_providers
+
 from zf.core.events.log import EventLog
 from zf.core.events.writer import EventWriter
 from zf.core.events.model import ZfEvent
@@ -25,6 +28,7 @@ from zf.runtime.channel_router import route_channel_message
 
 
 CHANNEL_ID = "ch-zaofu"
+pytestmark = pytest.mark.usefixtures("unavailable_headless_providers")
 
 
 def _seed_channel(log: EventLog) -> None:

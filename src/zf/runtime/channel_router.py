@@ -434,6 +434,7 @@ def route_channel_message(
                 project_root=project_root, config=config,
             )
         except SidecarRefError as exc:
+            kind = "skill_guidance" if exc.ref.startswith("skills/") else "profile_snapshot"
             writer.emit(
                 "channel.context_pack.rejected",
                 actor=actor,
@@ -451,14 +452,14 @@ def route_channel_message(
                     ).replace("reply-", "ctx-"),
                     "target_member_id": target_member_id,
                     "trigger_message_id": message_id,
-                    "reason": f"profile_snapshot_{exc.code}",
+                    "reason": f"{kind}_{exc.code}",
                     "routing_reason": routing_reason,
                     "source": source,
                 },
             )
             skipped.append({
                 "target_member_id": target_member_id,
-                "reason": f"profile_snapshot_{exc.code}",
+                "reason": f"{kind}_{exc.code}",
             })
             continue
         semantic_rejection = reject_incomplete_semantic_source_bundle(

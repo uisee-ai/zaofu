@@ -5,11 +5,16 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.schema import ProjectConfig, SkillSourceConfig, ZfConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.control_actions import ControlledActionService
+from zf.runtime.channel_skill_context import load_channel_skill_guidance
+from zf.runtime.channel_router import route_channel_message
+from zf.runtime.channel_handoff import request_channel_handoff
 
 
 def _service(tmp_path: Path, *, skill_sources: list[SkillSourceConfig] | None = None):
@@ -61,13 +66,9 @@ def test_channel_invite_materializes_skill_ref_from_skill_source(tmp_path: Path)
     })
 
     assert result.get("ok"), result
-    materialized = (
-        project_root
-        / ".zf"
-        / "runtime-skills"
-        / "zf-channel-discussion-participant"
-        / "SKILL.md"
-    )
+    invited = next(event for event in log.read_all()
+                   if event.type == "channel.member.invited")
+    materialized = Path(invited.payload["resolved_skill_refs"][0]["resolved_path"])
     assert materialized.is_file()
     assert materialized.read_text(encoding="utf-8") == "# participant protocol\n"
     assert not (
@@ -89,6 +90,37 @@ def test_channel_invite_materializes_skill_ref_from_skill_source(tmp_path: Path)
         project_root / ".zf" / "runtime-skills" / "manifest.json"
     ).read_text(encoding="utf-8")
     assert str(materialized) in manifest
+
+
+def test_inviting_after_skill_upgrade_preserves_existing_member_method(tmp_path: Path) -> None:
+    skills_repo = tmp_path / "external-skills"
+    source = skills_repo / "review-method" / "SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("Original review method\n")
+    (source.parent / "reference.txt").write_text("Original reference\n")
+    service, log, project_root = _service(
+        tmp_path, skill_sources=[SkillSourceConfig(name="external", path=str(skills_repo))],
+    )
+    legacy = project_root / ".zf" / "runtime-skills" / "review-method" / "SKILL.md"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("Legacy pinned method\n")
+    _exec(service, "channel-create", {"channel_id": "ch-1", "name": "ch-1"})
+    for member_id in ["before", "after"]:
+        if member_id == "after":
+            source.write_text("Updated review method\n")
+            (source.parent / "reference.txt").write_text("Updated reference\n")
+        result = _exec(service, "channel-invite-member", {
+            "channel_id": "ch-1", "member_id": member_id, "provider": "codex",
+            "channel_role": "critic", "skill_refs": ["review-method"],
+        })
+        assert result.get("ok"), result
+    members = [event.payload for event in log.read_all() if event.type == "channel.member.invited"]
+    for member, expected in zip(members, ["Original", "Updated"], strict=True):
+        refs = member["resolved_skill_refs"]
+        guidance = load_channel_skill_guidance(refs, state_dir=project_root / ".zf", project_root=project_root)
+        assert guidance[0]["content"] == f"{expected} review method\n"
+        assert Path(refs[0]["resolved_path"]).with_name("reference.txt").read_text() == f"{expected} reference\n"
+    assert legacy.read_text() == "Legacy pinned method\n"
 
 
 def test_channel_invite_skips_materialization_when_already_present(tmp_path: Path) -> None:
@@ -115,6 +147,39 @@ def test_channel_invite_skips_materialization_when_already_present(tmp_path: Pat
         / "runtime-skills"
         / "zf-channel-discussion-participant"
     ).exists()
+
+
+@pytest.mark.parametrize("entrypoint", ["message", "handoff"])
+def test_skill_drift_rejection_names_the_skill_instead_of_the_profile(tmp_path: Path, entrypoint: str) -> None:
+    service, log, project_root = _service(tmp_path)
+    source = project_root / "skills" / "review-method" / "SKILL.md"
+    source.parent.mkdir(parents=True)
+    source.write_text("Pinned method\n")
+    _exec(service, "channel-create", {"channel_id": "ch-1", "name": "ch-1"})
+    result = _exec(service, "channel-invite-member", {
+        "channel_id": "ch-1", "member_id": "reviewer", "provider": "codex",
+        "channel_role": "critic", "skill_refs": ["review-method"],
+    })
+    assert result.get("ok"), result
+    source.write_text("Changed method\n")
+    writer = EventWriter(log)
+    message = writer.emit("channel.message.posted", actor="web", payload={
+        "channel_id": "ch-1", "thread_id": "main", "message_id": "msg-review",
+        "member_id": "operator", "role": "user", "text": "@reviewer review",
+        "refs": {"synthesis_request_id": "s1"},
+    })
+    args = dict(state_dir=project_root / ".zf", writer=writer, actor="web", source="web", project_root=project_root)
+    if entrypoint == "message":
+        result = route_channel_message(**args, message_event=message, message_payload=message.payload)
+        event_type = "channel.context_pack.rejected"
+    else:
+        result = request_channel_handoff(**args, channel_id="ch-1", thread_id="main",
+            message_id="msg-review", member_id="operator", target_member_id="reviewer", reason="review")
+        event_type = "channel.handoff.failed"
+    assert result.reply_requests == []
+    assert result.skipped == [{"target_member_id": "reviewer", "reason": "skill_guidance_hash_mismatch"}]
+    rejected = [event for event in log.read_all() if event.type == event_type]
+    assert rejected[-1].payload["reason"] == "skill_guidance_hash_mismatch"
 
 
 def test_channel_invite_without_skill_refs_materializes_nothing(tmp_path: Path) -> None:
