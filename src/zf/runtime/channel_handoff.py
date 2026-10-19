@@ -140,6 +140,7 @@ def request_channel_handoff(
             project_root=project_root,
         )
     except SidecarRefError as exc:
+        kind = "skill_guidance" if exc.ref.startswith("skills/") else "profile_snapshot"
         writer.emit(
             "channel.handoff.failed",
             actor=actor,
@@ -151,14 +152,14 @@ def request_channel_handoff(
                 "message_id": message_id,
                 "member_id": member_id,
                 "target_member_id": target_member_id,
-                "reason": f"profile_snapshot_{exc.code}",
+                "reason": f"{kind}_{exc.code}",
                 "source": source,
             },
         )
         return HandoffResult(
             skipped=[{
                 "target_member_id": target_member_id,
-                "reason": f"profile_snapshot_{exc.code}",
+                "reason": f"{kind}_{exc.code}",
             }]
         )
     writer.emit(

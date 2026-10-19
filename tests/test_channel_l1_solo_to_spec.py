@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from zf.core.events import EventWriter
 from zf.core.events.log import EventLog
 from zf.runtime.channel_projection import project_channel
@@ -22,6 +24,12 @@ from zf.runtime.channel_router import route_channel_message
 
 CHANNEL_ID = "ch-zaofu"
 ARCH_MEMBER_ID = "claude-arch"
+
+
+@pytest.fixture(autouse=True)
+def _defer_provider_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    # This suite emits provider lifecycle events itself.
+    monkeypatch.setattr("zf.runtime.channel_router.dispatch_reply_request", lambda **_kwargs: None)
 
 
 def _seed_channel_with_arch(writer: EventWriter) -> None:

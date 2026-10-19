@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 from zf.core.events import ZfEvent
@@ -74,9 +75,21 @@ def _materialize_channel_skill_refs(
         if source is None or not source.is_file():
             unresolved.append(ref)
             continue
-        target = state_dir / "runtime-skills" / name / "SKILL.md"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source.parent, target.parent, dirs_exist_ok=True)
+        body = source.read_bytes()
+        digest = hashlib.sha256(body).hexdigest()
+        target = state_dir / "runtime-skills" / name / digest / "SKILL.md"
+        target.parent.parent.mkdir(parents=True, exist_ok=True)
+        # An invitation must not replace a method pinned by existing members.
+        # Publish the complete bundle before emitting its member binding.
+        with locked_path(target.parent):
+            if not target.parent.exists():
+                with tempfile.TemporaryDirectory(dir=target.parent.parent) as staging:
+                    bundle = Path(staging) / "bundle"
+                    shutil.copytree(source.parent, bundle)
+                    (bundle / "SKILL.md").write_bytes(body)
+                    bundle.replace(target.parent)
+            if hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                raise ValueError(f"channel skill snapshot digest mismatch: {ref}")
         resolved.append(_resolved_channel_skill(
             logical_ref=ref,
             path=target,

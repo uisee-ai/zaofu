@@ -20,6 +20,8 @@ Other 是问题卡片内提交的自由回答：选择后聚焦输入框，空�
 
 Kernel 的 Channel reply housekeeping 检查仍处于 phase2 的最新 requested 整理请求。超过 60 秒且没有 reply request 时，重放原请求到既有 reactor/router；复用消息、保持 request id，不铸造新一代。已经派发的回复继续由 reply remediation 管理；新请求、已关闭讨论、已解决问题及被替换请求不重启。单次最多补派 8 个请求。
 
+外部／内置 Channel Skill 按正文 SHA-256 写入 `project.state_dir/runtime-skills/<name>/<digest>/`，整目录原子发布。新增成员不会覆盖已有成员绑定的 Skill 文件，旧版非版本化路径也保持原样。项目自有 Skill 仍直接绑定项目源文件，变更后严格校验会要求重新绑定。上下文诊断将 `skill_guidance_*` 与 `profile_snapshot_*` 区分；历史共享文件已经漂移时，通过受控 `channel-invite-member` 重新绑定原成员，保留成员 ID、Profile 和权限，然后由原整理请求的恢复路径继续执行，不绕过哈希校验。
+
 ## 验证
 
 - `tests/test_channel_setup_other.py`：TestClient 调用实际 API / durable store / event / controlled action 路径，模拟 provider 返回，覆盖 Other → 新版确认 → multi_lens 群创建、注册角色后续接，以及未闭合和损坏提案。

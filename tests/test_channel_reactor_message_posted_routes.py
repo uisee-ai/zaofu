@@ -17,6 +17,7 @@ from threading import Thread
 import time
 
 import pytest
+from tests.channel_provider_fixtures import unavailable_headless_providers
 
 from zf.core.config.schema import (
     ProjectConfig,
@@ -37,6 +38,7 @@ from zf.runtime.transport import TmuxTransport
 
 
 CHANNEL_ID = "ch-zaofu"
+pytestmark = pytest.mark.usefixtures("unavailable_headless_providers")
 
 
 @pytest.fixture
