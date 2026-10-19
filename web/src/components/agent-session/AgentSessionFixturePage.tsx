@@ -75,6 +75,9 @@ const completedRun: AgentSessionRun = {
     part("diff_preview", "completed", "src/RichMarkdownText.tsx", { summary: "+3 −1", content: "```diff\n- const text = content;\n+ const text = isStreaming ? throttled : content;\n```" }),
     part("text", "completed", "Reply", { content: "Done — the build passed but **2 tests fail** in `tests/test_a.py`.\n\nThe failures look related to the streaming refactor:\n\n- `test_x` — expects the old chunked payload shape\n- `test_y` — timing assertion now races the throttle\n\nWant me to fix them, or just update the assertions?" }),
     part("text", "completed", "JSON reply", { content: JSON_REPLY }),
+    part("text", "completed", "Historical draft", {
+      content: '历史角色注册草稿，尚未执行。\n\n```json\n{"action_proposal":{"action":"channel-profile-register","payload":{"profile_id":"legacy-reviewer","role_markdown":"第一段\\n\\n第二段"}}}',
+    }),
   ],
 };
 

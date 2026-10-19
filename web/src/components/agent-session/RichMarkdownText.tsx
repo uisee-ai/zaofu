@@ -5,6 +5,7 @@ import type { MarkdownTextProps } from "./MarkdownText";
 
 import { ReferencePreviewContext } from "./referencePreview";
 import { localDocumentLink } from "./previewRegistry";
+import { prettyPrintIfJson } from "./jsonDisplay";
 
 type MarkdownComponents = NonNullable<StreamdownProps["components"]>;
 
@@ -74,7 +75,7 @@ const RichMarkdownText = memo(function RichMarkdownText({
       if (!isBlock) {
         return <code className={codeClassName} {...props}>{children}</code>;
       }
-      return <CodeBlock code={trimTrailingNewline(value)} language={language} />;
+      return <CodeBlock code={trimTrailingNewline(language === "json" ? prettyPrintIfJson(value) : value)} language={language} />;
     },
   }), [openReference]);
 
