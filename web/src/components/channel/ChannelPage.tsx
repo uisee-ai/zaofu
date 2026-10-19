@@ -693,7 +693,7 @@ export function ChannelPage({
   const ownerQuestionAttachments = useMemo(() => {
     const byRun = new Map<string, ChannelOwnerQuestion[]>();
     const unassigned: ChannelOwnerQuestion[] = [];
-    if (!ownerQuestionsOpen || !discussionBand?.ownerQuestions.length) {
+    if (!discussionBand?.ownerQuestions.length) {
       return { byRun, unassigned };
     }
     const activeThread = channelConversation.threads.find((thread) => thread.id === activeChannelThreadId)
@@ -710,7 +710,7 @@ export function ChannelPage({
       byRun.set(target.run.id, current);
     }
     return { byRun, unassigned };
-  }, [activeChannelThreadId, channelConversation, discussionBand, ownerQuestionsOpen]);
+  }, [activeChannelThreadId, channelConversation, discussionBand]);
   const decisionReceipts = useMemo(() => channelDecisionReceipts(detail, channelConversation, activeChannelThreadId),
     [detail, channelConversation, activeChannelThreadId]);
   const decisionQueueItems: ChannelDecisionItem[] = discussionBand?.ownerQuestions.map((question) => ({

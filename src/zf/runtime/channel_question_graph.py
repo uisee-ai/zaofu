@@ -6,6 +6,8 @@ import hashlib
 import json
 from typing import Any, Iterable
 
+from zf.runtime.channel_question_provenance import QUESTION_SOURCE_FIELDS
+
 
 QUESTION_KINDS = frozenset({
     "fact",
@@ -192,7 +194,9 @@ def question_graph_digest(
     thread_id: str,
 ) -> str:
     body = json.dumps(
-        _thread_questions(channel, thread_id=thread_id),
+        # Recovering navigation metadata must not invalidate an existing decision frontier.
+        [{key: value for key, value in question.items() if key not in QUESTION_SOURCE_FIELDS}
+         for question in _thread_questions(channel, thread_id=thread_id)],
         ensure_ascii=True,
         sort_keys=True,
         separators=(",", ":"),

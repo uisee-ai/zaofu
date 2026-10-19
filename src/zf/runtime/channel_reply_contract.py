@@ -66,6 +66,7 @@ from zf.runtime.channel_synthesis_currentness import (
 from zf.runtime.channel_templates import CHANNEL_TEMPLATES
 from zf.runtime.channel_member_proposals import prepare_member_proposals, emit_member_proposals
 from zf.runtime.channel_run_owner import reply_generation_is_current
+from zf.runtime.channel_question_provenance import question_source_for_request
 
 
 def emit_structured_reply_events(
@@ -704,6 +705,7 @@ def _emit_synthesis_locked(
                     "channel_id": channel_id,
                     "thread_id": thread_id,
                     **question_record,
+                    **question_source_for_request(channel_id, request),
                     "source": source,
                 },
             )
@@ -933,6 +935,7 @@ def _emit_contribution(
                 "channel_id": channel_id,
                 "thread_id": thread_id,
                 **question_record,
+                **question_source_for_request(channel_id, request),
                 "ordinal": index,
                 "source": source,
             },

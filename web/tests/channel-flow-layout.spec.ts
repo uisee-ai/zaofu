@@ -317,6 +317,20 @@ test("decision sheet traps focus on mobile and routes an unavailable source to d
   expect(state.writes).toEqual([]);
 });
 
+test("source remains available before question cards auto-open during another run", async ({ page, request }) => {
+  const detail = fixture();
+  detail.discussion_attention.main.active_agent_count = 1;
+  detail.provider_runs.push({ ...detail.provider_runs[0], run_id: "r2", status: "running", parts: [] });
+  const state = await setup(page, request, detail);
+  const queue = page.getByTestId("channel-decision-queue");
+  await expect(queue).toContainText("Open source question");
+  await expect(page.locator('.channel-question-card[data-question-id="q1"]')).toHaveCount(0);
+  await queue.getByRole("button", { name: /Who approves execution/ }).click();
+  await expect(page.locator('.channel-question-card[data-question-id="q1"]')).toBeVisible();
+  await expect(page.getByTestId("channel-question-source-diagnostics")).toHaveCount(0);
+  expect(state.writes).toEqual([]);
+});
+
 test("empty channel keeps the composer primary without a placeholder PRD card", async ({ page, request }) => {
   const detail = fixture();
   detail.messages = [];
