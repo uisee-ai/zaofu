@@ -24,7 +24,7 @@ _HIDE = "hide"
 class ChannelReplyStreamFilter:
     """Filter one provider text stream without parsing incomplete JSON.
 
-    The canonical response contract is a concise Markdown reply followed by a
+    The canonical response contract is a complete Markdown reply followed by a
     marker and one JSON object. Only the Markdown belongs on the ephemeral
     live bus. A small line-start probe also fail-closes legacy replies that
     omit the marker and start a known Channel contract directly.
@@ -91,20 +91,39 @@ class ChannelVisibleMessageEmitter:
         self._emit = emit
         self._filter = ChannelReplyStreamFilter()
         self._last_text_message: Any | None = None
+        self._visible = ""
+        self._continuing = False
+
+    def begin_continuation(self) -> None:
+        # A new turn may continue an unfinished JSON string. Buffer its text
+        # until the merged canonical reply establishes the public boundary.
+        self._continuing = True
 
     def emit(self, message: Any) -> None:
         if str(getattr(message, "type", "") or "") != "text":
             self._emit(message)
             return
         self._last_text_message = message
+        if self._continuing:
+            return
         content = self._filter.feed(str(getattr(message, "content", "") or ""))
         if content:
+            self._visible += content
             self._emit(replace(message, content=content))
 
-    def finish(self) -> None:
+    def finish(self, full_reply: str | None = None) -> None:
         tail = self._filter.finish()
         if tail and self._last_text_message is not None:
+            self._visible += tail
             self._emit(replace(self._last_text_message, content=tail))
+        if full_reply is not None and self._last_text_message is not None:
+            final_filter = ChannelReplyStreamFilter()
+            final = final_filter.feed(full_reply) + final_filter.finish()
+            if final.startswith(self._visible):
+                suffix = final[len(self._visible):]
+                if suffix:
+                    self._emit(replace(self._last_text_message, content=suffix))
+                    self._visible = final
 
 
 def _classify_probe(probe: str) -> str:

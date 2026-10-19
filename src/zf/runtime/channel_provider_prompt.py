@@ -9,6 +9,7 @@ from typing import Any
 
 from zf.core.security.redaction import redact_obj
 from zf.runtime.channel_contracts import (
+    active_channel_resolved_skill_refs,
     active_channel_skill_refs,
     normalize_permission_profile,
     permission_profile_write_policy,
@@ -94,6 +95,7 @@ def build_channel_provider_prompt(
         (
             key
             for key in (
+                "adaptive_next_round_id",
                 "question_dedup_request_id",
                 "synthesis_request_id",
                 "cross_review_request_id",
@@ -103,6 +105,8 @@ def build_channel_provider_prompt(
         ),
         "",
     )
+    if context_pack.get("semantic_source_stage") == "blind_contribution":
+        typed_phase_ref = "blind_contribution"
     context_view = redact_obj(_intern_cross_review_coverage(context_pack))
     source_file = ""
     if (state_dir is not None and context_pack.get("context_pack_ref")
@@ -248,3 +252,56 @@ def _intern_cross_review_coverage(context_pack: dict[str, Any]) -> dict[str, Any
     return {**context_pack, "cross_review_index": projected,
             "cross_review_source_coverage_manifests": {ref: encoded[key] for key, ref in repeated.items()},
             "cross_review_index_encoding": "source_coverage_manifest_ref resolves in cross_review_source_coverage_manifests; all other fields and full semantic source documents are unchanged. cross_review_index_digest binds the expanded original index."}
+
+
+def build_channel_system_prompt(
+    member: dict[str, Any],
+    *,
+    channel: dict[str, Any] | None = None,
+) -> str:
+    member_id = str(member.get("member_id") or "agent")
+    role = str(member.get("channel_role") or member.get("role") or "channel member")
+    provider = str(member.get("backend") or member.get("provider") or "agent")
+    permission_profile = normalize_permission_profile(member.get("permission_profile"))
+    write_policy = (
+        member.get("write_policy")
+        if isinstance(member.get("write_policy"), dict)
+        else permission_profile_write_policy(permission_profile)
+    )
+    discussion = (
+        channel.get("discussion")
+        if isinstance(channel, dict)
+        and isinstance(channel.get("discussion"), dict)
+        else {}
+    )
+    mode = discussion.get("mode") or discussion.get("product_mode") or "conversation"
+    skill_refs = active_channel_skill_refs(
+        member.get("skill_refs") or [],
+        discussion_mode=mode,
+    )
+    resolved_skill_refs = active_channel_resolved_skill_refs(
+        member.get("resolved_skill_refs") or [],
+        discussion_mode=mode,
+    )
+    prompt = (
+        f"You are {member_id}, a {provider} agent participating in a ZaoFu Agent Channel. "
+        f"Your channel role is {role}. Reply as a channel teammate. Give the complete answer at the depth the task needs; "
+        "produce all artifact content required by the current response contract in full. Stay "
+        "grounded in the provided channel context, and do not mutate runtime state directly. "
+        "Do not include step-by-step progress narration such as 'I will check' or "
+        "'I will write' in the final reply; ZaoFu renders runtime activity separately. "
+        "Preserve full Markdown paragraphs, code, evidence and unresolved constraints. Use the summary field only for navigation. "
+        f"Your channel permission_profile is {permission_profile}. "
+        f"Write policy: {redact_obj(write_policy)}. "
+        f"Channel skill refs: {redact_obj(skill_refs)}. "
+        f"Resolved channel skill refs: {redact_obj(resolved_skill_refs)}. "
+        "If work should be executed by ZaoFu, recommend a controlled workflow/action request. "
+        "Only write files when the permission_profile and write policy explicitly allow it."
+    )
+    # Member-declared reply-output contract (folded from channel.member.invited
+    # payload.reply_contract): the inviter owns the semantics, the kernel only
+    # relays it — e.g. the Feishu kanban agent's action-proposal JSON contract.
+    reply_contract = str(member.get("reply_contract") or "").strip()
+    if reply_contract:
+        prompt = f"{prompt}\n\n{reply_contract}"
+    return prompt

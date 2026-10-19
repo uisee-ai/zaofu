@@ -5982,32 +5982,9 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         return None
 
     def _check_channel_reply_remediation(self) -> None:
-        """Recover unstarted consolidation and failed/stuck Channel replies.
+        from zf.runtime.channel_reply_remediation import check_channel_reply_remediation
 
-        Reply remediation caps redispatch and exposes exhausted recovery to RM.
-        """
-        from zf.runtime.channel_reply_remediation import remediate_channel_replies
-
-        try:
-            events = self.event_log.read_all()
-        except Exception:
-            return
-        from zf.runtime.channel_dedup_recovery import resume_unstarted_question_dedup
-
-        resume_unstarted_question_dedup(self, events)
-        if not any(event.type.startswith("channel.agent.reply.") for event in events):
-            return
-
-        remediate_channel_replies(
-            self.event_writer,
-            events=events,
-        )
-        from zf.runtime.channel_reply_remediation import (
-            resume_pending_channel_reply_queues,
-        )
-
-        # Include generations just emitted by remediation in this drain.
-        resume_pending_channel_reply_queues(self, self.event_log.read_all())
+        check_channel_reply_remediation(self)
 
     def _on_worker_completed(self, event: ZfEvent) -> WorkflowRuntimeDecision | None:
         """Route provider/worker self-completion through completion audit.

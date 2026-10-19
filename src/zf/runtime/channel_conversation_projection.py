@@ -296,8 +296,14 @@ def _conversation_message(
             "ZaoFu retried synthesis after contract validation failed "
             f"(revision {revision})."
         )
+    body_error = ""
     if role in {"assistant", "user"} or request_id:
-        text = hydrate_channel_message_text(state_dir, message)
+        try:
+            text = hydrate_channel_message_text(state_dir, message, strict=True)
+        except SidecarRefError as exc:
+            body_error = exc.code
+            text = "完整消息正文不可读取，请检查来源文件后重试。"
+
     if role == "assistant" or request_id:
         text = structured_reply_display_text(text, "channel_contribution")
     out = {
@@ -326,6 +332,8 @@ def _conversation_message(
         if key in message
     }
     out["text"] = text
+    if body_error:
+        out["body_error"] = body_error
     if synthesis_repair_id:
         out["role"] = "system"
         out["member_id"] = "zf-kernel"
@@ -408,6 +416,8 @@ def _compact_refs(refs: dict[str, Any]) -> dict[str, Any]:
         for key in (
             "request_id",
             "run_id",
+            "run_generation",
+            "incomplete",
             "provider_session_id",
             "artifact_ref",
             "artifact_digest",

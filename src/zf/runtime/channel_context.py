@@ -50,9 +50,9 @@ def build_channel_context_pack(
 ) -> dict[str, Any]:
     """Build a compact, reference-oriented context packet for one reply.
 
-    The pack deliberately carries bounded excerpts and message/event refs rather
-    than the full transcript. Provider-specific adapters can rehydrate more
-    context later through the same event-log truth if they are allowed to.
+    Navigation excerpts stay bounded. The semantic source bundle separately
+    carries complete, verified bodies up to the trigger, subject to phase
+    visibility and a fail-closed source budget.
     """
     profile = visibility_profile or "minimal"
     normalized_permission_profile = normalize_permission_profile(permission_profile)
@@ -96,7 +96,10 @@ def build_channel_context_pack(
         channel,
         trigger_message_id=trigger_message_id,
     )
-    requires_complete_ledger = bool(
+    session = ((channel or {}).get("discussions") or {}).get(thread_id) or {}
+    blind = bool(trigger_message_id and trigger_message_id == session.get("requirement_message_id")
+                 or trigger_refs.get("adaptive_next_round_id"))
+    requires_complete_ledger = not blind and bool(
         trigger_refs.get("question_dedup_request_id")
         or trigger_refs.get("synthesis_request_id")
         or trigger_refs.get("cross_review_request_id")
@@ -110,8 +113,11 @@ def build_channel_context_pack(
         if requires_complete_ledger and state_dir is not None
         else []
     )
+    visible_messages = list((channel or {}).get("messages") or (channel or {}).get("recent_messages") or [])
+    if blind:
+        visible_messages = [item for item in visible_messages if item.get("role") == "user"]
     selected = _select_messages(
-        list((channel or {}).get("messages") or (channel or {}).get("recent_messages") or []),
+        visible_messages,
         thread_id=thread_id,
         trigger_message_id=trigger_message_id,
         max_messages=profile_limits["max_messages"],
@@ -153,6 +159,13 @@ def build_channel_context_pack(
         channel,
         thread_id=thread_id,
     )
+    if blind:
+        question_ledger = []
+        ledger_digest = _stable_digest([])
+        contribution_index = []
+        cross_review_index = []
+        frontier = {}
+        questionnaire = {}
     semantic_sources = build_semantic_source_bundle(
         channel,
         thread_id=thread_id,
@@ -218,10 +231,10 @@ def build_channel_context_pack(
                 if isinstance(proposal, dict) and str(proposal.get("thread_id") or "main") == thread_id],
         },
         "agent_context": (
-            redact_obj(agent_context) if isinstance(agent_context, dict) else {}
+            redact_obj(agent_context) if not blind and isinstance(agent_context, dict) else {}
         ),
         "role_definition": role_definition,
-        "summary": str((channel or {}).get("summary") or ""),
+        "summary": "" if blind else str((channel or {}).get("summary") or ""),
         "message_refs": [
             {
                 "message_id": str(item.get("message_id") or ""),
@@ -257,11 +270,11 @@ def build_channel_context_pack(
         ],
         "semantic_source_documents": semantic_sources["documents"],
         "artifact_refs": _select_artifact_refs(
-            channel,
+            None if blind else channel,
             selected_messages=selected,
             visibility_profile=profile,
         ),
-        "report_refs": _select_report_refs(channel, visibility_profile=profile),
+        "report_refs": [] if blind else _select_report_refs(channel, visibility_profile=profile),
         "limits": {
             "max_messages": profile_limits["max_messages"],
             "max_text_chars": profile_limits["max_text_chars"],
@@ -333,8 +346,10 @@ def _select_messages(
         item for item in messages
         if str(item.get("thread_id") or "main") == thread_id
     ]
-    if not same_thread:
-        same_thread = messages
+    position = next((i for i, item in enumerate(same_thread)
+                     if item.get("message_id") == trigger_message_id), None)
+    if position is not None:
+        same_thread = same_thread[:position + 1]
     tail = same_thread[-max_messages:]
     selected: list[dict[str, Any]] = []
     used = 0

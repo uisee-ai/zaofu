@@ -53,6 +53,8 @@ from zf.web.agent_session_runtime import (
     run_key,
 )
 
+from zf.web.codex_public_text import CodexPublicText
+
 logger = logging.getLogger(__name__)
 
 
@@ -830,6 +832,7 @@ class CodexHeadlessBackend:
                 }
                 if thinking_level:
                     turn_params["effort"] = thinking_level
+                client.turn_submitted = True
                 client.request("turn/start", turn_params)
                 (
                     reply,
@@ -857,7 +860,11 @@ class CodexHeadlessBackend:
                     thread_id=thread_id,
                     provider_session_id=codex_thread_id,
                     reply=reply,
-                    messages=[HeadlessMessage(type="text", content=reply)] if reply else [],
+                    messages=[HeadlessMessage(
+                        type="status" if item.phase == "commentary" else "text", content=item.text,
+                        raw={"item_id": item.item_id, "turn_id": item.turn_id,
+                             "phase": item.phase, "completed": item.completed},
+                    ) for item in client._public_text.items.values()],
                     usage=usage,
                     resumed=resumed,
                     fallback_reason=fallback_reason,
@@ -881,17 +888,19 @@ class CodexHeadlessBackend:
                 backend=self.backend_id,
                 thread_id=thread_id,
                 provider_session_id=client.thread_id or provider_session_id,
-                reply=(
-                    client._completed_reply
-                    or "".join(client._reply_parts)
-                ).strip(),
-                messages=[],
+                reply=client._public_text.reply,
+                messages=[HeadlessMessage(
+                    type="status" if item.phase == "commentary" else "text", content=item.text,
+                    raw={"item_id": item.item_id, "turn_id": item.turn_id,
+                         "phase": item.phase, "completed": item.completed},
+                ) for item in client._public_text.items.values()],
                 usage=dict(client._usage),
                 resumed=resumed,
                 fallback_reason=fallback_reason,
                 error=_codex_sandbox_error_with_hint(error) if status == "sandbox_unsupported" else error,
                 incomplete=incomplete,
                 completion_reason=error if incomplete else "",
+                telemetry={"input_delivery": "unknown" if client.turn_submitted and not client.turn_outcome_known else "settled"},
             )
         finally:
             client.close()
@@ -1993,8 +2002,9 @@ class _CodexRpcClient:
         self.process: subprocess.Popen[str] | None = None
         self._queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self._next_id = 0
-        self._reply_parts: list[str] = []
-        self._completed_reply = ""
+        self._public_text = CodexPublicText()
+        self.turn_submitted = False
+        self.turn_outcome_known = False
         self._usage: dict[str, Any] = {}
         self._stderr_parts: list[str] = []
         self.thread_id = ""
@@ -2039,6 +2049,8 @@ class _CodexRpcClient:
                 continue
             if item.get("id") == req_id:
                 if "error" in item:
+                    if method == "turn/start":
+                        self.turn_outcome_known = True  # Explicit negative ACK, safe to classify/retry.
                     raise RuntimeError(str(item["error"]))
                 result = item.get("result")
                 return result if isinstance(result, dict) else {}
@@ -2072,10 +2084,8 @@ class _CodexRpcClient:
                 timeout_budget_s = self._inactivity_timeout_s()
                 deadline = time.monotonic() + timeout_budget_s
                 if self.native_interaction_requested:
-                    reply = self._completed_reply or "".join(
-                        part for part in self._reply_parts if part
-                    )
-                    return reply.strip(), self._usage, False, "native_interaction_requested"
+                    reply = self._public_text.reply
+                    return reply, self._usage, False, "native_interaction_requested"
                 continue
             message = self._handle_notification(item)
             timeout_budget_s = self._inactivity_timeout_s()
@@ -2083,12 +2093,13 @@ class _CodexRpcClient:
             if message is not None and on_message is not None:
                 on_message(message)
             if method.endswith("turn/completed") or method == "turn/completed":
+                self.turn_outcome_known = True
                 incomplete, completion_reason = _codex_turn_completion(item)
                 if not incomplete:
                     self._raise_if_turn_failed(item)
-                reply = self._completed_reply or "".join(part for part in self._reply_parts if part)
+                reply = self._public_text.reply
                 return (
-                    reply.strip(),
+                    reply,
                     self._usage,
                     incomplete,
                     completion_reason,
@@ -2174,11 +2185,14 @@ class _CodexRpcClient:
                 session_id=self.thread_id,
                 raw=item,
             )
-        if method.endswith("item/agentMessage/delta"):
-            text = str(params.get("delta") or "")
-            if text:
-                self._reply_parts.append(text)
-                return HeadlessMessage(type="text", content=text, raw=item)
+        native = params.get("item") or {}
+        if method.endswith("item/agentMessage/delta") or (
+            isinstance(native, dict) and native.get("type") == "agentMessage"
+        ):
+            chunk = self._public_text.observe(method, params)
+            if chunk:
+                kind, text = chunk
+                return HeadlessMessage(type=kind, content=text, raw=item)
             return None
         if method.endswith("item/started"):
             message = _codex_item_message(item, message_type="tool_use")
@@ -2191,22 +2205,6 @@ class _CodexRpcClient:
                 if message.type == "tool_result":
                     self._in_flight_tools = max(0, self._in_flight_tools - 1)
                 return message
-        if method.endswith("item/completed"):
-            item = params.get("item")
-            if isinstance(item, dict) and item.get("type") == "agentMessage":
-                text = _extract_text(item)
-                if text:
-                    self._completed_reply = text
-                    streamed = "".join(part for part in self._reply_parts if part)
-                    if not streamed:
-                        self._reply_parts.append(text)
-                        return HeadlessMessage(type="text", content=text, raw=item)
-                    if text.startswith(streamed):
-                        suffix = text[len(streamed):]
-                        if suffix:
-                            self._reply_parts.append(suffix)
-                            return HeadlessMessage(type="text", content=suffix, raw=item)
-            return None
         if method.endswith("item/toolCall/started") or method.endswith("item/toolCall/completed"):
             item_payload = params.get("item") if isinstance(params.get("item"), dict) else params
             if isinstance(item_payload, dict):

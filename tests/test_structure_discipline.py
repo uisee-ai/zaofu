@@ -40,7 +40,7 @@ def test_00_index_links_resolve_to_existing_files():
     if not index_path.exists() and _PUBLIC_EXPORT_MANIFEST.exists():
         pytest.skip("public export excludes docs/design")
     index = index_path.read_text(encoding="utf-8")
-    links = re.findall(r"\]\(([0-9]{2}-[A-Za-z0-9._-]+\.md)\)", index)
+    links = re.findall(r"\]\(([0-9]{2,}-[A-Za-z0-9._-]+\.md)\)", index)
     assert links, "00-index should register numbered design docs"
     missing = sorted({
         link for link in links if not (_DESIGN / link).exists()

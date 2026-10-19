@@ -42,6 +42,8 @@ _STATUS_BY_TYPE = {
 _NON_RETRYABLE_FAILURE_STATUSES = frozenset({
     "command_unavailable",
     "incomplete",
+    "delivery_unknown",
+    "result_unreadable",
     "permission_denied",
     "permission_drift_blocked",
     "provider_binding_missing",
@@ -302,6 +304,9 @@ def channel_reply_remediation_candidates(
             retry_after = _retry_after_seconds(str(item.get("reason") or ""))
             if retry_after is not None and (age is None or age < retry_after):
                 continue
+        if status == "running":
+            item = {**item, "retryable": False, "failure_status": "delivery_unknown",
+                    "reason": "provider delivery outcome unknown; inspect the original run before retry"}
         generation = _positive_int(item.get("run_generation"), default=1)
         if not bool(item.get("retryable", True)):
             if exhausted_marked.get(key, 0) >= generation:
@@ -359,10 +364,10 @@ def remediate_channel_replies(
                     channel_id=channel_id,
                     reason=(
                         f"channel reply timed out after bounded retries "
-                        f"(generation {generation})"
+                        f"(generation {generation}); {candidate.get('reason') or ''}"
                     ),
                     provider_session_id=str(candidate.get("provider_session_id") or ""),
-                    failure_status="timeout",
+                    failure_status=str(candidate.get("failure_status") or "timeout"),
                 )
             writer.emit(
                 CHANNEL_REPLY_EXHAUSTED_EVENT,
@@ -561,3 +566,23 @@ def _positive_int(value: object, *, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed > 0 else default
+
+
+def check_channel_reply_remediation(runtime: Any) -> None:
+    """Recover durable intents, remediate replies, then drain their queues."""
+    from zf.runtime.channel_dedup_recovery import resume_unstarted_question_dedup
+    from zf.runtime.channel_handoff_recovery import resume_unstarted_channel_handoffs
+    from zf.runtime.channel_result_recovery import resume_unapplied_channel_results
+
+    try:
+        events = runtime.event_log.read_all()
+    except Exception:
+        return
+    resume_unstarted_question_dedup(runtime, events)
+    resume_unstarted_channel_handoffs(runtime, events)
+    resume_unapplied_channel_results(runtime, events)
+    events = runtime.event_log.read_all()
+    if not any(event.type.startswith("channel.agent.reply.") for event in events):
+        return
+    remediate_channel_replies(runtime.event_writer, events=events)
+    resume_pending_channel_reply_queues(runtime, runtime.event_log.read_all())

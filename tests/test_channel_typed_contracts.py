@@ -355,7 +355,7 @@ def test_all_typed_reply_prompts_separate_markdown_from_machine_contract() -> No
 
     for channel, request, message in cases:
         prompt = channel_reply_response_contract(channel, request, message)
-        assert "First write a concise user-facing Markdown response" in prompt
+        assert "First write a complete user-facing Markdown response" in prompt
         assert CHANNEL_CONTRACT_MARKER in prompt
         assert "without quotes or code fences" in prompt
         assert "must be the final content" in prompt
@@ -421,8 +421,11 @@ def test_deliberation_context_carries_complete_prior_message_bodies(
         visibility_profile="reviewer",
         state_dir=state_dir,
     )
-    assert ordinary["semantic_source_required"] is False
-    assert ordinary["semantic_source_documents"] == []
+    assert ordinary["semantic_source_required"] is True
+    assert ordinary["semantic_source_complete"] is True
+    assert [item["message_id"] for item in ordinary["semantic_source_documents"]] == [
+        "msg-requirement"
+    ]
     assert all(
         len(item["text_excerpt"]) <= 240
         for item in ordinary["message_refs"]

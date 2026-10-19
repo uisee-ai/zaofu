@@ -69,7 +69,7 @@ def test_dispatch_drains_every_formal_review_once_for_the_same_member(tmp_path):
     assert all(row["status"] == "completed" for row in project_channel(tmp_path, CH)["cross_reviews"])
 
 
-def test_chat_latest_only_is_scoped_to_the_thread_and_keeps_formal_work(tmp_path):
+def test_chat_keeps_every_input_and_formal_work(tmp_path):
     writer = runtime(tmp_path)
     review(writer, "formal")
     queued(writer, "formal")
@@ -78,8 +78,8 @@ def test_chat_latest_only_is_scoped_to_the_thread_and_keeps_formal_work(tmp_path
     queued(writer, "other-thread", thread="another")
     result = dispatch_pending_replies(state_dir=tmp_path, writer=writer, channel_id=CH,
                                       actor="test", source="test", allow_queued=True, project_root=tmp_path)
-    assert sorted(result.completed) == ["reply-formal", "reply-new-chat", "reply-other-thread"]
-    assert result.failed == ["reply-old-chat"]
+    assert sorted(result.completed) == ["reply-formal", "reply-new-chat", "reply-old-chat", "reply-other-thread"]
+    assert result.failed == []
 
 
 def test_mistaken_chat_supersession_rearms_only_a_live_bound_review(tmp_path):

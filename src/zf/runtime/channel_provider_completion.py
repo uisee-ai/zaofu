@@ -11,6 +11,7 @@ from zf.runtime.channel_reply_contract import (
     fake_channel_reply_text,
 )
 from zf.runtime.channel_reply_parsing import structured_reply_payload_with_error
+from zf.runtime.channel_reply_stream import ChannelReplyStreamFilter
 
 
 DEFAULT_CHANNEL_PROVIDER_MAX_CONTINUATIONS = 2
@@ -56,7 +57,7 @@ def run_channel_provider_with_continuations(
     request: dict[str, Any],
     message: dict[str, Any],
 ) -> Any:
-    result = run_turn(initial_prompt, provider_session_id)
+    result = _normalize_public_items(run_turn(initial_prompt, provider_session_id))
     expected_contract_key = _expected_channel_contract_key(
         channel,
         request,
@@ -77,18 +78,19 @@ def run_channel_provider_with_continuations(
         if not session_id:
             break
         continuation_count += 1
-        continued = run_turn(
+        continued = _normalize_public_items(run_turn(
             _continuation_prompt(
                 expected_contract_key=expected_contract_key,
                 reason=incomplete_reason,
                 attempt=continuation_count,
             ),
             session_id,
-        )
+        ))
         result = _merge_turn_results(
             result,
             continued,
             continuation_count=continuation_count,
+            expected_contract_key=expected_contract_key,
         )
         needs_continuation, incomplete_reason = _continuation_reason(
             result,
@@ -148,6 +150,8 @@ def _continuation_reason(
     *,
     expected_contract_key: str,
 ) -> tuple[bool, str]:
+    if (getattr(result, "telemetry", {}) or {}).get("input_delivery") == "unknown":
+        return False, "provider_delivery_unknown"
     status = str(getattr(result, "status", "") or "").strip().lower()
     if bool(getattr(result, "incomplete", False)) or status == "incomplete":
         return True, str(
@@ -190,13 +194,22 @@ def _merge_turn_results(
     current: Any,
     *,
     continuation_count: int,
+    expected_contract_key: str = "",
 ) -> Any:
+    previous_text = str(getattr(previous, "reply", "") or "")
+    current_text = str(getattr(current, "reply", "") or "")
+    reply = previous_text + current_text
+    if expected_contract_key and current_text:
+        _, error = structured_reply_payload_with_error(current_text, expected_contract_key)
+        if not error:
+            # A complete replacement contract supersedes only the old machine
+            # suffix. Earlier human paragraphs remain authoritative text.
+            visible = ChannelReplyStreamFilter()
+            prefix = visible.feed(previous_text) + visible.finish()
+            reply = prefix + current_text
     return replace(
         current,
-        reply=(
-            str(getattr(previous, "reply", "") or "")
-            + str(getattr(current, "reply", "") or "")
-        ),
+        reply=reply,
         messages=[
             *list(getattr(previous, "messages", []) or []),
             *list(getattr(current, "messages", []) or []),
@@ -207,6 +220,21 @@ def _merge_turn_results(
         ),
         continuation_count=continuation_count,
     )
+
+
+def _normalize_public_items(result: Any) -> Any:
+    texts = [m.content for m in getattr(result, "messages", [])
+             if m.type == "text" and m.content and (m.raw or {}).get("completed")]
+    if len(texts) < 2 or "\n\n".join(texts) != getattr(result, "reply", ""):
+        return result
+    # Each native item is complete. Preserve its human body; only the last
+    # item's machine suffix belongs to the final response contract. Raw items
+    # remain in the sidecar for replay and audit.
+    bodies = []
+    for text in texts[:-1]:
+        stream_filter = ChannelReplyStreamFilter()
+        bodies.append(stream_filter.feed(text) + stream_filter.finish())
+    return replace(result, reply="\n\n".join([*bodies, texts[-1]]))
 
 
 def _merge_usage(previous: object, current: object) -> dict[str, Any]:

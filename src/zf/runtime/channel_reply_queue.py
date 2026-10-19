@@ -6,26 +6,10 @@ from zf.core.events import EventWriter, ZfEvent
 from zf.runtime.channel_run_owner import provider_run_fields_for_request
 
 
-_CONTRACT_REFS = (
-    "cross_review_request_id", "consensus_review_id", "synthesis_request_id",
-    "question_dedup_request_id", "adaptive_next_round_id", "member_invitation_proposal_id",
-)
-
-
 def reply_coalescing_key(channel: dict[str, Any], request: dict[str, Any]) -> tuple[str, ...]:
-    """Ordinary chat replaces only chat for the same member and user thread."""
-    message = next((m for m in channel.get("messages", [])
-                    if m.get("message_id") == request.get("message_id")), {})
-    refs = message.get("refs") or {}
-    session = (channel.get("discussions") or {}).get(request.get("thread_id", "main"), {})
-    formal = (any(refs.get(key) for key in _CONTRACT_REFS)
-              or request.get("routing_reason") == "discussion_blind_fanout"
-              or request.get("handoff_request_event_id")
-              or (request.get("message_id") and request.get("message_id") in {
-                  session.get("requirement_message_id"), session.get("adaptive_next_round_message_id")}))
-    if formal:
-        return ("request", str(request.get("request_id") or ""))
-    return ("chat", str(request.get("target_member_id") or ""), str(request.get("thread_id") or "main"))
+    """Every accepted input owns work; coalesce only an identical request."""
+    return ("request", str(request.get("request_id") or ""),
+            str(request.get("target_member_id") or ""), str(request.get("thread_id") or "main"))
 
 
 def current_review_reply_bindings(

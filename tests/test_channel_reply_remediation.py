@@ -205,7 +205,10 @@ def test_fresh_running_is_not_a_candidate_but_stale_running_is():
         _evt("channel.agent.reply.started", age=1990),
     ]
     cands = channel_reply_remediation_candidates(stale, now=NOW)
-    assert len(cands) == 1 and cands[0]["kind"] == "redispatch"
+    assert len(cands) == 1 and cands[0]["kind"] == "exhaust"
+
+    assert cands[0]["failure_status"] == "delivery_unknown"
+    assert cands[0]["retryable"] is False
 
 
 def test_completed_reply_is_never_a_candidate():

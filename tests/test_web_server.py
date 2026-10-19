@@ -2110,6 +2110,12 @@ class TestApiChannels:
             headers={"x-zf-web-token": "test-token"},
             json={"channel_id": "ch-zaofu", "mode": "fanout_then_synthesis"},
         )
+        EventWriter(EventLog(state_dir / "events.jsonl")).emit(
+            "channel.message.posted", actor="web", payload={
+                "channel_id": "ch-zaofu", "thread_id": "main", "message_id": "msg-1",
+                "member_id": "dev-1", "role": "assistant", "text": "Please verify this evidence.",
+            },
+        )
         handoff = local_client.post(
             "/api/actions/channel.handoff",
             headers={"x-zf-web-token": "test-token"},
