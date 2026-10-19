@@ -5699,6 +5699,10 @@ def _web_action(
             "reason": "missing or invalid web action token/session",
         }
 
+    if legacy_route and project_root is not None:
+        config = _resolve_api_project("default", default_project_id=project_id or "default",
+            default_state_dir=state_dir, default_config=config, default_project_root=project_root,
+            require_initialized=False).config
     canonical_action = _canonical_action(action_name)
     request_payload, idempotency_key = _action_request_identity(
         payload,

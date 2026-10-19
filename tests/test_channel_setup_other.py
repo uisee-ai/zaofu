@@ -96,7 +96,8 @@ def test_other_resumes_exact_plan_and_replaces_it_without_creating_channel(tmp_p
 
 @pytest.mark.mock_e2e
 @pytest.mark.parametrize("answer_kind", ["other", "continue"])
-def test_profile_prerequisite_can_continue_the_answered_setup(tmp_path, monkeypatch, answer_kind):
+@pytest.mark.parametrize("scoped", [False, True])
+def test_profile_prerequisite_can_continue_the_answered_setup(tmp_path, monkeypatch, answer_kind, scoped):
     from tests.test_channel_profile_registration import setup, payload as profile_payload
     path, writer, service = setup(tmp_path, monkeypatch)
     state = tmp_path / "state"
@@ -114,10 +115,16 @@ def test_profile_prerequisite_can_continue_the_answered_setup(tmp_path, monkeypa
         "payload": profile_payload(path), "intent": {"decision": "propose_action", "source_quote": custom}}})
     replies = iter([initial_plan,
                     "先补齐角色。\n\n```json\n" + proposal_body, _channel_setup_answer()])
+    contexts = []
+
+    def run_turn(**kwargs):
+        contexts.append(kwargs["context"])
+        return HeadlessTurnResult(ok=True, status="completed", backend="codex-headless",
+            thread_id="main", provider_session_id="profile-session", reply=next(replies), messages=[], usage={})
+
     monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
-    monkeypatch.setattr("zf.web.observability.create_observed_headless_agent", lambda **kwargs: SimpleNamespace(
-        run_turn=lambda **kwargs: HeadlessTurnResult(ok=True, status="completed", backend="codex-headless",
-            thread_id="main", provider_session_id="profile-session", reply=next(replies), messages=[], usage={})))
+    monkeypatch.setattr("zf.web.observability.create_observed_headless_agent",
+                        lambda **kwargs: SimpleNamespace(run_turn=run_turn))
     client = TestClient(create_app(state, config=service.config, project_root=tmp_path))
     project_id = client.get("/api/workspace/projects").json()["server_default_project_id"]
     headers = {"x-zf-web-token": "test-token"}
@@ -145,10 +152,14 @@ def test_profile_prerequisite_can_continue_the_answered_setup(tmp_path, monkeypa
     settled = client.post(f"/api/projects/{project_id}/webchat/interactions/{approval['interaction_id']}/answer", headers=headers,
         json={"revision": approval["revision"], "response": {"decision": "approved", "applied_action": "channel-profile-register"}, "resume": False})
     assert settled.status_code == 200, settled.text
-    continued = client.post("/api/actions/chat-orchestrator", headers=headers, json={**base,
+    route = f"/api/projects/{project_id}/actions/chat-orchestrator" if scoped else "/api/actions/chat-orchestrator"
+    continuation_body = {**base,
         "turn_id": "setup-after-profile", "message": "注册成功，继续原设置并提供确认选项。",
-        "plan_discussion": {key: continuation[key] for key in ("request_event_id", "request_id", "revision")}})
+        "plan_discussion": {key: continuation[key] for key in ("request_event_id", "request_id", "revision")}}
+    continued = client.post(route, headers=headers, json=(
+        {"project_id": project_id, "payload": continuation_body} if scoped else continuation_body))
     assert continued.status_code == 200, continued.text
+    assert "ui-ux" in {profile["profile_id"] for profile in contexts[-1]["channel_profile_catalog"]}
     revised = store.list_interactions(turn_id="setup-after-profile", status="pending")[0]["request"]
     assert revised["request_id"] == plan["request_id"] and revised["revision"] == plan["revision"] + 1
     assert revised["valid"]
