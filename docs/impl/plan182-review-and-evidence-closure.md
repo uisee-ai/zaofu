@@ -4,6 +4,7 @@
 > 设计入口：[182](../design/182-plan-review-task-slicing-and-evidence-closure.md)。
 > 补充修复：[语义审查、角色图与格式化 Preview](../records/2026-10-20-0528-plan182-semantic-followup.md)。
 > 后续执行：[Task map 执行一致性与受控重规划](../records/2026-10-20-0725-taskmap-semantic-repair.md)。
+> 交接修复：[引用式端口搬移与大小边界](../records/2026-10-20-0806-taskmap-artifact-handoff.md)。
 > 以下为上轮实施时的证据，Plan 当前状态与语义结论范围以后续记录为准。
 > 案例评审：[洛书重规划与综合验收](../records/2026-10-20-0327-plan182-loshu-replan-review.md)。
 
@@ -29,6 +30,14 @@
 | B07 | 真实 Runtime 的确定性回归、自动验证层、浏览器验证 | 确定性影响闭包、浏览器及正式新 Plan 案例完成 |
 
 ## 协议说明
+
+引用式 `plan_ports` 支持 `{logical_name, ref, sha256}` 的工作目录文件；reader 汇总的
+正式搬移入口会定位作者文件，固化到当前 fanout 工件目录并改写显式端口描述符，
+兼容顶层及 `plan_synthesis_result` 封套。保留原摘要，后续 Package 读取继续拒绝
+摘要失配和路径越界；不递归改写任意语义正文中的路径。该路径让大型规格拆成独立的
+受控端口，不必把全部语义/历史副本塞入一个超限 source_index，也不提高 4 MiB
+Package hydration 或 8 MiB Preview 限制。测试经过实际汇总 caller、端口物化和
+Package hydration，在删除作者目录后读取正文，并覆盖篡改与符号链接越界。
 
 Preview 新增 content_kind、content_error、digest_markdown、digest_source、source_event_id、artifacts 和
 artifacts_error，原字段兼容。已声明全文而不可读时显示 unavailable，不冒充摘要是全文。

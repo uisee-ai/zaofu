@@ -10,6 +10,7 @@ from typing import Any, Mapping, TypedDict
 from zf.core.config.schema import RoleConfig, ZfConfig
 from zf.core.safety import PathGuard, PathGuardError
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.plan_artifact_ports import extract_inline_plan_ports
 from zf.runtime.workdirs import WorkdirManager
 
 
@@ -140,6 +141,32 @@ def relocate_fanout_artifact_refs(
             for item in raw
             if str(item)
         ]
+    return _rewrite_plan_port_refs(rewritten, replacements)
+
+
+def _rewrite_plan_port_refs(
+    payload: dict[str, Any], replacements: dict[str, str],
+) -> dict[str, Any]:
+    """Rebind explicit port descriptors without rewriting semantic bodies."""
+
+    rewritten = dict(payload)
+    ports = payload.get("plan_ports")
+    if isinstance(ports, list):
+        rewritten["plan_ports"] = [
+            {
+                **port,
+                "ref": replacements.get(str(port["ref"]), str(port["ref"])),
+            }
+            if isinstance(port, Mapping)
+            and port.get("ref")
+            and not isinstance(port.get("body"), Mapping)
+            else port
+            for port in ports
+        ]
+    for key in ("report", "plan_synthesis_result"):
+        nested = payload.get(key)
+        if isinstance(nested, dict):
+            rewritten[key] = _rewrite_plan_port_refs(nested, replacements)
     return rewritten
 
 
@@ -221,6 +248,12 @@ def _payload_refs(payload: dict[str, Any]) -> list[str]:
     report = payload.get("report")
     if isinstance(report, dict):
         refs.extend(_payload_refs(report))
+    ports, _ = extract_inline_plan_ports(payload)
+    refs.extend(
+        str(port["ref"])
+        for port in ports
+        if port.get("ref") and not isinstance(port.get("body"), Mapping)
+    )
     return _dedupe(refs)
 
 

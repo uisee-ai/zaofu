@@ -1,12 +1,125 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import shutil
+
+import pytest
 
 from zf.core.config.schema import ZfConfig
 from zf.runtime.fanout_artifact_refs import (
     prepare_fanout_synth_reports,
     relocate_fanout_artifact_refs,
 )
+from zf.runtime.plan_artifact_package_ports import materialize_explicit_plan_ports
+from zf.runtime.plan_artifact_package import (
+    build_plan_artifact_package,
+    hydrate_plan_artifact_package,
+    write_plan_artifact_package,
+)
+from zf.runtime.sidecar_refs import SidecarRefError, hydrate_sidecar_ref
+from tests.test_plan_artifact_package import _run_contract
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_referenced_plan_ports_survive_author_workdir_removal(tmp_path, nested):
+    project_root = tmp_path / "project"
+    state_dir = project_root / "runtime-state"
+    child_root = state_dir / "workdirs" / "planner" / "project"
+    ref = "artifacts/plan/behavior-specs.json"
+    source = child_root / ref
+    source.parent.mkdir(parents=True)
+    source.write_text(json.dumps({"cases": [{"id": "CASE-1", "expected": "rollback"}]}))
+    digest = hashlib.sha256(source.read_bytes()).hexdigest()
+    descriptor = {
+        "logical_name": "behavior_specs",
+        "schema_version": "behavior-specs.v1",
+        "ref": ref,
+        "sha256": digest,
+    }
+    body = {"plan_ports": [descriptor]}
+    report = {"plan_synthesis_result": body} if nested else body
+    row = {
+        "child_id": "planner",
+        "role_instance": "planner",
+        "report": report,
+    }
+    prepared = prepare_fanout_synth_reports(
+        reports=[row],
+        manifest={"fanout_id": "F-PLAN"},
+        state_dir=state_dir,
+        project_root=project_root,
+        config=ZfConfig(),
+        roles=[],
+    )
+    shutil.rmtree(child_root)
+    ports = materialize_explicit_plan_ports(
+        state_dir=state_dir,
+        project_root=project_root,
+        payload=prepared[0]["report"],
+        flow_kind="prd",
+        required_ports=["behavior_specs"],
+    )
+    port = ports["behavior_specs"]
+    assert port["ref"].startswith("artifacts/fanouts/F-PLAN/planner/")
+    assert port["sha256"] == digest
+    assert hydrate_sidecar_ref(state_dir, port).payload == {
+        "cases": [{"id": "CASE-1", "expected": "rollback"}],
+    }
+    package = build_plan_artifact_package(
+        workflow_run_id="run-plan",
+        flow_kind="prd",
+        producer_stage_id="prd-plan",
+        run_contract=_run_contract(state_dir),
+        plan_revision="R1",
+        task_map_generation="G1",
+        produced=ports.values(),
+        required_ports=["behavior_specs"],
+    )
+    package_ref = write_plan_artifact_package(state_dir, package)
+    assert hydrate_plan_artifact_package(state_dir, package_ref) == package
+    assert descriptor["ref"] == ref  # Preserve the submitted report.
+    (state_dir / port["ref"]).write_text('{"cases": []}')
+    with pytest.raises(SidecarRefError, match="digest|sha256|hash"):
+        materialize_explicit_plan_ports(
+            state_dir=state_dir,
+            project_root=project_root,
+            payload=prepared[0]["report"],
+            flow_kind="prd",
+            required_ports=["behavior_specs"],
+        )
+
+
+def test_referenced_plan_port_does_not_copy_an_escaping_symlink(tmp_path):
+    project_root = tmp_path / "project"
+    state_dir = project_root / "runtime-state"
+    child_root = state_dir / "workdirs" / "planner" / "project"
+    source = child_root / "artifacts" / "escape.json"
+    source.parent.mkdir(parents=True)
+    outside = tmp_path / "outside.json"
+    outside.write_text('{"private": true}')
+    source.symlink_to(outside)
+    report = {"plan_ports": [{
+        "logical_name": "behavior_specs",
+        "ref": "artifacts/escape.json",
+        "sha256": hashlib.sha256(outside.read_bytes()).hexdigest(),
+    }]}
+    prepared = prepare_fanout_synth_reports(
+        reports=[{"child_id": "planner", "role_instance": "planner", "report": report}],
+        manifest={"fanout_id": "F-PLAN"},
+        state_dir=state_dir,
+        project_root=project_root,
+        config=ZfConfig(),
+        roles=[],
+    )
+    with pytest.raises(SidecarRefError):
+        materialize_explicit_plan_ports(
+            state_dir=state_dir,
+            project_root=project_root,
+            payload=prepared[0]["report"],
+            flow_kind="prd",
+        )
+    assert not (state_dir / "artifacts" / "fanouts" / "F-PLAN").exists()
 
 
 def test_relocate_fanout_artifact_refs_canonicalizes_legacy_inventory_ref(tmp_path):
