@@ -7,7 +7,12 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from zf.runtime.artifact_refs import resolve_runtime_artifact_ref
+from zf.runtime.plan_preview_artifacts import (
+    PLAN_REVIEW_REF_FIELDS,
+    preview_artifact_path,
+    preview_package_artifacts,
+    read_preview_artifact,
+)
 
 
 PLAN_APPROVAL_REQUESTED = "plan.approval.requested"
@@ -25,6 +30,7 @@ def build_plan_preview(
 ) -> dict[str, Any]:
     """Return a full-screen-ready markdown preview for one plan approval."""
 
+    events = list(events)
     requested: Any | None = None
     resolved: Any | None = None
     for event in events:
@@ -46,7 +52,18 @@ def build_plan_preview(
         }
 
     source_event = requested or resolved
-    payload = _payload(source_event)
+    payload = dict(_payload(source_event))
+    bound_source = next((event for event in events if _event_id(event) == plan_id
+                         and _etype(event) == "task_map.ready"), None)
+    if bound_source is not None:
+        original = _payload(bound_source)
+        if any(payload.get(key) and original.get(key) and payload[key] != original[key]
+               for key in ("task_map_ref", "pdd_id", "trace_id", "workflow_run_id")):
+            bound_source = None
+        else:
+            for key in PLAN_REVIEW_REF_FIELDS:
+                if not payload.get(key) and original.get(key):
+                    payload[key] = original[key]
     resolved_payload = _payload(resolved) if resolved is not None else {}
     status = "pending"
     if resolved is not None:
@@ -60,15 +77,26 @@ def build_plan_preview(
         or payload.get("artifact_ref")
         or ""
     )
+    artifacts, artifacts_error = preview_package_artifacts(
+        payload, state_dir=state_dir, project_root=project_root,
+    )
+    plan_port = next((p for p in artifacts if p["name"] == "accepted_plan"), None)
+    if not plan_ref and plan_port:
+        plan_ref = plan_port["ref"]
+        payload["plan_artifact_digest"] = plan_port["sha256"]
     markdown, markdown_ref, markdown_error = _plan_markdown(
         state_dir,
         project_root=project_root,
-        refs=[digest_ref, plan_ref],
+        refs=[plan_ref] if plan_ref else [digest_ref],
+        digest=str(payload.get("plan_artifact_digest") or "") if plan_ref else "",
     )
+    content_kind = ("full_plan" if plan_ref else "digest_only") if markdown else "unavailable"
+    digest_markdown, _, _ = _plan_markdown(state_dir, project_root=project_root, refs=[digest_ref])
     task_map_summary = _task_map_summary(
         state_dir,
         project_root=project_root,
         task_map_ref=task_map_ref,
+        digest=next((p["sha256"] for p in artifacts if p["name"] == "task_map"), ""),
     )
     if not markdown:
         markdown = _fallback_markdown(
@@ -99,8 +127,15 @@ def build_plan_preview(
             "task_map_ref": task_map_ref,
             "plan_ref": plan_ref,
             "markdown_ref": markdown_ref,
+            "plan_artifact_digest": str(payload.get("plan_artifact_digest") or ""),
         },
         "markdown": markdown,
+        "content_kind": content_kind,
+        "content_error": markdown_error,
+        "digest_markdown": digest_markdown,
+        "source_event_id": _event_id(bound_source) or _event_id(source_event),
+        "artifacts": artifacts,
+        "artifacts_error": artifacts_error,
         "task_map_summary": task_map_summary,
         "actions": {
             "approve": "plan-approve",
@@ -129,17 +164,19 @@ def _plan_markdown(
     *,
     project_root: Path | None,
     refs: list[str],
+    digest: str = "",
 ) -> tuple[str, str, str]:
     diagnostics: list[str] = []
     for ref in refs:
         if not ref:
             continue
-        for path in _candidate_paths(ref, state_dir=state_dir, project_root=project_root):
-            try:
-                if path.is_file():
-                    return path.read_text(encoding="utf-8"), ref, ""
-            except OSError as exc:
-                diagnostics.append(f"{ref}: {exc}")
+        try:
+            body = read_preview_artifact(ref, state_dir=state_dir, project_root=project_root, digest=digest)
+            if body.strip():
+                return body, ref, ""
+            diagnostics.append(f"{ref}: artifact is empty")
+        except (OSError, ValueError) as exc:
+            diagnostics.append(f"{ref}: {exc}")
     return "", "", "; ".join(diagnostics)
 
 
@@ -148,6 +185,7 @@ def _task_map_summary(
     *,
     project_root: Path | None,
     task_map_ref: str,
+    digest: str = "",
 ) -> dict[str, Any]:
     if not task_map_ref:
         return {"ok": False, "task_count": 0, "tasks": [], "reason": "task_map_ref missing"}
@@ -155,7 +193,9 @@ def _task_map_summary(
     if path is None:
         return {"ok": False, "task_count": 0, "tasks": [], "reason": "task_map_ref unreadable"}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        data = json.loads(read_preview_artifact(
+            task_map_ref, state_dir=state_dir, project_root=project_root, digest=digest,
+        ))
     except (OSError, ValueError) as exc:
         return {"ok": False, "task_count": 0, "tasks": [], "reason": str(exc)}
     raw_tasks = data.get("tasks") if isinstance(data, dict) else []
@@ -226,11 +266,21 @@ def _first_existing_ref(
 
 
 def _candidate_paths(ref: str, *, state_dir: Path, project_root: Path | None) -> list[Path]:
-    return [resolve_runtime_artifact_ref(
-        ref,
-        project_root=project_root or state_dir.parent,
-        state_dir=state_dir,
-    )]
+    try:
+        return [preview_artifact_path(ref, project_root=project_root, state_dir=state_dir)]
+    except (OSError, ValueError):
+        return []
+
+
+def read_plan_preview_attachment(
+    state_dir: Path, events: Iterable[Any], *, plan_id: str, name: str,
+    project_root: Path | None = None,
+) -> str:
+    preview = build_plan_preview(state_dir, events, plan_id=plan_id, project_root=project_root)
+    artifact = next((p for p in preview.get("artifacts", []) if p["name"] == name), None)
+    if artifact is None:
+        raise ValueError("artifact is not bound to this plan")
+    return read_preview_artifact(artifact["ref"], state_dir=state_dir, project_root=project_root, digest=artifact["sha256"])
 
 
 def _etype(event: Any) -> str:

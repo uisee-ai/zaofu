@@ -19,6 +19,7 @@ import type { LucideIcon } from "lucide-react";
 import { getOperatorInbox, getPlanPreview, postAction } from "../../api/client";
 import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
+import { LatestRequestGate } from "../../app/latestRequestGate";
 
 type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
@@ -61,6 +62,7 @@ export function PlanApprovalPanel(
   const [selectedId, setSelectedId] = useState("");
   const projectIdRef = useRef(projectId);
   const inboxRefreshInFlight = useRef(false);
+  const previewRequestGate = useRef(new LatestRequestGate());
 
   const baseItems = useMemo(() => inboxItemsForView(inbox, view), [inbox, view]);
   const filteredItems = useMemo(() => {
@@ -88,6 +90,9 @@ export function PlanApprovalPanel(
 
   useEffect(() => {
     projectIdRef.current = projectId;
+    previewRequestGate.current.invalidate();
+    setPreview(null);
+    setPreviewLoading(false);
     setInbox(null);
     setHasLoadedInbox(false);
     setLoadError("");
@@ -131,14 +136,17 @@ export function PlanApprovalPanel(
   }, [refreshInbox]);
 
   const openPreview = async (planId: string) => {
+    const ticket = previewRequestGate.current.issue();
+    setPreview(null);
     setPreviewLoading(true);
     setActionError("");
     try {
-      setPreview(await getPlanPreview(planId, projectId || undefined));
+      const result = await getPlanPreview(planId, projectId || undefined);
+      if (previewRequestGate.current.isCurrent(ticket) && projectIdRef.current === projectId) setPreview(result);
     } catch (error) {
-      setActionError(String(error instanceof Error ? error.message : error));
+      if (previewRequestGate.current.isCurrent(ticket)) setActionError(String(error instanceof Error ? error.message : error));
     } finally {
-      setPreviewLoading(false);
+      if (previewRequestGate.current.isCurrent(ticket)) setPreviewLoading(false);
     }
   };
 
@@ -147,7 +155,8 @@ export function PlanApprovalPanel(
   useEffect(() => {
     if (autoOpenPlanId) void openPreview(autoOpenPlanId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoOpenPlanId]);
+    return () => previewRequestGate.current.invalidate();
+  }, [autoOpenPlanId, projectId]);
 
   const act = async (action: "plan-approve" | "plan-reject", planId: string) => {
     setBusy(`${action}:${planId}`);
@@ -382,6 +391,7 @@ export function PlanApprovalPanel(
 
       {preview || previewLoading ? (
         <PlanPreviewOverlay
+          projectId={projectId}
           preview={preview}
           loading={previewLoading}
           busy={busy}
@@ -390,7 +400,11 @@ export function PlanApprovalPanel(
             if (!preview) return;
             setRejectReason((current) => ({ ...current, [preview.plan_id]: value }));
           }}
-          onClose={() => setPreview(null)}
+          onClose={() => {
+            previewRequestGate.current.invalidate();
+            setPreviewLoading(false);
+            setPreview(null);
+          }}
           onApprove={() => preview && void act("plan-approve", preview.plan_id)}
           onReject={() => preview && void act("plan-reject", preview.plan_id)}
           onRepair={() => preview && void repairChat({ id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
@@ -564,6 +578,7 @@ function InboxRowActions({
 }
 
 function PlanPreviewOverlay({
+  projectId,
   preview,
   loading,
   busy,
@@ -574,6 +589,7 @@ function PlanPreviewOverlay({
   onReject,
   onRepair,
 }: {
+  projectId?: string;
   preview: PlanPreview | null;
   loading: boolean;
   busy: string;
@@ -594,7 +610,7 @@ function PlanPreviewOverlay({
           <span className="mono">{planId || "loading"}</span>
         </div>
         <div className="plan-preview-toolbar-actions">
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || disabled}>
+          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || disabled || loading || preview.content_kind === "unavailable"}>
             <Check size={14} /> Approve
           </button>
           <input
@@ -616,15 +632,28 @@ function PlanPreviewOverlay({
       </div>
       <div className="plan-preview-body">
         <main className="plan-preview-markdown-pane">
+          {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
+          {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <MarkdownText className="plan-preview-markdown" content={preview?.markdown || ""} />}
         </main>
         <aside className="plan-preview-context">
           <dl className="plan-approval-meta">
+            <div><dt>正文</dt><dd>{preview?.content_kind === "full_plan" ? "完整 Plan" : preview?.content_kind === "digest_only" ? "仅摘要" : "不可用"}</dd></div>
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
             <div><dt>trace</dt><dd>{preview?.trace_id || "-"}</dd></div>
           </dl>
+          {preview?.digest_markdown && preview.content_kind !== "digest_only" && <details>
+            <summary>计划摘要（机械检查）</summary>
+            <MarkdownText content={preview.digest_markdown} />
+          </details>}
+          {preview?.artifacts_error && <p role="alert">计划附件不可用：{preview.artifacts_error}</p>}
+          {(preview?.artifacts?.length ?? 0) > 0 && <nav aria-label="Plan artifacts">
+            {preview?.artifacts?.map((artifact) => <p key={artifact.name}>
+              <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
+            </p>)}
+          </nav>}
           <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
         </aside>
       </div>

@@ -3278,12 +3278,19 @@ class FanoutCoordinationMixin(
         enabled = bool(getattr(
             self.config.workflow, "plan_approval_enabled", False,
         ))
+        from zf.runtime.plan_preview_artifacts import approval_artifact_refs
+
         base_payload = {
             "plan_id": plan_id,
             "stage_id": stage_id,
             "trace_id": trace_id,
             "pdd_id": str(getattr(loaded, "pdd_id", "") or ""),
             "task_map_ref": str(getattr(loaded, "task_map_ref", "") or ""),
+            **approval_artifact_refs(
+                trigger_event.payload,
+                state_dir=self.state_dir,
+                project_root=self.project_root,
+            ),
         }
         if not enabled:
             self.event_writer.append(ZfEvent(
