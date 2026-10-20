@@ -2,6 +2,7 @@
 
 > 状态: active。用户已批准独立 worktree 实施 B01–B07，并在新 Dashboard 重新规划洛书。
 > 设计入口：[182](../design/182-plan-review-task-slicing-and-evidence-closure.md)。
+> 案例评审：[洛书重规划与综合验收](../records/2026-10-20-0327-plan182-loshu-replan-review.md)。
 
 ## 已选择的边界
 
@@ -17,7 +18,7 @@
 
 | Backlog | 实现或执行入口 | 验证 |
 | --- | --- | --- |
-| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | 13 项 API/Runtime 回归；3 项真实 React/API 浏览器测试；旧洛书 Plan 桌面/手机实测 |
+| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | 13 项 API/Runtime 回归；4 项真实 React/API 浏览器测试；旧洛书 Plan 桌面/手机实测 |
 | B02 | verification_commands 的 AC 路由；Impl self-check、Verify result、模板及实际 writer handoff | tests/test_stage_acceptance.py；既有 typed admission / handoff 回归 |
 | B03/B04 | zf-plan-execution-readiness；Planner/Critic 的实际依赖链 | tests/test_plan_readiness_skills.py；真实新 Plan 语义评审待完成 |
 | B05 | yoke/tdd-evidence；开发及 Verify role context | 技能物化测试；本轮 RED/GREEN 输出；不认证未来洛书实现已 TDD |
@@ -63,8 +64,10 @@ goal coverage 及结果消费方的影响闭包 865 passed；更新后 sentinel 
 Docker 使用现有组权限 `sg docker -c 'docker ...'`，没有修改 socket 权限或安装主机浏览器。
 镜像为 `mcp/playwright:latest`，host networking，fixture API 监听 `0.0.0.0:8003`；
 挂载源代码只读、证据目录可写，容器使用本机 UID/GID。容器通过 XDG 临时目录解决浏览器
-crashpad 写入问题。真实 React/API 用例 3 passed：完整长文和矩阵、缺失全文与旧摘要标识、
-关闭并切换 Plan 后旧响应不得覆盖新内容。夹具缺配置导致的首次失败已修正，不计作功能 RED。
+crashpad 写入问题。真实 React/API 用例 4 passed：完整长文和矩阵、缺失全文与旧摘要标识、
+关闭并切换 Plan 后旧响应不得覆盖新内容，以及超长正文分页后逐字重建。分页样本含
+12,000 条中文和 emoji 条款，验证 Unicode 边界与最终末尾；不取消现有长文渲染保护。
+夹具缺配置导致的首次失败已修正，不计作功能 RED。
 补充布局测试 2 passed、1 failed；手机 contract-health 表格溢出在原 dev 单独复现，
 其 CSS 和测试未被本批修改，不据此声称整个 Dashboard 手机布局已通过。
 

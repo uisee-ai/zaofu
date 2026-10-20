@@ -65,3 +65,24 @@ test("a late response from a closed preview cannot replace the newly selected Pl
   await expect(dialog.getByText("evt-preview-digest", { exact: true })).toBeVisible();
   await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
 });
+
+test("large Plan pagination preserves every character through the final page", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-long/preview`)).json();
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  const pagination = dialog.getByRole("navigation", { name: "长消息分页" });
+  await expect(pagination).toBeVisible();
+  const next = pagination.getByRole("button", { name: "下一页" });
+  let reconstructed = "";
+  let pages = 0;
+  do {
+    if (pages) await next.click();
+    await expect(pagination).toContainText(`第 ${pages + 1} /`);
+    reconstructed += await dialog.locator(".agent-markdown-plain-guard").textContent();
+    pages += 1;
+  } while (await next.isEnabled());
+  expect(pages).toBeGreaterThan(1);
+  expect(reconstructed).toBe(preview.markdown);
+  expect(reconstructed).toContain("END-OF-LONG-PLAN");
+});

@@ -37,6 +37,11 @@ def create_test_app():
     full += "\n".join(f"业务条款 {i}：输入、拒绝及状态观察。\n" for i in range(250))
     full += "\n## 未决事项\nQ15 保持待确认。\n\nEND-OF-FULL-PLAN\n"
     (state / "artifacts/full-plan.md").write_text(full)
+    long_plan = "# 超长规划\n\n" + "\n".join(
+        f"条款 {index}：😀 逐项记录输入、拒绝、业务结果与验收责任，不隐藏正文。"
+        for index in range(12000)
+    ) + "\nEND-OF-LONG-PLAN\n"
+    (state / "artifacts/long-plan.md").write_text(long_plan)
     (state / "artifacts/digest.md").write_text("# 计划摘要\n机械检查摘要。\n")
     (state / "artifacts/task-map.json").write_text(json.dumps({"tasks": [{"task_id": "T1", "title": "读取闭环"}]}))
     port = _fixture_port(state, "acceptance_matrix", "END-OF-MATRIX")
@@ -50,10 +55,11 @@ def create_test_app():
     atexit.register(writer.append, ZfEvent(
         type="simulation.done", actor="fixture", payload={"purpose": "plan-preview-e2e"},
     ))
-    for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", "")]:
+    for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", ""), ("evt-preview-long", "artifacts/long-plan.md")]:
         writer.append(ZfEvent(type="plan.approval.requested", actor="fixture", payload={
             "plan_id": plan_id, "task_count": 1, "task_map_ref": "artifacts/task-map.json",
-            "plan_artifact_ref": plan_ref, "plan_artifact_digest": hashlib.sha256(full.encode()).hexdigest(),
+            "plan_artifact_ref": plan_ref,
+            "plan_artifact_digest": hashlib.sha256((long_plan if plan_id == "evt-preview-long" else full).encode()).hexdigest(),
             "digest_ref": "artifacts/digest.md", "plan_artifact_package_ref": descriptor["ref"],
             "plan_artifact_package_digest": descriptor["sha256"],
         }))
