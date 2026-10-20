@@ -16,4 +16,6 @@
 
 ## 授权边界
 
-本次授权覆盖这五项缺陷的规划返工及一次受控新generation；不自动批准产品Impl、数据库操作、部署或push。
+本次授权覆盖这五项缺陷的规划修复；受控代际与预算记录见 [B17](2026-10-20-0709-182-b17-controlled-replan-verification.md)。不自动批准产品Impl、数据库操作、部署或push。
+
+当前修订与尚待关闭项见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md)。
