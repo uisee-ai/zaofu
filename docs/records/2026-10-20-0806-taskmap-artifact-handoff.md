@@ -1,6 +1,6 @@
 # Task map 规格交接的补充修复
 
-> 状态: active。属于 B17 的实际下游交接验收，承接[本轮授权与范围](2026-10-20-0725-taskmap-semantic-repair.md)。
+> 状态: done。`00d2442 fix: relocate referenced plan ports for downstream consumers`；最终正式候选的实际 Package、下游输入和新 Preview 均通过，见[最终验收](2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。以下保留修复过程；承接[本轮授权与范围](2026-10-20-0725-taskmap-semantic-repair.md)。
 
 ## 复现与修复
 
@@ -50,7 +50,7 @@ Planner 可把规格拆成具名受控端口，并在 `required_plan_ports` 声�
 `first-formal-audit.json`、`draft-handoff-gap.json`、
 `second-formal-size-gap.json`、`port-ref-red.log`、
 `port-ref-green.log`、`dev-verify-port-run.log`。
-B17 及相关任务在正式候选重新打包、独立 Critic 与实际 Preview 验收前保持 active。
+当时 B17 及相关任务在正式候选重新打包、独立 Critic 与实际 Preview 验收前保持 active。
 
 真实候选正文的 13 端口运输实验已通过，原正文保持相等，临时环境已删除。
 第二次 Critic 仍因供应商容量错误退出；后续安排与具体返工证据见

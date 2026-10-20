@@ -1,6 +1,6 @@
 # Task map 修复验收记录
 
-> 状态: active。B12–B17 的实现与证据已落地；首个续跑候选经正式 Critic 退回，正在同一有界代际内返工。承接[有界续跑](2026-10-20-0820-taskmap-bounded-continuation.md)。
+> 状态: done。实现包括 `00d2442 fix: relocate referenced plan ports for downstream consumers` 与 `2ea8371 fix: require coherent preconditions for negative test cases`。B12–B17 及关联 B08/B09/B11 的规划修复经正式 Critic、实际 Package/下游读取及新 Preview 验收通过；产品 Plan 保持待人工审批。承接[有界续跑](2026-10-20-0820-taskmap-bounded-continuation.md)，各轮事实按发生时状态保留。
 
 ## 已完成的工程工作
 
@@ -11,6 +11,8 @@
 - `00d2442 fix: relocate referenced plan ports for downstream consumers`：显式引用端口经正式 fanout 搬移，保留摘要和路径守卫；真实 caller 回归覆盖删除作者目录后的 Package 读取、摘要失配和越界拒绝。
 - `2ea6374 fix: review task actions and stage evidence boundaries`：补充本地命令内部的未来业务动作审查，以及阶段命令与收据路径的一致性检查。
 - `37a7b20 fix: audit evidence paths across every verification tier`：将收据核对扩大到全部本片、阶段和最终候选用例；浏览器、runtime、专项命令分别绑定真实输出。
+- `ebacd0e fix: preserve directional permissions in task map reviews`：保留职责派生能力的方向，不把反向禁止错误扩大为取消来源允许的操作。
+- `2ea8371 fix: require coherent preconditions for negative test cases`：正反例分别建立唯一且一致的前态，负例明确替换相冲突的公共默认值。
 
 ## 已复核的正式候选
 
@@ -50,7 +52,7 @@
 文档/指令/结构检查 25 passed。前端构建、类型检查及 bundle budget 通过。
 未执行全量 pytest，未运行洛书产品测试、数据库或部署。
 
-## 流程与尚待验收
+## 流程与首轮未通过项（历史）
 
 常规 PrdFlow 为产品/技术双扫描 → Planner → 独立 Critic → 人工 Plan 审批。
 Kernel 调度不计 Agent；本项目另有非阻断的 orchestrator shadow。
@@ -91,3 +93,55 @@ PC-BC-F3 拒绝：无仓库负例仍继承“已关联仓库”的公共前态�
 本代际预算耗尽后的限定收尾见[单项夹具修订](2026-10-20-0929-taskmap-fixture-closeout.md)。
 负例一致性方法已提交 `2ea8371 fix: require coherent preconditions for negative test cases`，
 三份分发一致，方法验证 20 passed、1 skipped。
+
+## 最终正式验收
+
+限定收尾 generation 为 `stage-replan-da616f3182877cabed05`，触发事件
+`evt-dc316391b1b7`。正式 Planner 提交 `evt-56228eef7bf2`，独立 Critic
+`evt-4d9584e71768` 返回 **approve**；新 Plan 为 `evt-d2cc2bafecf4`，
+状态 **pending**。Critic 对最后三处夹具变更独立核对来源、精确差异、
+正反例及消费者，对内容未变的其余范围明确绑定并复用前轮完整审查证据。
+不将此次有限差异审查描述为再次逐条重审全部正文。
+
+最终任务图 SHA-256：
+`f5687e3b3ff98e89ff84d52f098c3628198d97a9463d8d46158841f2e4df0292`。
+54 任务、237 AC、171 命令、68 页面/表单、2,043 来源记录均保留；
+2,011 条计划用例对应 2,015 个命令收据绑定。最后只调整 3 条用例，
+其余 2,008 条不变，所有命令及收据绑定不变。15 份语义文档摘要一致，
+54 任务的 2,356 条 JSON 选择路径全部可解析；23 个显式端口摘要正确。
+无仓库负例与有仓库正例各有独立前态，项目 P1 的拒绝不得回退到 P3 的仓库，
+拒绝前后权限、关联、库存及业务记录完整不变。
+
+实际选中的 Package 为
+`planpkg-eaf97a0c1cc3464532791620b55ec524c79bb3f61c55c09c18e5299249f92d63`。
+完整 `hydrate_plan_artifact_package` 成功；27 个必需端口、28 个总端口均可读取。
+使用真实 `CanonicalHandoffResolver._current_plan_port_sources` 解析这份
+Package，27 个必需输入逐一通过 `hydrate_sidecar_ref`，没有仅凭清单推断
+下游可读。该验收没有分派产品 writer，不代替未来 Impl/Verify 实际执行。
+索引 605,514 bytes，最大语义端口 3,309,679 bytes，仍满足公共大小限制。
+
+[新 Plan Preview](http://10.9.100.141:8002/?project=loshu-plan182-eae8133e&page=inbox&plan=evt-d2cc2bafecf4)
+已于 2026-10-20 09:52 UTC 使用 Docker `mcp/playwright:latest`、host networking
+验证：262,403 bytes、7 页、74 个标题、238 表格行、5 代码块；各页源码拼合
+与完整 Markdown 相等，下载相等，28 个附件全部 GET 200 且摘要一致。
+桌面及手机布局、导航边界、末行可达均通过，0 非 GET API 写入、0 JS 错误。
+正文 SHA-256 为
+`bf5d024ed16effe678d1db680edb5c6d5eb4097a7298febb6eac6db5835367c8`。
+正文保留 Planner 提交时的历史自述；当前正式裁决以以上 Critic 事件及 pending 状态为准。
+
+最终证据位于本 worktree 的 `reports/taskmap-readiness/`：
+
+- `fixture-formal-audit.json`、`fixture-frozen-integrity.json`：来源、绑定、摘要及精确差异；
+- `final-critic.json`、`final-plan-ready.json`：正式裁决与审批候选；
+- `final-package.json`、`final-downstream-read.json`：实际 Package 与下游输入读取；
+- `evt-d2cc2bafecf4/live-validation.json` 及同目录截图：实际新 Preview；
+- `final-verification-plan.txt`、`dev-verify-port-run.log`：影响闭包与测试结果。
+
+最终文档更新后执行
+`.venv/bin/python -m pytest tests/test_manual_docs.py tests/test_instruction_stack_contracts.py tests/test_structure_discipline.py -q --no-cov`，
+33 passed；三份绑定授权记录的 SHA-256 保持不变。
+
+B12–B17 和关联 B08/B09/B11 按实现提交与上述验收归档至 `tasks/done/`。
+Q01–Q15 仍为未决条件，按已登记的逻辑责任与最迟阶段关闭；没有伪造负责人、
+业务答案或产品测试结果。本次完成的是规划缺陷、方法和规格运输修复，
+不能据此宣称洛书产品已实现、全部测试已 GREEN 或外部验收已完成。

@@ -5,6 +5,7 @@
 > 补充修复：[语义审查、角色图与格式化 Preview](../records/2026-10-20-0528-plan182-semantic-followup.md)。
 > 后续执行：[Task map 执行一致性与受控重规划](../records/2026-10-20-0725-taskmap-semantic-repair.md)。
 > 交接修复：[引用式端口搬移与大小边界](../records/2026-10-20-0806-taskmap-artifact-handoff.md)。
+> 本轮关闭：[B08/B09/B11 与 B12–B17 的正式 Critic、下游读取和新 Preview 验收](../records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。
 > 以下为上轮实施时的证据，Plan 当前状态与语义结论范围以后续记录为准。
 > 案例评审：[洛书重规划与综合验收](../records/2026-10-20-0327-plan182-loshu-replan-review.md)。
 
