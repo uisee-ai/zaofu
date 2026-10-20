@@ -633,7 +633,7 @@ function PlanPreviewOverlay({
         </div>
       </div>
       <div className="plan-preview-body">
-        <main className="plan-preview-markdown-pane">
+        <main className="plan-preview-reader">
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>

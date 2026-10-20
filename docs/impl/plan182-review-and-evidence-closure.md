@@ -35,6 +35,12 @@ artifacts_error，原字段兼容。已声明全文而不可读时显示 unavail
 路径必须在当前 project/state 内，拒绝越界及符号链接逃逸。附件端点只接受已绑定的逻辑名，
 返回纯文本并禁止 MIME 嗅探。GET 不发审批事件。
 
+格式化阅读器的章节、翻页和阅读工具位于独立导航区，正文在下方单独滚动，避免 sticky
+导航与带内边距的正文交叠。窄屏的上一页、页码、下一页保持同组；源码和下载保留可访问
+名称，以图标压缩空间。正文可聚焦并使用 PageDown；换页重建正文滚动区，取消上一页尚未
+结束的键盘滚动。`plan-preview-navigation.spec.ts` 覆盖 1485、390、320px 下的导航与
+正文边界、按钮布局、换页归顶和末行可达；全文精确重建与下载仍由 content 用例验证。
+
 CLI review 使用相同的受限引用解析，兼容 state-relative 和显式 state 目录前缀。
 摘要使用 canonical `validation.commands` 解析，非法 canonical 命令不能被 legacy 字段掩盖。
 网页对 hash 绑定的 task_map 生成当前机械摘要，标记 `digest_source=bound_task_map`；

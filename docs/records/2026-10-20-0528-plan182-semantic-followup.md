@@ -173,3 +173,31 @@ Runtime 记录了 `active_fanout_snapshot_missing`，随后 `evt-83c4057b1157` �
 历史和既有重试上限，Planner 修订后由 Critic 重新审查；最终继续停在产品 Plan 人工审批门。
 不包含产品实现、数据库操作、部署、merge 或 push。正式验收不通过的 B08/B09/B11
 保持 active，B10 的格式化修复可以单独关闭。没有将本批标成全部完成。
+
+## B10 后续：分页导航滚动体验
+
+用户截图 `/tmp/10err.png` 经 Docker Playwright 在 worktree Dashboard 8002 的真实历史
+Plan 复现。原正文容器有 14px padding，sticky 导航吸附后仍距容器上沿 14px，正文
+从该空隙露出，又被导航遮住；390px 下上一页、下一页分属两行，320px 下进一步换行。
+前次测试只验证正文完整、格式化及末行可达，没有验证滚动后的导航与正文边界和控件分组，
+因此属于阅读体验验收遗漏。
+
+修复将导航与正文滚动区分开；章节独立伸缩，上一页/页码/下一页保持同组，窄屏阅读工具
+使用带可访问名称的图标。正文支持键盘滚动；切换页时创建新的正文滚动区，避免 PageDown
+仍在进行时将旧滚动偏移带入新页。API、Plan 内容、审批状态及规划执行均未修改。
+
+验收使用真实 React/API，而非仅检查 CSS 字符串：
+
+- 1485、390、320px 滚动顶部/中部/底部 → verify: 导航位置不变，正文视口从导航下方开始，
+  控件不溢出，上一页/下一页同排；修复前 3 failed，修复后 3 passed。
+- 翻页、键盘滚动后立即翻页、跳末页 → verify: 页码及首尾禁用正确，新页归顶，末行可见。
+- 与既有内容和布局用例联跑 → verify: 10 passed，含精确全文重建和 Markdown 下载。
+  原有独立的 contract-health 表格用例未纳入本次范围，其既知问题见上轮记录。
+- 构建/typecheck、体积预算、自动 Web 单元层通过；39 chunks，最大 432,696 bytes。
+  `dev-verify plan --base dev` 仍被前批 `tests/plan_preview_app.py` 未映射阻止，因此本轮
+  自动验证以先前已验收的 `e382d29` 为基准，域为 `web_ui`；没有重跑后端或全量 pytest。
+- 真实历史 Plan 桌面/手机滚动实测 → verify: 导航紧接总工具栏，正文紧接导航；真实翻页
+  归顶，0 API 写入、0 JS 错误。截图、RED/GREEN 和浏览器测量保存在
+  `reports/plan182-pagination/`。8002 保持可供 review，临时 8003 fixture 验证后清理。
+
+本次完成的是 B10 的 UI 回归修复，不改变 B08/B09/B11 的 active 状态或新 generation 授权门。
