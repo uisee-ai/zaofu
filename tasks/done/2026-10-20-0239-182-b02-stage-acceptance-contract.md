@@ -1,6 +1,6 @@
 # 182-B02 P1 · 局部实现完成与候选验收的契约兼容
 
-> 状态: active
+> 状态: done；实现：`9383191 fix: preserve bound candidate verification routes in readers`，前序实现见下。
 > 来源: [设计 182](../../docs/design/182-plan-review-task-slicing-and-evidence-closure.md) B02。
 > 授权: 用户明确要求在独立 worktree 生成 backlog 并全部实施，随后启动 Dashboard 重新规划和评估。
 
@@ -16,6 +16,14 @@
 
 ## 实施记录
 
-- 采用设计 182 推荐方向；公共契约修改先由实际 handoff 回归确定。
-- 行为改动先补失败回归，再实现并记录聚焦验证；方法变更验证注入及示例。
-- 完成状态以实际证据为准；产品 Plan 复审不授权产品 writer。
+- 实现：`e5cbc63 feat: scope completion evidence to acceptance stages`；
+  `2353c80 fix: enforce verification stage authority at result admission`；
+  `9383191 fix: preserve bound candidate verification routes in readers`。
+- 实际 writer handoff 的合法未来 AC 先复现拒绝，再修复为 blocked；当前失败/缺证据仍拒绝，
+  恢复重放保持 exactly-once，未放宽 frozen contract、attempt 或 target 绑定。
+- 追加普通 Verify 7 个功能 RED、typed admission 7 个功能 RED，修复报告伪造 owner、
+  未来 passed/waived 和 mandatory 缺失；真实 reader candidate 路由另先复现 2 failed 再修复。
+- 最终影响闭包 867 passed，sentinel 51 passed，确定性三流 smoke 10 passed。
+  没有关闭全局校验、降低 mandatory，或把局部通过算成产品通过。
+- 详细版本/命令/RED-GREEN 见 `reports/plan182/tdd-evidence.json`、相关日志及
+  [实施记录](../../docs/impl/plan182-review-and-evidence-closure.md)。

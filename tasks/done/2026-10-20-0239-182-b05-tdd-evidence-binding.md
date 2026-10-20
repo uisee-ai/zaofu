@@ -1,6 +1,6 @@
 # 182-B05 P2 · TDD 与规格到测试的证据绑定
 
-> 状态: active
+> 状态: done；实现：`865863d feat: bind planning roles to execution readiness methods`。
 > 来源: [设计 182](../../docs/design/182-plan-review-task-slicing-and-evidence-closure.md) B05。
 > 授权: 用户明确要求在独立 worktree 生成 backlog 并全部实施，随后启动 Dashboard 重新规划和评估。
 
@@ -15,6 +15,10 @@
 
 ## 实施记录
 
-- 采用设计 182 推荐方向；公共契约修改先由实际 handoff 回归确定。
-- 行为改动先补失败回归，再实现并记录聚焦验证；方法变更验证注入及示例。
-- 完成状态以实际证据为准；产品 Plan 复审不授权产品 writer。
+- 实现：`865863d feat: bind planning roles to execution readiness methods`。
+- `yoke/tdd-evidence` 增补纯规则、数据库事务和 UI 三类规格→测试→有效 RED/GREEN 示例，
+  绑定基线、测试变化、实现版本；明确环境失败不是功能 RED，无行为变更可解释不适用。
+- Dev/Verify 角色实际消费该方法，技能依赖物化和镜像测试通过；相关方法/注入回归
+  83 passed、1 个环境条件 skip。没有新增第二套任务 schema 或改 expected_red 默认语义。
+- 本批行为修复的实际失败/通过日志已绑定到 `reports/plan182/tdd-evidence.json`；
+  夹具和环境错误单列。洛书产品测试尚未执行，不能用本项完成认证其未来开发已遵循 TDD。
