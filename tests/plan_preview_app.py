@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from zf.core.config.loader import load_config
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -23,6 +24,12 @@ def create_test_app():
     atexit.register(directory.cleanup)
     root = Path(directory.name)
     state = root / "review-state"
+    config_path = root / "zf.yaml"
+    config_path.write_text(
+        "apiVersion: zaofu.dev/v1\nkind: ZfConfig\nmetadata: {name: preview-fixture}\n"
+        "spec:\n  version: '1.0'\n"
+        "  project: {name: preview-fixture, state_dir: review-state}\n"
+    )
     (state / "artifacts").mkdir(parents=True)
     (state / "kanban.json").write_text("[]")
     (state / "feature_list.json").write_text("[]")
@@ -40,6 +47,9 @@ def create_test_app():
     )
     descriptor = write_plan_artifact_package(state, package)
     writer = EventWriter(EventLog(state / "events.jsonl"))
+    atexit.register(writer.append, ZfEvent(
+        type="simulation.done", actor="fixture", payload={"purpose": "plan-preview-e2e"},
+    ))
     for plan_id, plan_ref in [("evt-preview-complete", "artifacts/full-plan.md"), ("evt-preview-missing", "artifacts/missing.md"), ("evt-preview-digest", "")]:
         writer.append(ZfEvent(type="plan.approval.requested", actor="fixture", payload={
             "plan_id": plan_id, "task_count": 1, "task_map_ref": "artifacts/task-map.json",
@@ -47,4 +57,4 @@ def create_test_app():
             "digest_ref": "artifacts/digest.md", "plan_artifact_package_ref": descriptor["ref"],
             "plan_artifact_package_digest": descriptor["sha256"],
         }))
-    return create_app(state, project_root=root)
+    return create_app(state, config=load_config(config_path), project_root=root)

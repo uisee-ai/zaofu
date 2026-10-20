@@ -17,12 +17,12 @@
 
 | Backlog | 实现或执行入口 | 验证 |
 | --- | --- | --- |
-| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | tests/test_operator_plan_preview.py；真实页面测试待补 |
+| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | 13 项 API/Runtime 回归；3 项真实 React/API 浏览器测试；旧洛书 Plan 桌面/手机实测 |
 | B02 | verification_commands 的 AC 路由；Impl self-check、Verify result、模板及实际 writer handoff | tests/test_stage_acceptance.py；既有 typed admission / handoff 回归 |
 | B03/B04 | zf-plan-execution-readiness；Planner/Critic 的实际依赖链 | tests/test_plan_readiness_skills.py；真实新 Plan 语义评审待完成 |
 | B05 | yoke/tdd-evidence；开发及 Verify role context | 技能物化测试；本轮 RED/GREEN 输出；不认证未来洛书实现已 TDD |
-| B06 | 新洛书项目、正式 flow intake/submit、Plan 人工审批门 | 重新规划与综合评审待执行 |
-| B07 | 真实 Runtime 的确定性回归、自动验证层、浏览器验证 | 待最终结果 |
+| B06 | 新洛书项目、正式 flow intake/submit、Plan 人工审批门 | 两路扫描完成，Planner 正在生成；新 Plan 综合评审待完成 |
+| B07 | 真实 Runtime 的确定性回归、自动验证层、浏览器验证 | 确定性影响闭包及浏览器通过；新 Plan 案例待完成 |
 
 ## 协议说明
 
@@ -44,9 +44,36 @@ B02 5 项失败，3 项原失败边界通过，包含真实 writer handoff 的�
 GREEN：分层契约及相关 caller 回归 45 项通过；Preview 及附件 API 新回归 13 项通过；
 角色方法/注入/相关回归 83 项通过、1 项环境条件 skip。自动扩大回归：11,498 passed、39 failed、19 skipped；其中新增技能索引缺项已修复，
 其余 38 个失败节点在原 dev 工作目录逐项复现。主要为公开导出缺少 CI/文档/fixture、
-既有 provider hook 哈希基线和测试进程的 python/pytest/ZF_CLI_CMD 环境。
+既有 provider hook 哈希基线、测试进程的 python/pytest 环境及导出后遗留的 CLI 占位路径。
 不修改这些基线以掩盖失败。索引修复后 sentinel 51 passed；三流 mock smoke 10 passed；
 影响闭包 340 passed、1 skipped。前端 build/typecheck 与自动 Web 单元层通过。
-原始输出保存于本 worktree 的 reports/plan182/，浏览器结果及实际新 Plan 评审待完成。
+补齐子进程 PATH 后，相关环境/调用者测试 158 passed、2 failed；剩余两项直接写死
+不存在的 `/path/to/zaofu/.venv/bin/zf`，在原 dev 同样失败。
+
+Docker 使用现有组权限 `sg docker -c 'docker ...'`，没有修改 socket 权限或安装主机浏览器。
+镜像为 `mcp/playwright:latest`，host networking，fixture API 监听 `0.0.0.0:8003`；
+挂载源代码只读、证据目录可写，容器使用本机 UID/GID。容器通过 XDG 临时目录解决浏览器
+crashpad 写入问题。真实 React/API 用例 3 passed：完整长文和矩阵、缺失全文与旧摘要标识、
+关闭并切换 Plan 后旧响应不得覆盖新内容。夹具缺配置导致的首次失败已修正，不计作功能 RED。
+补充布局测试 2 passed、1 failed；手机 contract-health 表格溢出在原 dev 单独复现，
+其 CSS 和测试未被本批修改，不据此声称整个 Dashboard 手机布局已通过。
+
+旧洛书 Plan 的真实 Docker 浏览器核验：正文 45,491 字节，与绑定正文一致；12 个附件可读，
+桌面及 390×844 手机视口可读末尾，Q15 可定位，摘要单独展开，审批状态仍为 pending，
+页面没有非 GET API 请求或 JavaScript 错误。脚本、截图、摘要和原始输出保存在本 worktree
+`reports/plan182/`；真实新 Plan 的语义复审尚未完成。
+
+## 重新规划输入
+
+Dashboard 从本 worktree 启动，入口为
+[新洛书 Inbox](http://10.9.100.141:8002/?project=loshu-plan182-eae8133e&page=inbox)。
+新项目 `/home/min/workspace/loshu-plan182` 使用独立 `.zf-plan182` 状态目录及
+`loshu-plan182-review` 工作流，沿正式 flow intake/submit 进入扫描和规划；人工 Plan 门保留。
+脱敏 MD 与旧规划输入同一 SHA-256，未将原文凭据带入新项目。
+
+首次准备输入时遗漏了 MD 引用的 24 个图片/数据库配套文件，两路扫描据实记录缺失。
+这些文件随后从原交接包逐字节补齐，未执行 SQL，并通过 operator intent 记录补充事实。
+活动 worker 的 checkout 未被手工修改；后续必须核对 Planner/Critic 是否真正读取补充来源，
+不能用主项目中存在这些文件来反推旧扫描已经审查过。若未消费，需走受控返工修订。
 
 本记录的通过范围限于 ZaoFu 修复与规划质量，不证明洛书产品已经实现、迁移或部署。

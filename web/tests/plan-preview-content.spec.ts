@@ -35,3 +35,33 @@ test("missing full Plan is explicit; legacy digest is identified", async ({ page
   await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
   await expect(dialog.getByText("机械检查摘要。", { exact: true })).toBeVisible();
 });
+
+test("a late response from a closed preview cannot replace the newly selected Plan", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  let release!: () => void;
+  let completed!: () => void;
+  const delayed = new Promise<void>((resolve) => { release = resolve; });
+  const fulfilled = new Promise<void>((resolve) => { completed = resolve; });
+  await page.route("**/plans/evt-preview-complete/preview", async (route) => {
+    const response = await route.fetch();
+    await delayed;
+    await route.fulfill({ response });
+    completed();
+  });
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-complete`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByText("Loading...", { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Close preview" }).click();
+  const next = page.getByTestId("approval-card").filter({ hasText: "evt-preview-digest" });
+  await next.click();
+  await next.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
+  const lateResponse = page.waitForResponse("**/plans/evt-preview-complete/preview");
+  release();
+  await fulfilled;
+  await (await lateResponse).finished();
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await expect(dialog.getByRole("status")).toContainText("仅有计划摘要");
+  await expect(dialog.getByText("evt-preview-digest", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("完整规划示例", { exact: true })).toHaveCount(0);
+});
