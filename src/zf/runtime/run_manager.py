@@ -11523,15 +11523,18 @@ def _emit_no_progress_run_terminal(
     causation_id: str,
     terminal_reason: str = "recovery_no_progress_exhausted",
 ) -> ZfEvent | None:
+    action_run_id = str(
+        action.get("workflow_run_id") or action.get("run_id") or ""
+    ).strip()
+    # Unscoped maintenance cannot borrow the latest run's terminal authority.
+    if not action_run_id:
+        return None
     try:
         events = writer.event_log.read_all()
     except Exception:
         events = []
-    action_run_id = str(
-        action.get("workflow_run_id") or action.get("run_id") or ""
-    ).strip()
     goal = build_run_goal_projection(events, run_id=action_run_id)
-    run_id = str(action_run_id or goal.get("run_id") or "").strip()
+    run_id = action_run_id
     if not run_id or str(goal.get("status") or "") in {"complete", "blocked"}:
         return None
     for event in events:

@@ -2635,6 +2635,11 @@ def test_batch_resume_no_progress_emits_one_blocked_run_terminal(
                 "pdd_id": "P1",
             },
         ))
+    log.append(ZfEvent(
+        type="run.goal.started",
+        correlation_id="RUN-2",
+        payload={"run_id": "RUN-2", "objective": "independent product"},
+    ))
 
     reason = _outcome_no_progress_break(log.read_all(), action)
     assert "without progress" in reason
@@ -2657,6 +2662,7 @@ def test_batch_resume_no_progress_emits_one_blocked_run_terminal(
     assert len(blocked) == 1
     assert blocked[0].payload["run_id"] == "RUN-1"
     assert blocked[0].payload["evidence_event_ids"][-1] == "breaker-1"
+    assert build_run_goal_projection(log.read_all(), run_id="RUN-2")["status"] == "active"
 
 
 def test_task_no_progress_does_not_accept_other_task_milestone() -> None:
@@ -4439,6 +4445,18 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
     writer.emit(
         "run.goal.started",
         actor="zf-cli",
+        correlation_id="R-OLD",
+        payload={"run_id": "R-OLD", "objective": "previous request"},
+    )
+    writer.emit(
+        "run.cancelled",
+        actor="operator",
+        correlation_id="R-OLD",
+        payload={"run_id": "R-OLD", "reason": "superseded request"},
+    )
+    writer.emit(
+        "run.goal.started",
+        actor="zf-cli",
         correlation_id="R-FAILED",
         payload={
             "run_id": "R-FAILED",
@@ -4470,13 +4488,13 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
     ][-1]
     assert escalation.payload["action"] == "failure-closeout-activate"
     assert escalation.payload["manifest_ref"] == str(manifest)
+    assert escalation.payload["blocking_scope"] == "side"
     blocked = [
         event for event in log.read_all()
         if event.type == "run.goal.blocked"
     ]
-    assert len(blocked) == 1
-    assert blocked[0].payload["run_id"] == "R-FAILED"
-    assert blocked[0].payload["reason"] == "failure_closeout_approval_pending"
+    assert blocked == []
+    assert build_run_goal_projection(log.read_all(), run_id="R-FAILED")["status"] == "active"
 
     repeated = run_manager_tick(
         state_dir=state_dir,
@@ -4487,10 +4505,10 @@ def test_run_manager_approval_activates_failure_closeout_backlog(
         spawn_repairs=False,
     )
     assert repeated.actions_blocked == 0
-    assert len([
+    assert not [
         event for event in log.read_all()
         if event.type == "run.goal.blocked"
-    ]) == 1
+    ]
 
     writer.emit(
         "human.escalation.acknowledged",
