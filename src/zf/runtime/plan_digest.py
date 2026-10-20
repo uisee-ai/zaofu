@@ -13,7 +13,14 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from zf.runtime.task_map import normalize_verification_command
+from zf.runtime.verification_commands import VerificationCommandError, task_map_verification_commands
+
+
+def _verification_summary(item: dict) -> str:
+    try:
+        return "; ".join(command["command"] for command in task_map_verification_commands(item))
+    except VerificationCommandError:
+        return ""
 
 
 def _is_assembly(item: dict) -> bool:
@@ -58,7 +65,7 @@ def plan_digest_checklist(
     missing_verify = [
         str(i.get("task_id") or "?")
         for i in items
-        if not normalize_verification_command(i.get("verification"))
+        if not _verification_summary(i)
     ]
     # scope 重叠:任一 allowed_path 被两个 task 同时声明(粗判,精判在 W1 门)
     seen: dict[str, str] = {}
@@ -162,7 +169,7 @@ def render_plan_digest(
         paths = ", ".join(str(p) for p in (i.get("allowed_paths") or [])[:4])
         if len(i.get("allowed_paths") or []) > 4:
             paths += " …"
-        verify = normalize_verification_command(i.get("verification")).replace("\n", " ")[:60] or "—"
+        verify = _verification_summary(i).replace("\n", " ")[:60] or "—"
         lines.append(
             f"| {i.get('task_id','?')} | {i.get('owner_role') or '-'} | "
             f"{i.get('wave','-')} | "

@@ -1019,6 +1019,10 @@
 .plan-preview-markdown {
   max-width: 980px;
 }
+.plan-preview-markdown .agent-markdown-plain-guard {
+  max-height: none;
+  overflow: visible;
+}
 .plan-preview-context {
   display: grid;
   align-content: start;

@@ -92,12 +92,20 @@ def build_plan_preview(
     )
     content_kind = ("full_plan" if plan_ref else "digest_only") if markdown else "unavailable"
     digest_markdown, _, _ = _plan_markdown(state_dir, project_root=project_root, refs=[digest_ref])
+    task_map_digest = next((p["sha256"] for p in artifacts if p["name"] == "task_map"), "")
     task_map_summary = _task_map_summary(
         state_dir,
         project_root=project_root,
         task_map_ref=task_map_ref,
-        digest=next((p["sha256"] for p in artifacts if p["name"] == "task_map"), ""),
+        digest=task_map_digest,
+        plan_id=plan_id,
     )
+    digest_source = "stored_digest"
+    if task_map_digest:
+        digest_markdown = task_map_summary.pop("digest_markdown", "")
+        digest_source = "bound_task_map" if digest_markdown else "unavailable"
+        if not task_map_summary.get("ok"):
+            artifacts_error = artifacts_error or str(task_map_summary.get("reason") or "task map unavailable")
     if not markdown:
         markdown = _fallback_markdown(
             plan_id=plan_id,
@@ -133,6 +141,7 @@ def build_plan_preview(
         "content_kind": content_kind,
         "content_error": markdown_error,
         "digest_markdown": digest_markdown,
+        "digest_source": digest_source,
         "source_event_id": _event_id(bound_source) or _event_id(source_event),
         "artifacts": artifacts,
         "artifacts_error": artifacts_error,
@@ -186,6 +195,7 @@ def _task_map_summary(
     project_root: Path | None,
     task_map_ref: str,
     digest: str = "",
+    plan_id: str = "",
 ) -> dict[str, Any]:
     if not task_map_ref:
         return {"ok": False, "task_count": 0, "tasks": [], "reason": "task_map_ref missing"}
@@ -210,12 +220,17 @@ def _task_map_summary(
             "root_owner_class": str(task.get("root_owner_class") or ""),
             "verification": str(task.get("verification") or ""),
         })
+    from zf.runtime.plan_digest import render_plan_digest
+
     return {
         "ok": True,
         "task_count": len(tasks),
         "tasks": rows,
         "path": str(path),
         "truncated": len(tasks) > len(rows),
+        **({"digest_markdown": render_plan_digest(
+            tasks, plan_id=plan_id, task_map_ref=task_map_ref,
+        )} if digest else {}),
     }
 
 

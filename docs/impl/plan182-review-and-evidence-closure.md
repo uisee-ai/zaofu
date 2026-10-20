@@ -1,6 +1,6 @@
 # 设计 182 实施与验收记录
 
-> 状态: active。用户已批准独立 worktree 实施 B01–B07，并在新 Dashboard 重新规划洛书。
+> 状态: implemented。B01–B07 已实施并验证；洛书新 Plan 停在人工审批门。
 > 设计入口：[182](../design/182-plan-review-task-slicing-and-evidence-closure.md)。
 > 案例评审：[洛书重规划与综合验收](../records/2026-10-20-0327-plan182-loshu-replan-review.md)。
 
@@ -18,20 +18,26 @@
 
 | Backlog | 实现或执行入口 | 验证 |
 | --- | --- | --- |
-| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | 13 项 API/Runtime 回归；4 项真实 React/API 浏览器测试；旧洛书 Plan 桌面/手机实测 |
+| B01 | orchestrator_fanout → plan_preview_artifacts → operator_plan_preview → Plan API/React | 14 项 API/Runtime 回归；4 项真实 React/API 浏览器测试；新旧洛书 Plan 实测 |
 | B02 | verification_commands 的 AC 路由；Impl self-check、Verify result、模板及实际 writer handoff | tests/test_stage_acceptance.py；既有 typed admission / handoff 回归 |
-| B03/B04 | zf-plan-execution-readiness；Planner/Critic 的实际依赖链 | tests/test_plan_readiness_skills.py；真实新 Plan 语义评审待完成 |
+| B03/B04 | zf-plan-execution-readiness；Planner/Critic 的实际依赖链 | tests/test_plan_readiness_skills.py；真实新 Plan 经 Critic 返工及最终独立复核通过 |
 | B05 | yoke/tdd-evidence；开发及 Verify role context | 技能物化测试；本轮 RED/GREEN 输出；不认证未来洛书实现已 TDD |
-| B06 | 新洛书项目、正式 flow intake/submit、Plan 人工审批门 | 两路扫描完成，Planner 正在生成；新 Plan 综合评审待完成 |
-| B07 | 真实 Runtime 的确定性回归、自动验证层、浏览器验证 | 确定性影响闭包及浏览器通过；新 Plan 案例待完成 |
+| B06 | 新洛书项目、正式 flow intake/submit、Plan 人工审批门 | 新 Plan evt-3f6b832282a3 待人工审批；来源、旧新映射及语义评审完成 |
+| B07 | 真实 Runtime 的确定性回归、自动验证层、浏览器验证 | 确定性影响闭包、浏览器及正式新 Plan 案例完成 |
 
 ## 协议说明
 
-Preview 新增 content_kind、content_error、digest_markdown、source_event_id、artifacts 和
+Preview 新增 content_kind、content_error、digest_markdown、digest_source、source_event_id、artifacts 和
 artifacts_error，原字段兼容。已声明全文而不可读时显示 unavailable，不冒充摘要是全文。
 正式请求固定 Plan 内容 digest；附件从同一 Plan 的 Package 提取，读取时验证 digest，
 路径必须在当前 project/state 内，拒绝越界及符号链接逃逸。附件端点只接受已绑定的逻辑名，
 返回纯文本并禁止 MIME 嗅探。GET 不发审批事件。
+
+CLI review 使用相同的受限引用解析，兼容 state-relative 和显式 state 目录前缀。
+摘要使用 canonical `validation.commands` 解析，非法 canonical 命令不能被 legacy 字段掩盖。
+网页对 hash 绑定的 task_map 生成当前机械摘要，标记 `digest_source=bound_task_map`；
+绑定文件失配时摘要不可用，历史 digest 文件、事件和 Package 不改写。旧未绑定请求仍显示
+stored_digest，保留向后兼容。
 
 分层证据沿用唯一 contract。Impl 仍覆盖所有 mandatory ID，当前阶段必须 passed，未来
 candidate/human 行必须 blocked。Verify 依据 immutable criterion owner 校验，不能通过结果
@@ -77,19 +83,31 @@ crashpad 写入问题。真实 React/API 用例 4 passed：完整长文和矩阵
 旧洛书 Plan 的真实 Docker 浏览器核验：正文 45,491 字节，与绑定正文一致；12 个附件可读，
 桌面及 390×844 手机视口可读末尾，Q15 可定位，摘要单独展开，审批状态仍为 pending，
 页面没有非 GET API 请求或 JavaScript 错误。脚本、截图、摘要和原始输出保存在本 worktree
-`reports/plan182/`；真实新 Plan 的语义复审尚未完成。
+`reports/plan182/`。真实新 Plan 已完成正式 Critic 与语义复审；正文 222,432 字节、
+12 个附件均经 Docker 浏览器读取及哈希核对，前后审批 pending，没有产品 writer。
+
+补充收尾回归：CLI state 引用先复现 2 failed，canonical 命令摘要先复现 2 failed，
+已绑定 task_map 的旧摘要投影先复现 1 failed；修复后相关 CLI、Preview、摘要、Feishu
+投影、审批和 fanout 调用者 230 passed。sentinel 51 passed、三流 mock smoke 10 passed。
+
+实图检查发现纯文本保护继承聊天消息的 320px 内层滚动框。已有逐字比对证明内容未丢，
+却不足以证明阅读区域可达末尾；追加浏览器 Range 位置断言先复现 1 failed。修复仅作用于
+Plan Preview：正文使用主阅读区滚动，保留分页和渲染保护。最终 4 项 Docker 浏览器回归
+通过，桌面与手机实际末行进入可视区；真实新 Plan 同样通过并更新截图。前端 build、
+typecheck、35 个 chunk 的体积预算通过；文档与指令检查 9 passed。
 
 ## 重新规划输入
 
 Dashboard 从本 worktree 启动，入口为
-[新洛书 Inbox](http://10.9.100.141:8002/?project=loshu-plan182-eae8133e&page=inbox)。
+[新洛书 Plan](http://10.9.100.141:8002/?project=loshu-plan182-eae8133e&page=inbox&plan=evt-3f6b832282a3)。
 新项目 `/home/min/workspace/loshu-plan182` 使用独立 `.zf-plan182` 状态目录及
 `loshu-plan182-review` 工作流，沿正式 flow intake/submit 进入扫描和规划；人工 Plan 门保留。
 脱敏 MD 与旧规划输入同一 SHA-256，未将原文凭据带入新项目。
 
 首次准备输入时遗漏了 MD 引用的 24 个图片/数据库配套文件，两路扫描据实记录缺失。
 这些文件随后从原交接包逐字节补齐，未执行 SQL，并通过 operator intent 记录补充事实。
-活动 worker 的 checkout 未被手工修改；后续必须核对 Planner/Critic 是否真正读取补充来源，
-不能用主项目中存在这些文件来反推旧扫描已经审查过。若未消费，需走受控返工修订。
+活动 worker 的 checkout 未被手工修改；通过受控拒绝与已有 admission_replan 能力重新规划。
+最终 Planner/Critic 实际读取 24 个文件、查看 8 张图片，核对 26 个旧任务和 82 个旧 AC。
+原历史扫描保留，后补来源与消费证据明确登记；不以文件存在代替实际消费。
 
 本记录的通过范围限于 ZaoFu 修复与规划质量，不证明洛书产品已经实现、迁移或部署。

@@ -85,4 +85,19 @@ test("large Plan pagination preserves every character through the final page", a
   expect(pages).toBeGreaterThan(1);
   expect(reconstructed).toBe(preview.markdown);
   expect(reconstructed).toContain("END-OF-LONG-PLAN");
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    const visible = await dialog.locator(".plan-preview-markdown-pane").evaluate((pane) => {
+      pane.scrollTop = pane.scrollHeight;
+      const text = pane.querySelector(".agent-markdown-plain-guard")!.firstChild!;
+      const end = text.textContent!.trimEnd().length;
+      const range = document.createRange();
+      range.setStart(text, end - "END-OF-LONG-PLAN".length);
+      range.setEnd(text, end);
+      const tail = range.getBoundingClientRect();
+      const bounds = pane.getBoundingClientRect();
+      return tail.top >= bounds.top && tail.bottom <= bounds.bottom;
+    });
+    expect(visible, "scrolling the Plan pane must reveal the final text line").toBe(true);
+  }
 });

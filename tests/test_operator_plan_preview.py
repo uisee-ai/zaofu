@@ -168,3 +168,40 @@ def test_package_attachment_is_plan_bound_and_digest_checked_via_api(tmp_path):
     preview = client.get(base + "/preview").json()
     assert not preview["artifacts"] and "digest mismatch" in preview["artifacts_error"]
     assert (state / "events.jsonl").read_bytes() == before
+
+
+def test_current_digest_uses_bound_task_commands_without_rewriting_history(tmp_path):
+    from zf.runtime.plan_artifact_package import build_plan_artifact_package, write_plan_artifact_package
+    from tests.test_plan_artifact_package import _run_contract
+
+    state, full, payload = _artifacts(tmp_path)
+    task_map = json.dumps({"tasks": [{
+        "task_id": "SLICE-1", "allowed_paths": ["src/feature.py"], "wave": 1,
+        "validation": {"commands": [{"id": "local", "command": "node --test tests/feature.mjs"}]},
+    }]})
+    (state / payload["task_map_ref"]).write_text(task_map)
+    port = {
+        "logical_name": "task_map", "artifact_kind": "task_map", "schema_version": "task-map.v1",
+        "producer_stage_id": "plan", "ref": payload["task_map_ref"],
+        "sha256": hashlib.sha256(task_map.encode()).hexdigest(),
+    }
+    package = build_plan_artifact_package(
+        workflow_run_id="run-1", flow_kind="prd", producer_stage_id="plan",
+        run_contract=_run_contract(state), plan_revision="r1", task_map_generation="g1",
+        produced=[port], required_ports=["task_map"],
+    )
+    descriptor = write_plan_artifact_package(state, package)
+    payload.update(task_map_ref=port["ref"], plan_artifact_package_ref=descriptor["ref"],
+                   plan_artifact_package_digest=descriptor["sha256"])
+    stored = (state / payload["digest_ref"]).read_bytes()
+    result = _preview(state, payload)
+    assert result["markdown"] == full
+    assert "node --test tests/feature.mjs" in result["digest_markdown"]
+    assert result["digest_source"] == "bound_task_map"
+    assert "🔴" not in result["digest_markdown"]
+    assert (state / payload["digest_ref"]).read_bytes() == stored
+    (state / port["ref"]).write_text('{"tasks": []}')
+    result = _preview(state, payload)
+    assert result["digest_source"] == "unavailable"
+    assert result["digest_markdown"] == ""
+    assert "digest mismatch" in result["artifacts_error"]
