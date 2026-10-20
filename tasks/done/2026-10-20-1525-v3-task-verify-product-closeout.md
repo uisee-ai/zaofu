@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `2a03bbb fix: scope candidate task verification before product closeout`
 
 # v3 分片 Verify 与产品验收收口
 
