@@ -41,7 +41,7 @@ def _service(
 
 def test_channel_review_skill_keeps_complete_package_in_custom_state(tmp_path: Path) -> None:
     source = Path(__file__).resolve().parents[1] / "skills"
-    service, _log, root = _service(
+    service, log, root = _service(
         tmp_path, state_dir_name="runtime-data",
         skill_sources=[SkillSourceConfig(name="canonical", path=str(source))],
     )
@@ -51,7 +51,11 @@ def test_channel_review_skill_keeps_complete_package_in_custom_state(tmp_path: P
         "channel_role": "arch", "skill_refs": ["zf-cr"],
     })
     assert result.get("ok"), result
-    bundle = root / "runtime-data/runtime-skills/zf-cr"
+    invited = next(event for event in log.read_all()
+                   if event.type == "channel.member.invited"
+                   and event.payload["member_id"] == "architect")
+    bundle = Path(invited.payload["resolved_skill_refs"][0]["resolved_path"]).parent
+    assert bundle.is_relative_to(root / "runtime-data/runtime-skills")
     expected = {p.relative_to(source / "zf-cr"): p.read_bytes()
                 for p in (source / "zf-cr").rglob("*") if p.is_file()}
     actual = {p.relative_to(bundle): p.read_bytes()
