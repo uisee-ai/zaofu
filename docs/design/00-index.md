@@ -18,3 +18,4 @@
 | 编号 | 文档 | 状态 | 摘要 |
 | --- | --- | --- | --- |
 | 181 | [Channel Group 角色、完整输出与可靠接力](181-channel-group-roles-lossless-output-reliable-handoff.md) | implemented | 角色职责与可选 Skills 分离，保留现有展示及机器合同；[实施记录](../impl/channel-group-181-lossless-relay.md)列出完整输出、接力、恢复与验证边界。 |
+| 182 | [Plan 完整预览、任务拆分与验收证据闭环](182-plan-review-task-slicing-and-evidence-closure.md) | partial | 以洛书 FMS 为案例，评审 Preview 引用丢失、分层完成契约、任务粒度及 TDD/SDD 证据，提出待批准的 backlog 与验证顺序。 |

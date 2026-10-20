@@ -67,6 +67,9 @@ context for runtime truth, task scope, and completion claims.
   commit; cover every mandatory `acceptance_id`, and record each declared
   command as an independent receipt. This is author evidence, not an
   independent verdict.
+- 本阶段的 `impl_self_check` / `task_verify` AC 必须通过；仍需覆盖所有 mandatory ID，
+  但 `candidate_verify` / `human` 行保持 `blocked` 并说明待验证阶段，不填 passed 或 waived。
+  复用 `yoke/tdd-evidence` 的条款 → 测试 → RED/GREEN 证据绑定，放入现有总结 sidecar。
 - When Controlled Artifact Inputs include `product_acceptance_spec`, read it
   through the sanctioned artifact command before editing. For the journeys
   owned by this slice, self-check the real build/start or health path, reject

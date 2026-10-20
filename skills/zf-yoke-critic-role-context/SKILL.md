@@ -3,7 +3,7 @@ name: zf-yoke-critic-role-context
 description: "Use for ZaoFu critic or judge roles that need yoke-style adversarial review and anti-rationalization discipline."
 stages: [critic, review, judge]
 tags: [yoke, role-context, critic]
-dependencies: [grill, zf-browser-e2e-contract]
+dependencies: [grill, zf-browser-e2e-contract, zf-plan-execution-readiness]
 auto_inject: true
 load_on_demand: false
 ---
@@ -43,6 +43,9 @@ Local adaptation of yoke critic role context for ZaoFu.
   recommended next action.
 
 ## Plan Critic Gate (Skill-Owned)
+
+加载 `zf-plan-execution-readiness`，逐条核对混合 AC 的验证责任、过大工作包、
+阶段集成和不合理依赖。把具体来源及判定写进 verdict；不能只按任务名豁免前置 AC。
 
 标准 Issue/PRD/Refactor 计划在进入 writer admission 前由一个独立 Critic
 做一次有界语义检查。light topology 可跳过。这里的检查完全属于本 Skill 和

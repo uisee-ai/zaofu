@@ -3,7 +3,7 @@ name: zf-yoke-planner-role-context
 description: "Use for ZaoFu planner / task-map-synth / triage roles that split PRDs, issues, or refactor objectives into a task_map."
 stages: [plan, scan, triage, replan]
 tags: [yoke, role-context, planning]
-dependencies: [vertical-slicing, grill, zf-plan-task-map-contract, zf-gap-task-synth, zf-project-adapter-matrix-enrichment]
+dependencies: [vertical-slicing, grill, zf-plan-task-map-contract, zf-gap-task-synth, zf-project-adapter-matrix-enrichment, zf-plan-execution-readiness]
 auto_inject: true
 load_on_demand: false
 ---
@@ -35,6 +35,9 @@ does not duplicate it. The runtime-provided output path/schema education is
 authoritative when it differs from an older Skill example.
 
 ## Rules
+
+- 在最终提交前加载 `zf-plan-execution-readiness`，记录条款级验收责任、切片可演示结果、
+  阶段集成和条件决定的审查证据；机械数量检查不替代语义评估。
 
 - **判据前置(criteria-before-dispatch)**:每个 task 的 `verification`
   与 `acceptance_criteria` 在 **task_map 落盘时** 写死——验收命令是任务
