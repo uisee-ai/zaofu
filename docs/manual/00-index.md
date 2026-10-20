@@ -22,6 +22,7 @@
 | 接入飞书、Automation 或 Provider | [集成](integrations/README.md) | 外部入口通过 projection/controlled action 工作，不产生第二真相 |
 | 查命令、配置或稳定合同 | [参考](reference/README.md) | 从生成的当前命令目录或专题参考定位准确入口 |
 | 开发、评审或验证 ZaoFu 本身 | [架构总览](architecture.md) | 能区分 Kernel、Agent、Store、Artifact、Projection 和两种编排模式 |
+| 修改审查技能并验证效果 | [审查技能对照评估](operations/review-skill-evaluation.md) | 质量无回退、分发兼容，并有真实轨迹支持效率结论 |
 
 ## 一个产品心智
 

@@ -17,14 +17,17 @@ from zf.runtime.channel_router import route_channel_message
 from zf.runtime.channel_handoff import request_channel_handoff
 
 
-def _service(tmp_path: Path, *, skill_sources: list[SkillSourceConfig] | None = None):
+def _service(
+    tmp_path: Path, *, skill_sources: list[SkillSourceConfig] | None = None,
+    state_dir_name: str = ".zf",
+):
     project_root = tmp_path / "proj"
     project_root.mkdir()
-    state_dir = project_root / ".zf"
+    state_dir = project_root / state_dir_name
     state_dir.mkdir()
     log = EventLog(state_dir / "events.jsonl")
     config = ZfConfig(
-        project=ProjectConfig(name="t"),
+        project=ProjectConfig(name="t", state_dir=state_dir_name),
         skill_sources=skill_sources or [],
     )
     service = ControlledActionService(
@@ -34,6 +37,28 @@ def _service(tmp_path: Path, *, skill_sources: list[SkillSourceConfig] | None = 
         project_root=project_root,
     )
     return service, log, project_root
+
+
+def test_channel_review_skill_keeps_complete_package_in_custom_state(tmp_path: Path) -> None:
+    source = Path(__file__).resolve().parents[1] / "skills"
+    service, _log, root = _service(
+        tmp_path, state_dir_name="runtime-data",
+        skill_sources=[SkillSourceConfig(name="canonical", path=str(source))],
+    )
+    _exec(service, "channel-create", {"channel_id": "review", "name": "review"})
+    result = _exec(service, "channel-invite-member", {
+        "channel_id": "review", "member_id": "architect", "provider": "codex",
+        "channel_role": "arch", "skill_refs": ["zf-cr"],
+    })
+    assert result.get("ok"), result
+    bundle = root / "runtime-data/runtime-skills/zf-cr"
+    expected = {p.relative_to(source / "zf-cr"): p.read_bytes()
+                for p in (source / "zf-cr").rglob("*") if p.is_file()}
+    actual = {p.relative_to(bundle): p.read_bytes()
+              for p in bundle.rglob("*") if p.is_file()}
+    assert actual == expected
+    assert not (root / ".zf").exists()
+    assert not (root / "skills").exists()
 
 
 def _exec(service, action: str, payload: dict) -> dict:
