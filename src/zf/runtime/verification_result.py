@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from zf.runtime.verification_commands import acceptance_required_for_stage
+
 
 SCHEMA_VERSION = "verification-result.v1"
 COMPLETED_VERDICTS = frozenset({"passed", "rejected", "blocked"})
@@ -452,6 +454,11 @@ def _normalize_requirement_results(
         if not acceptance_id and index < len(criteria) and isinstance(criteria[index], Mapping):
             acceptance_id = str(criteria[index].get("acceptance_id") or "")
         criterion = by_id.get(acceptance_id, {})
+        if (
+            criterion and record.get("verification_owner")
+            and record["verification_owner"] != criterion.get("verification_owner", "task_verify")
+        ):
+            raise VerificationResultError(f"{acceptance_id} verification owner mismatch")
         raw_status = str(record.get("status") or record.get("verdict") or "").lower()
         status = {
             "pass": "passed",
@@ -531,6 +538,9 @@ def _validate_requirement_coverage(
         if isinstance(item, Mapping)
         and bool(item.get("mandatory", True))
         and str(item.get("acceptance_id") or "")
+        and acceptance_required_for_stage(
+            item, verification_owner=str(result.get("verification_owner") or "task_verify"),
+        )
     }
     matrix = result.get("requirement_results")
     matrix = matrix if isinstance(matrix, list) else []
@@ -561,6 +571,13 @@ def _validate_requirement_coverage(
             "requirement matrix has unknown acceptance ids: "
             + ", ".join(unknown)
         )
+    if result.get("verdict") == "passed":
+        incomplete = sorted(
+            str(row.get("acceptance_id")) for row in matrix
+            if row.get("acceptance_id") in mandatory and row.get("status") != "passed"
+        )
+        if incomplete:
+            raise VerificationResultError("mandatory acceptance did not pass: " + ", ".join(incomplete))
 
 
 def _aggregate_requirement_evidence(result: dict[str, Any]) -> None:

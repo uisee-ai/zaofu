@@ -17,7 +17,10 @@ from zf.runtime.task_contract_snapshot import (
     TASK_CONTRACT_AUTHORITY_FIELDS,
     TaskContractSnapshotError,
 )
-from zf.runtime.verification_commands import verification_command_required_for_stage
+from zf.runtime.verification_commands import (
+    acceptance_required_for_stage,
+    verification_command_required_for_stage,
+)
 
 
 SCHEMA_VERSION = "impl-self-check.v1"
@@ -116,7 +119,10 @@ def normalize_impl_self_check(
     incomplete_mandatory = sorted(
         acceptance_id
         for acceptance_id in mandatory
-        if str((result_by_id.get(acceptance_id) or {}).get("status") or "")
+        if acceptance_required_for_stage(
+            criteria[acceptance_id], verification_owner="impl_self_check",
+        )
+        and str((result_by_id.get(acceptance_id) or {}).get("status") or "")
         != "passed"
     )
     if strict and incomplete_mandatory:
@@ -126,6 +132,16 @@ def normalize_impl_self_check(
         )
     receipt_by_id = {str(item["receipt_id"]): item for item in receipts}
     for item in results:
+        if (
+            strict
+            and not acceptance_required_for_stage(
+                criteria[str(item["acceptance_id"])], verification_owner="impl_self_check",
+            )
+            and item["status"] != "blocked"
+        ):
+            raise ImplSelfCheckError(
+                f"{item['acceptance_id']} belongs to later verification; retain blocked status"
+            )
         unknown_receipts = sorted(set(item["command_receipt_ids"]) - receipt_ids)
         if unknown_receipts:
             raise ImplSelfCheckError(
@@ -316,6 +332,12 @@ def completion_payload_template(
         str(item.get("command_id") or "")
         for item in commands
     }
+    local_acceptance_ids = {
+        str(item.get("acceptance_id") or "")
+        for item in contract_snapshot.get("acceptance_criteria") or []
+        if isinstance(item, Mapping)
+        and acceptance_required_for_stage(item, verification_owner="impl_self_check")
+    }
     return {
         "attempt_id": attempt_id,
         "impl_self_check": {
@@ -352,14 +374,19 @@ def completion_payload_template(
             "acceptance_results": [
                 {
                     "acceptance_id": str(item.get("acceptance_id") or ""),
-                    "status": "passed",
+                    "status": "passed" if item.get("acceptance_id") in local_acceptance_ids else "blocked",
                     "command_receipt_ids": [
                         f"receipt-{command_id}"
                         for command_id in item.get("verification_command_ids") or []
                         if str(command_id) in command_ids
                     ],
-                    "evidence_refs": ["<durable AC evidence ref>"],
-                    "residual_risks": [],
+                    "evidence_refs": (
+                        ["<durable AC evidence ref>"] if item.get("acceptance_id") in local_acceptance_ids else []
+                    ),
+                    "residual_risks": (
+                        [] if item.get("acceptance_id") in local_acceptance_ids
+                        else [f"Pending {item.get('verification_owner')} acceptance"]
+                    ),
                 }
                 for item in contract_snapshot.get("acceptance_criteria") or []
                 if isinstance(item, Mapping)

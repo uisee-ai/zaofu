@@ -283,7 +283,9 @@ def _verification_requirement_template(
     criterion_owner = str(
         criterion.get("verification_owner") or "task_verify"
     )
-    owned_here = criterion_owner == verification_owner
+    from zf.runtime.verification_commands import acceptance_required_for_stage
+
+    owned_here = acceptance_required_for_stage(criterion, verification_owner=verification_owner)
     return {
         "acceptance_id": str(criterion.get("acceptance_id") or ""),
         "status": "passed" if owned_here else "not_applicable",

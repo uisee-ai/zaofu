@@ -176,6 +176,18 @@ def materialize_task_verification_commands(
     return materialized
 
 
+def acceptance_required_for_stage(
+    criterion: Mapping[str, Any], *, verification_owner: str,
+) -> bool:
+    """Route immutable AC ownership without waiving later mandatory results."""
+    owner = str(criterion.get("verification_owner") or "task_verify")
+    if verification_owner in {"impl_self_check", "task_verify"}:
+        return owner not in {"candidate_verify", "human"}
+    if verification_owner == "candidate_verify":
+        return owner != "human"
+    return owner == verification_owner
+
+
 def verification_command_required_for_stage(
     command: Mapping[str, Any],
     *,
