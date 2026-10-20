@@ -1,6 +1,8 @@
 # 固定基线对照与收口
 
-> 状态: active
+> 状态: done
+
+实现 commit：`99e6e71b chore: streamline ZaoFu review skill with paired evaluation`
 
 来源：用户 2026-10-20 已批准在独立 worktree 生成并实施本批次。
 
