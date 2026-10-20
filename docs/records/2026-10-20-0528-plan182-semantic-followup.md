@@ -130,3 +130,46 @@ Critic 已实际读取更新后的 `zf-plan-execution-readiness`，不是仅在�
 阶段排除范围，遗漏自身承诺的 IC07 和完整详情标签。这说明前面的结构探针只能验证
 声明的 producer 与依赖是否闭合，不能证明该声明在业务上正确。本记录不将首次候选
 视为最终通过。方法中已补充动作生产者与候选排除范围的通用反例检查。
+
+另行复现 `LS-VEHICLE-TRANSFER` 第 3 个 TDD 步骤调用 `VC-G3-RUNTIME`，实际命令为
+`node --test app/tests/g3/runtime.test.mjs`，owner 为后续 `candidate_verify`、producer 为
+`LS-G3`。canonical 合同可以合法同时登记当前和未来命令，但当前片 RED/GREEN 步骤不能
+照搬整个命令列表。通用方法已补充该检查；证据为
+`reports/plan182-followup/first-tdd-future-command-findings.json`。
+
+05:58 UTC，Critic 因上下文阈值自动回收；事件 `evt-e8bc105d836a` 重新注入同一 fanout。
+Runtime 记录了 `active_fanout_snapshot_missing`，随后 `evt-83c4057b1157` 重新派发。
+旧会话的口头发现没有被补写成正式成功或拒绝，语义 attempt 未因此计为已消耗。
+恢复后的 Critic 重新读取冻结来源并复现责任错配。角色数量不变，调用次数增加。
+
+前端最终构建与 5 项 Docker 用例通过；追加方法/元数据检查 20 passed、1 skipped，
+文档/指令/方法组合检查 28 passed、1 skipped。旧正式 Plan 的格式化实测为 222,432 bytes、
+6 页、73 标题、295 表格行、5 代码块；原文和下载完全一致，12 正式附件哈希匹配，
+桌面/手机通过，0 API 写入、0 JS 错误。该对象已 rejected，仅用于验证阅读器，
+不能把它当成本轮最终批准候选。
+
+
+## 正式结论与待授权续跑
+
+正式 Critic 事件 `evt-45bb3c9bcea3` 已提交 reject；131 条高风险 AC 的独立反例判断和
+完整审查范围保留在正式 report。五项返工如下：
+
+| ID | 等级 | 必须修订 | 完成检查 |
+| --- | --- | --- | --- |
+| PC-F1 | high | 权限动作按实际命令 producer 分派；混合行拆具名子用例，同步各矩阵 | 入厂归 ENTRY、耗料及作业内设备结果归 WORK；全量动作没有前置片执行未来行为 |
+| PC-F2 | high | 分开活动作业完成与已完成结果修正的职责、节点和动作 | 仅流程编辑者不能完成活动作业；仅操作员不能据此修正已完成结果，允许/拒绝无歧义 |
+| PC-F3 | high | 调拨片内 TDD 排除未来 G3；G2 candidate 独立覆盖完整 IC01–IC07、C01 标签和 E18–E23 | 当前步骤可执行；未来 mandatory 不删；IC07/标签/E18 缺失时最终用例必须失败 |
+| PC-F4 | high | 作业结果修正补完整设备/时间/需求/物料/节点向量 | 抓住旧时间残留、部分提交、拆车早于安装、误改后续独立装拆；保持单事务 owner |
+| PC-F5 | medium | PAS 与所有下游 Q 项引用同一当前决定版本 | Q02 全站、Q04 首复合写、Q06 首安装等责任/范围/时点不再保留旧快照 |
+
+运行时事件 `evt-f7f337168b9a` 明确记录 `stage_replan_cap_exhausted`、
+`operator_required=true`、`max_auto_attempts=0`，允许动作是 `operator_review` 或
+`start_new_generation`；`evt-662599c7a9a5` 将本 workflow 标为 blocked。
+因此不能继续在原 generation 自动重试。受控入口为
+`ControlledActionService` 的 `stage-replan-new-generation`，要求该 escalation ID 和
+真实 `approval_ref`（`src/zf/runtime/control_actions_recovery.py`）。不手改计数、状态或成功事件。
+
+待批准的具体动作：仅为 PC-F1–PC-F5 开启一次新的有界规划 generation，保留原 blocked
+历史和既有重试上限，Planner 修订后由 Critic 重新审查；最终继续停在产品 Plan 人工审批门。
+不包含产品实现、数据库操作、部署、merge 或 push。正式验收不通过的 B08/B09/B11
+保持 active，B10 的格式化修复可以单独关闭。没有将本批标成全部完成。

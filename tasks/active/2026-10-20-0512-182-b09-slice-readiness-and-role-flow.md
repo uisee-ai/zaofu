@@ -13,3 +13,10 @@
 
 - 配置编译/实际事件对照 → verify: 2扫描+Planner+Critic；本项目另有非阻断的orchestrator shadow，Kernel不计Agent；图与当前路由一致。
 - 新Plan复核 → verify: 近期阻塞决定与局部UI验证明确；不依赖未来片完成本片验收。
+
+## 当前结果
+
+方法与公共实现已提交 `8ce571d feat: add formatted plan reading and semantic review checks`。
+真实候选在 Critic `evt-45bb3c9bcea3` 被拒绝；PC-F1–PC-F5 尚未修完。运行时已耗尽
+本 generation 自动重试预算，需受控 `stage-replan-new-generation` 授权，故保持 active。
+具体修订及验收见[补充记录](../../docs/records/2026-10-20-0528-plan182-semantic-followup.md)。
