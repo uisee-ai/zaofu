@@ -20,5 +20,5 @@
 再使用 `zf goal set --status active --reason ...` 及正式 workflow 恢复入口
 恢复有效阶段；已取消的 attempt 不接受补写成功结果。
 
-对应任务：`tasks/active/2026-10-20-1351-run-manager-side-gate-isolation.md`
-（完成后移至 `tasks/done/`）。
+对应任务：`tasks/done/2026-10-20-1351-run-manager-side-gate-isolation.md`
+实施提交：`05e9b83`。

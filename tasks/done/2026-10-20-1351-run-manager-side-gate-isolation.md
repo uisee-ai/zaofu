@@ -1,4 +1,6 @@
-> 状态: active
+> 状态: done
+
+实施提交：`05e9b83 fix: isolate unscoped recovery approvals from run terminals`
 
 # Run Manager 旁路审批不得终止无关执行批次
 
