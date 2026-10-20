@@ -29,6 +29,12 @@ def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role
     assert actual.read_bytes() == (root / source / method / "SKILL.md").read_bytes()
     metadata = read_skill_metadata(actual, expected_name=method)
     assert metadata.name == method
+    if method == "zf-plan-execution-readiness":
+        reference = Path("references/execution-consistency.md")
+        assert str(reference) in actual.read_text()
+        assert (actual.parent / reference).read_bytes() == (
+            root / source / method / reference
+        ).read_bytes()
 
 
 def test_new_method_distribution_matches_canonical_source():
@@ -36,3 +42,9 @@ def test_new_method_distribution_matches_canonical_source():
     source = (root / "skills/zf-plan-execution-readiness/SKILL.md").read_bytes()
     for provider in (".codex", ".claude"):
         assert (root / provider / "skills/zf-plan-execution-readiness/SKILL.md").read_bytes() == source
+        reference = Path("references/execution-consistency.md")
+        assert (
+            root / provider / "skills/zf-plan-execution-readiness" / reference
+        ).read_bytes() == (
+            root / "skills/zf-plan-execution-readiness" / reference
+        ).read_bytes()

@@ -14,6 +14,11 @@ load_on_demand: true
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
 
+Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
+[执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、
+状态相关权限、本片/候选验证边界、完整修正事务与跨工件决定版本；结果记录到已有
+评审工件。方法加载或结构检查通过不代表这些语义检查已经通过。
+
 ## 条款与验收责任
 
 先读当前需求 authority，再对每个 AC 内部的条款审查，不能只统计顶层 AC。

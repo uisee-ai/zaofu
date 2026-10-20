@@ -1,0 +1,27 @@
+# 182-B12 · 权限动作与实际行为生产者对齐
+
+> 状态: done；实现 `c199520 feat: strengthen plan execution consistency review`。
+> 来源: 最新54任务候选的正式Critic缺陷 PC-F1；用户于2026-10-20明确要求在新worktree生成backlog并执行修复。
+
+## 范围
+
+逐行审查权限动作及混合行；读取/基础管理只承担本片已就绪行为，入厂、作业耗料、设备结果等归实际命令生产者。同步来源、行为规格、用例、矩阵与阶段；不靠反向依赖或替身规避。
+
+通用语义方法归 skills/提示/评审工件；Kernel仅做机械校验，不硬编码洛书业务规则。旧运行态只读，候选修订由正式Planner产出。
+
+## 验收
+
+- 复现并修订 → verify: 旧 PERM-L4325/L4419 等反例可复现；新候选全部动作的 producer/owner/command/最早阶段一致，正式 Critic 无该类阻断。
+- 回归与证据 → verify: 实际角色消费当前方法；保留来源与旧新映射，不能把规划用例当作产品已执行TDD。
+
+## 授权边界
+
+本次授权覆盖这五项缺陷的规划修复；受控代际与预算记录见 [B17](2026-10-20-0709-182-b17-controlled-replan-verification.md)。不自动批准产品Impl、数据库操作、部署或push。
+
+## 当前结果
+
+175 条权限来源细分为 411 个动作，producer/owner/AC/command 绑定完成；
+混合行按实际生产动作分配，保留旧新映射和原范围。
+正式 Critic `evt-4d9584e71768` 通过最终候选，具体证据及未变正文复用边界见
+[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。
+通用方法和实际角色消费验证 20 passed、1 skipped；未宣称产品 TDD 已执行。

@@ -1,6 +1,6 @@
 # 182-B09 · 切片执行准备与真实Plan角色图
 
-> 状态: active
+> 状态: done；实现 `c199520 feat: strengthen plan execution consistency review` 与 `37a7b20 fix: audit evidence paths across every verification tier`。
 > 来源: 设计182及本轮用户批准的补充修复；沿用独立worktree，不自动批准产品Plan。
 
 ## 范围
@@ -16,7 +16,9 @@
 
 ## 当前结果
 
-方法与公共实现已提交 `8ce571d feat: add formatted plan reading and semantic review checks`。
-真实候选在 Critic `evt-45bb3c9bcea3` 被拒绝；PC-F1–PC-F5 尚未修完。运行时已耗尽
-本 generation 自动重试预算，需受控 `stage-replan-new-generation` 授权，故保持 active。
-具体修订及验收见[补充记录](../../docs/records/2026-10-20-0528-plan182-semantic-followup.md)。
+常规 PrdFlow 为两个扫描角色 → Planner → Critic → 人工 Plan 审批；
+本项目另有非阻断 orchestrator shadow，Kernel 不计 Agent。本次返工复用扫描。
+最终候选的片内命令与动作无未来依赖，最终候选覆盖不继承局部排除；
+2,015 个命令收据绑定无错配，Q01–Q15 内容一致且保留未决责任与阶段条件。
+正式 Critic `evt-4d9584e71768` 通过，方法验证 20 passed、1 skipped。
+完整证据和审查复用边界见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。
