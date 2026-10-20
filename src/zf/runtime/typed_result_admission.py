@@ -23,6 +23,7 @@ from zf.runtime.task_contract_snapshot import (
 from zf.runtime.verification_result import (
     VerificationResultError,
     validate_verification_result,
+    validate_verification_acceptance,
 )
 from zf.runtime.integration_acceptance_result import (
     IntegrationAcceptanceResultError,
@@ -204,6 +205,7 @@ def _verification_issues(
 
     try:
         validate_verification_result(result, strict=True)
+        validate_verification_acceptance(result, contract)
     except VerificationResultError as exc:
         message = str(exc)
         if "report evidence_refs" in message:

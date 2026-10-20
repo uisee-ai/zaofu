@@ -73,6 +73,8 @@ def normalize_verification_result(
     ):
         result.setdefault(key, str(target_snapshot.get(key) or ""))
     result.setdefault("verification_owner", default_owner)
+    if result["verification_owner"] != default_owner:
+        raise VerificationResultError("verification stage mismatch with runtime caller")
     result.setdefault("verification_tier", default_tier)
     result.setdefault("summary", str(payload.get("summary") or ""))
     result.setdefault("findings", _list(payload.get("findings")))
@@ -93,7 +95,7 @@ def normalize_verification_result(
         default_tier=str(result.get("verification_tier") or default_tier),
     )
     _aggregate_requirement_evidence(result)
-    _validate_requirement_coverage(result, contract_snapshot)
+    validate_verification_acceptance(result, contract_snapshot)
     validate_verification_result(
         result,
         strict=strict,
@@ -454,11 +456,6 @@ def _normalize_requirement_results(
         if not acceptance_id and index < len(criteria) and isinstance(criteria[index], Mapping):
             acceptance_id = str(criteria[index].get("acceptance_id") or "")
         criterion = by_id.get(acceptance_id, {})
-        if (
-            criterion and record.get("verification_owner")
-            and record["verification_owner"] != criterion.get("verification_owner", "task_verify")
-        ):
-            raise VerificationResultError(f"{acceptance_id} verification owner mismatch")
         raw_status = str(record.get("status") or record.get("verdict") or "").lower()
         status = {
             "pass": "passed",
@@ -524,10 +521,11 @@ def _normalize_rework_items(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _validate_requirement_coverage(
+def validate_verification_acceptance(
     result: Mapping[str, Any],
     contract_snapshot: Mapping[str, Any],
 ) -> None:
+    """Bind row ownership and required outcomes to a caller-validated stage."""
     if str(result.get("execution_status") or "") == "failed":
         return
     criteria = contract_snapshot.get("acceptance_criteria")
@@ -544,6 +542,23 @@ def _validate_requirement_coverage(
     }
     matrix = result.get("requirement_results")
     matrix = matrix if isinstance(matrix, list) else []
+    by_id = {
+        str(item.get("acceptance_id") or ""): item
+        for item in criteria if isinstance(item, Mapping)
+    }
+    for row in matrix:
+        if not isinstance(row, Mapping):
+            continue
+        acceptance_id = str(row.get("acceptance_id") or "")
+        criterion = by_id.get(acceptance_id)
+        if criterion is None:
+            continue
+        if row.get("verification_owner") != criterion.get("verification_owner", "task_verify"):
+            raise VerificationResultError(f"{acceptance_id} verification owner mismatch")
+        if row.get("status") in {"passed", "waived"} and not acceptance_required_for_stage(
+            criterion, verification_owner=str(result.get("verification_owner") or "task_verify"),
+        ):
+            raise VerificationResultError(f"{acceptance_id} belongs to later verification; cannot declare {row['status']}")
     ids = [
         str(item.get("acceptance_id") or "")
         for item in matrix
@@ -629,6 +644,7 @@ __all__ = [
     "normalize_verification_result",
     "recovery_owner",
     "validate_verification_result",
+    "validate_verification_acceptance",
     "verification_findings_from_payload",
     "verification_result_from_payload",
     "verification_rework_items_from_payload",

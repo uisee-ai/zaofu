@@ -37,6 +37,11 @@ candidate/human 行必须 blocked。Verify 依据 immutable criterion owner 校�
 行改 owner 来掩盖本片失败。旧单一 owner 合同保持原完成要求，attempt/target/revision 绑定不变。
 not_applicable 只描述当前 Verify 阶段的适用性，不豁免后续 mandatory AC。
 
+Verify 阶段由 Runtime caller 或绑定的 contract route 决定，报告不能自行改为 human 或其他
+阶段以改变必验范围。普通 fanout 归一化和 typed result 准入共用条款校验：当前阶段的
+mandatory 行必须存在且 passed；每行 owner 必须与合同一致；未来阶段不能预填 passed/waived。
+候选阶段仍要求所有非 human mandatory 结果，人工结果不能由候选验证者提前签收。
+
 ## 证据与状态
 
 功能 RED：B01 原代码 12 项回归失败（其中 API fixture 初始化问题另行修正，不计功能证明）；
@@ -49,6 +54,11 @@ GREEN：分层契约及相关 caller 回归 45 项通过；Preview 及附件 API
 影响闭包 340 passed、1 skipped。前端 build/typecheck 与自动 Web 单元层通过。
 补齐子进程 PATH 后，相关环境/调用者测试 158 passed、2 failed；剩余两项直接写死
 不存在的 `/path/to/zaofu/.venv/bin/zf`，在原 dev 同样失败。
+
+追加阶段权威审查各先复现 7 个普通 Verify 失败和 7 个 typed admission 失败，随后修复。
+两入口聚焦 39 passed；包含实际 fanout、candidate、task pipeline、typed admission、
+goal coverage 及结果消费方的影响闭包 865 passed；更新后 sentinel 51 passed，mock smoke
+10 passed。此轮扩大范围由新发现的共享准入边界决定，没有重跑未受影响的全量环境传感器。
 
 Docker 使用现有组权限 `sg docker -c 'docker ...'`，没有修改 socket 权限或安装主机浏览器。
 镜像为 `mcp/playwright:latest`，host networking，fixture API 监听 `0.0.0.0:8003`；

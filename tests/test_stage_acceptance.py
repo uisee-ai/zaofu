@@ -9,9 +9,12 @@ from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.impl_self_check import ImplSelfCheckError, completion_payload_template, normalize_impl_self_check
 from zf.runtime.verification_result import VerificationResultError, normalize_verification_result
+from zf.runtime.task_contract_snapshot import build_target_snapshot, write_target_snapshot, write_task_contract_snapshot
+from zf.runtime.typed_result_admission import typed_result_admission_issues
 from tests.test_impl_self_check import _payload, _snapshots
 from tests.test_writer_contract_handoff import _impl_self_check_body, _replace_contract, _typed_contract
 from tests.test_writer_fanout_runtime import _child, _commit, _fanout_id, _manifest, _seed_tasks, _start, _state
+from tests.test_typed_result_admission import _contract, _verification_result
 
 
 def _future_criteria():
@@ -91,6 +94,33 @@ def test_worker_cannot_change_acceptance_owner_in_result(tmp_path):
         normalize_verification_result(payload, contract_snapshot=contract, target_snapshot=target)
 
 
+@pytest.mark.parametrize("claimed_owner", ["human", "candidate_verify", "unregistered-stage"])
+def test_result_cannot_choose_its_own_verification_stage(tmp_path, claimed_owner):
+    contract, target = _snapshots(tmp_path)
+    payload = _verify_payload()
+    payload["verification_result"]["verification_owner"] = claimed_owner
+    payload["verification_result"]["requirement_results"][0]["status"] = "passed" if claimed_owner == "candidate_verify" else "not_applicable"
+    with pytest.raises(VerificationResultError, match="verification stage mismatch"):
+        normalize_verification_result(payload, contract_snapshot=contract, target_snapshot=target)
+
+
+@pytest.mark.parametrize("stage,acceptance_id", [("task_verify", "AC-CANDIDATE"), ("candidate_verify", "AC-HUMAN")])
+@pytest.mark.parametrize("status", ["passed", "waived"])
+def test_verifier_cannot_predeclare_future_acceptance(tmp_path, stage, acceptance_id, status):
+    contract, target = _snapshots(tmp_path)
+    contract["acceptance_criteria"].extend(_future_criteria())
+    payload = _verify_payload()
+    if stage == "candidate_verify":
+        payload["verification_result"]["requirement_results"].append({
+            "acceptance_id": "AC-CANDIDATE", "status": "passed", "evidence_refs": ["artifacts/candidate.log"],
+        })
+    payload["verification_result"]["requirement_results"].append({
+        "acceptance_id": acceptance_id, "status": status, "evidence_refs": ["artifacts/claimed.log"],
+    })
+    with pytest.raises(VerificationResultError, match="later verification"):
+        normalize_verification_result(payload, contract_snapshot=contract, target_snapshot=target, default_owner=stage)
+
+
 @pytest.mark.parametrize("status", ["not_applicable", "waived"])
 def test_candidate_mandatory_acceptance_cannot_be_waived_by_stage_routing(tmp_path, status):
     contract, target = _snapshots(tmp_path)
@@ -101,6 +131,35 @@ def test_candidate_mandatory_acceptance_cannot_be_waived_by_stage_routing(tmp_pa
     })
     with pytest.raises(VerificationResultError, match="mandatory acceptance did not pass"):
         normalize_verification_result(payload, contract_snapshot=contract, target_snapshot=target, default_owner="candidate_verify")
+
+
+@pytest.mark.parametrize("stage", ["task_verify", "candidate_verify"])
+@pytest.mark.parametrize("case", ["local_only", "future_pass", "owner_forgery", "local_waived"])
+def test_typed_admission_enforces_stage_acceptance_against_bound_contract(tmp_path, stage, case):
+    contract = _contract()
+    contract["verification_owner"] = stage
+    contract["acceptance_criteria"].extend(_future_criteria())
+    descriptor = write_task_contract_snapshot(tmp_path, contract)
+    target = build_target_snapshot(descriptor, target_commit="target-1", contract_snapshot=contract)
+    target_descriptor = write_target_snapshot(tmp_path, target)
+    result = _verification_result(contract, descriptor, target_descriptor)
+    result["verification_owner"] = stage
+    if case == "future_pass":
+        result["requirement_results"].append({
+            "acceptance_id": "AC-HUMAN", "verification_owner": "human", "verification_tier": "integration",
+            "status": "passed", "evidence_refs": ["event:claimed-human-verification"],
+        })
+    elif case == "owner_forgery":
+        result["requirement_results"][0]["verification_owner"] = "candidate_verify"
+    elif case == "local_waived":
+        result["requirement_results"][0]["status"] = "waived"
+    issues = typed_result_admission_issues(
+        tmp_path, schema_version="verification-result.v1", result=result, semantic_submit=True,
+    )
+    if stage == "task_verify" and case == "local_only":
+        assert issues == []
+    else:
+        assert [issue["code"] for issue in issues] == ["verification_result_invalid"]
 
 
 def test_real_writer_handoff_accepts_local_proof_and_retains_pending_candidate(tmp_path):
