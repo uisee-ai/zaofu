@@ -402,12 +402,27 @@ def bind_product_acceptance_report(
     operation: Mapping[str, Any] | None,
     source_event_id: str,
 ) -> Any:
-    """Bind Candidate Verify to the current spec and materialized report."""
+    """Bind global verification/discovery to the exact full-product report."""
 
-    if str(getattr(adapted, "schema_version", "")) != "verification-result.v1":
+    schema = str(getattr(adapted, "schema_version", ""))
+    operation = operation or {}
+    is_discovery = (
+        schema == "workflow-read-result.v1"
+        and operation.get("output_profile_id") == "workflow-read"
+        and operation.get("canonical_success_event") == "flow.discovery.child.completed"
+    )
+    if schema != "verification-result.v1" and not is_discovery:
         return adapted
     result = dict(getattr(adapted, "payload", {}) or {})
-    operation = operation or {}
+    # Discovery may report gaps or infrastructure failure without pretending
+    # that a complete product evaluation ran. Only a successful closeout must
+    # provide the full report; explicit reports still undergo validation.
+    if (
+        is_discovery
+        and result.get("verdict") != "passed"
+        and not isinstance(result.get("product_acceptance_report"), Mapping)
+    ):
+        return adapted
     identity = _mapping(operation.get("result_identity"))
     package_ref = str(
         result.get("plan_artifact_package_ref")
@@ -420,7 +435,8 @@ def bind_product_acceptance_report(
         or ""
     )
     is_candidate = (
-        str(operation.get("output_profile_id") or "") == "candidate-verify"
+        is_discovery
+        or str(operation.get("output_profile_id") or "") == "candidate-verify"
         or str(result.get("verification_owner") or "") == "candidate_verify"
     )
     if not package_ref or not package_digest:
@@ -439,6 +455,15 @@ def bind_product_acceptance_report(
         if not is_candidate:
             return adapted
         raw_report = result.get("product_acceptance_report")
+        if not isinstance(raw_report, Mapping) and result.get("product_acceptance_report_ref"):
+            raw_report = dict(hydrate_sidecar_ref(Path(state_dir), {
+                "ref": result["product_acceptance_report_ref"],
+                "sha256": str(result.get("product_acceptance_report_digest") or ""),
+            }).payload)
+            raw_report["provider_qualification_receipts"] = [
+                dict(hydrate_sidecar_ref(Path(state_dir), descriptor).payload)
+                for descriptor in _objects(raw_report.pop("provider_qualification_receipt_refs", []))
+            ]
         if not isinstance(raw_report, Mapping):
             if binding.get("required"):
                 raise ProductAcceptanceError(
@@ -525,9 +550,9 @@ def bind_product_acceptance_report(
         descriptor = write_immutable_json_sidecar(
             Path(state_dir),
             result,
-            root="call-results/control/verification-result.v1",
+            root=f"call-results/control/{schema}",
             kind="call_control_result",
-            schema_version="verification-result.v1",
+            schema_version=schema,
             created_by="call-result-admission:product-acceptance-binding",
             source_event_id=source_event_id,
         )

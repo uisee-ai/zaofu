@@ -43,6 +43,26 @@ Before comparing anything, confirm which tree you are auditing:
 
 ## Required Rescan Output
 
+### 分片 Verify 后的完整产品收口
+
+当 v3 affinity Verify 后配置了 `flow-discovery`，逐任务 reader 在固定的集成
+candidate commit 上只验收自己的 task contract；全产品验收由后续 discovery
+负责。任务级通过不是产品通过。保留原始 mandatory AC、command ID 和 owner，
+后续阶段的条款按结果协议记录 deferred，不得伪装 passed 或直接删除。
+
+Discovery 必须读取受控 manifest 中的 Plan ports 和本轮已准入的分片原始
+control result / envelope refs；核对 run、generation、candidate commit、
+task、attempt、command identity，再执行 Plan 指定的全局验收命令。无法取得的
+原始收据必须报告缺口；不得仅凭任务状态、汇总计数或其他 worker 的总结验收。
+并发观察材料应由实际观察者持久化并经受控 ref/digest 交接，不能假设未来产生的
+运行证据已经存在于不可变候选源码中。
+
+声明无缺口前，为 Plan 中要求的 `product_acceptance_spec` 提交完整
+`product_acceptance_report`，包含每个 mandatory journey/assertion 的证据和
+固定候选版本。没有完整报告时报告 blocked/gaps；最终 Thin Judge 只消费已准入
+证据，不负责补造自己的前置验收。以上是既有 discovery 的审计方法，不新增调度
+状态机，也不授权改写其他任务的执行身份。
+
 The rescan must write a durable report with:
 
 - `goal_id`, `goal_kind`, and `gap_category`;

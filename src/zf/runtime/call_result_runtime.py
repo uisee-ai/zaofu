@@ -164,6 +164,15 @@ def prepare_call_operation(
         stage_id=stage_id,
     )
     from zf.runtime.call_result_adapters import call_result_profile_identity
+    from zf.runtime.scoped_candidate_verify import uses_scoped_candidate_verify
+
+    scoped_candidate_verify = uses_scoped_candidate_verify(
+        runtime.config, payload=payload,
+        operation_type=operation_type, stage_id=stage_id,
+    )
+    if scoped_candidate_verify:
+        payload["output_profile_id"] = "task-verify"
+        payload["verification_owner"] = "task_verify"
 
     output_profile_id, output_profile_revision = call_result_profile_identity(
         operation_type=operation_type,
@@ -223,6 +232,8 @@ def prepare_call_operation(
         stage_id=stage_id,
         operation_type=operation_type,
     )
+    if scoped_candidate_verify:
+        payload["handoff_authority_contract"]["requires_candidate_lineage"] = True
     semantic_submit_mode = _semantic_submit_mode(
         runtime.config,
         profile_id=output_profile_id,
@@ -788,6 +799,8 @@ def admit_runtime_call_result(
             "result_identity": operation_result_identity,
             "output_profile_id": str(operation_request.get("output_profile_id") or ""),
             "output_profile_revision": str(operation_request.get("output_profile_revision") or ""),
+            "canonical_success_event": str(operation_request.get("canonical_success_event") or ""),
+            "handoff_authority_contract": dict(operation_request.get("handoff_authority_contract") or {}),
         },
         require_semantic_submit=require_semantic_submit,
         semantic_submit=semantic_submit,

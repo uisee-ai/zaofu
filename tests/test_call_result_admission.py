@@ -1170,3 +1170,14 @@ def test_task_and_global_verify_use_pinned_target_without_weakening_candidate_ve
         )
     }
     assert strict_codes == {"stale_task_map_generation", "stale_target_commit"}
+    scoped_codes = {
+        issue["code"]
+        for issue in admission._task_result_currentness_issues(
+            envelope, adapted,
+            {
+                "output_profile_id": "task-verify",
+                "handoff_authority_contract": {"requires_candidate_lineage": True},
+            },
+        )
+    }
+    assert scoped_codes == strict_codes
