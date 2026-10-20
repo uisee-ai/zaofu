@@ -51,3 +51,7 @@ Planner 可把规格拆成具名受控端口，并在 `required_plan_ports` 声�
 `second-formal-size-gap.json`、`port-ref-red.log`、
 `port-ref-green.log`、`dev-verify-port-run.log`。
 B17 及相关任务在正式候选重新打包、独立 Critic 与实际 Preview 验收前保持 active。
+
+真实候选正文的 13 端口运输实验已通过，原正文保持相等，临时环境已删除。
+第二次 Critic 仍因供应商容量错误退出；后续安排与具体返工证据见
+[有界续跑记录](2026-10-20-0820-taskmap-bounded-continuation.md)。

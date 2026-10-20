@@ -5,7 +5,7 @@
 
 ## 范围
 
-将通用方法接入真实Planner/Critic；依据本次用户授权通过stage-replan-new-generation开启一次有界代际，修复B12–B16。校验同版工件、规格可读、依赖/阶段闭包和最终Preview；保留产品人工审批门。
+将通用方法接入真实Planner/Critic；依据本次用户授权通过stage-replan-new-generation开展有界返工，修复B12–B16。校验同版工件、规格可读、依赖/阶段闭包和最终Preview；保留产品人工审批门。
 
 通用语义方法归 skills/提示/评审工件；Kernel仅做机械校验，不硬编码洛书业务规则。旧运行态只读，候选修订由正式Planner产出。
 
@@ -17,4 +17,6 @@
 
 ## 授权边界
 
-本次授权覆盖这五项缺陷的规划返工及一次受控新generation；不自动批准产品Impl、数据库操作、部署或push。
+本次授权覆盖这五项缺陷的规划返工；不自动批准产品Impl、数据库操作、部署或push。
+首轮有界 generation 因供应商容量错误耗尽，未取得正式 verdict。
+后续已验证引用端口修复，按[有界续跑记录](../../docs/records/2026-10-20-0820-taskmap-bounded-continuation.md)再开展一轮；保留原升级和计数，不无限续跑。
