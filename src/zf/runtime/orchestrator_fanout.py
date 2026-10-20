@@ -1472,8 +1472,8 @@ class FanoutCoordinationMixin(
                 child_payload,
                 contract_snapshot=contract_snapshot,
                 target_snapshot=target_snapshot,
-                default_owner="task_verify",
-                default_tier="task_non_smoke",
+                default_owner=str(contract_snapshot.get("verification_owner") or "task_verify"),
+                default_tier=str(contract_snapshot.get("verification_tier") or "task_non_smoke"),
                 strict=explicit_result or profile == "canonical-dag/v4",
                 require_rework_items=bool(
                     getattr(self.config.workflow, "impl_self_check_required", False)
@@ -1506,8 +1506,8 @@ class FanoutCoordinationMixin(
                     {"status": "failed", "reason": str(exc)},
                     contract_snapshot=contract_snapshot,
                     target_snapshot=target_snapshot,
-                    default_owner="task_verify",
-                    default_tier="task_non_smoke",
+                    default_owner=str(contract_snapshot.get("verification_owner") or "task_verify"),
+                    default_tier=str(contract_snapshot.get("verification_tier") or "task_non_smoke"),
                     strict=False,
                 )
                 return failed, str(exc)

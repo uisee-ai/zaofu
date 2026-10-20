@@ -42,6 +42,8 @@ Verify 阶段由 Runtime caller 或绑定的 contract route 决定，报告不�
 阶段以改变必验范围。普通 fanout 归一化和 typed result 准入共用条款校验：当前阶段的
 mandatory 行必须存在且 passed；每行 owner 必须与合同一致；未来阶段不能预填 passed/waived。
 候选阶段仍要求所有非 human mandatory 结果，人工结果不能由候选验证者提前签收。
+Reader fanout 同样从已验证的冻结合同取得 owner/tier，保留合法的 candidate_verify 路由；
+正常结果与错误回退都不能把它强行改成 task_verify。
 
 ## 证据与状态
 
@@ -58,7 +60,8 @@ GREEN：分层契约及相关 caller 回归 45 项通过；Preview 及附件 API
 
 追加阶段权威审查各先复现 7 个普通 Verify 失败和 7 个 typed admission 失败，随后修复。
 两入口聚焦 39 passed；包含实际 fanout、candidate、task pipeline、typed admission、
-goal coverage 及结果消费方的影响闭包 865 passed；更新后 sentinel 51 passed，mock smoke
+goal coverage 及结果消费方的影响闭包最终 867 passed；其中追加真实 reader caller 的
+候选路由成功/失败回退用例，先复现 2 failed 再修复。更新后 sentinel 51 passed，mock smoke
 10 passed。此轮扩大范围由新发现的共享准入边界决定，没有重跑未受影响的全量环境传感器。
 
 Docker 使用现有组权限 `sg docker -c 'docker ...'`，没有修改 socket 权限或安装主机浏览器。

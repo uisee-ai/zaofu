@@ -162,6 +162,33 @@ def test_typed_admission_enforces_stage_acceptance_against_bound_contract(tmp_pa
         assert [issue["code"] for issue in issues] == ["verification_result_invalid"]
 
 
+@pytest.mark.parametrize("claimed_owner", ["candidate_verify", "task_verify"])
+def test_reader_runtime_uses_candidate_contract_route_for_result_and_failure(tmp_path, claimed_owner):
+    state, _, _, orch = _state(tmp_path, harness_profile="baseline")
+    contract = _contract()
+    contract["verification_owner"] = "candidate_verify"
+    contract["verification_tier"] = "integration"
+    contract["acceptance_criteria"][0]["verification_owner"] = "candidate_verify"
+    descriptor = write_task_contract_snapshot(state, contract)
+    target = build_target_snapshot(descriptor, target_commit="target-1", contract_snapshot=contract)
+    target_descriptor = write_target_snapshot(state, target)
+    result = _verification_result(contract, descriptor, target_descriptor)
+    result["verification_owner"] = claimed_owner
+    result.pop("verification_tier")
+    result["requirement_results"][0]["verification_owner"] = "candidate_verify"
+    normalized, error = orch._normalize_lane_verification_result(
+        {**result, "verification_result": result}, manifest={"topology": "fanout_reader"},
+    )
+    assert normalized["verification_owner"] == "candidate_verify"
+    assert normalized["verification_tier"] == "integration"
+    if claimed_owner == "candidate_verify":
+        assert error == ""
+        assert normalized["verdict"] == "passed"
+    else:
+        assert "verification stage mismatch" in error
+        assert normalized["execution_status"] == "failed"
+
+
 def test_real_writer_handoff_accepts_local_proof_and_retains_pending_candidate(tmp_path):
     state, log, _, orch = _state(tmp_path, harness_profile="baseline")
     orch._typed_task_contract_handoff_enabled = lambda _: True

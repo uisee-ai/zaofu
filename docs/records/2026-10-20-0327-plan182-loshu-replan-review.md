@@ -50,7 +50,7 @@
 | Verify 准入 | Runtime 固定当前阶段；普通和 typed 路径均检查必验项、owner 和未来签收 | 不能靠改报告 owner 或 waived 绕过 |
 | 方法注入 | 实际 Planner 的工具读取事件及物化文件 hash 与 canonical skill 一致 | 证明已消费方法，尚不证明生成结果满足方法 |
 
-测试：影响闭包 865 passed；sentinel 51 passed；确定性流程 smoke 10 passed；
+测试：影响闭包 867 passed；sentinel 51 passed；确定性流程 smoke 10 passed；
 新增 Docker 页面用例 4 passed；前端 build/typecheck 通过。自动扩大回归原有 38 个失败
 已在原 dev 复现；手机 contract-health 表格溢出同样在原 dev 复现。完整原始结果和失败分类
 见实施记录，不能把本次聚焦通过写成全仓全绿。
