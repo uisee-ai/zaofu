@@ -1,6 +1,6 @@
 # 182-B15 · 完整作业修正与时间原子性规格
 
-> 状态: active
+> 状态: done；实现 `c199520 feat: strengthen plan execution consistency review`。
 > 来源: 最新54任务候选的正式Critic缺陷 PC-F4；用户于2026-10-20明确要求在新worktree生成backlog并执行修复。
 
 ## 范围
@@ -18,4 +18,10 @@
 
 本次授权覆盖这五项缺陷的规划修复；受控代际与预算记录见 [B17](2026-10-20-0709-182-b17-controlled-replan-verification.md)。不自动批准产品Impl、数据库操作、部署或push。
 
-当前修订与尚待关闭项见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md)。
+## 当前结果
+
+完整修正保留单一事务 owner；11 个具名用例覆盖 T1→T2、设备目标、
+占用/位置/时序/关联/撤权、逐写故障、独立后续事实和幂等回执。
+正式 Critic `evt-4d9584e71768` 通过最终候选，未把库存差额当成完整修正。
+方法及角色消费验证 20 passed、1 skipped；此处关闭规格缺陷，不认证产品事务实现。
+证据及审查复用边界见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。

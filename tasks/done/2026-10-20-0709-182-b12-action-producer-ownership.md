@@ -1,6 +1,6 @@
 # 182-B12 · 权限动作与实际行为生产者对齐
 
-> 状态: active
+> 状态: done；实现 `c199520 feat: strengthen plan execution consistency review`。
 > 来源: 最新54任务候选的正式Critic缺陷 PC-F1；用户于2026-10-20明确要求在新worktree生成backlog并执行修复。
 
 ## 范围
@@ -18,4 +18,10 @@
 
 本次授权覆盖这五项缺陷的规划修复；受控代际与预算记录见 [B17](2026-10-20-0709-182-b17-controlled-replan-verification.md)。不自动批准产品Impl、数据库操作、部署或push。
 
-当前修订与尚待关闭项见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md)。
+## 当前结果
+
+175 条权限来源细分为 411 个动作，producer/owner/AC/command 绑定完成；
+混合行按实际生产动作分配，保留旧新映射和原范围。
+正式 Critic `evt-4d9584e71768` 通过最终候选，具体证据及未变正文复用边界见
+[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。
+通用方法和实际角色消费验证 20 passed、1 skipped；未宣称产品 TDD 已执行。

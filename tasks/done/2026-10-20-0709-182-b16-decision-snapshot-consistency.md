@@ -1,6 +1,6 @@
 # 182-B16 · 跨规划工件决定版本一致
 
-> 状态: active
+> 状态: done；实现 `c199520 feat: strengthen plan execution consistency review`。
 > 来源: 最新54任务候选的正式Critic缺陷 PC-F5；用户于2026-10-20明确要求在新worktree生成backlog并执行修复。
 
 ## 范围
@@ -18,4 +18,10 @@
 
 本次授权覆盖这五项缺陷的规划修复；受控代际与预算记录见 [B17](2026-10-20-0709-182-b17-controlled-replan-verification.md)。不自动批准产品Impl、数据库操作、部署或push。
 
-当前修订与尚待关闭项见[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md)。
+## 当前结果
+
+Q01–Q15 的登记与 PAS 内容一致，Q02/Q04/Q06 的旧快照冲突已修复；
+逻辑责任、影响范围与最迟阶段保留，全部未知外部决定及具名负责人仍为未决。
+正式 Critic `evt-4d9584e71768` 通过最终候选；方法及角色消费验证
+20 passed、1 skipped。规格可读和审查证据见
+[验收记录](../../docs/records/2026-10-20-0847-taskmap-repair-verification.md#最终正式验收)。
