@@ -20,3 +20,5 @@
 本次授权覆盖这五项缺陷的规划返工；不自动批准产品Impl、数据库操作、部署或push。
 首轮有界 generation 因供应商容量错误耗尽，未取得正式 verdict。
 后续已验证引用端口修复，按[有界续跑记录](../../docs/records/2026-10-20-0820-taskmap-bounded-continuation.md)再开展一轮；保留原升级和计数，不无限续跑。
+该轮正式 Critic 已关闭 PC-BC-F1/F2，仅剩新负例前态矛盾；最后单项修订的
+原授权依据与边界见[夹具收尾记录](../../docs/records/2026-10-20-0929-taskmap-fixture-closeout.md)。

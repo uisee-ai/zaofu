@@ -77,3 +77,17 @@ G2/G3/G4 最终浏览器用例 50 处，契约登记/全局契约/资源权限�
 必须分清独立物料维护、活动作业完成、已完成作业修正三种动作，并保留派生能力方向。
 方法已补充 A 派生 B 与 B 不能反向执行 A 的反例，不将职责隔离错误扩大为取消 B。
 正式报告保存在 `reports/taskmap-readiness/continuation-first-critic.json`。
+
+## 第二次正式修订与最后缺口
+
+第二次 Planner 正式提交 `evt-d142563e46f9`，Critic 分派 `evt-6ee962c4d4ab`。
+冻结候选 `fanout-prd-plan-evt-15069565` 保留原范围，包含 2,011 用例及
+2,015 个命令收据绑定；独立机械核对无错配、无 Q 快照差异。
+15 份语义文档摘要一致，54 任务的 2,356 条 JSON 选择路径全部可解析。
+索引 605,514 bytes，最大端口 3,307,978 bytes，26 个必需端口运输验证通过。
+
+正式 Critic `evt-913761eeea2a` 关闭 PC-BC-F1/F2，但因新增中等缺陷
+PC-BC-F3 拒绝：无仓库负例仍继承“已关联仓库”的公共前态，导致相互矛盾。
+本代际预算耗尽后的限定收尾见[单项夹具修订](2026-10-20-0929-taskmap-fixture-closeout.md)。
+负例一致性方法已提交 `2ea8371 fix: require coherent preconditions for negative test cases`，
+三份分发一致，方法验证 20 passed、1 skipped。
