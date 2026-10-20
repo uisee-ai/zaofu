@@ -1023,6 +1023,54 @@
   max-height: none;
   overflow: visible;
 }
+.plan-document-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  margin-bottom: 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.plan-document-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.plan-document-toolbar select {
+  max-width: min(320px, 60vw);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--panel);
+  color: inherit;
+}
+.plan-document .agent-markdown {
+  line-height: 1.7;
+}
+.plan-document .agent-markdown h2 {
+  font-size: var(--text-20, 20px);
+  margin: 20px 0 12px;
+}
+.plan-document .agent-markdown h3 {
+  font-size: var(--text-16, 16px);
+  margin: 18px 0 10px;
+}
+.plan-document .agent-markdown :not(pre) > code {
+  white-space: break-spaces;
+  overflow-wrap: anywhere;
+}
+.plan-document-source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-12);
+}
 .plan-preview-context {
   display: grid;
   align-content: start;

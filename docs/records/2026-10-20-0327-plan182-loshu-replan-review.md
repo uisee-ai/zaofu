@@ -3,6 +3,10 @@
 > 状态: done。设计 182 的公共修复、受控重规划及综合复核已完成；产品 Plan 保持待人工审批。
 > 设计：[182](../design/182-plan-review-task-slicing-and-evidence-closure.md)；[实施记录](../impl/plan182-review-and-evidence-closure.md)。
 
+> 后续更正：本记录描述上轮证据；其“完整语义复核”的结论范围过宽。Q02 跨域映射、来源分类、
+> 关键用例与片内早期反馈仍需补强。原 Plan `evt-3f6b832282a3` 已于 05:15 UTC 受控拒绝，
+> 当前状态和补充结果以[本轮修复记录](2026-10-20-0528-plan182-semantic-followup.md)为准。
+
 ## 审查边界和入口
 
 本次在 `/home/min/.codex/worktrees/9f60/zaofu`、分支

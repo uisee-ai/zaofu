@@ -1,7 +1,9 @@
 # 设计 182 实施与验收记录
 
-> 状态: implemented。B01–B07 已实施并验证；洛书新 Plan 停在人工审批门。
+> 状态: implemented。B01–B07 的实现与验证保留；后续补审及 B08–B11 见下方记录。
 > 设计入口：[182](../design/182-plan-review-task-slicing-and-evidence-closure.md)。
+> 补充修复：[语义审查、角色图与格式化 Preview](../records/2026-10-20-0528-plan182-semantic-followup.md)。
+> 以下为上轮实施时的证据，Plan 当前状态与语义结论范围以后续记录为准。
 > 案例评审：[洛书重规划与综合验收](../records/2026-10-20-0327-plan182-loshu-replan-review.md)。
 
 ## 已选择的边界

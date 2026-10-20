@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
   AlertTriangle,
@@ -20,6 +20,8 @@ import { getOperatorInbox, getPlanPreview, postAction } from "../../api/client";
 import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { LatestRequestGate } from "../../app/latestRequestGate";
+
+const PlanMarkdownDocument = lazy(() => import("./PlanMarkdownDocument"));
 
 type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
@@ -634,7 +636,9 @@ function PlanPreviewOverlay({
         <main className="plan-preview-markdown-pane">
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
-          {loading ? <p className="muted">Loading...</p> : <MarkdownText className="plan-preview-markdown" content={preview?.markdown || ""} />}
+          {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
+            <PlanMarkdownDocument key={planId} content={preview?.markdown || ""} />
+          </Suspense>}
         </main>
         <aside className="plan-preview-context">
           <dl className="plan-approval-meta">

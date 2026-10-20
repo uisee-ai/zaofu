@@ -1,20 +1,32 @@
 ---
 name: zf-prd-plan-synth
-description: "Use for ZaoFu PRD workflows. Defines the PRD author -> critic -> task-map handoff and the dispatchable plan contract for product delivery."
+description: "Use for ZaoFu PRD workflows. Defines the standard scan -> Planner -> plan-critic flow, optional PRD authoring handoffs, and the dispatchable plan contract for product delivery."
 ---
 
 # ZaoFu PRD Plan Synthesis
 
 ## Stage Contract
 
-PRD delivery is sequential:
+For the standard `PrdFlow` compiled by `workflow_profiles.py`, follow the
+actual dispatch briefing and configured role names:
 
-1. `prd-author` writes a durable PRD artifact and emits `prd.ready`.
-2. `prd-critic` reviews that artifact and emits approval or blockage.
-3. `task-map-synth` converts the approved PRD into `task_map.json`.
+1. `prd-scan`: `product-scan` and `tech-scan` read in parallel; the Kernel
+   waits for both and emits `prd.scan.completed`.
+2. `prd-plan`: `planner` produces the complete Plan, task map and matrices.
+3. After mechanical pre-submit admission, `plan-critic` runs as the stage's
+   independent synth role. A correctable rejection returns to Planner;
+   acceptance lets the Kernel publish `task_map.ready` and the bound package.
+4. When enabled, human Plan approval precedes product writer dispatch.
 
-Do not run author and critic as peers when the critic needs the author's
-artifact.
+There are two configured Agent roles in the strict Plan stage, or four
+including its two scan roles. The Kernel is deterministic orchestration,
+not an additional Agent. Retries and provider-native helpers are not new
+configured workflow roles. Do not run Planner and Critic as parallel peers:
+Critic needs the exact admitted Planner artifacts.
+
+The author/PRD-review/task-map handoffs below also apply when an explicitly
+configured workflow separates PRD authoring. They do not add `prd-author`,
+`prd-critic`, or `task-map-synth` to the standard PrdFlow.
 
 ## PRD Author Output
 

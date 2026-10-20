@@ -93,6 +93,10 @@ authoritative when it differs from an older Skill example.
 
 ## 与 kernel 合约的配对
 
+提交前按 `zf-plan-execution-readiness` 区分来源记录、决定、行为规格与验收用例，
+保留高风险具体断言、跨域责任、延后细化边界、片内 TDD 步骤及最早 UI 反馈。
+“有 test id/原文/命令”不等于测试规格充分；不能把已知行为全部推给 writer 再解释。
+
 | 你产出的 | 消费它的机械 | 违约后果 |
 |---|---|---|
 | task_map JSON(含 `shared_conventions`) | writer-fanout admission(schema/test_path_prefix 机械校验) | 不合合同直接拒收,bad task_map 走上游返工路由 |

@@ -71,15 +71,16 @@ test("large Plan pagination preserves every character through the final page", a
   const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-long/preview`)).json();
   await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-long`);
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
-  const pagination = dialog.getByRole("navigation", { name: "长消息分页" });
+  const pagination = dialog.getByRole("navigation", { name: "计划阅读导航" });
   await expect(pagination).toBeVisible();
+  await pagination.getByRole("button", { name: "查看源码" }).click();
   const next = pagination.getByRole("button", { name: "下一页" });
   let reconstructed = "";
   let pages = 0;
   do {
     if (pages) await next.click();
     await expect(pagination).toContainText(`第 ${pages + 1} /`);
-    reconstructed += await dialog.locator(".agent-markdown-plain-guard").textContent();
+    reconstructed += await dialog.locator(".plan-document-source").textContent();
     pages += 1;
   } while (await next.isEnabled());
   expect(pages).toBeGreaterThan(1);
@@ -89,7 +90,7 @@ test("large Plan pagination preserves every character through the final page", a
     await page.setViewportSize(viewport);
     const visible = await dialog.locator(".plan-preview-markdown-pane").evaluate((pane) => {
       pane.scrollTop = pane.scrollHeight;
-      const text = pane.querySelector(".agent-markdown-plain-guard")!.firstChild!;
+      const text = pane.querySelector(".plan-document-source")!.firstChild!;
       const end = text.textContent!.trimEnd().length;
       const range = document.createRange();
       range.setStart(text, end - "END-OF-LONG-PLAN".length);
@@ -100,4 +101,36 @@ test("large Plan pagination preserves every character through the final page", a
     });
     expect(visible, "scrolling the Plan pane must reveal the final text line").toBe(true);
   }
+});
+
+test("long Plan renders headings and tables instead of raw Markdown", async ({ page, request }) => {
+  const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+  await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
+  const dialog = page.getByRole("dialog", { name: "Plan preview" });
+  await expect(dialog.getByRole("heading", { name: "格式化长计划", exact: true })).toBeVisible();
+  await expect(dialog.locator(".plan-preview-markdown table").first()).toBeVisible();
+  let rows = 0;
+  const next = dialog.getByRole("button", { name: "下一页" });
+  let number = 1;
+  do {
+    await expect(dialog.getByRole("navigation", { name: "计划阅读导航" })).toContainText(`第 ${number} /`);
+    rows += await dialog.locator(".plan-preview-markdown tbody tr").count();
+    if (!(await next.isEnabled())) break;
+    await next.click();
+    number += 1;
+  } while (true);
+  expect(rows).toBe(2400);
+  await expect(dialog.getByText("END-OF-RICH-PLAN", { exact: true })).toBeVisible();
+  await expect(dialog.locator(".plan-preview-markdown .agent-code-block")).toContainText("node --test");
+  const downloadEvent = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "下载 Markdown" }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe("plan.md");
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  if (!stream) throw new Error("download stream missing");
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  const downloaded = Buffer.concat(chunks).toString("utf8");
+  const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-rich/preview`)).json();
+  expect(downloaded).toBe(preview.markdown);
 });

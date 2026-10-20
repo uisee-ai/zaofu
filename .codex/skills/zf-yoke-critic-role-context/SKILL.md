@@ -46,6 +46,8 @@ Local adaptation of yoke critic role context for ZaoFu.
 
 加载 `zf-plan-execution-readiness`，逐条核对混合 AC 的验证责任、过大工作包、
 阶段集成和不合理依赖。把具体来源及判定写进 verdict；不能只按任务名豁免前置 AC。
+同时执行该方法的来源分类、跨域反例和最早反馈审查。返工 verdict 区分“已列修复关闭”
+与“当前完整 Plan 审查范围”，列出未覆盖维度；不能把前者当作全局语义通过。
 
 标准 Issue/PRD/Refactor 计划在进入 writer admission 前由一个独立 Critic
 做一次有界语义检查。light topology 可跳过。这里的检查完全属于本 Skill 和
