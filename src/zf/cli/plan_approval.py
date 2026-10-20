@@ -19,6 +19,7 @@ from zf.core.config.project_context import resolve_project_context
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+from zf.runtime.plan_preview_artifacts import preview_artifact_path
 
 
 def _pending(events) -> list[dict]:
@@ -98,10 +99,14 @@ def _run(args: argparse.Namespace) -> int:
                   f"tasks={item.get('task_count')}  pdd={item.get('pdd_id')}")
             print(f"  task_map: {ref}")
             if ref:
-                path = Path(ref)
-                if not path.is_absolute():
-                    path = Path.cwd() / ref
-                for line in _checklist(path) or ["[OK] checklist passed"]:
+                try:
+                    path = preview_artifact_path(
+                        ref, state_dir=state_dir, project_root=context.project_root,
+                    )
+                    checks = _checklist(path)
+                except (OSError, ValueError) as exc:
+                    checks = [f"[X] task_map unavailable: {exc}"]
+                for line in checks or ["[OK] checklist passed"]:
                     print(f"  {line}")
             print(f"  approve: zf plan approve {plan_id}")
         return 0

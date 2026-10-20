@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 
 
 def build_plan_health_router(
@@ -103,5 +104,22 @@ def build_plan_health_router(
     @router.get("/api/plans/{plan_id}/preview")
     def default_plan_preview(plan_id: str) -> dict:
         return plan_preview("default", plan_id)
+
+    @router.get("/api/projects/{project_id}/plans/{plan_id}/artifacts/{name}")
+    def plan_artifact(project_id: str, plan_id: str, name: str) -> PlainTextResponse:
+        ctx = resolve_ctx(project_id)
+        if ctx is None:
+            raise HTTPException(status_code=404, detail="unknown project")
+        from zf.core.events.factory import event_log_from_project
+        from zf.runtime.operator_plan_preview import read_plan_preview_attachment
+
+        try:
+            content = read_plan_preview_attachment(
+                ctx.state_dir, event_log_from_project(ctx.state_dir, config=ctx.config).read_all(),
+                plan_id=plan_id, name=name, project_root=getattr(ctx, "project_root", None),
+            )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return PlainTextResponse(content, headers={"X-Content-Type-Options": "nosniff"})
 
     return router

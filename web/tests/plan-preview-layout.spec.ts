@@ -56,10 +56,15 @@ function planPreviewMarkup() {
             </div>
           </div>
           <div class="plan-preview-body">
-            <main class="plan-preview-markdown-pane">
-              <div class="agent-markdown plan-preview-markdown">
-                <h1>Plan Ready</h1>
-                <p>${"Review ".repeat(200)}</p>
+            <main class="plan-preview-reader">
+              <div class="plan-document">
+                <nav class="plan-document-toolbar" aria-label="计划阅读导航">阅读导航</nav>
+                <div class="plan-preview-markdown-pane">
+                  <div class="agent-markdown plan-preview-markdown">
+                    <h1>Plan Ready</h1>
+                    <p>${"Review ".repeat(200)}</p>
+                  </div>
+                </div>
               </div>
             </main>
             <aside class="plan-preview-context">

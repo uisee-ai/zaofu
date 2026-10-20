@@ -3,7 +3,7 @@ name: zf-yoke-planner-role-context
 description: "Use for ZaoFu planner / task-map-synth / triage roles that split PRDs, issues, or refactor objectives into a task_map."
 stages: [plan, scan, triage, replan]
 tags: [yoke, role-context, planning]
-dependencies: [vertical-slicing, grill, zf-plan-task-map-contract, zf-gap-task-synth, zf-project-adapter-matrix-enrichment]
+dependencies: [vertical-slicing, grill, zf-plan-task-map-contract, zf-gap-task-synth, zf-project-adapter-matrix-enrichment, zf-plan-execution-readiness]
 auto_inject: true
 load_on_demand: false
 ---
@@ -35,6 +35,9 @@ does not duplicate it. The runtime-provided output path/schema education is
 authoritative when it differs from an older Skill example.
 
 ## Rules
+
+- 在最终提交前加载 `zf-plan-execution-readiness`，记录条款级验收责任、切片可演示结果、
+  阶段集成和条件决定的审查证据；机械数量检查不替代语义评估。
 
 - **判据前置(criteria-before-dispatch)**:每个 task 的 `verification`
   与 `acceptance_criteria` 在 **task_map 落盘时** 写死——验收命令是任务
@@ -89,6 +92,10 @@ authoritative when it differs from an older Skill example.
 - Do not implement, do not verify, do not pre-approve your own plan.
 
 ## 与 kernel 合约的配对
+
+提交前按 `zf-plan-execution-readiness` 区分来源记录、决定、行为规格与验收用例，
+保留高风险具体断言、跨域责任、延后细化边界、片内 TDD 步骤及最早 UI 反馈。
+“有 test id/原文/命令”不等于测试规格充分；不能把已知行为全部推给 writer 再解释。
 
 | 你产出的 | 消费它的机械 | 违约后果 |
 |---|---|---|

@@ -1007,17 +1007,98 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
 }
+.plan-preview-reader,
+.plan-document {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.plan-preview-reader {
+  border-right: 1px solid var(--line);
+}
+.plan-document {
+  flex: 1;
+}
 .plan-preview-markdown-pane,
 .plan-preview-context {
+  min-width: 0;
   min-height: 0;
   overflow: auto;
   padding: 14px;
 }
 .plan-preview-markdown-pane {
-  border-right: 1px solid var(--line);
+  flex: 1;
+  overscroll-behavior: contain;
 }
 .plan-preview-markdown {
   max-width: 980px;
+}
+.plan-preview-markdown .agent-markdown-plain-guard {
+  max-height: none;
+  overflow: visible;
+}
+.plan-document-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: var(--text-12);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.plan-document-toolbar label {
+  display: flex;
+  flex: 1 1 240px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.plan-document-toolbar select {
+  flex: 1;
+  min-width: 0;
+  max-width: 420px;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px;
+  background: var(--panel);
+  color: inherit;
+}
+.plan-document-pagination,
+.plan-document-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+  white-space: nowrap;
+}
+.plan-document-actions {
+  margin-left: auto;
+}
+.plan-document .agent-markdown {
+  line-height: 1.7;
+}
+.plan-document .agent-markdown h2 {
+  font-size: var(--text-20, 20px);
+  margin: 20px 0 12px;
+}
+.plan-document .agent-markdown h3 {
+  font-size: var(--text-16, 16px);
+  margin: 18px 0 10px;
+}
+.plan-document .agent-markdown :not(pre) > code {
+  white-space: break-spaces;
+  overflow-wrap: anywhere;
+}
+.plan-document-source {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono, monospace);
+  font-size: var(--text-12);
 }
 .plan-preview-context {
   display: grid;
@@ -1167,9 +1248,19 @@
   .plan-preview-body {
     grid-template-columns: 1fr;
   }
-  .plan-preview-markdown-pane {
+  .plan-preview-reader {
     border-right: 0;
     border-bottom: 1px solid var(--line);
+  }
+  .plan-document-toolbar label {
+    flex-basis: 100%;
+  }
+  .plan-document-actions button {
+    min-width: 32px;
+    min-height: 32px;
+  }
+  .plan-document-actions span {
+    display: none;
   }
   .plan-preview-context {
     max-height: 34vh;

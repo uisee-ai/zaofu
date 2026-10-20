@@ -3228,6 +3228,13 @@ export interface PlanPreview {
   task_count?: number | null;
   refs: Record<string, string>;
   markdown: string;
+  content_kind?: "full_plan" | "digest_only" | "unavailable";
+  content_error?: string;
+  digest_markdown?: string;
+  digest_source?: "bound_task_map" | "stored_digest" | "unavailable";
+  source_event_id?: string;
+  artifacts?: Array<{ name: string; ref: string; sha256: string }>;
+  artifacts_error?: string;
   task_map_summary?: {
     ok: boolean;
     task_count: number;

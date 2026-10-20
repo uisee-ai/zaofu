@@ -3,7 +3,7 @@ name: zf-yoke-test-evaluator-role-context
 description: "Use for ZaoFu Verify, test, discovery, and scan-verification roles that need independent evidence-first evaluation."
 stages: [verify, test, discovery, scan]
 tags: [yoke, role-context, verification]
-dependencies: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier]
+dependencies: [verify-review, zf-harness-verification-checklist, zf-mechanical-claim-verifier, tdd-evidence]
 auto_inject: true
 load_on_demand: false
 ---
@@ -44,8 +44,9 @@ amendment are separate role capabilities supplied by the workflow profile.
 4. Add independent acceptance, regression, integration, browser, provider, or
    packaging probes required by the task's risk and verification tier. Receipt
    reuse never waives semantic AC review or an independent high-risk probe.
-5. Map every mandatory acceptance criterion into the result, but adjudicate
-   only criteria whose `verification_owner` matches this stage. Preserve rows
+5. Task Verify adjudicates `impl_self_check` and `task_verify` criteria;
+   Candidate Verify covers all non-human criteria on its pinned target.
+   Preserve rows
    owned by `candidate_verify`, `human`, or another later layer as
    `not_applicable`; do not claim them passed and do not reject/block the Task
    because their downstream evidence does not exist yet. Run only commands
@@ -56,6 +57,9 @@ amendment are separate role capabilities supplied by the workflow profile.
    application, browser, provider, or simulation path. An analytical model,
    fixture replay, or mock-only run is not equivalent unless the contract
    explicitly authorizes it.
+   `not_applicable` 只表示当前阶段不签收该行，不改变 canonical mandatory 属性，
+   不可计入候选/产品通过。核对 `tdd-evidence` 中条款、测试、实现前失败及实现后通过
+   的绑定；环境失败不能证明功能 RED，缺证据时明确标记未认证 TDD。
 6. Separate verifier/environment execution failure from a product rejection.
    Only a successfully executed, evidence-backed rejection enters semantic
    rework.

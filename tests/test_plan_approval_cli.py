@@ -1,11 +1,39 @@
 from __future__ import annotations
 
 import argparse
+import json
+
+import pytest
 
 from zf.cli.plan_approval import _run
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
+
+
+@pytest.mark.parametrize("ref", ["artifacts/plan/task_map.json", ".zf/artifacts/plan/task_map.json"])
+def test_plan_review_reads_configured_state_artifact_without_mutation(tmp_path, monkeypatch, capsys, ref):
+    project = tmp_path / "project"
+    state = project / ".zf-custom"
+    artifact = state / "artifacts/plan/task_map.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text(json.dumps({"tasks": [{
+        "task_id": "SLICE-1", "owner_role": "dev", "allowed_paths": ["src/feature.py"],
+        "verification": "python -m pytest", "wave": 1,
+    }]}))
+    ledger = state / "events.jsonl"
+    EventWriter(EventLog(ledger)).append(ZfEvent(
+        type="plan.approval.requested", actor="zf-cli",
+        payload={"plan_id": "evt-plan", "task_map_ref": ref, "task_count": 1},
+    ))
+    before = ledger.read_bytes()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("ZF_STATE_DIR", ".zf-custom")
+    assert _run(argparse.Namespace(plan_cmd="review", state_dir=None)) == 0
+    output = capsys.readouterr().out
+    assert "[OK] checklist passed" in output
+    assert "not readable" not in output
+    assert ledger.read_bytes() == before
 
 
 def test_plan_cli_uses_zf_state_dir_env(tmp_path, monkeypatch, capsys):

@@ -1472,8 +1472,8 @@ class FanoutCoordinationMixin(
                 child_payload,
                 contract_snapshot=contract_snapshot,
                 target_snapshot=target_snapshot,
-                default_owner="task_verify",
-                default_tier="task_non_smoke",
+                default_owner=str(contract_snapshot.get("verification_owner") or "task_verify"),
+                default_tier=str(contract_snapshot.get("verification_tier") or "task_non_smoke"),
                 strict=explicit_result or profile == "canonical-dag/v4",
                 require_rework_items=bool(
                     getattr(self.config.workflow, "impl_self_check_required", False)
@@ -1506,8 +1506,8 @@ class FanoutCoordinationMixin(
                     {"status": "failed", "reason": str(exc)},
                     contract_snapshot=contract_snapshot,
                     target_snapshot=target_snapshot,
-                    default_owner="task_verify",
-                    default_tier="task_non_smoke",
+                    default_owner=str(contract_snapshot.get("verification_owner") or "task_verify"),
+                    default_tier=str(contract_snapshot.get("verification_tier") or "task_non_smoke"),
                     strict=False,
                 )
                 return failed, str(exc)
@@ -3278,12 +3278,19 @@ class FanoutCoordinationMixin(
         enabled = bool(getattr(
             self.config.workflow, "plan_approval_enabled", False,
         ))
+        from zf.runtime.plan_preview_artifacts import approval_artifact_refs
+
         base_payload = {
             "plan_id": plan_id,
             "stage_id": stage_id,
             "trace_id": trace_id,
             "pdd_id": str(getattr(loaded, "pdd_id", "") or ""),
             "task_map_ref": str(getattr(loaded, "task_map_ref", "") or ""),
+            **approval_artifact_refs(
+                trigger_event.payload,
+                state_dir=self.state_dir,
+                project_root=self.project_root,
+            ),
         }
         if not enabled:
             self.event_writer.append(ZfEvent(

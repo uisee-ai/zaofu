@@ -45,6 +45,25 @@ current / 契约 scope),verify reader 会复跑你的证据,复跑不过比没�
 
 ## Prove-It 模式(bug 修复)
 
+### 规格到测试的审计绑定
+
+在现有实现总结/证据 sidecar 中记录每个关键行为的来源条款或 acceptance_id、测试名、
+可复跑命令、RED 的基线和测试变更、预期与实际失败、GREEN 的实现版本及输出引用。
+保留测试变更或补丁，使审查者能在实现前版本重现同一测试，再在实现后版本验证。
+不新增 TDD 状态机或独立任务 schema，也不把测试交给另一个后置任务。
+
+| 行为 | 规格到测试例子 | 有意义的 RED / GREEN |
+| --- | --- | --- |
+| 纯规则 | AC-RULE → test_conflicting_payload_is_rejected | 错误请求被接受 → 返回规定冲突 |
+| 数据库事务 | AC-TXN → test_failure_rolls_back_all_writes | 注入业务失败后存在部分写入 → 全部回滚 |
+| UI 行为 | AC-PREVIEW → full plan end marker through real API/page | 正文尾部缺失 → 真页面可定位正文尾部 |
+
+缺依赖、服务不可达、命令拼错、测试自身参数错误都不是目标功能 RED 的充分证据。
+先修正环境/测试，再取得目标行为失败。最终正常验收仍要求通过；`expected_red=false`
+与开发时先写失败测试并不矛盾，不能批量改成 true。纯文档或无行为变化的配置记录
+不适用理由即可；改变行为的配置仍需相应回归。Verify 复核这条链，不把测试数量或
+字段出现当作 TDD 已执行的证明。
+
 收到 bug **不要先动手修**,先写复现测试:
 
 ```

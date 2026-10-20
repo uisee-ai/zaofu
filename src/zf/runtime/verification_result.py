@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from zf.runtime.verification_commands import acceptance_required_for_stage
+
 
 SCHEMA_VERSION = "verification-result.v1"
 COMPLETED_VERDICTS = frozenset({"passed", "rejected", "blocked"})
@@ -71,6 +73,8 @@ def normalize_verification_result(
     ):
         result.setdefault(key, str(target_snapshot.get(key) or ""))
     result.setdefault("verification_owner", default_owner)
+    if result["verification_owner"] != default_owner:
+        raise VerificationResultError("verification stage mismatch with runtime caller")
     result.setdefault("verification_tier", default_tier)
     result.setdefault("summary", str(payload.get("summary") or ""))
     result.setdefault("findings", _list(payload.get("findings")))
@@ -91,7 +95,7 @@ def normalize_verification_result(
         default_tier=str(result.get("verification_tier") or default_tier),
     )
     _aggregate_requirement_evidence(result)
-    _validate_requirement_coverage(result, contract_snapshot)
+    validate_verification_acceptance(result, contract_snapshot)
     validate_verification_result(
         result,
         strict=strict,
@@ -517,10 +521,11 @@ def _normalize_rework_items(raw: Any) -> list[dict[str, Any]]:
     return out
 
 
-def _validate_requirement_coverage(
+def validate_verification_acceptance(
     result: Mapping[str, Any],
     contract_snapshot: Mapping[str, Any],
 ) -> None:
+    """Bind row ownership and required outcomes to a caller-validated stage."""
     if str(result.get("execution_status") or "") == "failed":
         return
     criteria = contract_snapshot.get("acceptance_criteria")
@@ -531,9 +536,29 @@ def _validate_requirement_coverage(
         if isinstance(item, Mapping)
         and bool(item.get("mandatory", True))
         and str(item.get("acceptance_id") or "")
+        and acceptance_required_for_stage(
+            item, verification_owner=str(result.get("verification_owner") or "task_verify"),
+        )
     }
     matrix = result.get("requirement_results")
     matrix = matrix if isinstance(matrix, list) else []
+    by_id = {
+        str(item.get("acceptance_id") or ""): item
+        for item in criteria if isinstance(item, Mapping)
+    }
+    for row in matrix:
+        if not isinstance(row, Mapping):
+            continue
+        acceptance_id = str(row.get("acceptance_id") or "")
+        criterion = by_id.get(acceptance_id)
+        if criterion is None:
+            continue
+        if row.get("verification_owner") != criterion.get("verification_owner", "task_verify"):
+            raise VerificationResultError(f"{acceptance_id} verification owner mismatch")
+        if row.get("status") in {"passed", "waived"} and not acceptance_required_for_stage(
+            criterion, verification_owner=str(result.get("verification_owner") or "task_verify"),
+        ):
+            raise VerificationResultError(f"{acceptance_id} belongs to later verification; cannot declare {row['status']}")
     ids = [
         str(item.get("acceptance_id") or "")
         for item in matrix
@@ -561,6 +586,13 @@ def _validate_requirement_coverage(
             "requirement matrix has unknown acceptance ids: "
             + ", ".join(unknown)
         )
+    if result.get("verdict") == "passed":
+        incomplete = sorted(
+            str(row.get("acceptance_id")) for row in matrix
+            if row.get("acceptance_id") in mandatory and row.get("status") != "passed"
+        )
+        if incomplete:
+            raise VerificationResultError("mandatory acceptance did not pass: " + ", ".join(incomplete))
 
 
 def _aggregate_requirement_evidence(result: dict[str, Any]) -> None:
@@ -612,6 +644,7 @@ __all__ = [
     "normalize_verification_result",
     "recovery_owner",
     "validate_verification_result",
+    "validate_verification_acceptance",
     "verification_findings_from_payload",
     "verification_result_from_payload",
     "verification_rework_items_from_payload",

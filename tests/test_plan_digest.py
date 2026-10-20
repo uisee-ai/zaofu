@@ -22,6 +22,20 @@ def test_checklist_all_green_on_well_formed_map():
                  "verification_present": True, "scope_no_overlap": True}
 
 
+def test_digest_reads_canonical_validation_commands():
+    item = {**_GOOD[0], "validation": {"commands": [
+        {"id": "local", "command": "node --test tests/feature.test.mjs"},
+    ]}}
+    item.pop("verification")
+    assert _map([item])["verification_present"] is True
+    assert "node --test tests/feature.test.mjs" in render_plan_digest([item])
+
+
+def test_digest_does_not_mask_invalid_canonical_command_with_legacy_value():
+    item = {**_GOOD[0], "validation": {"commands": [{"id": "missing-command"}]}}
+    assert _map([item])["verification_present"] is False
+
+
 def test_checklist_flags_missing_assembly_and_root_owner_dup():
     # R21/R29 形态:无 assembly,两个任务都持根文件
     bad = [
