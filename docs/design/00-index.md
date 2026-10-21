@@ -20,3 +20,4 @@
 | 181 | [Channel Group 角色、完整输出与可靠接力](181-channel-group-roles-lossless-output-reliable-handoff.md) | implemented | 角色职责与可选 Skills 分离，保留现有展示及机器合同；[实施记录](../impl/channel-group-181-lossless-relay.md)列出完整输出、接力、恢复与验证边界。 |
 | 182 | [Plan 完整预览、任务拆分与验收证据闭环](182-plan-review-task-slicing-and-evidence-closure.md) | implemented | 完整 Preview、分层验收与 TDD/SDD 方法已实施；洛书受控重规划及浏览器复核完成，产品 Plan 保持待审批。 |
 | 183 | [运行时结果身份与恢复效果闭环补丁](183-runtime-result-authority-and-recovery-closure.md) | candidate | 派发身份、自检适配、故障分流、恢复效果、诊断环境及洛书断点续接。 |
+| 184 | [验证时序与命令证据门](184-verification-stage-order-and-evidence-gates.md) | implemented | 阶段验证与依赖释放、候选命令时序、Impl 收据闭包、八槽验证及故障专用诊断。 |

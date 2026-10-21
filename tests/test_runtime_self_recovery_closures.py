@@ -294,7 +294,7 @@ def test_autoresearch_trigger_accepted_creates_single_maintenance_proposal(
     assert candidates[0].payload["repair_task_payload"] is None
     assert Path(payload["candidate_path"]).exists()
     assert loop_requests[0].payload["apply_policy"] == "proposal_only"
-    assert loop_requests[0].payload["scenarios"] == ["controlled-stuck-recovery"]
+    assert loop_requests[0].payload["scenarios"] == ["incident-reproduction"]
 
 
 def test_raw_autoresearch_trigger_waits_for_run_manager_intake(

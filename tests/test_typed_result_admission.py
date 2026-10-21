@@ -199,7 +199,7 @@ def test_impl_rejects_invented_command_but_accepts_contract_receipt(
     assert issues[0]["recovery_owner"] == "implementation_owner"
 
 
-def test_impl_self_check_allows_no_receipt_when_commands_are_later_owned(
+def test_impl_self_check_requires_receipt_for_current_task_verify_command(
     tmp_path: Path,
 ) -> None:
     contract = _contract()
@@ -209,10 +209,27 @@ def test_impl_self_check_allows_no_receipt_when_commands_are_later_owned(
     result["self_check"]["command_receipts"] = []
     result["self_check"]["acceptance_results"][0]["command_receipt_ids"] = []
 
-    assert typed_result_admission_issues(
+    issues = typed_result_admission_issues(
         tmp_path,
         schema_version="implementation-result.v1",
         result=result,
+        semantic_submit=True,
+    )
+    assert [issue["code"] for issue in issues] == ["impl_self_check_invalid"]
+
+
+def test_impl_self_check_preserves_deferred_candidate_acceptance(tmp_path: Path) -> None:
+    contract = _contract()
+    contract["verification_commands"][0]["owner"] = "candidate_verify"
+    contract["acceptance_criteria"][0]["verification_owner"] = "candidate_verify"
+    descriptor = write_task_contract_snapshot(tmp_path, contract)
+    result = _implementation_result(contract, descriptor)
+    result["self_check"]["command_receipts"] = []
+    result["self_check"]["acceptance_results"][0].update({
+        "status": "blocked", "command_receipt_ids": [],
+    })
+    assert typed_result_admission_issues(
+        tmp_path, schema_version="implementation-result.v1", result=result,
         semantic_submit=True,
     ) == []
 
