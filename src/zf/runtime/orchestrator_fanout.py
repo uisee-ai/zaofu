@@ -7673,11 +7673,17 @@ class FanoutCoordinationMixin(
         cleaned = str(target_ref or "").strip()
         reason = ""
         pinned = ""
+        from zf.runtime.reader_target_binding import reader_checkout_ref
+
+        try:
+            cleaned = reader_checkout_ref(self.state_dir, child.payload or {}, cleaned)
+        except TaskContractSnapshotError as exc:
+            reason = f"target_binding_invalid: {exc}"
         unrendered = "${" in cleaned or "{{" in cleaned
-        if declared and (not cleaned or unrendered):
+        if not reason and declared and (not cleaned or unrendered):
             reason = "target_ref_unresolved"
             cleaned = "" if unrendered else cleaned
-        elif cleaned and not self._fanout_target_ref_is_project_path(cleaned):
+        elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
             from zf.runtime.workdirs import WorkdirManager
 
             try:

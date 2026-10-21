@@ -131,3 +131,5 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 受控 `stage-replan-new-generation` 新增可选 `repair_target={source_commit,commit,ref}`，仍要求原 cap escalation 与 owner approval。仅支持 contract-bound `flow.discovery.requested`：旧 target 必须匹配，提交必须改变且为旧提交后代，显式本地 ref 必须解析到新 commit。通过既有 snapshot writer 生成新的不可变 target；保留旧合同、计划、AC、历史 target，不移动任何候选/main ref。不满足条件不得重开 Run；同一升级的幂等重放不能偷换 target。
 
 验证责任：产品先 RED/GREEN、实际 reporter 命令与 Docker browser；Kernel 以真实 ControlledActionService 调用覆盖新 target、保留旧 snapshot、错误 ref/commit/来源/祖先/损坏 snapshot 及幂等冲突，再运行恢复影响闭包和 mock E2E。新动作成功只代表重新派发获准，不代表修复生效或 Q01–Q03 完成。
+
+真实恢复额外暴露两处交接问题：compact legacy trigger 尚未生成 target snapshot，只有精确 candidate commit；该形态从候选 pin 派生新 snapshot。reader 的 workdir pin 原先又无条件使用旧 stage target_ref 覆盖新的 snapshot。现在有不可变 target 时先核验其摘要和身份，再以其 commit checkout；坏 snapshot 拒绝派发，不回退旧 ref。无 snapshot 的文档/普通 reader 保留原路径。实际 `Orchestrator.run_once` + 临时 Git worktree 的 RED/GREEN 覆盖 checkout 与派发事件，避免仅 action-level 测试遗漏此边界。
