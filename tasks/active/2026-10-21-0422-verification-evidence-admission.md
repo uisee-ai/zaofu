@@ -1,0 +1,21 @@
+> 状态: active
+
+# P0 现场补充：禁止模板占位符绕过 Verify 证据门
+
+来源：[设计 183](../../docs/design/183-runtime-result-authority-and-recovery-closure.md)，用户授权的恢复验证闭包。
+
+事件 evt-37adee35a439 接受的 verification-result.v1 含未替换的 evidence_refs 和 probe target_commit。真实浏览器 receipt 通过不支持这些额外的非浏览器通过声明。根因：旧 emit transport 没有 semantic_submit，typed admission 整体跳过；仅检查字符串非空仍容许模板占位符。
+
+## 验收
+
+1. 带合同快照的 Verify，无论 transport 都执行原有命令/目标/证据门 -> verify: legacy 含错误 target 的结果拒绝，完整结果通过；实际 CallResultAdmissionService 调用回归。
+2. evidence_refs 不得保留模板槽位 -> verify: report/probe/AC 各层正反例；已存在的 canonical command target/exit_code 等校验继续生效。
+3. 保留旧准入历史但不能作为本轮通过证据 -> verify: 操作员审计记录、新受控 rescan、独立执行非浏览器命令及真实 receipt 后重新准入。Q01–Q03 外部决策仍不能假关闭。
+
+
+## TDD 与调用闭包
+
+先复现 legacy 绕门及 report/probe/AC 占位符两个 RED。增加真实 CallResultAdmissionService 测试：占位符进入 repair_pending、不产生 admitted；补齐有效合同/目标/命令/证据后才 admitted。原 live 控制结果只读检查现被拒绝。
+原测试中仅用伪造 snapshot ref 或模板 probe 充当完整结果的 fixture 改用持久合同/目标及明确 mock 证据；reader recovery fixture 亦记录真实 trigger 因果链，避免把缺失的原始事件当作合法续接。
+
+验证：261 passed（14 个直接调用方/合同/reader/lane/集成与三个 mock E2E 文件），sentinel 51 passed。现场新代独立结果尚待完成。

@@ -98,3 +98,11 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 
 
 现场验证另显示：项目自身 gitignored 的候选验收输入可能跨 reader checkout 留存。恢复时须依据本次 operation/HEAD/source manifest 重建并留存旧输入引用；错误输入引发的 wrong HEAD 属于验收环境故障，不是产品失败。当前现场通过操作员绑定并让独立 reader 重跑，未把本项目路径硬编码进通用 runtime，也未将此人工步骤宣称为全自动能力。
+
+
+## 现场 P0 补充：Verify 准入不能依赖传输路径
+
+真实浏览器通过之后，reader 的非浏览器 verification-result 仍携带模板 evidence_refs 和 target_commit，旧 emit 路径却准入（evt-37adee35a439）。该准入不是本轮验收证据。
+根因是 typed_result_admission 以 semantic_submit 标记整段早退；结构适配只执行 strict=False。现在带 contract snapshot ref/digest 的 verification-result 无论走 emit 还是受控 result-submit，都进入现有合同、目标快照、AC、canonical command、target、exit_code 与证据检查；无合同的历史兼容输入保留原边界。
+严格 Verify 检查另拒绝 evidence_refs 中保留的尖括号模板槽位。它是引用格式检查，不把非空字符串解释为已经证实的产品质量，也不替代独立运行命令。
+[补充任务](../../tasks/active/2026-10-21-0422-verification-evidence-admission.md)记录 RED/GREEN、真实 service caller 和新一代独立验证；旧事件不删除，不以旧准入冒充本次通过。

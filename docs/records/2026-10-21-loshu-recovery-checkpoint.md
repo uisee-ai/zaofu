@@ -74,3 +74,9 @@ API-RULES reader 实际运行合同浏览器命令时得到 wrong HEAD。检查�
 04:19:13–04:19:20 UTC，独立 reader 重跑原命令得到 candidate_verify passed / exit_code 0。receipt：产品 reader 工作区 `app/evidence/local-api-rules/browser/run-fanout-prd-post-verify-discovery-evt-42797c39-flow-discovery/receipt.json`；SHA256 `9d8f5bfc18f030b408b2dcaa7f291b1a65ffd78e8f229e0362c3e601c2928c47`。
 已独立核对 receipt 的 operation/attempt、target_commit 4f9959e 和 context SHA256 与当前绑定一致。1440、768、390 三种宽度均通过键盘复制、冲突保留草稿、修正后原子保存、治理权限拒绝、确认删除、四态区分、无横向溢出及无页面错误；截图、trace、observations 位于同目录。
 这是一个明确授权的本地 API-RULES slice 浏览器通过；不等于真实后端 API、身份服务或 Q01–Q03 闭环。提交给 Kernel 的全局 rescan 判定继续由独立 reader 和结果准入路径处理。
+
+
+## 结果准入审计（阻止错误完成声明）
+
+04:20 的 evt-37adee35a439 / evt-4a397a7bd97f / evt-80f89650d1ad 虽被旧 Kernel 接受，但独立复查控制结果 854986331750ef20f4db9bb203a09b8d111ffd47c1467149f571ab824371283b 发现报告/AC/三个非浏览器 probe 仍保留模板引用及占位 target。因此不能将这些事件作为正确完成证据；真实 browser receipt 另行成立。
+操作员再次受控暂停 Run，先修旧 emit 跳过 typed admission 的缺陷。新代码只读验证原控制结果已返回 verification_result_invalid / unresolved placeholder。将通过新受控阶段重跑实际非浏览器命令和浏览器，再核验新结果；绝不改写旧事件或直接设置 task done。
