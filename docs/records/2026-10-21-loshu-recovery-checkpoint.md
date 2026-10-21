@@ -118,3 +118,39 @@ Run Manager 之后错误地选择 workflow-batch-resume / repair_failed_children
 补充实现 `d641af6 fix: keep reader recovery out of business batch resumes` 已部署，watcher PID 998381、Dashboard 998382、Autoresearch resident 998383；health 返回 d641af6。260 项影响闭包、4 项最终正反例、serial 10、sentinel 51、flow-smoke 10 通过；新 helper 的直接 caller 测试已纳入 dev-verify 显式选择。此轮没有重跑已记录 20 项基线失败的整个确定性套件。
 
 最终现场状态是 Run blocked（evt-454a093ec936）：验证环境仍缺真正的 task Verify/reader context 交接，reader 有界重试已耗尽（evt-7c27425aabd2）。错误的 13 任务业务重跑先被 Run 终态门阻止（evt-3e1d62762b3f），再被操作员明确拒绝（evt-3dcba710a1f9），不恢复该错误计划。原 62 任务/274 mandatory AC、实现候选与证据保留；Q01–Q03 仍未完成。
+
+## 继续执行：产品上下文与修复目标交接
+
+已在产品独立 worktree `/home/min/.codex/worktrees/loshu-context-20261021/loshu`、分支 `wip/codex-2026-10-21-verification-context` 提交 `d7d6a94 feat: bind candidate verification to current reader context`。从原 API-RULES 提交 4f9959e 派生；没有改 worker 分支或主分支。产品协议见该分支 `docs/verification-context-recovery.md`。显式环境绑定校验当前 operation/dispatch/attempt、source manifest 原始摘要及实际 HEAD，candidate 收据单独保存，Task Verify/author 的原规则保留。
+
+产品先复现有效 candidate 被 reporter 拒绝的 RED，再通过 12 项上下文回归、66 项现有行为测试、typecheck 和 build；日志 `/tmp/zf-loshu-context-{red,green,vitest,typecheck,build}.log`。合成身份只用于回归，不作为真实独立验收。
+
+Harness 实现：`0944d27 feat: bind approved reader recovery to committed repair targets`；`e23d5f2 fix: preserve compact reader target lineage during recovery`；`6eaf6be fix: preserve bound reader targets during worktree checkout`。可选 repair_target 经原 cap escalation 和操作者授权检查，拒绝 unchanged/non-descendant/ref mismatch，使用既有 writer 派生新 target，不改原合同和目标。现场先暴露 compact trigger 缺 target 字段（evt-ec85079001cd 拒绝，未重开 Run），随后暴露旧 stage target_ref 覆盖新 target 的真实 checkout 缺陷；两者均新增 RED/GREEN，不把 action applied 当效果证明。
+
+新代授权 `evt-d13d75c242d2` / `stage-replan-59052ff65692a160a7e7`；错误 checkout 经 reader 实际核对，观察保存在 `artifacts/attempts/run-fanout-prd-post-verify-discovery-evt-d13d75c2-flow-discovery/evidence/reader-binding-observations.json`。操作员暂停 evt-07e8a06d9cc3；修复后追加 fanout 取消 evt-5f702fa16baf、operation service 取消 evt-93934eedb90a，再用 stage-retrigger 重发同一已批准修复目标 evt-e4294098a715，保留新代预算。没有替 worker 发完成事件。
+
+`evt-f979244163fa` 恢复 running；当前 operation `wop-prd-post-verify-discovery-flow-discovery-trig-evt-e4294098-7bec94e784da`。工作区 HEAD、candidate、target snapshot 已核对为 d7d6a94；上下文事件 evt-bac1cf21d945，SHA256 `152b7c5ab3f65f1b2d2530fd3187dc45581f02c667275c01eab8b26df267e6f6`。输入脚本仅提供本代非秘密身份；tmux 长消息草稿额外通过显式 Tab 投递，事件 evt-a5e5dd423462，不重复创建任务。
+
+影响验证：第一轮 100 项（83+17），compact 补充 68 项，checkout/恢复/候选/真实 Git worktree mock E2E 80 项，直接 reader/controller/durable caller 156 项通过。最终 serial/sentinel/flow-smoke 记录 `/tmp/zf-reader-target-final-tiers.log`。dev-verify 计划仍建议广泛确定性套件，本次明确选影响闭包并跳过已记录 20 项基线失败的重复全套，不宣称 full green。
+
+07:36 部署 health=6eaf6be；watcher 1320563、Dashboard 1320564、Autoresearch resident 1320565。Q01–Q03 外部事实未增加，原任务保持 active；本节后续以当前 reader 的独立命令/收据和 Kernel 准入结果补充现场验收。
+
+### 当前目标上的真实命令证据
+
+e4294098 reader 已独立运行全部四条原命令，actual target 为 d7d6a94，operation/dispatch/attempt 和 context 一致。三条 Vitest：RULES 25、UI 7、SMOKE 4 项实际断言全部通过，exit_code=0；收据均明确 `role_instance=flow-discovery`、`evidence_kind=candidate_verify`。browser 在 1440/768/390 三视口通过；receipt SHA256 `35f2d8a0daa44e8c1c6282ebb34996c927641ef39bbb236e7fce5f803669cce2`。独立 reader 另运行 12 项上下文回归。该结论只关闭本次 reporter/checkout 本地阻塞，不替代 Task Verify 或全局产品验收。
+
+32 份原始日志、receipts、截图、traces 与绑定输入已原子保存为 required sidecar `artifacts/operator-recovery/2026-10-21-context-handoff/e4294098-command-evidence.json`，SHA256 `db7836baf6d099792806d6c67cde95236376b2f034afbbeee1927512d16aec42`，事件 `evt-beefef8d27f9`。每个文件保留原路径、原字节 base64 和 SHA256；没有改写 worker 结果或历史证据。
+
+Docker Playwright Dashboard 检查 HTTP200、title zaofu、projectionReady=true、0 pageerror；截图 `/tmp/zf-loshu-browser-evidence/dashboard-context-recovery.png`。页面仍把 flow-discovery 标成旧 LS8-LOCAL-RTK-ACCOUNTS，虽然事件/operation 实际为 API-RULES；显示 24 workers / 7 active 不能证明当前业务 8 路并行。该投影一致性问题仍未修复。API-RULES 移动端截图明确标示本地演示、内存规则及未连接真实服务；未声称 Q01–Q03 已通过。
+
+### 报告提交与归档
+
+首次 provider turn 写好报告但未正式提交：它误将 protected completion-payloads 模板当待编辑的结果路径，scope guard 正确拒绝；turn 关闭产生 dispatch_lost evt-c6f218114060，Kernel 作 transport retry-1。不是命令测试失败。补充指引明确模板只读，worker 在自己的 workdir 写当前 envelope，通过正式 CLI 替换 `--payload-file` 路径提交；未放宽 guard，未由操作员代发结果。技能和首次 briefing 修复提交 3bc073f；contract-bound legacy retry 保留完整合同模板修复 5f2f180，RED/GREEN及167项闭包通过。三个技能副本摘要一致；最终serial10、sentinel51、flow-smoke10通过，日志 `/tmp/zf-reader-handoff-final-tiers.log`。
+
+正式事件：evt-e9b7ef9cc2e6 flow.discovery.child.failed → evt-82ee9700cece workflow.call.result.admitted → evt-fecc21f5074b workflow.operation.settled → evt-0e80b2c1445a fanout.child.failed → evt-11f5b3e39aa0 flow.discovery.failed。控制结果 `artifacts/call-results/control/verification-result.v1/9aa9adfa0ccca2105ed80b98dec63187f58635a0a703c508ea8439413229d560.json` 为 execution_status=failed / verdict=abstained：局部4AC已证明，完整当前候选原始shards与全局账本尚缺，其余270AC未验证，不是产品rejection，没有重复业务gap_tasks。分母另行独立核对原包：62 tasks、274 mandatory AC、208 command_responsibilities，均未删减。
+
+21份报告/当前retry envelope/输入审计等原始文件另存 required sidecar `artifacts/operator-recovery/2026-10-21-context-handoff/e4294098-admitted-report.json`，SHA256 `1326a14731b28b21c73e0cba7485e476704912eed4cfbda879e8ffe8c602fc19`，事件evt-c3249614c64a；关联前述32份命令证据。retry明确保留原收据身份和时间，未重跑或覆盖通过证据。
+
+Kernel启动原预算内第2/2轮 evt-cc1598d24920；操作员输入evt-e06738275aeb要求先核对是否新增真实分片证据，若无则复用原收据并报告当前输入不足，不无限重试或凭空造任务。08:03受控reload，health=5f2f180，watcher1512155、Dashboard1512156、Autoresearch1512157。此时全局Run仍running等待最后有界核对；缺失事实没有变化。
+
+[上下文交接修复任务](../../tasks/done/2026-10-21-0725-candidate-context-handoff.md)已按局部验收归档；[现场恢复及Q01–Q03](../../tasks/active/2026-10-21-0316-loshu-resume-q01-q03.md)继续active。未合并或推送本批分支。
