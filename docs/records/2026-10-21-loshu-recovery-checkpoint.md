@@ -111,3 +111,10 @@ Kernel 随后启动原有上限内第 2/2 次 reader 重试（evt-44e2999a38d1�
 Run Manager 之后错误地选择 workflow-batch-resume / repair_failed_children，重发 13 项业务任务 evt-fb91b4593b2e，仅凭请求收据产生 verify.passed evt-6ced63b70d5e。这不是环境修复成功；根因与补丁见设计 183 最新 P1 补充。该新 Plan 已通过 zf plan reject 明确拒绝，原批准的完整 Plan 和候选保留。尝试暂停时受控服务返回 blocked -> run-pause invalid_transition（evt-277aa58b746c），说明 Run 当时已 blocked；未直接改状态或制造暂停成功。
 
 新增两类 RED 已复现；影响闭包 260 passed，随后增强正反例共 4 passed（新 fanout/generation 可结算、同 Run 无关 fanout 不结算、Plan 拒绝仍失败、case 在请求后保持 verifying）。只读回放 30252 条真实事件，9fbc/dd88/44e 三个 reader 均不再产生错误 batch checkpoint。
+
+
+## 最新部署检查点（06:49 UTC）
+
+补充实现 `d641af6 fix: keep reader recovery out of business batch resumes` 已部署，watcher PID 998381、Dashboard 998382、Autoresearch resident 998383；health 返回 d641af6。260 项影响闭包、4 项最终正反例、serial 10、sentinel 51、flow-smoke 10 通过；新 helper 的直接 caller 测试已纳入 dev-verify 显式选择。此轮没有重跑已记录 20 项基线失败的整个确定性套件。
+
+最终现场状态是 Run blocked（evt-454a093ec936）：验证环境仍缺真正的 task Verify/reader context 交接，reader 有界重试已耗尽（evt-7c27425aabd2）。错误的 13 任务业务重跑先被 Run 终态门阻止（evt-3e1d62762b3f），再被操作员明确拒绝（evt-3dcba710a1f9），不恢复该错误计划。原 62 任务/274 mandatory AC、实现候选与证据保留；Q01–Q03 仍未完成。

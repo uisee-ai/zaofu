@@ -122,4 +122,4 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 
 对 repair_failed_children/trigger_rework 的 batch resume，动作收据后保持 effect pending；只接受本次 ControlledActionService 实际发出的唯一 task_map.ready 所触发的新 fanout 或 generation admission。同 Run 的无关事件、Plan 等待批准不结算；Plan 拒绝/准入失败或超时按失败处理。该效果仅表示恢复进入派发，绝不代表业务修复已验收。
 
-[补充任务](../../tasks/active/2026-10-21-0643-reader-batch-recovery-effects.md)记录 RED、实际 controlled caller、case 状态和现场回放。
+[补充任务](../../tasks/done/2026-10-21-0643-reader-batch-recovery-effects.md)记录 RED、实际 controlled caller、case 状态和现场回放。

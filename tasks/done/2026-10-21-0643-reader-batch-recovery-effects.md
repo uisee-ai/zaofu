@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `d641af6 fix: keep reader recovery out of business batch resumes`
 
 # P1 现场补充：Reader 恢复归属与 batch resume 效果
 
@@ -16,3 +16,5 @@ RED：2 failed，日志 `/tmp/zf-reader-batch-effects-red.log`。GREEN：11 文�
 错误 Plan evt-fb91b4593b2e 已拒绝；Run 为 blocked，暂停请求被确定性状态门拒绝，未更改状态。新增 helper 为机械 effect 绑定，保留语义判断在 reader/RM 报告。
 
 `dev-verify plan --base dev --tests tests/test_reader_batch_recovery_effects.py` 纳入新 helper 的直接 caller 证明。`dev-verify run` 本次以 `--skip-tier deterministic` 执行 serial 10、sentinel 51、flow-smoke 10 均通过；本补充采用上述 260 项影响闭包及 4 项最终回归，未再次重复已有 20 项基线失败的广泛套件。
+
+部署完成：watcher 998381、Dashboard 998382、Autoresearch resident 998383。`/health` 返回源码 d641af6 与真实 .zf-plan182；原 worker/candidate 保留。错误 Plan 拒绝事件 evt-3dcba710a1f9，Run 原已 blocked（evt-454a093ec936）；未重置上限、未宣称环境恢复或 Q01–Q03 完成。
