@@ -73,6 +73,7 @@ def review_execution(
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
             "command_owners": dict(owners),
+            "task_requirements": [_task_requirements(task) for task in tasks],
             "stages": stages,
             "impl_self_check_required": bool(policy.get("impl_self_check_required")),
         },
@@ -86,8 +87,51 @@ def review_execution(
         "limitations": [
             "Counts do not establish slice quality or elapsed execution time.",
             "Task verification ownership does not create a dispatch stage.",
+            "Required-by owners use runtime selectors; declared execution_stage is only an annotation.",
             "Setup presence does not prove installation or product execution.",
             "Port byte counts are JSON serialization sizes, not model token usage.",
+        ],
+    }
+
+
+def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:
+    from zf.runtime.verification_commands import (
+        acceptance_required_for_stage, verification_command_required_for_stage,
+    )
+
+    task_id = str(task.get("task_id") or task.get("id") or "")
+    owners = ("impl_self_check", "task_verify", "candidate_verify")
+    return {
+        "task_id": task_id,
+        "commands": [
+            {
+                "command_id": str(command.get("id") or ""),
+                "owner": str(command.get("owner") or "impl_self_check"),
+                "producer_task_id": str(command.get("producer_task_id") or ""),
+                "declared_execution_stage": str(command.get("execution_stage") or ""),
+                "required_by_verification_owner": [
+                    owner for owner in owners if verification_command_required_for_stage(
+                        command, verification_owner=owner, task_id=task_id,
+                    )
+                ],
+            }
+            for command in _rows(_object(task.get("validation")).get("commands"))
+            if isinstance(command, Mapping)
+        ],
+        "acceptance_criteria": [
+            {
+                "acceptance_id": str(criterion.get("id") or ""),
+                "verification_owner": str(criterion.get("verification_owner") or "task_verify"),
+                "declared_execution_stage": str(criterion.get("execution_stage") or ""),
+                "command_ids": _rows(criterion.get("verification_command_ids")),
+                "required_by_verification_owner": [
+                    owner for owner in owners if acceptance_required_for_stage(
+                        criterion, verification_owner=owner,
+                    )
+                ],
+            }
+            for criterion in _rows(task.get("acceptance_criteria"))
+            if isinstance(criterion, Mapping)
         ],
     }
 

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 from zf.core.config.schema import ZfConfig
 from zf.runtime.plan_execution_review import execution_policy, review_execution
@@ -87,3 +88,44 @@ def test_readiness_evidence_is_a_required_critic_input(tmp_path):
                                             attempt_id="attempt", dispatch_id="dispatch")
     reads = build_canonical_required_reads(manifest, output_profile_id="plan-synth")
     assert any(r["source_id"] == "plan-execution-review" for r in reads)
+
+
+def test_cli_exposes_actual_selection_despite_planned_stage_annotations(tmp_path, capsys):
+    from zf.cli.main import main
+
+    config = tmp_path / "zf.yaml"
+    config.write_text("project:\n  name: sample\n  state_dir: state\n")
+    plan = tmp_path / "task_map.json"
+    plan.write_text(json.dumps({"tasks": [{
+        "task_id": "release",
+        "validation": {"commands": [
+            {"id": "local", "owner": "impl_self_check", "producer_task_id": "release"},
+            {"id": "audit", "owner": "candidate_verify", "producer_task_id": "release",
+             "execution_stage": "after_independent_verify"},
+            {"id": "sign", "owner": "human", "producer_task_id": "release"},
+            {"id": "upstream", "owner": "task_verify", "producer_task_id": "other"},
+        ]},
+        "acceptance_criteria": [
+            {"id": "AC-audit", "verification_owner": "candidate_verify",
+             "verification_command_ids": ["audit"], "execution_stage": "after_independent_verify"},
+            {"id": "AC-sign", "verification_owner": "human"},
+        ],
+    }]}))
+    assert main(["plan", "inspect-execution", "--config", str(config),
+                 "--task-map", str(plan), "--flow-kind", "prd"]) == 0
+    report = json.loads(capsys.readouterr().out)
+    row = report["verification"]["task_requirements"][0]
+    commands = {c["command_id"]: c for c in row["commands"]}
+    assert commands["local"]["required_by_verification_owner"] == [
+        "impl_self_check", "task_verify", "candidate_verify",
+    ]
+    assert commands["audit"]["declared_execution_stage"] == "after_independent_verify"
+    assert commands["audit"]["required_by_verification_owner"] == ["candidate_verify"]
+    assert commands["sign"]["required_by_verification_owner"] == []
+    assert commands["upstream"]["required_by_verification_owner"] == []
+    criteria = {a["acceptance_id"]: a for a in row["acceptance_criteria"]}
+    assert criteria["AC-audit"]["required_by_verification_owner"] == ["candidate_verify"]
+    assert criteria["AC-audit"]["command_ids"] == ["audit"]
+    assert criteria["AC-sign"]["required_by_verification_owner"] == []
+    assert "verdict" not in report
+    assert not (tmp_path / "state").exists()

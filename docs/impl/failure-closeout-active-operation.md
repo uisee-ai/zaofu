@@ -22,3 +22,17 @@ superseded/interrupted 后不再由本规则延后；既有预算、lease、恢�
 
 本轮执行与后续真实规划验证见
 [任务记录](../../tasks/active/2026-10-21-1300-plan-rework-and-comparison.md)。
+
+## 真实返修暴露的验证时点事实缺口
+
+真实27任务返修得到Critic通过后，operator仍复现一项时点冲突：命令声明
+`execution_stage=after_independent_verify`，但owner为`candidate_verify`，当前运行时
+仍把它和对应AC选为candidate Verify必需项。该命令又要求本次独立Verify最终报告已准入，
+仅有文字后置声明不能消除未来收据依赖。
+
+`plan_execution_review.review_execution`现在复用`verification_commands`中的实际AC和
+命令选择函数，为每个任务输出`verification.task_requirements`，并区分声明的阶段注释
+与`required_by_verification_owner`。该报告经既有CLI和Plan preflight进入Critic必读输入；
+不改变命令执行、owner筛选、批准策略或工作流阶段，不产生语义通过/失败结论。
+Planner/Critic按执行一致性技能核对用例前置、收据时点与实际消费者，保留最终义务。
+新增CLI行为回归覆盖自定义阶段不覆盖选择、human义务和异任务生产者的区别。
