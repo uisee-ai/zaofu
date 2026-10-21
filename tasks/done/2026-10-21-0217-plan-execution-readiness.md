@@ -1,6 +1,8 @@
 # 通用 Plan → Impl → Verify 执行一致性改进
 
-> 状态: active
+> 状态: done
+
+实现提交：`ab01d9db feat: align plan review with execution and scoped inputs`。
 
 用户批准依据：2026-10-21 对任务拆分、SDD/TDD、实施及验证机制的讨论；要求通用演进并适配其他业务。独立 worktree 基线 `5191c9e6`。不直接改正在运行的项目或自动批准其 Plan。
 
