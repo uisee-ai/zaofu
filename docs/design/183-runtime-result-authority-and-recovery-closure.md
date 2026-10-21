@@ -123,3 +123,11 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 对 repair_failed_children/trigger_rework 的 batch resume，动作收据后保持 effect pending；只接受本次 ControlledActionService 实际发出的唯一 task_map.ready 所触发的新 fanout 或 generation admission。同 Run 的无关事件、Plan 等待批准不结算；Plan 拒绝/准入失败或超时按失败处理。该效果仅表示恢复进入派发，绝不代表业务修复已验收。
 
 [补充任务](../../tasks/done/2026-10-21-0643-reader-batch-recovery-effects.md)记录 RED、实际 controlled caller、case 状态和现场回放。
+
+## P1 补充：已提交修复的 reader target 交接
+
+现场 API-RULES reader 的三个 Vitest 在断言前被产品 reporter 拒绝：它只能读取 task Verify/author 输入。方法与协议应在产品脚手架解决，Kernel 不认识洛书文件名、角色槽或业务验收方法。产品独立 worktree 添加显式 candidate 输入绑定，校验 source manifest/operation/attempt/HEAD，保留真实 flow-discovery 身份，并将 candidate 收据与 task/author 收据隔离。Task Verify 责任不因本地 reader 补跑而自动关闭。
+
+受控 `stage-replan-new-generation` 新增可选 `repair_target={source_commit,commit,ref}`，仍要求原 cap escalation 与 owner approval。仅支持 contract-bound `flow.discovery.requested`：旧 target 必须匹配，提交必须改变且为旧提交后代，显式本地 ref 必须解析到新 commit。通过既有 snapshot writer 生成新的不可变 target；保留旧合同、计划、AC、历史 target，不移动任何候选/main ref。不满足条件不得重开 Run；同一升级的幂等重放不能偷换 target。
+
+验证责任：产品先 RED/GREEN、实际 reporter 命令与 Docker browser；Kernel 以真实 ControlledActionService 调用覆盖新 target、保留旧 snapshot、错误 ref/commit/来源/祖先/损坏 snapshot 及幂等冲突，再运行恢复影响闭包和 mock E2E。新动作成功只代表重新派发获准，不代表修复生效或 Q01–Q03 完成。
