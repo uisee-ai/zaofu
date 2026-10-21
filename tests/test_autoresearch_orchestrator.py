@@ -1052,3 +1052,38 @@ def test_sync_tracked_checkout_changes_strict_mode_skips(
     assert summary["skipped"] is True
     assert summary["modified"] == []
     assert (tmp_path / "synced.log").read_text(encoding="utf-8").startswith("skipped:")
+
+
+def test_diagnostic_worktree_uses_its_own_skill_sources(tmp_path):
+    from zf.autoresearch.orchestrator import _apply_autoresearch_controller_overrides
+    worktree = tmp_path / "worktree"
+    (worktree / "skills").mkdir(parents=True)
+    (worktree / "yoke").mkdir()
+    data = {"skill_sources": [
+        {"name": "zaofu-skills", "path": "/old/skills", "mode": "readonly"},
+        {"name": "yoke", "path": "yoke", "mode": "readonly"},
+        {"name": "yoke", "path": "/old/yoke", "mode": "readonly"},
+        {"name": "custom", "path": "/custom/skills", "mode": "readonly"},
+    ]}
+    _apply_autoresearch_controller_overrides(data, cfg=AutoresearchRunConfig(worktree=worktree), run_id="test")
+    roots = [str(Path(s["path"]).resolve()) for s in data["skill_sources"]]
+    assert str(worktree / "skills") not in roots  # implicit project source
+    assert roots.count(str(worktree / "yoke")) == 1
+    assert "/old/yoke" not in roots
+    assert "/custom/skills" in roots
+
+
+def test_diagnostic_worktree_pins_local_yoke_over_installed_fallback(tmp_path):
+    from zf.autoresearch.orchestrator import _apply_autoresearch_controller_overrides
+    from zf.core.config.schema import RoleConfig, SkillSourceConfig, ZfConfig
+    from zf.core.skills import validate_skill_sources
+    local = tmp_path / "yoke" / "verify-review"
+    local.mkdir(parents=True)
+    (local / "SKILL.md").write_text("---\nname: verify-review\ndescription: local method\n---\nLocal method\n")
+    data = {"skill_sources": []}
+    _apply_autoresearch_controller_overrides(data, cfg=AutoresearchRunConfig(worktree=tmp_path), run_id="test")
+    config = ZfConfig(
+        roles=[RoleConfig(name="verify", backend="mock", skills=["verify-review"])],
+        skill_sources=[SkillSourceConfig(**source) for source in data["skill_sources"]],
+    )
+    assert not any("multiple candidates" in issue for issue in validate_skill_sources(config=config, project_root=tmp_path))

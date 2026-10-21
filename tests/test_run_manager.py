@@ -3722,6 +3722,12 @@ def test_run_manager_worker_lifecycle_respawn_request_reaches_orchestrator(
         and event.actor == "dev-lane-0"
         for event in events
     )
+    from zf.runtime.run_manager import _settle_pending_action_effects
+    from zf.runtime.recovery_case import build_recovery_case_projection
+    assert any(event.type == "run.manager.action.effect.pending" for event in events)
+    assert _settle_pending_action_effects(events, writer) == 1
+    assert log.read_all()[-1].type == "run.manager.action.effect.passed"
+    assert build_recovery_case_projection(log.read_all())["cases"][0]["status"] == "resolved"
 
 
 def test_run_manager_worker_lifecycle_missing_ownership_routes_to_diagnosis(

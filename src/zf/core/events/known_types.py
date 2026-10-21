@@ -667,6 +667,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     "autoresearch.bug_candidate.created",
     "autoresearch.bug_candidate.confirmed",
     "autoresearch.bug_candidate.dismissed",
+    "autoresearch.bug_candidate.diagnosis_failed",
     "autoresearch.bug_candidate.superseded",
     "autoresearch.validation.passed", "autoresearch.validation.failed",
     "autoresearch.inject.worker_stuck",
