@@ -62,7 +62,13 @@ def build_canonical_required_reads(
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
             if source_id.startswith(("plan-port-", "oa-route-")):
-                required_paths[source_id] = ("$",)
+                required_paths[source_id] = (
+                    tuple(source.get("allowed_paths") or ["$"])
+                    if source_id.startswith("plan-port-")
+                    and source.get("kind") == "task_scoped_plan_input"
+                    and profile in {"implementation", "task-verify"}
+                    else ("$",)
+                )
     elif profile == "artifact-delivery":
         for source in _sources(manifest):
             source_id = str(source.get("source_id") or "")
@@ -101,6 +107,7 @@ def build_canonical_required_reads(
                     "requirement",
                     "review-artifact",
                     "plan-rework-context",
+                    "plan-execution-review",
                     "workflow-input",
                     "workflow-prompt",
                 }

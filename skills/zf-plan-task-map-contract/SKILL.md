@@ -137,6 +137,30 @@ After Package admission, the Kernel binds these ports to the current
 generation and exposes them as required controlled reads. Planner owns the
 selection and semantic readiness; it does not self-select a Package.
 
+### Large supplemental specifications
+
+For large supplemental behavior/design inputs, an explicit additional port such
+as `execution_spec` may use `task-scoped-plan-input.v1`:
+
+```json
+{
+  "schema_version": "task-scoped-plan-input.v1",
+  "shared": {"protocol": "versioned shared rules and source references"},
+  "tasks": [
+    {"task_id": "T-1", "body": {"behavior": "complete owned assertions and dependencies"}}
+  ]
+}
+```
+
+Use exactly these top-level keys and row keys. Declare every consumer Task's
+exact id once, with an object body; missing/duplicate partitions fail closed.
+Put cross-task rules and required interfaces in `shared` or the consuming Task's
+body with same-version source refs. Impl/Task Verify must read both shared and
+owned partitions; Candidate Verify reads the entire port. The complete original
+artifact and digest remain authoritative. This is an input artifact, not another
+task contract. Existing ports retain full reads; do not wrap fixed-schema
+acceptance/test matrices or silently discard requirements to reduce context.
+
 ## Source Provenance Contract
 
 Every dispatchable task must be traceable back to the plan, scan, PRD, issue,

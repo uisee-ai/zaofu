@@ -58,6 +58,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--state-dir", default=None)
     sub = parser.add_subparsers(dest="plan_cmd", required=True)
+    from zf.cli.plan_execution import register as register_execution
+
+    register_execution(sub)
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.set_defaults(func=_run)
     ap = sub.add_parser("approve", help="Approve a plan and unlock writer fanout")

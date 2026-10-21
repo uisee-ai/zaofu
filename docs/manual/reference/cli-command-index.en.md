@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **297** addressable command paths.
+The parser currently exposes **69** top-level families and **298** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -472,6 +472,7 @@ Review, approve, or reject a plan
 |---|---|
 | `zf plan` | Review, approve, or reject a plan |
 | `zf plan approve` | Approve a plan and unlock writer fanout |
+| `zf plan inspect-execution` | Inspect plan execution facts without approval or dispatch |
 | `zf plan reject` | Reject a plan and request synthesis replan |
 | `zf plan review` | List plans awaiting review with digest and checklist |
 

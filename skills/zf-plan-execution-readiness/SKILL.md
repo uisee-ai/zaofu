@@ -14,6 +14,11 @@ load_on_demand: true
 不替代 Kernel 的引用、路径、代际及完成证据检查。产物使用现有 Plan、task_map、
 矩阵和 Critic verdict；项目语义判断必须附来源，不能变成 Runtime 的项目规则。
 
+规划长依赖链、并行实现或新项目冷启动时，先按
+[执行路线与任务切片](references/execution-route.md)核对有效配置和反馈时点。
+Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本计划的匹配关系；
+该报告没有语义 verdict，不能把机械 preflight passed 当成实施就绪。
+
 Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
 [执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、
 状态相关权限、本片/候选验证边界、完整修正事务与跨工件决定版本；结果记录到已有
