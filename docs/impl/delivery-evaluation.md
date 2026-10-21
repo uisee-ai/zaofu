@@ -55,7 +55,7 @@ submit、start调用生产入口；不拼接假task事件或写canonical状态�
 - 当前批 `/tmp/zf-delivery-eval-20261021T0718Z` 使用两组相同Codex/tmux；顺序为
   cargo-mini B/A、warehouse A/B、publishing B/A。registration摘要为
   `35d35c235fd5e417c25a85021d140e218e91e0798ea70e7b3b9343b92fd91118`。
-  候选真实两路Scan已完成并进入Planner，尚无完整产品通过结论。
+  该批已结束：两组两路Scan均完成，但Planner都在600秒操作预算门被阻断，未进入Impl。
 - 固定Docker镜像有完整Chromium但无headless-shell。外部浏览器运行器只增加
   `channel: chromium`，在首次产品验收前对两组一致修正；原oracle与兼容性修订摘要
   分别保留在oracle/和oracle-runner-v2/，oracle-runner-amendment.json说明不改变
@@ -65,3 +65,57 @@ submit、start调用生产入口；不拼接假task事件或写canonical状态�
   `.gitlab-ci.yml`，独立baseline复现；不伪造CI文件、不改测试预期。
 - 真账本为subscription/unpriced，不能用cost_usd=0声明免费；已询问实际计价口径，
   不阻止继续质量/完整token/耗时验证。
+
+## 首轮结果与结论边界
+
+**整体改善未获证明，完整交付门未通过。** 单个配对pilot无法估计稳定完成率或统计显著性。
+质量验收未执行，应记NOT_RUN，不能把未出现产品缺陷写成质量通过。
+
+| 实测项 | A：5191c9e6 | B：4b0a96e0 |
+| --- | ---: | ---: |
+| goal完成 / 外部验收通过 | 否 / 未运行 | 否 / 未运行 |
+| Scan完成数 | 2 | 2 |
+| 被接纳Plan / Impl / 产品冷构建 / Verify | 均未到达 | 均未到达 |
+| arm耗时（秒，启动至终态检测） | 892.03 | 882.28 |
+| Planner预算检测耗时（秒） | 611.55 | 604.13 |
+| 非缓存输入token | 175,972 | 221,983 |
+| 缓存输入token | 1,506,944 | 1,616,768 |
+| 输出token | 22,905 | 20,516 |
+| 金额 | UNKNOWN | UNKNOWN |
+| arm内手工改产品 / 手工恢复 | 0 / 0 | 0 / 0 |
+
+账本按delta与dedupe_key计数，未重复累计cumulative快照。B非缓存输入增加26.1%、
+缓存输入增加7.3%、输出减少10.4%。失败终止时间略短不代表交付更快；不同token类别
+也不能相加后充当金额。操作预算由Kernel采样执行，600秒是配置阈值，实测存在检测延迟。
+操作员准备/观察/诊断时间未完整计量，不宣称总人工时间改善。
+
+两边Planner都把计划生成和指定结果scratch更新合并成大型shell命令，触发
+`worker.scope_write.rejected`。A/B的`hook_workdir_guard.py`相同；其保守shell检查
+命中“命令含项目根绝对路径、未含assigned workdir绝对路径”的条件。此证据不足以断言
+所有命令副作用都安全，未绕过保护或手工执行被拒命令。
+
+A在被拒后通过逐文件补丁继续，先后两次预提交校验失败：第一次包含assembly与依赖bundle
+共用owner的自锁风险及capability映射不一致；第二次剩余product acceptance的
+`assertion_id` / `observation_kind`缺失。B未到达预提交校验。两边最终均因操作预算超限
+阻断，不能把全部延迟归因于一次保护拦截。A技术Scan还发生一次自动重派发，已计入全量
+耗时/token，尚未证明与既有correction关闭竞态同因。
+
+两边各38项加载skill的源码/运行副本摘要均匹配事件。结束后检查A的34次、B的39次
+工具调用，未发现直接引用外部oracle路径或脚本名；这不是强沙箱隔离证明。
+
+证据归档：`/home/min/workspace/public/zaofu-evidence/20261021-delivery-eval/`。
+`pilot-20261021T0718Z/archive-manifest.json`绑定1,095份文件的摘要；保留注册、原oracle及
+兼容性修订、原始事件/账本/日志/必要transcript、实际计划、校验失败与measurement。
+不归档provider认证/private目录。前两次环境失败独立保留在setup目录，不计为产品收益。
+两组均通过CLI发出simulation.done并stop成功，运行PID与tmux已退出；归档摘要复核后清理
+本轮临时根目录，cleanup-receipt.json记录清理范围。最终报告的docs验证层8 passed；
+未声称运行整个分支的全量确定性测试或真实产品E2E通过。
+
+六步执行状态：①冻结完成；②机制闭包通过但自动工具层有既有CI文件缺失；③首对已执行、
+交付失败；④迁移探针未启动；⑤完整cargo未启动；⑥本轮负结果已汇总归档、总体任务仍active。
+按冻结门不继续库存/发布或完整cargo，也不更改本轮预算重试挑选结果。
+
+下一轮先复现并解决通用Plan交付问题：将计划文件编写与受控scratch更新分开，明确给出
+assembly owner与验收assertion的完整契约示例，并分别验证合法更新可通过、越权写入仍拒绝。
+这些是待验证方向，不是已实施修复。修改后冻结新候选，重新开展相同条件的完整配对；
+只有小产品真实交付和外部验收通过才扩大验证。原cargo仍需要Plan责任闭合、人工批准与真实输入。
