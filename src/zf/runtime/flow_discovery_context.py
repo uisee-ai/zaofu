@@ -122,11 +122,62 @@ def build_flow_discovery_context(
         value = _first_text(payload, fallback, key)
         if value:
             request_payload[key] = value
+    for key in (
+        "request_revision", "effective_config_ref", "effective_config_digest",
+        "run_contract_ref", "run_contract_digest",
+        "workflow_proposal_ref", "workflow_proposal_digest",
+    ):
+        value = payload.get(key) or fallback.get(key)
+        if value not in (None, "", {}):
+            request_payload[key] = value
+    if event.type == "test.passed":
+        request_payload["result_refs"] = _admitted_verify_results(
+            events, payload=request_payload, fanout_id=str(payload.get("fanout_id") or ""),
+        )
     return FlowDiscoveryContext(
         candidate_ref=candidate_ref,
         candidate_head_commit=candidate_head_commit,
         request_payload=request_payload,
     )
+
+
+def _admitted_verify_results(
+    events: Sequence[ZfEvent], *, payload: Mapping[str, Any], fanout_id: str,
+) -> list[dict[str, Any]]:
+    """Carry original admitted receipts from this exact completed fanout."""
+
+    if not fanout_id:
+        return []
+    admissions = {
+        str(item.payload.get("source_event_id")): item.payload
+        for item in events
+        if item.type == "workflow.call.result.admitted"
+        and item.payload.get("control_result_schema") == "verification-result.v1"
+    }
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in events:
+        body = item.payload
+        if item.type != "verify.child.completed" or body.get("fanout_id") != fanout_id:
+            continue
+        if any(
+            str(body.get(field) or "") != str(payload.get(field) or "")
+            for field in ("workflow_run_id", "task_map_generation")
+        ) or body.get("target_commit") != payload.get("candidate_head_commit"):
+            continue
+        admission = admissions.get(item.id, {})
+        if admission.get("workflow_run_id") != payload.get("workflow_run_id"):
+            continue
+        for field in ("control_result_ref", "envelope_ref"):
+            descriptor = admission.get(field)
+            if not isinstance(descriptor, Mapping):
+                continue
+            ref = str(descriptor.get("ref") or "")
+            if not ref or not descriptor.get("sha256") or ref in seen:
+                continue
+            seen.add(ref)
+            refs.append(dict(descriptor))
+    return refs
 
 
 def _latest_flow_candidate_context(

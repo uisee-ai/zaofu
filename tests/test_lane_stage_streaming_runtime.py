@@ -443,6 +443,7 @@ def _fail_verify(orch: Orchestrator, *, state_dir: Path, fanout_id: str) -> None
         "verdict": "rejected",
         "summary": "regression still fails",
         "evidence_refs": ["mock://lane-verify/rejection"],
+        "probe_receipts": [],
         "requirement_results": [{
             "acceptance_id": criterion["acceptance_id"],
             "status": "failed",

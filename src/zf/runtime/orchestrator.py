@@ -3484,7 +3484,9 @@ class WorkflowRuntimeCoordinator(
             return existing
         # P1/K2: thread self.config so yaml workflow.rework_routing
         # takes priority over heuristic classifiers.
-        result = classify_rework_trigger(event, self.config)
+        result = classify_rework_trigger(
+            event, self.config, evidence_events=self.event_log.read_all(),
+        )
         try:
             self.event_writer.append(ZfEvent(
                 type="task.rework.triage.completed",
@@ -3523,7 +3525,9 @@ class WorkflowRuntimeCoordinator(
         if existing_only:
             return None
         # P1/K2: same priority rule as _ensure_rework_triage.
-        return classify_rework_trigger(event, self.config)
+        return classify_rework_trigger(
+            event, self.config, evidence_events=self.event_log.read_all(),
+        )
 
     def _check_reader_write_violation(self, event: ZfEvent) -> None:
         role = None

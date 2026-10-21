@@ -34,43 +34,10 @@ from zf.runtime.task_contract_snapshot import (
     hydrate_task_contract_snapshot,
 )
 
-HANDOFF_AUTHORITY_SCHEMA = "handoff-authority-contract.v1"
-
-
-def build_handoff_authority_contract(
-    payload: Mapping[str, Any],
-    *,
-    output_profile_id: str,
-    stage_id: str,
-    operation_type: str,
-) -> dict[str, Any]:
-    trigger = (
-        payload.get("trigger_payload")
-        if isinstance(payload.get("trigger_payload"), Mapping)
-        else {}
-    )
-    continuation_key = str(
-        payload.get("rework_of")
-        or payload.get("rework_of_attempt_id")
-        or trigger.get("rework_of")
-        or trigger.get("rework_of_attempt_id")
-        or ""
-    ).strip()
-    attempt_domain = str(payload.get("attempt_domain") or "").strip()
-    profile = str(output_profile_id or "").strip()
-    return {
-        "schema_version": HANDOFF_AUTHORITY_SCHEMA,
-        "output_profile_id": profile,
-        "stage_id": str(stage_id or ""),
-        "operation_type": str(operation_type or ""),
-        "attempt_domain": attempt_domain,
-        "continuation_key": continuation_key,
-        "requires_prior_task_ref": bool(
-            profile == "implementation" and continuation_key
-        ),
-        "requires_candidate_lineage": profile == "candidate-verify",
-    }
-
+from zf.runtime.artifact_query.authority_contract import (
+    HANDOFF_AUTHORITY_SCHEMA,
+    build_handoff_authority_contract,
+)
 
 class CanonicalHandoffResolver:
     def __init__(
@@ -116,7 +83,7 @@ class CanonicalHandoffResolver:
                 workflow_run_id=workflow_run_id,
                 currentness=currentness,
             )
-            if profile == "candidate-verify"
+            if profile == "candidate-verify" or authority_contract.get("requires_candidate_lineage")
             else {}
         )
         freeze_ref = str(candidate_snapshot.get("freeze_receipt_ref") or "")
@@ -145,9 +112,15 @@ class CanonicalHandoffResolver:
                 workflow_run_id=workflow_run_id,
                 task_id=task_id,
                 currentness=currentness,
-                allow_without_task=profile == "candidate-verify",
+                allow_without_task=profile == "candidate-verify" or (
+                    profile == "workflow-read"
+                    and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
+                ),
             )
-            if profile in {"implementation", "task-verify", "candidate-verify"}
+            if profile in {"implementation", "task-verify", "candidate-verify"} or (
+                profile == "workflow-read"
+                and mutable.get("canonical_success_event") == "flow.discovery.child.completed"
+            )
             else []
         )
         if plan_port_sources:
@@ -387,7 +360,11 @@ class CanonicalHandoffResolver:
             result["task_ref"] = expected_ref
         elif expected_ref and result["task_ref"] == expected_ref:
             result["task_ref"] = expected_ref
-        if task is not None and authority_profile == "task-verify":
+        if (
+            task is not None
+            and authority_profile == "task-verify"
+            and not authority_contract.get("requires_candidate_lineage")
+        ):
             self._require_match(
                 "target_commit",
                 result["target_commit"],
@@ -544,7 +521,7 @@ class CanonicalHandoffResolver:
     ) -> dict[str, Any]:
         contract = self._authority_contract(
             payload,
-            profile="candidate-verify",
+            profile=str(payload.get("output_profile_id") or "candidate-verify"),
         )
         if self._blocking_handoff(payload) and not contract.get(
             "requires_candidate_lineage"
@@ -597,6 +574,11 @@ class CanonicalHandoffResolver:
             raise ArtifactReadError(
                 "candidate-verify current candidate lacks head/tasks"
             )
+        if (
+            payload.get("output_profile_id") == "task-verify"
+            and str(payload.get("task_id") or "") not in completed
+        ):
+            raise ArtifactReadError("Task Verify is not included in the current candidate")
         incoming_target = str(currentness.get("target_commit") or "")
         if incoming_target != candidate_head:
             raise ArtifactReadError(

@@ -982,6 +982,22 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     fanout_id = _fanout_id(log)
     first_dispatch = next(event for event in log.read_all()
                           if event.type == "fanout.child.dispatched")
+    started = next(event for event in log.read_all() if event.type == "fanout.started")
+    writer = EventWriter(log)
+    writer.append(ZfEvent(
+        id=started.payload["trigger_event_id"], type="candidate.ready",
+        payload={"task_id": "original-task", "candidate_head_commit": "original-commit"},
+    ))
+    unrelated = writer.append(ZfEvent(
+        type="candidate.ready",
+        payload={"task_id": "unrelated-task", "other_task_only": "foreign-context"},
+    ))
+    writer.append(ZfEvent(
+        type="fanout.started", correlation_id="trace-1", payload={
+            "stage_id": "review-candidate", "fanout_id": "unrelated-fanout",
+            "trigger_event_id": unrelated.id,
+        },
+    ))
     orch._set_worker_state("review-a", "idle", force=True)  # type: ignore[attr-defined]
     orch._now = lambda: time.time() + 10  # type: ignore[method-assign]
 
@@ -997,6 +1013,8 @@ def test_retry_keeps_fanout_and_child_id_but_changes_run_id(
     assert retry.payload["retry_of_run_id"] == first_dispatch.payload["run_id"]
     retry_briefing = transport.sent[-1][1].read_text(encoding="utf-8")
     assert "Aggregate contract:" in retry_briefing
+    assert "original-commit" in retry_briefing
+    assert "foreign-context" not in retry_briefing
     assert "uv --project /repo run zf emit workflow.child.completed" in retry_briefing
     assert "zf emit workflow.child.completed" in retry_briefing
     assert "Do not emit the aggregate success/failure event directly" in retry_briefing

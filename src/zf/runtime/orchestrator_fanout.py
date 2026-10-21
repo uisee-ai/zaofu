@@ -166,6 +166,11 @@ _HANDOFF_REF_FIELDS = (
 )
 
 _CONTRACT_HANDOFF_KEYS = (
+    "contract_authority_revision",
+    "execution_owner",
+    "workflow_request_id",
+    "workflow_request_revision",
+    "origin_binding_digest",
     "task_ref",
     "workflow_run_id",
     "flow_kind",
@@ -5217,7 +5222,16 @@ class FanoutCoordinationMixin(
             child=child,
         ):
             return
-        payload = bind_blocking_writer_result_identity(payload, child or {})
+        from zf.runtime.call_result_runtime import _pinned_operation_result_identity
+
+        pinned_identity = _pinned_operation_result_identity(
+            self,
+            operation_id=str((child or {}).get("operation_id") or payload.get("operation_id") or ""),
+            request_hash=str((child or {}).get("request_hash") or payload.get("request_hash") or ""),
+        )
+        payload = bind_blocking_writer_result_identity(
+            payload, child or {}, pinned_identity=pinned_identity,
+        )
         run_id = str(payload.get("run_id") or (child or {}).get("run_id") or "")
         expected_run_id = str((child or {}).get("run_id") or "")
         actual_run_id = str(payload.get("run_id") or "")
@@ -7659,11 +7673,17 @@ class FanoutCoordinationMixin(
         cleaned = str(target_ref or "").strip()
         reason = ""
         pinned = ""
+        from zf.runtime.reader_target_binding import reader_checkout_ref
+
+        try:
+            cleaned = reader_checkout_ref(self.state_dir, child.payload or {}, cleaned)
+        except TaskContractSnapshotError as exc:
+            reason = f"target_binding_invalid: {exc}"
         unrendered = "${" in cleaned or "{{" in cleaned
-        if declared and (not cleaned or unrendered):
+        if not reason and declared and (not cleaned or unrendered):
             reason = "target_ref_unresolved"
             cleaned = "" if unrendered else cleaned
-        elif cleaned and not self._fanout_target_ref_is_project_path(cleaned):
+        elif not reason and cleaned and not self._fanout_target_ref_is_project_path(cleaned):
             from zf.runtime.workdirs import WorkdirManager
 
             try:
@@ -7924,8 +7944,8 @@ class FanoutCoordinationMixin(
         blocked_payload.update({
             "status": "failed",
             "reason": "<concise reproducible blocker>",
-            "failure_class": "task_contract_unsatisfiable",
-            "recommended_action": "replan",
+            "failure_class": "unknown",
+            "recommended_action": "diagnose",
             "blocker_task_ids": [],
             "required_paths": [],
             "evidence_refs": ["<reproduction command or artifact ref>"],

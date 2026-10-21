@@ -35,6 +35,37 @@ def _failure(reason="task_map rejected", findings=None):
     })
 
 
+def test_replan_uses_failed_fanout_origin_instead_of_other_task_latest_trigger():
+    original = ZfEvent(id="evt-a", type="issue.requested", correlation_id="run", payload={
+        "workflow_run_id": "run", "task_id": "A", "candidate_head_commit": "commit-a",
+        "target_ref": "commit-a", "request_id": "request-a",
+    })
+    started = ZfEvent(type="fanout.started", correlation_id="trace-a", payload={
+        "fanout_id": "fanout-a", "stage_id": "issue-triage", "trigger_event_id": original.id,
+    })
+    unrelated = ZfEvent(type="issue.requested", correlation_id="run", payload={
+        "workflow_run_id": "run", "task_id": "B", "candidate_head_commit": "commit-b",
+        "target_ref": "commit-b", "request_id": "request-b", "other_task_only": True,
+    })
+    failure = ZfEvent(type="issue.triage.failed", correlation_id="trace-a", payload={
+        "workflow_run_id": "run", "fanout_id": "fanout-a", "target_ref": "commit-a",
+    })
+    result, _ = plan_reader_stage_replan(_config(), [original, started, unrelated, failure], failure)
+    assert result is not None
+    assert result.payload["task_id"] == "A"
+    assert result.payload["candidate_head_commit"] == "commit-a"
+    assert result.payload["request_id"] == "request-a"
+    assert "other_task_only" not in result.payload
+
+
+def test_replan_missing_failed_fanout_origin_does_not_borrow_another_task():
+    unrelated = ZfEvent(type="issue.requested", payload={"task_id": "B"})
+    failure = ZfEvent(type="issue.triage.failed", payload={"fanout_id": "missing"})
+    result, reason = plan_reader_stage_replan(_config(), [unrelated, failure], failure)
+    assert result is None
+    assert reason == "reader_origin_missing"
+
+
 def test_replan_re_emits_trigger_with_feedback() -> None:
     origin = ZfEvent(type="issue.requested", payload={"issue_ref": "docs/issues/TODO.md"})
     failure = _failure(findings=[{"severity": "high", "message": "root paths unowned"}])

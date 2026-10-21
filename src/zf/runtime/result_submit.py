@@ -566,6 +566,8 @@ class SemanticResultSubmitService:
                 "result_identity": dict(identity),
                 "output_profile_id": profile_id,
                 "output_profile_revision": revision,
+                "canonical_success_event": str(request.get("canonical_success_event") or ""),
+                "handoff_authority_contract": dict(request.get("handoff_authority_contract") or {}),
             },
             input_policy=policy,
             require_semantic_submit=True,

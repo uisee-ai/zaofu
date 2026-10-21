@@ -261,8 +261,15 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             "run.manager.action.verify.passed",
             "run.manager.action.effect.passed",
         }:
-            case["status"] = "resolved"
-            case["consecutive_failures"] = 0
+            if event_type == "run.manager.action.verify.passed" and (
+                payload.get("effect_expected_events")
+                or payload.get("effect_required_sequence")
+                or payload.get("action") in {"semantic-replan-request", "worker-lifecycle-recover"}
+            ):
+                case["status"] = "verifying"
+            else:
+                case["status"] = "resolved"
+                case["consecutive_failures"] = 0
         elif event_type in {
             "run.manager.action.failed",
             "run.manager.action.verify.failed",
@@ -295,7 +302,7 @@ def build_recovery_case_projection(events: Iterable[ZfEvent]) -> dict[str, Any]:
             else:
                 case["status"] = "resolved"
                 case["consecutive_failures"] = 0
-        elif event_type in _PROGRESS_EVENTS:
+        elif event_type in _PROGRESS_EVENTS and case["status"] != "verifying":
             case["status"] = "resolved"
             case["consecutive_failures"] = 0
 
