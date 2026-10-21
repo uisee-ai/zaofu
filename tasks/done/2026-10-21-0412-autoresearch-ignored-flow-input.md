@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P1 现场补充：Autoresearch 隔离 Flow 输入暂存
 
@@ -17,3 +17,5 @@
 - RED：docs/ 忽略场景失败，非忽略场景通过；日志 /tmp/zf-autoresearch-ignored-input-red.log。
 - GREEN：runner 与 Autoresearch 直接调用方 66 passed；另 sentinel 51 passed。
 - 真实隔离失败 checkout 上仅重做输入准备成功，提交 0f420aa 只包含 docs/prd/autoresearch.md；正文完全一致、原 dirty zf.yaml SHA256 未变。没有运行新的业务任务或宣称完整诊断通过。
+
+实现提交：`5759ba8 fix: stage generated diagnostic input in ignored doc directories`。上述三项验收均已验证；完整诊断与产品验收不在本小项完成声明内。

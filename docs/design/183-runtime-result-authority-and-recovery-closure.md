@@ -94,4 +94,7 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 ## 现场诊断环境补充：忽略的 Flow 来源
 
 真实 Autoresearch 进入 runner 后发现源码 checkout 的 docs/ 忽略规则阻止新生成 PRD 的 git add。runner 对自身明确生成的 source_ref 使用强制暂存，仍以唯一 pathspec 提交，不扩大暂存范围。回归同时证明无关暂存内容不进入提交。
-见[补充任务](../../tasks/active/2026-10-21-0412-autoresearch-ignored-flow-input.md)。这修复诊断启动条件，诊断 verdict 仍须以真实结果为准。
+见[补充任务](../../tasks/done/2026-10-21-0412-autoresearch-ignored-flow-input.md)。这修复诊断启动条件，诊断 verdict 仍须以真实结果为准。
+
+
+现场验证另显示：项目自身 gitignored 的候选验收输入可能跨 reader checkout 留存。恢复时须依据本次 operation/HEAD/source manifest 重建并留存旧输入引用；错误输入引发的 wrong HEAD 属于验收环境故障，不是产品失败。当前现场通过操作员绑定并让独立 reader 重跑，未把本项目路径硬编码进通用 runtime，也未将此人工步骤宣称为全自动能力。

@@ -52,7 +52,7 @@ Agents 投影仍显示旧 RTK 绑定及旧 running_task；agents 请求约 54 �
 | Q02 | 原 PRD 页面/字段需求与本地切片 | IC01–IC09 真实 API/Schema/权限及成功和边界样例、联调入口、其他页映射计划 | 未完成 |
 | Q03 | 原 PRD 身份/能力/撤权需求与 ACCESS 任务 | 实际身份/会话/网关服务、授权资源真源、能力计算、撤权传播实测 | 未完成 |
 
-依据 `docs/source/loshu-fms-handoff.md` §9.1.1（产品仓库 2843–2845 行），职责角色不能代替具名负责人，草案不能标 closed。已经索取缺失事实；没有收到外部接入信息或新建后端/认证服务的明确边界。本记录不改变批准的 62 任务、274 mandatory AC，也不以本地 mock 代替以上证据。
+依据 `docs/source/loshu-fms-handoff.md` §9.1.1（产品仓库 2848–2850 行），职责角色不能代替具名负责人，草案不能标 closed。已经索取缺失事实；没有收到外部接入信息或新建后端/认证服务的明确边界。本记录不改变批准的 62 任务、274 mandatory AC，也不以本地 mock 代替以上证据。
 
 
 ## 后续 Autoresearch 环境验证
@@ -60,3 +60,17 @@ Agents 投影仍显示旧 RTK 绑定及旧 running_task；agents 请求约 54 �
 rmar-7214d8508c92 通过原技能来源校验后，在 inner runner 暂存生成的 docs/prd/autoresearch.md 时因 docs/ ignore 规则失败，returncode 3、尚未派发。事件 evt-9d5b3eccc862 正确保留 HIC-68D9B81837 为 unverified，未 dismissed。
 补丁对明确生成的唯一 source_ref 使用 git add -f --，保留唯一提交路径。RED/GREEN 与直接调用方共 66 项通过；在原隔离失败 checkout 只重做 prepare 已成功，生成 0f420aa，仅包含输入文档，原正文及 dirty zf.yaml 未改。
 这证明输入准备故障修复，不是完整 Autoresearch、真实产品恢复或 Q01–Q03 的通过证据。
+
+
+## 验收输入重绑定
+
+API-RULES reader 实际运行合同浏览器命令时得到 wrong HEAD。检查确认 app/evidence/g4/candidate-context.json 是 gitignored 的旧 Material 任务输入；它不由 reader HEAD 切换自动更新，也不是本次 operation 的证据。
+操作者保留旧输入，然后从当前 manifest、running operation、实际 HEAD 和 source manifest 重新派生上下文，通过原子写入提供给现有原命令；事件 `evt-63dd3c798d59` 绑定旧/新输入 sidecar，新输入 SHA256 `09223a64405d74c42ac2d5efed56d61b01708425fb16049098ed902f14739306`。
+已通过已配置 transport 向同一 reader 发送带事件引用的更新，请其独立核实并重跑。没有写测试通过证据，没有清除第一次失败或改变验收命令；这一步是明确记录的操作员修复，不宣称 Run Manager 已自动完成。
+
+
+## 真实浏览器验收结果
+
+04:19:13–04:19:20 UTC，独立 reader 重跑原命令得到 candidate_verify passed / exit_code 0。receipt：产品 reader 工作区 `app/evidence/local-api-rules/browser/run-fanout-prd-post-verify-discovery-evt-42797c39-flow-discovery/receipt.json`；SHA256 `9d8f5bfc18f030b408b2dcaa7f291b1a65ffd78e8f229e0362c3e601c2928c47`。
+已独立核对 receipt 的 operation/attempt、target_commit 4f9959e 和 context SHA256 与当前绑定一致。1440、768、390 三种宽度均通过键盘复制、冲突保留草稿、修正后原子保存、治理权限拒绝、确认删除、四态区分、无横向溢出及无页面错误；截图、trace、observations 位于同目录。
+这是一个明确授权的本地 API-RULES slice 浏览器通过；不等于真实后端 API、身份服务或 Q01–Q03 闭环。提交给 Kernel 的全局 rescan 判定继续由独立 reader 和结果准入路径处理。
