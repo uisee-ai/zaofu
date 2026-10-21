@@ -5498,8 +5498,10 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert str(state_dir / "artifacts" / "fanout-refactor-plan") not in briefing
 
 
+@pytest.mark.parametrize("admitted", [False, True])
+@pytest.mark.parametrize("ledger_bound", [False, True])
 def test_refactor_plan_critic_large_package_is_ref_digest_only(
-    tmp_path: Path,
+    tmp_path: Path, admitted: bool, ledger_bound: bool,
 ) -> None:
     state_dir = tmp_path / ".zf-refactor-critic-large"
     state_dir.mkdir()
@@ -5547,6 +5549,23 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
         "report_path": str(report_path),
         "report": planner_body,
     }]
+    if admitted:
+        from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+        control = {"verdict": "passed", "payload": planner_body}
+        control_ref = write_immutable_json_sidecar(
+            state_dir, control, root="control-results", kind="control_result",
+            schema_version="fanout-child-result.v1", created_by="test",
+        )
+        envelope_ref = write_immutable_json_sidecar(
+            state_dir, {"control_result_ref": control_ref}, root="call-results",
+            kind="agent_call_result", schema_version="agent-call-result.v1",
+            created_by="test",
+        )
+        reports[0].update({
+            "control_result": control, "control_result_ref": control_ref,
+            "admitted_call_result_ref": envelope_ref,
+        })
     from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
 
     call_payload = build_plan_synth_call_payload(
@@ -5607,7 +5626,7 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
             "children": [],
         },
         run_id="run-synth-large",
-        call_payload=call_payload,
+        call_payload=call_payload if ledger_bound else {},
         reports=reports,
     )
 
@@ -5615,12 +5634,23 @@ def test_refactor_plan_critic_large_package_is_ref_digest_only(
     metrics = json.loads(
         path.with_suffix(".md.metrics.json").read_text(encoding="utf-8")
     )
+    if not ledger_bound:
+        assert "LARGE-PLAN-SENTINEL" in briefing
+        return
     assert "LARGE-PLAN-SENTINEL" not in briefing
     assert "Child report bodies are canonical required inputs" in briefing
     assert "artifact read --attempt run-synth-large" in briefing
     assert len(briefing.encode("utf-8")) < 24 * 1024
     assert metrics["briefing_bytes"] < 24 * 1024
     assert metrics["required_read_count"] >= 2
+    if admitted:
+        assert envelope_ref["sha256"] in briefing
+        assert json.loads((state_dir / control_ref["ref"]).read_text()) == control
+        assert any(source["source_id"].endswith("-control-result")
+                   and source["sha256"] == control_ref["sha256"]
+                   for source in manifest["sources"])
+        assert any(read["source_id"] == "child-result-refactor-plan-synth"
+                   for read in call_payload["required_reads"])
 
 
 def test_issue_triage_retry_restores_lineage_and_plan_contract(tmp_path: Path):

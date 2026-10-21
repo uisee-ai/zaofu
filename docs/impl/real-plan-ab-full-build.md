@@ -99,3 +99,26 @@ Reader 与 synth 的丢失检测只在四项身份完整匹配时，把本次补
 本条新增修复在安全重启前不记为已部署；不能把在线后续进展误归因于尚未加载的补丁。
 
 自动层级补充：`dev-verify run --base eafd941d --skip-tier deterministic` 的 serial 10、sentinel 51、flow-smoke 10 全部通过。deterministic 以本节记录的直接影响闭包替代；未执行全量 pytest。完整选择器给出 340 个候选文件且无 unmapped 错误。
+
+## 真实 Plan 的重复正文回归
+
+Critic briefing 已通过 Source Manifest 绑定完整报告，但随后渲染 admitted envelope 时
+又将 hydrated `control_result` 全文内嵌，重新引入了大包。补充真实准入路径的回归后
+出现有效 RED（1 failed / 1 passed，150KB 哨兵正文意外出现在 briefing）。
+仅当已有 call payload 且 control-result ref/digest 完整时改为渲染 ref；完整 sidecar
+仍在 Source Manifest，原 child result 必读规则不变，legacy 路径继续内嵌正文。
+
+- 直接 reader/synth、Source Manifest 和 CLI/capability 读取闭包：190 passed。
+- 补充 legacy/准入四组合、artifact relocation 及 mock E2E：11 passed。
+- sentinel：51 passed；源码仅改 briefing 渲染，不改准入、结果语义或运行状态。
+- `replay-briefing.py` 在临时目录回放真实 `evt-2937bd6f83d8` 的工件，比较
+  `9a765e31` 与本补丁：1,261,498 → 9,507 bytes（-99.25%）。全部来源摘要及
+  必读清单保持一致；发出 simulation.done 并清理临时目录。证据在 `briefing-replay/`。
+- 该字节结果不是 token 或质量结果；新增真实模型对照在 `briefing-ab/` 单独记录。
+  两组使用相同完整来源、相同技能、相同模型/隔离环境，仅 briefing.md 不同；
+  与首次实验相反，先 candidate 后 baseline。该实验不执行 workflow 提交或产品构建。
+
+完整产品当前已有 22 任务、273 AC、49 命令草稿。冻结配置预检通过，但独立 Critic
+在 `evt-ac68873cee41` Reject：仲裁职责、前置片依赖后继实现、确定性测试与真实资格
+混绑、装配自检依赖未来 Verify 四项。Kernel 已自动派发同一 Planner 修订。
+因此 C/D 仍未完成，不把结构预检或一次真实模型运行视作完整交付。

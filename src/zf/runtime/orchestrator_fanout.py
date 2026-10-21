@@ -8444,7 +8444,14 @@ class FanoutCoordinationMixin(
                         "operation_id": report.get("operation_id", ""),
                         "request_hash": report.get("request_hash", ""),
                         "envelope_ref": report.get("admitted_call_result_ref", {}),
-                        "control_result": report.get("control_result", {}),
+                        **(
+                            {"control_result_ref": report["control_result_ref"]}
+                            if call_payload
+                            and isinstance(report.get("control_result_ref"), dict)
+                            and report["control_result_ref"].get("ref")
+                            and report["control_result_ref"].get("sha256")
+                            else {"control_result": report.get("control_result", {})}
+                        ),
                     }
                     for report in reports
                     if report.get("admitted_call_result_ref")

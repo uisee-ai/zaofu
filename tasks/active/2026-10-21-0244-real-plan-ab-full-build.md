@@ -13,6 +13,7 @@ ZaoFu worktree 基于 eafd941d；比较基线 5191c9e6 与候选 eafd941d。
 - [ ] D. 批准后从干净 worktree 安装、完整 build、真实入口、独立 Verify、Docker 浏览器及全部 mandatory 验收。step -> verify: 对应实际产品 commit 和运行收据；缺少数据/设备/业务决定仍未完成，不用文档或小样例替代。
 
 - [x] E. 修正真实运行暴露的结果补正/旧 turn close 竞争。step -> verify: 实际失败事件链、有效 RED/GREEN、reader/synth caller 回归、身份错配和后续真实丢失保持可恢复；不放宽 read ledger 或业务门禁。
+- [x] F. 移除有 Source Manifest 绑定的 synth briefing 中重复 control-result 正文。step -> verify: 完整正文及摘要/必读报告保留、legacy 回退保留；实际 Plan 隔离回放与直接 caller/读取凭证回归通过。模型效果另以真实 A/B 收据判断，不能由字节数推导。
 
 ## 已知边界
 
