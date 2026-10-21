@@ -1,6 +1,6 @@
 # 运行时结果身份与恢复效果闭环补丁
 
-> 状态：candidate；2026-10-21。本设计由操作者明确批准实施，完成状态以关联任务的验证与提交为准。
+> 状态：P0/P1 implemented；现场恢复验收 active；2026-10-21。本设计由操作者明确批准实施，完成状态以关联任务的验证与提交为准。
 
 ## 问题与证据
 
@@ -64,8 +64,8 @@ Q01 正式工程/复用边界，Q02 真实 API/字段/联调，Q03 身份/会话
 
 ## 关联任务
 
-- [第一批 P0](../../tasks/active/2026-10-21-0316-result-authority-p0.md)
-- [第二批 P1](../../tasks/active/2026-10-21-0316-recovery-closure-p1.md)
+- [第一批 P0](../../tasks/done/2026-10-21-0316-result-authority-p0.md)
+- [第二批 P1](../../tasks/done/2026-10-21-0316-recovery-closure-p1.md)
 - [现场恢复与接入验收](../../tasks/active/2026-10-21-0316-loshu-resume-q01-q03.md)
 
 历史架构 142 文档未包含于当前公开 checkout；以 AGENTS.md、现有 store/event/service

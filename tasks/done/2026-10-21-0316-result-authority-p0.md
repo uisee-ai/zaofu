@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现: `6ef7593 fix: preserve dispatch authority and verify recovery effects`
 
 # 第一批：结果权威与故障分流
 
