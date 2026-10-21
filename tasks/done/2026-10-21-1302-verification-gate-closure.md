@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `ec3be8f feat: enforce verification gates and incident-specific diagnosis`
 
 # 验证时序、并行执行与恢复证据闭环
 

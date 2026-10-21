@@ -46,7 +46,7 @@ agent/skill 决策；Kernel 只执行冻结合同中的机械约束。
 
 ## 实施记录
 
-见 [本批任务](../../tasks/active/2026-10-21-1302-verification-gate-closure.md)。
+见 [本批任务](../../tasks/done/2026-10-21-1302-verification-gate-closure.md)。
 
 - Impl 自检必须覆盖当前本片的 task_verify 命令；未来 candidate/human 及其他 producer
   的命令保持原责任。缺收据、失败收据、旧 target/digest 均不能通过。
