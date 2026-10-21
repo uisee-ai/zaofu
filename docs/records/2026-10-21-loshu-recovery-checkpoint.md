@@ -154,3 +154,15 @@ Docker Playwright Dashboard 检查 HTTP200、title zaofu、projectionReady=true�
 Kernel启动原预算内第2/2轮 evt-cc1598d24920；操作员输入evt-e06738275aeb要求先核对是否新增真实分片证据，若无则复用原收据并报告当前输入不足，不无限重试或凭空造任务。08:03受控reload，health=5f2f180，watcher1512155、Dashboard1512156、Autoresearch1512157。此时全局Run仍running等待最后有界核对；缺失事实没有变化。
 
 [上下文交接修复任务](../../tasks/done/2026-10-21-0725-candidate-context-handoff.md)已按局部验收归档；[现场恢复及Q01–Q03](../../tasks/active/2026-10-21-0316-loshu-resume-q01-q03.md)继续active。未合并或推送本批分支。
+
+## 最后有界核对与原始队列审计
+
+cc1598d2 在未新增分片输入的情况下保留原收据身份、时间和目标，未重复执行通过的命令。正式提交 evt-84b5dd487138 → 准入 evt-d3e938b78b56（abstained）→ operation settled evt-09f0a7ea75f8 → stage failed evt-67effecd8b3b。控制结果 `artifacts/call-results/control/verification-result.v1/ce5b36fae3f3763d5bd5c18a59001f43adc51152c2e599a43a031c8f1d3d7974.json`。两次预算耗尽后，Run 于 evt-51f08de76e42 进入 blocked；未再增加代际或预算。Run Manager 自动请求诊断，Autoresearch 于 evt-2646978ed6ed 启动 `ar-stage-replan-f11b2f4e89efb212`，其 proposal_only 诊断启动不能作为修复完成证据。
+
+只读复核原始 Impl fanout `fanout-prd-lanes-impl-evt-4db30164` 的62个children：6个completed、4个已派发failed、52个未派发（因聚合失败标成failed）。因此当前全局270项未验证不只是证据文件遗漏，整个产品的实现也尚未完成。6个Impl完成标记不等于独立Verify完成，Kanban旧in_progress标记也不等于仍有worker执行。
+
+- ACCESS 的真实失败原因是缺少Q01外部复用、Q02接口及Q03身份/网关确认；本地导航/缓存隔离/壳组件检查点不能关闭其完整合同。
+- API-RULES、MATERIAL-CATEGORIES、RTK-ACCOUNTS保留了实现，但原Impl终态仍记录旧authority准入失败。当前API-RULES reader修复验证不修改这三个旧终态，也不补签Task Verify。
+- 需在真实输入齐备后，通过受控恢复/重新规划将保留产物重新纳入有效任务代际，独立Verify并集成，再继续依赖任务。没有绕过Run终态，也没有恢复此前已明确拒绝的13任务错误Plan。
+
+6份最后报告、输入审计、envelope及原始Impl children观察已通过required sidecar保存：`artifacts/operator-recovery/2026-10-21-context-handoff/cc1598d2-final-handoff.json`，SHA256 `bb8b0254bb92a186597e4d97ef9205c7350bae89e8139f6c133a4747c36d0cde`，绑定evt-e523941333db。原始合同、完整覆盖分母和历史失败均保留。当前结论是局部恢复缺陷完成、产品恢复与Q01–Q03未完成。
