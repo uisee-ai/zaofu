@@ -19,6 +19,9 @@ load_on_demand: true
 Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本计划的匹配关系；
 该报告没有语义 verdict，不能把机械 preflight passed 当成实施就绪。
 
+大型来源先按 [完整来源的读取方法](references/source-reading.md)建立位置与覆盖记录，
+再逐块检查原文。避免重复展开包装副本和被工具截断的巨量输出；不得缩小审查范围。
+
 Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
 [执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、
 状态相关权限、本片/候选验证边界、完整修正事务与跨工件决定版本；结果记录到已有

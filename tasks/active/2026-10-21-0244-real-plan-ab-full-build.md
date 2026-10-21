@@ -16,6 +16,8 @@ ZaoFu worktree 基于 eafd941d；比较基线 5191c9e6 与候选 eafd941d。
 - [x] F. 移除有 Source Manifest 绑定的 synth briefing 中重复 control-result 正文。step -> verify: 完整正文及摘要/必读报告保留、legacy 回退保留；实际 Plan 隔离回放与直接 caller/读取凭证回归通过。模型效果另以真实 A/B 收据判断，不能由字节数推导。
 - [x] G. 审批列表与预览使用相同的受限工件路径解析。step -> verify: 自定义 state dir、项目内旧引用、项目外路径拒绝三类回归；GET 不修改账本。29 项 API/CLI/Inbox/action 定向测试通过。
 
+- [ ] H. 继续验证相对改善。step -> verify: 固定候选、质量 oracle 和成本判据；真实 cargo 三轮配对，加跨业务缺陷/合法对照；所有负结果保留，未达预注册标准不宣称更好。详见 `reading-eval/registration.json`。
+
 ## 已知边界
 
 真实外部数据/GT/训练脚本/板端/仿真资源待 owner 提供位置；Plan 人工审批继续有效。
