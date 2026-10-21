@@ -1,6 +1,6 @@
 # 恢复规划返修并完成新旧Plan对照
 
-> 状态: active
+> 状态: done
 
 用户批准执行下一步：查清返修中断、修复4类计划问题、独立Critic复核并更新与既有22任务
 Plan的直接对照。保留Plan人工审批，不执行Impl，不修改原dev/8001/原cargo项目。
@@ -49,3 +49,5 @@ dev-verify GREEN 75 passed/1 skipped，哨兵51 passed，确定性Flow smoke 10 
 残留风险、全部失败/返修成本及待批链接。最终证据位于`zaofu-evidence/20261021-plan-regen/phase-fix/`。
 评估runtime/tmux已停止，未批准Plan、未运行Impl，主dev/8001未部署修改。
 收尾文档增量验证：`dev-verify run --base a05153cb`为8 passed，diff空白检查通过。
+评估报告提交：`20a397aa docs: record cargo plan repair and historical comparison`。
+实现提交为上文`5b6ebb2c`和`a05153cb`；5项本轮验收完成，不延伸为产品实现完成。
