@@ -9,11 +9,12 @@ ZaoFu worktree 基于 eafd941d；比较基线 5191c9e6 与候选 eafd941d。
 
 - [x] A. 固定输入、模型、环境和评审任务，冻结两组完整 skills 与依赖，运行真实 provider。step -> verify: 原始轨迹、提交、输入摘要、token、耗时、完整/超时状态及写入检查可复查；漏包运行不得计入效果。
 - [x] B. 实际项目启用候选方法。step -> verify: 比较旧项目 skill 与基线，保留定制；更新新产品 worktree，检查新 dispatch 的 materialization/provenance，不能只看 harness commit。
-- [ ] C. 独立完整产品目标经过 Scan/Planner/Critic，形成可审批 Plan。step -> verify: 根任务允许 app 实现、最终验收保留完整来源，审批前不派发产品 writer。
+- [x] C. 独立完整产品目标经过 Scan/Planner/Critic，形成可审批 Plan。step -> verify: 根任务允许 app 实现、最终验收保留完整来源，审批前不派发产品 writer。`evt-88d5d35b562f` Critic 通过；`evt-477684e8999c` 为待批 Plan。
 - [ ] D. 批准后从干净 worktree 安装、完整 build、真实入口、独立 Verify、Docker 浏览器及全部 mandatory 验收。step -> verify: 对应实际产品 commit 和运行收据；缺少数据/设备/业务决定仍未完成，不用文档或小样例替代。
 
 - [x] E. 修正真实运行暴露的结果补正/旧 turn close 竞争。step -> verify: 实际失败事件链、有效 RED/GREEN、reader/synth caller 回归、身份错配和后续真实丢失保持可恢复；不放宽 read ledger 或业务门禁。
 - [x] F. 移除有 Source Manifest 绑定的 synth briefing 中重复 control-result 正文。step -> verify: 完整正文及摘要/必读报告保留、legacy 回退保留；实际 Plan 隔离回放与直接 caller/读取凭证回归通过。模型效果另以真实 A/B 收据判断，不能由字节数推导。
+- [x] G. 审批列表与预览使用相同的受限工件路径解析。step -> verify: 自定义 state dir、项目内旧引用、项目外路径拒绝三类回归；GET 不修改账本。29 项 API/CLI/Inbox/action 定向测试通过。
 
 ## 已知边界
 

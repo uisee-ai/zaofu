@@ -95,8 +95,9 @@ Reader 与 synth 的丢失检测只在四项身份完整匹配时，把本次补
 - 最终增加真实 synth caller 路径后，补正竞争回归文件独立运行：13 passed。
 - sentinel：51 passed，manual docs currentness 通过。实际全产品验收仍不由这些测试代替。
 
-实际产品流程通过第二轮扫描后进入 Planner。运行中 Python 内存仍是重启时加载的版本，
-本条新增修复在安全重启前不记为已部署；不能把在线后续进展误归因于尚未加载的补丁。
+实际产品流程通过第二轮扫描后进入 Planner。该轮规划期间 Python 内存仍是前次重启时
+加载的版本，本条新增修复在安全重启前不记为已部署；不能把在线后续进展误归因于
+尚未加载的补丁。
 
 自动层级补充：`dev-verify run --base eafd941d --skip-tier deterministic` 的 serial 10、sentinel 51、flow-smoke 10 全部通过。deterministic 以本节记录的直接影响闭包替代；未执行全量 pytest。完整选择器给出 340 个候选文件且无 unmapped 错误。
 
@@ -118,7 +119,44 @@ Critic briefing 已通过 Source Manifest 绑定完整报告，但随后渲染 a
   两组使用相同完整来源、相同技能、相同模型/隔离环境，仅 briefing.md 不同；
   与首次实验相反，先 candidate 后 baseline。该实验不执行 workflow 提交或产品构建。
 
-完整产品当前已有 22 任务、273 AC、49 命令草稿。冻结配置预检通过，但独立 Critic
+首轮完整产品规划形成 22 任务、273 AC、49 命令草稿。冻结配置预检通过，但独立 Critic
 在 `evt-ac68873cee41` Reject：仲裁职责、前置片依赖后继实现、确定性测试与真实资格
 混绑、装配自检依赖未来 Verify 四项。Kernel 已自动派发同一 Planner 修订。
-因此 C/D 仍未完成，不把结构预检或一次真实模型运行视作完整交付。
+当时 C/D 尚未完成，不把结构预检或一次真实模型运行视作完整交付。
+
+第二组真实对照完成（`briefing-ab/manifest.json`、`evaluation.json`）：
+
+| 指标 | 旧渲染 9a765e31 | 新渲染 bc1593b1 |
+| --- | ---: | ---: |
+| 正常完成 / 输入变更 | 是 / 0 | 是 / 0 |
+| 秒 | 155.949 | 180.375 |
+| 累计 input tokens | 818,084 | 1,202,999 |
+| cached input tokens | 711,552 | 1,088,768 |
+| 非缓存 input tokens | 106,532 | 114,231 |
+| output tokens | 4,575 | 5,183 |
+| verdict | rework | rework |
+
+对照输入逐文件核对，唯一差异为 `briefing.md`。新版耗时 +15.66%、累计输入 +47.05%、
+非缓存输入 +7.23%，同样不能证明端到端效率提升。两组都发现原 Critic 的四类问题；
+旧版另指出 crop/embedding 的动作生产者缺口，新版更具体指出 RUNS 逐算子恢复的
+前置依赖，仍是互补覆盖。单对采样、顺序和缓存存在影响；不声称全面质量占优。
+本修复的已证实收益限于消除重复大包及保持来源完整性，不能据此宣称模型降本，
+也没有用追加实验覆盖或隐藏第一组不利结果。
+
+## 当前可审批 Plan 与读取一致性
+
+第二轮 Planner 修订后，Critic 在 `evt-88d5d35b562f` 正式 Approve，确认 PC-01–04
+关闭且未发现新增阻断；保留 22 任务、273 mandatory、149 要求/36 指标、69 具名用例、
+54 片内步骤，以及全部 CR/Q/D/外发未决。Plan Package 已准入，
+`evt-477684e8999c` 为 task_map.ready；`evt-2b4626167dbf` 请求人工 Plan 批准。
+预览 API 返回 full_plan，22 任务和完整工件可读取，无正文/工件错误。此时没有产品
+writer 派发，也没有 app build/产品 Verify/浏览器验收通过收据。
+
+检查 `/plan/pending` 发现它用 project_root 解释 state-relative ref，与预览/CLI 不一致，
+错误给出不可读/reject 建议；旧路径还未阻止项目外绝对引用。改用已有
+`preview_artifact_path`，路径不合法仍给出非绑定的 reject 建议，不影响人工裁决。
+有效 RED：2 failed / 1 passed（自定义 state、越界）；GREEN：29 项 API、CLI、Inbox、
+controlled action 定向测试通过。此修复不批准 Plan、不更改事件账本。
+
+人工审批保持用户此前指定的 approve 模式。完整产品仍需该批准，并在对应阶段取得
+真实数据、GT、训练脚本、设备/仿真与相关业务决定；不能用规划通过结清任务 D。
