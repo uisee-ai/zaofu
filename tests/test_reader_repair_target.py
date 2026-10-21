@@ -14,7 +14,7 @@ from zf.runtime.task_contract_snapshot import (
 from tests.test_control_actions_recovery import _service, _req
 
 
-def setup_reader(tmp_path):
+def setup_reader(tmp_path, *, compact=False):
     def git(*args):
         return subprocess.check_output(['git', '-C', str(tmp_path), *args], text=True).strip()
     git('init', '-q')
@@ -35,11 +35,15 @@ def setup_reader(tmp_path):
     descriptor = write_task_contract_snapshot(svc.state_dir, snapshot)
     target = write_target_snapshot(svc.state_dir, build_target_snapshot(descriptor,
         target_commit=old, contract_snapshot=snapshot))
-    origin = svc.writer.append(ZfEvent(type='flow.discovery.requested', task_id='T1', correlation_id='RUN', payload={
+    origin_payload = {
         **snapshot_payload_fields(descriptor), **target_payload_fields(target),
         'workflow_run_id': 'RUN', 'task_id': 'T1', 'task_map_generation': 'GEN',
         'candidate_ref': 'refs/heads/old', 'candidate_head_commit': old, 'target_commit': old,
-    }))
+    }
+    if compact:
+        for key in ('target_commit', 'target_snapshot_ref', 'target_snapshot_digest'):
+            origin_payload.pop(key)
+    origin = svc.writer.append(ZfEvent(type='flow.discovery.requested', task_id='T1', correlation_id='RUN', payload=origin_payload))
     svc.writer.append(ZfEvent(type='fanout.started', correlation_id='RUN', payload={
         'fanout_id': 'failed-reader', 'stage_id': 'prd-post-verify-discovery', 'trigger_event_id': origin.id,
     }))
@@ -57,8 +61,9 @@ def setup_reader(tmp_path):
     return svc, origin, payload, apply
 
 
-def test_repaired_reader_gets_new_target_with_original_contract(tmp_path: Path):
-    svc, origin, payload, apply = setup_reader(tmp_path)
+@pytest.mark.parametrize('compact', [False, True])
+def test_repaired_reader_gets_new_target_with_original_contract(tmp_path: Path, compact):
+    svc, origin, payload, apply = setup_reader(tmp_path, compact=compact)
     result = apply()
     assert result['ok']
     trigger = next(e for e in svc.writer.event_log.read_all() if e.id == result['stage_trigger_event_id'])
@@ -66,9 +71,10 @@ def test_repaired_reader_gets_new_target_with_original_contract(tmp_path: Path):
     assert trigger.payload['target_commit'] == payload['repair_target']['commit']
     assert trigger.payload['candidate_ref'] == 'refs/heads/repair'
     assert trigger.payload['contract_snapshot_ref'] == origin.payload['contract_snapshot_ref']
-    old = hydrate_target_snapshot(svc.state_dir, target_descriptor_from_payload(origin.payload))
     new = hydrate_target_snapshot(svc.state_dir, target_descriptor_from_payload(trigger.payload))
-    assert old['target_commit'] == payload['repair_target']['source_commit']
+    if not compact:
+        old = hydrate_target_snapshot(svc.state_dir, target_descriptor_from_payload(origin.payload))
+        assert old['target_commit'] == payload['repair_target']['source_commit']
     assert new['target_commit'] == payload['repair_target']['commit']
     assert apply()['replayed']
     conflicting = {**payload, 'repair_target': {**payload['repair_target'], 'commit': 'a' * 40}}

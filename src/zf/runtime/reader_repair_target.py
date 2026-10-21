@@ -24,7 +24,9 @@ def bind_reader_repair_target(
     if trigger.type != 'flow.discovery.requested':
         raise ValueError('repair_target is only supported for a contract-bound discovery reader')
     payload = trigger.payload
-    old = str(payload.get('target_commit') or '')
+    # Compact legacy triggers pin the candidate; dispatch supplies the target
+    # snapshot later. An explicit conflicting target still fails below.
+    old = str(payload.get('target_commit') or payload.get('candidate_head_commit') or '')
     new = str(repair.get('commit') or '')
     ref = str(repair.get('ref') or '')
     if not re.fullmatch(r'[0-9a-f]{40}', old) or not re.fullmatch(r'[0-9a-f]{40}', new):
@@ -51,10 +53,11 @@ def bind_reader_repair_target(
     snapshot = hydrate_task_contract_snapshot(state_dir, descriptor, expected={
         key: payload.get(key) for key in ('workflow_run_id', 'task_id', 'task_map_generation')
     })
-    hydrate_target_snapshot(state_dir, target_descriptor_from_payload(payload), expected={
-        'target_commit': old, 'contract_snapshot_ref': descriptor['ref'],
-        'contract_snapshot_digest': descriptor['sha256'],
-    })
+    if payload.get('target_snapshot_ref') or payload.get('target_snapshot_digest'):
+        hydrate_target_snapshot(state_dir, target_descriptor_from_payload(payload), expected={
+            'target_commit': old, 'contract_snapshot_ref': descriptor['ref'],
+            'contract_snapshot_digest': descriptor['sha256'],
+        })
     target = write_target_snapshot(state_dir, build_target_snapshot(
         descriptor, target_commit=new, contract_snapshot=snapshot,
     ), source_event_id=source_event_id)
