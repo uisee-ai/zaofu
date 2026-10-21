@@ -135,3 +135,5 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 真实恢复额外暴露两处交接问题：compact legacy trigger 尚未生成 target snapshot，只有精确 candidate commit；该形态从候选 pin 派生新 snapshot。reader 的 workdir pin 原先又无条件使用旧 stage target_ref 覆盖新的 snapshot。现在有不可变 target 时先核验其摘要和身份，再以其 commit checkout；坏 snapshot 拒绝派发，不回退旧 ref。无 snapshot 的文档/普通 reader 保留原路径。实际 `Orchestrator.run_once` + 临时 Git worktree 的 RED/GREEN 覆盖 checkout 与派发事件，避免仅 action-level 测试遗漏此边界。
 
 结果提交方法补充：[Verify 技能](../../skills/zf-yoke-test-evaluator-role-context/SKILL.md) 明确 content-addressed completion-payloads 是只读模板。legacy emit 的 worker 在自己的 workdir 完成 JSON，只替换正式 CLI 的 `--payload-file` 参数；profiled semantic submit 仍只更新当前授权 scratch。首次 reader briefing 同步说明这一输入/输出边界。transport retry 复用同 target 的原始收据时保留旧身份/时间，使用当前 envelope 提交并检查命令退出状态，不因报告已写完而省略提交。不放宽 scope guard，不让操作员代发 worker 结果。
+
+contract-bound legacy reader 的 retry 同样复用完整首次渲染器，不再因缺 `semantic_result_submit_mode=blocking` 而退化为只含几行 report 的 inline envelope。当前 run_id、合同、目标与 verification_result 模板完整保留；无合同的历史 reader 仍保留原兼容路径。真实 renderer 回归先 RED（返回 None），后 GREEN；含 reader、scope、refactor 与 scoped candidate 的闭包167项通过。
