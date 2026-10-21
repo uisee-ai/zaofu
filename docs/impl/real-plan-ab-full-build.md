@@ -160,3 +160,17 @@ controlled action 定向测试通过。此修复不批准 Plan、不更改事件
 
 人工审批保持用户此前指定的 approve 模式。完整产品仍需该批准，并在对应阶段取得
 真实数据、GT、训练脚本、设备/仿真与相关业务决定；不能用规划通过结清任务 D。
+
+## 候选部署收据
+
+在全部 worker 空闲、Plan 待批时，仅对新产品执行 `zf stop --fast` 后重启。
+2026-10-21 04:08 UTC 起运行候选 `3e665b54`，保留原账本与 Plan；Impl 派发数仍为 0。
+原 8001/dev `5191c9e6` 和原 cargo 会话没有重启。8002 已被其他进程使用，候选
+dashboard 使用 8003 和既有 access-token 文件，不打印或复制凭证正文。
+`web/` 相对 dev 无变化，仅复用已有 dist；这不是产品 app 的 build 证据。
+
+新服务 `/health` 回报 `3e665b54`；真实 `/plan/pending` 返回 22 任务、零 checklist
+警告，预览为 full_plan 且正文与工件错误均为空。
+[打开本轮 Plan Preview](http://10.9.100.143:8003/?project=full-build-20261021-c2f1cf22&page=inbox&plan=evt-477684e8999c)。
+运行与证据目录继续保留以等待人工审批，非临时模拟；两组 A/B 容器及隔离回放目录
+已清理。收据为 `deployment-receipt.json` 与 `plan-preview-pending.json`。

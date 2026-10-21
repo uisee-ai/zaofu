@@ -25,4 +25,7 @@ ZaoFu worktree 基于 eafd941d；比较基线 5191c9e6 与候选 eafd941d。
 
 详见 [评估与构建记录](../../docs/impl/real-plan-ab-full-build.md)。
 
-A/B 结果：单对完整真实运行；执行时序判断更准确，但耗时与输入增加，整体优越性未证实。见关联记录，不把 A 完成写成 C/D 完成。
+A/B 结果：两组独立的真实配对实验均完整运行；执行时序判断更准确、重复 briefing 体积减少，但两组耗时与输入均增加，整体优越性未证实。见关联记录，不把 A/C 完成写成 D 完成。
+
+实施提交：`a8ed2d15`（评估工具）、`9a765e31`（补正交接）、`bc1593b1`（briefing 去重）、`3e665b54`（审批路径）。仅本地分支，未合并或推送。
+本轮 [Plan Preview](http://10.9.100.143:8003/?project=full-build-20261021-c2f1cf22&page=inbox&plan=evt-477684e8999c) 待人工批准。候选 dashboard 与新产品 runtime 已加载修复；8001 与原 cargo 保持原会话。
