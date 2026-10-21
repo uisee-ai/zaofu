@@ -24,3 +24,39 @@
 目前已证实本地 React/TypeScript/Vite 前端启动授权和 app 工程；正式后端复用、具名负责人、真实 API/联调环境、登录/会话/网关/撤权事实仍缺。
 已向操作者请求正式仓库、API 契约或联调入口、身份服务和负责人，或明确新建后端与认证服务的验收边界。无回复前不把本地 demo/mock 计为 Q01–Q03 closed。
 相关源文档：产品仓库 `docs/source/loshu-fms-handoff.md`、`docs/implementation-8x8-request.md`。应继续无外部依赖的真实工作，逐项保留阻塞原因。
+
+## 断点恢复实证
+
+- P0 在真实运行中重新准入四个保留实现结果：VEHICLE-MODELS `evt-ce46e014a97d`、SCENES `evt-a432f7e690fc`、ADMINISTRATORS `evt-b8515a8eddf4`、ATTACHMENTS `evt-8bc6468370a6`。这是 child 准入，不等于产品完成；局部集成仍出现 candidate_product_quality_failed。
+- 补充修复 `5faa91a fix: bind reader recovery to its causal task context`；299 项聚焦（含两个 mock E2E）、51 sentinel、10 serial、10 flow-smoke 通过。先复现两个 RED，未重复已确认存在 20 项基线失败的完整套件。
+- 为纠正首次恢复暴露的串任务上下文，操作者通过 EventWriter 追加取消事实：`evt-06baf7f0be56`、`evt-c0ae70574c87`（错误 reader 输入）及 `evt-5ea9f7ae7667`（已准入任务的过时请求）。取消前均核实 pending、无 operation，不修改旧事件、不伪造完成。
+- ControlledActionService `stage-retrigger` 将原始 `evt-5752824e7541` 重发为 `evt-42797c399abb`；受控 role restart 后，`zf runs resume` 产生 `evt-e127925360b5`（running）。
+- `evt-72fec19d8be2` operation requested，`evt-5b13cfcb745e` started，`evt-937b48df4f18` 实际派发；task 为 LS8-LOCAL-API-RULES，候选与 reader HEAD 均为 `4f9959e10914570ff2f6498529fecd13d960927a`。provider 已读取当前 briefing、受控 contract/target/plan 输入并开始审查。
+- reader 重新绑定候选会清理旧工作目录，故提前保存并逐文件验证 19 份旧证据。已通过 sanctioned sidecar writer 转为持久证据：`artifacts/operator-recovery/2026-10-21-reader-evidence/manifest.json`，SHA256 `38bef52f7e46f2449ab661ee63c8c86425ec47cede6a3f28d1879a02e98130b3`；事件 `evt-938147b138fb` 绑定引用。旧 material 目录不继续混入 API 候选。
+- 产品配置仅改 skill_sources 来源路径，已独立提交 `3088d85 chore: align Loshu runtime skill sources with recovery fixes`；既有 `.codex/`、`artifacts/`、review.md 未提交文件未动。
+
+## 浏览器与运行边界
+
+预览：<http://10.9.100.141:8002/?project=loshu-plan182-eae8133e&page=agents>。
+Docker `mcp/playwright:latest` 实测 HTTP 200、title zaofu、0 pageerror；证据 `/tmp/zf-loshu-browser-evidence/dashboard-after-resume.png` 与 after-result.log。
+`/health` 报运行源码 `5faa91a`，state_dir 为真实洛书状态；原端口 8001 未修改。
+watcher / Autoresearch 使用当前 worktree；Run Manager 已受控重启。Orchestrator 为 shadow 建议角色，source_repair/reflect 原有禁用配置未冒充自动修复已开启。
+
+Agents 投影仍显示旧 RTK 绑定及旧 running_task；agents 请求约 54 秒，不能拿 UI 数量证明 8 个 Impl/Verify 真正同时执行。恢复后的实际新工作是上述 API-RULES reader；Verify 尚在等待可验收候选。该投影一致性/性能问题没有被本批次的页面可访问检查覆盖或宣称修复。
+
+## Q01–Q03 当前逐项结论
+
+| 项目 | 已有事实 | 尚缺关闭证据 | 状态 |
+| --- | --- | --- | --- |
+| Q01 | 本地 React/TypeScript/Vite 工程及前端实施授权；PG 默认选型 | 正式前后端仓库/版本、逐域复用决定、服务与持久化责任、具名负责人 | 未完成 |
+| Q02 | 原 PRD 页面/字段需求与本地切片 | IC01–IC09 真实 API/Schema/权限及成功和边界样例、联调入口、其他页映射计划 | 未完成 |
+| Q03 | 原 PRD 身份/能力/撤权需求与 ACCESS 任务 | 实际身份/会话/网关服务、授权资源真源、能力计算、撤权传播实测 | 未完成 |
+
+依据 `docs/source/loshu-fms-handoff.md` §9.1.1（产品仓库 2843–2845 行），职责角色不能代替具名负责人，草案不能标 closed。已经索取缺失事实；没有收到外部接入信息或新建后端/认证服务的明确边界。本记录不改变批准的 62 任务、274 mandatory AC，也不以本地 mock 代替以上证据。
+
+
+## 后续 Autoresearch 环境验证
+
+rmar-7214d8508c92 通过原技能来源校验后，在 inner runner 暂存生成的 docs/prd/autoresearch.md 时因 docs/ ignore 规则失败，returncode 3、尚未派发。事件 evt-9d5b3eccc862 正确保留 HIC-68D9B81837 为 unverified，未 dismissed。
+补丁对明确生成的唯一 source_ref 使用 git add -f --，保留唯一提交路径。RED/GREEN 与直接调用方共 66 项通过；在原隔离失败 checkout 只重做 prepare 已成功，生成 0f420aa，仅包含输入文档，原正文及 dirty zf.yaml 未改。
+这证明输入准备故障修复，不是完整 Autoresearch、真实产品恢复或 Q01–Q03 的通过证据。

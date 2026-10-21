@@ -88,4 +88,10 @@ Q01 正式工程/复用边界，Q02 真实 API/字段/联调，Q03 身份/会话
 随后发现 `plan_reader_stage_replan` 将失败 API-RULES 的目标与同 Run 最新 ATTACHMENTS 请求的任务、candidate 混合。恢复与重试 briefing 改为锚定失败 fanout 的原始 trigger；存在 fanout 身份但原始输入缺失时返回 reader_origin_missing，禁止借用其他任务上下文。
 Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导致已完成任务被旧失败再次 replan；现在以 task_id 和完成状态/准入凭据抑制旧请求，失败及无凭据事件不生效。
 
-[补充任务](../../tasks/active/2026-10-21-0354-reader-recovery-lineage.md)先复现两个 RED，修复后含真实 retry caller、Run Manager、受控恢复和两个 mock E2E 的 299 项测试通过。只读现场回放将 evt-e652eab0bdcf 正确绑定 LS8-LOCAL-API-RULES / 4f9959e，未写运行状态。现场操作和外部接入限制见[检查点](../records/2026-10-21-loshu-recovery-checkpoint.md)。
+[补充任务](../../tasks/done/2026-10-21-0354-reader-recovery-lineage.md)先复现两个 RED，修复后含真实 retry caller、Run Manager、受控恢复和两个 mock E2E 的 299 项测试通过。只读现场回放将 evt-e652eab0bdcf 正确绑定 LS8-LOCAL-API-RULES / 4f9959e，未写运行状态。现场操作和外部接入限制见[检查点](../records/2026-10-21-loshu-recovery-checkpoint.md)。
+
+
+## 现场诊断环境补充：忽略的 Flow 来源
+
+真实 Autoresearch 进入 runner 后发现源码 checkout 的 docs/ 忽略规则阻止新生成 PRD 的 git add。runner 对自身明确生成的 source_ref 使用强制暂存，仍以唯一 pathspec 提交，不扩大暂存范围。回归同时证明无关暂存内容不进入提交。
+见[补充任务](../../tasks/active/2026-10-21-0412-autoresearch-ignored-flow-input.md)。这修复诊断启动条件，诊断 verdict 仍须以真实结果为准。

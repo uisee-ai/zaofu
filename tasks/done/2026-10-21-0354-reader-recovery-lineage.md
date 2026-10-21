@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # P1 现场续接补充：Reader 因果身份与过时恢复请求
 
@@ -20,4 +20,10 @@
 ## 实施与验证
 
 两项失败用例先 RED，修复后 299 passed；包含 stage_failure_replan、fanout_hardening 的实际 retry caller、Run Manager/triage、controlled actions、runtime recovery、stale-contract/terminal-kanban mock E2E。sentinel 51 passed。
-现场只读回放修正了原 API-RULES task/target/candidate 身份，尚待新源码加载及受控实际派发验证；本任务保持 active。
+现场只读回放修正了原 API-RULES task/target/candidate 身份，随后完成新源码加载及受控实际派发，见下方完成依据。
+
+## 完成依据
+
+实现提交：`5faa91a fix: bind reader recovery to its causal task context`。
+受控恢复已实际派发 API-RULES：`evt-937b48df4f18`；operation started `evt-5b13cfcb745e`，candidate/reader HEAD 均为 4f9959e。19 份旧证据在重新绑定前备份，并通过原子 sidecar writer 持久化和校验，事件 evt-938147b138fb 绑定 manifest。
+本项完成的是恢复因果身份及实际派发；产品验收及 Q01–Q03 仍由独立现场验收任务跟踪。
