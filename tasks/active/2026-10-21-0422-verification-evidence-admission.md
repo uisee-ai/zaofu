@@ -19,3 +19,6 @@
 原测试中仅用伪造 snapshot ref 或模板 probe 充当完整结果的 fixture 改用持久合同/目标及明确 mock 证据；reader recovery fixture 亦记录真实 trigger 因果链，避免把缺失的原始事件当作合法续接。
 
 验证：261 passed（14 个直接调用方/合同/reader/lane/集成与三个 mock E2E 文件），sentinel 51 passed。现场新代独立结果尚待完成。
+
+扩大回归后补齐 result-submit / role-lifecycle 两处历史成功 fixture；受影响两模块 49 passed，其余非基线失败精确复跑合计 24 passed。serial 10、sentinel 51、flow-smoke 10 通过。已知基线 20 项失败维持单独报告。
+新 reader 已实际执行四条合同命令并形成完整 blocked 报告，typed validation 无 issues；三条 Vitest 缺合法 task Verify context，不能作产品通过。账号额度限制中断提交，用户更换账号后正在受控恢复，验收 3 仍待实际准入。

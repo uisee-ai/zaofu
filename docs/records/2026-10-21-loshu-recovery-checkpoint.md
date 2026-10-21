@@ -80,3 +80,14 @@ API-RULES reader 实际运行合同浏览器命令时得到 wrong HEAD。检查�
 
 04:20 的 evt-37adee35a439 / evt-4a397a7bd97f / evt-80f89650d1ad 虽被旧 Kernel 接受，但独立复查控制结果 854986331750ef20f4db9bb203a09b8d111ffd47c1467149f571ab824371283b 发现报告/AC/三个非浏览器 probe 仍保留模板引用及占位 target。因此不能将这些事件作为正确完成证据；真实 browser receipt 另行成立。
 操作员再次受控暂停 Run，先修旧 emit 跳过 typed admission 的缺陷。新代码只读验证原控制结果已返回 verification_result_invalid / unresolved placeholder。将通过新受控阶段重跑实际非浏览器命令和浏览器，再核验新结果；绝不改写旧事件或直接设置 task done。
+
+
+## 最终影响闭包回归与账号切换
+
+补丁 `25466e9 fix: enforce verification evidence checks on legacy results` 已部署。扩大确定性套件：11562 passed、19 skipped、44 failed；其中 20 项为先前已在独立基线复现的已知失败，22 项因测试进程 PATH 没有 virtualenv 导致 python/pytest 子命令或 preflight 失败，另 2 项仍使用不完整的旧验证 fixture。两项 fixture 已改为持久合同/目标与明确 mock 收据，保留原协议模式和生命周期断言。补齐 PATH 后精确复跑其余 24 项全部通过；两个受影响模块共 49 项通过。serial 10、sentinel 51、flow-smoke 10 再次通过；不宣称全套全绿或真实 provider E2E 全通过。
+
+日志：`/tmp/zf-recovery-post-admission-dev-verify.log`、`/tmp/zf-verification-environment-rerun.log`、`/tmp/zf-verification-fixture-followup.log`、`/tmp/zf-recovery-post-admission-tiers.log`。
+
+新的 reader `fanout-prd-post-verify-discovery-evt-9fbc3261` 实际执行四条原始命令：browser 三视口通过；三条 Vitest 在 reporter 启动阶段因无 task Verify/author context 退出 1，业务断言未运行。产品验证器 task 模式明确限制 verify-lane-0..7，当前 flow-discovery 不可冒充。它已生成完整 blocked 报告与 31 份本轮证据，typed admission 只读检查无 issues；这不是产品通过。
+
+reader 在正式提交前遭遇 provider usage limit。用户告知更换账号后，通过 zf restart flow-discovery 重新载入；只检查 role auth 是全局 auth 的同一 symlink，不读取或记录凭据内容。重启前逐文件保留新证据，事件 `evt-51a458747f10` 绑定 `artifacts/operator-recovery/2026-10-21-account-restart/evidence-manifest.json`。最终准入及恢复结果待下文确认。
