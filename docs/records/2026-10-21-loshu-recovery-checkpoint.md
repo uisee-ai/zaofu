@@ -102,3 +102,12 @@ reader 在正式提交前遭遇 provider usage limit。用户告知更换账号�
 准入控制体：`artifacts/call-results/control/verification-result.v1/712f7918a2c5bcb549a19dd428e9d023c7ce2fb1386abaeebe075f31edf9dde9.json`。29 份新日志、报告、截图/trace 与 receipts 已完整保存在 required sidecar `artifacts/operator-recovery/2026-10-21-verification-admission/dd88c1fe-evidence-bundle.json`；SHA256 `b2e20e2d4a36fb4c174bb802d24fcb123f385563642ca38a0bddc5789ba2d3e7`，绑定事件 `evt-cf9ddb69eaee`。每个 probe 的原路径存在、target 一致；未编辑 worker 结果或替它发完成事件。
 
 Kernel 随后启动原有上限内第 2/2 次 reader 重试（evt-44e2999a38d1）。截至记录时，验证上下文供应问题未解决，不把重试派发或有效 abstained 结果当作恢复完成。Run Manager/Autoresearch enable 只证明服务开启，不证明它们已修好该项目的 reporter 协议。
+
+
+## 最后一次有界重试与 batch resume 遗漏
+
+44e2999a 再次真实运行三条 Vitest，仍在断言前退出；没有冒用旧 dd88 的 browser 身份。本轮提交 evt-39569eaccdba，准入 evt-16962098c9f9 / abstained，阶段失败 evt-a85f561a4dbc。14 份新证据由 evt-f3e95b48db48 绑定 `artifacts/operator-recovery/2026-10-21-verification-admission/44e2999a-evidence-bundle.json`，SHA256 `5ebd8a0a7da14923c39a84fc14181f5088567c002979fb6bc5ffc9e81dc2138c`。读写混合命令被 hook 拦截后，仅提供 immutable 输入在工作区的同摘要副本（evt-c905e373d334），未改变 canonical 模板或放宽 hook。
+
+Run Manager 之后错误地选择 workflow-batch-resume / repair_failed_children，重发 13 项业务任务 evt-fb91b4593b2e，仅凭请求收据产生 verify.passed evt-6ced63b70d5e。这不是环境修复成功；根因与补丁见设计 183 最新 P1 补充。该新 Plan 已通过 zf plan reject 明确拒绝，原批准的完整 Plan 和候选保留。尝试暂停时受控服务返回 blocked -> run-pause invalid_transition（evt-277aa58b746c），说明 Run 当时已 blocked；未直接改状态或制造暂停成功。
+
+新增两类 RED 已复现；影响闭包 260 passed，随后增强正反例共 4 passed（新 fanout/generation 可结算、同 Run 无关 fanout 不结算、Plan 拒绝仍失败、case 在请求后保持 verifying）。只读回放 30252 条真实事件，9fbc/dd88/44e 三个 reader 均不再产生错误 batch checkpoint。

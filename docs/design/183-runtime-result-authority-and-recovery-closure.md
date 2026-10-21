@@ -112,3 +112,14 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 
 新代独立 reader 的环境失败报告已通过真实结果准入（evt-1d05765bfd15 / abstained），证明传输兼容与严格证据门同时生效。产品 reporter 只消费 task Verify/author context，candidate reader 的上下文不能替代该角色身份；三条非浏览器命令在断言前退出。浏览器本代通过只证明本地候选的相应旅程。
 后续应由任务验证 owner 供应真实合同上下文，或由脚手架 owner 明确增加 candidate 复核协议，并保留角色、目标、operation、manifest 校验；禁止伪造 verify-lane/作者身份使测试变绿。上下文修复与 Q01–Q03 外部事实闭环仍由现场恢复任务跟踪，未计入已完成。
+
+
+## 现场 P1 补充：Reader 不能经 batch resume 回到 Writer
+
+最后一轮有效 abstained 后，旧 workflow_resume 看到 task_map/candidate refs 就认为 reader 不再属于 stage 恢复，错误生成 repair_failed_children，将 1 个 reader 环境故障扩展为 13 个业务任务。`workflow-batch-resume` 也未声明 effect contract，收到 task_map.ready/workflow.resume.applied 就关闭恢复 case。首次 P1 覆盖 semantic-replan/worker restart/candidate retrigger，遗漏这个独立入口；该遗漏已通过真实事件复现。
+
+修复依据 fanout.started 的 topology 和实际 trigger 类型确定 ownership：flow.discovery.requested 的 reader 仍由 reader stage 的有界恢复负责，输入中的 task map/candidate refs 不能转移写权限。candidate.ready 触发的既有候选重验与 writer 业务返工保持原有入口。
+
+对 repair_failed_children/trigger_rework 的 batch resume，动作收据后保持 effect pending；只接受本次 ControlledActionService 实际发出的唯一 task_map.ready 所触发的新 fanout 或 generation admission。同 Run 的无关事件、Plan 等待批准不结算；Plan 拒绝/准入失败或超时按失败处理。该效果仅表示恢复进入派发，绝不代表业务修复已验收。
+
+[补充任务](../../tasks/active/2026-10-21-0643-reader-batch-recovery-effects.md)记录 RED、实际 controlled caller、case 状态和现场回放。

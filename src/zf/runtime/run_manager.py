@@ -6232,6 +6232,9 @@ def _execute_workflow_batch_resume(
     causation_id: str,
 ) -> str:
     from zf.runtime.control_actions import ControlledActionService
+    from zf.runtime.workflow_resume_effects import bind_resume_request, resume_admission_effect
+
+    action = {**action, **resume_admission_effect(action)}
 
     planned = writer.emit(
         RUN_MANAGER_ACTION_PLANNED,
@@ -6277,6 +6280,7 @@ def _execute_workflow_batch_resume(
             },
         )
         return "failed"
+    action.update(bind_resume_request(action, result, writer.event_log.read_all()))
     status = str(result.get("status") or "")
     ok = bool(result.get("ok"))
     event_type = RUN_MANAGER_ACTION_APPLIED if ok else RUN_MANAGER_ACTION_FAILED
@@ -7406,6 +7410,11 @@ def _effect_event_matches_scope(
     payload: dict[str, Any],
 ) -> bool:
     body = event.payload if isinstance(event.payload, dict) else {}
+    from zf.runtime.workflow_resume_effects import (
+        matches_resume_admission, resume_admission_effect,
+    )
+    if resume_admission_effect(payload):
+        return matches_resume_admission(event, payload)
     if payload.get("action") == "worker-lifecycle-recover":
         request_id = str(payload.get("effect_request_event_id") or "")
         return bool(request_id) and event.causation_id == request_id and str(
