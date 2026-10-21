@@ -226,3 +226,56 @@ Plan 人工审批仍待处理，当前实验不会改变已冻结产品 Plan 或
 撤销后实际角色分发与task-scoped输入9 passed。累计diff的dev-verify选择了465个测试文件
 对应的全套确定性测试；该宽泛运行已主动终止，未计为通过。改用本次变更显式paths
 执行上述闭包，收据为 reading-focused-verification.json。未重复宣称full pytest或产品E2E。
+
+## 2026-10-21 继续验证的最终收据
+
+本轮新增20次真实provider调用（读取方法10次、范围输入8次、固定顺序补测2次），
+全部完成且无输入写入。不能把全部运行完成写成全部验收通过：读取方法候选失败并
+撤销；其“合法”仓库对照的oracle无效；范围输入成本大幅下降，但联合耗时目标未通过。
+
+范围输入实验使用相同模型、Docker镜像和原文，只有实际required-read选取值不同。
+原始canonical字节额外留存在 `scoped-eval/original-cargo-execution-spec.json`，
+`source-origin-provenance.json` 证明其与紧凑序列化输入逐值相等，区分原始digest与
+序列化digest。全部shared和本任务正文完整保留，最终Candidate仍全量。
+
+| 输入场景/配对 | 基线非缓存input | 候选非缓存input | 基线秒 | 候选秒 |
+| --- | ---: | ---: | ---: | ---: |
+| cargo-import #1 | 98,572 | 19,345 | 77.613 | 71.438 |
+| cargo-import #2 | 98,572 | 19,345 | 67.785 | 74.739 |
+| cargo-edit #1 | 98,572 | 11,939 | 63.865 | 74.883 |
+| warehouse-transfer #1 | 3,645 | 3,058 | 35.967 | 38.019 |
+| cargo-edit 固定反向补测 | 98,572 | 21,667 | 61.592 | 72.930 |
+
+判定及边界：
+
+- 初始三对cargo耗时比中位数 **1.102589**，严格超过1.10，初批联合目标失败。
+- 观察到初三对均为后运行者更快，预先固定补一次EDIT AB，使总顺序AB/BA各两对；
+  不替换原结果、不改变阈值、不继续相同候选重试。该补测不是最初预注册的一部分，
+  因此明确作为pilot后的固定顺序核查，不声称统计显著性。
+- 四对cargo合并：非缓存input配对比中位数 **0.196252（减少80.4%）**，
+  总input配对比中位数 **0.234257（减少76.6%）**；耗时 **1.137555（增加13.8%）**，
+  仍未通过10%上限。补测候选cached_input为0，其余为9728；缓存及输出长度均保留，
+  不剔除不利运行、不由数据体积推导token，也不将token直接等同账单金额。
+- 10份范围输入答案：全部本任务case IDs、逐步RED/GREEN/回归命令机械核对通过；
+  人工逐份核对导入幂等/恢复/未知/gap、编辑事务/撤权/修正历史/职责、仓库7用例，
+  关键约束保留，未假称批准或执行。状态字段没有预定义枚举，评分器初版误加精确
+  NOT_RUN比较已纠正并留 `scorer-correction.md`；原文状态语义继续人工核查。
+- 仓库小输入非缓存input减少16.1%，总input减少4.4%，耗时增加5.7%。它只是
+  人工输入探针，不是另一完整产品；baseline可见ASSEMBLY最终脚本路径，candidate
+  正确表示未提供。需要这些跨任务信息的消费者应由作者放入shared；不能声称
+  分区天然保持所有其他任务的信息。
+- 成立的结论是**此输入组件降低真实模型输入消耗，且本批输入理解没有关键退化**；
+  **运行更快、任意任务分区正确、完整Impl/Verify/产品build更好均未证实**。
+
+收据：`reading-eval/evaluation.json`、`scoped-eval/evaluation.json`、
+`scoped-order-check/evaluation.json`；各目录均有预注册、输入/提示摘要、result、
+完整trace和答案。原有两组不利A/B也仍保留。实际产品Plan仍停在人工审批，
+未派发产品实现、未取得完整构建/独立Verify/浏览器及真实设备资格证据。
+
+返工建议已就 `evt-477684e8999c` 提交给用户确认，未代发plan.rejected。
+CLI/受控动作将approve/reject固定记录为operator人工决定（
+`src/zf/runtime/control_actions_plan.py`）；用户要求的手动审批继续有效。
+实现提交：`42fb2032`为未获效果支持的实验，`9034c01a`已撤销它；此前有效修复保留。
+8001仍为5191c9e6原会话，8003仍为3e665b54候选会话，均未因这些实验重启。
+
+最终文档/指令检查8 passed（continued-docs-verification.json）；20次运行的trace摘要、输入不变和自有容器清理均通过 continued-evaluation-integrity.json 核对。运行完整性通过不改变上述质量/性能失败结论。
