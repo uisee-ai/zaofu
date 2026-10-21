@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `25466e9 fix: enforce verification evidence checks on legacy results`；补充回归 `d92803a test: bind recovery fixtures to persisted verification evidence`
 
 # P0 现场补充：禁止模板占位符绕过 Verify 证据门
 
@@ -22,3 +22,11 @@
 
 扩大回归后补齐 result-submit / role-lifecycle 两处历史成功 fixture；受影响两模块 49 passed，其余非基线失败精确复跑合计 24 passed。serial 10、sentinel 51、flow-smoke 10 通过。已知基线 20 项失败维持单独报告。
 新 reader 已实际执行四条合同命令并形成完整 blocked 报告，typed validation 无 issues；三条 Vitest 缺合法 task Verify context，不能作产品通过。账号额度限制中断提交，用户更换账号后正在受控恢复，验收 3 仍待实际准入。
+
+## 现场验收闭合
+
+06:27:24 UTC 独立 reader 提交 `evt-f6039a7f34c1`；Kernel 以 `evt-1d05765bfd15` 准入，semantic_verdict=abstained，control result SHA256 `712f7918a2c5bcb549a19dd428e9d023c7ce2fb1386abaeebe075f31edf9dde9`。操作 `evt-b835e9bc115d` 正常结算，child 与阶段按真实验证环境失败结束，未产生产品通过声明。
+
+已核对本轮四个原始命令、精确 target、全部 probe refs 实际存在；browser 在本代三视口通过，三条 Vitest 在断言前因 reporter context 缺失退出。29 份新证据完整归档为 required sidecar，事件 `evt-cf9ddb69eaee`，摘要 `b2e20e2d4a36fb4c174bb802d24fcb123f385563642ca38a0bddc5789ba2d3e7`。旧模板准入历史仍在审计记录中，未计为通过。
+
+本任务关闭的是准入缺陷及其真实调用验收，不是产品、上下文供应或 Q01–Q03 的关闭。剩余事项归[现场恢复任务](../active/2026-10-21-0316-loshu-resume-q01-q03.md)。

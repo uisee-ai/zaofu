@@ -105,4 +105,10 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 真实浏览器通过之后，reader 的非浏览器 verification-result 仍携带模板 evidence_refs 和 target_commit，旧 emit 路径却准入（evt-37adee35a439）。该准入不是本轮验收证据。
 根因是 typed_result_admission 以 semantic_submit 标记整段早退；结构适配只执行 strict=False。现在带 contract snapshot ref/digest 的 verification-result 无论走 emit 还是受控 result-submit，都进入现有合同、目标快照、AC、canonical command、target、exit_code 与证据检查；无合同的历史兼容输入保留原边界。
 严格 Verify 检查另拒绝 evidence_refs 中保留的尖括号模板槽位。它是引用格式检查，不把非空字符串解释为已经证实的产品质量，也不替代独立运行命令。
-[补充任务](../../tasks/active/2026-10-21-0422-verification-evidence-admission.md)记录 RED/GREEN、真实 service caller 和新一代独立验证；旧事件不删除，不以旧准入冒充本次通过。
+[补充任务](../../tasks/done/2026-10-21-0422-verification-evidence-admission.md)记录 RED/GREEN、真实 service caller 和新一代独立验证；旧事件不删除，不以旧准入冒充本次通过。
+
+
+## 最新恢复边界
+
+新代独立 reader 的环境失败报告已通过真实结果准入（evt-1d05765bfd15 / abstained），证明传输兼容与严格证据门同时生效。产品 reporter 只消费 task Verify/author context，candidate reader 的上下文不能替代该角色身份；三条非浏览器命令在断言前退出。浏览器本代通过只证明本地候选的相应旅程。
+后续应由任务验证 owner 供应真实合同上下文，或由脚手架 owner 明确增加 candidate 复核协议，并保留角色、目标、operation、manifest 校验；禁止伪造 verify-lane/作者身份使测试变绿。上下文修复与 Q01–Q03 外部事实闭环仍由现场恢复任务跟踪，未计入已完成。

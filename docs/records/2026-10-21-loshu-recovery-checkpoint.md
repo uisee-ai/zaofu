@@ -91,3 +91,14 @@ API-RULES reader 实际运行合同浏览器命令时得到 wrong HEAD。检查�
 新的 reader `fanout-prd-post-verify-discovery-evt-9fbc3261` 实际执行四条原始命令：browser 三视口通过；三条 Vitest 在 reporter 启动阶段因无 task Verify/author context 退出 1，业务断言未运行。产品验证器 task 模式明确限制 verify-lane-0..7，当前 flow-discovery 不可冒充。它已生成完整 blocked 报告与 31 份本轮证据，typed admission 只读检查无 issues；这不是产品通过。
 
 reader 在正式提交前遭遇 provider usage limit。用户告知更换账号后，通过 zf restart flow-discovery 重新载入；只检查 role auth 是全局 auth 的同一 symlink，不读取或记录凭据内容。重启前逐文件保留新证据，事件 `evt-51a458747f10` 绑定 `artifacts/operator-recovery/2026-10-21-account-restart/evidence-manifest.json`。最终准入及恢复结果待下文确认。
+
+
+## 账号切换后的实际恢复结果
+
+受控重启 `evt-8c770fc8572d` 后，新的 flow-discovery 已能实际执行命令。此前额度受限的 9fbc attempt 已于 04:57 超时；不再提交旧 envelope。Kernel 新代 dd88 的实际派发为 `evt-8601238bce70`，context 绑定为 `evt-829926a91806`，所有历史收据保留原身份。旧 31 份完整证据已原子归档为 `artifacts/operator-recovery/2026-10-21-account-restart/evidence-bundle.json`，事件 `evt-8d9c06879a6f`。
+
+新代 reader 实际重跑四条原命令。三条 Vitest 仍在 reporter 启动阶段退出 1，未运行断言；browser 同 target 在本代三视口通过。最终按 schema 使用 execution_status=failed、verdict=abstained；不是 completed/passed，也不是业务 rejection。提交 `evt-f6039a7f34c1` → 准入 `evt-1d05765bfd15` → operation settled `evt-b835e9bc115d` → child failed `evt-6cdbf3a2820d` → stage failed `evt-2255017f174f`。
+
+准入控制体：`artifacts/call-results/control/verification-result.v1/712f7918a2c5bcb549a19dd428e9d023c7ce2fb1386abaeebe075f31edf9dde9.json`。29 份新日志、报告、截图/trace 与 receipts 已完整保存在 required sidecar `artifacts/operator-recovery/2026-10-21-verification-admission/dd88c1fe-evidence-bundle.json`；SHA256 `b2e20e2d4a36fb4c174bb802d24fcb123f385563642ca38a0bddc5789ba2d3e7`，绑定事件 `evt-cf9ddb69eaee`。每个 probe 的原路径存在、target 一致；未编辑 worker 结果或替它发完成事件。
+
+Kernel 随后启动原有上限内第 2/2 次 reader 重试（evt-44e2999a38d1）。截至记录时，验证上下文供应问题未解决，不把重试派发或有效 abstained 结果当作恢复完成。Run Manager/Autoresearch enable 只证明服务开启，不证明它们已修好该项目的 reporter 协议。
