@@ -2,6 +2,12 @@
 
 ## 从实际路线开始
 
+升级或 A/B 前核对实际加载的 skill 来源、完整目录摘要和依赖，而不只核对 harness
+commit。项目内已固化的同名 `skills/` 可能优先于新配置的 source；先与旧基线比较，
+保留项目定制，再通过项目正常更新/重启路径接入候选版本。检查新 dispatch 的
+materialization/provenance；已有 dispatch 的冻结输入不能靠覆盖文件冒充已升级。
+隔离评估同样要包含通用依赖；漏包、启动失败和超时是无效/未完成运行，不能算改进。
+
 读取 briefing 中冻结的执行配置；已有项目可用
 `zf plan inspect-execution --config zf.yaml --task-map <file> --flow-kind prd`
 只读检查。已准入 Package 可附 `--plan-package <state-dir 内的 package 文件>`，
