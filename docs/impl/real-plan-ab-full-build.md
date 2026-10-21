@@ -190,3 +190,39 @@ dashboard 使用 8003 和既有 access-token 文件，不打印或复制凭证�
 该批只验证 Critic 读取方法的增量效果，不代表相对原 dev 的整个产品生命周期改善。
 
 Plan 人工审批仍待处理，当前实验不会改变已冻结产品 Plan 或代替 Impl/Verify/build 验收。
+
+### 读取方法试验的负结果与撤销
+
+冻结候选 `42fb2032` 对基线 `eda8eb34` 的三轮 cargo 已完成。配对非缓存输入比值
+中位数 1.4071，耗时比值中位数 1.5030，均未通过事先标准；第三轮候选漏报装配等待
+后置独立 Verify 的问题，四类关键发现仅覆盖3类，基线三轮均覆盖4类。新增 reference
+与入口指导已撤销，原有方法/角色/源码保留；冻结提交、原始轨迹及负结果不删除。
+跨业务两例完成原定运行；预设合法对照本身缺少浏览器实现者与边界用例，其 pass oracle 无效，不能把合理 rework 计成误报。此缺陷不影响 cargo 三轮成本/关键发现的负结果。
+
+### 验证真实任务范围输入
+
+后续试验改为检验此前已实现的 task-scoped 输入能力，不能把 Critic 全局评审成本
+当作 Impl 输入裁剪效果。证据根 `scoped-eval/registration.json` 在调用前冻结：同一
+原始工件，执行旧版/新版真实 required-read 选择函数，以原样选取的完整值作为模型
+输入；共享与本任务逐值相等，最终 Candidate 仍全量。cargo IMPORT两对、EDIT一对，
+仓库 TRANSFER一对；baseline/candidate顺序交替，所有运行串行。
+
+该实验隔离 execution_spec 端口，衡量真实模型对完整用例、TDD命令、关键行为和共享
+约束的理解以及真实usage，不是完整worker dispatch或产品build；其他必读端口仍需
+原有入口测试与正式产品运行验证。成本门槛：两个cargo任务场景非缓存输入配对比
+中位数≤0.70、cargo整体耗时配对比中位数≤1.10；候选所有关键语义和结构必须保留。
+小输入仓库用作跨业务质量探针，固定system prompt成本使其不设30%下降门槛，实际
+成本仍全部报告。这项区分在任何本批provider调用前明确，修改记录保留。
+
+### 当前待批Plan的补充发现
+
+`pending-plan-followup-findings.json` 绑定 `evt-477684e8999c` 的冻结来源摘要。
+`AC-M14-01` 声明LIVE验证但 evidence_contract仍指向IMPORT本片runtime收据，
+与LIVE输出目录不一致；需要按命令绑定输出及聚合消费关系。
+另有T12-11保留在candidate原文义务中，但具体动作生产者/具名用例仍需独立语义复核。
+这两项没有通过更改canonical运行态“修复”，此前Critic批准不替代新发现的处理。
+
+本轮验证层级：新方法依赖/输入测试14 passed；指令/来源/结构闭包45 passed、1 skipped；
+撤销后实际角色分发与task-scoped输入9 passed。累计diff的dev-verify选择了465个测试文件
+对应的全套确定性测试；该宽泛运行已主动终止，未计为通过。改用本次变更显式paths
+执行上述闭包，收据为 reading-focused-verification.json。未重复宣称full pytest或产品E2E。

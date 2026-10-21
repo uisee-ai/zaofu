@@ -18,6 +18,8 @@ ZaoFu worktree 基于 eafd941d；比较基线 5191c9e6 与候选 eafd941d。
 
 - [ ] H. 继续验证相对改善。step -> verify: 固定候选、质量 oracle 和成本判据；真实 cargo 三轮配对，加跨业务缺陷/合法对照；所有负结果保留，未达预注册标准不宣称更好。详见 `reading-eval/registration.json`。
 
+- [ ] I. 新发现的Plan验收责任闭合。step -> verify: LIVE收据错配修正、后移行为的实现/测试生产者独立复核；走人工退回/重规划/新Plan批准，不改写已冻结工件。建议见证据根 `plan-rework-request.md`。
+
 ## 已知边界
 
 真实外部数据/GT/训练脚本/板端/仿真资源待 owner 提供位置；Plan 人工审批继续有效。
@@ -31,3 +33,5 @@ A/B 结果：两组独立的真实配对实验均完整运行；执行时序判�
 
 实施提交：`a8ed2d15`（评估工具）、`9a765e31`（补正交接）、`bc1593b1`（briefing 去重）、`3e665b54`（审批路径）。仅本地分支，未合并或推送。
 本轮 [Plan Preview](http://10.9.100.143:8003/?project=full-build-20261021-c2f1cf22&page=inbox&plan=evt-477684e8999c) 待人工批准。候选 dashboard 与新产品 runtime 已加载修复；8001 与原 cargo 保持原会话。
+
+继续验证：读取指导候选 `42fb2032` 三轮cargo失败（成本增加且第三轮漏关键问题），已撤销实验性指导；原始证据保留。任务范围输入的真实模型理解A/B仍在执行，不能提前把H置为完成。
