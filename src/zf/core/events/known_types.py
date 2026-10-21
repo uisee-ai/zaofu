@@ -768,6 +768,7 @@ KNOWN_EVENT_TYPES: frozenset[str] = frozenset({
     # Durable agent call results and replayable workflow operations (doc 140).
     "workflow.call.result.reported",
     "workflow.call.result.repair.requested",
+    "workflow.call.result.repair.dispatched",
     "workflow.call.result.admitted",
     "workflow.call.result.invalid",
     "workflow.operation.requested",

@@ -752,6 +752,7 @@ class FanoutCoordinationMixin(
                 lost_event = self._reader_dispatch_lost_event_after(
                     lost_events_by_role.get(role_instance, []),
                     latest_index,
+                    events=events, dispatch_event=latest_dispatch,
                 )
                 if lost_event is None:
                     continue
