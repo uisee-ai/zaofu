@@ -611,7 +611,7 @@ def test_integration_bridge_uses_rotated_projection_generation() -> None:
         "pipeline_key": "pipeline-1",
     }]
 
-    with patch(
+    with patch("zf.runtime.task_pipeline_integration._verify_result_is_current", return_value=True), patch(
         "zf.runtime.candidates.CandidateRebuilder",
         return_value=SimpleNamespace(integrate_task_pipeline_task=integrate),
     ):
