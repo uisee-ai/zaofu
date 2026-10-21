@@ -102,6 +102,7 @@ def write_fanout_retry_briefing(
         runtime.event_log.read_all(),
         stage_id=str(manifest.get("stage_id") or ""),
         correlation_id=str(manifest.get("trace_id") or ""),
+        fanout_id=fanout_id,
     )
     current_trigger = (
         child_payload.get("trigger_payload")

@@ -81,3 +81,11 @@ Q01 正式工程/复用边界，Q02 真实 API/字段/联调，Q03 身份/会话
 新效果等待具有 1800 秒默认期限，可由动作 effect_timeout_seconds 指定，历史未声明
 期限的 pending 不追溯超时。普通 task_map.ready 不可代替待验收的恢复效果。
 诊断失败保留 unverified；重复消费幂等，修好环境后可发起新的有界诊断请求。
+
+## 现场续接补充：Reader 因果身份
+
+首次恢复已让 VEHICLE-MODELS、SCENES、ADMINISTRATORS、ATTACHMENTS 四个已有实现结果通过准入，证明 P0 修复进入真实调用路径。
+随后发现 `plan_reader_stage_replan` 将失败 API-RULES 的目标与同 Run 最新 ATTACHMENTS 请求的任务、candidate 混合。恢复与重试 briefing 改为锚定失败 fanout 的原始 trigger；存在 fanout 身份但原始输入缺失时返回 reader_origin_missing，禁止借用其他任务上下文。
+Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导致已完成任务被旧失败再次 replan；现在以 task_id 和完成状态/准入凭据抑制旧请求，失败及无凭据事件不生效。
+
+[补充任务](../../tasks/active/2026-10-21-0354-reader-recovery-lineage.md)先复现两个 RED，修复后含真实 retry caller、Run Manager、受控恢复和两个 mock E2E 的 299 项测试通过。只读现场回放将 evt-e652eab0bdcf 正确绑定 LS8-LOCAL-API-RULES / 4f9959e，未写运行状态。现场操作和外部接入限制见[检查点](../records/2026-10-21-loshu-recovery-checkpoint.md)。

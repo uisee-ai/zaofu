@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import subprocess
@@ -2494,3 +2495,19 @@ def test_configs_with_orchestrator_role_close_triage_event_contract(
 
     assert TRIAGE_REQUESTED in role.triggers
     assert TRIAGE_RECORDED in role.publishes
+
+
+def test_admitted_child_completion_supersedes_old_task_failure():
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.run_manager_rework_triage import _has_later_task_progress
+    failure = ZfEvent(type="dev.blocked", task_id="A")
+    completed = ZfEvent(type="fanout.child.completed", payload={
+        "task_id": "A", "status": "completed", "admitted_call_result_ref": {"ref": "result", "sha256": "digest"},
+    })
+    assert _has_later_task_progress([failure, completed], 0, "A")
+    assert not _has_later_task_progress([failure, completed], 0, "B")
+    completed.payload["status"] = "failed"
+    assert not _has_later_task_progress([failure, completed], 0, "A")
+    completed.payload["status"] = "completed"
+    completed.payload.pop("admitted_call_result_ref")
+    assert not _has_later_task_progress([failure, completed], 0, "A")
