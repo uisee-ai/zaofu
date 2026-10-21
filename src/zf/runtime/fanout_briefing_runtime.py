@@ -977,8 +977,13 @@ class FanoutBriefingMixin:
             # actual command uses the immutable sidecar; semantic submitters
             # use their scratch contract and omit this potentially large block.
             result_preview_lines = [
-                "The payload file is authoritative; this JSON is only a shape "
-                "preview. Never copy it into an inline shell `--payload` argument.",
+                "The referenced completion-payloads files are immutable input templates. "
+                "Copy the selected template into your assigned workdir, complete that "
+                "local JSON, and replace only the command's `--payload-file` argument "
+                "with its path. Preserve the event type, actor, state-dir and current "
+                "dispatch identity. Never edit the protected template or substitute "
+                "an inline shell `--payload` argument. Check the submission exit "
+                "status before ending the turn.",
                 "```json",
                 json.dumps(success_payload, ensure_ascii=False, indent=2),
                 "```",

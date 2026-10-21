@@ -133,3 +133,5 @@ Run Manager 旧进展集合遗漏带准入引用的 fanout.child.completed，导
 验证责任：产品先 RED/GREEN、实际 reporter 命令与 Docker browser；Kernel 以真实 ControlledActionService 调用覆盖新 target、保留旧 snapshot、错误 ref/commit/来源/祖先/损坏 snapshot 及幂等冲突，再运行恢复影响闭包和 mock E2E。新动作成功只代表重新派发获准，不代表修复生效或 Q01–Q03 完成。
 
 真实恢复额外暴露两处交接问题：compact legacy trigger 尚未生成 target snapshot，只有精确 candidate commit；该形态从候选 pin 派生新 snapshot。reader 的 workdir pin 原先又无条件使用旧 stage target_ref 覆盖新的 snapshot。现在有不可变 target 时先核验其摘要和身份，再以其 commit checkout；坏 snapshot 拒绝派发，不回退旧 ref。无 snapshot 的文档/普通 reader 保留原路径。实际 `Orchestrator.run_once` + 临时 Git worktree 的 RED/GREEN 覆盖 checkout 与派发事件，避免仅 action-level 测试遗漏此边界。
+
+结果提交方法补充：[Verify 技能](../../skills/zf-yoke-test-evaluator-role-context/SKILL.md) 明确 content-addressed completion-payloads 是只读模板。legacy emit 的 worker 在自己的 workdir 完成 JSON，只替换正式 CLI 的 `--payload-file` 参数；profiled semantic submit 仍只更新当前授权 scratch。首次 reader briefing 同步说明这一输入/输出边界。transport retry 复用同 target 的原始收据时保留旧身份/时间，使用当前 envelope 提交并检查命令退出状态，不因报告已写完而省略提交。不放宽 scope guard，不让操作员代发 worker 结果。

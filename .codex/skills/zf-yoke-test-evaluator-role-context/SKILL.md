@@ -73,6 +73,17 @@ amendment are separate role capabilities supplied by the workflow profile.
    `owner`.
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
+   Treat content-addressed `completion-payloads/<kind>/<digest>.json` files as
+   immutable input templates. For a legacy `zf emit --payload-file` command,
+   copy the template into your assigned workdir, complete that local JSON,
+   and replace only the `--payload-file` argument with its path; preserve the
+   event type, actor, state-dir and current dispatch identity. Never overwrite
+   the protected template. For `zf result submit`, update only the current
+   operation-authorized scratch using its profile's semantic schema; do not
+   place a legacy event envelope there. Check the submission exit status
+   before ending the turn. A transport retry does not invalidate valid same-
+   target receipts: retain their original identity/time, mark reuse explicitly,
+   and submit with the current retry envelope instead of rewriting receipts.
 
 ## Product Acceptance Passes
 
