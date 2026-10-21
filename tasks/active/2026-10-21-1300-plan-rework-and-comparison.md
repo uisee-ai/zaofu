@@ -7,9 +7,9 @@ Plan的直接对照。保留Plan人工审批，不执行Impl，不修改原dev/8
 
 - [x] 复现中断。step -> verify: 历史快照复现running operation被附属失败收尾终止。
 - [x] 修复通用运行时边界。step -> verify: RED为2个行为失败；GREEN影响闭包379 passed、哨兵51 passed、确定性Flow smoke 10 passed；历史快照的误收尾动作由1变0。
-- [ ] 继续27任务草稿返修。step -> verify: 四类fix_items在正式产物中有逐项修订证据，未决CR/Q/D不擅自关闭。
-- [ ] 独立Critic和完整范围复核。step -> verify: 新提交得到实际评审，记录未覆盖项，不能只凭关闭四个fix_items宣称全量通过。
-- [ ] 新旧直接对照与待批交付。step -> verify: 逐项记录改善、保留问题、新增问题和UNKNOWN；正式待批Plan与原文绑定，未运行的产品测试为NOT_RUN。
+- [x] 继续27任务草稿返修。step -> verify: 四类fix_items在正式产物中有逐项修订证据，未决CR/Q/D不擅自关闭。
+- [x] 独立Critic和完整范围复核。step -> verify: 新提交得到实际评审，记录未覆盖项，不能只凭关闭四个fix_items宣称全量通过。
+- [x] 新旧直接对照与待批交付。step -> verify: 逐项记录改善、保留问题、新增问题和UNKNOWN；正式待批Plan与原文绑定，未运行的产品测试为NOT_RUN。
 
 运行时边界见[实现说明](../../docs/impl/failure-closeout-active-operation.md)。证据目录：
 `/home/min/workspace/public/zaofu-evidence/20261021-plan-regen/repair/`。
@@ -35,3 +35,17 @@ dev-verify GREEN 75 passed/1 skipped，哨兵51 passed，确定性Flow smoke 10 
 追加发现、正式Plan冻结、验证与成本记录：
 `/home/min/workspace/public/zaofu-evidence/20261021-plan-regen/repair-retry/`。
 仍需据真实选择事实返修、独立复核、最终对照；中间Critic通过不能代替这些验收。
+
+## 最终核验与交付
+
+追加修复提交：`a05153cb fix: expose actual verification selection in plan reviews`。
+真实追加运行完成Scan→Planner→独立Critic，正式Plan `evt-6557e6ef9305`待人工批准。
+四类规划问题在正式包中关闭；27任务/482 AC/69命令/425测试条目，产品测试仍NOT_RUN。
+与中间Plan相比25事件用例、48事务用例、149 T14及29待决项全部原样保留。
+独立Critic通过后operator再次用实际选择器、正式包摘要和既有消费者核对，没有仅凭approve放行。
+任务完成仅指本轮返修与对照，不表示产品实现、成本改善或全业务泛化证明。
+
+[最终直接对照报告](../../docs/records/2026-10-21-cargo-plan-rework-comparison.md)记录改善、恢复能力、
+残留风险、全部失败/返修成本及待批链接。最终证据位于`zaofu-evidence/20261021-plan-regen/phase-fix/`。
+评估runtime/tmux已停止，未批准Plan、未运行Impl，主dev/8001未部署修改。
+收尾文档增量验证：`dev-verify run --base a05153cb`为8 passed，diff空白检查通过。
