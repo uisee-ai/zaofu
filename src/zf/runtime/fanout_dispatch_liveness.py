@@ -198,7 +198,29 @@ class FanoutDispatchLivenessMixin:
     def _reader_dispatch_lost_event_after(
         role_events: list[tuple[int, ZfEvent]],
         dispatch_index: int,
+        *,
+        events: list[ZfEvent],
+        dispatch_event: ZfEvent,
     ) -> ZfEvent | None:
+        # A protocol correction continues this exact attempt. Its source turn's
+        # stop is no longer evidence that the child disappeared. A later stop
+        # or transport loss still follows the existing bounded recovery path.
+        original = dispatch_event.payload
+        identity = {
+            "operation_id": str(original.get("operation_id") or ""),
+            "request_hash": str(original.get("request_hash") or ""),
+            "dispatch_id": str(original.get("run_id") or original.get("dispatch_id") or ""),
+            "role_instance": str(original.get("role_instance") or ""),
+        }
+        if all(identity.values()):
+            for index in range(len(events) - 1, dispatch_index, -1):
+                event = events[index]
+                if event.type != "workflow.call.result.repair.dispatched":
+                    continue
+                if all(str(event.payload.get(key) or "") == value
+                       for key, value in identity.items()):
+                    dispatch_index = index
+                    break
         for index, event in reversed(role_events):
             if index > dispatch_index:
                 return event

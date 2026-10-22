@@ -25,9 +25,8 @@ from zf.runtime.call_result_adapters import (
     adapt_control_result_for_operation,
 )
 from zf.runtime.call_result_correction import (
-    build_correction_briefing,
+    dispatch_call_result_correction,
     repair_instruction,
-    wait_for_source_turn_stop,
 )
 from zf.runtime.call_result_envelope import (
     envelope_identity_key,
@@ -903,58 +902,6 @@ def result_protocol_mode(config: Any, payload: Mapping[str, Any] | None = None) 
     mode = str(raw or "shadow").strip().lower()
     return mode if mode in VALID_PROTOCOL_MODES else "shadow"
 
-
-def dispatch_call_result_correction(
-    runtime: Any,
-    *,
-    source_event: ZfEvent,
-    outcome: CallResultAdmissionOutcome,
-) -> bool:
-    """Continue the same resident provider session with a minimal correction."""
-
-    if not outcome.repair_requested or not outcome.correction_ref:
-        return False
-    payload = source_event.payload if isinstance(source_event.payload, dict) else {}
-    actor = str(payload.get("role_instance") or payload.get("role") or source_event.actor or "")
-    role = next((
-        item for item in getattr(runtime.config, "roles", [])
-        if actor in {item.instance_id, item.name}
-    ), None)
-    if role is None:
-        return False
-    wait_for_source_turn_stop(
-        runtime,
-        source_event=source_event,
-        actor=actor,
-        backend=str(getattr(role, "backend", "") or ""),
-    )
-    task_id = str(source_event.task_id or payload.get("task_id") or "")
-    briefing_dir = Path(runtime.state_dir) / "briefings"
-    briefing_dir.mkdir(parents=True, exist_ok=True)
-    path = briefing_dir / f"{role.instance_id}-{task_id or 'call'}-result-correction-{outcome.repair_round}.md"
-    path.write_text(
-        build_correction_briefing(
-            state_dir=Path(runtime.state_dir),
-            source_payload=payload,
-            task_id=task_id,
-            operation_id=outcome.operation_id,
-            request_hash=outcome.request_hash,
-            correction_ref=outcome.correction_ref,
-            issues=outcome.issues,
-        ),
-        encoding="utf-8",
-    )
-    from zf.runtime.injection import build_task_prompt
-
-    prompt = build_task_prompt(role.instance_id, path)
-    context = runtime._dispatch_context(
-        role=role,
-        briefing_path=path,
-        task_id=task_id,
-        trace_id=source_event.correlation_id,
-    )
-    runtime._send_transport_task(role.instance_id, path, prompt, context)
-    return True
 
 
 def _semantic_verdict(control_result: Mapping[str, Any]) -> str:

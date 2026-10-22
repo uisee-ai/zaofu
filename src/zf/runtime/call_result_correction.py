@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import time
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:
+    from zf.runtime.call_result_admission import CallResultAdmissionOutcome
 
 from zf.core.events.model import ZfEvent
 
@@ -96,7 +99,7 @@ def wait_for_source_turn_stop(
     timeout_seconds: float = 30.0,
     poll_interval: float = 0.1,
 ) -> bool:
-    """Wait until a provider stop hook makes correction input safe."""
+    """Wait for a stop hook or durable provider close after this result."""
 
     stop_type = {
         "codex": "codex.hook.stop",
@@ -107,8 +110,8 @@ def wait_for_source_turn_stop(
         return True
 
     deadline = time.monotonic() + max(0.0, timeout_seconds)
-    source_seen = False
     while True:
+        source_seen = False
         try:
             events = event_log.read_all()
         except Exception:
@@ -119,7 +122,11 @@ def wait_for_source_turn_stop(
                 continue
             if (
                 source_seen
-                and event.type == stop_type
+                and (event.type == stop_type or (
+                    event.type == "provider.turn.closed"
+                    and event.payload.get("backend") == backend
+                    and bool(event.payload.get("turn_id"))
+                ))
                 and str(event.actor or "") == actor
             ):
                 return True
@@ -128,6 +135,74 @@ def wait_for_source_turn_stop(
         if time.monotonic() >= deadline:
             return False
         time.sleep(max(0.01, poll_interval))
+
+
+def dispatch_call_result_correction(
+    runtime: Any,
+    *,
+    source_event: ZfEvent,
+    outcome: CallResultAdmissionOutcome,
+) -> bool:
+    """Continue the same resident provider session with a minimal correction."""
+
+    if not outcome.repair_requested or not outcome.correction_ref:
+        return False
+    payload = source_event.payload if isinstance(source_event.payload, dict) else {}
+    actor = str(payload.get("role_instance") or payload.get("role") or source_event.actor or "")
+    role = next((
+        item for item in getattr(runtime.config, "roles", [])
+        if actor in {item.instance_id, item.name}
+    ), None)
+    if role is None:
+        return False
+    if not wait_for_source_turn_stop(
+        runtime,
+        source_event=source_event,
+        actor=actor,
+        backend=str(getattr(role, "backend", "") or ""),
+    ):
+        return False
+    task_id = str(source_event.task_id or payload.get("task_id") or "")
+    briefing_dir = Path(runtime.state_dir) / "briefings"
+    briefing_dir.mkdir(parents=True, exist_ok=True)
+    path = briefing_dir / f"{role.instance_id}-{task_id or 'call'}-result-correction-{outcome.repair_round}.md"
+    path.write_text(
+        build_correction_briefing(
+            state_dir=Path(runtime.state_dir),
+            source_payload=payload,
+            task_id=task_id,
+            operation_id=outcome.operation_id,
+            request_hash=outcome.request_hash,
+            correction_ref=outcome.correction_ref,
+            issues=outcome.issues,
+        ),
+        encoding="utf-8",
+    )
+    from zf.runtime.injection import build_task_prompt
+
+    prompt = build_task_prompt(role.instance_id, path)
+    context = runtime._dispatch_context(
+        role=role,
+        briefing_path=path,
+        task_id=task_id,
+        trace_id=source_event.correlation_id,
+    )
+    runtime._send_transport_task(role.instance_id, path, prompt, context)
+    runtime.event_writer.append(ZfEvent(
+        type="workflow.call.result.repair.dispatched",
+        actor="zf-cli", task_id=task_id or None,
+        causation_id=source_event.id, correlation_id=source_event.correlation_id,
+        payload={
+            "schema_version": "call-result-repair-dispatch.v1",
+            "workflow_run_id": str(payload.get("workflow_run_id") or source_event.correlation_id or ""),
+            "operation_id": outcome.operation_id, "request_hash": outcome.request_hash,
+            "dispatch_id": str(payload.get("dispatch_id") or payload.get("run_id") or ""),
+            "role_instance": role.instance_id, "source_event_id": source_event.id,
+            "repair_round": outcome.repair_round,
+            "correction_ref": dict(outcome.correction_ref),
+        },
+    ))
+    return True
 
 
 def _result_submit_command(
@@ -157,6 +232,7 @@ def _result_submit_command(
 
 __all__ = [
     "build_correction_briefing",
+    "dispatch_call_result_correction",
     "repair_instruction",
     "wait_for_source_turn_stop",
 ]

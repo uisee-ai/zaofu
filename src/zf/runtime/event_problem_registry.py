@@ -2830,6 +2830,7 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             )
             for event_type in (
                 "workflow.call.result.reported",
+                "workflow.call.result.repair.dispatched",
                 "workflow.call.result.admitted",
                 "workflow.operation.requested",
                 "workflow.operation.reserved",

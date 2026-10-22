@@ -287,6 +287,10 @@ _DURABLE_CALL_RESULT_EVENTS: dict[str, dict[str, Any]] = {
         "envelope_ref", "control_result_ref", "correction_ref", "issues",
         "repair_round", "repair_cap", "semantic_attempt_incremented",
     ),
+    "workflow.call.result.repair.dispatched": _req(
+        "schema_version", "workflow_run_id", "operation_id", "request_hash",
+        "dispatch_id", "role_instance", "source_event_id", "repair_round", "correction_ref",
+    ),
     "workflow.call.result.admitted": _req(
         "schema_version", "workflow_run_id", "operation_id", "request_hash",
         "admission_status", "mode", "envelope_ref", "control_result_ref",
