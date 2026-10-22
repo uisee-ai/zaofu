@@ -1077,7 +1077,9 @@ def build_run_manager_projection(
         events,
         config=config,
     )
-    failure_closeout_actions = _pending_failure_closeout_activation_actions(events)
+    failure_closeout_actions = _pending_failure_closeout_activation_actions(
+        events, workflow_run_id=current_run_id,
+    )
     channel_reply_actions = []
     for action in pending_channel_reply_exhausted_actions(events):
         if _action_seen(events, action):
@@ -8573,10 +8575,20 @@ def _run_has_recent_worker_activity(
     return (latest - latest_worker).total_seconds() < grace_seconds
 
 
-def _pending_failure_closeout_activation_actions(events: list[ZfEvent]) -> list[dict[str, Any]]:
+def _pending_failure_closeout_activation_actions(
+    events: list[ZfEvent], *, workflow_run_id: str = "",
+) -> list[dict[str, Any]]:
     if _current_run_completed_closeout(events) is not None:
         return []
     if _autoresearch_inflight_request_ids(events):
+        return []
+    # Silence is not an operation terminal. Promoting diagnostic backlogs must
+    # not block the goal and cancel a live planning/rework operation. Its own
+    # budget, lease and recovery paths remain responsible for settling it.
+    from zf.runtime.workflow_operation import reduce_workflow_operations
+
+    operations = reduce_workflow_operations(events, workflow_run_id=workflow_run_id)
+    if any(row["status"] == "running" for row in operations.values()):
         return []
     # T1 (2026-07-08 E2E): defer owner escalation while the run is actively
     # progressing. failure-closeout is the common chokepoint for premature
