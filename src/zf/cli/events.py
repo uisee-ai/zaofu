@@ -63,6 +63,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     events_parser = subparsers.add_parser("events", help="Query events")
     events_sub = events_parser.add_subparsers(dest="events_command")
     events_parser.add_argument("--type", type=str, default=None, help="Filter by type")
+    events_parser.add_argument("--actor", default=None, help="Filter by exact actor")
+    events_parser.add_argument("--task", default=None, help="Filter by exact task ID")
+    events_parser.add_argument("--id", dest="event_id", default=None, help="Filter by exact event ID")
     events_parser.add_argument("--last", type=int, default=None, help="Show last N events")
     events_parser.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     events_parser.add_argument(
@@ -417,7 +420,15 @@ def run_events(args: argparse.Namespace) -> int:
     except EventSigningConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
-    events = event_log.query(type=args.type, last=args.last)
+    events = event_log.query(
+        type=args.type, actor=getattr(args, "actor", None), task_id=getattr(args, "task", None),
+    )
+    event_id = getattr(args, "event_id", None)
+    if event_id is not None:
+        events = [event for event in events if event.id == event_id]
+    if args.last is not None:
+        events = events[-args.last:]
+    event_log.close()
 
     if getattr(args, "json", False):
         from zf.cli.output import print_result

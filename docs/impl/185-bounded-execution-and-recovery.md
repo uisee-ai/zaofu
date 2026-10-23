@@ -305,3 +305,22 @@ PRD返修Critic `evt-af4d646ec77d` 明确评审需求覆盖、依赖、CLI装配
 Verify派发前已更新并记录hash，不称整轮冻结于单一代码/技能提交。
 
 本次 CLI 身份修复及 legacy candidate-verify 边界的自动闭包：`dev-verify.py run --base dev --paths <本次六个源码/测试/技能路径> --tests tests/test_plan_artifact_package.py --workers 2`，8 个测试文件，81 passed / 1 skipped（外部可选技能源缺失）。此前 RED 1 项、定向 GREEN 36 项、候选 owner 12 项均保留在 `post-plan-*` / `candidate-owner-boundary.log`；没有执行 full pytest 或覆盖率验收。
+
+## 验证取证查询收敛
+
+真实Issue Verify读取工具历史时遇到约97k tokens的嵌套查询输出。已有EventLog支持actor/task
+筛选，但CLI未暴露，Agent只能先输出大量历史再自行过滤。现在`zf events`增加`--actor`、
+`--task`和`--id`，均精确匹配且先筛选再取`--last`；原输出envelope及完整事件正文不变，
+不存在或与其他条件冲突的ID返回空集合，不伪造证据。方法skill建议优先定位原始工具事件，
+避免递归读回查询自身。CLI RED复现后，55 passed / 1 skipped的查询/JSON/技能闭包通过。
+这不改变权限、Run状态或验收结论，也不保证单条被查询事件本身没有大payload。
+
+当前独立候选检查：Issue `ae671604` 6项通过；PRD `8691ff47` 65项通过，涵盖API/真实CLI、
+错误分支、输入不变和原范围。已审阅所有产品源码、测试与README。检查脚本摘要在候选完成前
+登记，外部报告不进入运行时裁决；Issue Verify已admitted，后置discovery和PRD验收仍在运行。
+证据：续批`{critic-rerun/issue,shape-rerun/prd}/complete-oracle`、`manual-source-review.json`。
+
+事件查询补充：24项CLI主入口/trace/EventLog读取回归通过；真实CLI对`evt-44ab90920ccb`
+按actor+ID精确查询返回1738 bytes完整原事件。自动planner因main注册依赖选出103文件，
+建议broad deterministic及无关锁serial；按仓库禁止仅按数量触发full suite规则显式跳过，
+采用上述55+24项定向闭包（并非唯一总数），`event-query-verify-receipt.json`记录跳过层。
