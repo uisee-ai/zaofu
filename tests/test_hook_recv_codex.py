@@ -839,6 +839,31 @@ def test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch(
         "uuid-refactor-plan-result",
         operation="Update",
     ) == 0
+
+    # A plan producer may write workdir-relative artifacts and then update the
+    # exact signed result scratch in one provider shell turn. The legacy root
+    # heuristic must allow that compound operation while the scope guard still
+    # protects all provider-native path writes.
+    compound = (
+        "python3 - <<'PY'\n"
+        "from pathlib import Path\n"
+        "Path('artifacts/plan/task_map.json').write_text('{}')\n"
+        f"Path('{scratch}').write_text('{{}}')\n"
+        "PY"
+    )
+    assert _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-refactor-plan-compound",
+            "transcript_path": str(transcript),
+            "cwd": str(workdir),
+            "tool_name": "Bash",
+            "tool_input": {"command": compound},
+        },
+        monkeypatch=monkeypatch,
+    ) == 0
     assert not [
         event
         for event in event_log.read_all()

@@ -223,6 +223,52 @@ def _path_is_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _absolute_root_path_mentions(command: str, root: Path) -> list[Path]:
+    """Extract explicit paths rooted at ``root`` from a shell command.
+
+    The legacy shell guard only has a conservative string heuristic. Keep that
+    heuristic fail-closed for dynamic or ambiguous commands, but recognize the
+    one signed state-dir path that a provider is allowed to update alongside
+    workdir artifacts. This is deliberately limited to simple path characters;
+    shell expansion and computed paths remain blocked.
+    """
+
+    root_text = str(root.resolve(strict=False)).rstrip("/")
+    if not root_text:
+        return []
+    pattern = re.compile(
+        re.escape(root_text) + r"(?:/[A-Za-z0-9_.-]+)+"
+    )
+    paths: list[Path] = []
+    for raw in pattern.findall(command):
+        path = Path(raw)
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _command_uses_only_authorized_result_scratch(
+    *,
+    command: str,
+    project_root: Path,
+    state_dir: Path,
+    event_log: EventLog,
+    actor: str,
+) -> bool:
+    """Allow a compound writer command only for its exact signed scratch path."""
+
+    mentions = _absolute_root_path_mentions(command, project_root)
+    return bool(mentions) and all(
+        is_authorized_result_scratch_target(
+            state_dir,
+            event_log,
+            actor=actor,
+            target=path,
+        )
+        for path in mentions
+    )
+
+
 def is_authorized_result_scratch_target(
     state_dir: Path,
     event_log: EventLog,
@@ -293,6 +339,13 @@ def evaluate_workdir_write_guard(
             bash_command_looks_mutating(command)
             and str(project_root.resolve(strict=False)) in command
             and str(assigned_root.resolve(strict=False)) not in command
+            and not _command_uses_only_authorized_result_scratch(
+                command=command,
+                project_root=project_root,
+                state_dir=state_dir,
+                event_log=event_log,
+                actor=actor,
+            )
         ):
             offending.append(str(project_root.resolve(strict=False)))
     if not offending:
