@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 184 · 真实验证发现的三项边界修复
 
@@ -11,3 +11,8 @@
 Kanban 真实取消 -> verify: 公共 turn 映射实际 attempt，先持久化取消再停止进程；错误线程拒绝；真实 Codex 进程已停止，重建应用不复活且无 Task 副作用。
 
 证据和测试见 `docs/impl/184-live-validation.md`。原生 tmux 接收确认和完整产品交付仍在原 active 任务中，不属于本项已验证结论。
+
+## 关闭记录
+
+提交：`810c737d fix: close intake validation and cancellation boundary gaps`。
+验证：配置/调用闭包 104 passed；Channel 73 passed；取消调用闭包 16 passed，补充 2 passed，Store/路由 31 passed；最终 Web 检查、51 sentinel、10 flow smoke 通过；真实 Codex 取消及两项原失败重放通过。

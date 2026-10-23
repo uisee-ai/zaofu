@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 184 · 真实语义选路
 
@@ -19,3 +19,8 @@
 首轮 9/12；补齐真实源码后 12/12；修复配置边界后，在预检 GO 的标准混合目录和候选源码上第三轮 12/12。
 标签、评分器、请求模型 `gpt-6-astra/high` 不变。三轮原始输出和用量均保留；不据此宣称产品已交付。
 证据根：`/home/min/workspace/public/zaofu-evidence/184-live-20261023T120000Z/`。
+
+## 关闭记录
+
+提交：`810c737d fix: close intake validation and cancellation boundary gaps`。
+验证：真实 Provider 三轮 9/12、12/12、12/12；原始报告及候选源码限制均已记录；未宣称交付通过。
