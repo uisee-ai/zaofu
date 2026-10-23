@@ -192,3 +192,36 @@ Issue新轮次于18:11:47 UTC真实关闭triage pane，旧PID505647消失。监�
 本修复定向91项通过；扩展CLI调用者暴露dry-run终止后仍报告存活及未启动slot终止问题，
 已在模拟transport/layout状态中修复，不绕过真实停止确认。最终相关CLI/transport/skill回归65项通过，
 真实tmux 3项通过（33项非host未选），sentinel51项通过；此前6项及1项失败日志保留。
+
+## 有界工件真实交付通过，恢复单独验收
+
+执行代码 `36832cdc`，真实 Kanban Task `TASK-6E4E2C` / Run
+`workflow-58f22117f8de105d` 于18:36:14 UTC通过Kernel完成门禁，规范TaskStore状态为done。
+真实Codex执行者提交报告，另一独立Codex验证者读取全部必需证据后签收；外部算术复核与人工
+逐项审阅确认原序列、排序、数量4、总和6、均值/中位数1.5、计算步骤和空序列说明符合需求。
+重复启动批准没有重复invoke，执行者没有自评完成。证据位于续批目录
+`recovery/bounded/{terminal-evidence,external-report-check}.json`。
+
+本轮原计划关闭验证者pane，但测试脚本错误地按独立worktree路径定位共用项目目录的reader，
+在注入前抛出StopIteration；没有真实注入故障，**只算正常交付通过，不算恢复通过**。
+修正测试脚本为按隔离会话内的角色标识和项目路径共同定位，再以相同配置/预算/需求重跑。
+原报告、失败注入日志及Run均保留。最终有界执行/恢复确定性E2E为8 passed
+（`recovery-mock-final.log`）；不冒充真实恢复。
+
+Kimi实际HTTP缺环境案例返回`kimi-headless-canary command is unavailable`，没有创建Task、
+启动Workflow或静默fallback；证据`kimi-missing/result.json`。这仅证明缺CLI负分支，
+不代替Kimi模型正向、native子树或跨Provider接续验证。
+
+## PRD 产品验收规格的完整字段提示
+
+适配后的PRD `TASK-34EFCB` 双扫描通过，Planner生成保留11项AC的三任务串行计划，但仍在
+740.602秒、24个usage samples、2073256/2000000 tokens处阻断，未进入Critic/实施。
+其中1962880为缓存读取tokens，仍按既定计量累计。实际预检先报告旅程缺少title，修复后又
+报告断言缺少assertion_id/observation_kind；原提示只列概念，未完整列出嵌套机器字段。
+证据`adaptive/prd/validation-errors.json`保留两次实际诊断，不把已写计划当作交付。
+
+已在实际Plan派发/重试提示中补一个完整形状示例，明示必须换成当前需求语义、不得作为证据；
+canonical `zf-prd-plan-synth` skill及两份分发同步列出旅程/断言的全部必填字段和枚举。
+没有改变schema、必读、预算、独立Critic或验收规则。实际briefing的示例经Kernel身份绑定后
+交由现有产品验收validator验证：先RED复现，30项定向及31项Plan/triage/PRD/refactor
+调用者闭包通过。预算失败保留；后续真实运行才能证明本改进的交付效果。

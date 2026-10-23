@@ -73,17 +73,17 @@
 | B15 | 同路线预算/权限/门禁改变后的旧批准，CLI 和 Web | `test_workflow_policy_admission_mock_e2e` | 6 个交叉用例通过，零 invoke |
 | B16 | profile/允许参数复用、配置候选、批准、CAS、并发修改、非法候选 | `test_workflow_config_apply`、`test_task_workflow_plans` | 确定性通过；不证明所有 Flow 自动重配 |
 | B17 | 消费者旧配置、缺/坏快照、已加载快照、UI 变化 | `test_workflow_config_consumer`、`test_workflow_invoke_pattern_bridge` | 拒绝或准入通过；不更新既有运行 |
-| B18 | Task Map 后发现初评不适配 → 受控修订 | readiness/planner skill、真实 Planner | 方法已补；尚无真实修订闭环证据 |
+| B18 | Task Map 后发现初评不适配 → 受控修订 | readiness/planner skill、真实 Planner、续批 synthesis caller | 已绑定 Task Map/有效策略/代际；真实初评配置 apply/CAS 与新消费者通过，Task Map 后修订闭环仍待验证 |
 | B19 | 已受理但未启动、后端选择保留、批准后跟踪 | Docker `workflow-start-receipt`、`workflow-proposal-page` | 浏览器结果单列；含 API fixture/mocked projection |
-| B20 | 超时/退出、session 丢失、Kernel 重启、恢复次数耗尽 | task-attempt/recovery mock E2E、provider-stop tests | 已有确定性合同通过；新通用单 Agent 接手未实现 |
+| B20 | 超时/退出、session 丢失、Kernel 重启、恢复次数耗尽 | task-attempt/recovery mock E2E、provider-stop tests、续批 tmux host | 已补终止确认及消失 pane 恢复；真实 Issue 故障暴露的缺陷已修，3 项 host 通过；真实 Provider 自动接续仍待验证 |
 | B21 | 迟到成功、过期 dispatch、重复终结、语义失败归属 | `runtime/test_late_success_recovery`、`test_task_attempt_recovery` | 确定性通过 |
 | B22 | Channel synthesis/evaluation 取消、进程丢失后恢复、不复活 | `test_channel_synthesis_recovery`、`test_web_headless_recovery`、Channel recovery mock E2E | 确定性/模拟通过；旧 184 真实取消证据不冒充本轮新测 |
 | B23 | Provider 切换、旧 run、重复切换、次数上限 | `test_execution_policy_routing` | 受控路由及 mock caller 通过；未做真实跨 Provider 接续 |
 | B24 | 预算耗尽 | provider-stop tests、实际 Issue | 确定性保护通过；真实交付失败按失败记录 |
 | B25 | 写入后结果未知、外部副作用未知 | 既有 workflow unknown-delivery 边界 | 本轮未单独真实故障注入，不宣称 exactly-once |
-| B26 | 通用 bounded single 的启动/重复/取消/重启/不合格结果 | backlog 03 | 未实现，未签收 |
+| B26 | bounded single 的启动/重复/取消/重启/不合格结果 | backlog 03、bounded mock E2E、真实 TASK-6E4E2C | 工件交付入口已实现；确定性分支及真实执行者→独立验证→Kernel完成→TaskStore done通过；不是通用源码 writer，真实故障恢复另计 B20 |
 | B27 | native delegated 的权限、子树取消、后台未收敛、唯一根结果 | E0 capability/profile 测试；backlog 06 | E0 shadow 合同通过；实际协作闭环未实现 |
-| B28 | Kimi headless/native、跨 Provider State Packet 接续 | 本机 Kimi 源码检查；backlog 05/06 | CLI 不可用且 adapter 缺失；未验证，不升级能力声明 |
+| B28 | Kimi headless/native、跨 Provider State Packet 接续 | 本机 Kimi 源码检查；backlog 05/06、canary HTTP/process tests | 只读 tool-free canary 已接入实际 HTTP；15 项模拟进程测试通过，真实缺 CLI 分支明确失败且无 Task 副作用。Kimi 正向及跨 Provider 未实测，不升级能力声明 |
 
 ## 验证层与命令
 

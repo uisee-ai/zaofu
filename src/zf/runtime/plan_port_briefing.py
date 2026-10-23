@@ -32,6 +32,18 @@ def plan_port_contract_lines(*, flow_kind: str = "") -> list[str]:
         "with observable assertions, and `provider_qualification`. Do not "
         "invent workflow run, plan revision, or task-map generation; the Kernel "
         "binds those identities while building the current Plan Artifact Package.",
+        "Product Acceptance shape example (replace example semantics with the "
+        "confirmed requirement; this is not evidence): "
+        "`{\"logical_name\":\"product_acceptance_spec\","
+        "\"schema_version\":\"product_acceptance_spec.v1\",\"body\":{"
+        "\"assembly_owner\":\"ASSEMBLY\",\"entrypoints\":[{"
+        "\"entrypoint_id\":\"cli\",\"start_command\":\"python -m app\","
+        "\"health_check\":\"python -m app --help\",\"owner\":\"ASSEMBLY\"}],"
+        "\"user_journeys\":[{\"journey_id\":\"J1\",\"title\":\"Run the application\","
+        "\"mandatory\":true,\"verification_tier\":\"e2e\",\"assertions\":[{"
+        "\"assertion_id\":\"A1\",\"statement\":\"The actual command produces the required output\","
+        "\"observation_kind\":\"cli\"}]}],"
+        "\"provider_qualification\":{\"required_for_goal\":false,\"providers\":[],\"ttl_seconds\":0}}}`",
     ]
     if str(flow_kind or "").strip().lower() == "issue":
         lines.append(

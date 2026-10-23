@@ -3343,6 +3343,17 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert "tier `static` or `runtime`" in briefing
     assert "required Plan inputs/outputs: `issue_spec`, `task_map`, `product_acceptance_spec`, `source_index`" in briefing
     assert "do not rewrite intake" in briefing
+    # Validate the nested authoring example from the actual dispatch, after
+    # adding only the identities that the Kernel binds at admission.
+    example_line = next(line for line in briefing.splitlines()
+                        if "Product Acceptance shape example" in line)
+    example = json.loads(example_line.split("`", 1)[1].rsplit("`", 1)[0])
+    from zf.runtime.product_acceptance import validate_product_acceptance_spec
+    validate_product_acceptance_spec({
+        **example["body"], "schema_version": example["schema_version"],
+        "workflow_run_id": "run-test", "flow_kind": "issue",
+        "plan_revision": "r1", "task_map_generation": "g1",
+    })
 
 
 def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
