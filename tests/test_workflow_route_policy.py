@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -29,7 +30,7 @@ def test_catalog_binds_actual_pipeline_mode(kind, monkeypatch):
     assert route["execution_policy"]["rollout"] == "explicit_canary"
 
 
-@pytest.mark.parametrize("change", ["permission", "budget", "verification", "approval"])
+@pytest.mark.parametrize("change", ["permission", "budget", "verification", "approval", "context_scope"])
 def test_start_preview_rejects_changed_execution_policy(tmp_path, change):
     config = load_config(ROOT / "zf.yaml")
     TaskStore(tmp_path / "kanban.json").add(Task(
@@ -46,6 +47,9 @@ def test_start_preview_rejects_changed_execution_policy(tmp_path, change):
     assert preview["ok"], preview
     if change == "permission":
         next(r for r in config.roles if r.name == "source_researcher").permission_mode = "restricted"
+    elif change == "context_scope":
+        role = next(r for r in config.roles if r.name == "source_researcher")
+        role.lifecycle = replace(role.lifecycle, mode="on_demand", reader_context_scope="dispatch")
     elif change == "budget":
         config.global_budget_usd = 0.1
     elif change == "verification":

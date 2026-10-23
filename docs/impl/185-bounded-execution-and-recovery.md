@@ -61,6 +61,40 @@ Planner briefing 同时列出当前 profile 所要求的 Plan 产物，避免只
 - 从上一批真实 Issue 日志复现 `test_path_prefix: ./` 误拒绝根目录测试文件的问题，
   修正路径规范化。没有扩大预算或减少原验收条款。
 
+## Reader 会话边界（2026-10-23 续批）
+
+上一轮 PRD 重规划使用原 Planner 会话，最终触发 operation token 上限。日志同时存在
+多次完整工件读取和大块写入，不能把超额单独归因于会话复用。默认仍按 workflow 复用，
+新增显式 `roles[].lifecycle.reader_context_scope: dispatch` 供新运行选择：
+
+```yaml
+roles:
+  - name: planner
+    role_kind: reader
+    # 其余已注册角色字段省略；手写角色会完整覆盖同名 controller 角色。
+    lifecycle:
+      mode: on_demand
+      preserve_session: true
+      preserve_workdir: true
+      reader_context_scope: dispatch
+```
+
+示例是已注册 reader 的配置片段，不是独立可运行配置。仅 on-demand reader 可选择
+`dispatch`；其他生命周期或 writer 配置被拒绝。生成 lane 的 reader 可通过
+`roleDefaults.lifecycleByStage.verify` 配置，不能在含 writer 的全局 lifecycle 默认值中
+开启。`workflow` 是缺省值；`preserve_session` 仍适用于当前边界内的休眠恢复。
+
+真实 fanout dispatchability 入口使用稳定 `run_id` 作为 dispatch 身份；没有 Task ID 的
+synth 仍按 trace 绑定，缺失 dispatch 身份或 Task/trace 范围时拒绝派发。同一 dispatch
+的协议修正和发送重试保留上下文，新 dispatch 等待旧 provider turn、child、task 全部
+结算，再终止旧进程并复查停止结果，之后才能清理/轮换会话。旧进程仍存活或状态未知
+时，保留旧绑定，不启动替代。旧记录缺少 dispatch 绑定时保守轮换一次。会话切换保留
+工作目录，必需完整工件仍由已有输入合同约束；不以 shadow delta 替代权威输入。
+
+这项配置进入有效执行策略摘要，改变后旧启动预览不能继续批准。需在新 Run 前选择，
+或走已有配置修订及重新批准；禁止改运行中的冻结配置。它不等于源码 single-agent
+接替、跨 Provider 恢复完成，也不保证预算内通过。真实收益要由新运行测量。
+
 ## Kimi root canary
 
 增加显式后端 `kimi-headless-canary`，接入现有 Web headless caller。可使用
@@ -453,3 +487,17 @@ State Packet、来源读取和受控会话接续，验证完整AC与原始来源
 watcher/Web/tmux及项目cwd进程均停止；543个脱敏归档成员逐项校验摘要后清理临时根。
 证据：`reviewed-prd/prd/browser-live/{probe-verdicts,live-board-result}.json`、
 `terminal-evidence.json`、`archive-manifest.json`与`cleanup.json`。
+
+
+## 2026-10-23 Reader 边界续批验证
+
+证据目录：`/home/min/workspace/public/zaofu-evidence/185-context-20261023T225800Z/`。
+停机确认缺口、新策略未实现、共享默认值别名和无Task synth范围分别保留RED日志。
+修复后18文件闭包720 passed；最后无Task分支改动追加5文件调用者/Generic mock E2E
+208 passed；最终sentinel51 passed、三流mock E2E 10 passed。测试组有交集，不累计为唯一总数。选择器因共享
+配置模型保守扩展到597文件；显式领域闭包加自动sentinel/flow smoke，未运行full pytest。
+
+新真实PRD由原四个seed文件重新初始化，不恢复旧失败Run。脱敏归档中的token_budget
+字段不能作为可运行配置，数值从原freeze收据恢复并逐项比较；仍为Run 12M、operation
+2M。有效角色配置逐字段diff只有Planner/Verify的reader_context_scope变化，模型、
+角色合同、权限、预算、完整需求和五文件范围均保留。真实结果未产生前不签收新策略收益。

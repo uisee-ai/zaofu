@@ -433,6 +433,7 @@ def _parse_lifecycle(raw: Any, *, context: str) -> Any | None:
         "cooldown_seconds",
         "preserve_session",
         "preserve_workdir",
+        "reader_context_scope",
     }
     unknown = sorted(str(key) for key in raw if str(key) not in allowed)
     if unknown:
@@ -441,6 +442,7 @@ def _parse_lifecycle(raw: Any, *, context: str) -> Any | None:
 
     try:
         return RoleLifecycleConfig(
+            reader_context_scope=raw.get("reader_context_scope", "workflow"),
             mode=str(raw.get("mode") or "eager"),
             idle_seconds=float(raw.get("idle_seconds", 900.0)),
             cooldown_seconds=float(raw.get("cooldown_seconds", 180.0)),

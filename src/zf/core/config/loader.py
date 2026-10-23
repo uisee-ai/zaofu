@@ -378,7 +378,7 @@ _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
 })
 _KNOWN_ROLE_LIFECYCLE_KEYS = frozenset({
     "mode", "idle_seconds", "cooldown_seconds",
-    "preserve_session", "preserve_workdir",
+    "preserve_session", "preserve_workdir", "reader_context_scope",
 })
 
 
@@ -528,6 +528,7 @@ def _build_role_lifecycle(
     )
     try:
         return RoleLifecycleConfig(
+            reader_context_scope=data.get("reader_context_scope", "workflow"),
             mode=str(data.get("mode", "eager") or "eager").strip(),
             idle_seconds=float(data.get("idle_seconds", 900.0)),
             cooldown_seconds=float(data.get("cooldown_seconds", 180.0)),
