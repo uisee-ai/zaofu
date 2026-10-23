@@ -3,6 +3,8 @@
 本记录对应设计 184 的入口语义边界和本批四项任务。实现复用既有 Kanban 主 Agent、
 Workflow Synthesis Operation、Proposal 编译器及 Task Map 合同，没有增加第二套状态机。
 
+后续真实 Provider 验证与失败改进见 [184 真实验证记录](184-live-validation.md)。
+
 ## 行为与责任
 
 新请求的 `kind=auto` 表示待选路。Intake 只收集需求，默认 lane 为 0，

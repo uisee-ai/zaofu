@@ -505,6 +505,17 @@ class ChannelMessageActionsMixin:
                     status_code=422,
                     status="invalid_payload",
                 )
+            from zf.runtime.channel_run_owner import active_reply_for_target
+
+            unresolved = active_reply_for_target(channel, target_member_id, statuses=())
+            if unresolved:
+                return self._failed(
+                    requested=requested, action=action, requested_action=requested_action,
+                    task_id=requested.task_id, status_code=409,
+                    status="provider_delivery_unknown",
+                    reason=(f"Previous reply {unresolved['request_id']} has an unknown delivery "
+                            "outcome; inspect the original provider run before retrying synthesis"),
+                )
             request_id = (
                 _optional_str(payload.get("request_id"))
                 or _stable_control_id("synth", requested.id, channel_id, thread_id, target_member_id)

@@ -1402,6 +1402,12 @@ def _expand_product_flow_light(
     default_quality: str,
     default_delivery: str,
 ) -> dict[str, Any]:
+    if _product_acceptance_mode_param(params) == "blocking":
+        raise WorkflowProfileError(
+            f"{flow_kind} topology: light has no planner to produce "
+            "product_acceptance_spec; productAcceptanceMode: blocking "
+            "requires topology: fanout"
+        )
     entry = str(_pick(
         params, "entryTrigger", "entry_trigger", default=entry_default,
     ))

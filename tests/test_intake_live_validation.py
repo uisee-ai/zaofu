@@ -1,0 +1,43 @@
+"""Deterministic checks for the opt-in real-provider validation fixtures."""
+
+from importlib.util import module_from_spec, spec_from_file_location
+import json
+from pathlib import Path
+
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _module(name):
+    spec = spec_from_file_location(name, ROOT / "tests/e2e" / f"{name}.py")
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_live_projects_have_executable_routes_before_provider_call(tmp_path):
+    runner = _module("intake_live_validation")
+    root, evidence = tmp_path / "products", tmp_path / "evidence"
+    root.mkdir()
+    runner.prepare(root, ROOT, evidence)
+    for kind in ("issue", "prd"):
+        report = json.loads((evidence / kind / "preflight.json").read_text())
+        assert report["status"] in {"GO", "WARN"}
+        frozen = json.loads((evidence / kind / "freeze.json").read_text())
+        assert any(row["kind"] == kind and row["available"] for row in frozen["catalog"]["routes"])
+        assert frozen["config_sha256"] == runner.digest(root / kind / "zf.yaml")
+        assert not any(json.loads(line)["type"] == "workflow.invoke.requested"
+                       for line in (root / kind / ".zf-validation/events.jsonl").read_text().splitlines())
+
+
+def test_independent_oracle_rejects_seeded_counter_bug():
+    oracle = _module("intake_live_acceptance")
+    with pytest.raises(AssertionError):
+        oracle.accept("issue", ROOT / "tests/e2e/fixtures/intake-live/issue")
+
+
+def test_independent_oracle_accepts_counter_behavior(tmp_path):
+    (tmp_path / "counter.py").write_text("def advance(current, step=1):\n    return current + step\n")
+    assert _module("intake_live_acceptance").accept("issue", tmp_path) == {"passed": True, "checks": 5}
