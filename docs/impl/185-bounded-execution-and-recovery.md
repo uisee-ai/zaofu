@@ -150,3 +150,45 @@ Provider 环境检查：Claude `loggedIn=false`；Kimi CLI 不存在。跨 Provi
 
 预算方法与 bounded 合同回归18项通过，主 Agent headless caller回归64项通过，skill三份一致。
 PRD双扫描被接纳；Planner在601.79秒、929782 tokens时达到600秒上限，Run阻断，未进入写入。
+
+## 配置适配后的独立复测
+
+新隔离根目录 `/tmp/zf-185-adaptive-20261023T180000Z`；执行源代码 `89272260`。
+这不是原预算下的回归通过，旧失败及 oracle 非零退出码保存在原证据目录。
+所有候选经真实 intake/confirm、不可变配置提案、preflight、HTTP `workflow-config-apply`
+和 CAS 后，由新消费者加载，再经真实 Kanban/Channel 入口及精确启动批准。
+重复 apply 返回同一事件/回执，启动批准重放只产生一次 invoke。
+
+- bounded：原每 operation 100000 tokens 调为500000，Run250000调为1000000；
+  600秒、30samples及1500秒Run上限不变。依据是每回合约25000 tokens及提交/独立验证成本。
+- Issue：light候选被 `productAcceptanceMode: blocking` 拒绝，保留fanout/standard与全部门禁。
+  每 operation1000000调为2000000，Run3000000调为6000000；时间、采样与费用上限不变。
+- PRD：保留标准路线、五文件范围与全部验收；新PRD明确11项强制验收，原需求完整保留。
+  reasoning effort high调为medium，operation600秒/1000000 tokens调为1200秒/2000000；
+  Run1800秒/3000000调为7200秒/12000000；费用上限不变。
+
+PRD旧轮次写入拒绝的顺序审计：混合读写脚本在running时因涉及共享根目录拒绝；
+后续本地规划工件的apply_patch发生在预算终止之后。operation已正确绑定规划工件路径；
+终止后拒绝写入正确，因此没有放宽scope guard。证据 `prd-guard-order-audit.json`。
+
+Issue新轮次于18:11:47 UTC真实关闭triage pane，旧PID505647消失。监控记录dead_observed，
+但角色stuck阈值900秒大于operation600秒上限。受控CLI重启与自动恢复分开记录；
+不把人工触发的接续标成自动恢复通过。
+
+
+## 消失 pane 的恢复修复
+
+真实故障注入后的受控 `zf restart issue-triage` 失败：pane 已消失，pane-grid 的归属检查
+拒绝终止，导致无法进入接续。新实现仅在成功列举该会话所有pane、确认旧pane、角色身份及
+已知工作目录均不存在且共享角色窗口不存在无身份pane时，将终止视为幂等成功。
+查询错误、空/畸形结果、旧绑定指向另一角色或工作目录身份不明仍拒绝，不杀其他角色。
+这证明tmux管理的slot消失，不声称提供任意脱离会话的OS子进程沙箱。
+
+配置适配轮仍未完成交付：bounded执行者工件被真实接纳，独立验证者11回合502223/500000 tokens
+阻断；Issue退出后自动等待阈值过长、手动重启又遇到上述pane缺陷，最终wall-clock阻断。
+后续恢复案例将验证者配置为单独1000000 tokens profile、Run1500000，executor维持500000，
+使用medium及60秒活性阈值；原600秒/30samples/独立验收保持，不修改失败Run。
+
+本修复定向91项通过；扩展CLI调用者暴露dry-run终止后仍报告存活及未启动slot终止问题，
+已在模拟transport/layout状态中修复，不绕过真实停止确认。最终相关CLI/transport/skill回归65项通过，
+真实tmux 3项通过（33项非host未选），sentinel51项通过；此前6项及1项失败日志保留。

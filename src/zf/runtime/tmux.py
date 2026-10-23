@@ -225,6 +225,8 @@ class TmuxSession:
         issue the existing hard tmux teardown to keep layout bookkeeping
         consistent even if the process already exited.
         """
+        if self.layout.role_absence_confirmed(self, name):
+            return TmuxTerminationResult(target=f"{self.session_name}:{name}")
         target = self.layout.resolve(self, name)
         if not self.layout.target_owned_by(self, target, name):
             raise TmuxError(

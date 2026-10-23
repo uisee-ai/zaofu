@@ -265,6 +265,18 @@ def test_tmux_transport_terminate_uses_controlled_shutdown() -> None:
     assert tmux.kill_window_calls == []
 
 
+def test_dry_run_shutdown_and_spawn_model_liveness():
+    from zf.runtime.tmux import TmuxSession
+    transport = TmuxTransport(TmuxSession(dry_run=True))
+    role = RoleConfig(name="dev", backend="mock")
+    transport.spawn(role, [])
+    assert transport.is_alive("dev")
+    transport.terminate("dev")
+    assert not transport.is_alive("dev")
+    transport.spawn(role, [])
+    assert transport.is_alive("dev")
+
+
 class _SpawnLayout:
     def create_slot(self, tmux, role) -> None:  # noqa: ANN001
         return None
