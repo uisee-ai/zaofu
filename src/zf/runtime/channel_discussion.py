@@ -566,6 +566,7 @@ def advance_discussion(
                             "discussion_revision": int(current_session.get("revision") or 1),
                             "discussion_context_digest": str(current_session.get("context_digest") or ""),
                             "target_member_id": synthesizer,
+                            "prd_quality_contract": "channel-prd-quality.v1",
                             "status": "requested",
                             "reason": "ledger_converged",
                             "source": source,

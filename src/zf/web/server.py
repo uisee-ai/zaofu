@@ -8928,6 +8928,8 @@ def _web_session_cookie(request: Request) -> str | None:
 
 
 def _operator_websocket_authorized(websocket: WebSocket) -> bool:
+    if not terminal_routes._same_origin(websocket, terminal_routes.terminal_host_config(None)):
+        return False
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")

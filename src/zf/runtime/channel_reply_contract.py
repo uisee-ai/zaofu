@@ -64,6 +64,7 @@ from zf.runtime.channel_synthesis_currentness import (
     ignore_superseded_synthesis_reply as _ignore_superseded_synthesis_reply,
 )
 from zf.runtime.channel_templates import CHANNEL_TEMPLATES
+from zf.runtime.channel_prd_quality import required_prd_quality_contract, validate_prd_quality_contract
 from zf.runtime.channel_member_proposals import prepare_member_proposals, emit_member_proposals
 from zf.runtime.channel_run_owner import reply_generation_is_current
 from zf.runtime.channel_question_provenance import question_source_for_request
@@ -337,6 +338,12 @@ def _emit_synthesis_locked(
         synthesis, validation_error = expand_prd_composition(
             synthesis, channel=channel, request=request, state_dir=state_dir,
         )
+    validation_error = validation_error or validate_prd_quality_contract(
+        synthesis, required_version=required_prd_quality_contract(
+            writer.event_log.read_all(), channel_id=channel_id, thread_id=thread_id,
+            request_id=synthesis_request_id,
+        ),
+    )
     validation_error = validation_error or validate_channel_contract(
         synthesis,
         kind="synthesis",

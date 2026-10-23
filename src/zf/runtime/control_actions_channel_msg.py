@@ -550,6 +550,7 @@ class ChannelMessageActionsMixin:
                     "discussion_revision": int((channel.get("discussions", {}).get(thread_id) or {}).get("revision") or 1),
                     "discussion_context_digest": str((channel.get("discussions", {}).get(thread_id) or {}).get("context_digest") or ""),
                     "target_member_id": target_member_id,
+                    "prd_quality_contract": "channel-prd-quality.v1",
                     "status": "requested",
                     "reason": str(payload.get("reason") or "synthesis requested"),
                     "prompt": prompt,
@@ -576,6 +577,7 @@ class ChannelMessageActionsMixin:
             "text": f"@{target_member_id} {prompt}",
             "mentions": [target_member_id],
             "refs": {"synthesis_request_id": request_id, "prd_document_contract": "full.v1",
+                     "prd_quality_contract": request_event.payload.get("prd_quality_contract", ""),
                      **({"prd_source_file": source_file} if source_file else {})},
         }, created_by=f"channel-synthesis:{self.surface}")
         message = self.writer.emit(

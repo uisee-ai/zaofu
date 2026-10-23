@@ -1,5 +1,7 @@
 """Regression tests for the PRD cross-layer quality contract."""
 
+import pytest
+
 from zf.runtime.channel_prd_quality import (
     contribution_ledgers,
     validate_prd_quality_contract,
@@ -78,7 +80,53 @@ def test_contribution_ledgers_are_derived_from_bound_context_pack():
     }
 
 
-def test_evaluator_preflight_uses_the_same_quality_contract(tmp_path):
+@pytest.mark.parametrize("variant", ["omitted", "wrong_version", "valid", "legacy"])
+def test_bound_quality_contract_cannot_be_omitted(tmp_path, monkeypatch, variant):
+    import json
+    from zf.core.events import EventLog, EventWriter
+    from zf.runtime.channel_projection import project_channel
+    from zf.runtime.channel_reply_contract import emit_structured_reply_events
+
+    writer = EventWriter(EventLog(tmp_path / "events.jsonl"))
+    writer.emit("channel.created", payload={"channel_id": "ch-quality"})
+    writer.emit("channel.synthesis.requested", payload={
+        "channel_id": "ch-quality", "thread_id": "main", "request_id": "synth-1",
+        **({"prd_quality_contract": "channel-prd-quality.v1"} if variant != "legacy" else {})})
+    body = {"summary": "Incomplete new draft"}
+    if variant == "wrong_version":
+        body["quality_contract"] = "channel-prd-quality.v0"
+    elif variant == "valid":
+        body.update(_quality_body())
+        body.pop("source_attestation")
+        for field in ("consumed_contribution_refs", "canonical_cross_review_refs", "supporting_contribution_refs"):
+            body[field] = []
+    emit_structured_reply_events(
+        state_dir=tmp_path, writer=writer, channel=project_channel(tmp_path, "ch-quality"),
+        request={"thread_id": "main", "target_member_id": "synth"},
+        message={"refs": {"synthesis_request_id": "synth-1"}},
+        reply=json.dumps({"channel_synthesis": body}),
+        reply_event_id="reply-1", actor="synth", source="test")
+    events = writer.event_log.read_all()
+    if variant in {"valid", "legacy"}:
+        assert any(e.type == "channel.synthesis.proposed" for e in events)
+        return
+    assert not any(e.type == "channel.synthesis.proposed" for e in events)
+    assert any(e.type == "channel.synthesis.repair.requested"
+               and "quality_contract" in e.payload.get("contract_error", "") for e in events)
+    if variant == "omitted":
+        from types import SimpleNamespace
+        from zf.runtime import channel_synthesis_reactor
+
+        routed = []
+        monkeypatch.setattr(channel_synthesis_reactor, "_route_runtime_message", lambda host, event, message: routed.append(message))
+        repair = next(e for e in events if e.type == "channel.synthesis.repair.requested")
+        channel_synthesis_reactor.react_channel_synthesis_repair_requested(
+            SimpleNamespace(state_dir=tmp_path, event_log=writer.event_log, event_writer=writer), repair)
+        assert routed[0].payload["refs"]["prd_quality_contract"] == "channel-prd-quality.v1"
+
+
+@pytest.mark.parametrize("defect", ["contradiction", "omitted", "wrong_version"])
+def test_evaluator_preflight_uses_the_same_quality_contract(tmp_path, defect):
     import pytest
 
     from types import SimpleNamespace
@@ -113,15 +161,25 @@ def test_evaluator_preflight_uses_the_same_quality_contract(tmp_path):
         body={"verdict": "needs_owner"}, created_by="owner", source_event_id="req",
     )
     invalid = _quality_body()
-    invalid["classification"]["source_read_status"] = "partial"
+    if defect == "contradiction":
+        invalid["classification"]["source_read_status"] = "partial"
+    else:
+        invalid.pop("quality_contract")
+        invalid["classification"] = {}
+        if defect == "wrong_version":
+            invalid["quality_contract"] = "channel-prd-quality.v0"
     prd = persist_channel_prd(
         state, channel_id=channel_id, thread_id=thread_id, revision=1,
         previous_ref="", previous_digest="",
         body={"summary": "draft", "markdown": "# PRD", "synthesis": invalid},
         readiness_descriptor=readiness, created_by="owner", source_event_id="req",
     )
+    writer.emit("channel.synthesis.requested", actor="owner", correlation_id=channel_id,
+                payload={"channel_id": channel_id, "thread_id": thread_id,
+                         "request_id": "synth-quality", "prd_quality_contract": "channel-prd-quality.v1"})
     writer.emit("channel.synthesis.proposed", actor="owner", correlation_id=channel_id,
                 payload={"channel_id": channel_id, "thread_id": thread_id,
+                         "request_id": "synth-quality",
                          "prd_revision": 1, "artifact_ref": prd["ref"],
                          "artifact_digest": prd["sha256"]})
     request = writer.emit("channel.prd_evaluation.requested", actor="owner",

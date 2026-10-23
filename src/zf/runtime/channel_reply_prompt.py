@@ -128,6 +128,21 @@ def fake_channel_reply_text(
                 "freeze": True,
             },
         }
+    if "channel_synthesis" in contract and refs.get("prd_quality_contract"):
+        synthesis = contract["channel_synthesis"]
+        synthesis.update({
+            "quality_contract": refs["prd_quality_contract"],
+            "classification": {"source_read_status": "complete", "artifact_readability_status": "verified"},
+            "canonical_cross_review_refs": [],
+            "supporting_contribution_refs": _string_list(contribution_refs),
+            "permission_audit_contract": {
+                "deny_by_default": True, "event_fields": ["actor", "action"],
+                "query_fields": ["channel_id"], "retention_policy": "mock-only evidence",
+                "owner": "mock-owner",
+            },
+        })
+        for row in synthesis["requirement_coverage"]:
+            row["evidence_refs"] = [str(message.get("message_id") or "mock")]
     if "channel_synthesis" in contract and refs.get("prd_source_file"):
         contract["channel_synthesis"].pop("prd_markdown", None)
         contract["channel_synthesis"]["prd_file"] = {

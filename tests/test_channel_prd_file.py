@@ -78,8 +78,13 @@ def test_controlled_file_publication_preserves_full_body_and_requires_review(
     prompt = channel_reply_response_contract(channel, reply_request, message)
     assert selected["ref"] in prompt and "read_only" in prompt
     synthesis = {"summary": "Durable behavior", "decisions": ["Preserve full source"],
+                 "quality_contract": "channel-prd-quality.v1",
+                 "classification": {"source_read_status": "complete", "artifact_readability_status": "verified"},
+                 "permission_audit_contract": {"deny_by_default": True, "event_fields": ["actor", "action"],
+                     "query_fields": ["channel_id"], "retention_policy": "test evidence", "owner": "web"},
                  "prd_file": {k: selected[k] for k in ("ref", "sha256")},
                  "requirement_coverage": [{"id": "REQ-1", "section": "Behavior", "source_refs": [str(file)],
+                                           "evidence_refs": [selected["ref"]],
                                            "acceptance_ids": ["AC-1"], "status": "covered"}],
                  "acceptance_criteria": [{"id": "AC-1", "criterion": "Full source is preserved."}], "decision_log": []}
     if deferred:

@@ -2,7 +2,24 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterable
+
+from zf.core.events.model import ZfEvent
+
+PRD_QUALITY_CONTRACT = "channel-prd-quality.v1"
+
+
+def required_prd_quality_contract(events: Iterable[ZfEvent], *, channel_id: str,
+                                  thread_id: str, request_id: str) -> str:
+    """The durable synthesis request owns the version, including repair turns."""
+    for event in events:
+        payload = event.payload or {}
+        if (event.type == "channel.synthesis.requested"
+                and payload.get("channel_id") == channel_id
+                and str(payload.get("thread_id") or "main") == thread_id
+                and payload.get("request_id") == request_id):
+            return str(payload.get("prd_quality_contract") or "")
+    return ""
 
 
 _COMPLETE_SOURCE_STATES = {"complete", "full", "verified", "complete_verified"}
@@ -17,7 +34,7 @@ _INCOMPLETE_ARTIFACT_STATES = {
 
 
 def quality_contract_enabled(body: dict[str, Any]) -> bool:
-    if body.get("quality_contract") == "channel-prd-quality.v1":
+    if body.get("quality_contract") == PRD_QUALITY_CONTRACT:
         return True
     classification = body.get("classification")
     return isinstance(classification, dict) and any(
@@ -26,8 +43,13 @@ def quality_contract_enabled(body: dict[str, Any]) -> bool:
     )
 
 
-def validate_prd_quality_contract(body: dict[str, Any]) -> str:
+def validate_prd_quality_contract(body: dict[str, Any], *, required_version: str = "") -> str:
     """Return the first cross-layer inconsistency in a quality-enabled PRD."""
+    if required_version:
+        if required_version != PRD_QUALITY_CONTRACT:
+            return f"unsupported required quality_contract: {required_version}"
+        if body.get("quality_contract") != required_version:
+            return f"quality_contract must be {required_version} as bound by the synthesis request"
     if not quality_contract_enabled(body):
         return ""
     classification = body.get("classification")
