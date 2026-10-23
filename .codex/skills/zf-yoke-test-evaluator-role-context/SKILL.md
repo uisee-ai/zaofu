@@ -73,6 +73,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    历史大结果；确需扩大last时在调用端只输出待核验事件。核对工具结果事件的 actor、
    Run、派发因果、实际命令、输出和退出码。仅引用确实存在且属于本次验证的
    `event:<event_id>`，或该事件给出的原始输出 sidecar ref；保留截断输出的完整 sidecar。
+   核验 PRD 独立评审、Owner 确认、计划批准等前置流程证据时，注意事件可能早于 Task 创建，
+   `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
+   或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；
+   不把其他版本的评审、成员签字或仅有命令退出码当作所需批准。
    将实际发现、命令及这些引用写进已授权的 result scratch。不得虚构事件或引用其他回合，
    scratch 位于 workdir 外时，用原生 Edit/Write 或 apply_patch 更新 Kernel 声明的确切文件；
    不用 Python heredoc 或 shell 重定向写外部 scratch。Shell 的动态写入不享有该确切路径

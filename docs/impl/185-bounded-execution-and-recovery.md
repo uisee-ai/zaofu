@@ -400,3 +400,8 @@ canonical版本的synthesis request取受控快照，校验channel/thread、kind
 `output.evaluation.completed`（`evt-57c8f0b270ff`），34项来源标准全部PASS；
 独立报告明确产品验证未执行，完整报告已审阅。该证据早于Owner确认和后续Workflow启动，
 没有追补旧Run历史。来源、报告与canonical摘要记录在`reviewed-prd/prd/independent-review-audit.json`。
+
+前置流程取证方法另行澄清：PRD独立评审和Owner确认可能早于Task创建，事件task_id为空；
+按Task精确筛选后的空结果不能证明它们不存在。验证技能要求按绑定ID/ref或类型定位，
+核对channel/thread、PRD版本、计划代际和时间顺序，保留不确定结论而不借用其他版本。
+该技能在新轮Planner阶段补充，须记录Verify实际派发版本，不声称整轮冻结于c40c2239。
