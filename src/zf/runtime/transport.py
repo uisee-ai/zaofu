@@ -453,6 +453,11 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
+        paste = getattr(self.tmux, "send_paste", None)
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
+        if backend == "codex" and callable(paste):
+            paste(role_name, prompt)
+            return
         self.tmux.send_keys(role_name, prompt)
 
     def compact_context(self, role_name: str, command: str) -> bool:

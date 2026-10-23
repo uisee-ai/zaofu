@@ -35,6 +35,35 @@ def submit(state, writer, child, semantic):
     )
 
 
+def test_bounded_required_reads_cli_uses_immutable_operation_policy(tmp_path, monkeypatch, capsys):
+    from zf.cli.main import main
+    from zf.runtime.artifact_read_capability import (
+        provision_role_artifact_read_credential, bind_attempt_artifact_read_capability,
+    )
+
+    state, writer, _, _, _, _, _ = approved_runtime(tmp_path, monkeypatch)
+    child = child_for(state, "agent-execute")
+    manifest = hydrate_sidecar_ref(state, child["attempt_source_manifest"]).payload
+    token = provision_role_artifact_read_credential(
+        state, "bounded-executor", role_name="bounded-executor", provider="mock",
+    )
+    bind_attempt_artifact_read_capability(
+        state, operation_id=child["operation_id"], attempt_id=manifest["attempt_id"],
+        role_instance="bounded-executor", manifest=manifest,
+    )
+    monkeypatch.setenv("ZF_ROLE_INSTANCE", "bounded-executor")
+    monkeypatch.setenv("ZF_ROLE_NAME", "bounded-executor")
+    monkeypatch.setenv("ZF_ROLE_BACKEND", "mock")
+    monkeypatch.setenv("ZF_ARTIFACT_READ_TOKEN_FILE", str(token))
+    monkeypatch.setenv("ZF_ARTIFACT_PURPOSE", manifest.get("read_purpose", ""))
+    capsys.readouterr()
+    assert main(["artifact", "read", "--attempt", manifest["attempt_id"],
+                 "--required", "--state-dir", str(state)]) == 0
+    rows = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert len(rows) == len(child["required_reads"])
+    assert rows
+
+
 def test_cancellation_fences_late_result_and_restart(tmp_path, monkeypatch):
     from zf.runtime.orchestrator import Orchestrator
 
@@ -88,6 +117,11 @@ def test_bounded_executor_cannot_finish_without_output_or_independent_verificati
     state, writer, invoke, runtime, transport, _, store = approved_runtime(tmp_path, monkeypatch)
     assert invoke.payload["result_protocol_mode"] == "blocking"
     executor = child_for(state, "agent-execute")
+    unread = json.loads((state / executor["result_scratch_ref"]).read_text())
+    unread.update(execution_status="completed", summary="Claimed report without input consumption",
+                  outputs={"result": {"summary": "Claimed requirement review", "findings": []}})
+    with pytest.raises(ResultSubmitError):
+        submit(state, writer, executor, unread)
     consume_inputs(state, executor)
     semantic = json.loads((state / executor["result_scratch_ref"]).read_text())
     with pytest.raises(ResultSubmitError):

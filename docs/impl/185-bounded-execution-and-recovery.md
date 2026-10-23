@@ -95,3 +95,29 @@ CLI 契约来自本机 `~/workspace/kimi-code` 的 `commands.ts`、`run-v2-print
 有界路线当前沿用受信任本机 Worker 的权限基线；`native_delegation: false` 禁用 Provider 原生助手工具，但不是任意 shell 的操作系统沙箱。Kimi 的无工具 root canary 与此执行路线不同。
 
 最终入口回归125 passed；停止确认调用闭包65 passed。Web typecheck/unit、51项sentinel、10项flow smoke通过。上述均非真实 Provider 验收。
+
+## 第一轮真实失败与最小修复
+
+基线 `4bee9d93`，Codex CLI 0.163.0、gpt-6-astra/high；隔离目录
+`/tmp/zf-185-continuation-20261023T170000Z`。
+
+- Issue `TASK-1BCCC0`：建单、精确启动批准和幂等重放通过。按需角色终端收到文本，但没有
+  user_prompt_submit/session 证据；600秒 operation 上限阻断。未人工补Enter、未重复发送。
+- 有界报告 `TASK-B0417F`：真实语义选择 `agent:single:agent-execute` 并经批准派发。执行者
+  读取来源后，在188秒、6个usage samples、124640累计tokens时超过100000上限，被Kernel停止。
+  未形成通过的独立验收。缓存输入tokens仍计入既定预算，不改预算算法。
+- Channel PRD生成与Owner审阅通过，完整保留业务、CLI、错误行为、五文件范围与验证命令；
+  非目标仅网页/HTTP/外部服务/第三方依赖。Task `TASK-AE15EE` 独立启动批准通过，执行待下一版本。
+
+两项失败驱动以下改进：
+
+1. Codex任务输入采用唯一命名tmux buffer、bracketed paste（`-p -r`）和一次Enter；不增加
+   提交重试或延时。实际tmux/PTY探针验证Unicode、换行与单次提交字节完整；这不是模型验收。
+2. `zf artifact read --attempt <id> --required` 在一次CLI调用中读取Kernel声明的全部必需片段，
+   每项仍经角色凭证、路径权限和摘要检查，分别记录read ledger，不删除必读正文或放宽完成门禁。
+   禁止同时传入source/artifact/截断覆盖。briefing推荐批读，保留逐项命令用于失败或输出截断时补读。
+
+改进的CLI/读取安全、tmux、reader实际caller和bounded mock E2E闭包：237 passed；sentinel51 passed。
+第一轮真实失败及浏览器环境失败均保留原始日志，不能用后续成功覆盖。第二轮仍使用原任务预算和验收。
+
+补查发现bounded执行者原先只提供来源manifest、没有必读策略；现已在operation注册前绑定全部批准来源，完整报告缺少读取证据同样拒绝。批读同时支持事件中的任务派发策略和reader operation的不可变policy sidecar。补充实际caller/门禁回归56 passed。

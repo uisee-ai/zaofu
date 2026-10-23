@@ -372,6 +372,23 @@ class TmuxSession:
         target = self._target(window)
         self._run(["tmux", "send-keys", "-t", target, "C-u"])
 
+    def send_paste(self, window: str, text: str) -> None:
+        """Deliver one bracketed paste and one submit, without retrying input."""
+        from uuid import uuid4
+
+        target = self._target(window)
+        buffer = "zf-dispatch-" + uuid4().hex
+        self._run(["tmux", "set-buffer", "-b", buffer, "--", text])
+        try:
+            # The end-paste marker lets a TUI flush its paste buffer instead
+            # of inferring a burst of individual keystrokes from timing.
+            self._run(["tmux", "paste-buffer", "-p", "-r", "-b", buffer, "-t", target])
+            if not self.dry_run:
+                time.sleep(0.5)
+            self._run(["tmux", "send-keys", "-t", target, "Enter"])
+        finally:
+            self._run(["tmux", "delete-buffer", "-b", buffer], check=False)
+
     def capture_pane(self, window: str, *, lines: int = 3000) -> str:
         target = self._target(window)
         result = self._run(

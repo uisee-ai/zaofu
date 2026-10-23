@@ -91,8 +91,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Read one attempt input and append read evidence",
     )
     read_cmd.add_argument("--attempt", required=True, help="Attempt or dispatch id")
-    read_cmd.add_argument("--source", required=True, help="Source id from artifact list")
-    read_cmd.add_argument("--artifact", required=True, help="Artifact id from artifact list")
+    read_cmd.add_argument("--source", help="Source id from artifact list")
+    read_cmd.add_argument("--artifact", help="Artifact id from artifact list")
+    read_cmd.add_argument("--required", action="store_true", help="Read all kernel-required slices in one invocation")
     read_cmd.add_argument("--json-path", default="$", help="Supported $.field[index] selector")
     read_cmd.add_argument("--max-items", type=int, default=0)
     read_cmd.add_argument("--max-chars", type=int, default=0)
@@ -174,6 +175,12 @@ def _run_attempt_list(args: argparse.Namespace) -> int:
 
 def _run_attempt_read(args: argparse.Namespace) -> int:
     try:
+        required = getattr(args, "required", False)
+        if required:
+            if args.source or args.artifact or args.json_path != "$" or args.max_items or args.max_chars:
+                raise ValueError("--required cannot be combined with source, artifact or slice overrides")
+        elif not args.source or not args.artifact:
+            raise ValueError("artifact read requires --source and --artifact, or --required")
         context = resolve_project_context(
             explicit_state_dir=getattr(args, "state_dir", None),
         )
@@ -191,6 +198,26 @@ def _run_attempt_read(args: argparse.Namespace) -> int:
                 config=context.config,
             ),
         )
+        if required:
+            from zf.runtime.artifact_read_requirements import required_reads_for_attempt
+
+            rows = required_reads_for_attempt(
+                event_log_from_project(context.state_dir, config=context.config).read_all(),
+                args.attempt,
+                state_dir=context.state_dir, operation_id=identity["operation_id"],
+            )
+            for row in rows:
+                result = read_attempt_artifact(
+                    context.state_dir, manifest=manifest,
+                    source_id=row["source_id"], artifact_id=row["artifact_id"],
+                    json_path=row.get("json_path", "$"),
+                    actor=identity["actor"], role=identity["role"],
+                    provider=identity["provider"], purpose=identity["purpose"],
+                )
+                print(json.dumps({"source_id": row["source_id"], "artifact_id": row["artifact_id"],
+                                  "json_path": row.get("json_path", "$"), "content": result["content"]},
+                                 ensure_ascii=False))
+            return 0
         result = read_attempt_artifact(
             context.state_dir,
             manifest=manifest,
