@@ -1,6 +1,6 @@
 # 185 续批：有界工件执行、规划绑定与恢复隔离
 
-> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准 Issue 完整交付通过，PRD 仍在验收，不表示 185 全部签收。
+> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准 Issue 完整交付通过，PRD 最新轮在重规划操作预算处 blocked，不表示 185 全部签收。
 
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
@@ -415,3 +415,41 @@ canonical版本的synthesis request取受控快照，校验channel/thread、kind
 同步矩阵并保留所有产品条款与预算，尚未派发writer。拒绝和返修不是模型输入重复发送。
 Planner技能补充同类取证方法及原生文件写入说明，28 passed / 1 skipped的技能/注入
 检查通过；不增加语义Kernel门禁。后续交付仍需返修计划、独立Critic和单独批准。
+
+## 本轮最终状态：PRD 仍未交付
+
+最新`TASK-5CB69E` / `workflow-304fe8c8e9e23357`于21:51:48 UTC记录重规划
+operation预算超限，21:51:50 blocked。384秒、10个新增usage samples共2,096,853
+tokens / 2M；计量正确扣除会话基线1,476,431，不应把累计3,573,284误作本次新增量。
+费用样本unpriced，不能将0USD解释为免费或已证明美元限额有效。重规划复用了原Provider
+会话，尚不足以证明复用策略本身有缺陷；不能用忽略缓存tokens或放宽门禁制造通过。
+
+独立PRD评审34项PASS、Owner确认、启动重放幂等、扫描、首版Planner/Critic及Owner
+拒绝/重规划入口均真实发生；返修Planner确实读取了精确评审/签字事件和报告并核对摘要。
+然而返修结果未admitted，Plan未批准、writer未派发、无candidate，不能运行或声称
+本轮产品oracle通过。前两轮候选65项功能检查不替代这次未完成的流程验收。
+
+最新失败证据：`reviewed-prd/prd/failure-audit.json`；重规划前实测取证缺口、Owner拒绝、
+独立文档评审报告分别留存在同目录。`current-prd`和`shape-rerun/prd`的原失败记录保留。
+
+| 真实场景 | 已证实结果 | 未涵盖的结论 |
+| --- | --- | --- |
+| 有界报告正常执行 | Task done，完整报告独立核对通过 | 非源码交付 |
+| 验证者pane真实退出 | watchdog自动接续，同Provider独立验收后done，执行者未重做 | 非v4新attempt、非跨Provider |
+| 标准Issue | 全链路至Kernel ship，根/子Task done，候选/交付后探针与Docker看板通过 | 非其他Flow的通过证明 |
+| 文件PRD独立评审 | 真实Codex逐项34/34 PASS，版本和来源摘要绑定 | 仅文档评审，非产品通过 |
+| PRD完整交付 | 保留三轮后续失败：Run token、Verify operation token、重规划operation token | 未签收，不归档交付任务 |
+| Kimi缺环境 | 实际API明确拒绝，未建Task/invoke | 无正向Kimi/native/cross-provider证明 |
+
+下一轮必须先解决有界重规划/验证的上下文与预算可行性：使用真实用量证据评估
+State Packet、来源读取和受控会话接续，验证完整AC与原始来源不丢失，再做产品交付。
+当前没有实现“所有复杂度在固定2M operation内必然完成”的保证，也未证明自动配置变更
+能解决这一约束；相关18502/05/07/08继续active。18506的正向Kimi/Claude认证环境仍缺。
+本轮不将这些项目写成done，不以继续重复相同实验替代明确的改进条件。
+
+最新轮Docker真实浏览器在21:55:38 UTC确认仅根Task blocked、无page error、无mock。
+原交付探针等待实施子Task超时exit1，失败保留；单独状态投影检查通过，显式
+`product_delivery_passed=false`，两者没有混为成功。`simulation.done`已入账，
+watcher/Web/tmux及项目cwd进程均停止；543个脱敏归档成员逐项校验摘要后清理临时根。
+证据：`reviewed-prd/prd/browser-live/{probe-verdicts,live-board-result}.json`、
+`terminal-evidence.json`、`archive-manifest.json`与`cleanup.json`。
