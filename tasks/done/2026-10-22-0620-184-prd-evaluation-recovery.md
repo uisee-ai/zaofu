@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — d8ef5b08 fix: harden operator access and PRD evidence recovery
 
 # 184 · P1：PRD 评估失联恢复
 
@@ -62,3 +62,7 @@ PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python scripts/dev-ver
 ```
 
 自动层结果：Web typecheck + test:unit 通过；premerge sentinel 51 passed；flow smoke 10 passed。真实 provider 和浏览器 E2E 未执行，WebSocket 使用真实 ASGI 路由与模拟终端验证。
+
+## 完成结果
+
+实现 commit：`d8ef5b08 fix: harden operator access and PRD evidence recovery`。四项任务均已通过验收；验证命令与结果集中记录于 PRD 评估恢复任务。
