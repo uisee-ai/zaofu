@@ -405,3 +405,13 @@ canonical版本的synthesis request取受控快照，校验channel/thread、kind
 按Task精确筛选后的空结果不能证明它们不存在。验证技能要求按绑定ID/ref或类型定位，
 核对channel/thread、PRD版本、计划代际和时间顺序，保留不确定结论而不借用其他版本。
 该技能在新轮Planner阶段补充，须记录Verify实际派发版本，不声称整轮冻结于c40c2239。
+
+## 计划批准前的真实取证命令返修
+
+新轮Planner完成、Critic建议approve，但Owner复核实测V-07的Task全量事件查询返回
+673,209 bytes / 158条事件，缺少建单前的独立评审与Owner签字原事件。外部测量记录
+`reviewed-prd/prd/plan-evidence-query-audit.json`；没有把正文中提到事件ID当作读取原始事件。
+批准前通过现有`zf plan reject`要求仅将AC-09证据命令改成精确ID/有界类型查询，
+同步矩阵并保留所有产品条款与预算，尚未派发writer。拒绝和返修不是模型输入重复发送。
+Planner技能补充同类取证方法及原生文件写入说明，28 passed / 1 skipped的技能/注入
+检查通过；不增加语义Kernel门禁。后续交付仍需返修计划、独立Critic和单独批准。

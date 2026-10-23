@@ -55,6 +55,11 @@ authoritative when it differs from an older Skill example.
   命令拼成 `cmd1 && cmd2`;`verification` 单字符串只用于旧合同兼容。命令
   identity 包含完整字符串:必须按最终序列化后的原文可执行,不能用补转义后的
   “等价命令”代替。含多层引号/反斜杠的断言应落到本 task 拥有的测试或脚本。
+- 流程审批的 `manual_evidence` 命令按绑定事件 ID 或具体类型收集原始事件，
+  再核对版本、身份和先后顺序；不要用宽泛的 `zf events --task ... --last 1000`
+  转储代替审批证明。建单前的 PRD 评审/Owner 确认可能没有 task_id；未知的未来批准
+  使用有界类型查询及实际版本校验，不捏造 ID。将各项采集命令分别映射到同一流程 AC，
+  保留后续原始报告 ref/digest 的读取要求，避免重复加载工具历史消耗验证预算。
 - **两轴自检**:task_map 交付前对照两轴——**落闩**(每片有机械可验的
   完成闸门:命令+退出码,不是"应当工作")与**分母**(所有验收条款都
   映射到某个 task,`requirement_coverage` 无遗漏)。只报分母不落闩 =
@@ -78,6 +83,9 @@ authoritative when it differs from an older Skill example.
   relocates admitted workdir refs into canonical artifact storage and computes
   their digests. The Kernel admission gate, not your prose, decides whether the
   map is accepted.
+- 含项目根路径的来源引用只是产物数据，也可能触发动态 shell 写入门禁；优先用
+  原生 Edit/Write/apply_patch 写 workdir 产物与 Kernel 授权的确切 result scratch，
+  不把外部来源读取和本地产物写入混进一个 Python/shell 脚本，不绕过 guard。
 - Load `zf-plan-task-map-contract` before emitting the map. On incremental
   replan, also load `zf-gap-task-synth` and preserve unaffected completed tasks.
 - When Controlled Artifact Inputs include portable matrix drafts, load
