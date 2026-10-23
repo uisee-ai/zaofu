@@ -22,3 +22,11 @@ Issue -> verify: 原失败行为修复并独立测试；PRD -> verify: Planner/C
 - 未到达实现、Verify/Judge、独立产品验收，保持 active。
 
 后续：修复并验证原生终端首次输入确认 -> verify: 无人工 Enter 且有 native session/turn 接收证据；修订 PRD 非目标方法 -> verify: 原需求完整、流程限制不污染交付合同；再在冻结预算内重跑两条交付链路。
+
+## 2026-10-23 后续复测
+
+185 实施轮中，Issue triage 与 PRD scan/planner 首次输入均自动接收，没有人工 Enter；
+旧终端问题本次未复现，未擅改 transport。Channel PRD 非目标污染已修正，Owner 确认、
+完整建单、独立启动批准和重复批准幂等真实通过。Issue 仍在 operation token 预算耗尽时失败，
+未达到产品交付验收。该任务保持 active，后续以新 [逐分支验证记录](../../docs/impl/185-routing-admission-validation.md)
+和关联 185 backlog 继续追踪，旧失败记录保留。

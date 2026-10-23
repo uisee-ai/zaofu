@@ -7,6 +7,11 @@ import json
 from typing import Any
 
 from zf.core.workflow.flow_metadata import flow_metadata_for, normalize_flow_kind
+from zf.runtime.workflow_route_policy import (
+    effective_execution_policy_digest,
+    route_execution_policy,
+    route_flow_topology,
+)
 from zf.runtime.research_templates import (
     ADAPTIVE_RESEARCH_TEMPLATE,
     FIXED_RESEARCH_TEMPLATE,
@@ -199,6 +204,12 @@ def workflow_route_catalog(config: Any | None) -> dict[str, Any]:
             "available": True,
         })
 
+    policy_digest = effective_execution_policy_digest(config)
+    for route in routes:
+        route["flow_topology"] = route_flow_topology(config, route)
+        route["execution_policy"] = route_execution_policy(
+            config, route, digest=policy_digest,
+        )
     routes.sort(key=lambda item: str(item["route_id"]))
     config_digest = _catalog_digest(routes)
     return {

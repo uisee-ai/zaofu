@@ -139,6 +139,12 @@ class WorkflowStartService:
                 task_id=task_id,
             )
         requested_parameters = dict(parameters)
+        if ("authorize_channel_execution" in parameters
+                and not isinstance(parameters["authorize_channel_execution"], bool)):
+            return _failure(
+                "invalid_payload", "authorize_channel_execution must be a boolean",
+                status_code=422, task_id=task_id,
+            )
 
         task = TaskStore(self.state_dir / "kanban.json").get(task_id)
         if task is None:

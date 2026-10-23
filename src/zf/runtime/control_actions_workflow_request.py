@@ -28,13 +28,13 @@ from zf.runtime.workflow_start_inputs import (
     ensure_workflow_managed_task,
     prepare_approved_workflow_start,
 )
-from zf.runtime.channel_readiness import channel_task_execution_authorization_error
+from zf.runtime.channel_execution_approval import channel_start_authorization_error
 from zf.runtime.workflow_task_request_rotation import (
     WorkflowTaskRequestRotationError,
     apply_task_request_binding,
     fresh_task_request_origin_binding,
 )
-from zf.runtime.workflow_request_identity import project_ref, stable_request_id
+from zf.runtime.workflow_request_identity import request_source_ref, stable_request_id
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -113,8 +113,9 @@ class WorkflowRequestActionsMixin:
         objective = str(normalized.get("objective") or "")
         route = dict(preview.get("route") or {})
         workflow_task = TaskStore(self.state_dir / "kanban.json").get(task_id)
-        readiness_error = channel_task_execution_authorization_error(
-            workflow_task
+        readiness_error = channel_start_authorization_error(
+            state_dir=self.state_dir, task=workflow_task, actor=self.actor,
+            payload=payload, events=self.writer.event_log.read_all(),
         )
         if readiness_error:
             return self._failed(
@@ -289,11 +290,7 @@ class WorkflowRequestActionsMixin:
             requested.id,
             objective,
         )
-        source_ref = project_ref(
-            self.project_root,
-            self.state_dir,
-            _required_text(payload, "source_ref") or _required_text(payload, "artifact_ref"),
-        )
+        source_ref = request_source_ref(self.project_root, self.state_dir, payload)
         from zf.runtime.workflow_requests import (
             WorkflowRequestError,
             load_workflow_request,

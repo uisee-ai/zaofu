@@ -29,6 +29,7 @@ from zf.runtime.channel_workflow_authority import (
 
 TASK_WORKFLOW_PLAN_SCHEMA_VERSION = "task-workflow-plan.v1"
 TASK_WORKFLOW_PARAMETER_KEYS = frozenset({
+    "authorize_channel_execution",
     "acceptance",
     "artifact_refs",
     "backend",
@@ -381,6 +382,9 @@ def normalize_task_workflow_parameters(
     if not isinstance(raw, dict):
         return {}, "parameters must be a mapping"
     normalized_raw = dict(raw)
+    if ("authorize_channel_execution" in normalized_raw
+            and not isinstance(normalized_raw["authorize_channel_execution"], bool)):
+        return {}, "authorize_channel_execution must be a boolean"
     for alias, canonical in _PARAMETER_ALIASES.items():
         if alias not in normalized_raw:
             continue

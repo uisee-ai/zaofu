@@ -300,7 +300,10 @@ def test_chat_orchestrator_binds_agent_selected_channel_prd_plan(
                     "effect": {
                         "mode": "propose",
                         "action": "create-task",
-                        "payload": {"title": "Deliver the Channel PRD"},
+                        "payload": {"title": "Deliver the Channel PRD", "workflow_plan": {
+                            "options": [{"route_id": "delivery:prd:standard", "parameters": {}},
+                                        {"mode": "defer"}],
+                        }},
                     },
                 },
                 {
@@ -363,6 +366,10 @@ def test_chat_orchestrator_binds_agent_selected_channel_prd_plan(
         "channel_authority"
     ]["source_ref"] == artifact_ref
 
+
+    nested = response.json()["reply"]["plan_request"]["options"][0]["submit_payload"]["workflow_plan"]
+    assert nested["options"][0]["parameters"]["target_root"] == str(state_dir.parent.resolve())
+    assert "parameters" not in nested["options"][1]
 
 def _fake_codex_patch_approval_script(tmp_path: Path) -> Path:
     script = tmp_path / "fake_codex_patch_approval.py"

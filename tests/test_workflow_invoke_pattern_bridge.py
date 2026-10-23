@@ -4,6 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
+import yaml
+
 from zf.core.config.loader import load_config
 from zf.core.config.schema import (
     FanoutAggregateConfig,
@@ -988,31 +991,17 @@ def test_workflow_invoke_rejects_unapproved_proposal_binding(
     )
 
 
+@pytest.mark.parametrize("consumer_stale", [False, True])
 def test_workflow_invoke_accepts_exact_approved_proposal_binding(
-    tmp_path: Path,
+    tmp_path: Path, consumer_stale: bool,
 ) -> None:
+    from zf.core.config.render import renderable_config_to_primitive
+
     state_dir, log, _transport, orch = _state(tmp_path)
     config_path = tmp_path / "zf.yaml"
-    config_path.write_text(
-        """\
-apiVersion: zaofu.dev/v1
-kind: IssueFlow
-metadata: {name: issue-demo}
-spec:
-  lanes: 1
-  backend: mock
-  issueRef: docs/issue.md
----
-apiVersion: zaofu.dev/v1
-kind: ZfConfig
-metadata: {name: demo}
-spec:
-  version: "1.0"
-  project: {name: demo, state_dir: .zf}
-""",
-        encoding="utf-8",
-    )
+    config_path.write_text(yaml.safe_dump(renderable_config_to_primitive(orch.config)))
     config = load_config(config_path)
+    orch.config = config
     requirement_path = (
         state_dir / "workflow-requests" / "req-approved" / "requirement.json"
     )
@@ -1073,6 +1062,9 @@ spec:
     )
     run_contract_ref = write_run_contract_snapshot(state_dir, contract)
 
+    if consumer_stale:
+        orch.config.roles[0].model = "stale-provider-model"
+
     decisions = orch.run_once(events=[ZfEvent(
         type="workflow.invoke.requested",
         actor="web",
@@ -1094,6 +1086,14 @@ spec:
             "run_contract_digest": run_contract_ref["contract_digest"],
         },
     )])
+
+    if consumer_stale:
+        assert decisions and decisions[0].action == "block"
+        rejected = [e for e in log.read_all() if e.type == "workflow.invoke.rejected"]
+        assert len(rejected) == 1
+        assert "consumer_config_stale" in rejected[0].payload["reason"]
+        assert not any(e.type == "task.fanout.requested" for e in log.read_all())
+        return
 
     assert decisions and decisions[0].action == "workflow_invoke"
     assert not any(
