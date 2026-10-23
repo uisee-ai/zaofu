@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现 commit: `41f7a81f fix: preserve semantic ownership of automatic intake routing`
 
 # 184 · P1：入口交接与恢复验收
 
