@@ -287,7 +287,10 @@ def test_candidate_verify_binding_materializes_report_and_receipt(tmp_path: Path
     assert len(bound.payload["provider_qualification_receipt_refs"]) == 1
 
 
-def test_candidate_verify_rejects_stale_target_and_missing_report(tmp_path: Path) -> None:
+@pytest.mark.parametrize("verification_owner", ["task_verify", "candidate_verify"])
+def test_candidate_verify_rejects_stale_target_and_missing_report(
+    tmp_path: Path, verification_owner: str,
+) -> None:
     package, spec_descriptor = _package(tmp_path)
     operation = {
         "output_profile_id": "candidate-verify",
@@ -302,14 +305,17 @@ def test_candidate_verify_rejects_stale_target_and_missing_report(tmp_path: Path
     }
     stale = _report(spec_descriptor)
     stale["target_commit"] = "d" * 40
+    stale_payload = _adapted(stale)
+    stale_payload.payload["verification_owner"] = verification_owner
 
     stale_result = bind_product_acceptance_report(
-        _adapted(stale),
+        stale_payload,
         state_dir=tmp_path,
         operation=operation,
         source_event_id="verify-event-stale",
     )
     missing_payload = _adapted(_report(spec_descriptor))
+    missing_payload.payload["verification_owner"] = verification_owner
     missing_payload.payload.pop("product_acceptance_report")
     missing_result = bind_product_acceptance_report(
         missing_payload,

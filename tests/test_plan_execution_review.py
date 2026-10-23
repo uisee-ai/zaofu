@@ -80,6 +80,33 @@ def test_cli_inspection_is_read_only(tmp_path: Path, capsys):
     assert not (tmp_path / "state").exists()
 
 
+def test_cli_package_inspection_preserves_generation_and_rejects_other_map(tmp_path, capsys):
+    from zf.cli.main import main
+    from zf.runtime.plan_artifact_package import write_plan_artifact_package
+    from tests.test_plan_artifact_package import _package
+
+    state = tmp_path / "state"
+    state.mkdir()
+    config = tmp_path / "zf.yaml"
+    config.write_text("project:\n  name: sample\n  state_dir: state\n")
+    package = _package(state, revision="plan-r2", generation="generation-2")
+    descriptor = write_plan_artifact_package(state, package)
+    task_map = next(port for port in package["produced"] if port["logical_name"] == "task_map")
+    plan_path = tmp_path / "task_map.json"
+    plan_path.write_bytes((state / task_map["ref"]).read_bytes())
+    args = ["plan", "inspect-execution", "--config", str(config), "--task-map", str(plan_path),
+            "--flow-kind", "prd", "--plan-package", str(state / descriptor["ref"])]
+    assert main(args) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["input_binding"]["workflow_run_id"] == "run-1"
+    assert report["input_binding"]["task_map_generation"] == "generation-2"
+    assert report["input_binding"]["plan_revision"] == "plan-r2"
+    assert report["config_scope"] == "current_file_not_frozen_run"
+    plan_path.write_text('{"tasks": []}')
+    assert main(args) == 1
+    assert "task map differs" in capsys.readouterr().out
+
+
 def test_new_drafts_do_not_force_ac_chunking_but_require_self_check():
     from zf.cli.flow_draft_support import draft_runtime_profile_doc
     from zf.runtime.writer_fanout_admission import writer_task_map_policy_errors

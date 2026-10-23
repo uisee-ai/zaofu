@@ -86,6 +86,10 @@ amendment are separate role capabilities supplied by the workflow profile.
 
 When Candidate Verify receives a current `product_acceptance_spec`:
 
+- 以派发的 `output_profile_id=candidate-verify` 识别产品验收义务。兼容流程的任务快照
+  可能仍绑定 `verification_owner=task_verify`；保持该不可变身份及任务矩阵责任，
+  同时完成独立的 `product_acceptance_report`。任务行的 `not_applicable` 不豁免
+  产品规格中的任何 mandatory journey/assertion，也不意味着还有另一个阶段替你执行它。
 - With no admitted Product Acceptance Report for the current generation,
   execute the complete mandatory journey/assertion matrix against the pinned
   candidate target.

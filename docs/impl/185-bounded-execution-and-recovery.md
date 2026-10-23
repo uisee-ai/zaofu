@@ -279,3 +279,29 @@ PRD在待审批、无writer运行时以SIGINT停止watcher，后续从原状态�
 报告仍写入Kernel授权的结果scratch。缺证据必须报告缺失，不能虚构引用。canonical及两份
 分发一致；75项技能/实际注入回归通过，1项因可选外部技能夹具缺失跳过。该方法在新Verify
 派发前提交，是否改善实际验收仍以新运行记录为准。
+
+## Task Map 后真实复核与产品验收边界
+
+PRD返修Critic `evt-af4d646ec77d` 明确评审需求覆盖、依赖、CLI装配、验证阶段和残余风险，
+引用Task Map/有效策略摘要；两任务串行、writer数量1且无写冲突，语义结论为沿用配置。
+测试操作者核对新旧任务、goal claims、requirement coverage完全一致后，通过
+`zf plan approve evt-f0f4fb212ae9`批准实施；此前占位裁决已经正式驳回。
+这是B18的沿用配置分支，不是Task Map后变更冻结配置的真实证明。
+
+实际`zf plan inspect-execution --plan-package ...`原输出漏带包内Run/plan revision/generation；
+已RED复现并将已校验包身份传给既有review函数。不编造包内没有的字段，仍明确
+`config_scope=current_file_not_frozen_run`，不能把当前磁盘配置冒充Run快照。
+真实包复测输出保留`workflow-1afb5d0f75ff7297`与generation
+`a1cf20529986aadd86e8c42485efc56602ff721c120477a687dbb176c4886b26`。
+包/Task Map不匹配仍拒绝。36项CLI/包/产品验收/技能闭包通过；证据为
+`post-plan-cli-{red,green}.log`及`shape-rerun/prd/post-plan-inspection{,-bound}.json`。
+
+复核前轮v3 Verify模板中的task_verify身份后，确认既有产品验收绑定按operation profile
+判定candidate义务，任务级owner不绕过完整产品报告门禁；未改成另一套候选authority。
+新增回归证明两个owner下都拒绝缺报告/旧target，补充技能解释任务行not_applicable
+不能豁免mandatory产品旅程。12项定向验证通过（与36项有重叠）。
+新Issue Verify已实际物化含工具结果引用及candidate义务的最新技能，摘要见
+`critic-rerun/issue/verify-method-materialized.json`；运行时实现保持58db64a2，技能内容在
+Verify派发前已更新并记录hash，不称整轮冻结于单一代码/技能提交。
+
+本次 CLI 身份修复及 legacy candidate-verify 边界的自动闭包：`dev-verify.py run --base dev --paths <本次六个源码/测试/技能路径> --tests tests/test_plan_artifact_package.py --workers 2`，8 个测试文件，81 passed / 1 skipped（外部可选技能源缺失）。此前 RED 1 项、定向 GREEN 36 项、候选 owner 12 项均保留在 `post-plan-*` / `candidate-owner-boundary.log`；没有执行 full pytest 或覆盖率验收。

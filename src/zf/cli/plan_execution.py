@@ -27,6 +27,7 @@ def run(args: argparse.Namespace) -> int:
         if not isinstance(task_map, dict):
             raise ValueError("task map must be an object")
         ports = {"task_map": task_map}
+        package_identity = {}
         if args.plan_package:
             from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
             from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -46,8 +47,12 @@ def run(args: argparse.Namespace) -> int:
             }).payload for port in package["produced"] + package["inherited"]}
             if ports.get("task_map") != task_map:
                 raise ValueError("task map differs from the admitted package")
+            package_identity = package
         metadata = config.workflow.flow_metadata_by_kind.get(args.flow_kind, {})
-        report = review_execution(task_map, ports=ports, policy=execution_policy(config), metadata=metadata)
+        report = review_execution(
+            task_map, ports=ports, policy=execution_policy(config), metadata=metadata,
+            identity=package_identity,
+        )
         report["config_source"] = str(args.config.resolve())
         report["config_scope"] = "current_file_not_frozen_run"
     except (OSError, ValueError) as exc:

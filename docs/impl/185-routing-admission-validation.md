@@ -75,7 +75,7 @@
 | B15 | 同路线预算/权限/门禁改变后的旧批准，CLI 和 Web | `test_workflow_policy_admission_mock_e2e` | 6 个交叉用例通过，零 invoke |
 | B16 | profile/允许参数复用、配置候选、批准、CAS、并发修改、非法候选 | `test_workflow_config_apply`、`test_task_workflow_plans` | 确定性通过；不证明所有 Flow 自动重配 |
 | B17 | 消费者旧配置、缺/坏快照、已加载快照、UI 变化 | `test_workflow_config_consumer`、`test_workflow_invoke_pattern_bridge` | 拒绝或准入通过；不更新既有运行 |
-| B18 | Task Map 后发现初评不适配 → 受控修订 | readiness/planner skill、真实 Planner、续批 synthesis caller | 已绑定 Task Map/有效策略/代际；真实初评配置 apply/CAS 与新消费者通过，Task Map 后修订闭环仍待验证 |
+| B18 | Task Map 后发现初评不适配 → 受控修订 | readiness/planner skill、真实 Planner、续批 synthesis caller | 已绑定 Task Map/有效策略/代际；真实初评配置 apply/CAS 与新消费者通过；真实PRD二阶段复核沿用配置通过，需变更配置分支仍待验证 |
 | B19 | 已受理但未启动、后端选择保留、批准后跟踪 | Docker `workflow-start-receipt`、`workflow-proposal-page` | 浏览器结果单列；含 API fixture/mocked projection |
 | B20 | 超时/退出、session 丢失、Kernel 重启、恢复次数耗尽 | task-attempt/recovery mock E2E、provider-stop tests、续批 tmux host、TASK-4FFC3A | 3 项 host 通过；真实 Codex 验证者 pane 退出→watchdog自动重建→原operation验收→Task done通过，执行者未重做；不是跨 Provider/v4新attempt证明 |
 | B21 | 迟到成功、过期 dispatch、重复终结、语义失败归属 | `runtime/test_late_success_recovery`、`test_task_attempt_recovery` | 确定性通过 |
@@ -86,6 +86,8 @@
 | B26 | bounded single 的启动/重复/取消/重启/不合格结果 | backlog 03、bounded mock E2E、真实 TASK-6E4E2C | 工件交付入口已实现；确定性分支及真实执行者→独立验证→Kernel完成→TaskStore done通过；不是通用源码 writer，真实故障恢复另计 B20 |
 | B27 | native delegated 的权限、子树取消、后台未收敛、唯一根结果 | E0 capability/profile 测试；backlog 06 | E0 shadow 合同通过；实际协作闭环未实现 |
 | B28 | Kimi headless/native、跨 Provider State Packet 接续 | 本机 Kimi 源码检查；backlog 05/06、canary HTTP/process tests | 只读 tool-free canary 已接入实际 HTTP；15 项模拟进程测试通过，真实缺 CLI 分支明确失败且无 Task 副作用。Kimi 正向及跨 Provider 未实测，不升级能力声明 |
+| B29 | Synth空白结论、abstain、Owner驳回及重审 | result_submit回归、真实PRD evt-af4d646ec77d | 空白提交拒绝、abstain不通过；真实驳回→Planner/Critic重审→受控批准→writer派发通过，产品交付另计 |
+| B30 | Task Map包检查身份与不匹配输入 | plan_execution_review回归、实际CLI post-plan-inspection-bound.json | 包内Run/计划代际保留；错配Task Map拒绝；当前文件配置不冒充冻结Run |
 
 ## 验证层与命令
 
