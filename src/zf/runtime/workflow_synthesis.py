@@ -11,6 +11,7 @@ from zf.core.events import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.workflow_request_routing import synthesis_request_is_ready
 from zf.runtime.workflow_synthesis_support import (
     ALLOWED_FLOW_FAMILIES,
     WORKFLOW_SYNTHESIS_RESULT_SCHEMA,
@@ -569,7 +570,7 @@ def _prepare_synthesis_operation(
         raise WorkflowSynthesisError(
             f"workflow request not found: {request_id}"
         )
-    if str(request.get("status") or "") != "ready":
+    if not synthesis_request_is_ready(request):
         raise WorkflowSynthesisError(
             "workflow synthesis requires a ready request"
         )

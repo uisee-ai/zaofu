@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-import re
+import ast
 from pathlib import Path
 
 import pytest
@@ -238,13 +238,34 @@ class TestFailClosed:
             load_config(p)
 
 
+def _imports_workflow_compiler(source):
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            if any(alias.name.split(".")[-1] == "workflow_kind" for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[-1] == "workflow_kind" or any(
+                alias.name == "workflow_kind" for alias in node.names
+            ):
+                return True
+    return False
+
+
 class TestInspectOnlyBoundary:
+    @pytest.mark.parametrize("source, forbidden", [
+        ("import zf.core.workflow.workflow_kind as compiler", True),
+        ("from zf.core.workflow.workflow_kind import translate_workflow_kind", True),
+        ("from zf.core.workflow import workflow_kind", True),
+        ("from zf.core.workflow.request_policy import normalize_workflow_kind", False),
+    ])
+    def test_compiler_import_guard_distinguishes_shared_request_policy(self, source, forbidden):
+        assert _imports_workflow_compiler(source) is forbidden
+
     def test_runtime_does_not_import_workflow_kind(self):
-        pattern = re.compile(r"workflow_kind")
         offenders = [
             path.name
             for path in (_REPO / "src/zf/runtime").glob("*.py")
-            if pattern.search(path.read_text(encoding="utf-8", errors="replace"))
+            if _imports_workflow_compiler(path.read_text(encoding="utf-8"))
         ]
         assert offenders == [], (
             f"workflow_kind referenced by runtime modules: {offenders} "

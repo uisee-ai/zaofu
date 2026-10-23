@@ -647,13 +647,16 @@ def test_flow_classify_updates_manifest_and_writes_intent(tmp_path, capsys):
     assert rc == 0
     intent = json.loads(capsys.readouterr().out)
     assert intent["schema_version"] == "workflow.intent.v1"
-    assert intent["kind"] == "prd"
-    assert intent["next_action"] == "draft"
+    assert intent["kind"] == "auto"
+    assert intent["next_action"] == "clarify"
     intent_path = tmp_path / "artifacts" / "workflow" / "wfint-prd" / "workflow-intent.json"
     manifest_path = tmp_path / "artifacts" / "workflow" / "wfint-prd" / "workflow-input-manifest.json"
     assert intent_path.exists()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["intent_ref"] == str(intent_path)
+    assert main(["flow", "classify", "--intake", str(intake), "--kind", "prd", "--json"]) == 0
+    selected = json.loads(capsys.readouterr().out)
+    assert selected["kind"] == "prd" and selected["next_action"] == "draft"
 
 
 def test_flow_preflight_json_reports_config_inspection(tmp_path, capsys):

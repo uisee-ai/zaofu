@@ -1,6 +1,6 @@
 ---
 name: zf-workflow-synthesis
-description: "Provider-neutral ZaoFu method for selecting IssueFlow, PrdFlow, or RefactorFlow from a confirmed Requirement and returning a short typed FlowSpec. Use only for Workflow Synthesis before Proposal compilation; do not decompose Tasks, edit zf.yaml, approve a Proposal, or start a Run."
+description: "Provider-neutral ZaoFu method for selecting IssueFlow, PrdFlow, RefactorFlow, or a registered Workflow from a confirmed Requirement and returning a short typed FlowSpec. Use only for Workflow Synthesis before Proposal compilation; do not decompose Tasks, edit zf.yaml, approve a Proposal, or start a Run."
 ---
 
 # ZaoFu Workflow Synthesis
@@ -25,6 +25,7 @@ project constraints. Treat every allowlist as closed.
    - `IssueFlow` for bounded diagnosis/repair.
    - `PrdFlow` for a product behavior or feature delivery.
    - `RefactorFlow` for source-to-target parity or structural migration.
+   - `Workflow` only when the supplied catalog exposes the requested registered generic template and all of its required capabilities.
 3. Produce only a short FlowSpec with purpose and sanctioned parameters:
    `lanes`, `strictness`, and `pattern_id`.
 4. Request only registered roles, skills, and execution profiles.
@@ -38,7 +39,7 @@ project constraints. Treat every allowlist as closed.
 - Never emit expanded ZfConfig, arbitrary handlers, custom runtime code, Task
   objects, Task Map, approval, apply, submit, push, deploy, or terminal claims.
 - Never modify `zf.yaml` or canonical state.
-- Never use `Workflow`/ResearchFlow/custom composition in this version.
+- Never invent ResearchFlow, custom composition, templates or operations outside the supplied catalog.
 - A blocking open question means clarification, not a best-effort Proposal.
 - Provider output may vary; the compiler digest and Kernel admission are the
   deterministic boundary.
@@ -72,3 +73,10 @@ project constraints. Treat every allowlist as closed.
   "risk_hints": []
 }
 ```
+
+## auto 输入与复用
+
+Requirement 的 `kind=auto` 表示尚未作语义选路；不代表 IssueFlow，也不保证需要正式执行。
+依据目标、约束和验收理解否定、引用与混合意图。信息不足或仅需解释时返回阻塞问题，
+不能为了满足输出形状直接生成可执行提案；临时 family 候选必须保留 open_questions。
+已有仍有效的同版本结果由宿主复用；调用失败不改为关键词规则。

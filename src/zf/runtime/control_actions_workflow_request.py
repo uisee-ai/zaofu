@@ -12,6 +12,7 @@ from zf.runtime.workflow_delivery import (
     build_flow_submit_preview,
 )
 from zf.runtime.workflow_intake import build_flow_intake
+from zf.runtime.workflow_request_routing import request_revision_needed as _request_revision_needed
 from zf.runtime.control_actions_workflow_replay import active_request_mutation_failure, replay_active_workflow_start
 from zf.runtime.workflow_origin import (
     WorkflowOriginError,
@@ -478,14 +479,16 @@ class WorkflowRequestActionsMixin:
             )
 
         request_projection = load_workflow_request(self.state_dir, request_id)
-        if existing_projection:
+        if existing_projection and _request_revision_needed(self.state_dir, existing_projection, payload):
             request_projection = revise_workflow_request(
                 self.state_dir,
                 Path(str(intake["workflow_input_manifest_ref"])),
                 actor=self.actor,
-                objective=(
-                    _required_text(payload, "objective") or None
+                kind=(
+                    _required_text(payload, "kind")
+                    if _required_text(payload, "kind") not in {"", "auto"} else None
                 ),
+                objective=objective or None,
                 source_root=(
                     _required_text(payload, "source_root") or None
                 ),

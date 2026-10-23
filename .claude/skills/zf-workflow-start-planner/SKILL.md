@@ -102,3 +102,11 @@ For recommendation or clarification, include:
 How to test: create a temporary Task, run `zf workflow routes`, propose
 `research:fixed` or an active Delivery route, verify no
 `workflow.invoke.requested` exists before apply, then apply the exact proposal.
+
+## 未决 auto 与结果复用
+
+`flow intake/classify --kind auto` 的关键词输出仅为候选提示，不能作为路线决定。
+先按目标、约束与验收进行语义判断；否定句、引用示例和混合意图不能按关键词启动。
+已有有效路由建议时复用其 Request/Requirement revision 和目录绑定；否则澄清或通过
+既有 Workflow Synthesis Operation 给出建议。Provider 失败保持未决，不能默认为 issue。
+显式有效路线不额外调用分类模型；旧请求按原版本恢复。

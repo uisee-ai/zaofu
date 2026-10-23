@@ -143,7 +143,8 @@ def test_intake_classification_ignores_parent_directory_keywords(
         request_id="wfint-parent-path",
     )
 
-    assert result["effective_kind"] == "prd"
+    assert result["effective_kind"] == "auto"
+    assert json.loads(Path(result["intake_json_ref"]).read_text())["inferred_kind"] == "prd"
 
 
 def test_channel_prd_intake_materializes_project_reader_source(tmp_path: Path) -> None:
