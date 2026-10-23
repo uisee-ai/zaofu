@@ -65,7 +65,7 @@
 | B05 | 非 Owner、未绑定提案、payload 改动、旧 PRD/Leader、unresolved | `test_channel_execution_approval` | 拒绝通过；无 invoke |
 | B06 | 嵌套 Plan 缺 target_root、canonical source identity | `test_web_headless_agent` 的 Channel 建单用例及 B04 | 自动继承已知目标，完整来源通过；第一轮真实失败保留 |
 | B07 | PRD standard/v3 | flow smoke、真实 PRD 运行 | mock 通过；真实结果单列 |
-| B08 | Issue standard/v3 | flow smoke、真实 Issue 运行 | mock 通过；真实预算失败 |
+| B08 | Issue standard/v3 | flow smoke、真实 TASK-5577E6 | 续批真实完整交付通过：Critic/Verify/discovery/Judge/Kernel ship及Task done，外部探针和真实浏览器通过；早期预算失败保留 |
 | B09 | Refactor standard/v3 | `test_refactor_pipeline_smoke`（flow smoke） | mock 通过；本轮没有真实 Refactor |
 | B10 | PRD/Issue light、幂等、合法/不合法门禁 | `test_light_flow`、`test_intake_semantic_handoff_mock_e2e` | 确定性/模拟通过；未证明真实 light 完整交付 |
 | B11 | PRD/Issue/Refactor v4 shadow/blocking | `test_workflow_route_policy`、v4 runtime-noise mock E2E | 策略绑定及模拟运行通过；不能推导三类真实 v4 均通过 |

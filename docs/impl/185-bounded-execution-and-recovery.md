@@ -1,6 +1,6 @@
 # 185 续批：有界工件执行、规划绑定与恢复隔离
 
-> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准产品流程仍有阻断，不表示 185 全部签收。
+> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准 Issue 完整交付通过，PRD 仍在验收，不表示 185 全部签收。
 
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
@@ -324,3 +324,26 @@ Verify派发前已更新并记录hash，不称整轮冻结于单一代码/技能
 按actor+ID精确查询返回1738 bytes完整原事件。自动planner因main注册依赖选出103文件，
 建议broad deterministic及无关锁serial；按仓库禁止仅按数量触发full suite规则显式跳过，
 采用上述55+24项定向闭包（并非唯一总数），`event-query-verify-receipt.json`记录跳过层。
+
+## 标准 Issue 真实完整交付通过
+
+`TASK-5577E6` / `workflow-9f80eb3ff1e0d2ac` 经真实Kanban Agent、HTTP Preview/Approve，
+进入triage → 独立Critic → writer → Verify → discovery → Judge。20:10:30 UTC
+Kernel记录`run.goal.completed`；20:11:13终态消费后根Task和子Task都为done，期间约44秒
+事件消费延迟如实保留。Judge闭合10项mandatory声明，Product Acceptance四项断言通过。
+
+运行保持初始1800秒/6M tokens/$30及operation600秒/2M tokens/60 samples限制，无人工Enter、
+重复发送、跳过门禁或执行中加预算。重复批准仅一个`workflow.invoke.requested`；五个发布
+native prompt hook的角色各接收一次（discovery没有该hook，不编造收据）。
+运行时58db64a2；验证skill及只读CLI后续变更已按实际派发/调用记录，不冒充整轮单提交冻结。
+
+候选`ae671604`经Kernel ship交付到测试项目main `52bff247`。候选与交付后独立需求探针均
+6项通过；Docker真实浏览器20:11:39确认两个Task done、无page error、无mock路由。
+首次Docker命令误用了镜像默认entrypoint，属于测试驱动错误；改用`--entrypoint node`后
+通过，失败日志保留。
+
+`simulation.done`已通过EventWriter记录；watcher/Web/tmux与项目cwd进程均停止。549个
+脱敏归档成员逐一校验摘要后清理自有临时根。证据为续批`critic-rerun/issue/`下的
+`terminal-evidence.json`、`native-input-audit.json`、`{complete,shipped}-oracle/result.json`、
+`browser-live/live-board-result.json`、`archive-manifest.json`、`cleanup.json`。
+这证明标准Issue链路；不代替PRD、light、Refactor或v4真实交付。

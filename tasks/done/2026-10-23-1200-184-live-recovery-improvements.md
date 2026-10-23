@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 184 · 真实链路故障与改进
 
@@ -30,3 +30,13 @@
 完整建单、独立启动批准和重复批准幂等真实通过。Issue 仍在 operation token 预算耗尽时失败，
 未达到产品交付验收。该任务保持 active，后续以新 [逐分支验证记录](../../docs/impl/185-routing-admission-validation.md)
 和关联 185 backlog 继续追踪，旧失败记录保留。
+
+## 原生接收与恢复关闭证据
+
+`efd235c5 fix: deliver Codex pastes and batch required artifact reads` 修正原生paste提交，
+真实标准Issue TASK-5577E6无人工Enter/重复发送，从triage走到Kernel交付done；重复批准只有
+一次invoke，五个发布hook的角色各接收一次。237项调用闭包及51项sentinel通过。
+旧提案、取消不复活、未知交付的已完成证据沿用810c737d及上述关联已归档任务，未冒称本轮重做。
+此外36832cdc修复已消失pane的幂等终止，TASK-4FFC3A真实自动接续后done；跨Provider不在此
+旧任务签收范围，继续由185-05跟踪。完整证据见[续批报告](../../docs/impl/185-bounded-execution-and-recovery.md)。
+本旧任务原剩余接收阻断已闭合，可依据实施提交归档；185整体仍未完成。
