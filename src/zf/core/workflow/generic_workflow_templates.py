@@ -20,6 +20,9 @@ def build_registered_template_spec(
     """Expand bounded template parameters into one safe Generic FlowSpec."""
 
     template_id = bounded_identifier(template, "registered template")
+    if template_id == "bounded-agent-v1":
+        from zf.core.workflow.bounded_agent import build_bounded_agent_spec
+        return build_bounded_agent_spec(parameters)
     if template_id != "evidence-synthesis-v1":
         raise GenericWorkflowError(
             f"registered template {template_id!r} has no deterministic builder"

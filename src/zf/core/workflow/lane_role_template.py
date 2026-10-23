@@ -390,7 +390,7 @@ def _parse_provider_session(raw: Any, *, context: str) -> Any | None:
         return None
     if not isinstance(raw, dict):
         raise LaneRoleTemplateError(f"{context} must be a mapping")
-    allowed = {"effort", "agent", "max_parallel_agents"}
+    allowed = {"effort", "agent", "max_parallel_agents", "native_delegation"}
     unknown = sorted(str(key) for key in raw if str(key) not in allowed)
     if unknown:
         raise LaneRoleTemplateError(f"{context}: unknown key(s) {unknown}")
@@ -416,6 +416,7 @@ def _parse_provider_session(raw: Any, *, context: str) -> Any | None:
             effort=effort.strip(),
             agent=agent.strip(),
             max_parallel_agents=parallel,
+            native_delegation=raw.get("native_delegation"),
         )
     except ValueError as exc:
         raise LaneRoleTemplateError(f"{context}: {exc}") from exc

@@ -86,6 +86,20 @@ def _route(
     )
 
 
+@pytest.mark.parametrize("native", [None, False, True])
+def test_execution_route_keeps_native_delegation_restriction(native):
+    from dataclasses import replace
+    from zf.runtime.execution_policy_routing import apply_execution_route, ExecutionRouteError
+
+    role = replace(_role(), provider_session=ProviderSessionConfig(native_delegation=False))
+    route = replace(_route(), provider_session=ProviderSessionConfig(native_delegation=native))
+    if native is True:
+        with pytest.raises(ExecutionRouteError, match="cannot enable native delegation"):
+            apply_execution_route(role, route)
+    else:
+        assert apply_execution_route(role, route).provider_session.native_delegation is False
+
+
 def _config(*, route: ExecutionRouteConfig | None = None) -> ZfConfig:
     return ZfConfig(
         project=ProjectConfig(name="execution-routing-test"),

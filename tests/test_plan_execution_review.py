@@ -41,6 +41,34 @@ def test_task_pipeline_and_cycles_are_reported_as_facts():
     assert result["graph"]["unresolved_task_ids"] == ["a", "b"]
 
 
+def test_review_binds_actual_task_map_policy_and_generation_without_selecting_route():
+    from copy import deepcopy
+    from zf.core.config.schema import RoleConfig
+
+    config = ZfConfig(roles=[RoleConfig(name="worker", role_kind="writer", flow_kind="prd")])
+    task_map = {"tasks": [
+        {"task_id": "a", "allowed_paths": ["app/**"]},
+        {"task_id": "b", "allowed_paths": ["app/index.py"]},
+    ]}
+    identity = {"workflow_run_id": "run", "task_map_generation": "g2"}
+    policy = execution_policy(config)
+    report = review_execution(task_map, ports={}, policy=policy,
+                              metadata={"flow_kind": "prd"}, identity=identity)
+    assert report["input_binding"]["task_map_generation"] == "g2"
+    assert report["capacity"]["configured_writer_count"] == 1
+    assert report["capacity"]["dependency_level_peak_width"] == 2
+    assert report["capacity"]["write_scope_validation"]["status"] == "failed"
+    changed = deepcopy(task_map)
+    changed["tasks"][1]["allowed_paths"] = ["tests/test_app.py"]
+    next_report = review_execution(changed, ports={}, policy=policy, metadata={})
+    assert next_report["input_binding"]["task_map_digest"] != report["input_binding"]["task_map_digest"]
+    assert next_report["capacity"]["write_scope_validation"]["status"] == "passed"
+    config.workflow.impl_self_check_required = not config.workflow.impl_self_check_required
+    assert execution_policy(config)["effective_policy_digest"] != policy["effective_policy_digest"]
+    assert "recommended_route" not in report
+    assert "verdict" not in report
+
+
 def test_cli_inspection_is_read_only(tmp_path: Path, capsys):
     from zf.cli.main import main
     (tmp_path / "zf.yaml").write_text("project:\n  name: sample\n  state_dir: state\n")

@@ -8,7 +8,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from zf.core.config.schema import ExecutionRouteConfig, RoleConfig, ZfConfig
+from zf.core.config.schema import ExecutionRouteConfig, ProviderSessionConfig, RoleConfig, ZfConfig
 from zf.core.events.model import ZfEvent
 from zf.core.state.session import SessionStore, ZfNotInitialized
 from zf.core.task.store import TERMINAL_STATES, TaskStore
@@ -175,12 +175,19 @@ def apply_execution_route(
             execution,
             default_profile=route.execution_profile,
         )
+    provider_session = route.provider_session
+    if getattr(role.provider_session, "native_delegation", None) is False:
+        if getattr(provider_session, "native_delegation", None) is True:
+            raise ExecutionRouteError("execution route cannot enable native delegation for this role")
+        provider_session = replace(
+            provider_session or ProviderSessionConfig(), native_delegation=False,
+        )
     return replace(
         role,
         backend=route.backend,
         model=route.model,
         model_reasoning_effort=route.model_reasoning_effort,
-        provider_session=route.provider_session,
+        provider_session=provider_session,
         execution=execution,
     )
 

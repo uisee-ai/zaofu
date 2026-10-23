@@ -80,6 +80,9 @@ def provider_security_for_backend(
     env: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     normalized = str(backend or "")
+    if normalized == "kimi-headless-canary":
+        return {"permission_mode": "tool_free_canary", "native_delegation": "disabled",
+                "native_resume": "not_admitted"}
     if normalized in {"codex", "codex-headless", "codex-app-server"}:
         return codex_security_config_for_profile(permission_profile, env=env)
     if normalized in {"claude", "claude-code", "claude-headless"}:

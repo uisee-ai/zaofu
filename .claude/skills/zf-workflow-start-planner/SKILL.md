@@ -133,6 +133,12 @@ light 仍有实施／Verify／Judge；v4 `shadow` 与 `blocking` 不是相同执
 没有强制隔离证据的 native delegation 不可宣称已启用；legacy direct 不是通用单 Agent。
 用户指定的方式不可用时说明缺口，给有效替代或待处理选项，不静默换模式。
 
+目录出现 `agent:single:<entry>`、`template_id=bounded-agent-v1` 时，可以推荐其
+有界工件交付：一个执行者产生报告，一个独立验证者验收，复用现有批准和 operation。
+该入口要求显式禁用 Provider 原生子 Agent，且每个角色配置时间／token／采样上限。
+它不支持源码交付；写代码仍选择已准入的交付路线。未在当前目录出现时，不把模板
+注册或示例文件当作已激活能力。Kimi canary 仅是无工具的新文本回合，不是该执行路线。
+
 在现有 Plan `reason` 和选项 `description` 中保存：
 
 1. 范围、依赖、风险和验证成本的事实来源，以及尚未确定的输入；

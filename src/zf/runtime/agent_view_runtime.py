@@ -303,10 +303,16 @@ class AgentViewRuntimeMixin:
             correlation_id=request.correlation_id,
             payload={"reason": "operator_request"},
         ))
-        decision = self._respawn_instance(role)
+        payload = request.payload if isinstance(request.payload, dict) else {}
+        if payload.get("schema_version") == "execution-route-respawn.v1":
+            decision = self._respawn_instance(
+                role, recovery_reason="execution_route_switch", force_fresh_session=True,
+            )
+        else:
+            decision = self._respawn_instance(role)
         continuation_error = ""
         checkpoint_requeued = False
-        if decision.action != "respawn_failed":
+        if decision.action == "respawn":
             try:
                 from zf.runtime.orchestrator_agent_recovery import (
                     requeue_orchestrator_agent_checkpoint_after_respawn,
@@ -331,7 +337,7 @@ class AgentViewRuntimeMixin:
                 continuation_error = str(exc)
         event_type = (
             "worker.respawn.completed"
-            if decision.action != "respawn_failed" and not continuation_error
+            if decision.action == "respawn" and not continuation_error
             else "worker.respawn.failed"
         )
         self.event_writer.append(ZfEvent(
@@ -343,7 +349,8 @@ class AgentViewRuntimeMixin:
                 "reason": continuation_error or decision.reason,
                 "action": decision.action,
                 "continuation_delivered": bool(
-                    (request.payload or {}).get("continuation_briefing_ref")
+                    decision.action == "respawn"
+                    and (request.payload or {}).get("continuation_briefing_ref")
                     and not continuation_error
                 ) if isinstance(request.payload, dict) else False,
                 "orchestrator_checkpoint_requeued": (

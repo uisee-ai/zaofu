@@ -597,3 +597,8 @@ ready 且历史仅规划的 Channel PRD 可在精确启动提案中以 `authoriz
 请求另一次 Owner 执行授权；必须匹配当前来源与授权主体，不改写 PRD readiness 或产品非目标。
 该能力不等于 unresolved PRD 自动豁免，也不代表通用 single/delegated 或 Kimi 已完成。
 完整变化、失败和未覆盖分支见 [184/185 路由准入实施与逐分支验证](../impl/185-routing-admission-validation.md)。
+
+同日续批增加 `bounded-agent-v1` 有界工件入口、Task Map 评审输入绑定、恢复前进程终止确认，
+以及显式 `kimi-headless-canary` 无工具文本入口。single 的源码交付及 native delegation
+未因此开放；Kimi 的真实权限与生命周期签收仍需本机可运行环境。实现边界与本批验证见
+[续批记录](../impl/185-bounded-execution-and-recovery.md)。

@@ -234,6 +234,27 @@ def test_research_synthesis_expands_only_registered_generic_template(
     ).lower()
 
 
+def test_bounded_single_synthesis_keeps_executor_and_independent_verifier(tmp_path):
+    config, state_dir, writer, projection = _context(tmp_path, kind="workflow")
+    candidate = _research_result(projection)
+    candidate["short_flow_spec"].update(
+        intent="bounded_execution", template="bounded-agent-v1",
+        parameters={"executor_role": "synthesizer", "verifier_role": "verifier", "deadline_seconds": 120},
+    )
+    candidate["requested_roles"] = ["synthesizer", "verifier"]
+    candidate["completion_profile"]["required_artifacts"] = ["agent-execute.result"]
+    outcome = run_workflow_synthesis(
+        state_dir=state_dir, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", actor="test", candidate_result=candidate,
+    )
+    spec = hydrate_sidecar_ref(state_dir, outcome.result["short_flow_spec_ref"]).payload
+    tasks = spec["generic_workflow_spec"]["tasks"]
+    assert [task["role"] for task in tasks] == ["synthesizer", "verifier"]
+    assert [task["deadlineSeconds"] for task in tasks] == [120, 120]
+    assert spec["generic_workflow_spec"]["completionProfile"]["independentVerify"] is True
+    assert not any(e.type == "workflow.invoke.requested" for e in writer.event_log.read_all())
+
+
 def test_generic_synthesis_proposal_uses_generated_entry(
     tmp_path: Path,
     monkeypatch,
@@ -405,6 +426,23 @@ def test_mock_synthesis_admits_registered_flow_and_settles_operation(
     assert "workflow.synthesis.admitted" in types
 
 
+def test_synthesis_rejects_replay_after_effective_policy_changes(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    config, state_dir, writer, projection = _context(tmp_path)
+    run_workflow_synthesis(
+        state_dir=state_dir, project_root=tmp_path, config=config, writer=writer,
+        request_id="req-synth", actor="test", candidate_result=_result(projection, "IssueFlow"),
+    )
+    changed = replace(config, roles=[replace(config.roles[0], model="changed-model")])
+    with pytest.raises(WorkflowSynthesisError, match="request diverged"):
+        run_workflow_synthesis(
+            state_dir=state_dir, project_root=tmp_path, config=changed, writer=writer,
+            request_id="req-synth", actor="test", candidate_result=_result(projection, "IssueFlow"),
+        )
+    assert sum(e.type == "workflow.synthesis.admitted" for e in writer.event_log.read_all()) == 1
+
+
 def test_real_headless_caller_passes_read_only_contract_to_agent(
     tmp_path: Path,
 ) -> None:
@@ -436,6 +474,12 @@ def test_real_headless_caller_passes_read_only_contract_to_agent(
     assert outcome.result["selected_flow_family"] == "IssueFlow"
     assert agent.call["permission_profile"] == "read_only"
     assert "Do not emit expanded config" in agent.call["message"]
+    assert '"effective_policy_digest": "sha256:' in agent.call["message"]
+    assert '"template_contracts"' in agent.call["message"]
+    assert '"native_delegation": null' in agent.call["message"]
+    operation = load_workflow_operation(writer.event_log, outcome.operation_id)
+    request = hydrate_sidecar_ref(state_dir, operation["request_ref"]).payload["request"]
+    assert request["effective_policy_digest"].startswith("sha256:")
 
 
 def test_cancelled_running_synthesis_discards_late_provider_result(

@@ -3310,6 +3310,7 @@ def test_plan_candidate_briefing_validates_before_submit(
                 "manifest": {"stage_id": "issue-triage"},
                 "metadata": {
                     "flow_kind": "issue",
+                    "artifact_package": {"required_ports": ["issue_spec", "task_map", "product_acceptance_spec"]},
                     "task_pipeline": {
                         "candidate": {"rolling_smoke": "required"},
                     },
@@ -3340,6 +3341,8 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert "maximum acceptance criteria per task: `8`" in briefing
     assert "rolling smoke policy: `required`" in briefing
     assert "tier `static` or `runtime`" in briefing
+    assert "required Plan inputs/outputs: `issue_spec`, `task_map`, `product_acceptance_spec`, `source_index`" in briefing
+    assert "do not rewrite intake" in briefing
 
 
 def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(

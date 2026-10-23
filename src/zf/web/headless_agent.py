@@ -926,9 +926,12 @@ class KanbanHeadlessAgent:
             state_dir=self.state_dir,
             project_root=self.project_root,
         )
+        from zf.web.kimi_headless import KimiHeadlessBackend
+
         self.backends = backends or {
             "claude-headless": ClaudeHeadlessBackend(),
             "codex-headless": CodexHeadlessBackend(),
+            "kimi-headless-canary": KimiHeadlessBackend(),
         }
         self.telemetry = telemetry
         self.operations_metrics = operations_metrics
@@ -1556,7 +1559,7 @@ def canonical_headless_backend(value: str) -> str:
     }
     if backend in aliases:
         return aliases[backend]
-    if backend in {"claude-headless", "codex-headless"}:
+    if backend in {"claude-headless", "codex-headless", "kimi-headless-canary"}:
         return backend
     return ""
 

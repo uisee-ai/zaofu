@@ -205,8 +205,11 @@ class ProviderSessionConfig:
     effort: str = ""
     agent: str = ""
     max_parallel_agents: int | None = None
+    native_delegation: bool | None = None
 
     def __post_init__(self) -> None:
+        if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
+            raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:
             if self.max_parallel_agents < 1:
                 raise ValueError(

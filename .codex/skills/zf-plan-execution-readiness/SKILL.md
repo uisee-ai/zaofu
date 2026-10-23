@@ -18,6 +18,10 @@ load_on_demand: true
 [执行路线与任务切片](references/execution-route.md)核对有效配置和反馈时点。
 Critic 收到 `plan-execution-review` 必需输入时逐项解释其事实与本计划的匹配关系；
 该报告没有语义 verdict，不能把机械 preflight passed 当成实施就绪。
+将其中 `input_binding` 的 Task Map／有效策略摘要、revision／generation 与本次产物
+一并引用到既有评审工件；`capacity` 只报告配置实例、依赖层宽度和写入范围检查，
+不代表实时空闲容量，也不授权新增 lane。提出配置差异时逐项给出旧值、候选值、
+来源和受影响任务；输入摘要或代际改变后重新复核，不沿用旧评审的适配结论。
 
 Planner 在提交最终工件前、Critic 在决定 verdict 前，读取并执行
 [执行一致性复核](references/execution-consistency.md)。它检查实际动作生产者、

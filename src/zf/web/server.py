@@ -6528,9 +6528,10 @@ def _validate_action_payload(
                 "codex-headless",
                 "codex-app-server",
                 "codex_headless",
+                "kimi-headless-canary",
             }
             if backend not in allowed:
-                return "backend must be deterministic, codex, claude-code, claude-headless, or codex-headless"
+                return "backend must be deterministic, codex, claude-code, claude-headless, codex-headless, or kimi-headless-canary"
     if action in _HUMAN_DECISION_ACTIONS:
         if not str(payload.get("decision_token") or payload.get("approval_ref") or "").strip():
             return "decision_token is required"

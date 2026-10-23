@@ -184,17 +184,25 @@ def workflow_route_catalog(config: Any | None) -> dict[str, Any]:
         ):
             continue
         general_roles = _stage_roles([stage])
+        bounded = next((contract for contract in getattr(config.workflow, "generic_workflows", [])
+                        if contract.get("template") == "bounded-agent-v1" and contract.get("entry") == stage_id), None)
+        if bounded:
+            general_roles = list(dict.fromkeys(role for task in bounded["tasks"] for role in task["roles"]))
         routes.append({
-            "route_id": f"general:{stage_id}",
-            "family": "general",
+            "route_id": f"agent:single:{stage_id}" if bounded else f"general:{stage_id}",
+            "family": "agent" if bounded else "general",
+            **({"execution_mode": "single_executor", "executor_count": 1,
+                "independent_verifier_count": 1, "source_write": False,
+                "template_id": "bounded-agent-v1"} if bounded else {}),
             "kind": "workflow",
             "tier": "",
             "entry_pattern_id": stage_id,
             "topology": str(getattr(stage, "topology", "") or "single_reader"),
-            "stages": [stage_id],
+            "stages": [task["name"] for task in bounded["tasks"]] if bounded else [stage_id],
             "roles": general_roles,
             "writer_roles": [],
-            "verify_roles": [
+            "verify_roles": [role for task in bounded["tasks"]
+                             if task["operation"] == "agent.verify" for role in task["roles"]] if bounded else [
                 role for role in general_roles
                 if "verify" in role.lower() or "critic" in role.lower()
             ],

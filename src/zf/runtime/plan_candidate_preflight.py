@@ -219,6 +219,7 @@ def evaluate_plan_candidate_preflight(
         "execution_review": review_execution(
             task_map or {}, ports=port_bodies,
             policy=(writer_policy or {}).get("execution", {}), metadata=metadata or {},
+            identity=trigger,
         ),
         "status": "passed" if not errors else "failed",
         "stage_id": str(manifest.get("stage_id") or ""),

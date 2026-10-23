@@ -26,8 +26,9 @@ project constraints. Treat every allowlist as closed.
    - `PrdFlow` for a product behavior or feature delivery.
    - `RefactorFlow` for source-to-target parity or structural migration.
    - `Workflow` only when the supplied catalog exposes the requested registered generic template and all of its required capabilities.
-3. Produce only a short FlowSpec with purpose and sanctioned parameters:
-   `lanes`, `strictness`, and `pattern_id`.
+3. Produce only a short FlowSpec with purpose and the selected template's
+   sanctioned parameters. Controller flows use `lanes`, `strictness`, and
+   `pattern_id`; registered generic workflows use their catalog parameters.
 4. Request only registered roles, skills, and execution profiles.
 5. State rationale, assumptions, open questions, completion profile, and risk
    hints. Do not claim approval or execution.
@@ -35,6 +36,11 @@ project constraints. Treat every allowlist as closed.
    emit no prose or code fence.
 
 ## Hard Boundaries
+
+已注册 `bounded-agent-v1` 时，有界报告交付可用 `intent=bounded_execution`，参数为
+`executor_role`、`verifier_role`、可选 `deadline_seconds`（1..3600，默认 600）。
+完成要求为 `artifact_delivery`，必需产物 `agent-execute.result`。执行者和验证者
+必须不同；提案编译还会检查角色原生协作禁用及资源上限。不得将此模板用于源码写入。
 
 - Never emit expanded ZfConfig, arbitrary handlers, custom runtime code, Task
   objects, Task Map, approval, apply, submit, push, deploy, or terminal claims.

@@ -369,6 +369,20 @@ def _render_plan_candidate_policy(
     candidate = candidate if isinstance(candidate, Mapping) else {}
 
     policy_rows: list[str] = []
+    from zf.runtime.plan_artifact_package import required_plan_ports
+
+    ports = required_plan_ports(flow_kind=str(metadata.get("flow_kind") or ""), metadata=metadata)
+    authored_ports = list(dict.fromkeys([
+        *(name for name in ports if name not in {"goal_claim_set", "planning_result"}),
+        "source_index",
+    ]))
+    policy_rows.append("- required Plan inputs/outputs: " + ", ".join(f"`{name}`" for name in authored_ports))
+    policy_rows.append(
+        "- Preserve current immutable input refs when already supplied. Author missing outputs "
+        "through top-level `plan_ports` or the documented named refs; do not rewrite intake "
+        "or copy the full skill-adapter catalog into the result. The Kernel derives "
+        "`goal_claim_set` and `planning_result`."
+    )
     if "candidate_quality_source" in writer_policy:
         policy_rows.append(
             "- candidate quality source: "

@@ -1,5 +1,7 @@
 # 184/185 路由准入实施与逐分支验证
 
+后续实施见 [有界工件执行、规划绑定与恢复隔离](185-bounded-execution-and-recovery.md)。
+
 > 状态：部分实施、部分验证；不构成 185 全部能力或全分支真实交付签收。
 > 日期：2026-10-23；worktree：`/home/min/workspace/public/184`。
 > 实施基线：`b493d88608413e8042c1e62cf9cbf06d607a3df2`。
