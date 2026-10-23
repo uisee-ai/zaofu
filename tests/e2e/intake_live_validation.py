@@ -243,10 +243,46 @@ class EntryRun:
         # Stop for the validation operator to inspect the actual PRD; do not auto-confirm model content.
         return consensus
 
+    def evaluate_prd(self, channel_id: str, *, timeout: float = 1900, retry: bool = False) -> dict:
+        """Require a version-bound independent review before operator handoff."""
+        from zf.runtime.channel_projection import project_channel
+
+        channel = project_channel(self.state, channel_id) or {}
+        consensus = (channel.get("consensus") or {}).get("main") or {}
+        requested = self.post("channel-prd-evaluate", {
+            "channel_id": channel_id, "thread_id": "main", "role": "full",
+            **{key: consensus[key] for key in
+               ("prd_revision", "artifact_ref", "artifact_digest")},
+            **({"retry": True} if retry else {}),
+        })
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            terminal = next((event for event in reversed(self.log.read_all())
+                             if event.type in {"output.evaluation.completed", "output.evaluation.failed"}
+                             and event.payload.get("request_id") == requested["request_id"]), None)
+            if terminal:
+                result = {"event_id": terminal.id, "event_type": terminal.type,
+                          **terminal.payload}
+                save(self.evidence / "independent-prd-evaluation.json", result)
+                if terminal.type != "output.evaluation.completed" or result.get("verdict") != "PASS":
+                    raise RuntimeError("independent PRD evaluation did not pass; inspect retained report")
+                report = self.state / result["report_ref"]
+                if digest(report) != result["report_digest"].removeprefix("sha256:"):
+                    raise RuntimeError("independent PRD report digest mismatch")
+                current = project_channel(self.state, channel_id) or {}
+                current = (current.get("consensus") or {}).get("main") or {}
+                if any(current.get(key) != consensus.get(key) for key in
+                       ("prd_revision", "artifact_ref", "artifact_digest")):
+                    raise RuntimeError("PRD changed during evaluation; review current version")
+                # A passing advisory review is not Owner confirmation or execution authorization.
+                return result
+            time.sleep(1)
+        raise RuntimeError("independent PRD evaluation timed out; ensure zf start is running")
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=["prepare", "kanban", "channel", "resume-route"])
+    parser.add_argument("phase", choices=["prepare", "kanban", "channel", "evaluate-prd", "resume-route"])
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--harness", type=Path, required=True)
     parser.add_argument("--evidence", type=Path, required=True)
@@ -254,6 +290,7 @@ def main() -> int:
     parser.add_argument("--attempt", type=int, default=1)
     parser.add_argument("--task")
     parser.add_argument("--channel-id", default="ch-184-ledger")
+    parser.add_argument("--retry-evaluation", action="store_true")
     args = parser.parse_args()
     if args.phase == "prepare":
         prepare(args.root, args.harness, args.evidence)
@@ -266,6 +303,8 @@ def main() -> int:
         with run.client:
             if args.phase == "channel":
                 run.channel(args.channel_id)
+            elif args.phase == "evaluate-prd":
+                run.evaluate_prd(args.channel_id, retry=args.retry_evaluation)
             elif args.phase == "resume-route":
                 if not args.task:
                     parser.error("--task is required")

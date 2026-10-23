@@ -145,10 +145,29 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
                  and isinstance(row.get("refs"), dict)
                  and row["refs"].get("evaluation_source_document") is True))
     ]
-    if not source_messages or not requirement_id:
-        raise ValueError("original requirement source is unavailable")
     source_parts = []
     source_identity = []
+    # File-to-PRD intake need not create a discussion. Trust only the snapshot
+    # bound to this canonical version's durable synthesis request, not author refs.
+    selected = next((row.payload.get("prd_source_file") for row in events
+                     if synthesis_request_id and row.type == "channel.synthesis.requested"
+                     and row.payload.get("request_id") == synthesis_request_id
+                     and row.payload.get("channel_id") == channel_id
+                     and str(row.payload.get("thread_id") or "main") == thread_id), None)
+    if selected is not None:
+        if (not isinstance(selected, dict) or selected.get("kind") != "channel_prd_source"
+                or not selected.get("sha256")
+                or selected.get("access_scope") != {"channel_id": channel_id, "thread_id": thread_id}):
+            raise ValueError("original requirement file snapshot scope is inconsistent")
+        content = hydrate_sidecar_ref(Path(host.state_dir), selected,
+                                      purpose="independent-prd-source-evaluation",
+                                      actor="output-evaluator").payload
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("original requirement file snapshot is empty")
+        source_parts.append(f"[selected source file {selected['ref']}; sha256 {selected['sha256']}]\n{content}")
+        source_identity.append({"file_ref": selected["ref"], "digest": selected["sha256"]})
+    elif not source_messages or not requirement_id:
+        raise ValueError("original requirement source is unavailable")
     for message in source_messages:
         message_id = str(message["message_id"])
         content = hydrate_channel_message_text(Path(host.state_dir), message, strict=True)
@@ -178,7 +197,7 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
                                     "attachment_ref": attachment["uri"],
                                     "attachment_digest": body["hash"]})
     source = "\n\n".join(source_parts)
-    source_ids = {row["message_id"] for row in source_identity}
+    source_ids = {row["message_id"] for row in source_identity if "message_id" in row}
     source_ref = "channel-source-bundle:sha256:" + hashlib.sha256(
         json.dumps(source_identity, sort_keys=True).encode("utf-8")
     ).hexdigest()

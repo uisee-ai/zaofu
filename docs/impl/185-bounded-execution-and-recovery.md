@@ -360,3 +360,43 @@ usage samples，含11,387,520 cache-read tokens；不能去掉缓存用量绕过
 重跑相同原始需求，维持Run7200秒/12M tokens及operation1200秒/2M tokens/60 samples，
 不改旧Run、不降低AC、不跳过后置阶段。新轮`current-prd/prd/freeze.json`记录四个seed文件
 和配置摘要；当前只是启动验证，不是交付通过。旧轮详细结果与归档在`shape-rerun/prd/`。
+
+## PRD 第二次候选通过、独立评审前置证据缺失
+
+`TASK-8E5850` / `workflow-dd76c5051933c94f` 保持相同需求与预算，两名writer
+完成候选`5b516ae0`。外部65项产品检查、20项真实unittest及源码人工审阅通过；
+Owner计划批准发生在两次writer之前。Verify发现G-01要求的独立PRD评审在Owner确认前
+没有持久化记录，随后21:06:46 UTC达到单operation 2,047,702 / 2M tokens，
+21:06:48 Kernel blocked。此次是operation上限，不能误记为12M Run上限。
+Verify的语义阻断报告尚未admitted；最终机械阻断原因仍为预算。Docker实际看板确认
+根Task blocked、两子Task testing。外部需求映射G-01已更正为unproven，不能以产品
+65项通过替代流程证据，也不追补或伪造历史评审。完整证据在`current-prd/prd/`。
+
+根因包含真实测试驱动漏步：系统已有`channel-prd-evaluate`受控入口，使用独立Codex
+只读评估并绑定canonical版本；驱动此前直接从PRD生成进入Owner确认。新增显式
+`evaluate-prd`阶段，必须在隔离项目`zf start`运行后执行，等待独立评审PASS、验证报告
+摘要及当前PRD版本，仍停在Owner人工审阅之前；失败/不确定/过期/超时不可继续移交。
+使用方式：`python tests/e2e/intake_live_validation.py evaluate-prd --root <isolated-root>
+--harness <184-worktree> --evidence <evidence-root> --confirm-real`。
+该层是opt-in测试驱动，不将所有业务PRD强制套用新的语义Kernel门禁。22项驱动/实际
+reactor/恢复定向回归通过。相同seed与预算的`reviewed-prd`隔离轮将先完成独立评审，
+其后仍须独立Owner确认、启动和Planner/Critic批准；未提前宣称该轮交付成功。
+
+复核同轮scope guard拒绝：Verify使用Python heredoc写workdir外的合法scratch，
+动态shell写入未获得原生Edit/Write/apply_patch的精确路径例外。保留安全门禁，
+仅补验证技能明确使用原生工具更新已授权文件；canonical技能与两处分发副本同步。
+
+新轮评审在调用模型前真实复现`original requirement source is unavailable`：文件PRD
+入口没有discussion requirement_message_id，独立评审原先只支持讨论消息来源。现在沿
+canonical版本的synthesis request取受控快照，校验channel/thread、kind和digest后读取
+完整原文；不信任作者在PRD中自行声明的source_ref，不将目标草案混入盲评来源。
+新增实际reactor调用者回归，RED为1失败/5通过，覆盖正常文件入口及缺失、篡改、
+跨thread/scope、错误request。失败评审保持原记录，修复后经显式retry创建新评审。
+
+该文件入口修复的最终自动闭包为15个测试文件，182 passed / 1 skipped（可选技能源缺失）；
+另有共享来源/sidecar/output-evaluator/mock E2E 36项、sentinel 51项及技能30 passed /
+1 skipped。各组有重叠，不累加为唯一总数。未执行full pytest或coverage。
+真实重试`07ed74c0-138b-425a-99b8-014bd9ffed0d`于21:24:10 UTC产生
+`output.evaluation.completed`（`evt-57c8f0b270ff`），34项来源标准全部PASS；
+独立报告明确产品验证未执行，完整报告已审阅。该证据早于Owner确认和后续Workflow启动，
+没有追补旧Run历史。来源、报告与canonical摘要记录在`reviewed-prd/prd/independent-review-audit.json`。
