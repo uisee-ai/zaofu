@@ -546,6 +546,11 @@ def normalize_proposed_task_contract(payload: dict[str, Any]) -> dict[str, Any]:
             contract[key] = payload.pop(key)
     if "behavior" in contract:
         contract["behavior"] = _contract_text(contract.get("behavior"))
+    if not str(contract.get("behavior") or "").strip():
+        objective = contract.get("objective")
+        if isinstance(objective, str) and objective.strip():
+            contract["behavior"] = objective.strip()
+            contract.pop("objective")
     if "verification" in contract:
         contract["verification"] = _contract_text(
             contract.get("verification")

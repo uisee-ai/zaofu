@@ -121,3 +121,16 @@ CLI 契约来自本机 `~/workspace/kimi-code` 的 `commands.ts`、`run-v2-print
 第一轮真实失败及浏览器环境失败均保留原始日志，不能用后续成功覆盖。第二轮仍使用原任务预算和验收。
 
 补查发现bounded执行者原先只提供来源manifest、没有必读策略；现已在operation注册前绑定全部批准来源，完整报告缺少读取证据同样拒绝。批读同时支持事件中的任务派发策略和reader operation的不可变policy sidecar。补充实际caller/门禁回归56 passed。
+
+## 第二轮入口契约回归
+
+冻结代码 `efd235c5` 后，Issue 与有界报告的真实 Kanban 提案均使用
+`contract.objective`，在建单前被 `contract.behavior` 必填检查拒绝，未产生执行副作用。
+主 Agent 提示已有规范字段；现于既有提案归一化边界兼容非空文本 objective，
+仅在 behavior 为空时填入，已有 behavior 优先、冲突内容保留 notes，非文本仍拒绝。
+转换发生在提案持久化／摘要／批准之前，不添加第二种 Task schema，不批准失败提案。
+
+浏览器使用 Docker Playwright、隔离 API 状态与本轮生产构建，4 项实际浏览器案例通过
+（`browser-r9.log`）；覆盖启动回执和提案页面，不代替 Provider 交付验收。
+
+字段兼容回归：26 项定向、包含该组的 Web/headless 闭包 90 项通过；sentinel 51 项通过。

@@ -316,6 +316,44 @@ Do not present this example for approval."""
     assert extract_action_proposal(answer, user_message="解释如何创建task") is None
 
 
+@pytest.mark.parametrize("behavior", [None, "", "既有行为必须保留"])
+def test_workflow_proposal_normalizes_objective_before_approval(behavior) -> None:
+    decoded = json.loads(_create_task_answer(source_quote="创建task"))
+    payload = decoded["action_proposal"]["payload"]
+    payload["workflow_plan"] = {"question": "如何执行？", "options": []}
+    contract = payload["contract"]
+    contract.pop("behavior")
+    if behavior is not None:
+        contract["behavior"] = behavior
+    contract["objective"] = "按全文修复步长；覆盖零和负数，不重构。"
+    proposal = extract_action_proposal(
+        json.dumps(decoded, ensure_ascii=False), user_message="创建task",
+    )
+    assert proposal is not None and proposal["valid"] is True
+    normalized = proposal["payload"]
+    assert normalized["contract"]["behavior"] == (
+        behavior or contract["objective"]
+    )
+    assert "objective" not in normalized["contract"]
+    assert contract["objective"] == "按全文修复步长；覆盖零和负数，不重构。"
+    if behavior:
+        assert contract["objective"] in normalized["notes"]
+
+
+@pytest.mark.parametrize("objective", [None, "", [], {"behavior": "invented"}])
+def test_workflow_proposal_rejects_nontext_objective(objective) -> None:
+    decoded = json.loads(_create_task_answer(source_quote="创建task"))
+    payload = decoded["action_proposal"]["payload"]
+    payload["workflow_plan"] = {"question": "如何执行？", "options": []}
+    payload["contract"].pop("behavior")
+    payload["contract"]["objective"] = objective
+    proposal = extract_action_proposal(
+        json.dumps(decoded, ensure_ascii=False), user_message="创建task",
+    )
+    assert proposal is not None and proposal["valid"] is False
+    assert "contract.behavior is required" in proposal["validation_error"]
+
+
 def test_idea_to_product_uses_the_same_semantic_intent_contract() -> None:
     answer = json.dumps(
         {
