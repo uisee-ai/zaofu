@@ -134,3 +134,19 @@ CLI 契约来自本机 `~/workspace/kimi-code` 的 `commands.ts`、`run-v2-print
 （`browser-r9.log`）；覆盖启动回执和提案页面，不代替 Provider 交付验收。
 
 字段兼容回归：26 项定向、包含该组的 Web/headless 闭包 90 项通过；sentinel 51 项通过。
+
+第二轮真实执行仍失败：Issue `TASK-E9AFD8` 在 230.663 秒、15 个 usage samples 达到
+1016193/1000000 tokens；bounded `TASK-796E86` 在 122.755 秒、4 个 samples 达到
+101544/100000 tokens。两者均由预算保护阻断，未交付；计划中的 worker 故障注入因进程
+先退出而没有执行，不算恢复验证。两轮失败不可被新预算下的结果覆盖。
+
+已将基于实测的预算可行性复核补到选路 skill 和主 Agent 实际提示，要求考虑缓存输入、
+工具回合、结果提交及独立 Verify。当前 bounded 实测每回合约2.5万tokens，原10万上限
+不足以支持完整工件提交。另开隔离配置修订案例验证有界预算变更、批准、消费者加载与新启动；
+不修改旧 Run、计量公式、原验收或完成门禁。
+
+Provider 环境检查：Claude `loggedIn=false`；Kimi CLI 不存在。跨 Provider 与 Kimi 真实验证
+缺少运行环境，证据 `provider-environment.json`；保留未签收状态。
+
+预算方法与 bounded 合同回归18项通过，主 Agent headless caller回归64项通过，skill三份一致。
+PRD双扫描被接纳；Planner在601.79秒、929782 tokens时达到600秒上限，Run阻断，未进入写入。
