@@ -272,3 +272,10 @@ PRD在待审批、无writer运行时以SIGINT停止watcher，后续从原状态�
 `critic-cli-mock-e2e.log` 14 passed覆盖计划审批、策略准入及有界执行；这些集合有重叠，不相加
 当作唯一用例数。完整pytest/coverage未运行。首次sentinel因result_submit超过1000行失败，
 已按职责拆分，未增加豁免或修改结构阈值。
+
+独立Verify在19:24:17试图新增`.verification-evidence/counter-review.json`，被本任务仅允许
+`counter.py/test_counter.py`的scope守卫拒绝；不因此扩大源码写权限。验证角色skill补充现有
+`zf events`查询工具结果、核对actor/Run/派发因果并引用真实event或raw-output sidecar的方法，
+报告仍写入Kernel授权的结果scratch。缺证据必须报告缺失，不能虚构引用。canonical及两份
+分发一致；75项技能/实际注入回归通过，1项因可选外部技能夹具缺失跳过。该方法在新Verify
+派发前提交，是否改善实际验收仍以新运行记录为准。

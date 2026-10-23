@@ -66,6 +66,14 @@ amendment are separate role capabilities supplied by the workflow profile.
 7. Record `reused_command_receipt_ids`, newly executed probes, exact findings,
    affected criteria, reproducible command ids, evidence refs, and the
    recommended semantic owner.
+   保存探针证据时先复用当前回合已持久化的工具结果：通过 briefing 中的 CLI 和 state dir
+   查询 `zf events --type <provider>.hook.post_tool_use --last 5 --json --state-dir <state_dir>`
+   （provider取本回合的codex或claude；找不到目标时再扩大last），核对工具结果事件的 actor、
+   Run、派发因果、实际命令、输出和退出码。仅引用确实存在且属于本次验证的
+   `event:<event_id>`，或该事件给出的原始输出 sidecar ref；保留截断输出的完整 sidecar。
+   将实际发现、命令及这些引用写进已授权的 result scratch。不得虚构事件或引用其他回合，
+   不要为保存报告而在产品目录新增 `.verification-evidence/`、修改源码、扩张 allowed_paths，
+   或直接写 runtime ledger。若当前工具没有可核对的持久化结果，明确报告证据缺失。
 8. For each rejected/blocked AC, emit a structured `rework_items[]` entry with
    `rework_item_id`, `status` (`missing|incomplete|incorrect|unverified|blocked`),
    `acceptance_id`, `expected`, `observed`, `required_delta`,
