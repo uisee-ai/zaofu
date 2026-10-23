@@ -1,6 +1,8 @@
 # 184/185 路由准入实施与逐分支验证
 
 后续实施见 [有界工件执行、规划绑定与恢复隔离](185-bounded-execution-and-recovery.md)。
+本文主体保留首批基线和当时结论；续批已归档01/03/04，有界交付及同Provider自动接续真实通过。
+02/05/06/07/08和旧184两项仍active，标准Issue/PRD、Task Map后适配与跨Provider能力尚未全部签收。
 
 > 状态：部分实施、部分验证；不构成 185 全部能力或全分支真实交付签收。
 > 日期：2026-10-23；worktree：`/home/min/workspace/public/184`。
@@ -17,10 +19,10 @@
 | --- | --- | --- |
 | 01 policy-binding | 原目录不能区分 v4 shadow/blocking；新增真实 topology、mode、profile 和执行策略摘要，批准绑定随策略变化失效 | 定向测试及 CLI/HTTP 过期批准零 invoke |
 | 02 adaptive-planning | 已有选路；补事实评估、两阶段复核方法、双入口权限交接，修复真实 Channel 建单/启动缺口 | 方法与调用链已改；Task Map 后真实配置修订未闭环 |
-| 03 bounded-execution | headless turn、legacy direct、E0 profile 均已存在 | 通用 Task 单 Agent 准入/执行/验收仍未实现，保持 active |
+| 03 bounded-execution | 续批注册bounded-agent-v1，接入Task批准、独立Verifier和Kernel完成门禁 | 工件交付范围真实通过并归档；源码交付仍走产品workflow |
 | 04 config-activation | 已有候选验证、CAS apply；新增实际消费者与批准快照的执行策略比较 | stale/corrupt/missing 拒绝；不热改已有 Run |
 | 05 stage-recovery | 已有 Run Manager、attempt、恢复包与 v4 redrive | 本轮回归已有故障合同；新单 Agent 接手与真实跨会话完成未闭环 |
-| 06 provider-delegation | 已有固定研究和 adaptive pilot；通用 E0 仍是 shadow | 未新增 Kimi adapter 或扩大 native capability 声明 |
+| 06 provider-delegation | 续批接入Kimi只读root canary、显式禁用native助手和能力拒绝 | Kimi实际缺CLI负分支通过；未扩大native capability，正向环境仍缺 |
 | 07 live-blockers | 旧 tmux 首次输入问题本次未复现；修正 PRD 非目标/授权混淆，补只读来源与本地规划写入方法 | 标准 Issue 真实运行仍预算失败；不能签收完整交付 |
 | 08 branch-e2e | 新增下表分支清单、隔离真实任务与 Docker 浏览器验证 | 已测、未测和失败分别登记；未达到全分支真实通过 |
 
@@ -75,7 +77,7 @@
 | B17 | 消费者旧配置、缺/坏快照、已加载快照、UI 变化 | `test_workflow_config_consumer`、`test_workflow_invoke_pattern_bridge` | 拒绝或准入通过；不更新既有运行 |
 | B18 | Task Map 后发现初评不适配 → 受控修订 | readiness/planner skill、真实 Planner、续批 synthesis caller | 已绑定 Task Map/有效策略/代际；真实初评配置 apply/CAS 与新消费者通过，Task Map 后修订闭环仍待验证 |
 | B19 | 已受理但未启动、后端选择保留、批准后跟踪 | Docker `workflow-start-receipt`、`workflow-proposal-page` | 浏览器结果单列；含 API fixture/mocked projection |
-| B20 | 超时/退出、session 丢失、Kernel 重启、恢复次数耗尽 | task-attempt/recovery mock E2E、provider-stop tests、续批 tmux host | 已补终止确认及消失 pane 恢复；真实 Issue 故障暴露的缺陷已修，3 项 host 通过；真实 Provider 自动接续仍待验证 |
+| B20 | 超时/退出、session 丢失、Kernel 重启、恢复次数耗尽 | task-attempt/recovery mock E2E、provider-stop tests、续批 tmux host、TASK-4FFC3A | 3 项 host 通过；真实 Codex 验证者 pane 退出→watchdog自动重建→原operation验收→Task done通过，执行者未重做；不是跨 Provider/v4新attempt证明 |
 | B21 | 迟到成功、过期 dispatch、重复终结、语义失败归属 | `runtime/test_late_success_recovery`、`test_task_attempt_recovery` | 确定性通过 |
 | B22 | Channel synthesis/evaluation 取消、进程丢失后恢复、不复活 | `test_channel_synthesis_recovery`、`test_web_headless_recovery`、Channel recovery mock E2E | 确定性/模拟通过；旧 184 真实取消证据不冒充本轮新测 |
 | B23 | Provider 切换、旧 run、重复切换、次数上限 | `test_execution_policy_routing` | 受控路由及 mock caller 通过；未做真实跨 Provider 接续 |

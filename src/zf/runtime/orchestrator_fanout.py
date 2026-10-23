@@ -8336,6 +8336,10 @@ class FanoutCoordinationMixin(
                 "evidence_refs": [],
             })
         if call_payload:
+            # Bind identities in advance, but require the agent to author its verdict.
+            for body in (completion_payload, completion_payload["report"]):
+                for field in ("status", "recommendation", "summary"):
+                    body[field] = ""
             from zf.runtime.plan_synth_handoff import (
                 render_plan_synth_completion_command,
                 render_plan_synth_validation_section,
@@ -8347,7 +8351,10 @@ class FanoutCoordinationMixin(
                 state_dir=self.state_dir,
                 payload=completion_payload,
             )
-            validation_lines = render_plan_synth_validation_section(completion_command)
+            validation_lines = render_plan_synth_validation_section(
+                completion_command,
+                scratch_path=self.state_dir / completion_payload["result_scratch_ref"],
+            )
         else:
             validation_lines = []
             completion_command = " ".join([

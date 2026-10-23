@@ -1,6 +1,6 @@
 # 185 续批：有界工件执行、规划绑定与恢复隔离
 
-> 状态：实施与确定性验证中；尚未开始本批真实 Provider E2E，不表示 185 全部签收。
+> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准产品流程仍有阻断，不表示 185 全部签收。
 
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
@@ -225,3 +225,50 @@ canonical `zf-prd-plan-synth` skill及两份分发同步列出旅程/断言的�
 没有改变schema、必读、预算、独立Critic或验收规则。实际briefing的示例经Kernel身份绑定后
 交由现有产品验收validator验证：先RED复现，30项定向及31项Plan/triage/PRD/refactor
 调用者闭包通过。预算失败保留；后续真实运行才能证明本改进的交付效果。
+
+## 真实 Codex 自动接续通过
+
+隔离重跑`TASK-4FFC3A` / `workflow-38a9bec9915ed6ec`，配置、需求和预算与正常完成案例相同。
+18:46:51 UTC实际关闭bounded-verifier pane `%102`，旧PID553666消失；监控18:47:02记录
+dead_observed，watchdog于18:48:00自动respawn，新pane `%103`/PID559661接续。
+未运行手动restart。执行者只派发/接纳一次；验证者派发两次，operation身份保持同一个。
+18:53:45验证结果admitted，18:53:50 Kernel完成门禁通过，规范TaskStore为done；没有预算阻断。
+外部算术复核及完整报告人工审阅通过。证据`recovery-r2/bounded/recovery-verdict.json`
+与`terminal-evidence.json`，包括故障、旧PID消失、因果顺序、唯一执行者和最终状态断言。
+
+这是同Provider会话/operation接续，不是跨Provider或v4新attempt redrive的实测。
+运行进程启动于36832cdc；期间094f39e3仅修Plan authoring提示及测试/文档，bounded执行、
+结果接纳和恢复实现未变，最终CLI source HEAD与此版本边界已记入证据。
+
+## 真实 Issue 候选与 PRD 审批证据缺口
+
+相同预算/需求的新运行中，Issue `TASK-6B6CE8` 完成 triage、Critic、实现，并进入独立 Verify。
+候选 `7fb54223a8503a656ead79aa28e3cbb00c849609` 的外部五项行为断言通过；但19:25:39 UTC
+整条Run触发1800秒wall-clock限制，Task仍blocked，不能视为完整交付。Docker真实浏览器
+19:32:38确认根Task blocked、子任务testing，无页面错误；仅证明真实投影，不替代验收。
+
+PRD `TASK-BC14CC` 的双扫描和Planner通过，完整嵌套产品验收字段缺失没有再次出现；两任务
+串行覆盖10项AC和五个产品文件，CLI任务明确承担最终装配。独立Critic虽然读取了全部来源，
+其提交仍保留 `Short synthesis summary.`，模板预填passed/approve。操作员没有批准实现，
+保留该证据并准备受控驳回、重审。旧的plan digest按根目录多owner/缺assembly分类报警，
+实际计划为单lane串行、文件所有权无重叠，不以压掉提示为理由修改任务语义。
+
+由真实失败驱动的修复：
+
+- 实际Synth briefing给出已校验的绝对scratch路径，保留agent已有编辑和绑定字段。
+- 签名Synth模板不预填成功结论；validate及submit都要求report的status/recommendation/summary
+  为非空字符串，直接submit也不能绕过。`abstain`不再归一化为passed。语义质量仍由独立评审负责。
+- 高频 `hook-recv/artifact/result/guard` CLI仅加载对应命令注册，根help/其他命令保留完整解析器。
+  同机各一次冷启动help实测从6.49–6.51秒降至1.21–1.41秒；这是局部启动测量，不是交付SLA。
+
+证据：续批目录 `shape-rerun/issue/{terminal-evidence,candidate-oracle}.json`、
+`shape-rerun/prd/plan-review-before-reject.json`、`cli-hot-benchmark.json`。
+PRD在待审批、无writer运行时以SIGINT停止watcher，后续从原状态受控启动；新旧代码边界需单独记录，
+不能把整轮称为冻结在094f39e3上的无干预恢复。
+
+本轮修复验证：`critic-cli-focused.log` 62 passed、`critic-cli-closure.log` 94 passed、
+`critic-runtime-closure.log` 173 passed；预检职责移至已有Plan验证模块后
+`critic-preflight-final.log` 59 passed、`critic-cli-sentinel-final.log` 51 passed。
+`critic-cli-mock-e2e.log` 14 passed覆盖计划审批、策略准入及有界执行；这些集合有重叠，不相加
+当作唯一用例数。完整pytest/coverage未运行。首次sentinel因result_submit超过1000行失败，
+已按职责拆分，未增加豁免或修改结构阈值。

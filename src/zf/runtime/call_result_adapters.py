@@ -620,13 +620,7 @@ def _normalize_plan_synth(
         or "abstain"
     ).lower()
     status = str(source.get("status") or report.get("status") or "completed").lower()
-    failed = status in {"failed", "failure"} or recommendation in {
-        "reject",
-        "rejected",
-        "block",
-        "blocked",
-        "needs_rework",
-    }
+    failed = status in {"failed", "failure"} or recommendation != "approve"
     task_map = source.get("task_map")
     if not isinstance(task_map, Mapping):
         task_map = report.get("task_map")

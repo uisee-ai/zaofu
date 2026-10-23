@@ -30,3 +30,5 @@ single/delegated/workflow、能力缺失、子任务未收敛、取消传播、�
 续批：增加严格布尔 native_delegation 设置，Codex/Claude 实际启动与 SDK 入口可显式禁用原生助手；未验证的 native=true 在 preflight 拒绝。增加 kimi-headless-canary Web/API 后端，使用 tools=[]/subagents=[] 的新回合，限制输出/时长并清理自有进程组，拒绝工具活动、后台未收敛、resume/写入。15 项模拟进程测试含真实 HTTP caller、取消与超时通过。Kimi CLI/模型认证不可用，已询问环境位置；真实 Kimi 与 native 子树能力保持未签收。
 
 详见 [有界执行与恢复续批](../../docs/impl/185-bounded-execution-and-recovery.md)。
+
+实际HTTP缺环境分支已执行：kimi-headless-canary返回command is unavailable，未静默fallback、未建Task或启动Workflow。证据kimi-missing/result.json；隔离状态已归档并清理。Claude认证检查loggedIn=false，Kimi CLI不存在；正向模型、native助手子树和跨Provider恢复仍未签收，不能由mock或Codex同Provider自动恢复推导通过。

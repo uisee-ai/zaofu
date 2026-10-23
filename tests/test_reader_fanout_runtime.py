@@ -5498,6 +5498,11 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert "`goal_claim_set` and `planning_result` are Kernel-derived" in briefing
     assert "issue flows adapt `requirement_spec` to `issue_spec`" in briefing
     assert "Edit only the signed result scratch file" in briefing
+    assert f"Edit `{(state_dir / scratch_ref).resolve()}`" in briefing
+    for body in (result, result["report"]):
+        assert body["status"] == ""
+        assert body["recommendation"] == ""
+        assert body["summary"] == ""
     assert "non-empty `message`" in briefing
     assert "`info`, `low`, `medium`, `high`, or `critical`" in briefing
     assert "never invent `residual-risk`" in briefing

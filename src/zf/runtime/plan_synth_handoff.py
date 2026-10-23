@@ -118,12 +118,22 @@ def render_plan_synth_completion_command(
     return command
 
 
-def render_plan_synth_validation_section(submit_command: str) -> list[str]:
+def render_plan_synth_validation_section(
+    submit_command: str, *, scratch_path: Path | None = None,
+) -> list[str]:
     """Render the bounded schema preflight shown before plan submission."""
 
     from zf.runtime.stage_execution_card import render_result_validate_command
 
+    scratch_lines = (
+        [f"Edit `{scratch_path.resolve()}` in place; preserve the prefilled binding fields.", ""]
+        if scratch_path is not None else []
+    )
     return [
+        *scratch_lines,
+        "Write your actual review summary and explicitly choose status and recommendation "
+        "in both the result and report. Empty verdict fields are not a completed review.",
+        "",
         "Finding severity is an exact enum: use only `info`, `low`, `medium`, "
         "`high`, or `critical`. Record a non-blocking residual risk as `info` "
         "or `low`; never invent `residual-risk` or another label.",
