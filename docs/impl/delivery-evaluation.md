@@ -119,3 +119,61 @@ A在被拒后通过逐文件补丁继续，先后两次预提交校验失败：�
 assembly owner与验收assertion的完整契约示例，并分别验证合法更新可通过、越权写入仍拒绝。
 这些是待验证方向，不是已实施修复。修改后冻结新候选，重新开展相同条件的完整配对；
 只有小产品真实交付和外部验收通过才扩大验证。原cargo仍需要Plan责任闭合、人工批准与真实输入。
+
+## 2026-10-23 启动恢复诊断
+
+复合命令的 signed scratch 放行仅接受完整的简单绝对路径；混入裸项目根目录引用、
+动态后缀或仅匹配 scratch 前缀的其他路径时仍拒绝。对应反例由
+`tests/test_hook_recv_codex.py` 覆盖；该检查延续既有字符串启发式，不是 shell/Python 沙箱。
+
+后续单次 mini 诊断在 Scan 阶段观察到三次 `worker.pane.dead_observed`，仅一路 Scan
+完成，最终触发 600 秒 operation budget。未进入 Planner，不能用“未出现 scope rejection”
+证明 Planner 实跑修复有效。事件与注册归档于
+`/home/min/workspace/public/zaofu-evidence/20261023-mini-plan-fix/`；pane 原始退出原因未确定。
+
+恢复等待存在独立的可复现缺口：`task.dispatched` / `fanout.child.dispatched` 写入的
+内核心跳种子采用 900 秒 worker stuck 阈值，导致死 pane 的恢复晚于 operation 预算。
+watchdog 现在只为这种种子保留 `min(stuck_threshold_seconds,
+spawn_ready_timeout_seconds or 120)` 秒的启动宽限期；已有真实心跳仍使用原 stuck 阈值。
+死 pane 探测、活动任务或 fanout 责任、原有重试上限和 safe-halt 门继续生效，未增加重试预算。
+
+回归入口为 `tests/test_capture_logs_watchdog.py`：宽限期内不重启，期满后普通任务与
+无独立 Kanban task 的 reader child 都能恢复，真实心跳保护长 turn。真实重跑仍需冻结
+候选源码、PRD、预算和审批策略，并保留失败日志与必要的运行状态证据；这些机制测试不等于
+完整产品 Build / Verify 通过。
+
+本轮 `20261023T095656Z` 单次诊断已执行：两路 Scan 完成；Planner 的复合 artifact/scratch
+写入实际通过，但两次预提交校验后仍缺 `assertion_id` / `observation_kind`，在 610.501 秒
+触发 600 秒预算，未进入 Critic/approval/Impl/Verify。终态前未发生 pane 故障或 respawn，
+因此恢复时限效果由确定性回归证明，不能用该次顺利启动作因果证明。完整证据在
+`/home/min/workspace/public/zaofu-evidence/mini-recovery-20261023T095656Z/REPORT.md`；下一项应
+修正技能/briefing 中的产物契约指导，并用失败样本验证，不能用放宽预算代替契约修复。
+
+后续候选补齐 `zf-plan-task-map-contract/references/product-acceptance.json` 可校验示例，
+在 PRD skill 和编译 briefing 中列出 journey/assertion 准确字段，并明确 assembly owner
+和 real-E2E tier 的约束。源码及两套 skill 分发副本同步。离线回放保留原失败；仅在副本中
+补 assertion_id、将原 type 映射为 observation_kind 后完整预检通过。该回放验证契约修正，
+不替代新的真实 Planner 生成测试，也不把手工修正副本提交到原工作流。
+
+该候选真实重跑 `20261023T102602Z`：两路 Scan 完成，Planner 确实读取新示例；最后几秒
+写出草稿，但在 600.931 秒触发预算，未完成在线预检或提交。未修改草稿的离线预检确认
+上述断言字段、assembly owner、E2E tier 问题消失，仍有 14 项 capability 集合不一致。
+这只支持具体契约提示在一次生成中起效，不证明整体 Plan 交付改善。报告与原始产物位于
+`/home/min/workspace/public/zaofu-evidence/mini-contract-20261023T102602Z/REPORT.md`。
+
+## PRD Planner 的产物完成与独立评审
+
+v4 blocking 诊断 `20261023T122200Z` 取消 operation/run 墙钟上限，保留资源预算与人工
+Plan 审批。Planner 用时超过 600 秒后完成在线预检、修复 owner/tier 诊断并提交；但它保留
+`recommendation: abstain` 等待独立 Critic，旧 `prd-plan` 缺少结果语义声明，导致该产物
+报告进入 reader 的负面结论分支。提交被接收不等于该子报告语义通过。
+
+PRD v3/v4 共用的 `prd-plan` 现在声明现有 `result_semantics: artifact_production`。
+Kernel 通过派发身份传递此语义，区分“规划产物生成完成”和“是否批准计划”；真实 provider
+执行失败仍失败，候选预检、独立 plan-critic、人工审批及后续产品验收继续生效。不能用
+强迫 Planner 自填 approve 或放松矩阵校验替代这条责任边界。回归见
+`tests/test_prd_plan_result_semantics.py`，覆盖真实 controller 加载、派发语义及结果适配。
+
+该修正未热更新到已冻结的实跑。诊断证据在
+`/home/min/workspace/public/zaofu-evidence/mini-v4-20261023T122200Z/`；首次技术 Scan 无
+provider 活动，通过一次 `zf restart tech-scan` 恢复，需记入人工干预，不能声称全自动完成。

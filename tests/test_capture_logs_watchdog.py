@@ -458,6 +458,84 @@ class TestWatchdogEvents:
 class TestI41LivenessGate:
     """2026-06-11-0325: probe 只预筛,决策条件是 kernel 态新鲜度。"""
 
+    @pytest.mark.parametrize("dispatch_type", ["task.dispatched", "fanout.child.dispatched"])
+    @pytest.mark.parametrize("age, expected_respawns", [(239, 0), (241, 1)])
+    def test_dead_worker_dispatch_seed_has_startup_grace(
+        self, state_dir, config, monkeypatch, dispatch_type, age, expected_respawns,
+    ):
+        """A kernel dispatch seed must not hide a dead worker for 900 seconds."""
+        from datetime import datetime
+        from zf.core.state.role_sessions import RoleSessionRegistry
+        from zf.runtime.housekeeping import apply_task_dispatched_heartbeat_seed
+
+        role = config.roles[0]
+        role.stuck_threshold_seconds = 900
+        role.spawn_ready_timeout_seconds = 240
+        registry = RoleSessionRegistry(
+            state_dir / "role_sessions.yaml", project_root=str(state_dir.parent),
+        )
+        registry.get_or_create("dev")
+        task_id = "TASK-LIVENESS-DEV"
+        payload = {"role_instance": "dev", "dispatch_id": "disp-dev"}
+        if dispatch_type == "fanout.child.dispatched":
+            TaskStore(state_dir / "kanban.json").update(task_id, status="done")
+            task_id = "PRD-ROOT"
+            briefing = state_dir / "briefings" / "reader.md"
+            briefing.parent.mkdir(parents=True, exist_ok=True)
+            briefing.write_text("Read the PRD and report scan findings.\n")
+            payload.update(
+                fanout_id="scan", child_id="reader", run_id="scan-reader-retry-1",
+                task_id=task_id, briefing_path=str(briefing),
+            )
+        dispatched = ZfEvent(
+            type=dispatch_type, actor="orchestrator", task_id=task_id, payload=payload,
+        )
+        EventLog(state_dir / "events.jsonl").append(dispatched)
+        apply_task_dispatched_heartbeat_seed(registry, dispatched)
+        timestamp, _ = registry.get_last_heartbeat("dev")
+        now = datetime.fromisoformat(timestamp).timestamp() + age
+        monkeypatch.setattr("time.time", lambda: now)
+        transport = _AliveControllableTransport()
+        transport.spawn(role, argv=[])
+        transport.spawn(config.roles[1], argv=[])
+        orch = Orchestrator(state_dir, config, transport)
+        orch._dead_threshold = 1
+        transport.alive_flags["dev"] = False
+
+        orch._capture_logs()
+
+        assert transport.spawn_calls.count("dev") == 1 + expected_respawns
+
+    def test_worker_heartbeat_keeps_long_running_turn_grace(
+        self, state_dir, config, monkeypatch,
+    ):
+        from datetime import datetime
+        from zf.core.state.role_sessions import RoleSessionRegistry
+
+        role = config.roles[0]
+        role.stuck_threshold_seconds = 900
+        role.spawn_ready_timeout_seconds = 240
+        registry = RoleSessionRegistry(
+            state_dir / "role_sessions.yaml", project_root=str(state_dir.parent),
+        )
+        registry.get_or_create("dev")
+        registry.record_heartbeat("dev", {
+            "instance_id": "dev", "current_task_id": "TASK-LIVENESS-DEV",
+            "state": "busy", "source": "worker.heartbeat",
+        })
+        timestamp, _ = registry.get_last_heartbeat("dev")
+        now = datetime.fromisoformat(timestamp).timestamp() + 241
+        monkeypatch.setattr("time.time", lambda: now)
+        transport = _AliveControllableTransport()
+        transport.spawn(role, argv=[])
+        orch = Orchestrator(state_dir, config, transport)
+        orch._dead_threshold = 1
+        transport.alive_flags["dev"] = False
+
+        orch._capture_logs()
+
+        assert transport.spawn_calls.count("dev") == 1
+
     def test_dead_probe_with_fresh_worker_heartbeat_does_not_respawn(
         self, state_dir, config,
     ):
