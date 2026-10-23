@@ -347,3 +347,16 @@ native prompt hook的角色各接收一次（discovery没有该hook，不编造�
 `terminal-evidence.json`、`native-input-audit.json`、`{complete,shipped}-oracle/result.json`、
 `browser-live/live-board-result.json`、`archive-manifest.json`、`cleanup.json`。
 这证明标准Issue链路；不代替PRD、light、Refactor或v4真实交付。
+
+## PRD 第一次候选完整、Run 预算阻断
+
+`TASK-BC14CC`的第一项Verify于20:11:53 admitted；第二项仍在整理结果时，20:18:03
+整条Run达到12,155,516 / 12,000,000 tokens，20:18:05记录blocked。累计4727秒、121条
+usage samples，含11,387,520 cache-read tokens；不能去掉缓存用量绕过冻结预算。费用记录
+均unpriced，显示0不表示真实免费。两个writer及候选装配通过、外部65项检查通过，不替代
+未完成的第二Verify/discovery/Judge。20:20:10 Docker真实看板确认根Task blocked、两子任务testing。
+
+该轮保留旧版本占位裁决、受控驳回和重规划的完整证据。现另建隔离项目，以bb986afb版本
+重跑相同原始需求，维持Run7200秒/12M tokens及operation1200秒/2M tokens/60 samples，
+不改旧Run、不降低AC、不跳过后置阶段。新轮`current-prd/prd/freeze.json`记录四个seed文件
+和配置摘要；当前只是启动验证，不是交付通过。旧轮详细结果与归档在`shape-rerun/prd/`。

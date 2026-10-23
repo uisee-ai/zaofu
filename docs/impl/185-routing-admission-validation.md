@@ -2,7 +2,7 @@
 
 后续实施见 [有界工件执行、规划绑定与恢复隔离](185-bounded-execution-and-recovery.md)。
 本文主体保留首批基线和当时结论；续批已归档01/03/04，有界交付及同Provider自动接续真实通过。
-02/05/06/07/08和旧184两项仍active，标准Issue/PRD、Task Map后适配与跨Provider能力尚未全部签收。
+02/05/06/07/08和旧184产品交付任务仍active；旧184故障改进已归档。标准Issue已完整通过，PRD、Task Map后配置修订与跨Provider能力尚未全部签收。
 
 > 状态：部分实施、部分验证；不构成 185 全部能力或全分支真实交付签收。
 > 日期：2026-10-23；worktree：`/home/min/workspace/public/184`。

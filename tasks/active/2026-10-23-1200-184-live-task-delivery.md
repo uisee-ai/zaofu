@@ -30,3 +30,9 @@ Issue -> verify: 原失败行为修复并独立测试；PRD -> verify: Planner/C
 完整建单、独立启动批准和重复批准幂等真实通过。Issue 仍在 operation token 预算耗尽时失败，
 未达到产品交付验收。该任务保持 active，后续以新 [逐分支验证记录](../../docs/impl/185-routing-admission-validation.md)
 和关联 185 backlog 继续追踪，旧失败记录保留。
+
+2026-10-23续批真实结果：标准Issue TASK-5577E6从Kanban批准经Critic/实现/Verify/discovery/Judge
+到Kernel ship及根/子Task done；候选和交付后外部6项检查、Docker真实看板通过。
+PRD TASK-BC14CC两次开发和第一Verify通过、外部65项检查通过，但第二Verify未提交时
+触发12,155,516/12M Run token上限而blocked，不能签收产品交付。两运行均已保存终态、
+校验归档并清理。相同需求/预算的当前修复版PRD重跑在current-prd中继续，整体保持active。
