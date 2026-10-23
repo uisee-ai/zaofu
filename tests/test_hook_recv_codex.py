@@ -751,6 +751,7 @@ def test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    monkeypatch.chdir(tmp_path)
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
     role = "refactor-plan-synth"
@@ -869,6 +870,31 @@ def test_codex_refactor_planner_allows_workdir_artifact_and_result_scratch(
         for event in event_log.read_all()
         if event.type == "worker.scope_write.rejected"
     ]
+
+    # An authorized mention must not hide another root reference or let the
+    # path extractor authorize only a prefix of a different target.
+    for index, expression in enumerate([
+        f"Path('{tmp_path}').joinpath('outside.txt')",
+        f"Path(f'{scratch}{{suffix}}')",
+        f"Path('{scratch}其他')",
+    ]):
+        ambiguous = (
+            compound.removesuffix("PY")
+            + f"{expression}.write_text('bad')\nPY"
+        )
+        assert _invoke(
+            state_dir,
+            event="codex.hook.pre_tool_use",
+            backend="codex",
+            payload={
+                "session_id": f"uuid-refactor-plan-ambiguous-root-{index}",
+                "transcript_path": str(transcript),
+                "cwd": str(workdir),
+                "tool_name": "Bash",
+                "tool_input": {"command": ambiguous},
+            },
+            monkeypatch=monkeypatch,
+        ) == 2
 
 
 def _seed_claude_fanout_workdir(state_dir: Path) -> Path:

@@ -1632,6 +1632,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         {
             "id": "prd-plan",
             "attempt_domain": "plan",
+            "result_semantics": "artifact_production",
             "trigger": "prd.scan.completed",
             "topology": "fanout_reader",
             "roles": [plan_role],

@@ -19,6 +19,13 @@ do not copy an older example when they differ. Runtime owns schema/admission,
 while the planner owns task meaning, slicing, acceptance, dependencies, and
 source traceability.
 
+When `product_acceptance_spec` is required, read
+[the complete descriptor example](references/product-acceptance.json) before
+authoring the result. Adapt its commands, owners, journeys and assertions to
+the actual requirements; it demonstrates field names, not product scope or a
+default provider waiver. Keep `journey_id` and assertion-local `assertion_id`
+distinct; `id` and `kind` are not substitutes for those schema keys.
+
 ## Mechanical Closure Before Output
 
 Before emitting a plan result, reconcile the final serialized artifacts as
@@ -350,6 +357,12 @@ Do not invent a `setup`, `browser`, or `real-e2e` tier. Runtime normalizes a
 small compatibility alias set, but unknown tiers fail closed before writer
 dispatch.
 
+Each `real_e2e_matrix.rows[].command_id` must resolve to a canonical command
+whose tier is `e2e` or `manual_evidence`. Keep `static`/`runtime` commands in
+the Test Matrix. If a command actually exercises the built application end to
+end, classify it consistently as `e2e` in the registry and all references;
+do not merely relabel a unit suite to satisfy this gate.
+
 When the active v4 Task Pipeline profile requires rolling smoke, mark at least
 one cheap command per task with JSON boolean `rolling_smoke: true`. The marked
 command must be deterministic, reusable, and use the `static` or `runtime`
@@ -583,6 +596,10 @@ because no task owned the root entrypoint that wires the bundles together.
 Whenever the plan has more than one parallel bundle, emit exactly one final
 **assembly task**:
 
+- Give it an `owner_role` distinct from the feature tasks it depends on
+  (for example, `dev-assembly` versus `dev-feature`). A different task id or
+  later wave does not remove this constraint, even in a serial map. These are
+  logical ownership labels, not permission to create extra runtime roles.
 - `root_owner_class: "assembly"`. The deterministic plan gate checks for this;
   its absence is flagged `缺 assembly 任务`. Root-level paths (package
   entrypoint, `__init__`, CLI `main` wiring, `pyproject.toml`

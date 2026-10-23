@@ -226,11 +226,9 @@ def _path_is_within(path: Path, root: Path) -> bool:
 def _absolute_root_path_mentions(command: str, root: Path) -> list[Path]:
     """Extract explicit paths rooted at ``root`` from a shell command.
 
-    The legacy shell guard only has a conservative string heuristic. Keep that
-    heuristic fail-closed for dynamic or ambiguous commands, but recognize the
-    one signed state-dir path that a provider is allowed to update alongside
-    workdir artifacts. This is deliberately limited to simple path characters;
-    shell expansion and computed paths remain blocked.
+    This extends the legacy string heuristic, not a shell/Python interpreter.
+    Every root occurrence must form a complete simple path; never silently
+    ignore a bare root or accept the authorized prefix of a longer expression.
     """
 
     root_text = str(root.resolve(strict=False)).rstrip("/")
@@ -240,8 +238,14 @@ def _absolute_root_path_mentions(command: str, root: Path) -> list[Path]:
         re.escape(root_text) + r"(?:/[A-Za-z0-9_.-]+)+"
     )
     paths: list[Path] = []
-    for raw in pattern.findall(command):
-        path = Path(raw)
+    for occurrence in re.finditer(re.escape(root_text), command):
+        match = pattern.match(command, occurrence.start())
+        if match is None or (
+            match.end() < len(command)
+            and command[match.end()] not in "\"' \t\r\n"
+        ):
+            return []
+        path = Path(match.group())
         if path not in paths:
             paths.append(path)
     return paths
