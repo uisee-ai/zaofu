@@ -42,6 +42,11 @@ context for runtime truth, task scope, and completion claims.
   `child_id`, `run_id`, `task_id`, `lane_id`, `stage_slot`, `affinity_tag`, and
   `task_map_ref` as the lane binding. Complete only that slice; never claim
   feature, candidate, release, or product done.
+- 恢复或重试时，即使沿用同一 Provider 会话，也先重新读取本次派发的 briefing。
+  写入结果前逐项核对当前 task、operation、attempt、dispatch、result scratch 路径
+  和提交命令；代码与测试证据可以沿用，旧执行身份和旧 scratch 路径不能沿用。
+  scratch 写入被拒绝时，先对照本次 briefing 与实际尝试的完整路径；不要据旧会话
+  记忆认定 runtime 绑定错误，也不要修改守卫、权限或 canonical state 来继续。
 - Keep implementation small, inspectable, and test-backed.
 - Do not change runtime truth files by hand.
 - Preserve user and parallel-worker changes.

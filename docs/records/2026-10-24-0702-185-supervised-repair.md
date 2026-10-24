@@ -258,3 +258,57 @@ ID/owner/tier/timeout/证据绑定，保留额外配置检查；绑定过期在�
 SUP-009最终闭包：`tests/test_light_flow_contract.py tests/test_task_map.py
  tests/test_writer_fanout_runtime.py` 224项通过（311.56秒）；文档指令8项通过，
 Ruff/diff通过。与前述79项有重叠，不累计为唯一测试数；不是full pytest或真实Provider重验。
+
+SUP-009提交：`e3cb4c8f fix: preserve canonical task boundaries in light delivery`。
+
+## SUP-010 · Owner批准CLI writer取消token上限，原Run续行验证
+
+Owner明确授权“CLI writer 可以取消 2M 上限，token 限制，暂时不设置”。
+只给dev-lane-0增加cli-writer-recovery-v1，token_budget=0；保留Operation的
+1200秒/60样本/10美元、Run的12M/7200秒/30美元，其他reader仍为2M。
+原blocked Operation不改写、不清零；复用既有repair.action.requested的
+rerun_fanout_child，由Kernel创建有parent_operation_id的新writer Operation。
+其运行仍属于原Run，Run累计用量和时间不清零，API已准入结果和CLI已有提交保留。
+
+恢复前聚焦验证：`tests/test_repair_action_executor.py tests/test_workflow_budget_guard.py`
+加writer retry的fresh blocking Operation、dependency base两个案例，32项通过（20.71秒）。
+这不是full pytest，也不替代后续真实Provider闭环。已停止原watcher/Provider，
+源码从faf8cd5b冻结升级至e3cb4c8f，归档保留两版；停止状态下按Owner授权原子替换
+zf.yaml，校验原字节摘要，未直接修改TaskStore或ledger文件。配置候选逐角色比较，
+只有writer execution profile改变；首次候选漏写backend导致其默认为python，
+在应用前断言拦截，补codex后通过。恢复脚本首次误以worker目录为Git根，
+在变更前HEAD断言拦截，改为checkpoint记录的project子目录后继续。
+
+运行证据：`185-supervised-20261024T070200Z/live/prd/recovery-*`，
+Owner授权、配置前后全文/摘要、源码版本、恢复intent与watcher日志分开保留。
+此轮按新预算策略验证，不能把原2M失败改记为通过；未通过项目继续记录。
+
+09:02:31真实repair准入`evt-77d1ab48befd`；新Operation
+`wop-prd-lanes-impl-queued-TASK-PRD-CLI-2-trig-evt-0-7bfbf3a0e17e`
+于`evt-26722dcb830e`开始，父Operation仍blocked；dispatch为原dispatch加-retry-1。
+request不可变sidecar714b78f2606c0da59ed6bd7d55ae59ad6befcfa7b0a535f7943343bceab12076
+验证profile=cli-writer-recovery-v1、token_budget=0、其他限制不变。
+HEAD仍e9e8ab0207d3f8d6618ea09892576fd5682f8e78；API未重跑。
+更正SUP-007入口结论：自动resume projection不覆盖v3预算blocked，
+但既有受控repair重试入口已支持此次恢复，因此本步骤无需新增第二套恢复状态机。
+产品demo合同漂移预检为WARN而非STOP，按Owner批准的精确配置变更继续；
+不是严格合同CAS在线换代已实现的证明。
+
+### SUP-010a · 恢复会话沿用旧scratch，守卫正确拒绝
+
+09:05:19 `evt-3c8825c1610c`拒绝writer写旧Operation 3b7a18d5c6d2的scratch。
+当前Kernel生成briefing第118行和提交命令均指向新7bfbf3a0e17e/retry-1，
+因此不是新scratch绑定错误。writer根据旧会话记忆误报runtime缺陷并停止；
+监工通过同一Codex tmux输入提醒重新读取当前briefing、逐项核对执行身份和路径，
+不创建额外dispatch/Attempt，不放宽守卫、不代写结果。完整提示保存
+`recovery-operator-correction.json`。这是有人介入恢复，不能记作全自动恢复成功。
+修订writer方法并同步三份skill：恢复时先重读本次briefing；代码证据可沿用，
+旧身份/旧scratch不可沿用；拒绝后先核对实际路径，不根据旧上下文认定runtime错误。
+当前运行仍冻结e3cb4c8f，方法文件未热替换，现场改进由明确记录的监工提醒完成。
+
+方法修订验证：13项方法/指令检查通过；针对本切片显式paths执行
+`dev-verify.py plan/run --base dev --tests tests/test_plan_readiness_skills.py`，
+自动45项通过、1项跳过（14.52秒），三份skill字节相同，git diff --check通过。
+额外15项指令/Attempt终态检查通过，含旧终态不得关闭后续redrive Attempt。
+上述集合有重叠，不累计唯一总数；非全量验证。无paths的整个184对dev planner
+覆盖历史多批次并选794个测试文件、退出2，未作为通过证据，也未因此触发full pytest。

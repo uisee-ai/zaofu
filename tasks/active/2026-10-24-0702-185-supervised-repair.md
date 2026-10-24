@@ -16,6 +16,8 @@
 必需工作区、Git、ledger、sidecar与checkpoint。恢复前复核旧执行者已停、断点仍有效。
 
 当前原Run `workflow-3ba5d2aa7ac4bb65` 在CLI Operation预算处blocked；源码外部65项
-通过，未完成独立Verify/Judge/Kernel交付。完整现场保留，进程停止，预算未改。
-受控预算续行尚缺v3 fanout入口；不将重启/新Run称为原断点恢复。其余完整实现缺口
-保持active，未归档。预算验收口径已询问Owner，未收到改变上限的批准。
+通过，未完成独立Verify/Judge/Kernel交付。完整现场保留。
+Owner现已明确批准CLI writer取消2M token上限；实施仅writer的token_budget=0，
+Run的12M/7200秒/30美元及其他Operation限制保留。使用既有受控writer retry创建
+关联旧Operation的新Operation，保留原Run、已完成API与CLI HEAD；不将新Run称为恢复。
+原预算超限事实保持，当前开始按新授权恢复验证；其余实现缺口保持active，未归档。
