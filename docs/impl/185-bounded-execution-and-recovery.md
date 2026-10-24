@@ -980,3 +980,11 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 失败为成功终止用例的mock始终is_alive=True，与新增存活复查冲突。修正该用例的
 进程生命周期替身，保留idle断言和独立“终止仍活着必须blocked”测试；受影响分支
 及针对回归共18项复验通过。未重跑已绿170项，未运行full pytest或新一轮真实PRD。
+
+### Writer预算恢复后的汇总续行
+
+受控重试可保留原Run和已完成child，新Operation关联旧blocked Operation。
+当Owner已重新激活Run、当前fanout代际有效、全部writer完成时，由Run blocked
+产生的历史cancelled aggregate允许进入原候选集成；普通取消或仍终态Run不恢复。
+恢复保留Run累计预算及历史阻断，不代表旧Operation预算被清零。
+回归与真实断点证据见[SUP-011](../records/2026-10-24-0702-185-supervised-repair.md)。

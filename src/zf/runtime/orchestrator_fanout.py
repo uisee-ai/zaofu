@@ -5032,9 +5032,17 @@ class FanoutCoordinationMixin(
         aggregate = manifest.get("aggregate") if isinstance(manifest.get("aggregate"), dict) else {}
         status = str(aggregate.get("status") or "")
         reason = str(aggregate.get("reason") or "")
-        if status not in {"failed", "timed_out"}:
-            return False
-        if status != "timed_out" and reason != "timeout":
+        # The caller first fences terminal Runs and superseded generations.
+        # A reactivated blocked Run may retain its cancelled aggregate while
+        # a controlled child retry has already completed all writer work.
+        resumed_block = (
+            status == "cancelled"
+            and reason == "workflow_run_terminal:run.goal.blocked"
+        )
+        if not resumed_block and (
+            status not in {"failed", "timed_out"}
+            or (status != "timed_out" and reason != "timeout")
+        ):
             return False
         children = [
             child for child in manifest.get("children", []) or []

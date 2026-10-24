@@ -312,3 +312,25 @@ HEAD仍e9e8ab0207d3f8d6618ea09892576fd5682f8e78；API未重跑。
 额外15项指令/Attempt终态检查通过，含旧终态不得关闭后续redrive Attempt。
 上述集合有重叠，不累计唯一总数；非全量验证。无paths的整个184对dev planner
 覆盖历史多批次并选794个测试文件、退出2，未作为通过证据，也未因此触发full pytest。
+
+SUP-010a方法修订提交：`d160bdd7 fix: revalidate writer identity before supervised retry submission`。
+09:09:25新CLI结果`evt-4c93ed7d3573`准入，dev.build.done=`evt-82b412858ee0`，
+TaskRef e9e8ab0保留，child.completed=`evt-2dcbc9ba03e7`；恢复Attempt成功终局。
+
+## SUP-011 · 预算恢复后writer汇总保留cancelled导致死端
+
+真实API/CLI两child均completed，但manifest.aggregate仍为cancelled，原因
+workflow_run_terminal:run.goal.blocked。`_evaluate_writer_fanout`把历史cancelled
+当不可恢复终态；已有恢复判定只允许timeout，因此没有candidate.ready。
+09:11后再次zf stop（18步）并保留所有现场；原Run仍running，不清零预算。
+新增实际Orchestrator入口回归：Owner重新active后所有writer完成仍无候选，
+1 RED/2原有负例通过。修复仅允许“Run blocked导致的cancelled且全部child完成”
+进入既有候选集成；调用前仍校验当前Run终态和fanout代际，普通取消不能恢复。
+同时覆盖运行中完成、重启/idle收尾、未重新active、Owner取消和重复tick幂等；
+不得重派已完成writer，不直接改manifest或伪造candidate.ready。
+
+SUP-011验证：新增6分支与repair/budget/Run admission闭包75项通过（65.44秒）；
+完整writer runtime模块158项通过（4进程，94.03秒），sentinel51项、flow mock10项、
+指令8项通过，Ruff/diff通过。自动选择器显式传本切片source/test/doc并记录receipt，
+宽deterministic/serial层由上述已执行闭包替代，自动contract/mock层单独核对。
+这不是全仓pytest，不改变真实运行的预算和验收口径。
