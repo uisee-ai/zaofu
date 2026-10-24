@@ -10,14 +10,14 @@
 
 | 项 | 当前具体问题 | 下一验证 |
 | --- | --- | --- |
-| 1 | 第五轮产品容器校验失败，旧Verify超2M | 保持原需求/预算，冻结新版本从入口运行，失败先保存现场 |
+| 1 | 最新PRD源码外部65项通过，CLI writer超2M而未准入结果 | 原Run保留blocked；预算恢复口径待Owner选择，不称为完整交付 |
 | 2 | 旧候选reader取消修复尚无真实新Run验证 | 断点及迟到结果/旧Provider退出均取证 |
 | 3 | Task Map后配置变更缺新代际受控链 | 实测复用/变化两分支，旧批准失效、新消费者生效 |
-| 4 | Verify重复读、递归hook结果及短轮询增大累计上下文 | 查真实调用，精确证据索引，避免无效模型往返，预算不变 |
-| 5 | 通用源码single入口未接通 | 复用writer/Task/Operation及独立验证，不另建状态机 |
+| 4 | reader/writer重复读、大量失败堆栈和历史会话放大输入 | 索引/方法及恢复计量已修，原预算内完整PRD仍未通过 |
+| 5 | 通用源码single入口未接通；light原合同继承有缺陷 | light边界修复已验证；新入口及独立交付链仍待完成 |
 | 6 | Codex原生助手身份/权限/子树取消未签收 | 当前adapter资格逐项验证，未支持能力保持拒绝 |
 | 7 | 主机unshare拒绝；其他Codex正向能力已有证据 | 查实际隔离能力；Kimi不调用 |
-| 8 | 恢复包缺预算/Git/权限/副作用完整事实 | 精确Run/Attempt，原子副本、未知项与受控接替 |
+| 8 | 已补Git快照、当前Attempt消费者和预算续算，完整接替仍缺 | 跨计量域归一化、权限/副作用胶囊及v3 fanout预算恢复待完成 |
 | 9 | PRD未交付，新修复尚未真实重验 | 各分支独立记录pass/fail/blocked，不把mock当真实E2E |
 
 ## 监工协议
@@ -237,3 +237,24 @@ redrive；但Operation本身冻结上限未变。新执行超过同一上限时�
 30项预算/受控恢复聚焦通过。当前真实PRD继续保持停止，未应用该修复到现场。
 SUP-008追加：Run admission/Attempt终态/指令及flow smoke共57项、自动增量19项、
 sentinel51项通过，Ruff/diff通过；与聚焦组有重叠，不汇总成唯一测试数，非full pytest。
+
+SUP-007方法与SUP-008提交：`f796a2a8 fix: rearm budget guards after controlled operation recovery`。
+暂停快照独立进程观察：对应tmux session不存在，/proc中可读取的工作目录没有落在
+本模拟根的进程；详细范围见`paused-process-observation.json`。Run归属计量5,712,647
+（按当前已准入cost delta及事件归属），不把隔离项目入口用量混成Run用量。
+已询问Owner是否允许单独的3M Operation恢复实验；未收到批准，不改原2M/12M预算。
+即使后续预算实验成功，也不把当前原预算失败改为PASS。
+
+## SUP-009 · light入口丢失canonical Task边界
+
+3项RED：原Task明确两个文件，合成任务却采用默认app/**加README.md；结构化AC/ID
+被泛化文本替换，验证命令ID与AC链接丢失；过期root contract digest仍生成task_map。
+修复继承canonical scope、exclusions、non-goals、AC和goal IDs，复用命令规范化保留
+ID/owner/tier/timeout/证据绑定，保留额外配置检查；绑定过期在物化前发出明确blocked。
+没有已跟踪Task的legacy入口沿用既有合同，不在此切片宣称新source-single已完成。
+79项light/输入继承/writer准入/相关policy mock通过；实际Orchestrator入口到writer
+合同有测试。追加legacy字符串命令/额外检查去重，自动增量30项、sentinel51项通过。
+首个闭包命令误写不存在的验证命令测试路径，零测试执行；纠正后才执行上述闭包。
+SUP-009最终闭包：`tests/test_light_flow_contract.py tests/test_task_map.py
+ tests/test_writer_fanout_runtime.py` 224项通过（311.56秒）；文档指令8项通过，
+Ruff/diff通过。与前述79项有重叠，不累计为唯一测试数；不是full pytest或真实Provider重验。

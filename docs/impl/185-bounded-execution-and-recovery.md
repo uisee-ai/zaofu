@@ -2,6 +2,9 @@
 
 > 状态：部分完成；真实 Codex 有界交付、同 Provider 自动恢复、标准 Issue、General 完整交付通过。PRD 两轮候选功能通过但未交付：上一轮触发 Run 12M 上限；2026-10-24 轮第二个 Verify 触发 Operation 2M 上限。不表示 185 全部签收。
 
+最新监工运行在CLI writer的2M Operation上限阻断，暂停源码外部65项通过；现场保留，
+未进入独立Verify/Judge/Kernel交付。当前状态以[监工记录](../records/2026-10-24-0702-185-supervised-repair.md)为准。
+
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
 `6682ff90`。用户要求先完成未完成项，再做真实 E2E；模拟进程测试与真实模型测试分别记录。
@@ -36,6 +39,10 @@ Workflow Synthesis 支持 `intent=bounded_execution`，参数为 `executor_role`
 这是一条报告/工件执行路线，不能声明源码交付，也不把一个 lane 当作单 Agent。
 Provider 原生工具禁用不等于操作系统沙箱；源码写入仍受既有 scope/结果合同约束。
 现阶段不开放未验证的 `native_delegation: true`；运行前 preflight 明确拒绝。
+
+既有light入口现在继承canonical Task的明确scope、排除项、结构化AC和验证命令ID，
+不再用整目录默认范围覆盖这些输入；保留额外配置检查。启动绑定digest过期时在生成
+Task Map前阻断。此修复已接入实际runtime入口和writer合同，仍不等于通用源码single入口。
 
 ## Task Map 后复核
 
