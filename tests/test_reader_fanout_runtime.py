@@ -3508,7 +3508,7 @@ def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
     assert "Kernel. Do not add raw child result files" in briefing
 
 
-def test_goal_closure_success_uses_immutable_payload_file(
+def test_goal_closure_success_uses_editable_payload_draft(
     tmp_path: Path,
     monkeypatch,
 ):

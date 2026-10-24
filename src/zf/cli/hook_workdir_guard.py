@@ -239,11 +239,17 @@ def is_authorized_result_scratch_target(
         path = Path(cwd) / path
     from zf.runtime.result_submit import is_authorized_result_scratch_write
 
-    return is_authorized_result_scratch_write(
+    if is_authorized_result_scratch_write(
         state_dir,
         event_log,
         role_instance=actor,
         target=path,
+    ):
+        return True
+    from zf.runtime.fanout_result_draft import is_authorized_fanout_result_draft
+
+    return is_authorized_fanout_result_draft(
+        state_dir, event_log, role_instance=actor, target=path,
     )
 
 

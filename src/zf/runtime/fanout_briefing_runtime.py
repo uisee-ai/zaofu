@@ -922,26 +922,14 @@ class FanoutBriefingMixin:
         success_payload_file = ""
         failure_payload_file = ""
         if not semantic_submit:
-            # Child result payloads frequently contain evidence refs, shell
-            # commands, and multiline findings.  Inline shell JSON is fragile
-            # (quotes/newlines are routinely truncated by providers), so every
-            # structured result is written atomically and submitted by path.
-            from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+            from zf.runtime.fanout_result_draft import prepare_fanout_result_draft
 
-            def _payload_file(payload: dict, label: str) -> str:
-                descriptor = write_immutable_json_sidecar(
-                    self.state_dir,
-                    payload,
-                    root=f"attempts/{run_id}/completion-payloads/{label}",
-                    kind="fanout_child_completion_payload",
-                    schema_version="fanout-child-completion-payload.v1",
-                    created_by="fanout-briefing-runtime",
-                    source_event_id=str(context.trigger_event_id or ""),
-                )
-                return str(self.state_dir.expanduser().resolve() / descriptor["ref"])
-
-            success_payload_file = _payload_file(success_payload, "success")
-            failure_payload_file = _payload_file(failure_payload, "failure")
+            success_payload_file = prepare_fanout_result_draft(
+                self.state_dir, run_id=run_id, label="success", payload=success_payload,
+            )
+            failure_payload_file = prepare_fanout_result_draft(
+                self.state_dir, run_id=run_id, label="failure", payload=failure_payload,
+            )
         success_command = _emit_command(
             child_success_event,
             success_payload,
@@ -974,11 +962,15 @@ class FanoutBriefingMixin:
         result_preview_lines: list[str] = []
         if not semantic_submit:
             # Non-semantic readers still benefit from the schema example.  The
-            # actual command uses the immutable sidecar; semantic submitters
+            # actual command submits the editable draft; semantic submitters
             # use their scratch contract and omit this potentially large block.
             result_preview_lines = [
-                "The payload file is authoritative; this JSON is only a shape "
-                "preview. Never copy it into an inline shell `--payload` argument.",
+                "Edit the selected payload draft in place using native Edit or "
+                "apply_patch Update File. Do not delete, move, or recreate it. "
+                "Preserve the prefilled identity fields and replace report placeholders "
+                "with your findings before submission. The draft is not runtime truth.",
+                "This JSON is only a shape preview. Never copy it into an inline "
+                "shell `--payload` argument.",
                 "```json",
                 json.dumps(success_payload, ensure_ascii=False, indent=2),
                 "```",

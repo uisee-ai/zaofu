@@ -36,6 +36,9 @@ amendment are separate role capabilities supplied by the workflow profile.
    `zf artifact read` command for every briefing `required_reads` row, including
    all `plan-port-*` sources, with the exact source/artifact/json-path tuple.
    Direct file reads do not satisfy the attempt read ledger.
+   先按 required_reads 清单估算输出量，分批读取每行完整正文并保留本回合已读内容。
+   不因一个批量输出被截断而重读整个 `--required` 集合；只补读未完整呈现的行。
+   不用标题、摘要或截断片段替代完整必读正文，也不要重复打印已完整读过的大段 Plan/PAS。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce
@@ -77,6 +80,11 @@ amendment are separate role capabilities supplied by the workflow profile.
    `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
    或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；
    不把其他版本的评审、成员签字或仅有命令退出码当作所需批准。
+   建立一次证据索引：按事件类型、actor、当前派发因果定位 ID，再读取必要事件正文与
+   raw_output ref。不要为找一个命令的收据反复拉取 last 100/200 的 hook 历史；查询自身
+   也产生 hook 输出，递归读取会迅速放大上下文。找到原始命令后保留其 ID/ref 复用。
+   预算紧张时先收敛已完成检查的矩阵并预校验；证据确实缺失则如实阻断，不反复扩展
+   历史查询直到预算耗尽，不省略独立验收或伪造通过。
    将实际发现、命令及这些引用写进已授权的 result scratch。不得虚构事件或引用其他回合，
    scratch 位于 workdir 外时，用原生 Edit/Write 或 apply_patch 更新 Kernel 声明的确切文件；
    不用 Python heredoc 或 shell 重定向写外部 scratch。Shell 的动态写入不享有该确切路径

@@ -1,6 +1,6 @@
 # 185 续批：有界工件执行、规划绑定与恢复隔离
 
-> 状态：部分完成；真实 Codex 有界交付、同 Provider 自动恢复、标准 Issue、General 完整交付通过。最新 PRD 候选功能通过，但 Verify 未全部准入且 Run 12M token 上限触发 blocked，不表示 185 全部签收。
+> 状态：部分完成；真实 Codex 有界交付、同 Provider 自动恢复、标准 Issue、General 完整交付通过。PRD 两轮候选功能通过但未交付：上一轮触发 Run 12M 上限；2026-10-24 轮第二个 Verify 触发 Operation 2M 上限。不表示 185 全部签收。
 
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
@@ -671,3 +671,28 @@ State Packet 是运行事实投影，不是新的 canonical authority。
 恢复显示闭包132项、dev-verify自动层303项通过；目录/启动/规划/skill闭包87 passed、
 1 skipped，sentinel51项、serial10项通过（有重叠，不相加）。目录共享消费者保守扩展
 89文件而升级全仓，本批跳过 broad deterministic，以明确影响闭包验证；不是 full pytest。
+
+## 2026-10-24 真实失败驱动的结果草稿修复
+
+固定 Research 的 Codex risk_critic 正确发现兼容性风险，但编辑生成的不可变 completion
+sidecar 时被 scope guard 拦截；随后失败结果导致 synth 拒绝整个研究，未伪造成功。
+非 semantic-submit reader 现在生成 completion-drafts 下两份可编辑模板；权限从最新
+角色 dispatch、当前 fanout/attempt 与 EventLog 重建状态推导，只允许已存在的精确草稿
+原位更新。旧派发、终态、其他角色、任意 artifact、符号链接与新增/删除均不放行。
+草稿不是 canonical 结果，提交仍使用原受控 emit 和结果准入；semantic-submit 的签名
+scratch 路径与权限不变。重发 briefing 不覆盖已填写草稿。
+
+PRD 本轮 `workflow-e848dbc3d8cb2824` 的产品外部65项、产品19测试通过，首个 Verify
+准入；第二个 Verify 在16个 usage samples、2,065,001 token 时触发 Operation 2M
+预算，`evt-44ae4e8aace4` 阻断，未进入 Judge/交付。保留原预算，没有把候选 oracle
+当成交付验收。该 Verify 有重复大工件读取和多轮大范围 hook 收据查询；验证 skill
+补充完整必读资料的分批读取、避免重复输出与按事件身份建立证据索引的方法。
+不能据此推断新一轮一定通过；须冻结提交后真实重验。
+
+结果草稿 RED 7项复现；主影响闭包234、额外 hook/指令50、sentinel51通过。
+失败运行与清理证据存于 `185-codex-20261024T013700Z`；重验另建目录保留旧失败。
+
+本批 dev-verify 选出20个测试文件，按不重跑已绿检查的原则分组覆盖该闭包；
+额外调用者结果见 `research-draft-additional-callers.log`，不是 full pytest。
+自动 run 显式跳过已分组执行的 deterministic 层，实际 sentinel51、flow smoke10通过；
+另两项 policy/Generic mock E2E 文件9项通过。各组重叠，不累计为唯一测试总数。
