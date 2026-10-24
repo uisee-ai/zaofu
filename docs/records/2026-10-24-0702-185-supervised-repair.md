@@ -535,3 +535,52 @@ SUP-018补充直接writer admission闭包40项通过，真实准入/审批/派�
 当前尚待writer结果、后续Verify/Discovery/Judge与Kernel最终交付。
 
 SUP-019验证：29项CLI/digest/operator preview只读闭包通过，Ruff/diff通过；无需为只读展示修复中断真实writer，冻结执行继续使用6be5b399。
+
+
+## 当前真实续行证据（11:12 UTC，未最终交付）
+
+- 同一Run workflow-3ba5d2aa7ac4bb65；Request revision2、原需求SHA3cd60193保持。
+- gap writer Operation196e81a3cdec；TDD RED evt-bfe029d3fcd0（正负各失败），
+  提交4e836ed仅两文件；结果evt-d8c84c66bddf准入。
+- Kernel candidate.ready evt-77d48c1def93，候选30aa6a3，generation8579ed56。
+  原固定外部oracle SHA5dedd578不变，65项全通过；新增固定整数边界oracle
+  SHA2307d754在旧99b0ed0退出1，在新候选退出0、精确整数/输入不变等6项通过。
+- 新Verify Operation73b0586c89f3识别writer提交与candidate不相同，重新跑真实检查；
+  5旅程/15断言报告结果evt-f3788a3d5cbf准入。Discovery/Judge/Kernel交付仍待完成。
+- 11:09账本：原Run墙钟3.601h（含监工暂停），18,164,476累计tokens含缓存计量，
+  171条均unpriced，不能将账本USD0解释为免费。effective Run timeout/token=0，
+  cost=30；预算修订仍引用evt-c7c87dc36488，没有重置基线。
+
+本轮dev-verify显式26个改动路径规划无未映射项，保守选316测试文件并建议broad tier；
+已执行上述影响闭包/哨兵/mock和真实链路，未执行全量pytest。对当前dev的整分支差异
+另有292文件/801测试规划，报告6项未映射（workflow_request_identity及历史intake-live
+fixtures/runner等），属于整个184分支的待对账闭包；不把当前小批次通过宣称整分支全绿。
+两个规划JSON及全部测试日志保存在外部long-horizon-validation目录。
+
+
+## SUP-020 · 完成交付后继承任务未收尾
+
+原Run已由Kernel完成：Judge结果evt-8959563bd7dc准入，24声明全部closed；
+ship.completed evt-b24267ce2cb5把30aa6a3交付到main=48778d1，run.goal.completed
+为evt-f0e7c931237f。交付目录原65项oracle及独立整数边界6项均通过。
+但Docker四卡断言失败：根Task与gap已done/归档，原TASK-PRD-API/CLI仍in_progress。
+根因是完成payload.completed_task_ids只有gap，旧Task绑定旧generation；已有迟到终态
+防护正确拒绝跨代直接收尾，却没有识别当前amended TaskMap中未变更的继承任务。
+现场已停止；不重开完成的Run、不重复Ship、不修改已通过产品源码。
+
+新增机械证明：仅当前Run的最新已准入PlanPackage、可校验的不可变supersedes链、
+旧canonical任务绑定的原Package/TaskMap/generation、完全相同的新旧任务行、且该任务
+非空goal_claim_ids全部closed时，才允许跨generation收尾。显式superseded任务不收尾；
+错误Run/版本、修改后的任务、缺声明/未closed声明、篡改artifact均拒绝。
+其他迟到终态和普通任务规则不改。通过原Orchestrator入口与启动对账调用正常TaskStore/
+EventWriter迁移；不写kanban JSON。只读真实现场预演仅选中这两个旧任务、未改变state。
+
+测试先2 RED/5 PASS复现live/restart两条路径。最初fixture import路径不正确导致收集失败，
+修正tests命名空间后才得到有效RED。最终89项terminal/reconciliation/completion/根任务
+闭包、51项sentinel、3项flow smoke mock通过，Ruff/diff通过；等待冻结升级后的真实对账。
+
+
+SUP-020追加校验：最初把completed Run上的active更新当成重新激活，新增用例预期错误；
+既有RunAdmission明确只允许blocked恢复，completed不可重开，保持该规则。最终用例检查
+当前终态被后续阻断替代时，旧completion不能完成继承任务；helper核对当前Run状态及
+terminal_event_id。最终11项针对性回归、90项完整影响闭包、51项sentinel、3项mock通过。

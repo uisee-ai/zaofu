@@ -13,3 +13,9 @@
 
 `zf start` 是驻留项目服务；Run完成返回属于任务生命周期，不应因一个Run结束而停止其他任务。
 实现说明：[长期Run与受控恢复](../../docs/impl/185-long-horizon-run-recovery.md)。
+
+
+11:12 UTC：实现提交6513375d、4e60ec17、0fe2af8f、8b8cdd58、7c35ecb8、6be5b399、
+1eb976a7已本地提交。原Run已取消总time/token并真实恢复；两项原Verify通过，Discovery
+发现产品缺陷后产生gap，新候选30aa6a3外部65项/新增边界探针通过，新Verify结果准入。
+当前等待Discovery/Judge/Kernel交付；因此真实验收项仍不勾选、任务不归档。

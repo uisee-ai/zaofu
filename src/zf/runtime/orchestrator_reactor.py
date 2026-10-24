@@ -4476,15 +4476,19 @@ class EventReactorMixin(OrchestratorAgentReactorMixin, DurableCallWorkflowMixin)
         if not pdd_id or not feature_id:
             return None
         moved: list[str] = []
+        from zf.runtime.goal_retained_task_settlement import retained_goal_terminal_task_ids
+
+        current_tasks = self.task_store.list_all()
+        events = self.event_log.read_all()
         tasks = select_candidate_terminal_tasks(
-            self.task_store.list_all(),
+            current_tasks,
             event,
             pdd_id=pdd_id,
             feature_id=feature_id,
             is_bootstrap_task=self._is_workflow_bootstrap_task,
-            successful_task_ids=successful_task_ids_before_terminal(
-                self.event_log.read_all(),
-                event,
+            successful_task_ids=successful_task_ids_before_terminal(events, event),
+            retained_task_ids=retained_goal_terminal_task_ids(
+                self.state_dir, current_tasks, events, event,
             ),
         )
         for task in tasks:

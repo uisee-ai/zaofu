@@ -57,3 +57,9 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 
 `zf plan review`优先展示Kernel按实际派发任务集生成的plan-digest。返工TaskMap包含历史
 任务，不应把完整历史集合重算成当前scope冲突；无digest的旧事件继续使用兼容检查。
+
+
+跨generation gap完成时，当前Goal的终态只列本轮gap仍可能留下旧任务。对旧任务收尾
+必须证明其原PlanPackage在当前不可变继承链中、TaskMap任务行完全未变、属于同Run，
+且该任务所有声明已在当前Goal证据中关闭。新旧generation不匹配不能直接跳过检查。
+当前计划已被更新、引用损坏、任务被替换或声明未闭合时保持未完成；重启对账使用相同规则。
