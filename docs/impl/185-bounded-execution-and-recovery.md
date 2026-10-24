@@ -656,3 +656,18 @@ legacy run 提示。无绑定的旧任务保留兼容行为；本改动不从 re
 state-packet` caller、恢复 briefing、运行域隔离及 bounded mock。115 项影响闭包和
 51 项 sentinel 通过。这是恢复投影修复，不代表全部跨 Provider 接替或源码 single
 新入口已完成；真实 Codex 运行仍使用先前冻结源码，不能作为本修复的真实验证。
+
+## 2026-10-24 目录必需参数与恢复提示
+
+真实 Refactor 启动暴露缺失 `source_root`：路由目录现在从既有交互合同投影
+`required_parameters`（objective 保持顶层），CLI/Agent 可在批准前补齐；修改参与目录摘要。
+规划 skill 同步说明 source_ref 不能替代 source_root，Refactor 的源与目标必须不重叠，
+原地项目需使用经确认的冻结来源副本。运行中的冻结源码未热改。
+
+恢复提示不再把空 next_event 解释为可交付。仅已知 ship 阶段提示等待 Kernel delivery；
+unknown 或未解析的阶段要求查阅当前 operation 结果合同，并明确禁止自行 done/ship。
+State Packet 是运行事实投影，不是新的 canonical authority。
+
+恢复显示闭包132项、dev-verify自动层303项通过；目录/启动/规划/skill闭包87 passed、
+1 skipped，sentinel51项、serial10项通过（有重叠，不相加）。目录共享消费者保守扩展
+89文件而升级全仓，本批跳过 broad deterministic，以明确影响闭包验证；不是 full pytest。

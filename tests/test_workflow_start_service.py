@@ -434,6 +434,8 @@ def test_cli_routes_propose_apply_and_replay_without_web(
     ]) == 0
     routes = json.loads(capsys.readouterr().out)
     assert routes["task_id"] == "TASK-WORKFLOW-START"
+    prd = next(row for row in routes["routes"] if row["kind"] == "prd")
+    assert prd["required_parameters"] == ["target_root"]
     assert EventLog(state_dir / "events.jsonl").read_all() == []
 
     assert main([

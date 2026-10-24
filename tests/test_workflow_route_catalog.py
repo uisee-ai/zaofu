@@ -31,6 +31,7 @@ def test_root_catalog_projects_delivery_and_registered_research_routes() -> None
     assert delivery["entry_pattern_id"] == "prd-scan"
     assert delivery["lane_count"] == 2
     assert delivery["topology"] == "multi_lane"
+    assert delivery["required_parameters"] == ["target_root"]
     assert set(delivery["writer_roles"]) == {"dev-lane-0", "dev-lane-1"}
     assert {"verify-lane-0", "verify-lane-1"} <= set(
         delivery["verify_roles"]
@@ -53,6 +54,18 @@ def test_root_catalog_projects_delivery_and_registered_research_routes() -> None
     assert adaptive["roles"] == ["research_root"]
     assert adaptive["writer_roles"] == []
     assert adaptive["rollout"] == "opt_in_pilot"
+
+
+def test_refactor_catalog_exposes_request_policy_parameters():
+    config = load_config(ROOT / "examples/prod/controller/refactor-lane-v3.yaml")
+    route = resolve_workflow_route(config, "delivery:refactor:standard")
+    assert route["required_parameters"] == ["source_root", "target_root"]
+
+
+def test_issue_catalog_does_not_require_repository_parameters():
+    config = load_config(ROOT / "examples/prod/controller/issue-fanout-v3.yaml")
+    route = resolve_workflow_route(config, "delivery:issue:standard")
+    assert route["required_parameters"] == []
 
 
 def test_catalog_hides_registered_research_stage_with_wrong_role_contract() -> None:

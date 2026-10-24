@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from zf.core.workflow.flow_metadata import flow_metadata_for, normalize_flow_kind
+from zf.core.workflow.request_policy import required_fields_for_kind
 from zf.runtime.workflow_route_policy import (
     effective_execution_policy_digest,
     route_execution_policy,
@@ -214,6 +215,13 @@ def workflow_route_catalog(config: Any | None) -> dict[str, Any]:
 
     policy_digest = effective_execution_policy_digest(config)
     for route in routes:
+        if route["start_adapter"] in {
+            "delivery_request_submit", "light_delivery_request_submit", "registered_general",
+        }:
+            route["required_parameters"] = [
+                field for field in required_fields_for_kind(route["kind"])
+                if field != "objective"
+            ]
         route["flow_topology"] = route_flow_topology(config, route)
         route["execution_policy"] = route_execution_policy(
             config, route, digest=policy_digest,

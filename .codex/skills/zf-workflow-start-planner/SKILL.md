@@ -41,6 +41,13 @@ Task/config binding, proposal identity, approval, idempotency, and execution.
    - `planning`: artifact or task-map production without implementation;
    - `general`: another explicitly registered route.
 4. Remove routes that are unavailable or cannot satisfy required output.
+   Read the selected route's `required_parameters` and populate them from
+   confirmed project facts. A document `source_ref` does not replace a
+   required repository `source_root`. The Refactor route requires disjoint
+   source and target roots: for an existing-module refactor, use a confirmed
+   frozen source copy and the intended target, retaining the source revision.
+   Do not reuse one path for both or bypass overlap preflight.
+   If these facts are unknown, clarify before emitting an executable option.
 5. Rank the remaining routes using the Task contract:
    - prefer a single lane for one bounded owner, narrow scope, and one direct
      verification path;
