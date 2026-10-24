@@ -166,6 +166,8 @@ DYNAMIC_TEST_SUPPORT = {
         "tests/e2e/fixtures/intake-live/issue/counter.py",
         "tests/e2e/fixtures/intake-live/semantic/auth.py",
         "tests/e2e/fixtures/intake-live/semantic/orders.py",
+        "tests/e2e/fixtures/intake-live/issue/test_counter.py",
+        "tests/e2e/fixtures/intake-live/semantic/test_behavior.py",
     )
 }
 
@@ -406,6 +408,13 @@ def _source_module_for_path(path: str) -> str | None:
     return ".".join(parts) if parts else None
 
 
+def _is_repo_test_path(path: str) -> bool:
+    # Match pytest's exclusion of seeded, intentionally broken E2E products.
+    return (path.startswith("tests/") and path.endswith(".py")
+            and Path(path).name.startswith("test_")
+            and not path.startswith("tests/e2e/fixtures/"))
+
+
 @lru_cache(maxsize=8)
 def _dependency_graph(
     root_text: str,
@@ -424,10 +433,12 @@ def _dependency_graph(
     test_imports = {
         path.relative_to(root).as_posix(): _imports(path, modules)
         for path in (root / "tests").rglob("test_*.py")
+        if _is_repo_test_path(path.relative_to(root).as_posix())
     }
     test_support_imports = {
         path.relative_to(root).as_posix(): _import_candidates(path)
         for path in (root / "tests").rglob("test_*.py")
+        if _is_repo_test_path(path.relative_to(root).as_posix())
     }
     return modules, source_imports, test_imports, test_support_imports
 
@@ -439,9 +450,7 @@ def _test_candidates(
     selected = {
         path
         for path in changed_files
-        if path.startswith("tests/")
-        and path.endswith(".py")
-        and Path(path).name.startswith("test_")
+        if _is_repo_test_path(path)
         and (root / path).exists()
     }
     source_changes = [
@@ -454,7 +463,7 @@ def _test_candidates(
         for path in changed_files
         if path.startswith("tests/")
         and path.endswith(".py")
-        and not Path(path).name.startswith("test_")
+        and not _is_repo_test_path(path)
     ]
     if not source_changes and not support_changes:
         return selected, {}, {}
@@ -483,6 +492,7 @@ def _test_candidates(
         hits.update(
             path.relative_to(root).as_posix()
             for path in (root / "tests").rglob(f"test_{stem}.py")
+            if _is_repo_test_path(path.relative_to(root).as_posix())
         )
         per_source[source_path] = hits
         selected.update(hits)

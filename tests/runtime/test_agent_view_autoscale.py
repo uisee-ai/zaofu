@@ -35,10 +35,12 @@ class _Transport:
         self.registered.append(role.instance_id)
 
     def spawn(self, role: RoleConfig, argv: list[str], *, cwd: Path | None = None) -> None:
+        if role.instance_id in self.terminated:
+            self.terminated.remove(role.instance_id)
         self.spawned.append((role.instance_id, cwd))
 
     def is_alive(self, role_name: str) -> bool:
-        return True
+        return role_name not in self.terminated
 
     def wait_ready(self, role_name: str, pattern: str, timeout: float) -> bool:
         return True

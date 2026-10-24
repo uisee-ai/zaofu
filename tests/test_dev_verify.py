@@ -321,3 +321,29 @@ def test_dynamically_loaded_intake_support_selects_behavior_tests(mini_repo, sup
 def test_missing_dynamic_consumer_does_not_count_as_coverage(mini_repo):
     plan = dev_verify.build_plan(mini_repo, ["tests/e2e/intake_live_acceptance.py"])
     assert any("unmapped Python change" in error for error in plan.errors)
+
+
+@pytest.mark.parametrize("fixture", [
+    "tests/e2e/fixtures/intake-live/issue/test_counter.py",
+    "tests/e2e/fixtures/intake-live/semantic/test_behavior.py",
+])
+def test_seeded_product_tests_select_their_oracle_consumer(mini_repo, fixture):
+    path = mini_repo / fixture
+    path.parent.mkdir(parents=True)
+    path.write_text("def test_seed_is_intentionally_red(): assert False\n")
+    consumer = mini_repo / "tests/test_intake_live_validation.py"
+    consumer.write_text("def test_fixture_oracle(): pass\n")
+    plan = dev_verify.build_plan(mini_repo, [fixture])
+    assert plan.errors == []
+    assert fixture not in plan.selected_tests
+    assert "tests/test_intake_live_validation.py" in plan.selected_tests
+
+
+def test_unknown_seed_test_is_unmapped_instead_of_executable(mini_repo):
+    path = "tests/e2e/fixtures/new-product/test_bug.py"
+    fixture = mini_repo / path
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text("def test_seed_bug(): assert False\n")
+    plan = dev_verify.build_plan(mini_repo, [path])
+    assert path not in plan.selected_tests
+    assert any("unmapped Python change" in error for error in plan.errors)

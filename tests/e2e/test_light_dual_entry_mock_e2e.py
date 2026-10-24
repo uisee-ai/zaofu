@@ -19,7 +19,7 @@ from zf.runtime.workflow_start import WorkflowStartService
 pytestmark = pytest.mark.mock_e2e
 
 
-def _setup(tmp_path, surface):
+def _setup(tmp_path, surface, *, root_tests=False):
     if surface == 'channel':
         state, writer, service, authority = _ready_prd_fixture(tmp_path, implementation_start=True)
         payload = _task_payload(authority)
@@ -35,7 +35,7 @@ def _setup(tmp_path, surface):
         payload = {'task_id': 'TASK-LIGHT', 'title': '修复JSON输出', 'execution_mode': 'workflow',
                    'contract': {'behavior': '修复JSON输出', 'acceptance': '非法输入明确拒绝',
                                 'verification': 'python -m pytest -q', 'verification_tiers': ['runtime'],
-                                'scope': ['src/**', 'tests/**'], 'owner_role': 'fix-lane-0',
+                                'scope': ['counter.py', 'test_counter.py'] if root_tests else ['src/**', 'tests/**'], 'owner_role': 'fix-lane-0',
                                 'product_contract_ref': 'requirement.md'}}
     (tmp_path / 'requirement.md').write_text('修复现有JSON输出；非法输入明确拒绝；python -m pytest -q。')
     config_path = tmp_path / 'zf.yaml'
@@ -49,11 +49,12 @@ def _setup(tmp_path, surface):
 
 @pytest.mark.parametrize('surface,fault', [
     (surface, fault) for surface in ('kanban', 'channel')
-    for fault in ('', 'changed_contract', 'missing_input', 'tampered_source', 'missing_source')
-    if surface == 'channel' or fault not in ('tampered_source', 'missing_source')
+    for fault in ('', 'root_tests', 'changed_contract', 'missing_input', 'tampered_source', 'missing_source')
+    if (surface == 'channel' or fault not in ('tampered_source', 'missing_source'))
+    and not (surface == 'channel' and fault == 'root_tests')
 ])
 def test_preview_approval_and_light_map_preserve_source_and_scope(tmp_path, monkeypatch, capsys, surface, fault):
-    service, task, authority = _setup(tmp_path, surface)
+    service, task, authority = _setup(tmp_path, surface, root_tests=fault == 'root_tests')
     state = service.state_dir
     log = EventLog(state / 'events.jsonl')
     start = WorkflowStartService(state, service.config, project_root=tmp_path)
@@ -93,7 +94,7 @@ def test_preview_approval_and_light_map_preserve_source_and_scope(tmp_path, monk
         (state / authority['source_ref']).unlink()
     code = main(args)
     result = json.loads(capsys.readouterr().out)
-    if fault:
+    if fault and fault != 'root_tests':
         assert code != 0, result
         if fault in ('tampered_source', 'missing_source'):
             assert result['status'] == 'workflow_input_invalid'
@@ -123,3 +124,11 @@ def test_preview_approval_and_light_map_preserve_source_and_scope(tmp_path, monk
     stages = service.config.workflow.stages
     assert any('verify' in stage.id for stage in stages)
     assert any(any('judge' in role for role in stage.roles) for stage in stages)
+
+    runtime.run_once(events=maps)
+    all_events = log.read_all()
+    rejected = [e for e in all_events if e.type == 'fanout.cancelled']
+    assert not rejected, [e.payload for e in rejected]
+    children = [t for t in TaskStore(state / 'kanban.json').list_all() if t.id != task.id]
+    assert children, 'Task Map must produce a writer task through its real consumer'
+    assert children[0].contract.scope == task.contract.scope

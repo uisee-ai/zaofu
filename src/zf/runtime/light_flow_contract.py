@@ -23,6 +23,9 @@ def inherit_light_task_contract(
     if source.scope:
         target['allowed_paths'] = list(source.scope)
         target['allowed_paths_reason'] = 'single slice inherits the canonical root Task write scope'
+        # The approved single-slice scope owns layout; do not add a guessed
+        # tests/ convention that rejects existing root-level product tests.
+        task_map.get('shared_conventions', {}).pop('test_path_prefix', None)
     for key in ('exclusions', 'explicit_non_goals', 'acceptance_criteria', 'goal_claim_ids'):
         value = getattr(source, key, None)
         if value:
