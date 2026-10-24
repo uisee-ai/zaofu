@@ -59,6 +59,13 @@ context for runtime truth, task scope, and completion claims.
   `required_reads` row, using its exact attempt id, source id, artifact id, and
   JSON path. Reading the backing path with `cat`, `jq`, or an editor may help
   exploration but does not satisfy the runtime read ledger.
+- 必需工件正文只完整读取一次；批量 `--required` 返回 JSONL，各行的 `content`
+  是正文字符串。先在工具内解析，按未读行分批呈现，避免把转义 JSONL 与解析后的
+  同一正文都输出。单项 `--source ... --artifact ...` 的 stdout 本身就是正文。
+  输出被截断时只补缺失部分，不重跑整个集合；不能以索引或摘要替代必需正文。
+- 保存完整测试日志和退出码，向上下文呈现用例总数、失败类型及代表性堆栈；大量
+  subTest 同因失败时逐类检查，避免重复展开每一份相同堆栈。不得遗漏不同失败原因，
+  也不得把节选当完整证据。后续验证应引用原始日志和实际命令收据。
 - Treat every `plan-port-*` input as immutable Planner/Adapter output. Implement
   against the current port contents; do not rewrite a matrix or Plan Package
   after the contract snapshot has been dispatched.

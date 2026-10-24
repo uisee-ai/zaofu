@@ -57,6 +57,8 @@ Planner briefing 同时列出当前 profile 所要求的 Plan 产物，避免只
 continuation reservation 不清零累计消费。显式不同 worker 计量域不能直接相减，记为
 meter unavailable 并按既有预算门禁拒绝，不能报告零消费；同域累计token/采样数低于
 启动基线也视为计量不可用，包括只配置采样上限的情况。墙钟暂停规则未改。
+预算告警按受控redrive计数重新去重；旧Run的blocked事件不阻止恢复后再次阻断。
+Run预算修订不改变冻结Operation上限，不能据此宣称单操作预算恢复已获准。
 maintenance checkpoint 由受控动作/CLI 按 canonical assignee 定位配置工作区，使用
 入口验证的文件安全标识、唯一 ID 和 required sidecar 保存 HEAD、暂存/未暂存 binary patch、未跟踪文件内容、
 模式及符号链接目标。非 Git、超限、捕获变化或子模块场景明确 unavailable；忽略文件、

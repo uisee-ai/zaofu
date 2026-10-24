@@ -87,3 +87,41 @@ def test_runtime_blocks_and_stops_provider_after_cost_projection_regresses(tmp_p
     assert budget.payload['scope'] == 'operation'
     assert transport.terminated == ['dev']
     assert any(event.type == 'run.goal.blocked' for event in emitted)
+
+
+def test_resumed_operation_rearms_its_limit_and_blocks_the_run_again(tmp_path):
+    from zf.core.config.schema import ExecutionProfileLimitsConfig
+    from zf.core.events.model import ZfEvent
+    from zf.runtime.workflow_budget_guard import enforce_active_workflow_budgets, usage_meter_snapshot
+    from zf.runtime.workflow_operation import WorkflowOperationService
+    from tests.test_workflow_budget_guard import _runtime
+
+    runtime, transport = _runtime(tmp_path, operation_limits=ExecutionProfileLimitsConfig(token_budget=10))
+    service = WorkflowOperationService(state_dir=runtime.state_dir, event_log=runtime.event_log,
+                                       event_writer=runtime.event_writer)
+    op = service.ensure_operation(workflow_run_id='run-1', operation_id='op-1',
+        operation_type='task-stage', task_id='T1', request={
+            'task_pipeline_stage': 'impl', 'operation_generation': 1,
+            'operation_limits': {'token_budget': 10}})
+    identity = {'workflow_run_id': 'run-1', 'operation_id': op.operation_id,
+                'request_hash': op.request_hash, 'task_id': 'T1'}
+    service.mark_started(**identity, role_instance='dev', active_attempt_id='a1', dispatch_id='d1',
+                         budget_snapshot=usage_meter_snapshot(runtime, instance_id='dev'))
+    runtime.cost_tracker.record_usage('dev', 11, 0, instance_id='dev')
+    first = enforce_active_workflow_budgets(runtime)
+    assert any(e.type == 'run.goal.blocked' for e in first)
+    # The legacy recovery action changes Run limits, not the pinned Operation limit.
+    runtime.event_writer.append(ZfEvent(type='run.goal.updated', actor='operator', payload={
+        'workflow_run_id': 'run-1', 'run_id': 'run-1', 'source': 'zf_goal_cli',
+        'status': 'active', 'run_limits_patch': {'token_budget': 0}}, correlation_id='run-1'))
+    checkpoint = build_workflow_resume_projection(runtime.state_dir, runtime.config)['operation_checkpoints'][0]
+    assert apply_workflow_resume(runtime.state_dir, runtime.config,
+                                 checkpoint_id=checkpoint['checkpoint_id'])['applied'] == 1
+    transport.terminated.clear()
+    service.mark_started(**identity, role_instance='dev', active_attempt_id='a2', dispatch_id='d2',
+                         budget_snapshot=usage_meter_snapshot(runtime, instance_id='dev'))
+    second = enforce_active_workflow_budgets(runtime)
+    assert any(e.type == 'workflow.budget.exceeded' for e in second)
+    assert transport.terminated == ['dev']
+    assert any(e.type == 'run.goal.blocked' for e in second)
+    assert enforce_active_workflow_budgets(runtime) == []

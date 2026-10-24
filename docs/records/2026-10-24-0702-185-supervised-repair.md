@@ -195,3 +195,45 @@ mandatory claim（12条目标、12条显式GOAL重复绑定），没有用摘要
 仍未实现。41项预算、恢复、价格精度、归档与instance聚焦通过。
 自动增量18项、sentinel51项及相关flow smoke3项通过，Ruff/diff通过；非full pytest。
 首个闭包命令误写一个不存在的测试路径而零执行，纠正后才得到41项通过结果。
+
+SUP-006提交：`d4e4b544 fix: reject regressed and unavailable workflow usage meters`。
+
+## SUP-007 · 新真实 CLI writer 超限，保留原断点
+
+08:03预算事件`evt-cd8871e698e2`：Operation
+`wop-prd-lanes-impl-queued-TASK-PRD-CLI-2-trig-evt-0-3b7a18d5c6d2`
+累计2,140,249 token/13样本，超过原2M；Run blocked `evt-af2eaee43edb`。
+API Operation此前已准入；CLI源码已提交e9e8ab0207d3f8d6618ea09892576fd5682f8e78，
+但CLI结果尚未准入，没有candidate.ready/独立Verify/Judge/最终交付。
+
+真实transcript定位：writer第一次必读批量输出44,089字符，因输出形状/截断又读
+39,403及40,284字符；CLI复用同一会话后，重复失败subTest日志又输出41,209字符。
+这是上下文和模型往返放大的具体证据，不能仅归因于业务代码复杂；未知实际费用不报零。
+补writer方法：一次读取、在工具内解析JSONL后按未读正文分批呈现、仅补截断缺失行；
+完整测试日志保留，按不同失败原因查阅，避免重复堆栈进入上下文。6项方法/分发检查通过。
+这仍需要真实后续验证，不能据方法修订保证2M内完成。
+
+08:05受控CLI checkpoint
+`ckpt-TASK-PRD-CLI-20261024T080504-2c901b948a71` 保存实际writer HEAD/工作区；
+快照摘要62c2ef241947f26432efbf68c76c0b34871e87912ab8320a96a81228912b2c72。
+随后 `zf stop` 18步完成，独立进程检查确认本模拟watcher/Provider退出；保留完整Git、
+原工作区、state与ledger，没有simulation.done，没有删除可恢复现场。
+冻结faf8cd5b的checkpoint尚不包含SUP-004新增Attempt绑定，不能伪称已实测后续代码。
+
+暂停源码的独立detached worktree执行原始外部oracle：65项通过，五文件范围符合。
+人工读取业务函数/CLI/README确认标准库、只读输入及错误说明；这只是暂停源码验收，
+证据目录`live/prd/paused-source-oracle`，不称为候选或Kernel交付成功。
+恢复投影实测为0个operation checkpoint（`blocked-resume-projection.json`）。
+根因：既有预算恢复只覆盖Task Pipeline；当前v3 fanout writer未接对应受控恢复。
+原Operation预算已耗尽，也不能通过刷新session/Attempt清零。保持原预算及blocked事实。
+
+## SUP-008 · 恢复后第二次超限未重新阻断
+
+检查恢复链复现1项端到端runtime RED：Task Pipeline首次超限后，旧Run预算修订允许
+redrive；但Operation本身冻结上限未变。新执行超过同一上限时，旧预算事件被全生命周期
+去重，未停止Provider。历史run.goal.blocked也让后续Run阻断事件被忽略。
+修复预算事件按Operation受控redrive计数分代去重，Run终态判断复用当前admission投影；
+重试仍继承原消费/开始时间，不把Run预算修订当作Operation上限变更。
+30项预算/受控恢复聚焦通过。当前真实PRD继续保持停止，未应用该修复到现场。
+SUP-008追加：Run admission/Attempt终态/指令及flow smoke共57项、自动增量19项、
+sentinel51项通过，Ruff/diff通过；与聚焦组有重叠，不汇总成唯一测试数，非full pytest。

@@ -159,6 +159,7 @@ def enforce_active_workflow_budgets(
             exceeded=exceeded,
             causation_id=str(operation.get("started_event_id") or ""),
             blocked_operation_id=str(operation.get("operation_id") or ""),
+            operation_redrive_count=int(operation.get("redrive_count") or 0),
         ))
         blocked_runs.add(workflow_run_id)
     return emitted
@@ -179,6 +180,7 @@ def _trip_run(
     causation_id: str,
     blocked_operation_id: str = "",
     budget_revision_event_id: str = "",
+    operation_redrive_count: int = 0,
 ) -> list[ZfEvent]:
     emitted: list[ZfEvent] = []
     if _budget_event_exists(
@@ -186,6 +188,7 @@ def _trip_run(
         scope=scope,
         scope_id=scope_id,
         budget_revision_event_id=budget_revision_event_id,
+        operation_redrive_count=operation_redrive_count,
     ):
         return emitted
     detail = {
@@ -201,6 +204,8 @@ def _trip_run(
     }
     if budget_revision_event_id:
         detail["budget_revision_event_id"] = budget_revision_event_id
+    if scope == "operation":
+        detail["operation_redrive_count"] = operation_redrive_count
     budget_event = runtime.event_writer.append(ZfEvent(
         type="workflow.budget.exceeded",
         actor="zf-cli",
@@ -476,6 +481,7 @@ def _budget_event_exists(
     scope: str,
     scope_id: str,
     budget_revision_event_id: str = "",
+    operation_redrive_count: int = 0,
 ) -> bool:
     return any(
         event.type == "workflow.budget.exceeded"
@@ -484,29 +490,18 @@ def _budget_event_exists(
         and str(
             (event.payload or {}).get("budget_revision_event_id") or ""
         ) == budget_revision_event_id
+        and (scope != "operation" or int(
+            (event.payload or {}).get("operation_redrive_count") or 0
+        ) == operation_redrive_count)
         for event in events
     )
 
 
 def _run_terminal_exists(events: list[ZfEvent], workflow_run_id: str) -> bool:
-    terminal_types = {
-        "run.goal.completed",
-        "run.goal.blocked",
-        "run.completed",
-        "run.failed",
-        "run.cancelled",
-        "run.abandoned",
-    }
-    return any(
-        event.type in terminal_types
-        and str(
-            (event.payload or {}).get("workflow_run_id")
-            or (event.payload or {}).get("run_id")
-            or event.correlation_id
-            or ""
-        ) == workflow_run_id
-        for event in events
-    )
+    # Historical blocks do not suppress the terminal verdict of a later
+    # explicitly reactivated Run. Use the canonical current-state fold.
+    entry = build_run_admission_projection(events).runs.get(workflow_run_id)
+    return bool(entry and entry.terminal)
 
 
 __all__ = [
