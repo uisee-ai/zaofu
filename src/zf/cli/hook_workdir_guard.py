@@ -223,6 +223,56 @@ def _path_is_within(path: Path, root: Path) -> bool:
     return True
 
 
+def _absolute_root_path_mentions(command: str, root: Path) -> list[Path]:
+    """Extract explicit paths rooted at ``root`` from a shell command.
+
+    This extends the legacy string heuristic, not a shell/Python interpreter.
+    Every root occurrence must form a complete simple path; never silently
+    ignore a bare root or accept the authorized prefix of a longer expression.
+    """
+
+    root_text = str(root.resolve(strict=False)).rstrip("/")
+    if not root_text:
+        return []
+    pattern = re.compile(
+        re.escape(root_text) + r"(?:/[A-Za-z0-9_.-]+)+"
+    )
+    paths: list[Path] = []
+    for occurrence in re.finditer(re.escape(root_text), command):
+        match = pattern.match(command, occurrence.start())
+        if match is None or (
+            match.end() < len(command)
+            and command[match.end()] not in "\"' \t\r\n"
+        ):
+            return []
+        path = Path(match.group())
+        if path not in paths:
+            paths.append(path)
+    return paths
+
+
+def _command_uses_only_authorized_result_scratch(
+    *,
+    command: str,
+    project_root: Path,
+    state_dir: Path,
+    event_log: EventLog,
+    actor: str,
+) -> bool:
+    """Allow a compound writer command only for its exact signed scratch path."""
+
+    mentions = _absolute_root_path_mentions(command, project_root)
+    return bool(mentions) and all(
+        is_authorized_result_scratch_target(
+            state_dir,
+            event_log,
+            actor=actor,
+            target=path,
+        )
+        for path in mentions
+    )
+
+
 def is_authorized_result_scratch_target(
     state_dir: Path,
     event_log: EventLog,
@@ -299,6 +349,13 @@ def evaluate_workdir_write_guard(
             bash_command_looks_mutating(command)
             and str(project_root.resolve(strict=False)) in command
             and str(assigned_root.resolve(strict=False)) not in command
+            and not _command_uses_only_authorized_result_scratch(
+                command=command,
+                project_root=project_root,
+                state_dir=state_dir,
+                event_log=event_log,
+                actor=actor,
+            )
         ):
             offending.append(str(project_root.resolve(strict=False)))
     if not offending:

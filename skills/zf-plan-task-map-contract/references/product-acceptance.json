@@ -1,0 +1,36 @@
+{
+  "logical_name": "product_acceptance_spec",
+  "schema_version": "product_acceptance_spec.v1",
+  "body": {
+    "assembly_owner": "TASK-ASSEMBLY",
+    "entrypoints": [
+      {
+        "entrypoint_id": "product-web",
+        "start_command": "./bin/product --host 0.0.0.0 --port 8080",
+        "health_check": "curl -fsS http://127.0.0.1:8080/health",
+        "owner": "TASK-ASSEMBLY"
+      }
+    ],
+    "user_journeys": [
+      {
+        "journey_id": "journey-save",
+        "title": "用户保存后可查看已保存内容",
+        "mandatory": true,
+        "verification_tier": "e2e",
+        "assertions": [
+          {
+            "assertion_id": "saved-content-visible",
+            "statement": "提交成功后界面显示与服务端保存值一致的内容",
+            "observation_kind": "dom",
+            "mandatory": true
+          }
+        ]
+      }
+    ],
+    "provider_qualification": {
+      "required_for_goal": false,
+      "providers": [],
+      "ttl_seconds": 0
+    }
+  }
+}

@@ -132,6 +132,10 @@ tasks:
   bundle feeds it, depends on prior feature tasks, and verifies the assembled
   product through the real entrypoint plus the full suite.
 
+An explicitly declared assembly task needs an `owner_role` distinct from its
+dependency feature owners, even when waves are serial. Keep its task id as the
+`product_acceptance_spec.assembly_owner`; do not confuse task ids with role labels.
+
 Do not emit a task map that places implementation in one task and its tests or
 entrypoint smoke in another. Do not use `tests/...` paths when the declared
 test prefix is `app/tests/...`; all owned paths stay repo-relative.
@@ -173,8 +177,9 @@ body containing:
   observable `health_check`, and owner;
 - `user_journeys[]`, each with `journey_id`, `title`, `mandatory`,
   `verification_tier` (`runtime|e2e|manual_evidence`) and nonempty
-  `assertions[]`; every assertion needs `assertion_id`, `statement`, and
-  `observation_kind` (`api|cli|dom|interaction|state|visual`);
+  `assertions[]`;
+- each journey's assertions with `assertion_id`, `statement`,
+  `observation_kind` (`api|cli|dom|interaction|state|visual`), and `mandatory`;
 - a `provider_qualification` policy that explicitly says whether real Provider
   qualification is required, which providers are in scope, and its TTL.
 
@@ -188,6 +193,10 @@ Do not invent run, plan-revision, or task-map-generation values in that body.
 The Kernel binds those identities while constructing the current Plan Artifact
 Package. Product semantics, journeys, commands, and assembly ownership remain
 Planner-owned.
+
+Use the complete descriptor example in `zf-plan-task-map-contract`'s
+`references/product-acceptance.json` before writing this port. Populate every
+mandatory journey from the PRD; the one-journey example is not a coverage limit.
 
 For `e2e` / `real_e2e` criteria, bind the command to the intended executable
 path and method. A deterministic analytical estimate, fixture replay, or
