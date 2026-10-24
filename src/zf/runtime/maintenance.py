@@ -187,6 +187,10 @@ def create_checkpoint(
     transcript_path: str = "",
     emit_events: bool = True,
 ) -> MaintenanceCheckpoint:
+    if (not task_id or len(task_id.encode("utf-8")) > 128
+            or any(char in task_id for char in ("/", "\\", "\0"))
+            or task_id in {".", ".."}):
+        raise ValueError("task_id must be a file-safe identifier")
     state_dir = Path(state_dir)
     root = Path(project_root) if project_root is not None else state_dir.parent
     from zf.runtime.maintenance_worktree import capture_workspace

@@ -57,7 +57,7 @@ Planner briefing 同时列出当前 profile 所要求的 Plan 产物，避免只
 continuation reservation 不清零累计消费。显式不同 worker 计量域不能直接相减，记为
 meter unavailable 并按既有预算门禁拒绝，不能报告零消费；墙钟暂停规则未改。
 maintenance checkpoint 由受控动作/CLI 按 canonical assignee 定位配置工作区，使用
-唯一 ID 和 required sidecar 保存 HEAD、暂存/未暂存 binary patch、未跟踪文件内容、
+入口验证的文件安全标识、唯一 ID 和 required sidecar 保存 HEAD、暂存/未暂存 binary patch、未跟踪文件内容、
 模式及符号链接目标。非 Git、超限、捕获变化或子模块场景明确 unavailable；忽略文件、
 Git 历史和运行状态不在该快照内，原工作区必须保留。双次一致捕获不证明 Provider 已停，
 恢复执行仍须另外核验旧执行权终止、版本兼容和当前 Run/Attempt 门禁。

@@ -179,3 +179,13 @@ def test_checkpoint_cli_infers_canonical_worker(tmp_path, monkeypatch, capsys):
     assert packet['worktree_root'] == str(worker)
     snapshot = hydrate_sidecar_ref(state, packet['workspace_snapshot_ref']).payload
     assert b'CLI worker edit' in base64.b64decode(snapshot['unstaged_patch_base64'])
+
+
+@pytest.mark.parametrize('task_id', ['A/../../escape', r'A\..\escape'])
+def test_checkpoint_rejects_path_components_before_writing(tmp_path, task_id):
+    root = tmp_path / 'project'
+    _project(root)
+    state = tmp_path / 'state'
+    with pytest.raises(ValueError, match='task_id must be a file-safe identifier'):
+        create_checkpoint(state, project_root=root, task_id=task_id)
+    assert not state.exists()

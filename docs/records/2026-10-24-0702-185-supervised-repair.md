@@ -133,3 +133,36 @@ thread IDs、`thread/tokenUsage/updated`及按thread/turn中断参数。因此�
 unprivileged_userns_clone=1、apparmor_restrict_unprivileged_userns=1。仅能确认当前权限
 环境拒绝user namespace映射，不能仅凭这两个值断言唯一根因。源码补丁不能证明操作系统
 隔离已恢复；不更改宿主安全策略，也不把danger-full-access当read-only通过。
+
+## SUP-005 · checkpoint 标识路径越界
+
+复现输入`A/../../escape`：sidecar最终拒绝路径，但此前旧diff已经写到
+`state/autoresearch/maintenance/escape-<timestamp>-<uuid>.diff`，越过checkpoints目录。
+反斜线输入在当前平台未被拒绝。2项RED；修复在任何状态读取/目录创建之前验证
+task_id非空、UTF-8长度不超过128字节、无斜线/反斜线/NUL且不为点目录。
+不能依赖最后的sidecar校验替代入口校验。
+30项直接闭包、20项自动增量、sentinel 51项、flow smoke 10项通过；没有声明全仓测试。
+
+namespace细分探针：单独`unshare --user true`成功；添加root UID映射失败，单独mount
+namespace也失败。故限制应精确描述为UID映射/mount权限，而非笼统声称所有user namespace
+都不可用。输出保存在`namespace-probes.json`，未改变宿主策略。
+
+## 第3/5/8项仍待实施的准确边界
+
+第3项不是“缺少难度打分”：`plan_execution_review.py`已将真实Task Map与策略摘要
+提供给Agent。缺口在受控执行链：`control_actions_workflow_replay.py`禁止修改active
+Request；`workflow_config_consumer.py`只校验新admission，不替换运行中的config；
+`stage_replan_generation.py`生成语义重规划，不执行配置重载。需要独立的受控配置换代
+事务串联暂停/旧执行权终止、精确候选批准、配置CAS、运行消费者重载、新代际绑定、
+规划产物重验和原预算续算。不能只改lanes或重启后沿用旧批准；当前未实施完整事务。
+
+第5项不是“headless开关”：`bounded_agent.py` v1明确只接reader和artifact_delivery；
+`generic_workflow_catalog.py`登记的generic-delivery-v1目前没有template builder，
+`generic_workflow.py`的software_delivery仍为shadow结果协议；目录仅暴露reader入口。
+源码single须接canonical Task的精确scope/AC，单writer的Task/Operation/Attempt、候选
+集成和独立Verify/Judge，并走blocking结果/交付门禁。现有light虽有确定性单任务映射，
+真实dirty恢复也通过，但不能改名后宣称通用源码入口已经实现。
+
+第8项本批补齐了可验证Git快照、当前Attempt消费者和同Operation预算续算；仍没有
+跨计量域的预算归一化接替、完整权限批准与外部副作用回执胶囊。未知事实继续拒绝，
+不能从transcript猜授权。第9项完整交付仍依赖当前PRD真实结果；所有未签收项保持active。
