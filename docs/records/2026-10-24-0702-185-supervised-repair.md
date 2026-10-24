@@ -494,3 +494,25 @@ Discovery，再经gap bridge到新TaskMap；不复制旧代PlanPackage/claim-set
 由正常PlanPackage/approval/claim连续性门禁重新准入。这是监工修复，不宣称全自动恢复。
 
 SUP-017验证：88项Discovery/gap/GoalClaimSet/PlanPackage闭包、51项sentinel、3项flow smoke mock通过；Ruff/diff通过。未运行全量pytest，真实续行待验证。
+
+
+## SUP-018 · Gap返工继承的Product Acceptance绑定旧版本
+
+7c35ecb8冻结恢复后，原需求引用/声明连续性已通过，evt-df88a126edef在下一道门禁拒绝：
+继承的product_acceptance_spec仍绑定8758d790，而返工generation是8579ed56。
+evt-2b69987ccde0因重规划预算耗尽升级，Run evt-d1cba22112d6 blocked；已正常停止。
+这不是总时限/总token阻断。8b8cdd58根任务启动修复已真实加载，启动未再requeue根Task。
+
+历史补充：此前10:34还出现一次旧generation Discovery自动重试evt-d5cfa88d5b2c，
+10:38停止后本次启动自动redrive，未成为新候选交付证据。保留其事件，不宣称只运行过一次。
+
+修复限定显式gap_tasks_only返工，验证amend_of内容摘要和supersedes generation对应
+同Run/flow的原PlanPackage，校验旧Product Acceptance绑定，然后以相同语义体生成
+新版本不可变spec。记录rebound_from_ref/digest和原Package来源；旧spec/report不改。
+普通重规划、错误generation、不同base内容不自动重绑，仍拒绝。正常Plan审批和结果
+版本校验保留。新增准入入口回归先1 RED/3 PASS复现。初次实现严格比较ref字符串，
+fixture的输入ref被正常端口物化成另一ref，导致合法继承被拒；改为固定来源摘要校验。
+
+SUP-018验证：扩展闭包73项通过、1项合法ref别名回归失败后修复；最终28项PlanPackage/ProductAcceptance闭包通过，含5项新增返工测试。51项sentinel、3项flow smoke mock通过；最终源码再执行sentinel，未运行全量pytest。
+
+真实不可变输入的隔离准入回放通过：24条必需声明全部保留、无waiver，Product Acceptance重绑新generation且语义不变。初次隔离fixture遗漏RunContract快照，补齐后通过；未修改真实state。最终sentinel结果单独归档。

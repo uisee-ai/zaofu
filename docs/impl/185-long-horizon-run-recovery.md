@@ -47,3 +47,9 @@ Discovery请求必须继承原需求快照的ref/digest；返工TaskMap可更换
 PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧generation的claim引用
 掩盖丢失的需求输入。历史事件缺字段时保留事件，经受控CLI重发有证据的artifact-ready
 意图，正常准入与审批仍执行；这属于监工修复，不等同自动恢复。
+
+
+明确关联原计划的gap返工可继承Product Acceptance语义体。Kernel核对原Run/flow、
+原TaskMap摘要及generation、原spec版本后，写新spec并绑定新计划版本，保留来源ref/digest。
+此操作不改变journey/assertion或降低要求，也不重绑旧验收报告；新候选必须重新验收。
+普通重规划或缺少原计划关联时，不自动改写继承规范的版本。
