@@ -1035,9 +1035,16 @@ class FanoutBriefingMixin:
                 ),
                 "",
                 *stage_instruction_lines,
-                # B3 (R20): affinity lanes inspect ONLY their slice — not the full
-                # candidate — so a large candidate doesn't exhaust review context.
-                *affinity_scope_briefing_lines(child_payload),
+                # Scope task review by affinity, while preserving a bound
+                # candidate Product Acceptance obligation.
+                *affinity_scope_briefing_lines(
+                    child_payload,
+                    product_acceptance_required=bool(
+                        (success_payload.get("verification_result") or {}).get(
+                            "product_acceptance_report"
+                        )
+                    ),
+                ),
                 *skill_briefing.render_skill_briefing_section(role, skill_entries),
                 *workflow_input_lines,
                 *payload_section,

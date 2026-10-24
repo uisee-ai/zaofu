@@ -9,6 +9,8 @@ context bounded. The other lanes + the synth role cover the rest.
 """
 from __future__ import annotations
 
+import pytest
+
 from zf.runtime.affinity_review_scope import (
     affinity_scope_briefing_lines,
     affinity_scope_identity_errors,
@@ -69,3 +71,46 @@ def test_affinity_identity_errors_accept_complete_identity():
     )
 
     assert errors == []
+
+
+@pytest.mark.parametrize("product_required", [False, True])
+def test_runtime_candidate_briefing_reconciles_affinity_and_product_scope(
+    tmp_path, product_required,
+):
+    from tests.test_reader_fanout_runtime import _state
+    from tests.test_product_acceptance import _package, RUN_ID, GENERATION, TARGET, CANDIDATE
+    from tests.test_typed_result_admission import _contract
+    from zf.core.config.schema import RoleConfig, FanoutAggregateConfig
+    from zf.runtime.fanout import FanoutContext
+    from zf.runtime.task_contract_snapshot import write_task_contract_snapshot
+
+    state, _, _, runtime = _state(tmp_path)
+    contract = _contract()
+    contract.update(workflow_run_id=RUN_ID, task_map_generation=GENERATION)
+    descriptor = write_task_contract_snapshot(state, contract)
+    payload = {
+        **contract, "contract_snapshot_ref": descriptor["ref"],
+        "contract_snapshot_digest": descriptor["sha256"], "target_commit": TARGET,
+        "candidate_ref": CANDIDATE, "output_profile_id": "candidate-verify",
+        "assignment_strategy": "affinity_stage_slots", "lane_id": "lane0",
+        "affinity_tag": "api", "stage_slot": "verify",
+    }
+    if product_required:
+        package, _ = _package(state)
+        payload.update(plan_artifact_package_ref=package["ref"],
+                       plan_artifact_package_digest=package["sha256"])
+    path = runtime._write_fanout_briefing(
+        role=RoleConfig(name="verify", instance_id="verify-1", backend="mock", role_kind="reader"),
+        context=FanoutContext(fanout_id="verify", stage_id="verify", topology="fanout_reader",
+                              trace_id=RUN_ID, trigger_event_id="evt-candidate", target_ref=CANDIDATE),
+        child_id="api", run_id="attempt-api", child_payload=payload,
+        aggregate=FanoutAggregateConfig(mode="wait_for_all", child_success_event="verify.child.completed",
+            child_failure_event="verify.child.failed", success_event="verify.approved"),
+    )
+    briefing = path.read_text()
+    if product_required:
+        assert "Do NOT read or review the full candidate or other lanes" not in briefing
+        assert "mandatory product journeys" in briefing
+        assert "Task requirement rows remain scoped" in briefing
+    else:
+        assert "AFFINITY SLICE ONLY" in briefing

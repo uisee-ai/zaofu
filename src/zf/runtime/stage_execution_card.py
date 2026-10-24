@@ -498,13 +498,24 @@ def prepare_profiled_stage_result(
         "- Submit authorization is transport-owned; do not print or inspect it.",
         "",
     ]
-    if profile_id == "task-verify":
+    if profile_id in {"task-verify", "candidate-verify"}:
         lines[7:7] = [
             "- Verification command IDs are a closed set. Use `command_id` only "
             "for an exact command already present in the prefilled template; "
             "record extra independent probes without `command_id` and attach "
             "their command/evidence through requirement reproduction evidence.",
         ]
+    if profile_id == "candidate-verify" and semantic_body.get("product_acceptance_report"):
+        lines.extend([
+            "- Candidate Product Acceptance is separate from task requirement rows: "
+            "verify every mandatory product journey/assertion on this target, even "
+            "when task rows carry `verification_owner=task_verify`. Do not defer "
+            "mandatory product coverage to siblings or synth.",
+            "- Product report evidence is an object with exact ref and sha256, "
+            "not an event string or a placeholder. Reuse the current tool-output "
+            "sidecar descriptor. Task-row not_applicable does not waive product coverage.",
+            "",
+        ])
     if output_names:
         output_fields = ", ".join(f"`outputs.{name}`" for name in output_names)
         lines[7:7] = [
@@ -549,6 +560,16 @@ def prepare_profiled_stage_result(
             validate_command,
             "```",
             "",
+        ])
+    elif profile_id in {"task-verify", "candidate-verify"}:
+        lines.extend([
+            "- After authoring, run the pre-submit validation below. It checks "
+            "schema, pinned contract and Product Acceptance; it does not consume the submit capability.",
+            "- Correct this same scratch using structured diagnostics and rerun "
+            "validation. After exit 0, submit immediately. Preflight is not "
+            "admission or a product verdict; submission still checks authority and evidence.",
+            "", "Verification pre-submit validation:", "```bash",
+            render_result_validate_command(command), "```", "",
         ])
     else:
         lines.extend([

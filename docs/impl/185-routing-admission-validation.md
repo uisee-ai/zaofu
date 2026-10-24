@@ -2,7 +2,7 @@
 
 后续实施见 [有界工件执行、规划绑定与恢复隔离](185-bounded-execution-and-recovery.md)。
 本文主体保留首批基线和当时结论；续批已归档01/03/04，有界交付及同Provider自动接续真实通过。
-02/05/06/07/08和旧184产品交付任务仍active；旧184故障改进已归档。标准Issue已完整通过；PRD独立文档评审34项通过，但最新产品轮在重规划2M token上限处blocked。PRD交付、Task Map后配置修订与跨Provider能力尚未全部签收。
+02/05/06/07/08和旧184产品交付任务仍active；旧184故障改进已归档。标准Issue及General已完整通过；最新PRD独立文档评审31项通过、候选功能65项通过，但Verify未全部准入且Run 12M token上限触发blocked。PRD交付、Task Map后配置修订与跨Provider能力尚未全部签收。
 
 > 状态：部分实施、部分验证；不构成 185 全部能力或全分支真实交付签收。
 > 日期：2026-10-23；worktree：`/home/min/workspace/public/184`。
@@ -64,12 +64,12 @@
 | B04 | Channel ready、历史仅规划 → 独立 Owner 授权 | `test_channel_execution_approval`、`prd/owner-handoff-r2` | API 与真实入口通过，PRD 不改写 |
 | B05 | 非 Owner、未绑定提案、payload 改动、旧 PRD/Leader、unresolved | `test_channel_execution_approval` | 拒绝通过；无 invoke |
 | B06 | 嵌套 Plan 缺 target_root、canonical source identity | `test_web_headless_agent` 的 Channel 建单用例及 B04 | 自动继承已知目标，完整来源通过；第一轮真实失败保留 |
-| B07 | PRD standard/v3 | flow smoke、真实三轮后续PRD | mock通过；真实两轮候选功能65项通过但完整交付失败，最新轮重规划2M token阻断，未派发writer |
+| B07 | PRD standard/v3 | flow smoke、真实后续PRD | mock通过；最新TASK-754624候选65项功能检查通过，API Verify未准入、CLI Verify准入blocked、PRODUCT Verify期间Run 12,113,967/12M tokens阻断，未交付；历史失败保留 |
 | B08 | Issue standard/v3 | flow smoke、真实 TASK-5577E6 | 续批真实完整交付通过：Critic/Verify/discovery/Judge/Kernel ship及Task done，外部探针和真实浏览器通过；早期预算失败保留 |
 | B09 | Refactor standard/v3 | `test_refactor_pipeline_smoke`（flow smoke） | mock 通过；本轮没有真实 Refactor |
 | B10 | PRD/Issue light、幂等、合法/不合法门禁 | `test_light_flow`、`test_intake_semantic_handoff_mock_e2e` | 确定性/模拟通过；未证明真实 light 完整交付 |
 | B11 | PRD/Issue/Refactor v4 shadow/blocking | `test_workflow_route_policy`、v4 runtime-noise mock E2E | 策略绑定及模拟运行通过；不能推导三类真实 v4 均通过 |
-| B12 | General 已注册入口、受限候选图 | `test_control_actions_research`、generic complex mock E2E | 确定性/模拟通过；非任意 YAML 生成器 |
+| B12 | General 已注册入口、受限候选图 | generic complex mock E2E；真实 TASK-8B42B7，`185-context-20261023T225800Z/general` | 注册 evidence-synthesis-v1 的五阶段真实交付、独立验算、Kernel complete、Task done 和 Docker 看板通过；非任意 YAML 生成器 |
 | B13 | Research fixed、显式 adaptive pilot、缺只读能力 | `test_control_actions_research` | 调用与 fail-closed 合同通过；未运行真实助手子树 |
 | B14 | 不存在路线、缺参数、旧 Task/config | `test_workflow_start_service`、`test_control_actions_research` | 拒绝通过 |
 | B15 | 同路线预算/权限/门禁改变后的旧批准，CLI 和 Web | `test_workflow_policy_admission_mock_e2e` | 6 个交叉用例通过，零 invoke |
@@ -89,6 +89,8 @@
 | B29 | Synth空白结论、abstain、Owner驳回及重审 | result_submit回归、真实PRD evt-af4d646ec77d | 空白提交拒绝、abstain不通过；真实驳回→Planner/Critic重审→受控批准→writer派发通过，产品交付另计 |
 | B30 | Task Map包检查身份与不匹配输入 | plan_execution_review回归、实际CLI post-plan-inspection-bound.json | 包内Run/计划代际保留；错配Task Map拒绝；当前文件配置不冒充冻结Run |
 | B31 | 文件来源PRD的独立评审、缺失/篡改/跨线程快照、重试 | 实际reactor回归、reviewed-prd真实Codex评审 | 原缺来源失败已修复；真实34项文档PASS早于Owner确认；不是产品通过，来源错误在Provider调用前拒绝 |
+| B32 | Reader workflow/dispatch会话边界、旧进程存活/未知、旧回合未结算、同dispatch重试、无Task的synth | `test_reader_context_boundary`、生命周期/Plan synth调用者、真实General TASK-8B42B7 | `e4548e95`修复并接入实际入口；720项闭包及208项追加caller通过（有交集）；真实同Task/Run的scope→synthesize新会话及最终交付通过，尚不证明所有场景预算收益 |
+| B33 | Verify预校验、产品验收与affinity范围、兄弟预注册及fresh遥测 | `test_verification_submit_preflight`、实际briefing/lifecycle caller | 从真实PRD/General复现，补只读CLI预校验及完整PAS范围，保留正式准入；修复后完整真实PRD尚未重跑，不将确定性回归当作交付通过 |
 
 ## 验证层与命令
 

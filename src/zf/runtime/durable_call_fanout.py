@@ -516,12 +516,16 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         """Register the whole durable sibling batch before provider send."""
 
         prepared: dict[str, dict[str, Any]] = {}
+        ready_roles: set[str] = set()
         for child in context.expected_children:
             role = roles_by_instance.get(child.role_instance)
             if role is None:
                 continue
             run_id = f"run-{context.fanout_id}-{child.child_id}"
-            if not self._ensure_fanout_role_dispatchable(
+            # Siblings sharing a lane are registered together, then sent
+            # serially. Do not rotate its idle context for each queued child.
+            # Actual dispatch rechecks the child-specific context boundary.
+            if role.instance_id not in ready_roles and not self._ensure_fanout_role_dispatchable(
                 role=role,
                 fanout_id=context.fanout_id,
                 stage_id=context.stage_id,
@@ -536,6 +540,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             ):
                 prepared[child.child_id] = {"skip": True, "run_id": run_id}
                 continue
+            ready_roles.add(role.instance_id)
             try:
                 prepared[child.child_id] = self._prepare_reader_fanout_child_operation(
                     context=context,

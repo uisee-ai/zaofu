@@ -1,10 +1,54 @@
 """Reader context changes must fence the old process before replacing identity."""
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from zf.core.config.loader import ConfigError, load_config
 from tests.test_role_lifecycle_runtime import _runtime, _seed_reader_fanout_context
+
+
+def test_sibling_preregistration_does_not_rotate_one_reader_for_queued_tasks(
+    tmp_path, monkeypatch,
+):
+    runtime, role, transport = _runtime(tmp_path)
+    role.role_kind = "reader"
+    role.lifecycle = replace(role.lifecycle, reader_context_scope="dispatch")
+    children = [SimpleNamespace(
+        child_id=task, role_instance=role.instance_id, payload={"task_id": task},
+    ) for task in ["API", "CLI", "PRODUCT"]]
+    context = SimpleNamespace(
+        fanout_id="verify", stage_id="verify", trace_id="same-run",
+        expected_children=children,
+    )
+    registered = []
+
+    def prepare(**kwargs):
+        registered.append(kwargs["child"].child_id)
+        return {"skip": False}
+
+    monkeypatch.setattr(runtime, "_prepare_reader_fanout_child_operation", prepare)
+    prepared = runtime._preregister_reader_fanout_operations(
+        context=context, roles_by_instance={role.instance_id: role},
+        causation_id="evt-candidate",
+    )
+    assert registered == ["API", "CLI", "PRODUCT"]
+    assert set(prepared) == set(registered)
+    assert len(transport.spawned) == 1
+    assert not transport.terminated
+
+    args = dict(role=role, fanout_id="verify", stage_id="verify",
+                trace_id="same-run", child_id="API", task_id="API",
+                run_id="run-verify-API")
+    assert runtime._ensure_fanout_role_dispatchable(**args)
+    assert len(transport.spawned) == 1
+    runtime._set_worker_state(role.instance_id, "busy", force=True)
+    args.update(child_id="CLI", task_id="CLI", run_id="run-verify-CLI")
+    assert not runtime._ensure_fanout_role_dispatchable(**args)
+    assert not transport.terminated
+    runtime._set_worker_state(role.instance_id, "idle", force=True)
+    assert runtime._ensure_fanout_role_dispatchable(**args)
+    assert transport.terminated == [role.instance_id]
 
 
 @pytest.mark.parametrize('failure', ['alive', 'unknown', 'terminate'])

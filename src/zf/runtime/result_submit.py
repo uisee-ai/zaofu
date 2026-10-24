@@ -310,7 +310,7 @@ class SemanticResultSubmitService:
         credential: str,
         project_root: Path | None = None,
     ) -> dict[str, Any]:
-        """Preflight one Plan result without consuming its submit binding.
+        """Preflight a supported result without consuming its submit binding.
 
         Plan producers carry the full candidate-validation context. Plan Synth
         operations carry only the critic verdict delta, so they use their
@@ -348,6 +348,21 @@ class SemanticResultSubmitService:
                 role_instance=role_instance,
                 profile_id=profile_id,
                 revision=_revision,
+            )
+        if profile_id in {"task-verify", "candidate-verify"}:
+            from zf.runtime.verification_submit_validation import validate_verification_submission
+
+            return validate_verification_submission(
+                state_dir=self.state_dir,
+                registry=self.registry,
+                event_type=self._canonical_event_type(request, semantic),
+                operation=_operation,
+                request=request,
+                semantic=semantic,
+                role_instance=role_instance,
+                profile_id=profile_id,
+                revision=_revision,
+                delivery=self._current_task_pipeline_delivery(_operation, request),
             )
         raise ResultSubmitError(
             "plan_candidate_validation_unavailable",

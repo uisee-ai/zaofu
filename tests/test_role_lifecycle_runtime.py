@@ -508,6 +508,26 @@ def test_on_demand_ready_failure_emits_structured_transport_diagnostics(
     assert failed.payload["last_screen_excerpt"] == "codex --enable hooks"
 
 
+def test_codex_activation_without_session_reports_fresh_provider_launch(
+    tmp_path: Path,
+) -> None:
+    orchestrator, role, transport = _runtime(tmp_path)
+    role.backend = "codex"
+    registry = RoleSessionRegistry(
+        orchestrator.state_dir / "role_sessions.yaml", project_root=str(tmp_path),
+    )
+    registry.mark_spawned(role.instance_id)
+    registry.update_instance_meta(role.instance_id, lifecycle_state="suspended")
+
+    assert orchestrator._ensure_role_active(role, task_id="TASK-FRESH") is True
+
+    ready = next(e for e in orchestrator.event_log.read_all()
+                 if e.type == "role.lifecycle.ready")
+    assert ready.payload["from"] == "resuming"
+    assert ready.payload["is_resume"] is False
+    assert "resume" not in transport.spawned[-1][1]
+
+
 def test_codex_resume_readiness_failure_falls_back_to_fresh_session(
     tmp_path: Path,
 ) -> None:

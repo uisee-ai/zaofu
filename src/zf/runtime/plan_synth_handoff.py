@@ -126,7 +126,9 @@ def render_plan_synth_validation_section(
     from zf.runtime.stage_execution_card import render_result_validate_command
 
     scratch_lines = (
-        [f"Edit `{scratch_path.resolve()}` in place; preserve the prefilled binding fields.", ""]
+        [f"Edit `{scratch_path.resolve()}` in place; preserve the prefilled binding fields.",
+         "Use native Edit/Write/apply_patch, not shell redirection or Python/shell heredocs. "
+         "With apply_patch use `*** Update File`; never delete, add, move, or recreate this path.", ""]
         if scratch_path is not None else []
     )
     return [

@@ -5499,6 +5499,8 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert "issue flows adapt `requirement_spec` to `issue_spec`" in briefing
     assert "Edit only the signed result scratch file" in briefing
     assert f"Edit `{(state_dir / scratch_ref).resolve()}`" in briefing
+    assert "Use native Edit/Write/apply_patch" in briefing
+    assert "not shell redirection or Python/shell heredocs" in briefing
     for body in (result, result["report"]):
         assert body["status"] == ""
         assert body["recommendation"] == ""

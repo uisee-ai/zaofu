@@ -60,6 +60,10 @@ authoritative when it differs from an older Skill example.
   转储代替审批证明。建单前的 PRD 评审/Owner 确认可能没有 task_id；未知的未来批准
   使用有界类型查询及实际版本校验，不捏造 ID。将各项采集命令分别映射到同一流程 AC，
   保留后续原始报告 ref/digest 的读取要求，避免重复加载工具历史消耗验证预算。
+- 事件类型必须对照当前事件合同及实际 producer 核对，不凭名称猜测未来事件。
+  查询 exit 0 或空数组仅表示查询成功，不能证明批准或执行发生。证明“批准先于实施”
+  必须比较绑定当前 Run/Task 的批准与实际 writer 启动/派发事件；完成事件不能替代
+  开始时间。若项目不存在 `impl.child.completed`，不得把它写成可执行验收判据。
 - **两轴自检**:task_map 交付前对照两轴——**落闩**(每片有机械可验的
   完成闸门:命令+退出码,不是"应当工作")与**分母**(所有验收条款都
   映射到某个 task,`requirement_coverage` 无遗漏)。只报分母不落闩 =

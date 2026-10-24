@@ -90,6 +90,9 @@ amendment are separate role capabilities supplied by the workflow profile.
    `owner`.
 9. Submit through the exact result profile and completion command in the
    briefing. Do not invent terminal events or mutate runtime truth.
+   若 briefing 提供 `zf result validate`，先运行该精确预校验命令；按结构化诊断
+   原位修正同一 scratch，exit 0 后再提交。预校验不消耗 submit capability，
+   不代表正式准入或产品通过；不要用反复正式 submit 代替 schema 检查。
 
 ## Product Acceptance Passes
 
@@ -110,6 +113,8 @@ When Candidate Verify receives a current `product_acceptance_spec`:
   journey and assertion. Every row must carry current-target evidence; reuse is
   allowed only when the briefing/admission marks a receipt reusable for that
   exact identity.
+- 产品证据每项使用当前工具结果提供的 `{ref, sha256}` 描述符；事件字符串不能替代
+  该结构，不伪造摘要。任务切片范围不豁免已绑定产品规格所需的跨切片只读检查。
 - Deterministic product failure is semantic rework. Provider/environment
   execution failure is `blocked`/external wait and must not be reported as a
   failed product journey or consume semantic rework.

@@ -1,6 +1,6 @@
 # 185 续批：有界工件执行、规划绑定与恢复隔离
 
-> 状态：部分完成；真实 Codex 有界交付及同 Provider 自动恢复通过，标准 Issue 完整交付通过，PRD 最新轮在重规划操作预算处 blocked，不表示 185 全部签收。
+> 状态：部分完成；真实 Codex 有界交付、同 Provider 自动恢复、标准 Issue、General 完整交付通过。最新 PRD 候选功能通过，但 Verify 未全部准入且 Run 12M token 上限触发 blocked，不表示 185 全部签收。
 
 承接 [185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md) 与
 [上一批逐分支记录](185-routing-admission-validation.md)。工作目录为 `184`，基线
@@ -450,7 +450,7 @@ canonical版本的synthesis request取受控快照，校验channel/thread、kind
 Planner技能补充同类取证方法及原生文件写入说明，28 passed / 1 skipped的技能/注入
 检查通过；不增加语义Kernel门禁。后续交付仍需返修计划、独立Critic和单独批准。
 
-## 本轮最终状态：PRD 仍未交付
+## 上一轮状态：PRD 重规划未交付（21:51 UTC）
 
 最新`TASK-5CB69E` / `workflow-304fe8c8e9e23357`于21:51:48 UTC记录重规划
 operation预算超限，21:51:50 blocked。384秒、10个新增usage samples共2,096,853
@@ -500,4 +500,112 @@ watcher/Web/tmux及项目cwd进程均停止；543个脱敏归档成员逐项校�
 新真实PRD由原四个seed文件重新初始化，不恢复旧失败Run。脱敏归档中的token_budget
 字段不能作为可运行配置，数值从原freeze收据恢复并逐项比较；仍为Run 12M、operation
 2M。有效角色配置逐字段diff只有Planner/Verify的reader_context_scope变化，模型、
-角色合同、权限、预算、完整需求和五文件范围均保留。真实结果未产生前不签收新策略收益。
+角色合同、权限、预算、完整需求和五文件范围均保留。最终结果见下方新 PRD 记录，不能仅凭会话隔离签收预算收益。
+
+
+## dispatch 上下文真实 General 验证
+
+`e4548e95` 基线下，隔离 `TASK-8B42B7` / `workflow-1da42a7db86bc23a`
+通过真实 headless 主 Agent → Task → 启动 Plan → 精确批准，重复批准仅一个 invoke。
+使用已注册 `evidence-synthesis-v1`，不是临时拼接任意 YAML。scope 与 synthesize
+复用 `context-reader`，两位 collector 与独立 verifier 分开，native delegation 禁用。
+冻结 Run 2400秒/4M tokens、operation 600秒/1M tokens，运行中未改配置或源码。
+
+五阶段均有 admitted result，2026-10-23 23:51:24 UTC Kernel 记录
+`evt-a16e2af0ab52 run.goal.completed`，TaskStore 为 done。完整报告和独立验证已逐项读取：
+A/B/合并的原序列、排序、数量、总和、均值、中位数正确，保留重复值、负数与零；
+空序列均值/中位数未定义，来源引用及计算过程完整。独立 oracle 在运行前冻结，
+未交给执行角色。Docker 真浏览器看板为 done，无 page error、无 mock route。
+
+同 Task/Run 的 scope→synthesize 发出 `reader_dispatch_context_changed`，
+旧 session `01a16b23-0238-7f62-931a-7bfa7df485e2` 与新 session
+`01a16b28-d585-7161-bdd7-11dc20767912` 不同；新 Provider SessionStart 在回收记录之后。
+已核对操作绑定、报告摘要、单次 invoke、配置及需求原始 hash。
+外部 pane 快照采集于回收过程中，**未独立捕获旧进程 PID**，因此不将其描述为
+OS 层旧进程证明；停止确认的拒绝路径另由确定性测试覆盖。
+实际新会话仍误报 `is_resume=true`，该可观测性缺陷另有三项 RED 回归；运行结束后修正无缓存 UUID 分支及实际生命周期调用者，原始运行日志保留。
+
+证据：`/home/min/workspace/public/zaofu-evidence/185-context-20261023T225800Z/general/`，
+`acceptance.json`、`report.md`、`verification.md`、`browser-live/live-board-result.json`。
+已通过 EventWriter 记录 simulation.done，停止自有 tmux/Web/watcher，382 个归档成员
+逐项 hash 核对后删除隔离项目。归档脱敏且排除认证、缓存、git 和 provider home，不能用于续跑。
+这项真实通过不覆盖 native 助手、跨 Provider、源码 single 接替或任意图生成能力。
+
+
+## 尚未闭合能力的解决路径
+
+以下是已批准185范围内的具体后续方案，不表示代码已实现或验收已通过。
+
+| 缺口 | 实施边界与方案 | 必需验收 |
+| --- | --- | --- |
+| Task Map 后实际改变配置 | Agent 读取完整Task Map、有效策略、Provider能力及实际计量，输出保留/修改建议；需要修改时复用配置修订/CAS/consumer，生成新摘要并重新批准，禁止直接改运行中的zf.yaml | 真实触发一次配置差异；旧批准拒绝；新批准绑定新代际；执行者使用新配置，原AC和已完成产物保留 |
+| 源码single执行与单阶段接替 | 在现有Task/Operation/Attempt中增加受限源码交付profile，复用writer worktree、候选快照、独立Verify与Kernel交付；Run Manager先确认旧进程停止，再交付State Packet和仅未完成阶段，不把整段Workflow改成无验收串行执行 | 真实写代码任务中断；已完成任务不重跑；旧结果拒绝；新attempt独立验证；候选与最终交付一致；取消和未知外部副作用不得自动重试 |
+| 原生助手协作 | 先接Provider的root/child lineage、子树停止确认、强制权限、并发/深度/预算限制和唯一根结果，再开放native=true；当前不满足能力合同仍拒绝 | root退出、child残留、取消、超时、越权、重复结果及成本累加逐项故障注入；普通多角色Workflow不能替代这些证明 |
+| Kimi/跨Provider | 先补可用CLI、模型与认证的canary，再核对只读工具强制、结构化输出与取消；跨Provider使用规范化恢复包和fresh session，不导入原生历史充当恢复 | Kimi正向真实调用、无工具/越权拒绝、进程组回收；Codex→另一Provider的实际接替与独立验收。本机缺Kimi CLI且Claude未认证，环境缺口与实现缺口分别记录 |
+| 其余真实Flow | Refactor、light、v4与Research native分别冻结需求、预算、oracle及源码版本；每种保留自身审批、重工和交付条件 | 对应Flow真实终态、独立产品探针及投影检查；不能从Issue/PRD/General或mock结果推导全部通过 |
+
+下列真实缺陷均在冻结运行结束后修复；未在运行中热改源码/技能，也未把旧失败改写为通过。
+
+## 2026-10-24 新 PRD：候选功能通过，流程仍 blocked
+
+冻结源码 `e4548e95`；`TASK-754624` / `workflow-37cd1d6725abd32d` 从原 seed
+`e768783b` 启动，保留完整13项AC、五文件范围、Run 12M / operation 2M tokens。
+独立真实 Codex 文档评审31/31通过，6项Owner决定确认后，才建单及批准单次启动。
+Planner、独立Critic、精确Plan批准均发生；三次writer启动均晚于
+`evt-3777fe72752b`（23:46:21 UTC），没有跳过前置批准。
+
+三项实现完成，冻结候选 `4cc787c6df7bab74450d39b60022ce83eb0ca8f1`。
+运行前冻结的外部 oracle（SHA `5dedd578b578caf7b37352aa3d1252513efb02eac9174cca7234a0fe76071018`）
+65项通过，产品21项测试、编译、真实CLI探针通过；逐文件核对stdlib、整数分、UTF-8、
+输入不变、错误路径和范围。**这些证明候选功能，不证明Workflow交付完成。**
+
+- API Verify 的独立功能探针通过，但产品报告 evidence_refs 使用事件字符串，随后又以
+  全部任务行passed搭配blocked verdict；两次正式提交耗尽协议修复额度，未admitted。
+- CLI Verify 功能探针通过，最终以产品旅程未完整覆盖提交，Kernel准入的是 **blocked**。
+  原 briefing 同时要求“只读自己切片”和完整产品验收，构成实际矛盾。
+- PRODUCT Verify 完成21项测试及额外检查，仍在取证审批顺序时耗尽Run预算。
+  00:26:10记录超限，00:26:13 `evt-3c36e582b488 run.goal.blocked`。
+  用量12,113,967 / 12,000,000 tokens（input720139、output53284、cache11340544），
+  123个费用样本unpriced，不能声称美元预算已验证。
+
+未进入完整discovery/Judge/ship，主分支仍为seed。真实Docker交付探针exit1，独立状态
+投影看到根Task blocked，`product_delivery_passed=false`。受控恢复dry-run没有可用的
+失败Verify接续checkpoint，没有强制重置预算、伪造结果或跳过门禁。
+
+证据：上述 evidence 根下 `live/prd/complete-oracle/result.json`、`failure-audit.json`、
+`terminal-evidence.json`、`usage-totals.json`、`browser-live/`及`recovery-inspect.json`。
+完整事件审计使用EventLog读取跨UTC午夜滚动文件。已记录simulation.done，停止自有
+watcher/tmux/Web，796个脱敏归档成员校验后清理临时根；归档不包含可续跑凭证。
+
+## 真实缺陷的修复与再次验收条件
+
+| 缺陷 | 已实施修复 | 验证边界 |
+| --- | --- | --- |
+| fresh Codex误记resume | 无缓存UUID时明确fresh；警告不再错误声称UUID从未观察过 | 覆盖从未缓存、主动清缓存、真实生命周期caller |
+| 同一reader串行兄弟预注册反复重启 | 批次内每个role成功ready一次；所有operation仍先注册，实际发送前仍检查context及旧回合结算 | 实际生命周期回归证明一次预启动、忙碌拒绝及下一任务正常切换 |
+| 切片范围与产品验收矛盾 | 只有绑定产品报告的Candidate Verify获得必需journey的跨切片只读范围；任务所有权及写权限不变 | 实际briefing caller覆盖带/不带产品规格两支 |
+| schema修正消耗正式提交额度 | task-verify/candidate-verify接入现有 `zf result validate`；复用adapter、typed contract和产品报告校验，预校验不持久化sidecar、不写事件、不消耗授权 | 服务及真实CLI解析调用覆盖坏证据、缺旅程、错误target、缺报告和修正后正式提交；最终提交继续所有准入门禁 |
+| Critic动态shell写scratch被拒绝 | 实际提示与canonical技能要求native Edit/Write/apply_patch原位更新 | caller回归；不放宽scope guard |
+| Planner编造 `impl.child.completed` 取证类型 | Planner/Critic方法要求核对当前producer，比较批准与实际writer启动，空查询不能当证据 | 本次Owner检查也漏验了事件producer，记录责任；新技能的真实Planner/Critic行为仍待重跑 |
+
+新增预校验只检查机械合同；不替代Verify独立判断，也不承诺预算必然足够。
+上述改动发生在真实运行结束之后，尚未证明新代码下完整PRD交付通过。
+下一次真实验收须固定新提交、沿用原完整需求和预算，从新隔离Run开始，检查Verify全部
+准入、discovery/Judge、Kernel交付及最终产品oracle；若再次超限，按实际阶段token和重复
+读取证据定位，不通过放宽预算或删除AC掩盖问题。02/05/06/07/08及184交付任务保持active。
+
+
+### 本批修复的验证结果
+
+- `followup-impact-closure.log`：21文件414 passed，覆盖result submit/typed admission/
+  Product Acceptance、实际fanout/briefing/lifecycle、Provider停止与Generic/bounded mock E2E。
+- `followup-final-preflight-skill.log`：22 passed / 1 skipped（可选skill fixture），包含
+  最终CLI预校验及sidecar不落盘断言；与上一组有交集，不累计为唯一数量。
+- `followup-automatic.log`：manual docs currentness通过、sentinel51 passed、三流mock10 passed。
+- 三项canonical技能元数据及三份分发副本一致，`git diff --check`通过。
+- `dev-verify plan --base dev`覆盖整个历史分支，选747文件；本批显式路径仍扩展225文件。
+  `dev-verify run`自动执行contract/mock_e2e，显式跳过deterministic/serial，使用上述
+  21文件影响闭包替代；没有宣称full pytest、coverage或修复后全流程真实PRD通过。
+
+收据：`followup-scope.json`、`followup-verification-plan.json`、
+`followup-automatic-receipt.json`、`followup-skill-parity.json`。历史RED/中间失败日志保留。

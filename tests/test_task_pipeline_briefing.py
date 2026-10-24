@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pytest
 
 from zf.runtime.stage_execution_card import (
     prepare_profiled_stage_result,
@@ -41,21 +42,29 @@ def test_impl_output_contract_exposes_structured_scope_blockers(tmp_path) -> Non
     assert "Self-check command IDs are a closed set" in "\n".join(lines)
 
 
-def test_verify_output_contract_forbids_invented_command_ids(tmp_path) -> None:
+@pytest.mark.parametrize("profile", ["task-verify", "candidate-verify"])
+def test_verify_output_contract_forbids_invented_command_ids(tmp_path, profile) -> None:
     _, lines = prepare_profiled_stage_result(
         state_dir=tmp_path,
         child_payload={
             "operation_id": "op-verify-1",
             "attempt_id": "attempt-1",
-            "output_profile_id": "task-verify",
+            "output_profile_id": profile,
             "output_profile_revision": "1",
         },
-        success_payload={"verification_result": {}},
+        success_payload={"verification_result": {
+            "product_acceptance_report": {"journey_results": []},
+        }} if profile == "candidate-verify" else {"verification_result": {}},
         run_id="run-1",
         cli_command="zf",
     )
 
     assert "Verification command IDs are a closed set" in "\n".join(lines)
+    assert "zf result validate --operation op-verify-1" in "\n".join(lines)
+    assert "does not consume the submit capability" in "\n".join(lines)
+    if profile == "candidate-verify":
+        assert "every mandatory product journey/assertion" in "\n".join(lines)
+        assert "exact ref and sha256" in "\n".join(lines)
 
 
 def test_task_base_recovery_reviews_target_not_previous_candidate() -> None:
