@@ -32,9 +32,14 @@ def test_unlimited_run_age_preserves_operation_deadline(
         },
     ))
     operation_id, _ = _start_operation(runtime)
+    started = next(
+        e for e in runtime.event_log.read_all()
+        if e.type == 'workflow.operation.started'
+        and e.payload.get('operation_id') == operation_id
+    )
     runtime.cost_tracker.record_usage('dev', 20_000_000, 10)
     events = enforce_active_workflow_budgets(
-        runtime, now_epoch=now.timestamp() + operation_seconds,
+        runtime, now_epoch=datetime.fromisoformat(started.ts).timestamp() + operation_seconds,
     )
     exceeded = [e for e in events if e.type == 'workflow.budget.exceeded']
     assert len(exceeded) == int(blocked)

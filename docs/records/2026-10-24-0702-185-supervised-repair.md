@@ -435,3 +435,17 @@ repair evt-1fcdd21ccf18创建第二Verify新Operation afaddf2a72b4，旧71ed6a94
 
 SUP-014修复验证：181项reader/受控输入读取闭包通过，51项sentinel通过，10项flow mock通过；
 Ruff/diff通过。初次新增测试缺少sidecar created_by参数已修正，随后才复现真实source缺失。
+
+## SUP-015 · 释放dispatch后reader上下文切换仍被阻断
+
+4e60ec17启动后，第二次repair被evt-3786c50cba63拒绝，原因
+reader_context_switch_waiting_for_settlement:fanout_child_active,task_active。
+没有派出第二个新Operation，原Verify仍suspended；第一Verify保持completed。
+已停止现场。根因是_active_fanout_child_for_instance忽略fanout.child.dispatch_lost，
+而同模块task状态查询已经处理该事件，形成不一致。
+
+修复只按fanout_id/child_id/run_id三元组释放丢失的dispatch，缺失run_id不释放，
+旧dispatch迟到的loss不释放新dispatch。新增测试1 RED/12 PASS复现，再执行影响闭包。
+同时把长时测试的局部时钟基准改为真实operation.started时间，避免测试初始化耗时造成抖动。
+
+SUP-015验证：75项lifecycle/repair/reader/长时闭包、51项sentinel、10项flow mock通过，Ruff/diff通过。

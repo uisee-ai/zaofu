@@ -35,3 +35,6 @@ reader汇总仅在Run已恢复且generation仍当前时，允许继续
 
 reader重试必须保留上游writer的impl-self-check和固定target描述符；这些是reader输入。
 仅重建当前调用身份和结果输出，不能套用writer自身输出清理规则删除上游输入。
+
+上下文切换的活跃执行查询消费dispatch_lost时必须按完整dispatch身份释放；
+不能把旧dispatch的丢失推断为整个child终止，也不能漏掉该释放后永久等待settlement。
