@@ -266,6 +266,15 @@ def _render_resume_packet(
             f"- **Next**: {packet.get('next_required_action', '')}",
             f"- **Missing evidence**: {len(packet.get('missing_evidence') or [])}",
         ]
+        attempt_facts = packet.get("attempt_identity") or {}
+        lines.append(f"- **Attempt identity**: {attempt_facts.get('status', 'unknown')}")
+        for key, value in (attempt_facts.get("identity") or {}).items():
+            lines.append(f"  - {key}: `{value}`")
+        lines.append(
+            "- Attempt identity is an observed fact, not permission to continue. "
+            "Revalidate the current lease and controlled action before takeover; "
+            "unknown identity must not be inferred from transcript history."
+        )
         artifact_refs = packet.get("accepted_artifact_refs") or []
         hash_status = packet.get("artifact_hash_status") or []
         missing_refs = packet.get("missing_artifact_refs") or []

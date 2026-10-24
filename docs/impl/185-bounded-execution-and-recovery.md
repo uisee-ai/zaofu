@@ -868,3 +868,25 @@ post-tool hooks存在；Judge `evt-adea3548b18d`、Kernel `evt-f079f3d60e11`交�
 候选9be4fa23与交付61b6c21f产品树一致，交付后外部6项及4产品测试通过，Run937,801
 token。该样本补充了dirty edit与hooks实际验证，仍不等于自动恢复、跨Provider或通用
 源码single新入口。真实浏览器和最终清理另记。
+
+追加：dirty writer样本真实浏览器父子任务均done、零页面错误；348个归档成员摘要
+核验后清理临时产品目录、tmux及Web进程。Research同批235成员已核验并清理。
+
+### 恢复 Operation／Attempt 身份事实
+
+Run Manager恢复上下文和实际worker恢复briefing使用的resume packet新增
+`attempt_identity`，只复用TaskAttemptStore中当前Run/Task的唯一记录，并核对
+canonical active_dispatch_id及调用者指定的dispatch。旧Run、旧派发、歧义、缺证
+或不可读保持unknown；不从对话、角色名或旧会话猜测。包含Operation、Attempt、
+Lease、placement epoch、次数及终态事实，不把placement epoch重命名为generation。
+briefing明确其不授予执行权，接替仍须重新校验lease、存活状态和受控动作。
+该补充不等于完整恢复capsule：预算、源worktree快照、权限及外部副作用协调仍未签收。
+
+6项回归先RED；55项相关测试及58项调用者/Store/briefing测试通过，组间重叠。
+第五轮真实PRD仍冻结249f555e，不包含此次增量；独立文档评审32项通过
+（evt-ff49a5ee0e6d），保留原需求摘要、预算与全部验收，产品交付尚待验证。
+证据：`185-prd-planner-20261024T050500Z/attempt-*`及同目录`live/`。
+
+追加调用者/恢复mock168项及sentinel51项通过，Ruff和diff检查通过。
+dev-verify计划选择142个文件并扩展为全仓；run显式跳过宽deterministic/serial层，
+该收据不代表执行过测试，采用上述55/58/168影响闭包和手动sentinel收据。未跑full pytest。

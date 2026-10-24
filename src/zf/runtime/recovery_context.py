@@ -13,6 +13,7 @@ from zf.core.events.model import ZfEvent
 from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
 from zf.runtime.sidecar_refs import write_sidecar_json
+from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
 
 
 RECOVERY_CONTEXT_SCHEMA_VERSION = "task-recovery-context.v1"
@@ -96,6 +97,7 @@ def build_task_recovery_context(
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
+        "attempt_identity": recovery_attempt_facts(state_dir, task, run_id=run_id),
         "execution_boundary": {
             "workflow_run_id": run_id,
             "dispatch_id": task.active_dispatch_id if task is not None else "",
