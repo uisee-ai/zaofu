@@ -890,3 +890,17 @@ briefing明确其不授予执行权，接替仍须重新校验lease、存活状�
 追加调用者/恢复mock168项及sentinel51项通过，Ruff和diff检查通过。
 dev-verify计划选择142个文件并扩展为全仓；run显式跳过宽deterministic/serial层，
 该收据不代表执行过测试，采用上述55/58/168影响闭包和手动sentinel收据。未跑full pytest。
+
+第五轮Planner在1,106,777 token提交并准入，Critic在1,228,698 token提交passed，
+均低于原2M Operation上限。Owner逐项审阅完整计划、TaskMap、source index与六个
+Plan ports，核对最终包所有摘要；PAS仅增加当前Flow/Run/Plan代际绑定，正文不变。
+精确计划 `evt-1d21ad890658` 经 `evt-573dce4f3bcf` 批准，尚不表示产品通过。
+
+Critic存在一个无法解析的 `plan-execution-review.json#input_binding` 引用；Owner
+没有将该引用计为证据，依据实际不可变输入、策略和已准入审查正文独立复核并记录限制。
+规划审查skill补充stdout与持久文件的区分，禁止把拟定文件名作为证据；三份分发同步。
+该方法增量未热注入第五轮。批准脚本最初把PAS新增绑定当作正文差异而拒绝，未发批准；
+核对四个绑定字段后才重新执行，保留首次失败日志，没有绕过摘要或修改计划。
+
+方法增量的skill分发/规划工具14项测试和diff检查通过；首次命令含不存在的测试文件，
+未执行任何测试，已纠正且日志保留。不是新一轮真实Critic引用质量通过证明。
