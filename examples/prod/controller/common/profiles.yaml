@@ -88,7 +88,7 @@ spec:
           token_budget: 1500000
           cost_budget_usd: 8
     run_limits:
-      timeout_seconds: 3000
+      timeout_seconds: 0
       token_budget: 10000000
       cost_budget_usd: 40
     candidate_quality_source: task_contract_required
@@ -286,7 +286,7 @@ spec:
           token_budget: 1500000
           cost_budget_usd: 8
     run_limits:
-      timeout_seconds: 3000
+      timeout_seconds: 0
       token_budget: 10000000
       cost_budget_usd: 40
     plan_approval: false

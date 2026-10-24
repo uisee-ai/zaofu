@@ -26,3 +26,6 @@ Run的12M/7200秒/30美元及其他Operation限制保留。使用既有受控wri
 原Run的7200秒总时限到期，CLI第二项Verify被中断，尚无Judge/最终交付。
 现场已停止并完整保留。CLI writer cap=0已实测；Run总token和时限仍等待Owner澄清。
 汇总恢复修复1b2b19e0已真实生效；goal CLI根任务同步修复待下一次真实恢复验证。
+
+Owner已批准无Run总时限、按任务终态返回；本轮Run token也取消上限，继续累计用量。
+执行项见[长期Run恢复任务](2026-10-24-0947-185-long-horizon-recovery.md)，原验收范围保持。

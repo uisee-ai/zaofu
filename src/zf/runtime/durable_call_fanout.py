@@ -284,10 +284,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         role: RoleConfig,
         causation_id: str,
         aggregate=None,
+        retry_attempt: int = 0,
     ) -> dict[str, Any]:
         """Persist one selected reader call before any sibling is sent."""
 
         run_id = f"run-{context.fanout_id}-{child.child_id}"
+        if retry_attempt:
+            run_id += f"-retry-{retry_attempt}"
         if not self._pin_reader_target_or_reject(
             role=role,
             target_ref=child.target_ref or context.target_ref,
@@ -355,7 +358,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                     context=context,
                     child=child,
                     payload=child.payload,
-                ),
+                ) + (f"@retry:{retry_attempt}" if retry_attempt else ""),
                 stage_id=context.stage_id,
                 task_id=str(child.payload.get("task_id") or ""),
                 dispatch_id=run_id,

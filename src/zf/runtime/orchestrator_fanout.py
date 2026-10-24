@@ -1048,6 +1048,8 @@ class FanoutCoordinationMixin(
         *,
         recovery_snapshot=None,
     ) -> bool:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         completed_fanouts = {
             str((event.payload or {}).get("fanout_id") or "")
             for event in events
@@ -1074,7 +1076,10 @@ class FanoutCoordinationMixin(
                 if isinstance(manifest.get("aggregate"), dict)
                 else {}
             )
-            if aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}:
+            if (
+                aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
+                and not blocked_reader_aggregate_recoverable(manifest)
+            ):
                 continue
             children = [
                 child for child in manifest.get("children", []) or []
@@ -5775,6 +5780,8 @@ class FanoutCoordinationMixin(
         *,
         rebuild_request: ZfEvent | None = None,
     ) -> None:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         manifest = self._fanout_manifest(fanout_id)
         if not manifest:
             return
@@ -5787,6 +5794,7 @@ class FanoutCoordinationMixin(
         if (
             aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
             and rebuild_request is None
+            and not blocked_reader_aggregate_recoverable(manifest)
         ):
             return
         children = [
@@ -6816,14 +6824,21 @@ class FanoutCoordinationMixin(
             identity_sources = retry_dispatch["identity_sources"]
             task_item = retry_dispatch["task_item"]
         else:
-            if recovery_decision_event is not None:
+            if fresh_operation and manifest.get("topology") == "fanout_reader":
+                from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
+
+                prepared_call = prepare_fresh_reader_retry(
+                    self, manifest=manifest, child=child, role=role,
+                    attempt=attempt, previous_dispatch=previous_dispatch,
+                )
+            elif recovery_decision_event is not None:
                 prepared_call = self._prepare_reader_fanout_retry_operation(
                     manifest=manifest,
                     child=child,
                     recovery_decision_event=recovery_decision_event,
                 )
-                if prepared_call is not None and not prepared_call.should_dispatch:
-                    return False
+            if prepared_call is not None and not prepared_call.should_dispatch:
+                return False
             task_item = {}
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,

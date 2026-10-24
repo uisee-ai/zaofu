@@ -71,6 +71,8 @@ def has_nonterminal_reader_fanouts(
     *,
     recovery_snapshot=None,
 ) -> bool:
+    from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
     terminal = {"completed", "failed", "timed_out", "cancelled"}
     if recovery_snapshot is not None:
         manifests = recovery_snapshot.manifests
@@ -90,7 +92,7 @@ def has_nonterminal_reader_fanouts(
             if isinstance(manifest.get("aggregate"), dict)
             else {}
         )
-        if (
+        if blocked_reader_aggregate_recoverable(manifest) or (
             str(manifest.get("status") or "") not in terminal
             and str(aggregate.get("status") or "") not in terminal
         ):

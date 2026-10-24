@@ -992,3 +992,5 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 `zf goal set --status active` 在Run admission确认可继续后，通过现有生命周期服务
 同步根任务到in_progress并清除旧blocked原因；completed/cancelled/failed Run
 不会因该命令重开任务。CLI与重复调用回归见同一监工记录SUP-012。
+
+长期Run策略与reader断点恢复见[补充说明](185-long-horizon-run-recovery.md)。

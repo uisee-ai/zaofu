@@ -86,7 +86,7 @@ class RepairActionFanoutRuntimeMixin:
                 task_id=task_id,
                 reason="missing_previous_fanout_child_dispatch",
             )
-        suspended_dispatch: ZfEvent | None = None
+        interrupted_dispatch: ZfEvent | None = None
         latest_dispatch_is_open = (
             not terminal_events
             or dispatches[-1][0] > terminal_events[-1][0]
@@ -102,23 +102,23 @@ class RepairActionFanoutRuntimeMixin:
 
             operation = reduce_workflow_operations(events).get(operation_id, {})
             operation_status = str(operation.get("status") or "")
-            if terminal_events and operation_status != "suspended":
+            if terminal_events and operation_status not in {"suspended", "cancelled", "blocked"}:
                 return WorkflowRuntimeDecision(
                     action="rerun_fanout_child_failed",
                     role=role.instance_id,
                     task_id=task_id,
                     reason="fanout_child_has_newer_dispatch",
                 )
-            if operation_status == "suspended":
-                suspended_dispatch = dispatches[-1][1]
+            if operation_status in {"suspended", "cancelled", "blocked"}:
+                interrupted_dispatch = dispatches[-1][1]
         previous_dispatch = dispatches[-1][1]
-        if suspended_dispatch is not None:
-            suspended_payload = (
-                suspended_dispatch.payload
-                if isinstance(suspended_dispatch.payload, dict)
+        if interrupted_dispatch is not None:
+            interrupted_payload = (
+                interrupted_dispatch.payload
+                if isinstance(interrupted_dispatch.payload, dict)
                 else {}
             )
-            suspended_run_id = str(suspended_payload.get("run_id") or "")
+            interrupted_run_id = str(interrupted_payload.get("run_id") or "")
             self.event_writer.append(ZfEvent(
                 type="fanout.child.dispatch_lost",
                 actor="zf-cli",
@@ -128,22 +128,22 @@ class RepairActionFanoutRuntimeMixin:
                     "trace_id": str(manifest.get("trace_id") or ""),
                     "stage_id": str(manifest.get("stage_id") or ""),
                     "child_id": child_id,
-                    "run_id": suspended_run_id,
+                    "run_id": interrupted_run_id,
                     "role_instance": role.instance_id,
                     "task_id": task_id,
                     "operation_id": str(
-                        suspended_payload.get("operation_id") or ""
+                        interrupted_payload.get("operation_id") or ""
                     ),
-                    "reason": "suspended_operation_replaced_by_controlled_rerun",
+                    "reason": f"{operation_status}_operation_replaced_by_controlled_rerun",
                     "source": "repair_action_executor",
                 },
-                causation_id=suspended_dispatch.id,
+                causation_id=interrupted_dispatch.id,
                 correlation_id=str(manifest.get("trace_id") or "") or None,
             ))
             task = self.task_store.get(task_id)
             if (
                 task is not None
-                and str(task.active_dispatch_id or "") == suspended_run_id
+                and str(task.active_dispatch_id or "") == interrupted_run_id
             ):
                 self.task_store.update(
                     task_id,
@@ -152,13 +152,13 @@ class RepairActionFanoutRuntimeMixin:
                 )
             if (
                 getattr(self, "_active_dispatch_ids", {}).get(task_id)
-                == suspended_run_id
+                == interrupted_run_id
             ):
                 self._active_dispatch_ids.pop(task_id, None)
             self._set_worker_state(
                 role.instance_id,
                 "idle",
-                reason="suspended fanout dispatch released for controlled rerun",
+                reason=f"{operation_status} fanout dispatch released for controlled rerun",
                 task_id=task_id,
                 force=True,
             )

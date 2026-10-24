@@ -400,3 +400,23 @@ SUP-012实现提交：`c831a904 fix: reopen the parent task on authorized goal r
 本轮实现链d160bdd7→1b2b19e0→c831a904，仅本地提交，未push/merge；
 真实冻结运行最后使用1b2b19e0，c831a904尚待下一次真实恢复加载验证。
 整体1—9任务继续active，不归档，不将候选/局部Verify通过写成完整交付。
+
+## SUP-013 · Long horizon 总时限与 reader 受控恢复（实施中）
+
+Owner批准不再延长为4h，而取消Run总时限；本轮Run token上限也取消，计量继续。
+公共prod/refactor profile仅修改Run timeout=0，Operation timeout与公共token/cost保留。
+当前真实Run仍暂停，准备通过goal CLI预算修订恢复，不能仅改YAML。
+
+复现reader两处断点：受控重试仍引用已cancelled Operation；Run恢复后reader aggregate
+仍因旧cancelled状态不能收尾。修复通过已有repair入口新建关联旧调用的reader Operation，
+释放中断dispatch；保留已完成reader、原candidate与契约。汇总live/idle路径只恢复
+Run blocked造成的取消，仍blocked/人工cancel被挡住；失败子项继续失败/返工。
+
+验证：58项配置/预算/goal/repair通过；195项reader/结果准入/Attempt闭包通过。
+扩展live/idle与失败分支后170项通过、1项测试断言误将后续合法返工派发算作原fanout重跑；
+改为按原fanout计数后13项回归通过。5h/72h使用受控时钟测试，非真实等待72小时。
+planner保守选出176文件并建议全量；依仓库验证规则以显式影响闭包替代全量，
+自动contract/mock层仍执行，receipt留在外部证据。原PRD最终交付尚待真实续行。
+
+SUP-013提交前最终验证：旧reader迟到结果回归1项通过；51项sentinel和10项flow mock通过。
+新增恢复模块通过Ruff与diff检查；直接调用者reader/fanout恢复闭包已覆盖。真实续行待执行。
