@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   clarifyWorkflowRequest,
@@ -43,6 +43,7 @@ import {
   WorkflowExecutionPlan,
   WorkflowList,
 } from "./WorkflowProposalParts";
+import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowClarificationPanel } from "./WorkflowClarificationPanel";
 import {
   diagnosticSeverity,
@@ -84,6 +85,7 @@ export function WorkflowProposalPage({
   const [busyAction, setBusyAction] = useState("");
   const [feedback, setFeedback] = useState<ActionResponse | null>(null);
   const [view, setView] = useState<WorkflowView>("decision");
+  const reviewBusy = useRef(false);
 
   const loadRequests = useCallback(async () => {
     if (!projectId) {
@@ -110,6 +112,7 @@ export function WorkflowProposalPage({
   }, [projectId]);
 
   const loadDetail = useCallback(async () => {
+    if (reviewBusy.current) return;
     if (!projectId || !selectedId) {
       setDetail(null);
       return;
@@ -339,6 +342,9 @@ export function WorkflowProposalPage({
 
           <main className="workflow-proposal-detail">
             {detail ? (
+              <WorkflowPreviewReview detail={detail} projectId={projectId} disabled={!actionReady}
+                onBusy={(busy) => { reviewBusy.current = busy; setBusyAction(busy ? "preview-review" : ""); }}
+                onRefresh={async () => { await loadRequests(); await loadDetail(); }}>
               <WorkflowProposalDetail
                 actionReady={actionReady}
                 actionState={actionState}
@@ -356,6 +362,7 @@ export function WorkflowProposalPage({
                 onRunPause={(payload) => void execute("run-pause", payload)}
                 onRunResume={(payload) => void execute("run-resume", payload)}
               />
+              </WorkflowPreviewReview>
             ) : (
               <WorkflowEmpty title="Loading proposal detail" />
             )}
@@ -517,7 +524,7 @@ function WorkflowProposalDetail({
             {" / "}
             Revision {textValue(request.revision)}
           </span>
-          <h3>{textValue(requirement.objective) || requestId}</h3>
+          <h3 data-review-field="requirement.objective">{textValue(requirement.objective) || requestId}</h3>
           <div className="workflow-proposal-meta">
             <StatusBadge status={requestStatus} />
             {textValue(proposal.risk_class) ? <span>{textValue(proposal.risk_class)}</span> : null}
@@ -725,7 +732,7 @@ function WorkflowProposalDetail({
         </section>
       ) : null}
 
-      <section className="workflow-proposal-section workflow-plan-section">
+      <section className="workflow-proposal-section workflow-plan-section" data-review-field="execution_plan">
         <SectionHeading
           icon={GitFork}
           meta={`${planStages.length} of ${stages.length} stages`}
@@ -741,10 +748,10 @@ function WorkflowProposalDetail({
       <section className="workflow-proposal-section workflow-requirements">
         <SectionHeading icon={Check} meta="confirmed requirement" title="Requirements" />
         <div>
-          <WorkflowList title="Acceptance" items={asStringArray(requirement.acceptance)} />
-          <WorkflowList title="Constraints" items={asStringArray(requirement.constraints)} />
+          <div><h4>Acceptance</h4><ul>{asStringArray(requirement.acceptance).map((item, index) => <li key={index} data-review-field={`requirement.acceptance.${index}`}>{item}</li>)}</ul></div>
+          <div><h4>Constraints</h4><ul>{asStringArray(requirement.constraints).map((item, index) => <li key={index} data-review-field={`requirement.constraints.${index}`}>{item}</li>)}</ul></div>
           {asStringArray(requirement.open_questions).length ? (
-            <WorkflowList title="Open questions" items={asStringArray(requirement.open_questions)} />
+            <div><h4>Open questions</h4><ul>{asStringArray(requirement.open_questions).map((item, index) => <li key={index} data-review-field={`requirement.open_questions.${index}`}>{item}</li>)}</ul></div>
           ) : null}
         </div>
       </section>

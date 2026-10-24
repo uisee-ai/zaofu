@@ -74,12 +74,12 @@ class WorkflowRequestActionsMixin:
                 "workflow-request": self._workflow_request,
                 "workflow-submit": self._workflow_submit,
             }[action]
-        return handler(
-            requested=requested,
-            action=action,
-            requested_action=requested_action,
-            payload=payload,
-        )
+        from zf.core.state.locks import locked_path
+        with locked_path(self.state_dir / "locks" / "workflow-preview-mutation"):
+            return handler(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
 
     def _workflow_start(
         self,

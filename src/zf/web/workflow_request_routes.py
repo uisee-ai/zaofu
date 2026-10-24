@@ -208,8 +208,9 @@ def build_workflow_request_router(
         from zf.runtime.workflow_requests import (
             WorkflowRequestConflict,
             load_workflow_request,
-            revise_workflow_request,
         )
+
+        from zf.runtime.workflow_preview_review import revise_preview_requirement as revise_workflow_request
 
         request_id = str(payload.get("request_id") or "").strip()
         current = (
@@ -634,6 +635,8 @@ def build_workflow_request_router(
             status_code=code,
         )
 
+    from zf.web.workflow_preview_review_routes import build_preview_review_router
+    router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
     return router
 
 

@@ -611,3 +611,10 @@ ready 且历史仅规划的 Channel PRD 可在精确启动提案中以 `authoriz
 以及显式 `kimi-headless-canary` 无工具文本入口。single 的源码交付及 native delegation
 未因此开放；Kimi 的真实权限与生命周期签收仍需本机可运行环境。实现边界与本批验证见
 [续批记录](../impl/185-bounded-execution-and-recovery.md)。
+
+### Preview 审核中的引用讨论与局部修订（2026-10-24）
+
+启动前独立 Workflow Preview 已补充 Chat Agent 入口、划线引用、局部 before/after 差异和版本绑定。
+复用现有 headless Agent，不增设常驻路由/配置 Agent。应用修改只生成新版 Preview；配置变化仍走
+原 Apply config，启动仍走原 Approve。Task/Channel 规范来源变更和运行中重规划保持原授权路径。
+详见[实现与验证边界](../impl/185-preview-chat-revision.md)。
