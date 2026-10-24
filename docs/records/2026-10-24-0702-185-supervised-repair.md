@@ -516,3 +516,22 @@ fixture的输入ref被正常端口物化成另一ref，导致合法继承被拒�
 SUP-018验证：扩展闭包73项通过、1项合法ref别名回归失败后修复；最终28项PlanPackage/ProductAcceptance闭包通过，含5项新增返工测试。51项sentinel、3项flow smoke mock通过；最终源码再执行sentinel，未运行全量pytest。
 
 真实不可变输入的隔离准入回放通过：24条必需声明全部保留、无waiver，Product Acceptance重绑新generation且语义不变。初次隔离fixture遗漏RunContract快照，补齐后通过；未修改真实state。最终sentinel结果单独归档。
+
+
+## SUP-019 · CLI审批展示错误地检查历史任务
+
+6be5b399实际恢复成功：evt-e60a55a8e689准入新PlanPackage，evt-7caebdcae46b请求审批，
+仅1个gap task。CLI plan review却重读完整amended TaskMap，误报旧CLI与gap任务路径重叠；
+Kernel生成的digest按实际派发集检查，全部绿。监工核对digest、原需求、两文件修复边界后，
+按Owner授权批准evt-3df2b7f0ee9b；evt-9c62cbfcbcd3已启动真实Codex gap writer。
+完整评审差异保留在acceptance-revision-operator-review.json，不把误报隐去。
+
+修复CLI优先显示Kernel产出的共享digest；老事件没有digest时保留原检查。
+无法读digest时显式告警后降级展示，不静默装作成功。只读CLI，不改审批/派发机制。
+回归1 RED/4 PASS复现；第一次闭包命令误指不存在的test_plan_preview_artifacts.py，
+没有执行测试，已改用真实plan_digest/operator_plan_preview测试，不计入通过。
+
+SUP-018补充直接writer admission闭包40项通过，真实准入/审批/派发也已证明接通；
+当前尚待writer结果、后续Verify/Discovery/Judge与Kernel最终交付。
+
+SUP-019验证：29项CLI/digest/operator preview只读闭包通过，Ruff/diff通过；无需为只读展示修复中断真实writer，冻结执行继续使用6be5b399。

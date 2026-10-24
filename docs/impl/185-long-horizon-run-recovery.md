@@ -53,3 +53,7 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 原TaskMap摘要及generation、原spec版本后，写新spec并绑定新计划版本，保留来源ref/digest。
 此操作不改变journey/assertion或降低要求，也不重绑旧验收报告；新候选必须重新验收。
 普通重规划或缺少原计划关联时，不自动改写继承规范的版本。
+
+
+`zf plan review`优先展示Kernel按实际派发任务集生成的plan-digest。返工TaskMap包含历史
+任务，不应把完整历史集合重算成当前scope冲突；无digest的旧事件继续使用兼容检查。

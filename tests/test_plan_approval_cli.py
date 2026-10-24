@@ -110,3 +110,32 @@ def test_plan_reject_inherits_approval_context(tmp_path, monkeypatch):
     assert rejected.payload["task_map_ref"] == "/tmp/task_map.json"
     assert rejected.payload["digest_ref"] == "artifacts/plan-digest/evt-plan.md"
     assert rejected.payload["reason"] == "owner_role mismatch"
+
+
+def test_gap_review_uses_kernel_digest_for_selected_dispatch_scope(tmp_path, monkeypatch, capsys):
+    project = tmp_path / "project"
+    state = project / ".zf-custom"
+    artifact = state / "artifacts/plan/task_map.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text(json.dumps({"tasks": [
+        {"task_id": task_id, "owner_role": "dev", "allowed_paths": ["cli.py"],
+         "verification": "python -m unittest", "root_owner_class": "assembly"}
+        for task_id in ("OLD-CLI", "GAP-CLI")
+    ]}))
+    digest = state / "artifacts/plan/digest.md"
+    digest.write_text("# Plan Digest — gap-plan\n\nSelected: GAP-CLI\nNo overlapping active paths\n")
+    ledger = state / "events.jsonl"
+    EventWriter(EventLog(ledger)).append(ZfEvent(
+        type="plan.approval.requested", actor="zf-cli",
+        payload={"plan_id": "gap-plan", "task_map_ref": "artifacts/plan/task_map.json",
+                 "task_count": 1, "digest_ref": "artifacts/plan/digest.md"},
+    ))
+    before = ledger.read_bytes()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("ZF_STATE_DIR", ".zf-custom")
+    assert _run(argparse.Namespace(plan_cmd="review", state_dir=None)) == 0
+    output = capsys.readouterr().out
+    assert "Selected: GAP-CLI" in output
+    assert "[X]" not in output
+    assert "OLD-CLI" not in output
+    assert ledger.read_bytes() == before
