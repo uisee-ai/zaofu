@@ -731,3 +731,57 @@ secure submit 的结果被再次作为 legacy 结果适配，重复 reported 且
 模式同时为 blocking。伪造准入事件仍走拒绝路径；2项专门幂等测试和74项
 Refactor完整mock、call-result runtime/admission、result submit测试通过。
 新修复没有热注入正在运行的PRD/Refactor。
+
+## 2026-10-24 交付、故障恢复与启动重试验收
+
+- Refactor v4 `workflow-25cd5e204e64345c` 在冻结 `4907ab45` 下完成
+  Task Verify、集成、Candidate Verify、bridge、一致性扫描、Judge；Kernel
+  `evt-0f141551fbb5` 确认交付。交付 HEAD `0902a76a` 与候选 `c11e31d0`
+  产品树一致，交付后外部38项检查、7个产品测试和真实浏览器通过。入口经过
+  操作者 Request 修订，首次 ref-only 计划经过 replan；不把该样本写成全自动入口
+  或后来 `281f9f13` 引用投影修复的真实验证。968个归档成员摘要验证并清理。
+- 冻结 `281f9f13` 的 Issue light `workflow-60c3c1394fcb7f1d` 在真实 writer
+  PID 1180314 被终止后，由受控 worker-respawn 交还同一阶段/快照；Verify、Judge、
+  Kernel `evt-b003e661834e` 完成。交付 `8dc25e70` 与候选 `37dc0289` 产品树一致，
+  外部6项、产品4测试、真实浏览器通过，Run计量985,530 token。中断发生在首个源码
+  编辑之前；不证明 dirty diff 恢复、纯自动恢复、通用源码 single 新入口或跨Provider。
+  351个归档成员验证并清理。
+- 同一冻结版本 Research `wf-research-fanout-4019d25b7981` 四子任务分别只派发一次，
+  无 dispatch_lost 重试；`evt-b67ef3a5ac13` 完成报告，真实浏览器通过。终态后同一
+  synth 结果重放被拒绝，未重复派发。A/B/C引用及事实/提案/未知区分人工审阅通过，
+  结构化 Acceptance/Test/Task Map 仍为空，不能签收 strict 下游机器交接。226成员
+  摘要归档并清理。
+
+### PRD 第三轮未交付及追加修复
+
+冻结 `421eacf9` 的 `workflow-f4e934ac6b9e8331` 保留原需求摘要、五文件范围、
+12M Run / 2M Operation 预算。独立PRD评审37项、候选外部65项、产品21测试通过，
+但第一份 Verify **准入的是失败报告**：本会话缺少持久测试工具输出收据；第二份才是
+通过报告。`test.failed evt-d78914d987d4` 后自动返工把诊断文本
+`verification evidence capture` 当作无主源码路径，生成新 dev 任务，随后 assembly
+校验拒绝。不能把协议 admitted 当作业务 passed，更不能把候选检查代替交付。
+本轮Run计量8,875,933 token，未加预算。无安全 resume checkpoint 后，通过
+`zf runs cancel` 取消（`evt-905305c1c163`），simulation.done 记录 cancelled。
+未进入 discovery/Judge/Kernel交付；失败证据保留后再冻结新版本重验。
+
+追加修复遵守原批准边界：
+
+1. WorkflowStartService 可重新预览同一 Task 尚未启动的 Request。必须匹配精确修订、
+   不可变 Requirement 的 Task ID/合同摘要、原来源；终态/活动派发/Run准入历史拒绝。
+   preview 不修改 canonical binding，仍需新精确提案批准，submit 才绑定。其他Task、
+   旧修订、篡改工件、来源变更均拒绝；不是任意采用一个未绑定Request。
+2. reader target pin/checkout/dirty reset 的清理保留精确 `.codex/hooks.json`。
+   原实现会删除 Provider 已安装的运行时 hooks，形成发现时序竞争。三个真实git回归
+   先RED，修复后证明 hooks 内容不变，其他未跟踪文件和 `.codex` 杂项仍被清理。
+3. finding 路径无任何 Task Map owner 且无明确 gap plan 时，交回重新规划；Kernel
+   不再凭诊断文本生成默认 dev 所有权和源码 scope。既有有主替代任务与显式 gap plan
+   保持原校验，assembly门未放宽。
+
+验证：Request/Run影响闭包81项、自动14文件255项；hooks/workdirs/spawn/reader
+闭包92项；返工/TaskMap闭包134项，恢复caller67项。各组有重叠，不累计为唯一总数。
+证据分别位于 `185-codex-recheck-20261024T030000Z/live/prd` 与
+`185-writer-recovery-20261024T033900Z`。后续新源码真实运行和最终自动gate结果另记。
+
+追加验证：Run Manager直接caller159项通过；hooks直接caller与相关mock25项通过，1项host层排除。另10项历史Codex hook静态hash基线失败，在冻结281f9f13也全部复现；未修改hash基线，未把该组写成全绿。该失败与本次保留hooks路径无代码交集；真实Codex版本0.163.0，旧hash验证基线0.144仍待独立重新资格验证。
+
+最终检查：新增Task已占用Run的拒绝分支纳入9项Request回归，全部通过；文档指令8项通过。hooks/返工dev-verify选择276文件并升级全仓，本批显式跳过deterministic/serial全仓层，以前述直接调用者和共享合同闭包替代；自动sentinel51、三流mock10全部通过。不是full pytest；历史hash基线10项失败继续保留。

@@ -800,15 +800,19 @@ class WorkdirManager:
     def _clean_managed_worktree(self, project_path: Path) -> None:
         """Clean a managed worktree, repairing same-owner directory modes once."""
 
+        # Reader targets may be pinned after provider activation. Removing its
+        # runtime hook file here races Codex discovery and loses tool receipts.
+        # Preserve this exact projection, not arbitrary files in .codex/.
+        clean_args = ("clean", "-fd", "-e", "/.codex/hooks.json")
         try:
-            self._git(project_path, "clean", "-fd")
+            self._git(project_path, *clean_args)
             return
         except RuntimeError as first_error:
             changed = self._restore_managed_directory_write_bits(project_path)
             if not changed:
                 raise
             try:
-                self._git(project_path, "clean", "-fd")
+                self._git(project_path, *clean_args)
                 return
             except RuntimeError as retry_error:
                 raise RuntimeError(
