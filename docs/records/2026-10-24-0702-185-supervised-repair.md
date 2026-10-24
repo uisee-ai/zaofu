@@ -449,3 +449,25 @@ reader_context_switch_waiting_for_settlement:fanout_child_active,task_active。
 同时把长时测试的局部时钟基准改为真实operation.started时间，避免测试初始化耗时造成抖动。
 
 SUP-015验证：75项lifecycle/repair/reader/长时闭包、51项sentinel、10项flow mock通过，Ruff/diff通过。
+
+## SUP-016 · 重启把workflow根任务重新排入backlog
+
+Docker真实看板检查期望根任务in_progress，但页面ready；进一步检查并非前端投影缺陷：
+10:04 goal CLI确实把根任务恢复in_progress，10:05启动的task.requeued evt-ac2e6f2da659
+又把它改为backlog（source=zf_start_boot_reconcile）。Run及Verify仍running。
+当前调用链为zf start -> requeue_stale_inflight_tasks；它误把持久Run根任务当成失去worker
+session的普通任务。GracefulShutdown复用同一函数，也存在此问题。
+
+新增真实CLI启动helper/Shutdown cleanup四个分支测试（managed parent/legacy anchor），
+全部先RED；修复按既有execution owner/anchor身份排除Run根任务，普通中断worker仍requeue。
+当前现场无需打断Verify，通过已有goal set --status active纠正根任务状态；
+运行源码仍0fe2af8f，新的boot/stop修复真实启动尚未使用，不把它宣称为已真实重启验证。
+
+SUP-015真实恢复已成功：evt-483356cc445e应用repair，新Verify Operation25ad09c75126，
+15个required source引用/摘要完整，第一Verify仅原来1次dispatch。独立agent随后确认
+11业务测试、8CLI测试、19 discovery测试、compile和100位整数/输入不变/错误输出探针通过；
+这些是进行中的provider证据，尚需结果准入及Judge/Kernel交付。
+
+SUP-016验证：84项boot/stop/goal/根任务生命周期闭包、51项sentinel、10项flow mock通过。
+受控root修复事件evt-4a81485100e7未重启任何child；原Run继续。第二Verify准入
+evt-32f22f70d5c6，aggregate evt-cd1cf7374456 completed；Discovery实际启动evt-422e80030de1。

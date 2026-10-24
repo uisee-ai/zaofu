@@ -38,3 +38,6 @@ reader重试必须保留上游writer的impl-self-check和固定target描述符�
 
 上下文切换的活跃执行查询消费dispatch_lost时必须按完整dispatch身份释放；
 不能把旧dispatch的丢失推断为整个child终止，也不能漏掉该释放后永久等待settlement。
+
+启动/停止的普通worker清理必须排除workflow execution owner和legacy fanout anchor根任务。
+这些Task的生命周期由持久Run终态/受控恢复决定，不能因provider进程退出回到backlog。
