@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done
 
 # 185 · Preview 引用讨论与局部修订
 
@@ -16,3 +16,6 @@
 
 实施与验证：[Preview 引用修订](../../docs/impl/185-preview-chat-revision.md)。
 新增 17 项通过；Request/Web 调用闭包 31 项通过；107 文件影响闭包已完成，历史时序失败单独通过，保留一项包装器超时与监工接续 312 passed 回执。serial 10 passed、Web build/unit、sentinel 51 passed、Docker 浏览器 1 passed。Provider 为确定性 mock，不冒称真实 Codex 语义验收。
+
+实现提交：`b5b6b078 feat: support quoted workflow preview revisions`。
+证据：`/home/min/workspace/public/zaofu-evidence/185-preview-review-20261024T1423/`，186 个文件 SHA256 清单。仅本地提交，未 push/merge。

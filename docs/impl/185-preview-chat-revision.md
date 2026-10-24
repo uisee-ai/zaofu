@@ -1,6 +1,6 @@
 # 185 · Workflow Preview 引用讨论与局部修订
 
-关联：[185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md)、[实施任务](../../tasks/active/2026-10-24-1423-185-preview-chat-revision.md)。
+关联：[185 设计](../design/185-agent-routing-delegation-and-workflow-recovery.md)、[实施任务](../../tasks/done/2026-10-24-1423-185-preview-chat-revision.md)。
 
 ## 已接入入口
 
