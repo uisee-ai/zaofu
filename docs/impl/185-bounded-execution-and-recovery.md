@@ -696,3 +696,38 @@ PRD 本轮 `workflow-e848dbc3d8cb2824` 的产品外部65项、产品19测试通�
 额外调用者结果见 `research-draft-additional-callers.log`，不是 full pytest。
 自动 run 显式跳过已分组执行的 deterministic 层，实际 sentinel51、flow smoke10通过；
 另两项 policy/Generic mock E2E 文件9项通过。各组重叠，不累计为唯一测试总数。
+
+## 2026-10-24 Refactor 引用投影与结果恢复顺序
+
+真实 Refactor v4 首次 Planner/Critic 已准入，但 Planner 只提供 `task_map_ref`，
+下游投影只读取根级内嵌 Task Map，误报 `plan missing task_map`。现在 Plan Synth
+候选合同的 source bindings 同时绑定 ref 与摘要。下游从 Critic 精确审阅的合同、
+子报告和 Task Map 摘要链读取不可变工件；支持 canonical task_map port，保留内嵌
+旧格式。缺失摘要、身份不匹配、多个生产者或互相冲突的双份内容均拒绝。
+不得重新读取可变 worker 目录来补造旧批准；没有 ref 的旧合同需要重新规划和评审。
+实际旧运行由原有 replan 修复内容后继续，不能用它证明新投影代码已被真实调用。
+
+Codex Research 重验 `wf-research-fanout-0e3dc7b58300` 的四路报告及 synth 成功，
+真实 React/Docker 浏览器任务卡为 done、零页面错误。本地 A/B/C 引用、严格整数与
+bool 反例、事实/提案/未知边界人工审阅通过；结构化交接字段仍为空，不能宣称完整
+strict 交接验收。运行中 technical_analyst 已写结果却被误判失联而重试，原因是
+恢复扫描先处理 Provider 关闭，再重放子结果。恢复顺序改为先走既有结果准入/投影，
+然后判失联；没有放宽原始 worker 结果的可信度，也没有增加重试预算。
+两项 RED 复现及188项恢复闭包通过；真实重验运行冻结在修复前，仍保留重复重试证据。
+
+State Packet 补齐根 Task 只有 Request 绑定的情形：从 Task 的精确 Request 修订对应
+的 `workflow.invoke.accepted` 解析唯一 Run。旧修订、尚未接受、多个 Run 或缺证均
+保持 unknown，不继承旧 judge/ship，也不采信调用方猜测的 Run。显式 canonical Run
+绑定继续优先；规范化完整恢复包和真实跨 Provider 接替仍未签收。
+
+证据：`185-codex-20261024T013700Z/refactor-ref-*` 与
+`185-codex-recheck-20261024T030000Z/{research,state-packet-request-*}`。
+Refactor 工件影响闭包216项、State Packet/CLI/Run scope/recovery context50项通过。
+Research 已停止并清理，254个归档成员逐一核验摘要；原始失败证据单独保留。
+
+扩展 Refactor mock E2E 还发现一个旧缺陷（冻结421eacf9同样复现）：可选模式下，已通过
+secure submit 的结果被再次作为 legacy 结果适配，重复 reported 且 verdict 改变。
+现在只要完整 semantic-submit 凭据与已准入事件匹配，就复用原 envelope，不要求该
+模式同时为 blocking。伪造准入事件仍走拒绝路径；2项专门幂等测试和74项
+Refactor完整mock、call-result runtime/admission、result submit测试通过。
+新修复没有热注入正在运行的PRD/Refactor。

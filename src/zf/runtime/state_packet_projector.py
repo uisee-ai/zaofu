@@ -168,21 +168,40 @@ class StatePacketProjector:
             ),
         )
         events_for_task = self._events_for_task(task.id)
-        bound_run = str(getattr(getattr(task, "execution_binding", None), "workflow_run_id", "") or "")
+        binding = getattr(task, "execution_binding", None)
+        bound_run = str(getattr(binding, "workflow_run_id", "") or "")
+        request_id = str(getattr(binding, "request_id", "") or "")
+        if not bound_run and request_id:
+            from zf.runtime.run_scope import event_run_id, run_aliases
+
+            aliases = run_aliases(events_for_task)
+            accepted_runs = {
+                event_run_id(event, aliases=aliases) for event in events_for_task
+                if event.type == "workflow.invoke.accepted"
+                and event.payload.get("request_id") == request_id
+                and event.payload.get("request_revision") == getattr(binding, "request_revision", 0)
+                and event_run_id(event, aliases=aliases)
+            }
+            if len(accepted_runs) == 1:
+                bound_run = accepted_runs.pop()
+        strict_binding = bool(bound_run or request_id)
         if bound_run:
             from zf.runtime.run_scope import events_for_run
 
             events_for_task = events_for_run(
                 events_for_task, run_id=bound_run, include_legacy_single_run=False,
             )
+        elif request_id:
+            # An unaccepted or ambiguous Request must not inherit legacy truth.
+            events_for_task = []
         completed = self._completed_milestones(events_for_task)
         evidence = self._build_evidence(events_for_task)
         current_stage, next_event = self._infer_stage(
             events_for_task, dispatch_id=str(getattr(task, "active_dispatch_id", "") or ""),
-            strict_binding=bool(bound_run),
+            strict_binding=strict_binding,
         )
         if not current_stage:
-            current_stage = "unknown" if bound_run else "implement"
+            current_stage = "unknown" if strict_binding else "implement"
         next_owner = self._infer_next_owner(next_event)
         objective = ""
         if feature is not None:
@@ -190,7 +209,7 @@ class StatePacketProjector:
                 or str(getattr(feature, "objective", "") or "")
         return StatePacket(
             schema_version=SCHEMA_VERSION,
-            run_id=bound_run or run_id or "",
+            run_id=bound_run if strict_binding else run_id or "",
             feature_id=feature_id,
             task_id=task.id,
             objective=objective,

@@ -569,6 +569,7 @@ def build_plan_synth_call_payload(
             {
                 "source_id": str(item.get("source_id") or ""),
                 "artifact_id": str(item.get("artifact_id") or ""),
+                "ref": str(item.get("ref") or ""),
                 "sha256": str(item.get("sha256") or ""),
             }
             for item in input_refs

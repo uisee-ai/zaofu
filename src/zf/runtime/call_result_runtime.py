@@ -776,7 +776,9 @@ def admit_runtime_call_result(
         if require_semantic_submit
         else mode or result_protocol_mode(runtime.config, payload)
     )
-    if require_semantic_submit and semantic_submit:
+    # Verified semantic submissions are already admitted even when that path
+    # is optional. Re-adapting their projection can change the verdict on replay.
+    if semantic_submit:
         return CallResultAdmissionOutcome(
             status="admitted",
             mode=effective_mode,

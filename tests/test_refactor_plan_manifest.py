@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from zf.core.events.model import ZfEvent
 from zf.runtime.refactor_artifacts import (
     build_plan_manifest_payload,
@@ -395,3 +397,85 @@ def test_task_map_version_manifest_published_for_orchestrator_path(tmp_path):
     assert ref["kind"] == "task_map"
     assert ref["sha256"]  # hashed the file
     assert ev.payload["feature_id"] == "CJMIN-R6"
+
+
+def test_refactor_plan_materializes_canonical_task_map_port(tmp_path):
+    task_map = {'schema_version': 'task-map.v1', 'tasks': [{'task_id': 'CALC-001'}]}
+    projection = project_refactor_artifacts(
+        state_dir=tmp_path / '.state',
+        manifest={'fanout_id': 'fanout-port-plan'},
+        success_event='zaofu.refactor.plan.ready',
+        synth_event=ZfEvent(type='fanout.synth.completed', actor='plan-critic', payload={
+            'report': {'review_artifact_ref': 'artifacts/review.md',
+                'refactor_plan_md': 'Extract one shared validator.',
+                'gates': [{'command': 'python -m unittest discover -v'}],
+                'plan_ports': [{'logical_name': 'task_map', 'body': task_map}]},
+        }),
+    )
+    assert projection is not None and projection.ok, projection.diagnostics
+    assert projection.payload['task_count'] == 1
+    assert json.loads(Path(projection.payload['task_map_ref']).read_text()) == task_map
+
+
+@pytest.mark.parametrize('variant', ['ref', 'bad_digest', 'missing_ref', 'duplicate', 'conflict', 'invalid_body'])
+def test_refactor_task_map_port_provenance_and_conflicts(tmp_path, variant):
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    state = tmp_path / '.state'
+    task_map = {'tasks': [{'task_id': 'TASK-ONE'}]}
+    descriptor = write_immutable_json_sidecar(state, task_map, root='plan-ports',
+        kind='task_map', schema_version='task-map.v1', created_by='test', source_event_id='source')
+    port = {'logical_name': 'task_map', 'ref': descriptor['ref'], 'sha256': descriptor['sha256']}
+    report = {'review_artifact_ref': 'artifacts/review.md', 'refactor_plan_md': 'One task.',
+              'gates': [{'command': 'python -m unittest discover -v'}], 'plan_ports': [port]}
+    if variant == 'bad_digest':
+        port['sha256'] = 'f' * 64
+    elif variant == 'missing_ref':
+        port['ref'] = 'artifacts/missing.json'
+    elif variant == 'duplicate':
+        report['plan_ports'].append(dict(port))
+    elif variant == 'conflict':
+        report['task_map'] = {'tasks': [{'task_id': 'TASK-OTHER'}]}
+    elif variant == 'invalid_body':
+        port['body'] = {'tasks': 'not a list'}
+    projection = project_refactor_artifacts(state_dir=state,
+        manifest={'fanout_id': 'fanout-port-identity'}, success_event='zaofu.refactor.plan.ready',
+        synth_event=ZfEvent(type='fanout.synth.completed', actor='plan-critic', payload={'report': report}))
+    assert projection.ok is (variant == 'ref')
+    if variant == 'ref':
+        assert json.loads(Path(projection.payload['task_map_ref']).read_text()) == task_map
+    else:
+        assert any('task_map port invalid' in diagnostic for diagnostic in projection.diagnostics)
+
+
+@pytest.mark.parametrize('tamper', ['', 'artifact', 'candidate', 'fanout'])
+def test_refactor_projection_consumes_exact_critic_reviewed_ref_only_plan(tmp_path, tamper):
+    from zf.runtime.plan_synth_handoff import build_plan_synth_call_payload
+    from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+
+    state = tmp_path / '.state'
+    task_map = {'schema_version': 'task-map.v1', 'tasks': [{'task_id': 'CALC-001'}]}
+    task_ref = write_immutable_json_sidecar(state, task_map, root='plan-ports',
+        kind='task_map', schema_version='task-map.v1', created_by='test', source_event_id='plan')
+    report = {'task_map_ref': task_ref['ref'], 'review_artifact_ref': 'artifacts/review.md',
+              'refactor_plan_md': 'One atomic task.', 'gates': [{'command': 'python -m unittest discover -v'}]}
+    manifest = {'fanout_id': 'fanout-ref-plan', 'stage_id': 'flow-plan', 'workflow_run_id': 'run-one'}
+    bound = build_plan_synth_call_payload(state_dir=state, project_root=tmp_path,
+        manifest=manifest, reports=[{'child_id': 'planner', 'report': report}],
+        run_id='attempt-critic', role_instance='critic')
+    payload = {**bound, 'report': report}
+    if tamper == 'artifact':
+        (state / task_ref['ref']).write_text('{"tasks": []}')
+    elif tamper == 'candidate':
+        payload['reviewed_plan_candidate_digest'] = 'f' * 64
+    elif tamper == 'fanout':
+        payload['fanout_id'] = 'fanout-other'
+    projection = project_refactor_artifacts(state_dir=state, manifest=manifest,
+        success_event='zaofu.refactor.plan.ready',
+        synth_event=ZfEvent(type='fanout.synth.completed', actor='critic', payload=payload))
+    assert projection.ok is (not tamper), projection.diagnostics
+    if not tamper:
+        assert projection.payload['task_count'] == 1
+        assert json.loads(Path(projection.payload['task_map_ref']).read_text()) == task_map
+    else:
+        assert any('task_map port invalid' in item for item in projection.diagnostics)

@@ -48,10 +48,12 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
     ):
         return
     for recover in (
+        # A durable worker result may be queued behind provider.turn.closed.
+        # Admit/replay it before deciding that the provider lost its dispatch.
+        runtime._resume_unrecorded_reader_fanout_results,
         runtime._recover_pending_reader_fanout_dispatches,
         runtime._recover_lost_reader_fanout_dispatches,
         runtime._recover_lost_fanout_synth_dispatches,
-        runtime._resume_unrecorded_reader_fanout_results,
     ):
         if recover(events, recovery_snapshot=recovery_snapshot):
             # One immutable event/manifest snapshot owns one recovery sweep.
