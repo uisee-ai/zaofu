@@ -384,9 +384,14 @@ def _measurement(
     cost_fail_closed: bool = False,
 ) -> dict[str, Any]:
     baseline_map = baseline if isinstance(baseline, Mapping) else {}
+    compatible_scope = not (
+        "instance_id" in baseline_map and "instance_id" in current
+        and baseline_map["instance_id"] != current["instance_id"]
+    )
     available = bool(
         baseline_map.get("meter_available")
         and current.get("meter_available")
+        and compatible_scope
     )
     return {
         "meter_available": available,

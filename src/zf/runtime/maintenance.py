@@ -8,6 +8,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from zf.core.events import EventLog, EventWriter, ZfEvent
 from zf.core.state.atomic_io import atomic_write_text
@@ -35,6 +36,8 @@ class MaintenanceCheckpoint:
     dirty_diff_artifact: str = ""
     transcript_path: str = ""
     resume_packet_path: str = ""
+    worktree_root: str = ""
+    workspace_snapshot_ref: dict[str, Any] = field(default_factory=dict)
     reason: str = "suspended_for_zaofu_self_repair"
     created_at: str = field(default_factory=_now_iso)
 
@@ -184,7 +187,9 @@ def create_checkpoint(
 ) -> MaintenanceCheckpoint:
     state_dir = Path(state_dir)
     root = Path(project_root) if project_root is not None else state_dir.parent
-    checkpoint_id = f"ckpt-{task_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
+    from zf.runtime.maintenance_worktree import capture_workspace
+
+    checkpoint_id = f"ckpt-{task_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{uuid4().hex[:12]}"
     ckpt_dir = maintenance_dir(state_dir) / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     diff_path = ckpt_dir / f"{checkpoint_id}.diff"
@@ -207,6 +212,8 @@ def create_checkpoint(
         dirty_diff_artifact=str(diff_path),
         transcript_path=transcript_path,
         resume_packet_path=str(resume_path),
+        worktree_root=str(root.resolve()),
+        workspace_snapshot_ref=capture_workspace(state_dir, root, checkpoint_id),
     )
     atomic_write_text(
         resume_path,

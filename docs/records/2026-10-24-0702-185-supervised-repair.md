@@ -51,3 +51,46 @@ SUP-001实施：新增 `zf events --index`（可配合`--json`）；先筛选再
 真实旧ledger确定性重放：同样5条hook记录，完整查询193,383 bytes、索引5,271 bytes，
 ID集合完全一致，输出减少97.27%。这是定位开销证明，不代表整轮token降幅或新Provider
 通过。自动run未执行被跳过的全仓层，直接测试36+20为本批证据（不相加为唯一测试数）。
+
+SUP-001提交：`08b5d85f fix: bound event discovery output for verification agents`。
+
+## SUP-002 · 恢复后预算基线被覆盖
+
+复现：首次 Operation start 的 total_tokens=100；正常 graceful_stop 中断后通过
+workflow resume 受控 redrive，新 Attempt 在 total_tokens=1800 启动。原 reducer
+把基线改为1800，使之前1700消费从 Operation 计量中消失；续行 reservation 也会覆盖。
+另外，两个不同 worker 的累计计量直接相减可能得到负数并截为零，伪装成无消费。
+
+3个RED覆盖两条恢复路径及计量域变化（最初fixture用了不存在的 zf_stop 原因，
+该次失败不算产品缺陷证据；修正为实际 graceful_stop 后重现）。修复保留首次启动
+基线；显式不同instance域为 meter_unavailable，沿用 fail-closed。35项聚焦通过，
+扩大闭包见下。没有提高上限，也没有豁免暂停墙钟；跨worker预算归一化仍待实现。
+
+## SUP-003 · checkpoint 未保存实际工作现场
+
+3个RED：只存 git diff 遗漏暂存/未跟踪文件；controlled maintenance 使用主项目而非
+assigned worker 的配置工作区；秒级ID覆盖前次checkpoint。
+修复用 WorkdirManager 与 canonical assignee 解析工作区，CLI及受控入口均接入；
+错误owner或缺失工作区拒绝，不能退回主仓库。唯一ID；required digest sidecar 保存
+HEAD、两套binary patch、未跟踪内容/模式/符号链接。原始数据2MiB、编码载荷3MiB限制；
+捕获两次不一致、非Git、超限、子模块返回 unavailable，保留原工作区。
+
+测试从快照在独立clone还原index、worktree及未跟踪二进制/执行位；验证自定义state
+排除、不读取符号链接外部内容、同秒不覆盖、失败不冒充完整、CLI推导worker及Web
+maintenance入口。checkpoint 不包含ignored文件/Git历史，provider_quiescence 明确
+unverified；不是完整恢复胶囊，更不是旧Provider已终止的凭据。
+
+闭包：106项 runtime/CLI/sidecar/budget/recovery及两个相关mock E2E通过；入口补测
+10项通过（120 deselected）；sentinel 51项通过。自动增量验证48项通过，receipt另存证据目录；base dev累计闭包792文件触发全仓，
+本批按新增测试及直接调用者缩小自动范围，其他闭包由上述直接命令覆盖，
+flow smoke 10项、文档合同8项通过。不宣称full pytest或新的真实断点恢复已经通过。
+
+## 新真实 PRD：保留现场与版本切换
+
+证据根：`/home/min/workspace/public/zaofu-evidence/185-supervised-20261024T070200Z`。
+工作区：`/tmp/zf-185-supervised-20261024T070200Z/prd`；冻结源码08b5d85f。
+07:14 UTC起从Channel原始需求运行，需求摘要仍为3cd601932928aa294ba9cfde85ebaec9d51457f5827da6014a9b68278e393e62。
+07:22独立PRD评审 `evt-ee8fa81f2d9b` PASS（28个产品要求、5个Owner决定），
+canonical摘要f72fd9f6ef25c752dd98c9bfb865edba4b7def5b14555f5c384e5f5ec6a11aff。
+产品尚未实施，未批准启动Workflow。为升级SUP-002/003，先执行本项目 zf stop，
+18步完成、watcher退出；保留PRD/评审/完整Git与状态，待修复提交后冻结新版本续行。

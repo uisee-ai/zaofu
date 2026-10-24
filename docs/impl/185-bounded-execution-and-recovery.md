@@ -52,6 +52,16 @@ Planner briefing 同时列出当前 profile 所要求的 Plan 产物，避免只
 
 ## 恢复修复与真实失败回归
 
+2026-10-24 监工修复详见[逐项记录](../records/2026-10-24-0702-185-supervised-repair.md)。
+同一 Operation 受控 redrive 保留首次启动的预算基线与开始时间；新的 Attempt 或
+continuation reservation 不清零累计消费。显式不同 worker 计量域不能直接相减，记为
+meter unavailable 并按既有预算门禁拒绝，不能报告零消费；墙钟暂停规则未改。
+maintenance checkpoint 由受控动作/CLI 按 canonical assignee 定位配置工作区，使用
+唯一 ID 和 required sidecar 保存 HEAD、暂存/未暂存 binary patch、未跟踪文件内容、
+模式及符号链接目标。非 Git、超限、捕获变化或子模块场景明确 unavailable；忽略文件、
+Git 历史和运行状态不在该快照内，原工作区必须保留。双次一致捕获不证明 Provider 已停，
+恢复执行仍须另外核验旧执行权终止、版本兼容和当前 Run/Attempt 门禁。
+
 - 旧进程终止异常、仍存活或存活状态未知时，禁止启动替代进程。必须终止调用成功且
   liveness 为 false 才允许恢复；失败回合的健康状态不能替代停止确认。Claude resume
   失败后改开新会话，也必须先终止前一个启动实例。
