@@ -63,3 +63,7 @@ PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧
 必须证明其原PlanPackage在当前不可变继承链中、TaskMap任务行完全未变、属于同Run，
 且该任务所有声明已在当前Goal证据中关闭。新旧generation不匹配不能直接跳过检查。
 当前计划已被更新、引用损坏、任务被替换或声明未闭合时保持未完成；重启对账使用相同规则。
+
+权威 `run.goal.completed` 已携带交付结果；Run Manager 不再为其补发旧式
+`run.completed`（`not_shipped/not_requested`）记录。旧式 Judge 完成但未开启自动
+交付的兼容路径保持原行为，避免用全局 auto-ship 开关覆盖 Goal 的实际交付事实。

@@ -584,3 +584,54 @@ SUP-020追加校验：最初把completed Run上的active更新当成重新激活
 既有RunAdmission明确只允许blocked恢复，completed不可重开，保持该规则。最终用例检查
 当前终态被后续阻断替代时，旧completion不能完成继承任务；helper核对当前Run状态及
 terminal_event_id。最终11项针对性回归、90项完整影响闭包、51项sentinel、3项mock通过。
+
+## SUP-020 实际对账与最终交付
+
+冻结3ea26a8f重启后，原API/CLI分别通过evt-8033048c76f1、evt-1784b688bc07正常
+TaskStore/EventWriter收尾；根、API、CLI、gap四任务均done。Operation启动数仍19、
+ship.completed仍1，main仍48778d1；没有重开Run、重新执行writer或重复交付。
+Docker mcp/playwright:latest连接真实API/UI，四卡done、0页面异常、0mock路由、0写操作。
+证据：live/prd/browser-live/final-reconciled/live-board-result.json和live-board.png。
+原先失败的final浏览器记录保留。
+
+原需求SHA3cd601932928aa294ba9cfde85ebaec9d51457f5827da6014a9b68278e393e62保持。
+原固定外部oracle在实际交付main=48778d1通过65项，独立大整数边界oracle通过6项；
+同一边界oracle在旧99b0ed0失败。新Discovery请求evt-25ce6b2951d7正确继承需求，
+结果evt-b03029031aac准入；Judge evt-8959563bd7dc准入，24必需声明全部closed。
+ship.completed=evt-b24267ce2cb5；权威run.goal.completed=evt-f0e7c931237f。
+原Run从07:33:13到11:23:21，约3.836h（含监工暂停），不是实际超过4h的交付样本；
+5h/72h由受控时钟测试证明。最终账本21,469,999 tokens（包含缓存计量），187条均
+unpriced，不能将USD0解释为免费。Run time/token=0，cost=30，原计量基线未重置。
+
+## SUP-021 · Goal完成被旧式未交付收尾覆盖
+
+完成后启动对账暴露另一个真实缺陷：11:39 Run Manager补发evt-a8f553d6e0e7，
+虽引用正确的run.goal.completed，却因全局auto_ship开关关闭写入not_shipped。
+这不改变已经完成的Git交付，但会让终态投影和耗时报告误读。根因是旧closeout仅排除
+run.completed/ship终态，没有排除已有交付事实的权威run.goal.completed。
+修复在原caller禁止为Goal完成补发该兼容记录；原Judge未交付兼容收尾继续保留。
+
+入口回归先1 RED复现重复closeout；首轮闭包误指不存在测试路径，未执行测试。
+修正路径后218项通过，新增测试另因误把EventLog.append返回值当Event而失败；
+修正夹具后新增入口回归通过。没有把这些失败记作绿色。最终结果见本节后续验证记录。
+实际不可变事件前缀在修复函数重复回放两次，无新事件、不改现场；该回放不是又一次
+完整真实Provider E2E。历史错误记录原样保存；交付耗时按权威Goal终态计算，避免把
+后续对账时间说成超过4h的任务执行。51项sentinel、3项flow smoke通过。
+
+本次模拟已停止所有自有进程并发布simulation.done=evt-c3a656ba8089。
+源码修复和现场升级有独立来源：真实最终对账冻结3ea26a8f；SUP-021通过入口测试及
+真实事件前缀回放验证，不伪称已在原运行中重写历史。
+
+SUP-021最终影响闭包命令：
+`pytest tests/test_run_manager_goal_closeout.py tests/test_run_manager.py
+ tests/test_run_admission.py tests/test_goal_completion_gate_runtime.py
+ tests/test_goal_retained_task_settlement.py -q --no-cov`：219通过。
+`bash scripts/dev-premerge-gate.sh`：51通过；`pytest tests/test_flow_smoke_e2e.py
+-q --no-cov`：3通过；Ruff与git diff --check通过。
+dev-verify对本次两个Python路径规划无错误，保守扩展261个文件并升级全仓；
+遵循仓库不以文件数自动触发full pytest的规则，run跳过broad deterministic，
+以已执行219项直接调用者/共享终态合同闭包替代。其自动serial/contract/mock结果另记。
+以上各层有交集，不累加为唯一测试总数；整个184分支尚未完成全分支验证闭包。
+
+自动run完成：serial 10、contract 51、flow-smoke 10通过；receipt明确记录broad
+deterministic为not_run，由上述219项影响闭包替代。不是全仓测试全部通过。
