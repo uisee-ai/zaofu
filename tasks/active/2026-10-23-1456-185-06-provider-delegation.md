@@ -1,6 +1,6 @@
 > 状态: active
 
-# 184/185 · Provider 辅助协作与 Kimi canary
+# 184/185 · Provider 辅助协作与 Codex 能力验证
 
 来源：用户明确授权“未实现的结合185，在184 worktree生成backlog实施，实施后逐分支端到端验证”。
 设计：[185](../../docs/design/185-agent-routing-delegation-and-workflow-recovery.md)。
@@ -32,3 +32,12 @@ single/delegated/workflow、能力缺失、子任务未收敛、取消传播、�
 详见 [有界执行与恢复续批](../../docs/impl/185-bounded-execution-and-recovery.md)。
 
 实际HTTP缺环境分支已执行：kimi-headless-canary返回command is unavailable，未静默fallback、未建Task或启动Workflow。证据kimi-missing/result.json；隔离状态已归档并清理。Claude认证检查loggedIn=false，Kimi CLI不存在；正向模型、native助手子树和跨Provider恢复仍未签收，不能由mock或Codex同Provider自动恢复推导通过。
+
+
+## 2026-10-24 用户范围调整
+
+第7项暂不考虑Kimi接入，直接验证Codex。当前范围以本段为准，保留历史记录但不继续
+安装/调用Kimi，不以其环境缺口阻塞Codex工作。Codex验证headless、结果、终止、
+fresh/resume、强制权限及native助手子树；不满足能力合同仍明确拒绝。
+跨Provider确定性接口验证与真实Codex跨会话分别报告，后者不能证明真实跨Provider。
+批次跟踪：[Codex完成清单](2026-10-24-0137-185-codex-completion.md)。

@@ -609,3 +609,12 @@ watcher/tmux/Web，796个脱敏归档成员校验后清理临时根；归档不�
 
 收据：`followup-scope.json`、`followup-verification-plan.json`、
 `followup-automatic-receipt.json`、`followup-skill-parity.json`。历史RED/中间失败日志保留。
+
+
+## 2026-10-24 Codex 优先批次（执行中）
+
+用户批准按1—9方案继续，第7项由Kimi改为Codex实测。Kimi接入暂停；真实运行仅用Codex，
+跨Provider状态合同继续验证但不能用同Provider跨会话宣称真实跨Provider通过。
+[批准清单](../../tasks/active/2026-10-24-0137-185-codex-completion.md)记录逐项验收。
+PRD/Issue/Refactor自动配置候选生成仍有实现缺口：当前materialize_synthesized_workflow_candidate
+仅生成Generic Workflow，其余family返回原配置；本批同时补实现与实际消费者验证。
