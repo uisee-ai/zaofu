@@ -18,7 +18,21 @@ def execution_usage_facts(state_dir: Path, *, workflow_run_id: str = "") -> dict
     Unbound receipts remain visible. Role names and timestamps cannot prove a
     run, stage or retry, so missing attribution is never guessed.
     """
-    events = {event.id: event for event in event_log_from_project(state_dir).read_all()}
+    log = event_log_from_project(state_dir)
+    try:
+        events = {event.id: event for event in log.read_all()}
+    finally:
+        log.close()
+    operation_stages: dict[tuple[str, str], set[str]] = {}
+    for event in events.values():
+        if event.type != "workflow.operation.requested":
+            continue
+        payload = event.payload
+        binding = (str(payload.get("workflow_run_id") or ""),
+                   str(payload.get("operation_id") or ""))
+        stage = str(payload.get("parent_stage_id") or "")
+        if all(binding) and stage:
+            operation_stages.setdefault(binding, set()).add(stage)
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = {}
     unbound = 0
     for entry in CostTracker(state_dir / "cost.jsonl").usage_records():
@@ -29,8 +43,12 @@ def execution_usage_facts(state_dir: Path, *, workflow_run_id: str = "") -> dict
             unbound += 1
         if workflow_run_id and workflow_run_id != run_id:
             continue
-        key = (run_id, str(identity.get("stage_id") or ""),
-               str(identity.get("operation_id") or ""),
+        operation_id = str(identity.get("operation_id") or "")
+        stage_id = str(identity.get("stage_id") or "")
+        bound_stages = operation_stages.get((run_id, operation_id), set())
+        if not stage_id and len(bound_stages) == 1:
+            stage_id = next(iter(bound_stages))
+        key = (run_id, stage_id, operation_id,
                str(identity.get("active_attempt_id") or identity.get("attempt_id") or ""),
                str(entry.get("instance_id") or entry.get("role") or ""))
         groups.setdefault(key, []).append(entry)
@@ -53,7 +71,7 @@ def execution_usage_facts(state_dir: Path, *, workflow_run_id: str = "") -> dict
         "unattributed_project_samples": unbound, "groups": rows,
         "limitations": [
             "Only admitted cost deltas are included; missing provider telemetry is not zero usage.",
-            "Missing stage/attempt identity remains unknown; retries are not inferred from role names.",
+            "Stage may come from the exact Run/Operation request; ambiguous or missing bindings remain unknown. Retries are not inferred from role names.",
             "Null money means incomplete evidence, not free execution; estimates are not invoices.",
             "Historical consumption does not predict remaining work or authorize budget changes.",
         ],

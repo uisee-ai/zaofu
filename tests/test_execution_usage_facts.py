@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from zf.core.cost.tracker import CostTracker
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
@@ -65,3 +67,34 @@ def test_plan_inspection_exposes_real_usage_without_mutating_receipts(tmp_path, 
     assert report["usage_observations"]["groups"][0]["total_tokens"] == 25
     assert report["usage_observations"]["groups"][0]["estimated_usd"] is None
     assert (state / "cost.jsonl").read_bytes() == before
+
+
+@pytest.mark.parametrize("binding", ["exact", "other-run", "ambiguous", "missing"])
+def test_usage_stage_uses_only_exact_unambiguous_operation_binding(tmp_path, binding):
+    log = event_log_from_project(tmp_path)
+    writer = EventWriter(log)
+    if binding != "missing":
+        writer.append(ZfEvent(
+            id="operation-request", type="workflow.operation.requested", origin="kernel",
+            payload={"workflow_run_id": "OTHER" if binding == "other-run" else "RUN",
+                     "operation_id": "OP", "parent_stage_id": "issue-lanes-impl"},
+        ))
+    if binding == "ambiguous":
+        writer.append(ZfEvent(
+            type="workflow.operation.requested", origin="kernel",
+            payload={"workflow_run_id": "RUN", "operation_id": "OP", "parent_stage_id": "different"},
+        ))
+    tracker = CostTracker(tmp_path / "cost.jsonl")
+    event = writer.append(ZfEvent(type="agent.usage", actor="writer", payload={
+        "backend": "codex", "model": "unknown-model", "workflow_run_id": "RUN",
+        "operation_id": "OP", "active_attempt_id": "ATTEMPT",
+        "usage_semantics": "delta", "usage_sample_id": "sample",
+        "usage": {"input_tokens": 20, "output_tokens": 5},
+    }))
+    apply_agent_usage_event(tracker, event)
+    log.close()
+    row = execution_usage_facts(tmp_path, workflow_run_id="RUN")["groups"][0]
+    assert row["stage_id"] == ("issue-lanes-impl" if binding == "exact" else "")
+    assert row["total_tokens"] == 25
+    assert row["attempt_id"] == "ATTEMPT"
+    assert row["estimated_usd"] is None

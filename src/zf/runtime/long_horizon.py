@@ -1307,6 +1307,14 @@ def build_resume_packet(
         index = TaskEventIndex(events)
         events = index.events
     task = task_store.get(task_id)
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.run_scope import events_for_run
+
+    bound_run, strict_binding = canonical_task_run(task, index.events)
+    if strict_binding:
+        index = TaskEventIndex(events_for_run(
+            index.events, run_id=bound_run, include_legacy_single_run=False,
+        ) if bound_run else [])
     projection = project_why_not_done(
         state_dir,
         task_id,

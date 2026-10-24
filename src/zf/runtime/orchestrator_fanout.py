@@ -8265,6 +8265,11 @@ class FanoutCoordinationMixin(
                 "recommendation": "approve",
             },
         }
+        from zf.runtime.research_synthesis_contract import prepare_research_synthesis
+
+        research_handoff_lines = prepare_research_synthesis(
+            str(manifest.get("stage_id") or ""), completion_payload,
+        )
         completion_payload.update({
             key: call_payload[key]
             for key in PLAN_SYNTH_HANDOFF_KEYS
@@ -8402,6 +8407,7 @@ class FanoutCoordinationMixin(
                 "",
                 *runner_policy_lines,
                 *scope_summary_lines,
+                *research_handoff_lines,
                 *source_lines,
                 *( [""] if source_lines else [] ),
                 *skill_briefing.render_skill_briefing_section(role, skill_entries),

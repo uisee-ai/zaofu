@@ -801,3 +801,33 @@ Run 优先，否则仅采用精确 Request 修订对应的唯一 accepted Run。
 第四轮真实 PRD 冻结在 `4b81a645`，未包含本次恢复上下文修改，不能作为它的实测证明。
 
 恢复批次自动 dev-verify 覆盖40个文件：897 passed、1 skipped，包含相关确定性mock E2E；未跑host/real_provider/full pytest。
+
+### Research 与恢复交接的实际消费者
+
+固定 Research 的 synth briefing 原模板只提供 summary/findings，未暴露现有研究报告
+投影支持的 architecture、acceptance_matrix、test_matrix、task_map 和下游 prompt
+字段。现在在固定路由的真实 synth 入口预填这些字段，并提供来源、事实/提案/未知、
+验收与测试映射的填写方法。任务建议仅为研究建议，不能生成 canonical Tasks 或跳过
+下游计划批准；不适用或缺证时允许为空并说明原因，不增加 Kernel 语义质量判定。
+端到端 mock 证明字段经过 synth→aggregate→持久报告保留，相关192项通过。
+
+同样的跨 Run 隔离补至实际恢复 briefing 使用的 resume packet，以及 Web/人工交接
+使用的 handoff summary。否则即使 State Packet 已修复，旧 judge.passed 仍会进入
+“不要重复已完成步骤”或把当前摘要显示为 ship。显式当前 Run 与待接受 Request 两项
+先RED，修复后恢复/交接57项通过。legacy 未绑定任务继续兼容；不改 canonical 状态。
+证据：`185-prd-hooks-20261024T042500Z/{research-handoff-*,resume-scope-*}`。
+
+第四轮 PRD `TASK-2511E6` / `workflow-0704bed45f851959` 冻结4b81a645，独立文档
+评审31项通过（evt-8629457f5462），Owner确认和精确启动批准后进入扫描。仍未交付；
+本段新增交接修改没有热注入该真实运行。
+
+恢复补充调用者29项通过（含旧合同handoff mock）。最终自动检查因共享Orchestrator
+选择全仓层，本批明确跳过deterministic/serial宽层，采用上述192/57/29项影响闭包；
+sentinel51项通过，flow smoke结果见同目录handoff-verify-receipt.json。
+
+用量报告补齐精确阶段关联：usage receipt缺少stage时，只读取同一Run、同一Operation
+的唯一parent_stage_id，不根据角色名或时间猜测。跨Run、冲突和缺失关联继续unknown；
+原始usage计量、Attempt和费用语义不变，EventLog读完关闭。1项RED与43项计量/规划
+调用者测试通过。既有真实样本可重新投影阶段事实，不能将新投影写成旧运行使用过的新代码。
+
+最终三流mock10项通过；本批仍为focused验证，不是full pytest。
