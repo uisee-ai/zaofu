@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: superseded
+> 替代任务：[已支持路线可靠性收尾](../done/2026-10-24-1206-185-supported-route-reliability.md)；Owner已批准收敛范围。下文保留历史实施/失败记录，当前状态以替代任务及[范围对账](../../docs/impl/185-supported-route-reliability.md)为准。
 
 # 184/185 · Provider 辅助协作与 Codex 能力验证
 
@@ -41,3 +42,12 @@ single/delegated/workflow、能力缺失、子任务未收敛、取消传播、�
 fresh/resume、强制权限及native助手子树；不满足能力合同仍明确拒绝。
 跨Provider确定性接口验证与真实Codex跨会话分别报告，后者不能证明真实跨Provider。
 批次跟踪：[Codex完成清单](2026-10-24-0137-185-codex-completion.md)。
+
+
+## 2026-10-24 Owner取消原生助手接入
+
+最新剩余事项清单第3项Codex原生multi-agent辅助能力取消，不再要求本批实现或真实
+资格签收。既有native delegation禁用与能力不足拒绝保留；取消不等于能力已实现。
+此前关于native子树的验收要求不再属于本批范围；Kimi仍暂停。普通Codex headless、
+终止、fresh/resume及权限能力的已有记录保留，独立隔离验证尚未通过，不能因取消
+原生助手而将其标记通过。此混合任务保留active，待其他能力范围对账后再归档。

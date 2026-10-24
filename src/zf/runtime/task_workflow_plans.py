@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import re
 from typing import Any
 
 from zf.core.security.redaction import redact_obj
-from zf.core.task.authority import without_execution_binding_evidence
+from zf.core.task.authority import contract_authority_payload
 from zf.core.task.schema import Task
 from zf.core.workflow.request_policy import missing_fields_for_kind
 from zf.runtime.kanban_plan_requests import (
@@ -406,10 +405,9 @@ def normalize_task_workflow_parameters(
 
 
 def task_workflow_binding_digest(task: Task) -> str:
-    contract = asdict(task.contract)
-    contract["evidence_contract"] = without_execution_binding_evidence(
-        contract.get("evidence_contract")
-    )
+    # Document/capsule refresh and execution-binding mirrors are projections;
+    # use the same semantic boundary as canonical Task contract authority.
+    contract = contract_authority_payload(task.contract)
     encoded = json.dumps(
         {
             "id": task.id,

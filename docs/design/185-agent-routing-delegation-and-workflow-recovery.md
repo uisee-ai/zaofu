@@ -6,6 +6,14 @@
 > 基线：ZaoFu `b493d88608413e8042c1e62cf9cbf06d607a3df2`，184 worktree；Kimi Code `874d9abb32f7d8e23fd95da5fbfbd446266653ec`。
 > 编号说明：185 承接既有 184 实施主题。本 checkout 未包含 184 设计正文，不在此补写或宣称恢复历史文档。
 
+> 当前实施范围调整（2026-10-24）：Owner取消本轮Codex原生multi-agent辅助能力接入，
+> Kimi接入仍暂停。下文delegated/native子树及Kimi相关内容保留为设计背景，不作为
+> 当前批次交付要求；既有能力禁用与准入拒绝保留。Kernel多角色Workflow和固定Research
+> fanout不受此调整影响。旧[任务清单](../../tasks/active/2026-10-24-0137-185-codex-completion.md)由下述收敛批次替代。
+
+> 2026-10-24 Owner进一步批准收敛为现有路线可靠性收尾：简单源码任务复用light，
+> 热配置换代、跨Provider与通用恢复扩展延期；验收范围和触发条件见[当前实施对账](../impl/185-supported-route-reliability.md)。
+
 ## 1. 决策摘要
 
 1. 主 Agent 先决定如何处理请求：回答、澄清、仅记录、有界 Agent 执行、Workflow。

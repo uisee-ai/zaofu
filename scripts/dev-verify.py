@@ -156,6 +156,19 @@ SERIAL_TEST_FILES = {
 PREMERGE_DOMAINS = {"config", "event_store", "orchestration", "artifact_handoff"}
 FLOW_SMOKE_DOMAINS = {"config", "orchestration"}
 
+# These opt-in runners and seeded products are loaded/copied by path. Static
+# Python imports cannot discover their deterministic acceptance-test consumer.
+DYNAMIC_TEST_SUPPORT = {
+    path: ("tests/test_intake_live_validation.py",)
+    for path in (
+        "tests/e2e/intake_live_validation.py",
+        "tests/e2e/intake_live_acceptance.py",
+        "tests/e2e/fixtures/intake-live/issue/counter.py",
+        "tests/e2e/fixtures/intake-live/semantic/auth.py",
+        "tests/e2e/fixtures/intake-live/semantic/orders.py",
+    )
+}
+
 
 @dataclass(frozen=True)
 class VerificationStep:
@@ -489,6 +502,7 @@ def _test_candidates(
                 for test_path, imports in test_support_imports.items()
                 if module in imports
             }
+        hits.update(_existing(root, DYNAMIC_TEST_SUPPORT.get(support_path, ())))
         per_support[support_path] = hits
         selected.update(hits)
     return selected, per_source, per_support

@@ -80,3 +80,31 @@ def test_prd_review_requires_matching_successful_evidence(tmp_path, monkeypatch,
         assert run.evaluate_prd("channel", timeout=1)["event_id"] == "terminal"
     assert calls == [("channel-prd-evaluate", {"channel_id": "channel", "thread_id": "main",
                                              "role": "full", **consensus})]
+
+
+@pytest.mark.parametrize("repaired", [False, True])
+def test_semantic_fixture_oracle_detects_both_seeded_defects(tmp_path, repaired):
+    import shutil
+    import subprocess
+    import sys
+
+    source = ROOT / "tests/e2e/fixtures/intake-live/semantic"
+    for name in ("auth.py", "orders.py", "test_behavior.py"):
+        shutil.copy2(source / name, tmp_path / name)
+    if repaired:
+        (tmp_path / "auth.py").write_text("def login(password):\n    return password == 'secret'\n")
+        (tmp_path / "orders.py").write_text(
+            "def submit_order(rows, order):\n"
+            "    if not any(row['id'] == order['id'] for row in rows):\n"
+            "        rows.append(dict(order))\n"
+            "    return rows\n"
+        )
+    result = subprocess.run([sys.executable, "-m", "unittest", "-q"], cwd=tmp_path,
+                            text=True, capture_output=True, timeout=30)
+    if repaired:
+        assert result.returncode == 0, result.stderr
+    else:
+        assert result.returncode != 0
+        assert "FAIL: test_valid_login" in result.stderr
+        assert "FAIL: test_duplicate_submission" in result.stderr
+        assert "FAILED (failures=2)" in result.stderr

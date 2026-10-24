@@ -159,6 +159,21 @@ light 仍有实施／Verify／Judge；v4 `shadow` 与 `blocking` 不是相同执
 没有 Task Map 时并发只是估计；后续由 Planner/Critic 复核真实依赖与 owned paths。
 复杂任务不自动启用 canary；小任务不删独立验证或降级 blocking 验收。
 
+### 简单源码任务优先复用现有 light
+
+先确认需求和验收已具体、写入范围可由一个writer负责、依赖与副作用已明确，且当前
+目录确有可用的light交付路线。满足这些条件时可优先推荐该路线；一个writer之后仍需
+独立Verify/Judge及Kernel交付，不把light称为无验证的direct或通用single新内核。
+不能只按文件数量、关键词或lanes=1判断light；跨模块接口/迁移、未知依赖、缺验收或
+需要扫描规划的任务应澄清或选择目录中带规划的标准路线。没有适用路线时明确缺口，
+不虚构route_id、不为了启动任务改写zf.yaml。
+
+Kanban从用户当前任务合同判断；Channel须保留Owner执行意图、Leader及canonical PRD
+版本和完整批准范围。只有明确批准的子任务才可使用approved_task范围，不能因推荐
+light就自动缩小整个PRD。两入口均先给路线理由、预览和精确批准，再由Kernel执行。
+Task Map后发现有效配置不适配时提出暂停/重规划或受控配置修订，不承诺当前Run热切换。
+本批不推荐Provider原生delegated助手；Kernel管理的多角色Workflow和Research保持可用。
+
 ### 预算可行性复核
 
 推荐执行前，核对每个 operation 与整个 Run 的时间、token、采样和费用上限。

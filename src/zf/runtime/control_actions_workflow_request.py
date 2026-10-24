@@ -7,6 +7,7 @@ from pathlib import Path
 from zf.core.events import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions_helpers import _required_text, _string_list
+from zf.runtime.sidecar_refs import SidecarRefError
 from zf.runtime.workflow_delivery import (
     apply_flow_submit,
     build_flow_submit_preview,
@@ -454,15 +455,16 @@ class WorkflowRequestActionsMixin:
                     / f"{request_id}.md"
                 ),
             )
-        except TaskWorkflowInputCoverageError as exc:
+        except (TaskWorkflowInputCoverageError, SidecarRefError) as exc:
+            invalid_source = isinstance(exc, SidecarRefError)
             return self._failed(
                 requested=requested,
                 action=action,
                 requested_action=requested_action,
                 task_id=_required_text(payload, "task_id") or None,
-                reason=str(exc),
+                reason=f"{exc.code}: {exc}" if invalid_source else str(exc),
                 status_code=422,
-                status="workflow_input_incomplete",
+                status="workflow_input_invalid" if invalid_source else "workflow_input_incomplete",
             )
         except WorkflowRequestError as exc:
             return self._failed(

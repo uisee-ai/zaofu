@@ -262,7 +262,6 @@ def _run_start(args: argparse.Namespace) -> int:
     if args.apply:
         result = _apply_workflow_start(
             context=context,
-            service=service,
             proposal_event_id=str(args.proposal_event_id or "").strip(),
             authorization_ref=str(args.authorization_ref or "").strip(),
             authorization_token=str(args.authorization_token or ""),
@@ -303,7 +302,6 @@ def _run_start(args: argparse.Namespace) -> int:
 def _apply_workflow_start(
     *,
     context,
-    service: WorkflowStartService,
     proposal_event_id: str,
     authorization_ref: str,
     authorization_token: str,
@@ -368,13 +366,9 @@ def _apply_workflow_start(
         "proposal_event_id": proposal_event_id,
         "authorization_ref": authorization_ref,
     })
-    preview = service.preview(
-        payload,
-        require_bindings=True,
-        origin="cli",
-    )
-    if not preview.get("ok"):
-        return preview
+    # The controlled service checks exact proposal replay under its lock before
+    # validating current bindings. First apply may legitimately bind a Request
+    # to the Task, so repeating a pre-start preview here rejects a valid replay.
     requested = writer.emit(
         "control.action.requested",
         actor="operator:cli",
