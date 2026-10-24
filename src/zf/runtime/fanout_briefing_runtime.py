@@ -461,6 +461,14 @@ class FanoutBriefingMixin:
             success_event=success_event,
             child_success_event=child_success_event,
         )
+        if is_refactor_plan or is_plan_artifact_stage:
+            from zf.runtime.plan_execution_review import planning_execution_context
+
+            stage_instruction_lines.extend(planning_execution_context(
+                getattr(self, "config", None), flow_kind=str(child_payload.get("flow_kind")
+                                           or trigger_payload.get("flow_kind")
+                                           or ("refactor" if is_refactor_plan else "")),
+            ))
         if is_refactor_review:
             success_payload["report"].update({
                 "coverage_matrix": [{

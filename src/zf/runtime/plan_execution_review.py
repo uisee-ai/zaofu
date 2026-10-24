@@ -49,6 +49,31 @@ def execution_policy(config: Any) -> dict[str, Any]:
     }
 
 
+def planning_execution_context(config: Any, *, flow_kind: str = "") -> list[str]:
+    """Expose compiled facts before the Planner authors its Task Map."""
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    if config is None:
+        return ["## Compiled planning execution facts",
+                "Configuration unavailable; execution policy and approval requirements are unknown.", ""]
+    policy = execution_policy(config)
+    metadata = flow_metadata_for(config, flow_kind)
+    policy.update({
+        "plan_approval_required": bool(config.workflow.plan_approval_enabled),
+        "task_pipeline": metadata.get("task_pipeline", {}),
+        "flow_kind": flow_kind,
+        "authorizes_execution": False,
+    })
+    return [
+        "## Compiled planning execution facts",
+        "These are facts from this runtime's loaded config, not approval or evidence "
+        "that future stages have run. Use them to assign verification ownership. "
+        "After authoring the Task Map, perform the execution-readiness review. "
+        "Keep future gates pending; do not try to observe Plan approval before submitting a Plan.",
+        "```json", json.dumps(policy, ensure_ascii=False, indent=2), "```", "",
+    ]
+
+
 def review_execution(
     task_map: Mapping[str, Any], *, ports: Mapping[str, Any],
     policy: Mapping[str, Any], metadata: Mapping[str, Any],

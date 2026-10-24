@@ -831,3 +831,40 @@ sentinel51项通过，flow smoke结果见同目录handoff-verify-receipt.json。
 调用者测试通过。既有真实样本可重新投影阶段事实，不能将新投影写成旧运行使用过的新代码。
 
 最终三流mock10项通过；本批仍为focused验证，不是full pytest。
+
+## 第四轮 PRD 预算阻断与 Planner 输入改进
+
+`workflow-0704bed45f851959` 的Planner在2,027,576 token触发原2M Operation上限，
+`workflow.budget.exceeded evt-28bf3380f732`、`run.goal.blocked evt-f29e0b52793e`。
+本轮尚未提交Plan或产生candidate，不能证明产品交付或PRD Verify hooks修复。
+Run合计2,553,986 token；保持原始失败和预算，停止后413个归档成员摘要核验并清理。
+
+诊断记录33次Planner工具调用，包含重复读取skills、已取证报告以及宽泛CLI/help、
+workflow render和事件探索。规划briefing新增由现有execution_policy投影的已编译
+配置事实，包括policy摘要、阶段、writer配置、Plan批准要求与task pipeline；
+缺配置明确unknown，不凭默认值认证配置。信息只供规划，不授予执行权。
+规划skill补“当前证据/未来门禁”区分、缺失部分补读和有界工具探索方法，三份分发同步；
+完整必读来源、原AC、独立Critic和Plan批准均保留。1项RED后190项调用者/skill测试通过；
+初次修复的字段名与无config测试上下文错误已纠正，失败日志保留。
+这些方法尚待新冻结真实Run验证，不能把测试通过等同预算问题已解决。
+
+## 结构化 Research 新样本
+
+冻结 `18c625a2` 的 `wf-research-fanout-e939975dd2ee` 于 `evt-233e5e9819be`
+完成。新需求明确增加结构化交接要求，不能重新解释旧report-only样本。四子报告各派发
+一次，产出architecture、6项AC、6项测试、5项未批准任务提案及PRD/refactor输入；
+ID和依赖引用、来源/事实/提案/未知、bool兼容反例、风险异议与批准边界人工审阅通过。
+没有产品源码改动，也没有执行建议中的测试或生成实际实施Task。
+证据：`185-handoff-20261024T045000Z/research/{structured-report,owner-report-review}.json`。
+
+Research浏览器任务卡done且零页面错误，235个归档成员摘要核验并清理。Planner改进
+最终sentinel51、三流mock10通过；因共享模块闭包保守升级全仓，自动宽deterministic/
+serial层显式跳过，以190项直接影响闭包替代；不是full pytest或真实预算成功证明。
+
+未提交修改恢复：`workflow-fdd2aa505f4d3544` 的writer修改test_counter.py后被终止，
+确认旧Codex及工具进程退出后受控worker-respawn，`evt-a5c5ed68b94f`接续。
+中断测试文件逐字节保留；Verify报告 `evt-5ca8292ccf49` passed，15条本会话
+post-tool hooks存在；Judge `evt-adea3548b18d`、Kernel `evt-f079f3d60e11`交付。
+候选9be4fa23与交付61b6c21f产品树一致，交付后外部6项及4产品测试通过，Run937,801
+token。该样本补充了dirty edit与hooks实际验证，仍不等于自动恢复、跨Provider或通用
+源码single新入口。真实浏览器和最终清理另记。

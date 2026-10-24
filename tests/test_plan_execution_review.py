@@ -5,6 +5,20 @@ from zf.core.config.schema import ZfConfig
 from zf.runtime.plan_execution_review import execution_policy, review_execution
 
 
+def test_planner_receives_compiled_policy_without_future_approval_claim():
+    from zf.runtime.plan_execution_review import planning_execution_context
+
+    config = ZfConfig()
+    config.workflow.plan_approval_enabled = True
+    config.workflow.flow_metadata_by_kind = {"prd": {"task_pipeline": {"mode": "blocking"}}}
+    lines = planning_execution_context(config, flow_kind="prd")
+    facts = json.loads(lines[lines.index("```json") + 1])
+    assert facts["plan_approval_required"] is True
+    assert facts["task_pipeline"]["mode"] == "blocking"
+    assert facts["authorizes_execution"] is False
+    assert facts["effective_policy_digest"] == execution_policy(config)["effective_policy_digest"]
+
+
 def test_reports_execution_mismatch_without_semantic_verdict():
     task_map = {
         "shared_conventions": {"setup_commands": ["make setup"]},
