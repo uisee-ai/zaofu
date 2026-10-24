@@ -609,6 +609,11 @@ def render_attempt_source_briefing(
         ),
     ]
     if required:
+        lines.extend([
+            f"- Preferred single-call read: `{cli_command} artifact read --attempt {attempt_id} --required`.",
+            "  It returns every required slice and records each read. Consume the complete output; "
+            "do not repeat individual reads unless the tool output was truncated or a read failed.",
+        ])
         lines.extend(["- Required reads for this attempt:"])
         for item in required:
             source_id = str(item.get("source_id") or "")

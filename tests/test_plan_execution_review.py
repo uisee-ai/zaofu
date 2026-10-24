@@ -5,6 +5,20 @@ from zf.core.config.schema import ZfConfig
 from zf.runtime.plan_execution_review import execution_policy, review_execution
 
 
+def test_planner_receives_compiled_policy_without_future_approval_claim():
+    from zf.runtime.plan_execution_review import planning_execution_context
+
+    config = ZfConfig()
+    config.workflow.plan_approval_enabled = True
+    config.workflow.flow_metadata_by_kind = {"prd": {"task_pipeline": {"mode": "blocking"}}}
+    lines = planning_execution_context(config, flow_kind="prd")
+    facts = json.loads(lines[lines.index("```json") + 1])
+    assert facts["plan_approval_required"] is True
+    assert facts["task_pipeline"]["mode"] == "blocking"
+    assert facts["authorizes_execution"] is False
+    assert facts["effective_policy_digest"] == execution_policy(config)["effective_policy_digest"]
+
+
 def test_reports_execution_mismatch_without_semantic_verdict():
     task_map = {
         "shared_conventions": {"setup_commands": ["make setup"]},
@@ -41,6 +55,34 @@ def test_task_pipeline_and_cycles_are_reported_as_facts():
     assert result["graph"]["unresolved_task_ids"] == ["a", "b"]
 
 
+def test_review_binds_actual_task_map_policy_and_generation_without_selecting_route():
+    from copy import deepcopy
+    from zf.core.config.schema import RoleConfig
+
+    config = ZfConfig(roles=[RoleConfig(name="worker", role_kind="writer", flow_kind="prd")])
+    task_map = {"tasks": [
+        {"task_id": "a", "allowed_paths": ["app/**"]},
+        {"task_id": "b", "allowed_paths": ["app/index.py"]},
+    ]}
+    identity = {"workflow_run_id": "run", "task_map_generation": "g2"}
+    policy = execution_policy(config)
+    report = review_execution(task_map, ports={}, policy=policy,
+                              metadata={"flow_kind": "prd"}, identity=identity)
+    assert report["input_binding"]["task_map_generation"] == "g2"
+    assert report["capacity"]["configured_writer_count"] == 1
+    assert report["capacity"]["dependency_level_peak_width"] == 2
+    assert report["capacity"]["write_scope_validation"]["status"] == "failed"
+    changed = deepcopy(task_map)
+    changed["tasks"][1]["allowed_paths"] = ["tests/test_app.py"]
+    next_report = review_execution(changed, ports={}, policy=policy, metadata={})
+    assert next_report["input_binding"]["task_map_digest"] != report["input_binding"]["task_map_digest"]
+    assert next_report["capacity"]["write_scope_validation"]["status"] == "passed"
+    config.workflow.impl_self_check_required = not config.workflow.impl_self_check_required
+    assert execution_policy(config)["effective_policy_digest"] != policy["effective_policy_digest"]
+    assert "recommended_route" not in report
+    assert "verdict" not in report
+
+
 def test_cli_inspection_is_read_only(tmp_path: Path, capsys):
     from zf.cli.main import main
     (tmp_path / "zf.yaml").write_text("project:\n  name: sample\n  state_dir: state\n")
@@ -50,6 +92,33 @@ def test_cli_inspection_is_read_only(tmp_path: Path, capsys):
                  "--task-map", str(plan), "--flow-kind", "prd"]) == 0
     assert '"longest_dependency_chain": 1' in capsys.readouterr().out
     assert not (tmp_path / "state").exists()
+
+
+def test_cli_package_inspection_preserves_generation_and_rejects_other_map(tmp_path, capsys):
+    from zf.cli.main import main
+    from zf.runtime.plan_artifact_package import write_plan_artifact_package
+    from tests.test_plan_artifact_package import _package
+
+    state = tmp_path / "state"
+    state.mkdir()
+    config = tmp_path / "zf.yaml"
+    config.write_text("project:\n  name: sample\n  state_dir: state\n")
+    package = _package(state, revision="plan-r2", generation="generation-2")
+    descriptor = write_plan_artifact_package(state, package)
+    task_map = next(port for port in package["produced"] if port["logical_name"] == "task_map")
+    plan_path = tmp_path / "task_map.json"
+    plan_path.write_bytes((state / task_map["ref"]).read_bytes())
+    args = ["plan", "inspect-execution", "--config", str(config), "--task-map", str(plan_path),
+            "--flow-kind", "prd", "--plan-package", str(state / descriptor["ref"])]
+    assert main(args) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["input_binding"]["workflow_run_id"] == "run-1"
+    assert report["input_binding"]["task_map_generation"] == "generation-2"
+    assert report["input_binding"]["plan_revision"] == "plan-r2"
+    assert report["config_scope"] == "current_file_not_frozen_run"
+    plan_path.write_text('{"tasks": []}')
+    assert main(args) == 1
+    assert "task map differs" in capsys.readouterr().out
 
 
 def test_new_drafts_do_not_force_ac_chunking_but_require_self_check():

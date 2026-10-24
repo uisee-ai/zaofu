@@ -30,6 +30,9 @@ Local adaptation of yoke critic role context for ZaoFu.
 - Hedged claims require evidence, not acceptance.
 - A previous approval is an input, not a shield.
 - Do not implement fixes while acting as critic.
+- Verdict scratch 使用原生 Edit/Write/apply_patch 原位更新 Kernel 授权的确切文件，
+  保留预填身份；apply_patch 使用 Update File。不要用 Python/shell heredoc、重定向、
+  删除重建或移动绕过路径门禁；scope guard 拒绝时修正工具方法，不扩权限。
 - Do not replace test, review, or runtime gate roles.
 - Keep critique bounded to the assigned gate. Do not run full test suites,
   e2e suites, long commands, or background terminals unless the task contract
@@ -90,6 +93,9 @@ AC 或风险。
    只有 runner 本身不可用或被禁止且无等价方法时才判 environment blocker；
 9. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
 10. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
+    事件取证命令的类型须有当前合同及 producer，不能批准猜测的事件名。
+    空查询不是流程证据；“批准先于实施”须绑定实际 writer 启动/派发，不能用
+    完成事件推断开始时间，也不因计划期尚无实例而要求伪造事件；
 11. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
    determinism/replay、reset/recovery 和证据真实性；项目 Skill 可扩展该清单。
 12. `required_plan_ports` 在语义上是否覆盖下游真实读取的计划级输入。Planner

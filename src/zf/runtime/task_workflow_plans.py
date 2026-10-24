@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import hashlib
 import json
 import re
 from typing import Any
 
 from zf.core.security.redaction import redact_obj
-from zf.core.task.authority import without_execution_binding_evidence
+from zf.core.task.authority import contract_authority_payload
 from zf.core.task.schema import Task
 from zf.core.workflow.request_policy import missing_fields_for_kind
 from zf.runtime.kanban_plan_requests import (
@@ -29,6 +28,7 @@ from zf.runtime.channel_workflow_authority import (
 
 TASK_WORKFLOW_PLAN_SCHEMA_VERSION = "task-workflow-plan.v1"
 TASK_WORKFLOW_PARAMETER_KEYS = frozenset({
+    "authorize_channel_execution",
     "acceptance",
     "artifact_refs",
     "backend",
@@ -381,6 +381,9 @@ def normalize_task_workflow_parameters(
     if not isinstance(raw, dict):
         return {}, "parameters must be a mapping"
     normalized_raw = dict(raw)
+    if ("authorize_channel_execution" in normalized_raw
+            and not isinstance(normalized_raw["authorize_channel_execution"], bool)):
+        return {}, "authorize_channel_execution must be a boolean"
     for alias, canonical in _PARAMETER_ALIASES.items():
         if alias not in normalized_raw:
             continue
@@ -402,10 +405,9 @@ def normalize_task_workflow_parameters(
 
 
 def task_workflow_binding_digest(task: Task) -> str:
-    contract = asdict(task.contract)
-    contract["evidence_contract"] = without_execution_binding_evidence(
-        contract.get("evidence_contract")
-    )
+    # Document/capsule refresh and execution-binding mirrors are projections;
+    # use the same semantic boundary as canonical Task contract authority.
+    contract = contract_authority_payload(task.contract)
     encoded = json.dumps(
         {
             "id": task.id,

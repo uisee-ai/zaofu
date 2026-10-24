@@ -9,6 +9,7 @@ from pathlib import Path
 
 from zf.core.config.loader import load_config
 from zf.runtime.plan_execution_review import execution_policy, review_execution
+from zf.runtime.execution_usage_facts import execution_usage_facts
 
 
 def register(sub: argparse._SubParsersAction) -> None:
@@ -27,6 +28,10 @@ def run(args: argparse.Namespace) -> int:
         if not isinstance(task_map, dict):
             raise ValueError("task map must be an object")
         ports = {"task_map": task_map}
+        package_identity = {}
+        state_dir = Path(config.project.state_dir)
+        if not state_dir.is_absolute():
+            state_dir = args.config.resolve().parent / state_dir
         if args.plan_package:
             from zf.runtime.plan_artifact_package import hydrate_plan_artifact_package
             from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -46,8 +51,15 @@ def run(args: argparse.Namespace) -> int:
             }).payload for port in package["produced"] + package["inherited"]}
             if ports.get("task_map") != task_map:
                 raise ValueError("task map differs from the admitted package")
+            package_identity = package
         metadata = config.workflow.flow_metadata_by_kind.get(args.flow_kind, {})
-        report = review_execution(task_map, ports=ports, policy=execution_policy(config), metadata=metadata)
+        report = review_execution(
+            task_map, ports=ports, policy=execution_policy(config), metadata=metadata,
+            identity=package_identity,
+            usage_facts=execution_usage_facts(
+                state_dir, workflow_run_id=str(package_identity.get("workflow_run_id") or ""),
+            ),
+        )
         report["config_source"] = str(args.config.resolve())
         report["config_scope"] = "current_file_not_frozen_run"
     except (OSError, ValueError) as exc:

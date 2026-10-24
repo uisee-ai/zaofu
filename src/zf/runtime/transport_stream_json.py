@@ -44,6 +44,7 @@ from zf.runtime.provider_telemetry import (
 )
 from zf.runtime.provider_stop import classify_provider_stop
 from zf.runtime.runtime_logs import write_runtime_log
+from zf.runtime.stream_json_options import build_claude_stream_options
 from zf.runtime.session_mutex import SessionLock
 from zf.runtime.session_tailer import claude_session_path
 from zf.runtime.spawn_coordinator import purge_stale_claude_session_lock
@@ -54,7 +55,6 @@ QueryFn = Callable[..., Any]  # async generator factory
 _MAX_QUEUED_TURNS_PER_ROLE = 1
 _SESSION_FILE_SETTLE_TIMEOUT_S = 2.0
 _SESSION_FILE_POLL_INTERVAL_S = 0.05
-_CLAUDE_SDK_PERMISSION_MODE = "bypassPermissions"
 
 
 @dataclass(frozen=True)
@@ -686,55 +686,13 @@ class StreamJsonTransport(TransportAdapter):
         return collected, status
 
     def _build_options(
-        self,
-        session_id: str,
-        role: RoleConfig,
-        *,
-        is_resume: bool = False,
-        cwd: Path | None = None,
-        env: dict[str, str] | None = None,
+        self, session_id: str, role: RoleConfig, *, is_resume: bool = False,
+        cwd: Path | None = None, env: dict[str, str] | None = None,
     ) -> Any:
-        option_cwd = cwd or self.cwd
-        try:
-            from claude_code_sdk import ClaudeCodeOptions  # type: ignore
-        except ImportError:
-            class _Stub:
-                pass
-            stub = _Stub()
-            stub.permission_mode = _CLAUDE_SDK_PERMISSION_MODE  # type: ignore[attr-defined]
-            stub.allowed_tools = list(role.allowed_tools)  # type: ignore[attr-defined]
-            stub.cwd = str(option_cwd)  # type: ignore[attr-defined]
-            stub.model = (  # type: ignore[attr-defined]
-                role.model if role.model and role.model != "placeholder" else None
-            )
-            stub.max_turns = self._max_turns  # type: ignore[attr-defined]
-            stub.env = dict(env or {})  # type: ignore[attr-defined]
-            stub.extra_args = {}  # type: ignore[attr-defined]
-            if is_resume:
-                stub.resume = session_id  # type: ignore[attr-defined]
-            else:
-                stub.session_id = session_id  # type: ignore[attr-defined]
-                stub.extra_args = {"session-id": session_id}  # type: ignore[attr-defined]
-            return stub
-
-        opts: dict = dict(
-            permission_mode=_CLAUDE_SDK_PERMISSION_MODE,
-            allowed_tools=list(role.allowed_tools),
-            cwd=str(option_cwd),
-            model=role.model if role.model and role.model != "placeholder" else None,
-            # B9: without max_turns, Claude CLI defaults to a low cap that
-            # ends the stream right after the first tool call (observed:
-            # Layer 2 reads briefing, gets tool_result, then stop with no
-            # follow-up thinking). Default 30 is generous enough for one
-            # wake to decompose a feature, set N contracts, and dispatch.
-            max_turns=self._max_turns,
-            env=dict(env or {}),
+        return build_claude_stream_options(
+            session_id, role, cwd=cwd or self.cwd, max_turns=self._max_turns,
+            is_resume=is_resume, env=env,
         )
-        if is_resume:
-            opts["resume"] = session_id
-        else:
-            opts["extra_args"] = {"session-id": session_id}
-        return ClaudeCodeOptions(**opts)
 
     def capture_log(self, role_name: str, lines: int = 200) -> str:
         msgs = self._messages.get(role_name, [])

@@ -83,6 +83,10 @@ def validate_provider_session_config(
     if session is None:
         return
     caps = capabilities or get_adapter(role.backend).capabilities
+    if session.native_delegation is True and not caps.native_multi_agent:
+        raise ValueError("native delegation has not been admitted for this provider")
+    if session.native_delegation is False and role.backend not in {"codex", "claude-code", "mock"}:
+        raise ValueError("provider cannot explicitly disable native delegation")
     if session.effort and session.effort not in caps.provider_session_efforts:
         allowed = ", ".join(caps.provider_session_efforts) or "none"
         raise ValueError(
@@ -225,6 +229,8 @@ class ClaudeCodeAdapter(BackendAdapter):
         for plugin_dir in role.plugins:
             cmd.extend(["--plugin-dir", plugin_dir])
         provider_session = role.provider_session
+        if provider_session is not None and provider_session.native_delegation is False:
+            cmd.extend(["--disallowedTools", "Agent", "Task"])
         if provider_session is not None and provider_session.effort:
             cmd.extend(["--effort", provider_session.effort])
         agent = (
@@ -320,6 +326,8 @@ class CodexAdapter(BackendAdapter):
         if role.model and role.model != "placeholder":
             cmd.extend(["--model", role.model])
         provider_session = role.provider_session
+        if provider_session is not None and provider_session.native_delegation is False:
+            cmd.extend(["--disable", "multi_agent", "--disable", "multi_agent_v2"])
         session_effort = (
             provider_session.effort
             if provider_session is not None and provider_session.effort

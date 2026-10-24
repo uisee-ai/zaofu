@@ -34,6 +34,7 @@ def select_candidate_terminal_tasks(
     feature_id: str,
     is_bootstrap_task: Callable[[Task], bool],
     successful_task_ids: Iterable[str] = (),
+    retained_task_ids: Iterable[str] = (),
 ) -> list[Task]:
     """Return tasks that the candidate terminal may mechanically close."""
     payload = event.payload if isinstance(event.payload, dict) else {}
@@ -55,6 +56,7 @@ def select_candidate_terminal_tasks(
         for task_id in successful_task_ids
         if str(task_id).strip()
     }
+    retained_ids = set(retained_task_ids)
     selected: list[Task] = []
     for task in tasks:
         task_feature = str(
@@ -66,6 +68,7 @@ def select_candidate_terminal_tasks(
             task,
             payload,
         )
+        retained = task.id in retained_ids
         explicitly_completed = (
             exact_goal_settlement
             and task.id in completed_task_ids
@@ -92,12 +95,13 @@ def select_candidate_terminal_tasks(
             explicitly_completed
             or same_generation_task
             or managed_workflow_parent
-        ) and not goal_terminal_matches_current_task(
+        ) and not retained and not goal_terminal_matches_current_task(
             task, payload
         ):
             continue
         if exact_goal_settlement and not (
-            explicitly_completed
+            retained
+            or explicitly_completed
             or same_generation_task
             or bootstrap_container
             or managed_workflow_parent

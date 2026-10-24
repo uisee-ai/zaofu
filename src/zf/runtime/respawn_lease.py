@@ -10,6 +10,18 @@ from zf.runtime.workflow_runtime_types import WorkflowRuntimeDecision
 from zf.runtime.session_mutex import SessionLock, SessionLockBusy
 
 
+def quiesce_worker_for_replacement(runtime: Any, role: RoleConfig) -> None:
+    """Require transport-confirmed absence before replacing a provider session."""
+    try:
+        runtime.transport.terminate(role.instance_id)
+    except Exception as exc:
+        # Some transports report the last turn's health as liveness. A failed
+        # turn is not proof that cancellation joined its provider thread.
+        raise RuntimeError(f"cannot terminate previous worker {role.instance_id}") from exc
+    if runtime.transport.is_alive(role.instance_id) is not False:
+        raise RuntimeError(f"previous worker {role.instance_id} is not confirmed stopped")
+
+
 def reset_respawn_success_circuit(runtime: Any, role: RoleConfig) -> None:
     runtime._respawn_success_circuit_opened.discard(role.instance_id)
     current_state = runtime._last_worker_state.get(role.instance_id, "idle")

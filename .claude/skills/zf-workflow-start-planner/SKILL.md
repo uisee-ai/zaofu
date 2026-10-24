@@ -41,6 +41,13 @@ Task/config binding, proposal identity, approval, idempotency, and execution.
    - `planning`: artifact or task-map production without implementation;
    - `general`: another explicitly registered route.
 4. Remove routes that are unavailable or cannot satisfy required output.
+   Read the selected route's `required_parameters` and populate them from
+   confirmed project facts. A document `source_ref` does not replace a
+   required repository `source_root`. The Refactor route requires disjoint
+   source and target roots: for an existing-module refactor, use a confirmed
+   frozen source copy and the intended target, retaining the source revision.
+   Do not reuse one path for both or bypass overlap preflight.
+   If these facts are unknown, clarify before emitting an executable option.
 5. Rank the remaining routes using the Task contract:
    - prefer a single lane for one bounded owner, narrow scope, and one direct
      verification path;
@@ -102,3 +109,94 @@ For recommendation or clarification, include:
 How to test: create a temporary Task, run `zf workflow routes`, propose
 `research:fixed` or an active Delivery route, verify no
 `workflow.invoke.requested` exists before apply, then apply the exact proposal.
+
+## 未决 auto 与结果复用
+
+`flow intake/classify --kind auto` 的关键词输出仅为候选提示，不能作为路线决定。
+先按目标、约束与验收进行语义判断；否定句、引用示例和混合意图不能按关键词启动。
+已有有效路由建议时复用其 Request/Requirement revision 和目录绑定；否则澄清或通过
+既有 Workflow Synthesis Operation 给出建议。Provider 失败保持未决，不能默认为 issue。
+显式有效路线不额外调用分类模型；旧请求按原版本恢复。
+
+## 两类提交入口
+
+- Kanban：从当前用户需求链或已有 Task 判断回答、澄清、仅跟踪还是执行。
+  不强制要求 Issue／有界任务先生成 PRD；仅跟踪时不添加执行选项。
+- Channel Group：只有 Owner 要求将确认产物转成任务／交付时才规划；保留当前
+  Leader 身份与 revision、PRD ref/digest/revision、channel/thread 和批准范围。
+  `PRD ready`、建单确认、配置批准和启动批准分别核对；不得推断前者自动授权后者。
+- 用户在 Kanban 明确引用 Channel PRD 时仍使用相同来源检查；不因上下文里出现
+  一个 PRD 就自动绑定。旧版本拒绝后不能用无来源的 direct 派发绕过检查。
+
+## 需求初评与配置适配
+
+结合完整验收、当前代码事实、模块依赖、共享写入、独立验证责任和资源约束评估。
+说明依据，不只给“简单／困难”标签，也不根据关键词或文件数量决定路线。
+区分 `flow_topology`、`lane_count`、`execution_policy`：一条 lane 仍可能是 fanout，
+light 仍有实施／Verify／Judge；v4 `shadow` 与 `blocking` 不是相同执行策略。
+
+先考虑回答／澄清／跟踪；执行时再比较单执行者、根 Agent 带助手和 Workflow。
+只提出当前入口和 capability 已支持的可执行方案。E0 shadow、尚未注册的 Kimi、
+没有强制隔离证据的 native delegation 不可宣称已启用；legacy direct 不是通用单 Agent。
+用户指定的方式不可用时说明缺口，给有效替代或待处理选项，不静默换模式。
+
+目录出现 `agent:single:<entry>`、`template_id=bounded-agent-v1` 时，可以推荐其
+有界工件交付：一个执行者产生报告，一个独立验证者验收，复用现有批准和 operation。
+该入口要求显式禁用 Provider 原生子 Agent，且每个角色配置时间／token／采样上限。
+它不支持源码交付；写代码仍选择已准入的交付路线。未在当前目录出现时，不把模板
+注册或示例文件当作已激活能力。Kimi canary 仅是无工具的新文本回合，不是该执行路线。
+
+在现有 Plan `reason` 和选项 `description` 中保存：
+
+1. 范围、依赖、风险和验证成本的事实来源，以及尚未确定的输入；
+2. 推荐 route/profile、有效拓扑、资源取舍、预期产物及未选方案的原因；
+3. 复用配置、绑定允许参数或需要配置变更的判断。
+
+真实 Task 建立前只做初步推荐；由 Kernel 注入 Task ID 和配置／合同摘要。
+大评估正文使用已有批准产物路径与 refs，禁止编造摘要或把必需正文只放在聊天摘要。
+现有配置可满足时不重写 YAML；需要新增能力时走 workflow-config 提案，提供可审核
+候选差异和验证方法。apply 后确认消费者有效版本，再重新预览启动。
+没有 Task Map 时并发只是估计；后续由 Planner/Critic 复核真实依赖与 owned paths。
+复杂任务不自动启用 canary；小任务不删独立验证或降级 blocking 验收。
+
+### 简单源码任务优先复用现有 light
+
+先确认需求和验收已具体、写入范围可由一个writer负责、依赖与副作用已明确，且当前
+目录确有可用的light交付路线。满足这些条件时可优先推荐该路线；一个writer之后仍需
+独立Verify/Judge及Kernel交付，不把light称为无验证的direct或通用single新内核。
+不能只按文件数量、关键词或lanes=1判断light；跨模块接口/迁移、未知依赖、缺验收或
+需要扫描规划的任务应澄清或选择目录中带规划的标准路线。没有适用路线时明确缺口，
+不虚构route_id、不为了启动任务改写zf.yaml。
+
+Kanban从用户当前任务合同判断；Channel须保留Owner执行意图、Leader及canonical PRD
+版本和完整批准范围。只有明确批准的子任务才可使用approved_task范围，不能因推荐
+light就自动缩小整个PRD。两入口均先给路线理由、预览和精确批准，再由Kernel执行。
+Task Map后发现有效配置不适配时提出暂停/重规划或受控配置修订，不承诺当前Run热切换。
+本批不推荐Provider原生delegated助手；Kernel管理的多角色Workflow和Research保持可用。
+
+### 预算可行性复核
+
+推荐执行前，核对每个 operation 与整个 Run 的时间、token、采样和费用上限。
+token 计量包含缓存读取；不能把缓存命中视为免费 token，也不能把未定价费用零值
+当成零成本。已有同 Provider／角色的实测时，引用 meter 证据，区分基础上下文、
+必读来源、工具回合、结果准备／验证／提交，以及独立 Verify 的成本。
+简单业务不代表短上下文；仅列出预算数字不能证明配置可行。
+需要自动恢复时，同时比较活性等待阈值、接续时间与剩余 operation 预算；等待阈值
+已经长于单阶段上限时，不能声称能在本次预算内自动接续，应提出受控配置修订。
+
+预算耗尽后保留原失败 Run，不原地加预算或反复重新提交。先判断能否减少重复读取、
+批量执行独立只读命令或复用不可变工件；不能省略必读正文、验收或安全检查。
+若仍不足，提出有测量依据的有界配置差异与预期上限，走配置验证／批准／消费者加载，
+以关联的新 Run 重新预览和批准。新预算下的通过不覆盖原预算失败；没有可靠估计时
+明确说明不确定性，不能保证该配置足够。
+
+
+### 规划完成后的明确启动授权
+
+对于已确认、`readiness_verdict=ready` 但 `implementation_start=false` 的 Channel PRD，
+后续 Owner 可以批准一份新的、精确绑定 Task／路线／配置的启动提案。
+只有 Owner 当前明确要求执行时，才在该提案的 parameters 中设置
+`authorize_channel_execution: true`，并在选项文字中写明“授权并启动此 Task”。
+它不修改 PRD、验收或历史 readiness，也不等价于接受风险；Kernel 仍要求当前
+Leader／PRD 绑定、Owner 或具备 `channel.workflow.start` 权限的委托人，以及未过期的
+精确启动提案。仅确认 PRD、仅建单、存在未决 readiness 或原提案失效时不得使用此参数。

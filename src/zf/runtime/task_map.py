@@ -750,6 +750,9 @@ def _shared_convention_errors(
     prefix = str(conventions.get("test_path_prefix") or "").strip()
     if not prefix:
         return []
+    while prefix.startswith("./"):
+        prefix = prefix[2:]
+    root_convention = prefix in {"", "."}
     prefix = prefix.rstrip("/") + "/"
     prefix_base = prefix.rstrip("/")
     relative_roots = _relative_path_roots(data)
@@ -761,8 +764,12 @@ def _shared_convention_errors(
         for _field, item in task_map_verification_command_fields(raw):
             refs.extend(_command_path_refs(str(item["command"])))
         for ref in refs:
-            norm = str(ref).lstrip("./")
+            norm = str(ref)
+            while norm.startswith("./"):
+                norm = norm[2:]
             if not test_like.search(norm):
+                continue
+            if root_convention and not norm.startswith("/") and ".." not in norm.split("/"):
                 continue
             if norm == prefix_base or norm.startswith(prefix):
                 continue

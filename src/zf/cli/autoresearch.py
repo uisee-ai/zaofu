@@ -663,13 +663,16 @@ def _self_repair_prepare(args) -> int:
 
 
 def _self_repair_checkpoint(args) -> int:
+    from zf.runtime.maintenance_worktree import checkpoint_root
+
     context = resolve_project_context(
         explicit_state_dir=args.state_dir,
         load_config_with_explicit=args.state_dir is not None,
     )
     checkpoint = create_checkpoint(
         context.state_dir,
-        project_root=context.project_root,
+        project_root=checkpoint_root(context.state_dir, context.project_root,
+                                     context.config, args.task, args.worker),
         task_id=args.task,
         role=args.role,
         assigned_worker=args.worker,

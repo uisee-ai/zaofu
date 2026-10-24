@@ -5468,7 +5468,9 @@ def _emit_run_completed_closeout_if_ready(
     terminal = completion.get("terminal_signal")
     terminal = terminal if isinstance(terminal, dict) else {}
     terminal_type = str(terminal.get("event_type") or "")
-    if terminal_type == RUN_COMPLETED:
+    # Goal completion already records the authoritative delivery outcome. A
+    # legacy no-auto-ship closeout would overwrite it with "not_shipped".
+    if terminal_type in {RUN_COMPLETED, "run.goal.completed"}:
         return 0
     if terminal_type in {"ship.completed", "ship.done"}:
         return 0

@@ -952,3 +952,31 @@
     overflow-wrap: anywhere;
   }
 }
+
+.workflow-preview-review pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.75rem;
+  background: var(--surface-2);
+}
+.workflow-preview-review select, .workflow-preview-review textarea {
+  width: 100%;
+  min-width: 0;
+}
+.workflow-preview-review blockquote {
+  margin: 0;
+  padding: 0.75rem;
+  border-left: 3px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.workflow-quote-action {
+  z-index: 30;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface-2);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+}

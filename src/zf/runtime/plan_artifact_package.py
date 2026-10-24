@@ -611,6 +611,13 @@ def prepare_plan_artifact_package(
         ports=[*explicit_ports.values(), *inherited],
         required_ports=required_ports,
     )
+    from zf.runtime.plan_acceptance_rework import rebind_inherited_gap_acceptance
+
+    rebind_inherited_gap_acceptance(
+        state_dir=state_dir, project_root=project_root, payload=payload,
+        workflow_run_id=workflow_run_id, flow_kind=flow_kind,
+        explicit_ports=explicit_ports, inherited=inherited,
+    )
     product_acceptance_port = next(
         (
             port

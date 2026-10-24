@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, deque
+import hashlib
 import json
 from typing import Any, Mapping
 from pathlib import Path
@@ -26,21 +27,58 @@ def attach_execution_review(
 
 
 def execution_policy(config: Any) -> dict[str, Any]:
+    from zf.runtime.workflow_route_policy import effective_execution_policy_digest
+
     workflow = getattr(config, "workflow", None)
     return {
+        "effective_policy_digest": effective_execution_policy_digest(config),
         "setup_declared": bool(str(getattr(getattr(config, "project", None),
                                          "setup_script", "") or "").strip()),
         "impl_self_check_required": bool(getattr(workflow, "impl_self_check_required", False)),
         "stages": [
-            {"id": stage.id, "trigger": stage.trigger, "topology": stage.topology}
+            {"id": stage.id, "trigger": stage.trigger, "topology": stage.topology,
+             "roles": list(getattr(stage, "roles", []) or [])}
             for stage in getattr(workflow, "stages", [])
         ],
+        "writer_instances": [
+            {"instance_id": role.instance_id, "flow_kind": role.flow_kind,
+             "default_profile": role.execution.default_profile,
+             "profile_allowlist": list(role.execution.profile_allowlist)}
+            for role in getattr(config, "roles", []) if role.role_kind == "writer"
+        ],
     }
+
+
+def planning_execution_context(config: Any, *, flow_kind: str = "") -> list[str]:
+    """Expose compiled facts before the Planner authors its Task Map."""
+    from zf.core.workflow.flow_metadata import flow_metadata_for
+
+    if config is None:
+        return ["## Compiled planning execution facts",
+                "Configuration unavailable; execution policy and approval requirements are unknown.", ""]
+    policy = execution_policy(config)
+    metadata = flow_metadata_for(config, flow_kind)
+    policy.update({
+        "plan_approval_required": bool(config.workflow.plan_approval_enabled),
+        "task_pipeline": metadata.get("task_pipeline", {}),
+        "flow_kind": flow_kind,
+        "authorizes_execution": False,
+    })
+    return [
+        "## Compiled planning execution facts",
+        "These are facts from this runtime's loaded config, not approval or evidence "
+        "that future stages have run. Use them to assign verification ownership. "
+        "After authoring the Task Map, perform the execution-readiness review. "
+        "Keep future gates pending; do not try to observe Plan approval before submitting a Plan.",
+        "```json", json.dumps(policy, ensure_ascii=False, indent=2), "```", "",
+    ]
 
 
 def review_execution(
     task_map: Mapping[str, Any], *, ports: Mapping[str, Any],
     policy: Mapping[str, Any], metadata: Mapping[str, Any],
+    identity: Mapping[str, Any] | None = None,
+    usage_facts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Describe actual wiring and review questions without judging business slices."""
     tasks = [t for t in _rows(task_map.get("tasks")) if isinstance(t, Mapping)]
@@ -65,10 +103,27 @@ def review_execution(
         items.append("setup_not_wired")
     if not policy.get("impl_self_check_required"):
         items.append("self_check_not_required")
+    writers = [role for role in policy.get("writer_instances", [])
+               if not kind or role.get("flow_kind") in ("", kind)]
     return {
         "schema_version": "plan-execution-review.v1",
         "scope": "mechanical_facts_for_semantic_review",
+        "usage_observations": dict(usage_facts or {"available": False}),
+        "input_binding": {
+            "task_map_digest": _digest(task_map),
+            "effective_policy_digest": str(policy.get("effective_policy_digest") or ""),
+            **{key: (identity or {}).get(key, "") for key in (
+                "workflow_run_id", "request_revision", "plan_revision", "task_map_generation",
+                "workflow_generation", "requirement_digest", "prd_digest",
+            )},
+        },
         "graph": graph,
+        "capacity": {
+            "configured_writer_instances": writers,
+            "configured_writer_count": len(writers),
+            "dependency_level_peak_width": max(graph["level_widths"].values(), default=0),
+            "write_scope_validation": _write_scope_validation(task_map),
+        },
         "verification": {
             "independent_task_verify": per_task,
             "task_pipeline_mode": pipeline.get("mode", "off") if isinstance(pipeline, Mapping) else "off",
@@ -90,8 +145,24 @@ def review_execution(
             "Required-by owners use runtime selectors; declared execution_stage is only an annotation.",
             "Setup presence does not prove installation or product execution.",
             "Port byte counts are JSON serialization sizes, not model token usage.",
+            "Dependency levels do not prove write independence or predict live worker availability.",
         ],
     }
+
+
+def _digest(body: Mapping[str, Any]) -> str:
+    encoded = json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _write_scope_validation(task_map: Mapping[str, Any]) -> dict[str, Any]:
+    from zf.runtime.writer_fanout_admission import validate_writer_task_items, writer_task_items
+
+    try:
+        validate_writer_task_items(writer_task_items(dict(task_map)))
+    except (RuntimeError, ValueError) as exc:
+        return {"status": "failed", "reason": str(exc)}
+    return {"status": "passed"}
 
 
 def _task_requirements(task: Mapping[str, Any]) -> dict[str, Any]:

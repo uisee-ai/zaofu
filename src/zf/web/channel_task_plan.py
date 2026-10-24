@@ -6,6 +6,22 @@ from copy import deepcopy
 from typing import Any
 
 
+def bind_nested_workflow_target(payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
+    """Carry the trusted project target into the proposal before approval."""
+    plan = payload.get("workflow_plan")
+    target = str(context.get("target_root") or "").strip()
+    if not target or not isinstance(plan, dict):
+        return payload
+    copied = deepcopy(payload)
+    for option in copied["workflow_plan"].get("options") or []:
+        if not isinstance(option, dict) or not option.get("route_id"):
+            continue
+        parameters = option.setdefault("parameters", {})
+        if isinstance(parameters, dict) and not parameters.get("target_root"):
+            parameters["target_root"] = target
+    return copied
+
+
 def selected_channel_task_authority(
     raw: dict[str, Any],
     context: dict[str, Any],

@@ -1008,12 +1008,16 @@ class LifecycleManagerMixin(
         coordinator = self._get_spawn_coordinator()
         session_replacement: dict[str, str] = {}
         try:
+            from zf.runtime.respawn_lease import quiesce_worker_for_replacement
+
+            context_exhausted = role.backend == "codex" and self._codex_context_exhausted(role)
+            quiesce_worker_for_replacement(self, role)
             if force_fresh_session:
                 session_replacement = self._replace_provider_session_for_recycle(
                     role,
                     reason=recovery_reason,
                 )
-            elif role.backend == "codex" and self._codex_context_exhausted(role):
+            elif context_exhausted:
                 reg = RoleSessionRegistry(
                     self.state_dir / "role_sessions.yaml",
                     project_root=str(self.project_root),
@@ -1043,11 +1047,6 @@ class LifecycleManagerMixin(
                     },
                 ))
                 self._route_context_critical_inline(critical)
-            # Terminate any lingering pane/window state
-            try:
-                self.transport.terminate(role.instance_id)
-            except Exception:
-                pass
             coordinator.spawn(
                 role,
                 cwd=self._role_spawn_cwd(
@@ -1064,6 +1063,7 @@ class LifecycleManagerMixin(
                 # `--session-id <new>`), keeping --resume the default so normal
                 # crash recovery still preserves session context.
                 if role.backend == "claude-code":
+                    quiesce_worker_for_replacement(self, role)
                     try:
                         RoleSessionRegistry(
                             self.state_dir / "role_sessions.yaml",

@@ -702,7 +702,7 @@ def _synthesis_compatibility_blockers(
     family = str(short_spec.get("flow_family") or "")
     source_spec = _selected_flow_spec(source_docs, family)
     requested_lanes = int(parameters.get("lanes") or 0)
-    actual_lanes = int(source_spec.get("lanes") or 0)
+    actual_lanes = int(source_spec.get("lanes", source_spec.get("laneCount", source_spec.get("lane_count", 0))) or 0)
     if requested_lanes and requested_lanes != actual_lanes:
         mismatches.append(
             f"lanes requested {requested_lanes}, compiled {actual_lanes or 'none'}"
@@ -830,7 +830,16 @@ def materialize_synthesized_workflow_candidate(
     )
     base_path = Path(base_config_path).expanduser().resolve()
     if str(short_spec.get("flow_family") or "") != "Workflow":
-        return base_path
+        from zf.core.config.loader import ConfigError
+        from zf.runtime.workflow_controller_candidate import materialize_controller_candidate
+
+        try:
+            return materialize_controller_candidate(
+                base_path=base_path, request_id=str(request.get("request_id") or ""),
+                short_spec=short_spec,
+            )
+        except (OSError, ValueError, ConfigError, yaml.YAMLError) as exc:
+            raise WorkflowProposalError(str(exc)) from exc
     return _materialize_generic_candidate(
         Path(state_dir),
         base_path=base_path,

@@ -529,6 +529,11 @@ class CostTracker:
         """Get total cost across all roles."""
         return sum(s.total_usd for s in self.per_role_totals(last_days=last_days).values())
 
+    def usage_records(self) -> list[dict[str, Any]]:
+        """Read admitted delta receipts, including archives, without re-accounting."""
+        return [entry for entry in self._read_entries()
+                if entry.get("accounting_baseline") is not True]
+
     def usage_totals(
         self,
         *,

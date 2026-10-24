@@ -374,11 +374,11 @@ _KNOWN_ROLE_KEYS = frozenset({
     "agent", "provider_session", "lifecycle",
 })
 _KNOWN_PROVIDER_SESSION_KEYS = frozenset({
-    "effort", "agent", "max_parallel_agents",
+    "effort", "agent", "max_parallel_agents", "native_delegation",
 })
 _KNOWN_ROLE_LIFECYCLE_KEYS = frozenset({
     "mode", "idle_seconds", "cooldown_seconds",
-    "preserve_session", "preserve_workdir",
+    "preserve_session", "preserve_workdir", "reader_context_scope",
 })
 
 
@@ -504,6 +504,7 @@ def _build_provider_session(
             effort=str(effort or "").strip(),
             agent=str(agent or "").strip(),
             max_parallel_agents=parallel,
+            native_delegation=data.get("native_delegation"),
         )
     except ValueError as exc:
         raise ConfigError(
@@ -527,6 +528,7 @@ def _build_role_lifecycle(
     )
     try:
         return RoleLifecycleConfig(
+            reader_context_scope=data.get("reader_context_scope", "workflow"),
             mode=str(data.get("mode", "eager") or "eager").strip(),
             idle_seconds=float(data.get("idle_seconds", 900.0)),
             cooldown_seconds=float(data.get("cooldown_seconds", 180.0)),
@@ -3108,6 +3110,11 @@ def load_config(path: Path) -> ZfConfig:
         if scoped_schemas:
             cfg.workflow.dag.event_schemas_by_kind = scoped_schemas
     if cfg.workflow.generic_workflows:
+        from zf.core.workflow.bounded_agent import validate_bounded_agent_config
+        try:
+            validate_bounded_agent_config(cfg)
+        except ValueError as exc:
+            raise ConfigError(str(exc)) from exc
         from zf.core.config.schema_profiles import (
             SchemaProfileError,
             merge_event_schemas,

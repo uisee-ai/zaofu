@@ -368,3 +368,25 @@ def test_rework_replaces_terminal_path_owner_instead_of_redispatching_it(
     assert gap["task_id"] == "TASK-REWORK-CANDIDATE-VERIFICATION-GAP"
     assert gap["supersedes_task_ids"] == ["TASK-OWNER"]
     assert gap["claim_paths"] == ["scripts/release/**"]
+
+
+def test_unowned_diagnostic_does_not_invent_writer_task(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    state_dir.mkdir()
+    ref = "artifacts/current-map.json"
+    path = state_dir / ref
+    path.parent.mkdir()
+    path.write_text(json.dumps({"schema_version": "task-map.v1", "tasks": [
+        _task("TASK-API", ["ledger.py"], owner_role="dev-lane-0"),
+        _task("TASK-CLI", ["ledger_cli.py"], owner_role="dev-lane-0", blocked_by=["TASK-API"]),
+    ]}))
+    prepared = prepare_candidate_rework_scope(
+        state_dir=state_dir, project_root=tmp_path, events=[], pdd_id="PRD-1",
+        trace_id="RUN-1", source_event_id="verification-failed",
+        anchor={"task_map_ref": ref},
+        rework_paths=["verification evidence capture"],
+        failed_task_ids=["TASK-API"], rework_summary={},
+    )
+    assert prepared["requires_replan"] is True
+    assert not prepared["rework_summary"].get("gap_tasks")
+    assert prepared["rework_summary"]["unowned_rework_paths"] == ["verification evidence capture"]

@@ -56,6 +56,10 @@ def normalize_workflow_kind(kind: str, *, allow_auto: bool = False) -> str:
 
 
 def workflow_kind_policy(kind: str) -> WorkflowKindPolicy:
+    # An unresolved intake has no executable topology or default worker count.
+    # Keep auto out of WORKFLOW_KIND_POLICIES: it is not a registered flow kind.
+    if str(kind).strip().lower() == "auto":
+        return WorkflowKindPolicy("auto", 0, "standard", ("objective",))
     return WORKFLOW_KIND_POLICIES[normalize_workflow_kind(kind)]
 
 

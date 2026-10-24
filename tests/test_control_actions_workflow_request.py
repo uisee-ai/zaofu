@@ -788,11 +788,20 @@ def test_initialized_idea_to_product_proposes_request_then_submit(tmp_path: Path
     ]
 
 
+@pytest.mark.parametrize("lanes", [1, 2])
 def test_workflow_request_passes_admitted_synthesis_to_proposal_builder(
     tmp_path: Path,
     monkeypatch,
+    lanes: int,
 ) -> None:
     service, _log = _service(tmp_path)
+    base = tmp_path / "zf.yaml"
+    if lanes == 2:
+        body = base.read_text().replace("  lanes: 1", "  topology: fanout\n  lanes: 1")
+        body += "  workflow:\n    candidate_quality_source: task_contract_required\n"
+        base.write_text(body)
+        service.config = load_config(base)
+    original = base.read_bytes()
 
     def _synthesize(**kwargs):
         projection = load_workflow_request(
@@ -810,7 +819,7 @@ def test_workflow_request_passes_admitted_synthesis_to_proposal_builder(
                 "flow_family": "IssueFlow",
                 "purpose": "Repair the confirmed issue",
                 "parameters": {
-                    "lanes": 1,
+                    "lanes": lanes,
                     "strictness": "standard",
                     "pattern_id": "issue-triage",
                 },
@@ -873,11 +882,37 @@ def test_workflow_request_passes_admitted_synthesis_to_proposal_builder(
     )
     assert proposal["synthesis_result_ref"] == request["synthesis_ref"]
     assert proposal["run_parameters"] == {
-        "lanes": 1,
+        "lanes": lanes,
         "strictness": "standard",
         "pattern_id": "issue-triage",
     }
     assert proposal["approval_status"] == "approvable"
+    assert base.read_bytes() == original
+    if lanes == 2:
+        assert proposal["change_mode"] == "config_change"
+        payload = {
+            "request_id": request["request_id"],
+            "intake_ref": proposed["intake_ref"],
+            "proposal_ref": request["proposal_ref"],
+            "proposal_digest": proposal["proposal_digest"],
+            "kind": "issue", "allow_missing_env": True,
+        }
+        blocked = _execute(service, "workflow-submit", payload)
+        assert blocked["status"] == "config_apply_required"
+        applied = _execute(service, "workflow-config-apply", {
+            "proposal_id": proposal["proposal_id"],
+            "proposal_ref": request["proposal_ref"],
+            "proposal_digest": proposal["proposal_digest"],
+            "validation_result_ref": proposal["validation_result_ref"],
+            "approval_ref": "owner:approved",
+            "idempotency_key": "apply-synthesized-lanes",
+        })
+        assert applied["ok"] is True, applied
+        effective = load_config(base)
+        assert len([r for r in effective.roles if r.role_kind == "writer"]) == 2
+        submitted = _execute(service, "workflow-submit", payload)
+        assert submitted["ok"] is True, submitted
+        assert any(e.type == "workflow.submit.requested" for e in _log.read_all())
 
 
 def test_workflow_request_enqueue_returns_without_provider_call(

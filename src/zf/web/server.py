@@ -6528,9 +6528,10 @@ def _validate_action_payload(
                 "codex-headless",
                 "codex-app-server",
                 "codex_headless",
+                "kimi-headless-canary",
             }
             if backend not in allowed:
-                return "backend must be deterministic, codex, claude-code, claude-headless, or codex-headless"
+                return "backend must be deterministic, codex, claude-code, claude-headless, codex-headless, or kimi-headless-canary"
     if action in _HUMAN_DECISION_ACTIONS:
         if not str(payload.get("decision_token") or payload.get("approval_ref") or "").strip():
             return "decision_token is required"
@@ -8928,6 +8929,8 @@ def _web_session_cookie(request: Request) -> str | None:
 
 
 def _operator_websocket_authorized(websocket: WebSocket) -> bool:
+    if not terminal_routes._same_origin(websocket, terminal_routes.terminal_host_config(None)):
+        return False
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")

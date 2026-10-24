@@ -283,7 +283,19 @@ def _project_plan_artifacts(
     review_artifact_ref = str(_field(source, "review_artifact_ref") or "")
     plan_intent = str(_field(source, "plan_intent") or "")
     plan_md = _extract_plan_markdown(source)
-    task_map = _extract_task_map(source)
+    from zf.runtime.refactor_plan_task_map import resolve_refactor_task_map
+
+    try:
+        task_map = resolve_refactor_task_map(
+            state_dir, legacy=_extract_task_map(source), ports=_field(source, "plan_ports"),
+            reviewed={key: _field(source, key) for key in (
+                "fanout_id", "plan_synth_contract_ref", "plan_synth_contract_digest",
+                "reviewed_plan_candidate_digest",
+            )},
+        )
+    except (ValueError, OSError) as exc:
+        task_map = None
+        diagnostics.append(f"task_map port invalid: {exc}")
     gates = _field(source, "gates") or _field(source, "verification_plan")
     risk_register = _field(source, "risk_register") or []
     backlog_candidates = _field(source, "backlog_candidates") or []

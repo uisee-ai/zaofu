@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
+from pathlib import Path
 
 from zf.runtime.artifact_read_policy import (
     workflow_reader_required_source_paths,
@@ -12,6 +13,42 @@ from zf.runtime import semantic_replan_handoff
 
 class ArtifactReadRequirementError(ValueError):
     """A profile cannot derive a complete Required Read declaration."""
+
+
+def required_reads_for_attempt(
+    events: Iterable[Any], attempt_id: str, *, state_dir: Path | None = None,
+    operation_id: str = "",
+) -> list[dict[str, Any]]:
+    """Read the latest kernel-pinned declaration, never a worker-supplied list."""
+    events = list(events)
+    for event in reversed(events):
+        payload = event.payload if isinstance(event.payload, Mapping) else {}
+        if attempt_id not in {str(payload.get(key) or "") for key in (
+            "attempt_id", "active_attempt_id", "dispatch_id",
+        )}:
+            continue
+        rows = payload.get("required_reads")
+        if isinstance(rows, list):
+            return [dict(row) for row in rows if isinstance(row, Mapping)]
+    # Reader operations keep their complete delivery body in an immutable
+    # request sidecar; the event ledger intentionally only contains its ref.
+    if state_dir is not None and operation_id:
+        from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+        from zf.runtime.workflow_operation import reduce_workflow_operations
+
+        operation = reduce_workflow_operations(events).get(operation_id, {})
+        descriptor = operation.get("request_ref")
+        if isinstance(descriptor, Mapping):
+            request = hydrate_sidecar_ref(state_dir, dict(descriptor)).payload.get("request", {})
+            policy_ref = request.get("input_consumption_policy_ref")
+            if isinstance(policy_ref, Mapping) and policy_ref.get("ref"):
+                policy = hydrate_sidecar_ref(state_dir, dict(policy_ref)).payload
+                if policy.get("attempt_id") != attempt_id:
+                    raise ArtifactReadRequirementError("required-read policy belongs to another attempt")
+                rows = policy.get("required_reads")
+                if isinstance(rows, list):
+                    return [dict(row) for row in rows if isinstance(row, Mapping)]
+    raise ArtifactReadRequirementError(f"no required-read declaration for attempt {attempt_id}")
 
 
 def build_canonical_required_reads(
@@ -154,4 +191,5 @@ def _sources(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:
 __all__ = [
     "ArtifactReadRequirementError",
     "build_canonical_required_reads",
+    "required_reads_for_attempt",
 ]

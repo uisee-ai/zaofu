@@ -101,7 +101,18 @@ def _run(args: argparse.Namespace) -> int:
             print(f"plan {plan_id}  stage={item.get('stage_id')}  "
                   f"tasks={item.get('task_count')}  pdd={item.get('pdd_id')}")
             print(f"  task_map: {ref}")
-            if ref:
+            digest_ref = str(item.get("digest_ref") or "")
+            digest = ""
+            if digest_ref:
+                try:
+                    digest = preview_artifact_path(
+                        digest_ref, state_dir=state_dir, project_root=context.project_root,
+                    ).read_text(encoding="utf-8")
+                except (OSError, ValueError) as exc:
+                    print(f"  [X] plan digest unavailable: {exc}")
+            if digest:
+                print(digest.rstrip())
+            elif ref:
                 try:
                     path = preview_artifact_path(
                         ref, state_dir=state_dir, project_root=context.project_root,

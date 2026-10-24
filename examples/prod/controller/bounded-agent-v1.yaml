@@ -1,0 +1,77 @@
+# 有界报告交付示例；通过配置提案激活后才出现在选路目录。
+apiVersion: zaofu.dev/v1
+kind: Workflow
+metadata:
+  name: bounded-agent
+spec:
+  contractVersion: generic-workflow.v1
+  intent: bounded_execution
+  template: bounded-agent-v1
+  entry: agent-execute
+  completionProfile:
+    id: artifact_delivery
+    requiredArtifacts:
+    - agent-execute.result
+    independentVerify: true
+  tasks:
+  - name: agent-execute
+    operation: agent.synthesize
+    role: bounded-executor
+    deadlineSeconds: 600
+    inputs:
+    - name: request
+      kind: text/request
+      from: external.request
+    outputs:
+    - name: result
+      kind: report/markdown
+  - name: agent-verify
+    operation: agent.verify
+    role: bounded-verifier
+    deadlineSeconds: 600
+    dependencies:
+    - agent-execute
+    inputs:
+    - name: result
+      kind: report/markdown
+      from: agent-execute.result
+    outputs:
+    - name: verification
+      kind: verification/verdict
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: bounded-agent
+spec:
+  version: '1.0'
+  project:
+    name: bounded-agent
+    state_dir: .zf
+  workflow:
+    execution_profiles:
+      bounded-direct:
+        strategy: direct
+        limits:
+          timeout_seconds: 600
+          token_budget: 100000
+          max_usage_samples: 30
+  roles:
+  - name: bounded-executor
+    backend: codex
+    role_kind: reader
+    provider_session:
+      native_delegation: false
+    execution:
+      default_profile: bounded-direct
+      profile_allowlist:
+      - bounded-direct
+  - name: bounded-verifier
+    backend: codex
+    role_kind: reader
+    provider_session:
+      native_delegation: false
+    execution:
+      default_profile: bounded-direct
+      profile_allowlist:
+      - bounded-direct

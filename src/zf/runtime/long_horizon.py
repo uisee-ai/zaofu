@@ -1307,6 +1307,14 @@ def build_resume_packet(
         index = TaskEventIndex(events)
         events = index.events
     task = task_store.get(task_id)
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.run_scope import events_for_run
+
+    bound_run, strict_binding = canonical_task_run(task, index.events)
+    if strict_binding:
+        index = TaskEventIndex(events_for_run(
+            index.events, run_id=bound_run, include_legacy_single_run=False,
+        ) if bound_run else [])
     projection = project_why_not_done(
         state_dir,
         task_id,
@@ -1322,12 +1330,21 @@ def build_resume_packet(
         for event in task_events_for_id
         if event.type in SUCCESS_EVENT_TYPES
     ]
+    from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+    from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
+
+    attempt = recovery_attempt_facts(state_dir, task, run_id=bound_run, dispatch_id=dispatch_id)
+
     packet = {
         "schema_version": "resume-packet.v1",
         "generated_at": _now_iso(),
         "task_id": task_id,
         "work_unit_id": projection.work_unit.id if projection.work_unit else "",
         "dispatch_id": dispatch_id,
+        "attempt_identity": attempt,
+        "maintenance_checkpoint": maintenance_checkpoint_facts(
+            state_dir, task_events_for_id, task_id=task_id, attempt_facts=attempt,
+        ),
         "objective": projection.work_unit.goal if projection.work_unit else "",
         "current_state": projection.state,
         "outcome": projection.work_unit.outcome if projection.work_unit else "",

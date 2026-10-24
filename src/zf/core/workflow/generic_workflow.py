@@ -238,6 +238,9 @@ def prepare_generic_workflow(
         outputs_by_ref=outputs_by_ref,
         context=context,
     )
+    if template == "bounded-agent-v1":
+        from zf.core.workflow.bounded_agent import validate_bounded_agent_contract
+        validate_bounded_agent_contract(normalized_tasks, task_by_name)
 
     legacy_tasks: list[dict[str, Any]] = []
     extensions: dict[str, dict[str, Any]] = {}

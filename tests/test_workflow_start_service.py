@@ -143,7 +143,8 @@ def test_intake_classification_ignores_parent_directory_keywords(
         request_id="wfint-parent-path",
     )
 
-    assert result["effective_kind"] == "prd"
+    assert result["effective_kind"] == "auto"
+    assert json.loads(Path(result["intake_json_ref"]).read_text())["inferred_kind"] == "prd"
 
 
 def test_channel_prd_intake_materializes_project_reader_source(tmp_path: Path) -> None:
@@ -433,6 +434,8 @@ def test_cli_routes_propose_apply_and_replay_without_web(
     ]) == 0
     routes = json.loads(capsys.readouterr().out)
     assert routes["task_id"] == "TASK-WORKFLOW-START"
+    prd = next(row for row in routes["routes"] if row["kind"] == "prd")
+    assert prd["required_parameters"] == ["target_root"]
     assert EventLog(state_dir / "events.jsonl").read_all() == []
 
     assert main([

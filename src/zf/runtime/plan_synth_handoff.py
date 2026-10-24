@@ -118,12 +118,24 @@ def render_plan_synth_completion_command(
     return command
 
 
-def render_plan_synth_validation_section(submit_command: str) -> list[str]:
+def render_plan_synth_validation_section(
+    submit_command: str, *, scratch_path: Path | None = None,
+) -> list[str]:
     """Render the bounded schema preflight shown before plan submission."""
 
     from zf.runtime.stage_execution_card import render_result_validate_command
 
+    scratch_lines = (
+        [f"Edit `{scratch_path.resolve()}` in place; preserve the prefilled binding fields.",
+         "Use native Edit/Write/apply_patch, not shell redirection or Python/shell heredocs. "
+         "With apply_patch use `*** Update File`; never delete, add, move, or recreate this path.", ""]
+        if scratch_path is not None else []
+    )
     return [
+        *scratch_lines,
+        "Write your actual review summary and explicitly choose status and recommendation "
+        "in both the result and report. Empty verdict fields are not a completed review.",
+        "",
         "Finding severity is an exact enum: use only `info`, `low`, `medium`, "
         "`high`, or `critical`. Record a non-blocking residual risk as `info` "
         "or `low`; never invent `residual-risk` or another label.",
@@ -557,6 +569,7 @@ def build_plan_synth_call_payload(
             {
                 "source_id": str(item.get("source_id") or ""),
                 "artifact_id": str(item.get("artifact_id") or ""),
+                "ref": str(item.get("ref") or ""),
                 "sha256": str(item.get("sha256") or ""),
             }
             for item in input_refs

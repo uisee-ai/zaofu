@@ -926,9 +926,12 @@ class KanbanHeadlessAgent:
             state_dir=self.state_dir,
             project_root=self.project_root,
         )
+        from zf.web.kimi_headless import KimiHeadlessBackend
+
         self.backends = backends or {
             "claude-headless": ClaudeHeadlessBackend(),
             "codex-headless": CodexHeadlessBackend(),
+            "kimi-headless-canary": KimiHeadlessBackend(),
         }
         self.telemetry = telemetry
         self.operations_metrics = operations_metrics
@@ -1281,7 +1284,31 @@ class KanbanHeadlessAgent:
             "context contains workflow_route_catalog from the active expanded "
             "zf.yaml. Use the zf-workflow-start-planner method when available for "
             "semantic classification, clarification, and route recommendation, and "
-            "use only route_id values present in that catalog. Never inspect, "
+            "use only route_id values present in that catalog. In the existing Plan "
+            "reason/option descriptions, explain scope, dependency/write conflicts, "
+            "acceptance, budget and permission facts behind the route/profile choice. "
+            "Assess budget feasibility using available provider/role measurements, including "
+            "cached input tokens, required reads, result submission and independent verification; "
+            "a small task or a listed limit alone does not prove feasibility. Preserve exhausted "
+            "runs; propose measured bounded config changes before a separately approved new run. "
+            "Distinguish flow_topology from lane_count and inspect execution_policy; "
+            "one lane does not mean light, and shadow profiles do not enable native delegation. "
+            "For a concrete source task with one accountable writer, known dependencies, "
+            "bounded write scope and explicit acceptance, prefer an available light delivery "
+            "route when it fits. Keep independent Verify/Judge and Kernel delivery. Unknown "
+            "dependencies, migrations or missing acceptance require clarification or a registered "
+            "planning route. Do not narrow a Channel PRD to fit light, invent a single-agent "
+            "engine, or recommend provider-native delegation in this delivery scope. "
+            "State whether existing configuration suffices, allowed parameters suffice, "
+            "or an approved config change and consumer reload are needed. Do not silently "
+            "enable v4, lower acceptance, or advertise unsupported single/delegated execution. "
+            "Channel PRD readiness is not task/start authorization: preserve the current "
+            "Owner intent, Leader and canonical PRD bindings through either entry surface. "
+            "If a confirmed ready PRD was planning-only and its Owner now explicitly requests execution, "
+            "propose parameters.authorize_channel_execution=true with an option clearly labelled "
+            "Authorize and start this Task. This requires exact Owner start approval; do not use "
+            "readiness risk acceptance or change the PRD to grant execution. "
+            "Never inspect, "
             "request, or fabricate a workflow action token, and never call "
             "`zf workflow start --apply`; provider turns may only preview/propose. "
             "Add "
@@ -1542,7 +1569,7 @@ def canonical_headless_backend(value: str) -> str:
     }
     if backend in aliases:
         return aliases[backend]
-    if backend in {"claude-headless", "codex-headless"}:
+    if backend in {"claude-headless", "codex-headless", "kimi-headless-canary"}:
         return backend
     return ""
 

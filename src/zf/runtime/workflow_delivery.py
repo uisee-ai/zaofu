@@ -149,6 +149,24 @@ def build_flow_submit_preview(
     resolved_kind = _normalize_request_kind(
         flow_kind or str(manifest.get("kind") or report.get("flow_kind") or "")
     )
+    if resolved_kind == "auto":
+        from zf.runtime.workflow_request_routing import unresolved_route_blocker
+
+        request_blockers.append(unresolved_route_blocker())
+    else:
+        from zf.core.workflow.request_policy import missing_fields_for_kind
+
+        missing = missing_fields_for_kind(
+            resolved_kind, objective=str(manifest.get("objective") or ""),
+            source_ref=str(manifest.get("source_ref") or ""),
+            source_root=str(manifest.get("source_root") or ""),
+            target_root=str(manifest.get("target_root") or ""),
+        )
+        if missing:
+            request_blockers.append({
+                "severity": "STOP", "kind": "workflow_selected_route_inputs_missing",
+                "message": ", ".join(missing), "safe_auto_fix": False,
+            })
     source_ref_blockers = _submit_source_ref_blockers(
         config_path=config_path,
         source_ref=str(manifest.get("source_ref") or ""),
@@ -267,7 +285,7 @@ def build_flow_submit_preview(
     )
     proposal: dict[str, Any] = {}
     proposal_ref: dict[str, Any] = {}
-    if request_projection:
+    if request_projection and resolved_kind != "auto":
         from zf.runtime.workflow_proposal import (
             build_workflow_proposal,
             cleanup_synthesized_workflow_candidate,

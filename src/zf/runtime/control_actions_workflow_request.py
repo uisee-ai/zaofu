@@ -7,11 +7,13 @@ from pathlib import Path
 from zf.core.events import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.control_actions_helpers import _required_text, _string_list
+from zf.runtime.sidecar_refs import SidecarRefError
 from zf.runtime.workflow_delivery import (
     apply_flow_submit,
     build_flow_submit_preview,
 )
 from zf.runtime.workflow_intake import build_flow_intake
+from zf.runtime.workflow_request_routing import request_revision_needed as _request_revision_needed
 from zf.runtime.control_actions_workflow_replay import active_request_mutation_failure, replay_active_workflow_start
 from zf.runtime.workflow_origin import (
     WorkflowOriginError,
@@ -27,13 +29,13 @@ from zf.runtime.workflow_start_inputs import (
     ensure_workflow_managed_task,
     prepare_approved_workflow_start,
 )
-from zf.runtime.channel_readiness import channel_task_execution_authorization_error
+from zf.runtime.channel_execution_approval import channel_start_authorization_error
 from zf.runtime.workflow_task_request_rotation import (
     WorkflowTaskRequestRotationError,
     apply_task_request_binding,
     fresh_task_request_origin_binding,
 )
-from zf.runtime.workflow_request_identity import project_ref, stable_request_id
+from zf.runtime.workflow_request_identity import request_source_ref, stable_request_id
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -72,12 +74,12 @@ class WorkflowRequestActionsMixin:
                 "workflow-request": self._workflow_request,
                 "workflow-submit": self._workflow_submit,
             }[action]
-        return handler(
-            requested=requested,
-            action=action,
-            requested_action=requested_action,
-            payload=payload,
-        )
+        from zf.core.state.locks import locked_path
+        with locked_path(self.state_dir / "locks" / "workflow-preview-mutation"):
+            return handler(
+                requested=requested, action=action,
+                requested_action=requested_action, payload=payload,
+            )
 
     def _workflow_start(
         self,
@@ -112,8 +114,9 @@ class WorkflowRequestActionsMixin:
         objective = str(normalized.get("objective") or "")
         route = dict(preview.get("route") or {})
         workflow_task = TaskStore(self.state_dir / "kanban.json").get(task_id)
-        readiness_error = channel_task_execution_authorization_error(
-            workflow_task
+        readiness_error = channel_start_authorization_error(
+            state_dir=self.state_dir, task=workflow_task, actor=self.actor,
+            payload=payload, events=self.writer.event_log.read_all(),
         )
         if readiness_error:
             return self._failed(
@@ -288,11 +291,7 @@ class WorkflowRequestActionsMixin:
             requested.id,
             objective,
         )
-        source_ref = project_ref(
-            self.project_root,
-            self.state_dir,
-            _required_text(payload, "source_ref") or _required_text(payload, "artifact_ref"),
-        )
+        source_ref = request_source_ref(self.project_root, self.state_dir, payload)
         from zf.runtime.workflow_requests import (
             WorkflowRequestError,
             load_workflow_request,
@@ -456,15 +455,16 @@ class WorkflowRequestActionsMixin:
                     / f"{request_id}.md"
                 ),
             )
-        except TaskWorkflowInputCoverageError as exc:
+        except (TaskWorkflowInputCoverageError, SidecarRefError) as exc:
+            invalid_source = isinstance(exc, SidecarRefError)
             return self._failed(
                 requested=requested,
                 action=action,
                 requested_action=requested_action,
                 task_id=_required_text(payload, "task_id") or None,
-                reason=str(exc),
+                reason=f"{exc.code}: {exc}" if invalid_source else str(exc),
                 status_code=422,
-                status="workflow_input_incomplete",
+                status="workflow_input_invalid" if invalid_source else "workflow_input_incomplete",
             )
         except WorkflowRequestError as exc:
             return self._failed(
@@ -478,14 +478,16 @@ class WorkflowRequestActionsMixin:
             )
 
         request_projection = load_workflow_request(self.state_dir, request_id)
-        if existing_projection:
+        if existing_projection and _request_revision_needed(self.state_dir, existing_projection, payload):
             request_projection = revise_workflow_request(
                 self.state_dir,
                 Path(str(intake["workflow_input_manifest_ref"])),
                 actor=self.actor,
-                objective=(
-                    _required_text(payload, "objective") or None
+                kind=(
+                    _required_text(payload, "kind")
+                    if _required_text(payload, "kind") not in {"", "auto"} else None
                 ),
+                objective=objective or None,
                 source_root=(
                     _required_text(payload, "source_root") or None
                 ),

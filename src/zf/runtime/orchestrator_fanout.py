@@ -1048,6 +1048,8 @@ class FanoutCoordinationMixin(
         *,
         recovery_snapshot=None,
     ) -> bool:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         completed_fanouts = {
             str((event.payload or {}).get("fanout_id") or "")
             for event in events
@@ -1074,7 +1076,10 @@ class FanoutCoordinationMixin(
                 if isinstance(manifest.get("aggregate"), dict)
                 else {}
             )
-            if aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}:
+            if (
+                aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
+                and not blocked_reader_aggregate_recoverable(manifest)
+            ):
                 continue
             children = [
                 child for child in manifest.get("children", []) or []
@@ -5032,9 +5037,17 @@ class FanoutCoordinationMixin(
         aggregate = manifest.get("aggregate") if isinstance(manifest.get("aggregate"), dict) else {}
         status = str(aggregate.get("status") or "")
         reason = str(aggregate.get("reason") or "")
-        if status not in {"failed", "timed_out"}:
-            return False
-        if status != "timed_out" and reason != "timeout":
+        # The caller first fences terminal Runs and superseded generations.
+        # A reactivated blocked Run may retain its cancelled aggregate while
+        # a controlled child retry has already completed all writer work.
+        resumed_block = (
+            status == "cancelled"
+            and reason == "workflow_run_terminal:run.goal.blocked"
+        )
+        if not resumed_block and (
+            status not in {"failed", "timed_out"}
+            or (status != "timed_out" and reason != "timeout")
+        ):
             return False
         children = [
             child for child in manifest.get("children", []) or []
@@ -5767,6 +5780,8 @@ class FanoutCoordinationMixin(
         *,
         rebuild_request: ZfEvent | None = None,
     ) -> None:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         manifest = self._fanout_manifest(fanout_id)
         if not manifest:
             return
@@ -5779,6 +5794,7 @@ class FanoutCoordinationMixin(
         if (
             aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
             and rebuild_request is None
+            and not blocked_reader_aggregate_recoverable(manifest)
         ):
             return
         children = [
@@ -6808,14 +6824,21 @@ class FanoutCoordinationMixin(
             identity_sources = retry_dispatch["identity_sources"]
             task_item = retry_dispatch["task_item"]
         else:
-            if recovery_decision_event is not None:
+            if fresh_operation and manifest.get("topology") == "fanout_reader":
+                from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
+
+                prepared_call = prepare_fresh_reader_retry(
+                    self, manifest=manifest, child=child, role=role,
+                    attempt=attempt, previous_dispatch=previous_dispatch,
+                )
+            elif recovery_decision_event is not None:
                 prepared_call = self._prepare_reader_fanout_retry_operation(
                     manifest=manifest,
                     child=child,
                     recovery_decision_event=recovery_decision_event,
                 )
-                if prepared_call is not None and not prepared_call.should_dispatch:
-                    return False
+            if prepared_call is not None and not prepared_call.should_dispatch:
+                return False
             task_item = {}
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,
@@ -8265,6 +8288,11 @@ class FanoutCoordinationMixin(
                 "recommendation": "approve",
             },
         }
+        from zf.runtime.research_synthesis_contract import prepare_research_synthesis
+
+        research_handoff_lines = prepare_research_synthesis(
+            str(manifest.get("stage_id") or ""), completion_payload,
+        )
         completion_payload.update({
             key: call_payload[key]
             for key in PLAN_SYNTH_HANDOFF_KEYS
@@ -8336,6 +8364,10 @@ class FanoutCoordinationMixin(
                 "evidence_refs": [],
             })
         if call_payload:
+            # Bind identities in advance, but require the agent to author its verdict.
+            for body in (completion_payload, completion_payload["report"]):
+                for field in ("status", "recommendation", "summary"):
+                    body[field] = ""
             from zf.runtime.plan_synth_handoff import (
                 render_plan_synth_completion_command,
                 render_plan_synth_validation_section,
@@ -8347,7 +8379,10 @@ class FanoutCoordinationMixin(
                 state_dir=self.state_dir,
                 payload=completion_payload,
             )
-            validation_lines = render_plan_synth_validation_section(completion_command)
+            validation_lines = render_plan_synth_validation_section(
+                completion_command,
+                scratch_path=self.state_dir / completion_payload["result_scratch_ref"],
+            )
         else:
             validation_lines = []
             completion_command = " ".join([
@@ -8395,6 +8430,7 @@ class FanoutCoordinationMixin(
                 "",
                 *runner_policy_lines,
                 *scope_summary_lines,
+                *research_handoff_lines,
                 *source_lines,
                 *( [""] if source_lines else [] ),
                 *skill_briefing.render_skill_briefing_section(role, skill_entries),

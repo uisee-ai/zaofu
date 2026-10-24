@@ -286,9 +286,10 @@ def reduce_workflow_operations(
                 if value:
                     row[key] = value
             budget_snapshot = payload.get("budget_snapshot")
-            if isinstance(budget_snapshot, Mapping):
+            if isinstance(budget_snapshot, Mapping) and not row["started_at"]:
                 row["budget_snapshot"] = dict(budget_snapshot)
         elif event.type == "workflow.operation.started" and row["status"] not in TERMINAL_OPERATION_STATUSES:
+            first_start = not row["started_at"]
             row["status"] = "running"
             row["started_at"] = row["started_at"] or event.ts
             row["started_event_id"] = row["started_event_id"] or event.id
@@ -313,7 +314,9 @@ def reduce_workflow_operations(
                 payload.get("context_delivery_receipt_error") or ""
             )
             budget_snapshot = payload.get("budget_snapshot")
-            if isinstance(budget_snapshot, Mapping):
+            # A same-operation redrive retains all prior usage. New attempts
+            # and reservations do not grant a fresh operation allowance.
+            if isinstance(budget_snapshot, Mapping) and first_start:
                 row["budget_snapshot"] = dict(budget_snapshot)
             for key in ("reservation_id", "idempotency_key"):
                 value = str(payload.get(key) or "")

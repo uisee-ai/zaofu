@@ -3310,6 +3310,7 @@ def test_plan_candidate_briefing_validates_before_submit(
                 "manifest": {"stage_id": "issue-triage"},
                 "metadata": {
                     "flow_kind": "issue",
+                    "artifact_package": {"required_ports": ["issue_spec", "task_map", "product_acceptance_spec"]},
                     "task_pipeline": {
                         "candidate": {"rolling_smoke": "required"},
                     },
@@ -3340,6 +3341,19 @@ def test_plan_candidate_briefing_validates_before_submit(
     assert "maximum acceptance criteria per task: `8`" in briefing
     assert "rolling smoke policy: `required`" in briefing
     assert "tier `static` or `runtime`" in briefing
+    assert "required Plan inputs/outputs: `issue_spec`, `task_map`, `product_acceptance_spec`, `source_index`" in briefing
+    assert "do not rewrite intake" in briefing
+    # Validate the nested authoring example from the actual dispatch, after
+    # adding only the identities that the Kernel binds at admission.
+    example_line = next(line for line in briefing.splitlines()
+                        if "Product Acceptance shape example" in line)
+    example = json.loads(example_line.split("`", 1)[1].rsplit("`", 1)[0])
+    from zf.runtime.product_acceptance import validate_product_acceptance_spec
+    validate_product_acceptance_spec({
+        **example["body"], "schema_version": example["schema_version"],
+        "workflow_run_id": "run-test", "flow_kind": "issue",
+        "plan_revision": "r1", "task_map_generation": "g1",
+    })
 
 
 def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
@@ -3494,7 +3508,7 @@ def test_artifact_delivery_briefing_pins_identity_and_admitted_inputs(
     assert "Kernel. Do not add raw child result files" in briefing
 
 
-def test_goal_closure_success_uses_immutable_payload_file(
+def test_goal_closure_success_uses_editable_payload_draft(
     tmp_path: Path,
     monkeypatch,
 ):
@@ -5484,6 +5498,13 @@ def test_refactor_plan_critic_submits_only_verdict_delta(tmp_path: Path):
     assert "`goal_claim_set` and `planning_result` are Kernel-derived" in briefing
     assert "issue flows adapt `requirement_spec` to `issue_spec`" in briefing
     assert "Edit only the signed result scratch file" in briefing
+    assert f"Edit `{(state_dir / scratch_ref).resolve()}`" in briefing
+    assert "Use native Edit/Write/apply_patch" in briefing
+    assert "not shell redirection or Python/shell heredocs" in briefing
+    for body in (result, result["report"]):
+        assert body["status"] == ""
+        assert body["recommendation"] == ""
+        assert body["summary"] == ""
     assert "non-empty `message`" in briefing
     assert "`info`, `low`, `medium`, `high`, or `critical`" in briefing
     assert "never invent `residual-risk`" in briefing

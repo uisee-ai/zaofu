@@ -2604,6 +2604,10 @@ class TestApiTraceCandidateFanoutEventsSearchDiagnostics:
             },
         )
         EventLog(state_dir / "events.jsonl").append(event)
+        # This tests hydration, not asynchronous projection catch-up.
+        from zf.web.projections import read_model
+
+        read_model.rebuild(state_dir)
 
         list_payload = client.get("/api/events?limit=5").json()
         listed = next(item for item in list_payload["items"] if item["id"] == event.id)

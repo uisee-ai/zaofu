@@ -13,6 +13,12 @@ def run_replay_sweep(
     events: Iterable[ZfEvent] | None,
 ) -> None:
     event_batch = list(events or [])
+    if not event_batch:
+        from zf.runtime.channel_prd_evaluation_reactor import reconcile_channel_prd_evaluations
+
+        runtime._safe_housekeeping(
+            "channel_prd_evaluations", lambda: reconcile_channel_prd_evaluations(runtime),
+        )
     if not event_batch or any(
         event.type in {
             "task_map.ready",

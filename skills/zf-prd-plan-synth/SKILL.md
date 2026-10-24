@@ -175,12 +175,19 @@ body containing:
 - one stable `assembly_owner` that matches the task-map assembly owner;
 - runnable `entrypoints[]`, each with `entrypoint_id`, exact `start_command`,
   observable `health_check`, and owner;
-- `user_journeys[]` with `journey_id`, `title`, `mandatory`, and
-  `verification_tier` (`runtime|e2e|manual_evidence`);
-- each journey's `assertions[]` with `assertion_id`, `statement`,
+- `user_journeys[]`, each with `journey_id`, `title`, `mandatory`,
+  `verification_tier` (`runtime|e2e|manual_evidence`) and nonempty
+  `assertions[]`;
+- each journey's assertions with `assertion_id`, `statement`,
   `observation_kind` (`api|cli|dom|interaction|state|visual`), and `mandatory`;
 - a `provider_qualification` policy that explicitly says whether real Provider
   qualification is required, which providers are in scope, and its TTL.
+
+Check these nested fields together before the first validation. A prose
+journey or an assertion using only `id`/`kind` is not the machine contract.
+Use the current briefing's shape example to learn the fields, then replace
+its example meaning with the confirmed requirement; never treat the example
+as product evidence or use it to remove mandatory acceptance.
 
 Do not invent run, plan-revision, or task-map-generation values in that body.
 The Kernel binds those identities while constructing the current Plan Artifact

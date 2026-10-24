@@ -345,7 +345,8 @@ def test_prod_controller_profiles_wire_yoke_and_enforcement():
         prod["flow_defaults"]["issue"]["roleDefaults"]["lifecycle"]["mode"]
         == "on_demand"
     )
-    assert prod["workflow"]["run_limits"]["timeout_seconds"] == 3000
+    assert prod["workflow"]["run_limits"]["timeout_seconds"] == 0
+    assert prod["workflow"]["execution_profiles"]["bounded-direct-v1"]["limits"]["timeout_seconds"] == 900
     assert (
         prod["workflow"]["execution_profiles"]["bounded-direct-v1"]
         ["limits"]["token_budget"]
@@ -382,6 +383,8 @@ def test_prod_controller_profiles_wire_yoke_and_enforcement():
         == "on_demand"
     )
     assert refactor["workflow"]["run_limits"]["cost_budget_usd"] == 40
+    assert refactor["workflow"]["run_limits"]["timeout_seconds"] == 0
+    assert refactor["workflow"]["execution_profiles"]["bounded-direct-v1"]["limits"]["timeout_seconds"] == 900
     assert (
         refactor["flow_defaults"]["refactor"]["roleDefaults"]["execution"]
         ["default_profile"]

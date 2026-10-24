@@ -378,6 +378,24 @@ def test_register_role_without_spawn_preserves_config_for_send_task(
     assert getattr(opts, "max_turns") == 17
 
 
+def test_single_executor_disables_native_children_in_stream_transport(state_dir, registry):
+    from zf.core.config.schema import ProviderSessionConfig
+
+    calls = []
+
+    async def fake_query(*, prompt, options=None, transport=None):
+        calls.append(options)
+        return
+        yield
+
+    role = RoleConfig(name="executor", backend="claude-code", transport="stream-json",
+                      provider_session=ProviderSessionConfig(native_delegation=False))
+    transport = StreamJsonTransport(state_dir, registry, query_fn=fake_query)
+    transport.register_role(role)
+    transport.send_task("executor", state_dir / "briefings" / "executor.md", "review")
+    assert calls[0].disallowed_tools == ["Agent", "Task"]
+
+
 def test_send_task_first_call_uses_session_id_second_uses_resume(
     state_dir: Path, registry: RoleSessionRegistry
 ):

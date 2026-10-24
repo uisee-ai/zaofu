@@ -132,8 +132,8 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
         silently breaking Layer 2. Signal 2 closes the gap: respawn is
         only real when the file exists.
 
-        For codex: its session JSONL is written lazily (post-first-turn),
-        so file-existence can't be trusted. Keep the meta-only rule.
+        Codex requires an observed UUID and a rollout owned by this role;
+        prior process metadata alone does not prove a resumable session.
         """
         role, provider_config, _provider_binding = self.prepare_provider_session(role)
         meta_spawned = bool(
@@ -165,13 +165,14 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             # all if codex died before the first turn completed).
             cached = self.registry.get(role.instance_id)
             if cached is None:
+                is_respawn = False
                 # Strategy B: start a fresh codex (no resume). Never use
                 # --last — in multi-instance/multi-role configs it would
                 # pick whichever codex session was most recent globally.
                 self._emit_warning(
                     role,
                     "codex_no_cached_session",
-                    "respawning codex without resume — uuid was never observed",
+                    "respawning codex without resume — no cached session UUID is available",
                 )
             else:
                 cached_id = str(cached)

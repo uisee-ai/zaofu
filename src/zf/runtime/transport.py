@@ -199,6 +199,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         self._expected_cwds: dict[str, Path] = {}
         self._launch_records: dict[str, dict[str, object]] = {}
         self._readiness_failures: dict[str, dict[str, object]] = {}
+        self._dry_run_stopped: set[str] = set()
 
     @property
     def session_name(self) -> str:
@@ -209,6 +210,7 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         return self.tmux.dry_run
 
     def init(self, *, exclude_roles: set[str] | None = None) -> None:
+        self._dry_run_stopped.clear()
         if not self.tmux.dry_run and self.tmux.has_session():
             self.tmux.kill_session()
         self.tmux.create_session()
@@ -266,6 +268,8 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
                     diagnostics,
                     cause=exc,
                 ) from exc
+        else:
+            self._dry_run_stopped.discard(role.instance_id)
 
     @classmethod
     def _agent_env_prefix(cls, cwd: Path | None = None) -> str:
@@ -341,7 +345,8 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
 
     def _agent_process_liveness(self, role_name: str) -> tuple[bool, str]:
         if self.tmux.dry_run:
-            return True, ""
+            stopped = role_name in self._dry_run_stopped
+            return not stopped, "terminated" if stopped else ""
         if not self.tmux.pane_alive(role_name):
             return False, "pane_dead"
         command = self.pane_current_command(role_name).strip()
@@ -453,6 +458,11 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         clear_input = getattr(self.tmux, "clear_input", None)
         if callable(clear_input):
             clear_input(role_name)
+        paste = getattr(self.tmux, "send_paste", None)
+        backend = context.backend if context else self.pane_current_command(role_name).strip()
+        if backend == "codex" and callable(paste):
+            paste(role_name, prompt)
+            return
         self.tmux.send_keys(role_name, prompt)
 
     def compact_context(self, role_name: str, command: str) -> bool:
@@ -537,8 +547,10 @@ class TmuxTransport(TmuxReadinessMixin, TransportAdapter):
         terminator = getattr(self.tmux, "terminate_window", None)
         if callable(terminator):
             terminator(role_name)
-            return
-        self.tmux.kill_window(role_name)
+        else:
+            self.tmux.kill_window(role_name)
+        if self.tmux.dry_run:
+            self._dry_run_stopped.add(role_name)
 
     def shutdown(self, *, exclude_roles: set[str] | None = None) -> None:
         self.tmux.kill_session()

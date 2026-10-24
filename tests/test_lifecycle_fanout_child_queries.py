@@ -7,6 +7,7 @@ ZF-STOP-TAIL-01 邻居(07-16 实弹):被 supersede 取消的 fanout 其 child
 from __future__ import annotations
 
 from pathlib import Path
+import pytest
 
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -17,6 +18,35 @@ from zf.runtime.lifecycle_evidence_queries import LifecycleEvidenceQueriesMixin
 class _Host(LifecycleEvidenceQueriesMixin, FanoutEvidenceQueriesMixin):
     def __init__(self, path: Path) -> None:
         self.event_log = EventLog(path)
+
+
+@pytest.mark.parametrize('lost_run,expected', [('dispatch-old', None), ('', 'dispatch-old')])
+def test_lost_dispatch_releases_only_its_execution(
+    tmp_path: Path, lost_run: str, expected: str | None,
+) -> None:
+    host = _Host(tmp_path / 'events.jsonl')
+    host.event_log.append(_dispatched('fanout-1', 'reader', 'verify', run_id='dispatch-old'))
+    host.event_log.append(ZfEvent(
+        type='fanout.child.dispatch_lost', actor='zf-cli', payload={
+            'fanout_id': 'fanout-1', 'child_id': 'reader', 'run_id': lost_run,
+            'role_instance': 'verify', 'reason': 'suspended_operation_replaced_by_controlled_rerun',
+        },
+    ))
+    child = host._active_fanout_child_for_instance('verify')
+    assert (child['run_id'] if child else None) == expected
+
+
+def test_late_old_dispatch_loss_does_not_release_fresh_reader(tmp_path: Path) -> None:
+    host = _Host(tmp_path / 'events.jsonl')
+    for run_id in ('dispatch-old', 'dispatch-new'):
+        host.event_log.append(_dispatched('fanout-1', 'reader', 'verify', run_id=run_id))
+    host.event_log.append(ZfEvent(
+        type='fanout.child.dispatch_lost', actor='zf-cli', payload={
+            'fanout_id': 'fanout-1', 'child_id': 'reader', 'run_id': 'dispatch-old',
+            'role_instance': 'verify',
+        },
+    ))
+    assert host._active_fanout_child_for_instance('verify')['run_id'] == 'dispatch-new'
 
 
 def _dispatched(

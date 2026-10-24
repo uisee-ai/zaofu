@@ -112,6 +112,20 @@ def prepare_candidate_rework_scope(
     summary["invalid_failed_task_ids"] = invalid_failed_task_ids
     summary["terminal_failed_task_ids"] = terminal_failed_task_ids
 
+    if unowned_paths and not owner_ids and not summary.get("gap_tasks"):
+        # A finding's path can describe a runner/evidence failure. Without a
+        # canonical source owner or an explicit gap plan, it cannot authorize
+        # a new writer scope, dependency graph, or default "dev" owner.
+        summary["scope_replan_reason"] = (
+            "candidate finding paths have no Task Map owner; an explicit repair plan is required"
+        )
+        return {
+            "anchor": rebound,
+            "failed_task_ids": [],
+            "rework_summary": summary,
+            "requires_replan": True,
+        }
+
     if unowned_paths or terminal_owner_ids:
         rework_items = _source_rework_items(events, source_event_id)
         gap_task = _replacement_gap_task(

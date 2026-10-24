@@ -125,6 +125,20 @@ def _run_set(args: argparse.Namespace) -> int:
         payload=payload,
         correlation_id=run_id or None,
     ))
+    if status == "active" and run_id:
+        from zf.core.task.store import TaskStore
+        from zf.runtime.run_admission import build_run_admission_projection
+        from zf.runtime.workflow_task_lifecycle import (
+            reopen_workflow_managed_task_from_run_recovery,
+        )
+
+        entry = build_run_admission_projection(writer.event_log.read_all()).runs.get(run_id)
+        if entry is not None and entry.active:
+            reopen_workflow_managed_task_from_run_recovery(
+                task_store=TaskStore(context.state_dir / "kanban.json"),
+                event_writer=writer,
+                recovery_event=event,
+            )
     # codex re-activate 语义:set 回 active = 唤醒(quiescent 的
     # _WAKE_EVENT_TYPES 含 run.goal.updated,tick 服务自动恢复点火)。
     print(f"run.goal.updated appended: {event.id}")
