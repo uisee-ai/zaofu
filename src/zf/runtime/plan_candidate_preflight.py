@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from zf.runtime.plan_execution_review import plan_candidate_writer_policy, review_execution
+from zf.runtime.execution_usage_facts import execution_usage_facts
 
 from zf.runtime.plan_artifact_package import (
     hydrate_plan_artifact_package,
@@ -220,6 +221,9 @@ def evaluate_plan_candidate_preflight(
             task_map or {}, ports=port_bodies,
             policy=(writer_policy or {}).get("execution", {}), metadata=metadata or {},
             identity=trigger,
+            usage_facts=execution_usage_facts(
+                state_dir, workflow_run_id=str(trigger.get("workflow_run_id") or ""),
+            ),
         ),
         "status": "passed" if not errors else "failed",
         "stage_id": str(manifest.get("stage_id") or ""),

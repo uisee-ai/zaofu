@@ -283,6 +283,10 @@ def test_valid_candidate_delivers_execution_facts_to_actual_critic_caller(tmp_pa
         "source_index_ref": "inline:source-index", "plan_md": "# Plan",
     }}])
     harness._checkout_fanout_reader = lambda *args: None
+    from zf.core.cost.tracker import CostTracker
+    CostTracker(harness.state_dir / "cost.jsonl").record_usage(
+        "planner", 100, 20, model="unknown-model",
+    )
     captured = {}
 
     def prepare(runtime, *, payload, **kwargs):
@@ -301,6 +305,9 @@ def test_valid_candidate_delivers_execution_facts_to_actual_critic_caller(tmp_pa
     assert harness.critic_dispatch_attempted
     source = next(r for r in captured["input_refs"] if r["source_id"] == "plan-execution-review")
     assert hydrate_sidecar_ref(harness.state_dir, source).payload["graph"]["task_count"] == 1
+    usage = hydrate_sidecar_ref(harness.state_dir, source).payload["usage_observations"]
+    assert usage["groups"][0]["total_tokens"] == 120
+    assert usage["groups"][0]["estimated_usd"] is None
 
 
 def test_plan_candidate_preflight_validates_product_acceptance_before_critic(

@@ -618,3 +618,28 @@ watcher/tmux/Web，796个脱敏归档成员校验后清理临时根；归档不�
 [批准清单](../../tasks/active/2026-10-24-0137-185-codex-completion.md)记录逐项验收。
 PRD/Issue/Refactor自动配置候选生成仍有实现缺口：当前materialize_synthesized_workflow_candidate
 仅生成Generic Workflow，其余family返回原配置；本批同时补实现与实际消费者验证。
+
+
+## Codex 优先批次：受限配置候选与真实计量（2026-10-24）
+
+已批准的 Synthesis `lanes` 建议进入 `build_flow_submit_preview` 时，Issue/Prd/Refactor
+现在可从已有 Flow 生成受限 YAML 候选。只改变 lanes，保留其余文档的语义；正常 loader、
+preflight、提案摘要、`workflow-config-apply` CAS 和 submit 门保持有效。原配置在批准前
+不变；没有合并候选质量门时扩容仍被拒绝。light 不能通过 lanes 改成 fanout。
+显式 Task Pipeline 池不能只改 lanes：必须另提完整池配置修订；本批不自动猜测池成员。
+这不证明 Task Map 后重新配置运行中 Run 已实现，后者仍需新代际批准与恢复边界验证。
+
+`plan-execution-review.usage_observations` 和 `zf plan inspect-execution` 接入
+CostTracker 已准入的新增计量及事件归属，不重复累计 Provider 的累计快照。
+按明确的 Run/stage/operation/attempt/role 归属分组，缺失身份不猜测；项目历史与当前
+Run 区分。输入、输出和缓存分别展示；estimated/provider-reported/billed 缺证为 null。
+该只读报告不改变预算执行，也不推导剩余任务的价格。Critic 通过既有正式输入引用收到
+这些事实，语义建议按 [计量复核方法](../../skills/zf-plan-execution-readiness/references/usage-budget.md)
+形成评审证据，不硬编码“难度 -> 模型/并发”。
+
+当前真实 PRD 使用冻结提交 `7e45fe91`，与上述开发中修改隔离。
+`TASK-B2E0D4` / `workflow-e848dbc3d8cb2824`：Channel 原需求全文保留，作者归纳为
+10 个 AC；独立 Codex 评审逐条检查原始 31 项要求均 PASS，Owner 已审阅确认，
+主 Agent 精确提案批准后 Kernel 接收 Run。该结果只证明文档与入口链，不证明产品交付。
+本轮无 Kimi 安装或调用；原预算与五文件产品范围不变。
+证据目录：`/home/min/workspace/public/zaofu-evidence/185-codex-20261024T013700Z`。

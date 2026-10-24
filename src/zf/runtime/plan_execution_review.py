@@ -53,6 +53,7 @@ def review_execution(
     task_map: Mapping[str, Any], *, ports: Mapping[str, Any],
     policy: Mapping[str, Any], metadata: Mapping[str, Any],
     identity: Mapping[str, Any] | None = None,
+    usage_facts: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Describe actual wiring and review questions without judging business slices."""
     tasks = [t for t in _rows(task_map.get("tasks")) if isinstance(t, Mapping)]
@@ -82,6 +83,7 @@ def review_execution(
     return {
         "schema_version": "plan-execution-review.v1",
         "scope": "mechanical_facts_for_semantic_review",
+        "usage_observations": dict(usage_facts or {"available": False}),
         "input_binding": {
             "task_map_digest": _digest(task_map),
             "effective_policy_digest": str(policy.get("effective_policy_digest") or ""),
