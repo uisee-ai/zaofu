@@ -1,9 +1,10 @@
-> 状态: active
+> 状态: done
+> 实现提交: `0043a019 fix: preserve authoritative goal delivery closeout`；长期Run策略始于 `6513375d fix: support long-horizon runs and controlled reader recovery`。
 
 # 185 · Long horizon 生命周期与原 Run 断点恢复
 
 用户批准取消 Run 总时限，按任务完成返回；本轮真实验收 Run 总 token 上限也取消，
-继续计量。沿用[监工任务](2026-10-24-0702-185-supervised-repair.md)，Kimi 不在范围内。
+继续计量。沿用[监工任务](../active/2026-10-24-0702-185-supervised-repair.md)，Kimi 不在范围内。
 
 - [x] 生产/refactor profile 总时限设为0 -> verify: 配置编译、超过4小时/72小时的确定性测试；Operation超时仍生效，正数Run限制仍受支持。
 - [x] 修复受控 reader 重试 -> verify: 新Operation/Attempt/scratch关联旧调用；旧调用保持cancelled；已完成reader不重跑，重复repair不重复派发。
@@ -32,3 +33,12 @@ SUP-020影响闭包90、sentinel51、flow mock3通过；SUP-021验证结果见�
 原需求、Git、原始ledger/sidecar、失败/成功浏览器和测试证据均保留。
 本任务只签收长期Run与该次原PRD恢复；184/185整体1—9中的配置冻结后CAS、
 通用源码single入口、原生助手资格及完整跨Provider恢复仍由原active任务管理。
+
+
+归档验证：SUP-021最终219项影响闭包通过；自动serial10、sentinel51、flow-smoke10通过。
+未执行全量pytest。完整现场归档校验13,284项，产品Git bundle通过verify；原始事件、
+必需sidecar、未提交workdir及所有Git对象保留，排除9个凭据符号链接，不读取凭据内容。
+归档为本地私有证据，复原须恢复到原/tmp绝对路径并单独绑定认证。
+
+临时模拟已于2026-10-24T11:53:44.471825+00:00清理：0自有进程、tmux已停；删除前再次逐文件
+核验原目录与归档manifest一致。证据目录completed-simulation/cleanup-result.json。
