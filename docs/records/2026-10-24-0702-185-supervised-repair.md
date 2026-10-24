@@ -395,3 +395,8 @@ Docker Playwright真实看板断言根任务blocked及wall_clock原因、零page
 未安装宿主浏览器、未改变宿主安全设置，失败命令不算产品验收失败。
 自有API/UI进程组已停，tmux不存在；可读取/proc cwd扫描没有本模拟根下的进程。
 所有恢复必需工作区和Git/state保留；等待Owner答复Run token与总时限范围。
+
+SUP-012实现提交：`c831a904 fix: reopen the parent task on authorized goal recovery`。
+本轮实现链d160bdd7→1b2b19e0→c831a904，仅本地提交，未push/merge；
+真实冻结运行最后使用1b2b19e0，c831a904尚待下一次真实恢复加载验证。
+整体1—9任务继续active，不归档，不将候选/局部Verify通过写成完整交付。
