@@ -785,3 +785,19 @@ Refactor完整mock、call-result runtime/admission、result submit测试通过�
 追加验证：Run Manager直接caller159项通过；hooks直接caller与相关mock25项通过，1项host层排除。另10项历史Codex hook静态hash基线失败，在冻结281f9f13也全部复现；未修改hash基线，未把该组写成全绿。该失败与本次保留hooks路径无代码交集；真实Codex版本0.163.0，旧hash验证基线0.144仍待独立重新资格验证。
 
 最终检查：新增Task已占用Run的拒绝分支纳入9项Request回归，全部通过；文档指令8项通过。hooks/返工dev-verify选择276文件并升级全仓，本批显式跳过deterministic/serial全仓层，以前述直接调用者和共享合同闭包替代；自动sentinel51、三流mock10全部通过。不是full pytest；历史hash基线10项失败继续保留。
+
+## 2026-10-24 Run Manager 恢复事实隔离
+
+`build_task_recovery_context` 与 State Packet 共用 canonical Task→Run 解析：显式
+Run 优先，否则仅采用精确 Request 修订对应的唯一 accepted Run。未接受或歧义
+绑定保留 unresolved；旧 Run 的失败、活动及恢复动作不进入当前恢复上下文。
+请求中的失败 ID 若无法在当前边界核验，单独列入 unresolved，不伪装成已取证失败。
+复用 role instance 已服务其他 Task 或缺少 Task 绑定时，不再报告其 worker 可用。
+新增 execution_boundary 仅表达事实，不授予继续执行权；完整规范化恢复包仍待完成。
+
+两个回归先 RED；修复后 State Packet、handoff CLI、Run scope 和恢复 briefing
+70项、Run Manager/语义恢复/Task pipeline 调用者96项、sentinel51项通过。各组
+重叠，不累计为唯一总数。证据位于 `185-prd-hooks-20261024T042500Z/recovery-*`。
+第四轮真实 PRD 冻结在 `4b81a645`，未包含本次恢复上下文修改，不能作为它的实测证明。
+
+恢复批次自动 dev-verify 覆盖40个文件：897 passed、1 skipped，包含相关确定性mock E2E；未跑host/real_provider/full pytest。

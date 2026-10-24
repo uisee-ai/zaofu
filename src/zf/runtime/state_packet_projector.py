@@ -168,30 +168,16 @@ class StatePacketProjector:
             ),
         )
         events_for_task = self._events_for_task(task.id)
-        binding = getattr(task, "execution_binding", None)
-        bound_run = str(getattr(binding, "workflow_run_id", "") or "")
-        request_id = str(getattr(binding, "request_id", "") or "")
-        if not bound_run and request_id:
-            from zf.runtime.run_scope import event_run_id, run_aliases
+        from zf.runtime.task_run_binding import canonical_task_run
 
-            aliases = run_aliases(events_for_task)
-            accepted_runs = {
-                event_run_id(event, aliases=aliases) for event in events_for_task
-                if event.type == "workflow.invoke.accepted"
-                and event.payload.get("request_id") == request_id
-                and event.payload.get("request_revision") == getattr(binding, "request_revision", 0)
-                and event_run_id(event, aliases=aliases)
-            }
-            if len(accepted_runs) == 1:
-                bound_run = accepted_runs.pop()
-        strict_binding = bool(bound_run or request_id)
+        bound_run, strict_binding = canonical_task_run(task, events_for_task)
         if bound_run:
             from zf.runtime.run_scope import events_for_run
 
             events_for_task = events_for_run(
                 events_for_task, run_id=bound_run, include_legacy_single_run=False,
             )
-        elif request_id:
+        elif strict_binding:
             # An unaccepted or ambiguous Request must not inherit legacy truth.
             events_for_task = []
         completed = self._completed_milestones(events_for_task)
