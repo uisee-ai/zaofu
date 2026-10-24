@@ -94,3 +94,42 @@ flow smoke 10项、文档合同8项通过。不宣称full pytest或新的真实�
 canonical摘要f72fd9f6ef25c752dd98c9bfb865edba4b7def5b14555f5c384e5f5ec6a11aff。
 产品尚未实施，未批准启动Workflow。为升级SUP-002/003，先执行本项目 zf stop，
 18步完成、watcher退出；保留PRD/评审/完整Git与状态，待修复提交后冻结新版本续行。
+
+SUP-002/003提交：`faf8cd5b fix: preserve supervised checkpoints and resumed operation budgets`。
+已在无旧tmux/Provider/watcher的边界切换到该冻结提交，配置字节摘要保持216d309f…，
+源码归档及切换身份记于`source-upgrade-1.json`，保留原08b5d85f归档。
+07:33真实入口批准后产生 `TASK-5554BD / workflow-3ba5d2aa7ac4bb65`，
+invoke接纳事件`evt-c2b4211340a4`；开始两路Scan。新PRD验收编号为AC-01至12，
+原始完整需求正文摘要不变，独立28项语义检查通过；编号变化不代表缩小验收。
+
+## SUP-004 · checkpoint 接入恢复消费者
+
+发现保存checkpoint并不使它自动进入Run Manager上下文或worker恢复briefing。
+补充生产者的canonical Run/Attempt身份，以及两条已有恢复消费者的同身份引用；
+必须匹配Run、Task、Operation、Attempt、lease、dispatch、instance并验证sidecar摘要。
+旧Run/旧dispatch、损坏或未捕获的最新快照均不暴露可用引用；不自动退回更旧快照。
+正文仅保存引用和元数据，避免恢复提示重复塞入完整源码。依旧不授予续行权限。
+
+5项RED验证缺失接线（修正测试fixture的TaskStore更新调用后重跑），27项聚焦与117项
+恢复/briefing/long-horizon/sidecar/受控动作闭包通过；真实PRD仍冻结faf8cd5b，未热更新。
+自动增量18项、sentinel 51项、flow smoke 10项、文档合同8项通过；与前述闭包有重叠，
+不汇总为唯一测试数。没有声明full pytest或真实恢复已经通过。
+
+## 第6/7项能力原因复核
+
+本机Codex CLI仍为0.163.0。生成其experimental App Server协议schema，无模型调用：
+存在`SubAgentSource.thread_spawn.parent_thread_id/depth`、协作调用的sender/receiver
+thread IDs、`thread/tokenUsage/updated`及按thread/turn中断参数。因此不能写“Codex没有
+子Agent”。ZaoFu现有adapter声明仍为native_multi_agent=false，尚未把这些字段接成
+受控子树身份、结果收敛、预算去重和全树终止；生成schema不等于真实操作资格验证。
+
+[官方子Agent权限说明](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+明确继承父会话权限，custom instructions不能建立独立只读沙箱；
+[App Server文档](https://learn.chatgpt.com/docs/app-server)说明逐thread用量通知。
+由此，读写root下的“只读helper”不能仅靠prompt冒充隔离，须先接入受控外部只读worker
+或在已隔离只读root下验证原生子树。当前不启用native delegation，不绕过现有准入。
+
+主机复测`unshare --user --map-root-user true`失败于`/proc/self/uid_map: Operation not permitted`；
+unprivileged_userns_clone=1、apparmor_restrict_unprivileged_userns=1。仅能确认当前权限
+环境拒绝user namespace映射，不能仅凭这两个值断言唯一根因。源码补丁不能证明操作系统
+隔离已恢复；不更改宿主安全策略，也不把danger-full-access当read-only通过。

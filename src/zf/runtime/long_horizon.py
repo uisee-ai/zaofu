@@ -1331,6 +1331,9 @@ def build_resume_packet(
         if event.type in SUCCESS_EVENT_TYPES
     ]
     from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+    from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
+
+    attempt = recovery_attempt_facts(state_dir, task, run_id=bound_run, dispatch_id=dispatch_id)
 
     packet = {
         "schema_version": "resume-packet.v1",
@@ -1338,8 +1341,9 @@ def build_resume_packet(
         "task_id": task_id,
         "work_unit_id": projection.work_unit.id if projection.work_unit else "",
         "dispatch_id": dispatch_id,
-        "attempt_identity": recovery_attempt_facts(
-            state_dir, task, run_id=bound_run, dispatch_id=dispatch_id,
+        "attempt_identity": attempt,
+        "maintenance_checkpoint": maintenance_checkpoint_facts(
+            state_dir, task_events_for_id, task_id=task_id, attempt_facts=attempt,
         ),
         "objective": projection.work_unit.goal if projection.work_unit else "",
         "current_state": projection.state,

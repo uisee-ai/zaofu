@@ -61,6 +61,9 @@ maintenance checkpoint 由受控动作/CLI 按 canonical assignee 定位配置�
 模式及符号链接目标。非 Git、超限、捕获变化或子模块场景明确 unavailable；忽略文件、
 Git 历史和运行状态不在该快照内，原工作区必须保留。双次一致捕获不证明 Provider 已停，
 恢复执行仍须另外核验旧执行权终止、版本兼容和当前 Run/Attempt 门禁。
+checkpoint引用已进入Run Manager recovery context与worker resume packet/briefing，
+按当前完整Attempt身份筛选并重新校验sidecar摘要。旧身份、缺失/损坏或未捕获快照
+明确不可用，不自动恢复源码、不接纳旧结果、不授予执行权。
 
 - 旧进程终止异常、仍存活或存活状态未知时，禁止启动替代进程。必须终止调用成功且
   liveness 为 false 才允许恢复；失败回合的健康状态不能替代停止确认。Claude resume

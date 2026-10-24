@@ -275,6 +275,13 @@ def _render_resume_packet(
             "Revalidate the current lease and controlled action before takeover; "
             "unknown identity must not be inferred from transcript history."
         )
+        checkpoint = packet.get("maintenance_checkpoint") or {}
+        if checkpoint.get("status") == "bound":
+            lines.append(
+                f"- **Maintenance checkpoint**: `{checkpoint['checkpoint_id']}`; "
+                "verified reference in the resume packet. Provider quiescence is unverified; "
+                "do not restore or take over without revalidating execution rights."
+            )
         artifact_refs = packet.get("accepted_artifact_refs") or []
         hash_status = packet.get("artifact_hash_status") or []
         missing_refs = packet.get("missing_artifact_refs") or []

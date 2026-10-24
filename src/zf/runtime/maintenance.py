@@ -38,6 +38,8 @@ class MaintenanceCheckpoint:
     resume_packet_path: str = ""
     worktree_root: str = ""
     workspace_snapshot_ref: dict[str, Any] = field(default_factory=dict)
+    workflow_run_id: str = ""
+    attempt_identity: dict[str, Any] = field(default_factory=dict)
     reason: str = "suspended_for_zaofu_self_repair"
     created_at: str = field(default_factory=_now_iso)
 
@@ -188,6 +190,16 @@ def create_checkpoint(
     state_dir = Path(state_dir)
     root = Path(project_root) if project_root is not None else state_dir.parent
     from zf.runtime.maintenance_worktree import capture_workspace
+    from zf.core.task.store import TaskStore
+    from zf.runtime.task_run_binding import canonical_task_run
+    from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+
+    task = TaskStore(state_dir / "kanban.json").get(task_id)
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    run_id, _ = canonical_task_run(task, events)
+    attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
+    if assigned_worker and task is not None and assigned_worker != task.assigned_to:
+        raise ValueError("checkpoint worker does not match canonical task assignee")
 
     checkpoint_id = f"ckpt-{task_id}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}-{uuid4().hex[:12]}"
     ckpt_dir = maintenance_dir(state_dir) / "checkpoints"
@@ -214,6 +226,8 @@ def create_checkpoint(
         resume_packet_path=str(resume_path),
         worktree_root=str(root.resolve()),
         workspace_snapshot_ref=capture_workspace(state_dir, root, checkpoint_id),
+        workflow_run_id=run_id,
+        attempt_identity=attempt,
     )
     atomic_write_text(
         resume_path,

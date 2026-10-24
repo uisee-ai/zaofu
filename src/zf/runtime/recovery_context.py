@@ -14,6 +14,7 @@ from zf.core.security.redaction import redact_obj
 from zf.core.task.store import TaskStore
 from zf.runtime.sidecar_refs import write_sidecar_json
 from zf.runtime.recovery_attempt_facts import recovery_attempt_facts
+from zf.runtime.recovery_checkpoint import maintenance_checkpoint_facts
 
 
 RECOVERY_CONTEXT_SCHEMA_VERSION = "task-recovery-context.v1"
@@ -93,11 +94,15 @@ def build_task_recovery_context(
         for event in task_events
         if isinstance(event.payload, dict)
     )
+    attempt = recovery_attempt_facts(state_dir, task, run_id=run_id)
     return redact_obj({
         "schema_version": RECOVERY_CONTEXT_SCHEMA_VERSION,
         "is_derived_projection": True,
         "request_id": request_id,
-        "attempt_identity": recovery_attempt_facts(state_dir, task, run_id=run_id),
+        "attempt_identity": attempt,
+        "maintenance_checkpoint": maintenance_checkpoint_facts(
+            state_dir, task_events, task_id=task_id, attempt_facts=attempt,
+        ),
         "execution_boundary": {
             "workflow_run_id": run_id,
             "dispatch_id": task.active_dispatch_id if task is not None else "",
