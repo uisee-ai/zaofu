@@ -39,6 +39,11 @@ amendment are separate role capabilities supplied by the workflow profile.
    先按 required_reads 清单估算输出量，分批读取每行完整正文并保留本回合已读内容。
    不因一个批量输出被截断而重读整个 `--required` 集合；只补读未完整呈现的行。
    不用标题、摘要或截断片段替代完整必读正文，也不要重复打印已完整读过的大段 Plan/PAS。
+   单项 `zf artifact read --source ... --artifact ...` 的stdout就是正文，不是带`.content`
+   字段的外壳；不要把正文JSON解析后再取不存在的`.content`而误判为空。`--required`
+   才按JSONL逐行输出source/artifact/json-path/content；保留已完整呈现的正文，不重复dump。
+   等待仍在运行的工具时采用与预计耗时相称的10—30秒等待（保持操作者可见的进度），
+   避免连续1秒轮询：每次模型往返都重带上下文，空输出也会消耗累计预算。
 3. Read the admitted Impl self-check. Reuse a passing command receipt only when
    the briefing marks it reusable for the exact target commit and command
    digest. Do not rerun that identical deterministic command merely to produce
@@ -80,7 +85,10 @@ amendment are separate role capabilities supplied by the workflow profile.
    `task_id` 为空；`--task` 精确筛选不能证明这些事件不存在。优先按已绑定 ID/ref 查询，
    或按事件类型定位后核对 channel/thread、PRD ref/digest、计划代际及先后顺序；
    不把其他版本的评审、成员签字或仅有命令退出码当作所需批准。
-   建立一次证据索引：按事件类型、actor、当前派发因果定位 ID，再读取必要事件正文与
+   建立一次证据索引：先用 `zf events --index --json` 加精确type/actor/task筛选，
+   只输出ID、身份、工具输入预览和raw_output引用；再用不带`--index`的`--id`读取
+   所选事件完整正文及sidecar。索引不是完整证据，不能直接用预览签收验收。
+   按事件类型、actor、当前派发因果定位 ID，再读取必要事件正文与
    raw_output ref。不要为找一个命令的收据反复拉取 last 100/200 的 hook 历史；查询自身
    也产生 hook 输出，递归读取会迅速放大上下文。找到原始命令后保留其 ID/ref 复用。
    预算紧张时先收敛已完成检查的矩阵并预校验；证据确实缺失则如实阻断，不反复扩展
