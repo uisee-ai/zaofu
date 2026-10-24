@@ -9,6 +9,14 @@ from zf.runtime.fanout import FanoutChild, FanoutContext
 from zf.runtime.writer_fanout_retry import _WRITER_RETRY_CALL_IDENTITY_KEYS
 
 
+_READER_RETRY_CALL_IDENTITY_KEYS = _WRITER_RETRY_CALL_IDENTITY_KEYS - {
+    # A reader consumes the writer's evidence and pinned verification target.
+    # They are immutable inputs, not outputs owned by this reader attempt.
+    'impl_self_check_ref', 'impl_self_check_digest',
+    'target_snapshot_ref', 'target_snapshot_digest',
+}
+
+
 def prepare_fresh_reader_retry(
     runtime: Any, *, manifest: dict, child: dict, role: RoleConfig,
     attempt: int, previous_dispatch: ZfEvent,
@@ -21,7 +29,7 @@ def prepare_fresh_reader_retry(
     # Legacy shadow readers have no durable call to replace.
     if not old_operation_id:
         return None
-    for key in _WRITER_RETRY_CALL_IDENTITY_KEYS:
+    for key in _READER_RETRY_CALL_IDENTITY_KEYS:
         payload.pop(key, None)
         child.pop(key, None)
     payload.update({

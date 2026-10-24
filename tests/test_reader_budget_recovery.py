@@ -12,6 +12,42 @@ from tests.test_reader_fanout_runtime import (
     _durable_reader_state, _manifest, _start_fanout, _state,
 )
 from tests.test_repair_action_executor import _append_request
+from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.artifact_read_ledger import read_attempt_artifact
+from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
+
+
+def test_reader_retry_preserves_required_writer_evidence(tmp_path: Path) -> None:
+    state, log, _transport, orch, config, child = _durable_reader_state(tmp_path)
+    descriptor = write_immutable_json_sidecar(
+        state, {'command_receipts': [{'exit_code': 0}]},
+        root='impl-self-check', kind='impl_self_check', schema_version='impl-self-check.v1',
+        created_by='test',
+    )
+    child['payload'].update({
+        'impl_self_check_ref': descriptor['ref'],
+        'impl_self_check_digest': descriptor['sha256'],
+    })
+    child['payload']['required_reads'].append({
+        'source_id': 'impl-self-check', 'artifact_id': Path(descriptor['ref']).name,
+        'artifact_sha256': descriptor['sha256'], 'json_path': '$',
+    })
+    previous = next(e for e in log.read_all() if e.type == 'fanout.child.dispatched')
+    prepare_fresh_reader_retry(
+        orch, manifest=_manifest(state, child['fanout_id']), child=child,
+        role=config.roles[0], attempt=1, previous_dispatch=previous,
+    )
+    payload = child['payload']
+    manifest = hydrate_sidecar_ref(state, payload['attempt_source_manifest']).payload
+    # Exercise the same controlled source lookup used by `artifact read --required`.
+    for required in payload['required_reads']:
+        read_attempt_artifact(
+            state, manifest=manifest, source_id=required['source_id'],
+            artifact_id=required['artifact_id'], json_path=required['json_path'],
+        )
+    assert payload['impl_self_check_ref'] == descriptor['ref']
+    assert payload['impl_self_check_digest'] == descriptor['sha256']
 
 
 def test_controlled_reader_retry_replaces_cancelled_operation(tmp_path: Path) -> None:

@@ -420,3 +420,18 @@ planner保守选出176文件并建议全量；依仓库验证规则以显式影�
 
 SUP-013提交前最终验证：旧reader迟到结果回归1项通过；51项sentinel和10项flow mock通过。
 新增恢复模块通过Ruff与diff检查；直接调用者reader/fanout恢复闭包已覆盖。真实续行待执行。
+
+## SUP-014 · 真实reader恢复的输入引用遗漏
+
+6513375d实际恢复原Run成功：evt-c7c87dc36488将Run timeout/token改0，根任务回in_progress；
+repair evt-1fcdd21ccf18创建第二Verify新Operation afaddf2a72b4，旧71ed6a94b426保持cancelled，
+第一Verify不重跑。10:06启动后，agent受控读取发现impl-self-check source not found。
+证据文件仍在且SHA一致；重试清理误用了writer输出清单，删除了reader消费的自检输入引用。
+这不是产品缺陷，也未通过降低读取门禁绕过。session停止18步骤，现场和未准入报告保留。
+
+新增受控artifact读取回归，先准确复现source not found；修复reader重试保留writer自检和
+固定target引用。新Operation仍重建call身份、Attempt、scratch及读取清单。此前58/195等
+测试缺少跨writer-reader输入回归，不能当作完整真实成功；本次补上该边界。
+
+SUP-014修复验证：181项reader/受控输入读取闭包通过，51项sentinel通过，10项flow mock通过；
+Ruff/diff通过。初次新增测试缺少sidecar created_by参数已修正，随后才复现真实source缺失。

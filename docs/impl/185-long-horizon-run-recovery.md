@@ -32,3 +32,6 @@ reader汇总仅在Run已恢复且generation仍当前时，允许继续
 连同原预算守卫、goal CLI、reader runtime、repair executor与结果准入闭包。
 真实证据另记[监工记录](../records/2026-10-24-0702-185-supervised-repair.md)，
 确定性通过不替代真实Kernel交付。
+
+reader重试必须保留上游writer的impl-self-check和固定target描述符；这些是reader输入。
+仅重建当前调用身份和结果输出，不能套用writer自身输出清理规则删除上游输入。
