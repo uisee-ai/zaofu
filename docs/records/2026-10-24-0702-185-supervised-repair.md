@@ -334,3 +334,64 @@ SUP-011验证：新增6分支与repair/budget/Run admission闭包75项通过（6
 指令8项通过，Ruff/diff通过。自动选择器显式传本切片source/test/doc并记录receipt，
 宽deterministic/serial层由上述已执行闭包替代，自动contract/mock层单独核对。
 这不是全仓pytest，不改变真实运行的预算和验收口径。
+
+SUP-011实现提交：`1b2b19e0 fix: resume writer aggregation after a blocked run is reactivated`。
+自动验证receipt确认选172个受影响测试文件，按前述声明跳过宽deterministic/serial，
+实际自动sentinel51项（32.89秒）与flow smoke10项（20.49秒）通过；不是全量通过。
+停止状态升级冻结源码e3cb4c8f→1b2b19e0，预算配置摘要不变，原Run不变，两个
+child保持completed。09:16:43 Kernel生成candidate.ready `evt-06bcd430b1b6`，
+候选99b0ed09447eba3d95ea8cb1ce9a6cce0b0c9471；没有重复writer派发。
+候选独立外部oracle65项通过，五产品文件与暂停源码逐字节相同。人工读取API/CLI/
+README确认标准库、纯整数校验、只读输入、错误和运行说明，证据分别保留。
+09:16:59独立Verify启动`evt-ef1d63d71b21`；最终交付尚待后续证据。
+当前Run原配置12M总token仍在，已向Owner澄清“暂不设置token限制”是否也覆盖
+Run总上限；答复前保持，不能将CLI writer的授权自动扩大到其他限制。
+
+恢复writer实际增量2,891,985 token/14计量样本，超过旧2M仍于09:09准入；
+`recovery-writer-usage.json`记录原baseline和当前role counter，包含同Attempt的
+监工纠正。未知价格不能据total_usd=0报告免费。
+09:26:56第一项独立Verify结果准入`evt-778354b54ea5`，
+verify.child.completed=`evt-ea9434757d94`，目标99b0ed0；四条命令、19测试与独立
+边界检查通过，无blocking finding。该结果不等于CLI第二项Verify或最终Judge通过。
+09:27:39 reader_root_context_changed实际换会话`evt-4f0f53b27ba3`，
+09:27:43 CLI Verify新Operation 71ed6a94b426启动`evt-ce654083c7e7`。
+另向Owner澄清原7200秒是否延长14400秒（计入停机修复，约09:33 UTC到期）；
+答复前不变更。第一项Verify通过不能提前标整个任务或1—9完成。
+
+## SUP-012 · goal CLI激活Run后根任务仍blocked
+
+真实Run已running并执行Verify，但根TASK-5554BD仍blocked。根因：goal CLI只写
+run.goal.updated，已有reopen_workflow_managed_task_from_run_recovery只接在
+stage-replan受控动作中，goal CLI未调用。修复CLI先验证当前Run admission为active，
+再通过既有EventWriter/TaskStore生命周期服务同步根任务并清除阻断原因；不直改现场。
+验证blocked恢复、重复调用幂等、completed/cancelled/failed不被重新打开。
+初始测试fixture漏写canonical parent anchor，补workflow.invoke.accepted后校验；
+尝试跨冻结源码运行被仓库imports-from-this-repo守卫正确拒绝（7 setup errors），
+没有弱化守卫。随后在本worktree短暂加载原HEAD CLI、finally精确恢复当前文件，
+得到真实1 RED/6 PASS；新实现13项CLI/生命周期聚焦通过，最终恢复/Run/受控动作
+闭包69项通过（39.65秒）、sentinel51项、flow mock10项通过，Ruff/diff通过。
+自动selector选择106文件而升级full suite；发现意外启动后只终止自有selector/pytest
+进程树，未把中断的宽套件算作通过。验证结论仅为上述闭包，不称全量验证。
+此修复尚未加载到真实冻结Run，需下一次获准恢复时验证根任务投影。
+
+## 本轮暂停结论 · 原Run总时限到期
+
+09:33:15预算事件`evt-b8946c13013d`，elapsed=7202.156秒；超限维度仅wall_clock，
+当时计量11,914,542/12,000,000 token，113条未知价格记录（金额未知，不能称零成本）。
+09:33:17 Run blocked=`evt-e3f4a368f7d1`，第二项CLI Verify被取消，未准入最终结果。
+已执行zf stop，18步完成；保留原Git/state/workdirs/TaskRefs/候选/两个Verify的
+transcript与scratch，没有simulation.done，没有伪造Judge或最终交付。
+完整恢复描述见`live/prd/run-timeout-checkpoint.json`。
+本轮CLI writer取消2M上限已经实际证明有效，恢复后用量2.89M且准入；候选外部
+65项及第一项独立Verify通过。剩余CLI Verify、Discovery、Judge、Kernel交付，
+以及SUP-012真实根任务同步，仍未完成。Owner关于Run token/总时限的澄清尚待答复。
+
+收尾验证：针对CLI/lifecycle/本次文档的显式自动闭包21项通过（15.15秒）；
+69项恢复闭包、51 sentinel、10 mock记录已归档，集合有重叠，不累计唯一总数。
+Docker Playwright真实看板断言根任务blocked及wall_clock原因、零pageerror通过，
+没有mock路由、没有mutating browser action。证据`browser-live/blocked`；
+它不是done看板/最终交付证明。容器首轮遗漏entrypoint、第二轮输出目录权限、
+第三轮自定义UID无可写浏览器HOME导致crashpad失败，纠正为容器root后通过；
+未安装宿主浏览器、未改变宿主安全设置，失败命令不算产品验收失败。
+自有API/UI进程组已停，tmux不存在；可读取/proc cwd扫描没有本模拟根下的进程。
+所有恢复必需工作区和Git/state保留；等待Owner答复Run token与总时限范围。

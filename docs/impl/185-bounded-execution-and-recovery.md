@@ -988,3 +988,7 @@ flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠�
 产生的历史cancelled aggregate允许进入原候选集成；普通取消或仍终态Run不恢复。
 恢复保留Run累计预算及历史阻断，不代表旧Operation预算被清零。
 回归与真实断点证据见[SUP-011](../records/2026-10-24-0702-185-supervised-repair.md)。
+
+`zf goal set --status active` 在Run admission确认可继续后，通过现有生命周期服务
+同步根任务到in_progress并清除旧blocked原因；completed/cancelled/failed Run
+不会因该命令重开任务。CLI与重复调用回归见同一监工记录SUP-012。

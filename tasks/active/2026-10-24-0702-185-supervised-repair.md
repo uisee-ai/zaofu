@@ -21,3 +21,8 @@ Owner现已明确批准CLI writer取消2M token上限；实施仅writer的token_
 Run的12M/7200秒/30美元及其他Operation限制保留。使用既有受控writer retry创建
 关联旧Operation的新Operation，保留原Run、已完成API与CLI HEAD；不将新Run称为恢复。
 原预算超限事实保持，当前开始按新授权恢复验证；其余实现缺口保持active，未归档。
+
+最新（09:33 UTC）：CLI恢复结果准入，候选99b0ed0外部65项及第一项独立Verify通过；
+原Run的7200秒总时限到期，CLI第二项Verify被中断，尚无Judge/最终交付。
+现场已停止并完整保留。CLI writer cap=0已实测；Run总token和时限仍等待Owner澄清。
+汇总恢复修复1b2b19e0已真实生效；goal CLI根任务同步修复待下一次真实恢复验证。
