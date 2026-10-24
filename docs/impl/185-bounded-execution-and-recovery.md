@@ -904,3 +904,22 @@ Critic存在一个无法解析的 `plan-execution-review.json#input_binding` 引
 
 方法增量的skill分发/规划工具14项测试和diff检查通过；首次命令含不存在的测试文件，
 未执行任何测试，已纠正且日志保留。不是新一轮真实Critic引用质量通过证明。
+
+### 第五轮外部 oracle 失败与受控返工
+
+候选b510a9cba38ca377b8ad919d06980f41feafe63e在原冻结oracle的非列表业务输入
+用例失败：summarize({})返回空汇总，summarize(None)抛TypeError而非oracle要求的
+ValueError；候选自带9测试通过。65项oracle在首个失败处停止，不能声称其余已通过。
+该候选API Verify报告passed，但未覆盖这个外部边界，不能抵消外部失败。
+
+操作者通过原子sidecar保存实际复现及摘要，再经标准zf emit发布test.failed。
+首次缺fanout_id/status被schema拒绝（evt-2567b756c166），补真实候选来源fanout
+和失败状态后接收evt-5e25ad369478；未冒充Verify worker。Run Manager自动生成
+受控返工与精确批准请求，Owner核对原包未变后evt-fb41d8149599批准：修复原API
+责任并复验下游CLI，保持五文件、全部验收与原Run预算。返工仍在运行，尚未签收。
+
+规划方法补独立入口的容器/成员/字段边界及冻结外部验收映射；缺错误行为约定时
+须明确限制或决定，不能自行发明异常类型。未热改本轮提示词或外部oracle。
+方法与分发14项测试、diff检查通过；当前Run的writer是Codex tmux路径，后续任务
+复用同一会话，不能将其写成headless执行。原候选首个Verify在1,727,477 token准入
+passed，但外部oracle失败仍作为独立失败证据保留；原Run预算始终未变。
