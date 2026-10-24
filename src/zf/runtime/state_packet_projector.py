@@ -168,11 +168,21 @@ class StatePacketProjector:
             ),
         )
         events_for_task = self._events_for_task(task.id)
+        bound_run = str(getattr(getattr(task, "execution_binding", None), "workflow_run_id", "") or "")
+        if bound_run:
+            from zf.runtime.run_scope import events_for_run
+
+            events_for_task = events_for_run(
+                events_for_task, run_id=bound_run, include_legacy_single_run=False,
+            )
         completed = self._completed_milestones(events_for_task)
         evidence = self._build_evidence(events_for_task)
-        current_stage, next_event = self._infer_stage(events_for_task)
+        current_stage, next_event = self._infer_stage(
+            events_for_task, dispatch_id=str(getattr(task, "active_dispatch_id", "") or ""),
+            strict_binding=bool(bound_run),
+        )
         if not current_stage:
-            current_stage = "implement"
+            current_stage = "unknown" if bound_run else "implement"
         next_owner = self._infer_next_owner(next_event)
         objective = ""
         if feature is not None:
@@ -180,7 +190,7 @@ class StatePacketProjector:
                 or str(getattr(feature, "objective", "") or "")
         return StatePacket(
             schema_version=SCHEMA_VERSION,
-            run_id=run_id or "",
+            run_id=bound_run or run_id or "",
             feature_id=feature_id,
             task_id=task.id,
             objective=objective,
@@ -396,14 +406,33 @@ class StatePacketProjector:
             ))
         return tuple(evidence)
 
-    def _infer_stage(self, events: list) -> tuple[str, str]:
+    def _infer_stage(
+        self, events: list, *, dispatch_id: str = "", strict_binding: bool = False,
+    ) -> tuple[str, str]:
         """Latest stage-progress event determines current stage and
         next event."""
         latest: tuple[str, str] = ("", "")
+        operations = {
+            str(ev.payload.get("operation_id") or ""): str(ev.payload.get("parent_stage_id") or "")
+            for ev in events if ev.type == "workflow.operation.requested"
+        }
         for ev in events:
             etype = getattr(ev, "type", "")
+            payload = getattr(ev, "payload", {}) or {}
+            event_dispatch = str(payload.get("dispatch_id") or "")
+            if strict_binding and (not dispatch_id or event_dispatch != dispatch_id):
+                continue
+            if etype in {"task.dispatched", "workflow.operation.started"}:
+                stage = str(payload.get("stage_id") or operations.get(str(payload.get("operation_id") or "")) or "")
+                if stage:
+                    # An exact configured stage does not imply a legacy emit
+                    # command. The dispatched result contract owns that action.
+                    latest = (stage, "")
+                    continue
             if etype == "task.dispatched":
-                payload = getattr(ev, "payload", {}) or {}
+                if strict_binding:
+                    latest = ("unknown", "")
+                    continue
                 role_name = ""
                 if isinstance(payload, dict):
                     role_name = str(payload.get("role") or "")

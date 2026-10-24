@@ -299,6 +299,55 @@ def test_project_infers_design_stage_from_arch_dispatch(tmp_path: Path) -> None:
     assert packet.next_owner == "arch"
 
 
+def test_packet_uses_bound_run_and_explicit_current_dispatch_stage(tmp_path):
+    from zf.core.task.schema import TaskExecutionBinding
+
+    task = _task(assigned="verify-lane-0")
+    task.execution_binding = TaskExecutionBinding(workflow_run_id="new-run")
+    events = _FakeEventLog({task.id: [
+        _FakeEvent("task.dispatched", payload={"workflow_run_id": "new-run",
+                   "dispatch_id": "disp-1", "role": "verify-lane-0", "stage_id": "prd-lanes-verify"}),
+        _FakeEvent("judge.passed", payload={"workflow_run_id": "old-run", "dispatch_id": "old-dispatch"}),
+    ]})
+    packet = StatePacketProjector(state_dir=tmp_path, task_store=_FakeTaskStore([task]),
+                                  event_log=events).project(run_id="legacy-dispatch-hint")
+    assert packet.run_id == "new-run"
+    assert packet.current_stage == "prd-lanes-verify"
+    assert packet.next_event == ""  # No invented legacy dev completion command.
+    assert "judge.passed" not in packet.completed
+    assert packet.evidence == ()
+
+
+def test_bound_packet_does_not_infer_stage_from_stale_dispatch(tmp_path):
+    from zf.core.task.schema import TaskExecutionBinding
+
+    task = _task()
+    task.execution_binding = TaskExecutionBinding(workflow_run_id="run")
+    events = _FakeEventLog({task.id: [
+        _FakeEvent("task.dispatched", payload={"workflow_run_id": "run",
+                   "dispatch_id": "previous", "role": "dev", "stage_id": "old-stage"}),
+    ]})
+    packet = StatePacketProjector(state_dir=tmp_path, task_store=_FakeTaskStore([task]),
+                                  event_log=events).project()
+    assert packet.current_stage == "unknown"
+    assert packet.next_event == ""
+
+
+def test_bound_packet_without_stage_does_not_guess_from_role_name(tmp_path):
+    from zf.core.task.schema import TaskExecutionBinding
+
+    task = _task()
+    task.execution_binding = TaskExecutionBinding(workflow_run_id="run")
+    events = _FakeEventLog({task.id: [
+        _FakeEvent("task.dispatched", payload={"workflow_run_id": "run",
+                   "dispatch_id": "disp-1", "role": "custom-verifier"}),
+    ]})
+    packet = StatePacketProjector(state_dir=tmp_path, task_store=_FakeTaskStore([task]),
+                                  event_log=events).project()
+    assert packet.current_stage == "unknown"
+    assert packet.next_event == ""
+
+
 def test_project_infers_next_owner(tmp_path: Path) -> None:
     task = _task()
     events = _FakeEventLog({"TASK-T1": [

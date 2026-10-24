@@ -332,9 +332,10 @@ workflow-config proposal → validate → approve → apply。配置写入后必
 
 “动态加载”需要分别验收：配置解析／展开、配置变更生效、选定 Flow 激活、
 on-demand 角色启动。已有角色按需启动不能证明按难度生成配置的闭环已完成。
-当前 [候选配置生成](../../src/zf/runtime/workflow_proposal.py) 对 Generic `Workflow`
-提供生成路径，其他 Flow family 返回原配置；不能据此宣称 PRD／Issue／Refactor
-已能按任务难度自动重配。以下 7.2–7.5 是需要实施和验证的设计。
+当前 [候选配置生成](../../src/zf/runtime/workflow_proposal.py) 除 Generic `Workflow`
+外，`4907ab45` 补充了已有 PRD／Issue／Refactor Flow 的受限 lanes 候选，并接入
+配置 CAS 和 submit 消费者；light 扩容、v4 只改 lanes 均拒绝。这不能证明全部难度适配
+或 Task Map 后运行中重配已完成。以下 7.2–7.5 仍按各分支分别实施和验收。
 
 ### 7.2 Workflow Planner／Configurator 的职责
 

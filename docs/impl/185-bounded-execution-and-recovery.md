@@ -616,8 +616,8 @@ watcher/tmux/Web，796个脱敏归档成员校验后清理临时根；归档不�
 用户批准按1—9方案继续，第7项由Kimi改为Codex实测。Kimi接入暂停；真实运行仅用Codex，
 跨Provider状态合同继续验证但不能用同Provider跨会话宣称真实跨Provider通过。
 [批准清单](../../tasks/active/2026-10-24-0137-185-codex-completion.md)记录逐项验收。
-PRD/Issue/Refactor自动配置候选生成仍有实现缺口：当前materialize_synthesized_workflow_candidate
-仅生成Generic Workflow，其余family返回原配置；本批同时补实现与实际消费者验证。
+本批开始时 PRD/Issue/Refactor 自动配置候选生成有缺口；`4907ab45` 已补受限 lanes
+候选及实际消费者验证，边界如下。Task Map 后重新配置运行中 Run 仍未签收。
 
 
 ## Codex 优先批次：受限配置候选与真实计量（2026-10-24）
@@ -643,3 +643,16 @@ Run 区分。输入、输出和缓存分别展示；estimated/provider-reported/
 主 Agent 精确提案批准后 Kernel 接收 Run。该结果只证明文档与入口链，不证明产品交付。
 本轮无 Kimi 安装或调用；原预算与五文件产品范围不变。
 证据目录：`/home/min/workspace/public/zaofu-evidence/185-codex-20261024T013700Z`。
+
+### 恢复投影的 Run 与阶段边界
+
+State Packet 对具有 canonical `execution_binding.workflow_run_id` 的 Task，只读取该 Run
+的事件，并以当前 `active_dispatch_id` 的明确 stage 或已请求 Operation 的 parent stage
+确定阶段。缺证为 `unknown`，不按自定义角色名称猜作 implement，也不生成错误的旧版
+完成命令。旧 Run 的 judge/evidence 不再污染当前恢复包；显式 Run 绑定优先于调用方的
+legacy run 提示。无绑定的旧任务保留兼容行为；本改动不从 request_id 猜测缺失的 Run。
+
+回归先复现旧 Run 污染与缺少当前阶段两项失败，再覆盖真实 `zf handoff --format
+state-packet` caller、恢复 briefing、运行域隔离及 bounded mock。115 项影响闭包和
+51 项 sentinel 通过。这是恢复投影修复，不代表全部跨 Provider 接替或源码 single
+新入口已完成；真实 Codex 运行仍使用先前冻结源码，不能作为本修复的真实验证。
