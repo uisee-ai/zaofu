@@ -584,6 +584,7 @@ class FanoutRecoveryRuntimeMixin:
         if str(manifest.get("topology") or "") != "fanout_reader":
             return
         operation_ids: set[str] = set()
+        operation_children: dict[str, dict] = {}
         for child in manifest.get("children", []) or []:
             if not isinstance(child, dict):
                 continue
@@ -599,6 +600,7 @@ class FanoutRecoveryRuntimeMixin:
             ).strip()
             if operation_id:
                 operation_ids.add(operation_id)
+                operation_children[operation_id] = child
         if not operation_ids:
             return
 
@@ -629,6 +631,18 @@ class FanoutRecoveryRuntimeMixin:
             ).strip()
             if not request_hash or not workflow_run_id:
                 continue
+            from zf.runtime.cancelled_run_workers import stop_cancelled_dispatch
+
+            child = operation_children[operation_id]
+            stop_cancelled_dispatch(
+                self,
+                role_instance=str(operation.get("role_instance")
+                                  or child.get("role_instance") or ""),
+                task_id=str(operation.get("task_id") or child.get("task_id") or ""),
+                dispatch_id=str(operation.get("dispatch_id") or child.get("run_id") or ""),
+                events=self.event_log.read_all(),
+                cancellation=cancellation_event,
+            )
             service.cancel(
                 operation_id=operation_id,
                 request_hash=request_hash,

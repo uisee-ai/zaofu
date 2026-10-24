@@ -923,3 +923,37 @@ ValueError；候选自带9测试通过。65项oracle在首个失败处停止，�
 方法与分发14项测试、diff检查通过；当前Run的writer是Codex tmux路径，后续任务
 复用同一会话，不能将其写成headless执行。原候选首个Verify在1,727,477 token准入
 passed，但外部oracle失败仍作为独立失败证据保留；原Run预算始终未变。
+
+
+### 第五轮最终阻断与候选返工的 reader 取消
+
+冻结249f555e的Run `workflow-c454e8fca2bbaad4` 最终于
+`evt-26ae1454c932` blocked：旧候选的CLI Verify达2,066,868 token，超过原2M
+Operation上限。返工API结果虽已准入，CLI因仍忙的旧Verify被writer fence挡住。
+该轮只有一个候选，外部oracle失败，未交付；不把API Verify passed记为完整PASS。
+全隔离模拟原始用量11,734,110 token包含入口，不能冒充Run-only；109条未定价，
+费用unknown。777个运行记录成员核验、脱敏Provider记录归档，临时根和进程已清理。
+证据：`/home/min/workspace/public/zaofu-evidence/185-prd-planner-20261024T050500Z/`。
+
+此样本暴露同一候选进入返工后旧reader仍继续的问题。修复使用已有受控返工的
+kernel `task_map.ready`，要求精确Run、候选commit、实际失败来源和checkpoint，
+撤销该候选reader的当前性；普通失败事件或worker自报不能自行取消他人工作。
+直接结果路径与恢复快照共享机械判断。现有取消服务终止对应Operation，按最新
+role/Task/dispatch所有权停止Provider；已复用的worker不受影响，终止后仍存活
+保持blocked。旧结果不能通过迟到提交恢复有效性，writer单执行权围栏不放松。
+
+原HEAD有2项RED，针对分支17项及fanout/Operation/返工闭包291项通过（有重叠）。
+旧真实日志前缀重放与新真实Provider测试分开记录；这不是第六轮PRD交付证明。
+仍需在后续冻结Run验证撤销与Provider终止，并减少Verify上下文成本；原12M/2M
+预算和全部验收保持不变。其余能力缺口见任务的1—9签收表，不能据局部修复宣称完成。
+
+
+本次共享合同追加82项通过。dev-verify计划保守选出176文件并升级全仓；显式跳过
+宽deterministic/serial层，采用上述直接调用者/共享合同闭包并执行自动sentinel与
+flow-smoke。首次共享合同命令误写测试路径，零测试执行，纠正后的82项结果及原始
+错误日志均保留；旧日志重放首次包含last-shutdown副本而拒绝，改为精确主ledger后通过。
+
+最终：sentinel51、三流程mock10通过。writer/恢复调用者首轮170 passed / 1 failed；
+失败为成功终止用例的mock始终is_alive=True，与新增存活复查冲突。修正该用例的
+进程生命周期替身，保留idle断言和独立“终止仍活着必须blocked”测试；受影响分支
+及针对回归共18项复验通过。未重跑已绿170项，未运行full pytest或新一轮真实PRD。

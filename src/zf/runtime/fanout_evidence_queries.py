@@ -223,6 +223,11 @@ class FanoutEvidenceQueriesMixin:
             )
             if generation_reason[0]:
                 return generation_reason
+            from zf.runtime.reader_candidate_rework import candidate_rework_reader_fences
+
+            rework_reason = candidate_rework_reader_fences(events).get(fanout_id)
+            if rework_reason:
+                return rework_reason
             status = fanout_current_status(
                 events,
                 fanout_id,
