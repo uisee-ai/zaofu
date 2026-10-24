@@ -166,3 +166,32 @@ Request；`workflow_config_consumer.py`只校验新admission，不替换运行�
 第8项本批补齐了可验证Git快照、当前Attempt消费者和同Operation预算续算；仍没有
 跨计量域的预算归一化接替、完整权限批准与外部副作用回执胶囊。未知事实继续拒绝，
 不能从transcript猜授权。第9项完整交付仍依赖当前PRD真实结果；所有未签收项保持active。
+
+SUP-004提交：`ce9d0924 fix: bind maintenance evidence to current recovery attempts`。
+SUP-005提交：`7e6a28a9 fix: reject unsafe maintenance checkpoint identifiers`。
+
+## 新 PRD 计划批准与实施
+
+07:43 Planner结果接纳`evt-0a9b51013c18`，07:48独立Critic通过
+`evt-e46d64f606d8`。监工实际读取完整计划、六个必需端口、Task Map、Source Index
+及Critic正文；精确核对正式package摘要dd0de82d…、计划修订8758d790…和24条
+mandatory claim（12条目标、12条显式GOAL重复绑定），没有用摘要代替评审。
+正式PAS相对Planner正文只增加5个确定性绑定字段，包括schema_version。
+第一次批准脚本只预期4字段而停止于断言；修正测试驱动后才执行批准，不是产品门禁失败。
+07:51批准`evt-30fa4982d97a`，任务映射准入`evt-1432ac377724`。
+
+两个串行任务TASK-PRD-API、TASK-PRD-CLI保留原需求、五文件范围与全部负向用例，
+一个writer和独立候选Verify/Discovery/Judge。07:57 API实现结果接纳
+`evt-a5a8c9659563`，11项writer自测通过；CLI随后开始。自测不等于独立验收。
+当前运行仍冻结faf8cd5b，无运行中配置/代码替换；新增修复等待边界使用。
+
+## SUP-006 · 同域计量回退与采样上限漏拦截
+
+4项RED：同一instance的累计token或entries低于Operation启动基线，原实现把负差值
+截成零；仅配置max_usage_samples时meter_available=false也被放过。真实runtime
+测试中模拟不完整cost投影重建，原预算门禁未阻断Provider。
+修复把两类累计计数回退判为meter_unavailable，并将采样上限纳入失效计量拒绝。
+不改Provider累计快照转delta语义，不从缺失投影猜用量，不提高预算；跨worker归一化
+仍未实现。41项预算、恢复、价格精度、归档与instance聚焦通过。
+自动增量18项、sentinel51项及相关flow smoke3项通过，Ruff/diff通过；非full pytest。
+首个闭包命令误写一个不存在的测试路径而零执行，纠正后才得到41项通过结果。

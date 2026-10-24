@@ -51,3 +51,39 @@ def test_different_budget_meter_scope_is_unavailable_not_zero_usage():
     )
     assert measured['meter_available'] is False
     assert _exceeded_dimensions({'token_budget': 2000}, measured) == ['meter_unavailable']
+
+
+@pytest.mark.parametrize('field', ['total_tokens', 'entries'])
+def test_same_worker_meter_regression_is_unavailable(field):
+    from zf.runtime.workflow_budget_guard import _exceeded_dimensions, _measurement
+    baseline = {'meter_available': True, 'instance_id': 'dev-1', 'total_tokens': 1800, 'entries': 20}
+    current = {**baseline, field: 1}
+    measured = _measurement(baseline=baseline, current=current, elapsed_seconds=5)
+    assert measured['meter_available'] is False
+    assert _exceeded_dimensions({'token_budget': 2000}, measured) == ['meter_unavailable']
+
+
+def test_sample_only_budget_fails_closed_when_meter_is_unavailable():
+    from zf.runtime.workflow_budget_guard import _exceeded_dimensions
+    assert _exceeded_dimensions(
+        {'max_usage_samples': 10},
+        {'meter_available': False, 'usage_samples': 0},
+    ) == ['meter_unavailable']
+
+
+def test_runtime_blocks_and_stops_provider_after_cost_projection_regresses(tmp_path):
+    from zf.core.config.schema import ExecutionProfileLimitsConfig
+    from zf.runtime.workflow_budget_guard import enforce_active_workflow_budgets
+    from tests.test_workflow_budget_guard import _runtime, _start_operation
+
+    runtime, transport = _runtime(tmp_path, operation_limits=ExecutionProfileLimitsConfig(token_budget=2000))
+    runtime.cost_tracker.record_usage('dev', 1800, 0, instance_id='dev')
+    _start_operation(runtime)
+    # Simulate an incomplete cost projection rebuild after a supervised restart.
+    runtime.cost_tracker.cost_path.write_text('')
+    emitted = enforce_active_workflow_budgets(runtime)
+    budget = next(event for event in emitted if event.type == 'workflow.budget.exceeded')
+    assert budget.payload['exceeded_dimensions'] == ['meter_unavailable']
+    assert budget.payload['scope'] == 'operation'
+    assert transport.terminated == ['dev']
+    assert any(event.type == 'run.goal.blocked' for event in emitted)

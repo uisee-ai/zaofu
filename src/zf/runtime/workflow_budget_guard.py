@@ -388,10 +388,17 @@ def _measurement(
         "instance_id" in baseline_map and "instance_id" in current
         and baseline_map["instance_id"] != current["instance_id"]
     )
+    # A truncated/rebuilt projection must not grant a fresh allowance. These
+    # counters are cumulative across archives and must retain their baseline.
+    monotonic_usage = all(
+        int(current.get(key) or 0) >= int(baseline_map.get(key) or 0)
+        for key in ("total_tokens", "entries")
+    )
     available = bool(
         baseline_map.get("meter_available")
         and current.get("meter_available")
         and compatible_scope
+        and monotonic_usage
     )
     return {
         "meter_available": available,
@@ -429,6 +436,7 @@ def _exceeded_dimensions(
     if not measurement.get("meter_available") and (
         float(limits.get("token_budget") or 0) > 0
         or float(limits.get("cost_budget_usd") or 0) > 0
+        or float(limits.get("max_usage_samples") or 0) > 0
     ):
         return ["meter_unavailable"]
     if (

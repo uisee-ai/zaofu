@@ -55,7 +55,8 @@ Planner briefing 同时列出当前 profile 所要求的 Plan 产物，避免只
 2026-10-24 监工修复详见[逐项记录](../records/2026-10-24-0702-185-supervised-repair.md)。
 同一 Operation 受控 redrive 保留首次启动的预算基线与开始时间；新的 Attempt 或
 continuation reservation 不清零累计消费。显式不同 worker 计量域不能直接相减，记为
-meter unavailable 并按既有预算门禁拒绝，不能报告零消费；墙钟暂停规则未改。
+meter unavailable 并按既有预算门禁拒绝，不能报告零消费；同域累计token/采样数低于
+启动基线也视为计量不可用，包括只配置采样上限的情况。墙钟暂停规则未改。
 maintenance checkpoint 由受控动作/CLI 按 canonical assignee 定位配置工作区，使用
 入口验证的文件安全标识、唯一 ID 和 required sidecar 保存 HEAD、暂存/未暂存 binary patch、未跟踪文件内容、
 模式及符号链接目标。非 Git、超限、捕获变化或子模块场景明确 unavailable；忽略文件、
