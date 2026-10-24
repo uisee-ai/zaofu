@@ -41,3 +41,9 @@ reader重试必须保留上游writer的impl-self-check和固定target描述符�
 
 启动/停止的普通worker清理必须排除workflow execution owner和legacy fanout anchor根任务。
 这些Task的生命周期由持久Run终态/受控恢复决定，不能因provider进程退出回到backlog。
+
+
+Discovery请求必须继承原需求快照的ref/digest；返工TaskMap可更换generation，并重新构建
+PlanPackage与GoalClaimSet，但必须保持原必需声明连续。不能用旧generation的claim引用
+掩盖丢失的需求输入。历史事件缺字段时保留事件，经受控CLI重发有证据的artifact-ready
+意图，正常准入与审批仍执行；这属于监工修复，不等同自动恢复。

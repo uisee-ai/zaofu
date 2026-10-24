@@ -471,3 +471,26 @@ SUP-015真实恢复已成功：evt-483356cc445e应用repair，新Verify Operatio
 SUP-016验证：84项boot/stop/goal/根任务生命周期闭包、51项sentinel、10项flow mock通过。
 受控root修复事件evt-4a81485100e7未重启任何child；原Run继续。第二Verify准入
 evt-32f22f70d5c6，aggregate evt-cd1cf7374456 completed；Discovery实际启动evt-422e80030de1。
+
+
+## SUP-017 · Discovery真实缺陷与返工需求引用丢失
+
+两个Verify已准入，Discovery在原candidate99b0ed0独立发现AC-05缺陷：合法4300位整数
+加1后输出4301位整数，CLI的json.dumps越过Python默认转换限制，抛traceback而非返回JSON。
+flow.discovery.failed evt-6fb9b02fe210生成单项TASK-GAP-CLI-INTEGER-OUTPUT，仅允许改
+ledger_cli.py/test_ledger_cli.py，保持原12条AC；这是有效产品缺陷，不降低要求。
+
+返工TaskMap evt-43cf304aa685产生generation8579ed56，但PlanPackage准入
+被evt-7ed8b5a968b4拒绝：12条OBJECTIVE声明不连续。根因是Verify结果仍带需求快照，
+build_flow_discovery_context未传requirement_spec_ref/digest；新代计划正确丢弃旧代claim
+引用，却无法从原需求重建声明。保留连续性门禁，仅补这两个字段。
+
+新增payload/fallback及真实Orchestrator桥接回归先3 RED；另一个gap测试最初用了不存在的
+需求引用，正确导致writer未派发，修正为有摘要的真实fixture后验证。覆盖需求引用到
+Discovery，再经gap bridge到新TaskMap；不复制旧代PlanPackage/claim-set替代重新准入。
+
+真实现场已停止，原Run、通过的Verify、candidate、amended TaskMap和所有历史失败保留。
+计划冻结升级后经zf emit重新发布同一amended TaskMap，仅补回原Request需求快照引用，
+由正常PlanPackage/approval/claim连续性门禁重新准入。这是监工修复，不宣称全自动恢复。
+
+SUP-017验证：88项Discovery/gap/GoalClaimSet/PlanPackage闭包、51项sentinel、3项flow smoke mock通过；Ruff/diff通过。未运行全量pytest，真实续行待验证。

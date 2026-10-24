@@ -482,6 +482,8 @@ def test_prd_verify_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path
             "task_map_ref": ".zf/artifacts/PRD-1/task_map.json",
             "candidate_ref": "cand/PRD-1",
             "candidate_head_commit": "candidate-prd-1",
+            "requirement_spec_ref": "requirements/prd-1.json",
+            "requirement_spec_digest": "a" * 64,
         },
     )])
 
@@ -490,6 +492,8 @@ def test_prd_verify_passed_flow_discovery_can_start_reader_fanout(tmp_path: Path
     started = [event for event in events if event.type == "fanout.started"]
     assert any(decision.action == "bridge" for decision in decisions)
     assert len(requested) == 1
+    assert requested[0].payload["requirement_spec_ref"] == "requirements/prd-1.json"
+    assert requested[0].payload["requirement_spec_digest"] == "a" * 64
     assert requested[0].payload["flow_kind"] == "prd"
     assert requested[0].payload["discovery_profile"] == "product_completeness"
     assert [event.payload["stage_id"] for event in started] == [
@@ -978,6 +982,12 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
     state_dir, log, transport, orch = _state(tmp_path)
     orch.config.workflow.stages[0].flow_kind = "prd"
     task_map_ref = _write_base_task_map(state_dir)
+    requirement = state_dir / "requirements" / "prd-1.json"
+    requirement.parent.mkdir()
+    requirement.write_text("{}", encoding="utf-8")
+    from hashlib import sha256
+
+    requirement_digest = sha256(requirement.read_bytes()).hexdigest()
     orch.config.workflow.stages[0].flow_kind = "prd"
     orch.config.workflow.stages.append(WorkflowStageConfig(
         id="refactor-gap-impl",
@@ -1006,6 +1016,8 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
             "goal_id": "CANGJIE",
             "flow_kind": "prd",
             "workflow_run_id": "prd-run-1",
+            "requirement_spec_ref": "requirements/prd-1.json",
+            "requirement_spec_digest": requirement_digest,
             "discovery_profile": "product_completeness",
             "gap_category": "acceptance_gap",
             "trace_id": "trace-prd-gap",
@@ -1038,6 +1050,8 @@ def test_flow_discovery_completed_with_prd_gaps_amends_task_map(
     assert gap_ready.payload["candidate_base_commit"] == "candidate-head-123"
     assert gap_ready.payload["dispatch_base_commit"] == "candidate-head-123"
     assert ready.payload["gap_event_type"] == "flow.gap_plan.ready"
+    assert ready.payload["requirement_spec_ref"] == "requirements/prd-1.json"
+    assert ready.payload["requirement_spec_digest"] == requirement_digest
     assert ready.payload["flow_kind"] == "prd"
     assert ready.payload["workflow_run_id"] == "prd-run-1"
     assert ready.payload["goal_kind"] == "prd"
