@@ -44,6 +44,28 @@ def test_full_plan_is_primary_and_digest_is_separate(tmp_path):
     assert result["digest_markdown"].startswith("# Digest")
 
 
+def test_review_dossier_backfills_bound_decision_register(tmp_path):
+    state, _, payload = _artifacts(tmp_path)
+    full = (
+        "# Complete plan\n\n"
+        "## Owner decision register\n\n"
+        "| ID | Question | Options | Recommended | Blocking evidence |\n"
+        "|---|---|---|---|---|\n"
+        "| CR01 | Choose the clock contract? | Keep source semantics | Keep source | T01/T02 |\n\n"
+        "## Trace\n\n"
+        "All evidence is NOT_RUN.\n"
+    )
+    plan_path = state / "artifacts/plan.md"
+    plan_path.write_text(full, encoding="utf-8")
+    payload["plan_artifact_digest"] = hashlib.sha256(full.encode()).hexdigest()
+    result = _preview(state, payload)
+
+    assert result["decision_count"] == 1
+    assert result["owner_decision_items"][0]["decision_id"] == "CR01"
+    assert "**待决事项**：`1` 项" in result["review_dossier_markdown"]
+    assert "Choose the clock contract?" in result["review_dossier_markdown"]
+
+
 def test_preview_renders_the_bound_task_map_for_human_review(tmp_path):
     state, _, payload = _artifacts(tmp_path)
     task_map = {

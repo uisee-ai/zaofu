@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import re
 from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
@@ -227,6 +228,7 @@ def build_plan_preview(
         digest=task_map_digest,
         plan_id=plan_id,
     )
+    decision_items = _decision_items(payload, markdown)
     authority_refs = [
         str(item) for item in (
             preview_bundle.get("authority_refs")
@@ -271,6 +273,7 @@ def build_plan_preview(
         artifacts=artifacts,
         authority_refs=authority_refs,
         task_map_summary=task_map_summary,
+        decision_items=decision_items,
         status=status,
     )
     digest_source = "stored_digest"
@@ -347,9 +350,8 @@ def build_plan_preview(
             ),
             "repair_chat": "chat-orchestrator",
         },
-        "owner_decision_items": list(payload.get("owner_decision_items") or [])
-        if isinstance(payload.get("owner_decision_items"), list)
-        else [],
+        "owner_decision_items": decision_items,
+        "decision_count": len(decision_items),
         "policy": {
             "mutation_path": "controlled-action",
             "agent_can_propose_plan_approve": False,
@@ -564,6 +566,7 @@ def _render_human_review_dossier(
     artifacts: list[dict[str, str]],
     authority_refs: list[str],
     task_map_summary: dict[str, Any],
+    decision_items: list[dict[str, Any]],
     status: str,
 ) -> str:
     """Build the short SDD/TDD approval guide from bound plan ports.
@@ -603,8 +606,6 @@ def _render_human_review_dossier(
         str(item.get("status") or "UNKNOWN") for item in trace_rows
         if isinstance(item, dict)
     )
-    decisions = payload.get("owner_decision_items")
-    decisions = decisions if isinstance(decisions, list) else []
     prerequisites = [
         str(item) for item in product.get("external_prerequisite_ids", [])
         if str(item).strip()
@@ -623,6 +624,7 @@ def _render_human_review_dossier(
         f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or 'prd-lanes-impl'}`。",
         f"- **目标**：{objective}",
         f"- **权威输入**：{', '.join(f'`{ref}`' for ref in authority_refs) or '`未绑定`'}。",
+        f"- **待决事项**：`{len(decision_items)}` 项；任何 blocking decision 未关闭前不得启动 impl/verify。",
         "- **审批边界**：只批准后续实现/验证计划及其责任边界；不批准未决 CR/Q14 方案，不批准真实媒体、模型、仿真或 provider 结果。",
         "",
         "## 2. PRD：用户和产品结果",
@@ -646,6 +648,13 @@ def _render_human_review_dossier(
         lines.append(
             f"| {task.get('task_id') or '-'} {task.get('title') or '-'} | {task.get('owner_role') or '-'} | {task.get('blocked_by') or '-'} | {task.get('source_excerpt') or '-'} |"
         )
+    lines.extend(["", "**SDD boundary evidence**", ""])
+    for task in tasks:
+        paths = ", ".join(f"`{path}`" for path in task.get("allowed_paths", [])) or "未声明"
+        exclusive = ", ".join(f"`{path}`" for path in task.get("exclusive_files", [])) or "未声明"
+        lines.append(
+            f"- **{task.get('task_id') or '-'}**：allowed paths {paths}；exclusive files {exclusive}；source `{task.get('source_key') or task.get('source_ref') or '-'}`"
+        )
     if product.get("entrypoints"):
         lines.extend(["", "**Entrypoints / integration contract**", ""])
         for entry in product["entrypoints"]:
@@ -659,22 +668,43 @@ def _render_human_review_dossier(
     )
     lines.append(f"- 验证命令：`{len(commands)}` 条；每条命令绑定 owner、tier 和 acceptance IDs。")
     lines.append("")
-    lines.append("| Command | Tier | Owner | Acceptance |")
-    lines.append("|---|---|---|---|")
+    assertion_by_command: dict[str, list[dict[str, Any]]] = {}
+    for journey in journeys:
+        if not isinstance(journey, dict):
+            continue
+        for assertion in journey.get("assertions", []):
+            if not isinstance(assertion, dict):
+                continue
+            assertion_by_command.setdefault(str(assertion.get("command_id") or ""), []).append(assertion)
+    lines.append("| Command | Tier | Owner | Acceptance | Expected result | Evidence |")
+    lines.append("|---|---|---|---|---|---|")
     for command in commands:
+        command_assertions = assertion_by_command.get(str(command.get("id") or ""), [])
+        expected = "；".join(
+            str(item.get("statement") or "")
+            for item in command_assertions
+            if item.get("statement")
+        ) or "未声明；由测试断言定义"
+        evidence = ", ".join(dict.fromkeys(
+            str(ref)
+            for item in command_assertions
+            for ref in item.get("evidence_refs", [])
+            if str(ref).strip()
+        )) or "未声明"
         lines.append(
-            f"| `{command.get('id') or '-'}` `{command.get('command') or '-'}` | {command.get('tier') or '-'} | {command.get('owner') or '-'} | {', '.join(str(item) for item in command.get('acceptance_ids', [])) or '-'} |"
+            f"| `{command.get('id') or '-'}` `{command.get('command') or '-'}` | {command.get('tier') or '-'} | {command.get('owner') or '-'} | {', '.join(str(item) for item in command.get('acceptance_ids', [])) or '-'} | {expected} | {evidence} |"
         )
     lines.extend(["", "## 5. 风险、前置条件和审批问题", ""])
     if prerequisites:
         lines.append("**外部前置条件**")
         lines.extend(f"- `{item}`：未关闭时只能输出 BLOCKED/UNKNOWN，不能宣称正式通过。" for item in prerequisites)
         lines.append("")
-    if decisions:
+    if decision_items:
         lines.append("**Owner decisions**")
-        for decision in decisions:
+        for decision in decision_items:
             if isinstance(decision, dict):
-                lines.append(f"- **{decision.get('decision_id') or '-'}**：{decision.get('question') or '-'}（保持 `PENDING_APPROVAL`）")
+                impact = decision.get("blocking_impact") or "影响后续实现/验证边界"
+                lines.append(f"- **{decision.get('decision_id') or '-'}**：{decision.get('question') or '-'}（`PENDING_APPROVAL`；{impact}）")
     else:
         lines.append("- 当前没有额外 owner decision；请仍检查 canonical Plan 中的 CR/Q14 阻断项。")
     lines.extend([
@@ -693,6 +723,61 @@ def _render_human_review_dossier(
         "",
     ])
     return "\n".join(lines)
+
+
+def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, Any]]:
+    """Return one decision register from explicit payload or bound Plan text.
+
+    The fallback is scoped to the Plan's named decision-register table. It
+    keeps older plans reviewable without scanning unrelated files and never
+    invents a decision absent from the bound Plan.
+    """
+
+    items: dict[str, dict[str, Any]] = {}
+    raw = payload.get("owner_decision_items")
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            decision_id = str(item.get("decision_id") or item.get("id") or "").strip()
+            if decision_id:
+                items[decision_id] = dict(item)
+    lines = markdown.splitlines()
+    start = next(
+        (index for index, line in enumerate(lines)
+         if line.startswith("#") and "decision register" in line.lstrip("#").strip().lower()),
+        None,
+    )
+    if start is None:
+        start = next(
+            (index for index, line in enumerate(lines)
+             if line.startswith("#") and "owner 决策项" in line.lstrip("#").strip().lower()),
+            None,
+        )
+    if start is None:
+        return list(items.values())
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].startswith("## ")),
+        len(lines),
+    )
+    for line in lines[start + 1:end]:
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or cells[0] in {"ID", "id", "---"} or set(cells[0]) <= {"-", ":"}:
+            continue
+        decision_id = cells[0].strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*", decision_id):
+            continue
+        item = items.setdefault(decision_id, {"decision_id": decision_id})
+        item.setdefault("question", cells[1])
+        if len(cells) > 2:
+            item.setdefault("options", cells[2])
+        if len(cells) > 3:
+            item.setdefault("recommended", cells[3])
+        if len(cells) > 4:
+            item.setdefault("blocking_impact", cells[4])
+    return list(items.values())
 
 
 def _fallback_markdown(

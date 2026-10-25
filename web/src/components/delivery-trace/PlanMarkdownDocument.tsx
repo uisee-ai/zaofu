@@ -15,7 +15,10 @@ export default function PlanMarkdownDocument({ content, reviewContent = "" }: { 
     scrollPane.current?.scrollTo({ top: 0 });
   }, [index, content, continuous]);
   const download = () => {
-    const url = URL.createObjectURL(new Blob([content], { type: "text/markdown;charset=utf-8" }));
+    const downloadContent = reviewContent
+      ? `${reviewContent.trimEnd()}\n\n---\n\n${content}`
+      : content;
+    const url = URL.createObjectURL(new Blob([downloadContent], { type: "text/markdown;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = "plan.md";
@@ -57,6 +60,13 @@ export default function PlanMarkdownDocument({ content, reviewContent = "" }: { 
           </button>
         </div>
       </nav>
+      <details className="plan-document-outline">
+        <summary>章节索引</summary>
+        <ol>
+          {reviewContent ? <li><button type="button" onClick={() => { setContinuous(true); scrollPane.current?.scrollTo({ top: 0 }); }}>人工审批摘要</button></li> : null}
+          {pages.map((page, pageIndex) => <li key={`${page.title}-${pageIndex}`}><button type="button" onClick={() => { setContinuous(false); setPage(pageIndex); }}>{pageIndex + 1}. {page.title}</button></li>)}
+        </ol>
+      </details>
       <div key={index} ref={scrollPane} className="plan-preview-markdown-pane" role="region" aria-label="计划正文" tabIndex={0}>
         {continuous
           ? showSource

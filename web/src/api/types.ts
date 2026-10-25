@@ -3271,6 +3271,7 @@ export interface PlanPreview {
     question?: string;
     options?: Array<{ option_id?: string; label?: string }>;
   }>;
+  decision_count?: number;
   actions?: Record<string, string>;
   policy?: Record<string, unknown>;
 }

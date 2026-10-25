@@ -737,6 +737,7 @@ function PlanPreviewOverlay({
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
+            <div><dt>decisions</dt><dd>{preview?.decision_count ?? preview?.owner_decision_items?.length ?? 0}</dd></div>
             <div><dt>trace</dt><dd>{preview?.trace_id || "-"}</dd></div>
           </dl>
           {preview?.digest_markdown && preview.content_kind !== "digest_only" && <details>
