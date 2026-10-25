@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zf.cli.start import _process_watched_batch, _process_watched_event
+from zf.cli.watched_batch import process_watched_batch
 from zf.core.config.schema import (
     ProjectConfig,
     RoleConfig,
@@ -57,12 +57,12 @@ def test_goal_terminal_settles_kanban_before_simulation_stop_and_restart(
         transport,
         project_root=tmp_path,
     )
-    pushed_event_ids: set[str] = set()
-
-    def on_event(line: str) -> None:
-        event = ZfEvent.from_json(line)
-        if _process_watched_event(
-            event,
+    watcher = EventWatcher(
+        state_dir / "events.jsonl",
+        on_event=lambda _line: None,
+        on_batch_consumed=lambda events, offset: process_watched_batch(
+            events,
+            consumed_offset=offset,
             wake_patterns={"worker.state.changed", "run.goal.completed"},
             wake_worthy_fn=lambda _event: True,
             rate_limiter=_AllowAll(),
@@ -70,17 +70,6 @@ def test_goal_terminal_settles_kanban_before_simulation_stop_and_restart(
             simulation=True,
             event_log=log,
             stop_watcher=watcher.stop,
-        ):
-            pushed_event_ids.add(event.id)
-
-    watcher = EventWatcher(
-        state_dir / "events.jsonl",
-        on_event=on_event,
-        on_batch_consumed=lambda events, offset: _process_watched_batch(
-            events,
-            consumed_offset=offset,
-            pushed_event_ids=pushed_event_ids,
-            orchestrator=orchestrator,
         ),
         event_log=log,
     )

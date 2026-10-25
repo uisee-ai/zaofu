@@ -27,7 +27,7 @@ def test_idle_tick_catches_up_from_durable_offset_without_empty_pushed_events():
 
 
 def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
-    from zf.cli.start import _process_watched_event
+    from zf.cli.watched_batch import process_watched_batch
     from zf.core.events.log import EventLog
     from zf.core.events.model import ZfEvent
 
@@ -44,7 +44,7 @@ def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
     order: list[str] = []
 
     class FakeOrchestrator:
-        def run_once(self, *, events):  # noqa: ANN001
+        def run_once(self, *, events, consumed_offset):  # noqa: ANN001
             order.append(f"orchestrator:{events[0].type}")
             log.append(ZfEvent(
                 type="task.status_changed",
@@ -59,8 +59,9 @@ def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
     def stop_watcher() -> None:
         order.append("stop")
 
-    stopped = _process_watched_event(
-        terminal,
+    stopped = process_watched_batch(
+        [terminal],
+        consumed_offset=log.current_offset(),
         wake_patterns=set(),
         wake_worthy_fn=lambda _event: False,
         rate_limiter=DenyRateLimiter(),
@@ -77,77 +78,6 @@ def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
         "task.status_changed",
         "simulation.done",
     ]
-
-
-def test_watcher_batch_processes_only_events_not_already_pushed():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    pushed = ZfEvent(type="run.goal.completed")
-    observed = ZfEvent(type="provider.telemetry.observed")
-    pushed_ids = {pushed.id}
-    calls = []
-
-    class FakeOrchestrator:
-        def run_once(self, *, events, consumed_offset):  # noqa: ANN001
-            calls.append((events, consumed_offset))
-
-    _process_watched_batch(
-        [pushed, observed],
-        consumed_offset=321,
-        pushed_event_ids=pushed_ids,
-        orchestrator=FakeOrchestrator(),
-    )
-
-    assert calls == [([observed], 321)]
-    assert pushed_ids == set()
-
-
-def test_watcher_batch_acknowledges_without_duplicate_orchestrator_cycle():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    pushed = ZfEvent(type="run.goal.completed")
-    pushed_ids = {pushed.id}
-    acknowledged = []
-
-    class FakeOrchestrator:
-        def run_once(self, **_kwargs):  # noqa: ANN003
-            raise AssertionError("already-pushed batch must not run twice")
-
-        def acknowledge_consumed_offset(self, offset: int) -> None:
-            acknowledged.append(offset)
-
-    _process_watched_batch(
-        [pushed],
-        consumed_offset=654,
-        pushed_event_ids=pushed_ids,
-        orchestrator=FakeOrchestrator(),
-    )
-
-    assert acknowledged == [654]
-    assert pushed_ids == set()
-
-
-def test_watcher_batch_leaves_pure_observation_for_durable_tick():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    observed = ZfEvent(type="provider.telemetry.observed")
-
-    class FakeOrchestrator:
-        def run_once(self, **_kwargs):  # noqa: ANN003
-            raise AssertionError("pure observations must wait for durable tick")
-
-        def acknowledge_consumed_offset(self, _offset: int) -> None:
-            raise AssertionError("unprocessed observations cannot be acknowledged")
-
-    _process_watched_batch(
-        [observed],
-        consumed_offset=777,
-        pushed_event_ids=set(),
-        orchestrator=FakeOrchestrator(),
-    )
 
 
 def test_startup_catchup_uses_durable_offset_path():
@@ -571,9 +501,22 @@ workflow:
         assert "event_without_consumer" not in captured.err
         assert "dry-run" in captured.out.lower()
 
-    def test_start_dry_run_succeeds(self, project_dir: Path, capsys):
+    def test_start_dry_run_succeeds(self, project_dir: Path, capsys, monkeypatch):
+        from zf.cli import start
+
+        batches = []
+        original = start.process_watched_batch
+
+        def record_batch(events, **kwargs):
+            batches.append((events, kwargs["consumed_offset"]))
+            return original(events, **kwargs)
+
+        monkeypatch.setattr(start, "process_watched_batch", record_batch)
         result = main(["start", "--dry-run"])
         assert result == 0
+        assert len(batches) == 1
+        assert any(event.type == "loop.started" for event in batches[0][0])
+        assert batches[0][1] > 0
         captured = capsys.readouterr()
         assert "started" in captured.out.lower() or "dry" in captured.out.lower()
         assert (
