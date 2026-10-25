@@ -1035,6 +1035,17 @@
 .plan-preview-markdown {
   max-width: 980px;
 }
+.plan-review-dossier {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.plan-review-divider {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
 .plan-preview-markdown .agent-markdown-plain-guard {
   max-height: none;
   overflow: visible;
@@ -1105,6 +1116,30 @@
   align-content: start;
   gap: 10px;
   background: var(--panel);
+}
+.plan-preview-repair-chat {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.plan-preview-repair-chat span {
+  font-weight: 650;
+  font-size: var(--text-12);
+}
+.plan-preview-repair-chat textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  background: var(--panel);
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-12);
 }
 .delivery-cycle-strip {
   display: grid;
