@@ -636,6 +636,10 @@ def prepare_writer_execution_card(
         "`*** Update File`; never delete, add, move, or recreate the scratch path.",
         "- For a blocker, set `execution_status` to `failed`, describe "
         "the reproducible blocker, and run the same submit command.",
+        "- If task capsule/briefing/snapshot versions disagree, stop and set "
+        "both `failure_class` and `blocker_kind` to `task_context_stale`; "
+        "attach the exact conflicting revisions as evidence. This is a "
+        "runtime context repair, not an upstream product scope gap.",
         "- If the blocker proves this task contract is unsatisfiable inside "
         "its allowed paths, set both `failure_class` and `blocker_kind` to "
         "one of `task_contract_unsatisfiable`, `upstream_contract_gap`, or "
