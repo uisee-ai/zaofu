@@ -42,6 +42,10 @@ Package hydration，在删除作者目录后读取正文，并覆盖篡改与符
 
 Preview 新增 content_kind、content_error、digest_markdown、digest_source、source_event_id、artifacts 和
 artifacts_error，原字段兼容。已声明全文而不可读时显示 unavailable，不冒充摘要是全文。
+Owner checkpoint 现在在首次审批事件前生成不可变 `plan-preview-bundle.v1`，只收集审批 payload
+明确绑定的完整 Plan、需求 Markdown、task map、source index 和 inline plan ports；读取时校验 bundle
+digest、workflow 以及 Plan/task map 路径绑定。Preview payload 的 `plan_content_profile` 让网页区分
+完整派生 Plan、仅摘要和未声明完整性的旧请求，侧栏提供需求原文、任务图和矩阵等附件入口。
 正式请求固定 Plan 内容 digest；附件从同一 Plan 的 Package 提取，读取时验证 digest，
 路径必须在当前 project/state 内，拒绝越界及符号链接逃逸。附件端点只接受已绑定的逻辑名，
 返回纯文本并禁止 MIME 嗅探。GET 不发审批事件。

@@ -55,9 +55,12 @@ export function PlanApprovalPanel(
   const [inboxRefreshing, setInboxRefreshing] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
+  const [repairMessage, setRepairMessage] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<PlanPreview | null>(null);
+  const [previewItem, setPreviewItem] = useState<OperatorInboxItem | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [actionNotice, setActionNotice] = useState("");
   const [view, setView] = useState<InboxView>("decisions");
   const [kindFilter, setKindFilter] = useState<InboxKindFilter>("all");
   const [query, setQuery] = useState("");
@@ -94,6 +97,7 @@ export function PlanApprovalPanel(
     projectIdRef.current = projectId;
     previewRequestGate.current.invalidate();
     setPreview(null);
+    setPreviewItem(null);
     setPreviewLoading(false);
     setInbox(null);
     setHasLoadedInbox(false);
@@ -137,11 +141,13 @@ export function PlanApprovalPanel(
     };
   }, [refreshInbox]);
 
-  const openPreview = async (planId: string) => {
+  const openPreview = async (planId: string, item?: OperatorInboxItem) => {
     const ticket = previewRequestGate.current.issue();
     setPreview(null);
+    setPreviewItem(item || null);
     setPreviewLoading(true);
     setActionError("");
+    setActionNotice("");
     try {
       const result = await getPlanPreview(planId, projectId || undefined);
       if (previewRequestGate.current.isCurrent(ticket) && projectIdRef.current === projectId) setPreview(result);
@@ -163,6 +169,7 @@ export function PlanApprovalPanel(
   const act = async (action: "plan-approve" | "plan-reject", planId: string) => {
     setBusy(`${action}:${planId}`);
     setActionError("");
+    setActionNotice("");
     try {
       const payload: Record<string, unknown> = { plan_id: planId };
       if (action === "plan-reject") payload.reason = rejectReason[planId] || "";
@@ -182,25 +189,37 @@ export function PlanApprovalPanel(
     if (!planId) return;
     setBusy(`repair:${planId}`);
     setActionError("");
+    setActionNotice("");
     try {
       const result = await postAction("chat-orchestrator", {
-        message: `plan ${planId} repair: ${rejectReason[planId] || "review question"}`,
+        message: repairMessage[planId] || rejectReason[planId] || "请解释该 Plan 并提出需要修改的地方。",
         plan_id: planId,
         source: "operator-inbox",
         intent_type: "plan_repair",
+        plan_context: preview?.plan_id === planId ? {
+          plan_id: preview.plan_id,
+          trace_id: preview.trace_id,
+          stage_id: preview.stage_id,
+          pdd_id: preview.pdd_id,
+          task_map_ref: preview.refs.task_map_ref,
+          source_index_ref: preview.refs.source_index_ref,
+          requirement_spec_ref: preview.refs.requirement_spec_ref,
+        } : undefined,
       }, projectId || undefined);
       if (result.ok === false) setActionError(result.reason || "repair chat failed");
+      else setActionNotice("修改请求已提交给 Kanban Agent；Plan 仍保持待审批，等待新的候选版本。");
     } finally {
       setBusy("");
     }
   };
 
-  const actOnItem = async (item: OperatorInboxItem, action: string) => {
+  const actOnItem = async (item: OperatorInboxItem, action: string, reason = "") => {
     if (!action) return;
     setBusy(`${action}:${item.id}`);
     setActionError("");
+    setActionNotice("");
     try {
-      const result = await postAction(action, inboxActionPayload(item), projectId || undefined);
+      const result = await postAction(action, inboxActionPayload(item, reason), projectId || undefined);
       if (result.ok === false) setActionError(result.reason || `${action} failed`);
       await refresh();
     } finally {
@@ -304,6 +323,7 @@ export function PlanApprovalPanel(
       </div>
 
       {actionError ? <p className="error plan-approval-error">{actionError}</p> : null}
+      {actionNotice ? <p className="muted plan-approval-notice">{actionNotice}</p> : null}
       {loadError ? <p className="error plan-approval-error">Inbox refresh failed: {loadError}</p> : null}
 
       {initialLoading ? (
@@ -328,7 +348,7 @@ export function PlanApprovalPanel(
                   setRejectReason((current) => ({ ...current, [reasonKey]: value }));
                 }}
                 onSelect={() => setSelectedId(item.id)}
-                onPreview={() => item.plan_id && void openPreview(String(item.plan_id))}
+                onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
                 onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
                 onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
                 onRepair={() => void repairChat(item)}
@@ -402,14 +422,36 @@ export function PlanApprovalPanel(
             if (!preview) return;
             setRejectReason((current) => ({ ...current, [preview.plan_id]: value }));
           }}
+          repairMessage={preview ? repairMessage[preview.plan_id] || "" : ""}
+          onRepairMessage={(value) => {
+            if (!preview) return;
+            setRepairMessage((current) => ({ ...current, [preview.plan_id]: value }));
+          }}
           onClose={() => {
             previewRequestGate.current.invalidate();
             setPreviewLoading(false);
             setPreview(null);
+            setPreviewItem(null);
           }}
-          onApprove={() => preview && void act("plan-approve", preview.plan_id)}
-          onReject={() => preview && void act("plan-reject", preview.plan_id)}
-          onRepair={() => preview && void repairChat({ id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
+          onApprove={() => {
+            if (!preview) return;
+            if (previewItem?.owner_route === "plan_synth_owner_decision") {
+              void actOnItem(previewItem, "replan-approve");
+            } else {
+              void act("plan-approve", preview.plan_id);
+            }
+          }}
+          onReject={() => {
+            if (!preview) return;
+            if (previewItem?.owner_route === "plan_synth_owner_decision") {
+              void actOnItem(previewItem, "replan-reject", rejectReason[preview.plan_id] || "");
+            } else {
+              void act("plan-reject", preview.plan_id);
+            }
+          }}
+          onRepair={() => preview && void repairChat(previewItem || { id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
+          ownerDecision={previewItem?.owner_route === "plan_synth_owner_decision"}
+          actionKey={previewItem?.id || preview?.plan_id || ""}
         />
       ) : null}
     </section>
@@ -529,6 +571,26 @@ function InboxRowActions({
   onRepair: () => void;
   onAction: (action: string) => void;
 }) {
+  if (item.owner_route === "plan_synth_owner_decision" && item.plan_id) {
+    const actions = (item.actions ?? [])
+      .map((action) => ({
+        action: typeof action.action === "string" ? action.action : "",
+        label: typeof action.label === "string" ? action.label : "",
+      }))
+      .filter((action) => action.action);
+    return (
+      <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
+        <button type="button" className="delivery-action-button" onClick={onPreview} disabled={!item.preview?.available}>
+          <Eye size={14} /> Preview
+        </button>
+        {actions.map((action) => (
+          <button key={action.action} type="button" className="delivery-action-button" onClick={() => onAction(action.action)} disabled={disabled}>
+            <Check size={14} /> {action.label || action.action}
+          </button>
+        ))}
+      </div>
+    );
+  }
   if (item.kind === "plan_approval") {
     return (
       <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
@@ -586,10 +648,14 @@ function PlanPreviewOverlay({
   busy,
   rejectReason,
   onRejectReason,
+  repairMessage,
+  onRepairMessage,
   onClose,
   onApprove,
   onReject,
   onRepair,
+  ownerDecision,
+  actionKey,
 }: {
   projectId?: string;
   preview: PlanPreview | null;
@@ -597,23 +663,30 @@ function PlanPreviewOverlay({
   busy: string;
   rejectReason: string;
   onRejectReason: (value: string) => void;
+  repairMessage: string;
+  onRepairMessage: (value: string) => void;
   onClose: () => void;
   onApprove: () => void;
   onReject: () => void;
   onRepair: () => void;
+  ownerDecision: boolean;
+  actionKey: string;
 }) {
   const planId = preview?.plan_id || "";
-  const disabled = Boolean(planId && busy.endsWith(`:${planId}`));
+  const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
   return (
     <div className="plan-preview-overlay" role="dialog" aria-modal="true" aria-label="Plan preview">
       <div className="plan-preview-toolbar">
         <div>
-          <strong>Plan Preview</strong>
+          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : "Plan Preview"}</strong>
           <span className="mono">{planId || "loading"}</span>
+          {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
+            <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>
+          ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
           <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || disabled || loading || preview.content_kind === "unavailable"}>
-            <Check size={14} /> Approve
+            <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
           </button>
           <input
             value={rejectReason}
@@ -637,12 +710,30 @@ function PlanPreviewOverlay({
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
-            <PlanMarkdownDocument key={planId} content={preview?.markdown || ""} />
+            <PlanMarkdownDocument
+              key={planId}
+              content={preview?.markdown || ""}
+              reviewContent={preview?.review_dossier_markdown || ""}
+            />
           </Suspense>}
         </main>
         <aside className="plan-preview-context">
+          <label className="plan-preview-repair-chat">
+            <span>通过 Chat 修改 Plan</span>
+            <textarea
+              value={repairMessage}
+              placeholder="例如：保留 T01–T10，但按附录 B 恢复 AT 验收归属，并补齐页面 1–6 的 Task Map 范围。"
+              onChange={(event) => onRepairMessage(event.target.value)}
+              disabled={!preview || disabled}
+              rows={4}
+            />
+            <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled || !repairMessage.trim()}>
+              <MessageSquare size={14} /> 发送修改请求
+            </button>
+          </label>
           <dl className="plan-approval-meta">
-            <div><dt>正文</dt><dd>{preview?.content_kind === "full_plan" ? "完整 Plan" : preview?.content_kind === "digest_only" ? "仅摘要" : "不可用"}</dd></div>
+            <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
+            <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
@@ -651,6 +742,36 @@ function PlanPreviewOverlay({
           {preview?.digest_markdown && preview.content_kind !== "digest_only" && <details>
             <summary>计划摘要（机械检查）</summary>
             <MarkdownText content={preview.digest_markdown} />
+          </details>}
+          {(preview?.owner_decision_items?.length ?? 0) > 0 && <details open>
+            <summary>Owner decisions ({preview?.owner_decision_items?.length})</summary>
+            <ol>
+              {preview?.owner_decision_items?.map((item) => <li key={item.decision_id || item.question}>
+                <strong>{item.decision_id || "Decision"}</strong>: {item.question || "Owner decision required"}
+              </li>)}
+            </ol>
+          </details>}
+          {(preview?.requirement_artifacts?.length ?? 0) > 0 && <details open>
+            <summary>需求原文 ({preview?.requirement_artifacts?.length})</summary>
+            <p className="muted">打开原始需求文档核对范围、章节和未决项。</p>
+            <ul>
+              {preview?.requirement_artifacts?.map((artifact) => <li key={artifact.name}>
+                <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
+              </li>)}
+            </ul>
+          </details>}
+          {(preview?.task_map_summary?.tasks?.length ?? 0) > 0 && <details>
+            <summary>任务图 ({preview?.task_map_summary?.task_count ?? 0})</summary>
+            <ul>
+              {preview?.task_map_summary?.tasks?.map((task) => <li key={task.task_id || task.title}>
+                <strong>{task.task_id}</strong> {task.title}
+                {task.blocked_by ? <span className="muted"> · blocked by {task.blocked_by}</span> : null}
+              </li>)}
+            </ul>
+          </details>}
+          {preview?.task_map_markdown && <details>
+            <summary>完整 Task Map 详情</summary>
+            <MarkdownText content={preview.task_map_markdown} />
           </details>}
           {preview?.artifacts_error && <p role="alert">计划附件不可用：{preview.artifacts_error}</p>}
           {(preview?.artifacts?.length ?? 0) > 0 && <nav aria-label="Plan artifacts">
@@ -663,6 +784,22 @@ function PlanPreviewOverlay({
       </div>
     </div>
   );
+}
+
+function planContentProfileLabel(profile?: string): string {
+  switch (profile) {
+    case "derived_plan_full": return "完整派生 Plan";
+    case "summary_only": return "仅摘要";
+    case "derived_plan": return "派生 Plan（需核对完整性）";
+    default: return "未声明";
+  }
+}
+
+function planContentKindLabel(preview: PlanPreview | null): string {
+  if (!preview || preview.content_kind === "unavailable") return "不可用";
+  if (preview.content_profile === "summary_only" || preview.content_kind === "digest_only") return "仅摘要";
+  if (preview.content_profile === "derived_plan_full") return "完整 Plan";
+  return "Plan 正文（完整性未声明）";
 }
 
 function itemSearchText(item: OperatorInboxItem): string {
@@ -724,7 +861,7 @@ function inboxItemsForView(inbox: OperatorInboxProjection | null, view: InboxVie
   return items.filter((item) => item.status === "pending" && item.category === "automation_diagnostic");
 }
 
-function inboxActionPayload(item: OperatorInboxItem): Record<string, unknown> {
+function inboxActionPayload(item: OperatorInboxItem, reason = ""): Record<string, unknown> {
   return {
     source: "operator-inbox",
     approval_ref: item.approval_ref,
@@ -740,6 +877,7 @@ function inboxActionPayload(item: OperatorInboxItem): Record<string, unknown> {
     fingerprint: item.fingerprint,
     attention_id: item.attention_id,
     created_event_id: item.created_event_id,
+    ...(reason.trim() ? { reason: reason.trim() } : {}),
   };
 }
 

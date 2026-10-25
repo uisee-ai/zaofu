@@ -68,6 +68,49 @@ After PRD approval, write:
 - `task_map.json`: dispatchable vertical slices.
 - `source_index.json`: PRD and evidence index.
 
+The Markdown plan is the human review document, not a one-paragraph status
+summary. It must be long enough to let an owner review the confirmed scope
+without opening the provider transcript. Include these sections whenever the
+workflow has a source PRD or authority bundle:
+
+- a human approval entry in this order: **PRD** (user outcome, scope, and
+  non-goals), **SDD** (system boundaries, entrypoints, data/API contracts,
+  ownership, and dependencies), **TDD** (acceptance-to-command mapping,
+  evidence paths, and current PASS/BLOCKED/NOT_RUN state), risks/open
+  decisions, and an approval checklist;
+- authority and source index, with every source ref and digest-bound anchor;
+- objective, users, scope, non-goals, assumptions, risks, and unresolved owner decisions;
+- one row for every formal task with its group, wave, dependencies, owned paths,
+  acceptance criteria, verification owner, and evidence contract;
+- the dependency graph and parallel execution waves;
+- requirement, acceptance, test, and real-E2E traceability summaries with their
+  exact matrix artifact refs;
+- approval gates and the explicit rule that impl/verify remain blocked before
+  owner approval.
+
+Return `plan_content_profile: "derived_plan_full"` only when those sections and
+the exact confirmed authority have been reviewed. Use `summary_only` when the
+output is intentionally abbreviated; the operator UI must label that result as
+a summary and keep it out of the full Plan approval path. Also return
+`authority_refs` and `requirement_spec_ref` when the source authority is
+available so the owner can open the original PRD beside the derived Plan.
+
+For a source PRD that defines formal task or acceptance mappings, preserve the
+mapping as data instead of paraphrasing it away. In particular, keep the exact
+Appendix B T01–T10 boundaries, each task's AT/AC ownership, and the source
+anchor that proves the association. Do not round-robin acceptance ids, infer a
+new owner from task order, or replace a requirement statement with a shared
+placeholder such as “待执行/待审批追踪项”. Every trace row must retain its
+source id, a meaningful requirement statement, owning task(s), and evidence
+status. If the source mapping cannot be recovered, mark the Plan as needing
+rework and do not claim `derived_plan_full`.
+
+When the authority includes UI/UX acceptance, carry the named screens and
+interaction boundaries into the integration task. For AutoDataLoop v1.4 this
+includes the page 1–6 journey, drawers, notifications, keyboard behavior, and
+narrow-screen behavior; “page integration” without those boundaries is an
+incomplete task slice.
+
 Emit top-level `plan_artifact_ref`, `task_map_ref`, `source_index_ref`,
 `artifact_refs`, and `evidence_refs`.
 

@@ -3337,6 +3337,45 @@ class FanoutCoordinationMixin(
             # B-93-03 (doc 93 §4): 投影 plan-digest 落 artifact,payload 带
             # digest_ref —— CLI/Web/Feishu 共用同一份人读摘要,不各自重算。
             digest_ref = self._write_plan_digest(plan_id, task_items, base_payload["task_map_ref"])
+            # Bind a complete, immutable review bundle at the same gate as the
+            # approval request.  The bundle is a read-only projection for the
+            # human reviewer; it does not mint tasks or unlock implementation.
+            from zf.runtime.plan_preview_artifacts import write_plan_preview_bundle
+
+            preview_payload = {
+                **trigger_event.payload,
+                **base_payload,
+                "workflow_run_id": trace_id,
+                "fanout_id": str(trigger_event.payload.get("fanout_id") or ""),
+                "task_count": len(task_items),
+            }
+            preview_refs = {
+                **base_payload,
+                "task_map_ref": base_payload["task_map_ref"],
+                "source_index_ref": str(
+                    trigger_event.payload.get("source_index_ref") or ""
+                ),
+                "requirement_spec_ref": str(
+                    trigger_event.payload.get("requirement_spec_ref") or ""
+                ),
+                "plan_artifact_ref": str(
+                    trigger_event.payload.get("plan_artifact_ref")
+                    or trigger_event.payload.get("plan_ref")
+                    or ""
+                ),
+                "plan_artifact_digest": str(
+                    trigger_event.payload.get("plan_artifact_digest") or ""
+                ),
+                "artifact_refs": trigger_event.payload.get("artifact_refs") or [],
+                "plan_ports": trigger_event.payload.get("plan_ports") or [],
+            }
+            preview_bundle = write_plan_preview_bundle(
+                self.state_dir,
+                payload=preview_payload,
+                refs=preview_refs,
+                project_root=self.project_root,
+                source_event_id=plan_id,
+            )
             self.event_writer.append(ZfEvent(
                 type="plan.approval.requested",
                 actor="zf-cli",
@@ -3345,6 +3384,15 @@ class FanoutCoordinationMixin(
                     "plan_fingerprint": fingerprint,
                     "task_count": len(task_items),
                     "digest_ref": digest_ref,
+                    "plan_preview_bundle_ref": str(preview_bundle.get("ref") or ""),
+                    "plan_preview_bundle_digest": str(preview_bundle.get("sha256") or ""),
+                    "plan_content_profile": str(
+                        trigger_event.payload.get("plan_content_profile")
+                        or "derived_plan_full"
+                    ),
+                    "authority_refs": list(
+                        trigger_event.payload.get("authority_refs") or []
+                    ),
                 },
                 causation_id=plan_id,
                 correlation_id=trace_id,
