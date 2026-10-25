@@ -33,6 +33,7 @@ def dispatch_fixture(tmp_path, monkeypatch):
         lifecycle=RoleLifecycleConfig(mode="on_demand"),
     )
     runtime = SimpleNamespace(
+        event_log=log,
         state_dir=state,
         project_root=tmp_path,
         config=SimpleNamespace(),
@@ -91,9 +92,9 @@ def dispatch_fixture(tmp_path, monkeypatch):
                 workflow_run_id="run-1",
                 task_id=task.id,
                 task_map_generation="map-new",
-                stage="impl",
-                stage_revision="implementation-result.v1",
-                operation_generation=1,
+                stage=kw["stage_id"],
+                stage_revision=("implementation-result.v1" if kw["stage_id"] == "impl" else "verification-result.v1"),
+                operation_generation=kw["payload"]["operation_generation"],
             ).operation_id,
         )
 
@@ -101,15 +102,19 @@ def dispatch_fixture(tmp_path, monkeypatch):
         "zf.runtime.call_result_runtime.prepare_call_operation", prepare
     )
 
-    def dispatch():
+    monkeypatch.setattr(
+        "zf.runtime.task_pipeline_targets.prepare_verify_target", lambda *a, **kw: {},
+    )
+
+    def dispatch(generation=1, stage="impl"):
         return dispatch_task_pipeline_stage(
             runtime,
             policy={},
             task=task,
             assignment={
-                "stage": "impl",
+                "stage": stage,
                 "role_instance": "dev-0",
-                "operation_generation": 1,
+                "operation_generation": generation,
             },
             generation_context={
                 "workflow_run_id": "run-1",
@@ -125,7 +130,7 @@ def dispatch_fixture(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("old_doc", [False, True])
-def test_dispatch_refreshes_capsule_before_preparing_operation(
+def test_running_or_settled_operation_does_not_rewrite_capsule(
     dispatch_fixture, old_doc
 ):
     runtime, task, _, prepared, dispatch = dispatch_fixture
@@ -133,10 +138,12 @@ def test_dispatch_refreshes_capsule_before_preparing_operation(
         write_task_doc(
             runtime.state_dir, Task(id=task.id, contract=TaskContract(behavior="old"))
         )
-    assert verify_task_capsule(runtime.state_dir, task)
+    from zf.runtime.task_doc import task_doc_path
+    doc = task_doc_path(runtime.state_dir, task.id)
+    previous = doc.read_bytes() if doc.exists() else None
     before = asdict(runtime.task_store.get(task.id))
     dispatch()
-    assert verify_task_capsule(runtime.state_dir, task) == []
+    assert (doc.read_bytes() if doc.exists() else None) == previous
     assert asdict(runtime.task_store.get(task.id)) == before
     assert len(prepared) == 1
 
@@ -155,10 +162,19 @@ def test_dispatch_stops_when_capsule_publication_fails(dispatch_fixture, monkeyp
     def fail(*a, **kw):
         raise OSError("projection unavailable")
 
+    from zf.runtime import call_result_runtime
+    original = call_result_runtime.prepare_call_operation
+
+    def prepare(*a, **kw):
+        op = original(*a, **kw)
+        op.should_dispatch = True
+        return op
+
+    monkeypatch.setattr(call_result_runtime, "prepare_call_operation", prepare)
     monkeypatch.setattr("zf.runtime.task_doc.write_task_doc", fail)
     with pytest.raises(OSError, match="projection unavailable"):
         dispatch()
-    assert prepared == []
+    assert len(prepared) == 1
 
 
 def test_dispatch_rejects_canonical_contract_changed_since_selection(dispatch_fixture):
@@ -221,3 +237,115 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         "task.dispatched",
         "task.pipeline.stage.dispatched",
     ]
+
+
+@pytest.mark.parametrize("old_dispatch,generation", [("", 1), ("tpd-old-p1", 2)])
+@pytest.mark.parametrize("send_fails", [False, True])
+@pytest.mark.parametrize("stage", ["impl", "verify"])
+def test_dispatch_document_identity_matches_transport_before_delivery(
+    dispatch_fixture, monkeypatch, old_dispatch, generation, send_fails, stage
+):
+    import json
+    from zf.runtime.task_doc import task_doc_path
+    from zf.runtime import call_result_runtime
+
+    runtime, task, _, _, dispatch = dispatch_fixture
+    runtime.task_store.update(task.id, active_dispatch_id=old_dispatch, assigned_to="previous-role")
+    before = asdict(runtime.task_store.get(task.id))
+    original = call_result_runtime.prepare_call_operation
+
+    def prepare(*args, **kw):
+        op = original(*args, **kw)
+        op.should_dispatch = True
+        kw["payload"].update(
+            semantic_result_submit_mode="blocking", operation_id=op.operation_id,
+            result_scratch_ref="tmp/result-submit/test/result.json",
+        )
+        return op
+
+    monkeypatch.setattr(call_result_runtime, "prepare_call_operation", prepare)
+    monkeypatch.setattr(call_result_runtime, "mark_call_operation_started", lambda *a, **kw: None)
+    runtime._set_worker_state = lambda *a, **kw: None
+    sent = []
+
+    def send(role, briefing, prompt, context):
+        doc = task_doc_path(runtime.state_dir, task.id)
+        manifest = json.loads((doc.parent / "manifest.json").read_text())
+        assert manifest["active_dispatch_id"] == context.dispatch_id
+        assert manifest["dispatch_id"] == context.dispatch_id
+        assert manifest["assigned_to"] == context.instance_id
+        assert f"active_dispatch_id: {context.dispatch_id}\n" in doc.read_text()
+        assert f"- dispatch_id: `{context.dispatch_id}`" in briefing.read_text()
+        assert asdict(runtime.task_store.get(task.id)) == before
+        sent.append(context)
+        if send_fails:
+            raise OSError("transport offline")
+        return context
+
+    runtime._send_transport_task = send
+    expected_sends = 2 if send_fails else 1
+    if send_fails:
+        with pytest.raises(OSError, match="transport offline"):
+            dispatch(generation, stage)
+        assert asdict(runtime.task_store.get(task.id)) == before
+        assert not any(e.type == "task.dispatched" for e in runtime.event_log.read_all())
+        # Reopen durable state as a restarted runtime would, then retry delivery.
+        runtime.task_store = TaskStore(runtime.state_dir / "kanban.json")
+        send_fails = False
+        dispatch(generation, stage)
+        assert runtime.task_store.get(task.id).active_dispatch_id == sent[-1].dispatch_id
+    else:
+        dispatch(generation, stage)
+        assert runtime.task_store.get(task.id).active_dispatch_id == sent[0].dispatch_id
+    assert len(sent) == expected_sends
+
+
+@pytest.mark.parametrize("corrupt", ["manifest", "header", "body", "role"])
+def test_capsule_identity_corruption_after_prepare_blocks_transport(
+    dispatch_fixture, monkeypatch, corrupt
+):
+    import json
+    from zf.runtime import call_result_runtime
+    from zf.runtime.task_doc import task_doc_path
+
+    runtime, task, _, _, dispatch = dispatch_fixture
+    original = call_result_runtime.prepare_call_operation
+    from zf.runtime import task_pipeline_briefing
+    write_briefing = task_pipeline_briefing.write_task_pipeline_briefing
+    before = asdict(runtime.task_store.get(task.id))
+
+    def prepare(*args, **kw):
+        op = original(*args, **kw)
+        op.should_dispatch = True
+        kw["payload"].update(
+            semantic_result_submit_mode="blocking", operation_id=op.operation_id,
+            result_scratch_ref="tmp/result-submit/test/result.json",
+        )
+        return op
+
+    def corrupt_after_publish(*args, **kw):
+        briefing = write_briefing(*args, **kw)
+        path = task_doc_path(runtime.state_dir, task.id)
+        if corrupt == "manifest":
+            manifest_path = path.parent / "manifest.json"
+            manifest = json.loads(manifest_path.read_text())
+            manifest["active_dispatch_id"] = "old-dispatch"
+            manifest_path.write_text(json.dumps(manifest))
+        else:
+            old = kw["payload"]["dispatch_id"]
+            content = path.read_text()
+            if corrupt == "header":
+                content = content.replace(f"active_dispatch_id: {old}", "active_dispatch_id: old")
+            elif corrupt == "body":
+                content = content.replace(f"**Active dispatch id**: `{old}`", "**Active dispatch id**: `old`")
+            else:
+                content = content.replace("assigned_to: dev-0", "assigned_to: stale-role")
+            path.write_text(content)
+        return briefing
+
+    monkeypatch.setattr(call_result_runtime, "prepare_call_operation", prepare)
+    monkeypatch.setattr(task_pipeline_briefing, "write_task_pipeline_briefing", corrupt_after_publish)
+    runtime._send_transport_task = lambda *a: pytest.fail("must not deliver stale context")
+    with pytest.raises(TaskPipelineRuntimeError, match="delivery preflight"):
+        dispatch()
+    assert asdict(runtime.task_store.get(task.id)) == before

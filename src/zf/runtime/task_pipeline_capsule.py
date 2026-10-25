@@ -1,11 +1,27 @@
-"""Publish a current task projection before preparing a pipeline operation."""
+"""Publish and validate the task projection for a prepared pipeline delivery."""
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
+from zf.core.task.schema import Task
+
+
+def current_pipeline_capsule_task(
+    runtime: Any, *, task_id: str, snapshot: Mapping[str, Any],
+) -> Task:
+    from zf.runtime.task_doc import compute_task_capsule_revisions
+    from zf.runtime.task_pipeline_runtime import TaskPipelineRuntimeError
+
+    task = runtime.task_store.get(task_id)
+    if task is None or compute_task_capsule_revisions(task)[
+        "contract_revision"
+    ] != snapshot.get("contract_revision"):
+        raise TaskPipelineRuntimeError("task capsule canonical contract does not match snapshot")
+    return task
 
 
 def publish_pipeline_capsule(
@@ -14,24 +30,23 @@ def publish_pipeline_capsule(
     task_id: str,
     snapshot: Mapping[str, Any],
     dispatch_id: str,
+    role_instance: str,
     generation_event_id: str,
 ) -> None:
     from zf.runtime.task_doc import (
-        compute_task_capsule_revisions,
         verify_task_capsule,
         write_task_doc,
     )
     from zf.runtime.task_pipeline_runtime import TaskPipelineRuntimeError
 
     # Re-read canonical state: selection may predate a concurrent plan refresh.
-    task = runtime.task_store.get(task_id)
-    if task is None or compute_task_capsule_revisions(task)[
-        "contract_revision"
-    ] != snapshot.get("contract_revision"):
-        raise TaskPipelineRuntimeError(
-            "task capsule canonical contract does not match snapshot"
-        )
+    task = current_pipeline_capsule_task(runtime, task_id=task_id, snapshot=snapshot)
     state_dir = Path(runtime.state_dir)
+    # Bind the worker-facing projection to this delivery, without claiming
+    # successful delivery in TaskStore before the transport has accepted it.
+    task = deepcopy(task)
+    task.active_dispatch_id = dispatch_id
+    task.assigned_to = role_instance
     doc = write_task_doc(
         state_dir,
         task,
@@ -41,7 +56,10 @@ def publish_pipeline_capsule(
     )
     current = runtime.task_store.get(task_id)
     errors = (
-        verify_task_capsule(state_dir, current)
+        verify_task_capsule(
+            state_dir, current, expected_dispatch_id=dispatch_id,
+            expected_role_instance=role_instance,
+        )
         if current is not None
         else ["task_missing"]
     )
@@ -69,3 +87,22 @@ def publish_pipeline_capsule(
             },
         )
     )
+
+
+def verify_pipeline_delivery_capsule(
+    runtime: Any, *, task_id: str, dispatch_id: str, role_instance: str,
+) -> None:
+    """Recheck the projection at the transport boundary after call preparation."""
+    from zf.runtime.task_doc import verify_task_capsule
+    from zf.runtime.task_pipeline_runtime import TaskPipelineRuntimeError
+
+    current = runtime.task_store.get(task_id)
+    errors = (
+        verify_task_capsule(
+            Path(runtime.state_dir), current, expected_dispatch_id=dispatch_id,
+            expected_role_instance=role_instance,
+        )
+        if current is not None else ["task_missing"]
+    )
+    if errors:
+        raise TaskPipelineRuntimeError("task capsule delivery preflight failed: " + ", ".join(errors))

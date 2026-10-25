@@ -142,6 +142,8 @@ def write_task_pipeline_briefing(
         "",
         f"- task_id: `{task.id}`",
         f"- operation_id: `{prepared.operation_id}`",
+        f"- dispatch_id: `{payload.get('dispatch_id') or ''}`",
+        f"- attempt_id: `{payload.get('attempt_id') or ''}`",
         f"- operation_generation: `{payload['operation_generation']}`",
         f"- placement_epoch: `{payload['placement_epoch']}`",
         f"- workdir: `{workspace.project_path}`",

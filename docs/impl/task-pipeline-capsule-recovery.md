@@ -43,3 +43,11 @@ Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须�
 验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
 
 批量派发也受 `max_unverified_tasks` 剩余名额约束，每派发一个 fresh Impl 都占用名额；不能仅在批次开始检查一次阈值。Impl/Verify 池各有 8 个槽位不等于可以同时运行 16 个未验证任务。`tests/test_task_pipeline_parallel_backpressure.py` 覆盖 1 Verify + 7 Impl 并行与 8 Verify 排空，既有返工回归保持通过。
+
+## 派发身份与合同版本分别验证
+
+Task Pipeline 的 task.md/manifest 在发送前绑定本次 dispatch_id 与 role_instance；使用当前 canonical Task 的副本渲染，不提前更新 TaskStore 的 active_dispatch_id，也不改变合同版本。稳定 capsule revision 不应承担每次派发身份的校验职责。
+
+`verify_task_capsule` 的派发调用显式传入 expected_dispatch_id/expected_role_instance，核对 manifest 的 dispatch_id、active_dispatch_id、任务与角色，以及 task.md 的头部和 Runtime Binding。先校验当前合同，再准备 operation；只有需要实际派发时才发布文档，运行中/终态 operation 的幂等重入不重写文档。准备 briefing 后、交付 transport 前再检查一次，覆盖准备期间投影被替换的情况。briefing 显式列出 operation、dispatch 和 attempt 身份。发送成功后沿原路径更新 canonical TaskStore 并记录派发事件；发送失败不伪造 in_progress 或已发送事实。
+
+验证：`tests/test_task_pipeline_capsule.py` 在真实派发函数和 briefing/文档生成器、隔离的 provider transport 边界核对 Impl/Verify 首派、g2 重派及失败分支，并注入 manifest/正文/角色陈旧。它证明派发上下文一致性，不代表真实多 provider 并行或完整产品验收通过。
