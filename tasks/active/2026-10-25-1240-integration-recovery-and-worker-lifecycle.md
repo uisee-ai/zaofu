@@ -43,3 +43,15 @@
 剩余验收：等待当前依赖链推进到多个独立任务 ready，再核对运行中 operation/attempt、不同 worker 与任务工作区的时间交叠；因此本记录保持 active。事件处理延迟独立候选尚未解决，不把本次恢复等同于性能修复。
 
 证据：同目录 live-retry-preview.json、live-retry-apply.json、live-integration-receipt.json、live-recovery-proof.json、latest-live-monitor.json。具体测试日志保留首次失败及测试路径误写的 no-tests 输出，最终通过以 corrected/final 日志为准。
+
+## 后续监工：Environment 宿主前置设施（2026-10-25 UTC）
+
+- 13:14:15 `evt-a4e26e538646`：Environment Impl g1 提交 blocked。准确原因是已批准 execution_spec 要求宿主预置 `/var/lock/loshu-fms-acceptance.lock`，文件不存在；不是 Docker 不可用。worker 正确保持 allowed_paths 边界，没有修改宿主或伪造验收。
+- 监工核对 execution_spec.environment_isolation.lock_storage 后，13:16:19 在宿主创建固定共享锁，uid/gid=1001、mode=0660、device/inode=29/6。未覆盖已有文件、未改 TaskContract/Plan、未操作共享 Compose 栈。
+- 两个独立进程分别从 Candidate 和 Task Workspace 打开相同 inode；持锁期间均无法取得排它锁，释放后均可取得。这仅证明宿主前置设施，不代替产品的真实 Compose 生命周期、进程死亡接管等验收。
+- `zf recover task-impl` 先 preview，再 apply；`evt-241086418e56` 受控请求恢复 g1。13:18:24 `evt-5bc42ad3e5cd` 实际派发 Impl g2，operation=`wop-impl-tp-FMS-ENVIRONMENT-653cb0f263cd5-dcdbe8286e3e`。
+- worker 已收到 `impl-g2-p2.md`，其中包含宿主修复原因及证据。原 g1 阻塞记录保留；无需重启 watcher/Dashboard。
+- 当前 Impl=1、Verify=0；真实并行仍待后续独立任务就绪。已批准规范规定同 host 共享验收栈持排它租约串行；这与编码/静态检查的多 lane 并行不同，等待共享栈锁不应判为调度故障。
+- 锁位于 `/run/lock`（`/var/lock` 链接），为宿主临时设施；主机重启后需重新核对预置状态。本次没有添加系统级开机配置。
+
+证据目录：`/home/min/workspace/public/zaofu-evidence/host-lock-recovery-20261025/`，含 `host-lock-proof.json`、`retry-preview.json`、`retry-apply.json`、`latest-live-monitor.json`。本轮没有改 harness 或产品源码；记录保持 active，Environment 尚未通过验收。只读冷启动 monitor 的 profile 不能用于宣称常驻 watcher 延迟根因已定位。
