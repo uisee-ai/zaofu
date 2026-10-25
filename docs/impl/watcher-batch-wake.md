@@ -16,4 +16,4 @@
 验证：`tests/test_watched_batch.py` 覆盖同批合并、观察/限流、失败不停止和追加边界；
 `tests/test_cli_start.py` 覆盖真实 CLI 接线；
 `tests/e2e/test_terminal_kanban_convergence_mock_e2e.py` 覆盖真实 Orchestrator / Store / Kanban
-结算与重启去重。任务记录见 `tasks/active/2026-10-25-1556-watcher-batch-wake.md`。
+结算与重启去重。任务记录见 `tasks/done/2026-10-25-1556-watcher-batch-wake.md`。
