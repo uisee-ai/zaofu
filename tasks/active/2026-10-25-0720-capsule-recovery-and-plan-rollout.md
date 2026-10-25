@@ -43,3 +43,10 @@ dev=83b84518；工作树 zaofu-capsule-recovery。产品 run=workflow-4fbf85bbad
 - 输入复制被 workdir guard 拦截时，监工仅把 17 个同字节只读输入放入 Planner 工作目录，guard 保持不变。Critic 的 completed/passed 两层状态错误由其预检后自行修正。
 
 - readiness 补丁的 sentinel：51 passed；三流确定性 mock E2E：10 passed。dev-verify plan/run 自动选择 4 个直接测试文件：45 passed。未跑全量 pytest。
+
+- readiness 实现 15b9ff08 fix: reject draft plan inputs before independent review；合并 8d3e689d。合并后 7 个聚焦测试和 51 个 sentinel 通过。
+- 修正版 Planner 完成 evt-835e10e7270b：Task Map 仅 draft→ready，其他机器端口字节不变，待新 Critic。
+- 监工拦住无效 Preview evt-ba3e052d2934：workflow_resume_batch 对被拒绝的 Plan 重发 task_map.ready，造成草稿 Task Map 与旧 Package 混绑，未审批。新增 3 个恢复投影回归在基线全部失败；修复 reader Plan 协议失败的恢复归属，仍由 stage replan 负责。
+- 观察到 orchestrator trigger_lag_s 约 679 秒，需在无活跃 provider operation 的断点加载最新修复并重放；不能以“进程存活”宣称新计划已进入 Impl。
+
+- resume guard 6 个影响范围测试文件：86 passed；sentinel 51 passed；三流 mock E2E 10 passed。dev-verify plan/run 最终选择 48 个恢复相关测试文件：887 passed（包含确定性 mock 恢复 E2E；排除 host/real_provider）。停止前 operation reducer 确认 active=[]，Planner settled；zf stop 正常完成 18 步。
