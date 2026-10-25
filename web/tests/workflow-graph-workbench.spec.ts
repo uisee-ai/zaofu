@@ -62,6 +62,37 @@ test("real Workflow graph shows bound execution, every lens, stable selection an
   await test.info().attach("graph-source", { body: JSON.stringify(graph), contentType: "application/json" });
 });
 
+test("Plan reader retains unchanged attachments across graph polls and reloads changed bindings", async ({ page, request }) => {
+  test.setTimeout(60_000);
+  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
+  const graph = await (await request.get(endpoint)).json();
+  const ports = ["task_map", "execution_spec", "source_inventory"];
+  const plan = graph.plans.find((p: { artifacts?: { name: string }[] }) =>
+    ports.every(name => p.artifacts?.some(a => a.name === name)));
+  test.skip(!plan, "Requires a Plan with all three bound review ports.");
+  let polls = 0;
+  const loads: string[] = [];
+  await page.route(`**${endpoint}*`, route => {
+    polls += 1;
+    return route.fulfill({ json: { ...graph, plans: [plan] } });
+  });
+  page.on("request", req => {
+    if (req.method() === "GET" && ports.some(name => req.url().endsWith(`/plans/${plan.plan_id}/artifacts/${name}`))) loads.push(req.url());
+  });
+  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  await page.getByRole("button", { name: `PRD / Plan Preview · ${plan.status}`, exact: true }).click();
+  const reader = page.getByRole("region", { name: "计划审阅内容" });
+  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
+  const firstPoll = polls;
+  await expect.poll(() => polls, { timeout: 20_000 }).toBeGreaterThanOrEqual(firstPoll + 3);
+  expect(loads).toHaveLength(3);
+  await expect(reader.getByText("正在读取同版规格…")).toHaveCount(0);
+  // Only the graph response is a fixture; artifact reads still use the bound API.
+  plan.artifacts.find((a: { name: string }) => a.name === "task_map").sha256 = "changed-binding-fixture";
+  await expect.poll(() => loads.length, { timeout: 20_000 }).toBe(6);
+  await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
+});
+
 test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels", async ({ page, request }) => {
   test.setTimeout(90_000);
   const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
@@ -79,7 +110,7 @@ test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panel
     expect(input.name).toBe(plan.artifacts[0].name);
     await route.fulfill({ json: input.operation === "context"
       ? { ok: true, body: before, digest: "fixture", editable: true }
-      : { ok: true, answer: "局部修改候选", before, after, preview: after, draft_ref: { ref: "fixture-only" } } });
+      : { ok: true, answer: "局部修改候选", before, after, preview: graph.plans[0].markdown + "\n" + after, draft_ref: { ref: "fixture-only" } } });
   });
   await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
   await page.getByRole("button", { name: "PRD / Plan Preview · pending", exact: true }).click();

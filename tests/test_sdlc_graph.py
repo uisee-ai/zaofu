@@ -123,6 +123,39 @@ def test_workbench_api_uses_proposal_snapshot_and_is_read_only(setup):
     assert client.get(url.replace(binding["request_id"], "missing")).status_code == 404
 
 
+def test_workbench_keeps_pending_plan_when_source_index_omits_authority_refs(setup):
+    import hashlib
+    import json
+    from zf.runtime.workflow_requests import mark_workflow_request
+
+    client, service, binding = setup
+    for status in ["approved", "submitted"]:
+        mark_workflow_request(service.state_dir, binding["request_id"],
+                              status=status, actor="test", run_id="run-a")
+    artifacts = service.state_dir / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    full = "# Racing plan\n\nRequires explicit owner approval.\n"
+    (artifacts / "plan.md").write_text(full)
+    (artifacts / "source_index.json").write_text(json.dumps({"tasks": []}))
+    service.writer.append(ZfEvent(type="plan.approval.requested", payload={
+        "plan_id": "review-plan", "workflow_run_id": "run-a",
+        "plan_artifact_ref": "artifacts/plan.md",
+        "plan_artifact_digest": hashlib.sha256(full.encode()).hexdigest(),
+        "source_index_ref": "artifacts/source_index.json",
+    }))
+    before = service.writer.event_log.read_all()
+
+    response = client.get(f"/api/projects/default/workflow-requests/{binding['request_id']}/graph")
+
+    assert response.status_code == 200, response.text
+    preview = response.json()["plans"][0]
+    assert preview["plan_id"] == "review-plan"
+    assert preview["status"] == "pending"
+    assert preview["markdown"] == full
+    assert preview["authority_refs"] == []
+    assert len(service.writer.event_log.read_all()) == len(before)
+
+
 def test_new_candidate_and_generation_cannot_reuse_old_task_success():
     task = Task(id='T1', title='Old', status='done')
     events = [(1, ZfEvent(type='task.done.accepted', task_id='T1', origin='kernel')),

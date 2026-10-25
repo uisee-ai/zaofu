@@ -1,0 +1,245 @@
+apiVersion: zaofu.dev/v1
+kind: IssueFlow
+metadata:
+  name: 187 Racing Supervision-issue-flow
+spec:
+  lanes: 1
+  backend: codex
+  issueRef: 'TODO: issue/backlog path'
+  targetRef: HEAD
+  qualityFloor: issue-regression
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_only
+---
+apiVersion: zaofu.dev/v1
+kind: PrdFlow
+metadata:
+  name: 187 Racing Supervision-prd-flow
+spec:
+  lanes: 3
+  backend: codex
+  prdRef: 'TODO: PRD path'
+  targetRef: HEAD
+  targetRoot: 'TODO: target app path'
+  qualityFloor: product-demo
+  evidencePolicy: strict_refs
+  deliveryPolicy: report_and_demo
+---
+apiVersion: zaofu.dev/v1
+kind: RefactorFlow
+metadata:
+  name: 187 Racing Supervision-refactor-flow
+spec:
+  flowProfile: refactor-flow/v3
+  lanes: 5
+  assembly: none
+  roleDefaults:
+    backend: codex
+    permission_mode: bypass
+  objectiveRef: 'TODO: refactor prompt path'
+  targetRef: HEAD
+  sourceRoot: 'TODO: source project path'
+  targetRoot: 'TODO: target project path'
+  parityScope:
+  - core
+  - cli
+  - api
+  - web
+  - runtime
+  gapLoop: enabled
+  verifyRescan: module_parity
+  completionThreshold: close_p0_p1
+  qualityFloor: refactor-parity-real-env
+  evidencePolicy: strict_refs
+  environmentPolicy: real_env_required
+  projectionPolicy: control_room
+---
+apiVersion: zaofu.dev/v1
+kind: ConfigProfile
+metadata:
+  name: flow-project-runtime/v1
+spec:
+  runtime:
+    workdirs:
+      enabled: true
+      mode: worktree
+    run_manager:
+      backend: codex
+      resident_agent:
+        enabled: true
+        session_mode: dedicated
+    autoresearch_resident:
+      enabled: true
+      interval_seconds: 10
+      max_actions_per_tick: 1
+    feishu_inbound:
+      enabled: ${ZF_FEISHU_INBOUND_ENABLED:-false}
+      mode: bridge
+      require_routing: true
+  workflow:
+    candidate_quality_source: task_contract_required
+    impl_self_check_required: true
+    rework_routing: {}
+    work_units:
+      enabled: true
+      split_quality:
+        mode: blocking
+        max_acceptance_criteria: 0
+  flow_defaults:
+    issue:
+      roleSkillBundles:
+        issue-triage:
+        - debugging-triage
+        - source-verification
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-issue-plan-synth
+        - zf-yoke-planner-role-context
+        plan-critic:
+        - zf-workflow-adaptation-boundary
+        - zf-yoke-critic-role-context
+        discovery:
+        - zf-verify-rescan-replan
+        - zf-goal-closure-replan-contract
+        - zf-yoke-test-evaluator-role-context
+        judge-issue:
+        - zf-goal-closure-judge-contract
+        fix:
+        - zf-yoke-dev-worker-role-context
+        verify:
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-yoke-test-evaluator-role-context
+    prd:
+      roleSkillBundles:
+        scan:
+        - source-verification
+        - context-hygiene
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-prd-plan-synth
+        - zf-yoke-planner-role-context
+        planner:
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-prd-plan-synth
+        - zf-yoke-planner-role-context
+        plan-critic:
+        - zf-workflow-adaptation-boundary
+        - zf-yoke-critic-role-context
+        discovery:
+        - zf-verify-rescan-replan
+        - zf-goal-closure-replan-contract
+        - zf-yoke-test-evaluator-role-context
+        judge-prd:
+        - zf-goal-closure-judge-contract
+        impl:
+        - zf-yoke-dev-worker-role-context
+        verify:
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-yoke-test-evaluator-role-context
+    refactor:
+      roleSkillBundles:
+        scan-contract:
+        - source-verification
+        - context-hygiene
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-refactor-plan-synth
+        - zf-harness-spec-freeze-contract
+        - zf-harness-evidence-collection
+        - zf-yoke-planner-role-context
+        scan-runtime:
+        - source-verification
+        - context-hygiene
+        - zf-harness-evidence-collection
+        scan-verification:
+        - zf-yoke-test-evaluator-role-context
+        refactor-plan-synth:
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-refactor-plan-synth
+        - zf-yoke-planner-role-context
+        plan-critic:
+        - zf-workflow-adaptation-boundary
+        - zf-yoke-critic-role-context
+        refactor-verify-bridge:
+        - zf-verify-rescan-replan
+        - zf-goal-closure-replan-contract
+        - zf-yoke-test-evaluator-role-context
+        module-parity-scan:
+        - source-verification
+        - zf-verify-rescan-replan
+        - zf-goal-closure-replan-contract
+        - zf-yoke-test-evaluator-role-context
+        judge-refactor:
+        - zf-goal-closure-judge-contract
+        impl:
+        - zf-yoke-dev-worker-role-context
+        verify:
+        - zf-workflow-adaptation-boundary
+        - zf-project-adapter-matrix-enrichment
+        - zf-yoke-test-evaluator-role-context
+---
+apiVersion: zaofu.dev/v1
+kind: ZfConfig
+metadata:
+  name: 187 Racing Supervision
+spec:
+  version: '1.0'
+  project:
+    name: 187 Racing Supervision
+    description: 真实监工验收：赛车小游戏，Plan 人工审批、Workflow/Plan 局部 Chat、多 lane 实现与独立验证。
+    state_dir: .zf-187 Racing Supervision
+  session:
+    tmux_session: ${ZF_TMUX_SESSION:-zf-187-racing-supervision}
+  orchestrator:
+    backend: codex
+    wake_min_interval_s: 5
+  roles:
+  - name: orchestrator
+    instance_id: orchestrator
+    role_kind: reader
+    backend: codex
+    permission_mode: bypass
+    transport: tmux
+    stuck_threshold_seconds: 900
+    spawn_ready_timeout_seconds: 240
+    triggers:
+    - dispatch.silent_stall
+    - orchestrator.rework.triage.requested
+    - orchestrator.semantic.checkpoint.requested
+    publishes:
+    - orchestrator.rework.triage.recorded
+    skills:
+    - zf-yoke-orchestrator-role-context
+    - zf-harness-state-sync
+  workflow:
+    orchestration:
+      mode: exception_advisor
+      flow_policies:
+        issue:
+          mode: exception_advisor
+        prd:
+          mode: semantic_control
+          checkpoints:
+          - plan_candidate
+          checkpoint_policies:
+            plan_candidate: shadow
+        refactor:
+          mode: semantic_control
+          checkpoints:
+          - plan_candidate
+          checkpoint_policies:
+            plan_candidate: shadow
+        workflow:
+          mode: exception_advisor
+        research:
+          mode: exception_advisor
+  uses:
+  - flow-project-runtime/v1
+  skill_sources:
+  - name: zaofu-skills
+    path: skills
+    mode: readonly

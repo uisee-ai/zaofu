@@ -1,0 +1,117 @@
+{
+  "sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3",
+  "approval": true,
+  "impl": 3,
+  "verify": 3,
+  "roles": [
+    {
+      "id": "prd-product-scan",
+      "model": "gpt-6-astra",
+      "skills": [
+        "source-verification",
+        "context-hygiene",
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-prd-plan-synth",
+        "zf-yoke-planner-role-context"
+      ]
+    },
+    {
+      "id": "prd-tech-scan",
+      "model": "gpt-6-astra",
+      "skills": [
+        "source-verification",
+        "context-hygiene",
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-prd-plan-synth",
+        "zf-yoke-planner-role-context"
+      ]
+    },
+    {
+      "id": "prd-planner",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-prd-plan-synth",
+        "zf-yoke-planner-role-context"
+      ]
+    },
+    {
+      "id": "prd-plan-critic",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-yoke-critic-role-context"
+      ]
+    },
+    {
+      "id": "prd-flow-discovery",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-verify-rescan-replan",
+        "zf-goal-closure-replan-contract",
+        "zf-yoke-test-evaluator-role-context"
+      ]
+    },
+    {
+      "id": "judge-prd",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-goal-closure-judge-contract"
+      ]
+    },
+    {
+      "id": "prd-dev-lane-0",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-yoke-dev-worker-role-context",
+        "zf-plan-task-map-contract"
+      ]
+    },
+    {
+      "id": "prd-dev-lane-1",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-yoke-dev-worker-role-context",
+        "zf-plan-task-map-contract"
+      ]
+    },
+    {
+      "id": "prd-dev-lane-2",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-yoke-dev-worker-role-context",
+        "zf-plan-task-map-contract"
+      ]
+    },
+    {
+      "id": "prd-verify-lane-0",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-yoke-test-evaluator-role-context"
+      ]
+    },
+    {
+      "id": "prd-verify-lane-1",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-yoke-test-evaluator-role-context"
+      ]
+    },
+    {
+      "id": "prd-verify-lane-2",
+      "model": "gpt-6-astra",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-yoke-test-evaluator-role-context"
+      ]
+    }
+  ]
+}

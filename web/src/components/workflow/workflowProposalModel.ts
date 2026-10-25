@@ -40,6 +40,9 @@ export function readinessPresentation({
   terminal: string;
 }): { title: string; tone: "error" | "info" | "ok" } {
   if (blockerCount > 0) return { title: "Needs changes before approval", tone: "error" };
+  if (requestStatus === "cancelled" || runStatus === "cancelled") {
+    return { title: "Workflow cancelled", tone: "info" };
+  }
   if (terminal) return { title: "Run completed", tone: "ok" };
   if (runStatus === "paused") return { title: "Run paused", tone: "info" };
   if (runStatus === "running" || requestStatus === "running") {

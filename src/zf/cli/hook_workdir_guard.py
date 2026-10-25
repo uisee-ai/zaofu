@@ -165,6 +165,19 @@ def write_target_paths(tool_name: str, tool_input: dict) -> list[str]:
     return [path for _operation, path in write_target_operations(tool_name, tool_input)]
 
 
+def runtime_write_guard_text(tool_name: str, tool_input: object) -> str:
+    """Inspect explicit file targets, retaining conservative unknown-input checks."""
+    targets = write_target_paths(tool_name, tool_input) if isinstance(tool_input, dict) else []
+    if targets:
+        # Quoted ledger paths in a plan are data, not mutation targets.
+        return "\n".join(targets)
+    return (
+        json.dumps(tool_input, ensure_ascii=False)
+        if isinstance(tool_input, (dict, list))
+        else str(tool_input or "")
+    )
+
+
 def write_target_operations(
     tool_name: str,
     tool_input: dict,

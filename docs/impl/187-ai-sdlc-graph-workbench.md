@@ -112,3 +112,19 @@ bash scripts/dev-premerge-gate.sh
 ```
 
 各层存在重叠，不将以上计数相加作为独立用例总数。结果收据见 [验证结果](../records/187-workflow-graph-e2e/verification-results.json)。
+
+## 赛车监工续测中的入口修复
+
+后续 [赛车真实验收](../records/2026-10-25-2110-racing-supervisor-e2e.md) 发现，准备 Worker 只观察默认项目和访问过 Workflow 路由的项目。现在后台按 workspace 注册表持续发现新项目，读取各项目配置指定的 state_dir，消费已受控入队的 Synthesis；无需先打开 Workflows 页面。原有最多两个项目同时消费、进程租约和事件增量检查保持有效，注册项目本身不创建请求或启动 Run。
+
+Kanban/Channel 共用的合同路径形状判断保留 `.gitignore` 等根目录 dotfile；后续 canonical 合同路径校验继续拒绝 runtime/internal、绝对路径与目录穿越。
+
+授权 Workflow submit 后，runtime 进程仍存活但超过同步等待窗口时，回执保留已接纳请求并返回 HTTP 202 / `runtime_start.status=starting`，不写启动失败事件，也不声称 ready；观察到退出或启动异常仍返回失败。准备 Synthesis 的 `workflow-request:*` 操作身份不再作为产品 Run；当前需求修订的准备取消显示在 History，后续新修订可重新准备。
+
+验证命令的路径提取对 Docker `--pull never` 与 `--pull=never` 保持一致：镜像拉取策略值不作为镜像名，挂载目标和镜像标识不作为仓库输入；镜像后的项目脚本仍需声明路径归属。真实 Planner 首轮提交触发此误报，回归先复现失败后修复，未放宽任务路径或 assembly owner 约束。
+
+Plan Preview 从绑定的 source index 补读可选 `authority_refs` 时，仅消费列表。字段缺失、null 或其他形状表示没有可展示的附加引用，不再令 Plan/Inbox/Workflow 图接口崩溃，也不将字符串拆成字符引用；原 Plan 正文、摘要校验和待审批状态保持不变。
+
+Provider 的结构化文件写入保护复用现有目标解析器，只检查实际 Add/Update/Delete/Move 或 Write/Edit 目标，避免把规划文档正文里的账本引用当作写账本。未知输入继续使用原有保守检查，shell 变更检测和 Task/Workdir 范围检查不变。
+
+Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮询创建的新数组不再触发清空与重载。切换项目、Plan，或绑定端口变化仍取消旧请求并重新读取；API 的绑定与摘要校验保持有效。真实浏览器12秒观测从12次附件请求降为3次，另用明确标记的图响应夹具验证绑定变化触发重新读取。

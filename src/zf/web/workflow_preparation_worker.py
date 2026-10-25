@@ -10,6 +10,7 @@ from pathlib import Path
 from zf.core.config.loader import load_config
 from zf.core.events.factory import event_log_from_project
 from zf.core.events.writer import EventWriter
+from zf.core.workspace.registry import WorkspaceRegistry
 from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,13 @@ class WorkflowPreparationWorker:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            # Kanban/CLI can enqueue work before any Workflow page is opened.
+            # Re-read the registry to include projects admitted after startup.
+            try:
+                for project in WorkspaceRegistry().list_projects():
+                    self.watch(Path(project.root))
+            except (OSError, ValueError):
+                log.exception("Workflow preparation could not read workspace projects")
             with self._lock:
                 available = sorted(
                     self._roots - self._active,

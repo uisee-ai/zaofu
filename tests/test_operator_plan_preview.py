@@ -44,6 +44,25 @@ def test_full_plan_is_primary_and_digest_is_separate(tmp_path):
     assert result["digest_markdown"].startswith("# Digest")
 
 
+@pytest.mark.parametrize("source_index,expected", [
+    ({}, []),
+    ({"authority_refs": None}, []),
+    ({"authority_refs": "artifacts/plan.md"}, []),
+    ({"authority_refs": {"ref": "artifacts/plan.md"}}, []),
+    ({"authority_refs": ["artifacts/plan.md"]}, ["artifacts/plan.md"]),
+])
+def test_source_index_optional_authority_refs_preserve_preview(tmp_path, source_index, expected):
+    state, full, payload = _artifacts(tmp_path)
+    (state / "artifacts/source_index.json").write_text(json.dumps(source_index))
+    payload["source_index_ref"] = "artifacts/source_index.json"
+
+    result = _preview(state, payload)
+
+    assert result["status"] == "pending"
+    assert result["markdown"] == full
+    assert result["authority_refs"] == expected
+
+
 def test_review_dossier_backfills_bound_decision_register(tmp_path):
     state, _, payload = _artifacts(tmp_path)
     full = (

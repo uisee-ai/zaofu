@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 ui-regression/workflow-graph-workbench.spec.ts:96:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels (8.4s)
+
+  1 passed (10.9s)

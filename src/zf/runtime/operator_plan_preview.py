@@ -654,6 +654,8 @@ def _source_index_authority_refs(
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return []
     refs = data.get("authority_refs") if isinstance(data, dict) else []
+    if not isinstance(refs, list):
+        return []
     return [str(item) for item in refs if str(item).strip()]
 
 

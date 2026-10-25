@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "status": "revised",
+  "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
+  "revision": 5,
+  "proposal_ref": {
+    "ref_schema_version": "sidecar-ref.v1",
+    "kind": "workflow_proposal",
+    "ref": "artifacts/workflow/proposals/prepare-TASK-5F44B4-c32763f31115843f/proposals/fa4a81e77a1703b6ee98f5743b4541867e0bee95474942b9ce1d725f75e605e0.json",
+    "sha256": "fa4a81e77a1703b6ee98f5743b4541867e0bee95474942b9ce1d725f75e605e0",
+    "byte_count": 74211,
+    "content_type": "application/json",
+    "schema_version": "workflow-proposal.v1",
+    "encoding": "utf-8",
+    "created_by": "workflow-proposal-compiler",
+    "source_event_id": "",
+    "access_scope": {},
+    "retention": {
+      "class": "audit_required"
+    },
+    "required": true,
+    "preview": ""
+  },
+  "proposal_digest": "871342aa7252e19b9fd330cf54390da9c9bbf1dc4e5c6c39400e8f7cb674faa8",
+  "blockers": [],
+  "requires_config_apply": true,
+  "started": false
+}
