@@ -223,6 +223,9 @@ def test_transport_receives_fresh_capsule_and_real_briefing(
         assert "current" in task_doc_path(runtime.state_dir, task.id).read_text()
         assert briefing.read_text().startswith("Active task: TASK-1")
         assert "task_context_stale" in briefing.read_text()
+        assert "## Read Order (authoritative)" in briefing.read_text()
+        assert str(task_doc_path(runtime.state_dir, task.id).resolve()) in briefing.read_text()
+        assert "Controlled Artifact Inputs" in briefing.read_text()
         sent.append(context)
         return context
 
@@ -276,6 +279,9 @@ def test_dispatch_document_identity_matches_transport_before_delivery(
         assert manifest["assigned_to"] == context.instance_id
         assert f"active_dispatch_id: {context.dispatch_id}\n" in doc.read_text()
         assert f"- dispatch_id: `{context.dispatch_id}`" in briefing.read_text()
+        assert str(doc.resolve()) in briefing.read_text()
+        assert str((doc.parent / "source.md").resolve()) in briefing.read_text()
+        assert str((doc.parent / "progress.md").resolve()) in briefing.read_text()
         assert asdict(runtime.task_store.get(task.id)) == before
         sent.append(context)
         if send_fails:

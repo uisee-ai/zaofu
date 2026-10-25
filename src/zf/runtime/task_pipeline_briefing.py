@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 from zf.core.config.schema import RoleConfig
 from zf.runtime.verification_commands import verification_command_required_for_stage
+from zf.runtime.task_doc import task_doc_path, task_source_path, task_progress_path
 
 
 def write_task_pipeline_briefing(
@@ -135,6 +136,7 @@ def write_task_pipeline_briefing(
         f"\"current_task_id\":\"{task.id}\",\"state\":\"busy\","
         "\"last_action_ts\":\"<ISO8601 UTC>\"}'"
     )
+    state_dir = Path(runtime.state_dir).resolve()
     lines = [
         f"Active task: {task.id}",
         "",
@@ -149,6 +151,18 @@ def write_task_pipeline_briefing(
         f"- workdir: `{workspace.project_path}`",
         f"- target_commit: `{payload.get('target_commit') or workspace.base_commit}`",
         f"- skills: `{', '.join(role.skills) or 'none'}`",
+        "",
+        "## Read Order (authoritative)",
+        "",
+        f"1. Read the kernel-managed task document `{task_doc_path(state_dir, task.id)}`.",
+        f"2. Read semantic source `{task_source_path(state_dir, task.id)}` and "
+        f"progress `{task_progress_path(state_dir, task.id)}`.",
+        "3. Match the task document's dispatch and contract revision to this "
+        "briefing and Compact Execution Context; report task_context_stale on disagreement.",
+        "4. Complete the exact Controlled Artifact Inputs reads below before work; "
+        "reading task.md does not replace the required artifact read ledger.",
+        "5. Keep kernel projections read-only and submit only this operation's "
+        "typed result through the Output Contract below.",
         "",
         "## Stage Contract",
         "",
