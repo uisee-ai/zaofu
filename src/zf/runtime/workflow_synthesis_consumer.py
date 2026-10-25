@@ -23,6 +23,7 @@ def consume_workflow_synthesis_operations(
     writer: EventWriter,
     agent: Any | None = None,
     limit: int = 1,
+    request_id: str = "",
 ) -> int:
     """Consume durable synthesis operations with a process-safe lease."""
 
@@ -48,6 +49,11 @@ def consume_workflow_synthesis_operations(
         candidates.sort(
             key=lambda item: str(item.get("last_event_at") or "")
         )
+        if request_id:
+            revision = load_workflow_request(state_dir, request_id).get("revision")
+            candidates = [op for op in candidates if (
+                (body := synthesis._hydrate_operation_request(state_dir, op)).get("request_id") == request_id
+                and body.get("request_revision") == revision)]
         for operation in candidates[:max(1, int(limit or 1))]:
             try:
                 request_body = synthesis._hydrate_operation_request(
@@ -129,7 +135,7 @@ def consume_workflow_synthesis_operations(
             except synthesis.WorkflowSynthesisError:
                 consumed += 1
                 continue
-            if not outcome.result.get("open_questions"):
+            if outcome.request_projection.get("status") == "ready":
                 try:
                     synthesis._build_synthesis_proposal(
                         state_dir=state_dir,

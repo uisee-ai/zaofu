@@ -3,7 +3,7 @@
 > 本文件由 `src/zf/cli/main.py::build_parser()` 生成，禁止手工修改。
 > 重新生成：`uv run python scripts/manual-docs.py generate`。
 
-当前共 **69** 个顶层命令 family、**298** 条可寻址命令路径。
+当前共 **69** 个顶层命令 family、**300** 条可寻址命令路径。
 命令描述直接取自 argparse parser，因此描述语言以代码中的 help 为准。
 
 ## `zf agents`
@@ -771,6 +771,8 @@ Inspect workflow topology
 | `zf workflow gates` | Render the effective read-only gate projection |
 | `zf workflow hooks` | Render the effective read-only hook registry |
 | `zf workflow inspect` | Preflight inspect workflow graph, handoff, affinity, and skills |
+| `zf workflow prepare` | Select, clarify and assemble a Workflow for review |
+| `zf workflow preview` | Read the complete redacted YAML and current proposal |
 | `zf workflow render` | Render linear and star topology |
 | `zf workflow routes` | List active workflow routes bound to a Task |
 | `zf workflow start` | Preview, propose, or apply a Task-bound workflow route |

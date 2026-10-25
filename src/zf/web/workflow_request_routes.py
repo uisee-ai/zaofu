@@ -82,15 +82,22 @@ def build_workflow_request_router(
     session_cookie: Callable[[Request], str | None],
 ) -> APIRouter:
     router = APIRouter()
+    from zf.web.workflow_preparation_worker import WorkflowPreparationWorker
+    preparation_worker = WorkflowPreparationWorker()
+    preparation_worker.watch(default_project_root)
+    router.add_event_handler("startup", preparation_worker.start)
+    router.add_event_handler("shutdown", preparation_worker.stop)
 
     def resolve(project_id: str):
-        return _resolve_api_project(
+        context = _resolve_api_project(
             project_id,
             default_project_id=default_project_id,
             default_state_dir=default_state_dir,
             default_config=default_config,
             default_project_root=default_project_root,
         )
+        preparation_worker.watch(context.project_root)
+        return context
 
     def auth_response(
         action: str,
@@ -612,6 +619,19 @@ def build_workflow_request_router(
             )
             status_code = int(result.pop("_status_code", 200))
             return JSONResponse(result, status_code=status_code)
+        if current:
+            from zf.runtime.workflow_prepare import prepare_request_revision
+            try:
+                prepared = prepare_request_revision(
+                    state_dir=context.state_dir, project_root=context.project_root, config=context.config,
+                    writer=EventWriter(event_log_from_project(context.state_dir, config=context.config)),
+                    request=current, actor=str(payload.get("requested_by") or "web"),
+                    payload={**payload, "intake_ref": intake_ref},
+                )
+            except ValueError as exc:
+                return JSONResponse({"ok": False, "status": "preparation_blocked", "reason": str(exc)}, status_code=409)
+            if prepared is not None:
+                return JSONResponse({**prepared, "result": prepared}, status_code=202)
         synthesis_ref = (
             dict(current.get("synthesis_ref"))
             if isinstance(current.get("synthesis_ref"), dict)
