@@ -27,6 +27,55 @@ Operation。Agent 根据完整需求和目录选路；内核验证版本、摘�
 取消、需求修订、过期返回、Provider 失败沿用既有生命周期检查，不回退到关键词选路。
 Proposal 仍须通过受控 submit 才启动；重复 submit 复用已启动实例。
 
+### Task-bound Workflow 的路径合同
+
+Delivery 点火预检按字段用途校验 Task 路径：`scope`、`shared_files`、
+`exclusive_files` 以及普通 worker 的 `handoff_artifacts` 保持项目内相对路径，
+不能指向 `.git` 或 `project.state_dir`。`exclusions` 表示禁止修改的位置，
+允许列出 `.git/**` 和配置的运行态目录，但仍拒绝绝对路径、`..` 和越界符号链接。
+
+由 `execution_binding.owner=workflow`（兼容旧 `evidence_contract.execution_owner`）
+标记的父任务，其 `handoff_artifacts` 会绑定为 Workflow 输入 `artifact_refs`，
+可引用已有文件或目录的绝对路径，例如外部交接 Markdown、素材目录和数据库样例目录。
+这些引用不授予写入权限；绝对路径必须存在，不能指向项目内部状态，不能包含 `..`。
+预览保留原始引用、排除项和 Task 摘要，不重写 Task，也不追加启动事件。
+回归覆盖见 `tests/test_contract_validation.py` 与 `tests/test_workflow_start_service.py`。
+
+### 批准后自动启动项目运行器
+
+`workflow-start` 的 CLI、Kanban Agent 和 Channel Group 批准入口，以及
+`zf flow submit --apply`，在请求受控提交后调用同一个运行器启动器
+`src/zf/runtime/workflow_runtime_start.py`。预览、提案和被拒绝的请求不会启动运行器。
+启动器按 `zf.yaml` 的 `project.state_dir` 锁定启动记录，复用已有 watcher，或在
+项目根目录后台执行当前安装的 `zf start`。子进程固定目标 Project 上下文，移除
+Web/Workflow 授权凭证，仍执行原有 preflight、tmux/transport、sidecar 和 catch-up。
+
+`zf start` 完成启动后发布与 watcher PID/epoch 绑定的 readiness 投影；响应中的
+`runtime_start.status=running` 表示运行器已就绪，不表示 Workflow 或代码交付已完成。
+并发启动和重试复用同一进程；`runtime.start.requested`、`runtime.start.failed` 记录
+启动副作用。日志位于 `<state_dir>/logs/workflow-runtime-start.log`。
+启动失败或等待超过 30 秒返回明确失败/仍在启动信息，保留已提交 Request 与原提案；
+修复环境后重试原提案，不追加第二个 invoke。首次提交生成的 Request 标识不会改写
+原提案的输入摘要；Task、参数、配置和来源 currentness 检查继续生效。
+
+### Dashboard 默认写权限
+
+`zf web` 在未配置权限策略时默认启用写操作：loopback 使用可信本机会话，
+非 loopback（含 `0.0.0.0`）复用或创建 Workspace 的 `web-action-token`（权限 0600）。
+已有 Token/Passcode/可信会话策略保持不变；`--read-only` 显式禁用写操作。
+`tools/start-webkanban.sh` 默认可写，并输出 `write_url`；浏览器从 URL fragment
+读取授权到既有 Token 存储，立即清除 fragment，再发送 API 请求。Token 不进入 HTTP
+请求路径、查询参数或 Referer。局域网匿名请求仍被拒绝；所有写操作仍经过受控 action。
+Kanban Agent 默认文件权限统一为 `workspace_writer`（Write），Workflow 独立批准仍然必需。
+显式选择 `dangerous_full` 继续要求原有确认字段，不通过省略权限字段隐式扩大写入范围。
+未传权限字段的 API、Agent 直接调用、交互续跑、启动恢复和队列派发统一采用同一写权限
+默认值；明确传入 `read_only` 继续生效。`ZF_WEB_TRUSTED_SESSION=0` 只禁用免鉴权的
+可信会话，自动配置 Token 写操作；只读 Dashboard 需明确传入 `--read-only`。
+
+回归见 `tests/test_workflow_runtime_start.py`、`tests/test_cli_web_access.py`、
+`web/tests/dashboardLaunch.test.ts`。真实 watcher/tmux + mock Provider 的三个入口验证见
+`tests/e2e/test_workflow_runtime_autostart.py`（显式 `host` 层），不等同真实模型交付验证。
+
 ## 验证材料
 
 - `tests/test_workflow_auto_routing.py`：否定/解释/新功能输入、无默认 lane、旧请求重放、

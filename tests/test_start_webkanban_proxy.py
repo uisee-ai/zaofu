@@ -34,6 +34,7 @@ def test_launcher_forwards_proxy_without_shell_expansion(tmp_path):
     assert result.returncode == 0, result.stderr
     runtime_env = workspace / "webkanban-8002.env"
     assert runtime_env.stat().st_mode & 0o777 == 0o600
+    assert (workspace / "webkanban-8002.log").stat().st_mode & 0o777 == 0o600
     assert str(runtime_env) in (tmp_path / "args").read_text()
     command = '. "$1"; python3 -c \'import os,json; print(json.dumps({k:os.environ.get(k) for k in ["https_proxy","HTTPS_PROXY","NO_PROXY","ZF_WEB_ACTION_TOKEN"]}))\''
     values = json.loads(subprocess.check_output(["/bin/bash", "-c", command, "_", str(runtime_env)],
@@ -41,3 +42,4 @@ def test_launcher_forwards_proxy_without_shell_expansion(tmp_path):
     assert values == {"https_proxy": proxy, "HTTPS_PROXY": "http://127.0.0.1:3129", "NO_PROXY": "", "ZF_WEB_ACTION_TOKEN": "test-only"}
     assert not marker.exists()
     assert proxy not in result.stdout
+    assert "write_url: http://0.0.0.0:8002/#zf-action-token=test-only" in result.stdout

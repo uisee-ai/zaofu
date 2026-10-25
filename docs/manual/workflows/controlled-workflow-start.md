@@ -68,6 +68,12 @@ zf workflow start \
 
 Provider Agent 不得读取或接收 `ZF_WORKFLOW_ACTION_TOKEN`。
 
+Apply 成功后自动拉起当前 Project 的 `zf start`，已有运行器会复用。
+CLI、Kanban Agent 与 Channel Group 共用此行为；Preview/Propose 不拉起运行器。
+响应 `runtime_start.status=running` 表示 watcher 已就绪，可以接收派发事件。
+启动失败或超时会返回诊断和 `<state_dir>/logs/workflow-runtime-start.log` 路径；
+修复后重试原提案即可，已提交 Request 和 invoke 会复用。
+
 ## Web/Kanban Agent 路径
 
 ```text
@@ -128,9 +134,9 @@ zf events --last 80
 
 ## 完成定义
 
-Workflow Start 完成只表示 exact proposal 已获授权，并产生了与同一 Task/route/参数绑定的
-`workflow.invoke.requested`。它不表示代码交付完成；后续结果由 Run、Verify、Closure 和
-Completion Gate 判断。
+Workflow Start 成功表示 exact proposal 已获授权，产生了与同一 Task/route/参数绑定的
+`workflow.invoke.requested`，且项目运行器已就绪。它不表示代码交付完成；后续结果由
+Run、Verify、Closure 和 Completion Gate 判断。
 
 ## 相关
 

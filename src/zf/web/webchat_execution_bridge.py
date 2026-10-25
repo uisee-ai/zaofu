@@ -15,7 +15,7 @@ from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.task.store import TaskStore
-from zf.runtime.channel_contracts import normalize_permission_profile
+from zf.runtime.provider_permissions import normalize_kanban_permission_profile
 from zf.runtime.channel_prd_context import workflow_context_for_project
 from zf.runtime.channel_workflow_authority import bind_task_channel_authority
 from zf.runtime.runtime_snapshot import (
@@ -109,7 +109,7 @@ def resume_durable_webchat_turn(
             )
         ),
         "backend": str(turn.get("backend") or original.get("backend") or ""),
-        "permission_profile": str(turn.get("permission_profile") or "read_only"),
+        "permission_profile": normalize_kanban_permission_profile(turn.get("permission_profile") or original.get("permission_profile")),
         "project_id": str(turn.get("project_id") or ""),
         "conversation_id": str(turn.get("conversation_id") or ""),
         "thread_key": str(turn.get("thread_id") or "main"),
@@ -193,7 +193,7 @@ def schedule_durable_webchat_recovery(
             **original,
             "message": message,
             "backend": str(turn.get("backend") or original.get("backend") or ""),
-            "permission_profile": str(turn.get("permission_profile") or "read_only"),
+            "permission_profile": normalize_kanban_permission_profile(turn.get("permission_profile") or original.get("permission_profile")),
             "project_id": str(turn.get("project_id") or ""),
             "conversation_id": str(turn.get("conversation_id") or ""),
             "thread_key": str(turn.get("thread_id") or "main"),
@@ -288,7 +288,7 @@ def safe_dispatch_next_durable_webchat_queue(
             **request_payload,
             "message": str(item.get("message") or ""),
             "backend": str(request_payload.get("backend") or backend),
-            "permission_profile": str(
+            "permission_profile": normalize_kanban_permission_profile(
                 request_payload.get("permission_profile") or permission_profile
             ),
             "project_id": project_id,
@@ -363,7 +363,7 @@ def handle_headless_kanban_agent_chat(
     task_id = task_id_from_payload(payload)
     workflow_context = workflow_context_for_project(payload, project_root)
     thread_key = str(payload.get("thread_key") or "").strip()
-    permission_profile = normalize_permission_profile(payload.get("permission_profile"))
+    permission_profile = normalize_kanban_permission_profile(payload.get("permission_profile"))
     turn_id = str(payload.get("turn_id") or uuid.uuid4())
     project_id = str(payload.get("project_id") or "")
     conversation_id = str(payload.get("conversation_id") or "")

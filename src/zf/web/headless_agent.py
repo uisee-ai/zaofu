@@ -40,10 +40,12 @@ from zf.runtime.cli_command import (
     default_zf_cli_cmd,
 )
 from zf.runtime.provider_permissions import (
+    KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     build_provider_permission_snapshot,
     claude_permission_mode_for_profile,
     codex_security_config_for_profile,
     provider_permission_drift,
+    normalize_kanban_permission_profile,
     snapshot_with_provider_session,
 )
 from zf.runtime.task_workflow_plans import TASK_WORKFLOW_PARAMETER_KEYS
@@ -952,10 +954,10 @@ class KanbanHeadlessAgent:
         context: dict[str, Any] | None = None,
         on_message: MessageCallback | None = None,
         thinking_level: str = "",
-        permission_profile: str = "read_only",
+        permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     ) -> HeadlessTurnResult:
         backend = canonical_headless_backend(backend)
-        permission_profile = normalize_permission_profile(permission_profile)
+        permission_profile = normalize_kanban_permission_profile(permission_profile)
         if not backend or backend not in self.backends:
             return _backend_failure(backend or "unknown", "", "unsupported headless backend")
         adapter = self.backends[backend]
@@ -1189,7 +1191,7 @@ class KanbanHeadlessAgent:
             labels=labels,
         )
 
-    def _system_prompt(self, permission_profile: str = "read_only") -> str:
+    def _system_prompt(self, permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE) -> str:
         profile = normalize_permission_profile(permission_profile)
         cli_command = _headless_zf_cli_cmd()
         execution_contract = {

@@ -36,6 +36,7 @@ from zf.runtime.workflow_task_request_rotation import (
     fresh_task_request_origin_binding,
 )
 from zf.runtime.workflow_request_identity import request_source_ref, stable_request_id
+from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -159,8 +160,8 @@ class WorkflowRequestActionsMixin:
         )
         adapter = str(route.get("start_adapter") or "")
         if normalized.get("active_request_replay"):
-            return replay_active_workflow_start(self, requested, action, requested_action, common_payload, route_id, route)
-        if adapter in {"adaptive_research", "fixed_research"}:
+            result = replay_active_workflow_start(self, requested, action, requested_action, common_payload, route_id, route)
+        elif adapter in {"adaptive_research", "fixed_research"}:
             result = self._research_start(
                 requested=requested,
                 action=action,
@@ -245,7 +246,7 @@ class WorkflowRequestActionsMixin:
             "route_id": route_id,
             "route": route,
         })
-        return result
+        return ensure_submitted_workflow_runtime(result, config_path=self.project_root / "zf.yaml", config=self.config)
 
     def _workflow_request(
         self,
@@ -788,17 +789,17 @@ class WorkflowRequestActionsMixin:
         )
         accepted = result.get("status") != "STOP"
         return {
-            "_status_code": 202 if accepted else 409,
+            "_status_code": 202 if accepted else result.get("_status_code", 409),
             "ok": accepted,
             "status": str(result.get("status") or "STOP"),
             "action": action,
             "requested_action": requested_action,
             "request_id": str((result.get("payload") or {}).get("request_id") or ""),
             "workflow_invoke_event_id": str(result.get("workflow_invoke_event_id") or ""),
-            "workflow_invoke_status": str(
-                result.get("workflow_invoke_status") or ""
-            ),
+            "workflow_invoke_status": str(result.get("workflow_invoke_status") or ""),
             "next_action": str(result.get("next_action") or ""),
+            "runtime_start": result.get("runtime_start", {}),
+            "reason": str(result.get("reason") or ""),
             "idempotent_replay": bool(result.get("idempotent_replay")),
             "event_ids": list(result.get("event_ids") or []),
             "blockers": list(result.get("blockers") or []),

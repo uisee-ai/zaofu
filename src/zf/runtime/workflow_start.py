@@ -282,7 +282,10 @@ class WorkflowStartService:
                     status_code=409,
                     task_id=task_id,
                 )
-            if not terminal_rotation:
+            # An approved preview may predate Request creation. Keep its input
+            # digest intact on retry; the canonical Request is carried in the
+            # normalized top-level binding below and was checked above.
+            if not terminal_rotation and not isinstance(payload.get("task_input_binding"), dict):
                 parameters = dict(parameters)
                 parameters["request_id"] = task_request["request_id"]
                 parameters["request_revision"] = int(

@@ -34,6 +34,7 @@ from zf.runtime.workflow_delivery_replay import (
 from zf.runtime.workflow_task_lifecycle import (
     claim_submitted_workflow_task as _claim_submitted_workflow_task,
 )
+from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
 
 def build_flow_submit_preview(
     *,
@@ -498,12 +499,12 @@ def apply_flow_submit(
             writer=request_writer,
         )
         if str(projection.get("status") or "") in {"submitted", "running"}:
-            return _submitted_request_replay_result(
+            return ensure_submitted_workflow_runtime(_submitted_request_replay_result(
                 config=config,
                 state_dir=state_dir,
                 projection=projection,
                 events=request_writer.event_log.read_all(),
-            )
+            ), config_path=config_path, config=config)
         if not bool(projection.get("confirmed")):
             projection = revise_workflow_request(
                 state_dir,
@@ -763,7 +764,7 @@ def apply_flow_submit(
         writer.event_log.read_all(),
         source_event_id=invoked.id,
     )
-    return {
+    return ensure_submitted_workflow_runtime({
         **preview,
         "schema_version": "workflow.submit.apply.v1",
         "dry_run": False,
@@ -774,7 +775,7 @@ def apply_flow_submit(
         "next_action": invoke_visibility["next_action"],
         "event_ids": event_ids,
         "state_dir": str(state_dir),
-    }
+    }, config_path=config_path, config=config)
 
 
 def _request_id_from_path(path: Path) -> str:
