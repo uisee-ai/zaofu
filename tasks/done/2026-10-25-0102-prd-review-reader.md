@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现 commit: 1e044a7 feat: strengthen generic plan approval review contract
 
 # PRD Preview 人类阅读导航
 
@@ -17,3 +18,9 @@
 - step -> verify: `derived_plan_full` 页面显示 PRD/SDD/TDD/Decision/Task Map/Trace 导航和计数。
 - step -> verify: 章节跳转、连续阅读、分页阅读和源码查看保持可用。
 - step -> verify: Web build/typecheck/unit tests 通过，且不改变 approve 的受控 action 路径。
+
+## 验证
+
+- `npm run build` -> passed；bundle budget passed。
+- `npm run test:unit` -> passed。
+- `dev-verify` deterministic tier -> 1499 passed, 8 skipped；Web typecheck/unit passed；flow smoke（正确依赖环境）10 passed。

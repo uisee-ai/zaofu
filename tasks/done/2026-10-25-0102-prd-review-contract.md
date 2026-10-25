@@ -1,4 +1,5 @@
-> 状态: active
+> 状态: done
+> 实现 commit: 1e044a7 feat: strengthen generic plan approval review contract
 
 # PRD Preview 人工审批合同
 
@@ -17,3 +18,8 @@
 - step -> verify: skill contract 明确 PRD/SDD/TDD/Decision Register 必填内容，并同步 `skills/`、`.codex/skills/`、`.claude/skills/`。
 - step -> verify: Planner/Critic 的既有 plan ports 能表达每个合同，不能以一句 summary 代替行为、接口或证据。
 - step -> verify: 新增或更新聚焦测试验证缺失 review contract 时不宣称 `derived_plan_full`。
+
+## 验证
+
+- `pytest tests/test_skill_provenance.py tests/test_operator_plan_preview.py tests/test_reader_fanout_runtime.py tests/test_kanban_turn_context.py -q --no-cov` -> 185 passed, 1 skipped。
+- `scripts/dev-premerge-gate.sh`（使用已安装依赖环境）-> 51 passed。
