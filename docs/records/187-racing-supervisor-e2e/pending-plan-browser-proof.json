@@ -1,0 +1,11 @@
+{
+  "planId": "evt-adf3807d914c",
+  "status": "pending",
+  "bodyDigest": "c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28",
+  "bodyChars": 25377,
+  "assemblyNewCriterion": "AC-A07",
+  "approvalButtonEnabled": true,
+  "approvalClicked": false,
+  "desktopNoOverflow": true,
+  "mobileNoOverflow": true
+}

@@ -35,6 +35,8 @@
 18. 文案新版本 `evt-99bf2fe56f16` 于23:11:35接纳，23:11:38再次请求审批。Critic核对全文与确认候选一致，文案同步到PRD、AC-A02、浏览器场景及产品验收规格，要求真实点击后完整重置。此时shadow审查仍指出assembly自检映射缺口；没有把Critic批准当作用户Plan批准。
 19. 第二次真实Plan Chat只在选中自检段落追加具名验收/TDD映射要求，保留完整90秒和候选集成后独立验证责任。首个脚本断言错误地期待一个未发送给Agent的空格，未应用候选；修正脚本后逐字局部diff、引用外不变及审批按钮禁用均通过。确认产生 `plan.rejected=evt-2992693c229e`（23:17:04），不可变审阅摘要 `67096ba35da5c33ff46de80373d732bff4ec9e31896fd62d5d18179e9fe03a2a`，23:17:24开始重新规划，尚未批准实现。
 20. 真实页面12秒观测到同版三个Plan附件共请求12次，加载提示反复出现。根因是图轮询每次创建新的artifacts数组，触发审阅器Effect清空并重载。按端口路径/摘要稳定依赖后，同样真实观测只有3次请求、12次采样均持续显示内容。独立Docker浏览器回归用明确的图响应夹具证明同版轮询不重载、绑定变化后重新读取，1 passed；构建、类型及bundle预算通过。
+21. 第二次Plan Chat在23:17:24进入重规划，Planner正式预检零错误，`prd.plan.child.completed=evt-e501a93cea9a`。独立Critic核对新增AC-A07的五组场景、验收矩阵与运行时责任选择一致，23:42:45生成 `task_map.ready=evt-adf3807d914c`，23:42:47生成 `plan.approval.requested=evt-40e85f0b4734`。原4任务、依赖、lane归属及15项AC保留，新增后共16项；3个Impl/Verify lane已由实际配置编译核对，依赖图最大实现并行宽度为2。没有Plan批准或Impl派发。
+22. 真实Docker浏览器读到新版25377字符正文，与绑定SHA-256 `c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28` 一致；在模块/验收场景中找到AC-A07，审批按钮可用但未点击，桌面和手机没有横向溢出。最终两张Viewport截图已目视核对有效。完整PRD、SDD接口和Plan已导出，[审批摘要](187-racing-supervisor-e2e/approval-review.md)交付用户，并请求批准这一具体版本。此确认来自用户明确要求，不是监工自行追加的流程。
 
 ## 发现与处理
 
@@ -53,6 +55,8 @@
 本记录后续补入 Workflow/Plan 修订、用户审批、实际并行区间、门禁与最终交付。原始认证 token、storageState 和带认证 trace 不进入仓库。
 
 已导出审阅用问答、候选YAML、实际配置、局部修订回执和验证日志，见 [证据清单与SHA-256](187-racing-supervisor-e2e/manifest.json)。这批证据截止人工Plan审批前，不包含尚未发生的Impl/Verify或产品完成证明。
+
+修复提交：`bd11edf fix: harden workflow preparation and plan review gates`。最终自动验证器再次执行Web类型检查和全部模型测试通过；已单独通过的后端影响闭包、sentinel及Mock E2E不重复运行。尚未merge/push。工作区保留本次运行需要的`.venv`和`web/node_modules`临时符号链接，8002与runtime留供用户审批，任务未归档。
 
 补充真实 host + Mock Provider 层：`tests/e2e/test_workflow_runtime_autostart.py -k starting -m host` 的 CLI / Kanban / Channel 三入口全部通过（49.74 秒）。将同步等待设为 0，使回执实际返回 starting；各入口随后自动启动 watcher、接纳 invoke 并派发，重复批准不生成新 invoke，没有 runtime.start.failed。每个测试使用独立临时 tmux socket，并清理自己的 runtime。这一层不冒充真实 Provider 验证。
 

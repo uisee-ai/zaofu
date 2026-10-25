@@ -7,10 +7,12 @@
 
 持续记录：[真实运行与修复](../../docs/records/2026-10-25-2110-racing-supervisor-e2e.md)。
 
+当前停在用户指定的Plan审批门：`evt-adf3807d914c`，正文摘要 `c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28`。[审批摘要与完整文档](../../docs/records/187-racing-supervisor-e2e/approval-review.md)已交付；没有plan.approved或Impl派发。8项通用修复已提交：`bd11edf fix: harden workflow preparation and plan review gates`。本任务保持active，不以审批等待冒充端到端完成。
+
 ## 验收
 
 - [x] 在 8002 用 Playwright 新建赛车项目并输入需求 -> verify: 真实 Provider、Kanban 与 Workflow AskUserQuestion、Task/Request 来源和完整 YAML Preview 可核验；旧提案误点及受控恢复已记录。
-- [ ] Workflow 和 Plan 两处真实局部 Chat -> verify: 不可变候选、局部 diff、新版本绑定及重审均有效。
+- [x] Workflow 和 Plan 两处真实局部 Chat -> verify: 不可变候选、局部 diff、新版本绑定及重审均有效；Plan两次修订经真实Planner/Critic接纳，第二次新增AC-A07进入绑定合同，原15项保留。
 - [ ] Plan 交付用户后暂停 -> verify: 用户批准具体版本前没有 impl 派发，批准后自动继续。
 - [ ] 设置 3 lanes 并观察 impl/verify -> verify: 两类分别有至少两个 lane 的真实重叠区间；未达到时有根因、修复及实际重验。
 - [ ] 赛车产品与六视角图闭合 -> verify: 独立验证、Judge、内核 Run/Task/Goal 终态一致，当前候选的浏览器产品验收通过。

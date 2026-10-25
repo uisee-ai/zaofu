@@ -1,0 +1,28 @@
+{
+  "plan_id": "evt-adf3807d914c",
+  "status": "pending",
+  "accepted_plan_sha256": "c12ce3ef9dd16ba97c60259ba3ee75dca12d19d8397f67f5127f6546f9d2cc28",
+  "source_seq": 3236,
+  "task_count": 4,
+  "acceptance_count": 16,
+  "assembly_self_check": {
+    "id": "VC-ASSEMBLY",
+    "command": "node scripts/racing-runner/unit.mjs assembly",
+    "acceptance_ids": [
+      "AC-A07"
+    ],
+    "owner": "impl_self_check",
+    "tier": "runtime",
+    "deterministic": true,
+    "reusable": true,
+    "timeout_seconds": 120,
+    "producer_task_id": "RACE-ASSEMBLY",
+    "producer_paths": [
+      "artifacts/racing/assembly/runs/"
+    ],
+    "rolling_smoke": true
+  },
+  "plan_approved": false,
+  "impl_dispatched": false,
+  "url": "http://10.0.169.194:8002/?page=workflows&project=racing-project-33598481&request=prepare-TASK-5F44B4-c32763f31115843f"
+}
