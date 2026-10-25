@@ -1,6 +1,6 @@
 # 任务驱动 Workflow 准备、澄清与完整 YAML 预览
 
-> 状态: active；用户于 2026-10-25 明确批准“生成 backlog 实施”。
+> 状态: done；实现提交 `56656f5 feat: unify workflow preparation and YAML previews`；用户于 2026-10-25 明确批准“生成 backlog 实施”。
 
 ## 目标与边界
 
