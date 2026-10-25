@@ -4,4 +4,4 @@ Task Pipeline派发先发布当前task capsule，再生成briefing并发送promp
 
 `write_task_pipeline_briefing`现在从`runtime.state_dir`通过既有task_doc路径函数生成绝对task/source/progress路径；显式核对dispatch/contract revision，读取原Controlled Artifact Inputs，最后使用同一Output Contract提交typed result。它只投影已有路径，不创建第二套合同或写canonical state。
 
-验证与真实记录：[任务](../../tasks/active/2026-10-25-1622-pipeline-capsule-read-path.md)。
+验证与真实记录：[任务](../../tasks/done/2026-10-25-1622-pipeline-capsule-read-path.md)。

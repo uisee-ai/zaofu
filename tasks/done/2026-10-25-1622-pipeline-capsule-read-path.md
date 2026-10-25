@@ -1,6 +1,6 @@
 # Task Pipeline 启动合同路径补齐
 
-> 状态: active
+> 状态: done — `baf7b4d5 fix: expose task capsule paths in pipeline briefings`；合dev `aa053ea9 fix: make pipeline task context discoverable`。
 
 本轮真实并行后Inventory worker被通用launch prompt要求寻找task.md，但Task Pipeline briefing未列Read Order/绝对路径，worker在自己的worktree内空查找。Kernel事实上已把当前capsule发布在配置state_dir/task_docs下。监工第一条通知误将漏指针表述成未提供，已紧接更正绝对路径及dispatch/contract修订并保留两条审计；不更改运行态或worker代码。
 
@@ -14,3 +14,9 @@
 - dev-verify plan/run自动影响闭包61 passed（8个文件，含mock恢复控制循环），无跳过层；premerge 51 passed。
 - 当前Inventory worker已实际读取task.md/source.md/progress.md与受控工件，并开始读取59表目录。两个operator通知最终作为一条队列消息待处理；worker在此之前已自行找到胶囊，不能把其继续执行归因于通知。
 - Environment旧代际结果16:17:36已被接纳为dev.blocked evt-a021c8cd8a52；真实并行约3分04秒。后续只有Inventory继续，环境缺项与宿主资格仍未完成。
+
+## 上线回执
+
+合并后premerge再次51 passed。16:26:39 UTC仅重载watcher 3491709→3531557，新guard于16:27:01登记；9个worker PID/start ticks保持。Inventory工作树已新增五组owned路径下的CLI/脚本/文档/测试/证据，未被重启。source worktree已验证干净、全部提交在dev且无使用者后清理；未push；既有索引文档改动保留。
+
+本轮早期并行证据与缺项见[前一任务](2026-10-25-1556-watcher-batch-wake.md)及`/home/min/workspace/public/zaofu-evidence/early-parallel-20261025/`。旧Environment失败不使本次新任务停止；本任务完成只表示合同路径修复与验证完成，不表示产品验收通过。
