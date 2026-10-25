@@ -1,6 +1,6 @@
 # PRD Plan 人工审阅与规格追溯改进
 
-> 状态: active
+> 状态: done — `adae93f7 feat: add traceable human review layers to plan previews`
 
 用户已于本轮明确批准生成 backlog 并实施。依据：loshu-fms 62 页/6 表单/54 场景已映射，但 Preview 工程历史占约 42%，121/129 执行步骤采用相同 TDD 模板。目标是在同版已绑定工件上提供可读审批视图，并改善后续 Planner 的规格表达。保留业务范围、唯一 Task 合同、审批与状态所有权。
 
@@ -27,3 +27,5 @@
 ## 完成边界
 
 本批只改善 ZaoFu 的生成方法与同版工件阅读；未重新调用真实 Provider 生成 loshu-fms Plan，未改写已接纳工件，未批准或启动 Impl。新细化格式通过合成业务的真实 API/UI 验证；旧项目通过真实工件只读验证。代码提交在独立 worktree，未合并 dev、未 push。
+
+实现提交：`adae93f7 feat: add traceable human review layers to plan previews`。全部四项验收完成；临时 API/UI 已停止，真实 8001 服务与 loshu-fms runtime 保留。
