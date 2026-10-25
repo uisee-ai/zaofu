@@ -40,7 +40,10 @@ def derive_impl_rework_requests(
         if trigger_id:
             latest_status_by_trigger[trigger_id] = event.type
 
-    requests: dict[str, dict[str, Any]] = {}
+    from zf.runtime.task_pipeline_operator_retry import operator_impl_retry_requests
+    requests = operator_impl_retry_requests(
+        events=event_rows, operations=operations, contexts=generation_contexts,
+    )
     for event in event_rows:
         if event.type != "task.ref.rejected" or not event.task_id:
             continue
@@ -192,7 +195,7 @@ def impl_rework_feedback(
         return []
     return [{
         "finding_id": f"task-ref:{request.get('event_id') or 'rejected'}",
-        "category": "task_ref_admission",
+        "category": str(request.get("fault") or "task_ref_admission"),
         "severity": "blocking",
         "reason": str(request.get("reason") or "TaskRef admission rejected"),
         "expected_action": str(

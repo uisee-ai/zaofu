@@ -735,19 +735,22 @@ def _derive_stage(
         return "impl_ready", impl_generation, max(0, impl_generation - 1)
     if impl_status in {"failed", "blocked"}:
         return "blocked", impl_generation, max(0, impl_generation - 1)
-    if impl_status != "settled" or not _semantic_passed(impl):
-        return "blocked", impl_generation, max(0, impl_generation - 1)
     requested_generation = int(
         (impl_rework_request or {}).get("operation_generation") or 0
     )
-    if requested_generation == impl_generation:
+    operator_retry = (
+        (impl_rework_request or {}).get("fault") == "task_pipeline_operator_retry"
+        and impl_status == "settled"
+        and impl.get("semantic_verdict") in {"blocked", "failed"}
+    )
+    if requested_generation == impl_generation and (
+        operator_retry or (impl_status == "settled" and _semantic_passed(impl))
+    ):
         if impl_generation <= max_rework:
-            return (
-                "impl_rework_ready",
-                impl_generation + 1,
-                impl_generation,
-            )
+            return "impl_rework_ready", impl_generation + 1, impl_generation
         return "blocked", impl_generation, impl_generation
+    if impl_status != "settled" or not _semantic_passed(impl):
+        return "blocked", impl_generation, max(0, impl_generation - 1)
 
     verify = current.get("verify")
     if (
