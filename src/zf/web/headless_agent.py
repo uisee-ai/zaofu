@@ -1330,7 +1330,10 @@ class KanbanHeadlessAgent:
             'idea-to-product, intent must be {"decision": "propose_action", '
             '"source_quote": "<exact verbatim substring from the user semantic '
             'context that supports this proposal>"}. For product '
-            "ideas, prefer action=idea-to-product with payload.objective. For "
+            "ideas, prefer action=idea-to-product with payload.objective. Owner confirmation "
+            "prepares a visible Workflow Request for semantic selection, questions and YAML "
+            "Preview; it does not start execution. Describe this as preparation and require "
+            "separate approval of the assembled Preview before starting. For "
             "workflow yaml changes or runtime restart/stop, propose "
             "workflow-config-* or runtime-* only as owner-approved/proposal-only "
             "actions. For creating work, prefer "

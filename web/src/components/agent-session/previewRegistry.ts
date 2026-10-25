@@ -125,6 +125,7 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
     push("objective", payload.objective);
   } else if (action === "idea-to-product") {
     push("objective", payload.objective);
+    push("next", "Prepare Workflow, answer questions, then review YAML before starting");
   } else if (action === "apply-patch-proposal") {
     push("patch", payload.patch_ref || payload.artifact_id || payload.path);
     push("mode", "gated preview only");

@@ -1524,6 +1524,37 @@ class ProductActionsMixin:
             and self.config is not None
             and (self.project_root / "zf.yaml").exists()
         )
+        if initialized_project and not payload.get("proposal_only"):
+            prepared = self._dispatch_workflow_control_action(
+                requested=requested,
+                action="workflow-request",
+                requested_action=requested_action,
+                payload={
+                    **payload,
+                    "objective": objective,
+                    "kind": str(payload.get("kind") or "auto"),
+                },
+            )
+            if prepared.get("ok"):
+                self._completed(
+                    requested=requested,
+                    event=intent_event,
+                    action=action,
+                    requested_action=requested_action,
+                    status=prepared["status"],
+                    task_id=_task_id_from_payload(payload),
+                    extra={
+                        "intent_id": intent["intent_id"],
+                        "request_id": prepared["request_id"],
+                        "preview_url": prepared.get("preview_url", ""),
+                    },
+                )
+            return {
+                **prepared,
+                "action": action,
+                "requested_action": requested_action,
+                "intent_id": intent["intent_id"],
+            }
         if initialized_project:
             proposals = [
                 {
