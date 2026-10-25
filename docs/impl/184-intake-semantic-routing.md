@@ -19,6 +19,14 @@ Workflow Synthesis Operation、Proposal 编译器及 Task Map 合同，没有增
 历史请求保留原 kind，不因重放 auto 隐式迁移。
 
 受控 workflow-request 的 kind=auto 默认进入已有持久化 Synthesis Operation。
+已初始化项目确认 `idea-to-product` 时也立即创建同一 Workflow Request 并开始准备，
+使 Workflows 列表可见；不再仅记录一层无人执行的嵌套提案。确认表示准备需求、
+问答与 YAML Preview，配置应用和运行仍需各自批准。显式 `proposal_only=true`
+以及未初始化项目保留原提案行为；不凭产品想法伪造完整 Task 合同。
+准备消费者的单轮限额只计算实际处理的操作；已完成预览或已返回问答的操作
+不占用名额，避免同一项目的后续请求永远排队。
+编译被阻断时，详情页仍按当前 Request revision/digest 展示不可变候选中的 YAML
+和阻断原因；它不会成为可批准的 Request 绑定，旧 revision 的候选也不会显示。
 backend 优先采用显式 synthesis_backend、原操作 backend、请求 backend、项目 Run Manager
 backend，最后为 codex。Agent 根据完整需求和目录选路，内核校验版本、目录和准入。
 单独的 flow intake/classify 仍只收集需求，不隐式调用模型。

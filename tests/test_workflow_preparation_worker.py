@@ -3,6 +3,7 @@
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tests.test_web_workflow_proposals import _write_config
@@ -13,8 +14,9 @@ from zf.runtime.workflow_requests import load_workflow_request
 from zf.web.server import create_app
 
 
+@pytest.mark.parametrize("action", ["workflow-request", "idea-to-product"])
 def test_web_lifecycle_consumes_preparation_in_configured_state_without_runtime(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, action
 ):
     monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "test-token")
     calls = _provider(monkeypatch)
@@ -31,7 +33,7 @@ def test_web_lifecycle_consumes_preparation_in_configured_state_without_runtime(
     app = create_app(state, config=load_config(config_path), project_root=tmp_path)
     with TestClient(app) as client:
         response = client.post(
-            "/api/projects/default/actions/workflow-request",
+            f"/api/projects/default/actions/{action}",
             headers={"x-zf-web-token": "test-token"},
             json={
                 "project_id": "default",
@@ -46,6 +48,8 @@ def test_web_lifecycle_consumes_preparation_in_configured_state_without_runtime(
         )
         assert response.status_code == 202, response.text
         rid = response.json()["request_id"]
+        listing = client.get("/api/projects/default/workflow-requests").json()
+        assert [item["request_id"] for item in listing["items"]] == [rid]
         deadline = time.monotonic() + 8
         while time.monotonic() < deadline:
             if load_workflow_request(state, rid).get("status") == "clarifying":
@@ -53,6 +57,7 @@ def test_web_lifecycle_consumes_preparation_in_configured_state_without_runtime(
             time.sleep(0.05)
         detail = client.get(f"/api/projects/default/workflow-requests/{rid}").json()
         assert detail["result"]["open_questions"] == [QUESTION], detail
+        assert detail["result"]["origin_binding"]["project_id"]
     assert len(calls) == 1
     assert config_path.read_bytes() == before
     assert not (tmp_path / ".zf").exists()

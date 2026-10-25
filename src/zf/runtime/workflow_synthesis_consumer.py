@@ -54,7 +54,9 @@ def consume_workflow_synthesis_operations(
             candidates = [op for op in candidates if (
                 (body := synthesis._hydrate_operation_request(state_dir, op)).get("request_id") == request_id
                 and body.get("request_revision") == revision)]
-        for operation in candidates[:max(1, int(limit or 1))]:
+        for operation in candidates:
+            if consumed >= max(1, int(limit or 1)):
+                break
             try:
                 request_body = synthesis._hydrate_operation_request(
                     state_dir,

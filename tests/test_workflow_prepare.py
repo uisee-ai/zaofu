@@ -90,6 +90,26 @@ def test_tracking_task_does_not_queue_synthesis(tmp_path):
     assert not any(e.type == "workflow.synthesis.queued" for e in log.read_all())
 
 
+@pytest.mark.parametrize("ask", [False, True])
+def test_settled_request_does_not_block_next_preparation(tmp_path, monkeypatch, ask):
+    service, _log = _service(tmp_path)
+    calls = _provider(monkeypatch, ask=ask)
+    for objective in ("Repair first session issue", "Repair second session issue"):
+        prepared = _execute(service, "idea-to-product", {
+            "objective": objective, "backend": "mock",
+        })
+        assert consume_workflow_synthesis_operations(
+            state_dir=service.state_dir,
+            project_root=service.project_root,
+            config=service.config,
+            writer=service.writer,
+            limit=1,
+        ) == 1
+        current = load_workflow_request(service.state_dir, prepared["request_id"])
+        assert current["status"] == ("clarifying" if ask else "proposed")
+    assert len(calls) == 2
+
+
 def test_channel_task_prepares_with_canonical_prd(tmp_path, monkeypatch):
     from tests.test_channel_prd_task_contract import (
         _ready_prd_fixture,

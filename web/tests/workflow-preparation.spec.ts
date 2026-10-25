@@ -3,15 +3,16 @@ import { expect, test } from "@playwright/test";
 const token = process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST || "";
 test.skip(!token, "Requires the isolated workflow-prepare-server.py fixture.");
 
-test("Task preparation asks, resumes, previews complete YAML, then starts only after approval", async ({ page, request }) => {
+for (const action of ["create-task", "idea-to-product"]) {
+test(`${action} asks, resumes, previews complete YAML, then starts only after approval`, async ({ page, request }) => {
   test.setTimeout(90_000);
   await page.addInitScript((value) => localStorage.setItem("zf.webActionToken", value), token);
   const workspace = await (await request.get("/api/workspace/projects")).json();
   const project = workspace.server_default_project_id;
-  const response = await request.post(`/api/projects/${project}/actions/create-task`, {
+  const response = await request.post(`/api/projects/${project}/actions/${action}`, {
     headers: { "x-zf-web-token": token }, data: {
       project_id: project, actor: "web", idempotency_key: `prepare-browser-task-${Date.now()}`,
-      payload: { title: "Keep active sessions valid", execution_mode: "workflow", prepare_workflow: true,
+      payload: action === "idea-to-product" ? { objective: "Keep active sessions valid", backend: "mock" } : { title: "Keep active sessions valid", execution_mode: "workflow", prepare_workflow: true,
         backend: "mock", contract: { behavior: "Keep active sessions valid",
           verification: "python -m pytest -q", verification_tiers: ["runtime"], owner_instance: "fix-lane-0",
           spec_skip_reason: "Isolated preparation browser fixture", acceptance_criteria: ["Active sessions remain valid"] } },
@@ -19,7 +20,7 @@ test("Task preparation asks, resumes, previews complete YAML, then starts only a
   });
   expect(response.ok(), await response.text()).toBeTruthy();
   const created = await response.json();
-  const rid = created.workflow_preparation.request_id;
+  const rid = created.request_id || created.workflow_preparation?.request_id;
   expect(rid).toBeTruthy();
   await page.goto(`/?page=workflows&project=${encodeURIComponent(project)}&request=${encodeURIComponent(rid)}`);
   const clarification = page.getByTestId("workflow-clarification");
@@ -45,3 +46,4 @@ test("Task preparation asks, resumes, previews complete YAML, then starts only a
   const submitted = await (await request.get(`/api/projects/${project}/workflow-requests/${rid}`)).json();
   expect(submitted.lifecycle.submitted).toBe(true);
 });
+}

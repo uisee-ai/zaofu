@@ -348,6 +348,15 @@ def build_workflow_request_router(
         proposal: dict[str, Any] = {}
         artifacts: dict[str, Any] = {}
         proposal_ref = result.get("proposal_ref")
+        if not proposal_ref:
+            # A blocked candidate is reviewable without becoming an approved
+            # Request binding. Hydrate its immutable artifact, never its body
+            # from the disposable submit-preview projection.
+            preview = _bounded_json_body(context.state_dir, str(
+                context.state_dir / "artifacts" / "workflow" / request_id
+                / "workflow-submit-preview.json"
+            ))
+            proposal_ref = preview.get("proposal_ref")
         if isinstance(proposal_ref, dict):
             try:
                 proposal = load_workflow_proposal(
@@ -356,6 +365,13 @@ def build_workflow_request_router(
                 )
             except Exception:
                 proposal = {}
+        if not result.get("proposal_ref") and (
+            proposal.get("approval_status") != "blocked"
+            or proposal.get("request_id") != result["request_id"]
+            or proposal.get("request_revision") != result["revision"]
+            or proposal.get("requirement_spec_digest") != result["requirement_spec_digest"]
+        ):
+            proposal = {}
         for key in (
             "short_flow_spec_ref",
             "config_diff_ref",
