@@ -99,6 +99,20 @@ itself (`cd <subdir> && …` or an equivalent flag); a bare `npm test` with
 Keep the structured command identical to the one stated in the acceptance
 text.
 
+## Human Review Before Approval
+
+For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
+`references/human-review.md` before submission. Lead the accepted Plan with
+user goals, scope/conditional scope, phase outcomes and owner decisions;
+follow with module specifications and concrete acceptance scenarios. Keep
+engineering repair history in appendices. When execution_spec is already
+used, place shared reading material in `shared.human_review` and module
+specifications/scenarios in each existing `tasks[].body.human_review`.
+Preserve canonical task/AC/command IDs and bind these artifacts in the same
+Plan Package. Critic checks semantic consistency; UI only renders the bound
+content. Neither a page count nor repeated RED/GREEN prose proves clause
+coverage. Never rewrite admitted artifacts to improve presentation.
+
 ## Task Design
 
 Split by end-to-end user journey, not by component-only layers. Each normal
