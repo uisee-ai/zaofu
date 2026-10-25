@@ -331,6 +331,16 @@ class ProductActionsMixin:
                 }
                 self.writer.append(plan_event)
                 workflow_plan_event_id = plan_event.id
+        preparation = {}
+        if payload.get("prepare_workflow") is True and not raw_workflow_plan:
+            preparation = self._dispatch_workflow_control_action(
+                requested=event, action="workflow-request", requested_action="workflow-request",
+                payload={
+                    "task_id": created.id, "kind": "auto",
+                    **{key: payload[key] for key in ("backend", "project_id", "conversation_id", "thread_id")
+                       if payload.get(key)},
+                },
+            )
         self._completed(
             requested=requested,
             event=event,
@@ -342,6 +352,7 @@ class ProductActionsMixin:
                 "task_id": created.id,
                 "workflow_plan_event_id": workflow_plan_event_id,
                 "workflow_plan_warning": workflow_plan_warning,
+                "workflow_preparation": preparation,
             },
         )
         return {
@@ -355,6 +366,7 @@ class ProductActionsMixin:
             "task_id": created.id,
             "workflow_plan_event_id": workflow_plan_event_id,
             "workflow_plan_warning": workflow_plan_warning,
+            "workflow_preparation": preparation,
             "result": {"task": redact_obj(asdict(created))},
         }
     def _kanban_proposal_dismiss(

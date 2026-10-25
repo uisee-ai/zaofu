@@ -585,8 +585,9 @@ def bind_workflow_synthesis_result(
         raise WorkflowRequestError(
             f"workflow request is not synthesis-ready: {current}"
         )
-    projection = dict(projection)
     questions = [str(item).strip() for item in open_questions if str(item).strip()]
+    from zf.runtime.workflow_prepare import synthesis_open_questions
+    questions = synthesis_open_questions(state_dir, projection, selected_flow_family, questions)
     projection.update({
         "status": "clarifying" if questions else "ready",
         "open_questions": questions,

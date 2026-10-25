@@ -18,9 +18,10 @@ Workflow Synthesis Operation、Proposal 编译器及 Task Map 合同，没有增
 选择后的必需 source/target 输入仍会检查，不能借 auto 的中性字段要求绕过校验。
 历史请求保留原 kind，不因重放 auto 隐式迁移。
 
-需要模型建议时，调用方显式传入 `synthesis_backend`，使用已有持久化 Synthesis
-Operation。Agent 根据完整需求和目录选路；内核验证版本、摘要、目录、schema 和准入。
-没有 backend 时，系统返回待澄清，不额外发起模型调用。
+受控 workflow-request 的 kind=auto 默认进入已有持久化 Synthesis Operation。
+backend 优先采用显式 synthesis_backend、原操作 backend、请求 backend、项目 Run Manager
+backend，最后为 codex。Agent 根据完整需求和目录选路，内核校验版本、目录和准入。
+单独的 flow intake/classify 仍只收集需求，不隐式调用模型。
 已确认 Requirement 的 `ready` 表示需求可供 Synthesis 读取，并不表示路线已选定。
 
 相同输入重试不修订 Requirement，同版本已完成结果可复用；真实语义字段变化才修订。
@@ -155,3 +156,35 @@ PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python scripts/dev-ver
 flow smoke（10 passed）均通过。相对 dev 的范围包含此前 184 的 Web 后端修复，
 所以保留 Web 边界检查。临时复用的 `web/node_modules` 链接已移除。
 测试组存在重叠，不累加为独立用例总数。
+
+
+## 统一准备与完整 YAML Preview（2026-10-25）
+
+关联任务：2026-10-25-1258-workflow-prepare-and-yaml-preview.md（实施后归档至 tasks/done）。
+
+Kanban/Channel 的交付建单提案使用 prepare_workflow=true，由批准后的 create-task 创建
+Task，再调用同一个受控 workflow-request。完整合同、验收、来源和 Channel 授权从
+canonical Task 继承；仅跟踪省略标记，旧显式 route Plan 保留兼容。
+已有 Task 通过 `zf workflow prepare --task TASK-ID` 或 workflow-request(kind=auto) 准备。
+
+Web AskUserQuestion 展示 Request 当前问题，答案持久化为新的 Requirement revision，
+按原操作上下文/Provider 重新合成。CLI 用 --request、--revision 和可重复的
+`--answer '原问题=答案'` 回答；--enqueue-only 仅入队。取消、失败、旧版本不回退
+关键词选路。所选 Flow 的必需 root 缺失也回到澄清，不产生可执行提案。
+
+Web 生命周期托管最多两个项目准备消费者，复用原 process lease/Operation；没有 zf start
+也能完成准备。它不派发 Task、不运行完整 runtime tick、不启动 Run。CLI 默认同步消费
+本 Request 当前 revision，不抢其他请求，运行器仍能消费相同持久化操作。
+
+Proposal 的 effective_config_ref 增加完整、多文档、脱敏 yaml 字段，来自不可变配置候选。
+原始 SHA 仍绑定私有候选，对外 YAML 用于审核，不作为批准写入的输入。Workflows 展示
+Assembled zf.yaml、Config Diff、Execution Plan；CLI
+`zf workflow preview --request REQUEST-ID --format yaml` 使用同一快照。旧 Proposal
+没有该字段时不伪造全文，须准备新版才能看到全文。
+
+配置变更仍先受控 Apply config，再精确 Approve & Run。提交重查 Task 合同与 Channel
+Owner/PRD 绑定，不允许省略或替换 task_id 绕过来源。运行后 Plan 人审开关保持原语义。
+
+回归：tests/test_workflow_prepare.py、tests/test_workflow_preparation_worker.py；浏览器：
+web/tests/workflow-preparation.spec.ts。测试只模拟 Provider 语义结果和启动边界，不代表
+真实模型质量或产品最终验收。

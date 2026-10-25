@@ -33,8 +33,9 @@ def test_auto_controlled_request_requires_semantic_selection(tmp_path):
         "request_id": "auto-1", "objective": "不要重构，只修复登录失败",
         "backend": "mock", "allow_missing_env": True,
     })
-    assert result["status"] == "clarification_required"
-    assert any(b["kind"] == "workflow_route_selection_required" for b in result["blockers"])
+    assert result["status"] == "synthesis_queued"
+    assert result["synthesis_operation_id"]
+    assert load_workflow_request(service.state_dir, result["request_id"])["kind"] == "auto"
     assert not result.get("proposal_ref")
     assert not any(e.type == "workflow.invoke.requested" for e in log.read_all())
 

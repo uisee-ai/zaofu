@@ -74,6 +74,9 @@ export function actionImpactRows(action: string, payload: Record<string, unknown
     push("title", payload.title);
     push("assignee", payload.assigned_to || payload.assignee_id);
     push("verification", recordValue(payload.contract)?.verification);
+    if (payload.prepare_workflow === true) {
+      push("next", "Prepare Workflow, answer questions, then review YAML before starting");
+    }
   } else if (
     action === "channel-create-from-template"
     || action === "channel-create-and-start"

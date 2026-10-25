@@ -881,6 +881,12 @@ def test_workflow_request_passes_admitted_synthesis_to_proposal_builder(
         request["proposal_ref"],
     )
     assert proposal["synthesis_result_ref"] == request["synthesis_ref"]
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    import yaml
+    snapshot = hydrate_sidecar_ref(service.state_dir, proposal["effective_config_ref"]).payload
+    flow = next(doc for doc in yaml.safe_load_all(snapshot["yaml"]) if doc.get("kind") == "IssueFlow")
+    assert flow["spec"]["lanes"] == lanes
+
     assert proposal["run_parameters"] == {
         "lanes": lanes,
         "strictness": "standard",

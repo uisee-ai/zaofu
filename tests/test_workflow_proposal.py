@@ -58,6 +58,7 @@ def _request(state_dir: Path) -> dict:
     requirement.write_text(
         json.dumps({
             "schema_version": "requirement-spec.v1",
+            "objective": "Repair the confirmed issue",
             "request_id": "req-1",
             "revision": 1,
         }),

@@ -78,7 +78,7 @@ export function WorkflowProposalPage({
   projectId: string;
 }) {
   const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(() => new URLSearchParams(window.location.search).get("request") || "");
   const [detail, setDetail] = useState<WorkflowRequestDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -204,6 +204,8 @@ export function WorkflowProposalPage({
           request_id: payload.request_id,
           intake_ref: payload.intake_ref,
           kind: payload.kind,
+          expected_revision: asRecord(result.result).revision,
+          expected_requirement_digest: asRecord(result.result).requirement_spec_digest,
           allow_missing_env: true,
         });
       }
@@ -416,7 +418,8 @@ function WorkflowProposalDetail({
   const proposalDigest = textValue(request.proposal_digest);
   const requestId = textValue(request.request_id);
   const requestStatus = textValue(request.status);
-  const requestKind = textValue(request.kind);
+  const selectedKind: Record<string, string> = { IssueFlow: "issue", PrdFlow: "prd", RefactorFlow: "refactor", Workflow: "workflow" };
+  const requestKind = selectedKind[textValue(request.selected_flow_family)] || textValue(request.kind);
   const changeMode = textValue(proposal.change_mode);
   const configApplied = lifecycle.config_applied === true;
   const submitted = lifecycle.submitted === true || ["submitted", "running"].includes(requestStatus);
@@ -714,7 +717,7 @@ function WorkflowProposalDetail({
         requestKind={requestKind}
         requestId={requestId}
         requestStatus={requestStatus}
-        requirement={requirement}
+        requirement={{ ...requirement, open_questions: request.open_questions ?? requirement.open_questions }}
         requirementDigest={textValue(request.requirement_spec_digest)}
       />
 
@@ -729,6 +732,16 @@ function WorkflowProposalDetail({
               </strong>
             ))}
           </div>
+        </section>
+      ) : null}
+
+      {textValue(asRecord(artifacts.effective_config).yaml) ? (
+        <section className="workflow-proposal-section" data-testid="workflow-yaml-preview">
+          <SectionHeading icon={FileDiff} meta="redacted preview" title="Assembled zf.yaml" />
+          <details>
+            <summary>View complete YAML</summary>
+            <pre className="workflow-proposal-code">{textValue(asRecord(artifacts.effective_config).yaml)}</pre>
+          </details>
         </section>
       ) : null}
 
