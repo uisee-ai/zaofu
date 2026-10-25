@@ -1,6 +1,6 @@
 # Task Workspace 写入守卫绑定与真实 Impl/Verify 恢复
 
-> 状态: active
+> 状态: done — 38288b17 fix: bind task workspace guards and recover blocked implementation；补充 ca42ce88 fix: preserve task workspace observations through transport routing
 
 用户批准修复 loshu-fms 的 Task Workspace 与写入守卫冲突。基线 dev=ca7a3cff；原任务 FMS-SCAFFOLD 于 evt-168467251356 提交 dev.blocked，未产生产品代码。
 
@@ -10,7 +10,7 @@
 - [x] 由内核 operation/派发事实解析当前写入目录和任务 -> verify: 当前任务可写；旧角色目录、其他任务、旧代际及越界路径仍拒绝；legacy 路径保持兼容。
 - [x] 聚焦闭包、sentinel 和 mock E2E -> verify: 记录命令、准确结果和限制。
 - [x] 合并加载修复并受控恢复同一任务 -> verify: 不改写 runtime truth，不伪造 worker 完成。
-- [ ] 真实 worker 源码写入、Impl 产物提交、Verify 派发 -> verify: 记录实际文件/提交/事件证据，失败介入与恢复记录保留；未达成不标 done。
+- [x] 真实 worker 源码写入、Impl 产物提交、Verify 派发 -> verify: 记录实际文件/提交/事件证据，失败介入与恢复记录保留；未达成不标 done。
 
 ## 边界
 
@@ -35,3 +35,30 @@
 - 真实进程探针发现 Codex cwd 与 -C 参数仍为旧角色目录，worker 根据 briefing 在正确任务目录执行了写入。进一步复现：CompositeTransport 未转发生命周期快照，同 binding 恢复时 path_mismatch 无法被观察。实际重绑定入口回归先红（2 failed），补齐底层快照转发；不打断正在推进的 Impl。新增回归与加载时机继续记录。
 
 - 快照转发修复：7 文件聚焦影响闭包 74 passed；sentinel 51 passed，Ruff/diff --check 通过。dev-verify 对共享 transport 扩大到 220 文件并建议全量，本批明确以直接调用闭包替代，未跑全量；dev-verify 的 skipped receipt 本身不算测试通过证据。三流 mock E2E 与 control-plane-only 启动保留 worker 回归合计 47 passed。
+
+- 补充实现 ca42ce88 fix: preserve task workspace observations through transport routing，合并 2e0affdd；合并后 sentinel 51 passed、新增绑定 4 passed。使用 zf start --control-plane-only 重载控制面，旧 watcher 3131545 退出，新 watcher 3154798；保留 Codex PID 3137853 与原启动身份，不重排活跃任务。
+
+
+## 真实恢复验收（2026-10-25 UTC）
+
+- worker 实际提交：956168e feat: add reproducible TypeScript scaffold and health checks；21d8ffa feat: load explicit modules with fail-closed dispatch protocols。最终工作区干净。
+- 最终 HEAD 的 smoke/runtime/static 收据均 passed、exit_code=0、dirty=false。15 项运行时测试、2 项静态测试与类型检查通过；clean-checkout 独立安装、构建、进程启动和检查收据 passed。
+- 11:44:36 结果接纳 evt-9e5e25e9afac；规范结果 dev.build.done=evt-39d06191cfdf，operation g2 settled/passed。
+- 11:46:34 task.ref.updated=evt-8da21566eb67，将 task/FMS-SCAFFOLD 接纳至 21d8ffac72a45bbde1d1eb1b1079cae950a1afa5。
+- 11:47:19 Verify 实际派发 evt-aa4585e3ee7d，角色 verify-lane-0，operation=wop-verify-tp-FMS-SCAFFOLD-39102b23f7680a25-9367b723b872。tmux %409 的真实 cwd 为当前 Task Workspace，已读取 verify-g2-p1.md；不是仅创建队列或会话。
+- 真实证据：zaofu-evidence/workspace-guard-20261025/real-recovery-e2e.json、real-impl-test-receipts.json、real-workspace-write-proof.json、control-plane-reload.json；这些外部本地证据未作为 runtime state 加入源码仓库。
+- 验收范围是写入阻塞修复、终态 blocked 后受控重试、Impl 接纳和独立 Verify 启动。Verify 最终结论及全部 38 项项目交付仍未完成，不以本任务 done 代表产品交付 done。保留原 Plan、合同、8 Impl/8 Verify 配置与运行中 worker。
+- 事件消费延迟仍是独立未实施项：本次 Impl 接纳至 Verify 派发约 163 秒。原 backlogs/2026-10-25-0845-runtime-wake-backlog-latency.md 仍 proposed，不把重载后的推进当成性能根因已修复。
+
+## 补充修复验证命令
+
+```bash
+PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python -m pytest tests/test_task_pipeline_transport_binding.py tests/test_role_lifecycle_runtime.py tests/test_composite_transport.py tests/test_composite_transport_by_instance.py tests/test_tmux_transport_lifecycle.py tests/test_task_pipeline_generation.py tests/test_task_pipeline_capsule.py -q --no-cov -n 4 --dist loadfile
+# 74 passed
+bash scripts/dev-premerge-gate.sh
+# 51 passed；合并后重跑同门禁 51 passed
+PYTHONPATH=src /home/min/workspace/public/zaofu/.venv/bin/python -m pytest tests/e2e/test_task_pipeline_v4_runtime_noise_mock_e2e.py tests/test_cli_start.py -q --no-cov -n 4 --dist loadfile
+# 47 passed
+.venv/bin/python -m pytest tests/test_task_pipeline_transport_binding.py -q --no-cov
+# 合并后 4 passed
+```
