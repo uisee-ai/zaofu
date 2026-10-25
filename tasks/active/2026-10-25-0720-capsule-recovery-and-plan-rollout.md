@@ -50,3 +50,17 @@ dev=83b84518；工作树 zaofu-capsule-recovery。产品 run=workflow-4fbf85bbad
 - 观察到 orchestrator trigger_lag_s 约 679 秒，需在无活跃 provider operation 的断点加载最新修复并重放；不能以“进程存活”宣称新计划已进入 Impl。
 
 - resume guard 6 个影响范围测试文件：86 passed；sentinel 51 passed；三流 mock E2E 10 passed。dev-verify plan/run 最终选择 48 个恢复相关测试文件：887 passed（包含确定性 mock 恢复 E2E；排除 host/real_provider）。停止前 operation reducer 确认 active=[]，Planner settled；zf stop 正常完成 18 步。
+
+- 恢复分流实现 a8b0feb1 fix: keep rejected plan packages out of batch implementation recovery；合并 b32ea032。合并后 3 个聚焦回归与 51 个 sentinel 通过。
+- 第二次 restart 前 Run Contract PASS、配置摘要相同。Runtime PID=2997362，session.started=evt-259b734299ad；Dashboard PID=2997435，保留原环境和授权配置。
+- 启动补处理接纳已结算 Planner：evt-b01f759b6eb6；新 Critic 派发 evt-5e98a888fc8e。未重做规划，也未重写旧事件/产物。等待该版本审核和人工 Preview 审批。
+
+- 修正版 Critic 通过并接纳 evt-ef815717e579；Package=744d857e554f3ab36b36b40306d3ad856b6c722137630c291319dfa4113b7f7b，接纳 evt-7a19343f47ff。原 132 AC、9 Goals、36 原任务和路径均保留，新图共 38 任务/136 AC/117 命令。
+- 浏览器核对发现 evt-d36d25fa769c 的执行选择器仍继承旧 35 项，虽 Package 完整却遗漏 DATA-ACCESS 和两项新任务；没有点击 Approve。监工修正自己的恢复范围请求，通过 candidate-rework-apply retrigger 同一已审 Package、无旧失败任务选择器（evt-f58c6bcb4919 / evt-90384a950896），保留新审批门。真实 load_writer_task_map 已验证 38 项完整加载。
+- 事件消费延迟仍可复现，不能标为已根治。已在主工作树本地候选 backlogs/2026-10-25-0845-runtime-wake-backlog-latency.md 记录事实、诊断和批次合并唤醒验证方案；未提交该未批准候选。
+
+- 完整 38 项请求被历史无效 Preview 的 task-ID-only 指纹错误去重（evt-685f4d46bc59），且 suppressed 重入永久返回 false。补丁把 Package/Plan digest 纳入指纹，按当前未决事实重新判断历史抑制；不批准旧 Plan，不改写历史事件。基线 3 failed / 1 passed，修复后含原审批调用方的 9 项通过。
+
+- 审批影响闭包（Writer fanout runtime、Plan Preview API、审批 CLI、新身份用例）：181 passed；首次 sentinel 发现超大 fanout 文件增长，已提取 plan_approval_identity 小模块，不修改行数上限，提取后审批调用路径及结构检查 18 passed，sentinel 51 passed（32.83s）。dev-verify 173 文件触发全量建议，本批用上述闭包替代 deterministic/无关 serial，全量未跑。
+
+- 审批身份修复最终 dev-verify 自动档：sentinel 51 passed、三流 mock E2E 10 passed；日志 zaofu-evidence/capsule-recovery-20261025/approval-identity-gates.log。
