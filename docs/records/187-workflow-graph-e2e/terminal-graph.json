@@ -1,0 +1,166 @@
+{
+  "scope": {
+    "project_id": "counter-project-3014ef68",
+    "request_id": "workflow-ccaaed87c1b1d6c7",
+    "revision": 13,
+    "run_id": "workflow-ccaaed87c1b1d6c7",
+    "proposal_digest": "893bd402ec905241228ddfc80fc053c4c3c9e2f6cb474fd59da683e83e705cc0",
+    "source_seq": 3575,
+    "head_seq": 3575,
+    "historical": false,
+    "execution_started": true
+  },
+  "coverage": {
+    "total_nodes": 226,
+    "included_nodes": 226,
+    "total_edges": 473,
+    "included_edges": 457,
+    "truncated": false
+  },
+  "goal_coverage": {
+    "identity": {
+      "project_id": "counter-project-3014ef68",
+      "workflow_run_id": "workflow-ccaaed87c1b1d6c7",
+      "goal_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+      "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+      "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+      "task_map_digest": "1a0fb38eadb8e780d31334322bf9cb367d8c964d6c71de37a8203acadc7c671a",
+      "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987.json",
+      "goal_claim_set_digest": "6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987",
+      "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38"
+    },
+    "summary": {
+      "mandatory_claims": 6,
+      "planned_claims": 3,
+      "claims_with_current_results": 3,
+      "closed_claims": 6,
+      "open_gaps": 0
+    },
+    "diagnostics": [
+      {
+        "code": "mandatory_claim_uncovered",
+        "goal_claim_id": "OBJECTIVE-AC1-5636c62bb4",
+        "message": "mandatory claim has no covering task"
+      },
+      {
+        "code": "mandatory_claim_uncovered",
+        "goal_claim_id": "OBJECTIVE-AC2-b3e306a8a5",
+        "message": "mandatory claim has no covering task"
+      },
+      {
+        "code": "mandatory_claim_uncovered",
+        "goal_claim_id": "OBJECTIVE-AC3-ec4b7d42ad",
+        "message": "mandatory claim has no covering task"
+      }
+    ]
+  },
+  "capabilities": {
+    "production": {
+      "status": "unconnected",
+      "reason": "未绑定部署环境与生产健康数据源"
+    },
+    "modules": {
+      "status": "task_map.modules"
+    },
+    "release": {
+      "status": "unknown"
+    }
+  },
+  "nodes": [
+    {
+      "id": "run:workflow-ccaaed87c1b1d6c7",
+      "kind": "run",
+      "label": "workflow-ccaaed87c1b1d6c7",
+      "status": "done",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "task:COUNTER-001",
+      "kind": "task",
+      "label": "交付可运行的非负计数器完整纵向切片",
+      "status": "done",
+      "accepted_event_ids": [
+        "evt-c227df403c7a"
+      ]
+    },
+    {
+      "id": "claim:GOAL-COUNT",
+      "kind": "claim",
+      "label": "计数初始为 0，实现加一、正数减一、0 下限、重置和连续操作，并由 node --test 自动覆盖。",
+      "status": "closed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "claim:GOAL-WEB",
+      "kind": "claim",
+      "label": "交付居中卡片的原生计数网页，三个按钮与显示在真实浏览器中联动，无业务后端。",
+      "status": "closed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "claim:GOAL-RUN",
+      "kind": "claim",
+      "label": "最终为可启动、可验证、可演示的软件交付，不停留在 YAML Preview。",
+      "status": "closed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "module:MOD-COUNT",
+      "kind": "module",
+      "label": "计数状态与变更规则",
+      "status": "unknown",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "module:MOD-CARD",
+      "kind": "module",
+      "label": "居中卡片交互与展示",
+      "status": "unknown",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "module:MOD-DELIVERY",
+      "kind": "module",
+      "label": "静态运行与验收工具",
+      "status": "unknown",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "goal:PRD-WORKFLOW-CCAAED87C1B1D6C7",
+      "kind": "goal",
+      "label": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+      "status": "passed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "claim:OBJECTIVE-AC1-5636c62bb4",
+      "kind": "claim",
+      "label": "加一、正数减一、0值下限、连续操作与重置逻辑均由 node --test 自动测试覆盖。",
+      "status": "closed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "claim:OBJECTIVE-AC2-b3e306a8a5",
+      "kind": "claim",
+      "label": "浏览器中按钮与计数显示正确联动，无后端。",
+      "status": "closed",
+      "accepted_event_ids": []
+    },
+    {
+      "id": "claim:OBJECTIVE-AC3-ec4b7d42ad",
+      "kind": "claim",
+      "label": "Plan 产出可读 PRD、业务模块与任务映射及对应验收，待Owner审阅后再实施。",
+      "status": "closed",
+      "accepted_event_ids": []
+    }
+  ],
+  "terminal_event_id": "evt-c227df403c7a",
+  "candidate_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+  "assertions": {
+    "kernel_run_done": true,
+    "canonical_task_done": true,
+    "goal_claims_closed": "6/6",
+    "old_failed_candidate_still_failed": true,
+    "production_unconnected": true
+  }
+}

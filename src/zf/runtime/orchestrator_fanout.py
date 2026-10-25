@@ -6173,7 +6173,7 @@ class FanoutCoordinationMixin(
             for child in children
             if child.get("status") == "failed"
         ]
-        self.event_writer.append(ZfEvent(
+        integration_trigger = self.event_writer.append(ZfEvent(
             type="fanout.aggregate.started",
             actor="zf-cli",
             payload={
@@ -6209,6 +6209,7 @@ class FanoutCoordinationMixin(
                 ).rebuild(
                     pdd_id,
                     event_writer=self.event_writer,
+                    trigger_event=integration_trigger,
                     task_ids=completed_task_ids,
                     candidate_base_ref=candidate_base_ref or None,
                 )

@@ -1,0 +1,170 @@
+{
+  "type": "run.goal.completed",
+  "id": "evt-c227df403c7a",
+  "ts": "2026-10-25T19:13:59.507259+00:00",
+  "actor": "zf-cli",
+  "task_id": null,
+  "payload": {
+    "flow_kind": "prd",
+    "run_id": "workflow-ccaaed87c1b1d6c7",
+    "workflow_run_id": "workflow-ccaaed87c1b1d6c7",
+    "goal_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "pdd_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "feature_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "claim_id": "goal-claim-a801bcae55fdfc0dcac1",
+    "objective": "交付无需后端的计数器网页，采用原生 HTML/CSS/JavaScript，实现加一、减一、重置。初始为0，禁止负数，0时减一保持0。需要自动测试。Plan 产物包含 PRD、显式模块与任务关系、验收与验证方案。最终目标为可运行网页；启动前先审核 YAML、Plan 阶段先审核文档。",
+    "claim_event_id": "evt-bd06021694e4",
+    "source_event_id": "evt-9dd5e5c7d4ec",
+    "completion_profile": "software_delivery",
+    "workflow_generation": "",
+    "request_revision": 0,
+    "generic_workflow_contract_digest": "",
+    "run_contract_ref": "",
+    "run_contract_digest": "",
+    "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "verified_target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "verification_event_id": "evt-a2e58f470507",
+    "verification_admitted_call_result_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "call_result_envelope",
+      "ref": "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+      "sha256": "b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690",
+      "byte_count": 4732,
+      "content_type": "application/json",
+      "schema_version": "call-result-envelope.v1",
+      "encoding": "utf-8",
+      "created_by": "call-result-admission",
+      "source_event_id": "evt-9361bec63bd4",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    },
+    "candidate_event_id": "evt-e175a504f973",
+    "candidate_ref": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "contract_snapshot_ref": "",
+    "contract_snapshot_digest": "",
+    "fanout_id": "fanout-prd-lanes-impl-evt-a28aaf6c",
+    "upstream_fanout_id": "fanout-prd-lanes-impl-evt-a28aaf6c",
+    "candidate_base_commit": "955c22699df61bc083dae4ae49f2558f1da5dfb6",
+    "candidate_head_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "completed_task_ids": [
+      "COUNTER-001"
+    ],
+    "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/task_map.json",
+    "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-34fe537b/prd-planner/artifacts/plan/source_index.json",
+    "diff_ref": "955c22699df61bc083dae4ae49f2558f1da5dfb6..cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "delivery_phase": "result_reported",
+    "open_feedback_count": 0,
+    "pending_handoff_count": 0,
+    "historical_open_feedback_count": 0,
+    "historical_pending_handoff_count": 0,
+    "active_fanout_ids": [],
+    "historical_active_fanout_ids": [],
+    "pending_action_effect_ids": [],
+    "failed_action_effect_ids": [],
+    "required_operation_ids": [],
+    "unsettled_required_operation_ids": [],
+    "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+    "goal_claim_set_ref": "artifacts/goal-closure/claim-sets/6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987.json",
+    "goal_claim_set_digest": "6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987",
+    "product_acceptance_required": true,
+    "product_acceptance_spec_ref": "artifacts/product-acceptance/specs/7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d.json",
+    "product_acceptance_spec_digest": "7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d",
+    "product_acceptance_report_ref": "artifacts/product-acceptance/reports/be2f2d9268bb35e0642f48bb25ab5bb910c0f672556fcb3dd0de5adc1743e40a.json",
+    "product_acceptance_report_digest": "be2f2d9268bb35e0642f48bb25ab5bb910c0f672556fcb3dd0de5adc1743e40a",
+    "product_acceptance_verdict": "passed",
+    "provider_qualification_required": false,
+    "provider_qualification_status": "not_required",
+    "goal_coverage": [
+      {
+        "goal_claim_id": "OBJECTIVE-AC1-5636c62bb4",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC2-b3e306a8a5",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      },
+      {
+        "goal_claim_id": "OBJECTIVE-AC3-ec4b7d42ad",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      },
+      {
+        "goal_claim_id": "GOAL-COUNT",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      },
+      {
+        "goal_claim_id": "GOAL-WEB",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      },
+      {
+        "goal_claim_id": "GOAL-RUN",
+        "status": "closed",
+        "supporting_result_refs": [
+          "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+          "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json"
+        ]
+      }
+    ],
+    "required_artifacts": [],
+    "verification_evidence_refs": [],
+    "input_result_refs": [
+      "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json",
+      "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+      "artifacts/call-results/envelopes/37cb18b84b0968e0eb44214b76401126f9626f4d0b21c3825fe2bbe83367312a.json",
+      "artifacts/call-results/envelopes/91078e4ed573a4902768afe200600d998215703e5e24c9281e3d90bdf523f4ed.json",
+      "artifacts/call-results/envelopes/e2f030bd251a0301336371fce8a452e836478b5125e41c7480fc20c82920e055.json",
+      "artifacts/call-results/envelopes/9813d3a491ab53da1b5400a34511bf00d6f6c69cdd18787033d0a8b2acc61f78.json",
+      "artifacts/call-results/envelopes/3a26498b1c6d9cda5c929be2bac42b1d224496b6dedc6c9a69cda26e36973d20.json"
+    ],
+    "open_gap_refs": [],
+    "verifier_stage_id": "",
+    "verifier_role": "",
+    "admitted_call_result_ref": {
+      "ref_schema_version": "sidecar-ref.v1",
+      "kind": "call_result_envelope",
+      "ref": "artifacts/call-results/envelopes/f0b6677ac8b2c8dc81d97eb5e145cac8b2775aa6236c954e3d33df893fcb48f1.json",
+      "sha256": "f0b6677ac8b2c8dc81d97eb5e145cac8b2775aa6236c954e3d33df893fcb48f1",
+      "byte_count": 4474,
+      "content_type": "application/json",
+      "schema_version": "call-result-envelope.v1",
+      "encoding": "utf-8",
+      "created_by": "call-result-admission",
+      "source_event_id": "evt-1f7379692394",
+      "access_scope": {},
+      "retention": {
+        "class": "audit_required"
+      },
+      "required": true,
+      "preview": ""
+    },
+    "delivery_policy": "report_only",
+    "delivery_status": "not_required",
+    "delivery_event_id": "",
+    "reason": "completion claim passed deterministic gate"
+  },
+  "causation_id": "evt-bd06021694e4",
+  "correlation_id": "workflow-ccaaed87c1b1d6c7",
+  "origin": "kernel"
+}

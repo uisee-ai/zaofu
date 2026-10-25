@@ -1,0 +1,5 @@
+{
+  "pane": "%167",
+  "time": "2026-10-25T18:55:09.343451+00:00",
+  "message": "本次隔离 E2E 的环境补充（不改变验收结论）：现有 tmux server 创建于 Docker 组权限加载前，普通 shell 可能无法访问 daemon；操作侧已实测 sg docker -c \"docker info\" 成功。允许在 sg docker 组启动器中执行合同的原始 Docker 命令，记录原命令、启动器和实际退出码，不改参数或断言。请独立复核环境与产品证据，不能以本说明替代 Verify 判定。"
+}

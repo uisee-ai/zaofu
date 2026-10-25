@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import pytest
 
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -339,8 +340,10 @@ def test_stale_contract_completion_is_not_adopted_into_untyped_replacement(
     )["status"] != "failed"
 
 
+@pytest.mark.parametrize("authority", ["present", "omitted", "conflicting"])
 def test_current_contract_completion_recovers_identity_failed_child_once(
     tmp_path: Path,
+    authority: str,
 ):
     state_dir, log, _transport, orch = _state(
         tmp_path,
@@ -444,8 +447,19 @@ def test_current_contract_completion_recovers_identity_failed_child_once(
             ),
         },
     )
+    if authority == "omitted":
+        for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+            current_progress.payload["impl_self_check"].pop(key, None)
+    elif authority == "conflicting":
+        current_progress.payload["impl_self_check"]["contract_authority_revision"] = "authority-foreign"
     log.append(current_progress)
     orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+    if authority == "conflicting":
+        assert any(event.type == "fanout.child.failed"
+                   and "contract_authority_revision mismatch" in event.payload.get("reason", "")
+                   for event in log.read_all())
+        assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "failed"
+        return
     ref_updated = ZfEvent(
         type="task.ref.updated",
         actor="zf-cli",

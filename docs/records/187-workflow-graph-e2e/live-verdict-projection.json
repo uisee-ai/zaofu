@@ -1,0 +1,33 @@
+{
+  "scope": {
+    "project_id": "counter-project-3014ef68",
+    "request_id": "workflow-ccaaed87c1b1d6c7",
+    "revision": 13,
+    "run_id": "workflow-ccaaed87c1b1d6c7",
+    "proposal_digest": "893bd402ec905241228ddfc80fc053c4c3c9e2f6cb474fd59da683e83e705cc0",
+    "source_seq": 3094,
+    "head_seq": 3094,
+    "historical": false,
+    "execution_started": true
+  },
+  "assertions": {
+    "event:evt-092c752099ad": "failed",
+    "fanout:fanout-prd-lanes-impl-evt-5fe42460": "failed",
+    "event:evt-53d95a009491": "accepted",
+    "workflow:stage:prd-lanes-impl": "completed",
+    "workflow:stage:prd-lanes-verify": "running",
+    "task:COUNTER-001": "in_progress"
+  },
+  "capabilities": {
+    "production": {
+      "status": "unconnected",
+      "reason": "未绑定部署环境与生产健康数据源"
+    },
+    "modules": {
+      "status": "task_map.modules"
+    },
+    "release": {
+      "status": "unknown"
+    }
+  }
+}

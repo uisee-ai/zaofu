@@ -1,0 +1,18 @@
+{
+  "runtime_stop": "Stopped harness session: zf-187-counter (18 steps completed)\n",
+  "web_pids_stopped": [
+    1087537
+  ],
+  "second_probe_simulation_event": "evt-161bdb911173",
+  "main_simulation_event": "evt-00b25479b896",
+  "main_dev_runtime_pid_430890_alive": true,
+  "root_directories": [
+    "/tmp/zf-187-e2e-20261025T161931Z",
+    "/tmp/zf-187-skills-20261025T171300Z"
+  ],
+  "cleanup_status": "completed",
+  "remaining_owned_processes": [],
+  "temporary_port_8003_closed": true,
+  "dev_port_8001_unchanged_running": true,
+  "temporary_roots_removed": true
+}

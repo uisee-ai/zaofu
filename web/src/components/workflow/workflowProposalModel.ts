@@ -103,7 +103,7 @@ export function stagesForCurrentFlow(
   flowFamily: string,
 ): WorkflowRequest[] {
   if (!stages.length) return [];
-  const targetKind = normalizedFlowKind(requestKind || flowFamily);
+  const targetKind = normalizedFlowKind(requestKind && requestKind !== "auto" ? requestKind : flowFamily);
   const documents = asRecordArray(shortFlowSpec.documents);
   const targetDocument = documents.find(
     (document) => normalizedFlowKind(textValue(document.kind)) === targetKind,

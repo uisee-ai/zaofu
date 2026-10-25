@@ -46,6 +46,7 @@ def _ready_prd_fixture(
     readiness_verdict: str = "ready",
     readiness_gaps: list[str] | None = None,
     risk_accepted: bool = False,
+    owner_actor_ref: str = "web",
 ) -> tuple[Path, EventWriter, ControlledActionService, dict[str, object]]:
     state_dir = tmp_path / ".zf"
     state_dir.mkdir()
@@ -56,14 +57,14 @@ def _ready_prd_fixture(
         writer,
         config=config,
         project_root=tmp_path,
-        actor="web",
+        actor=owner_actor_ref,
         source="channel",
         surface="web",
     )
     assert _execute(service, writer, "channel-create", {
         "channel_id": "ch-prd-task",
         "name": "PRD Task",
-        "owner_actor_ref": "web",
+        "owner_actor_ref": owner_actor_ref,
     })["ok"]
     assert _execute(service, writer, "channel-invite-member", {
         "channel_id": "ch-prd-task",

@@ -1,0 +1,198 @@
+{
+  "schema_version": "187-e2e-evidence-manifest.v1",
+  "scope": "Selected acceptance evidence; raw authenticated traces and runtime state excluded",
+  "candidate_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+  "files": [
+    {
+      "path": "02-kanban-ask-actual.png",
+      "sha256": "64c9d0a7f398d632cf632b6454a8af595d863c82bae81bd3e09e64c71ba89c82",
+      "bytes": 160268
+    },
+    {
+      "path": "10-live-workflow-graph.png",
+      "sha256": "bfd6565ec55d9ee68ad684eba4061327b02249035f84e3a7e43e28226787998b",
+      "bytes": 86711
+    },
+    {
+      "path": "14-plan-revised-preview.png",
+      "sha256": "ca6356e18007d5e77be59fcb31ba19920c898f6d0957dc4b7a77794a48dfc962",
+      "bytes": 197476
+    },
+    {
+      "path": "candidate-evidence-hygiene-note.json",
+      "sha256": "9b11b254131954c7aeb51ddb9bb2bf4c110893ac2483e688144c17a15aaf86d9",
+      "bytes": 1113
+    },
+    {
+      "path": "candidate-result.json",
+      "sha256": "ba26432f2715cb3ea59333d5ab8086528cf9f4cb8f49fab95d882a138d2a0b4b",
+      "bytes": 15438
+    },
+    {
+      "path": "cleanup.json",
+      "sha256": "c4c53e1dc209e4dc62a04afb377c62caa12ca46c9c35e2d43e722c7aaf14f963",
+      "bytes": 570
+    },
+    {
+      "path": "counter-product-desktop.png",
+      "sha256": "496c3baef55e7da3d5fd1716e4958f8e5e076c7232678787934b3ca7882c70a4",
+      "bytes": 19890
+    },
+    {
+      "path": "counter-product-mobile.png",
+      "sha256": "a389ca3186816ffe53f1dc222434c4a374c2cd8eb4fb4e644be9cb65c00c3f81",
+      "bytes": 18303
+    },
+    {
+      "path": "counter-product-source.tar.gz",
+      "sha256": "06ad4bb3abdea524c730172bf701dc77d039a1cb2fc6004a885ac5be2ba01d38",
+      "bytes": 9609
+    },
+    {
+      "path": "delivery-terminal.png",
+      "sha256": "a028de8b44dd55e20d65ed19b0bd14458b596483f2ce8186a9bdd13afad2e20d",
+      "bytes": 124209
+    },
+    {
+      "path": "discovery-report.json",
+      "sha256": "0500807dada7d26ee293f9e5889009823a8dbd5120bedfe8e21a5aa7fe44ffd0",
+      "bytes": 22939
+    },
+    {
+      "path": "docker-environment-note.json",
+      "sha256": "ecd4a90d254800fd1fe35d6ea0a35e23f483e3a9519f84e88b7494bcb52cbc2a",
+      "bytes": 929
+    },
+    {
+      "path": "fanout-release-recovery.json",
+      "sha256": "eb427fe504c3c384c3809cec35966ee00284c1ce82f75b6f337a8ee2abe3137f",
+      "bytes": 627
+    },
+    {
+      "path": "goal-claim-set.json",
+      "sha256": "6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987",
+      "bytes": 2546
+    },
+    {
+      "path": "goal-closure-result.json",
+      "sha256": "bfde7f0a9f3c109354c5332b7738615275d9006ec78694d4a073d95609edd533",
+      "bytes": 5143
+    },
+    {
+      "path": "issue-skill-binding.json",
+      "sha256": "b8cec8fe6c2c666c855747fa669982cd2633ab6324a3bdb9d81b36f50dabcc5c",
+      "bytes": 737
+    },
+    {
+      "path": "judge-report.json",
+      "sha256": "2aa513d5baa10a8fc937dffce056987bb8488387c6cdcd2e875fb44490d239c3",
+      "bytes": 2117
+    },
+    {
+      "path": "live-verdict-projection.json",
+      "sha256": "98164f2aa1f7d55377f89c37d016100d8b0f5f84853d62128158f63a472aa0b6",
+      "bytes": 926
+    },
+    {
+      "path": "modules-terminal.png",
+      "sha256": "30bc92c04703ca115c87c9892432c1cbab270889f0c6903f8c984fc35c836cca",
+      "bytes": 169377
+    },
+    {
+      "path": "plan-after.md",
+      "sha256": "ef1bf2f97cd1cd87247f47dbe2fd0fe423df1e2bb091e3a7889df3e73de965e3",
+      "bytes": 27040
+    },
+    {
+      "path": "plan-before.md",
+      "sha256": "00ed7eaa8751f57a81f67fe69efcc828e057b74413f1e3dd6485d83366f6914c",
+      "bytes": 26989
+    },
+    {
+      "path": "plan-review-originals.tar.gz",
+      "sha256": "46cbf75ab0978ea925dcd122515998d7d93fa3806305736fa53896dfa3e4baf2",
+      "bytes": 12408
+    },
+    {
+      "path": "product-acceptance-report.json",
+      "sha256": "be2f2d9268bb35e0642f48bb25ab5bb910c0f672556fcb3dd0de5adc1743e40a",
+      "bytes": 6612
+    },
+    {
+      "path": "product-acceptance-spec.json",
+      "sha256": "7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d",
+      "bytes": 5992
+    },
+    {
+      "path": "receipt.json",
+      "sha256": "f2fc73114dea7d8051b79a76fcede3dd8ec8045fbb3229a2cb1ee4dab8750b45",
+      "bytes": 31239
+    },
+    {
+      "path": "run-terminal.json",
+      "sha256": "d32ea244ffb2e5aff1f80c237e8495f03d47622e9cd0da185744acd71bf660e5",
+      "bytes": 8342
+    },
+    {
+      "path": "runtime-docker-group-restart.json",
+      "sha256": "3f6a829cbe30098e7365d42ba7ba4d12ba6ec9b52ed0f34b7890c14285fb09ef",
+      "bytes": 346
+    },
+    {
+      "path": "simulation-done.json",
+      "sha256": "1aa88e55f73377a775aef6df0604d84779ddd22dcbee5a299c962d232c5ffe6d",
+      "bytes": 479
+    },
+    {
+      "path": "terminal-graph.json",
+      "sha256": "7df7b0441f905814da09869adfa00191e3005b91c65055616add458be0950edf",
+      "bytes": 5211
+    },
+    {
+      "path": "verification-result.json",
+      "sha256": "23858cd3653ba3c27ac498565b3a9d0a6e80efbf8b092822a684efa362eff8db",
+      "bytes": 17430
+    },
+    {
+      "path": "verification-results.json",
+      "sha256": "9f4ba7a7fa61920b33a4effa87a2afb5fe3adf5925fc22d9952758d82414e3dd",
+      "bytes": 64949
+    },
+    {
+      "path": "verification-run.json",
+      "sha256": "3e8e106e6fff5534160914d643bf4c08ade8a96846d92d117fdb6fac14181c61",
+      "bytes": 22355
+    },
+    {
+      "path": "verify-docker-environment-note.json",
+      "sha256": "f718bfdf5bbc16c71ba8dc76255137cd96251912eb31c99073306a4ac07bfc44",
+      "bytes": 526
+    },
+    {
+      "path": "verify-report.json",
+      "sha256": "7c303c1f447d9d6c98f726f2923be16d4eb5ea524f6cdeeb39bb421b2fc440e7",
+      "bytes": 14281
+    },
+    {
+      "path": "workflow-terminal.png",
+      "sha256": "c81b157eff80e5f51f093fbb88462d16d04c3e0bdd304f38e8778636a1034b3d",
+      "bytes": 129105
+    }
+  ],
+  "plan_preview_exports": [
+    {
+      "display_ref": "plan-before.md",
+      "original_archive_ref": "plan-review-originals.tar.gz",
+      "original_sha256": "18b9b16ce296309101bb821d81d8ad4b9cf9268feb1265cb08586644d1c8526e",
+      "original_bytes": 26991,
+      "display_transform": "Remove surplus trailing LF only; archive preserves every original byte."
+    },
+    {
+      "display_ref": "plan-after.md",
+      "original_archive_ref": "plan-review-originals.tar.gz",
+      "original_sha256": "eb8e5c2a89b3fedb4016d7bb7d9f44b39d31eae3c1eacfe841465d2e16881a93",
+      "original_bytes": 27042,
+      "display_transform": "Remove surplus trailing LF only; archive preserves every original byte."
+    }
+  ]
+}

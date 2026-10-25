@@ -15,7 +15,7 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   clarifyWorkflowRequest,
@@ -45,6 +45,8 @@ import {
 } from "./WorkflowProposalParts";
 import { WorkflowPreviewReview } from "./WorkflowPreviewReview";
 import { WorkflowClarificationPanel } from "./WorkflowClarificationPanel";
+import { LatestRequestGate } from "../../app/latestRequestGate";
+const WorkflowGraphWorkbench = lazy(() => import("./WorkflowGraphWorkbench"));
 import {
   diagnosticSeverity,
   expectedOutputLabel,
@@ -86,8 +88,11 @@ export function WorkflowProposalPage({
   const [feedback, setFeedback] = useState<ActionResponse | null>(null);
   const [view, setView] = useState<WorkflowView>("decision");
   const reviewBusy = useRef(false);
+  const detailGate = useRef(new LatestRequestGate());
+  const listGate = useRef(new LatestRequestGate());
 
   const loadRequests = useCallback(async () => {
+    const ticket = listGate.current.issue();
     if (!projectId) {
       setRequests([]);
       setSelectedId("");
@@ -96,6 +101,7 @@ export function WorkflowProposalPage({
     }
     try {
       const page = await getWorkflowRequests(projectId);
+      if (!listGate.current.isCurrent(ticket)) return;
       setRequests(page.items);
       setSelectedId((current) => {
         if (page.items.some((item) => textValue(item.request_id) === current)) {
@@ -105,23 +111,27 @@ export function WorkflowProposalPage({
       });
       setError("");
     } catch (reason) {
+      if (!listGate.current.isCurrent(ticket)) return;
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
-      setLoading(false);
+      if (listGate.current.isCurrent(ticket)) setLoading(false);
     }
   }, [projectId]);
 
   const loadDetail = useCallback(async () => {
     if (reviewBusy.current) return;
+    const ticket = detailGate.current.issue();
     if (!projectId || !selectedId) {
       setDetail(null);
       return;
     }
     try {
       const next = await getWorkflowRequestDetail(selectedId, projectId);
+      if (!detailGate.current.isCurrent(ticket) || reviewBusy.current) return;
       setDetail(next);
       setError("");
     } catch (reason) {
+      if (!detailGate.current.isCurrent(ticket) || reviewBusy.current) return;
       setDetail(null);
       setError(reason instanceof Error ? reason.message : String(reason));
     }
@@ -135,7 +145,7 @@ export function WorkflowProposalPage({
       void loadRequests();
       void loadDetail();
     }, 8000);
-    return () => window.clearInterval(timer);
+    return () => { window.clearInterval(timer); detailGate.current.invalidate(); listGate.current.invalidate(); };
   }, [loadDetail, loadRequests]);
 
   useEffect(() => {
@@ -343,6 +353,11 @@ export function WorkflowProposalPage({
           </aside>
 
           <main className="workflow-proposal-detail">
+            {detail && selectedId && <Suspense fallback={<p>正在载入图工作台…</p>}>
+              <WorkflowGraphWorkbench projectId={projectId} requestId={selectedId}
+                revision={`${detail.result?.revision}:${detail.result?.proposal_digest}`}
+                onAction={onAction} actionReady={actionReady} />
+            </Suspense>}
             {detail ? (
               <WorkflowPreviewReview detail={detail} projectId={projectId} disabled={!actionReady}
                 onBusy={(busy) => { reviewBusy.current = busy; setBusyAction(busy ? "preview-review" : ""); }}

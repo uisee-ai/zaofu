@@ -1675,6 +1675,9 @@ class DispatchMixin(
         return bool(fanout_id and child_id)
 
     def _settle_progress_actor(self, event: ZfEvent, task_id: str) -> None:
+        fanout = self._fanout_result_payload(event)
+        if fanout.get("fanout_id") and (fanout.get("child_id") or fanout.get("child_run")):
+            return  # Fanout owns lane release/refill, including recovered results.
         actor = event.actor or ""
         if not actor:
             return

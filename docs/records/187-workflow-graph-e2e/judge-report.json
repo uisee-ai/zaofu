@@ -1,0 +1,28 @@
+{
+  "child_id": "judge-prd",
+  "status": "passed",
+  "summary": "候选 cd8a21c 的 6/6 必需目标声明闭合；已准入证据支持 6/6 单测、4/4 验证命令及 3/3 产品旅程、11/11 必需断言通过，Plan 审批先于实施，未发现开放语义缺口。",
+  "findings": [
+    {
+      "severity": "info",
+      "path": "artifacts/call-results/envelopes/b66e7419c582282a05dfc8035495280171bd1d8310d88c8b1e892c36f127a690.json",
+      "message": "独立 Verify 与当前产品验收报告均绑定 cd8a21cf3e5cd919e78aad0a1516d2a517649d38 和冻结代际；9/9 产品 AC、6/6 Node 单测、11/11 静态检查及双视口浏览器验收通过。实现结果绑定的旧提交 2de0e9d 仅作为历史输入，不用于替代当前候选验证。"
+    },
+    {
+      "severity": "info",
+      "path": "artifacts/call-results/envelopes/24fade46c7c39a4c31a8212e19920731c6f7f8057e3af148280d4b0da94796b2.json",
+      "message": "已准入 Discovery 逐项支持 6 个 mandatory 声明；PRD/SDD/TDD、3 个模块到 COUNTER-001 的映射及验收方案已核对。G-PLAN 的 task_map.ready、Owner 批准、writer 派发证据依次为 evt-a3624c3d5e6c、evt-5b104efd71c0、evt-f9c3cd213c84，批准早于实施；gap_findings 与 gap_tasks 均为空。"
+    },
+    {
+      "severity": "info",
+      "path": "artifacts/goal-closure/claim-sets/6964d41850d323291371baa97cec55d3ea775b59b7ded38241cf9f16a04c8987.json",
+      "message": "Plan claim-set 使用 workflow goal_id，最终 canonical claim-set 使用 PRD goal_id；同代际下 6 个声明的 ID、正文、mandatory 和来源完全一致。本裁决严格保留最终契约固定的 canonical ref/digest 与候选提交。"
+    },
+    {
+      "severity": "info",
+      "path": "artifacts/attempt-inputs/0500807dada7d26e-report.json",
+      "message": "历史 G-YAML 审阅由 human/kernel 持有，Discovery 未代为签署；本裁决仅综合已准入的目标语义与产品验收，不把 revision 13 需求确认冒充 YAML 审阅证据。根 Goal 的机械门禁与最终完成仍由 Kernel 决定。"
+    }
+  ],
+  "recommendation": "approve"
+}

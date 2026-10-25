@@ -673,6 +673,10 @@ def build_workflow_request_router(
 
     from zf.web.workflow_preview_review_routes import build_preview_review_router
     router.include_router(build_preview_review_router(resolve=resolve, auth_response=auth_response))
+    from zf.web.workflow_workbench_routes import build_workbench_router
+    router.include_router(build_workbench_router(resolve=resolve, detail=project_workflow_request_detail))
+    from zf.web.plan_artifact_review_routes import build_plan_artifact_review_router
+    router.include_router(build_plan_artifact_review_router(resolve=resolve, auth_response=auth_response))
     return router
 
 

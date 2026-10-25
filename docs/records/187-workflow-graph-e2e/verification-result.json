@@ -1,0 +1,407 @@
+{
+  "source_event_id": "evt-9361bec63bd4",
+  "kernel_aggregate_event_id": "evt-eca0fbb31ae0",
+  "verification_result": {
+    "schema_version": "verification-result.v1",
+    "execution_status": "completed",
+    "verdict": "passed",
+    "verification_owner": "task_verify",
+    "verification_tier": "task_non_smoke",
+    "reused_command_receipt_ids": [],
+    "probe_receipts": [
+      {
+        "probe_id": "verify-VC-INSTALL",
+        "command_id": "VC-INSTALL",
+        "command": "timeout 180s npm ci",
+        "command_digest": "a84e51ed0d358bc383c85d3854a1de540b62323606569a64d8a90f5b27bf645a",
+        "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+        "status": "passed",
+        "exit_code": 0,
+        "evidence_refs": [
+          "event:evt-31cbef93a4c8"
+        ]
+      },
+      {
+        "probe_id": "verify-VC-UNIT",
+        "command_id": "VC-UNIT",
+        "command": "node --test tests/counter.test.mjs",
+        "command_digest": "6c9bd9740d892a64881a93e200ea3d041557fc9ce6100528249072a0e7532d65",
+        "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+        "status": "passed",
+        "exit_code": 0,
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52"
+        ]
+      },
+      {
+        "probe_id": "verify-VC-STATIC",
+        "command_id": "VC-STATIC",
+        "command": "node scripts/check-static.mjs",
+        "command_digest": "f4bf116db5e6748291d1d3928bcf16f640fe69ae630fd3773232e459bf84eabd",
+        "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+        "status": "passed",
+        "exit_code": 0,
+        "evidence_refs": [
+          "event:evt-5cc27799bf73"
+        ]
+      },
+      {
+        "probe_id": "verify-VC-BROWSER",
+        "command_id": "VC-BROWSER",
+        "command": "docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc 'set -euo pipefail; timeout 180s ./node_modules/.bin/playwright install chromium; ./node_modules/.bin/playwright test --config playwright.config.mjs'",
+        "command_digest": "ada586549916e95765991f1c5a317dafe6a3095aeef2a5100334686e3ae68374",
+        "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+        "status": "passed",
+        "exit_code": 0,
+        "evidence_refs": [
+          "event:evt-3e88bfdb034f",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ]
+      }
+    ],
+    "rework_items": [],
+    "evidence_refs": [
+      "event:evt-077ae823a63e",
+      "event:evt-31cbef93a4c8",
+      "event:evt-dbb13dfa1c52",
+      "event:evt-5cc27799bf73",
+      "event:evt-3e88bfdb034f",
+      "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+      "event:evt-300e609ddf2c",
+      "event:evt-38ddac746b0f",
+      "event:evt-49583e8fbd5b"
+    ],
+    "requirement_results": [
+      {
+        "acceptance_id": "AC-INITIAL",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-INCREMENT",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-DECREMENT",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-FLOOR",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-RESET",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-SEQUENCE",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "task_non_smoke",
+        "evidence_refs": [
+          "event:evt-dbb13dfa1c52",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node --test tests/counter.test.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-CARD",
+        "status": "not_applicable",
+        "verification_owner": "candidate_verify",
+        "verification_tier": "real_e2e",
+        "evidence_refs": [],
+        "findings": [],
+        "reproduction_commands": []
+      },
+      {
+        "acceptance_id": "AC-STATIC",
+        "status": "passed",
+        "verification_owner": "impl_self_check",
+        "verification_tier": "fast",
+        "evidence_refs": [
+          "event:evt-5cc27799bf73",
+          "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt"
+        ],
+        "findings": [],
+        "reproduction_commands": [
+          "node scripts/check-static.mjs"
+        ]
+      },
+      {
+        "acceptance_id": "AC-RUN",
+        "status": "not_applicable",
+        "verification_owner": "candidate_verify",
+        "verification_tier": "real_e2e",
+        "evidence_refs": [],
+        "findings": [],
+        "reproduction_commands": []
+      }
+    ],
+    "product_acceptance_report": {
+      "schema_version": "product_acceptance_report.v1",
+      "workflow_run_id": "workflow-ccaaed87c1b1d6c7",
+      "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+      "candidate_ref": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+      "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+      "product_acceptance_spec_ref": "artifacts/product-acceptance/specs/7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d.json",
+      "product_acceptance_spec_digest": "7ff8df3dc761bd60e6083c6b1f1c4ab8b9bdb47312c8b2948326ff216188ae0d",
+      "verdict": "passed",
+      "journey_results": [
+        {
+          "journey_id": "J-COUNT",
+          "status": "passed",
+          "evidence_refs": [
+            {
+              "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+              "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+            },
+            {
+              "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/trace.zip",
+              "sha256": "0bdf1c9ac1e483ae5378e5468022cee0e8f091318f34e61fd785e03e3b850c67"
+            }
+          ],
+          "assertion_results": [
+            {
+              "assertion_id": "AC-INITIAL",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "AC-INCREMENT",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "AC-DECREMENT",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "AC-FLOOR",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "AC-RESET",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "AC-SEQUENCE",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "journey_id": "J-CARD",
+          "status": "passed",
+          "evidence_refs": [
+            {
+              "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+              "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+            },
+            {
+              "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-e8e15ea1d539bebf.txt",
+              "sha256": "e8e15ea1d539bebfe84cbe3c605b7518748fa1f91f49979009f24bc389797d1a"
+            },
+            {
+              "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-d5b07e9f404dd106.txt",
+              "sha256": "d5b07e9f404dd10629af83f83894dff973d2a920f44a7dbe432c27417d540784"
+            },
+            {
+              "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/desktop-before.png",
+              "sha256": "e7598764a4cdc87be340ce352ccbcaa60d78a719ca2dec334699642ab647a818"
+            },
+            {
+              "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/desktop-after.png",
+              "sha256": "496c3baef55e7da3d5fd1716e4958f8e5e076c7232678787934b3ca7882c70a4"
+            },
+            {
+              "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/mobile.png",
+              "sha256": "a389ca3186816ffe53f1dc222434c4a374c2cd8eb4fb4e644be9cb65c00c3f81"
+            }
+          ],
+          "assertion_results": [
+            {
+              "assertion_id": "A-CARD-LAYOUT",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                },
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-e8e15ea1d539bebf.txt",
+                  "sha256": "e8e15ea1d539bebfe84cbe3c605b7518748fa1f91f49979009f24bc389797d1a"
+                },
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-d5b07e9f404dd106.txt",
+                  "sha256": "d5b07e9f404dd10629af83f83894dff973d2a920f44a7dbe432c27417d540784"
+                }
+              ]
+            },
+            {
+              "assertion_id": "A-DEMO-DIFFERENCE",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                },
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-e8e15ea1d539bebf.txt",
+                  "sha256": "e8e15ea1d539bebfe84cbe3c605b7518748fa1f91f49979009f24bc389797d1a"
+                },
+                {
+                  "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/desktop-after.png",
+                  "sha256": "496c3baef55e7da3d5fd1716e4958f8e5e076c7232678787934b3ca7882c70a4"
+                }
+              ]
+            },
+            {
+              "assertion_id": "A-RESET-LABEL",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "journey_id": "J-RUN",
+          "status": "passed",
+          "evidence_refs": [
+            {
+              "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+              "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+            },
+            {
+              "ref": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/workdirs/prd-verify-lane-0/project/artifacts/evidence/counter/browser/trace.zip",
+              "sha256": "0bdf1c9ac1e483ae5378e5468022cee0e8f091318f34e61fd785e03e3b850c67"
+            }
+          ],
+          "assertion_results": [
+            {
+              "assertion_id": "A-NO-BACKEND",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            },
+            {
+              "assertion_id": "A-ENTRYPOINT",
+              "status": "passed",
+              "evidence_refs": [
+                {
+                  "ref": "artifacts/agent-session-output/01a17469-33de-7351-bf65-fa8eb2b939b3/tool-response-48a1e00e069d0170.txt",
+                  "sha256": "48a1e00e069d01705c25f860dbdf4545567947a167872a8f5a78e6e5c0cbcc36"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "provider_qualification_receipts": []
+    },
+    "workflow_run_id": "workflow-ccaaed87c1b1d6c7",
+    "task_id": "COUNTER-001",
+    "contract_revision": "contract-r82bbc0085508",
+    "task_map_generation": "8dd4adae72518eb5de9b58456a98b528fe508df9bc0b0f175bf2231252c27db2",
+    "base_commit": "955c22699df61bc083dae4ae49f2558f1da5dfb6",
+    "task_ref": "task/COUNTER-001",
+    "contract_snapshot_ref": "artifacts/task-contract-snapshots/workflow-ccaaed87c1b1d6c7/COUNTER-001/contract-r82bbc0085508-f356c5e17067ea01.json",
+    "contract_snapshot_digest": "b2663772f49f004349f276b4ffba90c7a991270edba4616496a8d466e5cb8f5f",
+    "target_snapshot_ref": "artifacts/task-verification-targets/workflow-ccaaed87c1b1d6c7/COUNTER-001/cd8a21cf3e5cd919e78a-41db276261fc0665.json",
+    "target_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "target_snapshot_digest": "6ae23ebd708542fd1540a6f1fcc7e5dd49154a5a03664402ca832238e8e40ac7"
+  }
+}

@@ -12,6 +12,7 @@ from zf.runtime.impl_self_check import (
     write_impl_self_check,
 )
 from zf.runtime.task_contract_snapshot import (
+    TASK_CONTRACT_AUTHORITY_FIELDS,
     TaskContractSnapshotError,
     build_target_snapshot,
     build_task_contract_snapshot,
@@ -521,6 +522,8 @@ class WriterContractHandoffMixin:
             ).strip()
             self_check = dict(payload["impl_self_check"])
             expected_identity = {
+                **{key: str(contract_snapshot[key]) for key in TASK_CONTRACT_AUTHORITY_FIELDS
+                   if contract_snapshot.get(key) not in (None, "", 0)},
                 "workflow_run_id": str(
                     contract_snapshot.get("workflow_run_id") or ""
                 ),

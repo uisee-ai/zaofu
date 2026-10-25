@@ -447,6 +447,10 @@ def build_plan_preview(
             "repair_chat": "chat-orchestrator",
         },
         "owner_decision_items": decision_items,
+        "action_payload": {key: payload[key] for key in (
+            "proposal_ref", "eval_ref", "candidate_task_map_ref", "approval_ref",
+            "checkpoint_id", "workflow_run_id", "fanout_id", "source_event_id",
+        ) if payload.get(key)},
         "decision_count": len(decision_items),
         "policy": {
             "mutation_path": "controlled-action",

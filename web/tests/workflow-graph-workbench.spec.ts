@@ -1,0 +1,140 @@
+import { expect, test } from "@playwright/test";
+
+const project = process.env.ZF_GRAPH_PROJECT_ID || "";
+const requestId = process.env.ZF_GRAPH_REQUEST_ID || "";
+test.skip(!project || !requestId, "Requires an explicitly selected isolated Workflow Run.");
+
+test("real Workflow graph shows bound execution, every lens, stable selection and mobile layout", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
+  const response = await request.get(endpoint);
+  expect(response.ok()).toBeTruthy();
+  const graph = await response.json();
+  expect(graph.scope.request_id).toBe(requestId);
+  expect(graph.scope.execution_started).toBe(true);
+  expect(graph.nodes.some((n: { kind: string }) => n.kind === "workflow")).toBeTruthy();
+  expect(graph.nodes.some((n: { kind: string }) => n.kind === "operation")).toBeTruthy();
+  await page.goto(`/?page=workflows&project=${encodeURIComponent(project)}&request=${encodeURIComponent(requestId)}`);
+  const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
+  await expect(workbench).toBeVisible();
+  for (const name of ["生命周期", "模块与任务", "Workflow 执行", "追溯与变更", "验证与交付", "时间线"]) {
+    await workbench.getByRole("button", { name, exact: true }).click();
+    await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible();
+    expect(new URL(page.url()).searchParams.has("graph")).toBeTruthy();
+  }
+  await workbench.getByRole("button", { name: "Workflow 执行", exact: true }).click();
+  await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+  await workbench.getByRole("button", { name: /fit view/i }).click();
+  await workbench.screenshot({ path: test.info().outputPath("workflow-execution.png") });
+  await workbench.getByRole("button", { name: "展开角色、汇聚与事件结构", exact: true }).click();
+  await expect(workbench.getByRole("button", { name: "返回阶段与执行概览" })).toBeVisible();
+  const task = graph.nodes.find((n: { kind: string }) => n.kind === "task");
+  if (task) await workbench.getByLabel("搜索图节点").fill(task.id);
+  const item = workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first();
+  await item.click();
+  const selected = new URL(page.url()).searchParams.get("node");
+  expect(selected).toBeTruthy();
+  if (task) expect(selected).toBe(task.id);
+  await workbench.getByLabel("搜索图节点").clear();
+  for (const name of ["模块与任务", "追溯与变更", "Workflow 执行"]) {
+    await workbench.getByRole("button", { name, exact: true }).click();
+    await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(selected!);
+  }
+  await page.reload();
+  await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(selected!, { timeout: 30_000 });
+  const observed = graph.nodes.find((n: { kind: string; data: { agent_binding?: { source: string } } }) =>
+    n.kind === "operation" && n.data.agent_binding?.source === "provider_usage");
+  if (observed) {
+    await workbench.getByLabel("搜索图节点").fill(observed.id);
+    await workbench.getByRole("complementary", { name: "图节点目录" }).getByRole("button").first().click();
+    await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText("实际用量记录");
+    await expect(workbench.getByRole("complementary", { name: "图节点详情" })).toContainText(observed.data.agent_binding.model);
+    await workbench.getByLabel("搜索图节点").clear();
+  }
+  if (graph.nodes.some((n: { kind: string; status: string }) => n.kind === "operation" && n.status === "running")) {
+    await expect.poll(async () => (await (await request.get(endpoint)).json()).scope.source_seq,
+      { timeout: 60_000, intervals: [2000] }).toBeGreaterThan(graph.scope.source_seq);
+    await expect(workbench.getByRole("status")).not.toContainText(`事件 ${graph.scope.source_seq}`);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+  await page.screenshot({ path: test.info().outputPath("workflow-mobile.png"), fullPage: true });
+  await test.info().attach("graph-source", { body: JSON.stringify(graph), contentType: "application/json" });
+});
+
+test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels", async ({ page, request }) => {
+  test.setTimeout(90_000);
+  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
+  const graph = await (await request.get(endpoint)).json();
+  test.skip(!graph.plans.length, "Requires a bound Plan to test its review panel.");
+  const plan = { ...graph.plans[0], status: "pending",
+    artifacts: graph.plans[0].artifacts.filter((a: { name: string }) => a.name !== "accepted_plan") };
+  const before = "这是待审阅的长需求段落，修改仅生成候选，不能直接批准执行。".repeat(20);
+  const after = before + "按钮文案为归零。";
+  await page.addInitScript(() => localStorage.setItem("zf.webActionToken", "intercepted-layout-fixture"));
+  await page.route(`**${endpoint}*`, route => route.fulfill({ json: { ...graph, plans: [plan] } }));
+  await page.route(`**/api/projects/${project}/plan-artifact-review`, async route => {
+    const input = route.request().postDataJSON();
+    expect(["context", "discuss"]).toContain(input.operation);
+    expect(input.name).toBe(plan.artifacts[0].name);
+    await route.fulfill({ json: input.operation === "context"
+      ? { ok: true, body: before, digest: "fixture", editable: true }
+      : { ok: true, answer: "局部修改候选", before, after, preview: after, draft_ref: { ref: "fixture-only" } } });
+  });
+  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  await page.getByRole("button", { name: "PRD / Plan Preview · pending", exact: true }).click();
+  const source = page.getByTestId("plan-review-source");
+  await expect(source).toHaveText(before, { timeout: 30_000 });
+  await source.evaluate(element => {
+    const range = document.createRange(); range.selectNodeContents(element);
+    const selected = window.getSelection()!; selected.removeAllRanges(); selected.addRange(range);
+    element.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await page.getByLabel("Plan artifact discussion").fill("仅修改引用片段");
+  await page.getByRole("button", { name: "修改文档片段", exact: true }).click();
+  const diff = page.getByTestId("plan-review-diff");
+  await expect(diff).toContainText("按钮文案为归零");
+  await expect(page.getByRole("button", { name: "确认计划并继续", exact: true })).toBeDisabled();
+  for (const width of [1600, 390]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await diff.scrollIntoViewIfNeeded();
+    const size = await diff.boundingBox();
+    expect(size!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
+    await page.screenshot({ path: test.info().outputPath(`plan-diff-fixture-${width}.png`) });
+  }
+  await page.getByRole("button", { name: "放弃修改", exact: true }).last().click();
+  await expect(diff).toHaveCount(0);
+});
+
+test("terminal Run, Tasks and Goal coverage agree with kernel evidence", async ({ page, request }) => {
+  test.skip(process.env.ZF_GRAPH_EXPECT_TERMINAL !== "1", "Requires a completed isolated acceptance Run.");
+  test.setTimeout(90_000);
+  const endpoint = `/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`;
+  const graph = await (await request.get(endpoint)).json();
+  const run = graph.nodes.find((n: { kind: string }) => n.kind === "run");
+  expect(run.status).toBe("done");
+  const terminal = graph.nodes.find((n: { id: string }) => n.id === `event:${run.data.terminal_event_id}`);
+  expect(terminal.data.event.origin).toBe("kernel");
+  expect(terminal.data.event.type).toBe("run.goal.completed");
+  const tasks = graph.nodes.filter((n: { kind: string }) => n.kind === "task");
+  expect(tasks.length).toBeGreaterThan(0);
+  for (const task of tasks) {
+    expect(task.status).toBe("done");
+    expect(task.data.accepted_event_ids.length).toBeGreaterThan(0);
+  }
+  expect(graph.goal_coverage.summary.closed_claims).toBe(graph.goal_coverage.summary.mandatory_claims);
+  expect(graph.goal_coverage.summary.closed_claims).toBeGreaterThan(0);
+  expect(graph.goal_coverage.summary.open_gaps).toBe(0);
+  expect(graph.capabilities.production.status).toBe("unconnected");
+  await page.goto(`/?page=workflows&project=${project}&request=${requestId}`);
+  const workbench = page.getByRole("region", { name: "Workflow 图工作台" });
+  await expect(workbench).toBeVisible();
+  await workbench.getByRole("button", { name: "展开工作台", exact: true }).click();
+  for (const [view, file] of [["模块与任务", "modules-terminal.png"], ["Workflow 执行", "workflow-terminal.png"], ["验证与交付", "delivery-terminal.png"]]) {
+    await workbench.getByRole("button", { name: view, exact: true }).click();
+    await workbench.getByRole("button", { name: /fit view/i }).click();
+    await workbench.screenshot({ path: test.info().outputPath(file) });
+  }
+  await test.info().attach("terminal-graph", { body: JSON.stringify(graph), contentType: "application/json" });
+});

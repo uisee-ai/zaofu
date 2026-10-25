@@ -484,3 +484,13 @@ def test_config_apply_secret_scan_rejects_inline_credentials() -> None:
         "project: {name: demo}\n"
         "token_env: OPENAI_API_KEY\n"
     )
+
+
+def test_secret_scan_does_not_read_task_skill_names_as_api_keys():
+    from zf.runtime.workflow_config_apply import _validate_no_inline_secrets
+    _validate_no_inline_secrets('skills: [zf-plan-task-map-contract, zf-harness-task-capsule-contract]')
+    for content in ('skills: [sk-abcdefghijklmnop]', 'value: Bearer sk-abcdefghijklmnop',
+                    'url: https://example.test/?key=sk-abcdefghijklmnop'):
+        with pytest.raises(WorkflowConfigApplyError) as error:
+            _validate_no_inline_secrets(content)
+        assert error.value.code == 'candidate_inline_secret'
