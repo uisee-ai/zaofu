@@ -44,6 +44,28 @@ def test_full_plan_is_primary_and_digest_is_separate(tmp_path):
     assert result["digest_markdown"].startswith("# Digest")
 
 
+def test_review_dossier_backfills_bound_decision_register(tmp_path):
+    state, _, payload = _artifacts(tmp_path)
+    full = (
+        "# Complete plan\n\n"
+        "## Owner decision register\n\n"
+        "| ID | Question | Options | Recommended | Blocking evidence |\n"
+        "|---|---|---|---|---|\n"
+        "| CR01 | Choose the clock contract? | Keep source semantics | Keep source | T01/T02 |\n\n"
+        "## Trace\n\n"
+        "All evidence is NOT_RUN.\n"
+    )
+    plan_path = state / "artifacts/plan.md"
+    plan_path.write_text(full, encoding="utf-8")
+    payload["plan_artifact_digest"] = hashlib.sha256(full.encode()).hexdigest()
+    result = _preview(state, payload)
+
+    assert result["decision_count"] == 1
+    assert result["owner_decision_items"][0]["decision_id"] == "CR01"
+    assert "**待决事项**：`1` 项" in result["review_dossier_markdown"]
+    assert "Choose the clock contract?" in result["review_dossier_markdown"]
+
+
 def test_preview_renders_the_bound_task_map_for_human_review(tmp_path):
     state, _, payload = _artifacts(tmp_path)
     task_map = {
@@ -230,6 +252,101 @@ def test_preview_uses_bound_synth_plan_evidence_when_declared_plan_path_is_stale
     assert result["markdown"] == full
     assert result["content_kind"] == "full_plan"
     assert result["refs"]["markdown_ref"] == canonical_ref
+    assert any(
+        item["name"] == "accepted_plan" and item["ref"] == canonical_ref
+        for item in result["artifacts"]
+    )
+
+
+def test_preview_prefers_planning_bundle_canonical_plan_over_register_port(tmp_path):
+    from zf.runtime.plan_artifact_package import build_plan_artifact_package, write_plan_artifact_package
+    from tests.test_plan_artifact_package import _run_contract
+
+    state, _, payload = _artifacts(tmp_path)
+    fanout = "fanout-prd-plan-bundle"
+    canonical_ref = (
+        f"artifacts/fanouts/{fanout}/planner/docs/plans/prd-plan-planner-plan.md"
+    )
+    register_ref = (
+        f"artifacts/fanouts/{fanout}/planner/docs/plans/decision-register-v14.md"
+    )
+    bundle_ref = "artifacts/plan-ports/planning-result.json"
+    canonical = (
+        "# Complete PRD Plan\n\n"
+        "## Owner 决策项\n\n"
+        "| ID | Question | Options | Recommended | Blocking evidence |\n"
+        "|---|---|---|---|---|\n"
+        "| CR01 | Choose the clock contract? | Keep source semantics | Keep source | T01/T02 |\n\n"
+        "## Task Map\n\n"
+        "T01 through T10 remain pending approval.\n"
+    )
+    register = "# Decision Register\n\n## Status policy\n\n| ID | Question | Status |\n|---|---|---|\n| CR01 | Choose the clock contract? | PENDING_APPROVAL |\n"
+    for ref, body in ((canonical_ref, canonical), (register_ref, register)):
+        path = state / ref
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+    bundle = {
+        "schema_version": "plan-preview-bundle.v1",
+        "plan_ref": "docs/plans/prd-plan-planner-plan.md",
+        "decision_register_ref": "docs/plans/decision-register-v14.md",
+    }
+    bundle_path = state / bundle_ref
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    bundle_path.write_text(json.dumps(bundle), encoding="utf-8")
+    task_ref = payload["task_map_ref"]
+    ports = [
+        {
+            "logical_name": "planning_result",
+            "artifact_kind": "planning_result",
+            "producer_stage_id": "prd-plan",
+            "ref": bundle_ref,
+            "schema_version": "plan-preview-bundle.v1",
+            "sha256": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
+        },
+        {
+            "logical_name": "accepted_plan",
+            "artifact_kind": "accepted_plan",
+            "producer_stage_id": "prd-plan",
+            "ref": register_ref,
+            "schema_version": "",
+            "sha256": hashlib.sha256(register.encode()).hexdigest(),
+        },
+        {
+            "logical_name": "task_map",
+            "artifact_kind": "task_map",
+            "producer_stage_id": "prd-plan",
+            "ref": task_ref,
+            "schema_version": "task-map.v1",
+            "sha256": hashlib.sha256((state / task_ref).read_bytes()).hexdigest(),
+        },
+    ]
+    package = build_plan_artifact_package(
+        workflow_run_id="run-bundle", flow_kind="prd", producer_stage_id="prd-plan",
+        run_contract=_run_contract(state), plan_revision="r1",
+        task_map_generation="g1", produced=ports, required_ports=[],
+    )
+    package_desc = write_plan_artifact_package(state, package)
+    payload.update({
+        "workflow_run_id": "run-bundle",
+        "fanout_id": fanout,
+        "plan_artifact_ref": "docs/plans/prd-plan-synth-plan.md",
+        "plan_artifact_package_ref": package_desc["ref"],
+        "plan_artifact_package_digest": package_desc["sha256"],
+    })
+    trigger = ZfEvent(
+        id="evt-plan", type="task_map.ready", actor="planner",
+        payload={**payload, "fanout_id": fanout},
+    )
+    request = ZfEvent(
+        id="evt-approval", type="plan.approval.requested", actor="zf-cli",
+        payload={**payload, "plan_id": trigger.id},
+    )
+    result = build_plan_preview(
+        state, [trigger, request], plan_id=trigger.id, project_root=state.parent,
+    )
+    assert result["markdown"] == canonical
+    assert result["refs"]["markdown_ref"] == canonical_ref
+    assert result["decision_count"] == 1
     assert any(
         item["name"] == "accepted_plan" and item["ref"] == canonical_ref
         for item in result["artifacts"]
@@ -461,3 +578,84 @@ def test_owner_preview_bundle_exposes_requirements_and_plan_ports(tmp_path):
     }
     assert any(item["name"] == "acceptance_matrix" for item in result["artifacts"])
     assert result["authority_refs"] == payload["authority_refs"]
+
+
+def test_review_packet_surfaces_cross_artifact_gaps_and_lineage(tmp_path):
+    from zf.runtime.plan_preview_artifacts import write_plan_preview_bundle
+
+    state, full, payload = _artifacts(tmp_path)
+    requirement = state / "artifacts/requirements/authority.md"
+    requirement.parent.mkdir(parents=True)
+    requirement.write_text(
+        "# Authority\n\nR001 M14-01 U14-01 import_config.yaml\n",
+        encoding="utf-8",
+    )
+    full = "# Complete plan\n\n## Acceptance\n\n2 个任务 AC\n\nR001\n"
+    (state / payload["plan_artifact_ref"]).write_text(full, encoding="utf-8")
+    payload["plan_artifact_digest"] = hashlib.sha256(full.encode()).hexdigest()
+    payload.update({
+        "workflow_run_id": "run-r4",
+        "authority_refs": ["artifacts/requirements/authority.md"],
+        "artifact_refs": ["artifacts/requirements/authority.md"],
+        "plan_ports": [
+            {"logical_name": "acceptance_matrix", "body": {
+                "schema_version": "acceptance-matrix.v1",
+                "metadata": {"workflow_run_id": "run-r3"},
+                "acceptance": [{"id": "T01-AC1"}],
+            }},
+            {"logical_name": "test_matrix", "body": {
+                "schema_version": "test-matrix.v1",
+                "metadata": {"workflow_run_id": "run-r3"},
+                "commands": [{"id": "CMD-T01"}],
+            }},
+            {"logical_name": "source_index", "body": {
+                "schema_version": "source-index.v1",
+                "metadata": {"workflow_run_id": "run-r3"},
+                "traceability": [{"trace_id": "R001"}],
+            }},
+            {"logical_name": "coverage_ledger", "body": {
+                "schema_version": "coverage-ledger.v1",
+                "metadata": {"workflow_run_id": "run-r3"},
+                "entries": [{"trace_id": "R001"}],
+                "uncovered": [],
+            }},
+            {"logical_name": "product_acceptance_spec", "body": {
+                "schema_version": "product-acceptance-spec.v1",
+                "metadata": {"workflow_run_id": "run-r3"},
+                "user_journeys": [],
+            }},
+        ],
+    })
+    descriptor = write_plan_preview_bundle(
+        state, payload=payload, refs=payload, project_root=tmp_path,
+        source_event_id="evt-review-packet",
+    )
+    request = ZfEvent(
+        id="evt-review-packet",
+        type="plan.approval.requested",
+        actor="zf-cli",
+        payload={
+            **payload,
+            "plan_id": "evt-review-packet",
+            "plan_preview_bundle_ref": descriptor["ref"],
+            "plan_preview_bundle_digest": descriptor["sha256"],
+        },
+    )
+    result = build_plan_preview(state, [request], plan_id="evt-review-packet", project_root=tmp_path)
+
+    packet = result["review_packet"]
+    assert packet["schema_version"] == "plan-review-packet.v1"
+    assert {section["id"] for section in packet["sections"]} == {
+        "prd", "sdd", "tdd", "traceability", "task_map", "metrics",
+        "ui_states", "config_contracts", "decisions", "provenance",
+    }
+    assert packet["status"] == "blocked"
+    assert {item["code"] for item in packet["diagnostics"]} >= {
+        "acceptance_count_mismatch", "artifact_lineage_mismatch",
+    }
+    sections = {section["id"]: section for section in packet["sections"]}
+    assert sections["metrics"]["status"] in {"missing", "partial"}
+    assert sections["ui_states"]["status"] in {"missing", "partial"}
+    assert sections["config_contracts"]["status"] in {"missing", "partial"}
+    assert "## 1.1 审核包状态" in result["review_dossier_markdown"]
+    assert "artifact_lineage_mismatch" in result["review_dossier_markdown"]

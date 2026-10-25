@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 import hashlib
-from collections import Counter
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+from zf.runtime.plan_review_packet import build_review_packet, render_human_review_dossier
 from zf.runtime.plan_preview_artifacts import (
     PLAN_REVIEW_REF_FIELDS,
     preview_artifact_path,
@@ -146,16 +147,64 @@ def build_plan_preview(
     )
     if preview_bundle_error:
         artifacts_error = artifacts_error or preview_bundle_error
-    plan_port = next((p for p in artifacts if p["name"] == "accepted_plan"), None)
-    if not plan_ref and plan_port:
-        plan_ref = plan_port["ref"]
-        payload["plan_artifact_digest"] = plan_port["sha256"]
+    planning_result = _planning_result_bundle(
+        artifacts, state_dir=state_dir, project_root=project_root,
+    )
+    fanout_id = str(
+        payload.get("fanout_id")
+        or (bound_source and _payload(bound_source).get("fanout_id"))
+        or preview_bundle.get("fanout_id")
+        or ""
+    )
+    # The package may contain a planning-result bundle while the approval
+    # event still carries the old logical path (or an accepted_plan port for
+    # the Decision Register). Resolve the bundle's canonical Plan first.
+    bundle_plan_ref = str(
+        preview_bundle.get("plan_ref")
+        or planning_result.get("plan_ref")
+        or ""
+    )
+    plan_lookup = bool(bundle_plan_ref or plan_ref)
+    plan_refs = _bound_plan_refs(
+        bundle_plan_ref or plan_ref,
+        fanout_id=fanout_id,
+    )
+    if bundle_plan_ref and plan_ref and plan_ref != bundle_plan_ref:
+        plan_refs.extend(_bound_plan_refs(plan_ref, fanout_id=fanout_id))
+    if not plan_refs:
+        plan_refs = [plan_ref] if plan_ref else [digest_ref]
     markdown, markdown_ref, markdown_error = _plan_markdown(
         state_dir,
         project_root=project_root,
-        refs=[plan_ref] if plan_ref else [digest_ref],
-        digest=str(payload.get("plan_artifact_digest") or "") if plan_ref else "",
+        refs=plan_refs,
+        digest=(
+            str(payload.get("plan_artifact_digest") or "")
+            if not bundle_plan_ref and plan_ref
+            else ""
+        ),
     )
+    if markdown and markdown_ref and plan_lookup:
+        plan_ref = markdown_ref
+        payload["plan_artifact_ref"] = markdown_ref
+        payload["plan_artifact_digest"] = hashlib.sha256(
+            markdown.encode("utf-8")
+        ).hexdigest()
+    if not markdown and not bundle_plan_ref:
+        plan_port = next((p for p in artifacts if p["name"] == "accepted_plan"), None)
+        if plan_port:
+            plan_lookup = True
+            markdown, markdown_ref, markdown_error = _plan_markdown(
+                state_dir,
+                project_root=project_root,
+                refs=[plan_port["ref"]],
+                digest=plan_port.get("sha256", ""),
+            )
+            if markdown and markdown_ref:
+                plan_ref = markdown_ref
+                payload["plan_artifact_ref"] = markdown_ref
+                payload["plan_artifact_digest"] = hashlib.sha256(
+                    markdown.encode("utf-8")
+                ).hexdigest()
     # A pure plan critic may carry the planner's markdown only as an explicit
     # evidence ref while retaining its own prefilled, workdir-local plan path.
     # Reuse that bound evidence ref when the declared path is unavailable;
@@ -191,6 +240,15 @@ def build_plan_preview(
                 if ref.lower().endswith((".md", ".markdown"))
                 and "/plans/" in ref.replace("\\", "/")
             ]
+            plan_candidates = sorted(
+                dict.fromkeys(plan_candidates),
+                key=_plan_candidate_rank,
+            )
+            if bundle_plan_ref:
+                plan_candidates = [
+                    *_bound_plan_refs(bundle_plan_ref, fanout_id=fanout_id),
+                    *plan_candidates,
+                ]
             markdown, markdown_ref, fallback_error = _plan_markdown(
                 state_dir,
                 project_root=project_root,
@@ -209,6 +267,14 @@ def build_plan_preview(
     # was written without an `accepted_plan` port. Bind that recovered body to
     # the preview too, so the same human-readable Plan can be opened from the
     # artifact list and is protected by its digest.
+    if markdown:
+        # A package port named accepted_plan must never continue pointing at a
+        # Decision Register after the canonical Plan has been recovered.
+        artifacts = [
+            item for item in artifacts
+            if str(item.get("name") or "") != "accepted_plan"
+            or str(item.get("ref") or "") == markdown_ref
+        ]
     if markdown and plan_ref and not artifacts_error and not any(
         str(item.get("name") or "") == "accepted_plan" for item in artifacts
     ):
@@ -227,6 +293,25 @@ def build_plan_preview(
         digest=task_map_digest,
         plan_id=plan_id,
     )
+    decision_items = _decision_items(payload, markdown)
+    decision_register_ref = str(
+        preview_bundle.get("decision_register_ref")
+        or planning_result.get("decision_register_ref")
+        or ""
+    )
+    if decision_register_ref:
+        for ref in _bound_plan_refs(decision_register_ref, fanout_id=fanout_id):
+            try:
+                decision_register = read_preview_artifact(
+                    ref, state_dir=state_dir, project_root=project_root,
+                )
+            except (OSError, ValueError):
+                continue
+            decision_items = _decision_items(
+                {"owner_decision_items": decision_items}, decision_register,
+            )
+            if decision_items:
+                break
     authority_refs = [
         str(item) for item in (
             preview_bundle.get("authority_refs")
@@ -264,14 +349,27 @@ def build_plan_preview(
         }
         artifacts.append(item)
         requirement_artifacts.append(item)
-    review_dossier = _render_human_review_dossier(
+    review_packet = build_review_packet(
+        state_dir,
+        project_root=project_root,
+        payload=payload,
+        artifacts=artifacts,
+        authority_refs=authority_refs,
+        markdown=markdown,
+        task_map_summary=task_map_summary,
+        decision_items=decision_items,
+        preview_bundle=preview_bundle,
+    )
+    review_dossier = render_human_review_dossier(
         state_dir,
         project_root=project_root,
         payload=payload,
         artifacts=artifacts,
         authority_refs=authority_refs,
         task_map_summary=task_map_summary,
+        decision_items=decision_items,
         status=status,
+        review_packet=review_packet,
     )
     digest_source = "stored_digest"
     if task_map_digest:
@@ -316,6 +414,7 @@ def build_plan_preview(
         },
         "markdown": markdown,
         "review_dossier_markdown": review_dossier,
+        "review_packet": review_packet,
         "content_kind": content_kind,
         "content_error": markdown_error,
         "digest_markdown": digest_markdown,
@@ -347,9 +446,8 @@ def build_plan_preview(
             ),
             "repair_chat": "chat-orchestrator",
         },
-        "owner_decision_items": list(payload.get("owner_decision_items") or [])
-        if isinstance(payload.get("owner_decision_items"), list)
-        else [],
+        "owner_decision_items": decision_items,
+        "decision_count": len(decision_items),
         "policy": {
             "mutation_path": "controlled-action",
             "agent_can_propose_plan_approve": False,
@@ -386,6 +484,66 @@ def _plan_markdown(
         except (OSError, ValueError) as exc:
             diagnostics.append(f"{ref}: {exc}")
     return "", "", "; ".join(diagnostics)
+
+
+def _planning_result_bundle(
+    artifacts: list[dict[str, str]], *, state_dir: Path,
+    project_root: Path | None,
+) -> dict[str, Any]:
+    """Read the package's planning-result port when it is a preview bundle."""
+
+    item = next(
+        (item for item in artifacts if item.get("name") == "planning_result"),
+        None,
+    )
+    if not item:
+        return {}
+    try:
+        value = json.loads(read_preview_artifact(
+            item["ref"], state_dir=state_dir, project_root=project_root,
+            digest=item.get("sha256", ""),
+        ))
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) and value.get("schema_version") == "plan-preview-bundle.v1" else {}
+
+
+def _bound_plan_refs(ref: str, *, fanout_id: str) -> list[str]:
+    """Return explicit refs for a logical planner artifact and its fanout.
+
+    Worker outputs use ``docs/...`` paths, while admitted fanout artifacts are
+    materialized below ``state/artifacts/fanouts/<fanout>/planner``. The
+    fanout id is already bound by the approval/task-map event, so this is a
+    deterministic binding rather than directory discovery.
+    """
+
+    ref = str(ref or "").strip()
+    if not ref:
+        return []
+    refs: list[str] = []
+    if fanout_id and not Path(ref).is_absolute() and not ref.startswith("artifacts/"):
+        refs.append(f"artifacts/fanouts/{fanout_id}/planner/{ref.lstrip('/')}")
+    refs.append(ref)
+    return list(dict.fromkeys(refs))
+
+
+def _plan_candidate_rank(ref: str) -> tuple[int, str]:
+    """Prefer a canonical planner Plan over PRD summaries or registers."""
+
+    name = Path(ref).name.lower()
+    if name in {"prd-plan-planner-plan.md", "prd-plan-synth-plan.md"}:
+        rank = 0
+    elif name.endswith("-plan.md"):
+        rank = 1
+    elif name == "prd-v14-preview.md":
+        rank = 20
+    elif "decision-register" in name:
+        rank = 100
+    elif name in {"sdd-v14-preview.md", "tdd-v14-preview.md"}:
+        rank = 110
+    else:
+        rank = 50
+    return rank, str(ref)
 
 
 def _task_map_summary(
@@ -556,143 +714,79 @@ def _render_task_map_markdown(summary: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _render_human_review_dossier(
-    state_dir: Path,
-    *,
-    project_root: Path | None,
-    payload: dict[str, Any],
-    artifacts: list[dict[str, str]],
-    authority_refs: list[str],
-    task_map_summary: dict[str, Any],
-    status: str,
-) -> str:
-    """Build the short SDD/TDD approval guide from bound plan ports.
+def _decision_items(payload: dict[str, Any], markdown: str) -> list[dict[str, Any]]:
+    """Return one decision register from explicit payload or bound Plan text.
 
-    The canonical Plan remains unchanged. This dossier is a read-only review
-    surface that gives an owner the decision context before the long trace and
-    Task Map details.
+    The fallback is scoped to the Plan's named decision-register table. It
+    keeps older plans reviewable without scanning unrelated files and never
+    invents a decision absent from the bound Plan.
     """
 
-    def load_json(name: str) -> dict[str, Any]:
-        item = next((item for item in artifacts if item.get("name") == name), None)
-        if not item:
-            return {}
-        try:
-            value = json.loads(read_preview_artifact(
-                item["ref"], state_dir=state_dir, project_root=project_root,
-                digest=item.get("sha256", ""),
-            ))
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            return {}
-        return value if isinstance(value, dict) else {}
-
-    requirement = load_json("requirement_spec") or load_json("issue_spec")
-    product = load_json("product_acceptance_spec")
-    tests = load_json("test_matrix")
-    acceptance = load_json("acceptance_matrix")
-    tasks = task_map_summary.get("tasks", []) if task_map_summary.get("ok") else []
-    journeys = product.get("user_journeys", [])
-    assertions = [
-        item for journey in journeys if isinstance(journey, dict)
-        for item in journey.get("assertions", [])
-        if isinstance(item, dict)
-    ]
-    commands = [item for item in tests.get("commands", []) if isinstance(item, dict)]
-    trace_rows = acceptance.get("traceability", [])
-    trace_status = Counter(
-        str(item.get("status") or "UNKNOWN") for item in trace_rows
-        if isinstance(item, dict)
+    items: dict[str, dict[str, Any]] = {}
+    raw = payload.get("owner_decision_items")
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            decision_id = str(item.get("decision_id") or item.get("id") or "").strip()
+            if decision_id:
+                items[decision_id] = dict(item)
+    lines = markdown.splitlines()
+    start = next(
+        (index for index, line in enumerate(lines)
+         if line.startswith("#") and "decision register" in line.lstrip("#").strip().lower()),
+        None,
     )
-    decisions = payload.get("owner_decision_items")
-    decisions = decisions if isinstance(decisions, list) else []
-    prerequisites = [
-        str(item) for item in product.get("external_prerequisite_ids", [])
-        if str(item).strip()
-    ]
-    objective = str(requirement.get("objective") or "").strip()
-    if not objective:
-        objective = "基于两份原生 v1.4 权威 Markdown 形成可人工审批的 PRD、架构边界、测试合同和任务拆分。"
-
-    lines = [
-        "# 人工审批阅读摘要",
-        "",
-        "> 这是 Plan Approval 前的阅读入口。它把 PRD、SDD、TDD 和风险决策放在一起；后面的 canonical Plan、逐项 trace 和 Task Map 是证据正文。审批不会把未运行证据变成 PASS，也不会在本次审批前启动 impl/verify。",
-        "",
-        "## 1. 本次要审批什么",
-        "",
-        f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or 'prd-lanes-impl'}`。",
-        f"- **目标**：{objective}",
-        f"- **权威输入**：{', '.join(f'`{ref}`' for ref in authority_refs) or '`未绑定`'}。",
-        "- **审批边界**：只批准后续实现/验证计划及其责任边界；不批准未决 CR/Q14 方案，不批准真实媒体、模型、仿真或 provider 结果。",
-        "",
-        "## 2. PRD：用户和产品结果",
-        "",
-    ]
-    if assertions:
-        lines.append("下面是用户旅程的可观察结果，按产品行为阅读，而不是按 worker 阅读：")
-        lines.append("")
-        for assertion in assertions:
-            lines.append(
-                f"- **{assertion.get('assertion_id') or 'ASSERT'}**（{assertion.get('producer') or '-'}，{assertion.get('tier') or '-'}）：{assertion.get('statement') or '-'}"
-            )
-    else:
-        lines.append("- 当前 plan port 未提供结构化 user journey；请以 canonical Plan 的产品验收章节为准。")
-    lines.extend(["", "## 3. SDD：系统边界和集成合同", ""])
-    lines.append("每个任务拥有自己的写入边界；T10 只负责总装配和真实入口，不替代上游任务实现。")
-    lines.append("")
-    lines.append("| Slice | Owner | Depends on | Architecture responsibility |")
-    lines.append("|---|---|---|---|")
-    for task in tasks:
-        lines.append(
-            f"| {task.get('task_id') or '-'} {task.get('title') or '-'} | {task.get('owner_role') or '-'} | {task.get('blocked_by') or '-'} | {task.get('source_excerpt') or '-'} |"
+    if start is None:
+        start = next(
+            (index for index, line in enumerate(lines)
+             if line.startswith("#") and "owner 决策项" in line.lstrip("#").strip().lower()),
+            None,
         )
-    if product.get("entrypoints"):
-        lines.extend(["", "**Entrypoints / integration contract**", ""])
-        for entry in product["entrypoints"]:
-            if isinstance(entry, dict):
-                lines.append(
-                    f"- `{entry.get('entrypoint_id') or '-'}`：start `{entry.get('start_command') or '-'}`；health `{entry.get('health_check') or '-'}`；owner `{entry.get('owner') or '-'}`"
-                )
-    lines.extend(["", "## 4. TDD：验证合同和当前证据状态", ""])
-    lines.append(
-        f"- 验收追踪：`{len(trace_rows)}` 条；状态统计：`NOT_RUN={trace_status.get('NOT_RUN', 0)}`、`BLOCKED={trace_status.get('BLOCKED', 0)}`、`PASS={trace_status.get('PASS', 0)}`。"
+    if start is None:
+        return list(items.values())
+    heading = lines[start].lstrip()
+    heading_level = len(heading) - len(heading.lstrip("#"))
+    end = next(
+        (
+            index for index in range(start + 1, len(lines))
+            if lines[index].startswith("#")
+            and len(lines[index]) - len(lines[index].lstrip("#")) <= heading_level
+        ),
+        len(lines),
     )
-    lines.append(f"- 验证命令：`{len(commands)}` 条；每条命令绑定 owner、tier 和 acceptance IDs。")
-    lines.append("")
-    lines.append("| Command | Tier | Owner | Acceptance |")
-    lines.append("|---|---|---|---|")
-    for command in commands:
-        lines.append(
-            f"| `{command.get('id') or '-'}` `{command.get('command') or '-'}` | {command.get('tier') or '-'} | {command.get('owner') or '-'} | {', '.join(str(item) for item in command.get('acceptance_ids', [])) or '-'} |"
+    header: list[str] = []
+    for line in lines[start + 1:end]:
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [cell.strip().strip("`") for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 2 or cells[0] in {"ID", "id", "---"} or set(cells[0]) <= {"-", ":"}:
+            continue
+        if not header and cells[0].lower() in {"id", "decision id"}:
+            header = [cell.lower() for cell in cells]
+            continue
+        decision_id = cells[0].strip()
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*(?:[-_][A-Za-z0-9]+)*", decision_id):
+            continue
+        status_index = next(
+            (index for index, cell in enumerate(header) if "status" in cell),
+            None,
         )
-    lines.extend(["", "## 5. 风险、前置条件和审批问题", ""])
-    if prerequisites:
-        lines.append("**外部前置条件**")
-        lines.extend(f"- `{item}`：未关闭时只能输出 BLOCKED/UNKNOWN，不能宣称正式通过。" for item in prerequisites)
-        lines.append("")
-    if decisions:
-        lines.append("**Owner decisions**")
-        for decision in decisions:
-            if isinstance(decision, dict):
-                lines.append(f"- **{decision.get('decision_id') or '-'}**：{decision.get('question') or '-'}（保持 `PENDING_APPROVAL`）")
-    else:
-        lines.append("- 当前没有额外 owner decision；请仍检查 canonical Plan 中的 CR/Q14 阻断项。")
-    lines.extend([
-        "",
-        "## 6. Approve 前检查清单",
-        "",
-        "- [ ] 产品目标、用户旅程和非目标符合原生 Markdown。",
-        "- [ ] SDD 的任务边界、依赖、唯一写入 owner 和 T10 集成责任可接受。",
-        "- [ ] TDD 命令、验收 ID、证据路径和 NOT_RUN/BLOCKED 规则可执行。",
-        "- [ ] CR/Q14、真实数据、模型、仿真、通知和外部 runner 的未决状态已知晓。",
-        "- [ ] 通过 Chat 提出的修改已反映在新的 Plan candidate 后，再执行 approve。",
-        "",
-        "---",
-        "",
-        "以下继续显示 canonical Plan 正文、完整 requirement trace 和 Task Map 详情。",
-        "",
-    ])
-    return "\n".join(lines)
+        if status_index is not None and status_index < len(cells):
+            status = cells[status_index]
+            if status and status.upper() not in {"PENDING_APPROVAL", "PENDING", "OPEN", "NOT_RUN"}:
+                continue
+        item = items.setdefault(decision_id, {"decision_id": decision_id})
+        item.setdefault("question", cells[1])
+        if len(cells) > 2:
+            item.setdefault("options", cells[2])
+        if len(cells) > 3:
+            item.setdefault("recommended", cells[3])
+        if len(cells) > 4:
+            item.setdefault("blocking_impact", cells[4])
+        if status_index is not None and status_index < len(cells):
+            item.setdefault("status", cells[status_index])
+    return list(items.values())
 
 
 def _fallback_markdown(

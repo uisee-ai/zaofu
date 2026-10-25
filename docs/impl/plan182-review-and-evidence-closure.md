@@ -134,3 +134,26 @@ Dashboard 从本 worktree 启动，入口为
 原历史扫描保留，后补来源与消费证据明确登记；不以文件存在代替实际消费。
 
 本记录的通过范围限于 ZaoFu 修复与规划质量，不证明洛书产品已经实现、迁移或部署。
+
+## 本轮通用人工审批补充
+
+Plan Preview 的人工入口现在按四层职责处理：Planner/Critic 通过既有 plan ports
+提供 PRD、SDD、TDD 和 Decision Register 语义；Runtime 只绑定 artifact、校验
+digest/引用和跨工件一致性；Web 负责目录、状态、Task Map 和下载阅读。缺失的系统
+合同、测试预期、证据路径或决策登记不能由 Runtime 猜测成完整 Plan。
+
+审批摘要会从绑定的 Plan decision register 回填 owner decision，避免 slim payload
+缺字段时误显示“无决定”；下载内容同时包含人工摘要和 canonical Plan。该补充不改变
+`plan.approval.requested=pending`、impl/verify gate 或任何产品运行证据状态。
+
+## 人工审核包完整性（2026-10-25）
+
+Plan Preview 现在额外返回 `review_packet`（`plan-review-packet.v1`）。它把人工审核
+拆成 PRD、SDD、TDD、Traceability、Task Map、M14 指标、U14 UI 状态、配置/合同、
+Owner Decisions 和 Provenance 十个分区；每个分区保留 `status/counts/refs/notes`。
+分区只从审批事件已经绑定的 artifact 读取，缺少 port 或 source ID 未在 Plan 中出现时
+显示 `missing`/`partial`，不推断 PASS。
+
+审核包还报告 acceptance 数量声明与实际矩阵不一致、不同 workflow/pdd 标识混用等诊断。
+这类诊断会在摘要和 Web 侧栏显示，供人工在 approve 前通过 Chat 修订；它们不会修改
+事件、任务或 runtime state，也不会绕过 controlled-action 审批路径。

@@ -737,8 +737,26 @@ function PlanPreviewOverlay({
             <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
             <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
             <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
+            <div><dt>decisions</dt><dd>{preview?.decision_count ?? preview?.owner_decision_items?.length ?? 0}</dd></div>
             <div><dt>trace</dt><dd>{preview?.trace_id || "-"}</dd></div>
           </dl>
+          {preview?.review_packet && <details open>
+            <summary>SDD/TDD 审核包 · {preview.review_packet.status}</summary>
+            <ul>
+              {preview.review_packet.sections.map((section) => <li key={section.id}>
+                <strong>{section.title}</strong> <span className="muted">· {section.status}</span>
+                {section.notes?.[0] ? <div className="muted">{section.notes[0]}</div> : null}
+              </li>)}
+            </ul>
+            {(preview.review_packet.diagnostics?.length ?? 0) > 0 && <div role="alert">
+              <strong>需要处理的诊断</strong>
+              <ul>
+                {preview.review_packet.diagnostics?.map((diagnostic) => <li key={diagnostic.code}>
+                  <span className="mono">{diagnostic.code}</span> · {diagnostic.message}
+                </li>)}
+              </ul>
+            </div>}
+          </details>}
           {preview?.digest_markdown && preview.content_kind !== "digest_only" && <details>
             <summary>计划摘要（机械检查）</summary>
             <MarkdownText content={preview.digest_markdown} />

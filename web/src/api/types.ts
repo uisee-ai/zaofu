@@ -3230,6 +3230,24 @@ export interface PlanPreview {
   refs: Record<string, string>;
   markdown: string;
   review_dossier_markdown?: string;
+  review_packet?: {
+    schema_version: string;
+    status: string;
+    sections: Array<{
+      id: string;
+      title: string;
+      status: string;
+      counts?: Record<string, number>;
+      artifact_names?: string[];
+      refs?: string[];
+      notes?: string[];
+    }>;
+    diagnostics?: Array<{ code: string; severity: string; message: string; evidence?: string[] }>;
+    source_ids?: Record<string, string[]>;
+    plan_ids?: Record<string, string[]>;
+    missing_sections?: string[];
+    policy?: Record<string, unknown>;
+  };
   content_kind?: "full_plan" | "digest_only" | "unavailable";
   content_profile?: "derived_plan_full" | "summary_only" | "derived_plan" | "unknown" | string;
   content_error?: string;
@@ -3271,6 +3289,7 @@ export interface PlanPreview {
     question?: string;
     options?: Array<{ option_id?: string; label?: string }>;
   }>;
+  decision_count?: number;
   actions?: Record<string, string>;
   policy?: Record<string, unknown>;
 }

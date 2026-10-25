@@ -88,6 +88,25 @@ workflow has a source PRD or authority bundle:
 - approval gates and the explicit rule that impl/verify remain blocked before
   owner approval.
 
+The approval entry is a contract, not a formatting preference. For
+`derived_plan_full`, the Planner/Critic handoff must bind these semantic
+fields through existing plan ports or explicit evidence refs:
+
+- **PRD**: users, problem/outcome, scope, non-goals, success measures, and
+  authority anchors;
+- **SDD**: system slices, entrypoints, input/output or data/event contracts,
+  ownership, dependencies, and failure semantics;
+- **TDD**: acceptance ids, expected result, command id, verification owner and
+  tier, evidence path, pass/fail rule, and current evidence state;
+- **Decision Register**: stable decision id, question, options or recommendation,
+  affected tasks, blocker impact, and current disposition.
+
+Do not claim `derived_plan_full` when a section is represented only by a task
+title, a source excerpt, or a command name. Preserve the missing contract as a
+Critic rework finding. The operator may render a read-only dossier from these
+bound artifacts, but Runtime must not invent project semantics or silently
+select an owner decision.
+
 Return `plan_content_profile: "derived_plan_full"` only when those sections and
 the exact confirmed authority have been reviewed. Use `summary_only` when the
 output is intentionally abbreviated; the operator UI must label that result as
