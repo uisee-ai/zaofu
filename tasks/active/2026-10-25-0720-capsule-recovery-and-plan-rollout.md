@@ -10,7 +10,7 @@
 - [x] 派发前同步并校验当前任务投影，保留合同权威 -> verify: 新旧代际、首次派发、重试与失败关闭测试通过。
 - [x] 将可机械识别的上下文故障与语义合同缺口区分 -> verify: 上下文故障不进入产品重规划；真实 upstream gap 保持原路由。
 - [x] 影响闭包测试、sentinel、确定性 mock E2E -> verify: 记录准确命令与结果，不用单测冒充真实 E2E。
-- [ ] 文档与实现提交 -> verify: 显式路径提交，保留 dev 未关联 index.md 修改。
+- [x] 文档与实现提交 -> verify: a52b33b2 fix: synchronize task pipeline context before dispatch；89aa15fc 已合并 dev，保留未关联 index.md 修改。
 - [x] 更新 Dashboard 构建与浏览器验证 -> verify: 最新审核阅读层实际呈现。
 - [ ] 受控提交 38 任务候选并审核接纳 -> verify: 新 Plan/Package/generation 收据，保留旧审计证据。
 - [ ] 加载修复并恢复 -> verify: 当前 Task Capsule/snapshot/briefing 同版、真实 Impl 新派发与 worker 进展；不绕过 Verify/Judge。
@@ -32,3 +32,14 @@ dev=83b84518；工作树 zaofu-capsule-recovery。产品 run=workflow-4fbf85bbad
 运行时接纳/恢复仍待执行，任务保持 active。
 
 - dev-verify run 的实际自动档：premerge-sentinels 51 passed；三流 flow-smoke 10 passed。未执行全量 pytest。
+
+## 真实恢复中的新增问题
+
+- Runtime 以修复代码重启；session.started=evt-b3ed380d577f；受控提交 Plan 修订=evt-147284af321d。Planner 完成 evt-a425f79564c9，Critic approve 并提交 evt-6807dcbb6860。
+- 正式 Package 拒绝 evt-42326828f691：task_map.status=draft，而 enrichment=fulfilled。Planner 沿用了草稿状态，预检漏掉 task_map / source_inventory readiness，最终门禁正确拦住，Impl 未提前启动。
+- 新增 7 个回归：基线 5 failed / 2 passed，包含实际 SemanticResultSubmitService 对草稿错误放行。修复后 7 项通过；5 个直接影响测试文件共 96 passed（plan candidate/preflight、package、result submit、synth handoff）。保持未声明 enrichment contract 的历史输入兼容。
+- 受控返工 evt-48371911cc96，新的 Planner fanout-prd-plan-evt-8aadbcff 仅修正就绪状态与产物绑定，保留已审查的 38 任务内容，不修改旧 artifact。
+- 通用 stage-cap 升级 evt-3d09cd18d92e 与已派发的授权修复冲突；操作员经 CLI goal set 恢复 evt-5cb5e5022e9b。此记录是实际介入，不宣称已修复所有重试计数/恢复策略。
+- 输入复制被 workdir guard 拦截时，监工仅把 17 个同字节只读输入放入 Planner 工作目录，guard 保持不变。Critic 的 completed/passed 两层状态错误由其预检后自行修正。
+
+- readiness 补丁的 sentinel：51 passed；三流确定性 mock E2E：10 passed。dev-verify plan/run 自动选择 4 个直接测试文件：45 passed。未跑全量 pytest。
