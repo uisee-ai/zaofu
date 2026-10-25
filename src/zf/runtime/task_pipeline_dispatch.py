@@ -307,16 +307,12 @@ def dispatch_task_pipeline_stage(
         operation_payload["rework_feedback"] = rework_feedback
 
     from zf.runtime.call_result_runtime import prepare_call_operation
-    from zf.runtime.task_pipeline_capsule import publish_pipeline_capsule
-
-    publish_pipeline_capsule(
-        runtime,
-        task_id=task_id,
-        snapshot=contract_snapshot,
-        dispatch_id=dispatch_id,
-        generation_event_id=str(generation_context.get("generation_admitted_event_id") or ""),
+    from zf.runtime.task_pipeline_capsule import (
+        current_pipeline_capsule_task,
+        publish_pipeline_capsule,
     )
 
+    current_pipeline_capsule_task(runtime, task_id=task_id, snapshot=contract_snapshot)
     prepared = prepare_call_operation(
         runtime,
         payload=operation_payload,
@@ -343,6 +339,11 @@ def dispatch_task_pipeline_stage(
     if not prepared.should_dispatch:
         return None
 
+    publish_pipeline_capsule(
+        runtime, task_id=task_id, snapshot=contract_snapshot,
+        dispatch_id=dispatch_id, role_instance=role.instance_id,
+        generation_event_id=str(generation_context.get("generation_admitted_event_id") or ""),
+    )
     from zf.runtime.task_pipeline_briefing import write_task_pipeline_briefing
 
     briefing_path = write_task_pipeline_briefing(
@@ -380,6 +381,11 @@ def dispatch_task_pipeline_stage(
         workspace_generation=workspace_generation,
         placement_epoch=placement_epoch,
         task_stage_session_binding=str(binding.get("binding_key") or ""),
+    )
+    from zf.runtime.task_pipeline_capsule import verify_pipeline_delivery_capsule
+
+    verify_pipeline_delivery_capsule(
+        runtime, task_id=task_id, dispatch_id=dispatch_id, role_instance=role.instance_id,
     )
     delivered = runtime._send_transport_task(
         role.instance_id,
