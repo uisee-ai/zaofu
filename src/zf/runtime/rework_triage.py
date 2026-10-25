@@ -108,6 +108,8 @@ def is_plan_level_task_contract_blocker(event: ZfEvent) -> bool:
     payload = event.payload if isinstance(event.payload, dict) else {}
     failure_class = str(payload.get("failure_class") or "").strip().lower()
     blocker_kind = str(payload.get("blocker_kind") or "").strip().lower()
+    if "task_context_stale" in {failure_class, blocker_kind}:
+        return False
     semantic_kind = (
         failure_class in {
             "task_contract_unsatisfiable",
@@ -270,6 +272,18 @@ def classify_rework_trigger(
     gate = _gate_rule(payload, failed_d)
 
     explicit_failure_class = str(payload.get("failure_class") or "").strip()
+    if event.type == "dev.blocked" and "task_context_stale" in {
+        explicit_failure_class,
+        str(payload.get("blocker_kind") or "").strip(),
+    }:
+        return _result(
+            "harness_rule_issue",
+            "task_context",
+            "harness",
+            "suspend_for_harness_fix",
+            "task projection/snapshot versions disagree; repair and validate "
+            "execution context before controlled retry, not product replan",
+        )
     if explicit_failure_class in {
         "candidate_environment_setup_failed",
         "candidate_dependency_missing",

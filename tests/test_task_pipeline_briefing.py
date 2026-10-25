@@ -39,6 +39,7 @@ def test_impl_output_contract_exposes_structured_scope_blockers(tmp_path) -> Non
     assert result["failure_class"] == "none"
     assert result["blocker_kind"] == "none"
     assert "upstream_contract_gap" in "\n".join(lines)
+    assert "task_context_stale" in "\n".join(lines)
     assert "Self-check command IDs are a closed set" in "\n".join(lines)
 
 

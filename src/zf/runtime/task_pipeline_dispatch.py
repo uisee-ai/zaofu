@@ -307,6 +307,15 @@ def dispatch_task_pipeline_stage(
         operation_payload["rework_feedback"] = rework_feedback
 
     from zf.runtime.call_result_runtime import prepare_call_operation
+    from zf.runtime.task_pipeline_capsule import publish_pipeline_capsule
+
+    publish_pipeline_capsule(
+        runtime,
+        task_id=task_id,
+        snapshot=contract_snapshot,
+        dispatch_id=dispatch_id,
+        generation_event_id=str(generation_context.get("generation_admitted_event_id") or ""),
+    )
 
     prepared = prepare_call_operation(
         runtime,
