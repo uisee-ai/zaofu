@@ -1,6 +1,7 @@
 # Workflows 生命周期、模块 DAG 与流程执行工作台
 
-> 状态: active
+> 状态: done
+> 实现: `d4782e9 feat: add evidence-bound workflow graph workbench`
 > 来源: [设计 187](../../docs/design/187-ai-sdlc-graph-workbench.md)；187 §2、§4、§5、§6、§7、§12；用户要求放在 Workflows。
 
 ## 实施范围
@@ -20,3 +21,6 @@
 - 2026-10-25：用户明确批准基于 187 创建新 worktree、生成 backlog 并实施；真实 Provider / Playwright 验证已授权。
 
 - 验证：前端构建、模型测试与 Docker Playwright 通过；真实 Run 六视图、跨视图 Task 选择、URL 刷新、实际 Provider/model、事件刷新、桌面/移动布局均有断言。 详见 [实施记录](../../docs/impl/187-ai-sdlc-graph-workbench.md) 与 [真实 E2E 记录](../../docs/records/2026-10-25-187-workflow-graph-e2e.md)。
+
+- 收尾验证：真实 Provider 完成、Docker Playwright 3 passed；图/Goal/恢复闭包 72 passed；Web typecheck/模型测试、51 项 sentinel、10 项 flow-smoke 通过。其他影响闭包与环境重跑分别记录于 [实施文档](../../docs/impl/187-ai-sdlc-graph-workbench.md)。未运行全量 pytest。
+- 实现提交后工作区审计无残留；临时 E2E 服务、状态及本批依赖软链接已清理。归档提交仅包含本批 8 项任务。
