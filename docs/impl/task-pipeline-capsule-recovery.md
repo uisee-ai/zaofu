@@ -31,3 +31,15 @@ zf recover task-impl --operation <operation-id> --reason '<修复与验证证据
 ```
 
 默认不追加事件；apply 经 Run Contract 检查，只为当前已接纳的 blocked Impl 记录 task.rework.requested，绑定原结果、任务代际和 operation。重复请求幂等，旧代际/已通过/有更新 operation/活跃 attempt/终态任务或 Run 均拒绝。调度器继续使用原 Plan 和合同，在原 max_rework_attempts 预算内派发下一 operation generation；不重开旧 operation，不伪造 passed，不自动批准新计划。后续仍需 Impl 结果、TaskRef 接纳与 Verify。
+
+## Verify 后的集成失败与 Worker 生命周期
+
+Task 尚未 done 不代表 Impl/Verify worker 仍有执行义务。watchdog 对精确匹配的 Task Pipeline dispatch 和 operation 终态停止恢复该 worker，避免在等待集成时重启 provider 或重排 Task。新的活跃 operation 仍受监测，旧终态不能屏蔽下一次派发。
+
+Candidate 是独立工作区，不继承 worker 的未跟踪依赖。项目须在 zf.yaml 的 `project.scripts.setup` 声明可重复执行的环境准备入口；Candidate integrator 会在精确候选提交上执行该配置，再运行 rolling smoke。运行时不猜测项目使用 Node 或某个固定脚本。
+
+修复集成阻塞后使用 `zf recover task-integration --operation <id> --reason '<修复证据>'` 预览，加 `--apply` 才执行。入口检查当前代际、原 needs_review 事件、已接纳的 Verify 通过结果、无活跃 operation/attempt 及非终态 Run/Task；apply 通过 WorkflowOperationService 追加 supersede 事实，原失败证据不变。既有 reconciler 派发下一 integration generation，重新执行 setup、rolling smoke 与 Candidate CAS；保留已通过的 Impl/Verify，不发新的产品成功事件。重复请求幂等，新的阶段代际或更新集成操作使旧恢复请求失效。
+
+验证：`tests/test_task_pipeline_worker_liveness.py` 覆盖实际 watchdog 调用；`tests/test_task_pipeline_integration_retry.py` 覆盖 CLI、拒绝分支、代际投影和无 provider 的真实 git Candidate 集成恢复。
+
+批量派发也受 `max_unverified_tasks` 剩余名额约束，每派发一个 fresh Impl 都占用名额；不能仅在批次开始检查一次阈值。Impl/Verify 池各有 8 个槽位不等于可以同时运行 16 个未验证任务。`tests/test_task_pipeline_parallel_backpressure.py` 覆盖 1 Verify + 7 Impl 并行与 8 Verify 排空，既有返工回归保持通过。

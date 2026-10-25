@@ -168,9 +168,12 @@ class TaskPipelineReconciler:
         integration_queue_count = sum(
             1 for view in task_views if view["stage"] == "integration_ready"
         )
-        unverified_blocked = unverified_count >= int(
-            backpressure_policy.get("max_unverified_tasks") or 0
+        unverified_available = max(
+            0,
+            int(backpressure_policy.get("max_unverified_tasks") or 0)
+            - unverified_count,
         )
+        unverified_blocked = unverified_available == 0
         integration_blocked = integration_queue_count >= int(
             backpressure_policy.get("max_integration_queue") or 0
         )
@@ -211,7 +214,7 @@ class TaskPipelineReconciler:
                 )
                 if fresh_impl and (
                     fresh_impl_dispatched >= global_available
-                    or unverified_blocked
+                    or fresh_impl_dispatched >= unverified_available
                     or integration_blocked
                 ):
                     continue
