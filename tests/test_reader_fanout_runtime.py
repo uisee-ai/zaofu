@@ -4558,6 +4558,9 @@ def test_plan_synth_owner_decision_holds_then_resumes_same_run(
     approval = next(event for event in events if event.type == "approval.requested")
     assert checkpoint.payload["workflow_run_id"] == "trace-product"
     assert approval.payload["approve_action"] == "replan-approve"
+    assert approval.payload["plan_preview_bundle_ref"].startswith("artifacts/plan-preview/bundles/")
+    assert len(approval.payload["plan_preview_bundle_digest"]) == 64
+    assert (state_dir / approval.payload["plan_preview_bundle_ref"]).is_file()
     assert not [event for event in events if event.type == "fanout.aggregate.completed"]
     assert not [event for event in events if event.type == "task_map.blocked"]
 

@@ -20,6 +20,7 @@ for (const viewport of [
     const previous = nav.getByRole("button", { name: "上一页" });
     const next = nav.getByRole("button", { name: "下一页" });
     await expect(nav).toBeVisible();
+    await nav.getByTitle("切换到章节分页").click();
     await expect(previous).toBeDisabled();
     const initial = (await nav.boundingBox())!;
 

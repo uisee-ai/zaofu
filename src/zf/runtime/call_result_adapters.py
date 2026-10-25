@@ -670,6 +670,21 @@ def _normalize_plan_synth(
             _text(source, "plan_artifact_ref")
             or _text(report, "plan_artifact_ref")
         ),
+        "plan_content_profile": (
+            _text(source, "plan_content_profile")
+            or _text(report, "plan_content_profile")
+        ),
+        "authority_refs": (
+            source.get("authority_refs")
+            if isinstance(source.get("authority_refs"), list)
+            else report.get("authority_refs")
+            if isinstance(report.get("authority_refs"), list)
+            else []
+        ),
+        "requirement_spec_ref": (
+            _text(source, "requirement_spec_ref")
+            or _text(report, "requirement_spec_ref")
+        ),
         "task_map_ref": (
             _text(source, "task_map_ref")
             or _text(report, "task_map_ref")

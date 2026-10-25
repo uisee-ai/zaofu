@@ -110,6 +110,11 @@ Critic 对正例应说明为何可接受，对反例指出具体条款/任务、
 - Plan 保留条款责任、切片结果、集成时点、条件决定及主要反例审查结论。
 - task_map 与矩阵 ID/路径/命令保持一致；每项缺口有明确 owner 和 done_when。
 - 完整 Plan、矩阵和来源索引通过正式产物引用交接，摘要仅作导读。
+- 人工审批入口必须能从绑定产物重建 PRD/SDD/TDD/Decision Register：
+  SDD 不能只有任务标题或 source excerpt，TDD 不能只有命令名；每个
+  acceptance 至少要有预期结果、验证命令、owner/tier、证据路径和判定规则。
+- Decision Register 必须与 Plan 正文和审批 payload 使用同一组稳定 id；缺失、
+  重复或只存在于 Markdown 的决定记录为一致性缺口，不能让摘要显示“无决定”。
 - 由独立 Critic 复核，不自批 Plan；实现前没有运行证据是正常计划状态。
 
 验证本方法时，既验证 Planner/Critic 依赖物化，也记录真实样例的语义评审。

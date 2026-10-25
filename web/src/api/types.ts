@@ -3179,6 +3179,7 @@ export interface OperatorInboxItem {
   source_role?: string;
   source_actor?: string;
   owner_route?: string;
+  content_profile?: string;
   group_key?: string;
   dedupe_count?: number;
   first_seen_at?: string;
@@ -3228,20 +3229,67 @@ export interface PlanPreview {
   task_count?: number | null;
   refs: Record<string, string>;
   markdown: string;
+  review_dossier_markdown?: string;
+  review_packet?: {
+    schema_version: string;
+    status: string;
+    sections: Array<{
+      id: string;
+      title: string;
+      status: string;
+      counts?: Record<string, number>;
+      artifact_names?: string[];
+      refs?: string[];
+      notes?: string[];
+    }>;
+    diagnostics?: Array<{ code: string; severity: string; message: string; evidence?: string[] }>;
+    source_ids?: Record<string, string[]>;
+    plan_ids?: Record<string, string[]>;
+    missing_sections?: string[];
+    policy?: Record<string, unknown>;
+  };
   content_kind?: "full_plan" | "digest_only" | "unavailable";
+  content_profile?: "derived_plan_full" | "summary_only" | "derived_plan" | "unknown" | string;
   content_error?: string;
   digest_markdown?: string;
   digest_source?: "bound_task_map" | "stored_digest" | "unavailable";
   source_event_id?: string;
   artifacts?: Array<{ name: string; ref: string; sha256: string }>;
   artifacts_error?: string;
+  authority_refs?: string[];
+  requirement_artifacts?: Array<{ name: string; ref: string; sha256: string }>;
+  task_map_markdown?: string;
   task_map_summary?: {
     ok: boolean;
     task_count: number;
-    tasks: Array<Record<string, string>>;
+    tasks: Array<{
+      task_id?: string;
+      title?: string;
+      owner_role?: string;
+      root_owner_class?: string;
+      wave?: string;
+      blocked_by?: string;
+      allowed_paths?: string[];
+      exclusive_files?: string[];
+      source_key?: string;
+      source_ref?: string;
+      source_excerpt?: string;
+      acceptance_criteria?: Array<Record<string, unknown>>;
+      owner_decision_ids?: string[];
+      external_prerequisite_ids?: string[];
+      explicit_non_goals?: string[];
+      validation?: Record<string, unknown>;
+      verification?: string;
+    }>;
     reason?: string;
     truncated?: boolean;
   };
+  owner_decision_items?: Array<{
+    decision_id?: string;
+    question?: string;
+    options?: Array<{ option_id?: string; label?: string }>;
+  }>;
+  decision_count?: number;
   actions?: Record<string, string>;
   policy?: Record<string, unknown>;
 }

@@ -68,6 +68,67 @@ After PRD approval, write:
 - `task_map.json`: dispatchable vertical slices.
 - `source_index.json`: PRD and evidence index.
 
+The Markdown plan is the human review document, not a one-paragraph status
+summary. It must be long enough to let an owner review the confirmed scope
+without opening the provider transcript. Include these sections whenever the
+workflow has a source PRD or authority bundle:
+
+- a human approval entry in this order: **PRD** (user outcome, scope, and
+  non-goals), **SDD** (system boundaries, entrypoints, data/API contracts,
+  ownership, and dependencies), **TDD** (acceptance-to-command mapping,
+  evidence paths, and current PASS/BLOCKED/NOT_RUN state), risks/open
+  decisions, and an approval checklist;
+- authority and source index, with every source ref and digest-bound anchor;
+- objective, users, scope, non-goals, assumptions, risks, and unresolved owner decisions;
+- one row for every formal task with its group, wave, dependencies, owned paths,
+  acceptance criteria, verification owner, and evidence contract;
+- the dependency graph and parallel execution waves;
+- requirement, acceptance, test, and real-E2E traceability summaries with their
+  exact matrix artifact refs;
+- approval gates and the explicit rule that impl/verify remain blocked before
+  owner approval.
+
+The approval entry is a contract, not a formatting preference. For
+`derived_plan_full`, the Planner/Critic handoff must bind these semantic
+fields through existing plan ports or explicit evidence refs:
+
+- **PRD**: users, problem/outcome, scope, non-goals, success measures, and
+  authority anchors;
+- **SDD**: system slices, entrypoints, input/output or data/event contracts,
+  ownership, dependencies, and failure semantics;
+- **TDD**: acceptance ids, expected result, command id, verification owner and
+  tier, evidence path, pass/fail rule, and current evidence state;
+- **Decision Register**: stable decision id, question, options or recommendation,
+  affected tasks, blocker impact, and current disposition.
+
+Do not claim `derived_plan_full` when a section is represented only by a task
+title, a source excerpt, or a command name. Preserve the missing contract as a
+Critic rework finding. The operator may render a read-only dossier from these
+bound artifacts, but Runtime must not invent project semantics or silently
+select an owner decision.
+
+Return `plan_content_profile: "derived_plan_full"` only when those sections and
+the exact confirmed authority have been reviewed. Use `summary_only` when the
+output is intentionally abbreviated; the operator UI must label that result as
+a summary and keep it out of the full Plan approval path. Also return
+`authority_refs` and `requirement_spec_ref` when the source authority is
+available so the owner can open the original PRD beside the derived Plan.
+
+For a source PRD that defines formal task or acceptance mappings, preserve the
+mapping as data instead of paraphrasing it away. Keep the exact source-defined
+task boundaries, acceptance ownership, and the source anchor that proves each
+association. Do not round-robin acceptance ids, infer a
+new owner from task order, or replace a requirement statement with a shared
+placeholder such as “待执行/待审批追踪项”. Every trace row must retain its
+source id, a meaningful requirement statement, owning task(s), and evidence
+status. If the source mapping cannot be recovered, mark the Plan as needing
+rework and do not claim `derived_plan_full`.
+
+When the authority includes UI/UX acceptance, carry the named screens and
+interaction boundaries into the integration task, preserving the names and
+identifiers from that project's authority. Do not impose another project's
+screens, task numbering, or acceptance categories.
+
 Emit top-level `plan_artifact_ref`, `task_map_ref`, `source_index_ref`,
 `artifact_refs`, and `evidence_refs`.
 
