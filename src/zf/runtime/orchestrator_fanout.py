@@ -3284,7 +3284,7 @@ class FanoutCoordinationMixin(
         enabled = bool(getattr(
             self.config.workflow, "plan_approval_enabled", False,
         ))
-        from zf.runtime.plan_preview_artifacts import approval_artifact_refs
+        from zf.runtime.plan_preview_artifacts import approval_artifact_refs, bind_plan_approval_preview
 
         base_payload = {
             "plan_id": plan_id,
@@ -3346,12 +3346,14 @@ class FanoutCoordinationMixin(
             self.event_writer.append(ZfEvent(
                 type="plan.approval.requested",
                 actor="zf-cli",
-                payload={
-                    **base_payload,
-                    "plan_fingerprint": fingerprint,
-                    "task_count": len(task_items),
-                    "digest_ref": digest_ref,
-                },
+                payload=bind_plan_approval_preview(
+                    self.state_dir, trigger_event.payload, self.project_root, {
+                        **base_payload,
+                        "plan_fingerprint": fingerprint,
+                        "task_count": len(task_items),
+                        "digest_ref": digest_ref,
+                    },
+                ),
                 causation_id=plan_id,
                 correlation_id=trace_id,
             ))

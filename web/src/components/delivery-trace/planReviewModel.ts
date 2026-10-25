@@ -1,4 +1,12 @@
 /** Read-only views of admitted Plan ports. No inferred business rules or verdicts. */
+import type { OperatorInboxItem, PlanPreview } from "../../api/types";
+
+export function resolvePlanPreviewItem(preview: Pick<PlanPreview, "plan_id"> | null, items: OperatorInboxItem[], selected: OperatorInboxItem | null = null): OperatorInboxItem | null {
+  if (!preview) return null;
+  return items.find(item => item.plan_id === preview.plan_id)
+    || (selected?.plan_id === preview.plan_id ? selected : null);
+}
+
 type Row = Record<string, unknown>;
 export const reviewPorts = ["task_map", "execution_spec", "source_inventory"] as const;
 export type ReviewPort = typeof reviewPorts[number];

@@ -8,6 +8,10 @@ from typing import Any, Mapping
 
 from zf.core.events.model import ZfEvent
 from zf.runtime.call_result_envelope import write_immutable_json_sidecar
+from zf.runtime.plan_preview_artifacts import (
+    approval_artifact_refs,
+    write_plan_preview_bundle,
+)
 from zf.runtime.plan_synth_feedback import (
     normalize_plan_synth_owner_decision_items,
 )
@@ -104,6 +108,18 @@ def apply_plan_synth_owner_checkpoint(
             correlation_id=workflow_run_id or event.correlation_id,
         ))
         first = blocking_items[0]
+        preview_refs = plan_preview_refs(
+            body,
+            state_dir=runtime.state_dir,
+            project_root=getattr(runtime, "project_root", None),
+        )
+        preview_bundle = write_plan_preview_bundle(
+            runtime.state_dir,
+            payload=body,
+            refs=preview_refs,
+            project_root=getattr(runtime, "project_root", None),
+            source_event_id=event.id,
+        )
         runtime.event_writer.append(ZfEvent(
             type="approval.requested",
             actor="zf-cli",
@@ -122,7 +138,25 @@ def apply_plan_synth_owner_checkpoint(
                 "source_event_id": event.id,
                 "proposal_ref": proposal_ref,
                 "eval_ref": eval_ref,
-                "candidate_task_map_ref": str(body.get("task_map_ref") or ""),
+                "candidate_task_map_ref": str(
+                    body.get("task_map_ref") or preview_refs.get("task_map_ref") or ""
+                ),
+                # The owner checkpoint is the first human stop in a PRD Plan
+                # flow.  Carry the immutable candidate refs here so the
+                # operator can inspect the complete Plan before answering the
+                # questions.  This remains a generic approval request: it
+                # does not mint canonical tasks or unlock writer fanout.
+                "plan_id": event.id,
+                "plan_preview": True,
+                "plan_artifact_ref": str(preview_refs.get("plan_artifact_ref") or ""),
+                "plan_artifact_digest": str(preview_refs.get("plan_artifact_digest") or ""),
+                "task_map_ref": str(preview_refs.get("task_map_ref") or ""),
+                "source_index_ref": str(preview_refs.get("source_index_ref") or ""),
+                "plan_preview_bundle_ref": str(preview_bundle.get("ref") or ""),
+                "plan_preview_bundle_digest": str(preview_bundle.get("sha256") or ""),
+                "plan_content_profile": str(body.get("plan_content_profile") or "derived_plan"),
+                "authority_refs": list(body.get("authority_refs") or []),
+                "requirement_spec_ref": str(body.get("requirement_spec_ref") or ""),
                 "owner_decision_items": blocking_items,
                 "approve_action": "replan-approve",
                 "reject_action": "replan-reject",
@@ -225,6 +259,73 @@ def apply_plan_synth_owner_checkpoint(
         "previous_plan_candidate_refs": refs,
     })
     return PlanSynthOwnerDisposition(False, body, checkpoint_id)
+
+
+def plan_preview_refs(
+    body: Mapping[str, Any],
+    *,
+    state_dir: Any,
+    project_root: Any,
+) -> dict[str, Any]:
+    """Resolve Planner artifact refs for the owner checkpoint preview.
+
+    The Plan Critic may reject on an owner decision before it can publish the
+    canonical ``task_map.ready`` payload.  In that case the candidate refs are
+    carried in ``previous_plan_candidate_refs``.  Select only the named Plan,
+    task map, and source index artifacts; arbitrary child-result JSON is not a
+    valid preview body.
+    """
+
+    refs: dict[str, Any] = {}
+    try:
+        refs.update(approval_artifact_refs(
+            body,
+            state_dir=state_dir,
+            project_root=project_root,
+        ))
+    except (OSError, ValueError):
+        refs.update({
+            key: body.get(key)
+            for key in (
+                "plan_artifact_ref", "plan_artifact_digest", "plan_ref",
+                "task_map_ref", "source_index_ref",
+            )
+            if body.get(key)
+        })
+    for key in ("task_map_ref", "source_index_ref"):
+        if body.get(key) and not refs.get(key):
+            refs[key] = body[key]
+    for key in ("plan_content_profile", "authority_refs", "requirement_spec_ref"):
+        if body.get(key) and not refs.get(key):
+            refs[key] = body[key]
+
+    descriptors = body.get("previous_plan_candidate_refs")
+    if not isinstance(descriptors, list):
+        descriptors = []
+    for descriptor in descriptors:
+        if not isinstance(descriptor, Mapping):
+            continue
+        ref = str(descriptor.get("ref") or "").strip()
+        if not ref:
+            continue
+        artifact_id = str(
+            descriptor.get("artifact_id") or descriptor.get("source_id") or ref
+        ).strip().lower()
+        name = ref.rsplit("/", 1)[-1].lower()
+        digest = str(
+            descriptor.get("sha256") or descriptor.get("digest") or ""
+        ).strip()
+        if name == "task_map.json" or "task_map" in artifact_id:
+            refs.setdefault("task_map_ref", ref)
+            if digest:
+                refs.setdefault("task_map_digest", digest)
+        elif name == "source_index.json" or "source_index" in artifact_id:
+            refs.setdefault("source_index_ref", ref)
+        elif name.endswith((".md", ".markdown")) and not refs.get("plan_artifact_ref"):
+            refs["plan_artifact_ref"] = ref
+            if digest:
+                refs["plan_artifact_digest"] = digest
+    return refs
 
 
 def _checkpoint_id(

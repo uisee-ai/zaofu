@@ -220,6 +220,7 @@ const LOCAL_AGENT_STREAM_EVENTS = new Set([
 ]);
 const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", "node_id", "v"]);
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
+  inbox: new Set(["plan"]),
   delivery: new Set(["feature"]),
   "delivery-trace": new Set(["feature"]),
   "delivery-graph": new Set(["feature"]),
