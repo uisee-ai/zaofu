@@ -70,3 +70,30 @@ Package 身份/摘要，并把 Impl/Task Verify 的必读路径设置为
 摘要篡改、真实 handoff、preflight→Critic caller 和只读 CLI。配置、事件、产物和
 候选相关 sentinel/mock E2E 另列在任务完成记录。
 这些测试证明机械行为与兼容性，不证明真实模型计划质量或业务全链路已交付。
+
+
+## 同版 Plan 人工审阅
+
+Planner/Critic 的[人工审阅方法](../../skills/zf-plan-execution-readiness/references/human-review.md)
+把审批概览、模块规格、业务旅程和 Given/When/Then 场景放入既有
+`execution_spec.shared.human_review` 与 `tasks[].body.human_review`；Task Map
+仍是唯一派发合同。语义完整性由 Agent 评审，不新增 Kernel 业务判断。
+
+Web Plan Preview 提供审批概览、模块规格、验收场景、完整原文四种阅读视图。
+只请求当前 Plan 已绑定的 task_map/execution_spec/source_inventory 附件 API；
+服务端既有路径与 SHA-256 校验继续生效。没有新端口或业务写请求，原文下载保留。
+旧 Plan 可以按任务查看 AC、命令、页面、依赖与待决事项；缺少独立规格/场景明确显示，
+不自动推断字段、生成测试结果或声称需求覆盖。附件错误、未知任务及错 AC 引用可见，
+切换项目/Plan 或关闭 Preview 会取消旧请求，避免迟到数据污染。
+
+该改进不会改写已接纳 Plan，也不会给旧 Plan 自动补出新生成的业务规格。
+完善既有 Plan 的语义内容仍需受控修订、独立评审及人类审批。规划命令与场景都是
+未来执行义务，不能当作真实测试通过的证据。
+
+阅读器回归入口：先 `npm --prefix web run build`，再启动
+`uv run uvicorn tests.plan_preview_app:create_test_app --factory --host 0.0.0.0 --port 8003`；
+必须先构建再启动 API，确保挂载该次静态资源。使用 `mcp/playwright:latest` Docker
+容器、host network，设置 `ZF_WEB_BASE_URL=http://127.0.0.1:8003` 后执行
+`playwright test --config=playwright.plan-review.config.ts`。该配置仅选择阅读器相关
+浏览器用例，单 worker，断言等待 60 秒/用例 120 秒（含 12,000 行压力样本）属于功能测试启动预算，不是产品
+性能验收指标。fixture 使用隔离临时状态，退出发出 `simulation.done` 并清理。

@@ -21,7 +21,7 @@ import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "..
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { LatestRequestGate } from "../../app/latestRequestGate";
 
-const PlanMarkdownDocument = lazy(() => import("./PlanMarkdownDocument"));
+const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
 
 type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
@@ -637,7 +637,7 @@ function PlanPreviewOverlay({
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
-            <PlanMarkdownDocument key={planId} content={preview?.markdown || ""} />
+            {preview && <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />}
           </Suspense>}
         </main>
         <aside className="plan-preview-context">
@@ -654,11 +654,14 @@ function PlanPreviewOverlay({
           </details>}
           {preview?.artifacts_error && <p role="alert">计划附件不可用：{preview.artifacts_error}</p>}
           {(preview?.artifacts?.length ?? 0) > 0 && <nav aria-label="Plan artifacts">
+            <h3>工程附件（同版）</h3>
             {preview?.artifacts?.map((artifact) => <p key={artifact.name}>
               <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
             </p>)}
           </nav>}
-          <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
+          <details><summary>版本与来源引用</summary>
+            <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
+          </details>
         </aside>
       </div>
     </div>

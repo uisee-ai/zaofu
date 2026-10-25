@@ -69,4 +69,7 @@ def create_test_app():
             "digest_ref": "artifacts/digest.md", "plan_artifact_package_ref": descriptor["ref"],
             "plan_artifact_package_digest": descriptor["sha256"],
         }))
+    from tests.plan_human_review_fixture import add_human_review_fixture
+
+    add_human_review_fixture(state, writer)
     return create_app(state, config=load_config(config_path), project_root=root)
