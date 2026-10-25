@@ -318,8 +318,20 @@ def evaluate_workdir_write_guard(
 ) -> int:
     if not event_type.endswith(".pre_tool_use") or not should_check_actor(actor):
         return 0
+    from zf.cli.hook_dispatch_context import active_task_pipeline_dispatch
+
+    events = event_log.read_all()
+    pipeline = active_task_pipeline_dispatch(events, actor)
+    has_pipeline_assignment = any(
+        event.type == "task.pipeline.stage.dispatched"
+        and event.payload.get("role_instance") == actor for event in events
+    )
     assigned_root = state_dir / "workdirs" / actor / "project"
-    if not assigned_root.is_dir():
+    if pipeline is not None:
+        workdir = str(pipeline.payload.get("workdir") or "")
+        if workdir and Path(workdir).is_absolute():
+            assigned_root = Path(workdir)
+    if not has_pipeline_assignment and not assigned_root.is_dir():
         return 0
     tool_input = event_payload.get("tool_input")
     if not isinstance(tool_input, dict):
