@@ -1,6 +1,8 @@
 # 任务上下文同步、恢复与 loshu-fms 计划切换
 
-> 状态: active
+> 状态: done
+
+实现：a52b33b2 fix: synchronize task pipeline context before dispatch；15b9ff08 fix: reject draft plan inputs before independent review；a8b0feb1 fix: keep rejected plan packages out of batch implementation recovery；cb6a6270 fix: bind plan approval deduplication to reviewed artifact versions。均已合并 dev。
 
 用户已批准：修复并验证派发/恢复逻辑，更新 Dashboard，提交新 Plan Preview，经受控路径恢复并核实 Impl。
 
@@ -12,8 +14,8 @@
 - [x] 影响闭包测试、sentinel、确定性 mock E2E -> verify: 记录准确命令与结果，不用单测冒充真实 E2E。
 - [x] 文档与实现提交 -> verify: a52b33b2 fix: synchronize task pipeline context before dispatch；89aa15fc 已合并 dev，保留未关联 index.md 修改。
 - [x] 更新 Dashboard 构建与浏览器验证 -> verify: 最新审核阅读层实际呈现。
-- [ ] 受控提交 38 任务候选并审核接纳 -> verify: 新 Plan/Package/generation 收据，保留旧审计证据。
-- [ ] 加载修复并恢复 -> verify: 当前 Task Capsule/snapshot/briefing 同版、真实 Impl 新派发与 worker 进展；不绕过 Verify/Judge。
+- [x] 受控提交 38 任务候选并审核接纳 -> verify: 新 Plan/Package/generation 收据，保留旧审计证据。
+- [x] 加载修复并恢复 -> verify: 当前 Task Capsule/snapshot/briefing 同版、真实 Impl 新派发与 worker 进展；不绕过 Verify/Judge。
 
 ## 基线
 
@@ -29,7 +31,7 @@ dev=83b84518；工作树 zaofu-capsule-recovery。产品 run=workflow-4fbf85bbad
 - Dashboard npm run build 通过；Docker mcp/playwright:latest 在真实 8001 确认审批概览/模块规格/验收场景/完整原文均存在，page_errors=[]。证据：zaofu-evidence/capsule-recovery-20261025。
 - 说明：[Task Pipeline 上下文发布与恢复](../../docs/impl/task-pipeline-capsule-recovery.md)。
 
-运行时接纳/恢复仍待执行，任务保持 active。
+运行时接纳/恢复已完成；下方保留各阶段故障与介入的时间顺序记录。
 
 - dev-verify run 的实际自动档：premerge-sentinels 51 passed；三流 flow-smoke 10 passed。未执行全量 pytest。
 
@@ -64,3 +66,20 @@ dev=83b84518；工作树 zaofu-capsule-recovery。产品 run=workflow-4fbf85bbad
 - 审批影响闭包（Writer fanout runtime、Plan Preview API、审批 CLI、新身份用例）：181 passed；首次 sentinel 发现超大 fanout 文件增长，已提取 plan_approval_identity 小模块，不修改行数上限，提取后审批调用路径及结构检查 18 passed，sentinel 51 passed（32.83s）。dev-verify 173 文件触发全量建议，本批用上述闭包替代 deterministic/无关 serial，全量未跑。
 
 - 审批身份修复最终 dev-verify 自动档：sentinel 51 passed、三流 mock E2E 10 passed；日志 zaofu-evidence/capsule-recovery-20261025/approval-identity-gates.log。
+
+- 审批身份实现 cb6a6270 fix: bind plan approval deduplication to reviewed artifact versions；合并 eccc250c。合并后 51 个 sentinel 和 4 个新回归通过。重启前 reducer 共 25 个 operation、active=[]；Dashboard 已保留环境重载，PID=3055533。
+
+- 最新完整 Preview 为 stall 重派发的同一 Package 请求 evt-8f1a330176e5；15 项产物/范围/原条款检查全通过，Docker Playwright 真实点击 Approve，收据 evt-8294bde627e8。旧 35 项与无效草稿均未获批。
+- 新 generation 接纳 evt-1b1151de5805，38 项；generation=67f177de844ce91aa4137659bc0f3f27f28d681e6e2e951d05cf8f51d60ab380。Task Capsule 发布 evt-48b8689a4e5e，随后 Impl 派发 evt-b7bad2454afc；6 项派发证据检查通过，task-doc verify FMS-SCAFFOLD 输出 Task Capsule OK。等待 worker 实际代码进展。
+
+## 本批验收与交接
+
+- 实际运行的 dev= eccc250c，Runtime session.started=evt-8d6655faea07；Dashboard 已重载。正式审批到 Impl 派发约 210 秒，未通过重复重启推进该审批。
+- worker dev-lane-0 已读取 briefing、角色约束、kernel task.md/source.md，自行确认合同版本一致；已发心跳 evt-a976dcaeab04，并执行 zf artifact read --attempt ta-bca4f100d175f91fc300 --required 及定向读取。说明恢复已跨过原上下文阻断，正在开展实际 Impl。
+- 读取大正文出现输出截断；监工补充现有 CLI 定向读取/完整输出分段查看的方法，不修改任务合同、不替 worker 编造结果、不跳过必读或 Verify/Judge。整段 Task Map 再次输出约 1.2 万行后，监工在读取结束处中断当前对话轮，提交上述建议并从同一会话继续；未停 runtime、未换任务、未改 operation。
+- 本任务完成指恢复与计划切换成功，不表示 loshu-fms 38 项实现或完整产品 E2E 已完成。当前根任务只有 FMS-SCAFFOLD；配置保留 8 Impl/8 Verify 容量，尚未验证 8 项同时派发。
+- 验证分层：Capsule 308 项闭包；readiness 96 项闭包和 dev-verify 45 项；resume guard 86 项闭包和 dev-verify 887 项；approval identity 181 项闭包、提取后 18 项；各实现批次 sentinel 51 项、三流 mock E2E 10 项；最新合并后 51+4 项通过。另有前端构建及真实 Docker Playwright Preview/审批。未执行全量 pytest，未宣称完整产品 E2E 通过。
+- 证据目录：/home/min/workspace/public/zaofu-evidence/capsule-recovery-20261025/。重点：formal-plan-comparison.json、new-plan-approval-receipt.json、impl-resume-evidence.json、worker-progress.json、approval-identity-gates.log、approval-identity-postmerge.log。
+- 事件消费延迟仍存在，独立候选 backlogs/2026-10-25-0845-runtime-wake-backlog-latency.md 保持 proposed，未混入本批完成项。原 dev index.md 与产品工作区修改保留，未 push。
+
+- 归档文档验证：dev-verify 自动选择 instruction stack 合同检查，8 passed；归档合并前另跑 sentinel。
