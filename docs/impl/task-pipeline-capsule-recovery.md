@@ -11,3 +11,5 @@ worker 发现任务说明、briefing、快照之间版本冲突时，以 impleme
 验证：tests/test_task_pipeline_capsule.py 覆盖派发入口与真实 briefing/transport 调用边界；tests/test_task_context_recovery.py 覆盖分类与 Run Manager 重规划排除；保留 pipeline、TaskDoc、result submit 和 flow mock E2E 回归。
 
 真实恢复时还发现：候选 Task Map 保留了草稿状态，Planner 预检放行、Critic 通过后才被 Package 门禁拒绝。预检现在也检查必需 Task Map / Source Inventory 中显式声明的 enrichment contract：只有 status=ready 且 enrichment=fulfilled 才能提交；无该契约的历史输入保持兼容。复用已有矩阵检查，不自动把草稿改为 ready，也不替代语义审核。tests/test_plan_enriched_port_readiness.py 覆盖两个端口，以及同一次 result submit 被拒绝后修正并重新提交的实际入口。
+
+规划失败可能携带上一版本的 task_map/package 与失败任务 ID。批量恢复不得据此把 reader 的 Plan 协议失败当成实施失败并重发 task_map.ready。workflow_resume 将显式 plan_artifact_package_protocol、plan_candidate_review_identity、plan_candidate_preflight 继续交给 stage replan；原有实施失败/候选运行时恢复保持原路径。tests/test_plan_failure_batch_resume.py 覆盖带继承身份的实际恢复投影入口。

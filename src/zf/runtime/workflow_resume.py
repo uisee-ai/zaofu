@@ -912,7 +912,7 @@ def _reader_stage_replan_owns_failed_batch(
     events: list[ZfEvent],
     aggregate_event: ZfEvent,
 ) -> bool:
-    """Avoid a task-map resume action for a pre-task reader failure."""
+    """Keep reader Plan failures with stage replan, even with inherited refs."""
 
     payload = _payload(aggregate_event)
     fanout_id = str(payload.get("fanout_id") or "").strip()
@@ -934,6 +934,18 @@ def _reader_stage_replan_owns_failed_batch(
         for event in result_events
     ):
         return True
+    reader_started = any(
+        event.type == "fanout.started"
+        and str(_payload(event).get("fanout_id") or "") == fanout_id
+        and str(_payload(event).get("topology") or "") == "fanout_reader"
+        for event in events
+    )
+    if reader_started and str(payload.get("failure_class") or "") in {
+        "plan_artifact_package_protocol",
+        "plan_candidate_review_identity",
+        "plan_candidate_preflight",
+    }:
+        return True
     if (
         str(payload.get("task_map_ref") or "").strip()
         or _string_list(payload.get("completed_task_ids"))
@@ -941,12 +953,6 @@ def _reader_stage_replan_owns_failed_batch(
         or str(payload.get("candidate_head_commit") or "").strip()
     ):
         return False
-    reader_started = any(
-        event.type == "fanout.started"
-        and str(_payload(event).get("fanout_id") or "") == fanout_id
-        and str(_payload(event).get("topology") or "") == "fanout_reader"
-        for event in events
-    )
     if not reader_started:
         return False
     return bool(result_events)
