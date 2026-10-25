@@ -1,6 +1,7 @@
 # Plan Preview 人工审核包完整性
 
-> 状态: active
+> 状态: done
+> 实现提交: `18ec17f feat: add structured plan review packet`
 
 ## 背景
 
@@ -26,3 +27,8 @@
 - 不读取未绑定的任意目录，不从原始项目路径猜测 artifact。
 - 不在 Plan Preview 阶段修改 runtime state、任务状态或自动批准计划。
 - 不把缺失的 metrics/UI/config 内容编造为实现或验收结论。
+
+## Closeout
+
+- 验证：Plan Preview focused pytest 22 passed；Web typecheck passed；Web unit passed；`ZF_PYTHON=/home/min/workspace/public/zaofu/.venv/bin/python bash scripts/dev-premerge-gate.sh` 51 passed。
+- `python scripts/dev-verify.py run --base dev` 的默认自动 tier 因环境 Python 缺少 pytest-cov/httpx 未能启动；已使用仓库 venv 完成对应 focused/sentinel 验证。
