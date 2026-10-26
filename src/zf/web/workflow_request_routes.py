@@ -463,8 +463,9 @@ def build_workflow_request_router(
             context.state_dir,
             config=context.config,
         ).read_all()
-        from zf.runtime.run_admission import request_admission_view
+        from zf.runtime.run_admission import build_run_admission_projection, request_admission_view
 
+        admission_projection = build_run_admission_projection(events)
         items: list[dict[str, Any]] = []
         for path in root.glob("*.json") if root.exists() else ():
             try:
@@ -476,6 +477,7 @@ def build_workflow_request_router(
                     events,
                     request_id=str(value.get("request_id") or ""),
                     run_id=str(value.get("run_id") or ""),
+                    projection=admission_projection,
                 )
                 requirement = _bounded_json_body(
                     context.state_dir,

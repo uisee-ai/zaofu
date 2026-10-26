@@ -3119,6 +3119,7 @@ export interface OperatorOutputPage {
 
 export interface OperatorInboxItem {
   id: string;
+  unread?: boolean;
   kind: string;
   status: string;
   title: string;
@@ -3193,6 +3194,7 @@ export interface OperatorInboxProjection {
   is_derived_projection: boolean;
   summary: {
     total: number;
+    unread?: number;
     pending: number;
     action_required_pending?: number;
     noise_pending?: number;

@@ -1,5 +1,6 @@
 import type { Task } from "../src/api/types.js";
 import {
+  taskAttentionBadge,
   taskIsEffectivelyTerminal,
   taskRiskBadge,
   taskTerminalOutcome,
@@ -32,6 +33,9 @@ const reconciled = task({
   canonical_drift: true,
   terminal_outcome: "success",
 });
+assert(taskAttentionBadge(task({ retry_count: 4 })).label === "", "retries alone do not become board blockers");
+assert(taskAttentionBadge(task({ blocked_reason: "Waiting for access" })).label === "Blocked", "real blockers remain visible");
+assert(taskAttentionBadge(reconciled).label === "", "terminal cards do not display historical blockers");
 const terminalRisk = taskRiskBadge(reconciled, {
   attention: ["context"],
   contextRatio: 0.99,
@@ -51,6 +55,9 @@ const cancelled = task({
   effective_terminal: true,
   terminal_outcome: "cancelled",
 });
+for (const status of ["cancelled", "superseded", "archived"]) {
+  assert(taskTerminalOutcome(task({ status })) === status, "terminal status remains explicit without an outcome projection");
+}
 assert(taskTerminalTone(cancelled) === "muted", "cancelled work must not look successful or actionable");
 
 const blocked = task({
@@ -85,3 +92,4 @@ const queued = task({
   },
 });
 assert(taskRiskBadge(queued, undefined).label === "", "structured no-attention must suppress queue history");
+assert(taskAttentionBadge(queued).label === "", "board attention must respect the authoritative no-attention projection");

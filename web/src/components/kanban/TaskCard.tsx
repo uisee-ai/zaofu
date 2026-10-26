@@ -3,18 +3,16 @@
 import type { CSSProperties, PointerEvent } from "react";
 import type { Task } from "../../api/types";
 import { taskColumn } from "./board";
-import { formatTokens, contextBadgeTone, contextLabel } from "../../lib/format";
 import {
   taskPriority,
   taskActorLabel,
-  taskRiskBadge,
+  taskAttentionBadge,
   taskIsEffectivelyTerminal,
   taskTerminalOutcome,
   taskTerminalTone,
   latestEventAge,
   backlogRefsState,
   routeStatusTone,
-  type TaskTelemetry,
 } from "../../lib/task-display";
 
 const PRE_BACKLOG_STAGES = new Set(["design", "design_critique", "backlog"]);
@@ -25,16 +23,6 @@ function shortStepLabel(step: string): string {
   const last = step.split("/").pop() || step;
   // 砍 trailing task-id (e.g. "review-lane-0-PI-CORE-001" → "review-lane-0")
   return last.replace(/-[A-Z][A-Z0-9_-]*-\d+/, "");
-}
-
-// 后端原始 badge label 的中文/图标翻译(渐进:不识别的回退原样)。
-const BADGE_LABEL_TRANSLATIONS: Record<string, string> = {
-  "rework_triage:ambiguous": "🟡 重审中(歧义)",
-  "rework_triage:approve": "🟢 通过重审",
-  "rework_triage:reject": "🔴 重审驳回",
-};
-function translateBadgeLabel(label: string): string {
-  return BADGE_LABEL_TRANSLATIONS[label] ?? label;
 }
 
 function workflowBadgeTone(tone: string | undefined): string {
@@ -77,14 +65,6 @@ export function WorkflowBadges({
       ) : null}
     </>
   );
-}
-
-// 把 fanout_id 哈希成色相(0-359),让同 fanout 的卡顶部色条同色。
-function fanoutHue(fanoutId: string | undefined | null): number | null {
-  if (!fanoutId) return null;
-  let h = 0;
-  for (let i = 0; i < fanoutId.length; i++) h = (h * 31 + fanoutId.charCodeAt(i)) | 0;
-  return ((h % 360) + 360) % 360;
 }
 
 // actor (assigned_to) 头一个 `-` 前缀作 role,role → 颜色 token。
@@ -177,30 +157,21 @@ export function TaskCard({
   dragging,
   onPointerDown,
   selected,
-  telemetry,
   onSelect,
 }: {
   task: Task;
   dragging: boolean;
   onPointerDown: (event: PointerEvent<HTMLElement>, taskId: string) => void;
   selected: boolean;
-  telemetry?: TaskTelemetry;
   onSelect: (taskId: string) => void;
 }) {
   const currentColumn = taskColumn(task);
   const priority = taskPriority(task);
   const actorLabel = taskActorLabel(task);
-  const visibleSkills = (task.skills_required ?? []).filter(Boolean).slice(0, 2);
   const age = latestEventAge(task);
-  const totalTokens = (telemetry?.inputTokens ?? 0) + (telemetry?.outputTokens ?? 0);
-  const risk = taskRiskBadge(task, telemetry);
+  const attention = taskAttentionBadge(task);
   const effectiveTerminal = taskIsEffectivelyTerminal(task);
   const fanout = task.fanout;
-  const fHue = fanoutHue(fanout?.fanout_id);
-  const fanoutProgress = fanout?.progress;
-  const fanoutLabel = fanoutProgress?.total
-    ? `fanout ${fanoutProgress.done}/${fanoutProgress.total}`
-    : "fanout";
 
   return (
     <article
@@ -217,45 +188,10 @@ export function TaskCard({
           <span className="task-chip-row">
             <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
           </span>
-        ) : visibleSkills.length || task.retry_count > 0 || task.evidence_badges?.length || task.workflow_badges?.length || task.contract || telemetry || risk.label ? (
-          <span className="task-chip-row">
-            {risk.label ? <span className={`badge badge-${risk.tone}`}>{risk.label}</span> : null}
-            <WorkflowBadges task={task} compact />
-            {visibleSkills.map((skill) => <span className="badge" key={skill}>{skill}</span>)}
-            {task.retry_count > 0 ? <span className="badge badge-warn">rework {task.retry_count}</span> : null}
-            {telemetry ? (
-              <span
-                className={`ctx-mini ctx-mini-${contextBadgeTone(telemetry.contextRatio)}`}
-                title={`ctx ${contextLabel(telemetry.contextRatio)}${totalTokens > 0 ? ` · tok ${formatTokens(totalTokens)}` : ""}`}
-              >
-                <span
-                  className="ctx-mini-fill"
-                  style={{ width: `${Math.min(100, Math.round((telemetry.contextRatio ?? 0) * 100))}%` }}
-                />
-                <span className="ctx-mini-label">{contextLabel(telemetry.contextRatio)}</span>
-              </span>
-            ) : null}
-            {task.evidence_badges?.slice(0, 1).map((badge) => (
-              <span className={`badge badge-${badge.tone}`} key={`${badge.kind}-${badge.label}`} title={badge.label}>
-                {translateBadgeLabel(badge.label)}
-              </span>
-            ))}
-            {fanout?.fanout_id ? (
-              <span
-                className="fanout-tag"
-                title={`${fanout.fanout_id}${fanout.child_id ? ` / ${fanout.child_id}` : ""}`}
-                style={fHue !== null ? ({ "--fanout-hue": String(fHue) } as CSSProperties) : undefined}
-              >
-                {fanoutLabel}
-              </span>
-            ) : null}
-            {fanout?.lane_id ? <span className="badge badge-muted">lane {fanout.lane_id}</span> : null}
-            {fanout?.affinity_tag ? <span className="badge badge-muted">aff {fanout.affinity_tag}</span> : null}
-            <BacklogRefsBadge task={task} />
-          </span>
+        ) : attention.label ? (
+          <span className="task-chip-row"><span className={`badge badge-${attention.tone}`}>{attention.label}</span></span>
         ) : null}
-        {!effectiveTerminal ? <RouteSummaryStrip route={task.route_summary} compact /> : null}
-        {!effectiveTerminal && task.blocked_reason ? <span className="blocked-note">{task.blocked_reason}</span> : null}
+        {attention.label && task.blocked_reason ? <span className="blocked-note">{task.blocked_reason}</span> : null}
         <span className="task-footer">
           {actorLabel ? (
             <span className="task-assignee">

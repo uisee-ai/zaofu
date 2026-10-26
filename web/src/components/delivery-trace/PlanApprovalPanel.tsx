@@ -21,10 +21,10 @@ import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "..
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { LatestRequestGate } from "../../app/latestRequestGate";
 import { resolvePlanPreviewItem } from "./planReviewModel";
+import { INBOX_VIEWS as VIEW_OPTIONS, inboxItemsForView, inboxStatusLabel, type InboxView } from "./inboxViewModel";
 
 const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
 
-type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
 
 const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
@@ -38,16 +38,11 @@ const KIND_OPTIONS: Array<{ value: InboxKindFilter; label: string }> = [
   { value: "run_delivery", label: "Run Delivery" },
 ];
 
-const VIEW_OPTIONS: Array<{ value: InboxView; label: string }> = [
-  { value: "decisions", label: "Decisions" },
-  { value: "runtime_attention", label: "Runtime" },
-  { value: "automation", label: "Automation" },
-  { value: "notification", label: "Delivery" },
-  { value: "all", label: "All" },
-  { value: "resolved", label: "Resolved" },
-];
+export function PlanApprovalPanel(props: { projectId: string; autoOpenPlanId?: string | null }) {
+  return <OperatorInboxPanel key={props.projectId} {...props} />;
+}
 
-export function PlanApprovalPanel(
+function OperatorInboxPanel(
   { projectId, autoOpenPlanId }: { projectId: string; autoOpenPlanId?: string | null },
 ) {
   const [inbox, setInbox] = useState<OperatorInboxProjection | null>(null);
@@ -62,18 +57,23 @@ export function PlanApprovalPanel(
   const [previewLoading, setPreviewLoading] = useState(false);
   const [actionError, setActionError] = useState("");
   const [actionNotice, setActionNotice] = useState("");
-  const [view, setView] = useState<InboxView>("decisions");
+  const [view, setView] = useState<InboxView>("all");
   const [kindFilter, setKindFilter] = useState<InboxKindFilter>("all");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState("");
+  const [retainedReadId, setRetainedReadId] = useState("");
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const projectIdRef = useRef(projectId);
   const inboxRefreshInFlight = useRef(false);
+  const inboxRequestGate = useRef(new LatestRequestGate());
+  const inboxRequest = useRef<AbortController | null>(null);
   const previewRequestGate = useRef(new LatestRequestGate());
   const currentPreviewItem = resolvePlanPreviewItem(preview, inbox?.items || [], previewItem);
   const previewOwnerDecision = preview?.actions?.approve === "replan-approve"
     || currentPreviewItem?.owner_route === "plan_synth_owner_decision";
 
-  const baseItems = useMemo(() => inboxItemsForView(inbox, view), [inbox, view]);
+  const baseItems = useMemo(() => inboxItemsForView(inbox, view, retainedReadId), [inbox, view, retainedReadId]);
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return baseItems.filter((item) => {
@@ -109,32 +109,36 @@ export function PlanApprovalPanel(
     inboxRefreshInFlight.current = false;
   }, [projectId]);
 
-  const refreshInbox = useCallback(async () => {
-    if (inboxRefreshInFlight.current) return;
+  const refreshInbox = useCallback(async (force = false) => {
+    if (inboxRefreshInFlight.current && !force) return;
+    inboxRequest.current?.abort();
+    const controller = new AbortController();
+    inboxRequest.current = controller;
+    const ticket = inboxRequestGate.current.issue();
+    const current = () => alive.current && inboxRequestGate.current.isCurrent(ticket) && !controller.signal.aborted;
     inboxRefreshInFlight.current = true;
     setInboxRefreshing(true);
     setLoadError("");
-    const requestProjectId = projectId;
     try {
-      const inboxData = await getOperatorInbox(projectId || undefined);
-      if (projectIdRef.current === requestProjectId) {
+      const inboxData = await getOperatorInbox(projectId || undefined, controller.signal);
+      if (current()) {
         setInbox(inboxData);
       }
     } catch (error) {
-      if (projectIdRef.current === requestProjectId) {
+      if (current()) {
         setLoadError(error instanceof Error ? error.message : String(error));
       }
     } finally {
-      if (projectIdRef.current === requestProjectId) {
+      if (current()) {
         setHasLoadedInbox(true);
         setInboxRefreshing(false);
+        inboxRefreshInFlight.current = false;
       }
-      inboxRefreshInFlight.current = false;
     }
   }, [projectId]);
 
   const refresh = useCallback(async () => {
-    await refreshInbox();
+    await refreshInbox(true);
   }, [refreshInbox]);
 
   useEffect(() => {
@@ -142,6 +146,9 @@ export function PlanApprovalPanel(
     const inboxTimer = setInterval(() => void refreshInbox(), 15000);
     return () => {
       clearInterval(inboxTimer);
+      inboxRequestGate.current.invalidate();
+      inboxRequest.current?.abort();
+      inboxRefreshInFlight.current = false;
     };
   }, [refreshInbox]);
 
@@ -231,10 +238,29 @@ export function PlanApprovalPanel(
     }
   };
 
+  const markRead = async (item?: OperatorInboxItem) => {
+    if (busy) return;
+    setBusy(item ? `read:${item.id}` : "read:all");
+    setActionError("");
+    if (view === "unread") setRetainedReadId(selectedItem?.id || "");
+    try {
+      const result = await postAction(item ? "inbox-item-read" : "inbox-all-read",
+        item ? { item_id: item.id } : {}, projectId || undefined);
+      if (!alive.current) return;
+      if (result.ok === false) setActionError(result.reason || "Mark read failed");
+      else await refresh();
+    } catch (reason) {
+      if (alive.current) setActionError(String(reason));
+    } finally {
+      if (alive.current) setBusy("");
+    }
+  };
+
   const moveSelection = useCallback((direction: 1 | -1) => {
     if (!filteredItems.length) return;
     const currentIndex = Math.max(0, filteredItems.findIndex((item) => item.id === (selectedItem?.id || selectedId)));
     const nextIndex = (currentIndex + direction + filteredItems.length) % filteredItems.length;
+    setRetainedReadId("");
     setSelectedId(filteredItems[nextIndex].id);
   }, [filteredItems, selectedId, selectedItem?.id]);
 
@@ -259,8 +285,7 @@ export function PlanApprovalPanel(
 
   const initialLoading = !hasLoadedInbox && !inbox;
   const pendingCount = inbox?.summary.action_required_pending ?? inbox?.pending.filter((item) => item.actionability === "human_required").length ?? 0;
-  const diagnosticCount = inbox?.summary.noise_pending ?? inbox?.pending.filter((item) => item.actionability === "automation_owned").length ?? 0;
-  const deliveryCount = inbox?.summary.notification_pending ?? inbox?.pending.filter((item) => item.actionability === "informational").length ?? 0;
+  const unreadCount = inbox?.summary.unread ?? inbox?.items.filter((item) => item.unread).length ?? 0;
   const totalCount = inbox?.items.length ?? 0;
 
   return (
@@ -274,9 +299,7 @@ export function PlanApprovalPanel(
         <div>
           <h3>Inbox</h3>
           <span className="muted">
-            {initialLoading ? "loading" : pendingCount ? `${pendingCount} decisions` : "clear"}
-            {diagnosticCount ? ` / ${diagnosticCount} diagnostics` : ""}
-            {deliveryCount ? ` / ${deliveryCount} deliveries` : ""}
+            {initialLoading ? "loading" : `${pendingCount} needs action / ${unreadCount} unread`}
             {view === "all" && totalCount ? ` / ${totalCount} total` : ""}
           </span>
         </div>
@@ -287,7 +310,7 @@ export function PlanApprovalPanel(
               value={query}
               aria-label="Search inbox"
               placeholder="Search"
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => { setRetainedReadId(""); setQuery(event.target.value); }}
             />
           </label>
           <label className="operator-inbox-filter">
@@ -295,7 +318,7 @@ export function PlanApprovalPanel(
             <select
               value={kindFilter}
               aria-label="Inbox kind"
-              onChange={(event) => setKindFilter(event.target.value as InboxKindFilter)}
+              onChange={(event) => { setRetainedReadId(""); setKindFilter(event.target.value as InboxKindFilter); }}
             >
               {KIND_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -308,12 +331,14 @@ export function PlanApprovalPanel(
                 key={option.value}
                 type="button"
                 className={view === option.value ? "active" : ""}
-                onClick={() => setView(option.value)}
+                onClick={() => { setRetainedReadId(""); setView(option.value); }}
               >
                 {option.label}
               </button>
             ))}
           </div>
+          <button type="button" className="delivery-action-button" disabled={Boolean(busy) || !unreadCount}
+            onClick={() => void markRead()}>Mark all read</button>
           <button
             type="button"
             className="icon-button"
@@ -351,7 +376,8 @@ export function PlanApprovalPanel(
                   const reasonKey = inboxItemReasonKey(item);
                   setRejectReason((current) => ({ ...current, [reasonKey]: value }));
                 }}
-                onSelect={() => setSelectedId(item.id)}
+                onSelect={() => { if (selectedItem?.id !== item.id) setRetainedReadId(""); setSelectedId(item.id); }}
+                onRead={() => void markRead(item)}
                 onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
                 onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
                 onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
@@ -359,58 +385,7 @@ export function PlanApprovalPanel(
                 onAction={(action) => void actOnItem(item, action)}
               />
             );
-            // Human decisions stay individual and pinned first; the rest
-            // groups by (kind, title) — 210 identical attention rows buried
-            // the 15 real decisions on the r2 walk.
-            const isDecision = (item: OperatorInboxItem) =>
-              item.actionability === "human_required";
-            const decisions = filteredItems.filter(isDecision);
-            const rest = filteredItems.filter((item) => !isDecision(item));
-            const groups = new Map<string, OperatorInboxItem[]>();
-            for (const item of rest) {
-              const key = `${item.kind}::${item.title || item.summary || item.id}`;
-              const bucket = groups.get(key);
-              if (bucket) bucket.push(item);
-              else groups.set(key, [item]);
-            }
-            const ackAll = (items: OperatorInboxItem[]) => {
-              for (const entry of items) {
-                const action = (entry.actions ?? []).find((candidate) =>
-                  String(candidate.action || "").includes("ack"));
-                if (action?.action) void actOnItem(entry, String(action.action));
-              }
-            };
-            return (
-              <>
-                {decisions.length > 1 ? (
-                  <div className="operator-inbox-inline-actions">
-                    <span className="muted">{decisions.length} pending decisions</span>
-                  </div>
-                ) : null}
-                {decisions.map(renderRow)}
-                {[...groups.entries()].map(([key, items]) => (
-                  items.length === 1 ? renderRow(items[0]) : (
-                    <details className="operator-inbox-group" key={key}>
-                      <summary>
-                        <span className="operator-inbox-group-title">{items[0].title || items[0].summary || items[0].kind}</span>
-                        <span className="muted"> ×{items.length} · {items[0].kind}</span>
-                        {(items[0].actions ?? []).some((candidate) => String(candidate.action || "").includes("ack")) ? (
-                          <button
-                            type="button"
-                            className="delivery-action-button"
-                            disabled={Boolean(busy)}
-                            onClick={(event) => { event.preventDefault(); event.stopPropagation(); ackAll(items); }}
-                          >
-                            Ack all
-                          </button>
-                        ) : null}
-                      </summary>
-                      {items.map(renderRow)}
-                    </details>
-                  )
-                ))}
-              </>
-            );
+            return filteredItems.map(renderRow);
           })()}
         </div>
       )}
@@ -471,6 +446,7 @@ function InboxRow({
   rejectReason,
   onRejectReason,
   onSelect,
+  onRead,
   onPreview,
   onApprove,
   onReject,
@@ -484,6 +460,7 @@ function InboxRow({
   rejectReason: string;
   onRejectReason: (value: string) => void;
   onSelect: () => void;
+  onRead: () => void;
   onPreview: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -491,28 +468,30 @@ function InboxRow({
   onAction: (action: string) => void;
 }) {
   const Icon = kindIcon(item.kind);
-  const disabled = busy.endsWith(`:${inboxItemActionKey(item)}`);
+  const disabled = Boolean(busy);
   return (
     <article
       className={`operator-inbox-row ${selected ? "selected" : ""} ${item.status === "pending" ? "pending" : "resolved"}`}
+      data-inbox-id={item.id}
       data-testid={item.kind === "plan_approval" ? "approval-card" : "operator-inbox-row"}
       role="listitem"
+      aria-label={`${item.title || item.kind}, ${item.unread ? "Unread" : "Read"}`}
       onClick={onSelect}
     >
       <div className="operator-inbox-row-grid">
         <div className="operator-inbox-avatar" aria-hidden="true">
           <Icon size={17} />
-          {item.status === "pending" ? <span className="operator-inbox-unread-dot" /> : null}
+          {item.unread === true ? <span className="operator-inbox-unread-dot" aria-label="Unread" /> : null}
         </div>
         <div className="operator-inbox-row-main">
           <div className="operator-inbox-title-line">
             <span className="operator-inbox-kind">{kindLabel(item.kind)}</span>
             <strong className="operator-inbox-title">{item.title || kindLabel(item.kind)}</strong>
-            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{item.status}</span>
+            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{inboxStatusLabel(item)}</span>
             <time className="muted">{compactTime(item.created_ts || item.resolved_ts)}</time>
           </div>
           <p>{item.summary || inboxItemPrimaryRef(item) || "Operator action requested."}</p>
-          <div className="operator-inbox-meta-line">
+          <details className="operator-inbox-source"><summary>Source and records</summary><div className="operator-inbox-meta-line">
             {inboxItemPrimaryRef(item) ? <span className="mono">{inboxItemPrimaryRef(item)}</span> : null}
             {item.stage_id ? <span>stage {item.stage_id}</span> : null}
             {typeof item.task_count === "number" ? <span>{item.task_count} tasks</span> : null}
@@ -526,11 +505,13 @@ function InboxRow({
             {item.category ? <span>{categoryLabel(item.category)}</span> : null}
             {item.source_role ? <span>{sourceLabel(item.source_role)}</span> : null}
             {Number(item.dedupe_count || 0) > 1 ? <span>{item.dedupe_count} grouped</span> : null}
-          </div>
+          </div></details>
         </div>
       </div>
       {selected ? (
         <>
+          <button type="button" className="delivery-action-button" disabled={disabled || !item.unread}
+            onClick={(event) => { event.stopPropagation(); onRead(); }}>Mark read</button>
           {item.deep_link ? (
             <div className="operator-inbox-inline-actions">
               <a className="delivery-action-button" href={inboxDeepLink(item.deep_link, projectId)}>
@@ -621,6 +602,7 @@ function InboxRowActions({
     );
   }
 
+  if (item.actionability === "informational") return null;
   const actions = (item.actions ?? [])
     .map((action) => ({
       action: typeof action.action === "string" ? action.action : "",
@@ -867,22 +849,6 @@ function inboxItemActionKey(item: OperatorInboxItem): string {
 
 function inboxItemPrimaryRef(item: OperatorInboxItem): string {
   return String(item.plan_id || item.decision_token || item.question_id || item.request_id || item.attention_id || item.approval_ref || item.id || "");
-}
-
-function inboxItemsForView(inbox: OperatorInboxProjection | null, view: InboxView): OperatorInboxItem[] {
-  const items = inbox?.items ?? [];
-  if (view === "all") return items;
-  if (view === "resolved") return items.filter((item) => item.status !== "pending" || item.category === "resolved");
-  if (view === "decisions") {
-    return items.filter((item) => item.status === "pending" && item.actionability === "human_required");
-  }
-  if (view === "runtime_attention") {
-    return items.filter((item) => item.status === "pending" && item.category === "runtime_attention");
-  }
-  if (view === "notification") {
-    return items.filter((item) => item.status === "pending" && item.category === "notification");
-  }
-  return items.filter((item) => item.status === "pending" && item.category === "automation_diagnostic");
 }
 
 function inboxActionPayload(item: OperatorInboxItem, reason = ""): Record<string, unknown> {

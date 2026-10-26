@@ -1164,18 +1164,21 @@ export function getWorkflowGraph(projectId?: string): Promise<WorkflowGraph> {
   return requestJson<WorkflowGraph>(`${projectPrefix(projectId)}/workflow/graph`);
 }
 
-export function getWorkflowRequests(projectId?: string): Promise<WorkflowRequestsPage> {
+export function getWorkflowRequests(projectId?: string, signal?: AbortSignal): Promise<WorkflowRequestsPage> {
   return requestJson<WorkflowRequestsPage>(
     `${projectPrefix(projectId)}/workflow-requests`,
+    { signal },
   );
 }
 
 export function getWorkflowRequestDetail(
   requestId: string,
   projectId?: string,
+    signal?: AbortSignal,
 ): Promise<WorkflowRequestDetail> {
   return requestJson<WorkflowRequestDetail>(
     `${projectPrefix(projectId)}/workflow-requests/${encodeURIComponent(requestId)}`,
+    { signal },
   );
 }
 
@@ -1303,8 +1306,8 @@ export function getOperatorOutput(cursor = 0, limit = 200, projectId?: string): 
   );
 }
 
-export function getOperatorInbox(projectId?: string): Promise<OperatorInboxProjection> {
-  return requestJson<OperatorInboxProjection>(`${projectPrefix(projectId)}/operator/inbox`);
+export function getOperatorInbox(projectId?: string, signal?: AbortSignal): Promise<OperatorInboxProjection> {
+  return requestJson<OperatorInboxProjection>(`${projectPrefix(projectId)}/operator/inbox`, { signal });
 }
 
 export function getPlanPreview(planId: string, projectId?: string): Promise<PlanPreview> {

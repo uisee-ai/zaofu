@@ -17,6 +17,8 @@ import {
   taskIsEffectivelyTerminal,
   taskPriority,
   taskRiskBadge,
+  taskAttentionBadge,
+  taskActorLabel,
   taskTerminalOutcome,
   taskTerminalTone,
 } from "../../lib/task-display";
@@ -462,7 +464,6 @@ export function BoardWorkbench({
               key={column.id}
               column={column}
               tasks={tasksByColumn[column.id]}
-              telemetryByTaskId={telemetryByTaskId}
               selectedTaskId={selectedTaskId}
               dragTaskId={dragTaskId}
               onPointerDown={handleTaskPointerDown}
@@ -520,9 +521,7 @@ function TaskListView({
         </div>
         <div className="task-list-view" role="list">
           {tasks.map((task) => {
-            const telemetry = telemetryByTaskId.get(task.id);
-            const total = (telemetry?.inputTokens ?? 0) + (telemetry?.outputTokens ?? 0);
-            const risk = taskRiskBadge(task, telemetry);
+            const attention = taskAttentionBadge(task);
             return (
               <button
                 className={`task-list-row ${task.id === selectedTask?.id ? "active" : ""}`}
@@ -536,16 +535,12 @@ function TaskListView({
                 <span className="muted">{task.display_status || task.status}</span>
                 {taskIsEffectivelyTerminal(task) ? (
                   <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
-                ) : risk.label ? (
-                  <span className={`badge badge-${risk.tone}`}>{risk.label}</span>
+                ) : attention.label ? (
+                  <span className={`badge badge-${attention.tone}`} title={task.blocked_reason || attention.label}>{attention.label}</span>
                 ) : <span />}
-                {!taskIsEffectivelyTerminal(task) ? (
-                  <span className={`badge badge-${contextBadgeTone(telemetry?.contextRatio)}`}>
-                    {contextLabel(telemetry?.contextRatio)}
-                  </span>
-                ) : <span />}
-                {!taskIsEffectivelyTerminal(task) ? <span className="badge badge-muted">tok {formatTokens(total)}</span> : <span />}
-                <span className="task-route-list-cell">{taskIsEffectivelyTerminal(task) ? "-" : task.route_summary?.summary || "-"}</span>
+                <span className="muted">{taskActorLabel(task) || "Unassigned"}</span>
+                <span>P{taskPriority(task)}</span>
+                {task.blocked_reason && attention.label ? <span className="task-list-blocker">{task.blocked_reason}</span> : null}
               </button>
             );
           })}

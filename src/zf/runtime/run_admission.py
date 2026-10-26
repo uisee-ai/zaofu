@@ -809,10 +809,12 @@ def request_admission_view(
     *,
     request_id: str,
     run_id: str = "",
+    projection: RunAdmissionProjection | None = None,
 ) -> dict[str, Any]:
     """Small shared list/detail projection for one Project Request."""
 
-    projection = build_run_admission_projection(events)
+    if projection is None:
+        projection = build_run_admission_projection(events)
     entry = (
         projection.runs.get(str(run_id or "").strip())
         if run_id
