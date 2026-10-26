@@ -1,40 +1,22 @@
-# Board 与 Overview 小摘要读取
+# SQLite 热读、字节游标与 WAL 维护
 
-> 状态: active
-> 来源: docs/design/186-inbox-and-task-board-human-centered-design.md；docs/design/188-dashboard-workflow-multi-run-sqlite-review.md（186 第 11.3、11.5、13 节）。
+> 状态: done
+> 来源: docs/design/186-inbox-and-task-board-human-centered-design.md；docs/design/188-dashboard-workflow-multi-run-sqlite-review.md（188 第 5–6 节；186 第 14.3 节）。
 > 基线: dev c769680b；worktree zaofu-inbox-workflow。
 
 ## 范围
 
-消除 workspace 发现对已选项目的首屏串行阻塞；Board 不返回完整报告／重复 event payload；Pulse 不在请求中全量解析历史与重复 YAML。
+普通读不执行 schema 写入；Web read model 使用已存在的 segment/byte cursor；checkpoint 从请求与高频追赶迁到维护时机。保留重建与必需 sidecar 的所有权。
 
 ## 验收
 
-- 相同项目 fixture -> verify: 状态一致、摘要无大正文。
-- 冷/热与持续追加 -> verify: 记录首卡、接口 p50/p95、CPU、响应字节；不把仅缩小 UI 当成后端优化。
+- query_only 热读 -> verify: 无隐式写入。
+- 追加一条、轮转、半行、截断 -> verify: 不全扫旧 segment、无漏重，失效游标可恢复。
+- 并发读与追赶 -> verify: 无请求内 TRUNCATE 阻塞，记录 WAL 与锁等待。
 
 ## 验证与依赖
 
-首批 UI 与 Workflow 回归通过后，先固定接口字段契约与历史测量基线，再推进 API 调整。
-
-
-2026-10-26 已拆出 Board 首屏与正文摘要到 [2026-10-26-1151-board-first-paint-and-metric-parity](../done/2026-10-26-1151-board-first-paint-and-metric-parity.md) 并获用户授权执行；本候选保留 Overview/Pulse 聚合和更完整的增量摘要优化，不能随 Board 子项完成一起标 done。
-
-## 本轮实测新增边界
-
-Board 及 Overview transport 的摘要复用已落实到 `tasks/done/2026-10-26-1151-board-first-paint-and-metric-parity.md`，不重复实施。独立聚合及完全冷重建仍保留 proposed。
-
-- 上轮 Cargo 完整 snapshot 的 `metrics_snapshot.error: NoneType object has no attribute input` 已在 2026-10-26 后续排障中修复：实际原因是未知模型的费率返回 None，被 OA 指标消费方直接解引用，**不是 token 信息缺失**。两真实项目的 25 个核心字段已与 MetricsCollector 独立计算逐项一致，未知费用保留 null/known subtotal/unpriced count。见 `tasks/done/2026-10-26-1302-dashboard-metrics-and-observability-hotpaths.md`（完成后归档到 done）。
-- loshu-fms 的完整 Observability snapshot 两端均超过 180 秒；推进该页面时需 profile 各聚合、按需摘要/增量游标和无正文读取，不能把 Board 的 1–3 秒样本当作全站性能验收。
-- 冷 Board 单独构建仍约 12 秒（测试并行下的诊断样本），新项目/重启场景需要独立冷验收；持久化投影必须覆盖 canonical 输入指纹、失效、重放、并发和精度语义。
-
-2026-10-26 后续已完成按批读取 fanout、共享日窗口事件、真实观测摘要与面板按需加载，详情见 186 第 17 节。尚未完成持久化热摘要/完全冷首屏预算，不重复提交已修复的未知费率和无关面板预取候选。
-
-
-2026-10-26 最终补充：观测接口及按 tab 加载已实现，25 个核心字段对账通过，六张观测卡与 8001 相同。独立进程 loshu 观测摘要仍 33.711s，浏览器首次聚合样本 18–56s、缓存 2–7s。保留 proposed 的范围是持久化增量摘要与冷路径预算，不再重复排期已完成的接口/价格异常/面板懒加载。触发条件已由真实大历史项目复现；下一阶段须按原验收覆盖重建、追加、重放、迟到、轮转和多 Run 指标归属。
-
-
-14:12 UTC 已提交版本重启复核进一步确认冷路径失败：Cargo Board 30.290s / Events 46.352s，loshu Pulse 30s 超时、Events 90s 超时。主机存在其他 UI 测试并发，未量化干扰，不据此宣称独立 p95。验收必须覆盖服务重启及并发，禁止只用热缓存证明完成。见设计 186 第 17.5 节和 `browser-final-head.json`。
+在首批列表读取优化验收后，补齐游标迁移与恢复 fixture，按 Event/Store 边界执行 sentinel/mock E2E。
 
 
 ## 2026-10-26 用户批准实施
@@ -76,3 +58,29 @@ Board 及 Overview transport 的摘要复用已落实到 `tasks/done/2026-10-26-
 首次空库生成仍慢：与回归测试并发的诊断样本 Cargo Board/观测/Pulse 55.5/18.9/2.9s，loshu 164.2/75.4/35.9s（`initialize.json`）。已完成“首次构建一次、后续跨重启复用”，没有证明首次空库也能秒开。原生业务 delta reducer、首次建库预算及持续多项目更新能力保留后续候选，不把 202 HTTP 响应算页面完成。
 
 证据目录 `/tmp/zf-sqlite-dashboard-20261026T1500`；设计 186 第 18 节、188 第 7 节已更新且遵用户指示保持 gitignored。无运行时 DB、日志、设计文档或候选 backlog 入提交。最终实现 hash、sentinel 结果、进程复核在归档时补齐。
+
+
+## 完成记录
+
+实现：`381b57ac feat: persist dashboard read projections in existing SQLite`。本批完成的是前述 SQLite 读路径与跨重启资源复用范围。首次空库、所有业务逐事件 delta reducer、持续多项目/多 Run 压测保留后续候选 `backlogs/2026-10-26-1530-dashboard-initial-generation-budget.md`；历史 proposed 描述不代表这些更广目标已完成。
+
+最终 sentinel 51 passed，收据 passed；实际相关后端 417 passed、最后修订闭包 65 passed，完整前端 unit/build、Docker 9 passed，mock E2E passed。25 文件 / 1302 变更行，风险按跨 API/SQLite 边界评为 high，已经逐模块审查并覆盖读取者/索引恢复/原子性/浏览器合同；没有改 canonical 写入模块或外部 side effect。
+
+实现版本 8002 进程重启后（先直接打开 Events）：Cargo Events/Board 3.256/3.665s，loshu 5.820/4.673s；Overview 首摘要 1.411/1.284s，完整展示项均 15。任务 1/40、Events 6 卡、核心对象 26 字段无 error，六页无 pageerror。样本波动保留，不只采用最好成绩。8001 仍为 50eb6ba1，未重启。
+
+随后 60 次顺序 API 读取全部 HTTP 200，每端点 n=10、nearest-rank 样本分位数（ms），允许后台更新，不能解释为整体负载 p95 或无陈旧性：
+
+| 接口 | 样本 p50 | 样本 p95 |
+| --- | ---: | ---: |
+| cargo / snapshot/board | 1243.8 | 2373.6 |
+| cargo / snapshot/observability | 1313.1 | 2531.6 |
+| cargo / overview-pulse | 1077.8 | 3230.4 |
+| loshu / snapshot/board | 333.1 | 1403.5 |
+| loshu / snapshot/observability | 1606.0 | 4413.4 |
+| loshu / overview-pulse | 263.9 | 478.4 |
+
+采样总 wall 67.28s，8002 进程 CPU 累积 72.27s（含后台线程和其他服务请求），结束 RSS 821.3 MiB，非峰值。Cargo 三组为 ready；loshu 三组为 refreshing，携带上次完整值及更新时间。观测到 Cargo/loshu WAL 为 0/206032 B；没有实际生产每查询锁等待仪表，不能用 HTTP 成功冒充零等待，mock E2E 的锁等待值为 0。
+
+追加来源变化探针证实 loshu 有 progress.md、session.yaml、provider logs 与 watcher pid 的运行中变更（`source-change-probe.log`），不是单纯查询日志自失效；构建中变化标记按事实保留。后台按组重算仍有 CPU 成本，后续候选继续记录。
+
+证据：`browser-implementation-head.json`、`api-samples.json`、`final-verification-receipt.json`、`event-e2e/report.json`，均在上述证据目录。已清理模拟状态/8004/Docker 测试进程，8002 留给用户观察。本次仅本地提交，不 merge/push；设计文档/候选未提交。
