@@ -1,5 +1,5 @@
 {
-  "status": "corrected_combined_replan_running_verify_pending",
+  "status": "environment_plan_approved_repair_impl_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -65,6 +65,16 @@
       "bytes": 168025
     },
     {
+      "file": "31-environment-plan-preview.png",
+      "sha256": "4016242fe8982541ed0445707738a3a8c539c6e709898b71b19031f4f5cdbbff",
+      "bytes": 238180
+    },
+    {
+      "file": "32-environment-plan-mobile.png",
+      "sha256": "847f35713eefe9970b4067d884458e1ff73bd6a0105e4d930185cba3bcaabe07",
+      "bytes": 96059
+    },
+    {
       "file": "approval-recovery-dev-verify-plan.log",
       "sha256": "7365fbf0b03cb8d9262e23cc4ca31b2fbc2939749e9a72be215b294f90fc512b",
       "bytes": 11166
@@ -78,6 +88,11 @@
       "file": "approval-review.md",
       "sha256": "4a2a5fabd9a4982fef932e0c2004626ffbd89b51e92872a2d1cfd2c6a9ac7f36",
       "bytes": 4052
+    },
+    {
+      "file": "approve-environment-repair.cjs",
+      "sha256": "1f6be2248f04ee589fbeabc9f7511d0baa76e9599e0d171d6ea4421d1838ae03",
+      "bytes": 3293
     },
     {
       "file": "approved-plan-impl-continuation.json",
@@ -137,9 +152,7 @@
     {
       "file": "attempt-operation-focused.log",
       "sha256": "bc549b5adee82654a28da4b793145870e04ec0faab6d91d4ec04c3cf66a987e4",
-      "bytes": 14863,
-      "raw_sha256": "9f723d06d249eedb44661aefac7f492a8c7e9a646f7bf1eab510f0f5ca6a7470",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 14863
     },
     {
       "file": "attempt-operation-live-closeout.json",
@@ -194,9 +207,7 @@
     {
       "file": "candidate-timeouts-red.log",
       "sha256": "a85a5383746b654667fa15a70759526981b5207ff696e72a6624a122065a4cd4",
-      "bytes": 10653,
-      "raw_sha256": "01fa8b592ac8e4dca56b1d280cfc9d9f886299b765ded3fed05d7a313cb5f91a",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 10653
     },
     {
       "file": "candidate-timeouts-reload.json",
@@ -241,9 +252,7 @@
     {
       "file": "codex-observer-red.log",
       "sha256": "bdbda64a9370adb07fb52d1ac9ce3725a2e07e79ce098b0c38f5ebd11f067081",
-      "bytes": 3331,
-      "raw_sha256": "6f4714e06116d8304cb72c4a3a6a52b64c7b82af147a37c636061dd91db991e8",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 3331
     },
     {
       "file": "codex-observer-reload.json",
@@ -336,9 +345,69 @@
       "bytes": 2829
     },
     {
+      "file": "environment-plan-approved-event.json",
+      "sha256": "c84a995f1053356d509310b74e436c6944a68b9fb1ae0a664bb14540bd260bc7",
+      "bytes": 1169
+    },
+    {
+      "file": "environment-plan-browser-current.log",
+      "sha256": "5c015b4b67dbaac0c4844c1c04c35794499a426a34fa37968882a122dab9e431",
+      "bytes": 288
+    },
+    {
+      "file": "environment-plan-browser-proof.json",
+      "sha256": "2249ed019e679c630d5fd1b1db6153439f632a0dbe221895fed9c281ae0fdd29",
+      "bytes": 329
+    },
+    {
       "file": "environment-plan-browser.log",
       "sha256": "fe120f125accb38bb4fb126b3b185d5394218fdb7a7bfa6c7318e8ccabf735e5",
       "bytes": 519
+    },
+    {
+      "file": "environment-plan-execution_spec.json",
+      "sha256": "59d10e70b218deaae9364358f14801e1e05bb88d92f175bc973921e2bba1aa2d",
+      "bytes": 194394
+    },
+    {
+      "file": "environment-plan-gate.json",
+      "sha256": "5c2a8b41b7f8fa34dfdf83b6ce22688ff22d3acc92dceb29f95eddf35573a9d7",
+      "bytes": 2324
+    },
+    {
+      "file": "environment-plan-operator-approval.json",
+      "sha256": "48c77bc13fa6dfe02dcb882910ad8055bbbd7979e74ba1167c13593898b3d373",
+      "bytes": 1706
+    },
+    {
+      "file": "environment-plan-operator-approval.log",
+      "sha256": "d4351de0595efd31c79a02153db2e04213d60af1aaf7a9f387c017a978ad458b",
+      "bytes": 89
+    },
+    {
+      "file": "environment-plan-preview.cjs",
+      "sha256": "38248cc7de4c0bfe88e47817dbae291d9b8b04ea4a218e2b357d2f9dc247b26e",
+      "bytes": 4169
+    },
+    {
+      "file": "environment-plan-preview.json",
+      "sha256": "4848557180577abc4615d69f1ddff1d6836a619394e1aedfc88097d7bacf19b3",
+      "bytes": 145409
+    },
+    {
+      "file": "environment-plan-review.md",
+      "sha256": "a8d7a5bc29d21baeb73dc55e6527b6da7c6d0ce358b48aefc73bb24121d3a481",
+      "bytes": 2337
+    },
+    {
+      "file": "environment-plan-task_map.json",
+      "sha256": "acb56540e031f6f36d9e21163e9ce6123a4a2a1621f75258873c1795e0149a4b",
+      "bytes": 126623
+    },
+    {
+      "file": "environment-plan.md",
+      "sha256": "93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916",
+      "bytes": 50018
     },
     {
       "file": "environment-replan-delivery.json",
@@ -566,6 +635,61 @@
       "bytes": 8960
     },
     {
+      "file": "plan-approval-identity-closure.log",
+      "sha256": "27b0c421e887a9e9223ac2f1edc4945649f36f4a45d6a6371d6536462e9eef13",
+      "bytes": 99
+    },
+    {
+      "file": "plan-approval-identity-dev-verify-plan.log",
+      "sha256": "c2e4e832cc860fe890fe20ed5a66d79e9921b637a4bc58388506390d17a2853c",
+      "bytes": 1226
+    },
+    {
+      "file": "plan-approval-identity-dev-verify-run.log",
+      "sha256": "c2e4e832cc860fe890fe20ed5a66d79e9921b637a4bc58388506390d17a2853c",
+      "bytes": 1226
+    },
+    {
+      "file": "plan-approval-identity-flow-smoke.log",
+      "sha256": "b99b2621a6cc5de9010c996bc61d8a29e8e9801b7f857155e93161af9d033f2d",
+      "bytes": 100
+    },
+    {
+      "file": "plan-approval-identity-mock-e2e.log",
+      "sha256": "1733b2b1cf0aa7a6494f11258b53ba205b7abd46c7c3a9072b0c8f0cc8b1d212",
+      "bytes": 99
+    },
+    {
+      "file": "plan-approval-identity-real-replay.json",
+      "sha256": "50751c8185c48369fa3432c5f7ade68ce94ce01dea967356cc3bf45449360ae4",
+      "bytes": 2670
+    },
+    {
+      "file": "plan-approval-identity-recovery-projections.log",
+      "sha256": "0d91064bcad1490a49160c054d3a41bbb5db514584dad64a52b9b0b5dc0b3528",
+      "bytes": 99
+    },
+    {
+      "file": "plan-approval-identity-red.log",
+      "sha256": "873ffb20a6ffd5c7426afc1c70dde207d2813fa447dc70b3a8c9d8de4e1d194e",
+      "bytes": 12392
+    },
+    {
+      "file": "plan-approval-identity-runtime-reload.json",
+      "sha256": "48482a472168b1281ca6cca2a85a98f9b693b7f3764d36219dfe78877a20fccf",
+      "bytes": 158
+    },
+    {
+      "file": "plan-approval-identity-sentinel.log",
+      "sha256": "c8dae86d98e811d7c7237dd28efb7f5f504d34c1d0b1cecbda5f9a7d62112301",
+      "bytes": 128
+    },
+    {
+      "file": "plan-approval-identity-writer-callers.log",
+      "sha256": "c806c52b5fd9a45c32a3874f52834f65a56e33abe2ac4a9d1038b6d8f45331a0",
+      "bytes": 114
+    },
+    {
       "file": "plan-chat-gate.json",
       "sha256": "a60cf8fd48bd9eae8dc5b0c84713226c9a754882ebc040f4ce03a917dca09948",
       "bytes": 299
@@ -588,9 +712,7 @@
     {
       "file": "queued-authority-closure-corrected.log",
       "sha256": "4c88d93aad71c8b36f9f40b3abd207f26a4d3229d0e2de318e0aa005f19533c8",
-      "bytes": 10070,
-      "raw_sha256": "c7964f224d6ff1ef88f4847710dcde025dd8e8f39d6a58c6cb15aa270d29913c",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 10070
     },
     {
       "file": "queued-authority-closure-final.log",
@@ -635,9 +757,7 @@
     {
       "file": "queued-authority-red.log",
       "sha256": "159b1b6f8371ed5c6ff7957b60087dec1b4bf9b855abf7442a65fa4101491408",
-      "bytes": 15564,
-      "raw_sha256": "cab7bd5ecfb9a1fd04daefd0e57818bd3cff6998ad0cc452d51805b32394967f",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 15564
     },
     {
       "file": "queued-authority-sentinel-corrected.log",
@@ -717,9 +837,7 @@
     {
       "file": "reader-replan-ownership-red-corrected.log",
       "sha256": "4edec69073b4784fe4a626648787224da5f914d773fc416ceab175ee4fd4c2d4",
-      "bytes": 2031,
-      "raw_sha256": "541ede9666de620d5b3186f9b90607d5e2486fcf402c35b3c66d4f0094c3c39c",
-      "transformation": "remove line-end whitespace only"
+      "bytes": 2031
     },
     {
       "file": "reader-replan-ownership-red.log",
@@ -749,9 +867,7 @@
     {
       "file": "reader-retry-recovery-red.log",
       "sha256": "8ef9afdc53f8b1ad6e287624b6143fc9dd1ababce2af4e3dbc6b15ee43b16616",
-      "bytes": 2530,
-      "raw_sha256": "21d85aeb8fcc5c3c6806bbb09bc5ae00565da488d470723e3088762bcc65539d",
-      "transformation": "remove line-end whitespace only"
+      "bytes": 2530
     },
     {
       "file": "reader-retry-runtime-reload.json",
@@ -926,9 +1042,7 @@
     {
       "file": "replan-race-red.log",
       "sha256": "286695eb6fb9cc1e75622cc5c340cf0e0e9c7f13fe5428d43239c120706dfea6",
-      "bytes": 3085,
-      "raw_sha256": "9cd857a1d544101a0ff7015a0d8458df739234f58338e90ac21a00f08c10e7aa",
-      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+      "bytes": 3085
     },
     {
       "file": "replan-race-reload.json",
@@ -1098,9 +1212,16 @@
       "file": "recovered-run-graph-red.log",
       "raw_sha256": "0fc391565302a040b2d2f390d74a61562f270c20ab7fcb2133a5752065d42257",
       "transformation": "remove line-end whitespace only"
+    },
+    {
+      "file": "plan-approval-identity-red.log",
+      "raw_sha256": "32c9aae024dda8f49d8442387934f2bbe163cbcc02d3343770f4a0a05e2d9d4c",
+      "transformation": "remove line-end whitespace only"
     }
   ],
   "last_recovery_event_id": "evt-22f59b3c206a",
   "latest_plan_trigger_id": "evt-fe204937543b",
-  "original_approved_plan_id": "evt-adf3807d914c"
+  "original_approved_plan_id": "evt-adf3807d914c",
+  "current_plan_id": "evt-498c4d468cc2",
+  "current_approval_event_id": "evt-15434756a885"
 }

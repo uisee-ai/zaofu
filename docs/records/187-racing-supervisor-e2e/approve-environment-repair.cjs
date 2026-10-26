@@ -1,0 +1,23 @@
+const fs = require('fs'), assert = require('assert/strict'), crypto = require('crypto');
+const {chromium} = require('/app/node_modules/playwright');
+const root='/tmp/zf-racing-supervision-20261025T211020Z',base='http://127.0.0.1:8002';
+const c=JSON.parse(fs.readFileSync(root+'/context.json'));
+const gate=JSON.parse(fs.readFileSync(root+'/evidence/environment-plan-gate.json'));
+const proof=JSON.parse(fs.readFileSync(root+'/evidence/environment-plan-browser-proof.json'));
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'/ms-playwright/chromium-1226/chrome-linux64/chrome',args:['--no-sandbox']});
+try {
+ const ctx=await browser.newContext({storageState:root+'/browser-state.json'});
+ assert.equal(proof.planId,gate.plan_id); assert.equal(proof.bodyDigest,gate.accepted_plan_sha256);
+ assert.equal(proof.approvalClicked,false); assert(proof.approvalButtonEnabled);
+ const endpoint=base+'/api/projects/'+c.projectId+'/workflow-requests/'+c.requestId+'/graph';
+ const response=await ctx.request.get(endpoint);assert(response.ok());const graph=await response.json();
+ const plan=graph.plans.find(p=>p.plan_id===gate.plan_id); assert(plan);assert.equal(plan.status,'pending');
+ assert(graph.plans.some(p=>p.plan_id==='evt-adf3807d914c'&&p.status==='approved'));
+ assert.equal(crypto.createHash('sha256').update(plan.markdown).digest('hex'),proof.bodyDigest);
+ assert.equal(crypto.createHash('sha256').update(fs.readFileSync(c.projectRoot+'/zf.yaml')).digest('hex'),'2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3');
+ const key='supervisor-authorized-environment-repair-'+gate.plan_id;
+ const body={project_id:c.projectId,actor:'web',idempotency_key:key,payload:{plan_id:gate.plan_id,reason:'监工续修确认：用户已批准原 Plan evt-adf3807d914c（evt-158a8630051c），并明确要求真实端到端验证、持续修复到完成。本版经独立 Critic evt-096167993e32 通过及真实 Playwright 完整预览核对，保持原产品、4任务/16AC/依赖/owner和已加载zf.yaml；仅修复冷启动、Docker浏览器资格/持久缓存及真实90秒证据校验。采纳 DEC-ENV-01 qualified_reuse_cache 和明确的冷准备/命令期限。依据既有授权经受控接口继续，不声明用户进行了新的点击；原gap和独立Verify/Discovery/Judge/Kernel交付仍待实际证据。审阅依据 environment-plan-review.md、environment-plan-browser-proof.json，正文SHA 93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916。'}};
+ const resultResponse=await ctx.request.post(base+'/api/projects/'+c.projectId+'/actions/plan-approve',{headers:{'X-ZF-Web-Token':fs.readFileSync(root+'/token','utf8').trim(),'X-Idempotency-Key':key},data:body});const result=await resultResponse.json();
+ fs.writeFileSync(root+'/evidence/environment-plan-operator-approval.json',JSON.stringify({request:body,http_status:resultResponse.status(),result,authorization_basis:'existing user approval and explicit continuous-repair request; no new human click claimed'},null,2)+'\n');
+ assert(resultResponse.ok());assert.equal(result.ok,true);console.log(JSON.stringify({plan_id:gate.plan_id,http_status:resultResponse.status(),ok:result.ok,event_id:result.event_id||result.result?.event_id}));
+} finally {await browser.close();}})();
