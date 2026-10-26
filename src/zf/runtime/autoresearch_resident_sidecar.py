@@ -7,6 +7,7 @@ The sidecar owns only process lifecycle. Loop semantics stay in
 from __future__ import annotations
 
 import json
+import fcntl
 import os
 import signal
 import shlex
@@ -26,6 +27,7 @@ class AutoresearchResidentSidecar:
     log_handle: Any
     pid_path: Path
     log_path: Path
+    lock_handle: Any | None = None
 
 
 def build_autoresearch_resident_command(
@@ -105,6 +107,7 @@ def start_autoresearch_resident_sidecar(
     processes_dir.mkdir(parents=True, exist_ok=True)
     log_path = logs_dir / "autoresearch-resident.log"
     pid_path = processes_dir / "autoresearch-resident.pid.json"
+    lock_path = processes_dir / "autoresearch-resident.lock"
     command = build_autoresearch_resident_command(
         state_dir=state_dir.resolve(),
         interval_seconds=interval_seconds,
@@ -129,6 +132,19 @@ def start_autoresearch_resident_sidecar(
         })
         return None
 
+    # State-dir scoped lock prevents duplicate resident loops when multiple
+    # supervisors call `zf start` concurrently.
+    lock_handle = lock_path.open("a+", encoding="utf-8")
+    try:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock_handle.close()
+        _append_event(event_log, "autoresearch.resident_sidecar.already_running", {
+            **payload,
+            "lock_path": str(lock_path),
+        })
+        return None
+
     log_handle = log_path.open("a", encoding="utf-8")
     env = os.environ.copy()
     env["ZF_AUTORESEARCH_RESIDENT"] = "authorized"
@@ -150,6 +166,7 @@ def start_autoresearch_resident_sidecar(
         )
     except Exception as exc:
         log_handle.close()
+        _release_resident_lock(lock_handle)
         _append_event(event_log, "autoresearch.resident_sidecar.failed", {
             **payload,
             "error_type": type(exc).__name__,
@@ -174,11 +191,13 @@ def start_autoresearch_resident_sidecar(
         log_handle=log_handle,
         pid_path=pid_path,
         log_path=log_path,
+        lock_handle=lock_handle,
     )
     time.sleep(0.25)
     exit_code = process.poll()
     if exit_code is not None:
         log_handle.close()
+        _release_resident_lock(lock_handle)
         try:
             pid_path.unlink(missing_ok=True)
         except Exception:
@@ -227,6 +246,8 @@ def stop_autoresearch_resident_sidecar(
         sidecar.log_handle.close()
     except Exception:
         pass
+    _release_resident_lock(sidecar.lock_handle)
+    _remove_resident_lock_if_free(sidecar.pid_path.parent)
     try:
         sidecar.pid_path.unlink(missing_ok=True)
     except Exception:
@@ -354,12 +375,45 @@ def stop_autoresearch_resident_sidecar_by_pidfile(
             except (OSError, ProcessLookupError):
                 pass
     pid_path.unlink(missing_ok=True)
+    _remove_resident_lock_if_free(pid_path.parent)
     _append_event(event_log, "autoresearch.resident_sidecar.stopped", {
         "pid": pid,
         "stopped_by": "pidfile",
         "log_path": str(record.get("log_path") or ""),
     })
     return True
+
+
+def _release_resident_lock(lock_handle: Any | None) -> None:
+    if lock_handle is None:
+        return
+    try:
+        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+    except (OSError, ValueError):
+        pass
+    try:
+        lock_handle.close()
+    except Exception:
+        pass
+
+
+def _remove_resident_lock_if_free(processes_dir: Path) -> None:
+    lock_path = Path(processes_dir) / "autoresearch-resident.lock"
+    try:
+        handle = lock_path.open("a+")
+    except OSError:
+        return
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        return
+    try:
+        lock_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+    finally:
+        _release_resident_lock(handle)
 
 
 def _append_event(event_log: Any | None, event_type: str, payload: dict[str, Any]) -> None:

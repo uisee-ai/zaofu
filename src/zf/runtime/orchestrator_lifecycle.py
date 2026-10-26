@@ -320,6 +320,27 @@ class LifecycleManagerMixin(
         if workdirs is None or not getattr(workdirs, "enabled", False):
             return None
 
+        # A Task Pipeline attempt owns a generation-scoped task worktree.  A
+        # provider respawn/recycle must preserve that binding; falling back to
+        # the stable role worktree makes the resumed worker edit the wrong
+        # branch and causes the TaskRef currentness gate to reject its result.
+        task_pipeline_cwd = self._active_task_pipeline_spawn_cwd(role)
+        if task_pipeline_cwd is not None:
+            try:
+                self.event_writer.append(ZfEvent(
+                    type="task.pipeline.spawn_cwd.reused",
+                    actor="zf-cli",
+                    payload={
+                        "instance_id": role.instance_id,
+                        "role": role.name,
+                        "workdir": str(task_pipeline_cwd),
+                        "source": source,
+                    },
+                ))
+            except Exception:
+                pass
+            return task_pipeline_cwd
+
         from zf.runtime.workdirs import WorkdirManager
 
         manager = WorkdirManager(
@@ -351,6 +372,59 @@ class LifecycleManagerMixin(
                     f"{project_path}"
                 )
             return project_path
+        return None
+
+    def _active_task_pipeline_spawn_cwd(
+        self, role: "RoleConfig",
+    ) -> Path | None:
+        """Find the admitted Task Workspace for a live role attempt."""
+
+        try:
+            events = self.event_log.read_all()
+        except Exception:
+            return None
+        terminal_attempts: set[str] = set()
+        for event in events:
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            attempt_id = str(payload.get("attempt_id") or "").strip()
+            if attempt_id and event.type in {
+                "task.attempt.failed",
+                "task.attempt.completed",
+                "task.attempt.succeeded",
+                "task.attempt.superseded",
+                "task.attempt.expired",
+            }:
+                terminal_attempts.add(attempt_id)
+        task_root = (Path(self.state_dir) / "workdirs" / "tasks").resolve(
+            strict=False
+        )
+        for event in reversed(events):
+            if event.type != "task.pipeline.stage.dispatched":
+                continue
+            payload = event.payload if isinstance(event.payload, dict) else {}
+            if str(
+                payload.get("role_instance") or payload.get("assignee") or ""
+            ).strip() != role.instance_id:
+                continue
+            attempt_id = str(payload.get("attempt_id") or "").strip()
+            if attempt_id in terminal_attempts:
+                continue
+            raw = str(payload.get("workdir") or "").strip()
+            if not raw:
+                continue
+            candidate = Path(raw)
+            if not candidate.is_absolute():
+                candidate = Path(self.project_root) / candidate
+            candidate = candidate.resolve(strict=False)
+            if candidate.name != "project" or not candidate.is_dir():
+                continue
+            if not (candidate / ".git").exists():
+                continue
+            try:
+                candidate.relative_to(task_root)
+            except ValueError:
+                continue
+            return candidate
         return None
 
 
@@ -995,6 +1069,40 @@ class LifecycleManagerMixin(
                     "worker.respawn cooldown active; operator escalation required"
                 ),
             )
+        active_task = self._active_task_for_instance(role.instance_id)
+        active_fanout = self._active_fanout_child_for_instance(role.instance_id)
+        recovery_task_id = (
+            str(active_fanout.get("task_id") or "")
+            if active_fanout is not None
+            else str(active_task.id) if active_task is not None else ""
+        )
+        recovery_dispatch_id = (
+            str(getattr(active_task, "active_dispatch_id", "") or "")
+            if active_task is not None else ""
+        )
+        recovery_operation_id = ""
+        recovery_attempt_id = ""
+        recovery_lease_id = ""
+        try:
+            for prior in reversed(self.event_log.read_all()):
+                prior_payload = prior.payload if isinstance(prior.payload, dict) else {}
+                if str(prior_payload.get("task_id") or prior.task_id or "") != recovery_task_id:
+                    continue
+                if prior.type not in {"workflow.operation.requested", "workflow.operation.started"}:
+                    continue
+                recovery_operation_id = str(prior_payload.get("operation_id") or "")
+                recovery_attempt_id = str(
+                    prior_payload.get("active_attempt_id")
+                    or prior_payload.get("attempt_id") or ""
+                )
+                recovery_lease_id = str(prior_payload.get("lease_id") or "")
+                recovery_dispatch_id = recovery_dispatch_id or str(
+                    prior_payload.get("dispatch_id") or ""
+                )
+                if recovery_operation_id:
+                    break
+        except Exception:
+            pass
         # B3: watchdog has tripped — worker is currently stuck/dead and
         # we're now starting the respawn flow.
         self._set_worker_state(
@@ -1155,7 +1263,24 @@ class LifecycleManagerMixin(
                 self.event_writer.append(ZfEvent(
                     type="worker.respawn.failed",
                     actor=role.instance_id,
-                    payload={"role": role.name, "error": str(e)},
+                    task_id=recovery_task_id or None,
+                    payload={
+                        "role": role.name,
+                        "instance_id": role.instance_id,
+                        "error": str(e),
+                        "recovery_reason": recovery_reason,
+                        "task_id": recovery_task_id,
+                        "dispatch_id": recovery_dispatch_id,
+                        "operation_id": recovery_operation_id,
+                        "attempt_id": recovery_attempt_id,
+                        "lease_id": recovery_lease_id,
+                        "recovery_context_bound": bool(
+                            recovery_task_id and recovery_operation_id
+                        ),
+                        "recovery_retryable": True,
+                        "recovery_decision_owner": "run_manager",
+                        "recovery_effect_owner": "workflow_runtime_coordinator",
+                    },
                 ))
             except Exception:
                 pass

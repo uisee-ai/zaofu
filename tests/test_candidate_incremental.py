@@ -22,10 +22,38 @@ from zf.core.task.store import TaskStore
 from zf.runtime.candidates import CandidateRebuilder
 from zf.runtime.candidate_incremental import (
     CandidateIncrementalError,
+    _rolling_smoke_environment_error,
+    _rolling_smoke_command,
     _select_integration_base,
     _successor_contract_binds_base,
     _update_candidate_ref,
 )
+
+
+def test_rolling_smoke_npm_prefix_runs_from_package_root(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+
+    command, cwd = _rolling_smoke_command(
+        "npm --prefix app exec tsc -- --noEmit",
+        tmp_path,
+    )
+
+    assert cwd == app.resolve()
+    assert command == "npm exec tsc -- --noEmit"
+
+
+def test_rolling_smoke_reports_missing_npm_environment(tmp_path) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text("{}\n", encoding="utf-8")
+
+    error = _rolling_smoke_environment_error(
+        "npm --prefix app exec tsc -- --noEmit",
+        app,
+    )
+
+    assert error == f"candidate_environment_not_ready: dependencies missing at {app}"
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref, write_sidecar_json
 from zf.runtime.task_refs import TaskRefManager
 from zf.runtime.task_pipeline_terminal import (

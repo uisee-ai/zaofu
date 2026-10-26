@@ -462,6 +462,38 @@ def _merge_scheduler_projections(
         )
         if str(task_id)
     })
+    occupancy_pools: dict[str, int] = {}
+    capacity_pools: dict[str, dict[str, int]] = {}
+    max_active = 0
+    active_attempts = 0
+    backpressure_counts = {
+        "unverified_count": 0,
+        "integration_queue_count": 0,
+    }
+    backpressure_limits: dict[str, int] = {}
+    for scheduler in schedulers:
+        occupancy = scheduler.get("occupancy") or {}
+        capacity = scheduler.get("capacity") or {}
+        max_active += int(capacity.get("max_active_task_pipelines") or 0)
+        active_attempts += int(occupancy.get("active_attempts") or 0)
+        for name, value in (occupancy.get("pools") or {}).items():
+            occupancy_pools[str(name)] = occupancy_pools.get(str(name), 0) + int(value or 0)
+        for name, value in (capacity.get("pools") or {}).items():
+            if not isinstance(value, Mapping):
+                continue
+            entry = capacity_pools.setdefault(str(name), {"capacity": 0, "available": 0})
+            entry["capacity"] += int(value.get("capacity") or 0)
+            entry["available"] += int(value.get("available") or 0)
+        backpressure = scheduler.get("backpressure") or {}
+        for name in backpressure_counts:
+            backpressure_counts[name] += int(backpressure.get(name) or 0)
+        for name, value in backpressure.items():
+            if name.endswith("limit"):
+                backpressure_limits[name] = backpressure_limits.get(name, 0) + int(value or 0)
+    for name, entry in capacity_pools.items():
+        # Recalculate from merged occupancy so the explanation remains
+        # truthful even if one partition omitted an available field.
+        entry["available"] = max(0, entry["capacity"] - occupancy_pools.get(name, 0))
     return {
         "tasks": task_rows,
         "queues": {
@@ -485,11 +517,29 @@ def _merge_scheduler_projections(
         "occupancy": {
             "active_task_pipelines": len(active_task_ids),
             "active_task_ids": active_task_ids,
-            "pools": {},
+            "active_attempts": active_attempts,
+            "pools": occupancy_pools,
             "policy_partitioned": True,
         },
-        "capacity": {"policy_partitioned": True, "pools": {}},
-        "backpressure": {"policy_partitioned": True},
+        "capacity": {
+            "max_active_task_pipelines": max_active,
+            "available_task_pipelines": max(0, max_active - len(active_task_ids)),
+            "pools": capacity_pools,
+            "policy_partitioned": True,
+        },
+        "backpressure": {
+            **backpressure_counts,
+            **backpressure_limits,
+            "unverified_limit_reached": any(
+                bool((scheduler.get("backpressure") or {}).get("unverified_limit_reached"))
+                for scheduler in schedulers
+            ),
+            "integration_limit_reached": any(
+                bool((scheduler.get("backpressure") or {}).get("integration_limit_reached"))
+                for scheduler in schedulers
+            ),
+            "policy_partitioned": True,
+        },
         "fairness": {
             "ordering": "policy_partition,priority,created_at,task_id",
             "ordered_task_ids": [row["task_id"] for row in task_rows],
