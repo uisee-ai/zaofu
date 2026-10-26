@@ -57,12 +57,14 @@ AC 或风险。
 按以下顺序检查：
 
 1. owner/Goal 原意是否全部映射到 mandatory AC，是否发生静默收窄；
-2. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
-3. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
-4. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
+2. authority 的领域/模块/能力/用户旅程是否都有覆盖 disposition；是否存在“章节有
+   引用但模块业务规则没有正文”的空洞覆盖；
+3. AC 是否描述可观察结果，而不是实施步骤、文件列表或命令；
+4. 每个 mandatory AC 是否绑定 verification owner、tier 和 command id；
+5. 每条 canonical command 是否能由下游从 repo root 按存储原文执行；若
    Planner 只能通过重写、补转义或“等价命令”证明它，必须 Reject。含多层
    shell/interpreter 转义的 inline program 应改为 task-owned 测试/脚本；
-5. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
+6. 每个 mandatory AC 的行为与 evidence 是否有明确 producer，producer 的
    `allowed_paths` 是否覆盖生成 evidence 所需的实现、runner 配置、spec、
    fixture 和输出登记路径；
    不要把 command registry 的定义 owner、writer 路径 owner 和 verification
@@ -79,20 +81,20 @@ AC 或风险。
    以及 writable scope 是否无重叠。host/container/tmp 只读操作数属于 Task
    顶层 `verification_read_paths` 和 canonical command 边界，不属于 writer
    `allowed_paths`。只有路径无 owner、owner 重叠或依赖顺序不可满足时才 Reject；
-6. Final assembly 是否只聚合已生成的 evidence refs；如果它必须修改上游
+7. Final assembly 是否只聚合已生成的 evidence refs；如果它必须修改上游
    Playwright/测试/仿真配置才能满足 AC，则当前 task map 不可满足，必须 Reject；
-7. `e2e` / `real_e2e` command 是否真的调用合同指定的 application/browser/
+8. `e2e` / `real_e2e` command 是否真的调用合同指定的 application/browser/
    provider/simulation；分析模型、fixture replay 或 mock 不得冒充真实执行；
-8. 区分 Plan readiness 与 execution evidence：implementation 前尚未生成的
+9. 区分 Plan readiness 与 execution evidence：implementation 前尚未生成的
    screenshot/trace/receipt 是计划内未来产物，不得据此 Reject。若 producer task
    已拥有 runner/config/test/evidence paths，且声明的 sanctioned runner 可用，计划
    可以进入实施；browser 场景按 `zf-browser-e2e-contract` 核对 Docker Playwright。
    只有 runner 本身不可用或被禁止且无等价方法时才判 environment blocker；
-9. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
-10. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
-11. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
+10. task 是否纵向可交付、依赖真实、owned paths 不冲突且规模适合单 Agent；
+11. 验证策略是否覆盖高风险面，而不是仅证明进程返回 0；
+12. 风险方法至少考虑无效输入、失败原子性、空值/边界、并发/互斥、
    determinism/replay、reset/recovery 和证据真实性；项目 Skill 可扩展该清单。
-12. `required_plan_ports` 在语义上是否覆盖下游真实读取的计划级输入。Planner
+13. `required_plan_ports` 在语义上是否覆盖下游真实读取的计划级输入。Planner
     result 只有通过 Kernel 的 pre-submit validator 才会进入 Critic；schema、
     required-port presence 和 producer identity 的机械闭包属于已准入事实，Critic
     不重复推导。`goal_claim_set`、`planning_result` 是 Kernel-derived，
@@ -100,12 +102,17 @@ AC 或风险。
     `issue_spec`；不得要求 Planner 在 `plan_ports` 重复提交这些端口。Critic 只审核
     project-produced descriptor 的语义、来源和下游可用性，不选择 current Package，
     也不写 Package lifecycle。
-13. 若 profile 要求 `product_acceptance_spec`，检查其 mandatory user journeys
+14. 若 profile 要求 `product_acceptance_spec`，检查其 mandatory user journeys
     是否覆盖 owner Goal/AC、每个 assertion 是否可观察且有 verify tier、entrypoint
     start/health 是否真实可运行、assembly owner 是否与 task map 唯一 owner 一致，
     deterministic Product E2E 与 Provider qualification 是否分层。此处只审核
     Planner 语义；run/revision/generation/ref/digest 由 Kernel Package admission 绑定，
     不得因计划期尚未产生 screenshot/receipt 而 Reject。
+
+15. 若本次是人工反馈后的 replan，逐项检查旧/新覆盖账本、SDD/TDD、Decision Register、
+    task map、依赖和 evidence diff；影响 scope、合同、owner、依赖或 AC 的变更必须重新
+    判定 approval 是否失效，不能沿用旧 verdict。未受影响的完成证据可以复用，但必须有
+    明确映射和当前 revision ref。
 
 先读取 required reads 中的 exact requirement/PRD authority artifact，再审 child
 plan。若 authority 明确规定 task ids、任务边界、依赖或 AC 归属，Critic 必须逐项
