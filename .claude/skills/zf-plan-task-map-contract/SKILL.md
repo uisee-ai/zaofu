@@ -93,6 +93,11 @@ contract is fixed. Do not rely on markdown-only task lists for dispatch.
 
 ## Required Artifacts
 
+For human Plan Preview, also follow the
+[bound review-port contract](references/review-ports.md). Task source excerpts
+alone do not enumerate the source requirements; a file listed in artifact_refs
+alone is not a bound coverage ledger.
+
 Write durable artifacts before emitting the stage success event:
 
 - `plan_artifact_ref`: markdown plan, normally under `docs/plans/` or the
@@ -274,7 +279,7 @@ contract.
       "skills_required": ["project-domain-skill"],
       "affinity_tag": "core",
       "wave": 1,
-      "dependencies": [],
+      "blocked_by": [],
       "allowed_paths": ["src/example/**", "tests/example/**"],
       "exclusive_files": ["src/example/service.py"],
       "acceptance": ["PDD-CORE-001-AC1: service returns the documented result"],
@@ -480,14 +485,13 @@ must cite a `requirement_id` taken from the task contract's acceptance
 clauses — if the plan does not mint stable acceptance ids, the verify matrix
 has nothing to reference.
 
-**Verification timing rule (avbs-r4 lesson)**: a bundle task's `verification`
-may only contain commands that can pass with THIS task's own outputs plus the
-pre-existing scaffold — unit tests scoped to the task's test dirs plus the
-build. Do NOT put end-to-end (Playwright/browser) execution into parallel
-bundle tasks: app wiring belongs to the assembly task, so per-lane e2e is
-structurally unpassable at impl time and burns rework rounds. E2e execution
-belongs in the assembly task's verification (and the verify stage). Writing
-the e2e SPEC files is still a bundle deliverable; executing them is not.
+**Verification timing rule (avbs-r4 lesson)**: a task's local verification
+uses its outputs plus the scaffold and admitted dependencies actually available
+under the configured route. Browser/API smoke is valid when that real entrypoint
+is already wired and its fixtures are isolated. A journey requiring future
+assembly belongs to later candidate verification; author its spec now without
+making it a current task completion condition. Keep both earliest feasible
+local feedback and mandatory final integrated verification.
 Also: `schema_version` must be exactly `task-map.v1`, and verification
 commands must not reference paths outside the task's
 `allowed_paths`/`exclusive_files` — with one allowance: paths owned by a
@@ -608,23 +612,23 @@ Whenever the plan has more than one parallel bundle, emit exactly one final
   its absence is flagged `缺 assembly 任务`. Root-level paths (package
   entrypoint, `__init__`, CLI `main` wiring, `pyproject.toml`
   `[project.scripts]`, top-level glue) may ONLY be owned by this task.
-- `dependencies`: every bundle task id. `wave`: the last wave (it lands after
-  all bundles complete). A bundle "completes" when its writer closes the slice
-  with `dev.build.done` — or, in controller/profile workflows, the canonical
-  `impl.child.completed` (`impl.child.failed` on failure), which the kernel
-  treats as equivalent to legacy `dev.build.done`.
-- `verification`: an END-TO-END smoke that invokes the assembled product
-  through its real entrypoint AND runs the full test suite — not one bundle's
-  unit tests. This is the task that catches cross-bundle integration defects
-  before verify does.
-- `acceptance`: "assembled product runs end to end; full suite green".
+- `blocked_by`: reach every required bundle through actual dependency paths.
+  `wave` is presentation/order metadata, not an alternative dependency edge.
+  Read the compiled route's completion/unlock policy: an Impl report alone is
+  not independent Task Verify or admitted integration in task-pipeline routes.
+- `verification`: local wiring/entrypoint checks owned by `task_verify`, plus
+  mandatory integrated journeys and the agreed regression scope at
+  `candidate_verify`. Preserve any source-required full suite, but do not
+  invent one or execute a future candidate-only command during local Verify.
+- `acceptance`: observable assembly behavior and its separate local/final
+  evidence responsibilities; a command list alone is not the behavior spec.
 
-The assembly task counts toward the writer pool budget: you are still bounded
-by `tasks <= writer pool size`, so reserve one slot for it (e.g. for a 3-writer
-pool, produce at most 2 feature bundles + 1 assembly). Coarsen the feature
-bundles before you drop the assembly task — the assembly task is not optional
-when bundles run in parallel. A single-bundle / simple-serial plan is its own
-owner and needs no separate assembly task.
+Read pool limits from the effective profile. A reusable task-pipeline pool
+limits simultaneous workers, not total task count; it may execute multiple
+waves. Only apply a total-bundle cap when the configured writer contract
+actually declares one. Never coarsen independent behaviors solely to fit all
+tasks into one dispatch. A single-bundle/simple-serial plan needs no separate
+assembly task when its final task owns and verifies the complete wiring.
 
 For small greenfield PRD/issue products, prefer a serial scaffold → feature →
 assembly/wiring wave plan over parallel horizontal slices. If you choose not to

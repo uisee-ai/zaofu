@@ -23,6 +23,16 @@ def add_human_review_fixture(state, writer):
         "pages": [{"id": "A01", "title": "库存", "task_id": "T-STOCK"}, {"id": "A02", "title": "查询", "task_id": "T-LEGACY"}],
         "forms": [{"id": "F01", "title": "修正", "task_id": "T-STOCK"}],
     }}
+    bodies.update({
+        "source_index": {"rows": [
+            {"source_id": "REQ-STOCK"}, {"source_id": "REQ-NOTIFY"},
+            {"source_id": "REQ-MISSING"},
+        ]},
+        "coverage_ledger": {"rows": [
+            {"source_id": "REQ-STOCK", "disposition": "covered"},
+            {"source_id": "REQ-NOTIFY", "disposition": "pending_decision"},
+        ]},
+    })
     ports = []
     for name, body in bodies.items():
         descriptor = write_immutable_json_sidecar(state, body, root=f"fixtures/{name}", kind=name, schema_version=f"{name}.v1", created_by="test")

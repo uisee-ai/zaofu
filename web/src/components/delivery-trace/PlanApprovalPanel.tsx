@@ -748,7 +748,7 @@ function PlanPreviewOverlay({
             <ul>
               {preview.review_packet.sections.map((section) => <li key={section.id}>
                 <strong>{section.title}</strong> <span className="muted">· {section.status}</span>
-                {section.notes?.[0] ? <div className="muted">{section.notes[0]}</div> : null}
+                {section.notes?.map((note, index) => <div className="muted" key={index}>{note}</div>)}
               </li>)}
             </ul>
             {(preview.review_packet.diagnostics?.length ?? 0) > 0 && <div role="alert">

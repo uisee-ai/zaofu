@@ -55,3 +55,45 @@ def test_dossier_leaves_absent_product_objective_explicit(tmp_path):
     assert "阶段：`未声明`" in dossier
     assert "v1.4" not in dossier
     assert "T10" not in dossier
+
+
+def test_explicit_row_ports_preserve_uncovered_and_pending_sources(tmp_path):
+    _, kwargs = _packet(tmp_path, [], [])
+    bodies = {
+        "source_index": {"rows": [{"source_id": key} for key in ["REQ-A", "REQ-B", "REQ-C"]]},
+        "coverage_ledger": {"rows": [
+            {"source_id": "REQ-A", "disposition": "covered"},
+            {"source_id": "REQ-B", "disposition": "pending_decision"},
+        ]},
+    }
+    for name, body in bodies.items():
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(body))
+        item = next(x for x in kwargs["artifacts"] if x["name"] == name)
+        item["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
+    sections = {row["id"]: row for row in packet["sections"]}
+    assert sections["source_coverage"]["counts"] == {"source": 3, "covered": 2, "missing": 1}
+    assert sections["traceability"]["counts"]["pending_decision"] == 1
+    assert packet["status"] == "incomplete"
+    assert "REQ-C" in " ".join(sections["source_coverage"]["notes"])
+
+
+def test_task_excerpts_and_coverage_do_not_invent_source_universe(tmp_path):
+    _, kwargs = _packet(tmp_path, [], ["REQ-A"])
+    path = tmp_path / "source_index.json"
+    path.write_text(json.dumps({"tasks": [{"task_id": "T-A", "source_excerpt": "A"}]}))
+    kwargs["artifacts"][0]["sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
+    packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
+    assert packet["source_ids"]["requirements"] == []
+    assert packet["status"] == "incomplete"
+    section = next(row for row in packet["sections"] if row["id"] == "traceability")
+    assert section["counts"]["task_source_rows"] == 1
+
+
+def test_review_digest_mismatch_is_an_explicit_error(tmp_path):
+    _, kwargs = _packet(tmp_path, ["REQ-A"], ["REQ-A"])
+    (tmp_path / "coverage_ledger.json").write_text('{}')
+    packet = build_review_packet(tmp_path, **kwargs, markdown="# Plan", preview_bundle={})
+    assert packet["status"] == "blocked"
+    assert any(row["code"] == "review_artifact_unreadable" for row in packet["diagnostics"])

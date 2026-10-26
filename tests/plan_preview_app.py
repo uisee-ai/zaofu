@@ -6,6 +6,7 @@ The data is explicitly synthetic; no provider, product run, or approval occurs.
 import atexit
 import hashlib
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -23,6 +24,11 @@ def create_test_app():
     directory = TemporaryDirectory(prefix=f"zf-plan-preview-e2e-{datetime.now(timezone.utc):%Y%m%d%H%M%S}-")
     atexit.register(directory.cleanup)
     root = Path(directory.name)
+    # The standalone fixture also starts workspace background consumers.
+    # Never let a browser simulation discover or consume real projects.
+    os.environ["ZF_WORKSPACE_HOME"] = str(root / "workspace")
+    from zf.core.workspace.onboarding import apply_action
+    apply_action("skip")  # This fixture tests Plan review, not first-run setup.
     state = root / "review-state"
     config_path = root / "zf.yaml"
     config_path.write_text(
