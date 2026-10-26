@@ -1,6 +1,6 @@
 # P1 Task Map 负向验收与并行容量可观测性
 
-> 状态: active
+> 状态: done
 
 ## 问题
 Task Map 虽有 TDD/SDD 入口，但 unavailable、retry、幂等、部分接入等业务负向路径没有独立验收；capacity=8 也没有解释为何实际 active worker 只有 3 个。
@@ -14,3 +14,7 @@ Task Map 虽有 TDD/SDD 入口，但 unavailable、retry、幂等、部分接入
 - step -> verify: 缺失 negative-path acceptance 的外部依赖任务被 plan gate 拒绝。
 - step -> verify: projection 可解释 active=3/capacity=8 的原因。
 - step -> verify: rejected task 的语义缺口可在 dashboard/read model 查询。
+
+## 完成记录
+- 实现提交: `fb04e29 fix: close P0-P1 runtime recovery gaps`
+- 验证: 聚焦回归 122 passed；resident sidecar 6 passed；全量确定性层 11632 passed、32 failed、19 skipped，失败为工作区既有 fixture/config/阈值问题。
