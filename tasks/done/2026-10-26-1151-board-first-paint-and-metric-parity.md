@@ -1,6 +1,7 @@
 # Board 独立首屏、正文按需与指标对账
 
-> 状态: active
+> 状态: done
+> 实现提交: `a595c73b fix: accelerate board and overview loading without losing metrics`
 > 来源: docs/design/186-inbox-and-task-board-human-centered-design.md 第 11、13–15 节；backlogs/2026-10-26-1011-dashboard-small-summary-apis.md。
 > 基线: 09e1a587；用户明确要求优化后用 Playwright 对比 8001/8002，指标精度不变、指标不减少、加载更快。
 
