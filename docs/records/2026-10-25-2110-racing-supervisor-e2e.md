@@ -98,3 +98,11 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 38. 返工FOUNDATION发现宿主代理未进入Docker，增加仅用于下载的代理白名单与0600临时文件回归，检查点`1060cc46a88c51593d213bef3dbcf0fbfb406084`；传递后下载仍在180秒超时，未把环境探针成功算作产品通过。TRACK检查点`ddc5aed`、DRIVE检查点`82dd2884ee23d76d6e6cf7a025a3e8227950e3ec`保留通过的本片单测与真实浏览器阻塞日志，各自遵守共享runner范围并报告blocked。内核将子任务标为failed，继续派发ASSEMBLY及独立Discovery做归因；Verify尚未运行。
 
 观察器修复的dev-verify规划189个关联文件而建议broad；按AGENTS采用已完成198项明确闭包，匹配run登记跳过deterministic/serial，不宣称全量通过。
+
+39. 独立监工探针在被拒绝的原候选`dfe994`隔离checkout上显式安装依赖并构建，使用Docker镜像自带Chromium 149，不修改正式Run裁决。真实按键、暂停冻结、重开重置、自然90秒结束（单调时钟90294.5ms）、单次结算、结束后冻结和“重新比赛”全部通过，无console/pageerror。截图28与source文件摘要可核验。该结果只排查游戏行为，不能替代当前候选质量门或独立Verify。探针8023服务已停止，注册的隔离worktree留待最终清理。
+40. 受控`candidate-rework-apply/replan`于02:29接纳环境计划修订（`evt-b54797ff6f28`）。反馈明确原Plan安装180秒、依赖准备只覆盖writer、npm ci清除浏览器缓存等缺口；不修改运行中YAML，不降低16项产品AC或90秒要求，不声明新用户审批。反馈通过必读`plan-rework-context` sidecar（SHA3883bdca）交给真实Planner。原第一Planner被重复trigger替代，新`evt-442e54ec`已继续同一修订。
+41. 将冷环境消费者、命令顺序、镜像/项目版本和重装后缓存审查补入通用执行准备skill，canonical及两分发副本一致。23项技能物化/指令检查通过，1项已有可选example跳过；本次在途Planner使用派发时的冻结skill，不冒称热升级。Codex观察边界修复已提交`7636473 fix: recover Codex observation boundaries after restart`。
+
+42. 真实环境返工出现两个同源scan触发`evt-79e1f868b6f4`和`evt-442e54ec2fbd`，导致第一Planner刚启动即被superseded并重启。受控动作写marker后构造trigger期间，恢复扫描也可能读取未完成快照；双方原来直接追加。实际受控动作+Kernel消费交错反例先得到6个触发（应3），修复为锁内重新读取账本后复用同一返工事件。另验证4个并发writer只追加1次、新attempt仍允许。138项合同/动作/EventLog/锁闭包、56项Run Manager/Writer调用方（316 deselected）、51项sentinel、4项语义控制Mock及10项flow-smoke通过。首次闭包包含不存在的测试文件，未执行用例；已记录失败命令并按真实模块重跑。
+
+返工竞态的dev-verify规划198个关联文件而扩成broad；按AGENTS采用已运行的具体影响闭包，匹配run登记跳过已完成tier，不声称全量pytest。正式actuator保留Provider重载watcher，同时仅重启8002 Web；8001未动。独立Discovery另复现交付脚本对缺失/无效90秒字段错误放行，正在正式报告，最终闭环尚未完成。

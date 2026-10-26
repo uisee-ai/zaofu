@@ -375,7 +375,8 @@ class CandidateReworkActionsMixin:
             config=self.config or ZfConfig(),
         )
         if resynth is not None:
-            emitted.append(self.writer.append(resynth).id)
+            from zf.runtime.replan_resynth import append_replan_resynth_once
+            emitted.append(append_replan_resynth_once(self.writer, self.state_dir, resynth).id)
         return {
             "status": "applied",
             "reason": "candidate replan requested",

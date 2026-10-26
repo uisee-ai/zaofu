@@ -1,5 +1,5 @@
 {
-  "status": "cold_candidate_rework_running_verify_pending",
+  "status": "environment_plan_revision_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -48,6 +48,11 @@
       "file": "22-parallel-impl-inspector.png",
       "sha256": "393c88d2b5cf7db65941d296d43b6e91d7996f3ba045501bef70c8c602d91606",
       "bytes": 159939
+    },
+    {
+      "file": "28-operator-game-finished.png",
+      "sha256": "10d21ee5a3478a453a978dd0bd10f517d8b8f44754c67560a7c0a4d0a84f2183",
+      "bytes": 111407
     },
     {
       "file": "approval-recovery-dev-verify-plan.log",
@@ -179,6 +184,11 @@
       "bytes": 7610
     },
     {
+      "file": "cold-environment-skill-checks.log",
+      "sha256": "c92a6fb73ffbc2a94dbe0077f84cbdf71d00ae321c700c6e34c9b159203d79a2",
+      "bytes": 110
+    },
+    {
       "file": "compiled-lane-stages.json",
       "sha256": "92d493e7c127b7f6456f7794916b1354f577e3c5a828829e175f6350745c9754",
       "bytes": 1525
@@ -222,6 +232,21 @@
       "file": "effective-config-verified.json",
       "sha256": "fd713478af5c1c198cbb3e276bf167dfe9ae8b59931e0e572538460450ea0f58",
       "bytes": 2829
+    },
+    {
+      "file": "environment-replan-delivery.json",
+      "sha256": "a289a0f49e7afef207cd6ddc7371d7a39253412e055e91326519cf05f1bf71b6",
+      "bytes": 661
+    },
+    {
+      "file": "environment-replan-request.json",
+      "sha256": "5a0607d157cc30a39e085a9776475f8fe166449e78079fdb08cc434780c08f2b",
+      "bytes": 316790
+    },
+    {
+      "file": "environment-replan-result.json",
+      "sha256": "7d03160c68efb093636954cd7b56bf468a2fe77e1461eaabc2027ac245d8b5c8",
+      "bytes": 809
     },
     {
       "file": "evidence-environment-idle-role-restarts.json",
@@ -292,6 +317,31 @@
       "file": "observe-parallel-impl.log",
       "sha256": "08bfa3d16bc7cc863725f1a2fe604c80b307e1fa2ae223c4decd8cc2ef7d7c75",
       "bytes": 2522
+    },
+    {
+      "file": "operator-game-probe-browser.log",
+      "sha256": "9e2f4b029459e28f3d8837fec72a36ce396e435d9a435d352ec7fb8dec0ccc69",
+      "bytes": 1639
+    },
+    {
+      "file": "operator-game-probe-build.log",
+      "sha256": "bbdda4bb9219bcdabe375c819e484617b307b449cf18fc6885e6dbfb39c8c7e8",
+      "bytes": 972
+    },
+    {
+      "file": "operator-game-probe-source.json",
+      "sha256": "86d8d4a39fbcb892999491af9b189af190ef5092a85055566ff7b7fa78a2d6f7",
+      "bytes": 954
+    },
+    {
+      "file": "operator-game-probe.cjs",
+      "sha256": "716f16c263fa845f5b2fffa4beb1183258775037e16f7c6b27c0fb9f73072dda",
+      "bytes": 3668
+    },
+    {
+      "file": "operator-game-probe.json",
+      "sha256": "9a22e1ee248457859997562ef9d83a5f458f1e51644ca2f68949275301b186e6",
+      "bytes": 2146
     },
     {
       "file": "parallel-intervals.json",
@@ -511,6 +561,68 @@
       "file": "recovered-run-graph-sentinel.log",
       "sha256": "3b84b08e51c315ead900c501c92fc4b750adb2765faf8c30c64c09c15cd5bb85",
       "bytes": 128
+    },
+    {
+      "file": "replan-race-callers.log",
+      "sha256": "340588f06809938b400e08a55c926723c771a8de1c70e390aab006dcfd84e8cc",
+      "bytes": 126
+    },
+    {
+      "file": "replan-race-closure-corrected.log",
+      "sha256": "3edb77167855ea25ec04df7dbc141cdd9760ca82979e32568816a03376560490",
+      "bytes": 181
+    },
+    {
+      "file": "replan-race-closure.log",
+      "sha256": "25d700bda09113a99eb7277641ff864b8f9979f18db08e8394da79e57e46e4ba",
+      "bytes": 102
+    },
+    {
+      "file": "replan-race-dev-verify-plan.log",
+      "sha256": "6dd3c5dce170d75f5816f5ff90555f1327e00e29c44181f685e41bd2cdc6d1f6",
+      "bytes": 1271
+    },
+    {
+      "file": "replan-race-dev-verify-run.log",
+      "sha256": "6dd3c5dce170d75f5816f5ff90555f1327e00e29c44181f685e41bd2cdc6d1f6",
+      "bytes": 1271
+    },
+    {
+      "file": "replan-race-flow-smoke.log",
+      "sha256": "4a358cab32820f0c44d868e79790c1046fab37ec37389bff9d22abca82ec456e",
+      "bytes": 100
+    },
+    {
+      "file": "replan-race-focused.log",
+      "sha256": "1919a018fc7947e0a31db05e05c31618688a0cb3200a0e622d00d1d5f47e0897",
+      "bytes": 179
+    },
+    {
+      "file": "replan-race-red.log",
+      "sha256": "286695eb6fb9cc1e75622cc5c340cf0e0e9c7f13fe5428d43239c120706dfea6",
+      "bytes": 3085,
+      "raw_sha256": "9cd857a1d544101a0ff7015a0d8458df739234f58338e90ac21a00f08c10e7aa",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "replan-race-reload.json",
+      "sha256": "ab1738554a455304d5a30236fb24786558150d490cfec09e8ca0de25d69a2f95",
+      "bytes": 154
+    },
+    {
+      "file": "replan-race-semantic-mock.log",
+      "sha256": "ab0c8845d7c1f425ead633aa4b00bb9e3cdb58fba09c6ffdb0963bc32c2bd381",
+      "bytes": 99
+    },
+    {
+      "file": "replan-race-sentinel.log",
+      "sha256": "25e828eb607abce959a384f5de9860f214e3683bff29250fabdd67ea0c0aab8d",
+      "bytes": 128
+    },
+    {
+      "file": "replan-race-web-reload.json",
+      "sha256": "8c5d21939a4a8848242c641c2beab4170cbaa24048af835fbda34e738f6e932e",
+      "bytes": 130
     },
     {
       "file": "restart-actuator-closure.log",
