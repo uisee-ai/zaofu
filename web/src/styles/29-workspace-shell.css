@@ -1,4 +1,4 @@
-/* Full-height GR8R shell. Domain pages retain their own data and actions. */
+/* 右侧工作区保留 GR8R 排版；侧栏菜单使用 ZaoFu 原有结构与样式。 */
 :root, :root[data-theme="light"], :root[data-theme="dark"] {
   --font-sans: "Geist Variable", "Geist", ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans CJK SC", "Microsoft YaHei", Arial, sans-serif;
   --text-13-5: .84375rem;
@@ -24,24 +24,7 @@ body { font-size: var(--type-body); line-height: 1.45; }
 .workspace > .board-panel { border: 0; border-radius: 0; max-height: none; background: var(--panel); }
 .project-rail { border: 0; border-right: 1px solid var(--line); background: var(--sidebar); }
 .project-rail > .section-heading { height: 46px; min-height: 46px; padding: 8px 14px; border: 0; }
-.project-rail .section-heading .rail-brand { display: flex; align-items: center; gap: 8px; font-size: var(--text-13-5); font-weight: 600; }
-.rail-brand-mark { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 5px; color: var(--panel); background: var(--text); font-size: var(--text-12); font-weight: 700; }
-.project-rail-body { display: flex; flex: 1; flex-direction: column; gap: 0; padding: 4px 8px 0; }
-.project-rail .rail-nav { gap: 0; }
-.project-rail .rail-nav-button { height: var(--rail-row-height); min-height: var(--rail-row-height); padding: 0 8px; font-size: var(--text-13-5); font-weight: 450; color: var(--text-secondary); border: 1px solid transparent; }
-.project-rail .rail-nav-button.active { background: var(--panel); color: var(--text); font-weight: 500; border: 1px solid var(--line); box-shadow: 0 1px 1px var(--shadow); }
-.project-rail .rail-nav-button.active::before { display: none; }
-.project-rail .rail-nav-icon { color: var(--text-quaternary); }
-.project-rail .rail-nav-label { gap: 9px; }
-.project-rail .rail-group { border: 0; padding: 0; margin-top: 20px; gap: 0; }
-.project-rail .rail-nav-title { height: 24px; display: flex; align-items: center; padding: 0 8px; font-size: var(--text-11); font-weight: 600; letter-spacing: .06em; }
-.project-switcher-row { grid-template-columns: minmax(0, 1fr) 24px 24px; gap: 2px; }
-.project-switcher select { min-height: 30px; height: 30px; padding: 0 8px; font-size: var(--text-13-5); background: var(--panel); }
-.project-switcher-add { width: 24px; height: 24px; border: 0; background: transparent; }
-.rail-project-views { margin-left: 8px; padding-left: 13px; border-left: 1px solid var(--line); }
-.rail-project-views .rail-nav-button { width: 100%; }
-.rail-footer { margin: auto -8px 0; padding: 8px; border-top: 1px solid var(--line); }
-:root[data-theme="dark"] .project-rail .rail-nav-button.active { background: var(--sidebar-accent); }
+:root[data-sidebar-density="compact"] .project-rail .rail-nav-button { padding-block: 2px; }
 @media (min-width: 981px) {
   .topbar, .app-shell > .error-strip { margin-left: var(--workspace-rail-width); }
   .workspace { grid-template-columns: var(--workspace-rail-width) minmax(0, 1fr); }
@@ -55,8 +38,7 @@ body { font-size: var(--type-body); line-height: 1.45; }
   .project-rail { max-height: none; border-bottom: 1px solid var(--line); }
   .project-rail > .section-heading { height: 42px; min-height: 42px; }
   .project-rail-body { display: none; }
-  .project-rail.mobile-open .project-rail-body { display: flex; max-height: 60dvh; overflow: auto; }
-  .project-rail.mobile-open .rail-footer { margin-top: 24px; }
+  .project-rail.mobile-open .project-rail-body { display: grid; max-height: 60dvh; overflow: auto; }
   .rail-mobile-toggle { display: grid; }
   .topbar-search-control { width: 180px; }
   .topbar-runtime-summary { display: none; }

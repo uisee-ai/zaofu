@@ -93,7 +93,7 @@ docker run --rm --network host \
 
 修订范围：
 
-- 移除三个模块的外层圆角框和 10px 留白；侧栏贯穿窗口，Settings 固定在底部，导航选中态改中性白底细边。保留真实项目选择和运行状态。
+- 移除三个模块的外层圆角框和 10px 留白；侧栏贯穿窗口，保留真实项目选择和运行状态；菜单结构与自身样式按文末用户修订恢复为 ZaoFu 原有排列。
 - Tasks 使用实际项目名作为标题，恢复参考站的标题 / 标签 / 工具栏三层结构。列使用 sunken 背景与细边；卡片标签、标题、单行元数据依序排布。任务类别、优先级、owner、时间仅展示实际字段；不虚构人员、截止时间或参考站数据。授权入口收进可展开的工具栏，锁定拖拽仍无写请求。
 - Inbox 保持 420px 队列，标题 19px，类别改下划线标签；行以类型图标 / 正文 / 引用时间三部分排布，去除重复状态块与大面积强调色。保留显式审批、Ack、完整预览与移动端返回。
 - Settings 从 topbar 下直接分 220px 二级导航与正文；正文 x=512，顶部 padding32 / 水平40，内容含 padding 最大720。Appearance 同步主题整卡选中框、Theme / Accent color / Density 分组与密度分段按钮。仅渲染已有功能，不添加不可用占位导航。
@@ -110,3 +110,11 @@ docker run --rm --network host \
 - Docker Playwright 最终生产构建：`ui-alignment.spec.ts`、`kanban-toolbar.spec.ts`、`needs-input-ux.spec.ts`，**8 passed**。新增对侧栏、顶栏、标题/标签/工具栏、Board 列和卡片坐标、Settings 220px 导航及 Inbox 420px 队列的断言；验证字体 loaded、显式展开授权控件、搜索、设置持久化、跨标签同步和窄屏高度。
 - 同步真实后台的 8019 预览进行只读访问，Board / Inbox / Appearance 均渲染成功，page errors 为 0。真实任务保留原内容；未调用真实审批或任务更新。
 - 最终证据：`/tmp/zf-ui-parity-20261026-145557/release/`、`browser-release.log`、`dev-verify.log`、`build-complete.log`、`release-live-*.png`、`live-metrics.json`。早期开发服务冷启动超时、构建替换窗口的 HTTP 失败及重复标题定位均已通过最终生产回归复验；最终浏览器验证期间未修改构建产物。
+
+## 2026-10-26 侧栏范围修订
+
+用户明确要求「侧栏的菜单栏还是按照之前的排列，不用左侧菜单栏也对齐 GR8R，右侧 Task 对齐就行」。恢复 `c6d12388` 的 ZaoFu 菜单：品牌 ZaoFu，Workspace 下先项目选择器，再 Overview / Inbox / Tasks / Workflows / Agents / Automations；随后 Monitoring（Delivery / Loop / Traces）、Channels、System settings（Settings）。恢复原来的分组间距、项目选择器和强调色选中态；移除左侧 Projects 分组、Board / List / Table 次级入口及底部固定 Settings。
+
+右侧 Tasks 的项目标题、标签栏、工具栏、Geist 字体、Board 卡片与 List / Table 排版继续使用已验收版本；现有 Inbox 和 General / Appearance 内容继续保留。共享外框尺寸不变，避免侧栏菜单修订移动右侧对齐线。
+
+验收：`python scripts/dev-verify.py plan --base dev` / `run --base dev` 通过 docs / web_ui 闭包（8 个 instruction contract、前端 typecheck / unit）；Vite 生产构建与 bundle budget 通过（最大 443067 bytes）。既有 `ui-alignment.spec.ts` + `kanban-toolbar.spec.ts` 7/7 通过；最后的紧凑密度修正再运行 General preferences 1/1 通过。Docker Playwright 专项检查确认原菜单顺序、项目选择器优先、桌面 2px 选中边线、移动端跳转关闭菜单，以及舒适 30px / 紧凑 26px 行高；无业务写请求或 page errors。证据：`/tmp/zf-ui-navigation-20261026-1555/`。

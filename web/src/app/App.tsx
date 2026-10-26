@@ -2193,8 +2193,6 @@ export function App() {
           removeDisabled={Boolean(activeProjectId) && activeProjectId === serverDefaultProjectId}
           selectedChannelId={selectedChannelId}
           snapshot={snapshot}
-          viewMode={viewMode}
-          onSetView={setViewMode}
         />
 
         <section className="board-panel" data-page={page}>
