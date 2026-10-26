@@ -871,3 +871,26 @@ def test_context_sweep_wires_taskless_oa_liveness_recovery(monkeypatch) -> None:
     orchestrator_periodic_sweep.run_context_sweep(runtime)
 
     assert called == ["context", "recycles", "oa-liveness"]
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_checkpoint_requests_share_one_role_without_overwriting(tmp_path, restart):
+    state_dir, log, writer = _state(tmp_path)
+    transport = RecordingTransport()
+    runtime = Orchestrator(state_dir, _config(), transport, project_root=tmp_path)
+    first = _request(runtime, trigger_id="evt-one")
+    second = _request(runtime, trigger_id="evt-two")
+    requests = [e for e in log.read_all() if e.type == CHECKPOINT_REQUESTED]
+    runtime.run_once(requests)
+    assert len(transport.sent) == 1
+    assert load_workflow_operation(log, first.operation_id)["status"] == "running"
+    assert load_workflow_operation(log, second.operation_id)["status"] == "requested"
+    from zf.runtime.orchestrator_agent_operations import fail_orchestrator_agent_operation
+    fail_orchestrator_agent_operation(runtime, first, reason="fixture_failure", causation_id=requests[0].id)
+    if restart:
+        runtime = Orchestrator(state_dir, _config(), transport, project_root=tmp_path)
+    runtime.run_once([])
+    assert len(transport.sent) == 2
+    assert load_workflow_operation(log, second.operation_id)["status"] == "running"
+    runtime.run_once(requests)
+    assert len(transport.sent) == 2

@@ -803,9 +803,9 @@ def _build_orchestration_flow_policy(
             f"{path} blocking rollout is restricted to an explicit full "
             "Product Flow pilot"
         )
-    if blocking != ["plan_candidate"] and blocking:
+    if set(blocking) - {"plan_candidate", "pre_impl", "semantic_failure", "pre_closeout"}:
         raise ConfigError(
-            f"{path} rollout currently permits only plan_candidate blocking; "
+            f"{path} rollout permits plan_candidate, pre_impl, semantic_failure and pre_closeout blocking; "
             f"got {', '.join(blocking)}"
         )
     if pilot_id and not blocking:
@@ -2125,6 +2125,13 @@ def _build_role(data: dict) -> RoleConfig:
         raise ConfigError(
             f"Invalid transport {transport!r} for role {name!r}: "
             f"must be one of {_VALID_TRANSPORTS}"
+        )
+    if transport == "stream-json" and any(
+        value != "claude-code" for value in (backends_list or [backend])
+    ):
+        raise ConfigError(
+            f"role {name!r}: stream-json requires backend=claude-code; "
+            "use transport=tmux for Codex or other backends"
         )
     execution_data = data.get("execution")
     if execution_data is not None and not isinstance(execution_data, dict):

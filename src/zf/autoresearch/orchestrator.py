@@ -262,11 +262,25 @@ def _apply_autoresearch_controller_overrides(
         run_limits["cost_budget_usd"] = cfg.budget_usd
 
     for source in data.get("skill_sources") or []:
-        if (
-            isinstance(source, dict)
-            and str(source.get("name") or "") == "zaofu-skills"
-        ):
-            source["path"] = str(repo_root() / "skills")
+        if not isinstance(source, dict):
+            continue
+        bundled = {"zaofu-skills": "skills", "yoke": "yoke"}.get(
+            str(source.get("name") or ""),
+        )
+        if bundled:
+            # Prefer the experiment's version, including candidate skill edits.
+            # Mixing it with the driver checkout creates strict-source collisions.
+            local = cfg.worktree.resolve() / bundled
+            source["path"] = str(local if local.is_dir() else repo_root() / bundled)
+
+    local_yoke = cfg.worktree.resolve() / "yoke"
+    if local_yoke.is_dir() and not any(
+        isinstance(source, dict) and source.get("name") == "yoke"
+        for source in data.get("skill_sources") or []
+    ):
+        data.setdefault("skill_sources", []).append({
+            "name": "yoke", "path": str(local_yoke), "mode": "readonly",
+        })
 
     feishu_path = cfg.worktree.resolve() / "feishu.yaml"
     if feishu_path.is_file():

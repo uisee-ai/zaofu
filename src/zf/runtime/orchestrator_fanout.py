@@ -3241,12 +3241,13 @@ class FanoutCoordinationMixin(
             loaded=loaded,
             trace_id=trace_id,
         )
-        if semantic.enabled and semantic.blocking:
-            return semantic.satisfied
+        if semantic.enabled and semantic.blocking and not semantic.satisfied:
+            return False
+        enabled = bool(getattr(self.config.workflow, "plan_approval_enabled", False))
         try:
             events = self.event_log.read_all()
         except Exception:
-            return True  # 评估不可用不挡主路(observe-first)
+            return not enabled  # An unreadable ledger cannot satisfy owner approval.
         plan_id = trigger_event.id
         requested = False
         suppressed: set[tuple[str, str]] = set()
@@ -3260,7 +3261,8 @@ class FanoutCoordinationMixin(
             if not pid:
                 continue
             if existing.type in ("plan.approved", "plan.rejected"):
-                decided_plan_ids.add(pid)
+                if not (enabled and existing.type == "plan.approved" and payload.get("semantic_control")):
+                    decided_plan_ids.add(pid)
             elif existing.type == "plan.approval.requested":
                 pending_fingerprints[pid] = str(
                     payload.get("plan_fingerprint") or "",
@@ -3272,6 +3274,8 @@ class FanoutCoordinationMixin(
             if str(payload.get("plan_id") or "") != plan_id:
                 continue
             if existing.type == "plan.approved":
+                if enabled and payload.get("semantic_control"):
+                    continue  # Historical OA adoption is not an owner decision.
                 return True
             if existing.type == "plan.rejected":
                 return False
@@ -3282,9 +3286,6 @@ class FanoutCoordinationMixin(
                     str(payload.get("plan_fingerprint") or ""),
                     str(payload.get("duplicate_of") or ""),
                 ))
-        enabled = bool(getattr(
-            self.config.workflow, "plan_approval_enabled", False,
-        ))
         from zf.runtime.plan_preview_artifacts import approval_artifact_refs
 
         base_payload = {

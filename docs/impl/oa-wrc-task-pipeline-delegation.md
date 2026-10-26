@@ -34,7 +34,7 @@ Verify 的常规失败继续使用既有有界 Impl 返工。涉及图变化、�
 
 ## 启用与验证
 
-本批不修改活跃项目的冻结配置，也不默认启用所有 OA 检查点。希望 OA 实际委派的 v4 Run，需要在 `zf.yaml` 相应 flow policy 中启用 `semantic_control` 和 blocking `pre_impl`；如需阶段聚合、关闭及异常语义决策，再显式启用 `stage_barrier`、`pre_closeout`、`semantic_failure`。必须通过新的受控 Workflow 提案或既有配置修订流程生效，不能手改运行工件。
+本批不修改活跃项目的冻结配置，也不默认启用所有 OA 检查点。希望 OA 实际委派的 v4 Run，需要在 `zf.yaml` 相应 flow policy 中启用 `semantic_control` 和 blocking `pre_impl`；正式 YAML 入口仅对 `prd` / `issue` / `refactor` 的 `standard` / `full` 路由、带显式 `pilot_id` 的策略开放 `plan_candidate`、`pre_impl`、`semantic_failure`、`pre_closeout` blocking。其他检查点保留 shadow，不能把直接构造配置的单测当作 YAML 准入证明。必须通过新的受控 Workflow 提案或既有配置修订流程生效，不能手改运行工件。
 
 验证入口：
 
@@ -42,3 +42,18 @@ Verify 的常规失败继续使用既有有界 Impl 返工。涉及图变化、�
 - `tests/test_orchestrator_agent_results.py`：当前 Impl/Verify/Judge required reads、跨 Run 隔离、旧 attempt 和局部 generation。
 - `tests/test_task_pipeline_oa_rework.py` 与 `tests/test_orchestrator_agent_semantic_failure.py`：精确返工、重放、预算、过期拒绝及局部重规划。
 - `tests/e2e/test_oa_wrc_dispatch_mock_e2e.py`：真实 WRC 入口、隔离 Git worktree、实际 briefing/operation/TaskStore、记录型 transport 和重启去重。此层不调用真实 Provider，不作为模型语义判断质量证明。
+
+
+## Hello World 实测后的边界修复
+
+`workflow.plan_approval: true` 时，OA `adopt` 只满足语义采纳。Kernel 回到同一 Plan Artifact Package 的审批门，生成 `plan.approval.requested`，人工批准前不能孵化或派发 Impl。历史 `semantic_control: true` 的 `plan.approved` 不作为人工批准；关闭人工审批时仍保留既有自动推进。配置入口回归与真实运行需要分别验证这两种路径。
+
+同一 `orchestrator` 会话一次只接收一个 typed operation。后续检查点保留为账本中的 requested operation，前一项结算后由 Kernel 周期再次派发；重启不依赖进程内队列。reserved/running/suspended 的 operation 保留会话占用，原 operation 的受控恢复重试不被自己的占用阻挡。普通 Layer 2 通知在 typed operation 活跃期间暂存，不覆盖其对话。
+
+Codex 当前使用 `tmux`。`stream-json` 仅准入 `claude-code`，包含逐副本 backend 校验，错误在 loader 中报告，不等到 provider 启动后误入 Claude SDK。
+
+高频 provider 活动事件可复用文件身份和版本未变化的 RoleSessionRegistry 读快照；其他 writer 修改或原子替换文件即失效。heartbeat 写仍走原有锁内重新加载和原子写，不缓存 canonical 写入。注册表优先采用 PyYAML 的 C safe loader/dumper，缺少扩展时回退 safe 实现。相同状态、任务、attempt 和 context ratio 的 usage liveness 在既有 60 秒窗口内不重复写入；任何上述字段变化立即落盘。费用事实、租约和事件顺序均不折叠。
+
+回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/active/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
+
+Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 checkout 的本地目录；本地不存在时才回退安装来源。存在本地 yoke 时显式声明来源，避免隐式 fallback 同时命中 driver 的副本。客户自定义来源保持原声明，严格碰撞校验不关闭。`tests/test_autoresearch_controller_skill_sources.py` 与实际 11 角色默认模板预检覆盖这一恢复分支。

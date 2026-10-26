@@ -167,6 +167,8 @@ def _apply_plan_candidate(
         "reason_codes": list(outcome.get("reason_codes") or []),
     }
     if action == "adopt":
+        if getattr(runtime.config.workflow, "plan_approval_enabled", False):
+            return {**outcome, "owner_approval_required": True}
         runtime.event_writer.append(ZfEvent(
             type="plan.approved",
             actor="zf-cli",

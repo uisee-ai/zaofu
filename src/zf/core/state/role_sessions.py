@@ -81,7 +81,7 @@ class RoleSessionRegistry:
         self._task_stage_bindings = {}
         if not self.path.exists():
             return
-        data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
+        data = yaml.load(self.path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
         if not isinstance(data, dict):
             return
         roles = data.get("roles", {}) or {}
@@ -110,6 +110,7 @@ class RoleSessionRegistry:
                     "instance_meta": self._meta,
                     "task_stage_bindings": self._task_stage_bindings,
                 },
+                Dumper=getattr(yaml, "CSafeDumper", yaml.SafeDumper),
                 default_flow_style=False,
                 allow_unicode=True,
                 sort_keys=True,
