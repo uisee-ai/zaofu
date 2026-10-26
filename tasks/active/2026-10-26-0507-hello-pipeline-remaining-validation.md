@@ -162,3 +162,25 @@ mock+spawn入口62 passed、sentinel51 passed。原生hooks/list现在发现5项
 
 hook bridge/reader caller闭包169 passed、flow mock10 passed。07:11两个reader已明确
 获得真实文档输出sidecar；OA正式提交revise并由Planner修正返工边界，原Impl仍未重复。
+
+hook修复提交：`be9515a3 fix: isolate Codex hooks for linked experiment worktrees`。
+07:14两个候选reader正式passed，07:21产品复扫零阻断；后续Goal因错误返工产生的
+Plan代次缺少同版Product Acceptance Report被正确拒绝。Run Manager实际执行了
+workflow-batch-resume（evt-0d1326131009），OA revise→Planner→Critic approve均真实
+发生，但新计划/证据一致性仍在恢复中，不将复扫通过等同于Goal完成。
+
+补充修复blocked验证的产品返工误路由：五个复现在HEAD先红；按typed schema/verdict
+及已有worker_noop_or_terminal_missing分类为infra，candidate planner和受控动作
+不允许因此retrigger/replan产品，保留真实rejected与mixed分支。闭包262 passed；
+真实ledger复核evt-83d13bcde91f分类为非产品失败，remaining product rework sources=[]。
+该修复不抹除已有计划/账本，正在运行的历史轮次仍须走合法的新计划及证据准入。
+
+07:31 OA已adopt新计划c7167707，Task Pipeline准入新代次并派发父任务ID的Impl。
+这是历史错误返工导致的额外产品工作（此前原TASK-PRD-PRODUCT已有完整通过），
+不能把“不同task_id”统计成没有重复成本。预防修复已覆盖未来非产品blocked路由，
+当前合法新代次不回滚。监督适配器修正了自己把expected_done下限1写成恰好1的
+断言：与原runner/loop一致使用>=1，仍强制Goal、stuck及交付审计；旧脚本/日志
+保留在evidence，后继输出ar-loop-checkpoint-v2，未改runtime事实或产品验收门禁。
+
+blocked路由修复的Writer fanout/恢复/预算直接调用方追加188 passed；sentinel51
+passed、flow mock10 passed。组合共450项focused行为检查，不以此替代此前广域层。

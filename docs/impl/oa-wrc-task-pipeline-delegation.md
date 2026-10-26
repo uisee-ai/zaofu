@@ -128,3 +128,9 @@ worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须
 只在该私有home中禁用继承的ZaoFu bridge以防重复/跨state写入，保留自定义hooks，
 不修改共享主checkout。普通独立仓库沿用原项目hook路径。native hooks/list与
 实际PostToolUse事件是独立验证层，不能用静态hash测试代替真实执行证明。
+
+候选验证 `verification-result.v1` 的 `blocked`/`abstain` 表示未能认证产品，
+不是产品 `rejected`。故障分类保留这一typed区别：证据阻塞和provider无结果归入
+运行环境故障，供恢复/升级路径处理；仅有这些故障的候选不能触发实现返工，也
+不能消耗产品返工次数。受控动作入口同样拒绝旧队列中的此类retrigger/replan，
+但保留escalate；真正的产品拒绝与混合失败仍走原质量返工路径。

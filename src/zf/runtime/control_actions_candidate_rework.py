@@ -57,12 +57,20 @@ class CandidateReworkActionsMixin:
             )
 
         source_id = str(payload.get("source_event_id") or "")
-        source = next((event for event in self.writer.event_log.read_all()
-                       if event.id == source_id), None)
+        events = self.writer.event_log.read_all()
+        source = next((event for event in events if event.id == source_id), None)
         if source is not None and (source.payload or {}).get("authority") == "compat_projection":
             return self._failed(
                 requested=requested, action=action, requested_action=requested_action,
                 task_id=None, reason="compatibility projection cannot authorize candidate rework",
+                status_code=409, status="rejected",
+            )
+
+        from zf.runtime.candidate_rework import _infra_only_candidate_failure_ids
+        if rework_action != "escalate" and source_id in _infra_only_candidate_failure_ids(events):
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=None, reason="runtime verification blocker cannot authorize product rework",
                 status_code=409, status="rejected",
             )
 

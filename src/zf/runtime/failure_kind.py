@@ -43,6 +43,12 @@ def failure_kind_from_payload(payload: object) -> str:
         return kind
     if is_budget_reason(str(payload.get("reason") or "")):
         return FAILURE_KIND_BUDGET
+    if (
+        payload.get("control_result_schema") == "verification-result.v1"
+        and payload.get("semantic_verdict") in {"blocked", "abstain", "abstained"}
+    ) or payload.get("failure_class") == "worker_noop_or_terminal_missing":
+        # A verifier unable to certify evidence has not rejected the product.
+        return FAILURE_KIND_INFRA
     return ""
 
 
