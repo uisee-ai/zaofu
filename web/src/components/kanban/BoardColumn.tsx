@@ -1,3 +1,4 @@
+import { useUiPreferences } from "../../app/UiPreferences";
 // Kanban 列容器 —— 从 App.tsx BoardWorkbench 抽出(WEB-KANBAN-EXTRACT slice 4,docs/design/67 §4.1)。
 // 纯展示:列头 + task-list 渲染 TaskCard;拖拽 handler 由 BoardWorkbench 作 props 传入,
 // commit 仍走 gate(doc 31)。本组件不持 truth、不做转换判断。
@@ -24,6 +25,7 @@ export function BoardColumn({
   onPointerDown: (event: PointerEvent<HTMLElement>, taskId: string) => void;
   onSelect: (taskId: string) => void;
 }) {
+  const { t } = useUiPreferences();
   return (
     <section
       aria-label={`${column.title} column`}
@@ -36,7 +38,7 @@ export function BoardColumn({
       <div className="column-header">
         <span className="column-title">
           <span className="column-accent-dot" aria-hidden="true" />
-          <h3>{column.title}</h3>
+          <h3>{t(column.title)}</h3>
         </span>
         <span className="count">{tasks.length}</span>
       </div>

@@ -1,3 +1,5 @@
+import { TaskDrawer } from "../components/kanban/TaskDrawer";
+import { useUiPreferences } from "./UiPreferences";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -208,7 +210,7 @@ import {
 import { WorkspaceRail } from "../components/workspace/WorkspaceRail";
 import { WelcomeWizard } from "../components/workspace/WelcomeWizard";
 import { AddAgentModal } from "../components/modals/AddAgentModal";
-import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, ThemeMode, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
+import type { AddAgentDraft, AgentPanelMode, ChannelPermissionProfile, DetailTab, LiveState, OrchestratorContext, PageId, ProjectionKind, UiTone, ViewMode, OperatorBackend } from "./sharedTypes";
 import { KeyValuePanel, PreBlock, actionFailed, actionFailureReason, allBoardTasks, asRecord, asRecordArray, asStringArray, automationShortRunId, automationStatusTone, channelIdOf, channelNameOf, csvList, emptyAddAgentDraft, formatAge, isObservabilityPage, projectLabelFromId, recordString, recordValue, stringify, textValue } from "./shared";
 
 const REFRESH_EVENT_TYPES = new Set(["stream.gap"]);
@@ -222,6 +224,7 @@ const BEHAVIOR_LOOP_QUERY_KEYS = new Set(["layout", "lens", "loop_id", "stage", 
 const PAGE_QUERY_KEYS: Partial<Record<PageId, ReadonlySet<string>>> = {
   workflows: new Set(["request", "graph", "node"]),
   inbox: new Set(["plan"]),
+  settings: new Set(["settings"]),
   delivery: new Set(["feature"]),
   "delivery-trace": new Set(["feature"]),
   "delivery-graph": new Set(["feature"]),
@@ -310,7 +313,7 @@ function readInitialQuery() {
   const mobileDefaultList = window.matchMedia?.("(max-width: 680px)").matches ?? false;
   return {
     page: PAGES.includes(resolved.page as PageId) ? (resolved.page as PageId) : "board",
-    view: view === "list" || (!view && mobileDefaultList) ? "list" as ViewMode : "board" as ViewMode,
+    view: (view === "table" ? "table" : view === "list" || (!view && mobileDefaultList) ? "list" : "board") as ViewMode,
     status: params.get("status") ?? "all",
     task: params.get("task"),
     channel: params.get("channel") ?? "",
@@ -426,12 +429,6 @@ function projectNameFromPath(path: string): string {
   const normalized = path.trim().replace(/[\\/]+$/, "");
   const parts = normalized.split(/[\\/]/);
   return parts[parts.length - 1] || "zaofu-project";
-}
-
-function storedThemeMode(): ThemeMode {
-  if (typeof window === "undefined") return "system";
-  const value = window.localStorage.getItem("zf.themeMode");
-  return value === "dark" || value === "light" || value === "system" ? value : "system";
 }
 
 function skillRefOptions(summary: SkillsSummary | null | undefined): string[] {
@@ -653,6 +650,7 @@ export function App() {
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
+  const [taskDrawerOpen, setTaskDrawerOpen] = useState(initial.page === "board" && Boolean(initial.task));
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -673,7 +671,8 @@ export function App() {
     Boolean(storedWebActionToken()),
   );
   const [webSessionStatus, setWebSessionStatus] = useState<NonNullable<RuntimeSummary["web_session"]> | null>(null);
-  const [themeMode, setThemeMode] = useState<ThemeMode>(() => storedThemeMode());
+  const { preferences, t } = useUiPreferences();
+  const themeMode = preferences.theme;
   const [agentPanelMode, setAgentPanelMode] = useState<AgentPanelMode>(
     initial.openAgent ? "docked" : "collapsed",
   );
@@ -1109,9 +1108,9 @@ export function App() {
       if (statusFilter !== "all") params.set("status", statusFilter);
     }
     if (page === "channels") params.set("channel", selectedChannelId);
-    if (selectedTaskId) params.set("task", selectedTaskId);
+    if (selectedTaskId && (page !== "board" || taskDrawerOpen)) params.set("task", selectedTaskId);
     window.history.replaceState(null, "", `?${params.toString()}`);
-  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, viewMode]);
+  }, [activeProjectId, page, selectedChannelId, selectedTaskId, statusFilter, taskDrawerOpen, viewMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1426,10 +1425,7 @@ export function App() {
     selectedChannelId, selectedChannelIdRef, setChannelDetail,
   });
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = themeMode;
-    window.localStorage.setItem("zf.themeMode", themeMode);
-  }, [themeMode]);
+  useEffect(() => { if (page !== "board") setTaskDrawerOpen(false); }, [page]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1480,25 +1476,6 @@ export function App() {
       return true;
     });
   }, [assigneeFilter, priorityFilter, quickFilter, skillFilter, snapshot, statusFilter, textFilter]);
-
-  const tasksByColumn = useMemo(() => {
-    const grouped: Record<BoardColumnId, Task[]> = {
-      ready: [],
-      in_progress: [],
-      testing: [],
-      blocked: [],
-      done: [],
-    };
-
-    for (const task of filteredTasks) {
-      grouped[taskColumn(task)].push(task);
-    }
-    for (const column of BOARD_COLUMNS) {
-      grouped[column.id].sort((left, right) => taskPriority(left) - taskPriority(right));
-    }
-
-    return grouped;
-  }, [filteredTasks]);
 
   const activeFanouts = useMemo(() => {
     const active = new Set(["requested", "started", "running", "aggregating"]);
@@ -1910,6 +1887,7 @@ export function App() {
   }
 
   function backToBoard() {
+    if (taskDrawerOpen) setTaskDrawerOpen(false);
     setPage("board");
   }
 
@@ -2013,6 +1991,7 @@ export function App() {
     if (!projectId || projectId === activeProjectId) return;
     projectRequestScope.activate(projectId);
     setActiveProjectId(projectId);
+    setTaskDrawerOpen(false);
     void touchWorkspaceProject(projectId).then(() => loadWorkspaceProjects()).catch(() => {
       // Project selection must not fail just because recent-project metadata
       // could not be written.
@@ -2102,6 +2081,30 @@ export function App() {
     ? "fullscreen"
     : "docked";
 
+  const taskDetailView = (
+    <TaskDetail
+      actionReady={actionGate.actionReady}
+      actionResult={actionResult}
+      actionState={actionGate.actionState}
+      detail={taskDetail}
+      diff={taskDiff}
+      events={events}
+      loadError={taskLoadError}
+      onAction={(action, payload) => void runTaskAction(action, payload)}
+      onBackToBoard={backToBoard}
+      onOpenOrchestrator={() => { setTaskDrawerOpen(false); openTaskAgent(); }}
+      onOpenProjection={(kind, id) => void openProjection(kind, id)}
+      selectedTaskId={selectedTaskId}
+      setTab={setDetailTab}
+      skillsSummary={snapshot?.skills ?? null}
+      tab={detailTab}
+      task={selectedTask}
+      timeline={taskTimeline}
+      timelineError={taskTimelineError}
+      timelineLoading={taskTimelineLoading}
+    />
+  );
+
   if (showWelcome) {
     return (
       <WelcomeWizard
@@ -2123,7 +2126,7 @@ export function App() {
         <div className="brand-block">
           <h1>{topbarProjectName}</h1>
           <span className="breadcrumb-separator">/</span>
-          <span className="breadcrumb-current">{pageTitle(page)}</span>
+          <span className="breadcrumb-current">{t(pageTitle(page))}</span>
           <span className="muted">{topbarContextLabel}</span>
         </div>
         <div className="status-row">
@@ -2205,7 +2208,7 @@ export function App() {
           snapshot={snapshot}
         />
 
-        <section className="board-panel">
+        <section className="board-panel" data-page={page}>
           {!activeProjectId ? (
             <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
@@ -2284,63 +2287,46 @@ export function App() {
               <p className="muted">Loading board…</p>
             </section>
           ) : page === "board" ? (
-            <BoardWorkbench
-              actionReady={actionGate.actionReady}
-              actionResult={actionResult}
-              actionState={actionGate.actionState}
-              activeFanouts={activeFanouts}
-              agents={snapshot?.agents ?? []}
-              assignees={assignees}
-              assigneeFilter={assigneeFilter}
-              filteredTasks={filteredTasks}
-              mutationEnabled={actionGate.mutationEnabled}
-              quickFilter={quickFilter}
-              skillFilter={skillFilter}
-              skills={skills}
-              priorityFilter={priorityFilter}
-              selectedTaskId={selectedTaskId}
-              setAssigneeFilter={setAssigneeFilter}
-              setSkillFilter={setSkillFilter}
-              setPriorityFilter={setPriorityFilter}
-              setQuickFilter={setQuickFilter}
-              showTokenRow={actionGate.showTokenRow}
-              onOpenTask={openTask}
-              onSaveToken={saveWebActionToken}
-              onUnlockSession={unlockSession}
-              passcodeRequired={actionGate.passcodeRequired}
-              setStatusFilter={setStatusFilter}
-              setTextFilter={setTextFilter}
-              setViewMode={setViewMode}
-              statusFilter={statusFilter}
-              tasksByColumn={tasksByColumn}
-              textFilter={textFilter}
-              viewMode={viewMode}
-              onMoveTaskStatus={(taskId, status) => void moveBoardTaskStatus(taskId, status)}
-              onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
-              totalTaskCount={snapshot ? allBoardTasks(snapshot).length : 0}
-            />
+            <>
+              <BoardWorkbench
+                actionReady={actionGate.actionReady}
+                actionResult={actionResult}
+                actionState={actionGate.actionState}
+                activeFanouts={activeFanouts}
+                agents={snapshot?.agents ?? []}
+                assignees={assignees}
+                assigneeFilter={assigneeFilter}
+                filteredTasks={filteredTasks}
+                mutationEnabled={actionGate.mutationEnabled}
+                quickFilter={quickFilter}
+                skillFilter={skillFilter}
+                skills={skills}
+                priorityFilter={priorityFilter}
+                selectedTaskId={selectedTaskId}
+                setAssigneeFilter={setAssigneeFilter}
+                setSkillFilter={setSkillFilter}
+                setPriorityFilter={setPriorityFilter}
+                setQuickFilter={setQuickFilter}
+                showTokenRow={actionGate.showTokenRow}
+                onOpenTask={(taskId) => { setSelectedTaskId(taskId); setDetailTab("Summary"); setTaskDrawerOpen(true); }}
+                onNewTask={openTaskAgent}
+                onSaveToken={saveWebActionToken}
+                onUnlockSession={unlockSession}
+                passcodeRequired={actionGate.passcodeRequired}
+                setStatusFilter={setStatusFilter}
+                setTextFilter={setTextFilter}
+                setViewMode={setViewMode}
+                statusFilter={statusFilter}
+                textFilter={textFilter}
+                viewMode={viewMode}
+                onMoveTaskStatus={(taskId, status) => void moveBoardTaskStatus(taskId, status)}
+                onOpenFanout={(fanoutId) => void openProjection("fanout", fanoutId)}
+                totalTaskCount={snapshot ? allBoardTasks(snapshot).length : 0}
+              />
+              <TaskDrawer open={taskDrawerOpen} onClose={backToBoard}>{taskDetailView}</TaskDrawer>
+            </>
           ) : page === "task" ? (
-            <TaskDetail
-              actionReady={actionGate.actionReady}
-              actionResult={actionResult}
-              actionState={actionGate.actionState}
-              detail={taskDetail}
-              diff={taskDiff}
-              events={events}
-              loadError={taskLoadError}
-              onAction={(action, payload) => void runTaskAction(action, payload)}
-              onBackToBoard={backToBoard}
-              onOpenOrchestrator={openTaskAgent}
-              onOpenProjection={(kind, id) => void openProjection(kind, id)}
-              selectedTaskId={selectedTaskId}
-              setTab={setDetailTab}
-              skillsSummary={snapshot?.skills ?? null}
-              tab={detailTab}
-              task={selectedTask}
-              timeline={taskTimeline}
-              timelineError={taskTimelineError}
-              timelineLoading={taskTimelineLoading}
-            />
+            taskDetailView
           ) : page === "traces" ? (
             <section className="projection-scroll">
               <TracesRoute projectId={activeProjectId} liveState={liveState} />
@@ -2364,7 +2350,6 @@ export function App() {
                   channels={channelsPage?.channels ?? []}
                   snapshot={snapshot}
                   deliveryFeaturesPage={deliveryFeaturesPage}
-                  themeMode={themeMode}
                   actionReady={actionGate.actionReady}
                   actionState={actionGate.actionState}
                   onOpenChannel={openChannel}
@@ -2385,7 +2370,6 @@ export function App() {
                     });
                     openAddAgentModal();
                   }}
-                  onThemeModeChange={setThemeMode}
                   onOpenPage={(nextPage) => setPage(nextPage)}
                   onOpenProjection={(kind, id) => void openProjection(kind, id)}
                   onAction={submitAction}

@@ -1,9 +1,9 @@
 // Kanban TaskCard + 卡内子组件 —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT slice 3,docs/design/67 §4.1)。
 // 纯展示组件:消费 board 列模型 + lib 的 format/task-display helper,只读 projection,不持 truth。
-import type { CSSProperties, PointerEvent } from "react";
+import type { PointerEvent } from "react";
 import type { Task } from "../../api/types";
 import { taskColumn } from "./board";
-import { formatTokens, contextBadgeTone, contextLabel } from "../../lib/format";
+import { useUiPreferences } from "../../app/UiPreferences";
 import {
   taskPriority,
   taskActorLabel,
@@ -28,15 +28,6 @@ function shortStepLabel(step: string): string {
 }
 
 // 后端原始 badge label 的中文/图标翻译(渐进:不识别的回退原样)。
-const BADGE_LABEL_TRANSLATIONS: Record<string, string> = {
-  "rework_triage:ambiguous": "🟡 重审中(歧义)",
-  "rework_triage:approve": "🟢 通过重审",
-  "rework_triage:reject": "🔴 重审驳回",
-};
-function translateBadgeLabel(label: string): string {
-  return BADGE_LABEL_TRANSLATIONS[label] ?? label;
-}
-
 function workflowBadgeTone(tone: string | undefined): string {
   if (["ok", "warn", "err", "muted", "info"].includes(tone || "")) return tone || "muted";
   return "muted";
@@ -77,33 +68,6 @@ export function WorkflowBadges({
       ) : null}
     </>
   );
-}
-
-// 把 fanout_id 哈希成色相(0-359),让同 fanout 的卡顶部色条同色。
-function fanoutHue(fanoutId: string | undefined | null): number | null {
-  if (!fanoutId) return null;
-  let h = 0;
-  for (let i = 0; i < fanoutId.length; i++) h = (h * 31 + fanoutId.charCodeAt(i)) | 0;
-  return ((h % 360) + 360) % 360;
-}
-
-// actor (assigned_to) 头一个 `-` 前缀作 role,role → 颜色 token。
-// Task 没带 backend 字段,但 role 已足够告诉 operator 在做什么类型的活,
-// 而且 role 与 backend 在大多数项目里有强相关(arch/critic 多走 codex,
-// dev/test 跨 backend)。Backend 维度若以后真要可视化,fanout.run_id /
-// route_summary 里会有 provider 信息可挖。
-const ROLE_COLORS: Record<string, string> = {
-  arch: "oklch(0.62 0.16 255)",     // brand 蓝
-  critic: "oklch(0.65 0.17 35)",    // 暖橙
-  dev: "oklch(0.65 0.16 145)",      // 绿
-  review: "oklch(0.60 0.18 310)",   // 紫
-  test: "oklch(0.66 0.15 200)",     // 青
-  judge: "oklch(0.60 0.17 55)",     // 金
-};
-function actorRoleColor(assigned: string | null | undefined): string | null {
-  if (!assigned) return null;
-  const role = assigned.split(/[-_.]/)[0]?.toLowerCase() ?? "";
-  return ROLE_COLORS[role] ?? null;
 }
 
 export function BacklogRefsBadge({ task }: { task: Task }) {
@@ -187,94 +151,25 @@ export function TaskCard({
   telemetry?: TaskTelemetry;
   onSelect: (taskId: string) => void;
 }) {
+  const { t } = useUiPreferences();
   const currentColumn = taskColumn(task);
   const priority = taskPriority(task);
   const actorLabel = taskActorLabel(task);
-  const visibleSkills = (task.skills_required ?? []).filter(Boolean).slice(0, 2);
   const age = latestEventAge(task);
-  const totalTokens = (telemetry?.inputTokens ?? 0) + (telemetry?.outputTokens ?? 0);
   const risk = taskRiskBadge(task, telemetry);
-  const effectiveTerminal = taskIsEffectivelyTerminal(task);
-  const fanout = task.fanout;
-  const fHue = fanoutHue(fanout?.fanout_id);
-  const fanoutProgress = fanout?.progress;
-  const fanoutLabel = fanoutProgress?.total
-    ? `fanout ${fanoutProgress.done}/${fanoutProgress.total}`
-    : "fanout";
-
+  const terminal = taskIsEffectivelyTerminal(task);
   return (
-    <article
-      className={`task-card status-${currentColumn} priority-${priority} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""}`}
-      data-task-id={task.id}
-      data-task-status={currentColumn}
-      data-fanout-id={fanout?.fanout_id ?? undefined}
-      onPointerDown={(event) => onPointerDown(event, task.id)}
-    >
+    <article className={`task-card status-${currentColumn} ${selected ? "selected" : ""} ${dragging ? "dragging" : ""}`}
+      data-task-id={task.id} data-task-status={currentColumn} data-fanout-id={task.fanout?.fanout_id}
+      onPointerDown={(event) => onPointerDown(event, task.id)}>
       <button className="task-open" type="button" onClick={() => onSelect(task.id)}>
-        <span className="task-id mono">{task.id}</span>
-        <span className="task-title">{task.title || "(untitled)"}</span>
-        {effectiveTerminal ? (
-          <span className="task-chip-row">
-            <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
-          </span>
-        ) : visibleSkills.length || task.retry_count > 0 || task.evidence_badges?.length || task.workflow_badges?.length || task.contract || telemetry || risk.label ? (
-          <span className="task-chip-row">
-            {risk.label ? <span className={`badge badge-${risk.tone}`}>{risk.label}</span> : null}
-            <WorkflowBadges task={task} compact />
-            {visibleSkills.map((skill) => <span className="badge" key={skill}>{skill}</span>)}
-            {task.retry_count > 0 ? <span className="badge badge-warn">rework {task.retry_count}</span> : null}
-            {telemetry ? (
-              <span
-                className={`ctx-mini ctx-mini-${contextBadgeTone(telemetry.contextRatio)}`}
-                title={`ctx ${contextLabel(telemetry.contextRatio)}${totalTokens > 0 ? ` · tok ${formatTokens(totalTokens)}` : ""}`}
-              >
-                <span
-                  className="ctx-mini-fill"
-                  style={{ width: `${Math.min(100, Math.round((telemetry.contextRatio ?? 0) * 100))}%` }}
-                />
-                <span className="ctx-mini-label">{contextLabel(telemetry.contextRatio)}</span>
-              </span>
-            ) : null}
-            {task.evidence_badges?.slice(0, 1).map((badge) => (
-              <span className={`badge badge-${badge.tone}`} key={`${badge.kind}-${badge.label}`} title={badge.label}>
-                {translateBadgeLabel(badge.label)}
-              </span>
-            ))}
-            {fanout?.fanout_id ? (
-              <span
-                className="fanout-tag"
-                title={`${fanout.fanout_id}${fanout.child_id ? ` / ${fanout.child_id}` : ""}`}
-                style={fHue !== null ? ({ "--fanout-hue": String(fHue) } as CSSProperties) : undefined}
-              >
-                {fanoutLabel}
-              </span>
-            ) : null}
-            {fanout?.lane_id ? <span className="badge badge-muted">lane {fanout.lane_id}</span> : null}
-            {fanout?.affinity_tag ? <span className="badge badge-muted">aff {fanout.affinity_tag}</span> : null}
-            <BacklogRefsBadge task={task} />
-          </span>
-        ) : null}
-        {!effectiveTerminal ? <RouteSummaryStrip route={task.route_summary} compact /> : null}
-        {!effectiveTerminal && task.blocked_reason ? <span className="blocked-note">{task.blocked_reason}</span> : null}
-        <span className="task-footer">
-          {actorLabel ? (
-            <span className="task-assignee">
-              {(() => {
-                const roleColor = actorRoleColor(task.assigned_to);
-                return roleColor ? (
-                  <span
-                    className="actor-dot"
-                    style={{ background: roleColor } as CSSProperties}
-                    aria-hidden
-                  />
-                ) : null;
-              })()}
-              {actorLabel}
-            </span>
-          ) : null}
-          {!effectiveTerminal ? <span className={`priority-pill priority-${priority}`}>P{priority}</span> : null}
-          {age !== "-" ? <span className="task-age">{age}</span> : null}
-        </span>
+        <span className="task-title">{task.title || task.id}</span>
+        {(terminal || risk.label) && <span className="task-chip-row">{terminal
+          ? <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
+          : <span className={`badge badge-${risk.tone}`}>{risk.label}</span>}</span>}
+        {!terminal && task.blocked_reason && <span className="blocked-note" title={task.blocked_reason}>{task.blocked_reason}</span>}
+        <span className="task-footer"><span className="task-id mono" title={task.id}>{task.id}</span><span className="task-assignee" title={actorLabel || t("Unassigned")}>{actorLabel || t("Unassigned")}</span><span className={`priority-pill priority-${priority}`}>P{priority}</span></span>
+        {age !== "-" && <span className="task-age">{age}</span>}
       </button>
     </article>
   );

@@ -1,9 +1,10 @@
+import { SettingsPage } from "../settings/SettingsPage";
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, TaskPipelineProjection } from "../../api/types";
 import { DeliveryTracePage } from "../../components/delivery-trace/DeliveryTracePage";
 import { Settings } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
-import type { LiveState, PageId, ProjectionKind, ThemeMode } from "../../app/sharedTypes";
+import type { LiveState, PageId, ProjectionKind } from "../../app/sharedTypes";
 import { KeyValuePanel, ProjectionEmptyState, eventKey, isObservabilityPage } from "../../app/shared";
 import { AgentViewPage } from "../agent-view/AgentViewPage";
 import { ObservabilityPage } from "../observability/ObservabilityPage";
@@ -34,13 +35,11 @@ export function ProjectionPage({
   selectedTaskId,
   setEventFilter,
   snapshot,
-  themeMode,
   onAction,
   onAddAgentToChannel,
   onClearTaskScope,
   onOpenChannel,
   onOpenPage,
-  onThemeModeChange,
   onOpenProjection,
   onSelectTask,
 }: {
@@ -62,13 +61,11 @@ export function ProjectionPage({
   selectedTaskId: string | null;
   setEventFilter: (value: string) => void;
   snapshot: Snapshot | null;
-  themeMode: ThemeMode;
   onAction: (action: string, payload: Record<string, unknown>) => Promise<ActionResponse>;
   onAddAgentToChannel: (agent: AgentSummary) => void;
   onClearTaskScope: () => void;
   onOpenChannel: (channelId: string) => void;
   onOpenPage: (page: PageId) => void;
-  onThemeModeChange: (mode: ThemeMode) => void;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onSelectTask: (taskId: string) => void;
 }) {
@@ -232,54 +229,8 @@ export function ProjectionPage({
       </>
     );
   }
-  if (page === "settings") {
-    const themeOptions: Array<{ id: ThemeMode; label: string }> = [
-      { id: "light", label: "Light" },
-      { id: "dark", label: "Dark" },
-      { id: "system", label: "System" },
-    ];
-    const runtimeRows = [
-      { key: "control_plane", value: "zf.yaml" },
-      { key: "runtime_truth", value: "TaskStore/EventWriter" },
-      { key: "web_mutation", value: snapshot?.runtime.actions?.mutation_enabled ? "token/session gated" : "read-only" },
-      { key: "project_state_dir", value: snapshot?.project.state_dir ?? "-" },
-    ];
-    return (
-      <>
-        <div className="section-heading">
-          <div>
-            <h2>Settings</h2>
-            <span className="muted">appearance and local web preferences</span>
-          </div>
-        </div>
-        <div className="settings-grid">
-          <section className="subsection settings-panel">
-            <div className="inline-heading">
-              <h3>Appearance</h3>
-              <span className="muted">Theme</span>
-            </div>
-            <div className="theme-options" role="radiogroup" aria-label="Theme">
-              {themeOptions.map((option) => (
-                <button
-                  className={`theme-option ${themeMode === option.id ? "active" : ""}`}
-                  key={option.id}
-                  role="radio"
-                  aria-checked={themeMode === option.id}
-                  aria-label={`Select ${option.label} theme`}
-                  type="button"
-                  onClick={() => onThemeModeChange(option.id)}
-                >
-                  <ThemePreview mode={option.id} />
-                  <span className="theme-option-label">{option.label}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-          <KeyValuePanel title="Runtime Boundary" rows={runtimeRows} />
-        </div>
-      </>
-    );
-  }
+  if (page === "settings") return <SettingsPage snapshot={snapshot} />;
+
   return (
     <ProjectionEmptyState
       state={{
@@ -288,48 +239,5 @@ export function ProjectionPage({
         icon: Settings,
       }}
     />
-  );
-}
-
-
-function ThemePreview({ mode }: { mode: ThemeMode }) {
-  if (mode === "system") {
-    return (
-      <span className="theme-preview" aria-hidden="true">
-        <WindowMockup variant="light" />
-        <span className="theme-system-dark">
-          <WindowMockup variant="dark" />
-        </span>
-      </span>
-    );
-  }
-  return (
-    <span className="theme-preview" aria-hidden="true">
-      <WindowMockup variant={mode} />
-    </span>
-  );
-}
-
-
-function WindowMockup({ variant }: { variant: "light" | "dark" }) {
-  return (
-    <span className={`theme-window theme-window-${variant}`}>
-      <span className="theme-titlebar">
-        <span />
-        <span />
-        <span />
-      </span>
-      <span className="theme-window-body">
-        <span className="theme-window-sidebar">
-          <i />
-          <i />
-        </span>
-        <span className="theme-window-content">
-          <i />
-          <i />
-          <i />
-        </span>
-      </span>
-    </span>
   );
 }

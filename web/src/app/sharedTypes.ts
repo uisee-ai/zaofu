@@ -157,6 +157,6 @@ export type ThemeMode = "system" | "dark" | "light";
 
 export type UiTone = "ok" | "warn" | "err" | "info" | "muted";
 
-export type ViewMode = "board" | "list";
+export type ViewMode = "board" | "list" | "table";
 
 export type VisibilityProfile = "minimal" | "planner" | "reviewer" | "owner_report" | "full_audit";

@@ -1,9 +1,9 @@
+import { formatDateTime } from "./uiPreferences.js";
 // 通用格式化 helper —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT 地基,docs/design/67 §4)。
-// 纯函数,无依赖;App.tsx 与 kanban 组件共享。
+// 时间展示使用当前设备偏好；App.tsx 与 kanban 组件共享。
 
 export function formatTime(value?: string | null): string {
-  if (!value) return "";
-  return value.slice(11, 19) || value;
+  return formatDateTime(value, undefined, true);
 }
 
 export function formatTokens(value: number | undefined): string {

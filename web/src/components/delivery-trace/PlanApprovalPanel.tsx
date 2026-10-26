@@ -1,6 +1,11 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PlanPreviewOverlay } from "./PlanPreviewOverlay";
+import { InboxQueueItem } from "./InboxQueueItem";
+import { useUiPreferences } from "../../app/UiPreferences";
+import { formatDateTime } from "../../lib/uiPreferences";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import {
+  ArrowLeft,
   AlertTriangle,
   Bell,
   Check,
@@ -18,11 +23,10 @@ import type { LucideIcon } from "lucide-react";
 
 import { getOperatorInbox, getPlanPreview, postAction } from "../../api/client";
 import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "../../api/types";
-import { MarkdownText } from "../agent-session/MarkdownText";
 import { LatestRequestGate } from "../../app/latestRequestGate";
 import { resolvePlanPreviewItem } from "./planReviewModel";
 
-const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
+
 
 type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
@@ -50,6 +54,10 @@ const VIEW_OPTIONS: Array<{ value: InboxView; label: string }> = [
 export function PlanApprovalPanel(
   { projectId, autoOpenPlanId }: { projectId: string; autoOpenPlanId?: string | null },
 ) {
+  const { t } = useUiPreferences();
+  const [mobileDetail, setMobileDetail] = useState(false);
+  const queueFocus = useRef<HTMLElement | null>(null);
+  const detailPane = useRef<HTMLElement | null>(null);
   const [inbox, setInbox] = useState<OperatorInboxProjection | null>(null);
   const [busy, setBusy] = useState<string>("");
   const [hasLoadedInbox, setHasLoadedInbox] = useState(false);
@@ -87,6 +95,9 @@ export function PlanApprovalPanel(
     [filteredItems, selectedId],
   );
 
+  useEffect(() => { if (detailPane.current) detailPane.current.scrollTop = 0; }, [selectedItem?.id]);
+  useEffect(() => { setMobileDetail(false); }, [view, kindFilter, query]);
+
   useEffect(() => {
     if (!filteredItems.length) {
       if (selectedId) setSelectedId("");
@@ -99,6 +110,7 @@ export function PlanApprovalPanel(
 
   useEffect(() => {
     projectIdRef.current = projectId;
+    setMobileDetail(false);
     previewRequestGate.current.invalidate();
     setPreview(null);
     setPreviewItem(null);
@@ -251,7 +263,7 @@ export function PlanApprovalPanel(
       moveSelection(-1);
       return;
     }
-    if (event.key === "Enter" && selectedItem?.kind === "plan_approval" && selectedItem.plan_id && selectedItem.preview?.available) {
+    if (!target?.closest("button, a, summary") && event.key === "Enter" && selectedItem?.kind === "plan_approval" && selectedItem.plan_id && selectedItem.preview?.available) {
       event.preventDefault();
       void openPreview(selectedItem.plan_id);
     }
@@ -263,21 +275,45 @@ export function PlanApprovalPanel(
   const deliveryCount = inbox?.summary.notification_pending ?? inbox?.pending.filter((item) => item.actionability === "informational").length ?? 0;
   const totalCount = inbox?.items.length ?? 0;
 
+  const renderRow = (item: OperatorInboxItem, detail = false) => (
+    <InboxRow
+      key={item.id}
+      item={item}
+      detail={detail}
+      projectId={projectId}
+      selected={item.id === selectedItem?.id}
+      busy={busy}
+      rejectReason={rejectReason[inboxItemReasonKey(item)] || ""}
+      onRejectReason={(value) => {
+        const reasonKey = inboxItemReasonKey(item);
+        setRejectReason((current) => ({ ...current, [reasonKey]: value }));
+      }}
+      onSelect={() => { queueFocus.current = document.activeElement as HTMLElement; setSelectedId(item.id); setMobileDetail(true); if (window.matchMedia("(max-width: 760px)").matches) requestAnimationFrame(() => detailPane.current?.focus()); }}
+      onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
+      onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
+      onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
+      onRepair={() => void repairChat(item)}
+      onAction={(action) => void actOnItem(item, action)}
+    />
+  );
+
   return (
     <section
-      className="panel plan-approval-panel operator-inbox-panel"
+      className={`panel plan-approval-panel operator-inbox-panel ${mobileDetail ? "inbox-show-detail" : ""}`}
       data-testid="plan-approval-panel"
       tabIndex={0}
       onKeyDown={handleKeyDown}
     >
+      <div className="inbox-workspace-grid">
+      <div className="inbox-queue">
       <div className="plan-approval-head operator-inbox-head">
         <div>
-          <h3>Inbox</h3>
+          <h3>{t("Inbox")}</h3>
           <span className="muted">
-            {initialLoading ? "loading" : pendingCount ? `${pendingCount} decisions` : "clear"}
-            {diagnosticCount ? ` / ${diagnosticCount} diagnostics` : ""}
-            {deliveryCount ? ` / ${deliveryCount} deliveries` : ""}
-            {view === "all" && totalCount ? ` / ${totalCount} total` : ""}
+            {initialLoading ? t("loading") : pendingCount ? `${pendingCount} ${t("pending decisions")}` : t("clear")}
+            {diagnosticCount ? ` / ${diagnosticCount} ${t("diagnostics")}` : ""}
+            {deliveryCount ? ` / ${deliveryCount} ${t("deliveries")}` : ""}
+            {view === "all" && totalCount ? ` / ${totalCount} ${t("total")}` : ""}
           </span>
         </div>
         <div className="operator-inbox-tools">
@@ -285,8 +321,8 @@ export function PlanApprovalPanel(
             <Search size={14} aria-hidden="true" />
             <input
               value={query}
-              aria-label="Search inbox"
-              placeholder="Search"
+              aria-label={t("Search inbox")}
+              placeholder={t("Search")}
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
@@ -298,7 +334,7 @@ export function PlanApprovalPanel(
               onChange={(event) => setKindFilter(event.target.value as InboxKindFilter)}
             >
               {KIND_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
+                <option key={option.value} value={option.value}>{t(option.label)}</option>
               ))}
             </select>
           </label>
@@ -310,14 +346,14 @@ export function PlanApprovalPanel(
                 className={view === option.value ? "active" : ""}
                 onClick={() => setView(option.value)}
               >
-                {option.label}
+                {t(option.label)}
               </button>
             ))}
           </div>
           <button
             type="button"
             className="icon-button"
-            title={inboxRefreshing ? "Refreshing" : "Refresh"}
+            title={t(inboxRefreshing ? "Refreshing" : "Refresh")}
             onClick={() => void refresh()}
             disabled={inboxRefreshing}
           >
@@ -331,34 +367,14 @@ export function PlanApprovalPanel(
       {loadError ? <p className="error plan-approval-error">Inbox refresh failed: {loadError}</p> : null}
 
       {initialLoading ? (
-        <p className="muted plan-approval-empty operator-inbox-empty">Loading inbox...</p>
+        <p className="muted plan-approval-empty operator-inbox-empty">{t("Loading inbox...")}</p>
       ) : loadError && !inbox ? null : filteredItems.length === 0 ? (
         <p className="muted plan-approval-empty operator-inbox-empty">
-          {query || kindFilter !== "all" ? "No matching inbox items." : "No inbox items in this view."}
+          {t(query || kindFilter !== "all" ? "No matching inbox items." : "No inbox items in this view.")}
         </p>
       ) : (
         <div className="operator-inbox-list" role="list" aria-label="Operator inbox items">
           {(() => {
-            const renderRow = (item: OperatorInboxItem) => (
-              <InboxRow
-                key={item.id}
-                item={item}
-                projectId={projectId}
-                selected={item.id === selectedItem?.id}
-                busy={busy}
-                rejectReason={rejectReason[inboxItemReasonKey(item)] || ""}
-                onRejectReason={(value) => {
-                  const reasonKey = inboxItemReasonKey(item);
-                  setRejectReason((current) => ({ ...current, [reasonKey]: value }));
-                }}
-                onSelect={() => setSelectedId(item.id)}
-                onPreview={() => item.plan_id && void openPreview(String(item.plan_id), item)}
-                onApprove={() => item.plan_id && void act("plan-approve", String(item.plan_id))}
-                onReject={() => item.plan_id && void act("plan-reject", String(item.plan_id))}
-                onRepair={() => void repairChat(item)}
-                onAction={(action) => void actOnItem(item, action)}
-              />
-            );
             // Human decisions stay individual and pinned first; the rest
             // groups by (kind, title) — 210 identical attention rows buried
             // the 15 real decisions on the r2 walk.
@@ -384,10 +400,10 @@ export function PlanApprovalPanel(
               <>
                 {decisions.length > 1 ? (
                   <div className="operator-inbox-inline-actions">
-                    <span className="muted">{decisions.length} pending decisions</span>
+                    <span className="muted">{decisions.length} {t("pending decisions")}</span>
                   </div>
                 ) : null}
-                {decisions.map(renderRow)}
+                {decisions.map((item) => renderRow(item))}
                 {[...groups.entries()].map(([key, items]) => (
                   items.length === 1 ? renderRow(items[0]) : (
                     <details className="operator-inbox-group" key={key}>
@@ -401,11 +417,11 @@ export function PlanApprovalPanel(
                             disabled={Boolean(busy)}
                             onClick={(event) => { event.preventDefault(); event.stopPropagation(); ackAll(items); }}
                           >
-                            Ack all
+                            {t("Ack all")}
                           </button>
                         ) : null}
                       </summary>
-                      {items.map(renderRow)}
+                      {items.map((item) => renderRow(item))}
                     </details>
                   )
                 ))}
@@ -415,6 +431,12 @@ export function PlanApprovalPanel(
         </div>
       )}
 
+      </div>
+      <aside className="inbox-reading-pane" ref={detailPane} tabIndex={-1} aria-label={t("Inbox")}>
+        <button type="button" className="workbench-control inbox-back" onClick={() => { setMobileDetail(false); requestAnimationFrame(() => queueFocus.current?.focus()); }}><ArrowLeft size={15} />{t("Back to inbox")}</button>
+        {selectedItem ? renderRow(selectedItem, true) : <div className="inbox-reader-empty"><Bell size={26} /><p>{t("Select an item to read its details.")}</p></div>}
+      </aside>
+      </div>
       {preview || previewLoading ? (
         <PlanPreviewOverlay
           projectId={projectId}
@@ -465,6 +487,7 @@ export function PlanApprovalPanel(
 
 function InboxRow({
   item,
+  detail,
   projectId,
   selected,
   busy,
@@ -478,6 +501,7 @@ function InboxRow({
   onAction,
 }: {
   item: OperatorInboxItem;
+  detail: boolean;
   projectId: string;
   selected: boolean;
   busy: string;
@@ -490,14 +514,15 @@ function InboxRow({
   onRepair: () => void;
   onAction: (action: string) => void;
 }) {
+  const { t } = useUiPreferences();
   const Icon = kindIcon(item.kind);
   const disabled = busy.endsWith(`:${inboxItemActionKey(item)}`);
+  if (!detail) return <InboxQueueItem item={item} selected={selected} kind={t(kindLabel(item.kind))} primaryRef={inboxItemPrimaryRef(item)} onSelect={onSelect} />;
   return (
     <article
-      className={`operator-inbox-row ${selected ? "selected" : ""} ${item.status === "pending" ? "pending" : "resolved"}`}
+      className={`operator-inbox-row inbox-reading-card ${selected ? "selected" : ""} ${item.status === "pending" ? "pending" : "resolved"}`}
       data-testid={item.kind === "plan_approval" ? "approval-card" : "operator-inbox-row"}
       role="listitem"
-      onClick={onSelect}
     >
       <div className="operator-inbox-row-grid">
         <div className="operator-inbox-avatar" aria-hidden="true">
@@ -506,10 +531,10 @@ function InboxRow({
         </div>
         <div className="operator-inbox-row-main">
           <div className="operator-inbox-title-line">
-            <span className="operator-inbox-kind">{kindLabel(item.kind)}</span>
+            <span className="operator-inbox-kind">{t(kindLabel(item.kind))}</span>
             <strong className="operator-inbox-title">{item.title || kindLabel(item.kind)}</strong>
-            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{item.status}</span>
-            <time className="muted">{compactTime(item.created_ts || item.resolved_ts)}</time>
+            <span className={`badge ${item.status === "pending" ? "badge-warn" : ""}`}>{t(item.status)}</span>
+            <time className="muted">{formatDateTime(item.created_ts || item.resolved_ts)}</time>
           </div>
           <p>{item.summary || inboxItemPrimaryRef(item) || "Operator action requested."}</p>
           <div className="operator-inbox-meta-line">
@@ -534,7 +559,7 @@ function InboxRow({
           {item.deep_link ? (
             <div className="operator-inbox-inline-actions">
               <a className="delivery-action-button" href={inboxDeepLink(item.deep_link, projectId)}>
-                {item.deep_link_label || "Open source"}
+                {item.deep_link_label || t("Open source")}
               </a>
             </div>
           ) : null}
@@ -576,6 +601,7 @@ function InboxRowActions({
   onRepair: () => void;
   onAction: (action: string) => void;
 }) {
+  const { t } = useUiPreferences();
   if (item.owner_route === "plan_synth_owner_decision" && item.plan_id) {
     const actions = (item.actions ?? [])
       .map((action) => ({
@@ -586,11 +612,11 @@ function InboxRowActions({
     return (
       <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
         <button type="button" className="delivery-action-button" onClick={onPreview} disabled={!item.preview?.available}>
-          <Eye size={14} /> Preview
+          <Eye size={14} /> {t("Preview")}
         </button>
         {actions.map((action) => (
           <button key={action.action} type="button" className="delivery-action-button" onClick={() => onAction(action.action)} disabled={disabled}>
-            <Check size={14} /> {action.label || action.action}
+            <Check size={14} /> {t(action.label || action.action)}
           </button>
         ))}
       </div>
@@ -600,22 +626,23 @@ function InboxRowActions({
     return (
       <div className="operator-inbox-inline-actions" onClick={(event) => event.stopPropagation()}>
         <button type="button" className="delivery-action-button" onClick={onPreview} disabled={!item.preview?.available}>
-          <Eye size={14} /> Preview
+          <Eye size={14} /> {t("Preview")}
         </button>
         <button type="button" className="delivery-action-button" onClick={onApprove} disabled={disabled}>
-          <Check size={14} /> Approve
+          <Check size={14} /> {t("Approve")}
         </button>
         <input
           className="operator-inbox-reject-input"
           value={rejectReason}
-          placeholder="reject reason"
+          aria-label={t("Reject reason")}
+          placeholder={t("Reject reason")}
           onChange={(event) => onRejectReason(event.target.value)}
         />
         <button type="button" className="delivery-action-button" onClick={onReject} disabled={disabled || !rejectReason.trim()}>
-          <X size={14} /> Reject
+          <X size={14} /> {t("Reject")}
         </button>
         <button type="button" className="delivery-action-button" onClick={onRepair} disabled={disabled}>
-          <MessageSquare size={14} /> Repair
+          <MessageSquare size={14} /> {t("Repair")}
         </button>
       </div>
     );
@@ -639,191 +666,11 @@ function InboxRowActions({
           onClick={() => onAction(action.action)}
           disabled={disabled}
         >
-          <MessageSquare size={14} /> {action.label || action.action}
+          <MessageSquare size={14} /> {t(action.label || action.action)}
         </button>
       ))}
     </div>
   );
-}
-
-function PlanPreviewOverlay({
-  projectId,
-  preview,
-  loading,
-  busy,
-  rejectReason,
-  onRejectReason,
-  repairMessage,
-  onRepairMessage,
-  onClose,
-  onApprove,
-  onReject,
-  onRepair,
-  ownerDecision,
-  decisionReady,
-  actionKey,
-}: {
-  projectId?: string;
-  preview: PlanPreview | null;
-  loading: boolean;
-  busy: string;
-  rejectReason: string;
-  onRejectReason: (value: string) => void;
-  repairMessage: string;
-  onRepairMessage: (value: string) => void;
-  onClose: () => void;
-  onApprove: () => void;
-  onReject: () => void;
-  onRepair: () => void;
-  ownerDecision: boolean;
-  decisionReady: boolean;
-  actionKey: string;
-}) {
-  const planId = preview?.plan_id || "";
-  const disabled = Boolean(actionKey && busy.endsWith(`:${actionKey}`));
-  return (
-    <div className="plan-preview-overlay" role="dialog" aria-modal="true" aria-label="Plan preview">
-      <div className="plan-preview-toolbar">
-        <div>
-          <strong>{preview?.content_profile === "derived_plan_full" ? "完整 PRD Preview" : "Plan Preview"}</strong>
-          <span className="mono">{planId || "loading"}</span>
-          {preview?.content_profile === "derived_plan_full" && preview.markdown ? (
-            <span className="muted">正文 {preview.markdown.length.toLocaleString()} 字符 · Task Map 为辅助拆分</span>
-          ) : null}
-        </div>
-        <div className="plan-preview-toolbar-actions">
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || !decisionReady || disabled || loading || preview.content_kind === "unavailable"}>
-            <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
-          </button>
-          <input
-            value={rejectReason}
-            placeholder="reject reason"
-            onChange={(event) => onRejectReason(event.target.value)}
-            disabled={!preview}
-          />
-          <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || !decisionReady || disabled || !rejectReason.trim()}>
-            <X size={14} /> Reject
-          </button>
-          <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled}>
-            <MessageSquare size={14} /> Repair
-          </button>
-          <button type="button" className="icon-button" title="Close preview" onClick={onClose}>
-            <X size={16} />
-          </button>
-        </div>
-      </div>
-      <div className="plan-preview-body">
-        <main className="plan-preview-reader">
-          {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
-          {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
-          {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
-            {preview && <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />}
-          </Suspense>}
-        </main>
-        <aside className="plan-preview-context">
-          <label className="plan-preview-repair-chat">
-            <span>通过 Chat 修改 Plan</span>
-            <textarea
-              value={repairMessage}
-              placeholder="说明需要调整的范围、任务或验收要求。"
-              onChange={(event) => onRepairMessage(event.target.value)}
-              disabled={!preview || disabled}
-              rows={4}
-            />
-            <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled || !repairMessage.trim()}>
-              <MessageSquare size={14} /> 发送修改请求
-            </button>
-          </label>
-          <dl className="plan-approval-meta">
-            <div><dt>正文</dt><dd>{planContentKindLabel(preview)}</dd></div>
-            <div><dt>内容契约</dt><dd>{planContentProfileLabel(preview?.content_profile)}</dd></div>
-            <div><dt>status</dt><dd>{preview?.status || "-"}</dd></div>
-            <div><dt>stage</dt><dd>{preview?.stage_id || "-"}</dd></div>
-            <div><dt>tasks</dt><dd>{preview?.task_count ?? preview?.task_map_summary?.task_count ?? "-"}</dd></div>
-            <div><dt>decisions</dt><dd>{preview?.decision_count ?? preview?.owner_decision_items?.length ?? 0}</dd></div>
-            <div><dt>trace</dt><dd>{preview?.trace_id || "-"}</dd></div>
-          </dl>
-          {preview?.review_packet && <details open>
-            <summary>SDD/TDD 审核包 · {preview.review_packet.status}</summary>
-            <ul>
-              {preview.review_packet.sections.map((section) => <li key={section.id}>
-                <strong>{section.title}</strong> <span className="muted">· {section.status}</span>
-                {section.notes?.[0] ? <div className="muted">{section.notes[0]}</div> : null}
-              </li>)}
-            </ul>
-            {(preview.review_packet.diagnostics?.length ?? 0) > 0 && <div role="alert">
-              <strong>需要处理的诊断</strong>
-              <ul>
-                {preview.review_packet.diagnostics?.map((diagnostic) => <li key={diagnostic.code}>
-                  <span className="mono">{diagnostic.code}</span> · {diagnostic.message}
-                </li>)}
-              </ul>
-            </div>}
-          </details>}
-          {preview?.digest_markdown && preview.content_kind !== "digest_only" && <details>
-            <summary>计划摘要（机械检查）</summary>
-            <MarkdownText content={preview.digest_markdown} />
-          </details>}
-          {(preview?.owner_decision_items?.length ?? 0) > 0 && <details open>
-            <summary>Owner decisions ({preview?.owner_decision_items?.length})</summary>
-            <ol>
-              {preview?.owner_decision_items?.map((item) => <li key={item.decision_id || item.question}>
-                <strong>{item.decision_id || "Decision"}</strong>: {item.question || "Owner decision required"}
-              </li>)}
-            </ol>
-          </details>}
-          {(preview?.requirement_artifacts?.length ?? 0) > 0 && <details open>
-            <summary>需求原文 ({preview?.requirement_artifacts?.length})</summary>
-            <p className="muted">打开原始需求文档核对范围、章节和未决项。</p>
-            <ul>
-              {preview?.requirement_artifacts?.map((artifact) => <li key={artifact.name}>
-                <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
-              </li>)}
-            </ul>
-          </details>}
-          {(preview?.task_map_summary?.tasks?.length ?? 0) > 0 && <details>
-            <summary>任务图 ({preview?.task_map_summary?.task_count ?? 0})</summary>
-            <ul>
-              {preview?.task_map_summary?.tasks?.map((task) => <li key={task.task_id || task.title}>
-                <strong>{task.task_id}</strong> {task.title}
-                {task.blocked_by ? <span className="muted"> · blocked by {task.blocked_by}</span> : null}
-              </li>)}
-            </ul>
-          </details>}
-          {preview?.task_map_markdown && <details>
-            <summary>完整 Task Map 详情</summary>
-            <MarkdownText content={preview.task_map_markdown} />
-          </details>}
-          {preview?.artifacts_error && <p role="alert">计划附件不可用：{preview.artifacts_error}</p>}
-          {(preview?.artifacts?.length ?? 0) > 0 && <nav aria-label="Plan artifacts">
-            <h3>工程附件（同版）</h3>
-            {preview?.artifacts?.map((artifact) => <p key={artifact.name}>
-              <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
-            </p>)}
-          </nav>}
-          <details><summary>版本与来源引用</summary>
-            <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
-          </details>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function planContentProfileLabel(profile?: string): string {
-  switch (profile) {
-    case "derived_plan_full": return "完整派生 Plan";
-    case "summary_only": return "仅摘要";
-    case "derived_plan": return "派生 Plan（需核对完整性）";
-    default: return "未声明";
-  }
-}
-
-function planContentKindLabel(preview: PlanPreview | null): string {
-  if (!preview || preview.content_kind === "unavailable") return "不可用";
-  if (preview.content_profile === "summary_only" || preview.content_kind === "digest_only") return "仅摘要";
-  if (preview.content_profile === "derived_plan_full") return "完整 Plan";
-  return "Plan 正文（完整性未声明）";
 }
 
 function itemSearchText(item: OperatorInboxItem): string {
@@ -946,21 +793,6 @@ function kindIcon(kind: string): LucideIcon {
   return Bell;
 }
 
-function compactTime(value?: string): string {
-  if (!value) return "-";
-  const parsed = Date.parse(value);
-  if (!Number.isFinite(parsed)) return value;
-  const deltaMs = Date.now() - parsed;
-  if (deltaMs < 0) return new Date(parsed).toLocaleString();
-  const minutes = Math.floor(deltaMs / 60000);
-  if (minutes < 1) return "now";
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  const days = Math.floor(hours / 24);
-  if (days < 7) return `${days}d`;
-  return new Date(parsed).toLocaleDateString();
-}
 
 function inboxDeepLink(value: string, projectId: string): string {
   const target = new URL(value, window.location.href);

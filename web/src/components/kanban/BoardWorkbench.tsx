@@ -1,31 +1,22 @@
+import { TaskToolbar } from "./TaskToolbar";
+import { TaskViews } from "./TaskViews";
+import { sortTasks } from "./taskViewModel";
+import type { TaskSort, TaskGroup } from "./taskViewModel";
 // BoardWorkbench + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import { search } from "../../api/client";
 import type { ActionResponse, AgentSummary, FanoutSummary, Task } from "../../api/types";
 import { BoardColumn } from "../../components/kanban/BoardColumn";
-import { BacklogRefsBadge, RouteSummaryStrip, WorkflowBadges } from "../../components/kanban/TaskCard";
 import { BOARD_COLUMNS, isBoardColumnId, taskColumn } from "../../components/kanban/board";
 import type { BoardColumnId } from "../../components/kanban/board";
 import {
-  TASK_FOCUS_OPTIONS,
   selectTaskFocus,
   taskFocusForFilters,
 } from "../../components/kanban/taskToolbarSelection";
 import type { TaskFocus } from "../../components/kanban/taskToolbarSelection";
-import { contextBadgeTone, contextLabel, formatTokens } from "../../lib/format";
-import {
-  latestEventAge,
-  taskIsEffectivelyTerminal,
-  taskPriority,
-  taskRiskBadge,
-  taskTerminalOutcome,
-  taskTerminalTone,
-} from "../../lib/task-display";
 import type { TaskTelemetry } from "../../lib/task-display";
-import { Columns3, List } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent } from "react";
 import type { ViewMode } from "../../app/sharedTypes";
-import { formatUsd, needsOperatorAttention } from "../../app/shared";
+import { needsOperatorAttention } from "../../app/shared";
 
 interface PointerDragState {
   taskId: string;
@@ -87,6 +78,7 @@ export function BoardWorkbench({
   onMoveTaskStatus,
   onOpenFanout,
   onOpenTask,
+  onNewTask,
   onSaveToken,
   onUnlockSession,
   passcodeRequired,
@@ -104,7 +96,6 @@ export function BoardWorkbench({
   setTextFilter,
   setViewMode,
   statusFilter,
-  tasksByColumn,
   textFilter,
   totalTaskCount,
   viewMode,
@@ -121,6 +112,7 @@ export function BoardWorkbench({
   onMoveTaskStatus: (taskId: string, status: BoardColumnId) => void;
   onOpenFanout: (fanoutId: string) => void;
   onOpenTask: (taskId: string) => void;
+  onNewTask: () => void;
   onSaveToken: (token: string) => void;
   onUnlockSession: (passcode: string) => Promise<{ ok: boolean; reason?: string }>;
   passcodeRequired: boolean;
@@ -138,11 +130,14 @@ export function BoardWorkbench({
   setTextFilter: (value: string) => void;
   setViewMode: (value: ViewMode) => void;
   statusFilter: string;
-  tasksByColumn: Record<BoardColumnId, Task[]>;
   textFilter: string;
   totalTaskCount: number;
   viewMode: ViewMode;
 }) {
+  const [sort, setSort] = useState<TaskSort>("activity");
+  const [descending, setDescending] = useState(true);
+  const [group, setGroup] = useState<TaskGroup>("status");
+  const sortedTasks = useMemo(() => sortTasks(filteredTasks, sort, descending), [filteredTasks, sort, descending]);
   const [dragTaskId, setDragTaskId] = useState("");
   const [boardNotice, setBoardNotice] = useState("");
   const [passcodeInput, setPasscodeInput] = useState("");
@@ -274,103 +269,12 @@ export function BoardWorkbench({
 
   return (
     <>
-      <div className="section-heading">
-        <div>
-          <h2>Tasks</h2>
-          <span className="muted">{filteredTasks.length} visible tasks</span>
-        </div>
-      </div>
-      <div className="task-toolbar">
-        <div className="task-toolbar-row task-toolbar-primary-row">
-          <div className="task-toolbar-control-group">
-            <span className="task-toolbar-control-label" aria-hidden="true">View</span>
-            <div className="task-segmented-control" role="group" aria-label="Task view">
-              <button
-                aria-pressed={viewMode === "board"}
-                className={`segmented ${viewMode === "board" ? "active" : ""}`}
-                type="button"
-                onClick={() => setViewMode("board")}
-              >
-                <Columns3 size={14} strokeWidth={1.8} aria-hidden="true" />
-                Board
-              </button>
-              <button
-                aria-pressed={viewMode === "list"}
-                className={`segmented ${viewMode === "list" ? "active" : ""}`}
-                type="button"
-                onClick={() => setViewMode("list")}
-              >
-                <List size={14} strokeWidth={1.8} aria-hidden="true" />
-                List
-              </button>
-            </div>
-          </div>
-          <div className="task-toolbar-control-group task-focus-control-group">
-            <span className="task-toolbar-control-label" aria-hidden="true">Focus</span>
-            <div className="task-segmented-control" role="group" aria-label="Task focus">
-              {TASK_FOCUS_OPTIONS.map((option) => (
-                <button
-                  aria-pressed={activeTaskFocus === option.value}
-                  className={`segmented ${activeTaskFocus === option.value ? "active" : ""}`}
-                  key={option.value}
-                  type="button"
-                  onClick={() => handleTaskFocus(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <input
-            aria-label="Filter tasks"
-            className="filter-input task-search-input"
-            placeholder="filter tasks"
-            value={textFilter}
-            onChange={(event) => setTextFilter(event.target.value)}
-          />
-        </div>
-        <div className="task-toolbar-row task-filter-row">
-          <select
-            aria-label="Task status filter"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">all status</option>
-            {BOARD_COLUMNS.map((column) => (
-              <option value={column.id} key={column.id}>{column.title}</option>
-            ))}
-          </select>
-          <select value={assigneeFilter} onChange={(event) => setAssigneeFilter(event.target.value)}>
-            <option value="all">all assignees</option>
-            {assignees.map((assignee) => (
-              <option value={assignee} key={assignee}>{assignee}</option>
-            ))}
-          </select>
-          <select value={skillFilter} onChange={(event) => setSkillFilter(event.target.value)}>
-            <option value="all">all skills</option>
-            {skills.map((skill) => (
-              <option value={skill} key={skill}>{skill}</option>
-            ))}
-          </select>
-          <select value={priorityFilter} onChange={(event) => setPriorityFilter(event.target.value)}>
-            <option value="all">all priority</option>
-            {[0, 1, 2, 3, 4, 5].map((priority) => (
-              <option value={String(priority)} key={priority}>P{priority}</option>
-            ))}
-          </select>
-          <select
-            aria-label="Task signal filter"
-            value={quickFilter}
-            onChange={(event) => setQuickFilter(event.target.value)}
-          >
-            <option value="focused">focused work</option>
-            <option value="all">all tasks</option>
-            <option value="ready">ready</option>
-            <option value="blocked">blocked</option>
-            <option value="failed">failed</option>
-          </select>
-        </div>
-      </div>
+      <TaskToolbar
+        {...{ textFilter, setTextFilter, statusFilter, setStatusFilter, assigneeFilter, setAssigneeFilter, assignees,
+          skillFilter, setSkillFilter, skills, priorityFilter, setPriorityFilter, quickFilter, setQuickFilter,
+          viewMode, setViewMode, sort, setSort, descending, setDescending, group, setGroup, onNewTask }}
+        activeFocus={activeTaskFocus} onFocus={handleTaskFocus} count={filteredTasks.length}
+      />
       {!actionReady && mutationEnabled ? (
         <div className="notice board-action-notice">
           <div className="token-row">
@@ -461,7 +365,7 @@ export function BoardWorkbench({
             <BoardColumn
               key={column.id}
               column={column}
-              tasks={tasksByColumn[column.id]}
+              tasks={sortedTasks.filter((task) => taskColumn(task) === column.id)}
               telemetryByTaskId={telemetryByTaskId}
               selectedTaskId={selectedTaskId}
               dragTaskId={dragTaskId}
@@ -471,174 +375,13 @@ export function BoardWorkbench({
           ))}
         </div>
       ) : (
-        <TaskListView
-          tasks={filteredTasks}
-          selectedTaskId={selectedTaskId}
-          telemetryByTaskId={telemetryByTaskId}
-          onOpenTask={onOpenTask}
+        <TaskViews
+          tasks={sortedTasks} view={viewMode} group={group}
+          selectedTaskId={selectedTaskId} telemetry={telemetryByTaskId}
+          onOpenTask={onOpenTask} sort={sort} descending={descending}
+          onSort={(next) => { if (next === sort) setDescending(!descending); else { setSort(next); setDescending(false); } }}
         />
       )}
     </>
-  );
-}
-
-
-function TaskListView({
-  tasks,
-  telemetryByTaskId,
-  selectedTaskId,
-  onOpenTask,
-}: {
-  tasks: Task[];
-  telemetryByTaskId: Map<string, TaskTelemetry>;
-  selectedTaskId: string | null;
-  onOpenTask: (taskId: string) => void;
-}) {
-  const [focusedTaskId, setFocusedTaskId] = useState(selectedTaskId || tasks[0]?.id || "");
-  useEffect(() => {
-    if (selectedTaskId && selectedTaskId !== focusedTaskId) {
-      setFocusedTaskId(selectedTaskId);
-      return;
-    }
-    if (!tasks.some((task) => task.id === focusedTaskId)) {
-      setFocusedTaskId(tasks[0]?.id || "");
-    }
-  }, [focusedTaskId, selectedTaskId, tasks]);
-
-  const selectedTask = tasks.find((task) => task.id === focusedTaskId) ?? tasks[0] ?? null;
-  const selectedTelemetry = selectedTask ? telemetryByTaskId.get(selectedTask.id) : undefined;
-  const totalTokens = (selectedTelemetry?.inputTokens ?? 0) + (selectedTelemetry?.outputTokens ?? 0);
-  const selectedRisk = selectedTask ? taskRiskBadge(selectedTask, selectedTelemetry) : null;
-  const selectedTerminal = selectedTask ? taskIsEffectivelyTerminal(selectedTask) : false;
-
-  return (
-    <div className="task-list-layout">
-      <section className="subsection task-list-panel">
-        <div className="inline-heading">
-          <h3>Task List</h3>
-          <span className="muted">{tasks.length} tasks</span>
-        </div>
-        <div className="task-list-view" role="list">
-          {tasks.map((task) => {
-            const telemetry = telemetryByTaskId.get(task.id);
-            const total = (telemetry?.inputTokens ?? 0) + (telemetry?.outputTokens ?? 0);
-            const risk = taskRiskBadge(task, telemetry);
-            return (
-              <button
-                className={`task-list-row ${task.id === selectedTask?.id ? "active" : ""}`}
-                key={task.id}
-                type="button"
-                onClick={() => setFocusedTaskId(task.id)}
-                role="listitem"
-              >
-                <span className="mono">{task.id}</span>
-                <span>{task.title || "-"}</span>
-                <span className="muted">{task.display_status || task.status}</span>
-                {taskIsEffectivelyTerminal(task) ? (
-                  <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
-                ) : risk.label ? (
-                  <span className={`badge badge-${risk.tone}`}>{risk.label}</span>
-                ) : <span />}
-                {!taskIsEffectivelyTerminal(task) ? (
-                  <span className={`badge badge-${contextBadgeTone(telemetry?.contextRatio)}`}>
-                    {contextLabel(telemetry?.contextRatio)}
-                  </span>
-                ) : <span />}
-                {!taskIsEffectivelyTerminal(task) ? <span className="badge badge-muted">tok {formatTokens(total)}</span> : <span />}
-                <span className="task-route-list-cell">{taskIsEffectivelyTerminal(task) ? "-" : task.route_summary?.summary || "-"}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-      <aside className="subsection task-inspector" aria-label="Task inspector">
-        <div className="inline-heading">
-          <h3>Inspector</h3>
-          {selectedTask ? (
-            <button className="icon-button" type="button" onClick={() => onOpenTask(selectedTask.id)}>
-              Open Detail
-            </button>
-          ) : null}
-        </div>
-        {selectedTask ? (
-          <>
-            <div className="task-inspector-title">
-              <span className="mono">{selectedTask.id}</span>
-              <strong>{selectedTask.title || "(untitled)"}</strong>
-            </div>
-            {selectedTerminal ? (
-              <>
-                <div className="badge-row">
-                  <span className={`badge badge-${taskTerminalTone(selectedTask)}`}>
-                    {taskTerminalOutcome(selectedTask)}
-                  </span>
-                </div>
-                <dl className="key-value-grid compact-kv">
-                  <dt>Status</dt>
-                  <dd>{selectedTask.task_card?.lifecycle.display_status || selectedTask.display_status || "done"}</dd>
-                  <dt>Outcome</dt>
-                  <dd>{taskTerminalOutcome(selectedTask)}</dd>
-                  <dt>Owner</dt>
-                  <dd>{selectedTask.task_card?.owner.actor_id || selectedTask.assigned_to || "-"}</dd>
-                  <dt>Latest activity</dt>
-                  <dd>{selectedTask.task_card?.activity.kind || selectedTask.latest_event?.type || "-"}</dd>
-                  <dt>Activity age</dt>
-                  <dd>{latestEventAge(selectedTask)}</dd>
-                </dl>
-              </>
-            ) : (
-              <>
-                <div className="badge-row">
-                  {selectedRisk?.label ? <span className={`badge badge-${selectedRisk.tone}`}>{selectedRisk.label}</span> : null}
-                  <WorkflowBadges task={selectedTask} />
-                  <span className={`badge badge-${contextBadgeTone(selectedTelemetry?.contextRatio)}`}>
-                    {contextLabel(selectedTelemetry?.contextRatio)}
-                  </span>
-                  <span className="badge badge-muted">tokens {formatTokens(totalTokens)}</span>
-                </div>
-                <RouteSummaryStrip route={selectedTask.route_summary} />
-                <dl className="key-value-grid compact-kv">
-                  <dt>Status</dt>
-                  <dd>{selectedTask.status}</dd>
-                  <dt>Priority</dt>
-                  <dd>P{taskPriority(selectedTask)}</dd>
-                  <dt>Assignee</dt>
-                  <dd>{selectedTask.assigned_to || "-"}</dd>
-                  <dt>Workers</dt>
-                  <dd>{selectedTelemetry?.workerIds.join(", ") || "-"}</dd>
-                  <dt>Input tokens</dt>
-                  <dd>{formatTokens(selectedTelemetry?.inputTokens)}</dd>
-                  <dt>Output tokens</dt>
-                  <dd>{formatTokens(selectedTelemetry?.outputTokens)}</dd>
-                  <dt>Cost</dt>
-                  <dd>{formatUsd(selectedTelemetry?.usd)}</dd>
-                  <dt>Latest event</dt>
-                  <dd>{selectedTask.latest_event?.type || "-"}</dd>
-                </dl>
-                {selectedTask.blocked_reason ? (
-                  <div className="notice compact-error">{selectedTask.blocked_reason}</div>
-                ) : null}
-                <div className="subsection compact-subsection">
-                  <div className="inline-heading">
-                    <h3>Evidence</h3>
-                    <span className="muted">{selectedTask.evidence_badges?.length ?? 0}</span>
-                  </div>
-                  <div className="badge-row">
-                    {selectedTask.evidence_badges?.length ? selectedTask.evidence_badges.map((badge) => (
-                      <span className={`badge badge-${badge.tone}`} key={`${selectedTask.id}-${badge.kind}-${badge.label}`}>
-                        {badge.label}
-                      </span>
-                    )) : <span className="muted">No evidence badges.</span>}
-                    <BacklogRefsBadge task={selectedTask} />
-                  </div>
-                </div>
-              </>
-            )}
-          </>
-        ) : (
-          <p className="empty-text">No task selected.</p>
-        )}
-      </aside>
-    </div>
   );
 }
