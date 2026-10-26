@@ -1,5 +1,5 @@
 {
-  "status": "impl_parallel_observed_verify_pending",
+  "status": "assembly_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -283,6 +283,75 @@
       "file": "preview-authority-impact-closure.log",
       "sha256": "8d25e3f090ab2d6b21dace038e7222ba37508c236969c03cbfb0f1071b5489e8",
       "bytes": 180
+    },
+    {
+      "file": "queued-authority-closure-corrected.log",
+      "sha256": "4c88d93aad71c8b36f9f40b3abd207f26a4d3229d0e2de318e0aa005f19533c8",
+      "bytes": 10070,
+      "raw_sha256": "c7964f224d6ff1ef88f4847710dcde025dd8e8f39d6a58c6cb15aa270d29913c",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "queued-authority-closure-final.log",
+      "sha256": "d318e9e8795c897a25e16833dc188358b68efbf09c4775200564a59b8d4ab6c0",
+      "bytes": 352
+    },
+    {
+      "file": "queued-authority-dev-verify-plan.log",
+      "sha256": "4850ef0c42eb11dc9f6850a128225ff876d9b0487cc901e77266da27e1a203d6",
+      "bytes": 1268
+    },
+    {
+      "file": "queued-authority-dev-verify-run.log",
+      "sha256": "8cdca0926a2d8f4f0a044c1c0300561c8d4950d9613b6c2bf7aa1d16bda7be21",
+      "bytes": 1415
+    },
+    {
+      "file": "queued-authority-flow-smoke.log",
+      "sha256": "1cd19d398238ad28ba44f360c132db9770309cbf3486f5f9bdd89b9d8e41172c",
+      "bytes": 99
+    },
+    {
+      "file": "queued-authority-handoff-final.log",
+      "sha256": "496be5ec736e00e90f9f86d42d78dfe98f349d8872abc5466675066b21d0cd3a",
+      "bytes": 98
+    },
+    {
+      "file": "queued-authority-projection-repair.json",
+      "sha256": "c99f84200a3b8fe56f33dbfd505842231c728de00c1cbd6a2a19435cd78cb100",
+      "bytes": 419
+    },
+    {
+      "file": "queued-authority-real-replay.json",
+      "sha256": "63146fd7516d6f5c29a4c362e8345a749e650427575bbc603951d7556f9dcbd6",
+      "bytes": 609
+    },
+    {
+      "file": "queued-authority-recovery-audit.json",
+      "sha256": "1881e8bd4f3747e0e1ea97bbe0cfa243fd852e5e0bd4b38ba5638a26b5fa2b01",
+      "bytes": 4620
+    },
+    {
+      "file": "queued-authority-red.log",
+      "sha256": "159b1b6f8371ed5c6ff7957b60087dec1b4bf9b855abf7442a65fa4101491408",
+      "bytes": 15564,
+      "raw_sha256": "cab7bd5ecfb9a1fd04daefd0e57818bd3cff6998ad0cc452d51805b32394967f",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "queued-authority-sentinel-corrected.log",
+      "sha256": "bd5cb018694cbb3af52fbcaf15d98098e6119357fa7badfc624a7af7a6fed809",
+      "bytes": 128
+    },
+    {
+      "file": "queued-authority-sentinel.log",
+      "sha256": "eb261fb4b2614c857676a3abfd514ddec1e1e263689c96c992a1e7d0b83660ee",
+      "bytes": 2888
+    },
+    {
+      "file": "queued-authority-stale-handoff-e2e.log",
+      "sha256": "9c670889900d58c2ae395d27faa8b392972773d10530159b9110fc38c0dc1731",
+      "bytes": 98
     },
     {
       "file": "reader-binding-regression.log",

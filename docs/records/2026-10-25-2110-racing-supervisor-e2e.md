@@ -80,3 +80,10 @@
 与Prompt的差异：3个Impl/Verify lanes由真实Synthesis问答进入候选，而非另做一次lane数Chat修改；Workflow Chat实际验证审批开关、model和skills三项。两张真实Plan局部diff截图捕获位置失效，不作视觉证据，保留真实API与DOM断言；另以完整Plan候选的明确UI夹具复测桌面/手机diff可读且不横向溢出，1 passed，不冒充真实Provider执行证据。Docker镜像内没有@playwright/test runner，浏览器回归将已有前端node_modules只读挂入容器，仍使用容器Chromium，未安装宿主浏览器。
 
 恢复投影的验证器按本次5个改动路径（仍以dev为base）规划80个关联测试文件；已执行明确的115项影响闭包及51项sentinel，匹配run跳过已覆盖deterministic与未改变的Web层，没有额外执行全量或把跳过的tier计为通过。真实浏览器当前与历史状态由上述API回归及Docker复核共同验证。
+
+30. DRIVE提交`2d58b91886ecdb7e92c3776c7ba7a74e85313ea2`、TRACK提交`fc3f13f`，分别于00:52:49/00:55:32产生`dev.build.done`。两者真实Docker浏览器与本片测试完成，但结果被运行时标为stale_contract_authority：dispatch及Worker self-check使用当前authority，fanout投影遗漏五个authority/execution binding字段，结果binder错误采用排队旧payload。同时恢复循环反复写相同impl.self_check.completed。反例先复现3失败/1通过，修复保存正式dispatch元数据并对同来源/摘要去重，未放宽合同验证。两项旧兼容性测试需要从模拟“untyped replacement”的原始事件与投影中同时去除新增字段，保持原有成功/拒绝断言。
+31. 使用原5517条事件经`FanoutManifestProjector.write_manifest`重建可再生manifest，核对账本未变、未写TaskStore；保留Provider会话重载watcher。01:05:14/15内核自动接纳DRIVE/TRACK原结果（`evt-049f56c81c3a`、`evt-01ade5921a6d`），01:05:18派发ASSEMBLY（`evt-64b8d0dcad37`，实际lane 2）。监工没有代写产品代码、补造Worker成功或跳过独立Verify。治理外部证据随第四个实际派发更新，仍不包含未来验证结果。
+
+Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把全部区间称为活跃编码；实际两Provider均在00:29至00:53期间工作。配置3 lanes，当前依赖图实现最大宽度2，装配须等待两项交付接纳，独立Verify仍待候选生成。
+
+排队authority修复最终验证：8个调用链/合同模块233 passed（198.78秒），旧合同交接Mock E2E 1 passed（9.80秒），sentinel 51 passed，flow-smoke 10 passed。首次sentinel因fanout.py新增后超过1000行及orchestrator_fanout.py超过既有上限失败；将既有metadata函数移入同责任模块，并撤掉无必要的orchestrator改动后通过，未提高结构豁免。自动验证器规划211个关联文件而扩成broad；实际按AGENTS执行上述影响闭包，run跳过deterministic/serial与已通过contract，仅补跑flow-smoke 10 passed（6.55秒），不声称全量pytest。修复后截至01:14未再生成两份交付的重复self-check事件；修复前544条历史重复事件保留不删除。

@@ -566,6 +566,13 @@ class WriterContractHandoffMixin:
             )
             fields = self_check_payload_fields(descriptor)
             base_payload.update(fields)
+            if any(
+                prior.type == "impl.self_check.completed"
+                and prior.causation_id == event.id
+                and all(prior.payload.get(key) == value for key, value in fields.items())
+                for prior in self.event_log.read_all()
+            ):
+                return
             self.event_writer.append(ZfEvent(
                 type="impl.self_check.completed",
                 actor="orchestrator",

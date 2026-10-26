@@ -134,3 +134,5 @@ Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮
 保留Worker的源码修复重载器从 `process-guard.v2` 读取 `owner_pid`，同时兼容旧 `pid`，继续检查目标进程身份。此前只读旧字段，导致找不到现有watcher。真实运行中通过此路径更换watcher后，FOUNDATION的Provider会话、派发ID和全部pane PID均未变化；该操作不替代Plan批准，也不重建任务图。
 
 图与Workflow详情复用Run admission归约后的active状态。受控 `run.goal.updated(status=active)` 恢复原blocked Run后，当前Run显示running，终点回到pending，旧blocked事件仍可在历史/证据中查看；历史回放保持当时的blocked，completed/cancelled等不可逆终态不被该恢复事件清除。图不把Worker自报terminal当作Kernel终态。
+
+排队的writer派发后，fanout投影必须保存实际派发的合同authority和execution binding五字段，后续重派覆盖旧值；结果身份绑定不能被排队时旧payload回写为过期authority。字段来自正式事件，复用已有投影metadata模块，不改变合同准入规则。相同来源事件、相同绑定摘要的impl self-check在恢复重放时只记一次完成事件；仍先核验完整self-check正文与合同。真实DRIVE/TRACK原报告无需改写，重建可再生manifest并重载watcher后已被内核自动接纳。
