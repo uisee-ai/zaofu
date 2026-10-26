@@ -1,6 +1,6 @@
 # Inbox 阅读与人工处理分离
 
-> 状态: active
+> 状态: done — 29e325cb feat: simplify inbox and task views with isolated workflow reads
 > 来源: docs/design/186-inbox-and-task-board-human-centered-design.md；docs/design/188-dashboard-workflow-multi-run-sqlite-review.md（186 第 4.1–4.3 节及第 9 节）。
 > 基线: dev c769680b；worktree zaofu-inbox-workflow。
 

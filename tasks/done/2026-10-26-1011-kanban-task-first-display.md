@@ -1,6 +1,6 @@
 # Kanban Board 与 List 默认任务优先
 
-> 状态: active
+> 状态: done — 29e325cb feat: simplify inbox and task views with isolated workflow reads
 > 来源: docs/design/186-inbox-and-task-board-human-centered-design.md；docs/design/188-dashboard-workflow-multi-run-sqlite-review.md（186 第 5、11.4 节）。
 > 基线: dev c769680b；worktree zaofu-inbox-workflow。
 
