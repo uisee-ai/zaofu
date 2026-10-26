@@ -136,3 +136,5 @@ Plan 审阅器按三个绑定端口的路径和摘要确定加载身份，图轮
 图与Workflow详情复用Run admission归约后的active状态。受控 `run.goal.updated(status=active)` 恢复原blocked Run后，当前Run显示running，终点回到pending，旧blocked事件仍可在历史/证据中查看；历史回放保持当时的blocked，completed/cancelled等不可逆终态不被该恢复事件清除。图不把Worker自报terminal当作Kernel终态。
 
 排队的writer派发后，fanout投影必须保存实际派发的合同authority和execution binding五字段，后续重派覆盖旧值；结果身份绑定不能被排队时旧payload回写为过期authority。字段来自正式事件，复用已有投影metadata模块，不改变合同准入规则。相同来源事件、相同绑定摘要的impl self-check在恢复重放时只记一次完成事件；仍先核验完整self-check正文与合同。真实DRIVE/TRACK原报告无需改写，重建可再生manifest并重载watcher后已被内核自动接纳。
+
+候选质量执行器保留每条Task Contract命令规范化后的`timeout_seconds`，实际执行、超时诊断及命令收据使用同一值；过去统一固定为300秒，导致短命令无法按90秒约束、完整交付的1200秒期限也被截短。旧zf.yaml quality gate命令仍使用300秒默认。运行时只执行已声明的机械期限，超时保持失败，不替代命令自身的环境准备或语义验收。

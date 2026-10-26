@@ -1,5 +1,5 @@
 {
-  "status": "assembly_running_verify_pending",
+  "status": "cold_candidate_rework_running_verify_pending",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -70,9 +70,66 @@
       "bytes": 25730
     },
     {
+      "file": "assembly-pre-verification-truth.json",
+      "sha256": "5e3c7dd90d0ed69a3b62fe854a920a4bd71a370c8d75615cbb04fe3673dc6cc6",
+      "bytes": 1294
+    },
+    {
       "file": "cancel-projection-green2.log",
       "sha256": "fcc88f5f40e9aa8c4d36e4659327bc9d886c06003ae54eed58fac926825371d4",
       "bytes": 100
+    },
+    {
+      "file": "candidate-timeouts-callers.log",
+      "sha256": "8ef35fd664fd7c89fd1ba139ecb2a90e6f653a591f3f5e784737a52993964971",
+      "bytes": 99
+    },
+    {
+      "file": "candidate-timeouts-closure-corrected.log",
+      "sha256": "687fe8ca49e17e6bb7bd99891ff49111eea420257a10e66026124fd825c78c6c",
+      "bytes": 261
+    },
+    {
+      "file": "candidate-timeouts-dev-verify-plan.log",
+      "sha256": "c7bec02d137b138d11a7814e98d562e16ec34b5b63c6791761257daa9f8ffae9",
+      "bytes": 1157
+    },
+    {
+      "file": "candidate-timeouts-dev-verify-run.log",
+      "sha256": "c7bec02d137b138d11a7814e98d562e16ec34b5b63c6791761257daa9f8ffae9",
+      "bytes": 1157
+    },
+    {
+      "file": "candidate-timeouts-flow-smoke.log",
+      "sha256": "7da266ea9e48b3c88b755c45f1ac951df5c4a44220372a2053332dd07dfca771",
+      "bytes": 99
+    },
+    {
+      "file": "candidate-timeouts-focused.log",
+      "sha256": "e44b3c291b78c8245f0d09100874937e84788054c7bb7bd03541501e218cbb30",
+      "bytes": 114
+    },
+    {
+      "file": "candidate-timeouts-red.log",
+      "sha256": "a85a5383746b654667fa15a70759526981b5207ff696e72a6624a122065a4cd4",
+      "bytes": 10653,
+      "raw_sha256": "01fa8b592ac8e4dca56b1d280cfc9d9f886299b765ded3fed05d7a313cb5f91a",
+      "transformation": "strip trailing whitespace from log lines; preserve raw temp evidence"
+    },
+    {
+      "file": "candidate-timeouts-reload.json",
+      "sha256": "3dac6468366e6b6f5ad12ea5f67f841846b4032f54c7823a679f2b86ab2a2396",
+      "bytes": 141
+    },
+    {
+      "file": "candidate-timeouts-sentinel.log",
+      "sha256": "ec7c0a20b9ba4f195f617128738c737f70389d7aa2dbce862942795e98c46141",
+      "bytes": 127
+    },
+    {
+      "file": "cold-candidate-precheck-observation.json",
+      "sha256": "f9d1e45c32e18b21cf7f93f0ba60beb68941f3178fac562952cda92eb963c762",
+      "bytes": 7610
     },
     {
       "file": "compiled-lane-stages.json",
@@ -123,6 +180,16 @@
       "file": "evidence-environment-idle-role-restarts.json",
       "sha256": "8ff74dd65a62ff3fd0ef2470ad8cea0ee0d65f44d424fb445e283fa70ad99e9e",
       "bytes": 557
+    },
+    {
+      "file": "evt-b787a6c135c0.json",
+      "sha256": "470261c0ebd228d805c5ebae4b364f620ab5a5188c05fbdb3df3e42ff4fdeabc",
+      "bytes": 17582
+    },
+    {
+      "file": "evt-d372c55c34d3.json",
+      "sha256": "9a97eabcba194eda044eab3a40688ee5403d0bb6b9cf73ae09924e351c1e5fa6",
+      "bytes": 12071
     },
     {
       "file": "final-candidate.yaml",
@@ -181,8 +248,8 @@
     },
     {
       "file": "parallel-intervals.json",
-      "sha256": "41514a764d70b12aaf498282edb1f3d2c0254a25500d0ded6b7c1e37940c7618",
-      "bytes": 6949
+      "sha256": "53f03df714d612328746d26f6bdf4ba00d9ef52bcb2b401e91c952be2e6e5a51",
+      "bytes": 7814
     },
     {
       "file": "pending-interfaces.md",
@@ -464,6 +531,16 @@
       "bytes": 949
     },
     {
+      "file": "rework-approval-equivalence.json",
+      "sha256": "6900aef55d9e52d9972353ebb3f1eb26d8a0548bcdf2168dcda09a10006a64e0",
+      "bytes": 5831
+    },
+    {
+      "file": "rework-plan-preview.md",
+      "sha256": "dfa3dfc8b1634f0d64cb9430e935a93c537b3b73d997d21b5e7268aa64f5a7e8",
+      "bytes": 1261
+    },
+    {
       "file": "runtime-quote-guard-final.log",
       "sha256": "7682c2ed64bb9ee957ccb7aea087f2d1542a1c899ebb628b859df967522f366d",
       "bytes": 100
@@ -472,6 +549,16 @@
       "file": "runtime-reload-stop.log",
       "sha256": "eda827bb1702966604d83b62a92efbdc378d5d9391ab499f848d2826d6c2dd1d",
       "bytes": 72
+    },
+    {
+      "file": "same-package-rework-approval.json",
+      "sha256": "a21a0b493af80eced5e20230d9fee261d3c09dabdef0c14da9aed81c59db2ecd",
+      "bytes": 1247
+    },
+    {
+      "file": "same-package-rework-browser.log",
+      "sha256": "d9096855aed24145aaa5e8be06066ad591fcb8762f733b4f76746bf1a7dd1348",
+      "bytes": 451
     },
     {
       "file": "sentinel-final.log",

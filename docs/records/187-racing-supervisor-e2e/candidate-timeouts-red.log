@@ -1,0 +1,211 @@
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+__________ test_candidate_rebuild_preserves_command_timeout[90-False] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-212/test_candidate_rebuild_preserv0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708019a3c2d0>
+timeout = 90, expires = False
+
+    @pytest.mark.parametrize("timeout,expires", [(90, False), (1200, False), (1200, True), (None, False)])
+    def test_candidate_rebuild_preserves_command_timeout(tmp_path: Path, monkeypatch, timeout, expires):
+        _init_repo(tmp_path)
+        state_dir, config, log = _state(tmp_path)
+        commit = _task_commit(tmp_path, branch="worker/TASK-1", file_name="a.txt",
+                              content="delivered\n", message="deliver TASK-1")
+        _record_task_ref(tmp_path, state_dir, config, task_id="TASK-1",
+                         commit=commit, branch="worker/TASK-1")
+        contract = TaskContract()
+        if timeout is None:
+            config.quality_gates = {"legacy": QualityGateConfig(required_checks=["contract-check"])}
+        else:
+            contract.validation = {"commands": [{
+                "id": "check", "command": "contract-check", "timeout_seconds": timeout,
+            }]}
+        TaskStore(state_dir / "kanban.json").add(Task(
+            id="TASK-1", title="task", key="F-11111111:TASK-1", contract=contract,
+        ))
+        log.append(ZfEvent(type="task.created", actor="zf-cli", task_id="TASK-1",
+                          payload={"feature_id": "F-11111111"}))
+        _approve(log, "TASK-1")
+        actual = []
+        real_run = subprocess.run
+
+        def run(command, *args, **kwargs):
+            if command != "contract-check":
+                return real_run(command, *args, **kwargs)
+            actual.append(kwargs["timeout"])
+            if expires:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"], output="partial output")
+            return subprocess.CompletedProcess(command, 0, "checked", "")
+
+        monkeypatch.setattr(subprocess, "run", run)
+        result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+            "F-11111111", event_writer=EventWriter(log),
+        )
+        expected = timeout if timeout is not None else 300
+>       assert actual == [expected]
+E       assert [300] == [90]
+E
+E         At index 0 diff: 300 != 90
+E         Use -v to get more diff
+
+tests/test_candidate_quality_timeouts.py:53: AssertionError
+_________ test_candidate_rebuild_preserves_command_timeout[1200-False] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-212/test_candidate_rebuild_preserv1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708019a84a90>
+timeout = 1200, expires = False
+
+    @pytest.mark.parametrize("timeout,expires", [(90, False), (1200, False), (1200, True), (None, False)])
+    def test_candidate_rebuild_preserves_command_timeout(tmp_path: Path, monkeypatch, timeout, expires):
+        _init_repo(tmp_path)
+        state_dir, config, log = _state(tmp_path)
+        commit = _task_commit(tmp_path, branch="worker/TASK-1", file_name="a.txt",
+                              content="delivered\n", message="deliver TASK-1")
+        _record_task_ref(tmp_path, state_dir, config, task_id="TASK-1",
+                         commit=commit, branch="worker/TASK-1")
+        contract = TaskContract()
+        if timeout is None:
+            config.quality_gates = {"legacy": QualityGateConfig(required_checks=["contract-check"])}
+        else:
+            contract.validation = {"commands": [{
+                "id": "check", "command": "contract-check", "timeout_seconds": timeout,
+            }]}
+        TaskStore(state_dir / "kanban.json").add(Task(
+            id="TASK-1", title="task", key="F-11111111:TASK-1", contract=contract,
+        ))
+        log.append(ZfEvent(type="task.created", actor="zf-cli", task_id="TASK-1",
+                          payload={"feature_id": "F-11111111"}))
+        _approve(log, "TASK-1")
+        actual = []
+        real_run = subprocess.run
+
+        def run(command, *args, **kwargs):
+            if command != "contract-check":
+                return real_run(command, *args, **kwargs)
+            actual.append(kwargs["timeout"])
+            if expires:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"], output="partial output")
+            return subprocess.CompletedProcess(command, 0, "checked", "")
+
+        monkeypatch.setattr(subprocess, "run", run)
+        result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+            "F-11111111", event_writer=EventWriter(log),
+        )
+        expected = timeout if timeout is not None else 300
+>       assert actual == [expected]
+E       assert [300] == [1200]
+E
+E         At index 0 diff: 300 != 1200
+E         Use -v to get more diff
+
+tests/test_candidate_quality_timeouts.py:53: AssertionError
+_________ test_candidate_rebuild_preserves_command_timeout[1200-True] __________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-212/test_candidate_rebuild_preserv2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708019913f10>
+timeout = 1200, expires = True
+
+    @pytest.mark.parametrize("timeout,expires", [(90, False), (1200, False), (1200, True), (None, False)])
+    def test_candidate_rebuild_preserves_command_timeout(tmp_path: Path, monkeypatch, timeout, expires):
+        _init_repo(tmp_path)
+        state_dir, config, log = _state(tmp_path)
+        commit = _task_commit(tmp_path, branch="worker/TASK-1", file_name="a.txt",
+                              content="delivered\n", message="deliver TASK-1")
+        _record_task_ref(tmp_path, state_dir, config, task_id="TASK-1",
+                         commit=commit, branch="worker/TASK-1")
+        contract = TaskContract()
+        if timeout is None:
+            config.quality_gates = {"legacy": QualityGateConfig(required_checks=["contract-check"])}
+        else:
+            contract.validation = {"commands": [{
+                "id": "check", "command": "contract-check", "timeout_seconds": timeout,
+            }]}
+        TaskStore(state_dir / "kanban.json").add(Task(
+            id="TASK-1", title="task", key="F-11111111:TASK-1", contract=contract,
+        ))
+        log.append(ZfEvent(type="task.created", actor="zf-cli", task_id="TASK-1",
+                          payload={"feature_id": "F-11111111"}))
+        _approve(log, "TASK-1")
+        actual = []
+        real_run = subprocess.run
+
+        def run(command, *args, **kwargs):
+            if command != "contract-check":
+                return real_run(command, *args, **kwargs)
+            actual.append(kwargs["timeout"])
+            if expires:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"], output="partial output")
+            return subprocess.CompletedProcess(command, 0, "checked", "")
+
+        monkeypatch.setattr(subprocess, "run", run)
+        result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+            "F-11111111", event_writer=EventWriter(log),
+        )
+        expected = timeout if timeout is not None else 300
+>       assert actual == [expected]
+E       assert [300] == [1200]
+E
+E         At index 0 diff: 300 != 1200
+E         Use -v to get more diff
+
+tests/test_candidate_quality_timeouts.py:53: AssertionError
+_________ test_candidate_rebuild_preserves_command_timeout[None-False] _________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-212/test_candidate_rebuild_preserv3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x708019911190>
+timeout = None, expires = False
+
+    @pytest.mark.parametrize("timeout,expires", [(90, False), (1200, False), (1200, True), (None, False)])
+    def test_candidate_rebuild_preserves_command_timeout(tmp_path: Path, monkeypatch, timeout, expires):
+        _init_repo(tmp_path)
+        state_dir, config, log = _state(tmp_path)
+        commit = _task_commit(tmp_path, branch="worker/TASK-1", file_name="a.txt",
+                              content="delivered\n", message="deliver TASK-1")
+        _record_task_ref(tmp_path, state_dir, config, task_id="TASK-1",
+                         commit=commit, branch="worker/TASK-1")
+        contract = TaskContract()
+        if timeout is None:
+            config.quality_gates = {"legacy": QualityGateConfig(required_checks=["contract-check"])}
+        else:
+            contract.validation = {"commands": [{
+                "id": "check", "command": "contract-check", "timeout_seconds": timeout,
+            }]}
+        TaskStore(state_dir / "kanban.json").add(Task(
+            id="TASK-1", title="task", key="F-11111111:TASK-1", contract=contract,
+        ))
+        log.append(ZfEvent(type="task.created", actor="zf-cli", task_id="TASK-1",
+                          payload={"feature_id": "F-11111111"}))
+        _approve(log, "TASK-1")
+        actual = []
+        real_run = subprocess.run
+
+        def run(command, *args, **kwargs):
+            if command != "contract-check":
+                return real_run(command, *args, **kwargs)
+            actual.append(kwargs["timeout"])
+            if expires:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"], output="partial output")
+            return subprocess.CompletedProcess(command, 0, "checked", "")
+
+        monkeypatch.setattr(subprocess, "run", run)
+        result = _rebuilder(tmp_path, state_dir, config, log).rebuild(
+            "F-11111111", event_writer=EventWriter(log),
+        )
+        expected = timeout if timeout is not None else 300
+        assert actual == [expected]
+        assert result is not None
+        assert result.status == ("quality_failed" if expires else "updated")
+        gate = "legacy" if timeout is None else "task_contract:TASK-1:check"
+        evidence = result.payload["quality"]["gate_checks"][gate][0]
+>       assert evidence["timeout_seconds"] == expected
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'timeout_seconds'
+
+tests/test_candidate_quality_timeouts.py:58: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_candidate_quality_timeouts.py::test_candidate_rebuild_preserves_command_timeout[90-False]
+FAILED tests/test_candidate_quality_timeouts.py::test_candidate_rebuild_preserves_command_timeout[1200-False]
+FAILED tests/test_candidate_quality_timeouts.py::test_candidate_rebuild_preserves_command_timeout[1200-True]
+FAILED tests/test_candidate_quality_timeouts.py::test_candidate_rebuild_preserves_command_timeout[None-False]
+4 failed in 2.39s

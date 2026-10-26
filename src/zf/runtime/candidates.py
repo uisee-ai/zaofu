@@ -992,7 +992,7 @@ class CandidateRebuilder:
             "commit": commit,
             "merger_worktree": str(worktree),
             "gate_source": gate_source,
-            "gate_count": len({gate for gate, _ in checks}),
+            "gate_count": len({gate for gate, _, _ in checks}),
             "check_count": len(checks),
         }
         if not checks:
@@ -1037,14 +1037,14 @@ class CandidateRebuilder:
         gate_checks: dict[str, list[dict[str, Any]]] = {}
         expected_red_checks: list[dict[str, Any]] = []
 
-        by_gate: dict[str, list[str]] = {}
-        for gate_name, command in checks:
-            by_gate.setdefault(gate_name, []).append(command)
+        by_gate: dict[str, list[tuple[str, int]]] = {}
+        for gate_name, command, timeout_seconds in checks:
+            by_gate.setdefault(gate_name, []).append((command, timeout_seconds))
 
         for gate_name, commands in by_gate.items():
             gates_run.append(gate_name)
             gate_ok = True
-            for command in commands:
+            for command, timeout_seconds in commands:
                 started = time.monotonic()
                 try:
                     result = subprocess.run(
@@ -1053,7 +1053,7 @@ class CandidateRebuilder:
                         cwd=worktree,
                         capture_output=True,
                         text=True,
-                        timeout=_QUALITY_TIMEOUT_SECONDS,
+                        timeout=timeout_seconds,
                         check=False,
                         env=_quality_gate_env(worktree),
                     )
@@ -1091,7 +1091,7 @@ class CandidateRebuilder:
                         timed_out=True,
                     )
                     failure_details.setdefault(gate_name, []).append(
-                        f"{command}: timed out after {_QUALITY_TIMEOUT_SECONDS}s"
+                        f"{command}: timed out after {timeout_seconds}s"
                     )
                 except Exception as exc:
                     gate_ok = False
@@ -1104,6 +1104,7 @@ class CandidateRebuilder:
                         f"{command}: {exc}"
                     )
                 evidence["duration_ms"] = int((time.monotonic() - started) * 1000)
+                evidence["timeout_seconds"] = timeout_seconds
                 gate_checks.setdefault(gate_name, []).append(evidence)
             (gates_passed if gate_ok else gates_failed).append(gate_name)
 
@@ -1522,7 +1523,7 @@ class CandidateRebuilder:
     def _quality_checks(
         self,
         tasks: list[CandidateTask],
-    ) -> tuple[list[tuple[str, str]], str]:
+    ) -> tuple[list[tuple[str, str, int]], str]:
         """Resolve project checks from this run before legacy config fallback.
 
         Task contracts are plan-owned, run-scoped project facts. The config
@@ -1536,7 +1537,7 @@ class CandidateRebuilder:
             "candidate_quality_source",
             "auto",
         ) or "auto")
-        checks: list[tuple[str, str]] = []
+        checks: list[tuple[str, str, int]] = []
         seen_commands: set[tuple[str, str]] = set()
         missing_task_ids: list[str] = []
         for candidate_task in tasks:
@@ -1557,6 +1558,7 @@ class CandidateRebuilder:
                 checks.append((
                     f"task_contract:{candidate_task.task_id}:{command['id']}",
                     str(command["command"]),
+                    int(command["timeout_seconds"]),
                 ))
         if quality_source == "task_contract_required" and missing_task_ids:
             return [], "task_contract_missing"
@@ -1566,14 +1568,14 @@ class CandidateRebuilder:
         if quality_source == "task_contract_required":
             return [], "task_contract_missing"
 
-        checks: list[tuple[str, str]] = []
+        checks: list[tuple[str, str, int]] = []
         for gate_name, gate_cfg in self.config.quality_gates.items():
             if not getattr(gate_cfg, "enabled", True):
                 continue
             for command in getattr(gate_cfg, "required_checks", []) or []:
                 command_text = str(command).strip()
                 if command_text:
-                    checks.append((gate_name, command_text))
+                    checks.append((gate_name, command_text, _QUALITY_TIMEOUT_SECONDS))
         return checks, "zf_config_fallback" if checks else "intrinsic_only"
 
     def _prepare_candidate_environment(

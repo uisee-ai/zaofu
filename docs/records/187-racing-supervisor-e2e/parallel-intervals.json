@@ -1,7 +1,7 @@
 {
   "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
-  "as_of": "2026-10-26T00:33:30.351281+00:00",
-  "source_seq": 4307,
+  "as_of": "2026-10-26T01:31:15.024459+00:00",
+  "source_seq": 5972,
   "basis": "Kernel fanout dispatch/settlement intervals; open intervals stop at observation time, not completion",
   "stages": {
     "prd-lanes-impl": {
@@ -29,7 +29,9 @@
           "operation_id": "wop-prd-lanes-impl-queued-RACE-DRIVE-2-trig-evt-adf-edfc43404965",
           "start": "2026-10-26T00:29:42.907691+00:00",
           "start_event": "evt-a081f912774a",
-          "end": null
+          "end": "2026-10-26T01:05:14.883016+00:00",
+          "end_event": "evt-049f56c81c3a",
+          "outcome": "fanout.child.completed"
         },
         {
           "stage": "prd-lanes-impl",
@@ -40,7 +42,22 @@
           "operation_id": "wop-prd-lanes-impl-queued-RACE-TRACK-3-trig-evt-adf-cb5e3d8beff3",
           "start": "2026-10-26T00:29:46.806407+00:00",
           "start_event": "evt-858a6a8aa9d9",
-          "end": null
+          "end": "2026-10-26T01:05:15.206332+00:00",
+          "end_event": "evt-01ade5921a6d",
+          "outcome": "fanout.child.completed"
+        },
+        {
+          "stage": "prd-lanes-impl",
+          "role": "prd-dev-lane-2",
+          "fanout_id": "fanout-prd-lanes-impl-evt-adf3807d",
+          "child_id": "queued-RACE-ASSEMBLY-4",
+          "attempt": "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-ASSEMBLY-4",
+          "operation_id": "wop-prd-lanes-impl-queued-RACE-ASSEMBLY-4-trig-evt--498bf2112cb7",
+          "start": "2026-10-26T01:05:18.605428+00:00",
+          "start_event": "evt-64b8d0dcad37",
+          "end": "2026-10-26T01:31:07.587822+00:00",
+          "end_event": "evt-3e017c1b34af",
+          "outcome": "fanout.child.completed"
         }
       ],
       "overlap": [
@@ -53,8 +70,8 @@
             "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-DRIVE-2",
             "run-fanout-prd-lanes-impl-evt-adf3807d-queued-RACE-TRACK-3"
           ],
-          "seconds": 223.545,
-          "both_settled": false
+          "seconds": 2128.077,
+          "both_settled": true
         }
       ]
     },
