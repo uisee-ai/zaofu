@@ -1,0 +1,816 @@
+{
+  "schema_version": "skill.adapter.plan.v2",
+  "kind": "prd",
+  "project_id": "dataloop-bf39f74e",
+  "project_key": "dataloop-bf39f74e",
+  "strictness": "standard",
+  "parity_scope": [],
+  "status": "PASS",
+  "required_skills": [
+    "source-verification",
+    "context-hygiene",
+    "zf-workflow-adaptation-boundary",
+    "zf-project-adapter-matrix-enrichment",
+    "zf-prd-plan-synth",
+    "zf-yoke-planner-role-context",
+    "zf-yoke-critic-role-context",
+    "zf-verify-rescan-replan",
+    "zf-goal-closure-replan-contract",
+    "zf-yoke-test-evaluator-role-context",
+    "zf-goal-closure-judge-contract",
+    "zf-yoke-dev-worker-role-context",
+    "zf-browser-e2e-contract",
+    "vertical-slicing",
+    "grill",
+    "zf-plan-task-map-contract",
+    "zf-gap-task-synth",
+    "zf-plan-execution-readiness",
+    "zf-verify-gap-producer-contract",
+    "verify-review",
+    "zf-harness-verification-checklist",
+    "zf-mechanical-claim-verifier",
+    "tdd-evidence",
+    "incremental-delivery",
+    "debugging-triage",
+    "git-evidence",
+    "zf-harness-done-contract",
+    "zf-find-simplifications"
+  ],
+  "recommended_skills": [
+    "zf-dynamic-artifact-gate"
+  ],
+  "loaded_skills": [
+    {
+      "name": "source-verification",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/source-verification",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/source-verification/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "431fbf90ac1e1b840d283d1a7fc532f21bf870f1f361253470cdec81d9f7c201",
+      "description": "写码/扫描前的来源验证纪律:栈版本从依赖清单读、外部 API 查权威来源、目标仓现有能力先 grep、宣称附出处、查不到标 UNVERIFIED。dev/scan 角色使用;与 done-contract 的 evidence_refs 语法、grill 的冲突上报机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/source-verification/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "context-hygiene",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/context-hygiene",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/context-hygiene/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "ba5dd37b616fe144ca7beb5862c721d27e49c9005e933a343a736691a88d8fce",
+      "description": "上下文卫生:长任务 worker 的读取纪律、混乱处理、水位管理与 recycle/resume 语义(I32/I33)。所有长期会话角色使用;与 worker.context.* 事件、briefing scope 约束与恢复机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/context-hygiene/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-workflow-adaptation-boundary",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-workflow-adaptation-boundary",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-workflow-adaptation-boundary/SKILL.md",
+      "source_name": "project",
+      "sha256": "17c4c4b1b697511b911cf0711d9dc75abe3558436a5894d406ec809d13ba9652",
+      "description": "Use in ZaoFu issue, PRD, and refactor workflows when an agent must decide whether a project-specific adaptation belongs in skills/prompt/agent judgment or deterministic runtime/kernel/API/preflight code. Helps new-project intake, scan, plan, verify, and judge keep semantic adaptation out of runtime hardcode while still escalating missing invariants.",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-workflow-adaptation-boundary/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-project-adapter-matrix-enrichment",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-project-adapter-matrix-enrichment",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-project-adapter-matrix-enrichment/SKILL.md",
+      "source_name": "project",
+      "sha256": "705ba03d8f16b306fe7afec812f2e96588740aaaf1ea43721f14319446855c4b",
+      "description": "Use in ZaoFu issue, PRD, or refactor workflows when scan, plan, verify, or real E2E agents must enrich portable delivery matrix drafts with project-specific facts, commands, evidence, task slices, and parity/acceptance coverage without hard-coding project semantics in runtime.",
+      "stages": [
+        "plan",
+        "scan",
+        "triage",
+        "replan",
+        "verify"
+      ],
+      "roles": [],
+      "tags": [
+        "planning",
+        "matrix",
+        "closure"
+      ],
+      "dependencies": [
+        "zf-browser-e2e-contract"
+      ],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-project-adapter-matrix-enrichment/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-prd-plan-synth",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-prd-plan-synth",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-prd-plan-synth/SKILL.md",
+      "source_name": "project",
+      "sha256": "ab00d27dee94d776c4519bff6515797037c1e13b19fe0362c99e021d77b6f1dd",
+      "description": "Use for ZaoFu PRD workflows. Defines the standard scan -> Planner -> plan-critic flow, optional PRD authoring handoffs, and the dispatchable plan contract for product delivery.",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-prd-plan-synth/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-yoke-planner-role-context",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-planner-role-context",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-planner-role-context/SKILL.md",
+      "source_name": "project",
+      "sha256": "099f889a243abbdfb43a7ff6baa7eb9a73ee3bc694c6acc522c74f3e940927f9",
+      "description": "Use for ZaoFu planner / task-map-synth / triage roles that split PRDs, issues, or refactor objectives into a task_map.",
+      "stages": [
+        "plan",
+        "scan",
+        "triage",
+        "replan"
+      ],
+      "roles": [],
+      "tags": [
+        "yoke",
+        "role-context",
+        "planning"
+      ],
+      "dependencies": [
+        "vertical-slicing",
+        "grill",
+        "zf-plan-task-map-contract",
+        "zf-gap-task-synth",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-plan-execution-readiness"
+      ],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-yoke-planner-role-context/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-yoke-critic-role-context",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-critic-role-context",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-critic-role-context/SKILL.md",
+      "source_name": "project",
+      "sha256": "3061fa450176765b109acf145d093adfd1a61e4d6246b05867801f4d2b96b209",
+      "description": "Use for ZaoFu critic or judge roles that need yoke-style adversarial review and anti-rationalization discipline.",
+      "stages": [
+        "critic",
+        "review",
+        "judge"
+      ],
+      "roles": [],
+      "tags": [
+        "yoke",
+        "role-context",
+        "critic"
+      ],
+      "dependencies": [
+        "grill",
+        "zf-browser-e2e-contract",
+        "zf-plan-execution-readiness"
+      ],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-yoke-critic-role-context/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-verify-rescan-replan",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-verify-rescan-replan",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-verify-rescan-replan/SKILL.md",
+      "source_name": "project",
+      "sha256": "17b200f009056382102efd9ca970d8310237f8523bf3e6e55920ebbd8f641d80",
+      "description": "Use in discovery, module-parity, verify-bridge, or replan roles when completed work must be rescanned against the original goal and remaining gaps converted into bounded incremental work; not for ordinary task Verify or Thin Judge.",
+      "stages": [
+        "verify",
+        "discovery",
+        "replan"
+      ],
+      "roles": [],
+      "tags": [
+        "verification",
+        "parity",
+        "rescan",
+        "replan"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-verify-rescan-replan/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-goal-closure-replan-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-goal-closure-replan-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-goal-closure-replan-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "6bad3c3bff8993badbd0f59339e6a66f6605cd03fd526fb1810d1162849b9864",
+      "description": "Use on demand after verified gaps require an incremental task-map amendment; preserves completed work and delegates event/schema mechanics to the gap producer and runtime.",
+      "stages": [
+        "verify",
+        "discovery",
+        "replan"
+      ],
+      "roles": [],
+      "tags": [
+        "contract",
+        "goal-closure",
+        "replan"
+      ],
+      "dependencies": [
+        "zf-verify-gap-producer-contract"
+      ],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-goal-closure-replan-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-yoke-test-evaluator-role-context",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-test-evaluator-role-context",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-test-evaluator-role-context/SKILL.md",
+      "source_name": "project",
+      "sha256": "84e1f80e27d13c675c7ca97090ab4cb74cf9062862c1d65d215c3ce118f13cb7",
+      "description": "Use for ZaoFu Verify, test, discovery, and scan-verification roles that need independent evidence-first evaluation.",
+      "stages": [
+        "verify",
+        "test",
+        "discovery",
+        "scan"
+      ],
+      "roles": [],
+      "tags": [
+        "yoke",
+        "role-context",
+        "verification"
+      ],
+      "dependencies": [
+        "verify-review",
+        "zf-harness-verification-checklist",
+        "zf-mechanical-claim-verifier",
+        "tdd-evidence"
+      ],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-yoke-test-evaluator-role-context/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-goal-closure-judge-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-goal-closure-judge-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-goal-closure-judge-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "b427e98a6a8586548dd7f8c2d6fb6ca262220b1d234cb67da54e7455b1ae4d3f",
+      "description": "Use only for the final read-only Thin Judge in ZaoFu issue, PRD, or refactor workflows. Synthesizes admitted planning, verification, waiver, and closure facts into goal-closure-result.v1 without rerunning tests, editing the product, or planning rework.",
+      "stages": [
+        "judge"
+      ],
+      "roles": [],
+      "tags": [
+        "contract",
+        "goal-closure",
+        "thin-judge",
+        "read-only"
+      ],
+      "dependencies": [],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-goal-closure-judge-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-yoke-dev-worker-role-context",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-dev-worker-role-context",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-yoke-dev-worker-role-context/SKILL.md",
+      "source_name": "project",
+      "sha256": "53567277ea422ec4218c6d112dfaab2d29cfb59bc5ec8c7894d4b3b151efae0b",
+      "description": "Use for ZaoFu dev workers that need yoke-style isolated, evidence-first implementation discipline.",
+      "stages": [
+        "impl",
+        "fix"
+      ],
+      "roles": [],
+      "tags": [
+        "yoke",
+        "role-context",
+        "implementation"
+      ],
+      "dependencies": [
+        "tdd-evidence",
+        "incremental-delivery",
+        "debugging-triage",
+        "git-evidence",
+        "source-verification",
+        "zf-harness-done-contract",
+        "zf-find-simplifications"
+      ],
+      "auto_inject": true,
+      "load_on_demand": false,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-yoke-dev-worker-role-context/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-browser-e2e-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-browser-e2e-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-browser-e2e-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "94e705ae9c7c9744722e74835417c7c925020b7cf476993921ef0ff6734f3003",
+      "description": "ZaoFu browser/E2E (Docker Playwright) command-shape and clean-checkout environment checklist for writer, review, verify, and operator roles. Use when creating or reviewing task_map verification, worker briefings, Playwright/browser smoke commands, or Docker mcp/playwright runs. Taxonomy and the structured report contract live in the verify-review skill — this skill defers to it.",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-browser-e2e-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "vertical-slicing",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/vertical-slicing",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/vertical-slicing/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "d77c38757b16c37e9ea96a8ece518b7537207a3422ff8c78c89908f2448b1311",
+      "description": "tracer-bullet 垂直切片的 task_map 拆分法:每个 task 纵切全部集成层、独立可验收,替代按技术层横切。task-map-synth/plan 角色使用,配对 task_map 契约与 lane 亲和语义。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/vertical-slicing/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "grill",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/grill",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/grill/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "55ffcce4226b88ba772f3bf7f0a831870b77fc1e4b890d49f5e48108052f6d6f",
+      "description": "owner 意图逐条确认纪律:PRD/plan/共识收窄任何 owner 给定的目标或参考时,必须转化为显式决策项并获确认,禁止静默转译。prd-refine/critic/synthesizer 角色使用。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/grill/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-plan-task-map-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-plan-task-map-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-plan-task-map-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "80f5a6a2ffbd767932c65a962a273aad94bc4dc5e69b3cea5ca33ff2dcba470d",
+      "description": "Use in ZaoFu plan/task-map synthesis roles. Defines the fixed machine contract that downstream writer fanout, Kanban, verify, and judge stages consume. Customer/domain skills may be added, but they do not replace this contract.",
+      "stages": [
+        "plan",
+        "replan",
+        "scan",
+        "triage"
+      ],
+      "roles": [],
+      "tags": [
+        "contract",
+        "task-map",
+        "artifact"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-plan-task-map-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-gap-task-synth",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-gap-task-synth",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-gap-task-synth/SKILL.md",
+      "source_name": "project",
+      "sha256": "860e487b73ce29a21598f33ed79558ad77b075b6c202bc94c4b7b2296cd41e0d",
+      "description": "Use to synthesize bounded gap tasks from a failed verify/rescan result without duplicating the original task-map schema or reopening unrelated completed work.",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-gap-task-synth/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-plan-execution-readiness",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-plan-execution-readiness",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-plan-execution-readiness/SKILL.md",
+      "source_name": "project",
+      "sha256": "3314b37e7f8368131fff176aed500dd994e55e417b162a78fbac22286658ae04",
+      "description": "Planner/Critic 在 Plan 提交前审查条款验收责任、任务粒度和阶段集成；语义判断留在方法和评审证据中。",
+      "stages": [
+        "plan",
+        "replan",
+        "critic"
+      ],
+      "roles": [],
+      "tags": [
+        "planning",
+        "acceptance",
+        "slicing"
+      ],
+      "dependencies": [
+        "vertical-slicing"
+      ],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-plan-execution-readiness/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-verify-gap-producer-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-verify-gap-producer-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-verify-gap-producer-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "5b24e16bfd1c0384eb3c2a6a21bf9c8d591fdee001cfe616b97cfbcc06aca38b",
+      "description": "Use on demand when admitted Verify/discovery evidence must become a canonical product/parity gap handoff; runtime owns task-map amendment and loop idempotency.",
+      "stages": [
+        "verify",
+        "discovery",
+        "replan"
+      ],
+      "roles": [],
+      "tags": [
+        "contract",
+        "gap-plan",
+        "evidence"
+      ],
+      "dependencies": [
+        "zf-gap-task-synth"
+      ],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-verify-gap-producer-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "verify-review",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/verify-review",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/verify-review/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "3081c089a9937b22af7a15f9d75157182e23d967012fa2a8ff71b0f1a64825a0",
+      "description": "多轴验收评审:verify/review reader 角色对候选变更做五轴评审并产出 schema 合规的结构化报告(覆盖矩阵非空、发现分级、runner/product 失败分类、证据可复跑),与 verify.child.completed 报告合约机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/verify-review/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-harness-verification-checklist",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-harness-verification-checklist",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-harness-verification-checklist/SKILL.md",
+      "source_name": "project",
+      "sha256": "96cd40f7f198b1032f2a19d646193ae4055d8a8b8ccb11d5d5a3e1487da49c26",
+      "description": "Use before a ZaoFu Verify/test role issues a product verdict; checks target binding, acceptance coverage, reproducibility, and failure classification without owning runtime state.",
+      "stages": [
+        "verify",
+        "test",
+        "discovery",
+        "scan",
+        "refactor_scan"
+      ],
+      "roles": [],
+      "tags": [
+        "verification",
+        "evidence",
+        "checklist"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-harness-verification-checklist/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-mechanical-claim-verifier",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-mechanical-claim-verifier",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-mechanical-claim-verifier/SKILL.md",
+      "source_name": "project",
+      "sha256": "351b4284621e9d61189c4ddbef8ec44fa6e503bbd72ecf8cbb5b8a6235947dc9",
+      "description": "Use on demand to turn narrative completion or parity claims into acceptance-linked evidence judgments before writing the runtime-provided verification result.",
+      "stages": [
+        "verify",
+        "test",
+        "discovery",
+        "scan"
+      ],
+      "roles": [],
+      "tags": [
+        "verification",
+        "claims",
+        "evidence"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-mechanical-claim-verifier/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "tdd-evidence",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/tdd-evidence",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/tdd-evidence/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "e74272b5412ad7d8547f01d9d7eb14755ab792133bcef41cf8a2c143e6a9099d",
+      "description": "测试驱动开发 + 完成证据纪律:测试先行、bug 先复现、测试即证据。writer/dev 角色实现任何逻辑、修任何 bug、改任何行为时使用;完成证据与 kernel 完成审计机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/tdd-evidence/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "incremental-delivery",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/incremental-delivery",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/incremental-delivery/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "a7892e76ed4ba985316dff324d10c39e384fa6d5ec0723dcbc7d97f55865e9d4",
+      "description": "增量交付纪律:薄切片实现→测试→验证→提交循环,每个增量保持系统可用。writer 在 lane/worktree 语义下使用;与 candidate patch-id 幂等集成、attempt 绑定、allowed_paths scope gate 机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/incremental-delivery/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "debugging-triage",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/debugging-triage",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/debugging-triage/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "b8d0f1eb4b21040667f2e12833db5f8ffba9de6817f188d3f01df929b2a1cb14",
+      "description": "worker 级系统化排错:任务途中测试挂/构建断/行为不符时的 Stop-the-Line 分诊流程。writer/dev 角色日常使用;与完成诚实文化、rework 证据链、拒单反证机械配对。不收敛的停滞诊断归 diagnosis(Tier-2 角色)。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/debugging-triage/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "git-evidence",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/git-evidence",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/yoke/git-evidence/SKILL.md",
+      "source_name": "yoke",
+      "sha256": "86c18a3b0b771f8e2a36a566513e175420a86d725acff4bd4fb1bc8486e5a5f6",
+      "description": "ZaoFu 化的 git 纪律:分支/引用模型即证据链——task_ref、candidate、source_commit 绑定、remote_policy 守卫、多驾驶员规则,与 kernel git 合约机械配对。",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "skill-source:yoke",
+      "display_path": "yoke/git-evidence/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-harness-done-contract",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-harness-done-contract",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-harness-done-contract/SKILL.md",
+      "source_name": "project",
+      "sha256": "be65e0424b2dd4714795d31a802de55ffd589409f67217d0e11d931873fd9c3f",
+      "description": "Use when an Impl/Fix worker is ready to hand off work; requires reproducible evidence while leaving identity, result admission, and terminal state to the deterministic runtime.",
+      "stages": [
+        "impl",
+        "fix"
+      ],
+      "roles": [],
+      "tags": [
+        "contract",
+        "evidence",
+        "completion"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-harness-done-contract/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-find-simplifications",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-find-simplifications",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-find-simplifications/SKILL.md",
+      "source_name": "project",
+      "sha256": "1943250617fdb9a0519f0878d4fdfdba038daf716c6b9e05c9131c2c31c609e5",
+      "description": "Use on demand to find evidence-backed simplifications in ZaoFu itself, in applications developed with ZaoFu, or in an Autoresearch simplify audit. Proves consumers and protected seams before proposing deletion, coalescing, demotion, or dependency replacement; output is proposal-only until separately approved.",
+      "stages": [
+        "impl",
+        "fix",
+        "discovery",
+        "scan",
+        "reflection"
+      ],
+      "roles": [],
+      "tags": [
+        "simplification",
+        "architecture",
+        "autoresearch",
+        "maintenance"
+      ],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-find-simplifications/SKILL.md",
+      "requirement": "required"
+    },
+    {
+      "name": "zf-dynamic-artifact-gate",
+      "path": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-dynamic-artifact-gate",
+      "source_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/skills/zf-dynamic-artifact-gate/SKILL.md",
+      "source_name": "project",
+      "sha256": "c127a2abadbc482eadfaa45a0c9b4f8149e802348d53a01eabafe0f02bbeb491",
+      "description": "Use in ZaoFu issue, PRD, or refactor workflows when plan, verify, judge, or replan stages must generate run-specific fact artifacts and artifact/matrix gate configs instead of hard-coding project facts in runtime or static JSON. Triggers on gate_config_ref, artifact_matrix_gate, scan inventory coverage, acceptance/test matrices, goal gap reports, or verify-rescan gap loops.",
+      "stages": [],
+      "roles": [],
+      "tags": [],
+      "dependencies": [],
+      "auto_inject": false,
+      "load_on_demand": true,
+      "warnings": [],
+      "owner": "project",
+      "display_path": "skills/zf-dynamic-artifact-gate/SKILL.md",
+      "requirement": "recommended"
+    }
+  ],
+  "missing_required_skills": [],
+  "missing_recommended_skills": [],
+  "missing_skills": [],
+  "discovered_project_skills": [],
+  "roleSkillBundles": {
+    "scan": [
+      "source-verification",
+      "context-hygiene",
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-prd-plan-synth",
+      "zf-yoke-planner-role-context"
+    ],
+    "planner": [
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-prd-plan-synth",
+      "zf-yoke-planner-role-context"
+    ],
+    "plan-critic": [
+      "zf-workflow-adaptation-boundary",
+      "zf-yoke-critic-role-context"
+    ],
+    "discovery": [
+      "zf-verify-rescan-replan",
+      "zf-goal-closure-replan-contract",
+      "zf-yoke-test-evaluator-role-context"
+    ],
+    "judge-prd": [
+      "zf-goal-closure-judge-contract"
+    ],
+    "impl": [
+      "zf-yoke-dev-worker-role-context"
+    ],
+    "verify": [
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-yoke-test-evaluator-role-context"
+    ]
+  },
+  "role_skill_bundles_patch": {
+    "scan": [
+      "source-verification",
+      "context-hygiene",
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-prd-plan-synth",
+      "zf-yoke-planner-role-context"
+    ],
+    "planner": [
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-prd-plan-synth",
+      "zf-yoke-planner-role-context"
+    ],
+    "plan-critic": [
+      "zf-workflow-adaptation-boundary",
+      "zf-yoke-critic-role-context"
+    ],
+    "discovery": [
+      "zf-verify-rescan-replan",
+      "zf-goal-closure-replan-contract",
+      "zf-yoke-test-evaluator-role-context"
+    ],
+    "judge-prd": [
+      "zf-goal-closure-judge-contract"
+    ],
+    "impl": [
+      "zf-yoke-dev-worker-role-context"
+    ],
+    "verify": [
+      "zf-workflow-adaptation-boundary",
+      "zf-project-adapter-matrix-enrichment",
+      "zf-yoke-test-evaluator-role-context"
+    ]
+  },
+  "diagnostics": [],
+  "policy": {
+    "source_ref": "/home/min/workspace/zaofu/examples/prod/controller/common/skill-adapter-policy.yaml",
+    "sha256": "e396cb99c0a1b6fc9ee4d603a81752555509ac0a5a342dd7058b135cce8bca20",
+    "fallback": "generic_allowed_with_warning",
+    "strictness_stop_values": [
+      "full-parity",
+      "release",
+      "strict"
+    ]
+  },
+  "proposed_skill_backlogs": [],
+  "created_at": "2026-10-24T15:19:06.835140+00:00"
+}

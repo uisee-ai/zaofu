@@ -64,6 +64,23 @@ briefing中的 `Compiled planning execution facts` 是当前已加载配置的�
 提交或评审 Plan 前，按[人工审阅方法](references/human-review.md)组织审批首页、
 模块规格、业务旅程与原子验收场景。阅读层绑定同一 Plan Package，不创建第二任务合同；
 旧计划缺少场景时如实报告，不把工程命令或通用 RED/GREEN 模板当作充分规格。
+## 领域与模块覆盖复核
+
+对大型需求或多份 authority，先建立来源单元到计划语义的覆盖账本，再审任务图。
+账本使用已有矩阵或评审工件，不新增 canonical task schema。按来源实际内容分类为
+产品目标/范围、领域/模块/能力、用户旅程/行为规则、数据/API/事件合同、状态与错误、
+权限/安全、集成与非功能约束、验收/测试/E2E 义务；没有某类内容时记录“来源未定义”
+及分组理由。
+
+每个来源单元必须标记 `covered`、`explicit_non_goal`、`pending_decision` 或
+`out_of_scope`，并保留稳定 section/heading anchor、语义陈述、Plan 位置、需求/AC、
+任务、测试/命令、证据和责任阶段。`covered` 必须同时具备可观察行为或明确合同、实际
+生产者和可成立的验证断言；其余状态必须有原因和影响范围。章节级 ref 可以作为索引，
+不能单独证明整章的每条业务规则。任务数、标题、关键词命中和矩阵行数都不能替代这
+项复核。
+
+若 mandatory 来源单元没有归类、没有语义 Plan 正文、没有 producer 或没有验证路径，
+Plan 不能声明完整；Critic 应指出具体 source anchor、模块/能力、最小修订和验证责任。
 
 ## 切片与阶段集成
 
@@ -113,6 +130,8 @@ Critic 对正例应说明为何可接受，对反例指出具体条款/任务、
 - 人工审批入口必须能从绑定产物重建 PRD/SDD/TDD/Decision Register：
   SDD 不能只有任务标题或 source excerpt，TDD 不能只有命令名；每个
   acceptance 至少要有预期结果、验证命令、owner/tier、证据路径和判定规则。
+- `derived_plan_full` 还必须能从绑定产物重建上述领域/模块覆盖账本；每个来源单元的
+  disposition、语义正文和影响范围都要可读。不能用“章节已覆盖”替代模块/能力级复核。
 - Decision Register 必须与 Plan 正文和审批 payload 使用同一组稳定 id；缺失、
   重复或只存在于 Markdown 的决定记录为一致性缺口，不能让摘要显示“无决定”。
 - 由独立 Critic 复核，不自批 Plan；实现前没有运行证据是正常计划状态。
@@ -175,6 +194,13 @@ Approve 表示本次声明的规划审查通过，不认证未来测试已执行
 未保存输出时，不将工具名或拟定文件名写成 `evidence_refs`。引用已读取的不可变
 输入及实际工具收据，并在审查正文说明判断与限制；若必须保存审查输出，使用本次
 派发允许的产物路径并确认文件存在，再引用其ref/digest。不能用虚构路径填补证据。
+## 人工反馈与版本复核
+
+Preview 评论必须落到当前 Plan revision 及 source anchor、requirement/AC、decision
+或 Plan section。Replan 时比较旧/新覆盖账本、SDD/TDD、决定、task map、依赖和证据，
+明确哪些内容保持不变、哪些任务需要返工、哪些已完成任务可以复用。影响范围、合同、
+owner、依赖或验收的修改会使旧 approval 失效；未受影响的完成证据可以保留，但不能
+把旧 verdict 当作新版本的 Critic 结论。
 
 ## 片内执行与最早反馈
 
