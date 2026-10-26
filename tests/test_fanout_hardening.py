@@ -1250,6 +1250,58 @@ def test_synth_timeout_fails_aggregate_instead_of_hanging(tmp_path: Path):
     )
 
 
+def test_synth_report_rejection_overrides_prefilled_top_level_approval(
+    tmp_path: Path,
+):
+    """A critic report must be authoritative over a prefilled scratch field."""
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
+    log = EventLog(state_dir / "events.jsonl")
+    orch = Orchestrator(state_dir, _synth_config(), _RecordingTransport())
+    _start(orch)
+    fanout_id = _fanout_id(log)
+
+    orch.run_once(events=[ZfEvent(
+        type="workflow.child.completed",
+        actor="review-a",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "child_id": "review-a",
+            "run_id": f"run-{fanout_id}-review-a",
+            "status": "completed",
+        },
+    )])
+    orch.run_once(events=[ZfEvent(
+        type="fanout.synth.completed",
+        actor="review-synth",
+        correlation_id="trace-1",
+        payload={
+            "fanout_id": fanout_id,
+            "trace_id": "trace-1",
+            "stage_id": "review-candidate",
+            # The result scratch is prefilled with approve; the semantic
+            # critic report is the actual verdict.
+            "recommendation": "approve",
+            "report": {
+                "status": "failed",
+                "recommendation": "reject",
+                "summary": "critic found a blocking gap",
+            },
+        },
+    )])
+
+    events = log.read_all()
+    aggregate = [
+        event for event in events if event.type == "fanout.aggregate.completed"
+    ]
+    assert aggregate
+    assert aggregate[-1].payload["status"] == "failed"
+    assert aggregate[-1].payload["recommendation"] == "reject"
+    assert any(event.type == "review.rejected" for event in events)
+
+
 def _synth_budget_config(
     *,
     timeout_seconds: int = 3600,

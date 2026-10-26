@@ -3306,10 +3306,24 @@ class FanoutCoordinationMixin(
             # FIX-12(bizsim r4 F12):plan 语义指纹判重。r4 judge cap 冻结期
             # 每轮 replan 铸新 plan_id(14 请求/7 批,批一生一),同
             # stage+pdd+task 集的未决 plan 已在队时不再铸新单。
-            fingerprint = self._plan_fingerprint(
+            from zf.runtime.plan_approval_fingerprint import plan_approval_fingerprint
+
+            fingerprint = plan_approval_fingerprint(
                 stage_id=stage_id,
                 pdd_id=base_payload["pdd_id"],
                 task_items=task_items,
+                identity={
+                    "workflow_run_id": trace_id,
+                    "task_map_generation": str(
+                        trigger_event.payload.get("task_map_generation") or ""
+                    ),
+                    "plan_artifact_package_digest": str(
+                        trigger_event.payload.get("plan_artifact_package_digest") or ""
+                    ),
+                    "requirement_spec_digest": str(
+                        trigger_event.payload.get("requirement_spec_digest") or ""
+                    ),
+                },
             )
             duplicate_of = next(
                 (
@@ -3398,26 +3412,6 @@ class FanoutCoordinationMixin(
                 correlation_id=trace_id,
             ))
         return False
-
-    def _plan_fingerprint(
-        self,
-        *,
-        stage_id: str,
-        pdd_id: str,
-        task_items: list,
-    ) -> str:
-        import hashlib
-
-        task_ids = sorted(
-            str(
-                getattr(item, "task_id", "")
-                or (item.get("task_id") if isinstance(item, dict) else "")
-                or ""
-            )
-            for item in task_items
-        )
-        raw = "|".join([stage_id, pdd_id, *task_ids])
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
     def _write_plan_digest(self, plan_id: str, task_items: list, task_map_ref: str) -> str:
         """B-93-03: 落 plan-digest.md,返回相对 state_dir 的 digest_ref(失败返回 '')。"""
@@ -7128,9 +7122,14 @@ class FanoutCoordinationMixin(
             default_recommendation=str(payload.get("recommendation") or "abstain"),
             default_summary=str(payload.get("summary") or ""),
         )
+        # The synth envelope keeps structural fields from the prefilled
+        # scratch, while the nested report carries the critic's semantic
+        # verdict.  Prefer that report verdict whenever present; otherwise a
+        # stale top-level ``approve`` can promote a rejected review to
+        # ``task_map.ready`` (and unlock implementation before rework).
         recommendation = str(
-            payload.get("recommendation")
-            or report_result.report.get("recommendation")
+            report_result.report.get("recommendation")
+            or payload.get("recommendation")
             or "abstain"
         )
         if not report_result.valid:

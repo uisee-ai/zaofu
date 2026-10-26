@@ -871,7 +871,13 @@ def _normalize_implementation(
         ),
         "changed_files": _strings(payload.get("changed_files") or payload.get("files_touched")),
         "evidence_refs": _strings(payload.get("evidence_refs") or payload.get("artifact_refs")),
-        "self_check": payload.get("self_check") if isinstance(payload.get("self_check"), Mapping) else {},
+        "self_check": (
+            payload.get("self_check")
+            if isinstance(payload.get("self_check"), Mapping)
+            else payload.get("impl_self_check")
+            if isinstance(payload.get("impl_self_check"), Mapping)
+            else {}
+        ),
         "known_gaps": _strings(payload.get("known_gaps") or payload.get("residual_risks")),
         "summary": str(payload.get("summary") or ""),
         "source_event_id": event.id,
@@ -885,6 +891,9 @@ def _normalize_implementation(
     )
     result.setdefault("target_commit", _text(payload, "target_commit", "source_commit"))
     result.setdefault("source_event_id", event.id)
+    from zf.runtime.implementation_result_semantics import recover_implementation_verdict
+
+    recover_implementation_verdict(result, payload)
     issues = [
         {"field": f"control_result.{field}", "code": "missing_required"}
         for field in ("task_id", "target_commit")
