@@ -1,6 +1,6 @@
 # 品牌区与侧栏收放对齐 GR8R
 
-> 状态: active
+> 状态: done — `c97c9e22` feat: add GR8R-style sidebar collapse and branding
 
 用户已授权在 UI worktree 实施：左上角品牌区、侧栏收起与展开参考 GR8R，同时保留 ZaoFu 原菜单排列。
 
