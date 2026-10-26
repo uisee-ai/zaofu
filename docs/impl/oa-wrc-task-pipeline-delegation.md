@@ -61,3 +61,15 @@ Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 
 ### 高并发下的派发归属读取
 
 日志看门狗查询角色活动任务时，派发归属使用活动账本的增量只读投影，通过 EventLog.read_from_offset 消费完整新增行，不再为每个角色重复搜索全部工具正文。保持原有 task/fanout 派发、重分配、重排和终态释放语义；日志替换、截断或轮转后重建，半行写入不提前消费。该缓存不是 canonical store，不产生派发或修改任务状态。
+
+### 候选 Reader 的停止与恢复
+
+`zf recover workflow --state-dir <state> --json` 将因 `fast_stop` / `graceful_stop` 中断、且没有更新活跃 TaskAttempt 的 `fanout_reader_child` 列为 `redrive_interrupted_reader_operation`。核对 checkpoint 后，使用 `--resume-pending --checkpoint-id <id>` 经既有 WorkflowOperationService 准入 redrive；保留 operation/request/candidate 身份，由运行中的 Kernel 派发。已 settled 的 sibling 不重跑；未知中断原因、其他 operation 类型与活跃重试继续遵守原有门禁。仅重启进程不能把 suspended operation 当成新请求。
+
+对应入口及竞态回归：`tests/test_workflow_operation_resume.py`、`tests/test_workflow_resume_batch.py`、`tests/test_call_result_runtime.py`。临时运行的精确收尾见 [按 Run 收尾](../runbooks/scoped-fast-teardown.md)。
+
+### Autoresearch 实验续验
+
+真实 loop 的 eval/指标显式绑定实验配置解析出的 state_dir，在清理生成配置前记录；父项目仍持有诊断与改进上下文，不能用父 Run 的完成数证明内层实验完成。实验 PRD 输入即使被 checkout 忽略规则覆盖，也仅强制加入精确输入路径，提交不吸收其他暂存文件。Codex 反思通过 stdin 执行，审批参数位于顶层 `codex -a never exec ...`，解析或 provider 失败仍保留 unknown 与原始错误。
+
+续验与修复账目见 [本轮任务](../../tasks/active/2026-10-26-0507-hello-pipeline-remaining-validation.md)。

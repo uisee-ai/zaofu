@@ -310,6 +310,13 @@ def build_workflow_operation_resume_checkpoints(
                 "Task Pipeline operation was interrupted by a replayable "
                 "runtime stop and retains request identity"
             )
+        elif (
+            status == "suspended"
+            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
+        ):
+            action = "redrive_interrupted_reader_operation"
+            reason = "reader operation retains its pinned request after runtime stop"
         elif status == "suspended":
             action = "cancel_interrupted_operation"
             reason = "operation was interrupted by an explicit runtime stop"

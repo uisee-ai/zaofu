@@ -515,7 +515,7 @@ def prepare_flow_source(
     )
     source_path.write_text(body, encoding="utf-8")
     staged = _run(
-        ["git", "add", "--", source_ref],
+        ["git", "add", "-f", "--", source_ref],
         cwd=worktree,
         capture_output=True,
         text=True,

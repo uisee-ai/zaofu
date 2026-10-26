@@ -356,6 +356,7 @@ def _apply_operation_checkpoint(
             ),
         )
     redrive_actions = {
+        "redrive_interrupted_reader_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
         "redrive_budget_amended_task_pipeline_operation",
@@ -477,7 +478,7 @@ def _apply_operation_checkpoint(
         return WorkflowResumeApplyResult(
             checkpoint=checkpoint,
             applied=True,
-            reason="Task Pipeline operation admitted for restart replay",
+            reason="Workflow operation admitted for restart replay",
             emitted_event_ids=emitted,
         )
     cancelled = service.cancel(

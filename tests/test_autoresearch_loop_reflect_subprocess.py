@@ -63,7 +63,7 @@ def test_invoke_reflection_llm_codex_backend_uses_stdin_exec() -> None:
 
     assert r.verdict == "best_so_far"
     args = mock_run.call_args[0][0]
-    assert args[:2] == ["codex", "exec"]
+    assert args[:4] == ["codex", "-a", "never", "exec"]
     assert "--ephemeral" in args
     assert "-s" in args
     assert "danger-full-access" in args
