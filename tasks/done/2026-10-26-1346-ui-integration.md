@@ -1,6 +1,7 @@
 # UI 集成验收与归档
 
-> 状态: active
+> 状态: done
+> 实现提交: `04a2e077 feat: align tasks inbox and settings with GR8R`
 
 来源：[设计 189](../../docs/design/189-gr8r-ui-alignment.md)。用户 2026-10-26 已批准本批设计、backlog 与实施。
 
@@ -16,4 +17,4 @@
 
 最终生产构建 Docker Playwright 8 passed；8 个 instruction 检查、Web typecheck、63 个 Web 单元测试文件、build/bundle budget、token lint 通过；三种视口截图已复核。
 
-完整命令、边界和证据位置见 [设计 189 验证记录](../../docs/design/189-gr8r-ui-alignment.md#本批验证结果)。本任务实现已完成，等待实现提交号后归档。
+完整命令、边界和证据位置见 [设计 189 验证记录](../../docs/design/189-gr8r-ui-alignment.md#本批验证结果)。本任务已完成验证并归档；本地提交，未 push / merge。
