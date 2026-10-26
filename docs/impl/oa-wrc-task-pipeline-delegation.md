@@ -134,3 +134,12 @@ worker 自报及 `dev.build.done` 不算完成。Product Flow 的等待仍必须
 运行环境故障，供恢复/升级路径处理；仅有这些故障的候选不能触发实现返工，也
 不能消耗产品返工次数。受控动作入口同样拒绝旧队列中的此类retrigger/replan，
 但保留escalate；真正的产品拒绝与混合失败仍走原质量返工路径。
+
+
+### 工具输出证据的定位
+
+Impl handoff 和 Verify 使用 `<provider>.hook.post_tool_use`，按角色和派发因果
+核对命令证据。hook 顶层 `task_id` 可能为空，不应凭 `--task` 查询为空认定采集
+失败。完整正文和已有 `refs.raw_output` 是证据；索引仅用于定位。短输出或空
+stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当前契约明确要求
+额外 sidecar，则必须核对允许的证据形式并如实报告约束，不补造引用。

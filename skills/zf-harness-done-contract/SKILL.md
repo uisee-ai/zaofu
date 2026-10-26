@@ -64,6 +64,25 @@ The handoff must make these facts recoverable without replaying chat:
 Narrative statements such as "done" or "tests pass" are not evidence. Do not
 copy large logs into the event payload; persist them and cite their refs.
 
+## 查找已持久化的命令证据
+
+使用当前 briefing 中的 CLI 和 state dir 查询实际 Provider 的 hook：
+
+```text
+zf events --type codex.hook.post_tool_use --actor <role_instance> --last 10 --index --json --state-dir <state_dir>
+```
+
+Claude 使用 `claude.hook.post_tool_use`。按 actor 定位后，用 `--id <event_id>`
+读取选中事件的完整正文，并核对当前 Run、`causation_id` 对应的派发、cwd、命令
+和执行结果。hook 的顶层 `task_id` 可能为空；不能用 `--task` 查询为空来断言
+工具未执行或证据未采集，也不能把其他尝试的结果冒充当前尝试。
+
+优先引用真实 `event:<event_id>` 和事件给出的 `refs.raw_output`（若存在）；
+读取 sidecar 并核对其 digest。短输出或空 stdout 可以只保存在事件正文中，
+不应仅因没有 raw_output 判定采集失败。若当前契约明确要求额外 sidecar，
+先核对允许的证据形式；确实不满足时报告具体契约/环境阻塞，不伪造引用或通过。
+保留一次索引和选中 ID，避免反复读取查询自身产生的大量 hook 输出。
+
 ## Cannot Claim Completion
 
 Do not submit a success claim when:

@@ -76,8 +76,11 @@ amendment are separate role capabilities supplied by the workflow profile.
    recommended semantic owner.
    保存探针证据时先复用当前回合已持久化的工具结果：通过 briefing 中的 CLI 和 state dir
    查询 `zf events --type <provider>.hook.post_tool_use --last 5 --json --state-dir <state_dir>`
-   （provider取本回合的codex或claude）。优先加 `--actor <role_instance>` / `--task <task_id>`
-   在取last之前筛选；已知事件ID时用 `--id <event_id>` 读取原始事件。避免反复输出查询自身的
+   （provider取本回合的codex或claude）。优先加 `--actor <role_instance>` 在取last之前
+   筛选；hook 顶层 `task_id` 可能为空，不能因 `--task` 查询为空便认定工具证据不存在。
+   应核对 `causation_id` 对应的当前派发；已知事件ID时用 `--id <event_id>` 读取原始事件。
+   短输出或空 stdout 可能仅保存在事件正文中，没有 raw_output 不等于采集失败；
+   若契约明确要求 sidecar 而实际没有，报告该具体约束，不伪造引用。避免反复输出查询自身的
    历史大结果；确需扩大last时在调用端只输出待核验事件。核对工具结果事件的 actor、
    Run、派发因果、实际命令、输出和退出码。仅引用确实存在且属于本次验证的
    `event:<event_id>`，或该事件给出的原始输出 sidecar ref；保留截断输出的完整 sidecar。

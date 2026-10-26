@@ -184,3 +184,18 @@ workflow-batch-resume（evt-0d1326131009），OA revise→Planner→Critic appro
 
 blocked路由修复的Writer fanout/恢复/预算直接调用方追加188 passed；sentinel51
 passed、flow mock10 passed。组合共450项focused行为检查，不以此替代此前广域层。
+
+
+### 07:41 Impl 证据查找误判
+
+新代次 Impl 的文件检查通过，但提交 dev.blocked=`evt-02936294c291`，worker
+错误查询 codex.post_tool_use 并加 --task，漏掉真实 codex.hook.post_tool_use。
+只读复核文档 cat 的 evt-9d6a9bab7997 已有真实 raw_output sidecar 与 sha256，
+因果绑定当前派发 evt-fcea70c8740b；test -f 的 evt-d05d92c39c1d 输出为空、没有
+raw_output（现有短输出内联策略），不能将此一概视为 hook 未运行。
+修正 Impl handoff 与 Verify 方法：使用实际事件名、actor 与派发因果定位，
+不可依据空 task 过滤证明不存在；明确短输出与严格 sidecar 契约的区别。
+原 blocked 结果不覆盖，后续通过官方 recover task-impl 请求新 attempt。
+
+方法修复验证：真实角色依赖物化、适配器技能解析及技能来源测试32 passed、1 skipped；
+新增用例证明 Impl 的 handoff 方法通过现有角色依赖进入实际技能目录。

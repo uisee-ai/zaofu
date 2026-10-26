@@ -12,6 +12,7 @@ from zf.core.skills import materialize_role_skills, read_skill_metadata
     ("zf-yoke-planner-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-critic-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-dev-worker-role-context", "tdd-evidence", "yoke"),
+    ("zf-yoke-dev-worker-role-context", "zf-harness-done-contract", "skills"),
     ("zf-yoke-test-evaluator-role-context", "tdd-evidence", "yoke"),
 ])
 def test_active_roles_receive_current_review_and_evidence_methods(tmp_path, role_skill, method, source):
