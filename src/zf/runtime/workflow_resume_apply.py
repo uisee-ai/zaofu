@@ -356,6 +356,7 @@ def _apply_operation_checkpoint(
             ),
         )
     redrive_actions = {
+        "redrive_interrupted_reader_operation",
         "redrive_interrupted_task_pipeline_operation",
         "redrive_cancelled_interrupted_task_pipeline_operation",
         "redrive_budget_amended_task_pipeline_operation",
@@ -413,6 +414,14 @@ def _apply_operation_checkpoint(
                 checkpoint=checkpoint,
                 applied=False,
                 reason="budget amendment is missing, stale, or out of scope",
+            )
+    if checkpoint.safe_resume_action == "cancel_terminal_reader_operation":
+        from zf.runtime.terminal_reader_operation import terminal_reader_event
+
+        if not terminal_reader_event(current, writer.event_log.read_all()):
+            return WorkflowResumeApplyResult(
+                checkpoint=checkpoint, applied=False,
+                reason="reader carrier no longer has a terminal occurrence",
             )
     planned = writer.append(ZfEvent(
         type=WORKFLOW_RESUME_PLANNED_EVENT,
@@ -477,7 +486,7 @@ def _apply_operation_checkpoint(
         return WorkflowResumeApplyResult(
             checkpoint=checkpoint,
             applied=True,
-            reason="Task Pipeline operation admitted for restart replay",
+            reason="Workflow operation admitted for restart replay",
             emitted_event_ids=emitted,
         )
     cancelled = service.cancel(
@@ -486,7 +495,9 @@ def _apply_operation_checkpoint(
         workflow_run_id=checkpoint.workflow_run_id,
         task_id=checkpoint.task_id,
         reason=(
-            "workflow_resume_cancelled_interrupted_operation"
+            "workflow_resume_cancelled_terminal_reader"
+            if checkpoint.safe_resume_action == "cancel_terminal_reader_operation"
+            else "workflow_resume_cancelled_interrupted_operation"
             if checkpoint.safe_resume_action == "cancel_interrupted_operation"
             else "workflow_resume_cancelled_stale_operation"
         ),

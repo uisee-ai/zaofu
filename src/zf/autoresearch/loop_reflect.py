@@ -259,12 +259,12 @@ def _reflect_command(backend: str) -> list[str]:
     if backend == "codex":
         return [
             "codex",
+            "-a",
+            "never",
             "exec",
             "--ephemeral",
             "-s",
             "danger-full-access",
-            "-a",
-            "never",
             "-",
         ]
     raise ValueError(f"unsupported reflection backend: {backend}")

@@ -231,6 +231,8 @@ def build_workflow_operation_resume_checkpoints(
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
+    from zf.runtime.terminal_reader_operation import terminal_reader_event
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -297,6 +299,12 @@ def build_workflow_operation_resume_checkpoints(
             )
         elif (
             status == "suspended"
+            and terminal_reader_event(operation, event_list)
+        ):
+            action = "cancel_terminal_reader_operation"
+            reason = "reader carrier already has an exact terminal occurrence"
+        elif (
+            status == "suspended"
             and task_pipeline_stage
             and str(operation.get("reason") or "")
             in {
@@ -310,6 +318,13 @@ def build_workflow_operation_resume_checkpoints(
                 "Task Pipeline operation was interrupted by a replayable "
                 "runtime stop and retains request identity"
             )
+        elif (
+            status == "suspended"
+            and str(operation.get("operation_type") or "") == "fanout_reader_child"
+            and str(operation.get("reason") or "") in {"graceful_stop", "fast_stop"}
+        ):
+            action = "redrive_interrupted_reader_operation"
+            reason = "reader operation retains its pinned request after runtime stop"
         elif status == "suspended":
             action = "cancel_interrupted_operation"
             reason = "operation was interrupted by an explicit runtime stop"

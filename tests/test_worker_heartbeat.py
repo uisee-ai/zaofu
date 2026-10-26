@@ -587,7 +587,7 @@ def test_wire_up_apply_housekeeping_handles_worker_heartbeat():
         "apply_worker_heartbeat_event"
     )
     assert "is_worker_activity_event(event.type)" in text
-    assert "apply_worker_activity_heartbeat(registry, event)" in text
+    assert "apply_observed_activity(self, event)" in text
 
 
 def _seed_busy(reg, instance_id, *, stale=False, tmp_path=None):

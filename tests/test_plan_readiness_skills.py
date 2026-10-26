@@ -12,6 +12,7 @@ from zf.core.skills import materialize_role_skills, read_skill_metadata
     ("zf-yoke-planner-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-critic-role-context", "zf-plan-execution-readiness", "skills"),
     ("zf-yoke-dev-worker-role-context", "tdd-evidence", "yoke"),
+    ("zf-yoke-dev-worker-role-context", "zf-harness-done-contract", "skills"),
     ("zf-yoke-test-evaluator-role-context", "tdd-evidence", "yoke"),
     ("zf-yoke-test-evaluator-role-context", "verify-review", "yoke"),
     ("zf-channel-discussion-synthesizer", "zf-requirement-reconciliation", "skills"),

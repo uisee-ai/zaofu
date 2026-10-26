@@ -559,16 +559,15 @@ class SpawnCoordinator(ProviderSessionPreparationMixin):
             shutil.copy2(version_src, version_dst)
         _dismiss_codex_update_prompt(codex_home)
 
-        stale_hooks = codex_home / "hooks.json"
-        if stale_hooks.exists() or stale_hooks.is_symlink():
-            stale_hooks.unlink()
-
         write_codex_hook_settings(self.state_dir, project_root=hook_project_root)
         self._install_codex_project_hook_trust(
             role,
             codex_home,
             project_root=hook_project_root,
         )
+        from zf.runtime.codex_worktree_hooks import configure_linked_worktree_hooks
+        configure_linked_worktree_hooks(self.state_dir, project_root=Path(self.project_root),
+                                       worker_root=hook_project_root, codex_home=codex_home)
         return codex_home
 
     def _install_codex_project_hook_trust(

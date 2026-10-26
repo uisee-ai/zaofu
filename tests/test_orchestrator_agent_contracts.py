@@ -423,3 +423,31 @@ def test_workflow_runtime_facade_preserves_legacy_runtime_types() -> None:
     assert WorkflowRuntimeDecision is CanonicalWorkflowRuntimeDecision
     assert WorkflowRuntimeCoordinator.__name__ == "WorkflowRuntimeCoordinator"
     assert WorkflowRuntimeDecision.__name__ == "WorkflowRuntimeDecision"
+
+
+@pytest.mark.parametrize("checkpoint", ["pre_impl", "semantic_failure", "pre_closeout"])
+def test_product_pilot_loads_implemented_blocking_checkpoints(tmp_path, checkpoint):
+    config = load_config(_write_config(tmp_path, f"""orchestration:
+  flow_policies:
+    prd:
+      mode: semantic_control
+      pilot_id: hello-pipeline
+      checkpoints: [plan_candidate, {checkpoint}]
+kind_routes:
+  prd:
+    pattern_id: test-route
+    default_tier: full
+stages:
+  - id: test-route
+    trigger: test.requested
+    topology: fanout_reader
+    roles: [reader]"""))
+    assert checkpoint in config.workflow.orchestration.flow_policies["prd"].checkpoints
+
+
+@pytest.mark.parametrize("backends", ["backend: codex", "backends: [claude-code, codex]\n    replicas: 2"])
+def test_loader_rejects_codex_stream_json(tmp_path, backends):
+    path = tmp_path / "zf.yaml"
+    path.write_text("project: {name: transport-test}\nroles:\n  - name: worker\n    " + backends + "\n    transport: stream-json\n")
+    with pytest.raises(ConfigError, match="stream-json.*claude-code"):
+        load_config(path)

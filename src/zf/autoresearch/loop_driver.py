@@ -326,9 +326,8 @@ def _default_run_id(iter: int, scenario: str) -> str:
 def _metrics_state_dir(ar_result: dict[str, Any], fallback: Path) -> Path:
     """Return the runtime state tree that describes this iteration.
 
-    Normal autoresearch evaluates the parent project. In bypass mode the
-    inner harness owns the relevant events/kanban/health files, so the
-    bypass runner reports its state_dir explicitly.
+    Both real runners report their experiment state explicitly. The parent
+    remains a compatibility fallback for injected runners without a state tree.
     """
     raw = ar_result.get("state_dir") or ar_result.get("metrics_state_dir")
     if raw:

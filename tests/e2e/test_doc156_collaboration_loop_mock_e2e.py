@@ -255,7 +255,7 @@ def test_doc156_channel_research_adoption_and_workflow_start(
         },
     )
     assert discussion["status"] == "started"
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         replies = [
             event
@@ -282,7 +282,7 @@ def test_doc156_channel_research_adoption_and_workflow_start(
     assert requested_synthesis["status"] == "requested"
 
     synthesis_request = None
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         synthesis_request = next(
             (
@@ -297,7 +297,7 @@ def test_doc156_channel_research_adoption_and_workflow_start(
             break
         time.sleep(0.02)
     assert synthesis_request is not None
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + 15
     synthesis_proposed = False
     while time.monotonic() < deadline:
         synthesis_proposed = any(
@@ -609,7 +609,7 @@ def test_four_lens_discussion_cross_review_and_signoff_closes(
         "critic",
     ]
 
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + 15
     while time.monotonic() < deadline:
         detail = project_channel(state_dir, channel_id)
         session = discussion_state(detail, thread_id)

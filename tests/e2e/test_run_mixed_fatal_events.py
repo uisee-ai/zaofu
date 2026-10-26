@@ -153,6 +153,10 @@ def test_prepare_flow_source_commits_only_controller_input(
         check=True,
     )
 
+    (tmp_path / ".gitignore").write_text("docs/prd/\n", encoding="utf-8")
+    (tmp_path / "unrelated.txt").write_text("retain", encoding="utf-8")
+    subprocess.run(["git", "add", "--", "unrelated.txt"], cwd=tmp_path, check=True)
+
     request_id = prepare_flow_source(
         tmp_path,
         flow_kind="prd",
@@ -169,6 +173,10 @@ def test_prepare_flow_source_commits_only_controller_input(
     ).stdout.splitlines()
     assert request_id.startswith("autoresearch-")
     assert tracked == ["docs/prd/autoresearch.md"]
+    staged = subprocess.check_output(
+        ["git", "diff", "--cached", "--name-only"], cwd=tmp_path, text=True,
+    ).splitlines()
+    assert staged == ["unrelated.txt"]
 
 
 def test_submit_flow_uses_production_intake_clarify_submit_entry(

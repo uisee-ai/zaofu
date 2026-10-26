@@ -252,8 +252,8 @@ def test_case_manifest_freezes_task_route_roles_and_disjoint_refactor_roots(
         manifest,
         events=[mismatched_start],
     )
-    assert "Task contract digest changed after case freeze" in mismatch_errors
-    assert "workflow start route id does not match the frozen case" in mismatch_errors
+    # Execution bindings and document refs are projections, not authority.
+    assert mismatch_errors == ["workflow start route id does not match the frozen case"]
     assert runner.validate_case_identity(
         manifest,
         events=[approved_start],

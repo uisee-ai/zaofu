@@ -27,6 +27,7 @@ from zf.autoresearch.review_gate import (
     prepare_review_gate_summary,
 )
 from zf.autoresearch.scenarios import AutoresearchScenario, resolve_scenario
+from zf.autoresearch.task_completion import count_completed_tasks
 from zf.autoresearch.stuck_incident import (
     audit_stuck_incident,
     event_log_for_worktree,
@@ -262,11 +263,25 @@ def _apply_autoresearch_controller_overrides(
         run_limits["cost_budget_usd"] = cfg.budget_usd
 
     for source in data.get("skill_sources") or []:
-        if (
-            isinstance(source, dict)
-            and str(source.get("name") or "") == "zaofu-skills"
-        ):
-            source["path"] = str(repo_root() / "skills")
+        if not isinstance(source, dict):
+            continue
+        bundled = {"zaofu-skills": "skills", "yoke": "yoke"}.get(
+            str(source.get("name") or ""),
+        )
+        if bundled:
+            # Prefer the experiment's version, including candidate skill edits.
+            # Mixing it with the driver checkout creates strict-source collisions.
+            local = cfg.worktree.resolve() / bundled
+            source["path"] = str(local if local.is_dir() else repo_root() / bundled)
+
+    local_yoke = cfg.worktree.resolve() / "yoke"
+    if local_yoke.is_dir() and not any(
+        isinstance(source, dict) and source.get("name") == "yoke"
+        for source in data.get("skill_sources") or []
+    ):
+        data.setdefault("skill_sources", []).append({
+            "name": "yoke", "path": str(local_yoke), "mode": "readonly",
+        })
 
     feishu_path = cfg.worktree.resolve() / "feishu.yaml"
     if feishu_path.is_file():
@@ -977,7 +992,7 @@ def summarize_events(
         event_models,
         required=stuck_incident_required,
     )
-    done = 0
+    done = count_completed_tasks(events)
     fatal = None
     fatal_count = 0
     dispatch_by_instance: dict[str, int] = {}
@@ -992,10 +1007,6 @@ def summarize_events(
     for event in events:
         event_type = str(event.get("type") or "")
         event_counts[event_type] = event_counts.get(event_type, 0) + 1
-        if event_type == "task.status_changed":
-            payload = event.get("payload") or {}
-            if isinstance(payload, dict) and payload.get("to") == "done":
-                done += 1
         if event_type in FATAL_EVENT_TYPES:
             fatal_count += 1
             if fatal is None:

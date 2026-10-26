@@ -119,6 +119,11 @@ class OrchestratorAgentReactorMixin:
             correlation_id=event.correlation_id,
         ))
         applied = bool(outcome.get("applied"))
+        if applied and outcome.get("owner_approval_required"):
+            source = next((item for item in self.event_log.read_all()
+                           if item.id == outcome.get("source_event_id")), None)
+            if source is not None:
+                self._maybe_start_writer_fanout(source)
         return WorkflowRuntimeDecision(
             action="apply" if applied else "observe",
             role="orchestrator",
