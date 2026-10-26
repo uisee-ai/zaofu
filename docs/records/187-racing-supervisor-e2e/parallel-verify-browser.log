@@ -1,0 +1,53 @@
+{
+  "plan_id": "evt-498c4d468cc2",
+  "plan_status": "approved",
+  "source_seq": 11036,
+  "running": [
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-0-foundation-tri-2bff8048b562",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-workflow-adaptation-boundary",
+          "zf-project-adapter-matrix-enrichment",
+          "zf-yoke-test-evaluator-role-context"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-851e29c0f623"
+      }
+    },
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-2-experience-ass-317ae58ae006",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-workflow-adaptation-boundary",
+          "zf-project-adapter-matrix-enrichment",
+          "zf-yoke-test-evaluator-role-context"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-1b6b6ac01db9"
+      }
+    },
+    {
+      "id": "operation:wop-prd-lanes-verify-prd-verify-lane-1-track-collisio-d29b1c767894",
+      "status": "running",
+      "agent": {
+        "backend": "codex",
+        "model": "gpt-6-astra",
+        "skills": [
+          "zf-workflow-adaptation-boundary",
+          "zf-project-adapter-matrix-enrichment",
+          "zf-yoke-test-evaluator-role-context"
+        ],
+        "source": "provider_usage",
+        "source_event_id": "evt-a951c15a028a"
+      }
+    }
+  ],
+  "detail": "prd-verify-lane-0\n\n执行中\n\noperation:wop-prd-lanes-verify-prd-verify-lane-0-foundation-tri-2bff8048b562\n\nAgent：prd-verify-lane-0 · Attempt：run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-foundation\n\nProvider：codex · 模型：gpt-6-astra · 实际用量记录\n\n最近活动\n\n2026-10-26T05:53:37.310024+00:00 · Bash\n{\"command\":\"rg --files -g '!package-lock.json' -g '!node_modules' -g '!artifacts/**'\"}\n\n2026-10-26T05:53:37.690352+00:00 · Bash\n{\"command\":\"sed -n '375,535p' '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-verify-lane-0-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-foundation.md'\"}\n\n2026-10-26T05:53:38.731529+00:00 · Bash\n{\"command\":\"cat '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/skills/zf-browser-e2e-contract/SKILL.md'\"}\n\n2026-10-26T05:53:57.244006+00:00 · Bash\n{\"command\":\"rg --files -g '!package-lock.json' -g '!node_modules' -g '!artifacts/**'\"}\n\n2026-10-26T05:53:57.921874+00:00 · Bash\n{\"command\":\"cat '/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/skills/zf-browser-e2e-contract/SKILL.md'\"}\n\n收起节点\n关联\n← executes · prd-lanes-verify\n← execution · 建立可启动的工程骨架与共享契约\n→ attempt · run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-foundation\n→ attempt · ta-b3abf5659d443204dd5c\n来源与执行证据"
+}

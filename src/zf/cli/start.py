@@ -588,76 +588,6 @@ def _run_orchestrator_idle_tick(orchestrator) -> None:
     orchestrator.run_once()
 
 
-def _process_watched_event(
-    event: ZfEvent,
-    *,
-    wake_patterns: set[str],
-    wake_worthy_fn,
-    rate_limiter,
-    orchestrator,
-    simulation: bool,
-    event_log,
-    stop_watcher,
-) -> bool:
-    """Process one watcher event before applying simulation auto-stop."""
-    terminal_settlement = simulation and event.type in {
-        "run.goal.completed",
-        "run.goal.blocked",
-    }
-    should_wake = terminal_settlement or (
-        event.type in wake_patterns
-        and wake_worthy_fn(event)
-        and rate_limiter.allow(event.type)
-    )
-    if should_wake:
-        orchestrator.run_once(events=[event])
-
-    if not simulation:
-        return should_wake
-
-    from zf.core.events.writer import EventWriter
-    from zf.runtime.simulation_lifecycle import emit_simulation_done
-
-    done = emit_simulation_done(
-        event,
-        events=event_log.read_all(),
-        writer=EventWriter(event_log, default_origin="kernel"),
-    )
-    if done is None:
-        return should_wake
-    stop_watcher()
-    return should_wake
-
-
-def _process_watched_batch(
-    events: list[ZfEvent],
-    *,
-    consumed_offset: int,
-    pushed_event_ids: set[str],
-    orchestrator,
-) -> None:
-    """Process non-wake batch members, then acknowledge the exact boundary."""
-    batch_event_ids = {event.id for event in events}
-    if not batch_event_ids.intersection(pushed_event_ids):
-        # Pure observation batches remain level-triggered and are consumed by
-        # the periodic durable catch-up instead of waking the full runtime on
-        # every watcher poll.
-        return
-    pending = [
-        event
-        for event in events
-        if event.id not in pushed_event_ids
-    ]
-    if pending:
-        orchestrator.run_once(
-            events=pending,
-            consumed_offset=consumed_offset,
-        )
-    else:
-        orchestrator.acknowledge_consumed_offset(consumed_offset)
-    pushed_event_ids.difference_update(batch_event_ids)
-
-
 def _run_startup_orchestrator_catchup(orchestrator, event_log) -> None:
     """Catch up durable events before the watcher starts at EOF.
 
@@ -1444,38 +1374,17 @@ def run(args: argparse.Namespace) -> int:
             )
 
             restore_flow_role_activations(orchestrator)
-        pushed_event_ids: set[str] = set()
+        from zf.cli.watch_batch import make_watch_callbacks
 
-        def _on_event(line: str) -> None:
-            # Parse the line and push the event object into run_once so the
-            # orchestrator does not re-read events.jsonl from disk.
-            try:
-                from zf.core.events.model import ZfEvent
-                event = ZfEvent.from_json(line)
-            except Exception:
-                return
-            if _process_watched_event(
-                event,
-                wake_patterns=wake_pattern_set,
-                wake_worthy_fn=wake_worthy,
-                rate_limiter=rate_limiter,
-                orchestrator=orchestrator,
-                simulation=simulation,
-                event_log=event_log,
-                stop_watcher=watcher.stop,
-            ):
-                pushed_event_ids.add(event.id)
-
-        def _on_batch_consumed(
-            events: list[ZfEvent],
-            consumed_offset: int,
-        ) -> None:
-            _process_watched_batch(
-                events,
-                consumed_offset=consumed_offset,
-                pushed_event_ids=pushed_event_ids,
-                orchestrator=orchestrator,
-            )
+        _on_event, _on_batch_consumed = make_watch_callbacks(
+            orchestrator=orchestrator,
+            wake_patterns=wake_pattern_set,
+            wake_worthy_fn=wake_worthy,
+            rate_limiter=rate_limiter,
+            simulation=simulation,
+            event_log=event_log,
+            stop_watcher=lambda: watcher.stop(),
+        )
 
         # α-3 + β-1 periodic-sweep throttles: the EventWatcher tick fires
         # every ~5s but heartbeat/supervisor/autoresearch services have

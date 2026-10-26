@@ -1,5 +1,5 @@
 {
-  "status": "repair_impl_in_progress_verify_pending_graph_layout_fixed",
+  "status": "independent_verify_in_progress_reader_recovery_and_watch_batch_fixed",
   "project_id": "racing-project-33598481",
   "request_id": "prepare-TASK-5F44B4-c32763f31115843f",
   "excluded": [
@@ -48,6 +48,21 @@
       "file": "22-parallel-impl-inspector.png",
       "sha256": "393c88d2b5cf7db65941d296d43b6e91d7996f3ba045501bef70c8c602d91606",
       "bytes": 159939
+    },
+    {
+      "file": "23-parallel-verify-modules.png",
+      "sha256": "87c3dcb23db101287fcb3d1200fc3758880b434a60e63ffdca147506e2f0a465",
+      "bytes": 253845
+    },
+    {
+      "file": "24-parallel-verify-workflow.png",
+      "sha256": "d1cb1a201754cb1fb80a627e8f0af065566ca1633e6cdcce0ce856bff9c9f29d",
+      "bytes": 202288
+    },
+    {
+      "file": "25-parallel-verify-inspector.png",
+      "sha256": "d920d42a227064e478197932ef2fa004ed07a915c146a919b3927b64fb766601",
+      "bytes": 133517
     },
     {
       "file": "28-operator-game-finished.png",
@@ -113,6 +128,26 @@
       "file": "40-plan-chat-grid-fixed-mobile.png",
       "sha256": "3461b8943cc56c1cc511cf229edd7b7b3cdc5cf08b88aed729369e05fa637c87",
       "bytes": 126931
+    },
+    {
+      "file": "41-final-game-ready.png",
+      "sha256": "5b0a763f3d54a70edda2684ba304d7cd8082ad153df7005d83217014ad16739e",
+      "bytes": 117455
+    },
+    {
+      "file": "42-final-game-finished.png",
+      "sha256": "b8bbd0c648fa0ae9336eede8301b29916d2439fa8a9a196c23c763bd713ac8a9",
+      "bytes": 111401
+    },
+    {
+      "file": "43-candidate-first-normal-finish.png",
+      "sha256": "e057be1c5e0183e99b5d727d4a044c2bee2d97848e1487941d5f2f9b5c5475bd",
+      "bytes": 105670
+    },
+    {
+      "file": "44-three-verify-lanes-active.png",
+      "sha256": "5ebd8cc43ad7774b4b59f55c1fc571f47c379ba44ec0d0deedffed9c5d21bb9f",
+      "bytes": 138391
     },
     {
       "file": "approval-recovery-dev-verify-plan.log",
@@ -355,6 +390,11 @@
       "bytes": 6337
     },
     {
+      "file": "current-candidate-first-browser.json",
+      "sha256": "5b7d0fc39799a241e393557e4577d47b1e1827c2a7b019df98693f495e91dfd5",
+      "bytes": 17094
+    },
+    {
       "file": "dev-verify-final-plan.log",
       "sha256": "f829c68afda0ce3a847a9332a8db4cdbc1e5194c897294f28c97d5c0009d5188",
       "bytes": 7503
@@ -383,6 +423,21 @@
       "file": "effective-config-verified.json",
       "sha256": "fd713478af5c1c198cbb3e276bf167dfe9ae8b59931e0e572538460450ea0f58",
       "bytes": 2829
+    },
+    {
+      "file": "environment-candidate-manifest-source.json",
+      "sha256": "b2a01aa55cd49c0a0eb635432c7719d3ba1816b55b8452c31cdf36f70dd881e1",
+      "bytes": 236
+    },
+    {
+      "file": "environment-candidate-manifest.json",
+      "sha256": "dcfc7751f7a16da308a316cc006cb83aea0f0fd0a67831f7c2c0a0b03cfe31ce",
+      "bytes": 14995
+    },
+    {
+      "file": "environment-candidate-verify-events.json",
+      "sha256": "ab8b4c564dd6670f4397416bb249f3856b141561a2c30480b05cf8c51a6f7fb7",
+      "bytes": 332144
     },
     {
       "file": "environment-plan-approved-event.json",
@@ -508,6 +563,21 @@
       "file": "final-candidate.yaml",
       "sha256": "2b356f6a13021b0616878f71079c83a31abd25d1f262a1fb73ae206778b6a6f3",
       "bytes": 6973
+    },
+    {
+      "file": "final-game-browser.json",
+      "sha256": "74fb91dd042a070b06ebcdbc6bc2b531dbf18b132a5d793b33a93d60671fe4de",
+      "bytes": 3167
+    },
+    {
+      "file": "final-game-browser.log",
+      "sha256": "b2b5856cf780cccb500d75c1ad004739dfa592b80a73f79bb0b419eec1676ac3",
+      "bytes": 2563
+    },
+    {
+      "file": "final-game-source.json",
+      "sha256": "876d792493f7a96784cf47190f15fa587acaa91d0153e8a9307d8617c78b4be5",
+      "bytes": 1939
     },
     {
       "file": "flow-smoke-final.log",
@@ -665,6 +735,16 @@
       "bytes": 7814
     },
     {
+      "file": "parallel-verify-browser.log",
+      "sha256": "18e0eac63c3eb787b72b4a9540b0d5f2439a5776db892049bb41ea54c8b3ffc2",
+      "bytes": 3121
+    },
+    {
+      "file": "parallel-verify-proof.json",
+      "sha256": "393edf7271b53bfcb3d5f81cb377061cd0c0a64d11f21e16c58653dc64b86adf",
+      "bytes": 5338
+    },
+    {
       "file": "pending-interfaces.md",
       "sha256": "32def2aebb68ec65c8a50853583110cef81e1ddac95df35372b31f06bf66503a",
       "bytes": 12051
@@ -813,6 +893,11 @@
       "file": "plan-selfcheck-chat-gate.json",
       "sha256": "5a3c0ae35d38f6e48cc6b193266a2fb5c9ecb5813f3a19003f79b6b5af23e5ec",
       "bytes": 299
+    },
+    {
+      "file": "portable-candidate-export.json",
+      "sha256": "2b6fbca8cf25e61f505cadf2f4d162e254934e3d0a4d770f69cddc4ba1584d38",
+      "bytes": 1299
     },
     {
       "file": "preparation-discovery-green.log",
@@ -1290,6 +1375,11 @@
       "bytes": 114
     },
     {
+      "file": "three-verify-lanes-browser.log",
+      "sha256": "f92d530ee925157f7fad93f9e85b4921c387eef3a4f0f4d9bf9f08e4cd4526dd",
+      "bytes": 228
+    },
+    {
       "file": "user-plan-approval.json",
       "sha256": "cc775eabec1f53384bbdbd851c035473c3d2932373321f3fb0a08ef9f4d75c12",
       "bytes": 1649
@@ -1300,9 +1390,69 @@
       "bytes": 379
     },
     {
+      "file": "verify-candidate-pins.json",
+      "sha256": "ecfceaa8cd2e236234d391aabc8315ce23d8f40010fba3e1b7ba5a8ff73fd4a9",
+      "bytes": 2768
+    },
+    {
       "file": "verify-dispatch-configuration.json",
       "sha256": "28f0bcde7a7ed9bd91e9f9db4910183997eabc5a9e454626142c4a3558d38579",
       "bytes": 1485
+    },
+    {
+      "file": "watch-batch-closure.log",
+      "sha256": "931770e2fb56c1378447bcdb488620e13758452352ceb6e6da14f6b92acbc924",
+      "bytes": 272
+    },
+    {
+      "file": "watch-batch-dev-verify-plan.log",
+      "sha256": "dfffbcc01f773235787380de2244b6e8e9e9ebc75ed639b4af113babd53a9653",
+      "bytes": 1163
+    },
+    {
+      "file": "watch-batch-dev-verify-receipt.json",
+      "sha256": "5d0c62b5639be59939be9af670826ad3f2d4c38b17de6dd84a940842a58ca631",
+      "bytes": 7895
+    },
+    {
+      "file": "watch-batch-dev-verify-run.log",
+      "sha256": "dfffbcc01f773235787380de2244b6e8e9e9ebc75ed639b4af113babd53a9653",
+      "bytes": 1163
+    },
+    {
+      "file": "watch-batch-flow-mock.log",
+      "sha256": "c5110d1d6c629e34ec2a517edfb75a108cc438ca0ff113f9897c80faba161ddd",
+      "bytes": 99
+    },
+    {
+      "file": "watch-batch-focused.log",
+      "sha256": "aa9d4a4ea3a0623f7b240e2f105a36ac8804a0e82d1aabba93a783e09c1a0c77",
+      "bytes": 111
+    },
+    {
+      "file": "watch-batch-log-normalization.json",
+      "sha256": "0086fade74ac103fc24f3797d5fd437d5e0b944a3c2752b959a7efa114be41d0",
+      "bytes": 379
+    },
+    {
+      "file": "watch-batch-red.log",
+      "sha256": "fb456225c39da7ff0dc7aacd0de4831088d1304e9fccf67711194dc50fdab997",
+      "bytes": 2589
+    },
+    {
+      "file": "watch-batch-red.raw.log.gz",
+      "sha256": "c5796d1ae6b3ecdd38fb87cf613219be838f29cf705644f5ca3d15fad2a1ec84",
+      "bytes": 919
+    },
+    {
+      "file": "watch-batch-runtime-reload.json",
+      "sha256": "2e5eb30216ec386179eb4946c725d72c48c7259c7cbbcb0b19da4fd72a5c6820",
+      "bytes": 2060
+    },
+    {
+      "file": "watch-batch-sentinel.log",
+      "sha256": "b9e73504c0a19442986589fa34c6d856ad6c3893c2d57ec278df1043da30dc75",
+      "bytes": 128
     },
     {
       "file": "web-reader-build.log",

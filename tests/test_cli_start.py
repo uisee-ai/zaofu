@@ -26,130 +26,6 @@ def test_idle_tick_catches_up_from_durable_offset_without_empty_pushed_events():
     assert calls == [((), {})]
 
 
-def test_simulation_processes_goal_terminal_before_auto_stop(tmp_path: Path):
-    from zf.cli.start import _process_watched_event
-    from zf.core.events.log import EventLog
-    from zf.core.events.model import ZfEvent
-
-    log = EventLog(tmp_path / "events.jsonl")
-    terminal = ZfEvent(
-        type="run.goal.completed",
-        correlation_id="RUN-SIM",
-        payload={
-            "run_id": "RUN-SIM",
-            "completed_task_ids": ["TASK-SIM"],
-        },
-    )
-    log.append(terminal)
-    order: list[str] = []
-
-    class FakeOrchestrator:
-        def run_once(self, *, events):  # noqa: ANN001
-            order.append(f"orchestrator:{events[0].type}")
-            log.append(ZfEvent(
-                type="task.status_changed",
-                task_id="TASK-SIM",
-                payload={"from": "in_progress", "to": "done"},
-            ))
-
-    class DenyRateLimiter:
-        def allow(self, _event_type: str) -> bool:
-            return False
-
-    def stop_watcher() -> None:
-        order.append("stop")
-
-    stopped = _process_watched_event(
-        terminal,
-        wake_patterns=set(),
-        wake_worthy_fn=lambda _event: False,
-        rate_limiter=DenyRateLimiter(),
-        orchestrator=FakeOrchestrator(),
-        simulation=True,
-        event_log=log,
-        stop_watcher=stop_watcher,
-    )
-
-    assert stopped is True
-    assert order == ["orchestrator:run.goal.completed", "stop"]
-    assert [event.type for event in log.read_all()] == [
-        "run.goal.completed",
-        "task.status_changed",
-        "simulation.done",
-    ]
-
-
-def test_watcher_batch_processes_only_events_not_already_pushed():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    pushed = ZfEvent(type="run.goal.completed")
-    observed = ZfEvent(type="provider.telemetry.observed")
-    pushed_ids = {pushed.id}
-    calls = []
-
-    class FakeOrchestrator:
-        def run_once(self, *, events, consumed_offset):  # noqa: ANN001
-            calls.append((events, consumed_offset))
-
-    _process_watched_batch(
-        [pushed, observed],
-        consumed_offset=321,
-        pushed_event_ids=pushed_ids,
-        orchestrator=FakeOrchestrator(),
-    )
-
-    assert calls == [([observed], 321)]
-    assert pushed_ids == set()
-
-
-def test_watcher_batch_acknowledges_without_duplicate_orchestrator_cycle():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    pushed = ZfEvent(type="run.goal.completed")
-    pushed_ids = {pushed.id}
-    acknowledged = []
-
-    class FakeOrchestrator:
-        def run_once(self, **_kwargs):  # noqa: ANN003
-            raise AssertionError("already-pushed batch must not run twice")
-
-        def acknowledge_consumed_offset(self, offset: int) -> None:
-            acknowledged.append(offset)
-
-    _process_watched_batch(
-        [pushed],
-        consumed_offset=654,
-        pushed_event_ids=pushed_ids,
-        orchestrator=FakeOrchestrator(),
-    )
-
-    assert acknowledged == [654]
-    assert pushed_ids == set()
-
-
-def test_watcher_batch_leaves_pure_observation_for_durable_tick():
-    from zf.cli.start import _process_watched_batch
-    from zf.core.events.model import ZfEvent
-
-    observed = ZfEvent(type="provider.telemetry.observed")
-
-    class FakeOrchestrator:
-        def run_once(self, **_kwargs):  # noqa: ANN003
-            raise AssertionError("pure observations must wait for durable tick")
-
-        def acknowledge_consumed_offset(self, _offset: int) -> None:
-            raise AssertionError("unprocessed observations cannot be acknowledged")
-
-    _process_watched_batch(
-        [observed],
-        consumed_offset=777,
-        pushed_event_ids=set(),
-        orchestrator=FakeOrchestrator(),
-    )
-
-
 def test_startup_catchup_uses_durable_offset_path():
     from zf.cli.start import _run_startup_orchestrator_catchup
 
@@ -975,10 +851,26 @@ workflow:
         openai = [item for item in data["env"] if item["key"] == "OPENAI_API_KEY"]
         assert openai == [{"key": "OPENAI_API_KEY", "value": "<redacted>"}]
 
-    def test_start_watcher_configured(self, project_dir: Path, capsys):
-        main(["start", "--dry-run"])
+    def test_start_watcher_configured(self, project_dir: Path, capsys, monkeypatch):
+        from zf.cli import watch_batch
+
+        snapshots = []
+        original = watch_batch.make_watch_callbacks
+
+        def instrument(**kwargs):
+            on_event, on_batch = original(**kwargs)
+
+            def consume(events, offset):
+                snapshots.append(([event.type for event in events], offset))
+                on_batch(events, offset)
+
+            return on_event, consume
+
+        monkeypatch.setattr(watch_batch, "make_watch_callbacks", instrument)
+        assert main(["start", "--dry-run"]) == 0
         captured = capsys.readouterr()
         assert "watcher" in captured.out.lower() or "wake" in captured.out.lower()
+        assert any("loop.started" in types and offset > 0 for types, offset in snapshots)
 
     def test_start_creates_lock_file(self, project_dir: Path):
         main(["start", "--dry-run"])

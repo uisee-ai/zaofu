@@ -1,0 +1,407 @@
+{
+  "pdd_id": "TASK-5F44B4",
+  "branch": "candidate/TASK-5F44B4",
+  "base_ref": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+  "requested_base_ref": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+  "strategy": "cherry-pick",
+  "requested_tasks": [
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9",
+      "approval_event_id": "evt-882305b36cfb",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "task_ref": "task/RACE-DRIVE",
+      "source_commit": "85ce137f7ca3979d667bf6a7d7f154fac152b79f",
+      "approval_event_id": "evt-a7ab065e1fd7",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-TRACK",
+      "task_ref": "task/RACE-TRACK",
+      "source_commit": "0c335dcd7b64cfe9d7a81fee83e105f6a5f602cb",
+      "approval_event_id": "evt-55b0203f1cc2",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "task_ref": "task/RACE-ASSEMBLY",
+      "source_commit": "d05d03d86dd5ee3e929c6926250812435e91ffcc",
+      "approval_event_id": "evt-2494123830e9",
+      "approval_event_type": "task.ref.updated"
+    }
+  ],
+  "dependency_tasks": [],
+  "included_tasks": [
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9",
+      "approval_event_id": "evt-882305b36cfb",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-TRACK",
+      "task_ref": "task/RACE-TRACK",
+      "source_commit": "0c335dcd7b64cfe9d7a81fee83e105f6a5f602cb",
+      "approval_event_id": "evt-55b0203f1cc2",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "task_ref": "task/RACE-DRIVE",
+      "source_commit": "85ce137f7ca3979d667bf6a7d7f154fac152b79f",
+      "approval_event_id": "evt-a7ab065e1fd7",
+      "approval_event_type": "task.ref.updated"
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "task_ref": "task/RACE-ASSEMBLY",
+      "source_commit": "d05d03d86dd5ee3e929c6926250812435e91ffcc",
+      "approval_event_id": "evt-2494123830e9",
+      "approval_event_type": "task.ref.updated"
+    }
+  ],
+  "skipped_tasks": [],
+  "commit_lineage_schema_version": "candidate-commit-lineage.v1",
+  "commit_lineage": [
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "b1f67af6bd281bc4dd8710cb69ce596c2a370591",
+      "candidate_commit": "771a52a039fb635f40ec9b4096b31614a7a4847d",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "eca82693cc5e1df5c4c40b26d8292d2c08a84daa",
+      "candidate_commit": "cef42a40279cf87967664afd371ac85f7e7a3428",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "500fbd96507e07d478d09791c3a45ea537bece6a",
+      "candidate_commit": "ae9fcfba0e3f6f6a838133f368cbffebe94963db",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "fe6aecfd285d1b8e3c419baef5c2c987141114ca",
+      "candidate_commit": "e5b4583cd93c775019cfd8a304bdf3d58269d39d",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-FOUNDATION",
+      "task_ref": "task/RACE-FOUNDATION",
+      "source_commit": "2a92610dfab80aeb6a24f161d0fa64d7a2cb0ac9",
+      "candidate_commit": "e443348d3b8c5004d103227ca864a0ee041cd95b",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-TRACK",
+      "task_ref": "task/RACE-TRACK",
+      "source_commit": "0c335dcd7b64cfe9d7a81fee83e105f6a5f602cb",
+      "candidate_commit": "0716ada77aa571d3e56af6431574f1fc439d814d",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "task_ref": "task/RACE-DRIVE",
+      "source_commit": "ed5089597234cede6430e22456966370bc4b2cba",
+      "candidate_commit": "01c0b2d56d18144f72e455025829acd391454c6f",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-DRIVE",
+      "task_ref": "task/RACE-DRIVE",
+      "source_commit": "85ce137f7ca3979d667bf6a7d7f154fac152b79f",
+      "candidate_commit": "e186525cfee90c8c7337145cb86688d4a97f8df5",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "RACE-ASSEMBLY",
+      "task_ref": "task/RACE-ASSEMBLY",
+      "source_commit": "d05d03d86dd5ee3e929c6926250812435e91ffcc",
+      "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+      "relation": "scoped_projection"
+    }
+  ],
+  "started_at": "2026-10-26T05:39:56.500270+00:00",
+  "manifest_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/manifest.json",
+  "merger_worktree": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree",
+  "status": "updated",
+  "base_commit": "dfe994958e811acbfd95101dafd4a73c4df56eb5",
+  "commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "quality_status": "passed",
+  "quality": {
+    "pdd_id": "TASK-5F44B4",
+    "branch": "candidate/TASK-5F44B4",
+    "commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "merger_worktree": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree",
+    "gate_source": "task_contract",
+    "gate_count": 14,
+    "check_count": 14,
+    "status": "passed",
+    "gates_run": [
+      "task_contract:RACE-FOUNDATION:VC-FOUNDATION",
+      "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER",
+      "task_contract:RACE-FOUNDATION:VC-INSTALL",
+      "task_contract:RACE-TRACK:VC-TRACK",
+      "task_contract:RACE-TRACK:VC-TRACK-BROWSER",
+      "task_contract:RACE-TRACK:VC-UNIT",
+      "task_contract:RACE-DRIVE:VC-DRIVE",
+      "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-ASSEMBLY",
+      "task_contract:RACE-ASSEMBLY:VC-LINT",
+      "task_contract:RACE-ASSEMBLY:VC-BUILD",
+      "task_contract:RACE-ASSEMBLY:VC-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-DELIVERY",
+      "task_contract:RACE-ASSEMBLY:VC-GOVERNANCE"
+    ],
+    "gates_passed": [
+      "task_contract:RACE-FOUNDATION:VC-FOUNDATION",
+      "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER",
+      "task_contract:RACE-FOUNDATION:VC-INSTALL",
+      "task_contract:RACE-TRACK:VC-TRACK",
+      "task_contract:RACE-TRACK:VC-TRACK-BROWSER",
+      "task_contract:RACE-TRACK:VC-UNIT",
+      "task_contract:RACE-DRIVE:VC-DRIVE",
+      "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-ASSEMBLY",
+      "task_contract:RACE-ASSEMBLY:VC-LINT",
+      "task_contract:RACE-ASSEMBLY:VC-BUILD",
+      "task_contract:RACE-ASSEMBLY:VC-BROWSER",
+      "task_contract:RACE-ASSEMBLY:VC-DELIVERY",
+      "task_contract:RACE-ASSEMBLY:VC-GOVERNANCE"
+    ],
+    "gates_failed": [],
+    "gate_checks": {
+      "task_contract:RACE-FOUNDATION:VC-FOUNDATION": [
+        {
+          "command": "node scripts/racing-runner/unit.mjs scaffold",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T05-39-59-868Z-c964773f-ca0d-482a-8fde-508a2d66d190\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 45589,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-FOUNDATION:VC-SCAFFOLD-BROWSER": [
+        {
+          "command": "bash scripts/racing-runner/docker.sh scaffold",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/scaffold/runs/2026-10-26T05-40-45-478Z-becb925a-5eff-46ad-9701-275d6e3ec4da\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 18650,
+          "timeout_seconds": 2100
+        }
+      ],
+      "task_contract:RACE-FOUNDATION:VC-INSTALL": [
+        {
+          "command": "node scripts/racing-runner/setup.mjs",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-41-04-132Z-3a88ce74-c0fc-45da-a4f5-d6c5cce1d24f\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 3462,
+          "timeout_seconds": 660
+        }
+      ],
+      "task_contract:RACE-TRACK:VC-TRACK": [
+        {
+          "command": "node scripts/racing-runner/unit.mjs track",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/track/runs/2026-10-26T05-41-07-568Z-607c9d9d-2d55-4d28-a728-5f7699b9bad8\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 4855,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-TRACK:VC-TRACK-BROWSER": [
+        {
+          "command": "bash scripts/racing-runner/docker.sh track",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/track/runs/2026-10-26T05-41-12-463Z-ea13f613-d4f6-4cd5-85fe-900a80486d4d\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 39837,
+          "timeout_seconds": 2100
+        }
+      ],
+      "task_contract:RACE-TRACK:VC-UNIT": [
+        {
+          "command": "node scripts/racing-runner/check.mjs unit",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-41-52-254Z-c8a5f0e5-b60f-479a-94a4-5e06e1dc9a15\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 55961,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-DRIVE:VC-DRIVE": [
+        {
+          "command": "node scripts/racing-runner/unit.mjs race",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/race/runs/2026-10-26T05-42-48-219Z-bcdecef9-f814-426c-92c8-e302f107d939\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 3952,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-DRIVE:VC-DRIVE-BROWSER": [
+        {
+          "command": "bash scripts/racing-runner/docker.sh race",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/race/runs/2026-10-26T05-42-52-196Z-69f00c96-5e0f-4ede-914d-3e51baac05db\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 33376,
+          "timeout_seconds": 2100
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-ASSEMBLY": [
+        {
+          "command": "node scripts/racing-runner/unit.mjs assembly",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-43-25-539Z-66d02b73-a7ce-478a-9547-61a732df7422\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 54094,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-LINT": [
+        {
+          "command": "node scripts/racing-runner/check.mjs lint",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-44-19-642Z-ff5a6fe6-fd6a-4edd-a078-ab6592a355fd\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 5601,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-BUILD": [
+        {
+          "command": "node scripts/racing-runner/check.mjs build",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-44-25-238Z-96caa73d-aaa3-47b0-b0f7-efe761701c68\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 6221,
+          "timeout_seconds": 780
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-BROWSER": [
+        {
+          "command": "bash scripts/racing-runner/docker.sh acceptance",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 179436,
+          "timeout_seconds": 2400
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-DELIVERY": [
+        {
+          "command": "bash scripts/verify-racing.sh",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-47-30-935Z-b0d2a6e1-25ea-4066-8e15-db301a8433f8\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 270156,
+          "timeout_seconds": 3600
+        }
+      ],
+      "task_contract:RACE-ASSEMBLY:VC-GOVERNANCE": [
+        {
+          "command": "node scripts/audit-racing-workflow.mjs",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "RACING_RUN=artifacts/racing/assembly/runs/2026-10-26T05-52-01-056Z-a558f8cc-5c2e-46a6-8828-d633cee16d66\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 119,
+          "timeout_seconds": 90
+        }
+      ]
+    },
+    "intrinsic_checks": {
+      "candidate_diff": {
+        "command": "git diff --check dfe994958e811acbfd95101dafd4a73c4df56eb5..a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+        "exit_code": 0,
+        "passed": true,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "timed_out": false,
+        "error": "",
+        "duration_ms": 127,
+        "kind": "candidate_diff_whitespace"
+      },
+      "candidate_worktree_clean": {
+        "command": "git status --porcelain --untracked-files=all",
+        "exit_code": 0,
+        "passed": true,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "timed_out": false,
+        "error": "",
+        "reportable_status": "",
+        "duration_ms": 40
+      }
+    },
+    "expected_red_checks": [],
+    "failure_details": {}
+  },
+  "candidate_environment": {
+    "schema_version": "candidate-environment.v1",
+    "status": "ready",
+    "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "setup_declared": false,
+    "setup_script_digest": "",
+    "setup_ran": false,
+    "exit_code": null,
+    "detail": "no setup declared"
+  },
+  "materialized_config_refs": [],
+  "updated_at": "2026-10-26T05:52:01.297061+00:00"
+}

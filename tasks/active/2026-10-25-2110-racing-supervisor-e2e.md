@@ -14,7 +14,7 @@
 - [x] 在 8002 用 Playwright 新建赛车项目并输入需求 -> verify: 真实 Provider、Kanban 与 Workflow AskUserQuestion、Task/Request 来源和完整 YAML Preview 可核验；旧提案误点及受控恢复已记录。
 - [x] Workflow 和 Plan 两处真实局部 Chat -> verify: 不可变候选、局部 diff、新版本绑定及重审均有效；Plan两次修订经真实Planner/Critic接纳，第二次新增AC-A07进入绑定合同，原15项保留。
 - [x] Plan 交付用户后暂停 -> verify: 用户批准具体版本前没有Impl派发；批准后发现审批等待误触发Run blocked，回归修复并经正式接口恢复，同一Plan自动继续，没有重复批准或另建任务图。
-- [ ] 设置 3 lanes 并观察 impl/verify -> verify: 两类分别有至少两个 lane 的真实重叠区间；未达到时有根因、修复及实际重验。
+- [x] 设置 3 lanes 并观察 impl/verify -> verify: 两类分别有至少两个 lane 的真实重叠区间；未达到时有根因、修复及实际重验。
 - [ ] 赛车产品与六视角图闭合 -> verify: 独立验证、Judge、内核 Run/Task/Goal 终态一致，当前候选的浏览器产品验收通过。
 - [ ] 导出证据、提交修复并清理 -> verify: 准确验证层级、秘密检查、临时资源清理与干净工作区审计；不 merge/push。
 
@@ -34,6 +34,8 @@
 
 派发输入核验进一步发现受控动作遗漏新工件引用，Planner正确报告输入冲突；已修复上下文传递及恢复身份遗漏重试次数，两项分别有失败回归和真实事件/请求回放。109项主闭包、43项调用方、28项preflight/Mock及162项Reader恢复闭包通过；最终sentinel51和flow-smoke10通过。正式新Plan审批、环境修复实施与多lane Verify仍待完成。
 
-## 当前进度（2026-10-26 05:27 UTC）
+## 当前进度（2026-10-26 06:50 UTC）
 
-本版FOUNDATION、DRIVE、TRACK均已被内核接纳，DRIVE/TRACK有同代际、两个workdir及实际Provider并行证据；ASSEMBLY于05:23:45自动派发，正在修复时间字段校验和正式入口环境。外部治理bundle绑定本版审批及四次派发，未含未来Verify/Judge。新修复图筛选稀疏坐标和Plan Chat宽表格溢出，均有浏览器失败复现；最终build/typecheck、5图模型场景、8指令检查及4项Docker浏览器通过。API完整快照读取约6秒已记录。任务仍active，等待正式候选、独立Verify多lane、当前候选正常90秒和终态闭环。
+四个实现子任务均已被内核接纳，新候选`a15b6b6f`的14项质量检查全部通过，含真实完整90秒浏览器、统一交付与治理审计。Impl宽度2已证实；05:52启动3个独立Verify lane，三个工作区固定同一候选，真实Provider用量与Playwright同屏执行取证通过。两项UI修复提交`b7dd59a`。任务仍active，继续独立验收、Discovery/Judge、Run/Task/Goal终态、最终候选监工浏览器复核与导出清理。
+
+监工固定候选浏览器实测90.2079秒通过并导出源码、静态产物与原始trace。三个Verify lane均有通过的完整比赛证据，lane 1已正式接纳；lane 0/2经历执行环境超时及上下文恢复，lane 2统一交付重试六阶段全0，正式报告仍待完成。另复现完成事件接纳延迟166.627秒，按账本快照批量调度修复已通过64项入口回归、147项闭包（7 skipped）、51项sentinel和5项Mock/flow，已保留Provider重载。未宣称最终Run或交付完成。
