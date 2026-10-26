@@ -885,9 +885,20 @@ def _normalize_implementation(
     )
     result.setdefault("target_commit", _text(payload, "target_commit", "source_commit"))
     result.setdefault("source_event_id", event.id)
-    from zf.runtime.implementation_result_semantics import recover_implementation_verdict
-
-    recover_implementation_verdict(result, payload)
+    if not str(result.get("verdict") or "").strip():
+        self_check = result.get("self_check")
+        if not isinstance(self_check, Mapping):
+            self_check = payload.get("impl_self_check")
+        if isinstance(self_check, Mapping):
+            self_check_verdict = str(self_check.get("verdict") or "").strip()
+            if self_check_verdict:
+                result["verdict"] = self_check_verdict
+        if not str(result.get("verdict") or "").strip():
+            report = payload.get("report")
+            if isinstance(report, Mapping):
+                report_status = str(report.get("status") or "").strip()
+                if report_status:
+                    result["verdict"] = report_status
     issues = [
         {"field": f"control_result.{field}", "code": "missing_required"}
         for field in ("task_id", "target_commit")
