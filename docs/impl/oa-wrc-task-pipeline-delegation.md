@@ -54,7 +54,7 @@ Codex 当前使用 `tmux`。`stream-json` 仅准入 `claude-code`，包含逐副
 
 高频 provider 活动事件可复用文件身份和版本未变化的 RoleSessionRegistry 读快照；其他 writer 修改或原子替换文件即失效。heartbeat 写仍走原有锁内重新加载和原子写，不缓存 canonical 写入。注册表优先采用 PyYAML 的 C safe loader/dumper，缺少扩展时回退 safe 实现。相同状态、任务、attempt 和 context ratio 的 usage liveness 在既有 60 秒窗口内不重复写入；任何上述字段变化立即落盘。费用事实、租约和事件顺序均不折叠。
 
-回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/active/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
+回归覆盖 `tests/test_activity_liveness.py`、`tests/test_orchestrator_agent_operations.py` 与 `tests/e2e/test_orchestrator_agent_semantic_control_mock_e2e.py`。本轮 backlog 与实际验证结果见 [任务记录](../../tasks/done/2026-10-26-0339-hello-pipeline-validation-fixes.md)。
 
 Autoresearch 实验配置的 `zaofu-skills` 和 `yoke` 来源优先绑定实验 checkout 的本地目录；本地不存在时才回退安装来源。存在本地 yoke 时显式声明来源，避免隐式 fallback 同时命中 driver 的副本。客户自定义来源保持原声明，严格碰撞校验不关闭。`tests/test_autoresearch_controller_skill_sources.py` 与实际 11 角色默认模板预检覆盖这一恢复分支。
 
