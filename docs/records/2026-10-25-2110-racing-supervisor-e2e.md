@@ -143,3 +143,9 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 63. lane 2随后完成101/101装配自检及90.359秒真实比赛，并于06:23启动原命令重试；其统一交付最终六阶段全0，未修改产品源码、期限或期望。lane 0/2在06:25被原有hard-cap策略回收，正式恢复仍绑定原fanout/子任务/候选，但仅重发原briefing，两个新回合重复执行了部分此前检查；不把重复执行算作额外独立lane。lane 1提交`verify.child.completed=evt-544646bee75f`（06:28:23.324455），内核于06:31:09.951740接纳`fanout.child.completed=evt-e7b2102f7fd1`，延迟166.627秒。lane 0新回合90.158秒比赛通过，额外冷工作树检查首轮工具探测超时，后续分阶段单元和容器启动页通过；这些仍须正式结果接纳。
 
 64. 密集唤醒逐事件调用完整调度造成积压；回归复现同一快照多次调度，较早的观察事件被留到批末。将Watch callbacks抽至独立小模块，真实`zf start`按快照调用一次调度，逐事件过滤/限流、账本顺序和精确字节游标保留；追加的新事件留待下一轮。初始64项CLI/Watcher回归通过；补充闭包首次因旧Mock E2E导入旧helper而收集失败，迁移其真实回调接线后147项通过、7项条件跳过，另51项sentinel及5项Mock/flow通过。dev-verify首次显式tests误用逗号路径，改为合法参数后plan/run成功；共享边界规划122个文件而建议broad，matching run记录跳过deterministic/serial，以以上实际闭包为准，未运行全量pytest。06:49正式保留Provider重载watcher至2439703，全部pane PID一致；真实延迟改善仍待后续完成事件量测，不以单元调用次数代替实测。
+
+65. 三个Verify报告均已正式接纳：lane 2报告`evt-09fca80d510d`至接纳`evt-5b058f18acdd`耗时20.156732秒；lane 0报告`evt-29287f9a6af3`至接纳`evt-178981d81d7c`耗时24.395379秒。与修复前lane 1的166.627285秒相比有改善，但不是同负载受控基准。前三份独立结论及14个完整摘要清单已导出至portable evidence，共11,730文件/788,050,072字节，包含冷启动检查依赖，不含Provider homes。第4个DRIVE仍排队，未宣称Run完成。
+
+66. 定位DRIVE排队：lane 0注册表06:55:49.289447清除旧会话，迟到Hook在06:55:49.453342重新绑定同一UUID；旧0.92上下文用量令idle worker仍被hard-cap拒绝派发。新增6个反例覆盖跨进程旧实例、重启持久化、新会话保护、最新mtime旧rollout、扫描/clear竞态及真实Hook入口审计。首轮pytest未指定本worktree的PYTHONPATH，被导入来源断言拦截；校正后6项全部在旧代码失败。修复在canonical registry加退休UUID栅栏，观察器跳过并尊重绑定失败；155项registry/Hook/Spawn/回收/reader影响闭包及51项sentinel通过。真实重载恢复及最终验收仍待验证。
+
+67. 补充17项流程Mock/锁/文档测试通过。dev-verify plan因共享Store边界规划225个文件而建议broad，matching run明确跳过deterministic/serial、通过sentinel；实际执行范围以上述155+17闭包为准，无全量pytest。正式重载watcher至2489416后，07:18:27自动派发DRIVE（`evt-7f42e3b6091d`），Provider开始读取新briefing；重载清除内存hard-cap是此次立即恢复的直接条件，旧UUID的下一轮退休保护尚待真实回收验证。

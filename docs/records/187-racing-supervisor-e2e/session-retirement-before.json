@@ -1,0 +1,261 @@
+{
+  "events": [
+    {
+      "type": "worker.state.changed",
+      "id": "evt-f0a74e9da15c",
+      "ts": "2026-10-26T06:55:49.073555+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "pending_recycle",
+        "to": "recycling",
+        "reason": "context ratio 0.92 over hard cap 0.9 for >= 180s, force recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.recycling",
+      "id": "evt-a23aff9971dd",
+      "ts": "2026-10-26T06:55:49.318592+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "instance_id": "prd-verify-lane-0",
+        "backend": "codex",
+        "old_session": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+        "new_session": "",
+        "session_strategy": "fresh_context_recycle_clear_codex",
+        "reason": "context_threshold_recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.launch_artifact.written",
+      "id": "evt-71c9eb700707",
+      "ts": "2026-10-26T06:55:51.755518+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "role": "prd-verify-lane-0",
+        "backend": "codex",
+        "artifact_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/runtime/launch.json",
+        "launch_attempt": 5,
+        "is_resume": true
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "worker.recycled",
+      "id": "evt-a628e62dcbc9",
+      "ts": "2026-10-26T06:55:57.461930+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "instance_id": "prd-verify-lane-0",
+        "backend": "codex",
+        "old_session": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+        "new_session": "",
+        "session_strategy": "fresh_context_recycle_clear_codex",
+        "reason": "context_threshold_recycle"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-5bef8db19de4",
+      "ts": "2026-10-26T06:55:57.476260+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "recycling",
+        "to": "busy",
+        "reason": "recycle complete; resumed task RACE-FOUNDATION"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-8b2c6ed87c99",
+      "ts": "2026-10-26T06:56:06.098822+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": "RACE-FOUNDATION",
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "busy",
+        "to": "idle",
+        "reason": "fanout child fanout-prd-lanes-verify-evt-c1e65c55/prd-verify-lane-0-foundation terminal",
+        "task_id": "RACE-FOUNDATION"
+      },
+      "causation_id": "evt-178981d81d7c",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-362c499ef03b",
+      "ts": "2026-10-26T06:56:10.955874+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "idle",
+        "to": "respawning",
+        "reason": "watchdog is_alive=False"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.launch_artifact.written",
+      "id": "evt-60450475a7fd",
+      "ts": "2026-10-26T06:56:13.226363+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "role": "prd-verify-lane-0",
+        "backend": "codex",
+        "artifact_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/runtime/launch.json",
+        "launch_attempt": 6,
+        "is_resume": true
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": ""
+    },
+    {
+      "type": "worker.respawned",
+      "id": "evt-86778b9ed02d",
+      "ts": "2026-10-26T06:56:17.600487+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "role": "prd-verify-lane-0",
+        "instance_id": "prd-verify-lane-0",
+        "reason": "watchdog"
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    },
+    {
+      "type": "worker.state.changed",
+      "id": "evt-061d3a248d7c",
+      "ts": "2026-10-26T06:56:17.916680+00:00",
+      "actor": "prd-verify-lane-0",
+      "task_id": null,
+      "payload": {
+        "instance_id": "prd-verify-lane-0",
+        "from": "respawning",
+        "to": "idle",
+        "reason": "respawn complete",
+        "generation_override": true
+      },
+      "causation_id": null,
+      "correlation_id": null,
+      "origin": "kernel"
+    }
+  ],
+  "current_session_id": "01a176e2-6af6-78e2-9361-2a2ce48c2406",
+  "instance_meta": {
+    "backend": "codex",
+    "cleared_at": "2026-10-26T06:55:49.289447+00:00",
+    "last_heartbeat_at": "2026-10-26T06:56:34.957709+00:00",
+    "observed_at": "2026-10-26T06:55:49.453342+00:00",
+    "observed_from": "hook",
+    "session_path": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/codex-home/sessions/2026/10/26/rollout-2026-10-26T14-25-12-01a176e2-6af6-78e2-9361-2a2ce48c2406.jsonl"
+  },
+  "last_deferred": [
+    {
+      "type": "fanout.child.dispatch_deferred",
+      "id": "evt-e0a6cbbf0486",
+      "ts": "2026-10-26T07:14:28.697829+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-verify-evt-c1e65c55",
+        "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "stage_id": "prd-lanes-verify",
+        "child_id": "prd-verify-lane-0-vehicle-race-2",
+        "run_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+        "role_instance": "prd-verify-lane-0",
+        "prompt_kind": "fanout_child",
+        "reason": "worker_state_not_dispatchable:idle",
+        "worker_state": "idle",
+        "transport_alive": true,
+        "dispatchable": false,
+        "respawn_action": "",
+        "respawn_reason": ""
+      },
+      "causation_id": "evt-1a038d6af632",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "fanout.child.dispatch_deferred",
+      "id": "evt-1a2e14bb21ea",
+      "ts": "2026-10-26T07:15:42.036375+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-verify-evt-c1e65c55",
+        "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "stage_id": "prd-lanes-verify",
+        "child_id": "prd-verify-lane-0-vehicle-race-2",
+        "run_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+        "role_instance": "prd-verify-lane-0",
+        "prompt_kind": "fanout_child",
+        "reason": "worker_state_not_dispatchable:idle",
+        "worker_state": "idle",
+        "transport_alive": true,
+        "dispatchable": false,
+        "respawn_action": "",
+        "respawn_reason": ""
+      },
+      "causation_id": "evt-1a038d6af632",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    },
+    {
+      "type": "fanout.child.dispatch_deferred",
+      "id": "evt-9daf5fb549c5",
+      "ts": "2026-10-26T07:16:43.089298+00:00",
+      "actor": "zf-cli",
+      "task_id": null,
+      "payload": {
+        "fanout_id": "fanout-prd-lanes-verify-evt-c1e65c55",
+        "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+        "stage_id": "prd-lanes-verify",
+        "child_id": "prd-verify-lane-0-vehicle-race-2",
+        "run_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2",
+        "role_instance": "prd-verify-lane-0",
+        "prompt_kind": "fanout_child",
+        "reason": "worker_state_not_dispatchable:idle",
+        "worker_state": "idle",
+        "transport_alive": true,
+        "dispatchable": false,
+        "respawn_action": "",
+        "respawn_reason": ""
+      },
+      "causation_id": "evt-1a038d6af632",
+      "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "origin": "kernel"
+    }
+  ]
+}

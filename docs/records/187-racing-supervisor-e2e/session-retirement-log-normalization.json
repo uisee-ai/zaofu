@@ -1,0 +1,8 @@
+[
+  {
+    "file": "session-retirement-red.log",
+    "original_sha256": "e21844d562a6617ffc5f915046414a477315a49224704610cedb3b482692c26f",
+    "rendered_sha256": "c61b3649b9528abe1d16247da56f537e739d0bf325ceb7b85494dabebd8f4d0c",
+    "normalization": "rstrip each line; raw bytes retained in .raw.gz"
+  }
+]
