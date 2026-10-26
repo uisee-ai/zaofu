@@ -25,3 +25,9 @@
 补充验证：recovery-closure 34 passed；AR CLI 最终22 passed；本机 Codex 实际参数解析（--help）通过，真实反思结论仍等 loop 终态。五项 reader checkpoint 受控恢复均返回 applied=1，实际已观察到重新派发。
 
 结构门禁第一次失败（CLI 1005 行）后，将单次实验执行完整职责移至 loop_iteration.py，不增加超限豁免；CLI+结构39 passed，最终 sentinel51 passed。整个批次仍 active，真实终态及广域回归未结束。
+
+首批实现提交：`e8510bf0 fix: recover interrupted readers and isolate autoresearch validation`。
+
+RV-04 取样：直接 py-spy attach 被宿主 ptrace 权限拒绝，未修改权限；改为对真实只读恢复 CLI 做 cProfile。24.3 秒 profiler 样本中 config load 约6.9秒，纯 Python YAML 为主要热点之一。配置主文件/profile_sources/feature 解析改用 C safe loader（保留 safe fallback），相关862 passed、7 skipped。固定96,115 bytes/23 roles/6 stages配置三次实测中位数2.026→0.333秒；仅证明配置加载优化，不把它当作整个 long-horizon 流程的延迟证明。运行中控制进程未为这个优化打断，后续 CLI 子进程可加载新代码。证据：config-loader-before/after.json、recovery-inspect.prof/txt、config-closure.log。
+
+配置优化补充：sentinel51 passed、flow-smoke10 passed。

@@ -2608,7 +2608,7 @@ def _load_profile_source_documents(
                 env,
             )
             try:
-                loaded = list(yaml.safe_load_all(text))
+                loaded = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
             except yaml.YAMLError as exc:
                 raise ConfigError(
                     f"profile source {source_path} YAML parse error: {exc}"
@@ -2633,7 +2633,7 @@ def load_config(path: Path) -> ZfConfig:
     env = _config_env_map(path)
     text = _expand_env_vars(path.read_text(encoding="utf-8"), env)
     try:
-        documents = list(yaml.safe_load_all(text))
+        documents = list(yaml.load_all(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)))
     except yaml.YAMLError as e:
         raise ConfigError(f"YAML parse error: {e}")
     profile_documents, profile_source_files = _load_profile_source_documents(
@@ -4440,7 +4440,7 @@ def _merge_feishu_yaml(raw: dict, zf_yaml_path: Path) -> dict:
     text = _expand_env_vars(
         feishu_path.read_text(encoding="utf-8"), _config_env_map(feishu_path))
     try:
-        fdata = yaml.safe_load(text) or {}
+        fdata = yaml.load(text, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
     except yaml.YAMLError as exc:
         raise ConfigError(f"feishu.yaml parse error: {exc}")
     if not isinstance(fdata, dict):
