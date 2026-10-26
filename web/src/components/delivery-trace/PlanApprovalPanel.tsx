@@ -56,6 +56,7 @@ export function PlanApprovalPanel(
 ) {
   const { t } = useUiPreferences();
   const [mobileDetail, setMobileDetail] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const queueFocus = useRef<HTMLElement | null>(null);
   const detailPane = useRef<HTMLElement | null>(null);
   const [inbox, setInbox] = useState<OperatorInboxProjection | null>(null);
@@ -271,9 +272,6 @@ export function PlanApprovalPanel(
 
   const initialLoading = !hasLoadedInbox && !inbox;
   const pendingCount = inbox?.summary.action_required_pending ?? inbox?.pending.filter((item) => item.actionability === "human_required").length ?? 0;
-  const diagnosticCount = inbox?.summary.noise_pending ?? inbox?.pending.filter((item) => item.actionability === "automation_owned").length ?? 0;
-  const deliveryCount = inbox?.summary.notification_pending ?? inbox?.pending.filter((item) => item.actionability === "informational").length ?? 0;
-  const totalCount = inbox?.items.length ?? 0;
 
   const renderRow = (item: OperatorInboxItem, detail = false) => (
     <InboxRow
@@ -307,16 +305,23 @@ export function PlanApprovalPanel(
       <div className="inbox-workspace-grid">
       <div className="inbox-queue">
       <div className="plan-approval-head operator-inbox-head">
-        <div>
-          <h3>{t("Inbox")}</h3>
-          <span className="muted">
-            {initialLoading ? t("loading") : pendingCount ? `${pendingCount} ${t("pending decisions")}` : t("clear")}
-            {diagnosticCount ? ` / ${diagnosticCount} ${t("diagnostics")}` : ""}
-            {deliveryCount ? ` / ${deliveryCount} ${t("deliveries")}` : ""}
-            {view === "all" && totalCount ? ` / ${totalCount} ${t("total")}` : ""}
-          </span>
+        <div className="inbox-title-row"><h3>{t("Inbox")}</h3><span className="inbox-pending-count" title={`${pendingCount} ${t("pending decisions")}`}>{initialLoading ? t("loading") : pendingCount}</span>
+          <button type="button" className={`inbox-header-control ${query || kindFilter !== "all" ? "active" : ""}`} aria-label={t("Search inbox")} aria-expanded={searchOpen} onClick={() => setSearchOpen(!searchOpen)}><Search size={15} aria-hidden="true" /></button>
+          <button type="button" className="inbox-header-control" aria-label={t("Refresh")} onClick={() => void refresh()} disabled={inboxRefreshing}><RefreshCw size={15} aria-hidden="true" /></button>
         </div>
-        <div className="operator-inbox-tools">
+          <div className="operator-inbox-mode" aria-label="Inbox display view">
+            {VIEW_OPTIONS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className={view === option.value ? "active" : ""}
+                onClick={() => setView(option.value)}
+              >
+                {t(option.label)}
+              </button>
+            ))}
+          </div>
+        {searchOpen && <div className="operator-inbox-tools">
           <label className="operator-inbox-search">
             <Search size={14} aria-hidden="true" />
             <input
@@ -338,28 +343,7 @@ export function PlanApprovalPanel(
               ))}
             </select>
           </label>
-          <div className="operator-inbox-mode" aria-label="Inbox display view">
-            {VIEW_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={view === option.value ? "active" : ""}
-                onClick={() => setView(option.value)}
-              >
-                {t(option.label)}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="icon-button"
-            title={t(inboxRefreshing ? "Refreshing" : "Refresh")}
-            onClick={() => void refresh()}
-            disabled={inboxRefreshing}
-          >
-            <RefreshCw size={15} />
-          </button>
-        </div>
+        </div>}
       </div>
 
       {actionError ? <p className="error plan-approval-error">{actionError}</p> : null}
@@ -398,11 +382,6 @@ export function PlanApprovalPanel(
             };
             return (
               <>
-                {decisions.length > 1 ? (
-                  <div className="operator-inbox-inline-actions">
-                    <span className="muted">{decisions.length} {t("pending decisions")}</span>
-                  </div>
-                ) : null}
                 {decisions.map((item) => renderRow(item))}
                 {[...groups.entries()].map(([key, items]) => (
                   items.length === 1 ? renderRow(items[0]) : (

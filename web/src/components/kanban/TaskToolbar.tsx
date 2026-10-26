@@ -1,5 +1,6 @@
-import { ArrowDownUp, Columns3, Filter, List, Plus, Search, Table2, X } from "lucide-react";
+import { ArrowDownUp, Columns3, Filter, Globe2, List, Plus, Search, Table2, X } from "lucide-react";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import type { ViewMode } from "../../app/sharedTypes";
 import { useUiPreferences } from "../../app/UiPreferences";
 import { BOARD_COLUMNS } from "./board";
@@ -18,7 +19,7 @@ export interface TaskToolbarProps {
   descending: boolean; setDescending: (value: boolean) => void;
   group: TaskGroup; setGroup: (value: TaskGroup) => void;
   activeFocus: TaskFocus | null; onFocus: (value: TaskFocus) => void;
-  onNewTask: () => void; count: number;
+  onNewTask: () => void; count: number; projectName: string; accessControl?: ReactNode;
 }
 export function TaskToolbar(p: TaskToolbarProps) {
   const { t } = useUiPreferences();
@@ -32,14 +33,17 @@ export function TaskToolbar(p: TaskToolbarProps) {
   ];
   const active = filters.filter((filter) => filter.value !== "all");
   return <>
-    <header className="workbench-heading tasks-heading"><div><h2>{t("Tasks")}</h2><p>{p.count} {t("visible tasks")}</p></div><button className="workbench-primary" type="button" onClick={p.onNewTask}><Plus size={15} aria-hidden="true" />{t("New task")}</button></header>
+    <header className="workbench-heading tasks-heading"><span className="project-page-icon" aria-hidden="true"><Globe2 size={20} /></span><h2>{p.projectName}</h2><span className="project-task-count">{p.count} {t("visible tasks")}</span></header>
+      <div className="workbench-views" role="group" aria-label="Task view">{([{ value: "board", label: "Board", Icon: Columns3 }, { value: "list", label: "List", Icon: List }, { value: "table", label: "Table", Icon: Table2 }] as const).map(({ value, label, Icon }) => <button type="button" key={value} aria-pressed={p.viewMode === value} onClick={() => p.setViewMode(value)}><Icon size={14} aria-hidden="true" />{t(label)}</button>)}</div>
     <div className="workbench-toolbar">
       <label className="workbench-search"><Search size={15} aria-hidden="true" /><input aria-label={t("Search tasks")} placeholder={t("Search tasks")} value={p.textFilter} onChange={(e) => p.setTextFilter(e.target.value)} /></label>
       <button className={`workbench-control ${filtersOpen || active.length ? "active" : ""}`} type="button" aria-expanded={filtersOpen} aria-controls="task-filters" onClick={() => setFiltersOpen(!filtersOpen)}><Filter size={14} aria-hidden="true" />{t("Filter")}{active.length ? ` (${active.length})` : ""}</button>
       <label className="workbench-select">{t("Sort")}<select aria-label={t("Sort")} value={p.sort} onChange={(e) => p.setSort(e.target.value as TaskSort)}>{([['activity', 'Activity'], ['title', 'Title'], ['priority', 'Priority'], ['owner', 'Owner'], ['status', 'Status'], ['phase', 'Phase']] as const).map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}</select></label>
       <button className="workbench-control sort-direction" type="button" aria-label={t(p.descending ? "Descending" : "Ascending")} title={t(p.descending ? "Descending" : "Ascending")} onClick={() => p.setDescending(!p.descending)}><ArrowDownUp size={14} aria-hidden="true" /></button>
       <label className="workbench-select">{t("Group")}<select aria-label={t("Group")} disabled={p.viewMode === "board"} value={p.viewMode === "board" ? "status" : p.group} onChange={(e) => p.setGroup(e.target.value as TaskGroup)}>{([['status', 'Status'], ['owner', 'Owner'], ['priority', 'Priority'], ['none', 'None']] as const).map(([value, label]) => <option value={value} key={value}>{t(label)}</option>)}</select></label>
-      <div className="workbench-views" role="group" aria-label="Task view">{([{ value: "list", label: "List", Icon: List }, { value: "board", label: "Board", Icon: Columns3 }, { value: "table", label: "Table", Icon: Table2 }] as const).map(({ value, label, Icon }) => <button type="button" key={value} aria-pressed={p.viewMode === value} onClick={() => p.setViewMode(value)}><Icon size={14} aria-hidden="true" />{t(label)}</button>)}</div>
+      {p.viewMode === "table" && <div id="task-view-options" />}
+      <span className="toolbar-spacer" />{p.accessControl}
+      <button className="workbench-primary" type="button" onClick={p.onNewTask}><Plus size={14} aria-hidden="true" />{t("New task")}</button>
     </div>
     {filtersOpen && <div id="task-filters" className="workbench-filters">
       <div className="task-focus-options" role="group" aria-label="Task focus"><span>{t("Focus")}</span>{TASK_FOCUS_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={p.activeFocus === option.value} onClick={() => p.onFocus(option.value)}>{t(option.label)}</button>)}</div>

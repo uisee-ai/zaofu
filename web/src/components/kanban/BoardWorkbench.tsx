@@ -66,6 +66,7 @@ function buildTaskTelemetry(agents: AgentSummary[]): Map<string, TaskTelemetry> 
 
 
 export function BoardWorkbench({
+  projectName,
   actionReady,
   actionResult,
   actionState,
@@ -100,6 +101,7 @@ export function BoardWorkbench({
   totalTaskCount,
   viewMode,
 }: {
+  projectName: string;
   actionReady: boolean;
   actionResult: ActionResponse | null;
   actionState: string;
@@ -267,16 +269,8 @@ export function BoardWorkbench({
   const moveActionResult = actionResult?.action === "update-task" ? actionResult : null;
   const activeFanout = totalTaskCount === 0 ? activeFanouts[0] : undefined;
 
-  return (
-    <>
-      <TaskToolbar
-        {...{ textFilter, setTextFilter, statusFilter, setStatusFilter, assigneeFilter, setAssigneeFilter, assignees,
-          skillFilter, setSkillFilter, skills, priorityFilter, setPriorityFilter, quickFilter, setQuickFilter,
-          viewMode, setViewMode, sort, setSort, descending, setDescending, group, setGroup, onNewTask }}
-        activeFocus={activeTaskFocus} onFocus={handleTaskFocus} count={filteredTasks.length}
-      />
-      {!actionReady && mutationEnabled ? (
-        <div className="notice board-action-notice">
+  const accessControl = !actionReady && mutationEnabled ? (
+        <details className="board-access"><summary>{actionState}</summary><div className="board-access-popover">
           <div className="token-row">
             <span className="mono">board actions: {actionState}</span>
             {passcodeRequired ? (
@@ -330,8 +324,17 @@ export function BoardWorkbench({
               </>
             ) : null}
           </div>
-        </div>
-      ) : null}
+        </div></details>
+      ) : null;
+
+  return (
+    <>
+      <TaskToolbar
+        {...{ textFilter, setTextFilter, statusFilter, setStatusFilter, assigneeFilter, setAssigneeFilter, assignees,
+          skillFilter, setSkillFilter, skills, priorityFilter, setPriorityFilter, quickFilter, setQuickFilter,
+          viewMode, setViewMode, sort, setSort, descending, setDescending, group, setGroup, onNewTask }}
+        activeFocus={activeTaskFocus} onFocus={handleTaskFocus} count={filteredTasks.length} projectName={projectName} accessControl={accessControl}
+      />
       {boardNotice ? <div className="notice">{boardNotice}</div> : null}
       {moveActionResult ? (
         <div className={`notice ${moveActionResult.ok ? "notice-ok" : ""}`}>
@@ -371,6 +374,7 @@ export function BoardWorkbench({
               dragTaskId={dragTaskId}
               onPointerDown={handleTaskPointerDown}
               onSelect={handleTaskSelect}
+              onNewTask={onNewTask}
             />
           ))}
         </div>

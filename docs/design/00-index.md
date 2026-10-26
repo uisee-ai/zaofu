@@ -28,6 +28,6 @@
 | 187 | [借鉴 BMAD 的需求闭环、Epic 渐进细化、任务调度与 TDD](187-bmad-inspired-epic-task-map-and-tdd.md) | partial | 方法、薄 Epic 阅读层与依赖诊断已实施；[12 次真实模型对照](../records/2026-10-26-0431-187-model-effect-evaluation.md)质量基本持平，长程收益仍待验证；[实施说明](../impl/bmad-187-methods-and-validation.md)保留工程边界。 |
 | 186 | [Inbox 阅读与处理、任务看板与子任务状态](186-inbox-and-task-board-human-centered-design.md) | candidate | 结合 Gr8r、Multica、Chorus 梳理 Inbox、Board／List、人工输入与执行图；保留性能实测及指标对照，按 dev 36c3bd32 修正 Workflow 现状。 |
 | 188 | [Dashboard、Workflow 多 Run 与 SQLite 读模型审查补充](188-dashboard-workflow-multi-run-sqlite-review.md) | candidate | dev 36c3bd32 的 Workflow 详情竞态、列表重复归约、多 Run 准入约束、SQLite 读写／游标／checkpoint 风险及分期验收。 |
-| 189 | [Inbox / Tasks / Settings 与 GR8R 对齐](189-gr8r-ui-alignment.md) | implemented | 三视图共享筛选、Inbox 双栏与 General 设置；保留受控动作和状态所有权。 |
+| 189 | [Inbox / Tasks / Settings 与 GR8R 对齐](189-gr8r-ui-alignment.md) | implemented | GR8R 实测排版与 Geist 字体、三视图、Inbox 双栏和 General / Appearance；保留受控动作。 |
 
 181–188 的本地文档路由保留自主 checkout；本分支新增并纳入版本管理的是设计 189。

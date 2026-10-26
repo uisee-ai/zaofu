@@ -1,4 +1,4 @@
-import { Building2, Check, Globe2, Palette, Clock3 } from "lucide-react";
+import { Building2, Check, Globe2, Palette, Clock3, Sun, Moon, Monitor } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode, CSSProperties } from "react";
 import type { Snapshot } from "../../api/types";
@@ -21,6 +21,14 @@ const TIME_ZONES = allTimeZones();
 function SettingRow({ title, description, children }: { title: string; description?: string; children: ReactNode }) {
   return <div className="general-setting-row"><div><div className="general-setting-label">{title}</div>{description && <p>{description}</p>}</div><div className="general-setting-control">{children}</div></div>;
 }
+function ThemePreview({ mode }: { mode: "light" | "dark" | "system" }) {
+  return <span className={`appearance-preview preview-${mode}`} aria-hidden="true">
+    {mode === "system" ? <><ThemePreview mode="light" /><ThemePreview mode="dark" /></> : <>
+      <span className="appearance-preview-rail"><i /><i /><i /><i /></span>
+      <span className="appearance-preview-main"><b /><i /><i /><em /></span>
+    </>}
+  </span>;
+}
 export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
   const { preferences: p, updatePreferences: update, t, storageError } = useUiPreferences();
   const [section, setSection] = useState(() => {
@@ -34,8 +42,10 @@ export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
       {options.map(([value, name]) => <option value={value} key={value}>{t(name)}</option>)}
     </select>
   );
+  const density = (key: "sidebarDensity" | "taskDensity", label: string) => <div className="settings-density" role="group" aria-label={t(label)}>
+    {(["comfortable", "compact"] as const).map((value) => <button key={value} type="button" aria-pressed={p[key] === value} onClick={() => update({ [key]: value })}>{t(value === "comfortable" ? "Comfortable" : "Compact")}</button>)}
+  </div>;
   return <div className="general-settings" data-testid="general-settings">
-    <header className="workbench-heading"><h2>{t("Settings")}</h2><p>{t("Personalize your workspace.")}</p></header>
     <div className="general-settings-layout">
       <nav className="general-settings-nav" aria-label={t("General")}>
         <span className="settings-nav-caption">{t("General")}</span>
@@ -53,18 +63,21 @@ export function SettingsPage({ snapshot }: { snapshot: Snapshot | null }) {
           <details className="settings-runtime"><summary>{t("Runtime boundary")}</summary><dl><dt>Control plane</dt><dd>zf.yaml</dd><dt>Runtime truth</dt><dd>TaskStore / EventWriter</dd><dt>Web actions</dt><dd>{snapshot?.runtime.actions?.mutation_enabled ? "Token / session gated" : "Read-only"}</dd></dl></details>
         </>}
         {section === "appearance" && <>
-          <div className="settings-section-intro"><h4>{t("Theme")}</h4><p>{t("Choose how ZaoFu looks on this device.")}</p></div>
+          <p className="settings-description">{t("Choose how ZaoFu looks on this device.")}</p>
+          <div className="settings-section-intro"><h4>{t("Theme")}</h4></div>
           <div className="appearance-themes" role="group" aria-label={t("Theme")}>
             {(["light", "dark", "system"] as const).map((mode) => <button type="button" key={mode} aria-pressed={p.theme === mode} aria-label={t(mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System")} onClick={() => update({ theme: mode })}>
-              <span className={`appearance-preview preview-${mode}`} aria-hidden="true"><span className="appearance-preview-rail"><i /><i /><i /></span><span className="appearance-preview-main"><i /><span><b /><b /><b /></span><i /></span></span>
-              <span>{t(mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System")}{p.theme === mode && <Check size={14} aria-hidden="true" />}</span>
+              <ThemePreview mode={mode} />
+              <span><span className="theme-card-label">{mode === "light" ? <Sun size={14} /> : mode === "dark" ? <Moon size={14} /> : <Monitor size={14} />}{t(mode === "light" ? "Light" : mode === "dark" ? "Dark" : "System")}</span>{p.theme === mode && <Check size={14} aria-hidden="true" />}</span>
             </button>)}
           </div>
-          <SettingRow title={t("Accent color")} description={t("Used for selections, links and focus.")}><div className="accent-options" role="group" aria-label={t("Accent color")}>
+          <div className="settings-section-intro"><h4>{t("Accent color")}</h4></div>
+          <SettingRow title={t("Accent")} description={t("Used for selections, links and focus.")}><div className="accent-options" role="group" aria-label={t("Accent color")}>
             {ACCENTS.map((accent) => <button type="button" key={accent} aria-label={t(accent)} title={t(accent)} aria-pressed={p.accent === accent} style={{ "--swatch": `var(--accent-${accent})` } as CSSProperties} onClick={() => update({ accent })}>{p.accent === accent && <Check size={14} aria-hidden="true" />}</button>)}
           </div></SettingRow>
-          <SettingRow title={t("Sidebar density")} description={t("Spacing between navigation items.")}>{select("sidebarDensity", "Sidebar density", [["comfortable", "Comfortable"], ["compact", "Compact"]])}</SettingRow>
-          <SettingRow title={t("Task density")} description={t("Applies to Board, List and Table.")}>{select("taskDensity", "Task density", [["comfortable", "Comfortable"], ["compact", "Compact"]])}</SettingRow>
+          <div className="settings-section-intro"><h4>{t("Density")}</h4></div>
+          <SettingRow title={t("Sidebar density")} description={t("Spacing between navigation items.")}>{density("sidebarDensity", "Sidebar density")}</SettingRow>
+          <SettingRow title={t("Task density")} description={t("Applies to Board, List and Table.")}>{density("taskDensity", "Task density")}</SettingRow>
           <SettingRow title={t("Motion")} description={t("Respect your system preference or reduce animation.")}>{select("motion", "Motion", [["system", "System"], ["reduce", "Reduce motion"]])}</SettingRow>
         </>}
         {section === "language" && <>

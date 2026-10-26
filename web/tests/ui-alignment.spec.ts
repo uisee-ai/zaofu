@@ -12,17 +12,20 @@ test("General preferences change actual appearance, survive refresh, and synchro
   await page.goto("/?project=ui-review&page=settings&settings=appearance");
   await expect(page.getByTestId("general-settings")).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  const settingsBox = await page.locator(".general-settings-nav").boundingBox();
+  expect(settingsBox?.x).toBe(252); expect(settingsBox?.y).toBe(46); expect(settingsBox?.width).toBe(220);
+  expect((await page.locator(".general-settings-content h3").boundingBox())?.x).toBe(512);
   await page.getByRole("button", { name: "Light", exact: true }).click();
   await page.getByRole("button", { name: "teal", exact: true }).click();
-  await page.getByLabel("Task density", { exact: true }).selectOption("compact");
-  await page.getByLabel("Sidebar density", { exact: true }).selectOption("compact");
+  await page.getByRole("group", { name: "Task density", exact: true }).getByRole("button", { name: "Compact", exact: true }).click();
+  await page.getByRole("group", { name: "Sidebar density", exact: true }).getByRole("button", { name: "Compact", exact: true }).click();
   await page.getByLabel("Motion", { exact: true }).selectOption("reduce");
   await expect(page.locator("html")).toHaveAttribute("data-accent", "teal");
   await expect(page.locator("html")).toHaveAttribute("data-task-density", "compact");
   await page.screenshot({ path: info.outputPath("appearance-light.png"), fullPage: true });
   await page.reload();
   await expect(page.getByRole("button", { name: "Light", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("Task density", { exact: true })).toHaveValue("compact");
+  await expect(page.getByRole("group", { name: "Task density", exact: true }).getByRole("button", { name: "Compact", exact: true })).toHaveAttribute("aria-pressed", "true");
   const second = await context.newPage();
   await installUiFixture(second);
   await second.goto("/?project=ui-review&page=settings&settings=appearance");
@@ -50,6 +53,9 @@ test("General preferences change actual appearance, survive refresh, and synchro
   await page.getByRole("button", { name: "外观", exact: true }).click();
   await expect(page.getByRole("button", { name: "深色", exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect((await page.locator(".topbar").boundingBox())?.height).toBe(46);
+  expect((await page.locator(".project-rail").boundingBox())?.x).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBe(844);
   await page.screenshot({ path: info.outputPath("settings-mobile.png"), fullPage: true });
   expect(writes).toEqual([]); expect(errors).toEqual([]);
 });
@@ -58,6 +64,20 @@ test("Board, List and Table preserve filters and open one keyboard-safe detail d
   const { writes, errors } = await installUiFixture(page);
   await page.goto("/?project=ui-review&page=board");
   await expect(page.locator(".board-grid .task-card")).toHaveCount(6);
+  await page.evaluate(() => document.fonts.ready);
+  const geometry = await page.evaluate(() => {
+    const box = (selector: string) => { const el = document.querySelector(selector)!; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height }; };
+    const card = getComputedStyle(document.querySelector(".task-open")!);
+    return { rail: box(".project-rail"), topbar: box(".topbar"), heading: box(".tasks-heading"), views: box(".workbench-views"), toolbar: box(".workbench-toolbar"), column: box(".board-column"), card: box(".task-card"), padding: card.padding, font: getComputedStyle(document.body).fontFamily, loaded: [...document.fonts].some((font) => font.family.includes("Geist Variable") && font.status === "loaded") };
+  });
+  expect(geometry.rail).toEqual({ x: 0, y: 0, w: 252, h: 1000 });
+  expect(geometry.topbar).toEqual({ x: 252, y: 0, w: 1188, h: 46 });
+  expect(geometry.heading.y).toBe(46); expect(geometry.heading.h).toBe(68);
+  expect(geometry.views.y).toBe(114); expect(geometry.views.h).toBe(37);
+  expect(geometry.toolbar.y).toBe(151); expect(geometry.toolbar.h).toBe(44);
+  expect(geometry.column.x).toBe(276); expect(geometry.column.y).toBe(209); expect(geometry.column.w).toBe(284);
+  expect(geometry.card.x).toBe(285); expect(geometry.card.y).toBe(252); expect(geometry.card.w).toBe(266);
+  expect(geometry.padding).toBe("10px 12px"); expect(geometry.loaded).toBe(true); expect(geometry.font).toContain("Geist");
   await page.screenshot({ path: info.outputPath("tasks-board.png"), fullPage: true });
   await page.getByLabel("Search tasks", { exact: true }).fill("Design");
   await expect(page.locator(".board-grid .task-card")).toHaveCount(2);
@@ -109,6 +129,14 @@ test("Inbox selection is read only; preview and explicit approve, reject and ack
   const { writes, errors } = await installUiFixture(page);
   await page.goto("/?project=ui-review&page=inbox");
   await expect(page.getByTestId("inbox-queue-item")).toHaveCount(3);
+  await page.getByRole("button", { name: "Search inbox", exact: true }).click();
+  await page.getByRole("textbox", { name: "Search inbox", exact: true }).fill("Confirm task view");
+  await expect(page.getByTestId("inbox-queue-item")).toHaveCount(1);
+  await page.getByRole("textbox", { name: "Search inbox", exact: true }).fill("");
+  await page.getByRole("button", { name: "Search inbox", exact: true }).click();
+  await expect(page.getByTestId("inbox-queue-item")).toHaveCount(3);
+  expect((await page.locator(".inbox-queue").boundingBox())?.width).toBe(420);
+  expect((await page.locator(".inbox-queue").boundingBox())?.y).toBe(46);
   await page.getByTestId("inbox-queue-item").nth(1).click();
   await expect(page.locator(".inbox-reading-pane")).toContainText("Confirm task view acceptance");
   await page.screenshot({ path: info.outputPath("inbox-desktop.png"), fullPage: true });
@@ -161,6 +189,10 @@ test("mobile Inbox returns to its queue position; desktop medium width fits", as
 test("locked board dragging cannot send a mutation", async ({ page }) => {
   const { writes, errors } = await installUiFixture(page, { locked: true });
   await page.goto("/?project=ui-review&page=board");
+  await expect(page.getByPlaceholder("action token", { exact: true })).not.toBeVisible();
+  await page.locator(".board-access summary").click();
+  await expect(page.getByPlaceholder("action token", { exact: true })).toBeVisible();
+  await page.locator(".board-access summary").click();
   const card = page.locator('.task-card[data-task-id="UI-101"]');
   const target = page.locator('.board-column[data-column-id="in_progress"]');
   await card.dragTo(target);
@@ -173,7 +205,7 @@ test("density, locale and timezone affect actual task rows, cards and timestamps
   await page.addInitScript(() => localStorage.setItem("zf.uiPreferences.v1", JSON.stringify({ theme: "dark", accent: "violet", taskDensity: "compact", sidebarDensity: "compact", language: "zh-CN", timeZone: "Asia/Shanghai", dateStyle: "iso", hourCycle: "h23" })));
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/?project=ui-review&page=board&view=table");
-  await expect(page.getByRole("heading", { name: "任务", exact: true })).toBeVisible();
+  await expect(page.locator(".tasks-heading h2")).toHaveText("ZaoFu Studio");
   await expect(page.locator(".workbench-task-table time").first()).toContainText("2026-10-26 14:15:00");
   expect(await page.locator(".workbench-task-table tr[data-task-id] td").first().evaluate((el) => el.getBoundingClientRect().height)).toBe(34);
   const views = page.getByRole("group", { name: "Task view" });
@@ -184,7 +216,7 @@ test("density, locale and timezone affect actual task rows, cards and timestamps
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
   await page.screenshot({ path: info.outputPath("tasks-medium-dark-compact.png"), fullPage: true });
   await page.goto("/?project=ui-review&page=inbox");
-  await expect(page.getByRole("heading", { name: "收件箱", exact: true })).toBeVisible();
+  await expect(page.getByTestId("plan-approval-panel").getByRole("heading", { name: "收件箱", exact: true })).toBeVisible();
   await expect(page.locator(".inbox-reading-pane time")).toContainText("2026-10-26 20:30:00");
   await page.screenshot({ path: info.outputPath("inbox-dark.png"), fullPage: true });
   expect(writes).toEqual([]); expect(errors).toEqual([]);

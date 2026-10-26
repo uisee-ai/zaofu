@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useUiPreferences } from "../../app/UiPreferences";
 // Kanban 列容器 —— 从 App.tsx BoardWorkbench 抽出(WEB-KANBAN-EXTRACT slice 4,docs/design/67 §4.1)。
 // 纯展示:列头 + task-list 渲染 TaskCard;拖拽 handler 由 BoardWorkbench 作 props 传入,
@@ -16,6 +17,7 @@ export function BoardColumn({
   dragTaskId,
   onPointerDown,
   onSelect,
+  onNewTask,
 }: {
   column: BoardColumnConfig;
   tasks: Task[];
@@ -24,6 +26,7 @@ export function BoardColumn({
   dragTaskId: string;
   onPointerDown: (event: PointerEvent<HTMLElement>, taskId: string) => void;
   onSelect: (taskId: string) => void;
+  onNewTask: () => void;
 }) {
   const { t } = useUiPreferences();
   return (
@@ -40,7 +43,7 @@ export function BoardColumn({
           <span className="column-accent-dot" aria-hidden="true" />
           <h3>{t(column.title)}</h3>
         </span>
-        <span className="count">{tasks.length}</span>
+        <span className="count">{tasks.length}</span><button className="column-add" type="button" aria-label={`${t("New task")} · ${t(column.title)}`} onClick={onNewTask}><Plus size={14} aria-hidden="true" /></button>
       </div>
       <div className="task-list">
         {tasks.map((task) => (
@@ -54,6 +57,7 @@ export function BoardColumn({
             onSelect={onSelect}
           />
         ))}
+        <button className="board-add-task" type="button" onClick={onNewTask}><Plus size={14} aria-hidden="true" />{t("Add task")}</button>
       </div>
     </section>
   );

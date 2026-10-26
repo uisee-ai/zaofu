@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/inter";
+import "@fontsource-variable/geist";
 import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/700.css";
 import { UiPreferencesProvider } from "./app/UiPreferences";
@@ -9,6 +9,7 @@ import { consumeDashboardLaunchToken } from "./api/dashboardLaunch";
 import "./styles.css";
 import "./cockpit.css";
 import "./styles/28-workbench.css";
+import "./styles/29-workspace-shell.css";
 
 const AgentSessionFixturePage = React.lazy(() => (
   import("./components/agent-session/AgentSessionFixturePage").then((module) => ({

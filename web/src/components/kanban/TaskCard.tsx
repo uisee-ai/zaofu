@@ -1,3 +1,4 @@
+import { Clock3, SignalLow, SignalMedium, SignalHigh, OctagonAlert, UserRound } from "lucide-react";
 // Kanban TaskCard + 卡内子组件 —— 从 App.tsx 抽出(WEB-KANBAN-EXTRACT slice 3,docs/design/67 §4.1)。
 // 纯展示组件:消费 board 列模型 + lib 的 format/task-display helper,只读 projection,不持 truth。
 import type { PointerEvent } from "react";
@@ -154,6 +155,7 @@ export function TaskCard({
   const { t } = useUiPreferences();
   const currentColumn = taskColumn(task);
   const priority = taskPriority(task);
+  const PriorityIcon = priority === 0 ? OctagonAlert : priority === 1 ? SignalHigh : priority === 2 ? SignalMedium : SignalLow;
   const actorLabel = taskActorLabel(task);
   const age = latestEventAge(task);
   const risk = taskRiskBadge(task, telemetry);
@@ -163,13 +165,20 @@ export function TaskCard({
       data-task-id={task.id} data-task-status={currentColumn} data-fanout-id={task.fanout?.fanout_id}
       onPointerDown={(event) => onPointerDown(event, task.id)}>
       <button className="task-open" type="button" onClick={() => onSelect(task.id)}>
+        {Boolean(task.skills_required?.length) && <span className="task-labels">{task.skills_required!.slice(0, 2).map((skill) => <span className="task-label" key={skill}><i aria-hidden="true" />{skill}</span>)}</span>}
         <span className="task-title">{task.title || task.id}</span>
         {(terminal || risk.label) && <span className="task-chip-row">{terminal
           ? <span className={`badge badge-${taskTerminalTone(task)}`}>{taskTerminalOutcome(task)}</span>
           : <span className={`badge badge-${risk.tone}`}>{risk.label}</span>}</span>}
         {!terminal && task.blocked_reason && <span className="blocked-note" title={task.blocked_reason}>{task.blocked_reason}</span>}
-        <span className="task-footer"><span className="task-id mono" title={task.id}>{task.id}</span><span className="task-assignee" title={actorLabel || t("Unassigned")}>{actorLabel || t("Unassigned")}</span><span className={`priority-pill priority-${priority}`}>P{priority}</span></span>
-        {age !== "-" && <span className="task-age">{age}</span>}
+        <span className="task-footer">
+          <span className="task-id mono" title={task.id}>{task.id}</span>
+          <span className="task-priority-icon" title={`${t("Priority")} P${priority}`} aria-label={`${t("Priority")} P${priority}`}><PriorityIcon size={13} aria-hidden="true" /></span>
+          {age !== "-" && <span className="task-age"><Clock3 size={12} aria-hidden="true" />{age}</span>}
+          <span className={`task-assignee-avatar ${actorLabel ? "assigned" : ""}`} title={actorLabel || t("Unassigned")} aria-label={actorLabel || t("Unassigned")}>
+            {actorLabel ? actorLabel.replace(/^@/, "").split(/[-_ /]+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase() : <UserRound size={12} aria-hidden="true" />}
+          </span>
+        </span>
       </button>
     </article>
   );

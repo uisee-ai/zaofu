@@ -2064,18 +2064,7 @@ export function App() {
     topbarStatus.title = "Archived project: historical record, no live runtime.";
   }
   const topbarProjectName = snapshot?.project.name || activeProject?.name || projectLabelFromId(activeProjectId) || "ZaoFu Project";
-  const sliceContextLabel = page === "channels" && channelsPage
-    ? "channels slice"
-    : pageLoadsDeliveryFeatures(page) && deliveryFeaturesPage
-      ? "measure slice"
-      : page === "agents"
-        ? "agent slice"
-        : "slice pending";
-  const topbarContextLabel = snapshot
-    ? "local workspace"
-    : activeProjectId
-      ? sliceContextLabel
-      : "no project";
+
   const agentPanelVisible = agentPanelMode !== "collapsed";
   const renderedAgentPanelMode: Exclude<AgentPanelMode, "collapsed"> = agentPanelMode === "fullscreen"
     ? "fullscreen"
@@ -2124,17 +2113,15 @@ export function App() {
     <div className={`app-shell ${page === "channels" ? "app-shell-channel" : ""}`.trim()}>
       <header className="topbar">
         <div className="brand-block">
-          <h1>{topbarProjectName}</h1>
-          <span className="breadcrumb-separator">/</span>
-          <span className="breadcrumb-current">{t(pageTitle(page))}</span>
-          <span className="muted">{topbarContextLabel}</span>
+          <h1>{page === "board" ? t("Projects") : t(pageTitle(page))}</h1>
+          {page === "board" && <><span className="breadcrumb-separator">/</span><span className="breadcrumb-current">{topbarProjectName}</span></>}
         </div>
         <div className="status-row">
           <div className="topbar-search-control">
             <input
               className="search-input"
               aria-label="Search workspace"
-              placeholder="task:TASK-123 actor:dev-1"
+              placeholder={t("Search workspace…")}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -2206,6 +2193,8 @@ export function App() {
           removeDisabled={Boolean(activeProjectId) && activeProjectId === serverDefaultProjectId}
           selectedChannelId={selectedChannelId}
           snapshot={snapshot}
+          viewMode={viewMode}
+          onSetView={setViewMode}
         />
 
         <section className="board-panel" data-page={page}>
@@ -2289,6 +2278,7 @@ export function App() {
           ) : page === "board" ? (
             <>
               <BoardWorkbench
+                projectName={topbarProjectName}
                 actionReady={actionGate.actionReady}
                 actionResult={actionResult}
                 actionState={actionGate.actionState}

@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronRight, Columns3 } from "lucide-react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Task } from "../../api/types";
 import { useUiPreferences } from "../../app/UiPreferences";
 import { formatDateTime } from "../../lib/uiPreferences";
@@ -35,6 +36,8 @@ export function TaskViews(p: TaskViewsProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [table, setTable] = useState(readTablePreferences);
   const [columnPicker, setColumnPicker] = useState(false);
+  const [toolsHost, setToolsHost] = useState<HTMLElement | null>(null);
+  useEffect(() => { setToolsHost(document.getElementById("task-view-options")); }, [p.view]);
   const groups = groupTasks(p.tasks, p.group);
   const columns = COLUMNS.filter((c) => table.columns.includes(c.id));
   function saveTable(next: typeof table) {
@@ -50,10 +53,14 @@ export function TaskViews(p: TaskViewsProps) {
     const risk = taskRiskBadge(task, p.telemetry.get(task.id));
     return <><span className="task-row-title">{task.title || task.id}</span>{risk.label && <span className={`task-row-risk badge-${risk.tone}`} title={risk.label} aria-label={risk.label}>!</span>}<span className="task-row-id mono">{task.id}</span></>;
   }
+  function owner(task: Task) {
+    const name = taskOwner(task);
+    return <span className="task-owner"><span className="task-assignee-avatar assigned" aria-hidden="true">{name === "Unassigned" ? "–" : name.replace(/^@/, "").split(/[-_ /]+/).slice(0, 2).map((word) => word[0]).join("").toUpperCase()}</span><span>{t(name)}</span></span>;
+  }
   function cell(task: Task, id: ColumnId) {
     if (id === "title") return <button type="button" className="task-table-open" onClick={() => p.onOpenTask(task.id)}>{titleCell(task)}</button>;
     if (id === "status") return <span className={`task-status-label status-${taskColumn(task)}`}><i className={`task-status-dot status-${taskColumn(task)}`} />{t(taskStatus(task))}</span>;
-    if (id === "owner") return t(taskOwner(task));
+    if (id === "owner") return owner(task);
     if (id === "priority") return `P${taskPriority(task)}`;
     if (id === "phase") return taskPhase(task);
     if (id === "activity") return <time dateTime={taskActivity(task)}>{formatDateTime(taskActivity(task), preferences) || "—"}</time>;
@@ -66,10 +73,11 @@ export function TaskViews(p: TaskViewsProps) {
   }
   if (!p.tasks.length) return <div className="workbench-empty"><h3>{t("No matching tasks")}</h3><p>{t("Try changing your search or filters.")}</p></div>;
   if (p.view === "list") return <div className="workbench-task-list">
-    {groups.map((group) => <section key={group.id} className="task-row-group">{p.group !== "none" && groupButton(group)}{!collapsed.has(`${p.group}:${group.id}`) && <div role="list">{group.tasks.map((task) => <div role="listitem" key={task.id}><button type="button" className={`workbench-task-row ${p.selectedTaskId === task.id ? "selected" : ""}`} onClick={() => p.onOpenTask(task.id)} data-task-id={task.id}><span className={`task-status-dot status-${taskColumn(task)}`} aria-label={taskStatus(task)} />{titleCell(task)}<span className="task-row-owner" title={taskOwner(task)}>{t(taskOwner(task))}</span><span className="task-row-priority">P{taskPriority(task)}</span><time className="task-row-activity" dateTime={taskActivity(task)} title={formatDateTime(taskActivity(task), preferences)}>{formatDateTime(taskActivity(task), preferences, true) || "—"}</time></button></div>)}</div>}</section>)}
+    <div className="task-list-columns" aria-hidden="true"><span>{t("Title")}</span><span>{t("Status")}</span><span>{t("Owner")}</span><span>{t("Priority")}</span><span>{t("Activity")}</span><span>{t("Skills")}</span></div>
+    {groups.map((group) => <section key={group.id} className="task-row-group">{p.group !== "none" && groupButton(group)}{!collapsed.has(`${p.group}:${group.id}`) && <div role="list">{group.tasks.map((task) => <div role="listitem" key={task.id}><button type="button" className={`workbench-task-row ${p.selectedTaskId === task.id ? "selected" : ""}`} onClick={() => p.onOpenTask(task.id)} data-task-id={task.id}><span className="task-list-title"><span className={`task-status-dot status-${taskColumn(task)}`} aria-label={taskStatus(task)} />{titleCell(task)}</span><span className="task-row-status">{cell(task, "status")}</span><span className="task-row-owner" title={taskOwner(task)}>{owner(task)}</span><span className="task-row-priority">P{taskPriority(task)}</span><time className="task-row-activity" dateTime={taskActivity(task)} title={formatDateTime(taskActivity(task), preferences)}>{formatDateTime(taskActivity(task), preferences, true) || "—"}</time><span className="task-row-labels">{task.skills_required?.slice(0, 2).map((skill) => <span className="task-label" key={skill}><i aria-hidden="true" />{skill}</span>)}</span></button></div>)}</div>}</section>)}
   </div>;
   return <div className="workbench-table-view">
-    <div className="table-options"><button className="workbench-control" type="button" aria-expanded={columnPicker} onClick={() => setColumnPicker(!columnPicker)}><Columns3 size={14} aria-hidden="true" />{t("Columns")}</button>{columnPicker && <fieldset className="table-column-picker"><legend>{t("Columns")}</legend>{COLUMNS.map((column) => <label key={column.id}><input type="checkbox" checked={table.columns.includes(column.id)} disabled={column.id === "title"} onChange={(event) => saveTable({ ...table, columns: event.target.checked ? [...table.columns, column.id] : table.columns.filter((id) => id !== column.id) })} />{t(column.label)}</label>)}</fieldset>}</div>
+    {toolsHost && createPortal(<div className="table-options"><button className="workbench-control" type="button" aria-expanded={columnPicker} onClick={() => setColumnPicker(!columnPicker)}><Columns3 size={14} aria-hidden="true" />{t("Columns")}</button>{columnPicker && <fieldset className="table-column-picker"><legend>{t("Columns")}</legend>{COLUMNS.map((column) => <label key={column.id}><input type="checkbox" checked={table.columns.includes(column.id)} disabled={column.id === "title"} onChange={(event) => saveTable({ ...table, columns: event.target.checked ? [...table.columns, column.id] : table.columns.filter((id) => id !== column.id) })} />{t(column.label)}</label>)}</fieldset>}</div>, toolsHost)}
     <div className="workbench-table-scroll"><table className="workbench-task-table" style={{ width: columns.reduce((sum, c) => sum + (table.widths[c.id] || c.width), 0) }}><colgroup>{columns.map((c) => <col key={c.id} style={{ width: table.widths[c.id] || c.width }} />)}</colgroup><thead><tr>{columns.map((column) => <th key={column.id} scope="col" aria-sort={"sort" in column && p.sort === column.sort ? p.descending ? "descending" : "ascending" : undefined}>
       {"sort" in column ? <button type="button" onClick={() => p.onSort(column.sort)}>{t(column.label)}{p.sort === column.sort ? p.descending ? " ↓" : " ↑" : ""}</button> : t(column.label)}
       <input className="table-column-width" aria-label={`${t(column.label)} width`} title={`${t(column.label)} width`} type="range" min={80} max={600} step={10} value={table.widths[column.id] || column.width} onChange={(event) => saveTable({ ...table, widths: { ...table.widths, [column.id]: Number(event.target.value) } })} />

@@ -10,15 +10,15 @@
 
 ## 视觉基线
 
-使用温暖的中性色背景、白色/深色 surface、细分隔线和少量强调色。保留 Inter 字体。桌面页边距 24px，窄屏 16px；主标题约 23px，设置页约 19px，正文 13.5–14px，次要元数据 12px，任务编号 11px。颜色、字号、密度均走 token。语义警告/错误颜色不能随强调色改变。
+使用温暖的中性色背景、白色/深色 surface、细分隔线和少量强调色。使用本地打包的 Geist Variable 与 Geist Mono；中文回退到系统无衬线字体。桌面页边距 24px，窄屏 16px；项目标题与设置标题 19px，一般页面标题 23px，正文 13.5px，次要元数据 12px，任务编号 11px。颜色、字号、密度均走 token。语义警告/错误颜色不能随强调色改变。
 
 ## Tasks
 
-一个工具栏：搜索、Filter、Sort、Group 靠左，List / Board / Table 切换靠右；筛选展开后有完整标签，已选条件显示可移除 chips。Focus 预设整合进筛选区域。New task 调用既有 Task Agent 入口，继续遵守控制动作权限。
+项目标题下单独设置 Board / List / Table 下划线标签栏；再下一行工具栏：搜索、Filter、Sort、Group 靠左，New task 靠右；筛选展开后有完整标签，已选条件显示可移除 chips。Focus 预设整合进筛选区域。New task 调用既有 Task Agent 入口，继续遵守控制动作权限。
 
 三种视图共用筛选、排序与详情选择；URL 支持 `?page=board&view=table`。Board 保持 Todo / In Progress / Verify / Blocked / Done 五个语义列，列宽约 284px，间距 12px，横向滚动限制在板内。卡片标题优先，编号与所有者/优先级/最近活动收敛为 footer；保留重要风险，遥测和路由放在既有详情中。拖动仍走原受控更新路径。
 
-List 为全宽可折叠分组列表，舒适行高 40px，紧凑 34px，移除常驻 Inspector。Table 有粘性表头和标题列，列排序、列显隐与可调宽度；默认标题、状态、所有者、优先级、阶段、最近活动，可选技能、依赖、证据、重试和成本。三视图打开相同的任务详情入口；不制造 due date 或 estimate 等不存在字段。
+List 为全宽可折叠分组列表，舒适行高 40px，紧凑 34px，移除常驻 Inspector。Table 有粘性表头和标题列，列排序、列显隐与可调宽度；默认标题、状态、所有者、优先级、阶段、最近活动，可选技能、依赖、证据、重试和成本。Table 舒适行高 36px，紧凑 34px。三视图打开相同的任务详情入口；不制造 due date 或 estimate 等不存在字段。
 
 ## Inbox
 
@@ -66,7 +66,6 @@ Date & time 提供系统/指定时区、日期样式、12/24 小时制和实时�
 ```sh
 docker run --rm --network host \
   -v "$PWD:/work" \
-  -v /home/min/workspace/public/zaofu/web/node_modules:/work/web/node_modules:ro \
   -w /work/web \
   -e ZF_WEB_BASE_URL=http://127.0.0.1:8020 \
   -e ZF_E2E_CHROMIUM_EXECUTABLE_PATH=/ms-playwright/chromium-1226/chrome-linux64/chrome \
@@ -76,7 +75,7 @@ docker run --rm --network host \
   --workers=1 --reporter=line --output=/tmp/zf-ui-browser
 ```
 
-该命令的 node_modules 挂载位置和 Chromium 路径需与当前机器/镜像一致；此次使用镜像 `sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2`，不安装宿主浏览器。
+该命令使用当前 worktree 的 node_modules（按 web/package-lock.json 安装），Chromium 路径需与当前镜像一致；此次使用镜像 `sha256:8342e03ef3571d09afffcd00558b8067e66489a54e7f3f0d96a71a327fd45fe2`，不安装宿主浏览器。
 
 ## 本批验证结果
 
@@ -87,3 +86,27 @@ docker run --rm --network host \
 - Docker Playwright：`ui-alignment.spec.ts`、`kanban-toolbar.spec.ts`、`needs-input-ux.spec.ts`，最终生产构建 **8 passed**。覆盖 1440×1000、1024×768、390×844，以及浅/深/系统主题。紧凑 List/Table 实测行高 34px、Board 内边距 8px。
 - 证据目录：`/tmp/zf-ui-20261026-1408/verified/`（截图）；同级 `browser-verified.log`、`build-final.log`、`dev-verify.log`。先前测试发现的 mock 路由范围、容器目录权限及 Table 行高问题均已修复并复验。
 - 只在 mock API 上验证写请求内容与鉴权边界；未调用真实运行态的审批、Ack、拖动更新或 Provider。未运行依赖真实项目数据的全量浏览器 suite。
+
+## 2026-10-26 视觉复核与修订
+
+用户要求以参考站 **Website Redesign → Board** 的实际渲染为基准，纠正第一批只做模块结构对齐的问题。Docker Playwright 于 1440×1000 实测：侧栏 x=0 / w=252；右侧 topbar y=0 / h=46；项目标题区 y=46 / h=68；视图标签 y=114 / h=37；工具栏 y=151 / h=44；Board y=195、padding=14px 24px 24px；列 w=284 / gap=12 / radius=10；卡片 padding=10px 12px / gap=8 / radius=8，正文 Geist 13.5px、weight450。
+
+修订范围：
+
+- 移除三个模块的外层圆角框和 10px 留白；侧栏贯穿窗口，Settings 固定在底部，导航选中态改中性白底细边。保留真实项目选择和运行状态。
+- Tasks 使用实际项目名作为标题，恢复参考站的标题 / 标签 / 工具栏三层结构。列使用 sunken 背景与细边；卡片标签、标题、单行元数据依序排布。任务类别、优先级、owner、时间仅展示实际字段；不虚构人员、截止时间或参考站数据。授权入口收进可展开的工具栏，锁定拖拽仍无写请求。
+- Inbox 保持 420px 队列，标题 19px，类别改下划线标签；行以类型图标 / 正文 / 引用时间三部分排布，去除重复状态块与大面积强调色。保留显式审批、Ack、完整预览与移动端返回。
+- Settings 从 topbar 下直接分 220px 二级导航与正文；正文 x=512，顶部 padding32 / 水平40，内容含 padding 最大720。Appearance 同步主题整卡选中框、Theme / Accent color / Density 分组与密度分段按钮。仅渲染已有功能，不添加不可用占位导航。
+
+验收：固定视口测量关键几何值、确认 Geist 字体 loaded、比较实际截图；已有审批 / 拖动权限 / 跨页偏好 / List / Table / 窄屏用例必须通过。同步更新 8019 预览构建。证据目录 `/tmp/zf-ui-parity-20261026-145557/`。此节覆盖前文已被修订的视觉细节。
+
+本次校准采用 `@fontsource-variable/geist@5.3.0`（OFL-1.1），字体随构建本地分发，不依赖运行时 Google Fonts 请求。Chrome DevTools 的 `CSS.getPlatformFontsForNode` 确认项目标题实际使用 Geist 自定义字体；中文使用系统字体回退。基线比较不要求伪造参考站的项目、成员、截止日期和任务状态。
+
+### 视觉校准验收结果
+
+- `python scripts/dev-verify.py plan --base dev` / `run --base dev`：通过 docs / web_ui 闭包，含 8 个 instruction contract 检查、Web typecheck 和 Web 单元测试；未运行全量后端 pytest。
+- `npm run build --prefix web`：通过；最后的样式修订再由 `vite build --outDir /tmp/zf-ui-parity-20261026-145557/dist-final` 构建，完成后替换 UI worktree 的 dist。`npm run bundle:check --prefix web` 通过：39 chunks，最大 443740 bytes。
+- `npm run lint:tokens --prefix web`、28/29 样式文件裸绝对字号扫描、`git diff --check`：通过。
+- Docker Playwright 最终生产构建：`ui-alignment.spec.ts`、`kanban-toolbar.spec.ts`、`needs-input-ux.spec.ts`，**8 passed**。新增对侧栏、顶栏、标题/标签/工具栏、Board 列和卡片坐标、Settings 220px 导航及 Inbox 420px 队列的断言；验证字体 loaded、显式展开授权控件、搜索、设置持久化、跨标签同步和窄屏高度。
+- 同步真实后台的 8019 预览进行只读访问，Board / Inbox / Appearance 均渲染成功，page errors 为 0。真实任务保留原内容；未调用真实审批或任务更新。
+- 最终证据：`/tmp/zf-ui-parity-20261026-145557/release/`、`browser-release.log`、`dev-verify.log`、`build-complete.log`、`release-live-*.png`、`live-metrics.json`。早期开发服务冷启动超时、构建替换窗口的 HTTP 失败及重复标题定位均已通过最终生产回归复验；最终浏览器验证期间未修改构建产物。

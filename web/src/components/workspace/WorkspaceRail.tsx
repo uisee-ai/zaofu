@@ -1,10 +1,10 @@
 import { useUiPreferences } from "../../app/UiPreferences";
 // WorkspaceRail + exclusive closure, extracted verbatim from App.tsx (P1 split).
 import type { ActionResponse, ChannelSummary, Snapshot, WorkspaceProject } from "../../api/types";
-import { Bot, CalendarClock, ChevronRight, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
+import { Bot, CalendarClock, Columns3, List, Table2, Gauge, GitFork, Home, Inbox, ListTodo, Menu, MessageSquare, Plus, Radio, Route, Settings, Trash2, X } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
-import type { LiveState, PageId } from "../../app/sharedTypes";
+import type { LiveState, PageId, ViewMode } from "../../app/sharedTypes";
 import { allBoardTasks, channelIdOf, channelNameOf, isObservabilityPage, projectLabelFromId } from "../../app/shared";
 
 interface RailNavItem {
@@ -39,6 +39,8 @@ export function WorkspaceRail({
   removeDisabled = false,
   selectedChannelId,
   snapshot,
+  viewMode,
+  onSetView,
 }: {
   actionResult: ActionResponse | null;
   activePage: PageId;
@@ -57,6 +59,8 @@ export function WorkspaceRail({
   removeDisabled?: boolean;
   selectedChannelId: string;
   snapshot: Snapshot | null;
+  viewMode: ViewMode;
+  onSetView: (view: ViewMode) => void;
 }) {
   const { t } = useUiPreferences();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -127,7 +131,7 @@ export function WorkspaceRail({
     <section className={`panel project-rail ${mobileOpen ? "mobile-open" : ""}`} aria-label="Navigation rail">
       <div className="section-heading">
         <div>
-          <h2 className="rail-brand">ZaoFu</h2>
+          <h2 className="rail-brand"><span className="rail-brand-mark" aria-hidden="true">Z</span>ZaoFu Studio</h2>
           {/* count removed: the unified header is the single count source (doc116 §11.2) */}
         </div>
         <div className="rail-heading-actions">
@@ -145,8 +149,12 @@ export function WorkspaceRail({
         </div>
       </div>
       <div className="project-rail-body" id="workspace-navigation">
+        <RailNav title="" items={workspaceNav.slice(0, 3)} activePage={railActivePage} onOpenPage={openPage} />
+        <div className="rail-group"><span className="rail-nav-title">{t("Workspace")}</span>
+          <RailNav title="" items={workspaceNav.slice(3)} activePage={railActivePage} onOpenPage={openPage} />
+        </div>
         <div className="rail-group workspace-context-group">
-          <span className="rail-nav-title">{t("Workspace")}</span>
+          <span className="rail-nav-title">{t("Projects")}</span>
           {projectOptions.length ? (
             <div className="project-switcher">
               <div className="project-switcher-row">
@@ -189,7 +197,9 @@ export function WorkspaceRail({
               </span>
             </button>
           )}
-          <RailNav title="" items={workspaceNav} activePage={railActivePage} onOpenPage={openPage} />
+          {activeProjectId && <div className="rail-project-views" role="group" aria-label={t("Project views")}>
+            {([{ value: "board", label: "Board", Icon: Columns3 }, { value: "list", label: "List", Icon: List }, { value: "table", label: "Table", Icon: Table2 }] as const).map(({ value, label, Icon }) => <button key={value} type="button" className={`rail-nav-button ${activePage === "board" && viewMode === value ? "active" : ""}`} onClick={() => { onSetView(value); openPage("board"); }}><span className="rail-nav-label"><Icon size={14} aria-hidden="true" />{t(label)}</span></button>)}
+          </div>}
         </div>
         <div className="rail-group">
           <span className="rail-nav-title">{t("Monitoring")}</span>
@@ -229,13 +239,7 @@ export function WorkspaceRail({
           </button>
         </div>
         </div>
-        <details className="rail-section" open>
-          <summary>
-            <span>{t("System settings")}</span>
-            <ChevronRight className="rail-section-chevron" size={14} strokeWidth={1.9} aria-hidden="true" />
-          </summary>
-          <RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} />
-        </details>
+        <div className="rail-footer"><RailNav title="" items={systemNav} activePage={railActivePage} onOpenPage={openPage} /></div>
         {actionResult && shouldShowRailActionResult(actionResult) ? (
           <p className="empty-text compact-error">{actionResult.status}: {actionResult.reason}</p>
         ) : null}
