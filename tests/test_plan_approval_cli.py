@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from zf.cli.plan_approval import _run
+from zf.cli.plan_approval import _pending, _run
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -110,3 +110,18 @@ def test_plan_reject_inherits_approval_context(tmp_path, monkeypatch):
     assert rejected.payload["task_map_ref"] == "/tmp/task_map.json"
     assert rejected.payload["digest_ref"] == "artifacts/plan-digest/evt-plan.md"
     assert rejected.payload["reason"] == "owner_role mismatch"
+
+
+def test_plan_review_can_filter_pending_plans_by_workflow_run():
+    events = [
+        ZfEvent(
+            type="plan.approval.requested",
+            payload={"plan_id": "p-r1", "workflow_run_id": "run-1"},
+        ),
+        ZfEvent(
+            type="plan.approval.requested",
+            payload={"plan_id": "p-r2", "workflow_run_id": "run-2"},
+        ),
+    ]
+
+    assert [item["plan_id"] for item in _pending(events, "run-1")] == ["p-r1"]

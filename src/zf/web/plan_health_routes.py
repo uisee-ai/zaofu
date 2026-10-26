@@ -21,7 +21,7 @@ def build_plan_health_router(
     router = APIRouter()
 
     @router.get("/api/projects/{project_id}/plan/pending")
-    def plan_pending(project_id: str) -> dict:
+    def plan_pending(project_id: str, workflow_run_id: str | None = None) -> dict:
         ctx = resolve_ctx(project_id)
         if ctx is None:
             raise HTTPException(status_code=404, detail="unknown project")
@@ -34,7 +34,7 @@ def build_plan_health_router(
             event_log_from_project(ctx.state_dir, config=ctx.config).read_all()
         )
         items = []
-        for item in _pending(events):
+        for item in _pending(events, workflow_run_id):
             ref = str(item.get("task_map_ref") or "")
             entry = dict(item)
             if ref:

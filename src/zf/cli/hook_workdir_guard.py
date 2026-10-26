@@ -247,6 +247,45 @@ def is_authorized_result_scratch_target(
     )
 
 
+def _active_task_workdirs(
+    event_log: EventLog,
+    *,
+    actor: str,
+    task_id: str,
+) -> set[Path]:
+    """Return task-stage workdirs recorded for the actor's active task.
+
+    Task Pipeline workers run in a task worktree while their physical role
+    session still has a role-scoped workdir.  The task dispatch event is the
+    canonical binding for that worktree; accepting only these recorded paths
+    keeps the guard fail-closed without treating every state-dir path as safe.
+    """
+
+    if not actor or not task_id:
+        return set()
+    roots: set[Path] = set()
+    for event in event_log.read_all():
+        if str(event.task_id or "") != task_id:
+            continue
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        role_instance = str(
+            payload.get("role_instance")
+            or payload.get("instance_id")
+            or payload.get("assignee")
+            or payload.get("role")
+            or ""
+        ).strip()
+        if role_instance != actor:
+            continue
+        workdir = str(payload.get("workdir") or "").strip()
+        if not workdir:
+            continue
+        path = Path(workdir)
+        if path.is_absolute():
+            roots.add(path)
+    return roots
+
+
 def evaluate_workdir_write_guard(
     *,
     state_dir: Path,
@@ -270,6 +309,13 @@ def evaluate_workdir_write_guard(
         return 0
     tool_name = str(event_payload.get("tool_name") or "")
     cwd = Path(str(event_payload.get("cwd") or assigned_root))
+    task_id = active_task_id_for_actor(event_log, actor)
+    task_workdirs = _active_task_workdirs(
+        event_log,
+        actor=actor,
+        task_id=task_id,
+    )
+    allowed_workdirs = {assigned_root, *task_workdirs}
     project_roots = {Path(project_root), state_dir.parent}
     offending: list[str] = []
     for operation, raw_target in write_target_operations(tool_name, tool_input):
@@ -277,7 +323,9 @@ def evaluate_workdir_write_guard(
         target = target if target.is_absolute() else cwd / target
         if (
             any(_path_is_within(target, root) for root in project_roots)
-            and not _path_is_within(target, assigned_root)
+            and not any(
+                _path_is_within(target, root) for root in allowed_workdirs
+            )
         ):
             if is_authorized_result_scratch_target(
                 state_dir,
@@ -292,12 +340,14 @@ def evaluate_workdir_write_guard(
         if (
             bash_command_looks_mutating(command)
             and str(project_root.resolve(strict=False)) in command
-            and str(assigned_root.resolve(strict=False)) not in command
+            and not any(
+                str(root.resolve(strict=False)) in command
+                for root in allowed_workdirs
+            )
         ):
             offending.append(str(project_root.resolve(strict=False)))
     if not offending:
         return 0
-    task_id = active_task_id_for_actor(event_log, actor)
     event_writer.append(ZfEvent(
         type="worker.scope_write.rejected",
         actor="zf-cli",
