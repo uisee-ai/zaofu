@@ -3312,24 +3312,13 @@ class FanoutCoordinationMixin(
             # FIX-12(bizsim r4 F12):plan 语义指纹判重。r4 judge cap 冻结期
             # 每轮 replan 铸新 plan_id(14 请求/7 批,批一生一),同
             # stage+pdd+task 集的未决 plan 已在队时不再铸新单。
-            from zf.runtime.plan_approval_fingerprint import plan_approval_fingerprint
-
-            fingerprint = plan_approval_fingerprint(
+            fingerprint = self._plan_fingerprint(
                 stage_id=stage_id,
                 pdd_id=base_payload["pdd_id"],
                 task_items=task_items,
-                identity={
-                    "workflow_run_id": trace_id,
-                    "task_map_generation": str(
-                        trigger_event.payload.get("task_map_generation") or ""
-                    ),
-                    "plan_artifact_package_digest": str(
-                        trigger_event.payload.get("plan_artifact_package_digest") or ""
-                    ),
-                    "requirement_spec_digest": str(
-                        trigger_event.payload.get("requirement_spec_digest") or ""
-                    ),
-                },
+                identity={"workflow_run_id": trace_id, **{
+                    key: str(trigger_event.payload.get(key) or "") for key in
+                    ("task_map_generation", "plan_artifact_package_digest", "requirement_spec_digest")}},
             )
             duplicate_of = next(
                 (
@@ -3372,6 +3361,20 @@ class FanoutCoordinationMixin(
                 correlation_id=trace_id,
             ))
         return False
+
+    def _plan_fingerprint(
+        self,
+        *,
+        stage_id: str,
+        pdd_id: str,
+        task_items: list,
+        identity: dict[str, str] | None = None,
+    ) -> str:
+        from zf.runtime.plan_approval_fingerprint import plan_approval_fingerprint
+        return plan_approval_fingerprint(
+            stage_id=stage_id, pdd_id=pdd_id, task_items=task_items,
+            identity=identity,
+        )
 
     def _write_plan_digest(self, plan_id: str, task_items: list, task_map_ref: str) -> str:
         """B-93-03: 落 plan-digest.md,返回相对 state_dir 的 digest_ref(失败返回 '')。"""

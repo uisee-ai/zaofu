@@ -487,15 +487,14 @@ def reconcile_task_pipeline_runtime(
             for task_id in partition["task_ids"]
         }
         events = runtime.event_log.read_all()
+        all_operations = [row for row in reduce_workflow_operations(events).values()
+                          if operation_matches_generation(row, contexts)]
         state_dir = getattr(runtime, "state_dir", None)
-        all_operations = normalize_task_pipeline_operation_semantics(
-            state_dir,
-            [row for row in reduce_workflow_operations(events).values()
-             if operation_matches_generation(row, contexts)],
-        ) if state_dir is not None else [
-            row for row in reduce_workflow_operations(events).values()
-            if operation_matches_generation(row, contexts)
-        ]
+        if state_dir is not None:
+            all_operations = normalize_task_pipeline_operation_semantics(
+                state_dir,
+                all_operations,
+            )
         group_operations = [
             row
             for row in all_operations
@@ -507,14 +506,14 @@ def reconcile_task_pipeline_runtime(
             operation_rows=group_operations,
         ))
         events = runtime.event_log.read_all()
-        all_operations = normalize_task_pipeline_operation_semantics(
-            state_dir,
-            [row for row in reduce_workflow_operations(events).values()
-             if operation_matches_generation(row, contexts)],
-        ) if state_dir is not None else [
-            row for row in reduce_workflow_operations(events).values()
-            if operation_matches_generation(row, contexts)
-        ]
+        all_operations = [row for row in reduce_workflow_operations(events).values()
+                          if operation_matches_generation(row, contexts)]
+        state_dir = getattr(runtime, "state_dir", None)
+        if state_dir is not None:
+            all_operations = normalize_task_pipeline_operation_semantics(
+                state_dir,
+                all_operations,
+            )
         group_operations = [
             row
             for row in all_operations
