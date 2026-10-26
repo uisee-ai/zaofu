@@ -1,19 +1,34 @@
 # 赛车小游戏：187 分支监工端到端验证
 
-> 状态: active
+> 状态: done — `f952370 fix: reconcile admitted retries and terminal task evidence`
 > 执行依据：[完整监工 Prompt](../runbooks/2026-10-25-2110-racing-supervisor-e2e-prompt.md)。基线 `8367e6c`，使用真实 Provider 与 Docker Playwright，进行中的步骤不记为通过。
+
+## 最终结论（2026-10-26 08:42 UTC）
+
+真实Kanban赛车主链已完成，候选 `a15b6b6f5247`，Kernel完成事件 `evt-e31b1c6d9a73`。23/23强制声明、16/16产品AC、四条正式浏览器旅程通过；独立正常比赛90.308秒，监工固定构建复核90.208秒。
+
+- AskUserQuestion、完整YAML预览、lane/model/skills局部Chat修改及生效均有真实证据。
+- Plan预览及局部Agent Chat修改经过真实Planner/Critic；用户批准具体版本前没有Impl派发，技术续修的受控审批来源逐项记录。
+- 配置3 Impl/3 Verify lanes，实际峰值Impl 2、Verify 3。Impl由FOUNDATION → DRIVE/TRACK并行 → ASSEMBLY的依赖宽度限制；Verify四个逻辑子任务复用三lane，不是四lane。
+- 六视角、YAML完整结构、真实执行状态、终态Task与Goal证据关联通过。最终浏览器1 passed；[终态摘要](187-racing-supervisor-e2e/terminal-graph-summary.json)、[完成收据](187-racing-supervisor-e2e/final-goal-completion-receipt.json)、[节点详情截图](187-racing-supervisor-e2e/51-terminal-goal-inspector.png)。
+- CLI/Channel自动启动补充是宿主+Mock Provider层；赛车Kanban主链为真实Provider，未把前者写成三入口真实Provider E2E。
+- [清理证明](187-racing-supervisor-e2e/final-cleanup.json)：模拟完成事件已发，8002/8023和专用tmux/runtime已停止，6.3GB临时根删除；dev/8001未改动。源代码worktree保留，未merge/push。
+
+交付保存在 `/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247/`，包含源码归档、固定构建、实际YAML、完整独立验证证据和acceptance.json。按该目录README可重新启动试玩。
+
+剩余非阻断限制：1280×800时键位图例轻微遮挡；573节点历史图API观察8–21秒。发布策略report_only，没有执行生产部署。初轮冷环境失败、协议修正及超时后成功重试均保留，不声称全程无失败或全量pytest通过。
 
 ## 本次环境
 
 - Worktree：`/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph`，分支 `wip/codex-20261025-ai-sdlc-graph`。
-- Dashboard：`0.0.0.0:8002`；dev 的 8001 保持运行。
+- 测试期间Dashboard：`0.0.0.0:8002`（已按规范停止）；dev 的 8001 保持运行。
 - 隔离根：`/tmp/zf-racing-supervision-20261025T211020Z`。
 - 浏览器新建项目：`racing-project-33598481`，名称 `187 Racing Supervision`。
 - 项目配置生成的 state_dir 为 `.zf-187 Racing Supervision`，按配置读取，保留空格路径的真实覆盖。
 - Docker：`mcp/playwright:latest`，host network；服务继承 Docker 组，tmux 使用本次独立 `TMUX_TMPDIR`，不复用未加载 Docker 组的旧 server。
 - Plan 审批由用户决定；在具体 Plan 交付用户前不请求空泛批准，也不自行批准实现。
 
-## 当前事实
+## 按时间记录的验收事实
 
 1. 首次空 workspace 展示 onboarding；浏览器先跳过全局引导，再走实际 Add Project 表单创建项目。初次脚本的按钮等待失败属于脚本入口假设，未创建重复项目。
 2. Kanban 真实 Codex 问答提出三项选择，已选择 2D 俯视、90 秒积分赛、桌面 Chromium。Agent 识别到当前 PRD 为 2 个实现/验证 lane，未假称 3 lanes 已生效。
@@ -177,3 +192,5 @@ Impl的dispatch-to-settlement重叠包含等待上述修复的时间，不能把
 80. 最终Docker Playwright补充完成节点详情断言：1 passed/20.1秒，五个Task均done且accepted_event_ids指向Kernel完成事件，Goal 23/23、open_gaps=0，截图48–51。最后以base dev、精确变更paths生成验证计划；matching run跳过已执行的deterministic/Web层，不重复扩大测试，实际通过184项自动选择+228项Attempt闭包、51项sentinel、3项Mock E2E、8项文档检查、Web typecheck和真实浏览器。不宣称全量pytest。
 
 81. 已发simulation.done=evt-e191747854b7，正式zf stop完成18步并关闭本次专用Run Manager，8002停止。外部交付目录的acceptance.json SHA d0cdae2d5142258c2b6da39e7adbb3e0088b387d1304b367d5ce418868c6af08；剩余临时监控/试玩进程与状态将在最终清理审计后删除。
+
+82. 实现提交f952370后完成资源清理，工作区仅保留本任务源分支；临时软链接删除，指定临时根已删除，8001仍监听。任务归档到tasks/done，最终记录中的历史active/pending均为当时快照，不覆盖本节最终结论。

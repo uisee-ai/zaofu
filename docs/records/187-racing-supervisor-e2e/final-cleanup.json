@@ -1,0 +1,26 @@
+{
+  "completed_at": "2026-10-26T08:42:29.907255+00:00",
+  "temporary_root": "/tmp/zf-racing-supervision-20261025T211020Z",
+  "portable_delivery": "/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247",
+  "stopped_pids": [
+    2272517,
+    2346463
+  ],
+  "ports": {
+    "8002": "released",
+    "8023": "released",
+    "8001": "still listening; untouched"
+  },
+  "temporary_tmux_sessions": [],
+  "running_docker_containers": [],
+  "simulation_done_event": "evt-e191747854b7",
+  "runtime_stop_steps": 18,
+  "removed_worktree_symlinks": [
+    ".venv",
+    "web/node_modules"
+  ],
+  "remaining_source_worktree": "/home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph",
+  "implementation_commit": "f952370",
+  "main_dev_unchanged": true,
+  "temporary_root_removed": true
+}

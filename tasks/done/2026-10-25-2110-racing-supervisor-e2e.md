@@ -1,6 +1,6 @@
 # 赛车小游戏监工验收与通用缺陷修复
 
-> 状态: active
+> 状态: done — `f952370 fix: reconcile admitted retries and terminal task evidence`
 > 用户已授权真实端到端测试、持续修复，并显式批准已交付的具体Plan。技术续修仍逐版审阅并经受控审批，依据及边界见下述运行记录。
 
 执行依据：[监工 Prompt](../../docs/runbooks/2026-10-25-2110-racing-supervisor-e2e-prompt.md)。基线 `8367e6c`，工作分支 `wip/codex-20261025-ai-sdlc-graph`。
@@ -16,7 +16,7 @@
 - [x] Plan 交付用户后暂停 -> verify: 用户批准具体版本前没有Impl派发；批准后发现审批等待误触发Run blocked，回归修复并经正式接口恢复，同一Plan自动继续，没有重复批准或另建任务图。
 - [x] 设置 3 lanes 并观察 impl/verify -> verify: 两类分别有至少两个 lane 的真实重叠区间；未达到时有根因、修复及实际重验。
 - [x] 赛车产品与六视角图闭合 -> verify: 独立验证、Judge、内核 Run/Task/Goal 终态一致，当前候选的浏览器产品验收通过。
-- [ ] 导出证据、提交修复并清理 -> verify: 准确验证层级、秘密检查、临时资源清理与干净工作区审计；不 merge/push。
+- [x] 导出证据、提交修复并清理 -> verify: 准确验证层级、秘密检查、临时资源清理与干净工作区审计；不 merge/push。
 
 ## 历史推进记录
 
@@ -34,7 +34,7 @@
 
 派发输入核验进一步发现受控动作遗漏新工件引用，Planner正确报告输入冲突；已修复上下文传递及恢复身份遗漏重试次数，两项分别有失败回归和真实事件/请求回放。109项主闭包、43项调用方、28项preflight/Mock及162项Reader恢复闭包通过；最终sentinel51和flow-smoke10通过。正式新Plan审批、环境修复实施与多lane Verify仍待完成。
 
-## 当前进度（2026-10-26 06:50 UTC）
+## 历史进度（2026-10-26 06:50 UTC）
 
 四个实现子任务均已被内核接纳，新候选`a15b6b6f`的14项质量检查全部通过，含真实完整90秒浏览器、统一交付与治理审计。Impl宽度2已证实；05:52启动3个独立Verify lane，三个工作区固定同一候选，真实Provider用量与Playwright同屏执行取证通过。两项UI修复提交`b7dd59a`。任务仍active，继续独立验收、Discovery/Judge、Run/Task/Goal终态、最终候选监工浏览器复核与导出清理。
 
@@ -46,4 +46,6 @@
 
 08:02 UTC：四条Verify均已被Kernel接纳并产生test.passed，Discovery自动运行；DRIVE产品浏览器90308.10ms通过。退休UUID及reader恢复归属分别提交0061a7a、01c205d。最终Discovery/Judge/Run/图闭合尚待完成，任务继续active。
 
-最终Kernel完成evt-e31b1c6d9a73，23/23声明闭合，四子任务与顶层需求全部done。固定候选a15b6b6f5247完成真实90秒比赛，Impl峰值2/Verify峰值3；顶层结构状态、重试Attempt及容器证据已修复。最后清理与实现提交后再归档done。
+最终Kernel完成evt-e31b1c6d9a73，23/23声明闭合，四子任务与顶层需求全部done。固定候选a15b6b6f5247完成真实90秒比赛，Impl峰值2/Verify峰值3；顶层结构状态、重试Attempt及容器证据已修复。实现已提交f952370，最终资源清理通过，按批次规范归档done。
+
+收尾验证：184项自动选择、228项Attempt闭包、51项sentinel、3项复杂Mock E2E、8项文档检查、Web typecheck及终态真实Docker Playwright通过；前序验证范围详见记录。最终573节点图下五个任务均done并有内核证据，23/23声明闭合。8002/8023、专用tmux及runtime已停止，临时根删除；交付保存在独立目录，dev/8001未改动，未merge/push。
