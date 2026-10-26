@@ -1,6 +1,7 @@
 # Delivery / Loop / Trace / Agents 加载与指标对账
 
-> 状态: active
+> 状态: done
+> 实现提交: `f56a92c4` — fix: accelerate monitoring projections without metric drift
 > 授权: 用户要求分析并优化上述四个页面，完成后使用 8001/8002 对比速度及 metrics 偏差。继续 wip/codex-20261026-inbox-workflow，撤销 52e4a325 的冻结交付标记。
 
 沿用 zf-backlog-batch-closeout：实现、验证、本地提交与任务归档，不 merge/push。docs/design 与 backlogs 保持 ignored。8001 不重启、不修改；8002 运行当前 worktree。事件、状态及 sidecar 权威来源不变。
