@@ -1,4 +1,4 @@
-> 状态: active
+> 状态: done — `d142c39c fix: restore original workspace navigation`
 
 # 恢复 ZaoFu 侧栏菜单排列
 
