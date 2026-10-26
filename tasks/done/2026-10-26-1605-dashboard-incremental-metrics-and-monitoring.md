@@ -1,6 +1,6 @@
 # Dashboard 指标增量与 Monitoring 读路径
 
-> 状态: active
+> 状态: done
 > 授权: 用户批准建议 1–4，并要求参考 Chorus/Multica/Gr8r 优化 Monitoring；继续当前 inbox-workflow worktree。来源: docs/design/186 第 19 节、188 第 8 节。
 
 ## 范围与边界
@@ -34,9 +34,9 @@
 
 8001 未修改；它的核心 metrics 仍返回历史 NoneType 错误，loshu Overview 的 Pulse 等待超时。因此数值正确性以 canonical 对账为准，不能把基线错误/缺失算成新版本减少指标。8002 返回全部 25 核心字段加 OA，保留 6 张观测概览卡与 15 个 Overview/Pulse 项。
 
-## 待归档
+## 实现与归档
 
-实现 commit/hash、最终浏览器数据和 clean-worktree handoff 在 closeout 时补充；docs/design/backlogs 继续 gitignored，不进入 commit。
+实现：`59bc8740 feat: incrementally project dashboard and monitoring metrics`。实现后已核对无残留 source/test 改动；本任务归档到 tasks/done。docs/design/backlogs 继续 gitignored，不进入 commit。完整冷构建预算留在 defer 候选，不在本任务完成范围内。
 
 
 ## 最终页面复测
