@@ -45,6 +45,8 @@ KERNEL_BOUND_WRITER_RESULT_FIELDS = (
 def bind_blocking_writer_result_identity(
     payload: Mapping[str, Any],
     child: Mapping[str, Any],
+    *,
+    pinned_identity: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a result whose request identity comes from the Kernel child."""
 
@@ -55,6 +57,8 @@ def bind_blocking_writer_result_identity(
         else {}
     )
     canonical = {**child_payload, **child}
+    if pinned_identity:
+        canonical.update(pinned_identity)
     protocol_mode = str(
         canonical.get("result_protocol_mode")
         or result.get("result_protocol_mode")
@@ -66,7 +70,12 @@ def bind_blocking_writer_result_identity(
     for key in KERNEL_BOUND_WRITER_RESULT_FIELDS:
         value = canonical.get(key)
         if value not in (None, ""):
-            result[key] = value
+            if pinned_identity and key in pinned_identity:
+                # Preserve explicit conflicts for the authority gate. A queue
+                # snapshot must never replace the immutable dispatch identity.
+                result.setdefault(key, value)
+            else:
+                result[key] = value
 
     raw_self_check = result.get("impl_self_check")
     if isinstance(raw_self_check, Mapping):
@@ -89,7 +98,10 @@ def bind_blocking_writer_result_identity(
         }
         for key, value in self_check_identity.items():
             if value not in (None, ""):
-                self_check[key] = value
+                if pinned_identity:
+                    self_check.setdefault(key, value)
+                else:
+                    self_check[key] = value
         result["impl_self_check"] = self_check
     return result
 

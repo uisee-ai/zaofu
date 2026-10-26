@@ -961,6 +961,18 @@ def _reader_stage_replan_owns_failed_batch(
         "plan_candidate_preflight",
     }:
         return True
+    started = next((
+        event for event in reversed(events)
+        if event.type == "fanout.started"
+        and str(_payload(event).get("fanout_id") or "") == fanout_id
+    ), None)
+    if started is not None and _payload(started).get("topology") == "fanout_reader":
+        trigger_id = str(_payload(started).get("trigger_event_id") or "")
+        trigger = next((event for event in events if event.id == trigger_id), None)
+        if trigger is not None and trigger.type == "flow.discovery.requested":
+            # Candidate/task-map refs are inputs to discovery, not authority
+            # to reopen implementation tasks after a reader failure.
+            return True
     if (
         str(payload.get("task_map_ref") or "").strip()
         or _string_list(payload.get("completed_task_ids"))

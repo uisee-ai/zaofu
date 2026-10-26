@@ -1065,7 +1065,7 @@ def _select_role(
     preferred_role: str = "",
     delegation: Mapping[str, Any] | None = None,
 ) -> str:
-    roles = sorted({str(item) for item in pool.get("role_instances", []) if str(item)})
+    roles = list(dict.fromkeys(str(item) for item in pool.get("role_instances", []) if str(item)))
     profiles = {
         str(item.get("role") or ""): set(
             str(value) for value in item.get("capabilities", []) if str(value)

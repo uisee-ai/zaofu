@@ -9,6 +9,7 @@ from typing import Any
 from zf.core.events.model import ZfEvent
 from zf.core.task.store import TaskStore
 from zf.runtime.manual_evidence_gate import pending_manual_evidence_gate_action
+from zf.runtime.rework_progress import has_later_task_progress as _has_later_task_progress
 from zf.runtime.rework_triage import is_plan_level_task_contract_blocker
 from zf.runtime.semantic_replan import (
     SEMANTIC_REPLAN_ACTION,
@@ -32,21 +33,6 @@ ORCHESTRATOR_TRIAGE_ACTIONS = frozenset({
     SEMANTIC_REPLAN_ACTION,
 })
 
-_PROGRESS_EVENTS = frozenset({
-    "task.dispatched",
-    "task.rework.requested",
-    "dev.build.done",
-    "impl.child.completed",
-    "review.approved",
-    "verify.passed",
-    "test.passed",
-    "judge.passed",
-    "task.done",
-    "orchestrator.replan_requested",
-    "task_map.ready",
-    "candidate.ready",
-    "run.goal.completed",
-})
 _REWORK_RECOMMENDATIONS = frozenset({
     "continue_rework",
     "precise_rework",
@@ -836,30 +822,6 @@ def _triage_request_id(capped: ZfEvent, task_id: str, fingerprint: str) -> str:
         payload.get("trigger_event_id") or capped.id
     )
     return _stable_id("ortriage", task_id, fingerprint, evidence_key)
-
-
-def _has_later_task_progress(events: list[ZfEvent], start: int, task_id: str) -> bool:
-    for event in events[start + 1:]:
-        payload = _payload(event)
-        if (
-            event.type in {
-                "task_map.ready",
-                "task_map.amended",
-                "product_delivery.task_map.adopted",
-            }
-            and task_id in set(_string_list(payload.get("supersedes_task_ids")))
-        ):
-            return True
-        event_task = str(
-            event.task_id
-            or payload.get("task_id")
-            or payload.get("pdd_id")
-            or payload.get("feature_id")
-            or ""
-        )
-        if event_task == task_id and event.type in _PROGRESS_EVENTS:
-            return True
-    return False
 
 
 def _action_completed(events: list[ZfEvent], checkpoint_id: str) -> bool:

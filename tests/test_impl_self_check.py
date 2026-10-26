@@ -203,7 +203,7 @@ def test_impl_self_check_round_trip_and_exact_target_reuse(tmp_path: Path) -> No
     ) == []
 
 
-def test_impl_self_check_requires_only_impl_owned_command_subset(
+def test_impl_self_check_requires_current_stage_command_subset(
     tmp_path: Path,
 ) -> None:
     contract, target = _snapshots(tmp_path)
@@ -286,21 +286,27 @@ def test_impl_self_check_defers_command_to_declared_producer_task(
     assert template["impl_self_check"]["command_receipts"] == []
 
 
+@pytest.mark.parametrize("owner", ["impl_self_check", "task_verify"])
 @pytest.mark.parametrize(
     "mutation",
-    ["missing_ac", "failed_ac", "failed_receipt", "bad_digest", "bad_target"],
+    ["missing_ac", "failed_ac", "missing_receipt", "failed_receipt", "bad_digest", "bad_target"],
 )
 def test_impl_self_check_rejects_incomplete_or_stale_evidence(
     tmp_path: Path,
     mutation: str,
+    owner: str,
 ) -> None:
     contract, target = _snapshots(tmp_path)
+    contract["verification_commands"][0]["owner"] = owner
     payload = _payload(contract, target)
     body = payload["impl_self_check"]
     if mutation == "missing_ac":
         body["acceptance_results"] = []
     elif mutation == "failed_ac":
         body["acceptance_results"][0]["status"] = "failed"
+    elif mutation == "missing_receipt":
+        body["command_receipts"] = []
+        body["acceptance_results"][0]["command_receipt_ids"] = []
     elif mutation == "failed_receipt":
         body["command_receipts"][0]["status"] = "failed"
         body["command_receipts"][0]["exit_code"] = 1

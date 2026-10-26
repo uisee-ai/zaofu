@@ -363,6 +363,11 @@ class RecoveryActionsMixin:
             None,
         )
         if existing_trigger is not None:
+            if payload.get("repair_target") != existing_trigger.payload.get("reader_repair_target"):
+                return self._recovery_failed(
+                    requested, action, requested_action,
+                    "stage generation already exists with a different repair target", 409,
+                )
             return self._recovery_ok(
                 requested,
                 existing_trigger,
@@ -394,6 +399,19 @@ class RecoveryActionsMixin:
                 f"new stage generation rejected: {note}",
                 409,
             )
+        if "repair_target" in payload:
+            from zf.runtime.reader_repair_target import bind_reader_repair_target
+
+            try:
+                bind_reader_repair_target(
+                    project_root=self.project_root, state_dir=self.state_dir,
+                    trigger=stage_trigger, repair=payload["repair_target"],
+                    source_event_id=requested.id,
+                )
+            except ValueError as exc:
+                return self._recovery_failed(
+                    requested, action, requested_action, str(exc), 409,
+                )
         goal_update = next(
             (
                 event for event in events

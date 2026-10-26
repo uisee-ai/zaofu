@@ -201,13 +201,15 @@ def verification_command_required_for_stage(
     producer_task_id = str(command.get("producer_task_id") or "").strip()
     if (
         producer_task_id
-        and stage_owner in {"impl_self_check", "task_verify", "candidate_verify"}
+        and stage_owner in {
+            "impl_self_check", "task_verify", "candidate_verify", "candidate_integration",
+        }
         and producer_task_id != str(task_id or "").strip()
     ):
         return False
-    if stage_owner == "impl_self_check":
-        return command_owner == "impl_self_check"
-    if stage_owner == "task_verify":
+    if stage_owner in {"impl_self_check", "task_verify", "candidate_integration"}:
+        # Ownership names the independent acceptance consumer, not permission
+        # to claim current local ACs without running their commands in Impl.
         return command_owner not in {"candidate_verify", "human"}
     if stage_owner == "candidate_verify":
         return command_owner != "human"

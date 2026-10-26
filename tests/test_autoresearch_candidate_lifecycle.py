@@ -320,3 +320,20 @@ def test_terminal_diagnosis_survives_unrelated_or_earlier_reopen() -> None:
 
     assert invocation is not None
     assert invocation.type == "autoresearch.invocation.requested"
+
+
+def test_failed_diagnosis_keeps_unverified_candidate(tmp_path):
+    state_dir = _state_dir(tmp_path)
+    log = EventLog(state_dir / "events.jsonl")
+    writer = EventWriter(log)
+    log.append(_request("ar-env", "case-env"))
+    log.append(_candidate_created(state_dir, request_id="ar-env", recovery_case_id="case-env"))
+    log.append(ZfEvent(type="autoresearch.loop.failed", payload={
+        "loop_request_id": "ar-env", "stdout_tail": "validate_failed", "returncode": 1,
+    }))
+    assert _consume_autoresearch_results(state_dir, log.read_all(), writer) == 2
+    assert not any(e.type == "autoresearch.bug_candidate.dismissed" for e in log.read_all())
+    failure = next(e for e in log.read_all() if e.type == "autoresearch.bug_candidate.diagnosis_failed")
+    assert failure.payload["candidate"]["status"] == "unverified"
+    assert failure.payload["repair_task_payload"] is None
+    assert _consume_autoresearch_results(state_dir, log.read_all(), writer) == 0

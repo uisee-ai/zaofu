@@ -133,6 +133,30 @@ Plan 正文及阶段门的负责人、受影响范围、最迟关闭时点、条
 Planner 不能自批；Critic 不因任务、用例或矩阵计数增加就判通过。计划通过只表明允许
 后续按合同执行，不证明产品已经完成、TDD 已实际运行或外部接入已验收。
 
+## 7. 把运行阶段放入依赖图
+
+读取本轮有效 Flow/Profile、池容量和触发事件，把每条证据的生产者、消费者、最早
+可用时点和任务解锁条件画入同一张图。仅检查 task 的 blocked_by 无环还不够。
+
+- 若阶段门承诺“独立 Task Verify 通过后才允许后继 Impl”，必须验证实际路由支持
+  逐任务 Verify 和已准入集成收据解锁。整批 Impl 后才触发 candidate.ready/Verify 的
+  stage-barrier 路由无法兑现该承诺。优先复用已支持的 task-pipeline 路由，或修订
+  计划中不成立的时序；不得把自检改名为独立验证。新路由进入新的批准合同/代际。
+- 候选装配检查只消费当时已有的输入；需要 frozen candidate、Verify briefing、
+  source manifest 或最终浏览器 context 的命令留给真实后续消费者。保留 mandatory
+  AC 及 command 身份，说明消费者和汇总入口，不能通过过滤命令降低最终覆盖。
+- task_verify owner 指独立验收责任；当前本片可执行命令仍需 Impl 自检收据。
+  candidate/human 未来责任保留待验；集成检查上下文不能冒充 Verify 或作者上下文。
+- “八并行”分别证明配置容量、可调度任务、在途派发、隔离工作区/端口/数据和实际
+  执行重叠。Impl 八槽与 Task Verify 八槽不证明共享数据库/8022 端口的 Candidate
+  Browser 八并行；后者先定义隔离和汇总合同，再请求运行。
+- 独立分片汇总必须固定同一 candidate commit、run、generation 和分片责任集合。
+  缺片、失败片、旧目标证据不得通过 Judge；Judge 消费已准入证据和目标声明，不用
+  汇总文字冒充重跑测试。逐任务已验证提交仍需对最终合并候选复验。
+
+Critic 给出至少一条完整的“Impl → Task Verify → 集成 → 后继”时序和一条失败/缺证据
+反例。记录配置来源和未验证限制，不能仅凭 stage 名称或池大小批准可执行性。
+
 ## 最小反例集
 
 | 候选写法 | 应如何判断 |

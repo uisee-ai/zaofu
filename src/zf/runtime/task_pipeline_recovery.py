@@ -221,6 +221,28 @@ def _completed_run_manager_recovery(
             for event in events
         ):
             return request
+    # A watchdog can fail after the pane was replaced but before the Run
+    # Manager can persist a normal requested/completed pair (for example,
+    # recovery briefing injection fails).  The lifecycle event is admissible
+    # only when it carries the complete operation identity and explicitly
+    # declares the Run Manager decision/effect owners.  This preserves the
+    # same-operation redrive contract while keeping unrelated respawn errors
+    # out of the Task Pipeline.
+    failures = [
+        event for event in events
+        if event.type == "worker.respawn.failed"
+        and str(event.task_id or _payload(event).get("task_id") or "") == task_id
+        and str(_payload(event).get("operation_id") or "") == operation_id
+        and str(_payload(event).get("attempt_id") or "") == attempt_id
+        and bool(_payload(event).get("recovery_retryable"))
+        and bool(_payload(event).get("recovery_context_bound"))
+        and str(_payload(event).get("recovery_decision_owner") or "")
+        == "run_manager"
+        and str(_payload(event).get("recovery_effect_owner") or "")
+        == "workflow_runtime_coordinator"
+    ]
+    if failures:
+        return failures[-1]
     return None
 
 

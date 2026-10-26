@@ -416,8 +416,8 @@ def register(subparsers) -> None:
     )
     loop.add_argument(
         "--seed-text", default="",
-        help="(bypass mode) user.message text emitted at iter start "
-             "(JSON-wrapped). Pass the task description here.",
+        help="Diagnostic context appended to the scenario seed; in bypass mode, "
+             "the complete user.message emitted at iteration start.",
     )
     loop.add_argument(
         "--expected-done", type=int, default=1,

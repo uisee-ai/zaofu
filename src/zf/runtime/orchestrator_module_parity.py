@@ -565,6 +565,7 @@ class ModuleParityBridgeMixin(CandidateSuccessCurrentnessMixin, GoalClosureBridg
                 source_event=event,
                 flow_kind=flow_kind or "flow",
                 payload={
+                    **workflow_identity,
                     "schema_version": "flow-goal-closed.v1",
                     "pdd_id": pdd_id,
                     "feature_id": feature_id,

@@ -6,6 +6,7 @@ import subprocess
 from dataclasses import asdict, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -3631,8 +3632,8 @@ def test_writer_briefing_uses_configured_zf_cli_cmd(
     assert "uv --project /repo run zf emit dev.build.done" in briefing
     assert "uv --project /repo run zf emit dev.blocked" in briefing
     assert f"--state-dir {state_dir}" in briefing
-    assert '"failure_class": "task_contract_unsatisfiable"' in briefing
-    assert '"recommended_action": "replan"' in briefing
+    assert '"failure_class": "unknown"' in briefing
+    assert '"recommended_action": "diagnose"' in briefing
     assert '"blocker_task_ids": []' in briefing
     assert '"required_paths": []' in briefing
 
@@ -4596,8 +4597,10 @@ def test_reader_operation_inherits_plan_package_identity_from_contract_snapshot(
     assert child.payload["plan_artifact_package_digest"] == "abc"
 
 
+@pytest.mark.parametrize("stale_queued_identity", [False, True])
 def test_selected_writer_call_settles_with_admitted_implementation_result(
     tmp_path: Path,
+    stale_queued_identity: bool,
 ) -> None:
     state_dir, log, _transport, orch = _state(tmp_path)
     _seed_tasks(state_dir)
@@ -4630,6 +4633,12 @@ def test_selected_writer_call_settles_with_admitted_implementation_result(
     task1 = _child(_manifest(state_dir, fanout_id), "TASK-1")
     commit1 = _commit(Path(task1["workdir"]), "a.txt", "TASK-1\n", "TASK-1")
     operation_payload = dict(task1)
+    if stale_queued_identity:
+        manifest = _manifest(state_dir, fanout_id)
+        queued = _child(manifest, "TASK-1")
+        queued.pop("contract_authority_revision", None)
+        queued.setdefault("payload", {})["contract_authority_revision"] = "authority-queued-old"
+        (state_dir / "fanouts" / fanout_id / "manifest.json").write_text(json.dumps(manifest))
     source_manifest = hydrate_sidecar_ref(
         state_dir,
         operation_payload["attempt_source_manifest"],
@@ -4675,6 +4684,7 @@ def test_selected_writer_call_settles_with_admitted_implementation_result(
                     "contract_snapshot_ref",
                     "contract_snapshot_digest",
                     "contract_revision",
+                    "contract_authority_revision",
                     "task_map_generation",
                     "base_commit",
                     "required_reads",

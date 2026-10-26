@@ -187,25 +187,23 @@ class CallResultAuthorityMixin:
             ))
             return issues
 
-        # Task Verify runs before candidate integration, and Global Rescan
-        # audits an immutable continuation target.  For both profiles the
-        # operation, TaskStore, and immutable snapshots above are authority;
-        # an older candidate.ready from this workflow must not supersede them.
-        output_profile_id = str(operation.get("output_profile_id") or "")
-        task_pipeline_verify = (
-            str(operation.get("operation_type") or "") == "task-stage"
-            and str(operation.get("task_pipeline_stage") or "") == "verify"
+        from zf.runtime.scoped_candidate_verify import (
+            candidate_bound_task_verify, verify_uses_independent_target,
         )
-        if (
-            output_profile_id in {"task-verify", "global-rescan"}
-            or task_pipeline_verify
-        ):
+
+        candidate_task_verify = candidate_bound_task_verify(operation)
+        if verify_uses_independent_target(operation):
             return issues
 
         current_candidate = self._latest_candidate_for_run(
             str(identity.get("workflow_run_id") or ""),
         )
         if current_candidate is None:
+            if candidate_task_verify:
+                issues.append(_currentness_issue(
+                    "control_result.target_commit", "stale_target_commit",
+                    "candidate-bound Task Verify requires current candidate.ready",
+                ))
             return issues
         candidate_payload = (
             current_candidate.payload
@@ -224,11 +222,12 @@ class CallResultAuthorityMixin:
             ))
         candidate_commit = str(candidate_payload.get("candidate_head_commit") or "")
         allowed_targets = {candidate_commit} if candidate_commit else set()
-        allowed_targets.update(candidate_task_source_commits(
-            self.event_log.read_all(),
-            workflow_run_id=str(identity.get("workflow_run_id") or ""),
-            candidate_head_commit=candidate_commit,
-        ).values())
+        if not candidate_task_verify:
+            allowed_targets.update(candidate_task_source_commits(
+                self.event_log.read_all(),
+                workflow_run_id=str(identity.get("workflow_run_id") or ""),
+                candidate_head_commit=candidate_commit,
+            ).values())
         if allowed_targets and target_commit not in allowed_targets:
             issues.append(_currentness_issue(
                 "control_result.target_commit",

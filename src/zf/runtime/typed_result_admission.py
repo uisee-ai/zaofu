@@ -39,13 +39,19 @@ def typed_result_admission_issues(
     result: Mapping[str, Any],
     semantic_submit: bool,
 ) -> list[dict[str, str]]:
-    """Return fail-closed issues for secure, contract-bound result submits.
+    """Check secure submits and contract-bound Verify on every transport.
 
     Legacy results without a Contract Snapshot remain compatible. A secure
     submit that carries either half of the ref/digest pair is malformed.
     """
 
-    if not semantic_submit:
+    contract_bound_verification = (
+        schema_version == "verification-result.v1"
+        and bool(result.get("contract_snapshot_ref") or result.get("contract_snapshot_digest"))
+    )
+    # Contract-bound Verify evidence has the same obligations on the legacy
+    # event transport as on the controlled result-submit transport.
+    if not semantic_submit and not contract_bound_verification:
         return []
     if schema_version == "implementation-result.v1":
         return _implementation_issues(Path(state_dir), result)

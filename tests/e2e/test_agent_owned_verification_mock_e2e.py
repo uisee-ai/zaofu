@@ -11,9 +11,15 @@ from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 from zf.core.config.loader import load_config
 from zf.core.config.render import renderable_config_to_primitive
-from zf.core.config.schema import WorkflowAffinityLaneConfig
+from zf.core.config.schema import (
+    FanoutAggregateConfig,
+    WorkflowAffinityLaneConfig,
+    WorkflowStageConfig,
+)
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -111,9 +117,11 @@ def _dispatch_payload(child: dict) -> dict:
     return payload
 
 
+@pytest.mark.parametrize("discovery_closeout", [False, True])
 def test_light_profile_mock_e2e_exact_verify(
     tmp_path: Path,
     monkeypatch,
+    discovery_closeout: bool,
 ) -> None:
     monkeypatch.setenv("ZF_CLI_CMD", "zf")
     workflow_run_id = "evt-light-entry-148"
@@ -154,6 +162,26 @@ def test_light_profile_mock_e2e_exact_verify(
     )
 
     config = load_config(config_path)
+    if discovery_closeout:
+        config.workflow.flow_metadata["post_verify_discovery"] = "product_completeness"
+        discovery_role = deepcopy(next(
+            role for role in config.roles if role.instance_id == "verify-lane-0"
+        ))
+        discovery_role.name = discovery_role.instance_id = "flow-discovery"
+        config.roles.append(discovery_role)
+        config.workflow.stages.append(WorkflowStageConfig(
+            id="prd-post-verify-discovery",
+            trigger="flow.discovery.requested",
+            topology="fanout_reader",
+            roles=["flow-discovery"],
+            aggregate=FanoutAggregateConfig(
+                mode="wait_for_all",
+                child_success_event="flow.discovery.child.completed",
+                child_failure_event="flow.discovery.child.failed",
+                success_event="flow.discovery.completed",
+                failure_event="flow.discovery.failed",
+            ),
+        ))
     state_dir = tmp_path / ".zf-148-mock"
     config.project.root = str(tmp_path)
     config.project.state_dir = str(state_dir)
@@ -234,6 +262,7 @@ def test_light_profile_mock_e2e_exact_verify(
             "verify-lane-0",
             "verify-lane-1",
             "judge-prd",
+                *(("flow-discovery",) if discovery_closeout else ()),
         )
     }
     actions = ControlledActionService(
@@ -641,7 +670,9 @@ def test_light_profile_mock_e2e_exact_verify(
                     "evidence_refs": [f"mock://verify/{task_id}/probe"],
                 } for command in verify_contract["verification_commands"]],
                 "rework_items": [],
-                "product_acceptance_report": product_report,
+                **({} if discovery_closeout else {
+                    "product_acceptance_report": product_report,
+                }),
                 "requirement_results": [{
                     "acceptance_id": item["acceptance_id"],
                     "status": "passed",
@@ -665,7 +696,7 @@ def test_light_profile_mock_e2e_exact_verify(
             if item.id == submitted_verify.canonical_event_id
         )
         assert verify_result.payload["semantic_result_profile"] == {
-            "profile_id": "candidate-verify",
+            "profile_id": "task-verify" if discovery_closeout else "candidate-verify",
             "revision": "1",
         }
         assert "verification_result" not in verify_result.payload
@@ -673,6 +704,52 @@ def test_light_profile_mock_e2e_exact_verify(
 
     test_passed = _latest_event(log, "test.passed")
     orchestrator.run_once(events=[test_passed])
+    if discovery_closeout:
+        # Both task results have been admitted before the global consumer runs.
+        assert len([
+            item for item in log.read_all() if item.type == "verify.child.completed"
+        ]) == 2
+        assert not any(item.type == "flow.goal.closed" for item in log.read_all())
+        discovery_dispatch = _latest_event(log, "fanout.child.dispatched")
+        assert discovery_dispatch.payload["stage_id"] == "prd-post-verify-discovery"
+        discovery_manifest = _manifest(
+            state_dir, discovery_dispatch.payload["fanout_id"],
+        )
+        discovery_payload = _dispatch_payload(discovery_manifest["children"][0])
+        discovery_sources = hydrate_sidecar_ref(
+            state_dir, discovery_payload["attempt_source_manifest"],
+        ).payload["sources"]
+        source_refs = {item["ref"] for item in discovery_sources}
+        for child_event in log.read_all():
+            if child_event.type == "verify.child.completed":
+                assert child_event.payload["control_result_ref"]["ref"] in source_refs
+                assert child_event.payload["call_result_envelope_ref"]["ref"] in source_refs
+        assert any(
+            item["source_id"] == "plan-port-product_acceptance_spec"
+            for item in discovery_sources
+        )
+        _record_required_reads(state_dir, discovery_payload)
+        submitted_discovery = submitter.submit(
+            operation_id=discovery_payload["operation_id"],
+            semantic_result={
+                "schema_version": "workflow-read-result.v1",
+                "status": "passed",
+                "recommendation": "approve",
+                "summary": "Full product evidence reconciled after both task readers.",
+                "evidence_refs": [str(product_evidence["ref"])],
+                "findings": [],
+                "open_p0_p1_gap_count": 0,
+                "product_acceptance_report": product_report,
+            },
+            role_instance="flow-discovery",
+            credential=submit_tokens["flow-discovery"],
+        )
+        discovery_result = next(
+            item for item in log.read_all()
+            if item.id == submitted_discovery.canonical_event_id
+        )
+        orchestrator.run_once(events=[discovery_result])
+        orchestrator.run_once(events=[_latest_event(log, "flow.discovery.completed")])
     goal_closed = _latest_event(log, "flow.goal.closed")
     orchestrator.run_once(events=[goal_closed])
     judge_dispatch = next(
@@ -774,10 +851,14 @@ def test_light_profile_mock_e2e_exact_verify(
     product_admissions = [
         item for item in events
         if item.type == "workflow.call.result.admitted"
-        and item.payload.get("control_result_schema") == "verification-result.v1"
+        and item.payload.get("control_result_schema") == (
+            "workflow-read-result.v1" if discovery_closeout else "verification-result.v1"
+        )
         and item.payload.get("product_acceptance_report_ref")
     ]
-    assert len(product_admissions) == 2
+    assert len({item.payload["operation_id"] for item in product_admissions}) == (
+        1 if discovery_closeout else 2
+    )
     assert all(
         item.payload["provider_qualification_status"] == "passed"
         for item in product_admissions
@@ -814,6 +895,8 @@ def test_light_profile_mock_e2e_exact_verify(
     assert judge_metrics["briefing_bytes"] == briefing_bytes
     assert judge_metrics["soft_budget_bytes"] == 10 * 1024
     assert judge_metrics["soft_budget_exceeded"] is (briefing_bytes > 10 * 1024)
+    # Keep the hard envelope bounded while the 10 KiB value remains advisory.
+    assert briefing_bytes <= 12 * 1024
     self_check_event = _latest_event(log, "impl.self_check.completed")
     assert "impl_self_check" not in self_check_event.payload
     assert (state_dir / self_check_event.payload["impl_self_check_ref"]).is_file()

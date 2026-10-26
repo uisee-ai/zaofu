@@ -379,8 +379,12 @@ def _running_workflow_read_operation(
     return runtime, prepared, service, token_path.read_text().strip()
 
 
-def _verification_event(*, operation_id: str, request_hash: str) -> ZfEvent:
-    return ZfEvent(
+def _verification_event(
+    state_dir: Path, *, operation_id: str, request_hash: str,
+) -> ZfEvent:
+    from tests.test_call_result_admission import _persisted_verification_payload
+
+    event = ZfEvent(
         type="verify.child.completed",
         actor="verify-1",
         task_id="T-VERIFY",
@@ -392,40 +396,14 @@ def _verification_event(*, operation_id: str, request_hash: str) -> ZfEvent:
             "attempt_id": "attempt-verify",
             "dispatch_id": "dispatch-verify",
             "lease_id": "lease-verify",
-            "verification_result": {
-                "schema_version": "verification-result.v1",
-                "execution_status": "completed",
-                "verdict": "passed",
-                "failure_class": "none",
-                "workflow_run_id": "run-verify",
-                "task_id": "T-VERIFY",
-                "contract_revision": "contract-1",
-                "task_map_generation": "generation-1",
-                "base_commit": "base-1",
-                "task_ref": "artifacts/task-ref.json",
-                "contract_snapshot_ref": "artifacts/contract.json",
-                "contract_snapshot_digest": "a" * 64,
-                "target_snapshot_ref": "artifacts/target.json",
-                "target_snapshot_digest": "b" * 64,
-                "target_commit": "target-1",
-                "verification_owner": "task_verify",
-                "verification_tier": "task_non_smoke",
-                "summary": "verified",
-                "evidence_refs": ["receipt:verify"],
-                "findings": [],
-                "reproduction_commands": ["pytest"],
-                "requirement_results": [{
-                    "acceptance_id": "AC-1",
-                    "status": "passed",
-                    "verification_owner": "task_verify",
-                    "verification_tier": "task_non_smoke",
-                    "evidence_refs": ["receipt:verify"],
-                    "findings": [],
-                    "reproduction_commands": ["pytest"],
-                }],
-            },
         },
     )
+    event.payload.update(_persisted_verification_payload(
+        state_dir, "passed", identity={
+            "workflow_run_id": "run-verify", "task_id": "T-VERIFY",
+        },
+    ))
+    return event
 
 
 def _pin_verification_operation(
@@ -439,6 +417,9 @@ def _pin_verification_operation(
         event_log=runtime.event_log,
         event_writer=runtime.event_writer,
     )
+    result = _verification_event(
+        runtime.state_dir, operation_id=operation_id, request_hash="",
+    ).payload["verification_result"]
     ensured = operations.ensure_operation(
         workflow_run_id="run-verify",
         operation_id=operation_id,
@@ -447,19 +428,12 @@ def _pin_verification_operation(
             "semantic_result_submit_mode": semantic_submit_mode,
             "output_profile_id": "task-verify",
             "output_profile_revision": "1",
-            "result_identity": {
-                "workflow_run_id": "run-verify",
-                "task_id": "T-VERIFY",
-                "contract_revision": "contract-1",
-                "task_map_generation": "generation-1",
-                "base_commit": "base-1",
-                "task_ref": "artifacts/task-ref.json",
-                "contract_snapshot_ref": "artifacts/contract.json",
-                "contract_snapshot_digest": "a" * 64,
-                "target_snapshot_ref": "artifacts/target.json",
-                "target_snapshot_digest": "b" * 64,
-                "target_commit": "target-1",
-            },
+            "result_identity": {key: result[key] for key in (
+                "workflow_run_id", "task_id", "contract_revision",
+                "task_map_generation", "base_commit", "task_ref",
+                "contract_snapshot_ref", "contract_snapshot_digest",
+                "target_snapshot_ref", "target_snapshot_digest", "target_commit",
+            )},
         },
         task_id="T-VERIFY",
         role_instance="verify-1",
@@ -1239,6 +1213,7 @@ def test_verify_legacy_terminal_obeys_pinned_semantic_submit_mode(
     blocked = admit_runtime_call_result(
         runtime,
         _verification_event(
+            runtime.state_dir,
             operation_id="op-verify-blocking",
             request_hash=blocking_hash,
         ),
@@ -1259,6 +1234,7 @@ def test_verify_legacy_terminal_obeys_pinned_semantic_submit_mode(
     compatible = admit_runtime_call_result(
         runtime,
         _verification_event(
+            runtime.state_dir,
             operation_id="op-verify-off",
             request_hash=off_hash,
         ),

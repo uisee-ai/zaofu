@@ -852,6 +852,7 @@ def _normalize_implementation(
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     payload = event.payload if isinstance(event.payload, dict) else {}
     raw = payload.get("implementation_result")
+    self_check = payload.get("self_check", payload.get("impl_self_check", {}))
     result = dict(raw) if isinstance(raw, Mapping) else {
         "schema_version": IMPLEMENTATION_RESULT_SCHEMA,
         "workflow_run_id": _text(payload, "workflow_run_id", "trace_id"),
@@ -865,13 +866,7 @@ def _normalize_implementation(
         ),
         "changed_files": _strings(payload.get("changed_files") or payload.get("files_touched")),
         "evidence_refs": _strings(payload.get("evidence_refs") or payload.get("artifact_refs")),
-        "self_check": (
-            payload.get("self_check")
-            if isinstance(payload.get("self_check"), Mapping)
-            else payload.get("impl_self_check")
-            if isinstance(payload.get("impl_self_check"), Mapping)
-            else {}
-        ),
+        "self_check": dict(self_check) if isinstance(self_check, Mapping) else {},
         "known_gaps": _strings(payload.get("known_gaps") or payload.get("residual_risks")),
         "summary": str(payload.get("summary") or ""),
         "source_event_id": event.id,
@@ -885,12 +880,20 @@ def _normalize_implementation(
     )
     result.setdefault("target_commit", _text(payload, "target_commit", "source_commit"))
     result.setdefault("source_event_id", event.id)
+    for key in (
+        "contract_authority_revision", "execution_owner", "workflow_request_id",
+        "workflow_request_revision", "origin_binding_digest", "contract_revision",
+        "task_map_generation", "contract_snapshot_ref", "contract_snapshot_digest",
+        "impl_self_check_ref", "impl_self_check_digest", "failure_class",
+    ):
+        if payload.get(key) not in (None, ""):
+            result.setdefault(key, payload[key])
     if not str(result.get("verdict") or "").strip():
-        self_check = result.get("self_check")
-        if not isinstance(self_check, Mapping):
-            self_check = payload.get("impl_self_check")
-        if isinstance(self_check, Mapping):
-            self_check_verdict = str(self_check.get("verdict") or "").strip()
+        inferred_self_check = result.get("self_check")
+        if not isinstance(inferred_self_check, Mapping):
+            inferred_self_check = payload.get("impl_self_check")
+        if isinstance(inferred_self_check, Mapping):
+            self_check_verdict = str(inferred_self_check.get("verdict") or "").strip()
             if self_check_verdict:
                 result["verdict"] = self_check_verdict
         if not str(result.get("verdict") or "").strip():
@@ -904,6 +907,14 @@ def _normalize_implementation(
         for field in ("task_id", "target_commit")
         if not str(result.get(field) or "").strip()
     ]
+    if not isinstance(self_check, Mapping):
+        issues.append({"field": "control_result.self_check", "code": "invalid_self_check"})
+    if (
+        isinstance(payload.get("self_check"), Mapping)
+        and isinstance(payload.get("impl_self_check"), Mapping)
+        and payload["self_check"] != payload["impl_self_check"]
+    ):
+        issues.append({"field": "control_result.self_check", "code": "conflicting_self_check"})
     return result, issues
 
 
