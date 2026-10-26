@@ -9,10 +9,13 @@ from pathlib import Path
 from typing import Any
 
 from zf.core.events import ZfEvent
-from zf.core.state.locks import locked_path
+from zf.runtime.channel_prd_evaluation_recovery import (
+    TERMINAL_EVALUATION_EVENTS, evaluation_execution_lock, evaluation_failure,
+    fail_interrupted_evaluation,
+)
 from zf.runtime.channel_attachments import read_channel_attachment
 from zf.runtime.channel_projection import project_channel
-from zf.runtime.channel_prd_quality import validate_prd_quality_contract
+from zf.runtime.channel_prd_quality import required_prd_quality_contract, validate_prd_quality_contract
 from zf.runtime.channel_sidecar import hydrate_channel_message_text
 from zf.runtime.output_evaluation import EvaluationInput, evaluate_output
 from zf.runtime.sidecar_refs import hydrate_sidecar_ref
@@ -85,8 +88,15 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
     ).payload
     body = document.get("body") if isinstance(document, dict) else {}
     synthesis = body.get("synthesis") if isinstance(body, dict) else {}
+    events = host.event_log.read_all()
+    synthesis_request_id = next((str(row.payload.get("request_id") or "") for row in events
+                                 if row.id == prd.get("event_id")
+                                 and row.type == "channel.synthesis.proposed"), "")
     quality_error = validate_prd_quality_contract(
-        synthesis if isinstance(synthesis, dict) else {}
+        synthesis if isinstance(synthesis, dict) else {},
+        required_version=required_prd_quality_contract(
+            events, channel_id=channel_id, thread_id=thread_id, request_id=synthesis_request_id,
+        ),
     )
     if quality_error:
         raise ValueError(f"canonical PRD quality contract invalid: {quality_error}")
@@ -96,7 +106,6 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
         "revision": payload.get("prd_revision"),
     }.items()):
         raise ValueError("canonical PRD document identity is inconsistent")
-    events = host.event_log.read_all()
     version_events = [row for row in events if row.type in {
         "channel.consensus.proposed", "channel.consensus.signed",
         "channel.consensus.blocked", "channel.consensus.reached",
@@ -136,10 +145,29 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
                  and isinstance(row.get("refs"), dict)
                  and row["refs"].get("evaluation_source_document") is True))
     ]
-    if not source_messages or not requirement_id:
-        raise ValueError("original requirement source is unavailable")
     source_parts = []
     source_identity = []
+    # File-to-PRD intake need not create a discussion. Trust only the snapshot
+    # bound to this canonical version's durable synthesis request, not author refs.
+    selected = next((row.payload.get("prd_source_file") for row in events
+                     if synthesis_request_id and row.type == "channel.synthesis.requested"
+                     and row.payload.get("request_id") == synthesis_request_id
+                     and row.payload.get("channel_id") == channel_id
+                     and str(row.payload.get("thread_id") or "main") == thread_id), None)
+    if selected is not None:
+        if (not isinstance(selected, dict) or selected.get("kind") != "channel_prd_source"
+                or not selected.get("sha256")
+                or selected.get("access_scope") != {"channel_id": channel_id, "thread_id": thread_id}):
+            raise ValueError("original requirement file snapshot scope is inconsistent")
+        content = hydrate_sidecar_ref(Path(host.state_dir), selected,
+                                      purpose="independent-prd-source-evaluation",
+                                      actor="output-evaluator").payload
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("original requirement file snapshot is empty")
+        source_parts.append(f"[selected source file {selected['ref']}; sha256 {selected['sha256']}]\n{content}")
+        source_identity.append({"file_ref": selected["ref"], "digest": selected["sha256"]})
+    elif not source_messages or not requirement_id:
+        raise ValueError("original requirement source is unavailable")
     for message in source_messages:
         message_id = str(message["message_id"])
         content = hydrate_channel_message_text(Path(host.state_dir), message, strict=True)
@@ -169,7 +197,7 @@ def _request_item(host: Any, event: ZfEvent) -> EvaluationInput:
                                     "attachment_ref": attachment["uri"],
                                     "attachment_digest": body["hash"]})
     source = "\n\n".join(source_parts)
-    source_ids = {row["message_id"] for row in source_identity}
+    source_ids = {row["message_id"] for row in source_identity if "message_id" in row}
     source_ref = "channel-source-bundle:sha256:" + hashlib.sha256(
         json.dumps(source_identity, sort_keys=True).encode("utf-8")
     ).hexdigest()
@@ -223,18 +251,27 @@ def react_channel_prd_evaluation_requested(host: Any, event: ZfEvent) -> None:
            for row in host.event_log.read_all()):
         _publish_feedback(host, event)
         return
-    lock = Path(host.state_dir) / "locks" / f"channel-prd-evaluation-{request_id}.lock"
-    with locked_path(lock):
+    fail_interrupted_evaluation(host.state_dir, host.event_writer, event)
+    lock = evaluation_execution_lock(host.state_dir, request_id)
+    try:
+        lock.__enter__()
+    except TimeoutError:
+        return
+    try:
         if any((row.payload or {}).get("request_id") == request_id and row.type in {
             "channel.prd_evaluation.dispatched", "output.evaluation.started",
             "output.evaluation.completed", "output.evaluation.failed",
         } for row in host.event_log.read_all()):
+            lock.__exit__(None, None, None)
             return
         dispatched = host.event_writer.emit(
             "channel.prd_evaluation.dispatched", actor="orchestrator-reactor",
             causation_id=event.id, correlation_id=event.correlation_id,
             payload={"request_id": request_id, "channel_id": payload.get("channel_id"),
                      "thread_id": payload.get("thread_id"), "role": payload.get("role")})
+    except BaseException:
+        lock.__exit__(None, None, None)
+        raise
 
     def run() -> None:
         try:
@@ -243,22 +280,31 @@ def react_channel_prd_evaluation_requested(host: Any, event: ZfEvent) -> None:
                             item=item, request_id=request_id,
                             causation_id=dispatched.id)
         except Exception as exc:
-            host.event_writer.emit(
-                "output.evaluation.failed", actor="output-evaluator",
-                causation_id=dispatched.id, correlation_id=event.correlation_id,
-                payload={"request_id": request_id, "verdict": "INDETERMINATE",
-                         "reason": str(exc)[:500], "manifest": {
-                             "context": {"channel_id": payload.get("channel_id"),
-                                         "thread_id": payload.get("thread_id")},
-                             "target": {"ref": payload.get("artifact_ref"),
-                                        "revision": payload.get("prd_revision")},
-                             "role": payload.get("role")}})
+            evaluation_failure(host.event_writer, event, reason=str(exc), causation_id=dispatched.id)
             return
+        finally:
+            lock.__exit__(None, None, None)
         # Feedback failure must never overwrite an already completed verdict.
         _publish_feedback(host, event)
 
-    threading.Thread(target=run, name=f"zf-prd-evaluation-{request_id[:8]}",
-                     daemon=True).start()
+    try:
+        threading.Thread(target=run, name=f"zf-prd-evaluation-{request_id[:8]}",
+                         daemon=True).start()
+    except Exception as exc:
+        try:
+            evaluation_failure(host.event_writer, event, reason=str(exc), causation_id=dispatched.id)
+        finally:
+            lock.__exit__(None, None, None)
+
+
+def reconcile_channel_prd_evaluations(host: Any) -> None:
+    events = host.event_log.read_all()
+    terminal = {row.payload.get("request_id") for row in events
+                if row.type in TERMINAL_EVALUATION_EVENTS}
+    for event in events:
+        if (event.type == "channel.prd_evaluation.requested"
+                and event.payload.get("request_id") not in terminal):
+            react_channel_prd_evaluation_requested(host, event)
 
 
 def _publish_feedback(host: Any, event: ZfEvent) -> None:

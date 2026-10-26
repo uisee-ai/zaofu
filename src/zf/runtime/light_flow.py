@@ -266,6 +266,28 @@ def maybe_synthesize_light_task_map(
         flow_kind=flow_kind,
         ready_plan_ports=ready_plan_ports,
     )
+    from zf.runtime.light_flow_contract import inherit_light_task_contract
+
+    try:
+        inherit_light_task_contract(
+            task_map, task_store=task_store,
+            task_id=str(event.task_id or payload.get("task_id") or ""),
+            source_refs=workflow_refs.get("source_refs") or {},
+        )
+    except ValueError as exc:
+        prior = next((item for item in events if item.type == "run.goal.blocked"
+                      and item.causation_id == event.id
+                      and item.payload.get("failure_class") == "light_task_contract_invalid"), None)
+        if prior is not None:
+            return prior
+        return event_writer.append(ZfEvent(
+            type="run.goal.blocked", actor="zf-cli", origin="kernel",
+            task_id=event.task_id or payload.get("task_id") or None,
+            payload={"run_id": workflow_run_id, "workflow_run_id": workflow_run_id,
+                     "status": "blocked", "failure_class": "light_task_contract_invalid",
+                     "reason": str(exc)},
+            causation_id=event.id, correlation_id=workflow_run_id,
+        ))
     # light goal 终态闭环(2026-07-08):最简配置只开 goal.enabled、无人发
     # run.goal.started → goal 投影永远是 loop.started 兜底(run_id 空),
     # run_goal_completion_event 的 run_id 守卫正确拒发完成事件 → light 没有

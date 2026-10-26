@@ -32,7 +32,6 @@ def build_review_packet(
 
     artifact_map = {str(item.get("name") or ""): item for item in artifacts}
     json_values: dict[str, dict[str, Any]] = {}
-    text_values: dict[str, str] = {}
     for name, item in artifact_map.items():
         try:
             body = read_preview_artifact(
@@ -41,7 +40,6 @@ def build_review_packet(
             )
         except (OSError, ValueError, UnicodeError):
             continue
-        text_values[name] = body
         if name.endswith((".json", "_matrix", "_ledger", "_spec", "_index")) or name in {
             "task_map", "source_index", "coverage_ledger", "acceptance_matrix",
             "test_matrix", "product_acceptance_spec", "real_e2e_matrix",
@@ -53,24 +51,6 @@ def build_review_packet(
             if isinstance(value, dict):
                 json_values[name] = value
 
-    requirement_text = "\n".join(
-        body for name, body in text_values.items()
-        if name.startswith("requirement_")
-    )
-    id_patterns = {
-        "requirements": r"\b(?:R\d{3}|T14-\d{3}|AT\d{2}|T12-\d{2})\b",
-        "metrics": r"\bM14-\d{2}\b",
-        "ui_states": r"\bU14-\d{2}\b",
-        "configs": r"\b(?:import|clean|align|scene|sample|annotate|train|sim)_config\.ya?ml\b",
-    }
-    source_ids = {
-        key: sorted(set(re.findall(pattern, requirement_text, flags=re.IGNORECASE)))
-        for key, pattern in id_patterns.items()
-    }
-    plan_ids = {
-        key: sorted(set(re.findall(pattern, markdown, flags=re.IGNORECASE)))
-        for key, pattern in id_patterns.items()
-    }
     refs_by_name = {
         name: [str(item.get("ref") or "")]
         for name, item in artifact_map.items()
@@ -78,6 +58,10 @@ def build_review_packet(
     }
     trace_rows = _json_list(json_values.get("source_index"), "traceability")
     coverage_rows = _json_list(json_values.get("coverage_ledger"), "entries")
+    # Identifiers are authored by the Planner and bound through existing ports.
+    # Their spelling and the applicable requirement categories are project-owned.
+    source_ids = {"requirements": _trace_ids(trace_rows)}
+    plan_ids = {"requirements": _trace_ids(coverage_rows)}
     acceptance_rows = _json_list(json_values.get("acceptance_matrix"), "acceptance")
     test_rows = _json_list(json_values.get("test_matrix"), "commands")
     journeys = _json_list(json_values.get("product_acceptance_spec"), "user_journeys")
@@ -170,9 +154,7 @@ def build_review_packet(
             refs=[refs_by_name.get("task_map", [""])[0]],
             notes=["包含 owner、wave、依赖、路径、验收和验证命令。" if task_map_summary.get("ok") else str(task_map_summary.get("reason") or "task_map 缺失。")],
         ),
-        _coverage_section("metrics", "指标 M14", source_ids["metrics"], plan_ids["metrics"], artifact_map, refs_by_name),
-        _coverage_section("ui_states", "UI 状态 U14", source_ids["ui_states"], plan_ids["ui_states"], artifact_map, refs_by_name),
-        _coverage_section("config_contracts", "配置与合同", source_ids["configs"], plan_ids["configs"], artifact_map, refs_by_name),
+        _coverage_section("source_coverage", "来源条款映射", source_ids["requirements"], plan_ids["requirements"], artifact_map, refs_by_name),
         section(
             "decisions", "Owner Decisions", "ready" if decision_items else "partial",
             counts={"pending": len(decision_items)},
@@ -212,9 +194,9 @@ def _coverage_section(
 ) -> dict[str, Any]:
     covered = sorted(set(source_ids) & set(plan_ids))
     missing = sorted(set(source_ids) - set(plan_ids))
-    port_names = [name for name in artifact_map if any(token in name.lower() for token in (section_id, "metric", "ui", "config", "contract"))]
+    port_names = [name for name in ("source_index", "coverage_ledger") if name in artifact_map]
     status = "ready" if source_ids and not missing else ("partial" if covered else "missing")
-    notes = [f"source {len(source_ids)}，Plan 显式覆盖 {len(covered)}。"]
+    notes = [f"来源条款 {len(source_ids)}，覆盖账本包含 {len(covered)}；映射存在不代表验收通过。"]
     if missing:
         notes.append("未覆盖: " + ", ".join(missing[:40]))
     return {
@@ -226,6 +208,13 @@ def _coverage_section(
         "refs": [ref for name in port_names for ref in refs_by_name.get(name, []) if ref],
         "notes": notes,
     }
+
+
+def _trace_ids(rows: list[dict[str, Any]]) -> list[str]:
+    return sorted({
+        str(row.get("trace_id") or row.get("source_id") or row.get("id") or "").strip()
+        for row in rows
+    } - {""})
 
 
 def _json_list(value: dict[str, Any] | None, key: str) -> list[dict[str, Any]]:
@@ -297,7 +286,7 @@ def render_human_review_dossier(
     ]
     objective = str(requirement.get("objective") or "").strip()
     if not objective:
-        objective = "基于两份原生 v1.4 权威 Markdown 形成可人工审批的 PRD、架构边界、测试合同和任务拆分。"
+        objective = "绑定需求未提供结构化目标，请核对来源正文。"
 
     lines = [
         "# 人工审批阅读摘要",
@@ -306,11 +295,11 @@ def render_human_review_dossier(
         "",
         "## 1. 本次要审批什么",
         "",
-        f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or 'prd-lanes-impl'}`。",
+        f"- **计划状态**：`{status}`；Plan ID：`{payload.get('plan_id') or ''}`；阶段：`{payload.get('stage_id') or '未声明'}`。",
         f"- **目标**：{objective}",
         f"- **权威输入**：{', '.join(f'`{ref}`' for ref in authority_refs) or '`未绑定`'}。",
         f"- **待决事项**：`{len(decision_items)}` 项；任何 blocking decision 未关闭前不得启动 impl/verify。",
-        "- **审批边界**：只批准后续实现/验证计划及其责任边界；不批准未决 CR/Q14 方案，不批准真实媒体、模型、仿真或 provider 结果。",
+        "- **审批边界**：以当前审批请求为准；未决方案及尚未取得的验证结果仍需独立确认。",
         "",
         "## 1.1 审核包状态",
         "",
@@ -343,7 +332,7 @@ def render_human_review_dossier(
     else:
         lines.append("- 当前 plan port 未提供结构化 user journey；请以 canonical Plan 的产品验收章节为准。")
     lines.extend(["", "## 3. SDD：系统边界和集成合同", ""])
-    lines.append("每个任务拥有自己的写入边界；T10 只负责总装配和真实入口，不替代上游任务实现。")
+    lines.append("各任务的写入边界和集成责任以下方绑定合同为准。")
     lines.append("")
     lines.append("| Slice | Owner | Depends on | Architecture responsibility |")
     lines.append("|---|---|---|---|")
@@ -409,15 +398,15 @@ def render_human_review_dossier(
                 impact = decision.get("blocking_impact") or "影响后续实现/验证边界"
                 lines.append(f"- **{decision.get('decision_id') or '-'}**：{decision.get('question') or '-'}（`PENDING_APPROVAL`；{impact}）")
     else:
-        lines.append("- 当前没有额外 owner decision；请仍检查 canonical Plan 中的 CR/Q14 阻断项。")
+        lines.append("- 未绑定结构化待决事项；请核对 canonical Plan，不代表所有问题均已关闭。")
     lines.extend([
         "",
         "## 6. Approve 前检查清单",
         "",
         "- [ ] 产品目标、用户旅程和非目标符合原生 Markdown。",
-        "- [ ] SDD 的任务边界、依赖、唯一写入 owner 和 T10 集成责任可接受。",
+        "- [ ] SDD 的任务边界、依赖、唯一写入 owner 和集成责任可接受。",
         "- [ ] TDD 命令、验收 ID、证据路径和 NOT_RUN/BLOCKED 规则可执行。",
-        "- [ ] CR/Q14、真实数据、模型、仿真、通知和外部 runner 的未决状态已知晓。",
+        "- [ ] 绑定的待决事项、外部依赖及其对实现和验收的影响已确认。",
         "- [ ] 通过 Chat 提出的修改已反映在新的 Plan candidate 后，再执行 approve。",
         "",
         "---",

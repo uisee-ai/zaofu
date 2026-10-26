@@ -336,7 +336,7 @@ def build_flow_intent(
     manifest = dict(manifest or {})
     request_id = str(manifest.get("request_id") or _request_id_from_path(intake_path))
     explicit = str(explicit_kind or "auto").strip().lower()
-    kind = _normalize_request_kind(explicit) if explicit != "auto" else _infer_request_kind(text)
+    kind = _normalize_request_kind(explicit) if explicit != "auto" else "auto"
     if explicit == "auto" and manifest.get("kind") in {
         "issue",
         "prd",
@@ -344,7 +344,18 @@ def build_flow_intent(
         "workflow",
     }:
         kind = str(manifest["kind"])
-    confidence = "high" if explicit_kind != "auto" or manifest.get("kind") else "medium"
+    current: dict[str, Any] = {}
+    if manifest_path is not None and explicit != "auto":
+        from zf.runtime.workflow_requests import load_workflow_request, revise_workflow_request
+
+        config_path = _project_root_from_intake_path(intake_path) / "zf.yaml"
+        if config_path.is_file():
+            config = load_config(config_path)
+            state_dir = _state_dir_for_config(config_path, config)
+            current = load_workflow_request(state_dir, request_id)
+            if current.get("kind") != kind and current.get("status") in {"submitted", "running"}:
+                raise ValueError("active Workflow Request is immutable; use controlled recovery/replan")
+    confidence = "pending" if kind == "auto" else "high"
     missing = missing_fields_for_kind(
         kind,
         objective=str(manifest.get("objective") or _compact_text(text)),
@@ -358,11 +369,12 @@ def build_flow_intent(
     workflow_dir.mkdir(parents=True, exist_ok=True)
     intent_path = (output or workflow_dir / "workflow-intent.json").expanduser()
     intent_path.parent.mkdir(parents=True, exist_ok=True)
-    next_action = "clarify" if missing else "draft"
+    next_action = "clarify" if missing or kind == "auto" else "draft"
     result = {
         "schema_version": "workflow.intent.v1",
         "request_id": request_id,
         "kind": kind,
+        "candidate_kind": _infer_request_kind(text),
         "confidence": confidence,
         "reason": _classification_reason(kind, explicit_kind=explicit_kind),
         "missing_required_fields": missing,
@@ -385,6 +397,13 @@ def build_flow_intent(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
+        if current and current.get("kind") != kind:
+            revise_workflow_request(
+                state_dir, manifest_path, actor="zf-cli", kind=kind,
+                expected_revision=current["revision"],
+                expected_requirement_digest=current["requirement_spec_digest"],
+                writer=EventWriter(event_log_from_project(state_dir, config=config)),
+            )
     return result
 
 
@@ -897,6 +916,8 @@ def run_preflight(args: argparse.Namespace) -> int:
 
 
 def _classification_reason(kind: str, *, explicit_kind: str) -> str:
+    if kind == "auto":
+        return "semantic selection required; choose an explicit kind or use workflow synthesis"
     if explicit_kind != "auto":
         return f"explicit kind {kind!r} supplied by operator"
     return "classified from intake text and manifest hints"

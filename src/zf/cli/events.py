@@ -63,7 +63,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     events_parser = subparsers.add_parser("events", help="Query events")
     events_sub = events_parser.add_subparsers(dest="events_command")
     events_parser.add_argument("--type", type=str, default=None, help="Filter by type")
+    events_parser.add_argument("--actor", default=None, help="Filter by exact actor")
+    events_parser.add_argument("--task", default=None, help="Filter by exact task ID")
+    events_parser.add_argument("--id", dest="event_id", default=None, help="Filter by exact event ID")
     events_parser.add_argument("--last", type=int, default=None, help="Show last N events")
+    events_parser.add_argument(
+        "--index", action="store_true",
+        help="Show bounded discovery metadata; read --id without --index for full evidence",
+    )
     events_parser.add_argument("--json", action="store_true", help="Wrap output in zf.cli.result.v1")
     events_parser.add_argument(
         "--state-dir",
@@ -417,22 +424,64 @@ def run_events(args: argparse.Namespace) -> int:
     except EventSigningConfigError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
-    events = event_log.query(type=args.type, last=args.last)
+    events = event_log.query(
+        type=args.type, actor=getattr(args, "actor", None), task_id=getattr(args, "task", None),
+    )
+    event_id = getattr(args, "event_id", None)
+    if event_id is not None:
+        events = [event for event in events if event.id == event_id]
+    if args.last is not None:
+        events = events[-args.last:]
+    event_log.close()
 
+    indexed = bool(getattr(args, "index", False))
+    rows = [event_index_entry(event) if indexed else asdict(event) for event in events]
     if getattr(args, "json", False):
         from zf.cli.output import print_result
 
         print_result(
             command="events",
-            data={"events": [asdict(event) for event in events]},
+            data={"events": rows, **({"content_mode": "index"} if indexed else {})},
             context=context,
         )
+        return 0
+    if indexed:
+        for row in rows:
+            print(json.dumps(row, ensure_ascii=False))
         return 0
     for ev in events:
         payload_str = f" {json.dumps(ev.payload)}" if ev.payload else ""
         print(f"[{ev.ts}] {ev.type}{payload_str}")
 
     return 0
+
+
+def event_index_entry(event: ZfEvent) -> dict[str, Any]:
+    """Locate evidence without recursively printing tool inputs and outputs."""
+    row = asdict(event)
+    payload = event.payload or {}
+    row["payload"] = {
+        key: value for key in (
+            "workflow_run_id", "run_id", "operation_id", "dispatch_id", "stage_id",
+            "candidate_head_commit", "status", "exit_code", "tool_name", "tool_call_id",
+        ) if isinstance(value := payload.get(key), (str, int, float, bool))
+        and (not isinstance(value, str) or len(value) <= 256)
+    }
+    refs = payload.get("refs")
+    raw = refs.get("raw_output") if isinstance(refs, dict) else None
+    if isinstance(raw, dict):
+        row["payload"]["refs"] = {"raw_output": {
+            key: raw[key] for key in ("ref", "sha256", "byte_count")
+            if key in raw and isinstance(raw[key], (str, int))
+        }}
+    tool_input = payload.get("tool_input")
+    if isinstance(tool_input, dict):
+        command = tool_input.get("cmd") or tool_input.get("command") or ""
+    else:
+        command = tool_input if isinstance(tool_input, str) else ""
+    row["tool_input_preview"] = command[:240] if isinstance(command, str) else ""
+    row["payload_omitted"] = True
+    return row
 
 
 def run_trace(args: argparse.Namespace) -> int:

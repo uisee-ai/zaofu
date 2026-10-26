@@ -115,9 +115,9 @@ a summary and keep it out of the full Plan approval path. Also return
 available so the owner can open the original PRD beside the derived Plan.
 
 For a source PRD that defines formal task or acceptance mappings, preserve the
-mapping as data instead of paraphrasing it away. In particular, keep the exact
-Appendix B T01–T10 boundaries, each task's AT/AC ownership, and the source
-anchor that proves the association. Do not round-robin acceptance ids, infer a
+mapping as data instead of paraphrasing it away. Keep the exact source-defined
+task boundaries, acceptance ownership, and the source anchor that proves each
+association. Do not round-robin acceptance ids, infer a
 new owner from task order, or replace a requirement statement with a shared
 placeholder such as “待执行/待审批追踪项”. Every trace row must retain its
 source id, a meaningful requirement statement, owning task(s), and evidence
@@ -125,10 +125,9 @@ status. If the source mapping cannot be recovered, mark the Plan as needing
 rework and do not claim `derived_plan_full`.
 
 When the authority includes UI/UX acceptance, carry the named screens and
-interaction boundaries into the integration task. For AutoDataLoop v1.4 this
-includes the page 1–6 journey, drawers, notifications, keyboard behavior, and
-narrow-screen behavior; “page integration” without those boundaries is an
-incomplete task slice.
+interaction boundaries into the integration task, preserving the names and
+identifiers from that project's authority. Do not impose another project's
+screens, task numbering, or acceptance categories.
 
 Emit top-level `plan_artifact_ref`, `task_map_ref`, `source_index_ref`,
 `artifact_refs`, and `evidence_refs`.
@@ -160,6 +159,20 @@ itself (`cd <subdir> && …` or an equivalent flag); a bare `npm test` with
 `package.json` under `app/` fails from the root and burns rework rounds.
 Keep the structured command identical to the one stated in the acceptance
 text.
+
+## Human Review Before Approval
+
+For the standard PRD Plan, apply `zf-plan-execution-readiness` and its
+`references/human-review.md` before submission. Lead the accepted Plan with
+user goals, scope/conditional scope, phase outcomes and owner decisions;
+follow with module specifications and concrete acceptance scenarios. Keep
+engineering repair history in appendices. When execution_spec is already
+used, place shared reading material in `shared.human_review` and module
+specifications/scenarios in each existing `tasks[].body.human_review`.
+Preserve canonical task/AC/command IDs and bind these artifacts in the same
+Plan Package. Critic checks semantic consistency; UI only renders the bound
+content. Neither a page count nor repeated RED/GREEN prose proves clause
+coverage. Never rewrite admitted artifacts to improve presentation.
 
 ## Task Design
 
@@ -193,6 +206,10 @@ tasks:
   scaffold it changes, sets `root_owner_class: "assembly"` when more than one
   bundle feeds it, depends on prior feature tasks, and verifies the assembled
   product through the real entrypoint plus the full suite.
+
+An explicitly declared assembly task needs an `owner_role` distinct from its
+dependency feature owners, even when waves are serial. Keep its task id as the
+`product_acceptance_spec.assembly_owner`; do not confuse task ids with role labels.
 
 Do not emit a task map that places implementation in one task and its tests or
 entrypoint smoke in another. Do not use `tests/...` paths when the declared
@@ -233,15 +250,28 @@ body containing:
 - one stable `assembly_owner` that matches the task-map assembly owner;
 - runnable `entrypoints[]`, each with `entrypoint_id`, exact `start_command`,
   observable `health_check`, and owner;
-- `user_journeys[]` with stable ids, mandatory flags, verification tiers, and
-  observable assertions (`api|cli|dom|interaction|state|visual`);
+- `user_journeys[]`, each with `journey_id`, `title`, `mandatory`,
+  `verification_tier` (`runtime|e2e|manual_evidence`) and nonempty
+  `assertions[]`;
+- each journey's assertions with `assertion_id`, `statement`,
+  `observation_kind` (`api|cli|dom|interaction|state|visual`), and `mandatory`;
 - a `provider_qualification` policy that explicitly says whether real Provider
   qualification is required, which providers are in scope, and its TTL.
+
+Check these nested fields together before the first validation. A prose
+journey or an assertion using only `id`/`kind` is not the machine contract.
+Use the current briefing's shape example to learn the fields, then replace
+its example meaning with the confirmed requirement; never treat the example
+as product evidence or use it to remove mandatory acceptance.
 
 Do not invent run, plan-revision, or task-map-generation values in that body.
 The Kernel binds those identities while constructing the current Plan Artifact
 Package. Product semantics, journeys, commands, and assembly ownership remain
 Planner-owned.
+
+Use the complete descriptor example in `zf-plan-task-map-contract`'s
+`references/product-acceptance.json` before writing this port. Populate every
+mandatory journey from the PRD; the one-journey example is not a coverage limit.
 
 For `e2e` / `real_e2e` criteria, bind the command to the intended executable
 path and method. A deterministic analytical estimate, fixture replay, or

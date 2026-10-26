@@ -1,4 +1,4 @@
-"""Stop only the latest dispatch still owned by a cancelled run."""
+"""Stop only the latest dispatch still owned by a cancelled run or fanout."""
 
 from __future__ import annotations
 
@@ -16,6 +16,10 @@ def stop_cancelled_dispatch(
     events: list[ZfEvent],
     cancellation: ZfEvent,
 ) -> bool:
+    source = (
+        "superseded_reader_fanout_closeout"
+        if cancellation.type == "fanout.cancelled" else "run_cancel_reconciliation"
+    )
     if not role_instance or not dispatch_id:
         return False
     worker_task = getattr(runtime, "_last_worker_task_id", {}).get(role_instance, "")
@@ -43,7 +47,7 @@ def stop_cancelled_dispatch(
         event.type == "worker.state.changed"
         and event.actor == role_instance
         and event.payload.get("to") == "idle"
-        and event.payload.get("source") == "run_cancel_reconciliation"
+        and event.payload.get("source") == source
         and event.payload.get("dispatch_id") == dispatch_id
         for event in events
     ):
@@ -57,16 +61,20 @@ def stop_cancelled_dispatch(
     ):
         return False
     context = {
-        "source": "run_cancel_reconciliation",
+        "source": source,
         "dispatch_id": dispatch_id,
-        "run_cancelled_event_id": cancellation.id,
+        ("fanout_cancelled_event_id" if cancellation.type == "fanout.cancelled"
+         else "run_cancelled_event_id"): cancellation.id,
     }
     runtime._set_worker_state(
         role_instance, "cancelling", task_id=task_id, force=True,
-        reason="cancelled workflow run stopping provider", extra_payload=context,
+        reason="cancelled dispatch stopping provider", extra_payload=context,
     )
     try:
         runtime.transport.terminate(role_instance)
+        is_alive = getattr(runtime.transport, "is_alive", None)
+        if callable(is_alive) and is_alive(role_instance):
+            raise RuntimeError("provider still alive after termination")
     except Exception as exc:
         runtime._set_worker_state(
             role_instance, "blocked_human", task_id=task_id, force=True,
@@ -75,6 +83,6 @@ def stop_cancelled_dispatch(
         return False
     runtime._set_worker_state(
         role_instance, "idle", task_id=task_id, force=True,
-        reason="cancelled workflow run stopped provider", extra_payload=context,
+        reason="cancelled dispatch stopped provider", extra_payload=context,
     )
     return True

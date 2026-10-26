@@ -90,7 +90,6 @@ from zf.autoresearch.projection import project_autoresearch_state
 from zf.runtime.control_actions import ControlledActionService
 from zf.runtime.channel_contracts import (
     CHANNEL_DISCUSSION_MODES,
-    normalize_permission_profile,
     validate_channel_member_contract,
 )
 from zf.runtime.agent_live import project_agent_live
@@ -131,6 +130,7 @@ from zf.runtime.agent_session_stream import AgentSessionIdentity, AgentSessionSt
 from zf.runtime.live_delta_bus import live_delta_bus_for_writer
 from zf.runtime.provider_permissions import (
     KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
+    normalize_kanban_permission_profile,
     KANBAN_AGENT_PERMISSION_PROFILES,
     emit_provider_permission_snapshot,
 )
@@ -739,7 +739,7 @@ def create_app(
                 writer=EventWriter(event_log_from_project(context.state_dir, config=context.config)),
                 durable_run=source_turn,
                 backend=str(source_turn.get("backend") or ""),
-                permission_profile=str(source_turn.get("permission_profile") or "read_only"),
+                permission_profile=normalize_kanban_permission_profile(source_turn.get("permission_profile")),
                 project_root=context.project_root,
                 config=context.config,
                 chat_handler=_handle_chat_orchestrator,
@@ -5253,7 +5253,7 @@ def _runtime(
         }
     runtime_state = _project_runtime_state(state_dir, config=config)
     return {
-        "mode": "read-only",
+        "mode": "write" if _web_action_authorization_available() else "read-only",
         "live": runtime_state in ("running", "unknown"),
         "runtime_state": runtime_state,
         "state_dir": str(state_dir),
@@ -6528,9 +6528,10 @@ def _validate_action_payload(
                 "codex-headless",
                 "codex-app-server",
                 "codex_headless",
+                "kimi-headless-canary",
             }
             if backend not in allowed:
-                return "backend must be deterministic, codex, claude-code, claude-headless, or codex-headless"
+                return "backend must be deterministic, codex, claude-code, claude-headless, codex-headless, or kimi-headless-canary"
     if action in _HUMAN_DECISION_ACTIONS:
         if not str(payload.get("decision_token") or payload.get("approval_ref") or "").strip():
             return "decision_token is required"
@@ -7092,7 +7093,7 @@ def _handle_chat_orchestrator(
         return terminal
     message = str(payload.get("message") or "").strip()
     headless_backend = canonical_headless_backend(str(payload.get("backend") or ""))
-    permission_profile = normalize_permission_profile(payload.get("permission_profile"))
+    permission_profile = normalize_kanban_permission_profile(payload.get("permission_profile"))
     user_message = writer.emit(
         "user.message",
         actor="web",
@@ -7231,7 +7232,7 @@ def _run_headless_kanban_agent_turn(
     project_id: str,
     conversation_id: str,
     thinking_level: str = "",
-    permission_profile: str = "read_only",
+    permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     config: ZfConfig | None = None,
     durable_run: Any | None = None,
     process_run_id: str = "",
@@ -8928,6 +8929,8 @@ def _web_session_cookie(request: Request) -> str | None:
 
 
 def _operator_websocket_authorized(websocket: WebSocket) -> bool:
+    if not terminal_routes._same_origin(websocket, terminal_routes.terminal_host_config(None)):
+        return False
     configured_token = os.environ.get("ZF_WEB_ACTION_TOKEN", "")
     supplied = (
         websocket.headers.get("x-zf-web-token")

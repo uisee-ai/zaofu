@@ -518,6 +518,31 @@ def test_events_last_n(tmp_path: Path, monkeypatch, capsys):
     assert "event.3" in captured.out
 
 
+def test_events_evidence_filters_before_last_without_mutation(tmp_path, monkeypatch, capsys):
+    _init_with_state_dir(tmp_path, monkeypatch)
+    log = EventLog(tmp_path / "runtime-state" / "events.jsonl")
+    events = [
+        ZfEvent(type="probe", actor="writer", task_id="T1", payload={"exit_code": 1}),
+        ZfEvent(type="probe", actor="writer", task_id="T1", payload={"exit_code": 0}),
+        ZfEvent(type="probe", actor="writer", task_id="T2"),
+        ZfEvent(type="probe", actor="verifier", task_id="T1"),
+    ]
+    for event in events:
+        log.append(event)
+    before = log.path.read_bytes()
+    capsys.readouterr()
+    args = ["events", "--type", "probe", "--actor", "writer", "--task", "T1", "--json"]
+    assert main([*args, "--last", "1"]) == 0
+    assert [e["id"] for e in json.loads(capsys.readouterr().out)["data"]["events"]] == [events[1].id]
+    assert main([*args, "--id", events[0].id, "--last", "1"]) == 0
+    result = json.loads(capsys.readouterr().out)["data"]["events"]
+    assert [e["id"] for e in result] == [events[0].id]
+    assert result[0]["payload"] == {"exit_code": 1}
+    assert main([*args, "--id", events[3].id]) == 0
+    assert json.loads(capsys.readouterr().out)["data"]["events"] == []
+    assert log.path.read_bytes() == before
+
+
 def test_events_not_initialized(tmp_path: Path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     result = main(["events"])

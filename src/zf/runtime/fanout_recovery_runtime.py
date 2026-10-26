@@ -48,10 +48,12 @@ def recover_unrecorded_reader_fanout_results(runtime) -> None:
     ):
         return
     for recover in (
+        # A durable worker result may be queued behind provider.turn.closed.
+        # Admit/replay it before deciding that the provider lost its dispatch.
+        runtime._resume_unrecorded_reader_fanout_results,
         runtime._recover_pending_reader_fanout_dispatches,
         runtime._recover_lost_reader_fanout_dispatches,
         runtime._recover_lost_fanout_synth_dispatches,
-        runtime._resume_unrecorded_reader_fanout_results,
     ):
         if recover(events, recovery_snapshot=recovery_snapshot):
             # One immutable event/manifest snapshot owns one recovery sweep.
@@ -69,6 +71,8 @@ def has_nonterminal_reader_fanouts(
     *,
     recovery_snapshot=None,
 ) -> bool:
+    from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
     terminal = {"completed", "failed", "timed_out", "cancelled"}
     if recovery_snapshot is not None:
         manifests = recovery_snapshot.manifests
@@ -88,7 +92,7 @@ def has_nonterminal_reader_fanouts(
             if isinstance(manifest.get("aggregate"), dict)
             else {}
         )
-        if (
+        if blocked_reader_aggregate_recoverable(manifest) or (
             str(manifest.get("status") or "") not in terminal
             and str(aggregate.get("status") or "") not in terminal
         ):
@@ -582,6 +586,7 @@ class FanoutRecoveryRuntimeMixin:
         if str(manifest.get("topology") or "") != "fanout_reader":
             return
         operation_ids: set[str] = set()
+        operation_children: dict[str, dict] = {}
         for child in manifest.get("children", []) or []:
             if not isinstance(child, dict):
                 continue
@@ -597,6 +602,7 @@ class FanoutRecoveryRuntimeMixin:
             ).strip()
             if operation_id:
                 operation_ids.add(operation_id)
+                operation_children[operation_id] = child
         if not operation_ids:
             return
 
@@ -627,6 +633,18 @@ class FanoutRecoveryRuntimeMixin:
             ).strip()
             if not request_hash or not workflow_run_id:
                 continue
+            from zf.runtime.cancelled_run_workers import stop_cancelled_dispatch
+
+            child = operation_children[operation_id]
+            stop_cancelled_dispatch(
+                self,
+                role_instance=str(operation.get("role_instance")
+                                  or child.get("role_instance") or ""),
+                task_id=str(operation.get("task_id") or child.get("task_id") or ""),
+                dispatch_id=str(operation.get("dispatch_id") or child.get("run_id") or ""),
+                events=self.event_log.read_all(),
+                cancellation=cancellation_event,
+            )
             service.cancel(
                 operation_id=operation_id,
                 request_hash=request_hash,

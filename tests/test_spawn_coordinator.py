@@ -645,8 +645,9 @@ class TestCodexRespawnWithoutCachedUuid:
         assert "resume" not in argv
         assert "--last" not in argv
 
+    @pytest.mark.parametrize("cleared_after_observation", [False, True])
     def test_codex_respawn_without_uuid_emits_warning_event(
-        self, state_dir, registry, transport, tmp_path
+        self, state_dir, registry, transport, tmp_path, cleared_after_observation
     ):
         from zf.core.events.log import EventLog
 
@@ -660,6 +661,12 @@ class TestCodexRespawnWithoutCachedUuid:
         )
         role = RoleConfig(name="dev", backend="codex")
         registry.mark_spawned("dev")
+        if cleared_after_observation:
+            registry.bind_codex_session(
+                "dev", "77777777-7777-7777-7777-777777777777",
+                observed_from="test_context_boundary",
+            )
+            registry.clear("dev")
 
         coordinator.spawn(role)
         events = event_log.read_all()
@@ -667,6 +674,11 @@ class TestCodexRespawnWithoutCachedUuid:
         assert len(warns) == 1
         assert warns[0].payload["code"] == "codex_no_cached_session"
         assert warns[0].payload["instance_id"] == "dev"
+        launch = next(e for e in events if e.type == "worker.launch_artifact.written")
+        assert launch.payload["is_resume"] is False
+        artifact = json.loads(Path(launch.payload["artifact_ref"]).read_text())
+        assert artifact["is_resume"] is False
+        assert "resume" not in transport.spawn_calls[-1][1]
 
 
 class TestCodexUpdatePromptDismissal:

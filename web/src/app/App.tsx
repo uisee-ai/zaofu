@@ -587,9 +587,9 @@ function runtimeActionState(
   fallbackWebSession: RuntimeSummary["web_session"] | null,
 ): RuntimeActionState {
   const webSession = snapshot?.runtime.web_session ?? fallbackWebSession;
-  const mutationEnabled = Boolean(snapshot?.runtime.actions?.mutation_enabled)
+  const mutationEnabled = webSession?.mode !== "read_only" && (Boolean(snapshot?.runtime.actions?.mutation_enabled)
     || Boolean(webSession && webSession.mode !== "read_only")
-    || tokenPresent;
+    || tokenPresent);
   const sessionActionReady = Boolean(webSession?.actions_enabled);
   const tokenFallbackAvailable = Boolean(tokenPresent)
     || webSession?.mode === "token_required"
@@ -2209,7 +2209,7 @@ export function App() {
             <WorkspaceEmptyPanel onAddProject={() => openProjectWizard()} />
           ) : activeProject && !activeProjectReady ? (
             <ProjectInitPanel
-              actionReady={webActionTokenPresent}
+              actionReady={actionGate.actionReady}
               onAddProject={() => openProjectWizard()}
               onInit={() => void initializeActiveProject()}
               project={activeProject}

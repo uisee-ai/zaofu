@@ -2751,6 +2751,24 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             required_scope_any=("task_id", "trace_id"),
         ),
         EventProblemSpec(
+            event_type="runtime.start.failed",
+            event_class="abnormal",
+            problem_class="harness_runtime",
+            failure_class="runtime_start_failed",
+            source="workflow_runtime_start",
+            severity="high",
+            title="Project runtime did not become ready",
+            owner_route="human",
+            action_policy="human_escalate",
+            intervention_class="human_decision",
+            suggested_action_kind="inspect_runtime_startup",
+            supervisor_attention="on_single",
+            producer_kind="kernel",
+            notification_policy="owner_immediate",
+            recovery_policy="human",
+            dedupe_key_fields=("project_root",),
+        ),
+        EventProblemSpec(
             event_type="runtime.watcher.lag_warning",
             event_class="abnormal",
             problem_class="harness",
@@ -2830,6 +2848,7 @@ EVENT_PROBLEM_SPECS: dict[str, EventProblemSpec] = {
             )
             for event_type in (
                 "workflow.call.result.reported",
+                "workflow.call.result.repair.dispatched",
                 "workflow.call.result.admitted",
                 "workflow.operation.requested",
                 "workflow.operation.reserved",

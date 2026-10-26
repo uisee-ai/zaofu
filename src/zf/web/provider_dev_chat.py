@@ -152,8 +152,37 @@ def handle_agent_session_cancel(
     thread_id = str(
         payload.get("thread_id") or payload.get("thread_key") or ""
     ).strip()
+    # Public WebChat events identify the turn; the process registry identifies
+    # its current attempt. Persist cancellation before signalling the process
+    # so late provider output cannot settle or resume a cancelled turn.
+    process_run_id = run_id
+    from zf.web.agent_runtime_db import database_path
+    from zf.web.agent_turn_contract import AgentTurnConflict, AgentTurnNotFound, TURN_TERMINAL_STATES
+    from zf.web.agent_turn_store import AgentTurnStore
+
+    state_dir = writer.event_log.path.parent
+    if database_path(state_dir).exists():
+        turns = AgentTurnStore(state_dir)
+        try:
+            turn = turns.get(run_id)
+        except AgentTurnNotFound:
+            turn = None
+        if turn is not None:
+            if turn["thread_id"] != thread_id:
+                return {"ok": False, "_status_code": 409, "status": "turn_conflict",
+                        "reason": "cancel thread does not match the public turn"}
+            process_run_id = str(turn.get("current_attempt_id") or run_id)
+            if turn["state"] not in TURN_TERMINAL_STATES:
+                try:
+                    receipt, _ = turns.apply_control(
+                        operation="cancel", turn_id=run_id,
+                        idempotency_key=f"agent-session-cancel:{requested.id}",
+                    )
+                except AgentTurnConflict as exc:
+                    return {"ok": False, "_status_code": 409, "status": "turn_conflict", "reason": str(exc)}
+                process_run_id = str(receipt.get("attempt_id") or process_run_id)
     cancel_result = cancel_agent_session_run(run_key(
-        run_id=run_id,
+        run_id=process_run_id,
         thread_id=thread_id,
         project_id=project_id,
         conversation_id=str(payload.get("conversation_id") or ""),

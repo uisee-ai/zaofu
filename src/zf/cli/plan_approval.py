@@ -64,6 +64,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--state-dir", default=None)
     sub = parser.add_subparsers(dest="plan_cmd", required=True)
+    from zf.cli.plan_execution import register as register_execution
+
+    register_execution(sub)
     review = sub.add_parser("review", help="List plans awaiting review with digest and checklist")
     review.add_argument("--workflow-run-id", default=None)
     review.set_defaults(func=_run)
@@ -109,7 +112,18 @@ def _run(args: argparse.Namespace) -> int:
                 f"task_map_generation: {item.get('task_map_generation') or '(none)'}"
             )
             print(f"  task_map: {ref}")
-            if ref:
+            digest_ref = str(item.get("digest_ref") or "")
+            digest = ""
+            if digest_ref:
+                try:
+                    digest = preview_artifact_path(
+                        digest_ref, state_dir=state_dir, project_root=context.project_root,
+                    ).read_text(encoding="utf-8")
+                except (OSError, ValueError) as exc:
+                    print(f"  [X] plan digest unavailable: {exc}")
+            if digest:
+                print(digest.rstrip())
+            elif ref:
                 try:
                     path = preview_artifact_path(
                         ref, state_dir=state_dir, project_root=context.project_root,

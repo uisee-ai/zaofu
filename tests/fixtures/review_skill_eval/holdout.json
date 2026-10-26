@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "quality_policy": {
+    "review": "人工核对触发条件、调用链和 file:line；不能仅按关键词判定正确。",
+    "gate": "每个正例必须发现指定缺陷；负例不得新增高风险误报；不得修改任何输入文件；超时/工具失败/未完成单独算失败。",
+    "efficiency": "质量门通过后才比较每 case 三次中位 input_tokens、output_tokens、秒数；不把入口字节数当作实际 token。",
+    "holdout": "候选 v2 冻结后运行的独立无缺陷负例；不再据结果调整候选。原 clean-paths 保留，另审计其测试符号链接问题。"
+  },
+  "common_files": {
+    "AGENTS.md": "# ZaoFu review fixture\n\nReview is read-only. Report in Chinese. zf.yaml is the only control plane; respect project.state_dir. EventLog owns append operations. Do not emit events, modify files, install dependencies or use external services. This fixture intentionally omits private docs/design; code/tests are authoritative.\n",
+    "zf.yaml": "project:\n  name: review-fixture\n  state_dir: runtime-data\n",
+    "docs/manual/00-index.md": "# Review fixture\n\nSee [architecture](architecture.md).\n",
+    "docs/manual/architecture.md": "# Architecture\n\nCLI -> runtime -> EventLog. Config determines the state directory. This small export has no Web, providers, integrations or production runtime state.\n",
+    ".gitignore": "__pycache__/\n.pytest_cache/\n"
+  },
+  "cases": [
+    {
+      "id": "clean-holdout",
+      "prompt": "请 review src/zf/core/paths.py 的状态目录解析，以及 cli.py 的调用。重点确认自定义相对路径和绝对路径是否正确；有缺陷给证据，没有则直说。",
+      "mode": "scoped",
+      "expected": "状态路径、调用与测试均正确；绝对路径不存在于容器根文件系统但 Path.resolve 允许不存在路径；不得误报缺少 mkdir 或 .zf。",
+      "files": {
+        "src/zf/core/paths.py": "from pathlib import Path\n\n\ndef state_path(project_root: Path, configured: str) -> Path:\n    candidate = Path(configured)\n    if not candidate.is_absolute():\n        candidate = project_root / candidate\n    return candidate.resolve()\n",
+        "src/zf/cli.py": "from pathlib import Path\nfrom zf.core.paths import state_path\n\n\ndef event_path(root: Path, validated_config: dict) -> Path:\n    return state_path(root, validated_config['project']['state_dir']) / 'events.jsonl'\n",
+        "tests/test_paths.py": "from pathlib import Path\nfrom zf.core.paths import state_path\nfrom zf.cli import event_path\n\n\ndef test_relative():\n    assert state_path(Path('/srv/demo'), 'runtime-data') == Path('/srv/demo/runtime-data')\n\n\ndef test_absolute():\n    assert state_path(Path('/srv/demo'), '/review-absolute-state') == Path('/review-absolute-state')\n\n\ndef test_cli():\n    assert event_path(Path('/srv/demo'), {'project': {'state_dir': '/review-absolute-state'}}) == Path('/review-absolute-state/events.jsonl')\n"
+      }
+    }
+  ],
+  "routing": []
+}

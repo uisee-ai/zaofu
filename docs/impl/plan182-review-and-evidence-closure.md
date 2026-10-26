@@ -143,17 +143,25 @@ digest/引用和跨工件一致性；Web 负责目录、状态、Task Map 和下
 合同、测试预期、证据路径或决策登记不能由 Runtime 猜测成完整 Plan。
 
 审批摘要会从绑定的 Plan decision register 回填 owner decision，避免 slim payload
-缺字段时误显示“无决定”；下载内容同时包含人工摘要和 canonical Plan。该补充不改变
+缺字段时误显示“无决定”；原始 Plan 与包含人工摘要的审核包分别下载。该补充不改变
 `plan.approval.requested=pending`、impl/verify gate 或任何产品运行证据状态。
 
 ## 人工审核包完整性（2026-10-25）
 
 Plan Preview 现在额外返回 `review_packet`（`plan-review-packet.v1`）。它把人工审核
-拆成 PRD、SDD、TDD、Traceability、Task Map、M14 指标、U14 UI 状态、配置/合同、
-Owner Decisions 和 Provenance 十个分区；每个分区保留 `status/counts/refs/notes`。
-分区只从审批事件已经绑定的 artifact 读取，缺少 port 或 source ID 未在 Plan 中出现时
+拆成 PRD、SDD、TDD、Traceability、Task Map、来源条款映射、Owner Decisions 和
+Provenance 八个分区；每个分区保留 `status/counts/refs/notes`。来源条款使用绑定的
+`source_index.traceability` 与 `coverage_ledger.entries` 中的标识，不限定项目编号格式。
+分区只从审批事件已经绑定的 artifact 读取，缺少 port 或来源条款没有账本映射时
 显示 `missing`/`partial`，不推断 PASS。
 
 审核包还报告 acceptance 数量声明与实际矩阵不一致、不同 workflow/pdd 标识混用等诊断。
 这类诊断会在摘要和 Web 侧栏显示，供人工在 approve 前通过 Chat 修订；它们不会修改
 事件、任务或 runtime state，也不会绕过 controlled-action 审批路径。
+
+合并后的阅读入口保留审批概览、模块规格、验收场景、完整原文四种视图，完整原文可
+切换连续阅读与章节分页；连续模式复用有界 Markdown 分块，避免长表格退化或遗漏正文。
+`plan.md` 保持 canonical Markdown，`plan-review.md` 包含人工摘要与原文。
+Owner 决策深链接根据 Preview 的动作类型和同一 Plan 的 Inbox 审批身份提交；身份尚未
+加载时禁用审批，不能回落到普通 Plan 审批。相关回归见 `test_plan_review_packet.py`、
+`test_operator_plan_preview.py`、`planReviewModel.test.ts` 和 Plan 浏览器测试。

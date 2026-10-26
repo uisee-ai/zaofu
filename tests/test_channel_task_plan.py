@@ -2,6 +2,21 @@ from zf.web.channel_task_plan import normalize_channel_task_submit_payload
 import pytest
 
 
+def test_nested_target_binding_preserves_explicit_target_and_defer() -> None:
+    from zf.web.channel_task_plan import bind_nested_workflow_target
+    payload = {"workflow_plan": {"options": [
+        {"route_id": "delivery:prd:standard", "parameters": {"target_root": "approved-target"}},
+        {"route_id": "delivery:prd:standard"},
+        {"mode": "defer"},
+    ]}}
+    bound = bind_nested_workflow_target(payload, {"target_root": "known-project"})
+    options = bound["workflow_plan"]["options"]
+    assert options[0]["parameters"]["target_root"] == "approved-target"
+    assert options[1]["parameters"]["target_root"] == "known-project"
+    assert options[2] == {"mode": "defer"}
+    assert "parameters" not in payload["workflow_plan"]["options"][1]
+
+
 def _authority() -> dict[str, object]:
     return {
         "channel_id": "ch-prd",

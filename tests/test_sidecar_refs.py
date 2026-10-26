@@ -182,6 +182,42 @@ def test_sidecar_ref_rejects_escape_and_reports_hash_mismatch(tmp_path: Path) ->
     assert escape.value.code == "state_dir_mismatch"
 
 
+def test_hydration_never_returns_unverified_replacement(tmp_path, monkeypatch):
+    from contextlib import contextmanager
+
+    descriptor = write_sidecar_text(tmp_path, "artifacts/proof.txt", "FAIL",
+                                    kind="proof", schema_version="proof.v1", created_by="test")
+    target = tmp_path / descriptor["ref"]
+    original_open = Path.open
+    replaced = False
+
+    @contextmanager
+    def replace_after_read(path, mode="r", *args, **kwargs):
+        nonlocal replaced
+        with original_open(path, mode, *args, **kwargs) as handle:
+            yield handle
+        if path == target and mode == "rb" and not replaced:
+            replaced = True
+            replacement = target.with_suffix(".new")
+            replacement.write_text("PASS")
+            replacement.replace(target)
+
+    monkeypatch.setattr(Path, "open", replace_after_read)
+    result = hydrate_sidecar_ref(tmp_path, descriptor)
+    assert replaced
+    assert result.payload == "FAIL"
+    assert result.sha256 == descriptor["sha256"]
+
+
+def test_hydration_enforces_actual_payload_limit(tmp_path):
+    descriptor = write_sidecar_text(tmp_path, "artifacts/large.txt", "12345",
+                                    kind="proof", schema_version="proof.v1", created_by="test")
+    with pytest.raises(SidecarRefError) as rejected:
+        hydrate_sidecar_ref(tmp_path, descriptor, max_bytes=4)
+    assert rejected.value.code == "payload_too_large"
+    assert hydrate_sidecar_ref(tmp_path, descriptor, max_bytes=5).payload == "12345"
+
+
 def test_iter_sidecar_refs_accepts_legacy_raw_output_ref() -> None:
     payload = {
         "refs": {

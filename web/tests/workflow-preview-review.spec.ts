@@ -1,0 +1,44 @@
+import { expect, test } from "@playwright/test";
+const token = process.env.ZF_WEB_ACTION_TOKEN_FOR_TEST || "";
+test.skip(!token, "Requires an isolated API with the deterministic preview review provider.");
+test("quotes a clause, discusses, reviews a narrow diff, and creates a new Preview", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await page.addInitScript((value) => {
+    localStorage.setItem("zf.webActionToken", value);
+  }, token);
+  const workspace = await (await request.get("/api/workspace/projects")).json();
+  const projectId = workspace.server_default_project_id || "default";
+  await page.goto(`/?page=workflows&project=${encodeURIComponent(projectId)}`);
+  const panel = page.getByTestId("workflow-preview-review");
+  await expect(panel).toBeVisible();
+  await expect(panel.getByLabel("Review field").locator("option").first()).toBeAttached();
+  const clause = page.locator('[data-review-field="requirement.acceptance.0"]').first();
+  await clause.evaluate((node) => {
+    const range = document.createRange();
+    range.setStart(node.firstChild!, 0); range.setEnd(node.firstChild!, "Active sessions".length);
+    const selection = window.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    node.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  });
+  await expect(panel.getByTestId("review-quote")).toContainText("Active sessions");
+  await page.getByRole("button", { name: "引用讨论 / 修改", exact: true }).click();
+  await expect(panel.getByLabel("Preview discussion")).toBeFocused();
+  await panel.getByLabel("Preview discussion").fill("Why is this needed?");
+  await panel.getByRole("button", { name: "引用讨论 / Chat about" }).click();
+  await expect(panel.getByTestId("review-answer")).toBeVisible();
+  await expect(page.getByTestId("workflow-approve-run")).toBeEnabled({ timeout: 20_000 });
+  await expect(panel.getByTestId("review-diff")).toHaveCount(0);
+  await panel.getByLabel("Preview discussion").fill("Include empty sessions; keep everything else.");
+  await panel.getByRole("button", { name: "提出局部修改" }).click();
+  await expect(panel.getByTestId("review-diff")).toContainText("Active and empty sessions remain valid.");
+  await expect(page.getByTestId("workflow-approve-run")).toBeDisabled();
+  await panel.getByRole("button", { name: "应用修改并生成新版 Preview" }).click();
+  await expect(clause).toHaveText("Active and empty sessions remain valid.");
+  await expect(page.locator('[data-review-field="requirement.acceptance.1"]').first()).toHaveText("Expired sessions fail.");
+  await expect(page.getByTestId("workflow-approve-run")).toBeEnabled({ timeout: 20_000 });
+  const detail = await request.get("/api/projects/default/workflow-requests/review-browser");
+  const body = await detail.json();
+  expect(body.result.status).toBe("proposed"); expect(body.lifecycle.submitted).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBeTruthy();
+  await page.screenshot({ path: test.info().outputPath("preview-quote-revision.png"), fullPage: true });
+});

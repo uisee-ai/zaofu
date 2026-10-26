@@ -1,0 +1,606 @@
+{
+  "schema_version": "plan-counterexamples.v1",
+  "cases": [
+    {
+      "id": "valid",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "approve",
+      "required_finding": "已覆盖两项行为，过期测试有真实登录前置。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "missing_claim",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "mandatory_claim_uncovered",
+      "expected_critic_verdict": "reject",
+      "required_finding": "原需求要求过期返回401，缺少对应实施与验证所有者。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "unknown_dependency",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "absent"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": false,
+      "error_contains": "unknown task",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "引用不存在的前置。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "cycle",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ],
+            "blocked_by": [
+              "expire"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": false,
+      "error_contains": "cycle",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "依赖形成环。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "shared_write",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": false,
+      "error_contains": "exclusive_files overlap",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "两个任务声明同一写入文件。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "semantic_narrowing",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "仅检查过期配置存在",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "python -c \"assert True\"",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "配置存在和恒真断言不能证明过期请求返回401。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "future_evidence",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ],
+            "acceptance_criteria": [
+              {
+                "id": "AC-LOGIN",
+                "text": "登录验证",
+                "evidence_requirements": [
+                  {
+                    "producer_task_id": "expire",
+                    "producer_paths": [
+                      "tests/test_expiry.py"
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": false,
+      "error_contains": "does not depend on evidence producer",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "登录切片验收依赖尚未完成的下游产物。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "evidence_path",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ],
+            "acceptance_criteria": [
+              {
+                "id": "AC-EXP",
+                "text": "过期验证",
+                "evidence_requirements": [
+                  {
+                    "producer_task_id": "login",
+                    "producer_paths": [
+                      "other/report.json"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "expected_kernel_passed": false,
+      "error_contains": "does not own evidence path",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "证据生产者不拥有声明的输出路径。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    },
+    {
+      "id": "false_dependency",
+      "source_requirement": "登录成功后可以通过 HTTP 读取受保护数据；会话过期后同一入口必须返回 401。过期验证复用登录会话。另提供独立健康检查，不读取用户或会话数据。",
+      "task_map": {
+        "schema_version": "task-map.v1",
+        "goal_claims": [
+          {
+            "id": "LOGIN",
+            "text": "登录成功可读取受保护数据",
+            "mandatory": true
+          },
+          {
+            "id": "EXPIRE",
+            "text": "过期后读取返回401",
+            "mandatory": true
+          }
+        ],
+        "tasks": [
+          {
+            "task_id": "login",
+            "title": "登录与受保护读取",
+            "owner_role": "dev",
+            "wave": 1,
+            "allowed_paths": [
+              "src/login.py",
+              "tests/test_login.py"
+            ],
+            "exclusive_files": [
+              "src/login.py"
+            ],
+            "verification": "pytest tests/test_login.py",
+            "goal_claim_ids": [
+              "LOGIN"
+            ]
+          },
+          {
+            "task_id": "expire",
+            "title": "过期后拒绝访问",
+            "owner_role": "dev",
+            "wave": 2,
+            "blocked_by": [
+              "login"
+            ],
+            "allowed_paths": [
+              "src/expiry.py",
+              "tests/test_expiry.py"
+            ],
+            "exclusive_files": [
+              "src/expiry.py"
+            ],
+            "verification": "pytest tests/test_expiry.py",
+            "goal_claim_ids": [
+              "EXPIRE"
+            ]
+          },
+          {
+            "task_id": "health",
+            "title": "独立健康检查",
+            "owner_role": "dev",
+            "wave": 3,
+            "blocked_by": [
+              "expire"
+            ],
+            "allowed_paths": [
+              "src/health.py",
+              "tests/test_health.py"
+            ],
+            "verification": "pytest tests/test_health.py"
+          }
+        ]
+      },
+      "expected_kernel_passed": true,
+      "error_contains": "",
+      "diagnostic": "",
+      "expected_critic_verdict": "reject",
+      "required_finding": "独立健康检查不读会话状态，不应等待过期功能；移除无依据的依赖。",
+      "minimal_revision": "只修订所指出的任务、依赖或验收映射，保留其余有效计划。"
+    }
+  ]
+}

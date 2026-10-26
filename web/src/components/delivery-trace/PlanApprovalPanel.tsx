@@ -20,8 +20,9 @@ import { getOperatorInbox, getPlanPreview, postAction } from "../../api/client";
 import type { OperatorInboxItem, OperatorInboxProjection, PlanPreview } from "../../api/types";
 import { MarkdownText } from "../agent-session/MarkdownText";
 import { LatestRequestGate } from "../../app/latestRequestGate";
+import { resolvePlanPreviewItem } from "./planReviewModel";
 
-const PlanMarkdownDocument = lazy(() => import("./PlanMarkdownDocument"));
+const PlanReviewReader = lazy(() => import("./PlanReviewReader"));
 
 type InboxView = "decisions" | "runtime_attention" | "automation" | "notification" | "all" | "resolved";
 type InboxKindFilter = "all" | "plan_approval" | "human_decision" | "channel_decision" | "kanban_question" | "runtime_attention" | "approval" | "run_delivery";
@@ -68,6 +69,9 @@ export function PlanApprovalPanel(
   const projectIdRef = useRef(projectId);
   const inboxRefreshInFlight = useRef(false);
   const previewRequestGate = useRef(new LatestRequestGate());
+  const currentPreviewItem = resolvePlanPreviewItem(preview, inbox?.items || [], previewItem);
+  const previewOwnerDecision = preview?.actions?.approve === "replan-approve"
+    || currentPreviewItem?.owner_route === "plan_synth_owner_decision";
 
   const baseItems = useMemo(() => inboxItemsForView(inbox, view), [inbox, view]);
   const filteredItems = useMemo(() => {
@@ -435,23 +439,24 @@ export function PlanApprovalPanel(
           }}
           onApprove={() => {
             if (!preview) return;
-            if (previewItem?.owner_route === "plan_synth_owner_decision") {
-              void actOnItem(previewItem, "replan-approve");
+            if (previewOwnerDecision) {
+              if (currentPreviewItem) void actOnItem(currentPreviewItem, "replan-approve");
             } else {
               void act("plan-approve", preview.plan_id);
             }
           }}
           onReject={() => {
             if (!preview) return;
-            if (previewItem?.owner_route === "plan_synth_owner_decision") {
-              void actOnItem(previewItem, "replan-reject", rejectReason[preview.plan_id] || "");
+            if (previewOwnerDecision) {
+              if (currentPreviewItem) void actOnItem(currentPreviewItem, "replan-reject", rejectReason[preview.plan_id] || "");
             } else {
               void act("plan-reject", preview.plan_id);
             }
           }}
-          onRepair={() => preview && void repairChat(previewItem || { id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
-          ownerDecision={previewItem?.owner_route === "plan_synth_owner_decision"}
-          actionKey={previewItem?.id || preview?.plan_id || ""}
+          onRepair={() => preview && void repairChat(currentPreviewItem || { id: preview.plan_id, kind: "plan_approval", status: preview.status, title: "Plan Ready", plan_id: preview.plan_id })}
+          ownerDecision={previewOwnerDecision}
+          decisionReady={!previewOwnerDecision || Boolean(currentPreviewItem?.proposal_ref && currentPreviewItem?.eval_ref)}
+          actionKey={currentPreviewItem?.id || preview?.plan_id || ""}
         />
       ) : null}
     </section>
@@ -655,6 +660,7 @@ function PlanPreviewOverlay({
   onReject,
   onRepair,
   ownerDecision,
+  decisionReady,
   actionKey,
 }: {
   projectId?: string;
@@ -670,6 +676,7 @@ function PlanPreviewOverlay({
   onReject: () => void;
   onRepair: () => void;
   ownerDecision: boolean;
+  decisionReady: boolean;
   actionKey: string;
 }) {
   const planId = preview?.plan_id || "";
@@ -685,7 +692,7 @@ function PlanPreviewOverlay({
           ) : null}
         </div>
         <div className="plan-preview-toolbar-actions">
-          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || disabled || loading || preview.content_kind === "unavailable"}>
+          <button type="button" className="delivery-action-button" onClick={onApprove} disabled={!preview || !decisionReady || disabled || loading || preview.content_kind === "unavailable"}>
             <Check size={14} /> {ownerDecision ? "Approve decisions" : "Approve"}
           </button>
           <input
@@ -694,7 +701,7 @@ function PlanPreviewOverlay({
             onChange={(event) => onRejectReason(event.target.value)}
             disabled={!preview}
           />
-          <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || disabled || !rejectReason.trim()}>
+          <button type="button" className="delivery-action-button" onClick={onReject} disabled={!preview || !decisionReady || disabled || !rejectReason.trim()}>
             <X size={14} /> Reject
           </button>
           <button type="button" className="delivery-action-button" onClick={onRepair} disabled={!preview || disabled}>
@@ -710,11 +717,7 @@ function PlanPreviewOverlay({
           {!loading && preview?.content_kind === "digest_only" && <p role="status">仅有计划摘要，尚未绑定完整 Plan 正文。</p>}
           {!loading && preview?.content_kind === "unavailable" && <p role="alert">完整计划不可用：{preview.content_error || "未找到可读正文"}</p>}
           {loading ? <p className="muted">Loading...</p> : <Suspense fallback={<p className="muted">Loading...</p>}>
-            <PlanMarkdownDocument
-              key={planId}
-              content={preview?.markdown || ""}
-              reviewContent={preview?.review_dossier_markdown || ""}
-            />
+            {preview && <PlanReviewReader key={`${projectId}:${planId}`} preview={preview} projectId={projectId || "default"} />}
           </Suspense>}
         </main>
         <aside className="plan-preview-context">
@@ -722,7 +725,7 @@ function PlanPreviewOverlay({
             <span>通过 Chat 修改 Plan</span>
             <textarea
               value={repairMessage}
-              placeholder="例如：保留 T01–T10，但按附录 B 恢复 AT 验收归属，并补齐页面 1–6 的 Task Map 范围。"
+              placeholder="说明需要调整的范围、任务或验收要求。"
               onChange={(event) => onRepairMessage(event.target.value)}
               disabled={!preview || disabled}
               rows={4}
@@ -793,11 +796,14 @@ function PlanPreviewOverlay({
           </details>}
           {preview?.artifacts_error && <p role="alert">计划附件不可用：{preview.artifacts_error}</p>}
           {(preview?.artifacts?.length ?? 0) > 0 && <nav aria-label="Plan artifacts">
+            <h3>工程附件（同版）</h3>
             {preview?.artifacts?.map((artifact) => <p key={artifact.name}>
               <a href={`/api/projects/${encodeURIComponent(projectId || "default")}/plans/${encodeURIComponent(planId)}/artifacts/${encodeURIComponent(artifact.name)}`} target="_blank" rel="noreferrer">{artifact.name}</a>
             </p>)}
           </nav>}
-          <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
+          <details><summary>版本与来源引用</summary>
+            <pre className="delivery-raw-block">{JSON.stringify(preview?.refs ?? {}, null, 2)}</pre>
+          </details>
         </aside>
       </div>
     </div>

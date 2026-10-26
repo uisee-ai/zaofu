@@ -128,6 +128,21 @@ def fake_channel_reply_text(
                 "freeze": True,
             },
         }
+    if "channel_synthesis" in contract and refs.get("prd_quality_contract"):
+        synthesis = contract["channel_synthesis"]
+        synthesis.update({
+            "quality_contract": refs["prd_quality_contract"],
+            "classification": {"source_read_status": "complete", "artifact_readability_status": "verified"},
+            "canonical_cross_review_refs": [],
+            "supporting_contribution_refs": _string_list(contribution_refs),
+            "permission_audit_contract": {
+                "deny_by_default": True, "event_fields": ["actor", "action"],
+                "query_fields": ["channel_id"], "retention_policy": "mock-only evidence",
+                "owner": "mock-owner",
+            },
+        })
+        for row in synthesis["requirement_coverage"]:
+            row["evidence_refs"] = [str(message.get("message_id") or "mock")]
     if "channel_synthesis" in contract and refs.get("prd_source_file"):
         contract["channel_synthesis"].pop("prd_markdown", None)
         contract["channel_synthesis"]["prd_file"] = {
@@ -262,6 +277,10 @@ def channel_reply_response_contract(
             "classification, dissent, confidence, readiness, and next_round. "
             "Your deliverable now is the complete standalone PRD, not a decision draft, "
             "outline, or recommendation that a later workflow write the PRD. Keep only the summary field concise; never omit required answer or artifact content. "
+            "Non-goals/out_of_scope describe sourced product exclusions only. A request to discuss or "
+            "write the PRD now and wait for approval before implementation is an authorization boundary; "
+            "put it in readiness/next steps, never exclude implementation or workflow delivery from the product. "
+            "PRD readiness itself does not authorize task creation or workflow execution. "
             "A read_only agent can publish through this structured reply: Runtime writes the artifact. "
             "Do not request filesystem write permission merely to publish a PRD. "
             "If request refs include prd_source_file, its complete verified body is supplied as "

@@ -161,6 +161,41 @@ def read_plan_preview_bundle(
         return {}, str(exc)
 
 
+def bind_plan_approval_preview(
+    state_dir: Path,
+    trigger_payload: Mapping[str, Any],
+    project_root: Path | None,
+    approval_payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Bind immutable review evidence when requesting approval, before minting."""
+    payload = {
+        **trigger_payload,
+        **approval_payload,
+        "workflow_run_id": approval_payload["trace_id"],
+        "fanout_id": str(trigger_payload.get("fanout_id") or ""),
+    }
+    refs = {
+        **approval_payload,
+        "source_index_ref": str(trigger_payload.get("source_index_ref") or ""),
+        "requirement_spec_ref": str(trigger_payload.get("requirement_spec_ref") or ""),
+        "plan_artifact_ref": str(
+            trigger_payload.get("plan_artifact_ref") or trigger_payload.get("plan_ref") or ""
+        ),
+        "plan_artifact_digest": str(trigger_payload.get("plan_artifact_digest") or ""),
+    }
+    bundle = write_plan_preview_bundle(
+        state_dir, payload=payload, refs=refs, project_root=project_root,
+        source_event_id=approval_payload["plan_id"],
+    )
+    return {
+        **approval_payload,
+        "plan_preview_bundle_ref": str(bundle.get("ref") or ""),
+        "plan_preview_bundle_digest": str(bundle.get("sha256") or ""),
+        "plan_content_profile": str(trigger_payload.get("plan_content_profile") or "derived_plan_full"),
+        "authority_refs": list(trigger_payload.get("authority_refs") or []),
+    }
+
+
 def write_plan_preview_bundle(
     state_dir: Path,
     *,

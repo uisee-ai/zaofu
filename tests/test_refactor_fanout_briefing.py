@@ -219,6 +219,9 @@ def test_refactor_plan_briefing_includes_required_artifact_fields(tmp_path: Path
     briefing = transport.sent[0][1].read_text(encoding="utf-8")
     assert "/tmp/review.md" in briefing
     assert "Generate P0/P1 plan." in briefing
+    assert "## Compiled planning execution facts" in briefing
+    assert '"effective_policy_digest"' in briefing
+    assert '"plan_approval_required"' in briefing
     assert "refactor_plan_md" in briefing
     assert "task_map" in briefing
     assert "gates" in briefing

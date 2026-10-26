@@ -28,9 +28,16 @@ KANBAN_AGENT_PERMISSION_PROFILES = (
     "isolated_writer",
     "dangerous_full",
 )
-KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE = "dangerous_full"
+KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE = "workspace_writer"
 DEFAULT_CODEX_HEADLESS_SANDBOX = "danger-full-access"
 DEFAULT_CLAUDE_HEADLESS_PERMISSION_MODE = "bypassPermissions"
+
+
+def normalize_kanban_permission_profile(value: object) -> str:
+    """Use the operator write default only when no profile was specified."""
+    return normalize_permission_profile(
+        value if str(value or "").strip() else KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE
+    )
 
 
 def _now() -> str:
@@ -80,6 +87,9 @@ def provider_security_for_backend(
     env: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
     normalized = str(backend or "")
+    if normalized == "kimi-headless-canary":
+        return {"permission_mode": "tool_free_canary", "native_delegation": "disabled",
+                "native_resume": "not_admitted"}
     if normalized in {"codex", "codex-headless", "codex-app-server"}:
         return codex_security_config_for_profile(permission_profile, env=env)
     if normalized in {"claude", "claude-code", "claude-headless"}:
@@ -301,6 +311,7 @@ __all__ = [
     "claude_permission_mode_for_profile",
     "codex_security_config_for_profile",
     "emit_provider_permission_snapshot",
+    "normalize_kanban_permission_profile",
     "provider_permission_drift",
     "provider_security_for_backend",
     "snapshot_with_provider_session",

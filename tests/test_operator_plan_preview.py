@@ -671,16 +671,14 @@ def test_review_packet_surfaces_cross_artifact_gaps_and_lineage(tmp_path):
     packet = result["review_packet"]
     assert packet["schema_version"] == "plan-review-packet.v1"
     assert {section["id"] for section in packet["sections"]} == {
-        "prd", "sdd", "tdd", "traceability", "task_map", "metrics",
-        "ui_states", "config_contracts", "decisions", "provenance",
+        "prd", "sdd", "tdd", "traceability", "task_map",
+        "source_coverage", "decisions", "provenance",
     }
     assert packet["status"] == "blocked"
     assert {item["code"] for item in packet["diagnostics"]} >= {
         "acceptance_count_mismatch", "artifact_lineage_mismatch",
     }
     sections = {section["id"]: section for section in packet["sections"]}
-    assert sections["metrics"]["status"] in {"missing", "partial"}
-    assert sections["ui_states"]["status"] in {"missing", "partial"}
-    assert sections["config_contracts"]["status"] in {"missing", "partial"}
+    assert sections["source_coverage"]["counts"] == {"source": 1, "covered": 1, "missing": 0}
     assert "## 1.1 审核包状态" in result["review_dossier_markdown"]
     assert "artifact_lineage_mismatch" in result["review_dossier_markdown"]

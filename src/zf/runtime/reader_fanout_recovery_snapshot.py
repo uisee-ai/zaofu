@@ -187,8 +187,10 @@ def build_fanout_currentness(
 
     rows = list(events)
     from zf.runtime.fanout_identity import build_fanout_identity_projection
+    from zf.runtime.reader_candidate_rework import candidate_rework_reader_fences
 
     identity_projection = build_fanout_identity_projection(rows)
+    rework_fences = candidate_rework_reader_fences(rows)
     identity_by_id = {
         str(item.get("fanout_id") or ""): item
         for item in identity_projection.get("instances", []) or []
@@ -254,6 +256,10 @@ def build_fanout_currentness(
         )
         if generation_reason[0]:
             result[fanout_id] = generation_reason
+            continue
+
+        if fanout_id in rework_fences:
+            result[fanout_id] = rework_fences[fanout_id]
             continue
 
         identity = identity_by_id.get(fanout_id)

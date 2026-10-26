@@ -7,6 +7,12 @@ import json
 from typing import Any
 
 from zf.core.workflow.flow_metadata import flow_metadata_for, normalize_flow_kind
+from zf.core.workflow.request_policy import required_fields_for_kind
+from zf.runtime.workflow_route_policy import (
+    effective_execution_policy_digest,
+    route_execution_policy,
+    route_flow_topology,
+)
 from zf.runtime.research_templates import (
     ADAPTIVE_RESEARCH_TEMPLATE,
     FIXED_RESEARCH_TEMPLATE,
@@ -179,17 +185,25 @@ def workflow_route_catalog(config: Any | None) -> dict[str, Any]:
         ):
             continue
         general_roles = _stage_roles([stage])
+        bounded = next((contract for contract in getattr(config.workflow, "generic_workflows", [])
+                        if contract.get("template") == "bounded-agent-v1" and contract.get("entry") == stage_id), None)
+        if bounded:
+            general_roles = list(dict.fromkeys(role for task in bounded["tasks"] for role in task["roles"]))
         routes.append({
-            "route_id": f"general:{stage_id}",
-            "family": "general",
+            "route_id": f"agent:single:{stage_id}" if bounded else f"general:{stage_id}",
+            "family": "agent" if bounded else "general",
+            **({"execution_mode": "single_executor", "executor_count": 1,
+                "independent_verifier_count": 1, "source_write": False,
+                "template_id": "bounded-agent-v1"} if bounded else {}),
             "kind": "workflow",
             "tier": "",
             "entry_pattern_id": stage_id,
             "topology": str(getattr(stage, "topology", "") or "single_reader"),
-            "stages": [stage_id],
+            "stages": [task["name"] for task in bounded["tasks"]] if bounded else [stage_id],
             "roles": general_roles,
             "writer_roles": [],
-            "verify_roles": [
+            "verify_roles": [role for task in bounded["tasks"]
+                             if task["operation"] == "agent.verify" for role in task["roles"]] if bounded else [
                 role for role in general_roles
                 if "verify" in role.lower() or "critic" in role.lower()
             ],
@@ -199,6 +213,19 @@ def workflow_route_catalog(config: Any | None) -> dict[str, Any]:
             "available": True,
         })
 
+    policy_digest = effective_execution_policy_digest(config)
+    for route in routes:
+        if route["start_adapter"] in {
+            "delivery_request_submit", "light_delivery_request_submit", "registered_general",
+        }:
+            route["required_parameters"] = [
+                field for field in required_fields_for_kind(route["kind"])
+                if field != "objective"
+            ]
+        route["flow_topology"] = route_flow_topology(config, route)
+        route["execution_policy"] = route_execution_policy(
+            config, route, digest=policy_digest,
+        )
     routes.sort(key=lambda item: str(item["route_id"]))
     config_digest = _catalog_digest(routes)
     return {

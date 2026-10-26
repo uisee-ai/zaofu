@@ -1,0 +1,64 @@
+{
+  "schema": 1,
+  "quality_policy": {
+    "review": "人工核对触发条件、调用链和 file:line；不能仅按关键词判定正确。",
+    "gate": "每个正例必须发现指定缺陷；负例不得新增高风险误报；不得修改任何输入文件；超时/工具失败/未完成单独算失败。",
+    "efficiency": "质量门通过后才比较每 case 三次中位 input_tokens、output_tokens、秒数；不把入口字节数当作实际 token。",
+    "holdout": "clean-paths 在候选首次冻结后运行，不依据其结果调参；失败须另取新 holdout。"
+  },
+  "common_files": {
+    "AGENTS.md": "# ZaoFu review fixture\n\nReview is read-only. Report in Chinese. zf.yaml is the only control plane; respect project.state_dir. EventLog owns append operations. Do not emit events, modify files, install dependencies or use external services. This fixture intentionally omits private docs/design; code/tests are authoritative.\n",
+    "zf.yaml": "project:\n  name: review-fixture\n  state_dir: runtime-data\n",
+    "docs/manual/00-index.md": "# Review fixture\n\nSee [architecture](architecture.md).\n",
+    "docs/manual/architecture.md": "# Architecture\n\nCLI -> runtime -> EventLog. Config determines the state directory. This small export has no Web, providers, integrations or production runtime state.\n",
+    ".gitignore": "__pycache__/\n.pytest_cache/\n"
+  },
+  "cases": [
+    {
+      "id": "scoped-retry",
+      "prompt": "请 review src/zf/runtime/retry.py 及其直接调用方，判断是否有会影响重试预算的缺陷。只审查，不实施。",
+      "mode": "scoped",
+      "expected": "retry.py 的 <= 令 attempts == limit 时仍允许派发，limit=3 实际派发 4 次；需要引用 dispatcher.py 调用。不要把循环有界误报为无限重试。",
+      "files": {
+        "src/zf/runtime/retry.py": "def may_retry(attempts: int, limit: int) -> bool:\n    \"\"\"attempts counts ALL completed dispatches, including the initial one.\"\"\"\n    return attempts <= limit\n",
+        "src/zf/runtime/dispatcher.py": "from .retry import may_retry\n\n\ndef dispatch(send, limit=3):\n    \"\"\"Dispatch at most limit times, including the initial attempt.\"\"\"\n    attempts = 0\n    while may_retry(attempts, limit):\n        attempts += 1\n        if send():\n            return True\n    return False\n",
+        "tests/test_retry.py": "from zf.runtime.retry import may_retry\n\n\ndef test_retry_after_one_attempt():\n    assert may_retry(1, 3)\n\n\ndef test_exhausted():\n    assert not may_retry(4, 3)\n"
+      }
+    },
+    {
+      "id": "clean-paths",
+      "prompt": "请 review src/zf/core/paths.py 的状态目录解析，以及 cli.py 的调用。重点确认自定义相对路径和绝对路径是否正确；有缺陷给证据，没有则直说。",
+      "mode": "scoped",
+      "expected": "没有状态路径缺陷；相对路径以项目根解析、绝对路径保留。不得误报硬编码 .zf 或要求修改正确代码。没有设计文档不等于代码缺陷。",
+      "files": {
+        "src/zf/core/paths.py": "from pathlib import Path\n\n\ndef state_path(project_root: Path, configured: str) -> Path:\n    candidate = Path(configured)\n    if not candidate.is_absolute():\n        candidate = project_root / candidate\n    return candidate.resolve()\n",
+        "src/zf/cli.py": "from pathlib import Path\nfrom zf.core.paths import state_path\n\n\ndef event_path(root: Path, validated_config: dict) -> Path:\n    return state_path(root, validated_config['project']['state_dir']) / 'events.jsonl'\n",
+        "tests/test_paths.py": "from pathlib import Path\nfrom zf.core.paths import state_path\nfrom zf.cli import event_path\n\n\ndef test_relative():\n    assert state_path(Path('/srv/demo'), 'runtime-data') == Path('/srv/demo/runtime-data')\n\n\ndef test_absolute():\n    assert state_path(Path('/srv/demo'), '/var/run/demo') == Path('/var/run/demo')\n\n\ndef test_cli():\n    assert event_path(Path('/srv/demo'), {'project': {'state_dir': '/var/run/demo'}}) == Path('/var/run/demo/events.jsonl')\n"
+      }
+    },
+    {
+      "id": "full-event-owner",
+      "prompt": "请对这个精简 ZaoFu 仓库做 full review，为后续重构做准备。检查状态和事件归属、调用链及测试，给出覆盖范围、证据和未覆盖项。",
+      "mode": "full",
+      "expected": "ingest.py 直接 write_text 覆盖事件日志，绕过 EventLog.append，并且错误固定 .zf 而配置为 runtime-data。引用 cli caller，说明缺少重复接收/自定义目录测试。不把不存在的 Web 等模块判为真实系统已审查。",
+      "files": {
+        "src/zf/core/events.py": "import json\nfrom pathlib import Path\n\n\nclass EventLog:\n    def __init__(self, path: Path):\n        self.path = path\n\n    def append(self, event: dict):\n        with self.path.open('a') as stream:\n            stream.write(json.dumps(event) + '\\n')\n",
+        "src/zf/integrations/ingest.py": "import json\nfrom pathlib import Path\n\n\ndef ingest(root: Path, event: dict):\n    \"\"\"Receive each external event; caller has provisioned the directory.\"\"\"\n    (root / '.zf' / 'events.jsonl').write_text(json.dumps(event) + '\\n')\n",
+        "src/zf/cli.py": "from zf.integrations.ingest import ingest\n\n\ndef receive(root, event):\n    return ingest(root, event)\n",
+        "tests/test_ingest.py": "import json\nfrom zf.cli import receive\n\n\ndef test_first_event(tmp_path):\n    (tmp_path / '.zf').mkdir()\n    receive(tmp_path, {'type': 'external.received'})\n    assert json.loads((tmp_path / '.zf/events.jsonl').read_text())['type'] == 'external.received'\n"
+      }
+    }
+  ],
+  "routing": [
+    {
+      "id": "positive",
+      "prompt": "Review this ZaoFu codebase and its state/event boundaries before development. Only inspect files and report findings.",
+      "should_load": true
+    },
+    {
+      "id": "negative",
+      "prompt": "把英文短语 good morning 翻译成中文。只返回译文。",
+      "should_load": false
+    }
+  ]
+}

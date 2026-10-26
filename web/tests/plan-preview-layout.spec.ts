@@ -136,57 +136,6 @@ test.describe("plan preview layout", () => {
     });
   }
 
-  test("mobile contract health table wraps inside the panel", async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 760 });
-    await page.setContent(`
-      <html data-theme="dark">
-        <head>
-          <style>${css}</style>
-          <style>body { margin: 0; background: var(--bg); color: var(--text); }</style>
-        </head>
-        <body>
-          <section class="panel plan-approval-panel">
-            <details class="plan-contract-health" open>
-              <summary>Contract health: 4/12</summary>
-              <table>
-                <thead>
-                  <tr><th>task</th><th>status</th><th>source</th><th>rework</th><th>signals</th></tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td>TASK-029275</td>
-                    <td>backlog</td>
-                    <td>source_anchor_degraded</td>
-                    <td>0</td>
-                    <td>source_anchor_degraded, task_contract_needs_review</td>
-                  </tr>
-                </tbody>
-              </table>
-            </details>
-          </section>
-        </body>
-      </html>
-    `);
-
-    const metrics = await page.locator(".plan-contract-health table").evaluate((el) => {
-      const rect = el.getBoundingClientRect();
-      const viewportWidth = document.documentElement.clientWidth;
-      const cells = Array.from(el.querySelectorAll("th,td")).map((cell) => {
-        const cellRect = cell.getBoundingClientRect();
-        return {
-          right: cellRect.right,
-          scrollWidth: (cell as HTMLElement).scrollWidth,
-          width: cellRect.width,
-        };
-      });
-      return { cells, right: rect.right, viewportWidth, width: rect.width };
-    });
-
-    expect(metrics.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
-    expect(metrics.width).toBeLessThanOrEqual(metrics.viewportWidth);
-    for (const cell of metrics.cells) {
-      expect(cell.right).toBeLessThanOrEqual(metrics.viewportWidth + 1);
-      expect(cell.scrollWidth).toBeLessThanOrEqual(cell.width + 2);
-    }
-  });
+  // Contract health was retired from the product. Mobile review content is
+  // exercised through the real API/React app in plan-human-review.spec.ts.
 });

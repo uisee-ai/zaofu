@@ -356,6 +356,10 @@ def validate_shared_action_payload(
     if action == "create-task":
         if not str(payload.get("title") or "").strip():
             return "title is required"
+        if "prepare_workflow" in payload and not isinstance(payload["prepare_workflow"], bool):
+            return "prepare_workflow must be a boolean"
+        if payload.get("prepare_workflow") and (payload.get("execution_mode") != "workflow" or payload.get("workflow_plan")):
+            return "prepare_workflow requires workflow mode without a legacy workflow_plan"
         execution_mode = str(payload.get("execution_mode") or "").strip()
         if execution_mode and execution_mode not in {"direct", "workflow"}:
             return "execution_mode must be direct or workflow"

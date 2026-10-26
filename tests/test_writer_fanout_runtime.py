@@ -7826,6 +7826,9 @@ def test_cancelled_run_closes_writer_resources_before_restart_recovery(
         affinity_stage_slots=True,
         affinity_lane_count=1,
     )
+    # This is the successful stop path; a live process after terminate must
+    # instead remain blocked (covered by test_cancelled_run_workers).
+    _transport.is_alive = lambda role: role not in _transport.terminated
     task_map_path = state_dir / "artifacts" / "F-11111111" / "task_map.json"
     task_map = json.loads(task_map_path.read_text(encoding="utf-8"))
     task_map["tasks"] = task_map["tasks"][:1]

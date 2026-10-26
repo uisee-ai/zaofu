@@ -53,6 +53,39 @@ def test_provider_session_omitted_keeps_legacy_argv() -> None:
     )
 
 
+@pytest.mark.parametrize("backend", ["codex", "claude-code"])
+def test_native_delegation_opt_out_is_applied_to_provider_and_snapshot(tmp_path, backend):
+    path = _config(tmp_path, {"name": "executor", "backend": backend,
+                              "provider_session": {"native_delegation": False}})
+    role = load_config(path).roles[0]
+    adapter = CodexAdapter() if backend == "codex" else ClaudeCodeAdapter()
+    argv = adapter.build_command(role)
+    if backend == "codex":
+        assert [argv[i + 1] for i, arg in enumerate(argv) if arg == "--disable"] == [
+            "multi_agent", "multi_agent_v2"]
+    else:
+        offset = argv.index("--disallowedTools")
+        assert argv[offset + 1:offset + 3] == ["Agent", "Task"]
+    snapshot = resolve_effective_provider_session(state_dir=tmp_path, role=role)
+    assert snapshot.snapshot["resolved"]["native_delegation"]["value"] is False
+
+
+@pytest.mark.parametrize("value", ["false", 0, 1])
+def test_native_delegation_rejects_non_boolean_config(tmp_path, value):
+    with pytest.raises(ConfigError):
+        load_config(_config(tmp_path, {"name": "executor", "backend": "codex",
+                                     "provider_session": {"native_delegation": value}}))
+
+
+def test_unadmitted_native_delegation_is_rejected_by_preflight(tmp_path):
+    config = load_config(_config(tmp_path, {"name": "executor", "backend": "codex",
+                                          "provider_session": {"native_delegation": True}}))
+    results = run_preflight_checks(config)
+    result = next(item for item in results if item.name == "provider_session_configs")
+    assert not result.ok
+    assert "has not been admitted" in result.detail
+
+
 def test_loader_and_adapters_map_supported_explicit_fields(tmp_path: Path) -> None:
     claude_path = _config(tmp_path, {
         "name": "impl",

@@ -205,8 +205,11 @@ class ProviderSessionConfig:
     effort: str = ""
     agent: str = ""
     max_parallel_agents: int | None = None
+    native_delegation: bool | None = None
 
     def __post_init__(self) -> None:
+        if self.native_delegation is not None and not isinstance(self.native_delegation, bool):
+            raise ValueError("ProviderSessionConfig.native_delegation must be boolean")
         if self.max_parallel_agents is not None:
             if self.max_parallel_agents < 1:
                 raise ValueError(
@@ -227,8 +230,13 @@ class RoleLifecycleConfig:
     cooldown_seconds: float = 180.0
     preserve_session: bool = True
     preserve_workdir: bool = True
+    reader_context_scope: str = "workflow"  # workflow | dispatch
 
     def __post_init__(self) -> None:
+        if self.reader_context_scope not in ("workflow", "dispatch"):
+            raise ValueError("reader_context_scope must be workflow or dispatch")
+        if self.reader_context_scope == "dispatch" and self.mode != "on_demand":
+            raise ValueError("reader_context_scope=dispatch requires on_demand")
         if self.mode not in {"eager", "resident", "on_demand"}:
             raise ValueError(
                 "RoleLifecycleConfig.mode must be eager, resident, or on_demand"
@@ -406,6 +414,8 @@ class RoleConfig:
             owner=f"RoleConfig(name={self.name!r})",
         )
         self.flow_kind = str(self.flow_kind or "").strip().lower()
+        if self.lifecycle.reader_context_scope == "dispatch" and self.role_kind != "reader":
+            raise ValueError("reader_context_scope=dispatch requires role_kind=reader")
         if self.flow_kind not in {"", "issue", "prd", "refactor", "workflow"}:
             raise ValueError(
                 f"RoleConfig(name={self.name!r}).flow_kind must be one of "

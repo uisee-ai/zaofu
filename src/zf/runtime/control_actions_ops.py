@@ -282,17 +282,25 @@ class OpsActionsMixin:
                 wants_checkpoint
                 or payload.get("assigned_worker")
                 or payload.get("worker")
+                or payload.get("instance_id")
             ):
+                from zf.runtime.maintenance_worktree import checkpoint_root
+
+                worker = (
+                    _required_text(payload, "assigned_worker")
+                    or _required_text(payload, "worker")
+                    or _required_text(payload, "instance_id")
+                )
+                root = checkpoint_root(
+                    self.state_dir, self.project_root or self.state_dir.parent,
+                    self.config, task_id, worker,
+                )
                 checkpoint = create_checkpoint(
                     self.state_dir,
-                    project_root=self.project_root,
+                    project_root=root,
                     task_id=task_id,
                     role=_required_text(payload, "role"),
-                    assigned_worker=(
-                        _required_text(payload, "assigned_worker")
-                        or _required_text(payload, "worker")
-                        or _required_text(payload, "instance_id")
-                    ),
+                    assigned_worker=worker,
                     session_id=_required_text(payload, "session_id"),
                     tmux_session=_required_text(payload, "tmux_session"),
                     pane_id=_required_text(payload, "pane_id"),

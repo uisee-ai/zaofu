@@ -16,6 +16,7 @@ Options:
   --provider-token-envs N  Comma/space-separated provider token env names to load/pass.
                            Defaults to registry token_env values plus OPENCLAW_GATEWAY_TOKEN.
   --workspace-only        Start Web shell without binding default Project.
+  --read-only             Disable dashboard mutations (default: writable via the printed link).
   --no-build              Skip npm web build.
   --no-restart            Fail if tmux session or port is already in use.
   --stop                  Stop the tmux session and exit.
@@ -59,6 +60,7 @@ claude_headless_permission_mode="${ZF_KANBAN_AGENT_CLAUDE_HEADLESS_PERMISSION_MO
 build=1
 restart=1
 workspace_only="${ZF_WEB_WORKSPACE_ONLY:-0}"
+read_only=0
 mode="start"
 
 if [[ "${ZF_WEB_NO_BUILD:-0}" == "1" ]]; then
@@ -101,6 +103,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --workspace-only)
       workspace_only=1
+      shift
+      ;;
+    --read-only)
+      read_only=1
       shift
       ;;
     --no-build)
@@ -239,7 +245,7 @@ fi
 session="${session:-zf-web-${port}}"
 workspace_home="$(python3 -c 'import pathlib,sys; print(pathlib.Path(sys.argv[1]).expanduser())' "$workspace_home")"
 token_file="${token_file:-$workspace_home/web-action-token}"
-log_file="/tmp/${session}.log"
+log_file="$workspace_home/webkanban-${port}.log"
 runtime_env_file="$workspace_home/webkanban-${port}.env"
 workspace_env_file="$workspace_home/env"
 
@@ -383,6 +389,9 @@ if [[ "$build" == "1" ]]; then
 fi
 
 web_args=(web --host "$host" --port "$port")
+if [[ "$read_only" == "1" ]]; then
+  web_args+=(--read-only)
+fi
 if [[ "$workspace_only" == "1" ]]; then
   web_args+=(--workspace-only)
 fi
@@ -408,6 +417,8 @@ for name in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all
 done
 
 umask 077
+: >> "$log_file"
+chmod 600 "$log_file"
 : > "$runtime_env_file"
 for item in "${launch_env[@]}"; do
   key="${item%%=*}"
@@ -426,4 +437,12 @@ for _ in $(seq 1 30); do
 done
 
 print_status
-echo "action_token: $token"
+if [[ "$read_only" == "0" ]]; then
+  ZF_WEB_ACTION_TOKEN="$token" python3 - "$host" "$port" <<'PY'
+import os, sys
+from urllib.parse import urlencode
+host = sys.argv[1]
+authority = f"[{host}]" if ":" in host and not host.startswith("[") else host
+print(f"write_url: http://{authority}:{sys.argv[2]}/#" + urlencode({"zf-action-token": os.environ["ZF_WEB_ACTION_TOKEN"]}))
+PY
+fi

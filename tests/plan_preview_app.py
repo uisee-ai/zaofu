@@ -71,4 +71,7 @@ def create_test_app():
             "plan_artifact_package_digest": descriptor["sha256"],
             "plan_content_profile": content_profile,
         }))
+    from tests.plan_human_review_fixture import add_human_review_fixture
+
+    add_human_review_fixture(state, writer)
     return create_app(state, config=load_config(config_path), project_root=root)

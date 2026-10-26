@@ -139,6 +139,12 @@ class WorkflowStartService:
                 task_id=task_id,
             )
         requested_parameters = dict(parameters)
+        if ("authorize_channel_execution" in parameters
+                and not isinstance(parameters["authorize_channel_execution"], bool)):
+            return _failure(
+                "invalid_payload", "authorize_channel_execution must be a boolean",
+                status_code=422, task_id=task_id,
+            )
 
         task = TaskStore(self.state_dir / "kanban.json").get(task_id)
         if task is None:
@@ -276,18 +282,41 @@ class WorkflowStartService:
                     status_code=409,
                     task_id=task_id,
                 )
-            if not terminal_rotation:
+            # An approved preview may predate Request creation. Keep its input
+            # digest intact on retry; the canonical Request is carried in the
+            # normalized top-level binding below and was checked above.
+            if not terminal_rotation and not isinstance(payload.get("task_input_binding"), dict):
                 parameters = dict(parameters)
                 parameters["request_id"] = task_request["request_id"]
                 parameters["request_revision"] = int(
                     task_request["request_revision"]
                 )
         elif payload_request_id:
-            return _failure(
-                "workflow_task_stale",
-                "workflow Request is not bound to the Task",
-                status_code=409,
-                task_id=task_id,
+            from zf.runtime.workflow_pending_request import pending_request_for_task
+
+            try:
+                request_projection = pending_request_for_task(
+                    self.state_dir, config=self.config, task=task,
+                    request_id=payload_request_id,
+                    revision=payload_request_revision,
+                )
+            except WorkflowRequestError as exc:
+                return _failure(
+                    "workflow_task_stale", str(exc),
+                    status_code=409, task_id=task_id,
+                )
+            if not _matches_canonical_origin(
+                payload, request_projection["origin_binding"],
+            ):
+                return _failure(
+                    "origin_binding_mismatch",
+                    "pending Request origin does not match the approved return target",
+                    status_code=409, task_id=task_id,
+                )
+            parameters = dict(parameters)
+            parameters.update(
+                request_id=payload_request_id,
+                request_revision=payload_request_revision,
             )
 
         catalog = workflow_route_catalog(self.config)
@@ -319,6 +348,14 @@ class WorkflowStartService:
                 f"workflow route {route_id!r} is stale or unavailable",
                 status_code=409,
                 task_id=task_id,
+            )
+        if (
+            payload_request_id and not task_request and request_projection
+            and str(route.get("kind") or "") != request_projection.get("kind")
+        ):
+            return _failure(
+                "workflow_task_stale", "pending Request workflow kind cannot change",
+                status_code=409, task_id=task_id,
             )
         eligibility_error = workflow_route_task_eligibility_error(route, task)
         if eligibility_error:

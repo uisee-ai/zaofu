@@ -1455,7 +1455,7 @@ class TestApiWorkbenchProjections:
         assert runtime["actions"]["mutation_enabled"] is False
         assert runtime["web_session"]["mode"] == "read_only"
         assert runtime["agent_surface"]["id"] == "kanban-agent"
-        assert runtime["agent_surface"]["permission_profile"] == "dangerous_full"
+        assert runtime["agent_surface"]["permission_profile"] == "workspace_writer"
         assert runtime["agent_surface"]["shared_context"]["project_root"] == str(state_dir.parent)
         assert (
             runtime["agent_surface"]["shared_context"]["mode"]
@@ -2604,6 +2604,10 @@ class TestApiTraceCandidateFanoutEventsSearchDiagnostics:
             },
         )
         EventLog(state_dir / "events.jsonl").append(event)
+        # This tests hydration, not asynchronous projection catch-up.
+        from zf.web.projections import read_model
+
+        read_model.rebuild(state_dir)
 
         list_payload = client.get("/api/events?limit=5").json()
         listed = next(item for item in list_payload["items"] if item["id"] == event.id)

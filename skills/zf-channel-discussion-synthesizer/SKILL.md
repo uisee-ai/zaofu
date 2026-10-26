@@ -119,6 +119,10 @@ synthesis。若请求携带上一次 rejection reason，必须基于最新 ledge
    `summary` 只描述长期有效的产品行为，签收、
    Owner 确认和执行授权等瞬时状态只写入 `readiness`，避免 immutable PRD 在签收后
    生成自相矛盾的 Task behavior。
+   `out_of_scope`／PRD Non-goals 只记录有来源的产品范围排除项。
+   “本轮只讨论”“先写 PRD，待批准再实施”属于当前动作的授权边界，应写入
+   readiness／下一步，不能变成“实现、建单、启动 Workflow 不在产品范围”的永久条款。
+   对全文验收仍保留产品交付义务；PRD ready 不代替后续建单和启动批准。
 
    这些 command 不能只给 build/unit 命令却把 viewport、pointer、network、storage、refresh、
    screenshot 等浏览器行为留给下游猜测。浏览器场景加载

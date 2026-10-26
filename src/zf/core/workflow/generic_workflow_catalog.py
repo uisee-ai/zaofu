@@ -87,6 +87,10 @@ COMPLETION_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 REGISTERED_TEMPLATES: dict[str, dict[str, tuple[str, ...]]] = {
+    "bounded-agent-v1": {
+        "intents": ("bounded_execution",),
+        "completion_profiles": ("artifact_delivery",),
+    },
     "evidence-synthesis-v1": {
         "intents": ("research",),
         "completion_profiles": ("artifact_delivery",),
@@ -128,6 +132,11 @@ def generic_workflow_catalog_projection() -> dict[str, Any]:
                         },
                     },
                 } if key == "evidence-synthesis-v1" else {}),
+                **({"parameters": {
+                    "required": ["executor_role", "verifier_role"],
+                    "optional": ["deadline_seconds"],
+                    "deadline_seconds": {"minimum": 1, "maximum": 3600, "default": 600},
+                }} if key == "bounded-agent-v1" else {}),
             }
             for key, value in sorted(REGISTERED_TEMPLATES.items())
         },

@@ -5,11 +5,14 @@ from __future__ import annotations
 import json
 import shlex
 import subprocess
+
+import yaml
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from zf.core.config.loader import load_config
+from zf.core.config.render import renderable_config_to_primitive
 from zf.core.config.schema import WorkflowAffinityLaneConfig
 from zf.core.events.log import EventLog
 from zf.core.events.model import ZfEvent
@@ -201,6 +204,15 @@ def test_light_profile_mock_e2e_exact_verify(
         if item != "product_acceptance_spec"
     ]
     config.workflow.flow_metadata["product_acceptance"] = {"mode": "blocking"}
+
+    # Proposal and consumer must read the same approved two-lane policy.
+    config_path.write_text(
+        yaml.safe_dump(renderable_config_to_primitive(config), sort_keys=False),
+        encoding="utf-8",
+    )
+    config = load_config(config_path)
+    _git(tmp_path, "add", "zf.yaml")
+    _git(tmp_path, "commit", "-q", "-m", "Pin approved two-lane mock policy")
 
     state_dir.mkdir()
     (state_dir / "kanban.json").write_text("[]\n", encoding="utf-8")
@@ -796,8 +808,12 @@ def test_light_profile_mock_e2e_exact_verify(
     assert judge_metrics["required_read_count"] == len(
         judge_child_payload["required_reads"]
     )
-    assert judge_metrics["briefing_bytes"] <= 10 * 1024
-    assert judge_metrics["soft_budget_exceeded"] is False
+    # The final attempt envelope and absolute paths count toward the advisory
+    # budget; exceeding it is observable, not a delivery rejection.
+    briefing_bytes = len(judge_briefing_path.read_bytes())
+    assert judge_metrics["briefing_bytes"] == briefing_bytes
+    assert judge_metrics["soft_budget_bytes"] == 10 * 1024
+    assert judge_metrics["soft_budget_exceeded"] is (briefing_bytes > 10 * 1024)
     self_check_event = _latest_event(log, "impl.self_check.completed")
     assert "impl_self_check" not in self_check_event.payload
     assert (state_dir / self_check_event.payload["impl_self_check_ref"]).is_file()

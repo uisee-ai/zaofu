@@ -270,6 +270,8 @@ def project_discussion_attention(
         if context_rejections:
             state, reason, next_action = "blocked", "context_pack_rejected", "diagnose_attention"
             execution_state = "running" if active_replies else "blocked"
+        unknown_delivery = any(r.get("status") == "failed"
+                               and r.get("failure_status") == "delivery_unknown" for r in replies)
         retry_synthesis = bool(
             phase == "phase3_synthesis" and synthesis_requests
             and latest_synthesis_status == "failed"
@@ -277,6 +279,7 @@ def project_discussion_attention(
             and not work_replies and not open_questions and not visible_owner_questions
             and question_consolidation_status == "open"
             and not invitation_count and not context_rejections
+            and not unknown_delivery
             and (not coverage_required or coverage_complete)
             and not any(str(r.get("status") or "") in _FAILED_REPLY_STATUSES
                         and r.get("request_id") != synthesis_requests[-1].get("recovery_reply_id") for r in replies)
@@ -399,6 +402,7 @@ def project_discussion_attention(
                 and not invitation_count
                 and not context_rejections
                 and not contribution_missing
+                and not unknown_delivery
             ),
             "coverage_required": coverage_required,
             "coverage_complete": coverage_complete,

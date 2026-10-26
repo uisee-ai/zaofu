@@ -8,6 +8,22 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def workflow_runtime_launcher(monkeypatch):
+    """Keep ordinary action tests from launching installed providers.
+
+    Process integration tests restore ``mock.real`` explicitly; launcher unit
+    tests exercise the original function with a fake subprocess boundary.
+    """
+    from unittest.mock import Mock
+    from zf.runtime import workflow_runtime_start
+
+    mock = Mock(return_value={"ok": True, "status": "running", "pid": 123, "launched": False})
+    mock.real = workflow_runtime_start.ensure_project_runtime
+    monkeypatch.setattr(workflow_runtime_start, "ensure_project_runtime", mock)
+    return mock
+
+
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> Path:
     """Create a temporary project directory and chdir into it."""

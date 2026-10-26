@@ -438,6 +438,72 @@ def test_window_per_role_kill_window_still_uses_kill_window():
     assert any("kill-window" in c for c in tmux.command_log)
 
 
+@pytest.mark.parametrize("persisted", [False, True])
+def test_terminate_missing_grid_role_is_idempotent(tmp_path, monkeypatch, persisted):
+    binding = tmp_path / "panes.json"
+    layout = PaneGridLayout(binding_path=binding)
+    if persisted:
+        binding.write_text(json.dumps({"roles": {"dev": {"pane": "%41", "cwd": "/work/dev"}}}))
+    else:
+        layout._panes["dev"] = "%41"
+    tmux = TmuxSession(session_name="zf-test", layout=layout)
+    commands = []
+
+    def run(args, **kwargs):
+        commands.append(args)
+        return subprocess.CompletedProcess(args, 0, stdout="%42\treview\treview\t/work/review\troles\n")
+
+    monkeypatch.setattr(tmux, "_run", run)
+    result = tmux.terminate_window("dev")
+    assert not result.term_sent and not result.kill_sent and not result.hard_killed
+    assert not result.alive_after_kill
+    assert all(cmd[:2] == ["tmux", "list-panes"] for cmd in commands)
+
+
+@pytest.mark.parametrize("returncode,output", [
+    (1, ""), (0, ""), (0, "malformed"),
+    (0, "%41\tother\tother\t/work/other\troles\n"),
+    (0, "%42\tdev\tchanged-title\t/work/dev\troles\n"),
+    (0, "%42\t\tdev\t/work/dev\troles\n"),
+    (0, "%42\t\tunknown\t/work/dev\troles\n"),
+    (0, "%42\t\tunknown\t/work/elsewhere\troles\n"),
+])
+def test_grid_absence_requires_unambiguous_inventory(monkeypatch, returncode, output):
+    layout = PaneGridLayout()
+    layout._panes["dev"] = "%41"
+    layout._expected_cwds["dev"] = "/work/dev"
+    tmux = TmuxSession(session_name="zf-test", layout=layout)
+    monkeypatch.setattr(tmux, "_run", lambda args, **kw: subprocess.CompletedProcess(
+        args, returncode, stdout=output,
+    ))
+    assert not layout.role_absence_confirmed(tmux, "dev")
+
+
+@pytest.mark.host
+@pytest.mark.skipif(shutil.which("tmux") is None, reason="tmux is unavailable")
+@pytest.mark.parametrize("has_sibling", [False, True])
+def test_real_grid_lost_pane_can_be_replaced_without_touching_sibling(tmp_path, has_sibling):
+    from types import SimpleNamespace
+    layout = PaneGridLayout(binding_path=tmp_path / "panes.json")
+    tmux = TmuxSession(session_name="zf-lost-pane-" + uuid.uuid4().hex[:10], layout=layout)
+    tmux.create_session()
+    try:
+        old = layout.create_slot(tmux, SimpleNamespace(name="dev", instance_id="dev"))
+        sibling = layout.create_slot(tmux, SimpleNamespace(name="verify", instance_id="verify")) if has_sibling else None
+        sibling_pid = tmux._pane_pid_for_target(sibling) if sibling else ""
+        tmux._run(["tmux", "kill-pane", "-t", old.address()])
+        fresh = TmuxSession(session_name=tmux.session_name, layout=PaneGridLayout(binding_path=tmp_path / "panes.json"))
+        result = fresh.terminate_window("dev")
+        assert not result.hard_killed and not fresh.pane_alive("dev")
+        replacement = fresh.layout.create_slot(fresh, SimpleNamespace(name="dev", instance_id="dev"))
+        assert replacement.address() != old.address()
+        if sibling:
+            assert fresh._pane_pid_for_target(sibling) == sibling_pid
+            assert fresh.layout.target_owned_by(fresh, sibling, "verify")
+    finally:
+        tmux.kill_session()
+
+
 def test_pane_grid_terminate_rejects_stale_cross_role_binding(monkeypatch):
     """A stale in-memory role binding must never signal another role."""
 

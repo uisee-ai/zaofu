@@ -10,6 +10,7 @@ from zf.core.workflow.generic_workflow import (
     GenericWorkflowError,
     build_registered_template_spec,
 )
+from zf.core.workflow.bounded_agent import PARAMETERS as BOUNDED_PARAMETERS, TEMPLATE as BOUNDED_TEMPLATE
 
 
 FLOW_PARAMETER_KEYS = frozenset({
@@ -22,6 +23,8 @@ FLOW_PARAMETER_KEYS = frozenset({
     "strictness",
     "synthesizer_role",
     "verifier_role",
+    "executor_role",
+    "deadline_seconds",
 })
 
 _GENERIC_PARAMETER_KEYS = frozenset({
@@ -56,7 +59,7 @@ def admit_generic_workflow_selection(
     parameters: Mapping[str, Any],
     completion: Mapping[str, Any],
     required_artifacts: list[str] | None,
-    catalog: Mapping[str, set[str]],
+    catalog: Mapping[str, Any],
     requested_roles: list[str],
 ) -> tuple[dict[str, Any], dict[str, Any], str]:
     if flow_family != "Workflow":
@@ -72,15 +75,17 @@ def admit_generic_workflow_selection(
             )
         return {}, dict(completion), ""
 
-    unsupported = sorted(set(parameters) - _GENERIC_PARAMETER_KEYS)
+    allowed_parameters = BOUNDED_PARAMETERS if template == BOUNDED_TEMPLATE else _GENERIC_PARAMETER_KEYS
+    unsupported = sorted(set(parameters) - allowed_parameters)
     if unsupported:
         raise GenericWorkflowSynthesisError(
             "Generic Workflow parameters contain unsupported fields: "
             + ", ".join(unsupported)
         )
-    if intent != "research":
+    expected_intent = "bounded_execution" if template == BOUNDED_TEMPLATE else "research"
+    if intent != expected_intent:
         raise GenericWorkflowSynthesisError(
-            "Generic Workflow synthesis currently requires intent research"
+            f"Generic Workflow synthesis currently requires intent {expected_intent}"
         )
     if template not in catalog["templates"]:
         raise GenericWorkflowSynthesisError(
@@ -103,7 +108,7 @@ def admit_generic_workflow_selection(
     )
     if str(completion.get("id") or "") != "artifact_delivery":
         raise GenericWorkflowSynthesisError(
-            "evidence-synthesis-v1 requires artifact_delivery completion"
+            f"{template} requires artifact_delivery completion"
         )
     if (
         required_artifacts is not None
@@ -133,6 +138,7 @@ def admit_generic_workflow_selection(
 
 def _parameter_roles(parameters: Mapping[str, Any]) -> list[str]:
     roles = [
+        str(parameters.get("executor_role") or "").strip(),
         str(parameters.get("scoper_role") or "").strip(),
         str(parameters.get("synthesizer_role") or "").strip(),
         str(parameters.get("verifier_role") or "").strip(),

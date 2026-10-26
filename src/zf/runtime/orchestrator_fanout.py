@@ -752,6 +752,7 @@ class FanoutCoordinationMixin(
                 lost_event = self._reader_dispatch_lost_event_after(
                     lost_events_by_role.get(role_instance, []),
                     latest_index,
+                    events=events, dispatch_event=latest_dispatch,
                 )
                 if lost_event is None:
                     continue
@@ -1047,6 +1048,8 @@ class FanoutCoordinationMixin(
         *,
         recovery_snapshot=None,
     ) -> bool:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         completed_fanouts = {
             str((event.payload or {}).get("fanout_id") or "")
             for event in events
@@ -1073,7 +1076,10 @@ class FanoutCoordinationMixin(
                 if isinstance(manifest.get("aggregate"), dict)
                 else {}
             )
-            if aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}:
+            if (
+                aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
+                and not blocked_reader_aggregate_recoverable(manifest)
+            ):
                 continue
             children = [
                 child for child in manifest.get("children", []) or []
@@ -3278,7 +3284,7 @@ class FanoutCoordinationMixin(
         enabled = bool(getattr(
             self.config.workflow, "plan_approval_enabled", False,
         ))
-        from zf.runtime.plan_preview_artifacts import approval_artifact_refs
+        from zf.runtime.plan_preview_artifacts import approval_artifact_refs, bind_plan_approval_preview
 
         base_payload = {
             "plan_id": plan_id,
@@ -3351,63 +3357,17 @@ class FanoutCoordinationMixin(
             # B-93-03 (doc 93 §4): 投影 plan-digest 落 artifact,payload 带
             # digest_ref —— CLI/Web/Feishu 共用同一份人读摘要,不各自重算。
             digest_ref = self._write_plan_digest(plan_id, task_items, base_payload["task_map_ref"])
-            # Bind a complete, immutable review bundle at the same gate as the
-            # approval request.  The bundle is a read-only projection for the
-            # human reviewer; it does not mint tasks or unlock implementation.
-            from zf.runtime.plan_preview_artifacts import write_plan_preview_bundle
-
-            preview_payload = {
-                **trigger_event.payload,
-                **base_payload,
-                "workflow_run_id": trace_id,
-                "fanout_id": str(trigger_event.payload.get("fanout_id") or ""),
-                "task_count": len(task_items),
-            }
-            preview_refs = {
-                **base_payload,
-                "task_map_ref": base_payload["task_map_ref"],
-                "source_index_ref": str(
-                    trigger_event.payload.get("source_index_ref") or ""
-                ),
-                "requirement_spec_ref": str(
-                    trigger_event.payload.get("requirement_spec_ref") or ""
-                ),
-                "plan_artifact_ref": str(
-                    trigger_event.payload.get("plan_artifact_ref")
-                    or trigger_event.payload.get("plan_ref")
-                    or ""
-                ),
-                "plan_artifact_digest": str(
-                    trigger_event.payload.get("plan_artifact_digest") or ""
-                ),
-                "artifact_refs": trigger_event.payload.get("artifact_refs") or [],
-                "plan_ports": trigger_event.payload.get("plan_ports") or [],
-            }
-            preview_bundle = write_plan_preview_bundle(
-                self.state_dir,
-                payload=preview_payload,
-                refs=preview_refs,
-                project_root=self.project_root,
-                source_event_id=plan_id,
-            )
             self.event_writer.append(ZfEvent(
                 type="plan.approval.requested",
                 actor="zf-cli",
-                payload={
-                    **base_payload,
-                    "plan_fingerprint": fingerprint,
-                    "task_count": len(task_items),
-                    "digest_ref": digest_ref,
-                    "plan_preview_bundle_ref": str(preview_bundle.get("ref") or ""),
-                    "plan_preview_bundle_digest": str(preview_bundle.get("sha256") or ""),
-                    "plan_content_profile": str(
-                        trigger_event.payload.get("plan_content_profile")
-                        or "derived_plan_full"
-                    ),
-                    "authority_refs": list(
-                        trigger_event.payload.get("authority_refs") or []
-                    ),
-                },
+                payload=bind_plan_approval_preview(
+                    self.state_dir, trigger_event.payload, self.project_root, {
+                        **base_payload,
+                        "plan_fingerprint": fingerprint,
+                        "task_count": len(task_items),
+                        "digest_ref": digest_ref,
+                    },
+                ),
                 causation_id=plan_id,
                 correlation_id=trace_id,
             ))
@@ -5073,9 +5033,17 @@ class FanoutCoordinationMixin(
         aggregate = manifest.get("aggregate") if isinstance(manifest.get("aggregate"), dict) else {}
         status = str(aggregate.get("status") or "")
         reason = str(aggregate.get("reason") or "")
-        if status not in {"failed", "timed_out"}:
-            return False
-        if status != "timed_out" and reason != "timeout":
+        # The caller first fences terminal Runs and superseded generations.
+        # A reactivated blocked Run may retain its cancelled aggregate while
+        # a controlled child retry has already completed all writer work.
+        resumed_block = (
+            status == "cancelled"
+            and reason == "workflow_run_terminal:run.goal.blocked"
+        )
+        if not resumed_block and (
+            status not in {"failed", "timed_out"}
+            or (status != "timed_out" and reason != "timeout")
+        ):
             return False
         children = [
             child for child in manifest.get("children", []) or []
@@ -5808,6 +5776,8 @@ class FanoutCoordinationMixin(
         *,
         rebuild_request: ZfEvent | None = None,
     ) -> None:
+        from zf.runtime.reader_fanout_retry import blocked_reader_aggregate_recoverable
+
         manifest = self._fanout_manifest(fanout_id)
         if not manifest:
             return
@@ -5820,6 +5790,7 @@ class FanoutCoordinationMixin(
         if (
             aggregate.get("status") in {"completed", "failed", "timed_out", "cancelled"}
             and rebuild_request is None
+            and not blocked_reader_aggregate_recoverable(manifest)
         ):
             return
         children = [
@@ -6849,14 +6820,21 @@ class FanoutCoordinationMixin(
             identity_sources = retry_dispatch["identity_sources"]
             task_item = retry_dispatch["task_item"]
         else:
-            if recovery_decision_event is not None:
+            if fresh_operation and manifest.get("topology") == "fanout_reader":
+                from zf.runtime.reader_fanout_retry import prepare_fresh_reader_retry
+
+                prepared_call = prepare_fresh_reader_retry(
+                    self, manifest=manifest, child=child, role=role,
+                    attempt=attempt, previous_dispatch=previous_dispatch,
+                )
+            elif recovery_decision_event is not None:
                 prepared_call = self._prepare_reader_fanout_retry_operation(
                     manifest=manifest,
                     child=child,
                     recovery_decision_event=recovery_decision_event,
                 )
-                if prepared_call is not None and not prepared_call.should_dispatch:
-                    return False
+            if prepared_call is not None and not prepared_call.should_dispatch:
+                return False
             task_item = {}
             briefing_path = self._write_fanout_retry_briefing(
                 role=role,
@@ -8311,6 +8289,11 @@ class FanoutCoordinationMixin(
                 "recommendation": "approve",
             },
         }
+        from zf.runtime.research_synthesis_contract import prepare_research_synthesis
+
+        research_handoff_lines = prepare_research_synthesis(
+            str(manifest.get("stage_id") or ""), completion_payload,
+        )
         completion_payload.update({
             key: call_payload[key]
             for key in PLAN_SYNTH_HANDOFF_KEYS
@@ -8382,6 +8365,10 @@ class FanoutCoordinationMixin(
                 "evidence_refs": [],
             })
         if call_payload:
+            # Bind identities in advance, but require the agent to author its verdict.
+            for body in (completion_payload, completion_payload["report"]):
+                for field in ("status", "recommendation", "summary"):
+                    body[field] = ""
             from zf.runtime.plan_synth_handoff import (
                 render_plan_synth_completion_command,
                 render_plan_synth_validation_section,
@@ -8393,7 +8380,10 @@ class FanoutCoordinationMixin(
                 state_dir=self.state_dir,
                 payload=completion_payload,
             )
-            validation_lines = render_plan_synth_validation_section(completion_command)
+            validation_lines = render_plan_synth_validation_section(
+                completion_command,
+                scratch_path=self.state_dir / completion_payload["result_scratch_ref"],
+            )
         else:
             validation_lines = []
             completion_command = " ".join([
@@ -8441,6 +8431,7 @@ class FanoutCoordinationMixin(
                 "",
                 *runner_policy_lines,
                 *scope_summary_lines,
+                *research_handoff_lines,
                 *source_lines,
                 *( [""] if source_lines else [] ),
                 *skill_briefing.render_skill_briefing_section(role, skill_entries),
@@ -8490,7 +8481,14 @@ class FanoutCoordinationMixin(
                         "operation_id": report.get("operation_id", ""),
                         "request_hash": report.get("request_hash", ""),
                         "envelope_ref": report.get("admitted_call_result_ref", {}),
-                        "control_result": report.get("control_result", {}),
+                        **(
+                            {"control_result_ref": report["control_result_ref"]}
+                            if call_payload
+                            and isinstance(report.get("control_result_ref"), dict)
+                            and report["control_result_ref"].get("ref")
+                            and report["control_result_ref"].get("sha256")
+                            else {"control_result": report.get("control_result", {})}
+                        ),
                     }
                     for report in reports
                     if report.get("admitted_call_result_ref")

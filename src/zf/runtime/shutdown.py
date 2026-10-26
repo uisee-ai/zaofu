@@ -46,6 +46,7 @@ def requeue_stale_inflight_tasks(
     sequence; manual intervention remains the fallback.
     """
     from zf.core.task.store import TaskStore
+    from zf.runtime.workflow_anchor import is_workflow_dispatch_managed_task
 
     kanban_path = state_dir / "kanban.json"
     if not kanban_path.exists():
@@ -58,6 +59,10 @@ def requeue_stale_inflight_tasks(
 
     requeued_any = False
     for task in in_flight:
+        # A workflow root belongs to the durable Run, not a provider session.
+        # Run terminal/recovery actions own its state across stop and restart.
+        if is_workflow_dispatch_managed_task(task):
+            continue
         from_assignee = task.assigned_to or ""
         from_dispatch_id = task.active_dispatch_id or ""
         try:

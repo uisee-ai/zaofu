@@ -15,7 +15,7 @@ from zf.core.events import ZfEvent
 from zf.core.events.writer import EventWriter
 from zf.core.safety.path_guard import PathGuard, PathGuardError
 from zf.core.state.atomic_io import atomic_write_text
-from zf.core.workflow.request_policy import missing_fields_for_kind
+from zf.core.workflow.request_policy import missing_fields_for_kind, normalize_workflow_kind
 from zf.runtime.workflow_origin import (
     WorkflowOriginError,
     assert_same_workflow_origin,
@@ -352,6 +352,7 @@ def revise_workflow_request(
     manifest_path: Path,
     *,
     actor: str,
+    kind: str | None = None,
     objective: str | None = None,
     source_root: str | None = None,
     target_root: str | None = None,
@@ -398,6 +399,7 @@ def revise_workflow_request(
         raise WorkflowRequestError("current requirement spec is missing")
     revision = int(prior.get("revision") or 0) + 1
     updates = {
+        "kind": normalize_workflow_kind(kind) if kind is not None else None,
         "objective": objective,
         "source_root": source_root,
         "target_root": target_root,
@@ -405,9 +407,7 @@ def revise_workflow_request(
         "constraints": constraints,
         "open_questions": open_questions,
     }
-    spec = dict(current)
-    spec["revision"] = revision
-    spec["updated_at"] = _now_iso()
+    spec = dict(current, revision=revision, updated_at=_now_iso())
     for key, value in updates.items():
         if value is not None:
             spec[key] = value
@@ -585,8 +585,9 @@ def bind_workflow_synthesis_result(
         raise WorkflowRequestError(
             f"workflow request is not synthesis-ready: {current}"
         )
-    projection = dict(projection)
     questions = [str(item).strip() for item in open_questions if str(item).strip()]
+    from zf.runtime.workflow_prepare import synthesis_open_questions
+    questions = synthesis_open_questions(state_dir, projection, selected_flow_family, questions)
     projection.update({
         "status": "clarifying" if questions else "ready",
         "open_questions": questions,

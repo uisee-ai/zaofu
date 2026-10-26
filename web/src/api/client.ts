@@ -1196,9 +1196,15 @@ export async function prepareWorkflowProposal(
   });
 }
 
+export async function reviewWorkflowPreview(
+  projectId: string, payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return mutateWorkflowRequest(projectId, "workflow-preview-review", payload);
+}
+
 async function mutateWorkflowRequest(
   projectId: string,
-  action: "workflow-clarify" | "workflow-submit",
+  action: "workflow-clarify" | "workflow-submit" | "workflow-preview-review",
   payload: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`${projectPrefix(projectId)}/${action}`, {

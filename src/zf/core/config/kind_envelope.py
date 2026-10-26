@@ -75,6 +75,7 @@ def _norm_template(value: Any) -> Any:
             "skillsByStage": "skills_by_stage",
             "roleKindByStage": "role_kind_by_stage",
             "backendByStage": "backend_by_stage",
+            "lifecycleByStage": "lifecycle_by_stage",
             "allowedTools": "allowed_tools",
             "budgetUsd": "budget_usd",
             "contextWindowTokens": "context_window_tokens",

@@ -10,8 +10,10 @@ from zf.core.workflow.generic_workflow import (
     COMPLETION_PROFILES,
     REGISTERED_OPERATIONS,
     REGISTERED_TEMPLATES,
+    generic_workflow_catalog_projection,
 )
-from zf.runtime.execution_profiles import execution_profile_catalog
+from zf.runtime.execution_profiles import execution_profile_catalog, execution_profile_catalog_projection
+from zf.runtime.workflow_route_policy import effective_execution_policy_digest
 
 
 WORKFLOW_SYNTHESIS_RESULT_SCHEMA = "workflow-synthesis-result.v1"
@@ -23,7 +25,7 @@ ALLOWED_FLOW_FAMILIES = frozenset({
 })
 
 
-def admission_catalog(config: Any, project_root: Path) -> dict[str, set[str]]:
+def admission_catalog(config: Any, project_root: Path) -> dict[str, Any]:
     roles: set[str] = set()
     skills: set[str] = set()
     for role in getattr(config, "roles", []) or []:
@@ -40,6 +42,12 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, set[str]]:
             )
     for skill_path in Path(project_root).glob("skills/*/SKILL.md"):
         skills.add(skill_path.parent.name)
+    execution = execution_profile_catalog_projection(config)
+    for role in getattr(config, "roles", []) or []:
+        execution["roles"][str(role.instance_id or role.name)].update(
+            role_kind=role.role_kind,
+            native_delegation=getattr(role.provider_session, "native_delegation", None),
+        )
     return {
         "roles": roles,
         "skills": skills,
@@ -47,6 +55,25 @@ def admission_catalog(config: Any, project_root: Path) -> dict[str, set[str]]:
         "templates": set(REGISTERED_TEMPLATES),
         "operations": set(REGISTERED_OPERATIONS),
         "completion_profiles": set(COMPLETION_PROFILES),
+        "template_contracts": generic_workflow_catalog_projection()["templates"],
+        "execution_catalog": execution,
+        "effective_policy_digest": effective_execution_policy_digest(config),
+    }
+
+
+def admission_contract(catalog: Mapping[str, Any]) -> dict[str, Any]:
+    """Pin the same effective catalog in the provider prompt and request hash."""
+    return {
+        "effective_policy_digest": catalog["effective_policy_digest"],
+        "execution_catalog": catalog["execution_catalog"],
+        "template_contracts": catalog["template_contracts"],
+        "allowed_flow_families": sorted(ALLOWED_FLOW_FAMILIES),
+        "allowed_roles": sorted(catalog["roles"]),
+        "allowed_skills": sorted(catalog["skills"]),
+        "allowed_profiles": sorted(catalog["profiles"]),
+        "allowed_generic_templates": sorted(catalog["templates"]),
+        "allowed_generic_operations": sorted(catalog["operations"]),
+        "allowed_completion_profiles": sorted(catalog["completion_profiles"]),
     }
 
 
@@ -54,7 +81,7 @@ def synthesis_prompt(
     *,
     request: Mapping[str, Any],
     requirement: Mapping[str, Any],
-    catalog: Mapping[str, set[str]],
+    catalog: Mapping[str, Any],
 ) -> str:
     contract = {
         "schema_version": WORKFLOW_SYNTHESIS_RESULT_SCHEMA,
@@ -64,15 +91,7 @@ def synthesis_prompt(
         "requirement_digest": str(
             request.get("requirement_spec_digest") or ""
         ),
-        "allowed_flow_families": sorted(ALLOWED_FLOW_FAMILIES),
-        "allowed_roles": sorted(catalog["roles"]),
-        "allowed_skills": sorted(catalog["skills"]),
-        "allowed_profiles": sorted(catalog["profiles"]),
-        "allowed_generic_templates": sorted(catalog["templates"]),
-        "allowed_generic_operations": sorted(catalog["operations"]),
-        "allowed_completion_profiles": sorted(
-            catalog["completion_profiles"]
-        ),
+        **admission_contract(catalog),
         "requirement": dict(requirement),
     }
     return (

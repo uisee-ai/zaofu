@@ -20,6 +20,7 @@ from typing import Iterable
 from zf.core.state.state_packet import StatePacket
 from zf.runtime.backend_session_reader import TranscriptCatchup
 from zf.runtime.workflow_state_breadcrumb import (
+    display_next_event,
     render_workflow_state_breadcrumb,
 )
 
@@ -69,8 +70,8 @@ def render_recovery_briefing(
         f"This worker was restarted (reason: "
         f"`{recovery_reason or 'unspecified'}`). "
         f"Chat history may be incomplete. The State Packet below is "
-        f"the canonical fact source — trust it over any partial "
-        f"transcript memory."
+        f"a projection of runtime facts. Reconcile it with the current "
+        f"operation contract; partial transcript memory cannot authorize completion."
     )
     lines.append("")
     lines.append(render_workflow_state_breadcrumb(
@@ -140,7 +141,7 @@ def _packet_quick_render(packet: StatePacket) -> list[str]:
     lines.append(
         f"- task_id: `{packet.task_id or '-'}`  ·  "
         f"stage: `{packet.current_stage or '-'}`  ·  "
-        f"next_event: `{packet.next_event or '(ship-ready)'}`"
+        f"next_event: `{display_next_event(packet)}`"
     )
     if packet.objective:
         lines.append(f"- objective: {packet.objective}")

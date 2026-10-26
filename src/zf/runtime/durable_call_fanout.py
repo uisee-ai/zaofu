@@ -284,10 +284,13 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         role: RoleConfig,
         causation_id: str,
         aggregate=None,
+        retry_attempt: int = 0,
     ) -> dict[str, Any]:
         """Persist one selected reader call before any sibling is sent."""
 
         run_id = f"run-{context.fanout_id}-{child.child_id}"
+        if retry_attempt:
+            run_id += f"-retry-{retry_attempt}"
         if not self._pin_reader_target_or_reject(
             role=role,
             target_ref=child.target_ref or context.target_ref,
@@ -355,7 +358,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
                     context=context,
                     child=child,
                     payload=child.payload,
-                ),
+                ) + (f"@retry:{retry_attempt}" if retry_attempt else ""),
                 stage_id=context.stage_id,
                 task_id=str(child.payload.get("task_id") or ""),
                 dispatch_id=run_id,
@@ -516,12 +519,16 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
         """Register the whole durable sibling batch before provider send."""
 
         prepared: dict[str, dict[str, Any]] = {}
+        ready_roles: set[str] = set()
         for child in context.expected_children:
             role = roles_by_instance.get(child.role_instance)
             if role is None:
                 continue
             run_id = f"run-{context.fanout_id}-{child.child_id}"
-            if not self._ensure_fanout_role_dispatchable(
+            # Siblings sharing a lane are registered together, then sent
+            # serially. Do not rotate its idle context for each queued child.
+            # Actual dispatch rechecks the child-specific context boundary.
+            if role.instance_id not in ready_roles and not self._ensure_fanout_role_dispatchable(
                 role=role,
                 fanout_id=context.fanout_id,
                 stage_id=context.stage_id,
@@ -536,6 +543,7 @@ class DurableCallFanoutMixin(WriterFanoutRetryMixin):
             ):
                 prepared[child.child_id] = {"skip": True, "run_id": run_id}
                 continue
+            ready_roles.add(role.instance_id)
             try:
                 prepared[child.child_id] = self._prepare_reader_fanout_child_operation(
                     context=context,

@@ -220,6 +220,14 @@ def test_research_fanout_template_runs_to_channel_update(tmp_path: Path) -> None
     events = log.read_all()
     assert any(event.type == "fanout.synth.dispatched" for event in events)
     assert transport.sent[-1][0] == "synthesizer"
+    synth_briefing = Path(transport.sent[-1][1]).read_text(encoding="utf-8")
+    assert "## Research handoff" in synth_briefing
+    for field in (
+        "architecture", "acceptance_matrix", "test_matrix", "task_map",
+        "prd_prompt_input", "refactor_prompt_input",
+    ):
+        assert f'"{field}"' in synth_briefing
+    assert "not an approved implementation plan" in synth_briefing
 
     orch.run_once(events=[ZfEvent(
         type="fanout.synth.completed",
@@ -241,6 +249,10 @@ def test_research_fanout_template_runs_to_channel_update(tmp_path: Path) -> None
             "report": {
                 "summary": "Research synthesis ready.",
                 "recommendation": "approve",
+                "architecture": {"proposal": "retain a pure validator"},
+                "acceptance_matrix": [{"id": "AC-STRICT", "criterion": "reject bool"}],
+                "test_matrix": [{"id": "CHECK-BOOL", "acceptance_id": "AC-STRICT"}],
+                "task_map": [{"id": "PROPOSED-VALIDATOR", "status": "proposal"}],
             },
         },
     )])
@@ -267,6 +279,9 @@ def test_research_fanout_template_runs_to_channel_update(tmp_path: Path) -> None
         == aggregate.payload["research_artifact_digest"]
     )
     assert aggregate.payload["research_summary"] == "Evidence-backed synthesis."
+    artifact_body = artifact_path.read_text(encoding="utf-8")
+    for authored_fact in ("retain a pure validator", "AC-STRICT", "CHECK-BOOL", "PROPOSED-VALIDATOR"):
+        assert authored_fact in artifact_body
     assert any(
         isinstance(item, dict)
         and item.get("ref") == artifact_ref

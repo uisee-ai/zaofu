@@ -280,6 +280,12 @@ class LifecycleEvidenceQueriesMixin:
         for event_index in range(len(events) - 1, -1, -1):
             event = events[event_index]
             payload = event.payload if isinstance(event.payload, dict) else {}
+            if event.type == "fanout.child.dispatch_lost":
+                key = self._fanout_child_key(payload)
+                # Loss releases one dispatch, never a later retry of the child.
+                if all(key):
+                    terminal_children.add(key)
+                continue
             if event.type == "fanout.child.stale_completion":
                 key = self._fanout_child_key(payload)
                 if key[0] and key[1]:

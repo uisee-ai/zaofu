@@ -141,7 +141,7 @@ _TASK_MAP_CONTRACT_INSTRUCTIONS = [
     "Plan handoff hard contract: for PRD plans, plan_md is the human review document, not a status summary; include authority/scope, one row per formal task with dependencies and verification, execution waves, traceability coverage, owner decisions, and the pre-approval impl/verify gate. Return plan_content_profile=derived_plan_full only when these sections are present; use summary_only for an intentionally abbreviated artifact.",
     "Plan handoff hard contract: preserve authority_refs and requirement_spec_ref when source requirements are available so the owner can open the original PRD beside the derived Plan.",
     "Plan handoff hard contract: preserve explicit Appendix/task acceptance mappings exactly; never round-robin ids or emit shared placeholder trace statements. Every trace row needs its source id, meaningful requirement statement, owning task(s), and evidence status; missing mapping is rework and cannot claim derived_plan_full.",
-    "Plan handoff hard contract: carry named UI/UX boundaries into the integration task, including page 1-6, drawers, notifications, keyboard behavior, and narrow-screen behavior when present in the authority.",
+    "Plan handoff hard contract: carry named UI/UX boundaries into the integration task, preserving the exact screens and interaction requirements named in the authority.",
     "Plan review contract: the human approval entry must bind PRD user outcomes, SDD boundaries and input/output or data/event contracts, TDD expected results and evidence paths, and a stable Decision Register with affected-task and blocker impact; a task title, source excerpt, or command name alone is insufficient.",
     "Plan review contract: `owner_decision_items` must agree with the bound Decision Register; if the payload omits them, preserve the register through an explicit artifact/ref and let Critic request rework when the register cannot be reconstructed.",
     "Plan handoff hard contract: produce source-index.v1 and expose source_index_ref or a source_index plan port; every task needs source_key, source_ref, and source_excerpt.",
@@ -1408,6 +1408,12 @@ def _expand_product_flow_light(
     default_quality: str,
     default_delivery: str,
 ) -> dict[str, Any]:
+    if _product_acceptance_mode_param(params) == "blocking":
+        raise WorkflowProfileError(
+            f"{flow_kind} topology: light has no planner to produce "
+            "product_acceptance_spec; productAcceptanceMode: blocking "
+            "requires topology: fanout"
+        )
     entry = str(_pick(
         params, "entryTrigger", "entry_trigger", default=entry_default,
     ))
@@ -1638,6 +1644,7 @@ def expand_prd_flow(params: dict) -> dict[str, Any]:
         {
             "id": "prd-plan",
             "attempt_domain": "plan",
+            "result_semantics": "artifact_production",
             "trigger": "prd.scan.completed",
             "topology": "fanout_reader",
             "roles": [plan_role],
