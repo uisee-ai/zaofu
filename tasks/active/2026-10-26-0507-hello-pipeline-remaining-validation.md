@@ -55,9 +55,36 @@ RV-04 取样：直接 py-spy attach 被宿主 ptrace 权限拒绝，未修改权
   故障注入、关联恢复及最终 done 的强制审计仍保留。新实验验证待完成。
 
 - 生命周期/AR 影响闭包：114 passed；sentinel：51 passed；flow mock E2E：10 passed。
-- 停机期间提交的 aggregate rebuild 未在重启后自动消费；运行后通过已有
+- 停机期间提交的 aggregate rebuild 重启后未产生新 aggregate；运行后通过已有
   `stage-retrigger` 重放原 discovery（`evt-7b7eff4f545a`），06:06 已派发新的
   Judge `fanout-prd-lanes-final-evt-8d29743e`。此恢复未产生新的实现/任务验证派发。
-  停机期间控制请求的重放覆盖仍需独立验证，不能由这次在线重触发证明。
+  后续查明原 discovery 被历史错误 rework 判为 stale，rebuild handler 因此返回；
+  不能据此认定启动 catch-up 丢失请求。真实问题是下文的兼容事件重复返工权限。
 - 第四次独立 AR：`ar-experiment-product-seed`，使用修订后的产品 seed 与同一
   token_budget=0 配置，保留全部外层终态与故障恢复检查；进行中。
+
+## 广域确定性回归完整结果
+
+`dev-verify run --base dev --workers 4 --keep-going` 完整结束：Python deterministic
+12,291 passed / 20 skipped / 10 failed，1836.45 秒；serial 10 passed、sentinel 51
+passed、flow-smoke 10 passed。这里不包含 host/real_provider，也不冒充全绿。
+
+10 个失败中，2 个环境测试硬编码不存在的 `/path/to/zaofu`，2 个周期机制预算
+仍为18但现有源码自 a06712238 已为19，1 个 Channel mock 的3秒超时在并行负载
+下不稳定。经复现、机制审查及修复，相关15项在四进程复测通过。
+
+另外5项仍未解决：4个 export_public 测试依赖 `tools/export-public.sh`（公开化
+提交5fa09bef明确删除），1个 prompt_source_closure 依赖从未进入此公开源码的
+`prompt/2026-08-05-1559-kanban-agent-five-workflow-real-e2e.md`。最终独立复测为
+5 failed / 1 passed，日志 public-assets-final.log。触发后续处理的条件：公开仓库
+发布维护者恢复经过审查的资产，或明确调整公开投影的测试契约；本批次不凭空
+重建私有发布工具或历史需求，不删除/skip断言掩盖失败。
+
+## 真实恢复进一步发现：兼容失败事件被误当返工权限
+
+06:06的新Judge被内核取消，原因为05:50已存在的 `task_map.ready` 返工。
+追溯至正式 blocked/hold 的兼容投影 `judge.failed(authority=compat_projection)`，
+被 Run Manager 的 legacy candidate rework planner 误当第二个语义裁决。
+修复在 planner、受控动作准入、reader currentness 三处维持同一边界：兼容投影
+不能授权返工；历史错误派生记录不能消耗真实产品失败的重试预算或取消恢复reader。
+不修改既有账本、终态结果、候选提交或审批。该发现保留在真实失败记录中。

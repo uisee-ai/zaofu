@@ -98,3 +98,9 @@ Autoresearch controlled-stuck-recovery 的产品输入只要求一份中文演�
 文件存在性验收。故障注入、恢复关联和最终 done 由外层 runner 的
 `requires_worker_stuck_injection`、`audit_stuck_incident` 与终态检查验证，
 不把尚未发生的终态写成中途 candidate_verify 的先决条件。
+
+Thin Judge 的 `judge.failed(authority=compat_projection)` 只供兼容展示。
+Candidate rework planner 与 `candidate-rework-apply` 不再把它当第二次语义裁决；
+reader currentness 同时忽略历史版本从此类投影误派生的候选失效记录。正式
+`goal.closure.rejected` 的受控 replan/复验路径及普通 `test.failed` 返工保持有效。
+真实恢复中发现的 hold→legacy rework→取消新 Judge 已覆盖回归测试；历史账本不改写。

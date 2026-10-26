@@ -56,6 +56,16 @@ class CandidateReworkActionsMixin:
                 status="rejected",
             )
 
+        source_id = str(payload.get("source_event_id") or "")
+        source = next((event for event in self.writer.event_log.read_all()
+                       if event.id == source_id), None)
+        if source is not None and (source.payload or {}).get("authority") == "compat_projection":
+            return self._failed(
+                requested=requested, action=action, requested_action=requested_action,
+                task_id=None, reason="compatibility projection cannot authorize candidate rework",
+                status_code=409, status="rejected",
+            )
+
         if rework_action == "retrigger":
             result = self._candidate_rework_retrigger(payload, requested=requested)
         elif rework_action == "replan":

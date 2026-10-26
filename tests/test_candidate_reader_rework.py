@@ -148,3 +148,12 @@ def test_rework_fence_leaves_new_candidate_and_writer_current():
     assert current["reader-1"] == ("candidate_superseded_by_controlled_rework", rework.id)
     assert current["reader-new"] == ("", "")
     assert current["writer-1"] == ("", "")
+
+
+def test_goal_compat_projection_cannot_fence_recovery_reader():
+    started, failure, rework = _events()
+    failure.type = "judge.failed"
+    failure.payload.update(authority="compat_projection", verdict="blocked")
+    rework.payload["rework_source"] = "judge.failed"
+    current = build_fanout_currentness([started, failure, rework])
+    assert current["reader-1"] == ("", "")
