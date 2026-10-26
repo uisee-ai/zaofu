@@ -28,6 +28,8 @@ def _safe_snapshot_projection(name: str, default: Any, factory: Any) -> Any:
     try:
         return factory()
     except Exception as exc:
+        from zf.web.projections.projection_failures import record_projection_failure
+        record_projection_failure(name)
         if isinstance(default, dict):
             return {"projection": name, "error": str(exc)}
         return default

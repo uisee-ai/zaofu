@@ -164,3 +164,46 @@ test("Observability keeps its metrics and refreshes through its scoped snapshot"
   expect(panelPaths.every(path => path.endsWith("/integration-queue"))).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("first SQLite generation stays loading until ready, without a fake empty Board", async ({ page }) => {
+  await mockApi(page);
+  let ready = false;
+  await page.route("**/projects/a/snapshot/board", route => route.fulfill(ready
+    ? { json: { ...snapshot("a"), read_projection: { state: "ready", generated_at_epoch: 1_790_000_000 } } }
+    : { status: 202, json: { read_projection: { state: "building" } } }));
+  await page.goto("/?project=a&page=board");
+  await expect(page.getByText("Loading board…", { exact: true })).toBeVisible();
+  await expect(page.locator(".board-grid .task-card")).toHaveCount(0);
+  ready = true;
+  await expect(page.locator(".board-grid")).toContainText("Task a");
+});
+
+test("stale SQLite generation stays visible with a notice and updates without an event seq change", async ({ page }) => {
+  await mockApi(page);
+  let ready = false;
+  await page.route("**/projects/a/snapshot/board", route => route.fulfill({ json: {
+    ...snapshot("a", ready ? "Updated projection" : "Previous projection"),
+    read_projection: { state: ready ? "ready" : "refreshing", generated_at_epoch: 1_790_000_000 },
+  } }));
+  await page.goto("/?project=a&page=board");
+  await expect(page.locator(".board-grid")).toContainText("Previous projection");
+  await expect(page.getByRole("status")).toContainText("当前显示上次结果");
+  ready = true;
+  await expect(page.locator(".board-grid")).toContainText("Updated projection");
+  await expect(page.getByText("正在更新数据", { exact: false })).toHaveCount(0);
+});
+
+test("ready projection refreshes clock-derived values without new events", async ({ page }) => {
+  await page.clock.install();
+  await mockApi(page);
+  let changed = false;
+  await page.route("**/projects/a/snapshot/board", route => route.fulfill({ json: {
+    ...snapshot("a", changed ? "Clock refreshed" : "Initial clock"),
+    read_projection: { state: "ready", generated_at_epoch: 1_790_000_000 },
+  } }));
+  await page.goto("/?project=a&page=board");
+  await expect(page.locator(".board-grid")).toContainText("Initial clock");
+  changed = true;
+  await page.clock.fastForward(31_000);
+  await expect(page.locator(".board-grid")).toContainText("Clock refreshed");
+});

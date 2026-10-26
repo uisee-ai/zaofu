@@ -1,3 +1,6 @@
+import { useOverviewPulse } from "./useOverviewPulse";
+import { useDashboardProjectionRefresh } from "./useDashboardProjectionRefresh";
+import { ReadProjectionNotice } from "../components/shared/ReadProjectionNotice";
 import type { CSSProperties, PointerEvent, ReactNode, UIEvent as ReactUIEvent } from "react";
 import { Fragment, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
@@ -56,7 +59,6 @@ import {
   X,
 } from "lucide-react";
 import {
-  fetchOverviewPulse,
   getChannelConversation,
   getChannelDetail,
   getChannels,
@@ -649,6 +651,7 @@ export function App() {
   const [taskLoadError, setTaskLoadError] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("Summary");
   const [page, setPage] = useState<PageId>(initial.page);
+  useDashboardProjectionRefresh(activeProjectId, page, snapshot, setSnapshot);
   const [viewMode, setViewMode] = useState<ViewMode>(initial.view);
   const [statusFilter, setStatusFilter] = useState(initial.status);
   const [assigneeFilter, setAssigneeFilter] = useState("all");
@@ -2177,6 +2180,7 @@ export function App() {
       </header>
 
       {error ? <div className="error-strip">{error}</div> : null}
+      <ReadProjectionNotice snapshot={snapshot} />
 
       <main className={`workspace ${terminalOpen && activeProjectId ? "has-web-terminal" : ""}`.trim()}>
         <WorkspaceRail
@@ -2629,65 +2633,7 @@ function ProjectHomePage({
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onOpenTask: (taskId: string) => void;
 }) {
-  // overview-pulse.v1 is an independent project-scoped projection. A project
-  // already pinned by the URL can render its pulse while workspace discovery
-  // and the auxiliary light snapshot continue in parallel.
-  const pulseProjectId = projectId.trim();
-  const [pulseResource, setPulseResource] = useState<{
-    data: OverviewPulse | null;
-    projectId: string;
-  }>({ data: null, projectId: "" });
-  const pulse = pulseResource.projectId === pulseProjectId ? pulseResource.data : null;
-  const pulseSnapshotRef = useRef<{ projectId: string; seq: number | null }>({
-    projectId: "",
-    seq: null,
-  });
-  useEffect(() => {
-    if (!pulseProjectId) {
-      setPulseResource({ data: null, projectId: "" });
-      return;
-    }
-    let cancelled = false;
-    fetchOverviewPulse(pulseProjectId)
-      .then((next) => {
-        if (!cancelled) setPulseResource({ data: next, projectId: pulseProjectId });
-      })
-      .catch(() => {
-        if (!cancelled) setPulseResource({ data: null, projectId: pulseProjectId });
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [pulseProjectId]);
-  const pulseSnapshotSeq = snapshot?.project.project_id === pulseProjectId
-    && typeof snapshot.seq === "number"
-    ? snapshot.seq
-    : null;
-  useEffect(() => {
-    const seen = pulseSnapshotRef.current;
-    if (seen.projectId !== pulseProjectId) {
-      pulseSnapshotRef.current = { projectId: pulseProjectId, seq: pulseSnapshotSeq };
-      return undefined;
-    }
-    if (pulseSnapshotSeq === null || seen.seq === null) {
-      seen.seq = pulseSnapshotSeq;
-      return undefined;
-    }
-    if (pulseSnapshotSeq === seen.seq) return undefined;
-    seen.seq = pulseSnapshotSeq;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void fetchOverviewPulse(pulseProjectId)
-        .then((next) => {
-          if (!cancelled) setPulseResource({ data: next, projectId: pulseProjectId });
-        })
-        .catch(() => undefined);
-    }, 250);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [pulseProjectId, pulseSnapshotSeq]);
+  const pulse = useOverviewPulse(projectId.trim(), snapshot?.project.project_id === projectId ? snapshot.seq : undefined);
   const tasks = snapshot ? allBoardTasks(snapshot) : [];
   const activeTasks = tasks.filter((task) => task.status !== "done" && task.status !== "cancelled");
   const taskCounts = BOARD_COLUMNS.map((column) => ({
@@ -2919,6 +2865,7 @@ function ProjectHomePage({
           );
         })}
       </div>
+      <ReadProjectionNotice status={pulse?.read_projection} />
       <PulseBand pulse={pulse?.run_pulse ?? null} />
       <ProjectFocusPanel items={focusItems} />
       <TaskFlowBand

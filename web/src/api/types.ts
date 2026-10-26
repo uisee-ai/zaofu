@@ -3028,6 +3028,7 @@ export interface LongRunTruthProjection {
 }
 
 export interface Snapshot {
+  read_projection?: { state: "ready" | "building" | "refreshing" | "error"; generated_at_epoch?: number; source_cursor?: { source_seq?: number }; error?: string };
   seq: number;
   generated_at: string;
   project: {
@@ -3403,6 +3404,7 @@ export interface OverviewWhyNot {
 }
 
 export interface OverviewPulse {
+  read_projection?: Snapshot["read_projection"];
   schema_version?: string;
   is_derived_projection?: boolean;
   generated_at?: string;

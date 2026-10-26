@@ -25,14 +25,7 @@ export async function cachedGetJson<T>(
       if (pending) return pending as Promise<T>;
     }
   }
-  const promise = fetch(path, {
-    headers: { Accept: "application/json" },
-    signal: options.signal,
-  })
-    .then(async (response) => {
-      if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-      return (await response.json()) as T;
-    })
+  const promise = fetchReadyJson<T>(path, options.signal)
     .then((value) => {
       // Signal-owned requests have an independent lifecycle and can race a
       // shared request for the same key. Keep them out of the shared cache so
@@ -47,6 +40,23 @@ export async function cachedGetJson<T>(
     });
   if (ttlMs > 0 && !options.signal) inFlight.set(path, promise);
   return promise;
+}
+
+async function fetchReadyJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const deadline = Date.now() + 180_000;
+  while (true) {
+    const response = await fetch(path, { headers: { Accept: "application/json" }, signal });
+    if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+    const value = await response.json();
+    if (response.status !== 202 || value?.read_projection?.state !== "building") return value as T;
+    if (Date.now() >= deadline) throw new Error("首次数据准备仍未完成，请稍后刷新。");
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => { clearTimeout(timer); reject(new DOMException("Aborted", "AbortError")); };
+      const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, 1000);
+      if (signal?.aborted) abort();
+      else signal?.addEventListener("abort", abort, { once: true });
+    });
+  }
 }
 
 export function clearGetCache(prefix = ""): void {

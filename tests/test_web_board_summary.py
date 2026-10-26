@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+from tests.dashboard_projection_helpers import ready_get
 from pathlib import Path
 
 import pytest
@@ -73,9 +74,11 @@ def test_board_route_uses_cached_summary_and_preserves_light_detail(
     client = TestClient(server.create_app(state))
     # Project-scoped default id is available without a real workspace registry.
     light = client.get("/api/projects/default/snapshot/light")
-    board = client.get("/api/projects/default/snapshot/board")
+    board = ready_get(client, "/api/projects/default/snapshot/board")
     assert light.status_code == board.status_code == 200
-    assert board.json() == board_snapshot_summary(light.json())
+    board_data = board.json()
+    assert board_data.pop("read_projection")["state"] == "ready"
+    assert board_data == board_snapshot_summary(light.json())
     assert sorted(calls) == ["board", "light"]
     repeated = client.get("/api/projects/default/snapshot/board", headers={"If-None-Match": board.headers["etag"]})
     assert repeated.status_code == 304

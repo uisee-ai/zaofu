@@ -686,6 +686,8 @@ def create_app(
     gets a fresh app pointing at its own tmp .zf.
     """
     app = FastAPI(title="zaofu dashboard", version=__version__)
+    from zf.web.dashboard_projection import register_pending_handler
+    register_pending_handler(app)
     state_dir = Path(state_dir).resolve()
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     app.state.kanban_agent_recovery = reconcile_kanban_startup(state_dir, config=config)
@@ -826,6 +828,9 @@ def create_app(
             return data
 
     def _cached_project_snapshot(sd: Path, *, slice_name: str, cfg, root, token) -> dict[str, Any]:
+        if slice_name in {"board", "observability-summary"}:
+            from zf.web.dashboard_projection import snapshot as dashboard_snapshot
+            return _with_session_overlay(dashboard_snapshot(sd, slice_name=slice_name, config=cfg, project_root=root or sd.parent), token)
         from zf.web.projections.events import _event_log_fingerprint
 
         key = f"{sd}::{slice_name}"
@@ -3763,78 +3768,6 @@ def create_app(
             media_type="text/html",
             headers={"Cache-Control": "no-cache"},
         )
-
-    def _prewarm_recent_projects() -> None:
-        """Warm Board summaries for recently opened projects.
-
-        Build only the derived views the Board consumes; hydrating full reports
-        and optional task indexes here competes with foreground requests.
-        Background daemon, best-effort, one project at a time (GIL-bound work).
-        """
-        try:
-            from zf.core.workspace import WorkspaceRegistry, project_lifecycle
-
-            targets: list[tuple[str, Path]] = []
-            if default_project_enabled and state_dir.exists():
-                targets.append(("default", state_dir))
-            try:
-                rows = sorted(
-                    WorkspaceRegistry().list_projects(),
-                    key=lambda item: str(getattr(item, "last_opened_at", "") or ""),
-                    reverse=True,
-                )
-            except Exception:
-                rows = []
-            row_meta: dict[str, tuple] = {}
-            for row in rows[:4]:
-                lifecycle = project_lifecycle(row)
-                if lifecycle.can_open_board and lifecycle.state_dir_resolved:
-                    targets.append((row.project_id, Path(lifecycle.state_dir_resolved)))
-                    row_meta[str(lifecycle.state_dir_resolved)] = (
-                        getattr(row, "config_path", ""), getattr(row, "root", ""),
-                    )
-            seen: set[str] = set()
-
-            def _yield_to_requests() -> None:
-                # GIL courtesy: prewarming a 30k-event project starves a live
-                # request (observed: a cold project paid 20s queued behind
-                # prewarm). Wait for 2s of API silence before each project.
-                deadline = time.monotonic() + 60
-                while time.monotonic() < deadline:
-                    last = getattr(app.state, "last_api_request_monotonic", 0.0)
-                    if time.monotonic() - last >= 2.0:
-                        return
-                    time.sleep(0.5)
-
-            for name, sd in targets:
-                _yield_to_requests()
-                key = str(sd)
-                if key in seen or not sd.exists():
-                    continue
-                seen.add(key)
-                try:
-                    cfg = config if name == "default" else None
-                    root = project_root if name == "default" else None
-                    meta = row_meta.get(str(sd))
-                    if cfg is None and meta and meta[0]:
-                        try:
-                            from zf.core.config.loader import load_config as _load
-
-                            cfg = _load(Path(meta[0]))
-                            root = Path(meta[1]) if meta[1] else None
-                        except Exception:
-                            cfg = None
-                    _cached_project_snapshot(
-                        sd, slice_name="board", cfg=cfg, root=root, token=None,
-                    )
-                except Exception:
-                    continue
-        except Exception:
-            pass
-
-    threading.Thread(
-        target=_prewarm_recent_projects, name="zf-web-prewarm", daemon=True,
-    ).start()
 
     return app
 

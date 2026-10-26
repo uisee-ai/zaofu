@@ -1,5 +1,6 @@
 """The Observability route owns exactly its page data and complete metrics."""
 
+from tests.dashboard_projection_helpers import ready_get
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -43,7 +44,7 @@ def test_scoped_observability_keeps_metrics_without_building_board(tmp_path, mon
     monkeypatch.setattr(server, "_runs_index", lambda *a, **kw: {"runs": samples["runs"]})
     monkeypatch.setattr(server, "_active_runs", lambda *a, **kw: {"active_runs": samples["active_runs"]})
     client = TestClient(server.create_app(tmp_path))
-    scoped = client.get("/api/projects/default/snapshot/observability")
+    scoped = ready_get(client, "/api/projects/default/snapshot/observability")
     assert scoped.status_code == 200
     data = scoped.json()
     assert data["snapshot_slice"] == "observability-summary"

@@ -18,7 +18,6 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from zf.core.config.schema import ZfConfig
-from zf.core.events.factory import event_log_from_project
 from zf.core.events.model import ZfEvent
 from zf.core.task.kanban_projection import kanban_column_projection
 from zf.core.task.store import TaskStore
@@ -27,6 +26,7 @@ from zf.runtime.dispatch_diagnostics import (
     build_runtime_loop_health,
 )
 from zf.runtime.runtime_resources import build_runtime_resource_projection
+from zf.web.projections.projection_failures import record_projection_failure
 
 SCHEMA_VERSION = "overview-pulse.v1"
 PULSE_BUCKETS = 12
@@ -154,6 +154,7 @@ def _task_flow(
     try:
         tasks = TaskStore(state_dir / "kanban.json").list_all()
     except Exception:
+        record_projection_failure("pulse.tasks")
         tasks = []
     counts: dict[str, int] = {"todo": 0, "in_progress": 0, "verify": 0, "blocked": 0, "done": 0, "other": 0}
     last_task_event_ts: dict[str, str] = {}
@@ -272,6 +273,7 @@ def _why_not(state_dir: Path, events: list[ZfEvent], loop: dict[str, Any]) -> di
     try:
         notifications = build_dispatch_notifications(state_dir, loop=loop, events=events)
     except Exception:
+        record_projection_failure("pulse.notifications")
         notifications = []
     summary = "dispatching_normally"
     if notifications:
@@ -300,6 +302,7 @@ def _sessions(state_dir: Path, config: ZfConfig | None, events: list[ZfEvent]) -
             tmux_output="",
         )
     except Exception:
+        record_projection_failure("pulse.sessions")
         return {"active": 0, "total": 0, "stale": 0, "by_state": {}, "by_backend": {}}
     sessions = projection.get("provider_sessions", []) or []
     by_state: dict[str, int] = {}
@@ -332,8 +335,10 @@ def build_overview_pulse(
 ) -> dict[str, Any]:
     current = now or datetime.now(timezone.utc)
     try:
-        events = event_log_from_project(state_dir, config=config).read_days(2)
+        from zf.web.projections.events import events_read_days
+        events = events_read_days(state_dir, 2, config=config)
     except Exception:
+        record_projection_failure("pulse.events")
         events = []
     loop = build_runtime_loop_health(state_dir, events=events, now=current)
     return {
@@ -358,6 +363,9 @@ def build_overview_pulse_router(*, resolve_ctx: Callable[[str], Any]) -> APIRout
     @router.get("/api/projects/{project_id}/overview-pulse")
     def overview_pulse(project_id: str) -> JSONResponse:
         ctx = resolve_ctx(project_id)
-        return JSONResponse(build_overview_pulse(ctx.state_dir, config=ctx.config))
+        from zf.web.dashboard_projection import read_dashboard
+        data = read_dashboard(ctx.state_dir, ctx.project_root, ctx.config, "pulse",
+                              lambda: build_overview_pulse(ctx.state_dir, config=ctx.config))
+        return JSONResponse(data)
 
     return router
