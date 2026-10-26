@@ -778,8 +778,8 @@ def _trace_id_from_events(events: list[tuple[int, object]]) -> Any:
     )
 
 
-def _event_to_dict(seq: int, event: object) -> dict:
-    safe_event = redact_event(event)  # type: ignore[arg-type]
+def _event_to_dict(seq: int, event: object, *, include_payload: bool = True) -> dict:
+    safe_event = redact_event(event) if include_payload else event  # type: ignore[arg-type]
     return {
         "seq": seq,
         "id": getattr(safe_event, "id", ""),
@@ -787,7 +787,7 @@ def _event_to_dict(seq: int, event: object) -> dict:
         "type": getattr(safe_event, "type", ""),
         "actor": getattr(safe_event, "actor", None),
         "task_id": getattr(safe_event, "task_id", None),
-        "payload": getattr(safe_event, "payload", {}) or {},
+        "payload": (getattr(safe_event, "payload", {}) or {}) if include_payload else {},
         "causation_id": getattr(safe_event, "causation_id", None),
         "correlation_id": getattr(safe_event, "correlation_id", None),
     }

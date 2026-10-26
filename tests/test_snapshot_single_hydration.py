@@ -60,3 +60,22 @@ def test_payload_collect_matches_payload_ref() -> None:
                 assert key not in collected, (payload, key)
             else:
                 assert collected.get(key) == ref, (payload, key, ref, collected.get(key))
+
+
+def test_payload_collect_preserves_nested_shadowing_and_scalar_values() -> None:
+    import random
+
+    rng = random.Random(18)
+    keys = ["commit", "branch", "task_id", "missing"]
+
+    def tree(depth: int):
+        if not depth or rng.random() < 0.3:
+            return rng.choice([None, "", "ref", 0, False, 1.23456789])
+        if rng.random() < 0.4:
+            return [tree(depth - 1) for _ in range(4)]
+        return {key: tree(depth - 1) for key in rng.sample([*keys[:3], "a", "b", "c"], 4)}
+
+    for _ in range(300):
+        payload = tree(4)
+        collected = _payload_collect(payload, keys)
+        assert {key: collected.get(key) for key in keys} == {key: _payload_ref(payload, key) for key in keys}

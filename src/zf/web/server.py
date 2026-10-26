@@ -108,6 +108,7 @@ from zf.runtime.channel_prd_context import (
 )
 from zf.runtime.channel_profiles import public_channel_profile_catalog
 from zf.web.kanban_channel_context import kanban_channel_group_context
+from zf.web.projections.board_summary import board_snapshot_summary
 from zf.runtime.channel_workflow_authority import (
     bind_task_channel_authority,
     channel_workflow_authority_error,
@@ -1672,13 +1673,13 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot_slice(
+        return _etag_json(board_snapshot_summary(_cached_project_snapshot(
             context.state_dir,
             slice_name="board",
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            cfg=context.config,
+            root=context.project_root,
+            token=_web_session_cookie(request),
+        )), request)
 
     @app.get("/api/projects/{project_id}/snapshot/runtime")
     def project_snapshot_runtime(project_id: str, request: Request) -> JSONResponse:
@@ -3765,20 +3766,14 @@ def create_app(
         )
 
     def _prewarm_recent_projects() -> None:
-        """Warm the event memo + derived caches for recently opened projects.
+        """Warm Board summaries for recently opened projects.
 
-        Cold start on a 30k-event log costs ~12s (one-time full decode + leaf
-        index); without prewarm the first page load after a server restart eats
-        it. Background daemon, best-effort, one project at a time (GIL-bound
-        work — do not parallelize).
+        Build only the derived views the Board consumes; hydrating full reports
+        and optional task indexes here competes with foreground requests.
+        Background daemon, best-effort, one project at a time (GIL-bound work).
         """
         try:
             from zf.core.workspace import WorkspaceRegistry, project_lifecycle
-            from zf.web.projections.events import (
-                _events_with_seq,
-                payload_search_texts,
-                task_event_index,
-            )
 
             targets: list[tuple[str, Path]] = []
             if default_project_enabled and state_dir.exists():
@@ -3830,11 +3825,8 @@ def create_app(
                             root = Path(meta[1]) if meta[1] else None
                         except Exception:
                             cfg = None
-                    _events_with_seq(sd, config=cfg)
-                    payload_search_texts(sd, config=cfg)
-                    task_event_index(sd, config=cfg)
                     _cached_project_snapshot(
-                        sd, slice_name="light", cfg=cfg, root=root, token=None,
+                        sd, slice_name="board", cfg=cfg, root=root, token=None,
                     )
                 except Exception:
                     continue
@@ -4276,7 +4268,7 @@ def _snapshot_slice(
     if slice_name in {"light", "board"}:
         data.update({
             "tasks": _safe_snapshot_projection(
-                "tasks", [], lambda: _kanban(state_dir, config=config)
+                "tasks", [], lambda: _kanban(state_dir, config=config, include_detail_bodies=slice_name != "board")
             ),
             "archive_tasks": _safe_snapshot_projection(
                 "archive_tasks", [], lambda: _archive_tasks(state_dir, include_active=False)

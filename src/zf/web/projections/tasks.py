@@ -596,6 +596,7 @@ def _latest_task_fanout_runtime(
     state_dir: Path,
     task_id: str,
     all_events: list[tuple[int, ZfEvent]],
+    *, include_report: bool = True,
 ) -> dict[str, Any]:
     """Return the newest fanout child runtime for a task, projection-only."""
     if not task_id:
@@ -628,7 +629,7 @@ def _latest_task_fanout_runtime(
         for child in children:
             if str(child.get("task_id") or "").strip() != task_id:
                 continue
-            projected_child = _fanout_child_projection(child)
+            projected_child = _fanout_child_projection(child, include_report=include_report)
             projected = {
                 "fanout_id": fanout_id,
                 "stage_id": str(manifest.get("stage_id") or ""),
@@ -651,9 +652,7 @@ def _latest_task_fanout_runtime(
                 "source_commit": str(projected_child.get("source_commit") or ""),
                 "task_ref": str(projected_child.get("task_ref") or ""),
                 "workdir": str(projected_child.get("workdir") or ""),
-                "progress": _fanout_progress([
-                    _fanout_child_projection(item) for item in children
-                ]),
+                "progress": _fanout_progress(children),
                 "seq": seq,
             }
             if not latest or seq >= int(latest.get("seq") or 0):
@@ -1384,7 +1383,7 @@ def _task_diff(
     }
 
 
-def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
+def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_bodies: bool = True) -> list[dict]:
     """Tasks list with derived phase (R-TASK-STATE-AXIS-01)."""
     path = state_dir / "kanban.json"
     if not path.exists():
@@ -1433,7 +1432,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
             or (_tid and _tid in _text)
         ]
         refs = _refs_from_events(task_events, task=t, state_dir=state_dir, config=config)
-        latest_fanout = _latest_task_fanout_runtime(state_dir, t.id, all_events)
+        latest_fanout = _latest_task_fanout_runtime(state_dir, t.id, all_events, include_report=include_detail_bodies)
         if latest_fanout:
             refs = {**refs, **{
                 key: latest_fanout.get(key, "")
@@ -1451,7 +1450,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
                 )
                 if latest_fanout.get(key, "")
             }}
-        latest = _event_to_dict(*task_events[-1]) if task_events else None
+        latest = _event_to_dict(*task_events[-1], include_payload=include_detail_bodies) if task_events else None
         candidate_ref = (
             refs.get("pdd_id")
             or refs.get("candidate_ref")
@@ -1785,7 +1784,7 @@ def _task_evidence_badges(
         fanout_id = str(refs.get("fanout_id") or "")
         manifest = _fanout_manifest(state_dir, fanout_id)
         children = [
-            _fanout_child_projection(child)
+            child
             for child in manifest.get("children", []) or []
             if isinstance(child, dict)
         ]
@@ -1860,7 +1859,7 @@ def _task_fanout_projection(
         return projection
     manifest = _fanout_manifest(state_dir, fanout_id)
     children = [
-        _fanout_child_projection(child)
+        child
         for child in manifest.get("children", []) or []
         if isinstance(child, dict)
     ]

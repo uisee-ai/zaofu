@@ -206,6 +206,7 @@ def _fanout_child_projection(
     child: dict,
     *,
     task_index: dict[str, object] | None = None,
+    include_report: bool = True,
 ) -> dict:
     child_id = str(
         child.get("child_id")
@@ -275,7 +276,7 @@ def _fanout_child_projection(
         "skills",
         "attempt",
     ):
-        if key in child:
+        if key in child and (include_report or key != "report"):
             projected[key] = child[key]
     return redact_obj(projected)
 

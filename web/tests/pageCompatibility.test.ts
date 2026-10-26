@@ -126,6 +126,8 @@ testSupportedCompatibilityTabsRemainReachable();
 testProjectionLinksPersistExactlyOneEntityId();
 
 const empty = resolve("");
+assert(canBootstrapScopedPageBeforeWorkspace("board", "project-a"), "a scoped Board must not wait for the workspace picker");
+assert(!canBootstrapScopedPageBeforeWorkspace("board", ""), "an unscoped Board must still resolve its project");
 assert(!empty.changed, "an empty URL should not be rewritten before board bootstrap");
 assert(
   canBootstrapScopedPageBeforeWorkspace("traces", "project-a"),

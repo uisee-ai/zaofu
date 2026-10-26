@@ -474,6 +474,10 @@ export function getSnapshotLight(projectId?: string): Promise<Snapshot> {
   return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot/light`);
 }
 
+export function getBoardSnapshot(projectId?: string): Promise<Snapshot> {
+  return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot/board`);
+}
+
 export function getDeliveryFeatures(projectId?: string): Promise<DeliveryFeaturesPage> {
   return requestJson<DeliveryFeaturesPage>(`${projectPrefix(projectId)}/delivery-features`);
 }

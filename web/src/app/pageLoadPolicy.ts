@@ -1,10 +1,11 @@
 import type { PageId } from "./sharedTypes";
 
-export type SnapshotLoadKind = "none" | "light" | "full";
+export type SnapshotLoadKind = "none" | "board" | "light" | "full";
 
 export type BootstrapResource =
   | "project.health"
   | "project.snapshot.light"
+  | "project.snapshot.board"
   | "project.snapshot.full"
   | "delivery.features"
   | "channels.summary"
@@ -84,8 +85,6 @@ const OBSERVABILITY_SNAPSHOT_PAGES = new Set<PageId>([
 ]);
 
 const LIGHT_SNAPSHOT_PAGES = new Set<PageId>([
-  "project",
-  "board",
   "task",
   "triage",
   "runtime",
@@ -98,6 +97,7 @@ export function isObservabilitySnapshotPage(page: PageId): boolean {
 }
 
 export function snapshotLoadKindForPage(page: PageId): SnapshotLoadKind {
+  if (page === "board" || page === "project") return "board";
   if (OBSERVABILITY_SNAPSHOT_PAGES.has(page)) return "full";
   if (LIGHT_SNAPSHOT_PAGES.has(page)) return "light";
   return "none";
@@ -135,6 +135,7 @@ export function pageLoadsRecentEvents(page: PageId): boolean {
 export function pageResourcePlanForPage(page: PageId): PageResourcePlan {
   const foreground: BootstrapResource[] = ["project.health"];
   const snapshotKind = snapshotLoadKindForPage(page);
+  if (snapshotKind === "board") foreground.push("project.snapshot.board");
   if (snapshotKind === "light") foreground.push("project.snapshot.light");
   if (snapshotKind === "full") foreground.push("project.snapshot.full");
   if (pageLoadsDeliveryFeatures(page)) foreground.push("delivery.features");

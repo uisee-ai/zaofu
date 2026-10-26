@@ -15,7 +15,7 @@ export function canBootstrapScopedPageBeforeWorkspace(
   page: PageId,
   projectId: string,
 ): boolean {
-  return (page === "traces" || page === "project") && Boolean(projectId.trim());
+  return (page === "traces" || page === "project" || page === "board") && Boolean(projectId.trim());
 }
 
 const OBSERVABILITY_COMPATIBILITY_TABS = new Set([

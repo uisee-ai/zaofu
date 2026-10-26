@@ -5,8 +5,6 @@ import {
   getDeliveryFeatures,
   getKanbanPendingProposals,
   getRecentEventsPage,
-  getSnapshot,
-  getSnapshotLight,
   invalidateProjectReadCache,
   type PendingKanbanProposal,
 } from "../api/client";
@@ -21,6 +19,7 @@ import { channelIdOf } from "./shared";
 import { LatestRequestGate } from "./latestRequestGate";
 import type { PageId } from "./sharedTypes";
 import { pageLoadsDeliveryFeatures, snapshotLoadKindForPage } from "./pageLoadPolicy";
+import { loadPageSnapshot } from "./pageSnapshot";
 
 interface ProjectStreamGapRecoveryOptions {
   activeProjectId: string;
@@ -70,11 +69,7 @@ export function useProjectStreamGapRecovery(
 
     const snapshotKind = snapshotLoadKindForPage(recoveryPage);
     const [nextSnapshot, nextDelivery, nextChannels, nextProposals] = await Promise.all([
-      snapshotKind === "none"
-        ? Promise.resolve<Snapshot | undefined>(undefined)
-        : snapshotKind === "full"
-          ? getSnapshot(projectId)
-          : getSnapshotLight(projectId),
+      loadPageSnapshot(snapshotKind, projectId),
       pageLoadsDeliveryFeatures(recoveryPage)
         ? getDeliveryFeatures(projectId)
         : Promise.resolve<DeliveryFeaturesPage | undefined>(undefined),

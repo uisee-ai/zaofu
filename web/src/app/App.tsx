@@ -72,8 +72,7 @@ import {
   getRecentEventsPage,
   getProjectHealth,
   getRunDetail,
-  getSnapshot,
-  getSnapshotLight,
+  invalidateProjectReadCache,
   getTaskDetail,
   getTaskDiff,
   getTaskTimeline,
@@ -197,6 +196,7 @@ import {
   projectionNeedsFresh,
   snapshotLoadKindForPage,
 } from "./pageLoadPolicy";
+import { loadPageSnapshot } from "./pageSnapshot";
 // P1 frontend split: pages/shared extracted from this file.
 import { PlanApprovalPanel } from "../components/delivery-trace/PlanApprovalPanel";
 import { BoardWorkbench } from "../components/kanban/BoardWorkbench";
@@ -782,14 +782,12 @@ export function App() {
     return page;
   }, [activeProjectId]);
 
-  const loadSnapshot = useCallback(async (kindOverride?: "light" | "full") => {
+  const loadSnapshot = useCallback(async (kindOverride?: "board" | "light" | "full") => {
     const snapshotKind = kindOverride ?? snapshotLoadKindForPage(page);
     if (snapshotKind === "none") return null;
     const requestedProjectId = activeProjectId || "";
     const ticket = projectRequestScope.capture(requestedProjectId);
-    const next = snapshotKind === "full"
-      ? await getSnapshot(requestedProjectId || undefined)
-      : await getSnapshotLight(requestedProjectId || undefined);
+    const next = await loadPageSnapshot(snapshotKind, requestedProjectId || undefined);
     if (
       requestedProjectId
       && next.project?.project_id
@@ -896,6 +894,7 @@ export function App() {
       const owns = (resource: BootstrapResource) => (
         pageOwnsBootstrapResource(page, resource)
       );
+      invalidateProjectReadCache(activeProjectId);
       const requests: Array<Promise<unknown>> = [
         getProjectHealth(activeProjectId || undefined)
           .then((health) => {
@@ -1124,13 +1123,19 @@ export function App() {
         const owns = (resource: BootstrapResource) => (
           pageOwnsBootstrapResource(page, resource)
         );
-        const projectsRequest = getWorkspaceProjects().catch(() => null);
+        const scopedBoard = page === "board" && Boolean(activeProjectId) && (
+          initial.project === activeProjectId
+          || workspaceProjects.some((project) => project.project_id === activeProjectId)
+        );
+        // A selected Board needs no workspace-wide lifecycle probe to render.
+        // Start that background work after the Board response to avoid CPU contention.
+        const projectsRequest = scopedBoard ? null : getWorkspaceProjects().catch(() => null);
         const bootstrapBeforeWorkspace = canBootstrapScopedPageBeforeWorkspace(
           page,
-          initial.project === activeProjectId ? activeProjectId : "",
+          scopedBoard || initial.project === activeProjectId ? activeProjectId : "",
         );
         const projectsPage = bootstrapBeforeWorkspace ? null : await projectsRequest;
-        if (bootstrapBeforeWorkspace) {
+        if (bootstrapBeforeWorkspace && projectsRequest) {
           void projectsRequest.then((workspacePage) => {
             if (cancelled || !workspacePage) return;
             setWorkspaceProjects(workspacePage.items ?? workspacePage.projects ?? []);
@@ -1204,12 +1209,20 @@ export function App() {
             setDeliveryFeaturesPage(initialFeatures);
           }).catch(() => undefined);
         }
+        const visibleSnapshot = loadPageSnapshot(snapshotKind, projectId || undefined).then((next) => {
+          if (scopedBoard && !cancelled && next?.project?.project_id === projectId) {
+            setSnapshot(next);
+            setError(null);
+            void getWorkspaceProjects().then((workspacePage) => {
+              if (cancelled) return;
+              setWorkspaceProjects(workspacePage.items ?? workspacePage.projects ?? []);
+              setServerDefaultProjectId(workspacePage.server_default_project_id ?? "");
+            }).catch(() => undefined);
+          }
+          return next;
+        });
         const [initialSnapshot, initialEventsPage, initialHealth] = await Promise.all([
-          snapshotKind === "none"
-            ? Promise.resolve(null)
-            : snapshotKind === "full"
-              ? getSnapshot(projectId || undefined)
-              : getSnapshotLight(projectId || undefined),
+          visibleSnapshot,
           owns("events.recent")
             ? getRecentEventsPage(60, projectId || undefined)
             : Promise.resolve(null),
@@ -1234,7 +1247,7 @@ export function App() {
           fallbackSeq: cursorFallback?.current_seq,
         });
         lastSeqRef.current = initialSeq;
-        if (initialSnapshot) setSnapshot(initialSnapshot);
+        if (initialSnapshot && !scopedBoard) setSnapshot(initialSnapshot);
         if (initialHealth) setProjectHealth(initialHealth);
         setEvents(initialEventsPage ? initialEventsPage.items.slice().reverse() : []);
         setError(null);

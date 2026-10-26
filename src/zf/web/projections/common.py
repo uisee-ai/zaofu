@@ -919,8 +919,7 @@ def _payload_collect(node: Any, keys) -> dict:
             if not remaining:
                 break
             child = _payload_collect(value, remaining)
-            for k in list(remaining):
-                found = child.get(k)
+            for k, found in child.items():
                 if found not in (None, ""):
                     out[k] = found
                     remaining.remove(k)
@@ -930,8 +929,7 @@ def _payload_collect(node: Any, keys) -> dict:
             if not remaining:
                 break
             child = _payload_collect(value, remaining)
-            for k in list(remaining):
-                found = child.get(k)
+            for k, found in child.items():
                 if found not in (None, ""):
                     out[k] = found
                     remaining.remove(k)
