@@ -231,6 +231,8 @@ def build_workflow_operation_resume_checkpoints(
     from zf.runtime.workflow_operation import reduce_workflow_operations
 
     event_list = list(events if events is not None else _read_events(Path(state_dir)))
+    from zf.runtime.terminal_reader_operation import terminal_reader_event
+
     operations = reduce_workflow_operations(event_list)
     attempts = _task_attempt_rows(Path(state_dir))
     now = datetime.now(timezone.utc).timestamp()
@@ -295,6 +297,12 @@ def build_workflow_operation_resume_checkpoints(
                 "legacy workflow resume cancelled an operation that had been "
                 "interrupted by an explicit runtime stop"
             )
+        elif (
+            status == "suspended"
+            and terminal_reader_event(operation, event_list)
+        ):
+            action = "cancel_terminal_reader_operation"
+            reason = "reader carrier already has an exact terminal occurrence"
         elif (
             status == "suspended"
             and task_pipeline_stage

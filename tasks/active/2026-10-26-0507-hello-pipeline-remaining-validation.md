@@ -199,3 +199,16 @@ raw_output（现有短输出内联策略），不能将此一概视为 hook 未�
 
 方法修复验证：真实角色依赖物化、适配器技能解析及技能来源测试32 passed、1 skipped；
 新增用例证明 Impl 的 handoff 方法通过现有角色依赖进入实际技能目录。
+
+
+证据方法实现提交：`dd712a59 fix: teach workers to resolve current tool evidence`。
+恢复预检发现先前 failed fanout 的 reader operation 因 fast_stop 仍为 suspended，
+使当前 Impl retry 被正确拒绝为 active operation already owns the task。
+新增精确 carrier 终态判定：operation→最后一次 fanout.child.dispatched→相同
+fanout/child/dispatch/Run 的终态事件，才允许恢复入口取消残留 reader；不重跑
+已终局 child、不改变当前父任务、不取消仍有新 live TaskAttempt 的运行。
+先红1例/绿4例，修复后直接恢复/重试/预算闭包50 passed，CLI及调用方69 passed，
+sentinel51 passed。真实 dry-run 只选择旧 verify-lane-1 的终局 reader。
+
+新增调度 mock6 passed；真实恢复取消旧 reader=`evt-e910b0190002`，恢复应用
+`evt-dd45ca1d8af5`，未改父任务状态。保留旧 child failed 和 blocked Impl。

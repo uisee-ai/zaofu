@@ -143,3 +143,11 @@ Impl handoff 和 Verify 使用 `<provider>.hook.post_tool_use`，按角色和派
 失败。完整正文和已有 `refs.raw_output` 是证据；索引仅用于定位。短输出或空
 stdout 可仅内联于事件，没有 sidecar 不代表工具未执行；若当前契约明确要求
 额外 sidecar，则必须核对允许的证据形式并如实报告约束，不补造引用。
+
+
+### 已终局 reader 的恢复清理
+
+停止后仍为 suspended 的 reader，若最后一次派发已有精确 fanout/child/dispatch/Run
+终态，`recover workflow` 生成 `cancel_terminal_reader_operation`，通过 Operation
+服务取消残留占用。它不重放旧 child、不签发验收结果，也不把正在新代次工作的父
+任务改为 blocked；新的活跃 TaskAttempt 优先保护，取消前再次核对终态归属。
