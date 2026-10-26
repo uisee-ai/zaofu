@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+from dataclasses import asdict, is_dataclass
 from collections.abc import Mapping, Sequence
 
 
@@ -15,23 +17,12 @@ def plan_approval_fingerprint(
 ) -> str:
     """Distinguish task-map generations while preserving duplicate suppression."""
 
-    task_ids = sorted(
-        str(
-            getattr(item, "task_id", "")
-            or (item.get("task_id") if isinstance(item, Mapping) else "")
-            or ""
-        )
-        for item in task_items
-    )
-    identity = identity or {}
-    identity_parts = [
-        str(identity.get(key) or "")
-        for key in (
-            "workflow_run_id",
-            "task_map_generation",
-            "plan_artifact_package_digest",
-            "requirement_spec_digest",
-        )
-    ]
-    raw = "|".join([stage_id, pdd_id, *identity_parts, *task_ids])
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    tasks = [dict(item) if isinstance(item, Mapping) else
+             asdict(item) if is_dataclass(item) else vars(item)
+             for item in task_items]
+    bound = {key: value for key, value in (identity or {}).items() if value}
+    raw = json.dumps({
+        "stage_id": stage_id, "pdd_id": pdd_id, "binding": bound,
+        "tasks": sorted(tasks, key=lambda item: str(item.get("task_id") or "")),
+    }, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return "plan-approval.v2:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()

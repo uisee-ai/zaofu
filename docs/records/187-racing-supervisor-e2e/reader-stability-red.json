@@ -1,0 +1,90 @@
+{
+  "requests": [
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/task_map",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/execution_spec",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/source_inventory",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/task_map",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/execution_spec",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/source_inventory",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/task_map",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/execution_spec",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/source_inventory",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/task_map",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/execution_spec",
+    "/api/projects/racing-project-33598481/plans/evt-a6b18c1e2f25/artifacts/source_inventory"
+  ],
+  "samples": [
+    {
+      "second": 1,
+      "requests": 3,
+      "loading": 1,
+      "overview": 0
+    },
+    {
+      "second": 2,
+      "requests": 3,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 3,
+      "requests": 3,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 4,
+      "requests": 3,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 5,
+      "requests": 6,
+      "loading": 1,
+      "overview": 0
+    },
+    {
+      "second": 6,
+      "requests": 6,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 7,
+      "requests": 6,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 8,
+      "requests": 9,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 9,
+      "requests": 9,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 10,
+      "requests": 9,
+      "loading": 0,
+      "overview": 1
+    },
+    {
+      "second": 11,
+      "requests": 12,
+      "loading": 1,
+      "overview": 0
+    },
+    {
+      "second": 12,
+      "requests": 12,
+      "loading": 0,
+      "overview": 1
+    }
+  ]
+}

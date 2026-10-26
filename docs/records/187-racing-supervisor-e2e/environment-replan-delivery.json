@@ -1,0 +1,9 @@
+{
+  "dispatch_event": "evt-1f68622a335c",
+  "briefing_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/briefings/prd-planner-fanout-prd-plan-evt-79e1f868-prd-planner.md",
+  "feedback_materialized": true,
+  "status": "planner_running",
+  "delivery_mode": "required plan-rework-context sidecar, not inline briefing",
+  "context_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/artifacts/plan-synth/rework-contexts/3883bdcaf9a4d23433aaabb62e60a9a27b5f14c77d2f89c40a0c2f8adabc54dc.json",
+  "context_sha256": "3883bdcaf9a4d23433aaabb62e60a9a27b5f14c77d2f89c40a0c2f8adabc54dc"
+}

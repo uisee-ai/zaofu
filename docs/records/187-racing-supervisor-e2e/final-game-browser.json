@@ -1,0 +1,87 @@
+{
+  "source": {
+    "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "candidate_manifest_sha256": "dcfc7751f7a16da308a316cc006cb83aea0f0fd0a67831f7c2c0a0b03cfe31ce",
+    "candidate_quality": "passed",
+    "final_run_acceptance": "not_yet_observed; must match this commit before final closeout",
+    "captured_at": "2026-10-26T05:58:34.526277+00:00",
+    "build_source": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/build",
+    "frozen_dist": "/tmp/zf-racing-supervision-20261025T211020Z/final-candidate-probe/dist",
+    "build_receipts": [
+      {
+        "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-48-56-872Z-7a98de79-50a0-41ec-aa45-712761a426de/receipt.json",
+        "sha256": "b2eea5104b2a73bc793543a16ada8626403bf9957853fa4fb5d6b25d17b68c18"
+      },
+      {
+        "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-25-238Z-96caa73d-aaa3-47b0-b0f7-efe761701c68/receipt.json",
+        "sha256": "787b177f44e862096979494d5146a525bf0eacf36b945ff5f87dd5f3b6773369"
+      }
+    ],
+    "build_files": [
+      {
+        "file": "assets/index-DdBykQBu.js",
+        "sha256": "519ad5f9affdd4bb57d130ea38fb574ddc3e8478af73f5405b6205a6d018bc20",
+        "bytes": 13025
+      },
+      {
+        "file": "assets/index-ccsueTfw.css",
+        "sha256": "edef234a58d1df895f4cb82d602fb72021de56b856e26051631e3583832f5e74",
+        "bytes": 4761
+      },
+      {
+        "file": "favicon.svg",
+        "sha256": "731da32eb98e67c7d1b8d9528aa10195caa436dd0e3169d5ed15a5964d8f4c57",
+        "bytes": 245
+      },
+      {
+        "file": "index.html",
+        "sha256": "6320b8c0f9dd85c64420556ca08f7fe8b94fc199a7af0626f91b3f46f5d27dae",
+        "bytes": 3453
+      }
+    ]
+  },
+  "browser": "149.0.7827.22",
+  "status": "passed",
+  "checks": [
+    "real keyboard moves vehicle",
+    "pause freezes snapshot",
+    "restart resets live race",
+    "normal 90 seconds, single immutable settlement, correct score",
+    "exact replay button resets finished game"
+  ],
+  "errors": [],
+  "normal_race": {
+    "monotonic_elapsed_ms": 90207.90000152588,
+    "snapshot": {
+      "phase": "finished",
+      "vehicle": {
+        "x": 421.1981848048889,
+        "y": 120,
+        "headingRad": 0,
+        "speedMps": 0
+      },
+      "elapsedActiveMs": 90000,
+      "remainingMs": 0,
+      "distanceM": 106.66743469759487,
+      "collisionCount": 1,
+      "score": 86,
+      "route": {
+        "lastAngleRad": -0.9781994673638144,
+        "unwrappedProgressM": 106.66743469759487,
+        "highWaterM": 106.66743469759487,
+        "nextCheckpointIndex": 1,
+        "completedLaps": 0
+      },
+      "contactIds": [
+        "outer"
+      ],
+      "result": {
+        "distanceM": 106.66743469759487,
+        "collisionCount": 1,
+        "score": 86,
+        "elapsedActiveMs": 90000
+      },
+      "finishCount": 1
+    }
+  }
+}

@@ -219,6 +219,7 @@ def test_candidate_quality_prefers_run_scoped_task_contract_commands(
     assert checks == [(
         "task_contract:TASK-RUST:contract-verification",
         "cargo test --workspace",
+        900,
     )]
 
 
@@ -236,7 +237,7 @@ def test_candidate_quality_uses_config_only_as_legacy_fallback(tmp_path: Path) -
     checks, source = _rebuilder(root, state_dir, config, log)._quality_checks([])
 
     assert source == "zf_config_fallback"
-    assert checks == [("static", "make verify")]
+    assert checks == [("static", "make verify", 300)]
 
 
 def test_candidate_quality_required_never_uses_config_fallback(tmp_path: Path) -> None:

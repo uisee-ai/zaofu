@@ -1,0 +1,7 @@
+{
+  "port": 8002,
+  "stopped_pids": [
+    2600182
+  ],
+  "reason": "Final browser evidence exported; revoke temporary write dashboard"
+}

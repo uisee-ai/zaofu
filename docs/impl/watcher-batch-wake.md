@@ -5,6 +5,7 @@
 导致 Planner 完成到 Critic 接手出现数分钟积压。
 
 `src/zf/cli/watched_batch.py::process_watched_batch` 接收 EventWatcher 的不可变读取批次。
+`zf start` 通过 `watch_batch.py::make_watch_callbacks` 接线，共用这一批次处理入口。
 逐条检查原 wake predicate / rate limiter；任一唤醒时，所有事件保持发生顺序，
 只调用一次 `run_once(events=batch, consumed_offset=snapshot_end)`。
 没有唤醒的观察批次继续由 idle durable catch-up 处理；不提前确认其游标。
@@ -17,3 +18,5 @@
 `tests/test_cli_start.py` 覆盖真实 CLI 接线；
 `tests/e2e/test_terminal_kanban_convergence_mock_e2e.py` 覆盖真实 Orchestrator / Store / Kanban
 结算与重启去重。任务记录见 `tasks/done/2026-10-25-1556-watcher-batch-wake.md`。
+
+两侧事件批处理的集成与验证记录见 [2026-10-26 dev 同步](../records/2026-10-26-0938-upstream-dev-integration.md)。

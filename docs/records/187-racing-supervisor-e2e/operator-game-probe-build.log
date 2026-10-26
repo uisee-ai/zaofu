@@ -1,0 +1,27 @@
+npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+npm warn deprecated eslint@9.39.2: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+
+added 191 packages, and audited 192 packages in 4s
+
+58 packages are looking for funding
+  run `npm fund` for details
+
+1 low severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+
+> 187-racing-supervision@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 12 modules transformed.
+rendering chunks...
+computing gzip size...
+artifacts/racing/assembly/build/index.html                  3.45 kB │ gzip: 1.66 kB
+artifacts/racing/assembly/build/assets/index-ccsueTfw.css   4.76 kB │ gzip: 1.67 kB
+artifacts/racing/assembly/build/assets/index-DdBykQBu.js   13.03 kB │ gzip: 5.25 kB
+✓ built in 455ms

@@ -1,0 +1,9 @@
+{
+  "actual_old_trigger": "evt-bddccfe072a9",
+  "old_candidate_reference_count": 22,
+  "old_contains_latest_candidate": false,
+  "request_candidate_reference_count": 24,
+  "fixed_trigger_references_equal_request": true,
+  "runtime_mutated": false,
+  "recovery_context_sha256": "24737468bdef99d123abd5b04b4921a7a7d4ae25026623ced68ae19dba919aec"
+}

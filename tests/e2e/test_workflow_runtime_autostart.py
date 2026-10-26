@@ -24,8 +24,9 @@ pytestmark = [pytest.mark.host, pytest.mark.mock_e2e]
 
 
 @pytest.mark.parametrize("surface", ["cli", "kanban", "channel"])
+@pytest.mark.parametrize("startup_wait_seconds", [30.0, 0.0], ids=["ready", "starting"])
 def test_approved_start_launches_runtime_and_dispatches_without_manual_start(
-    monkeypatch, capsys, workflow_runtime_launcher, surface,
+    monkeypatch, capsys, workflow_runtime_launcher, surface, startup_wait_seconds,
 ):
     if not shutil.which("tmux"):
         pytest.skip("tmux is required for the explicit runtime process tier")
@@ -33,6 +34,8 @@ def test_approved_start_launches_runtime_and_dispatches_without_manual_start(
     root = Path(tempfile.mkdtemp(prefix=f"zf-autostart-{surface}-{stamp}-"))
     service = None
     try:
+        (root / "tmux").mkdir()
+        monkeypatch.setenv("TMUX_TMPDIR", str(root / "tmux"))
         service, task, authority = _setup(root, "channel" if surface == "channel" else "kanban")
         config_path = root / "zf.yaml"
         text = config_path.read_text().replace(
@@ -50,7 +53,8 @@ def test_approved_start_launches_runtime_and_dispatches_without_manual_start(
         subprocess.run(["git", "-C", str(root), "-c", "user.name=Runtime Test", "-c", "user.email=runtime@example.invalid",
                         "commit", "-qm", "test: initialize isolated mock project"], check=True)
         monkeypatch.chdir(root)
-        monkeypatch.setattr(workflow_runtime_start, "ensure_project_runtime", workflow_runtime_launcher.real)
+        monkeypatch.setattr(workflow_runtime_start, "ensure_project_runtime", lambda **kwargs:
+                            workflow_runtime_launcher.real(**kwargs, timeout_seconds=startup_wait_seconds))
         monkeypatch.setenv("ZF_WEB_ACTION_TOKEN", "isolated-web-token")
         monkeypatch.setenv("ZF_WORKFLOW_ACTION_TOKEN", "isolated-cli-token")
         for key in ("ZF_PROJECT_ROOT", "ZF_STATE_DIR", "ZF_TMUX_SESSION", "ZF_CLI_CMD"):
@@ -81,7 +85,7 @@ def test_approved_start_launches_runtime_and_dispatches_without_manual_start(
                 assert response.status_code < 300, result
                 replay = client.post("/api/actions/workflow-start", json=approval, headers={"X-ZF-Web-Token": "isolated-web-token"})
                 assert replay.status_code < 300, replay.json()
-        assert result["runtime_start"]["status"] == "running", result
+        assert result["runtime_start"]["status"] == ("starting" if startup_wait_seconds == 0 else "running"), result
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             events = EventLog(service.state_dir / "events.jsonl").read_all()
@@ -92,6 +96,7 @@ def test_approved_start_launches_runtime_and_dispatches_without_manual_start(
         assert any(e.type == "task.attempt.sent" for e in events), [e.type for e in events[-20:]]
         assert sum(e.type == "workflow.invoke.requested" for e in events) == 1
         assert sum(e.type == "runtime.start.requested" for e in events) == 1
+        assert not any(e.type == "runtime.start.failed" for e in events)
     finally:
         if service is not None:
             service.writer.emit("simulation.done", actor="test", payload={"source": "workflow-runtime-autostart", "surface": surface})

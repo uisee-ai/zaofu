@@ -1,0 +1,109 @@
+.........FFF....FFF..........                                            [100%]
+=================================== FAILURES ===================================
+_______ test_pending_plan_wait_does_not_escalate_old_failure_closeout[] ________
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no0')
+verdict = ''
+
+    @pytest.mark.parametrize("verdict", ["", "plan.approved", "plan.rejected"])
+    def test_pending_plan_wait_does_not_escalate_old_failure_closeout(tmp_path, verdict):
+        state, log, writer, config = _fixture(tmp_path, terminal="settled")
+        _plan_wait(writer, verdict=verdict, verdict_plan="different-plan")
+>       assert not _closeout_actions(state, log, config, tmp_path)
+E       AssertionError: assert not [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-210b33c27a59', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}]
+E        +  where [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-210b33c27a59', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}] = _closeout_actions(PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no0/.runtime'), <zf.core.events.log.EventLog object at 0x7706aebd26d0>, ZfConfig(version='1.0', preset='', project=ProjectConfig(name='test', description='', workspace='.', state_dir='.zf', ...alse, max_rescans=5, idle_progress_ticks=3, rework_fingerprint=False, quiescent_after_escalate=True, micro_loop=False)), PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no0'))
+
+tests/test_failure_closeout_active_operations.py:98: AssertionError
+_ test_pending_plan_wait_does_not_escalate_old_failure_closeout[plan.approved] _
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no1')
+verdict = 'plan.approved'
+
+    @pytest.mark.parametrize("verdict", ["", "plan.approved", "plan.rejected"])
+    def test_pending_plan_wait_does_not_escalate_old_failure_closeout(tmp_path, verdict):
+        state, log, writer, config = _fixture(tmp_path, terminal="settled")
+        _plan_wait(writer, verdict=verdict, verdict_plan="different-plan")
+>       assert not _closeout_actions(state, log, config, tmp_path)
+E       AssertionError: assert not [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-702a0d5191d8', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}]
+E        +  where [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-702a0d5191d8', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}] = _closeout_actions(PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no1/.runtime'), <zf.core.events.log.EventLog object at 0x7706aebb4f50>, ZfConfig(version='1.0', preset='', project=ProjectConfig(name='test', description='', workspace='.', state_dir='.zf', ...alse, max_rescans=5, idle_progress_ticks=3, rework_fingerprint=False, quiescent_after_escalate=True, micro_loop=False)), PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no1'))
+
+tests/test_failure_closeout_active_operations.py:98: AssertionError
+_ test_pending_plan_wait_does_not_escalate_old_failure_closeout[plan.rejected] _
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no2')
+verdict = 'plan.rejected'
+
+    @pytest.mark.parametrize("verdict", ["", "plan.approved", "plan.rejected"])
+    def test_pending_plan_wait_does_not_escalate_old_failure_closeout(tmp_path, verdict):
+        state, log, writer, config = _fixture(tmp_path, terminal="settled")
+        _plan_wait(writer, verdict=verdict, verdict_plan="different-plan")
+>       assert not _closeout_actions(state, log, config, tmp_path)
+E       AssertionError: assert not [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-4b0ca9f36579', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}]
+E        +  where [{'action': 'failure-closeout-activate', 'action_policy': 'needs_approval', 'checkpoint_id': 'failure-closeout-activate-4b0ca9f36579', 'expected_downstream_events': ['failure.closeout.activated', 'run.manager.action.applied'], ...}] = _closeout_actions(PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no2/.runtime'), <zf.core.events.log.EventLog object at 0x7706aebb5010>, ZfConfig(version='1.0', preset='', project=ProjectConfig(name='test', description='', workspace='.', state_dir='.zf', ...alse, max_rescans=5, idle_progress_ticks=3, rework_fingerprint=False, quiescent_after_escalate=True, micro_loop=False)), PosixPath('/tmp/pytest-of-uisee/pytest-186/test_pending_plan_wait_does_no2'))
+
+tests/test_failure_closeout_active_operations.py:98: AssertionError
+________ test_pending_plan_approval_is_a_wait_not_idle_rescan[trace_id] ________
+
+scope = 'trace_id'
+
+    @pytest.mark.parametrize("scope", ["trace_id", "workflow_run_id", "correlation_id"])
+    def test_pending_plan_approval_is_a_wait_not_idle_rescan(scope) -> None:
+        payload = {"plan_id": "plan-1"}
+        if scope != "correlation_id":
+            payload[scope] = "r-1"
+        request = ZfEvent(type="plan.approval.requested", actor="zf-cli", payload=payload,
+                         correlation_id="r-1" if scope == "correlation_id" else None)
+        events = [_goal_started(), request]
+        state, writer = _state(), _Writer()
+>       assert _tick_until_fire(events, _cfg(), state, writer, ticks=20) == ""
+E       AssertionError: assert 'rescan' == ''
+E
+E         + rescan
+
+tests/test_goal_idle_driver.py:65: AssertionError
+____ test_pending_plan_approval_is_a_wait_not_idle_rescan[workflow_run_id] _____
+
+scope = 'workflow_run_id'
+
+    @pytest.mark.parametrize("scope", ["trace_id", "workflow_run_id", "correlation_id"])
+    def test_pending_plan_approval_is_a_wait_not_idle_rescan(scope) -> None:
+        payload = {"plan_id": "plan-1"}
+        if scope != "correlation_id":
+            payload[scope] = "r-1"
+        request = ZfEvent(type="plan.approval.requested", actor="zf-cli", payload=payload,
+                         correlation_id="r-1" if scope == "correlation_id" else None)
+        events = [_goal_started(), request]
+        state, writer = _state(), _Writer()
+>       assert _tick_until_fire(events, _cfg(), state, writer, ticks=20) == ""
+E       AssertionError: assert 'rescan' == ''
+E
+E         + rescan
+
+tests/test_goal_idle_driver.py:65: AssertionError
+_____ test_pending_plan_approval_is_a_wait_not_idle_rescan[correlation_id] _____
+
+scope = 'correlation_id'
+
+    @pytest.mark.parametrize("scope", ["trace_id", "workflow_run_id", "correlation_id"])
+    def test_pending_plan_approval_is_a_wait_not_idle_rescan(scope) -> None:
+        payload = {"plan_id": "plan-1"}
+        if scope != "correlation_id":
+            payload[scope] = "r-1"
+        request = ZfEvent(type="plan.approval.requested", actor="zf-cli", payload=payload,
+                         correlation_id="r-1" if scope == "correlation_id" else None)
+        events = [_goal_started(), request]
+        state, writer = _state(), _Writer()
+>       assert _tick_until_fire(events, _cfg(), state, writer, ticks=20) == ""
+E       AssertionError: assert 'rescan' == ''
+E
+E         + rescan
+
+tests/test_goal_idle_driver.py:65: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_failure_closeout_active_operations.py::test_pending_plan_wait_does_not_escalate_old_failure_closeout[]
+FAILED tests/test_failure_closeout_active_operations.py::test_pending_plan_wait_does_not_escalate_old_failure_closeout[plan.approved]
+FAILED tests/test_failure_closeout_active_operations.py::test_pending_plan_wait_does_not_escalate_old_failure_closeout[plan.rejected]
+FAILED tests/test_goal_idle_driver.py::test_pending_plan_approval_is_a_wait_not_idle_rescan[trace_id]
+FAILED tests/test_goal_idle_driver.py::test_pending_plan_approval_is_a_wait_not_idle_rescan[workflow_run_id]
+FAILED tests/test_goal_idle_driver.py::test_pending_plan_approval_is_a_wait_not_idle_rescan[correlation_id]
+6 failed, 23 passed in 0.82s

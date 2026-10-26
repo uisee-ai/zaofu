@@ -1,0 +1,8 @@
+{
+  "old_pid": 2071940,
+  "port": 8002,
+  "host": "0.0.0.0",
+  "reason": "Load tested read-only structure node state projection",
+  "watcher_pid_unchanged": 2517936,
+  "new_pid": 2571813
+}

@@ -1,0 +1,6 @@
+{
+  "guard_schema": "process-guard.v2",
+  "recorded_owner_pid": 1559070,
+  "actuator_selected_pid": 0,
+  "basis": "Read-only inspection of live process guard; no restart performed"
+}

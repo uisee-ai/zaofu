@@ -75,3 +75,39 @@ def test_tick_does_not_block_goal_for_closeout_during_rework(tmp_path):
     state, log, writer, config = _fixture(tmp_path)
     run_manager_tick(state_dir=state, writer=writer, config=config, project_root=tmp_path)
     assert not [e for e in log.read_all() if e.type == "run.goal.blocked"]
+
+
+def _plan_wait(writer, *, run_id="current", verdict="", verdict_plan="review-plan"):
+    old = datetime.now(timezone.utc) - timedelta(hours=1)
+    writer.append(ZfEvent(
+        type="plan.approval.requested", actor="zf-cli", ts=old.isoformat(),
+        correlation_id=run_id,
+        payload={"plan_id": "review-plan", "trace_id": run_id},
+    ))
+    if verdict:
+        writer.append(ZfEvent(
+            type=verdict, actor="operator", ts=old.isoformat(),
+            payload={"plan_id": verdict_plan},
+        ))
+
+
+@pytest.mark.parametrize("verdict", ["", "plan.approved", "plan.rejected"])
+def test_pending_plan_wait_does_not_escalate_old_failure_closeout(tmp_path, verdict):
+    state, log, writer, config = _fixture(tmp_path, terminal="settled")
+    _plan_wait(writer, verdict=verdict, verdict_plan="different-plan")
+    assert not _closeout_actions(state, log, config, tmp_path)
+    run_manager_tick(state_dir=state, writer=writer, config=config, project_root=tmp_path)
+    assert not [e for e in log.read_all() if e.type == "run.goal.blocked"]
+
+
+@pytest.mark.parametrize("verdict", ["plan.approved", "plan.rejected"])
+def test_resolved_plan_does_not_hide_idle_failure_closeout(tmp_path, verdict):
+    state, log, writer, config = _fixture(tmp_path, terminal="settled")
+    _plan_wait(writer, verdict=verdict)
+    assert _closeout_actions(state, log, config, tmp_path)
+
+
+def test_other_run_plan_wait_does_not_hide_current_closeout(tmp_path):
+    state, log, writer, config = _fixture(tmp_path, terminal="settled")
+    _plan_wait(writer, run_id="other")
+    assert _closeout_actions(state, log, config, tmp_path)

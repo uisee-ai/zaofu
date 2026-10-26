@@ -30,8 +30,14 @@ project constraints. Treat every allowlist as closed.
    sanctioned parameters. Controller flows use `lanes`, `strictness`, and
    `pattern_id`; registered generic workflows use their catalog parameters.
 4. Request only registered roles, skills, and execution profiles.
+   `allowed_skills` 表示已安装，不等于已装配；用 `configured_role_skills` 核对选中路线的实际
+   角色绑定。确需新增能力时提出阻塞问题与配置变更要求，不能把希望使用的 skills 当作已启用。
 5. State rationale, assumptions, open questions, completion profile, and risk
    hints. Do not claim approval or execution.
+   从 `configured_completion_by_family` 选择该路线可编译的完成要求，不能编造 threshold、
+   required_artifacts 或把 `software_delivery` 改成通用模板的 `artifact_delivery`。
+   “先预览、待确认后再启动”描述审批时序，不改变产品最终交付目标；YAML Preview 是准备工件，
+   不属于该产品 Run 的完成条件。只有用户明确要求仅交付研究/文档时才选择对应文档路线。
 6. Return exactly one JSON object matching `workflow-synthesis-result.v1`;
    emit no prose or code fence.
 
@@ -49,6 +55,10 @@ project constraints. Treat every allowlist as closed.
 - A blocking open question means clarification, not a best-effort Proposal.
 - Provider output may vary; the compiler digest and Kernel admission are the
   deterministic boundary.
+- `direct-v1` 的 `access=read_only` 是注册执行策略合同中的兼容字段，不会把直接派发的
+  writer 角色改成只读。判断直接实现能力时同时读取 `execution_catalog.roles` 的
+  `role_kind`、`permission_mode` 和 Task 写入范围；不要建议 schema 不支持的
+  `execution_profile.access=write_*`。Provider-native 策略仍按其严格只读能力边界处理。
 
 ## Output Shape
 

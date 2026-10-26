@@ -1,0 +1,33 @@
+{
+  "equivalence_ref": "rework-approval-equivalence.json",
+  "http_status": 200,
+  "request": {
+    "project_id": "racing-project-33598481",
+    "actor": "web",
+    "idempotency_key": "supervisor-same-package-rework-evt-746215246543",
+    "payload": {
+      "plan_id": "evt-746215246543",
+      "reason": "监督续修授权：用户已批准 Plan evt-adf3807d914c（plan.approved evt-158a8630051c）并要求持续修复到完成。此 Kernel workflow_resume_batch 复用完全相同的 Plan package、task_map generation、需求与 Run contract；仅因候选环境检查失败重试同版任务。监工核对不可变摘要后沿用现有授权，不声明用户进行了新的审批。"
+    }
+  },
+  "result": {
+    "ok": true,
+    "status": "recorded",
+    "action": "plan-approve",
+    "plan_id": "evt-746215246543",
+    "event_id": "evt-c94ace449772",
+    "action_result": {
+      "schema_version": "controlled-action-result.v1",
+      "attempt_id": "act-evt-279e4fe1",
+      "action": "plan-approve",
+      "requested_action": "plan-approve",
+      "status": "recorded",
+      "operation_id": "",
+      "request_hash": "",
+      "ok": true,
+      "event_id": "evt-c94ace449772",
+      "reply_event_id": "",
+      "reason": ""
+    }
+  }
+}

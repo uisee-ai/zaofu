@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any, Iterable
 
 from zf.core.events.model import ZfEvent
+from zf.runtime.plan_approval_state import has_pending_plan_approval
 from zf.runtime.workflow_operation import (
     TERMINAL_OPERATION_STATUSES,
     reduce_workflow_operations,
@@ -64,6 +65,9 @@ def maybe_emit_goal_idle_rescan(
         state.goal_idle_ticks = 0
         return ""
     run_id = str(projection.get("run_id") or "")
+    if has_pending_plan_approval(events, workflow_run_id=run_id):
+        state.goal_idle_ticks = 0
+        return ""
     operations = reduce_workflow_operations(
         events,
         workflow_run_id=run_id,

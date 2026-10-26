@@ -1,0 +1,83 @@
+
+> @zaofu/web@0.0.7 build
+> tsc --noEmit && vite build && npm run bundle:check
+
+vite v6.4.2 building for production...
+transforming...
+✓ 2549 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                               0.59 kB │ gzip:   0.33 kB
+dist/assets/geist-mono-cyrillic-400-normal-Ce5q_31Z.woff2     5.46 kB
+dist/assets/geist-mono-cyrillic-700-normal-VCNRadI3.woff2     5.79 kB
+dist/assets/geist-mono-latin-ext-400-normal-Cgks_Qgx.woff2    6.42 kB
+dist/assets/geist-mono-latin-ext-700-normal-YOllDaLV.woff2    6.46 kB
+dist/assets/geist-mono-cyrillic-400-normal-BPBWmzPh.woff      7.16 kB
+dist/assets/geist-mono-cyrillic-700-normal-DH5Q319x.woff      7.33 kB
+dist/assets/geist-mono-latin-ext-400-normal-CxNRRMGd.woff     8.74 kB
+dist/assets/geist-mono-latin-ext-700-normal-BX9f1BHp.woff     8.85 kB
+dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2      10.25 kB
+dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2       11.23 kB
+dist/assets/geist-mono-latin-400-normal-LC9RFr9I.woff2       14.71 kB
+dist/assets/geist-mono-latin-700-normal-D6izGJRP.woff2       15.30 kB
+dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2        18.75 kB
+dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2           19.00 kB
+dist/assets/geist-mono-latin-400-normal-CoULgQGM.woff        19.17 kB
+dist/assets/geist-mono-latin-700-normal-QGw08Lff.woff        19.63 kB
+dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2    25.96 kB
+dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2           48.26 kB
+dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2       85.07 kB
+dist/assets/LoopPageV2-BQ4dD_AR.css                           2.76 kB │ gzip:   0.92 kB
+dist/assets/WorkflowGraphWorkbench-B8MLioJn.css               3.51 kB │ gzip:   1.14 kB
+dist/assets/DeliveryWorkView-B1x-B0tF.css                    10.02 kB │ gzip:   2.07 kB
+dist/assets/TraceViewer-Bpy-1JMf.css                         11.66 kB │ gzip:   2.36 kB
+dist/assets/TerminalDrawer-B4sslIK3.css                      14.19 kB │ gzip:   3.82 kB
+dist/assets/index-BnuhLJ6X.css                               15.87 kB │ gzip:   2.67 kB
+dist/assets/index-ugNpamse.css                              327.75 kB │ gzip:  50.00 kB
+dist/assets/chevron-down-Dgf9rVUs.js                          0.30 kB │ gzip:   0.25 kB
+dist/assets/code-BwEnq16X.js                                  0.33 kB │ gzip:   0.26 kB
+dist/assets/arrow-left-SxSVNDmW.js                            0.34 kB │ gzip:   0.27 kB
+dist/assets/ChannelEmojiPicker-DGMvLHbe.js                    0.39 kB │ gzip:   0.27 kB
+dist/assets/ellipsis-5zdYU7hK.js                              0.39 kB │ gzip:   0.27 kB
+dist/assets/download-Y_XOl4wV.js                              0.40 kB │ gzip:   0.30 kB
+dist/assets/external-link-CPn42bF3.js                         0.42 kB │ gzip:   0.30 kB
+dist/assets/referencePreview-Bq8DhjOh.js                      0.64 kB │ gzip:   0.44 kB
+dist/assets/minimize-2-MCYplr04.js                            0.77 kB │ gzip:   0.36 kB
+dist/assets/square-terminal-BclFcCEG.js                       0.81 kB │ gzip:   0.43 kB
+dist/assets/play-rPOBaMf-.js                                  1.12 kB │ gzip:   0.49 kB
+dist/assets/api-L8XCvk3i.js                                   1.98 kB │ gzip:   0.89 kB
+dist/assets/kanbanSessionEvents-Ctnn_-UQ.js                   2.35 kB │ gzip:   1.11 kB
+dist/assets/code-block-F6WJLWQG-cryDvPEO.js                   6.06 kB │ gzip:   2.58 kB
+dist/assets/AskUserQuestion-X7FYB9Ip.js                       7.40 kB │ gzip:   2.46 kB
+dist/assets/PlanReviewReader-v_VW0a0o.js                     12.96 kB │ gzip:   5.12 kB
+dist/assets/TracesPage-Dgd7aqXQ.js                           15.42 kB │ gzip:   5.23 kB
+dist/assets/AgentSessionFixturePage-B0eJ0VZd.js              16.89 kB │ gzip:   5.67 kB
+dist/assets/TraceViewer-BdnDg0GM.js                          17.46 kB │ gzip:   4.40 kB
+dist/assets/WorkflowGraphWorkbench-CGP4OQMY.js               18.32 kB │ gzip:   7.50 kB
+dist/assets/WebChatPendingControls-C7yTrEuA.js               18.32 kB │ gzip:   5.84 kB
+dist/assets/DeliveryWorkView-vHs-INR_.js                     27.44 kB │ gzip:   8.92 kB
+dist/assets/LoopPageV2-BGI4b5Ao.js                           28.32 kB │ gzip:   8.57 kB
+dist/assets/AgentSessionTimeline-2NUJQEJD.js                 53.87 kB │ gzip:  15.75 kB
+dist/assets/shiki-lang-shell-DhATkzGw.js                     58.36 kB │ gzip:   8.85 kB
+dist/assets/emoji-picker-D2xztTOS.js                         84.18 kB │ gzip:  30.38 kB
+dist/assets/OrchestratorPanel-DC3t7x0Z.js                    86.64 kB │ gzip:  26.18 kB
+dist/assets/index-Upv4b_5L.js                                95.18 kB │ gzip:  26.94 kB
+dist/assets/ChannelPage-B8Ofu3vh.js                         138.61 kB │ gzip:  43.48 kB
+dist/assets/shiki-lang-other-B15NuaF5.js                    140.12 kB │ gzip:  21.34 kB
+dist/assets/shiki-lang-web-DXXiIofi.js                      168.34 kB │ gzip:  29.04 kB
+dist/assets/shiki-core-B9jHJm-H.js                          172.81 kB │ gzip:  53.15 kB
+dist/assets/index-B4A9iQsB.js                               183.74 kB │ gzip:  59.89 kB
+dist/assets/ProjectionPage-DTjeWavK.js                      218.36 kB │ gzip:  60.75 kB
+dist/assets/markdown-math-vvdY1MTI.js                       297.71 kB │ gzip:  90.52 kB
+dist/assets/shiki-lang-jsx-Cc-5Dlmi.js                      353.30 kB │ gzip:  32.20 kB
+dist/assets/mermaid-FSSLJTFX-Cdg8rcVk.js                    353.53 kB │ gzip: 112.41 kB
+dist/assets/shiki-lang-js-B96g42-O.js                       355.88 kB │ gzip:  31.68 kB
+dist/assets/TerminalDrawer-CFut-GaG.js                      385.82 kB │ gzip: 102.00 kB
+dist/assets/index-D_sW-6vH.js                               425.31 kB │ gzip: 128.01 kB
+dist/assets/emoji-data-BSzKojZg.js                          432.70 kB │ gzip:  82.78 kB
+✓ built in 25.37s
+
+> @zaofu/web@0.0.7 bundle:check
+> node scripts/check-bundle-size.mjs
+
+[bundle-budget] 41 chunks; largest emoji-data-BSzKojZg.js=432696; limit=500000

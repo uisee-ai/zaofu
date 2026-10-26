@@ -20,7 +20,7 @@ _RUNTIME_PATH_VALUE_FLAGS = {"--state-dir"}
 _DOCKER_VALUE_FLAGS = {
     "--env", "-e", "--mount", "--volume", "-v", "--workdir", "-w",
     "--user", "-u", "--network", "--entrypoint", "--name", "--publish", "-p",
-    "--hostname", "--add-host", "--platform", "--tmpfs",
+    "--hostname", "--add-host", "--platform", "--tmpfs", "--pull",
 }
 _OCI_DIGEST_REF_RE = re.compile(
     r"^(?:[A-Za-z0-9._-]+(?::[0-9]+)?/)+"

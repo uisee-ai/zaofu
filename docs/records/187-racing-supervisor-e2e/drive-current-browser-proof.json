@@ -1,0 +1,47 @@
+{
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "worker": "prd-verify-lane-0",
+  "slice": "RACE-DRIVE",
+  "normal_seconds": 90.30809999847412,
+  "stats": {
+    "startTime": "2026-10-26T07:37:25.646Z",
+    "duration": 169125.12099999998,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "files": [
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/receipt.json",
+      "sha256": "48ed902674caa762850de8f1ad94a896cc274dc9382d232fdd4b77916d0db6ef",
+      "bytes": 11973
+    },
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/report.json",
+      "sha256": "5d1e52d685f8960dd0c46a28dc52730d5067d33d3320d83055f3c42116541147",
+      "bytes": 7302
+    },
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/normal-90-seconds.json",
+      "sha256": "4d490ca28d58371ef100407770dca63e9a6dce9a1a626fd597c236190f687db7",
+      "bytes": 599
+    },
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/browser-errors.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "bytes": 2
+    },
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/browser-source.json",
+      "sha256": "47f49319a06b51d1567d811ac965150cc66eaca4893e31166c384b093dbaf345",
+      "bytes": 905
+    },
+    {
+      "file": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workdirs/prd-verify-lane-0/project/artifacts/racing/assembly/runs/2026-10-26T07-37-04-094Z-2f06bed0-83cc-43cb-ab6e-fda5b558a1f2/sha256.json",
+      "sha256": "267fbc11d12c95335a3106bc84cfed96ea08f2dfab1a3b67cbe97d6c577e2c6a",
+      "bytes": 7671
+    }
+  ],
+  "status": "browser passed; worker result and kernel admission pending"
+}

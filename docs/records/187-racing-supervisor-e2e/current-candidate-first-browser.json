@@ -1,0 +1,362 @@
+{
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "scope": "candidate quality browser command only; independent Verify/Judge and Run completion still pending",
+  "source_artifacts": {
+    "receipt.json": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/receipt.json",
+      "sha256": "a3307bdc68401240c3e28a91ab0a49439671f24b326a53f220fb5045e5edcdeb",
+      "bytes": 11965
+    },
+    "normal-90-seconds.json": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/normal-90-seconds.json",
+      "sha256": "99a3b229eef24767bd2364cd0da683801e0f3f75e3a8936b79f98425b127f34e",
+      "bytes": 588
+    },
+    "browser-source.json": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/browser-source.json",
+      "sha256": "47f49319a06b51d1567d811ac965150cc66eaca4893e31166c384b093dbaf345",
+      "bytes": 905
+    },
+    "browser-errors.json": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/browser-errors.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "bytes": 2
+    },
+    "report.json": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/report.json",
+      "sha256": "5aaa41ffbf8dad5df4a19f2d91abe4b09385abda22ce51416f4357758125b8a2",
+      "bytes": 7302
+    },
+    "playwright/finished.png": {
+      "ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/playwright/finished.png",
+      "sha256": "e057be1c5e0183e99b5d727d4a044c2bee2d97848e1487941d5f2f9b5c5475bd",
+      "bytes": 105670
+    }
+  },
+  "receipt": {
+    "dir": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa",
+    "command": "bash scripts/racing-runner/docker.sh acceptance",
+    "command_id": "VC-BROWSER",
+    "commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+    "uid": 1000,
+    "gid": 984,
+    "stages": [
+      {
+        "name": "setup-probe-existing",
+        "command": [
+          "/home/uisee/.nvm/versions/node/v24.14.0/bin/node",
+          "--input-type=module",
+          "-e",
+          "import {readFileSync} from 'node:fs'; import {spawnSync} from 'node:child_process';\n    const lock=JSON.parse(readFileSync('package-lock.json','utf8'));\n    for(const name of Object.keys(JSON.parse(readFileSync('package.json','utf8')).devDependencies ?? {})) {\n      const pkg=JSON.parse(readFileSync('node_modules/'+name+'/package.json','utf8'));\n      if(pkg.version!==lock.packages['node_modules/'+name].version) throw Error('tool_version_mismatch: '+name);\n    }\n    await import('vite'); await import('vitest/node'); await import('@playwright/test');\n    for(const name of ['vite','vitest','@playwright/test']) {\n      const pkg=JSON.parse(readFileSync('node_modules/'+name+'/package.json','utf8'));\n      const bin=typeof pkg.bin==='string'?pkg.bin:Object.values(pkg.bin ?? {})[0];\n      if(!bin) throw Error('tool_cli_missing: '+name);\n      const result=spawnSync(process.execPath,['node_modules/'+name+'/'+bin,'--version'],{encoding:'utf8',timeout:5000});\n      if(result.status!==0) throw Error('tool_cli_failed: '+name);\n      console.log(name+': '+result.stdout.trim());\n    }\n    const {transformSync}=await import('esbuild'); if(!transformSync('const n: number = 1',{loader:'ts'}).code) throw Error('esbuild_probe');\n    console.log(JSON.stringify({node:process.version,tools:Object.fromEntries(['vite','vitest','@playwright/test','esbuild'].map(n=>[n,JSON.parse(readFileSync('node_modules/'+n+'/package.json','utf8')).version]))}));"
+        ],
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "duration_ms": 2331,
+        "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/setup-probe-existing.stdout.bin",
+        "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/setup-probe-existing.stderr.bin"
+      },
+      {
+        "name": "image-inspect",
+        "command": [
+          "docker",
+          "image",
+          "inspect",
+          "--format",
+          "{{json .Id}} {{json .RepoDigests}}",
+          "mcp/playwright:latest"
+        ],
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "duration_ms": 52,
+        "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-inspect.stdout.bin",
+        "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-inspect.stderr.bin"
+      },
+      {
+        "name": "docker",
+        "command": [
+          "docker",
+          "run",
+          "--rm",
+          "--pull",
+          "never",
+          "--network",
+          "host",
+          "--user",
+          "1000:984",
+          "--name",
+          "racing-2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa",
+          "--entrypoint",
+          "bash",
+          "-v",
+          "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree:/work",
+          "-w",
+          "/work",
+          "-e",
+          "RACING_SUITE",
+          "-e",
+          "RACING_RUN_DIR",
+          "-e",
+          "RACING_BROWSER_CACHE",
+          "-e",
+          "https_proxy",
+          "mcp/playwright:latest",
+          "-lc",
+          "bash scripts/racing-runner/container.sh"
+        ],
+        "exit_code": 0,
+        "signal": null,
+        "timed_out": false,
+        "duration_ms": 176234,
+        "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/docker.stdout.bin",
+        "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/docker.stderr.bin"
+      }
+    ],
+    "lock": {
+      "path": "/tmp/racing-1000-dff1224500bb2eb4fec7d194cb87b730ba21367b1103f252cc70a0f79c9b24f0.lock",
+      "wait_seconds": 30
+    },
+    "setup": {
+      "package_sha256": "c79f0ca69e312432f8213785290e2a807fa87ebc897a5c9e9b740bbe88c14b0c",
+      "lock_sha256": "6fff76a5c5149f1f33d0bb7e75bdacadebec12d1260dc7ca12db3b0dbcab9bc1",
+      "node": "v24.14.0",
+      "abi": "137",
+      "os": "linux",
+      "arch": "x64",
+      "reused": true
+    },
+    "image": {
+      "tag": "mcp/playwright:latest",
+      "digest": "sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b",
+      "repo_digests": [
+        "mcp/playwright@sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b"
+      ]
+    },
+    "docker_command": [
+      "docker",
+      "run",
+      "--rm",
+      "--pull",
+      "never",
+      "--network",
+      "host",
+      "--user",
+      "1000:984",
+      "--name",
+      "racing-2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa",
+      "--entrypoint",
+      "bash",
+      "-v",
+      "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/candidates/TASK-5F44B4/worktree:/work",
+      "-w",
+      "/work",
+      "-e",
+      "RACING_SUITE",
+      "-e",
+      "RACING_RUN_DIR",
+      "-e",
+      "RACING_BROWSER_CACHE",
+      "-e",
+      "https_proxy",
+      "mcp/playwright:latest",
+      "-lc",
+      "bash scripts/racing-runner/container.sh"
+    ],
+    "container": {
+      "commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+      "image": {
+        "tag": "mcp/playwright:latest",
+        "digest": "sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b",
+        "repo_digests": [
+          "mcp/playwright@sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b"
+        ]
+      },
+      "uid": 1000,
+      "gid": 984,
+      "bind_host": "0.0.0.0",
+      "network": "host",
+      "stages": [
+        {
+          "name": "setup-probe-existing",
+          "command": [
+            "/home/uisee/.nvm/versions/node/v24.14.0/bin/node",
+            "--input-type=module",
+            "-e",
+            "import {readFileSync} from 'node:fs'; import {spawnSync} from 'node:child_process';\n    const lock=JSON.parse(readFileSync('package-lock.json','utf8'));\n    for(const name of Object.keys(JSON.parse(readFileSync('package.json','utf8')).devDependencies ?? {})) {\n      const pkg=JSON.parse(readFileSync('node_modules/'+name+'/package.json','utf8'));\n      if(pkg.version!==lock.packages['node_modules/'+name].version) throw Error('tool_version_mismatch: '+name);\n    }\n    await import('vite'); await import('vitest/node'); await import('@playwright/test');\n    for(const name of ['vite','vitest','@playwright/test']) {\n      const pkg=JSON.parse(readFileSync('node_modules/'+name+'/package.json','utf8'));\n      const bin=typeof pkg.bin==='string'?pkg.bin:Object.values(pkg.bin ?? {})[0];\n      if(!bin) throw Error('tool_cli_missing: '+name);\n      const result=spawnSync(process.execPath,['node_modules/'+name+'/'+bin,'--version'],{encoding:'utf8',timeout:5000});\n      if(result.status!==0) throw Error('tool_cli_failed: '+name);\n      console.log(name+': '+result.stdout.trim());\n    }\n    const {transformSync}=await import('esbuild'); if(!transformSync('const n: number = 1',{loader:'ts'}).code) throw Error('esbuild_probe');\n    console.log(JSON.stringify({node:process.version,tools:Object.fromEntries(['vite','vitest','@playwright/test','esbuild'].map(n=>[n,JSON.parse(readFileSync('node_modules/'+n+'/package.json','utf8')).version]))}));"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 2331,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/setup-probe-existing.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/setup-probe-existing.stderr.bin"
+        },
+        {
+          "name": "image-inspect",
+          "command": [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            "{{json .Id}} {{json .RepoDigests}}",
+            "mcp/playwright:latest"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 52,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-inspect.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-inspect.stderr.bin"
+        },
+        {
+          "name": "image-version",
+          "command": [
+            "/ms-playwright/chromium-1226/chrome-linux64/chrome",
+            "--version"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 50,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-version.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-version.stderr.bin"
+        },
+        {
+          "name": "image-protocol",
+          "command": [
+            "/usr/local/bin/node",
+            "scripts/racing-runner/qualify.mjs",
+            "/ms-playwright/chromium-1226/chrome-linux64/chrome",
+            "/work/artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa",
+            "image",
+            "149.0.7827.22"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 1921,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-protocol.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/image-protocol.stderr.bin"
+        },
+        {
+          "name": "build",
+          "command": [
+            "npm",
+            "run",
+            "build"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 4604,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/build.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/build.stderr.bin"
+        },
+        {
+          "name": "playwright",
+          "command": [
+            "./node_modules/.bin/playwright",
+            "test",
+            "--config",
+            "playwright.config.ts",
+            "--workers=1",
+            "--retries=0",
+            "--forbid-only",
+            "--reporter=json",
+            "--output",
+            "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/playwright"
+          ],
+          "exit_code": 0,
+          "signal": null,
+          "timed_out": false,
+          "duration_ms": 167731,
+          "stdout": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/playwright.stdout.bin",
+          "stderr": "artifacts/racing/assembly/runs/2026-10-26T05-44-31-466Z-1ac7da91-6fd8-4719-80ab-572ad29c95fa/playwright.stderr.bin"
+        }
+      ],
+      "browser_source_sha256": "47f49319a06b51d1567d811ac965150cc66eaca4893e31166c384b093dbaf345",
+      "build_hashes": {
+        "assets/index-DdBykQBu.js": "519ad5f9affdd4bb57d130ea38fb574ddc3e8478af73f5405b6205a6d018bc20",
+        "assets/index-ccsueTfw.css": "edef234a58d1df895f4cb82d602fb72021de56b856e26051631e3583832f5e74",
+        "favicon.svg": "731da32eb98e67c7d1b8d9528aa10195caa436dd0e3169d5ed15a5964d8f4c57",
+        "index.html": "6320b8c0f9dd85c64420556ca08f7fe8b94fc199a7af0626f91b3f46f5d27dae"
+      },
+      "port": 8004,
+      "browser_origin": "http://127.0.0.1:8004",
+      "service_url": "http://127.0.0.1:8004",
+      "health": "passed",
+      "exit_code": 0,
+      "status": "passed"
+    },
+    "exit_code": 0,
+    "status": "passed"
+  },
+  "normal_race": {
+    "started": 96.29999923706055,
+    "finishedAt": 90340.5,
+    "monotonic_elapsed_ms": 90244.20000076294,
+    "snapshot": {
+      "phase": "finished",
+      "vehicle": {
+        "x": 421.1981848048889,
+        "y": 120,
+        "headingRad": 0,
+        "speedMps": 0
+      },
+      "elapsedActiveMs": 90000,
+      "remainingMs": 0,
+      "distanceM": 106.66743469759479,
+      "collisionCount": 1,
+      "score": 86,
+      "route": {
+        "lastAngleRad": -0.9781994673638144,
+        "unwrappedProgressM": 106.66743469759479,
+        "highWaterM": 106.66743469759479,
+        "nextCheckpointIndex": 1,
+        "completedLaps": 0
+      },
+      "contactIds": [
+        "outer"
+      ],
+      "result": {
+        "distanceM": 106.66743469759479,
+        "collisionCount": 1,
+        "score": 86,
+        "elapsedActiveMs": 90000
+      },
+      "finishCount": 1
+    }
+  },
+  "browser_source": {
+    "image": {
+      "tag": "mcp/playwright:latest",
+      "digest": "sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b",
+      "repo_digests": [
+        "mcp/playwright@sha256:d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b"
+      ]
+    },
+    "project_playwright_version": "1.58.2",
+    "expected_revision": "1208",
+    "cache_key": "/work/artifacts/racing/assembly/cache/browsers/sha256-d022a54c8422484ecb9e5cb3e3882ba81ee2f092a058b0a9f59a83ac8ba9430b/1.58.2/1208/linux-x64",
+    "executable_path": "/ms-playwright/chromium-1226/chrome-linux64/chrome",
+    "executable_sha256": "5c8e7acf070574dc019b1f6351e522444dd98ad6b6748500613b41c765366289",
+    "actual_revision": "1226",
+    "browser_version": "149.0.7827.22",
+    "image_playwright_version": "1.61.0-alpha-1781023400000",
+    "source": "image",
+    "qualification": "passed",
+    "qualification_kind": "qualified-image",
+    "rejected": []
+  },
+  "report_stats": {
+    "startTime": "2026-10-26T05:44:44.942Z",
+    "duration": 164780.78199999998,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "report_errors": [],
+  "browser_errors": []
+}

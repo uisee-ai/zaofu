@@ -19,6 +19,7 @@ from zf.runtime.task_map_assembly import (
     assembly_ownership_errors as _assembly_ownership_errors,
 )
 from zf.runtime.task_map_goal_coverage import validate_goal_coverage
+from zf.runtime.plan_modules import plan_module_errors
 from zf.runtime.task_map_required_ports import required_plan_port_errors
 from zf.runtime.task_map_successor import successor_base_errors
 from zf.runtime.task_contract_snapshot import acceptance_contract_errors
@@ -90,6 +91,8 @@ def build_task_map_from_ingest_plan(
         "feature_id": str(plan.get("feature_id") or "").strip(),
         "source_refs": dict(source_refs),
         "tasks": tasks,
+        **({"modules": plan["modules"]} if "modules" in plan else {}),
+        **({"goal_claims": plan["goal_claims"]} if "goal_claims" in plan else {}),
     }
 
 
@@ -242,6 +245,7 @@ def validate_task_map_payload(
         [raw for raw in tasks_raw if isinstance(raw, dict)],
     )
     errors.extend(goal_coverage_errors)
+    errors.extend(plan_module_errors(payload))
     from zf.runtime.task_map_evidence import validate_task_map_evidence
     topological_order, evidence_errors = validate_task_map_evidence(payload)
     errors.extend(evidence_errors)

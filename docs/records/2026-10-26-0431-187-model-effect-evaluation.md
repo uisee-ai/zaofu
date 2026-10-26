@@ -1,7 +1,7 @@
 # 187 真实模型效果评估：方法更明确，尚无明显质量跃升
 
 > 日期: 2026-10-26 UTC；用户在工程验收后要求追加实际效果评估。
-> 设计: [187](../design/187-bmad-inspired-epic-task-map-and-tdd.md)。
+> 设计: [187](../design/188-bmad-inspired-epic-task-map-and-tdd.md)。
 > 前序: [工程验证记录](2026-10-26-0336-187-delivery-validation.md)。
 
 ## 结论与交付决定

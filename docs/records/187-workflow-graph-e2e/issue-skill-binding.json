@@ -1,0 +1,32 @@
+{
+  "project_id": "todo-project-3ef9b6f4",
+  "request_id": "prepare-TASK-C31585-f16e7ce533b41689",
+  "revision": 3,
+  "yaml_sha256": "41c32d47b0015f176bd6339e15ae64191fbfefa284402e25f63622f14b16695e",
+  "compiled_roles": [
+    {
+      "role": "judge-issue",
+      "model": "",
+      "skills": [
+        "zf-goal-closure-judge-contract"
+      ]
+    },
+    {
+      "role": "issue-fix-lane-0",
+      "model": "",
+      "skills": [
+        "zf-plan-task-map-contract"
+      ]
+    },
+    {
+      "role": "issue-verify-lane-0",
+      "model": "",
+      "skills": [
+        "zf-workflow-adaptation-boundary",
+        "zf-project-adapter-matrix-enrichment",
+        "zf-yoke-test-evaluator-role-context"
+      ]
+    }
+  ],
+  "submitted": false
+}

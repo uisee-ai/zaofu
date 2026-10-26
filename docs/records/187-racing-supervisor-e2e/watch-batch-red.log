@@ -1,0 +1,41 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___ test_wake_burst_runs_once_in_ledger_order_and_preserves_append_boundary ____
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-270/test_wake_burst_runs_once_in_l0')
+
+    def test_wake_burst_runs_once_in_ledger_order_and_preserves_append_boundary(tmp_path: Path):
+        log = EventLog(tmp_path / "events.jsonl")
+        calls = []
+        appended = ZfEvent(type="verify.child.completed")
+
+        def run_once(*, events, consumed_offset=None):
+            calls.append((list(events), consumed_offset))
+            if len(calls) == 1:
+                log.append(appended)
+
+        on_event, on_batch = make_watch_callbacks(
+            orchestrator=SimpleNamespace(run_once=run_once),
+            wake_patterns={"worker.state.changed", "verify.child.completed"},
+            wake_worthy_fn=lambda _: True,
+            rate_limiter=SimpleNamespace(allow=lambda _: True),
+            simulation=False, event_log=log, stop_watcher=lambda: None,
+        )
+        watcher = EventWatcher(log.path, on_event, on_batch_consumed=on_batch, event_log=log)
+        events = [ZfEvent(type="agent.usage"), ZfEvent(type="worker.state.changed"),
+                  ZfEvent(type="worker.state.changed"), ZfEvent(type="verify.child.completed")]
+        for event in events:
+            log.append(event)
+        boundary = log.path.stat().st_size
+        watcher.poll_once()
+>       assert calls == [(events, boundary)]
+E       AssertionError: assert [([ZfEvent(ty...in='')], 757)] == [([ZfEvent(ty...in='')], 757)]
+E
+E         At index 0 diff: ([ZfEvent(type='worker.state.changed', id='evt-cc3b8a4af6ab', ts='2026-10-26T06:36:51.073066+00:00', actor=None, task_id=None, payload={}, causation_id=None, correlation_id=None, origin='')], None) != ([ZfEvent(type='agent.usage', id='evt-1b23df2409ba', ts='2026-10-26T06:36:51.073026+00:00', actor=None, task_id=None, payload={}, causation_id=None, correlation_id=None, origin=''), ZfEvent(type='worker.state.changed', id='evt-cc3b8a4af6ab', ts='2026-10-26T06:36:51.073066+00:00', actor=None, task_id=None, payload={}, causation_id=None, correlation_id=None,...
+E
+E         ...Full output truncated (3 lines hidden), use '-vv' to show
+
+tests/test_cli_watch_batch.py:36: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_cli_watch_batch.py::test_wake_burst_runs_once_in_ledger_order_and_preserves_append_boundary
+1 failed in 3.38s

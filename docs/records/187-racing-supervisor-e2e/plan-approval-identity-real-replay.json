@@ -1,0 +1,57 @@
+{
+  "read_only": true,
+  "observed_suppression": {
+    "type": "plan.minting.suppressed",
+    "id": "evt-3346de48b3cc",
+    "ts": "2026-10-26T04:16:24.321785+00:00",
+    "actor": "zf-cli",
+    "task_id": null,
+    "payload": {
+      "plan_id": "evt-498c4d468cc2",
+      "stage_id": "prd-lanes-impl",
+      "trace_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "pdd_id": "TASK-5F44B4",
+      "task_map_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/artifacts/plan/task_map.json",
+      "plan_artifact_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/docs/plans/prd-plan-prd-planner-plan.md",
+      "plan_artifact_package_ref": "artifacts/plan-packages/3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52.json",
+      "plan_artifact_package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+      "requirement_spec_ref": "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json",
+      "source_index_ref": "artifacts/fanouts/fanout-prd-plan-evt-fe204937/prd-planner/artifacts/plan/source_index.json",
+      "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "plan_artifact_digest": "93255908dd5c222141dd85b9c448829f2dde9a96fecdcf88d0ec0737d5095916",
+      "plan_fingerprint": "178826d6b21f82cc",
+      "duplicate_of": "evt-7f09c139c21e",
+      "reason": "pending_plan_same_fingerprint"
+    },
+    "causation_id": "evt-498c4d468cc2",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  },
+  "candidates": [
+    {
+      "id": "evt-7f09c139c21e",
+      "task_ids": [
+        "RACE-ASSEMBLY",
+        "RACE-DRIVE",
+        "RACE-FOUNDATION",
+        "RACE-TRACK"
+      ],
+      "package_digest": "2e0516620b7cb212871cc5a929ef37fc446ac1c6b834296c85c5db1e77588f4a",
+      "generation": "bc70eca2006225af346bbebbd8c49a3e7c59f479ef491a4056368aa90736ec8e",
+      "fingerprint_v2": "plan-approval.v2:bb3fae973a8bef93f748639e13de89f861ee8556ef97d524a0d7f05d62d40233"
+    },
+    {
+      "id": "evt-498c4d468cc2",
+      "task_ids": [
+        "RACE-ASSEMBLY",
+        "RACE-DRIVE",
+        "RACE-FOUNDATION",
+        "RACE-TRACK"
+      ],
+      "package_digest": "3fb10ccbfa9fdacc6652f67703dbe087feaae0bbc5b005d51c8a5c6b1795fe52",
+      "generation": "29a5e4aa78f025416cad43bd538eb99e903616f0bacefa4cdb62033ebf96e7d2",
+      "fingerprint_v2": "plan-approval.v2:d332e5d0f629e84803a96c48a58322db69025bccfe73de2007bcf819bdf239df"
+    }
+  ],
+  "effect": "new candidate differs and can be reviewed; approval remains required"
+}

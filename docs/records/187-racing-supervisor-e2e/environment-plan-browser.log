@@ -1,0 +1,16 @@
+node:internal/process/promises:394
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+locator.waitFor: Timeout 180000ms exceeded.
+Call log:
+  - waiting for getByRole('button', { name: 'PRD / Plan Preview · pending', exact: true }) to be visible
+
+    at /tmp/zf-racing-supervision-20261025T211020Z/environment-plan-preview.cjs:16:18 {
+  log: [
+    "  - waiting for getByRole('button', { name: 'PRD / Plan Preview · pending', exact: true }) to be visible"
+  ],
+  name: 'TimeoutError'
+}
+
+Node.js v22.23.1

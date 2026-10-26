@@ -1,0 +1,11 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - src/zf/runtime/sdlc_graph.py
+  - src/zf/runtime/task_attempt_operation_settlement.py
+  - tests/test_fanout_retry_attempt_settlement.py
+  - tests/test_sdlc_terminal_container.py
+domains: backend, tests
+python tests: 13
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_briefing_metrics.py tests/test_call_result_runtime.py tests/test_fanout_retry_attempt_settlement.py tests/test_result_submit.py tests/test_scheduler_task_attempt.py tests/test_sdlc_graph.py tests/test_sdlc_terminal_container.py tests/test_sdlc_workflow_states.py tests/test_task_attempt_failure_operations.py tests/test_task_attempt_operation_terminalization.py tests/test_task_pipeline_entry.py tests/test_task_pipeline_fault_matrix.py tests/test_workflow_budget_guard.py -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: changed tests + direct imports/callers + boundary sentinels

@@ -1,0 +1,9 @@
+
+Running 4 tests using 1 worker
+
+  ✓  1 ui-regression/workflow-graph-workbench.spec.ts:7:5 › real Workflow graph shows bound execution, every lens, stable selection and mobile layout (1.1m)
+  ✓  2 ui-regression/workflow-graph-workbench.spec.ts:66:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings (27.6s)
+  ✓  3 ui-regression/workflow-graph-workbench.spec.ts:97:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels (16.6s)
+  ✓  4 ui-regression/workflow-graph-workbench.spec.ts:144:5 › explicit graph filters compact the layout while polls retain the viewport (13.9s)
+
+  4 passed (2.1m)

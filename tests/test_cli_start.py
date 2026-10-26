@@ -502,16 +502,16 @@ workflow:
         assert "dry-run" in captured.out.lower()
 
     def test_start_dry_run_succeeds(self, project_dir: Path, capsys, monkeypatch):
-        from zf.cli import start
+        from zf.cli import watch_batch
 
         batches = []
-        original = start.process_watched_batch
+        original = watch_batch.process_watched_batch
 
         def record_batch(events, **kwargs):
             batches.append((events, kwargs["consumed_offset"]))
             return original(events, **kwargs)
 
-        monkeypatch.setattr(start, "process_watched_batch", record_batch)
+        monkeypatch.setattr(watch_batch, "process_watched_batch", record_batch)
         result = main(["start", "--dry-run"])
         assert result == 0
         assert len(batches) == 1
@@ -918,10 +918,26 @@ workflow:
         openai = [item for item in data["env"] if item["key"] == "OPENAI_API_KEY"]
         assert openai == [{"key": "OPENAI_API_KEY", "value": "<redacted>"}]
 
-    def test_start_watcher_configured(self, project_dir: Path, capsys):
-        main(["start", "--dry-run"])
+    def test_start_watcher_configured(self, project_dir: Path, capsys, monkeypatch):
+        from zf.cli import watch_batch
+
+        snapshots = []
+        original = watch_batch.make_watch_callbacks
+
+        def instrument(**kwargs):
+            on_event, on_batch = original(**kwargs)
+
+            def consume(events, offset):
+                snapshots.append(([event.type for event in events], offset))
+                on_batch(events, offset)
+
+            return on_event, consume
+
+        monkeypatch.setattr(watch_batch, "make_watch_callbacks", instrument)
+        assert main(["start", "--dry-run"]) == 0
         captured = capsys.readouterr()
         assert "watcher" in captured.out.lower() or "wake" in captured.out.lower()
+        assert any("loop.started" in types and offset > 0 for types, offset in snapshots)
 
     def test_start_creates_lock_file(self, project_dir: Path):
         main(["start", "--dry-run"])

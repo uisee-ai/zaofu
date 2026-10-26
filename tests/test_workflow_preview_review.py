@@ -253,6 +253,39 @@ def test_http_context_auth_and_apply_are_wired(setup, monkeypatch):
     assert applied.json()["revision"] == binding["revision"] + 1
 
 
+@pytest.mark.parametrize("field,replacement", [
+    ("config.0.roleDefaults.model", "test-model"),
+    ("config.1.workflow.plan_approval", True),
+    ("config.0.roleSkillBundles.impl", ["zf-yoke-dev-worker-role-context", "zf-plan-task-map-contract"]),
+])
+def test_nested_model_and_skills_recompile_exact_selected_input(setup, field, replacement):
+    import yaml
+    from zf.runtime.workflow_config_apply import WorkflowConfigApplyService
+    from zf.runtime.workflow_proposal import load_workflow_proposal
+
+    _, service, binding = setup
+    baseline = service.config_path.read_bytes()
+    context = service.context(binding)
+    assert context["fields"][field]["editable"]
+    draft = service.discuss(
+        {**binding, "field": field, "message": "仅修改所选配置", "mode": "revise"},
+        agent=Agent({"answer": "修改所选字段", "replacement": replacement}),
+    )
+    applied = service.apply(draft["draft_ref"])
+    proposal = load_workflow_proposal(service.state_dir, applied["proposal_ref"])
+    candidate = WorkflowConfigApplyService(
+        state_dir=service.state_dir, project_root=service.project_root,
+    )._private_candidate(proposal)
+    before = list(yaml.safe_load_all(context["config_text"]))
+    after = list(yaml.safe_load_all(candidate.read_text()))
+    _, index, parent, key = field.split(".")
+    expected = deepcopy(before)
+    expected[int(index)]["spec"].setdefault(parent, {})[key] = replacement
+    assert after == expected
+    assert service.config_path.read_bytes() == baseline
+    assert not applied["started"]
+
+
 def test_apply_can_resume_after_compiler_interruption(setup, monkeypatch):
     _, service, binding = setup
     draft = revision(service, binding)
@@ -501,3 +534,108 @@ def test_invalid_candidate_returns_422_without_mutation(setup, monkeypatch):
         == binding["revision"]
     )
     assert not list(service.project_root.glob(".zf-preview-*.yaml"))
+
+
+@pytest.mark.parametrize("kind", ["issue", "auto"])
+def test_synthesis_preview_lane_reduction_rebinds_compiled_roles(tmp_path, kind):
+    from tests.test_web_workflow_proposals import _write_config
+    from tests.test_workflow_synthesis import _result
+    from zf.core.config.loader import load_config
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    from zf.runtime.workflow_synthesis import run_workflow_synthesis
+    from zf.runtime.workflow_synthesis_support import admission_catalog
+
+    path = tmp_path / 'zf.yaml'
+    _write_config(path, lanes=2)
+    path.write_text(path.read_text().replace("  lanes: 2", "  topology: fanout\n  lanes: 2") + "  workflow:\n    candidate_quality_source: task_contract_required\n")
+    state = tmp_path / '.zf'
+    writer = EventWriter(EventLog(state / 'events.jsonl'))
+    intake = build_flow_intake(kind=kind, objective='Fix expiry', request_id='lane-review',
+        backend='mock', project_id='default', acceptance=('Expiry regression passes',),
+        output=tmp_path / 'docs/intake/bug.md')
+    req = revise_workflow_request(state, Path(intake['workflow_input_manifest_ref']),
+        actor='test', confirm=True, writer=writer)
+    config = load_config(path)
+    catalog = admission_catalog(config, tmp_path)
+    candidate = _result(req, 'IssueFlow', requested_roles=sorted(catalog['roles']),
+        requested_skills=[], requested_profiles=[],
+        completion_profile=catalog['configured_completion_by_family']['issue'])
+    candidate['short_flow_spec']['parameters']['lanes'] = 2
+    synth = run_workflow_synthesis(state_dir=state, project_root=tmp_path, config=config,
+        writer=writer, request_id=req['request_id'], actor='test', candidate_result=candidate)
+    report = build_flow_submit_preview(config_path=path, intake_path=Path(intake['intake_ref']),
+        flow_kind='issue', allow_missing_env=True, synthesis_result_ref=synth.result_ref)
+    assert report.get('status') != 'STOP', report.get('blockers')
+    req = load_workflow_request(state, req['request_id'])
+    service = WorkflowPreviewReview(state, tmp_path, writer)
+    binding = {key: req[key] for key in ('request_id', 'revision', 'proposal_digest')}
+    draft = service.discuss({**binding, 'field': 'config.0.lanes', 'mode': 'revise', 'message': 'One lane'},
+        agent=Agent({'answer': '仅修改并行数', 'replacement': 1}))
+    applied = service.apply(draft['draft_ref'])
+    assert not applied['blockers'], applied['blockers']
+    latest = load_workflow_request(state, req['request_id'])
+    admitted = hydrate_sidecar_ref(state, latest['synthesis_ref']).payload
+    assert not any('lane-1' in role for role in admitted['requested_roles'])
+    assert any('lane-0' in role for role in admitted['requested_roles'])
+    assert latest['status'] == 'proposed'
+    assert any('lane-1' in role.name for role in load_config(path).roles)
+
+
+def test_preview_apply_holds_preparation_consumer_lease(setup, monkeypatch):
+    from zf.core.config.loader import load_config
+    from zf.runtime import workflow_preview_review as module
+    from zf.runtime.workflow_synthesis_consumer import consume_workflow_synthesis_operations
+    _, service, binding = setup
+    change = service.discuss({**binding, 'field': 'config.0.lanes', 'mode': 'revise', 'message': 'Two lanes'},
+        agent=Agent({'answer': '两条 lane', 'replacement': 2}))
+    original = module.build_workflow_proposal
+    observed = []
+
+    def compile_during_consumer_tick(*args, **kwargs):
+        with pytest.raises(TimeoutError):
+            consume_workflow_synthesis_operations(state_dir=service.state_dir,
+                project_root=service.project_root, config=load_config(service.config_path), writer=service.writer)
+        observed.append(True)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(module, 'build_workflow_proposal', compile_during_consumer_tick)
+    assert service.apply(change['draft_ref'])['ok']
+    assert observed == [True]
+
+
+def test_multi_flow_skill_fields_use_compiler_input_roles(tmp_path):
+    import yaml
+    from tests.test_web_workflow_proposals import _write_config
+    from zf.core.config.loader import load_config
+    from zf.runtime.workflow_review_fields import flow_input_roles, config_review_fields, apply_config_field
+    path = tmp_path / 'zf.yaml'
+    _write_config(path)
+    docs = list(yaml.safe_load_all(path.read_text()))
+    docs.insert(1, {'apiVersion': 'zaofu.dev/v1', 'kind': 'PrdFlow',
+        'metadata': {'name': 'product'}, 'spec': {'lanes': 1, 'backend': 'mock'}})
+    inputs = flow_input_roles(docs, 1, 'prd')
+    fields = config_review_fields(1, docs[1]['spec'], role_names=list(inputs), family='prd', inherited_skills=inputs)
+    assert 'config.1.roleSkillBundles.planner' in fields
+    assert 'config.1.roleSkillBundles.prd-planner' not in fields
+    patched = apply_config_field(docs, 'config.1.roleSkillBundles.planner', ['zf-plan-task-map-contract'])
+    path.write_text(yaml.safe_dump_all(patched))
+    planner = next(role for role in load_config(path).roles if role.name == 'prd-planner')
+    assert planner.skills == ['zf-plan-task-map-contract']
+
+
+@pytest.mark.parametrize('topology,bundle', [('light', 'impl'), ('fanout', 'fix')])
+def test_issue_skill_input_matches_selected_topology(tmp_path, topology, bundle):
+    import yaml
+    from tests.test_web_workflow_proposals import _write_config
+    from zf.core.config.loader import load_config
+    from zf.runtime.workflow_review_fields import flow_input_roles, config_review_fields, apply_config_field
+    path = tmp_path / 'zf.yaml'
+    _write_config(path)
+    docs = list(yaml.safe_load_all(path.read_text()))
+    docs[0]['spec']['topology'] = topology
+    inputs = flow_input_roles(docs, 0, 'issue')
+    fields = config_review_fields(0, docs[0]['spec'], role_names=list(inputs), family='issue', inherited_skills=inputs)
+    field = f'config.0.roleSkillBundles.{bundle}'
+    assert field in fields
+    path.write_text(yaml.safe_dump_all(apply_config_field(docs, field, ['zf-plan-task-map-contract'])))
+    assert any(role.skills == ['zf-plan-task-map-contract'] and 'fix' in role.name for role in load_config(path).roles)

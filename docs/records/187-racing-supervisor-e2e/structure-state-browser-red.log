@@ -1,0 +1,26 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 ui-regression/workflow-graph-workbench.spec.ts:183:5 › completed fanout updates aggregate and role structure nodes (5.0s)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:183:5 › completed fanout updates aggregate and role structure nodes
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "completed"
+    Received: "pending"
+
+      186 |   const graph = await (await request.get(`/api/projects/${encodeURIComponent(project)}/workflow-requests/${encodeURIComponent(requestId)}/graph`)).json();
+      187 |   const aggregate = graph.nodes.find((n: { id: string }) => n.id === `workflow:aggregate:${stageId}`);
+    > 188 |   expect(aggregate.status).toBe("completed");
+          |                            ^
+      189 |   expect(aggregate.data.status_source_event_id).toBeTruthy();
+      190 |   const roles = aggregate.data.definition.roles as string[];
+      191 |   expect(roles.length).toBeGreaterThan(0);
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:188:28
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-c-831eb-te-and-role-structure-nodes/error-context.md
+
+  1 failed
+    ui-regression/workflow-graph-workbench.spec.ts:183:5 › completed fanout updates aggregate and role structure nodes

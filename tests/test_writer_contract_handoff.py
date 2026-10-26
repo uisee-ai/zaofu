@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import pytest
 
 from zf.core.events.model import ZfEvent
 from zf.core.events.writer import EventWriter
@@ -145,7 +146,11 @@ def test_adopted_task_ref_recovers_source_generation_dispatch_base(
     assert source_child.get("contract_snapshot_ref")
 
     replacement_fanout_id = "fanout-dev-fanout-replacement"
-    replacement_started = dict(started.payload)
+    replacement_started = json.loads(json.dumps(started.payload))
+    for expected_child in replacement_started["expected_children"]:
+        for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+            expected_child.pop(key, None)
+            expected_child.get("payload", {}).pop(key, None)
     replacement_started["fanout_id"] = replacement_fanout_id
     replacement_started["trigger_event_id"] = "task-map-replacement"
     EventWriter(log).append(ZfEvent(
@@ -165,6 +170,7 @@ def test_adopted_task_ref_recovers_source_generation_dispatch_base(
         "contract_snapshot_ref",
         "contract_snapshot_digest",
         "contract_revision",
+        *TASK_CONTRACT_AUTHORITY_FIELDS,
     ):
         replacement_child.pop(key, None)
         if isinstance(replacement_child.get("payload"), dict):
@@ -273,7 +279,11 @@ def test_stale_contract_completion_is_not_adopted_into_untyped_replacement(
     assert effective_contract_revision(current_task) != source_child["contract_revision"]
 
     replacement_fanout_id = "fanout-dev-fanout-replacement"
-    replacement_started = dict(started.payload)
+    replacement_started = json.loads(json.dumps(started.payload))
+    for expected_child in replacement_started["expected_children"]:
+        for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+            expected_child.pop(key, None)
+            expected_child.get("payload", {}).pop(key, None)
     replacement_started["fanout_id"] = replacement_fanout_id
     replacement_started["trigger_event_id"] = "task-map-replacement"
     EventWriter(log).append(ZfEvent(
@@ -292,6 +302,7 @@ def test_stale_contract_completion_is_not_adopted_into_untyped_replacement(
         "contract_snapshot_digest",
         "contract_revision",
         "task_map_generation",
+        *TASK_CONTRACT_AUTHORITY_FIELDS,
     ):
         replacement_child.pop(key, None)
         if isinstance(replacement_child.get("payload"), dict):
@@ -339,8 +350,10 @@ def test_stale_contract_completion_is_not_adopted_into_untyped_replacement(
     )["status"] != "failed"
 
 
+@pytest.mark.parametrize("authority", ["present", "omitted", "conflicting"])
 def test_current_contract_completion_recovers_identity_failed_child_once(
     tmp_path: Path,
+    authority: str,
 ):
     state_dir, log, _transport, orch = _state(
         tmp_path,
@@ -444,8 +457,24 @@ def test_current_contract_completion_recovers_identity_failed_child_once(
             ),
         },
     )
+    if authority == "omitted":
+        for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+            current_progress.payload["impl_self_check"].pop(key, None)
+    elif authority == "conflicting":
+        current_progress.payload["impl_self_check"]["contract_authority_revision"] = "authority-foreign"
     log.append(current_progress)
     orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+    if authority == "conflicting":
+        assert any(event.type == "fanout.child.failed"
+                   and "contract_authority_revision mismatch" in event.payload.get("reason", "")
+                   for event in log.read_all())
+        assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "failed"
+        return
+    orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+    assert len([
+        event for event in log.read_all()
+        if event.type == "impl.self_check.completed" and event.causation_id == current_progress.id
+    ]) == 1
     ref_updated = ZfEvent(
         type="task.ref.updated",
         actor="zf-cli",

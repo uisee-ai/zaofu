@@ -1,0 +1,322 @@
+FFF.                                                                     [100%]
+=================================== FAILURES ===================================
+____ test_dispatched_authority_replaces_queued_authority_for_result_binding ____
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-199/test_dispatched_authority_repl0')
+
+    def test_dispatched_authority_replaces_queued_authority_for_result_binding(tmp_path: Path):
+        from zf.runtime.fanout_result_identity import bind_blocking_writer_result_identity
+
+        state_dir = tmp_path / "custom-state"
+        state_dir.mkdir()
+        log = EventLog(state_dir / "events.jsonl")
+        writer = EventWriter(log)
+        old = {"contract_authority_revision": "authority-planned",
+               "execution_owner": "planned-owner", "workflow_request_id": "request-1",
+               "workflow_request_revision": "1", "origin_binding_digest": "origin-old"}
+        context = FanoutContext(
+            fanout_id="queued-authority", stage_id="impl", topology="fanout_writer_scoped",
+            trace_id="run-1", trigger_event_id="plan", target_ref="main",
+            expected_children=[FanoutChild(child_id="queued-task", role_instance="",
+                                          payload={**old, "task_id": "TASK-1", "result_protocol_mode": "blocking"})],
+        )
+        writer.append(context.started_event())
+        for revision in ("dispatched", "redispatched"):
+            current = {**old, "contract_authority_revision": "authority-" + revision,
+                       "execution_owner": "runtime-owner", "workflow_request_revision": "2",
+                       "origin_binding_digest": "origin-current"}
+            writer.append(ZfEvent(type="fanout.child.dispatched", actor="zf-cli", payload={
+                "fanout_id": context.fanout_id, "child_id": "queued-task",
+                "role_instance": "dev-2", "run_id": revision, **current,
+            }))
+            manifest = json.loads((state_dir / "fanouts" / context.fanout_id / "manifest.json").read_text())
+            child = manifest["children"][0]
+            result = bind_blocking_writer_result_identity({
+                "impl_self_check": {**current, "evidence_refs": ["actual-command-receipt"]},
+            }, child)
+>           assert {key: child[key] for key in current} == current
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_fanout_manifest.py:328:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+.0 = <dict_keyiterator object at 0x7825a87f9da0>
+
+>   assert {key: child[key] for key in current} == current
+                 ^^^^^^^^^^
+E   KeyError: 'contract_authority_revision'
+
+tests/test_fanout_manifest.py:328: KeyError
+_ test_current_contract_completion_recovers_identity_failed_child_once[present] _
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-199/test_current_contract_completi0')
+authority = 'present'
+
+    @pytest.mark.parametrize("authority", ["present", "omitted", "conflicting"])
+    def test_current_contract_completion_recovers_identity_failed_child_once(
+        tmp_path: Path,
+        authority: str,
+    ):
+        state_dir, log, _transport, orch = _state(
+            tmp_path,
+            harness_profile="baseline",
+        )
+        orch._typed_task_contract_handoff_enabled = lambda _payload: True  # type: ignore[method-assign]
+        orch.config.workflow.impl_self_check_required = True
+        _seed_tasks(state_dir)
+        store = TaskStore(state_dir / "kanban.json")
+        _replace_contract(state_dir, store, _typed_contract(behavior="revision one"))
+        _start(orch)
+        fanout_id = _fanout_id(log)
+        child = _child(_manifest(state_dir, fanout_id), "TASK-1")
+        descriptor = {
+            "ref": child["contract_snapshot_ref"],
+            "sha256": child["contract_snapshot_digest"],
+        }
+        stale_snapshot = json.loads(
+            (state_dir / descriptor["ref"]).read_text(encoding="utf-8")
+        )
+        stale_snapshot.update({
+            "contract_snapshot_ref": descriptor["ref"],
+            "contract_snapshot_digest": descriptor["sha256"],
+        })
+        _replace_contract(state_dir, store, _typed_contract(behavior="revision two"))
+        current_task = store.get("TASK-1")
+        assert current_task is not None
+        current_revision = effective_contract_revision(current_task)
+        assert current_revision != stale_snapshot["contract_revision"]
+        source_commit = _commit(
+            Path(child["workdir"]),
+            "a.txt",
+            "delivered\n",
+            "deliver current contract",
+        )
+        attempt_id = str(child.get("attempt_id") or child["run_id"])
+        stale_progress = ZfEvent(
+            type="dev.build.done",
+            actor=child["role_instance"],
+            task_id="TASK-1",
+            correlation_id="trace-1",
+            payload={
+                "fanout_id": fanout_id,
+                "child_id": child["child_id"],
+                "run_id": child["run_id"],
+                "dispatch_id": child["run_id"],
+                "attempt_id": attempt_id,
+                "source_branch": child["source_branch"],
+                "workdir": child["workdir"],
+                "source_commit": source_commit,
+                "workflow_run_id": "trace-1",
+                "contract_revision": stale_snapshot["contract_revision"],
+                "task_map_generation": stale_snapshot["task_map_generation"],
+                "contract_snapshot_ref": descriptor["ref"],
+                "contract_snapshot_digest": descriptor["sha256"],
+                "impl_self_check": _impl_self_check_body(
+                    stale_snapshot,
+                    attempt_id=attempt_id,
+                    source_commit=source_commit,
+                ),
+            },
+        )
+        log.append(stale_progress)
+        orch._maybe_update_writer_fanout(stale_progress)  # type: ignore[attr-defined]
+        assert [
+            event for event in log.read_all()
+            if event.type == "fanout.child.failed"
+            and event.causation_id == stale_progress.id
+            and "contract_revision mismatch" in event.payload.get("reason", "")
+        ]
+
+        current_snapshot = build_task_contract_snapshot(
+            current_task,
+            workflow_run_id="trace-1",
+            task_map_generation_id=task_map_generation(
+                current_task,
+                task_map_ref=child["task_map_ref"],
+            ),
+            base_commit=child["base_commit"],
+            task_ref="task/TASK-1",
+        )
+        current_progress = ZfEvent(
+            type="dev.build.done",
+            actor=child["role_instance"],
+            task_id="TASK-1",
+            correlation_id="trace-1",
+            payload={
+                "dispatch_id": child["run_id"],
+                "attempt_id": attempt_id,
+                "source_branch": child["source_branch"],
+                "workdir": child["workdir"],
+                "source_commit": source_commit,
+                "workflow_run_id": "trace-1",
+                "contract_revision": current_revision,
+                "task_map_generation": current_snapshot["task_map_generation"],
+                "impl_self_check": _impl_self_check_body(
+                    current_snapshot,
+                    attempt_id=attempt_id,
+                    source_commit=source_commit,
+                    include_snapshot_ref=False,
+                ),
+            },
+        )
+        if authority == "omitted":
+            for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+                current_progress.payload["impl_self_check"].pop(key, None)
+        elif authority == "conflicting":
+            current_progress.payload["impl_self_check"]["contract_authority_revision"] = "authority-foreign"
+        log.append(current_progress)
+        orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+        if authority == "conflicting":
+            assert any(event.type == "fanout.child.failed"
+                       and "contract_authority_revision mismatch" in event.payload.get("reason", "")
+                       for event in log.read_all())
+            assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "failed"
+            return
+        orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+>       assert len([
+            event for event in log.read_all()
+            if event.type == "impl.self_check.completed" and event.causation_id == current_progress.id
+        ]) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([ZfEvent(type='impl.self_check.completed', id='evt-09ea8cf43961', ts='2026-10-26T01:00:22.425794+00:00', actor='orches... 'attempt_id': 'ta-5d1e431b80d29fd3392c'}, causation_id='evt-782e6c462f42', correlation_id='trace-1', origin='kernel')])
+
+tests/test_writer_contract_handoff.py:464: AssertionError
+_ test_current_contract_completion_recovers_identity_failed_child_once[omitted] _
+
+tmp_path = PosixPath('/tmp/pytest-of-uisee/pytest-199/test_current_contract_completi1')
+authority = 'omitted'
+
+    @pytest.mark.parametrize("authority", ["present", "omitted", "conflicting"])
+    def test_current_contract_completion_recovers_identity_failed_child_once(
+        tmp_path: Path,
+        authority: str,
+    ):
+        state_dir, log, _transport, orch = _state(
+            tmp_path,
+            harness_profile="baseline",
+        )
+        orch._typed_task_contract_handoff_enabled = lambda _payload: True  # type: ignore[method-assign]
+        orch.config.workflow.impl_self_check_required = True
+        _seed_tasks(state_dir)
+        store = TaskStore(state_dir / "kanban.json")
+        _replace_contract(state_dir, store, _typed_contract(behavior="revision one"))
+        _start(orch)
+        fanout_id = _fanout_id(log)
+        child = _child(_manifest(state_dir, fanout_id), "TASK-1")
+        descriptor = {
+            "ref": child["contract_snapshot_ref"],
+            "sha256": child["contract_snapshot_digest"],
+        }
+        stale_snapshot = json.loads(
+            (state_dir / descriptor["ref"]).read_text(encoding="utf-8")
+        )
+        stale_snapshot.update({
+            "contract_snapshot_ref": descriptor["ref"],
+            "contract_snapshot_digest": descriptor["sha256"],
+        })
+        _replace_contract(state_dir, store, _typed_contract(behavior="revision two"))
+        current_task = store.get("TASK-1")
+        assert current_task is not None
+        current_revision = effective_contract_revision(current_task)
+        assert current_revision != stale_snapshot["contract_revision"]
+        source_commit = _commit(
+            Path(child["workdir"]),
+            "a.txt",
+            "delivered\n",
+            "deliver current contract",
+        )
+        attempt_id = str(child.get("attempt_id") or child["run_id"])
+        stale_progress = ZfEvent(
+            type="dev.build.done",
+            actor=child["role_instance"],
+            task_id="TASK-1",
+            correlation_id="trace-1",
+            payload={
+                "fanout_id": fanout_id,
+                "child_id": child["child_id"],
+                "run_id": child["run_id"],
+                "dispatch_id": child["run_id"],
+                "attempt_id": attempt_id,
+                "source_branch": child["source_branch"],
+                "workdir": child["workdir"],
+                "source_commit": source_commit,
+                "workflow_run_id": "trace-1",
+                "contract_revision": stale_snapshot["contract_revision"],
+                "task_map_generation": stale_snapshot["task_map_generation"],
+                "contract_snapshot_ref": descriptor["ref"],
+                "contract_snapshot_digest": descriptor["sha256"],
+                "impl_self_check": _impl_self_check_body(
+                    stale_snapshot,
+                    attempt_id=attempt_id,
+                    source_commit=source_commit,
+                ),
+            },
+        )
+        log.append(stale_progress)
+        orch._maybe_update_writer_fanout(stale_progress)  # type: ignore[attr-defined]
+        assert [
+            event for event in log.read_all()
+            if event.type == "fanout.child.failed"
+            and event.causation_id == stale_progress.id
+            and "contract_revision mismatch" in event.payload.get("reason", "")
+        ]
+
+        current_snapshot = build_task_contract_snapshot(
+            current_task,
+            workflow_run_id="trace-1",
+            task_map_generation_id=task_map_generation(
+                current_task,
+                task_map_ref=child["task_map_ref"],
+            ),
+            base_commit=child["base_commit"],
+            task_ref="task/TASK-1",
+        )
+        current_progress = ZfEvent(
+            type="dev.build.done",
+            actor=child["role_instance"],
+            task_id="TASK-1",
+            correlation_id="trace-1",
+            payload={
+                "dispatch_id": child["run_id"],
+                "attempt_id": attempt_id,
+                "source_branch": child["source_branch"],
+                "workdir": child["workdir"],
+                "source_commit": source_commit,
+                "workflow_run_id": "trace-1",
+                "contract_revision": current_revision,
+                "task_map_generation": current_snapshot["task_map_generation"],
+                "impl_self_check": _impl_self_check_body(
+                    current_snapshot,
+                    attempt_id=attempt_id,
+                    source_commit=source_commit,
+                    include_snapshot_ref=False,
+                ),
+            },
+        )
+        if authority == "omitted":
+            for key in TASK_CONTRACT_AUTHORITY_FIELDS:
+                current_progress.payload["impl_self_check"].pop(key, None)
+        elif authority == "conflicting":
+            current_progress.payload["impl_self_check"]["contract_authority_revision"] = "authority-foreign"
+        log.append(current_progress)
+        orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+        if authority == "conflicting":
+            assert any(event.type == "fanout.child.failed"
+                       and "contract_authority_revision mismatch" in event.payload.get("reason", "")
+                       for event in log.read_all())
+            assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "failed"
+            return
+        orch._maybe_update_writer_fanout(current_progress)  # type: ignore[attr-defined]
+>       assert len([
+            event for event in log.read_all()
+            if event.type == "impl.self_check.completed" and event.causation_id == current_progress.id
+        ]) == 1
+E       AssertionError: assert 2 == 1
+E        +  where 2 = len([ZfEvent(type='impl.self_check.completed', id='evt-ba7d3049f797', ts='2026-10-26T01:00:23.526214+00:00', actor='orches... 'attempt_id': 'ta-cf2271d1c1317132f42a'}, causation_id='evt-fa9c289c7b8c', correlation_id='trace-1', origin='kernel')])
+
+tests/test_writer_contract_handoff.py:464: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_fanout_manifest.py::test_dispatched_authority_replaces_queued_authority_for_result_binding
+FAILED tests/test_writer_contract_handoff.py::test_current_contract_completion_recovers_identity_failed_child_once[present]
+FAILED tests/test_writer_contract_handoff.py::test_current_contract_completion_recovers_identity_failed_child_once[omitted]
+3 failed, 1 passed, 11 deselected in 4.28s

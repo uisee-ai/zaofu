@@ -1,0 +1,204 @@
+{
+  "pdd_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+  "branch": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+  "base_ref": "955c22699df61bc083dae4ae49f2558f1da5dfb6",
+  "requested_base_ref": "955c22699df61bc083dae4ae49f2558f1da5dfb6",
+  "strategy": "cherry-pick",
+  "requested_tasks": [
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "2de0e9da9a8d367e3d536a0860d8b3b731f3844a",
+      "approval_event_id": "evt-8c40d817b19e",
+      "approval_event_type": "task.ref.updated"
+    }
+  ],
+  "dependency_tasks": [],
+  "included_tasks": [
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "2de0e9da9a8d367e3d536a0860d8b3b731f3844a",
+      "approval_event_id": "evt-8c40d817b19e",
+      "approval_event_type": "task.ref.updated"
+    }
+  ],
+  "skipped_tasks": [],
+  "commit_lineage_schema_version": "candidate-commit-lineage.v1",
+  "commit_lineage": [
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "50320a8a732b572f775d8ce2fcee15c67205963e",
+      "candidate_commit": "847cb81ce22ad7d8b3b3e8acd7d0927e68c69874",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "5f4eb5d42400aa06aed7bd193b547206611c5340",
+      "candidate_commit": "f6f1bb7dbc52c85a6b0d0a736fdfbd043037f04f",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "496bc4c1849731c0e55f170b3d49907e85320f4b",
+      "candidate_commit": "609a49be7786f195b14ab802d39ec66c85fcf5d8",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "75861ec4c4e48ac3b28cb95a3da78961c2f214f0",
+      "candidate_commit": "8b06f2d316e23a40185ceaec4c1326146312447b",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "c28ed64ed22229830aa7aeafc4af156a114fa9f3",
+      "candidate_commit": "ce439321d21000004f9e437edb282c298948af34",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "26bf94d8f4167b268be106ca32ddcc211a7fa723",
+      "candidate_commit": "3f15d01510f2023be54b023b3eaad2e6c1e8dde2",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "ab3750890fb3ef1d69efdc473024f172d79ccfab",
+      "candidate_commit": "dff6dc1bc9a90afd7f016649192c01f86765cf7a",
+      "relation": "scoped_projection"
+    },
+    {
+      "task_id": "COUNTER-001",
+      "task_ref": "task/COUNTER-001",
+      "source_commit": "2de0e9da9a8d367e3d536a0860d8b3b731f3844a",
+      "candidate_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+      "relation": "scoped_projection"
+    }
+  ],
+  "started_at": "2026-10-25T18:50:55.066318+00:00",
+  "manifest_path": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/candidates/PRD-WORKFLOW-CCAAED87C1B1D6C7/manifest.json",
+  "merger_worktree": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/candidates/PRD-WORKFLOW-CCAAED87C1B1D6C7/worktree",
+  "status": "updated",
+  "base_commit": "955c22699df61bc083dae4ae49f2558f1da5dfb6",
+  "commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+  "quality_status": "passed",
+  "quality": {
+    "pdd_id": "PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "branch": "candidate/PRD-WORKFLOW-CCAAED87C1B1D6C7",
+    "commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "merger_worktree": "/tmp/zf-187-e2e-20261025T161931Z/counter-project/.zf-187-counter/candidates/PRD-WORKFLOW-CCAAED87C1B1D6C7/worktree",
+    "gate_source": "task_contract",
+    "gate_count": 4,
+    "check_count": 4,
+    "status": "passed",
+    "gates_run": [
+      "task_contract:COUNTER-001:VC-INSTALL",
+      "task_contract:COUNTER-001:VC-UNIT",
+      "task_contract:COUNTER-001:VC-STATIC",
+      "task_contract:COUNTER-001:VC-BROWSER"
+    ],
+    "gates_passed": [
+      "task_contract:COUNTER-001:VC-INSTALL",
+      "task_contract:COUNTER-001:VC-UNIT",
+      "task_contract:COUNTER-001:VC-STATIC",
+      "task_contract:COUNTER-001:VC-BROWSER"
+    ],
+    "gates_failed": [],
+    "gate_checks": {
+      "task_contract:COUNTER-001:VC-INSTALL": [
+        {
+          "command": "timeout 180s npm ci",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "\nadded 3 packages, and audited 4 packages in 1s\n\nfound 0 vulnerabilities\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 1367
+        }
+      ],
+      "task_contract:COUNTER-001:VC-UNIT": [
+        {
+          "command": "node --test tests/counter.test.mjs",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "✔ AC-INITIAL: 新状态为 0 (1.364765ms)\n✔ AC-INCREMENT: 从 0 连续加一得到 1、2 (0.254779ms)\n✔ AC-DECREMENT: 从 2 连续减一得到 1、0 (0.160767ms)\n✔ AC-FLOOR: 初始 0 及正数减至 0 后连续五次减一均为 0 (0.229778ms)\n✔ AC-RESET: 0 和正数均可重复归零，归零后加一得到 1 (0.227323ms)\n✔ AC-SEQUENCE: 加、加、减、归零、减、加逐步得到 1、2、1、0、0、1 (0.468197ms)\nℹ tests 6\nℹ suites 0\nℹ pass 6\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 88.448787\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 126
+        }
+      ],
+      "task_contract:COUNTER-001:VC-STATIC": [
+        {
+          "command": "node scripts/check-static.mjs",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": "er.test.mjs\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"syntax:tests/e2e/counter.spec.mjs\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"syntax:playwright.config.mjs\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"native-entry-and-card\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"visible-actions-and-production-wiring\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"local-static-resources-only\",\n      \"status\": \"passed\"\n    },\n    {\n      \"id\": \"documented-root-commands\",\n      \"status\": \"passed\"\n    }\n  ],\n  \"files\": [\n    {\n      \"path\": \"index.html\",\n      \"sha256\": \"5595e699129074df9c6dff28f42e14af6b0fcc162ff4f4c1847b229afa3822bb\"\n    },\n    {\n      \"path\": \"src/app.mjs\",\n      \"sha256\": \"2aa5f9fb555a1c0f44960035db4628113234e60c553503e368e9ba73159ccb54\"\n    },\n    {\n      \"path\": \"src/counter.mjs\",\n      \"sha256\": \"2b0b6e1d574c415ae62525b39a4254e5514e9a79a7ce177c4e9089ceef2ba700\"\n    },\n    {\n      \"path\": \"scripts/serve.mjs\",\n      \"sha256\": \"b30134b9efb9fda5bc39fee9425940530af37abee3f474c4efe60cc9a9fd1e9b\"\n    },\n    {\n      \"path\": \"scripts/check-static.mjs\",\n      \"sha256\": \"57e7ed838fec98f84f51f3055e194867808131a2e68c5b6aeff089a935a12dfd\"\n    },\n    {\n      \"path\": \"tests/counter.test.mjs\",\n      \"sha256\": \"f751a6e461bbfbe7b916ddc73976133e2b73604f86d78d0c49f921df5b73a2a5\"\n    },\n    {\n      \"path\": \"tests/e2e/counter.spec.mjs\",\n      \"sha256\": \"47c6ce583ee4748828857a14228fce7554b9b0c8589304d414e709aac469ab01\"\n    },\n    {\n      \"path\": \"playwright.config.mjs\",\n      \"sha256\": \"a54994e0d0845b72085eb06c6943a091c392337f9b2fca98d4767e00626e6d26\"\n    },\n    {\n      \"path\": \"package.json\",\n      \"sha256\": \"dc12511fc2d63714e8236ab14b8b60d45130a90adffd931bb746f376988794ca\"\n    },\n    {\n      \"path\": \"package-lock.json\",\n      \"sha256\": \"b09e201e51f39cc0520719e46b04a55292b9313344228c9fc1491db6ae0504ba\"\n    },\n    {\n      \"path\": \"README.md\",\n      \"sha256\": \"8a9c72d9946939a8daa7b642654edd5623f619ffe2f63fa94a4e204efd460f1b\"\n    }\n  ]\n}\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 361
+        }
+      ],
+      "task_contract:COUNTER-001:VC-BROWSER": [
+        {
+          "command": "docker run --rm --network host --user \"$(id -u):$(id -g)\" --entrypoint bash -v \"$PWD:/work\" -w /work -e PLAYWRIGHT_BROWSERS_PATH=0 mcp/playwright:latest -lc 'set -euo pipefail; timeout 180s ./node_modules/.bin/playwright install chromium; ./node_modules/.bin/playwright test --config playwright.config.mjs'",
+          "exit_code": 0,
+          "passed": true,
+          "stdout_tail": " |  70% of 2.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 2.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 2.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 2.3 MiB\nFFMPEG playwright build v1011 downloaded to /work/node_modules/playwright-core/.local-browsers/ffmpeg-1011\nDownloading Chromium Headless Shell 141.0.7390.37 (playwright build v1194) from https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/1194/chromium-headless-shell-linux.zip\n|                                                                                |   0% of 104.3 MiB\n|■■■■■■■■                                                                        |  10% of 104.3 MiB\n|■■■■■■■■■■■■■■■■                                                                |  20% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■                                                        |  30% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                                |  40% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                        |  50% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                                |  60% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                        |  70% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■                |  80% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■        |  90% of 104.3 MiB\n|■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■| 100% of 104.3 MiB\nChromium Headless Shell 141.0.7390.37 (playwright build v1194) downloaded to /work/node_modules/playwright-core/.local-browsers/chromium_headless_shell-1194\n\nRunning 1 test using 1 worker\n\n  ✓  1 tests/e2e/counter.spec.mjs:6:1 › 双视口真实计数旅程、居中卡片和纯静态运行 (4.3s)\n\n  1 passed (5.6s)\n",
+          "stderr_tail": "",
+          "timed_out": false,
+          "error": "",
+          "duration_ms": 149245
+        }
+      ]
+    },
+    "intrinsic_checks": {
+      "candidate_diff": {
+        "command": "git diff --check 955c22699df61bc083dae4ae49f2558f1da5dfb6..cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+        "exit_code": 0,
+        "passed": true,
+        "stdout_tail": "",
+        "stderr_tail": "",
+        "timed_out": false,
+        "error": "",
+        "duration_ms": 28,
+        "kind": "candidate_diff_whitespace"
+      },
+      "candidate_worktree_clean": {
+        "command": "git status --porcelain --untracked-files=all",
+        "exit_code": 0,
+        "passed": true,
+        "stdout_tail": "wright/lib/runner/lastRun.js\n?? node_modules/playwright/lib/runner/loadUtils.js\n?? node_modules/playwright/lib/runner/loaderHost.js\n?? node_modules/playwright/lib/runner/processHost.js\n?? node_modules/playwright/lib/runner/projectUtils.js\n?? node_modules/playwright/lib/runner/rebase.js\n?? node_modules/playwright/lib/runner/reporters.js\n?? node_modules/playwright/lib/runner/sigIntWatcher.js\n?? node_modules/playwright/lib/runner/taskRunner.js\n?? node_modules/playwright/lib/runner/tasks.js\n?? node_modules/playwright/lib/runner/testGroups.js\n?? node_modules/playwright/lib/runner/testRunner.js\n?? node_modules/playwright/lib/runner/testServer.js\n?? node_modules/playwright/lib/runner/uiModeReporter.js\n?? node_modules/playwright/lib/runner/vcs.js\n?? node_modules/playwright/lib/runner/watchMode.js\n?? node_modules/playwright/lib/runner/workerHost.js\n?? node_modules/playwright/lib/third_party/pirates.js\n?? node_modules/playwright/lib/third_party/tsconfig-loader.js\n?? node_modules/playwright/lib/transform/babelBundle.js\n?? node_modules/playwright/lib/transform/babelBundleImpl.js\n?? node_modules/playwright/lib/transform/compilationCache.js\n?? node_modules/playwright/lib/transform/esmLoader.js\n?? node_modules/playwright/lib/transform/portTransport.js\n?? node_modules/playwright/lib/transform/transform.js\n?? node_modules/playwright/lib/util.js\n?? node_modules/playwright/lib/utilsBundle.js\n?? node_modules/playwright/lib/utilsBundleImpl.js\n?? node_modules/playwright/lib/worker/fixtureRunner.js\n?? node_modules/playwright/lib/worker/testInfo.js\n?? node_modules/playwright/lib/worker/testTracing.js\n?? node_modules/playwright/lib/worker/timeoutManager.js\n?? node_modules/playwright/lib/worker/util.js\n?? node_modules/playwright/lib/worker/workerMain.js\n?? node_modules/playwright/package.json\n?? node_modules/playwright/test.d.ts\n?? node_modules/playwright/test.js\n?? node_modules/playwright/test.mjs\n?? node_modules/playwright/types/test.d.ts\n?? node_modules/playwright/types/testReporter.d.ts\n",
+        "stderr_tail": "",
+        "timed_out": false,
+        "error": "",
+        "reportable_status": "",
+        "duration_ms": 12
+      }
+    },
+    "expected_red_checks": [],
+    "failure_details": {}
+  },
+  "candidate_environment": {
+    "schema_version": "candidate-environment.v1",
+    "status": "ready",
+    "candidate_commit": "cd8a21cf3e5cd919e78aad0a1516d2a517649d38",
+    "setup_declared": false,
+    "setup_script_digest": "",
+    "setup_ran": false,
+    "exit_code": null,
+    "detail": "no setup declared"
+  },
+  "materialized_config_refs": [],
+  "updated_at": "2026-10-25T18:53:27.204655+00:00"
+}

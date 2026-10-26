@@ -2844,7 +2844,7 @@ def test_light_task_contract_uses_config_quality_gate_fallback(tmp_path: Path):
     ])
 
     assert source == "zf_config_fallback"
-    assert checks == [("static", check)]
+    assert checks == [("static", check, 300)]
 
 
 def test_same_task_map_replan_reopens_blocked_task(tmp_path: Path):
@@ -6384,6 +6384,9 @@ def test_pending_handoff_reconcile_completes_writer_fanout_child_after_task_ref(
     assert completed[-1].payload["task_ref"] == "task/TASK-1"
     assert completed[-1].payload["source_commit"] == commit1
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "completed"
+    states = [e for e in events if e.type == "worker.state.changed"
+              and e.actor == task1["role_instance"]]
+    assert states[-1].payload["to"] != "awaiting_review"
 
 
 def test_run_once_replays_missed_writer_completion(
@@ -7062,6 +7065,9 @@ def test_static_gate_reconcile_completes_writer_fanout_child_from_trigger_event(
     assert completed[-1].payload["fanout_id"] == fanout_id
     assert completed[-1].payload["child_id"] == task1["child_id"]
     assert _child(_manifest(state_dir, fanout_id), "TASK-1")["status"] == "completed"
+    states = [e for e in log.read_all() if e.type == "worker.state.changed"
+              and e.actor == task1["role_instance"]]
+    assert states[-1].payload["to"] != "awaiting_review"
 
 
 def test_dev_build_done_waits_for_late_task_ref_updated(tmp_path: Path):
@@ -8474,6 +8480,10 @@ def test_writer_candidate_ready_payload_matches_schema_contract(tmp_path: Path):
     assert payload["request_id"] == "req-prd"
     assert payload["workflow_run_id"] == "run-prd"
     assert payload["flow_kind"] == "prd"
+    started = next(e for e in log.read_all() if e.type == "candidate.started")
+    aggregate = next(e for e in log.read_all() if e.type == "fanout.aggregate.started")
+    assert started.causation_id == aggregate.id
+    assert started.correlation_id == aggregate.correlation_id
 
 
 def test_lane_final_ready_targets_candidate_ref_from_root_aggregate(

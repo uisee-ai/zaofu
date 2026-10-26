@@ -20,6 +20,7 @@ from zf.runtime.task_attempt_briefing import (
     bind_task_attempt_to_briefing as _bind_attempt_to_briefing,
 )
 from zf.runtime.task_attempt_operation_settlement import (
+    settle_failed_attempt_operations,
     settle_terminal_operation_attempt,
 )
 from zf.runtime.task_attempt_terminal import (
@@ -455,6 +456,7 @@ def settle_task_attempt_result(runtime: Any, event: ZfEvent) -> None:
         causation_id=event.id,
     )
     _emit_shadow_comparison(runtime, row)
+    settle_failed_attempt_operations(runtime, [row])
 
 
 def renew_task_attempt_lease(runtime: Any, event: ZfEvent) -> None:
@@ -526,7 +528,7 @@ def reconcile_task_attempts(runtime: Any) -> int:
         if event.id
     }
     attempt_rows = store.rows()
-    changed = 0
+    changed = settle_failed_attempt_operations(runtime, attempt_rows, events=events)
     for event in events:
         if (
             event.type in {

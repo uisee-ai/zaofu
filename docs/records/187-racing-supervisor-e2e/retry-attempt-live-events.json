@@ -1,0 +1,61 @@
+[
+  {
+    "type": "task.attempt.failed",
+    "id": "evt-4260aba7956d",
+    "ts": "2026-10-26T08:15:11.645636+00:00",
+    "actor": "orchestrator",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "schema_version": "task-attempt.v1",
+      "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "task_id": "RACE-DRIVE",
+      "parent_task_id": "",
+      "operation_id": "wop-prd-lanes-verify-prd-verify-lane-0-vehicle-race-2-aeeacccf6f9f",
+      "attempt_id": "ta-a12ce703111fef3c7ce1",
+      "lease_id": "lease-0bfa5f14d840079b8a51",
+      "dispatch_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1",
+      "identity_version": "role-v1",
+      "reason": "lease_expired",
+      "retryable": true,
+      "failure_class": "lease_expired",
+      "recovery_owner": "scheduler",
+      "shadow_only": true,
+      "mode": "shadow",
+      "actionability": "shadow_only"
+    },
+    "causation_id": "evt-9d9fb40ebcfc",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  },
+  {
+    "type": "task.attempt.succeeded",
+    "id": "evt-b572515cdc65",
+    "ts": "2026-10-26T08:33:22.951113+00:00",
+    "actor": "orchestrator",
+    "task_id": "RACE-DRIVE",
+    "payload": {
+      "schema_version": "task-attempt.v1",
+      "workflow_run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "run_id": "prepare-TASK-5F44B4-c32763f31115843f",
+      "task_id": "RACE-DRIVE",
+      "parent_task_id": "",
+      "operation_id": "wop-prd-lanes-verify-prd-verify-lane-0-vehicle-race-2-aeeacccf6f9f",
+      "attempt_id": "ta-a12ce703111fef3c7ce1",
+      "lease_id": "lease-0bfa5f14d840079b8a51",
+      "dispatch_id": "run-fanout-prd-lanes-verify-evt-c1e65c55-prd-verify-lane-0-vehicle-race-2-retry-1",
+      "identity_version": "role-v1",
+      "source_event_id": "evt-5d7a30898be8",
+      "source_event_type": "verify.child.completed",
+      "admission_event_id": "evt-8bbed5209447",
+      "status": "succeeded",
+      "failure_class": "lease_expired",
+      "retryable": true,
+      "recovery_owner": "scheduler",
+      "reconciled_shadow_expiry": true
+    },
+    "causation_id": "evt-8bbed5209447",
+    "correlation_id": "prepare-TASK-5F44B4-c32763f31115843f",
+    "origin": "kernel"
+  }
+]

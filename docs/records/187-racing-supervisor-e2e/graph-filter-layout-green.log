@@ -1,0 +1,98 @@
+
+Running 4 tests using 1 worker
+
+  ✘  1 ui-regression/workflow-graph-workbench.spec.ts:7:5 › real Workflow graph shows bound execution, every lens, stable selection and mobile layout (18.9s)
+  ✘  2 ui-regression/workflow-graph-workbench.spec.ts:65:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings (44.2s)
+  ✓  3 ui-regression/workflow-graph-workbench.spec.ts:96:5 › Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels (22.5s)
+  ✘  4 ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport (1.0m)
+
+
+  1) ui-regression/workflow-graph-workbench.spec.ts:7:5 › real Workflow graph shows bound execution, every lens, stable selection and mobile layout
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('region', { name: 'Workflow 图工作台' }).getByTestId('workflow-graph-canvas')
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('region', { name: 'Workflow 图工作台' }).getByTestId('workflow-graph-canvas')[22m
+
+
+      20 |   for (const name of ["生命周期", "模块与任务", "Workflow 执行", "追溯与变更", "验证与交付", "时间线"]) {
+      21 |     await workbench.getByRole("button", { name, exact: true }).click();
+    > 22 |     await expect(workbench.getByTestId("workflow-graph-canvas")).toBeVisible();
+         |                                                                  ^
+      23 |     expect(new URL(page.url()).searchParams.has("graph")).toBeTruthy();
+      24 |   }
+      25 |   await workbench.getByRole("button", { name: "Workflow 执行", exact: true }).click();
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:22:66
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-r-f1849-selection-and-mobile-layout/error-context.md
+
+  2) ui-regression/workflow-graph-workbench.spec.ts:65:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByRole('region', { name: '计划审阅内容' }).getByRole('heading', { name: '本次交付与审批范围' })
+    Expected: visible
+    Timeout: 5000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 5000ms[22m
+    [2m  - waiting for getByRole('region', { name: '计划审阅内容' }).getByRole('heading', { name: '本次交付与审批范围' })[22m
+
+
+      91 |   plan.artifacts.find((a: { name: string }) => a.name === "task_map").sha256 = "changed-binding-fixture";
+      92 |   await expect.poll(() => loads.length, { timeout: 20_000 }).toBe(6);
+    > 93 |   await expect(reader.getByRole("heading", { name: "本次交付与审批范围" })).toBeVisible();
+         |                                                                    ^
+      94 | });
+      95 |
+      96 | test("Plan Chat fixture keeps a long quoted diff inside desktop and mobile panels", async ({ page, request }) => {
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:93:68
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-P-5424e-nd-reloads-changed-bindings/error-context.md
+
+  3) ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport
+
+    [31mTest timeout of 60000ms exceeded.[39m
+
+    Error: locator.click: Test timeout of 60000ms exceeded.
+    Call log:
+    [2m  - waiting for getByRole('region', { name: 'Workflow 图工作台' }).getByRole('button', { name: /zoom in/i })[22m
+    [2m    - locator resolved to <button disabled type="button" title="Zoom In" aria-label="Zoom In" class="react-flow__controls-button react-flow__controls-zoomin">…</button>[22m
+    [2m  - attempting click action[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m    - waiting 20ms[22m
+    [2m    2 × waiting for element to be visible, enabled and stable[22m
+    [2m      - element is not enabled[22m
+    [2m    - retrying click action[22m
+    [2m      - waiting 100ms[22m
+    [2m    89 × waiting for element to be visible, enabled and stable[22m
+    [2m       - element is not enabled[22m
+    [2m     - retrying click action[22m
+    [2m       - waiting 500ms[22m
+
+
+      165 |   const a = (await first.boundingBox())!, b = (await active.boundingBox())!;
+      166 |   expect(Math.abs(a.y - b.y)).toBeLessThan(350);
+    > 167 |   await workbench.getByRole("button", { name: /zoom in/i }).click();
+          |                                                             ^
+      168 |   const viewport = workbench.locator(".react-flow__viewport");
+      169 |   // Wait for the zoom control animation before checking polling stability.
+      170 |   await page.waitForTimeout(500);
+        at /tmp/zf-racing-supervision-20261025T211020Z/ui-regression/workflow-graph-workbench.spec.ts:167:61
+
+    Error Context: evidence/browser-ui-regression/workflow-graph-workbench-e-d982a-e-polls-retain-the-viewport/error-context.md
+
+  3 failed
+    ui-regression/workflow-graph-workbench.spec.ts:7:5 › real Workflow graph shows bound execution, every lens, stable selection and mobile layout
+    ui-regression/workflow-graph-workbench.spec.ts:65:5 › Plan reader retains unchanged attachments across graph polls and reloads changed bindings
+    ui-regression/workflow-graph-workbench.spec.ts:141:5 › explicit graph filters compact the layout while polls retain the viewport
+  1 passed (2.5m)

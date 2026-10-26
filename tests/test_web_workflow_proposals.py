@@ -778,6 +778,8 @@ def test_async_synthesis_operation_is_queryable_without_reposting(
     ).json()
     assert detail["operation"]["operation_id"] == operation_id
     assert detail["operation"]["queue_status"] == "queued"
+    assert detail["result"]["run_id"] == detail["links"]["run_id"] == ""
+    assert not detail["lifecycle"]["run_started"]
 
     operation = client.get(
         f"/api/projects/default/workflow-operations/{operation_id}"
@@ -807,3 +809,25 @@ def test_async_synthesis_operation_is_queryable_without_reposting(
         f"/api/projects/default/workflow-operations/{operation_id}"
     ).json()
     assert operation["queue_status"] == "cancelled"
+    detail = client.get(
+        "/api/projects/default/workflow-requests/REQ-ASYNC-SYNTH"
+    ).json()
+    assert detail["status"] == detail["result"]["status"] == "cancelled", {
+        "result": detail["result"], "operation": detail["operation"],
+    }
+    listing = client.get("/api/projects/default/workflow-requests").json()
+    assert listing["items"][0]["status"] == "cancelled"
+
+    revised = client.post(
+        "/api/projects/default/workflow-clarify",
+        headers={"x-zf-web-token": "test-token"},
+        json={"request_id": queued["request_id"], "intake_ref": queued["intake_ref"],
+              "objective": "Repair refreshed checkout scope", "confirm": True,
+              "expected_revision": detail["result"]["revision"]},
+    )
+    assert revised.status_code < 300, revised.text
+    detail = client.get(
+        "/api/projects/default/workflow-requests/REQ-ASYNC-SYNTH"
+    ).json()
+    assert detail["result"]["revision"] > queued["request_revision"]
+    assert detail["status"] != "cancelled"

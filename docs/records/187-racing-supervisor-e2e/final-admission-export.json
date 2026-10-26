@@ -1,0 +1,23 @@
+{
+  "candidate_commit": "a15b6b6f5247c6b2d8d08390c5aa9f532529ae03",
+  "terminal_event_id": "evt-e31b1c6d9a73",
+  "accepted_event_ids": [
+    "evt-057d6cec2cf7",
+    "evt-17c54730c6a3",
+    "evt-1b9bcc7894da",
+    "evt-97354a8a02f3",
+    "evt-974cde5a3b23",
+    "evt-c03898ca47f1",
+    "evt-c1e65c55c50a",
+    "evt-c2f68ba19724",
+    "evt-d8426951945d",
+    "evt-e31b1c6d9a73",
+    "evt-f777da9f27f9"
+  ],
+  "all_bound_digests_verified": true,
+  "excluded": "provider transcripts, authentication and raw runtime ledger",
+  "path": "/home/uisee/workspace/zaofu-e2e-deliveries/2026-10-25-racing-187/candidate-a15b6b6f5247/evidence/final-admission",
+  "file_count": 77,
+  "total_bytes": 1654767,
+  "manifest_sha256": "6a8f4eba8cecd63e67c09056923e1747c4edb4480606361bd9a5b887dda4e4a6"
+}

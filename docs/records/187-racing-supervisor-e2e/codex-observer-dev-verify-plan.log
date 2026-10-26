@@ -1,0 +1,14 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - src/zf/runtime/codex_session_ownership.py
+  - src/zf/runtime/spawn_coordinator.py
+  - tests/test_codex_observer_recovery.py
+domains: backend, provider_host, tests
+python tests: 189 (broad deterministic)
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: 189 impacted test files exceed 80; run deterministic suite
+  - [auto/serial] python-serial: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_memory_rotate_concurrency.py tests/test_session_mutex.py tests/test_state_locks.py -q --no-cov -m 'serial and not perf and not host and not real_provider'
+      reason: selected process/fixed-resource tests run without xdist
+  - [explicit/real_provider] real-provider: <operator explicit>
+      reason: real provider/host proof requires explicit operator approval

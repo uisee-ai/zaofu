@@ -1,0 +1,157 @@
+{
+  "source_event_id": "evt-dede9ac3a65e",
+  "base_sha256": "7bd2382a01ff2e6c48efcb355256e5e395668761dfc201b61f1b294e4f2311d0",
+  "passed": true,
+  "errors": [],
+  "before_modules": [
+    {
+      "module_id": "MOD-DRIVE",
+      "title": "驾驶与比赛状态",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-DRIVE",
+        "RACE-ASSEMBLY"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-04",
+        "REQ-05",
+        "REQ-06"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    },
+    {
+      "module_id": "MOD-TRACK",
+      "title": "赛道碰撞与有效进度",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-TRACK",
+        "RACE-ASSEMBLY"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-04",
+        "REQ-06"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    },
+    {
+      "module_id": "MOD-DELIVERY",
+      "title": "正式界面与独立交付验收",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-DRIVE",
+        "RACE-TRACK",
+        "RACE-ASSEMBLY"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-03",
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-07",
+        "REQ-08",
+        "REQ-09",
+        "REQ-10",
+        "REQ-11"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    }
+  ],
+  "after_modules": [
+    {
+      "module_id": "MOD-DRIVE",
+      "title": "驾驶与比赛状态",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-DRIVE",
+        "RACE-ASSEMBLY-TIMING-REPAIR"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-04",
+        "REQ-05",
+        "REQ-06"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    },
+    {
+      "module_id": "MOD-TRACK",
+      "title": "赛道碰撞与有效进度",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-TRACK",
+        "RACE-ASSEMBLY-TIMING-REPAIR"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-04",
+        "REQ-06"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    },
+    {
+      "module_id": "MOD-DELIVERY",
+      "title": "正式界面与独立交付验收",
+      "task_ids": [
+        "RACE-FOUNDATION",
+        "RACE-DRIVE",
+        "RACE-TRACK",
+        "RACE-ASSEMBLY-TIMING-REPAIR"
+      ],
+      "goal_claim_ids": [
+        "REQ-01",
+        "REQ-02",
+        "REQ-03",
+        "REQ-04",
+        "REQ-05",
+        "REQ-06",
+        "REQ-07",
+        "REQ-08",
+        "REQ-09",
+        "REQ-10",
+        "REQ-11"
+      ],
+      "source_refs": [
+        "/tmp/zf-racing-supervision-20261025T211020Z/racing-project/.zf-187 Racing Supervision/workflow-requests/prepare-TASK-5F44B4-c32763f31115843f/requirements/revision-0006-5c0dd9f57a1ada94.json"
+      ],
+      "design_refs": [
+        "docs/racing/interfaces.md"
+      ]
+    }
+  ],
+  "new_tasks": [
+    "RACE-FOUNDATION",
+    "RACE-DRIVE",
+    "RACE-TRACK",
+    "RACE-ASSEMBLY-TIMING-REPAIR"
+  ],
+  "canonical_mutation": false
+}

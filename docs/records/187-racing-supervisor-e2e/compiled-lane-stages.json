@@ -1,0 +1,60 @@
+[
+  {
+    "id": "prd-lanes-impl",
+    "trigger": "task_map.ready",
+    "topology": "fanout_writer_scoped",
+    "roles": [
+      "prd-dev-lane-0",
+      "prd-dev-lane-1",
+      "prd-dev-lane-2"
+    ],
+    "assignment": {
+      "strategy": "affinity_stage_slots",
+      "role_pool": [],
+      "lane_profile": "prd-lanes-slot",
+      "stage_slot": "impl"
+    },
+    "aggregate": {
+      "mode": "candidate_integration",
+      "success_event": "candidate.ready",
+      "failure_event": "integration.failed",
+      "child_success_event": "dev.build.done",
+      "child_failure_event": "dev.failed",
+      "synth_role": "",
+      "max_retries": 1,
+      "review_strategy": "",
+      "pending_event": "",
+      "quorum": 0,
+      "synth_timeout_seconds": 0
+    }
+  },
+  {
+    "id": "prd-lanes-verify",
+    "trigger": "candidate.ready",
+    "topology": "fanout_reader",
+    "roles": [
+      "prd-verify-lane-0",
+      "prd-verify-lane-1",
+      "prd-verify-lane-2"
+    ],
+    "assignment": {
+      "strategy": "affinity_stage_slots",
+      "role_pool": [],
+      "lane_profile": "prd-lanes-slot",
+      "stage_slot": "verify"
+    },
+    "aggregate": {
+      "mode": "wait_for_all",
+      "success_event": "test.passed",
+      "failure_event": "test.failed",
+      "child_success_event": "verify.child.completed",
+      "child_failure_event": "verify.child.failed",
+      "synth_role": "",
+      "max_retries": 1,
+      "review_strategy": "",
+      "pending_event": "",
+      "quorum": 0,
+      "synth_timeout_seconds": 0
+    }
+  }
+]

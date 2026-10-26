@@ -68,7 +68,31 @@ def test_failed_or_slow_start_does_not_report_running(tmp_path, monkeypatch, exi
     result = ensure_project_runtime(project_root=root, state_dir=state, writer=writer, timeout_seconds=0)
     assert result["ok"] is False
     assert result["status"] == expected_status
-    assert writer.event_log.read_all()[-1].type == "runtime.start.failed"
+    assert writer.event_log.read_all()[-1].type == (
+        "runtime.start.failed" if exit_code is not None else "runtime.start.requested"
+    )
+
+
+def test_slow_start_keeps_accepted_submission_pending(tmp_path, workflow_runtime_launcher):
+    from tests.test_web_workflow_proposals import _write_config
+
+    path = tmp_path / "zf.yaml"
+    _write_config(path)
+    workflow_runtime_launcher.return_value = {
+        "ok": False, "status": "starting", "pid": 777, "launched": True,
+        "reason": "project runtime is still starting", "log_ref": "startup.log",
+    }
+    accepted = {"ok": True, "status": "accepted", "workflow_invoke_event_id": "invoke-one",
+                "workflow_invoke_status": "pending_consumer"}
+    result = runtime.ensure_submitted_workflow_runtime(accepted, config_path=path)
+    assert result["ok"] is True
+    assert result["status"] == "accepted"
+    assert result["_status_code"] == 202
+    assert result["workflow_invoke_event_id"] == "invoke-one"
+    assert result["workflow_invoke_status"] == "pending_consumer"
+    assert result["runtime_start"]["status"] == "starting"
+    assert not result.get("blockers")
+    assert "ready" not in result["next_action"]
 
 
 def test_concurrent_requests_share_one_launcher(tmp_path, monkeypatch):

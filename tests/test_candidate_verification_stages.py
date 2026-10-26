@@ -46,7 +46,7 @@ def test_rebuild_defers_candidate_commands_only_to_a_wired_consumer(
     task = store.get("TASK-1")
     task.contract.validation = {"commands": [
         {"id": "local", "command": 'test -f feature.txt && test -f "$ZF_CANDIDATE_QUALITY_CONTEXT"',
-         "owner": "task_verify"},
+         "owner": "task_verify", "timeout_seconds": 90},
         {"id": "global", "command": "echo downstream-not-ready >&2; exit 23",
          "owner": "candidate_verify"},
     ]}
@@ -67,6 +67,7 @@ def test_rebuild_defers_candidate_commands_only_to_a_wired_consumer(
         if not local:
             return  # No downstream command was run or reported as a passed gate.
         check = quality["gate_checks"]["task_contract:TASK-1:local"][0]
+        assert check["timeout_seconds"] == 90
         descriptor = check["execution_context_ref"]
         context = hydrate_sidecar_ref(state, descriptor).payload
         assert context["evidence_kind"] == "candidate_integration"

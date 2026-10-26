@@ -1,0 +1,17 @@
+worktree: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph
+changed:
+  - docs/impl/187-ai-sdlc-graph-workbench.md
+  - src/zf/runtime/orchestrator_fanout.py
+  - src/zf/runtime/plan_approval_state.py
+  - tests/test_plan_approval_identity.py
+domains: backend, docs, orchestration, tests
+python tests: 193 (broad deterministic)
+steps:
+  - [auto/deterministic] python-deterministic: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests -q --no-cov -m 'not serial and not perf and not host and not real_provider' -n 4 --dist loadfile
+      reason: 193 impacted test files exceed 80; run deterministic suite
+  - [auto/serial] python-serial: /home/uisee/workspace/zaofu-wt-187-ai-sdlc-graph/.venv/bin/python -m pytest tests/test_memory_rotate_concurrency.py tests/test_session_mutex.py tests/test_state_locks.py -q --no-cov -m 'serial and not perf and not host and not real_provider'
+      reason: selected process/fixed-resource tests run without xdist
+  - [auto/contract] premerge-sentinels: bash scripts/dev-premerge-gate.sh
+      reason: shared Event/Store/Config/Orchestration contract changed
+  - [auto/mock_e2e] flow-smoke: bash scripts/run-flow-smoke.sh
+      reason: workflow/config route changed
