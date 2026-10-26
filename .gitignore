@@ -28,6 +28,7 @@ htmlcov/
 **/.zf*/
 
 # Local/private planning and release notes
+/docs/design/
 docs/*
 !docs/manual/
 !docs/manual/**
