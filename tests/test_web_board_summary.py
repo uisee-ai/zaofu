@@ -76,10 +76,10 @@ def test_board_route_uses_cached_summary_and_preserves_light_detail(
     board = client.get("/api/projects/default/snapshot/board")
     assert light.status_code == board.status_code == 200
     assert board.json() == board_snapshot_summary(light.json())
-    assert calls == ["light", "board"]
+    assert sorted(calls) == ["board", "light"]
     repeated = client.get("/api/projects/default/snapshot/board", headers={"If-None-Match": board.headers["etag"]})
     assert repeated.status_code == 304
-    assert calls == ["light", "board"]
+    assert sorted(calls) == ["board", "light"]
     assert client.get("/api/projects/default/snapshot/light").json() == light.json()
 
 

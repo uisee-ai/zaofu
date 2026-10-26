@@ -160,13 +160,10 @@ import type {
   FanoutSummary,
   FleetStats,
   IntegrationQueueEntry,
-  IntegrationQueueProjection,
-  TaskPipelineProjection,
   MetricsSnapshotProjection,
   OnboardingStatus,
   OverviewPulse,
   RecentEvent,
-  RepairActionProjection,
   RepairActionRecord,
   RuntimeSummary,
   RunSummary,
@@ -664,9 +661,6 @@ export function App() {
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [projectionDetail, setProjectionDetail] = useState<Record<string, unknown> | null>(null);
   const projectionNavigationRef = useRef("");
-  const [integrationQueue, setIntegrationQueue] = useState<IntegrationQueueProjection | null>(null);
-  const [taskPipeline, setTaskPipeline] = useState<TaskPipelineProjection | null>(null);
-  const [repairActions, setRepairActions] = useState<RepairActionProjection | null>(null);
   const [actionResult, setActionResult] = useState<ActionResponse | null>(null);
   const [webActionTokenPresent, setWebActionTokenPresent] = useState(() =>
     Boolean(storedWebActionToken()),
@@ -882,9 +876,6 @@ export function App() {
       eventBusRef.current?.close();
       setSnapshot(null);
       setDeliveryFeaturesPage(null);
-      setIntegrationQueue(null);
-      setTaskPipeline(null);
-      setRepairActions(null);
       setChannelsPage(null);
       setError(null);
       setLiveState("connecting");
@@ -1123,16 +1114,16 @@ export function App() {
         const owns = (resource: BootstrapResource) => (
           pageOwnsBootstrapResource(page, resource)
         );
-        const scopedBoard = page === "board" && Boolean(activeProjectId) && (
+        const scopedSnapshot = (snapshotKind === "board" || snapshotKind === "observability") && Boolean(activeProjectId) && (
           initial.project === activeProjectId
           || workspaceProjects.some((project) => project.project_id === activeProjectId)
         );
-        // A selected Board needs no workspace-wide lifecycle probe to render.
-        // Start that background work after the Board response to avoid CPU contention.
-        const projectsRequest = scopedBoard ? null : getWorkspaceProjects().catch(() => null);
+        // A selected page needs no workspace-wide lifecycle probe to render.
+        // Start that background work after the page response to avoid CPU contention.
+        const projectsRequest = scopedSnapshot ? null : getWorkspaceProjects().catch(() => null);
         const bootstrapBeforeWorkspace = canBootstrapScopedPageBeforeWorkspace(
           page,
-          scopedBoard || initial.project === activeProjectId ? activeProjectId : "",
+          scopedSnapshot || initial.project === activeProjectId ? activeProjectId : "",
         );
         const projectsPage = bootstrapBeforeWorkspace ? null : await projectsRequest;
         if (bootstrapBeforeWorkspace && projectsRequest) {
@@ -1160,9 +1151,6 @@ export function App() {
         if (!projectId || (selectedProject && !projectCanOpenBoard(selectedProject))) {
           setSnapshot(null);
           setDeliveryFeaturesPage(null);
-          setIntegrationQueue(null);
-          setTaskPipeline(null);
-          setRepairActions(null);
           setEvents([]);
           setChannelsPage(null);
           setError(null);
@@ -1210,7 +1198,7 @@ export function App() {
           }).catch(() => undefined);
         }
         const visibleSnapshot = loadPageSnapshot(snapshotKind, projectId || undefined).then((next) => {
-          if (scopedBoard && !cancelled && next?.project?.project_id === projectId) {
+          if (scopedSnapshot && !cancelled && next?.project?.project_id === projectId) {
             setSnapshot(next);
             setError(null);
             void getWorkspaceProjects().then((workspacePage) => {
@@ -1247,7 +1235,7 @@ export function App() {
           fallbackSeq: cursorFallback?.current_seq,
         });
         lastSeqRef.current = initialSeq;
-        if (initialSnapshot && !scopedBoard) setSnapshot(initialSnapshot);
+        if (initialSnapshot && !scopedSnapshot) setSnapshot(initialSnapshot);
         if (initialHealth) setProjectHealth(initialHealth);
         setEvents(initialEventsPage ? initialEventsPage.items.slice().reverse() : []);
         setError(null);
@@ -1368,9 +1356,6 @@ export function App() {
     eventFilter,
     onError: setError,
     onEventsPage: setEventsPage,
-    onIntegrationQueue: setIntegrationQueue,
-    onRepairActions: setRepairActions,
-    onTaskPipeline: setTaskPipeline,
     page,
     scope: projectRequestScope,
     selectedTaskId,
@@ -2036,9 +2021,6 @@ export function App() {
     setTaskTimelineLoading(false);
     setTaskTimelineError(null);
     setProjectionDetail(null);
-    setIntegrationQueue(null);
-    setTaskPipeline(null);
-    setRepairActions(null);
     setSearchResult(null);
     setEventFilter("");
     setEventsPage(null);
@@ -2365,11 +2347,8 @@ export function App() {
                   eventFilter={eventFilter}
                   liveState={liveState}
                   recentEvents={events}
-                  integrationQueue={integrationQueue}
-                  taskPipeline={taskPipeline}
                   page={page}
                   projectionDetail={projectionDetail}
-                  repairActions={repairActions}
                   searchResult={searchResult}
                   selectedTaskId={selectedTaskId}
                   setEventFilter={setEventFilter}

@@ -577,7 +577,7 @@ def _role_sessions_data(state_dir: Path) -> dict:
     if not path.exists():
         return {}
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        data = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader)) or {}
     except Exception:
         return {}
     return data if isinstance(data, dict) else {}

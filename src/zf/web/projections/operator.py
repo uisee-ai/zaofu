@@ -20,7 +20,7 @@ def _operator_skills_available(
     config: ZfConfig | None = None,
     project_root: Path | None = None,
 ) -> dict:
-    skills = _skills(state_dir, config=config, project_root=project_root)
+    skills = _skills(state_dir, config=config, project_root=project_root, include_invocations=False)
     pool = skills.get("pool", []) if isinstance(skills, dict) else []
     enabled = skills.get("enabled", []) if isinstance(skills, dict) else []
     warnings = skills.get("warnings", []) if isinstance(skills, dict) else []

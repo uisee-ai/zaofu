@@ -734,7 +734,7 @@ def _fanouts(state_dir: Path, config: ZfConfig | None = None) -> list[dict]:
                 if child.get("task_id"):
                     item["tasks"].add(str(child["task_id"]))
         projected_children = [
-            _fanout_child_projection(child, task_index=task_index)
+            _fanout_child_projection(child, task_index=task_index, include_report=False)
             for child in manifest.get("children", []) or []
             if isinstance(child, dict)
         ]

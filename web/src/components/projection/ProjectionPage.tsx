@@ -1,5 +1,5 @@
 // ProjectionPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
-import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, IntegrationQueueProjection, RecentEvent, RepairActionProjection, SearchResult, Snapshot, TaskPipelineProjection } from "../../api/types";
+import type { ActionResponse, AgentSummary, ChannelSummary, DeliveryFeaturesPage, EventsPage, Feature, RecentEvent, SearchResult, Snapshot } from "../../api/types";
 import { DeliveryTracePage } from "../../components/delivery-trace/DeliveryTracePage";
 import { Settings } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
@@ -23,13 +23,10 @@ export function ProjectionPage({
   deliveryFeaturesPage,
   eventsPage,
   eventFilter,
-  integrationQueue,
-  taskPipeline,
   liveState,
   recentEvents,
   page,
   projectionDetail,
-  repairActions,
   searchResult,
   selectedTaskId,
   setEventFilter,
@@ -51,13 +48,10 @@ export function ProjectionPage({
   deliveryFeaturesPage: DeliveryFeaturesPage | null;
   eventsPage: EventsPage | null;
   eventFilter: string;
-  integrationQueue: IntegrationQueueProjection | null;
-  taskPipeline: TaskPipelineProjection | null;
   liveState: LiveState;
   recentEvents: RecentEvent[];
   page: PageId;
   projectionDetail: Record<string, unknown> | null;
-  repairActions: RepairActionProjection | null;
   searchResult: SearchResult | null;
   selectedTaskId: string | null;
   setEventFilter: (value: string) => void;
@@ -160,15 +154,12 @@ export function ProjectionPage({
         eventFilter={eventFilter}
         eventItems={eventItems}
         eventsPage={eventsPage}
-        integrationQueue={integrationQueue}
-        taskPipeline={taskPipeline}
         liveState={liveState}
         onOpenChannel={onOpenChannel}
         onOpenPage={onOpenPage}
         onOpenProjection={onOpenProjection}
         onSelectEvent={setSelectedEventKey}
         projectionDetail={projectionDetail}
-        repairActions={repairActions}
         searchResult={searchResult}
         selectedEvent={selectedEvent}
         selectedEventKey={selectedEvent ? eventKey(selectedEvent, eventItems.indexOf(selectedEvent)) : ""}

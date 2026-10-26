@@ -1,4 +1,5 @@
 // ObservabilityPage + exclusive closure, extracted verbatim from App.tsx (P1 split).
+import { useObservabilityPanelData } from "./useObservabilityPanelData";
 import { search } from "../../api/client";
 import type { EventRecord, EventsPage, IntegrationQueueEntry, IntegrationQueueProjection, LongRunTruthMilestone, LongRunTruthProjection, RepairActionProjection, RepairActionRecord, SearchResult, Snapshot, TaskPipelineProjection, TraceSummary } from "../../api/types";
 import { LogsPanel } from "../../components/observability/LogsPanel";
@@ -139,15 +140,12 @@ export function ObservabilityPage({
   eventFilter,
   eventItems,
   eventsPage,
-  integrationQueue,
-  taskPipeline,
   liveState,
   onOpenChannel,
   onOpenPage,
   onOpenProjection,
   onSelectEvent,
   projectionDetail,
-  repairActions,
   scopedTraceRows,
   searchResult,
   selectedEvent,
@@ -160,15 +158,12 @@ export function ObservabilityPage({
   eventFilter: string;
   eventItems: EventRecord[];
   eventsPage: EventsPage | null;
-  integrationQueue: IntegrationQueueProjection | null;
-  taskPipeline: TaskPipelineProjection | null;
   liveState: LiveState;
   onOpenChannel: (channelId: string) => void;
   onOpenPage: (page: PageId) => void;
   onOpenProjection: (kind: ProjectionKind, id: string) => void;
   onSelectEvent: (key: string) => void;
   projectionDetail: Record<string, unknown> | null;
-  repairActions: RepairActionProjection | null;
   scopedTraceRows?: TraceSummary[] | null;
   searchResult: SearchResult | null;
   selectedEvent: EventRecord | null;
@@ -177,6 +172,7 @@ export function ObservabilityPage({
   snapshot: Snapshot | null;
 }) {
   const [tab, setTab] = useState<ObservabilityTab>(() => readInitialObservabilityTab(activePage));
+  const { integrationQueue, taskPipeline, repairActions, error: panelError } = useObservabilityPanelData(activeProjectId, tab, snapshot?.seq);
   const [traceFilters, setTraceFilters] = useState<TraceFilters>(() => readInitialTraceFilters());
   const [foldNoiseEvents, setFoldNoiseEvents] = useState(() => readInitialBooleanQuery("obs_fold_noise", true));
   const [autoFollowEvents, setAutoFollowEvents] = useState(() => readInitialBooleanQuery("obs_auto_follow", true));
@@ -336,9 +332,9 @@ export function ObservabilityPage({
     { id: "runs", label: "Runs", count: scopedTraceMode ? undefined : runs.length },
     { id: "fanouts", label: "Fanouts", count: scopedTraceMode ? undefined : fanouts.length },
     { id: "candidates", label: "Candidates", count: scopedTraceMode ? undefined : candidates.length },
-    { id: "pipeline", label: "Pipeline", count: taskPipeline?.summary.task_count ?? 0 },
-    { id: "integration", label: "Integration", count: integrationQueue?.summary.total ?? 0 },
-    { id: "repair", label: "Repair", count: repairActions?.summary.total ?? 0 },
+    { id: "pipeline", label: "Pipeline", count: taskPipeline?.summary.task_count },
+    { id: "integration", label: "Integration", count: integrationQueue?.summary.total },
+    { id: "repair", label: "Repair", count: repairActions?.summary.total },
     // Tokens/Context 与 Feedback tab 已退役(operator 2026-07-11):前者三重复
     // (顶部卡片 + Agents 页 FLEET 逐行同数据),后者的家是 Inbox(可行动)与
     // Agents Attention Queue。同数据不二渲染。
@@ -407,6 +403,7 @@ export function ObservabilityPage({
         </div>
         <span className={`metric-chip tone-${streamTone}`}>{liveState}</span>
       </div>
+      {panelError ? <p role="alert">{panelError}</p> : null}
       <ObservabilityStateNotice
         hiddenNoiseCount={hiddenNoiseCount}
         liveState={liveState}

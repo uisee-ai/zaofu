@@ -64,8 +64,8 @@ function testSnapshotPagesStayExplicit(): void {
   assert(snapshotLoadKindForPage("project") === "board", "overview needs the same task and cost fields, without report bodies");
   assert(snapshotLoadKindForPage("task") === "light", "task detail shell should use light snapshot");
   assert(snapshotLoadKindForPage("traces") === "none", "traces must load only its scoped index and detail resources");
-  assert(snapshotLoadKindForPage("events") === "full", "events should use full observability snapshot");
-  assert(snapshotLoadKindForPage("runs") === "full", "runs should use full observability snapshot");
+  assert(snapshotLoadKindForPage("events") === "observability", "events should use the scoped observability snapshot");
+  assert(snapshotLoadKindForPage("runs") === "observability", "runs should use the scoped observability snapshot");
 }
 
 function testInboxPollIsPageScoped(): void {

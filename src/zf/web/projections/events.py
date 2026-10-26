@@ -25,6 +25,7 @@ from zf.web.projections.common import _first_nonempty, _is_blocked_event, _is_fa
 from zf.web.projections.request_util import _active_event_seq_window, _record_sse_gap_projection, _sse_event, _sse_gap
 from zf.web.projections.summaries import _archive_tasks, _refs_from_events
 from zf.web.projections.task_pipeline_events import task_pipeline_trace
+from zf.web.projections.event_windows import events_read_days
 
 
 _EVENT_LOG_RUN_ID = "event-log-latest"
@@ -373,7 +374,7 @@ _DERIVED_CACHE_MAX = 32
 _CACHE_BUDGET_BYTES = int(
     os.environ.get("ZF_WEB_EVENT_CACHE_BUDGET_MB", "2048")
 ) * 1024 * 1024
-_DECODED_COST_FACTOR = 14   # events / read_days entries: own decoded objects
+_DECODED_COST_FACTOR = 14   # events entries: own decoded objects
 _DERIVED_COST_FACTOR = 2    # index/texts entries: share event objects
 _CACHE_STAMP = itertools.count()
 
@@ -437,7 +438,7 @@ def _derived_cached(state_dir, kind: str, config, build, fold=None):
     else:
         value = build()
     basis = _log_bytes_basis(state_dir, fp)
-    factor = _DECODED_COST_FACTOR if kind.startswith("read_days:") else _DERIVED_COST_FACTOR
+    factor = _DERIVED_COST_FACTOR
     with _DERIVED_CACHE_LOCK:
         _DERIVED_CACHE[key] = {
             "fp": fp,
@@ -551,37 +552,6 @@ def fanout_seq_maps(
     return _derived_cached(state_dir, "fanout_seq_maps", config, build, fold=fold)
 
 
-def events_read_days(state_dir, days: int = 1, config=None) -> list:
-    """Fingerprint-memoized EventLog.read_days — six projections each decoded
-    the log independently per snapshot (119k events decoded for a 10.6k log).
-    Key includes the UTC date so the calendar window rolls at midnight."""
-    from datetime import datetime, timezone
-
-    from zf.core.events.factory import event_log_from_project
-
-    day_key = datetime.now(timezone.utc).date().isoformat()
-
-    def build():
-        return list(event_log_from_project(state_dir, config=config).read_days(days))
-
-    def fold(old: list, tail) -> list:
-        # New rows are active-file appends = inside every read_days window.
-        # _parse_file silently skips non-JSON lines; the events cache injects
-        # an event.malformed placeholder (actor=segments) for them — drop
-        # those to keep exact parity. Schema-invalid JSON (actor=zf-cli) stays.
-        fresh = [
-            event
-            for _seq, event in tail
-            if not (
-                getattr(event, "type", "") == "event.malformed"
-                and getattr(event, "actor", "") == "segments"
-            )
-        ]
-        return old + fresh if fresh else old
-
-    return _derived_cached(state_dir, f"read_days:{days}:{day_key}", config, build, fold=fold)
-
-
 def payload_search_texts(state_dir, config=None) -> list[str]:
     """Lowered payload dumps aligned with _events_with_seq(state_dir)."""
     from zf.web.projections.common import _payload_search_text
@@ -674,7 +644,14 @@ def _try_append_fold(state_dir: Path, entry: dict, fingerprint: tuple[int, int],
                     },
                 )
             tail.append((seq, event))
+    ranges = list(entry["segment_ranges"])
+    if ranges and ranges[-1][0] == "events.jsonl":
+        segment, start, _end = ranges[-1]
+        ranges[-1] = (segment, start, len(events) + len(tail))
+    elif tail:
+        ranges.append(("events.jsonl", len(events), len(events) + len(tail)))
     return {
+        "segment_ranges": ranges,
         "fp": fingerprint,
         "epoch": entry["epoch"],
         "events": events + tail if tail else events,
@@ -713,6 +690,10 @@ def _events_state(
             except Exception:
                 return [], (entry["epoch"] + 1 if entry else 0), fingerprint
             events = [(record.seq, record.event) for record in records]
+            ranges = []
+            for segment, group in itertools.groupby(enumerate(records), key=lambda row: row[1].raw_segment):
+                indices = [index for index, _record in group]
+                ranges.append((segment, indices[0], indices[-1] + 1))
             consumed = 0
             for record in reversed(records):
                 if record.raw_segment == "events.jsonl":
@@ -721,6 +702,7 @@ def _events_state(
             epoch = (entry["epoch"] + 1) if entry else 0
             archives = _archive_inventory(state_dir)
             _EVENTS_WITH_SEQ_CACHE[key] = {
+                "segment_ranges": ranges,
                 "fp": fingerprint,
                 "epoch": epoch,
                 "events": events,

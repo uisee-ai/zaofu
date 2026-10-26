@@ -142,6 +142,6 @@ assert(
   "an explicitly scoped Project dashboard should start its pulse before workspace discovery",
 );
 assert(
-  !canBootstrapScopedPageBeforeWorkspace("runs", "project-a"),
-  "entity compatibility routes still wait for workspace discovery",
+  canBootstrapScopedPageBeforeWorkspace("runs", "project-a"),
+  "scoped observation routes must not wait for workspace discovery",
 );

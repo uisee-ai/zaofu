@@ -188,8 +188,10 @@ def _metrics_snapshot_projection(state_dir: Path) -> dict:
         tasks=TaskStore(state_dir / "kanban.json"),
         cost=CostTracker(state_dir / "cost.jsonl"),
     ).to_dict()
-    snapshot["orchestrator_agent"] = build_orchestrator_agent_metrics(
-        event_log.read_all() if event_log.path.exists() else []
+    snapshot["orchestrator_agent"] = _safe_snapshot_projection(
+        "orchestrator_agent", {}, lambda: build_orchestrator_agent_metrics(
+            event_log.read_all() if event_log.path.exists() else []
+        ),
     )
     return snapshot
 
@@ -582,6 +584,7 @@ def _skills(
     state_dir: Path,
     config: ZfConfig | None = None,
     project_root: Path | None = None,
+    *, include_invocations: bool = True,
 ) -> dict:
     project_root = _resolve_project_root_for_state(state_dir, project_root)
     roles = list(config.roles) if config is not None else []
@@ -702,7 +705,7 @@ def _skills(
         state_dir,
         config=config,
         project_root=project_root,
-    )
+    ) if include_invocations else {}
     return {
         "pool_path": str(pool_path),
         "materialize": materialize_mode,

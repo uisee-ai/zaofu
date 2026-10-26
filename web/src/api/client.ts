@@ -449,6 +449,10 @@ export function getSnapshot(projectId?: string): Promise<Snapshot> {
   return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot`);
 }
 
+export function getObservabilitySnapshot(projectId?: string): Promise<Snapshot> {
+  return requestJson<Snapshot>(`${projectPrefix(projectId)}/snapshot/observability`);
+}
+
 export function getProjectCost(projectId?: string): Promise<CostSummary> {
   return requestJson<CostSummary>(`${projectPrefix(projectId)}/cost`);
 }

@@ -38,6 +38,7 @@ from zf.web.projections.events import _EVENT_LOG_RUN_ID, _diagnostics, _event_lo
 from zf.web.projections.workflow_graph import _workflow_judge_configured, _workflow_terminal_success_event
 from zf.web.projections.operator import _operator_task_evidence
 from zf.web.projections.agents import _workdir_for_instance
+from zf.web.projections.task_fanout_runtime import _latest_task_fanout_runtimes
 from zf.web.projections.fanouts import _candidate_detail, _fanout_child_projection, _fanout_manifest, _fanout_progress
 
 
@@ -601,63 +602,9 @@ def _latest_task_fanout_runtime(
     """Return the newest fanout child runtime for a task, projection-only."""
     if not task_id:
         return {}
-    # RF-8: these maps are task-independent but were rebuilt with a full-log
-    # scan per task (kanban loop + task detail). Shared fingerprint-cached
-    # view; all_events stays in the signature for API stability (callers all
-    # pass the full _events_with_seq list, which the view derives from).
-    from zf.web.projections.events import fanout_seq_maps
-
-    last_seq_by_fanout, started_seq_by_fanout = fanout_seq_maps(state_dir)
-
-    latest: dict[str, Any] = {}
-    for manifest_path in sorted((state_dir / "fanouts").glob("*/manifest.json")):
-        fanout_id = manifest_path.parent.name
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if not isinstance(manifest, dict):
-            continue
-        seq = started_seq_by_fanout.get(
-            fanout_id,
-            last_seq_by_fanout.get(fanout_id, 0),
-        )
-        children = [
-            child for child in manifest.get("children", []) or []
-            if isinstance(child, dict)
-        ]
-        for child in children:
-            if str(child.get("task_id") or "").strip() != task_id:
-                continue
-            projected_child = _fanout_child_projection(child, include_report=include_report)
-            projected = {
-                "fanout_id": fanout_id,
-                "stage_id": str(manifest.get("stage_id") or ""),
-                "workflow_run_id": str(manifest.get("workflow_run_id") or ""),
-                "fanout_status": str(manifest.get("status") or "observed"),
-                "child": projected_child,
-                "child_id": str(projected_child.get("child_id") or ""),
-                "child_status": str(projected_child.get("status") or "observed"),
-                "role_instance": str(projected_child.get("role_instance") or ""),
-                "lane_id": str(child.get("lane_id") or ""),
-                "affinity_tag": str(child.get("affinity_tag") or ""),
-                "assignment_strategy": str(child.get("assignment_strategy") or ""),
-                "pipeline_id": str(projected_child.get("pipeline_id") or ""),
-                "root_fanout_id": str(projected_child.get("root_fanout_id") or ""),
-                "upstream_fanout_id": str(projected_child.get("upstream_fanout_id") or ""),
-                "upstream_child_id": str(projected_child.get("upstream_child_id") or ""),
-                "upstream_stage_slot": str(projected_child.get("upstream_stage_slot") or ""),
-                "run_id": str(projected_child.get("run_id") or ""),
-                "source_branch": str(projected_child.get("source_branch") or ""),
-                "source_commit": str(projected_child.get("source_commit") or ""),
-                "task_ref": str(projected_child.get("task_ref") or ""),
-                "workdir": str(projected_child.get("workdir") or ""),
-                "progress": _fanout_progress(children),
-                "seq": seq,
-            }
-            if not latest or seq >= int(latest.get("seq") or 0):
-                latest = projected
-    return latest
+    return _latest_task_fanout_runtimes(
+        state_dir, {task_id}, include_report=include_report,
+    ).get(task_id, {})
 
 
 def _fanout_phase_override(latest_fanout: dict[str, Any]) -> str:
@@ -1423,6 +1370,9 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             _payload_search_text(getattr(event, "payload", {}) or {})
             for _, event in all_events
         ]
+    latest_fanouts = _latest_task_fanout_runtimes(
+        state_dir, {t.id for t in tasks}, include_report=include_detail_bodies,
+    )
     for t in tasks:
         _tid = t.id.lower()
         task_events = [
@@ -1432,7 +1382,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             or (_tid and _tid in _text)
         ]
         refs = _refs_from_events(task_events, task=t, state_dir=state_dir, config=config)
-        latest_fanout = _latest_task_fanout_runtime(state_dir, t.id, all_events, include_report=include_detail_bodies)
+        latest_fanout = latest_fanouts.get(t.id, {})
         if latest_fanout:
             refs = {**refs, **{
                 key: latest_fanout.get(key, "")
@@ -1463,6 +1413,7 @@ def _kanban(state_dir: Path, config: ZfConfig | None = None, *, include_detail_b
             ready=t.id in ready_ids,
             refs=refs,
             latest=latest,
+            latest_fanout=latest_fanout,
         )
         why_not_done = {}
         workpad = {}
@@ -1772,6 +1723,7 @@ def _task_evidence_badges(
     ready: bool,
     refs: dict,
     latest: dict | None,
+    latest_fanout: dict | None = None,
 ) -> list[dict]:
     badges = []
     if ready:
@@ -1782,13 +1734,12 @@ def _task_evidence_badges(
         badges.append({"kind": "candidate", "label": "candidate", "tone": "info"})
     if refs.get("fanout_id"):
         fanout_id = str(refs.get("fanout_id") or "")
-        manifest = _fanout_manifest(state_dir, fanout_id)
-        children = [
-            child
-            for child in manifest.get("children", []) or []
-            if isinstance(child, dict)
-        ]
-        progress = _fanout_progress(children)
+        if latest_fanout and latest_fanout.get("fanout_id") == fanout_id:
+            progress = latest_fanout["progress"]
+        else:
+            manifest = _fanout_manifest(state_dir, fanout_id)
+            children = [child for child in manifest.get("children", []) or [] if isinstance(child, dict)]
+            progress = _fanout_progress(children)
         label = (
             f"fanout {progress['done']}/{progress['total']}"
             if progress["total"] else "fanout"
@@ -1856,6 +1807,8 @@ def _task_fanout_projection(
         projection["current"] = True
     fanout_id = str(refs.get("fanout_id") or "")
     if not fanout_id:
+        return projection
+    if latest_fanout and latest_fanout.get("fanout_id") == fanout_id and "progress" in latest_fanout:
         return projection
     manifest = _fanout_manifest(state_dir, fanout_id)
     children = [

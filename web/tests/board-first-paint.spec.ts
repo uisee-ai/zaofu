@@ -20,7 +20,7 @@ async function mockApi(page: Page) {
     if (path.endsWith("/snapshot/board")) return route.fulfill({ json: snapshot(path.split("/")[3]) });
     if (path.endsWith("/snapshot/light")) return route.fulfill({ json: snapshot(path.split("/")[3]) });
     if (path.endsWith("/overview-pulse")) return route.fulfill({ json: { schema_version: "overview-pulse.v1", run_pulse: { events_per_bucket: [], loop: {}, sessions: {} }, task_flow: null, attention: null, why_not: null } });
-    return route.fulfill({ json: { ok: true, items: [] } });
+    return route.fulfill({ json: { ok: true, items: [], summary: { task_count: 0, total: 0 } } });
   });
 }
 
@@ -130,4 +130,37 @@ test("stream gap reloads the Board summary and reconnects at the recovered curso
   await expect(page.locator(".board-grid")).toContainText("Recovered task");
   await expect.poll(() => streamUrls.some(url => new URL(url).searchParams.get("cursor") === "42")).toBe(true);
   expect(snapshots.every(url => url.includes("/snapshot/board"))).toBe(true);
+});
+
+test("Observability keeps its metrics and refreshes through its scoped snapshot", async ({ page }) => {
+  await mockApi(page);
+  const paths: string[] = [];
+  const errors: string[] = [];
+  const panelPaths: string[] = [];
+  page.on("request", request => { if (/\/(integration-queue|repair-actions|task-pipeline)(\?|$)/.test(request.url())) panelPaths.push(new URL(request.url()).pathname); });
+  let revision = 1;
+  page.on("pageerror", error => errors.push(String(error)));
+  page.on("request", request => { if (request.url().includes("/snapshot")) paths.push(new URL(request.url()).pathname); });
+  await page.route("**/snapshot/observability", route => route.fulfill({ json: {
+    ...snapshot("a"), tasks: [], archive_tasks: [],
+    traces: Array.from({ length: revision }, (_, index) => ({ trace_id: `trace-${index}`, event_count: 42, first_seq: 1, last_seq: 42, task_ids: [], actors: [] })),
+    runs: [{ run_id: "run1" }], active_runs: [],
+    fanouts: [{ fanout_id: "fanout1" }],
+    agents: [{ instance_id: "dev-1", context_usage_ratio: 0.25 }],
+  } }));
+  await page.goto("/?project=a&page=events");
+  const traceCount = page.locator(".projection-summary-card").filter({ hasText: "Traces" }).locator("strong");
+  await expect(traceCount).toHaveText("1");
+  await expect(page.locator(".projection-summary-grid")).toContainText("25%");
+  revision = 2;
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(traceCount).toHaveText("2");
+  await expect(page.locator(".projection-summary-card")).toHaveCount(6);
+  expect(paths.length).toBeGreaterThanOrEqual(2);
+  expect(paths.every(path => path.endsWith("/snapshot/observability"))).toBe(true);
+  expect(panelPaths).toEqual([]);
+  await page.getByRole("button", { name: /^Integration/ }).click();
+  await expect.poll(() => panelPaths.some(path => path.endsWith("/integration-queue"))).toBe(true);
+  expect(panelPaths.every(path => path.endsWith("/integration-queue"))).toBe(true);
+  expect(errors).toEqual([]);
 });

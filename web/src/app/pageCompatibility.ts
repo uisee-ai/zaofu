@@ -1,4 +1,5 @@
 import type { PageId, ProjectionKind } from "./sharedTypes";
+import { isObservabilitySnapshotPage } from "./pageLoadPolicy.js";
 
 export interface CompatiblePageQuery {
   changed: boolean;
@@ -15,7 +16,7 @@ export function canBootstrapScopedPageBeforeWorkspace(
   page: PageId,
   projectId: string,
 ): boolean {
-  return (page === "traces" || page === "project" || page === "board") && Boolean(projectId.trim());
+  return (page === "traces" || page === "project" || page === "board" || isObservabilitySnapshotPage(page)) && Boolean(projectId.trim());
 }
 
 const OBSERVABILITY_COMPATIBILITY_TABS = new Set([

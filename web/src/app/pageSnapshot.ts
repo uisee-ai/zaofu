@@ -1,4 +1,4 @@
-import { getBoardSnapshot, getSnapshot, getSnapshotLight } from "../api/client";
+import { getBoardSnapshot, getObservabilitySnapshot, getSnapshot, getSnapshotLight } from "../api/client";
 import type { Snapshot } from "../api/types";
 import type { SnapshotLoadKind } from "./pageLoadPolicy";
 
@@ -7,6 +7,7 @@ export function loadPageSnapshot(kind: Exclude<SnapshotLoadKind, "none">, projec
 export function loadPageSnapshot(kind: SnapshotLoadKind, projectId?: string): Promise<Snapshot | null>;
 export function loadPageSnapshot(kind: SnapshotLoadKind, projectId?: string): Promise<Snapshot | null> {
   if (kind === "none") return Promise.resolve(null);
+  if (kind === "observability") return getObservabilitySnapshot(projectId);
   if (kind === "full") return getSnapshot(projectId);
   if (kind === "board") return getBoardSnapshot(projectId);
   return getSnapshotLight(projectId);

@@ -1707,13 +1707,12 @@ def create_app(
             default_config=config,
             default_project_root=project_root,
         )
-        return JSONResponse(_snapshot_slice(
+        return _etag_json(_cached_project_snapshot(
             context.state_dir,
-            slice_name="observability",
-            config=context.config,
-            project_root=context.project_root,
-            web_session_token=_web_session_cookie(request),
-        ))
+            slice_name="observability-summary",
+            cfg=context.config, root=context.project_root,
+            token=_web_session_cookie(request),
+        ), request)
 
     @app.get("/api/projects/{project_id}/delivery-features")
     def project_delivery_features(project_id: str) -> JSONResponse:
@@ -4250,6 +4249,9 @@ def _snapshot_slice(
     project_root: Path | None = None,
     web_session_token: str | None = None,
 ) -> dict:
+    if slice_name == "observability-summary":
+        from zf.web.snapshot_observability import observability_snapshot
+        return observability_snapshot(state_dir, config=config, project_root=project_root, web_session_token=web_session_token)
     if slice_name == "observability":
         data = _snapshot(
             state_dir,
