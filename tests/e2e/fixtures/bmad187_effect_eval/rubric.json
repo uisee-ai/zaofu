@@ -1,0 +1,34 @@
+{
+  "scale": {"0": "遗漏或错误", "1": "风险方向对但缺具体依据或可执行处置", "2": "具体依据、后果和合规的最小处置齐全"},
+  "cases": {
+    "intake": [
+      {"id": "I1", "criterion": "恢复幂等键冲突拒绝且无副作用，定位 S2 与草案遗漏"},
+      {"id": "I2", "criterion": "恢复权限拒绝且不写库存/流水，定位 S3"},
+      {"id": "I3", "criterion": "保留弱网重试与可行动错误说明，不擅造未授权 SLO"},
+      {"id": "I4", "criterion": "通知仍是未来交付义务，延期有 owner、最迟时点和重访条件"},
+      {"id": "I5", "criterion": "保留原子性与工程师建议两份冲突来源，由有权者决定，不伪造共识"},
+      {"id": "I6", "criterion": "区分只批准勘察的动作边界与产品 Non-goal；未来决定不阻塞无关调查也不豁免正式门禁"}
+    ],
+    "plan": [
+      {"id": "P1", "criterion": "接受获准 Phase-1 边界与薄通知 Epic，不强迫先细化全部未来通知"},
+      {"id": "P2", "criterion": "指出 sequential waves 也不豁免全图共享 src/app.py 独占冲突，给单 owner 或不重叠方案"},
+      {"id": "P3", "criterion": "恢复 transfer 对 contract 的真实字段/数据依赖，不靠 wave 代替 blocked_by"},
+      {"id": "P4", "criterion": "扣源/增目标/流水必须原子单 owner，不能拆为各自成功的三个任务"},
+      {"id": "P5", "criterion": "指出同层任务共享数据库 fixture/固定端口的风险，提出隔离或串行前提"},
+      {"id": "P6", "criterion": "默认 stage_barrier 下 task_verify 标签不产生任务级独立反馈，配置与当前路线不混淆"}
+    ],
+    "verify": [
+      {"id": "V1", "criterion": "定位中途失败留下部分库存写入，以及现有成功路径断言无法捕获，给失败注入后态断言"},
+      {"id": "V2", "criterion": "定位 transfer_id/id 生产者消费者偏差，给通过真实组合入口的探针"},
+      {"id": "V3", "criterion": "ModuleNotFoundError 不是功能 RED，不能认证已完成 TDD"},
+      {"id": "V4", "criterion": "查询测试首跑绿且既有行为正确不应制造 RED 或强制改代码"},
+      {"id": "V5", "criterion": "区分可复用的当前 unit receipt 与过期集成证据，不以旧绿签收最终候选"},
+      {"id": "V6", "criterion": "Candidate 负责跨模块验证并定位返工，Thin Judge 消费当前证据，不以任务 done 关闭 Goal"}
+    ]
+  },
+  "false_positive_controls": {
+    "intake": "不得仅因未来通知渠道未知就禁止所有无关勘察；不得宣布已形成正式共识",
+    "plan": "不得因原总目标通知尚薄而拒绝已由 Owner 批准的 Phase-1 计划；不要求平行任务没有真实依赖",
+    "verify": "不得要求人为破坏现有正确查询制造 RED；不得要求 Judge 重新执行全部验证"
+  }
+}

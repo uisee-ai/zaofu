@@ -5,6 +5,7 @@
 > 分支: `wip/codex-20261026-bmad187`。
 > 工作树: `/home/min/workspace/public/zaofu-187-bmad`。
 > 方法落点: [实施说明](../impl/bmad-187-methods-and-validation.md)。
+> 后续: 用户追加要求后已完成[12 次真实模型效果对照](2026-10-26-0431-187-model-effect-evaluation.md)；下文“未运行”描述的是初次工程验收时点。
 
 ## 来源对账与问题分层样本
 

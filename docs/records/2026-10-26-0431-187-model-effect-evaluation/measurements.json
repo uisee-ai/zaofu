@@ -1,0 +1,390 @@
+{
+  "experiment": "187-method-review-paired-pilot",
+  "source_locator": {
+    "baseline_commit_title": "feat: integrate OA and WRC task pipeline orchestration",
+    "candidate_commit_title": "feat: add BMAD-inspired delivery methods and plan dependency diagnostics"
+  },
+  "bundle_sha256": {
+    "baseline": "3d26eda9aee228b2b0678332ff752d48cd68f184ade9c80589b4a49774b3bb13",
+    "candidate": "999249a1d6673c5a1e3676d20b0511253cdfe9feec10ed6e4fd266cd64be17be"
+  },
+  "cases": [
+    {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "provider_default_same_for_both_arms",
+      "codex_version": "codex-cli 0.163.0",
+      "isolation": "sha256:50cbb76d250a50002045a95f484c5f40573cde831adbe40c784052c037e36118",
+      "timeout_seconds": 240,
+      "prompt_sha256": "5b1c84e3e5a260d4fc501416777f4e94de180b552e00fabd7541a1754ba0f01d",
+      "input_digest": "42061a8de4a6505a6f32066a1521c0dd71f1964ab373af6069fd147bd100b30b",
+      "repetitions": 2,
+      "case": "intake"
+    },
+    {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "provider_default_same_for_both_arms",
+      "codex_version": "codex-cli 0.163.0",
+      "isolation": "sha256:50cbb76d250a50002045a95f484c5f40573cde831adbe40c784052c037e36118",
+      "timeout_seconds": 240,
+      "prompt_sha256": "d2b9a9578f31bf95b00d10f3236f3e40d44b0843cd274e28964eecba37db21b3",
+      "input_digest": "6691db6d03d06401787b67b4ca32048fa9e945717dcad9b0cdf3a1b08755dbfd",
+      "repetitions": 2,
+      "case": "plan"
+    },
+    {
+      "model": "gpt-6-astra",
+      "reasoning_effort": "provider_default_same_for_both_arms",
+      "codex_version": "codex-cli 0.163.0",
+      "isolation": "sha256:50cbb76d250a50002045a95f484c5f40573cde831adbe40c784052c037e36118",
+      "timeout_seconds": 240,
+      "prompt_sha256": "f4beddaed2722f8c01e91cb7420db0305945a5c76e1a5ec4c8322c1b04a72e54",
+      "input_digest": "005dfc5bcd6f02122671ca36a2c41579d06ef9ce68d9161a019b3d942c155297",
+      "repetitions": 2,
+      "case": "verify"
+    }
+  ],
+  "runs": [
+    {
+      "case": "intake",
+      "run_id": "1-baseline",
+      "arm": "baseline",
+      "repeat": 1,
+      "seconds": 61.239,
+      "usage": {
+        "input_tokens": 65596,
+        "cached_input_tokens": 47488,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1412,
+        "reasoning_output_tokens": 52
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "27a9928f2091b3279ee083086d8ca95c80cf1d5d5d41142cf1cffaca24f754e9",
+      "trace_sha256": "b2e00499726e4f7694036bcb1f1320effb2b71550dca2818ca57a2b0c40e0bb0",
+      "answer_file": "answers/intake-1-baseline.txt",
+      "answer_sha256": "f3db1e15397d1e54c823178dba67f9d44121a40d40729b4ff14abbb462569945",
+      "command_count": 7,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-synthesizer/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-participant/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-browser-e2e-contract/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "f3db1e15397d1e54c823178dba67f9d44121a40d40729b4ff14abbb462569945"
+    },
+    {
+      "case": "intake",
+      "run_id": "1-candidate",
+      "arm": "candidate",
+      "repeat": 1,
+      "seconds": 71.195,
+      "usage": {
+        "input_tokens": 86337,
+        "cached_input_tokens": 70528,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1581,
+        "reasoning_output_tokens": 36
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "5ae2aa9622f0c3bbb4b95f0ee0fa02d921a1509b6d666b8dbce1d676e20ba95d",
+      "trace_sha256": "d4da1411c134d3ae78c78ea88adf781e41300b69c8d2c03b3123ed438cce7f67",
+      "answer_file": "answers/intake-1-candidate.txt",
+      "answer_sha256": "49f65c32dca60bdce488ff1ab33553251d3738269cedcb8d07052e15cd15e7e4",
+      "command_count": 6,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-synthesizer/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-requirement-reconciliation/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-participant/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "00d7701a982842f82f28c3a2b757aa21de27a4a50c192ff96cc616ee136ed983"
+    },
+    {
+      "case": "intake",
+      "run_id": "2-candidate",
+      "arm": "candidate",
+      "repeat": 2,
+      "seconds": 76.677,
+      "usage": {
+        "input_tokens": 63191,
+        "cached_input_tokens": 47360,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1525,
+        "reasoning_output_tokens": 103
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "5ae2aa9622f0c3bbb4b95f0ee0fa02d921a1509b6d666b8dbce1d676e20ba95d",
+      "trace_sha256": "7695cda8833d08fe64dfcbf0bde3964a0e6f331a7894b3df5f049db0ff3fa2c8",
+      "answer_file": "answers/intake-2-candidate.txt",
+      "answer_sha256": "f277d85604945f5c646a7edb97f076ee17088b8d2038443ce4b6b574f6a7c7e5",
+      "command_count": 4,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-synthesizer/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-requirement-reconciliation/SKILL.md .agents/skills/zf-channel-discussion-participant/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "f277d85604945f5c646a7edb97f076ee17088b8d2038443ce4b6b574f6a7c7e5"
+    },
+    {
+      "case": "intake",
+      "run_id": "2-baseline",
+      "arm": "baseline",
+      "repeat": 2,
+      "seconds": 65.803,
+      "usage": {
+        "input_tokens": 65552,
+        "cached_input_tokens": 47488,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1420,
+        "reasoning_output_tokens": 46
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "27a9928f2091b3279ee083086d8ca95c80cf1d5d5d41142cf1cffaca24f754e9",
+      "trace_sha256": "54ba01c870b99b027558473eb566036fb0fa615dac8059675e78015246d64894",
+      "answer_file": "answers/intake-2-baseline.txt",
+      "answer_sha256": "8eb7c1af2fd93d31b0625b127e250332af96571d06954d093917d7d4cb8d7f16",
+      "command_count": 5,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-channel-discussion-synthesizer/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-browser-e2e-contract/SKILL.md; cat .agents/skills/zf-channel-discussion-participant/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "8eb7c1af2fd93d31b0625b127e250332af96571d06954d093917d7d4cb8d7f16"
+    },
+    {
+      "case": "plan",
+      "run_id": "1-baseline",
+      "arm": "baseline",
+      "repeat": 1,
+      "seconds": 68.805,
+      "usage": {
+        "input_tokens": 99634,
+        "cached_input_tokens": 74752,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1387,
+        "reasoning_output_tokens": 0
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "eb19e59272e714cce51dc4015d297022000d774020b0bc197f01c70b55263e29",
+      "trace_sha256": "1385b723cabf621eea22018bfc96d000cba9a12cd954ed00f4d976f9d25abd23",
+      "answer_file": "answers/plan-1-baseline.txt",
+      "answer_sha256": "23c21e0e144b7b9d0c15e8e3ae637ce28a44e425bfa6c49ad09153da26c17dfd",
+      "command_count": 9,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-critic-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/grill/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/execution-consistency.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/execution-route.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/human-review.md'",
+        "/bin/bash -lc 'cat .agents/skills/vertical-slicing/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "23c21e0e144b7b9d0c15e8e3ae637ce28a44e425bfa6c49ad09153da26c17dfd"
+    },
+    {
+      "case": "plan",
+      "run_id": "1-candidate",
+      "arm": "candidate",
+      "repeat": 1,
+      "seconds": 75.015,
+      "usage": {
+        "input_tokens": 108721,
+        "cached_input_tokens": 73344,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1360,
+        "reasoning_output_tokens": 0
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "97befd5a320611f07b117b01be5f001753622d326eeaaabf7357430f6290b1a3",
+      "trace_sha256": "f420818617a3a8363ee0c0386f77c63a4697758b9630632cac5b5d9bd33853ee",
+      "answer_file": "answers/plan-1-candidate.txt",
+      "answer_sha256": "c61a79b74da6147731323a17f815718f54cc3d920c6cf060f0a44ce0050836b0",
+      "command_count": 13,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-critic-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/grill/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-browser-e2e-contract/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/vertical-slicing/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/epic-refinement.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/execution-consistency.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/execution-route.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-requirement-reconciliation/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/human-review.md'"
+      ],
+      "original_final_answer_sha256": "c61a79b74da6147731323a17f815718f54cc3d920c6cf060f0a44ce0050836b0"
+    },
+    {
+      "case": "plan",
+      "run_id": "2-candidate",
+      "arm": "candidate",
+      "repeat": 2,
+      "seconds": 70.894,
+      "usage": {
+        "input_tokens": 100592,
+        "cached_input_tokens": 75008,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1365,
+        "reasoning_output_tokens": 22
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "97befd5a320611f07b117b01be5f001753622d326eeaaabf7357430f6290b1a3",
+      "trace_sha256": "838095192de79132bc6547e5ca26a02d2eaaac9045eb3eb95c6070e5d470e723",
+      "answer_file": "answers/plan-2-candidate.txt",
+      "answer_sha256": "43f00e714097862bdfb47581531f1e7daad3c979052804ba9d4b712e36ebe472",
+      "command_count": 4,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-critic-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/SKILL.md .agents/skills/grill/SKILL.md; nl -ba scope.md; nl -ba plans.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-requirement-reconciliation/SKILL.md .agents/skills/zf-plan-execution-readiness/references/epic-refinement.md .agents/skills/zf-plan-execution-readiness/references/execution-route.md .agents/skills/zf-plan-execution-readiness/references/execution-consistency.md .agents/skills/zf-plan-execution-readiness/references/human-review.md'"
+      ],
+      "original_final_answer_sha256": "43f00e714097862bdfb47581531f1e7daad3c979052804ba9d4b712e36ebe472"
+    },
+    {
+      "case": "plan",
+      "run_id": "2-baseline",
+      "arm": "baseline",
+      "repeat": 2,
+      "seconds": 61.702,
+      "usage": {
+        "input_tokens": 99611,
+        "cached_input_tokens": 74752,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1452,
+        "reasoning_output_tokens": 11
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "eb19e59272e714cce51dc4015d297022000d774020b0bc197f01c70b55263e29",
+      "trace_sha256": "a3ee377f64e7c513f103a8320fc71418fbeb95712ec0be4faab22827d99b830f",
+      "answer_file": "answers/plan-2-baseline.txt",
+      "answer_sha256": "b1b8753e8cad7210b1ae61826d2d18551fa26f3c8aa0bb7f905f1effc3610e34",
+      "command_count": 6,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-critic-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/SKILL.md .agents/skills/grill/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-plan-execution-readiness/references/execution-consistency.md .agents/skills/zf-plan-execution-readiness/references/execution-route.md .agents/skills/zf-plan-execution-readiness/references/human-review.md'",
+        "/bin/bash -lc 'cat .agents/skills/vertical-slicing/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "b1b8753e8cad7210b1ae61826d2d18551fa26f3c8aa0bb7f905f1effc3610e34"
+    },
+    {
+      "case": "verify",
+      "run_id": "1-baseline",
+      "arm": "baseline",
+      "repeat": 1,
+      "seconds": 65.86,
+      "usage": {
+        "input_tokens": 91792,
+        "cached_input_tokens": 73728,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1895,
+        "reasoning_output_tokens": 26
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "8365900f29b06fcf6caa2435a52fd4c320cceb473b89ee2aaff2e3d29ac15c47",
+      "trace_sha256": "bf0ac7976816354e9568de8e3d712ee181d3e35d73677e92499e3e6f03344111",
+      "answer_file": "answers/verify-1-baseline.txt",
+      "answer_sha256": "709b798535aff8c74faebe6c8505641683d062c30144850f450b4a3356cf9218",
+      "command_count": 6,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-test-evaluator-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/verify-review/SKILL.md .agents/skills/tdd-evidence/SKILL.md .agents/skills/zf-harness-verification-checklist/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/zf-mechanical-claim-verifier/SKILL.md'"
+      ],
+      "original_final_answer_sha256": "851b1ae5ff4cbe40360849e5d0bdf24e92e72ca0187e531b62e1026bea20d00d"
+    },
+    {
+      "case": "verify",
+      "run_id": "1-candidate",
+      "arm": "candidate",
+      "repeat": 1,
+      "seconds": 60.468,
+      "usage": {
+        "input_tokens": 93273,
+        "cached_input_tokens": 74112,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1898,
+        "reasoning_output_tokens": 10
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "59ece2e041f7f95f85e01ef7d405a1429ffa1191daa4e9fb4b7d05df2b94eddf",
+      "trace_sha256": "94b50e264e4437b1a5df329b32ab2204891ba0566cd5d12e32d532110581fae6",
+      "answer_file": "answers/verify-1-candidate.txt",
+      "answer_sha256": "79d461961fdaf4f120a148082e1f84999a49e55d6b4025f0323194f5023ca0af",
+      "command_count": 8,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-test-evaluator-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/verify-review/SKILL.md .agents/skills/tdd-evidence/SKILL.md .agents/skills/zf-harness-verification-checklist/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/verify-review/references/regression-and-integration.md .agents/skills/tdd-evidence/references/cycle-evidence.md'"
+      ],
+      "original_final_answer_sha256": "a33ab9a8ba51204207ed18818944be5152057bf49c8a5d5afeef8f880ba42e23"
+    },
+    {
+      "case": "verify",
+      "run_id": "2-candidate",
+      "arm": "candidate",
+      "repeat": 2,
+      "seconds": 63.284,
+      "usage": {
+        "input_tokens": 122207,
+        "cached_input_tokens": 102272,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1793,
+        "reasoning_output_tokens": 30
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "59ece2e041f7f95f85e01ef7d405a1429ffa1191daa4e9fb4b7d05df2b94eddf",
+      "trace_sha256": "bf9d2158db81617511fae381cacfe1903d8bac58d3b3c54537477fd2b4e31de6",
+      "answer_file": "answers/verify-2-candidate.txt",
+      "answer_sha256": "7f410942efd07287511e6b60fb3ce2005ae4c13fcd0845688db7994b5baf5dbc",
+      "command_count": 5,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-test-evaluator-role-context/SKILL.md'",
+        "/bin/bash -lc \"cat .agents/skills/verify-review/SKILL.md .agents/skills/tdd-evidence/SKILL.md .agents/skills/zf-harness-verification-checklist/SKILL.md; cat source.md handoff.md; rg --files --hidden -g AGENTS.md -g '\"'!node_modules'\"' /workspace /root 2>/dev/null\"",
+        "/bin/bash -lc 'cat .agents/skills/verify-review/references/regression-and-integration.md .agents/skills/tdd-evidence/references/cycle-evidence.md .agents/skills/zf-mechanical-claim-verifier/SKILL.md; nl -ba tests/test_transfer.py; nl -ba src/transfer.py; nl -ba src/presenter.py; nl -ba src/query.py'"
+      ],
+      "original_final_answer_sha256": "7d30220b192610f327eea69f423c32e887446a0712316b4d53f07d354a59d738"
+    },
+    {
+      "case": "verify",
+      "run_id": "2-baseline",
+      "arm": "baseline",
+      "repeat": 2,
+      "seconds": 63.167,
+      "usage": {
+        "input_tokens": 91725,
+        "cached_input_tokens": 73344,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 1855,
+        "reasoning_output_tokens": 16
+      },
+      "valid": true,
+      "input_unchanged": true,
+      "input_snapshot_digest": "8365900f29b06fcf6caa2435a52fd4c320cceb473b89ee2aaff2e3d29ac15c47",
+      "trace_sha256": "4d096a45c112a051bc877863c302aa83a6623540eb979463f0997603942f2273",
+      "answer_file": "answers/verify-2-baseline.txt",
+      "answer_sha256": "c615d8c06bc6b1e0013e71560762c5de58e9682efa85c85ae380c7bd9eace07d",
+      "command_count": 5,
+      "skill_read_commands": [
+        "/bin/bash -lc 'cat .agents/skills/zf-yoke-test-evaluator-role-context/SKILL.md'",
+        "/bin/bash -lc 'cat .agents/skills/verify-review/SKILL.md .agents/skills/tdd-evidence/SKILL.md .agents/skills/zf-harness-verification-checklist/SKILL.md source.md handoff.md src/query.py src/transfer.py src/presenter.py tests/test_transfer.py'",
+        "/bin/bash -lc 'cat .agents/skills/zf-mechanical-claim-verifier/SKILL.md; nl -ba src/transfer.py; nl -ba src/presenter.py; nl -ba tests/test_transfer.py'"
+      ],
+      "original_final_answer_sha256": "f787f4ef6a45bbe7fae1df0148e0c9e7faf9d973703f516ce0b5721a2ea87675"
+    }
+  ],
+  "grading": "predeclared rubric, non-blind operator scoring; no automated semantic verdict",
+  "limitations": [
+    "3 synthetic cases, 2 repetitions per arm; ceiling effect and prompt hints",
+    "Review/probe experiment, not a complete ZaoFu product workflow",
+    "Same requested model and config; sampling/cache/backend variance uncontrolled",
+    "Monetary cost unknown; token and elapsed counts are observed, not proven causal gains"
+  ],
+  "answer_archive_normalization": "Only trailing horizontal whitespace on each line is removed; original_final_answer_sha256 identifies the pre-normalized final answer and trace_sha256 identifies the full original trace."
+}

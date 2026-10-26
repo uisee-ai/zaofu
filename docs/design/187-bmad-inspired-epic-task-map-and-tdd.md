@@ -1,10 +1,11 @@
 # 187 — 借鉴 BMAD 的需求闭环、Epic 渐进细化、任务调度与 TDD
 
-> 状态: partial — 五方法、薄 Epic 阅读层和依赖诊断已实施；真实模型语义收益与调度吞吐对照尚未验证。
+> 状态: partial — 方法与诊断已实施，12 次真实模型评审对照已完成；长程产品交付和调度吞吐收益尚未验证。
 > 日期: 2026-10-25；实施更新: 2026-10-26 UTC。
 > 范围: 需求 → PRD/规格 → Epic → Task Map → Impl → Verify → Judge。
 > 基线: `~/workspace/public/zaofu` 与 `~/workspace/gm/BMAD-METHOD`；BMAD checkout 自述为 V7 Preview Alpha。
 > 实施: 用户已授权拆分并执行 6 项任务；见[实施说明](../impl/bmad-187-methods-and-validation.md)与[评估记录](../records/2026-10-26-0336-187-delivery-validation.md)。
+> 效果: [真实模型对照](../records/2026-10-26-0431-187-model-effect-evaluation.md)显示质量基本持平、方法表达更明确，本次输入 token 与平均耗时略增；不扩大默认 rollout。
 
 ## 1. 设计决定与关联
 
@@ -37,7 +38,7 @@ SDD 在本文指规格驱动开发，贯穿交付链；TDD 是 Impl 内部循环
 | 角色方法 | profile 绑定 wrapper，dependencies 展开并物化 | 每个方法正文已经被模型读取并正确执行 |
 | 默认配置解析 | 2 lanes，`stage_barrier`，未配置 v4 Task Pipeline | 每个任务完成 Impl 后立即独立进入 Verify |
 | 默认门禁配置 | Plan Artifact Package、Product Acceptance 均为 `shadow` | 这两项已按 blocking 强制执行；其他既有门禁因此也被关闭 |
-| v4 示例 | 独立 Impl/Verify pools、背压、增量集成、候选冻结已有配置和代码 | canary/shadow 已默认发布，或本文已完成真实 Provider 验证 |
+| v4 示例 | 独立 Impl/Verify pools、背压、增量集成、候选冻结已有配置和代码 | canary/shadow 已默认发布，或本文已完成真实 Provider 的 v4 产品交付验证 |
 
 上述配置结论来自本次只读调用 `load_config(zf.yaml)`；描述仓库默认配置，不代表任意
 真跑项目的有效配置。后续判断必须绑定项目、配置版本和 Run。
@@ -502,4 +503,5 @@ Verify 可以复用同目标、同命令摘要且被标记可复用的确定性�
 
 原始设计阶段确认范围为上述源码、配置、Skill 和相关测试源码，配置做了只读解析。
 实施阶段增加实际方法物化、CLI、依赖/证据边界、调度和确定性 mock E2E 验证，
-结果见关联记录。真实 Provider、浏览器与调度吞吐收益仍不能由这些检查推出。
+结果见关联记录。后续追加了真实模型的方法评审对照；完整 Provider 产品交付、
+浏览器与调度吞吐收益仍不能由这些检查推出。

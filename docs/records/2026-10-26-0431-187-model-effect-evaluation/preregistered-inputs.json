@@ -1,0 +1,30 @@
+{
+  "case_count": 3,
+  "arms": [
+    "baseline",
+    "candidate"
+  ],
+  "repetitions": 2,
+  "maximum_provider_calls": 12,
+  "model": "gpt-6-astra",
+  "per_call_timeout_seconds": 240,
+  "scoring": "predeclared rubric; non-blind operator review",
+  "input_files": {
+    "README.md": "5ef9dde8db18df6461b439b60d743723cf470815743486ba22caac38ab8c0bad",
+    "intake/project/discussion.md": "a10eeb27c963956f317131244af9d520e1f306ab169c72ee46437d4ef36f3ced",
+    "intake/project/draft.md": "2cc4d5391e86db7be4d9a31c77352f5496e785c2126ae4d60ca9adef9e288c77",
+    "intake/project/source.md": "ef1b1878859b12e277be08e66ed71408a7dbc807171150c613e4b8add033b0a3",
+    "intake/prompt.md": "5b1c84e3e5a260d4fc501416777f4e94de180b552e00fabd7541a1754ba0f01d",
+    "plan/project/plans.md": "35c2575705085af324204ef39d9558803d472a2f9fa73889afd59ddcea06669f",
+    "plan/project/scope.md": "5c2ccd20125e8f8eb4a1cc2efe6b3aef2a5a489108d376c1886bb63c55d9ed6b",
+    "plan/prompt.md": "d2b9a9578f31bf95b00d10f3236f3e40d44b0843cd274e28964eecba37db21b3",
+    "rubric.json": "c179b44f8c8896333d4ee789a93c7764782b878d36ee3015f98810be4f1a2a9a",
+    "verify/project/handoff.md": "aecc68e05401130ae32ac4e44e008b60a15b38ecafc2da7eaae9f69fe4ed69aa",
+    "verify/project/source.md": "b88c48027da3b1580a924d0e72ac645deacce1de2eeabb1741f9c6d1ac8e3c56",
+    "verify/project/src/presenter.py": "496144f2d273fd8a1dff8f523173d1ec7c8f41d39df9edacd22b870078ccbbea",
+    "verify/project/src/query.py": "48543fdcfe0ab406a8deee9678ac0e2cfe0336093f0b5000578538a0245be363",
+    "verify/project/src/transfer.py": "87baa99f05be228a10fecdcbb0f2d067e5c13efac7b91d623e96db5b3080223c",
+    "verify/project/tests/test_transfer.py": "17ccb09410090d2e9c906a77cbb1cad715665872655457f556250ca6b51396aa",
+    "verify/prompt.md": "f4beddaed2722f8c01e91cb7420db0305945a5c76e1a5ec4c8322c1b04a72e54"
+  }
+}

@@ -1,0 +1,27 @@
+产品 verdict：**rejected**，目标为 handoff 指定的 **revision-3**。两个独立内存探针确认产品失败，并非环境阻塞。已复用 U3 的 3 passed，未重跑相同 unit 命令；J2 属于 revision-2，不能证明当前组合入口正确。全程未修改文件、安装依赖或联网。
+
+| 条款 | 结论 | 当前证据 |
+|---|---|---|
+| AC-TXN | 失败 | 流水异常后库存未回滚 |
+| AC-UI | 失败 | 真实组合入口抛出 `KeyError('id')` |
+| AC-COUNT | 通过、保留 | U3 既有回归；独立成功转移探针确认总库存仍为 10 |
+
+两个必改点：
+
+1. **Critical｜AC-TXN：错误后留下部分更新。**
+   [transfer.py:2](/workspace/src/transfer.py:2) 先扣源、增目标，第 5 行才抛流水异常。具名回归 `test_ledger_failure_rolls_back_all_state`：输入 `state={"source":10,"destination":0,"ledger":[]}`，调用 `transfer(state,3,fail_ledger=True)`；捕获 `RuntimeError("ledger unavailable")` 后，断言 `state == deepcopy(调用前state)`。实际为 `{"source":7,"destination":3,"ledger":[]}`，断言失败。
+   漏检原因：[test_transfer.py:9](/workspace/tests/test_transfer.py:9) 仅测成功返回的 `ok` 和源库存，既不触发流水失败，也不核对完整后态。
+   **返工 owner：转移实现 DEV。** 在 `src/transfer.py` 与对应测试中落实全成功或全回滚；成功时同时断言源 7、目标 3、流水 `[3]`，异常时完整 state 不变。
+
+2. **必改｜AC-UI：生产者与消费者字段不兼容。**
+   [transfer.py:7](/workspace/src/transfer.py:7) 返回 `transfer_id`，而 [presenter.py:5](/workspace/src/presenter.py:5) 读取 `id`。具名回归 `test_transfer_and_present_displays_transfer_id`：以上述初始 state 调用 `transfer_and_present(state,3)`，应断言结果为 `"转移完成：TX-7"`；实际直接抛 `KeyError('id')`。
+   漏检原因：[test_transfer.py:15](/workspace/tests/test_transfer.py:15) 手工提供旧格式 `{"id":"TX-7"}`，绕过真实生产者；转移测试也未检查展示所需字段。
+   **返工 owner：revision-3 字段清理负责人，协同展示层 DEV。** 统一生产消费契约，增加真实组合入口测试，保留成功转移的库存与流水断言。
+
+以上探针均以 `/workspace` 为工作目录，用 `PYTHONDONTWRITEBYTECODE=1 python3 -B` 直接导入当前源码执行；输入、调用及断言如上，可独立复现。成功路径探针 `test_success_preserves_inventory_and_records_ledger` 已通过：返回 `transfer_id="TX-7"`、`ok=True`，完整 state 为 `7/3/[3]`，总库存为 10。
+
+**TDD 证据：未认证。** `ModuleNotFoundError: optional_test_helper` 属于环境失败，不是业务 RED；U3 只能证明现有三个测试 GREEN，不能补证测试先行。DEV 应更正“完整执行 TDD”声明，并为此次修复保留当前失败基线、具名测试及修复后 GREEN。AC-COUNT 首跑即绿符合既有正确行为，保留回归测试，记录“未观察到 RED”；无需修改 `query.py`，更不得破坏它制造失败。
+
+五轴结论：正确性不通过；可读性、架构、安全、性能未发现额外阻断项，保留现有简洁结构。通知已明确不在本期范围，不扩充验收。
+
+Candidate Verify 负责当前候选全部三个 AC、跨任务组合及返工后的受影响回归，不能以 Task 全部 done 替代产品通过。Thin Judge 只消费已接纳、同目标版本的证据判断闭环，不补跑产品测试、不修代码。本报告仅为只读评审，未提交平台结果或改变运行时状态。

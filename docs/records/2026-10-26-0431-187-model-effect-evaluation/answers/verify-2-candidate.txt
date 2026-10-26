@@ -1,0 +1,39 @@
+产品 verdict：**rejected**，目标按 handoff 绑定样例 **revision-3**，不要求宿主 Git 提交。已审查 3 个源码文件、3 个测试；复用 U3（3 passed），未重跑其命令。新增内存探针执行成功，证实两个产品失败，不属于环境阻塞；未写文件、安装依赖或联网。
+
+| 条款 | 结论 | 依据 |
+|---|---|---|
+| AC-TXN | fail | 正常转移完整后态通过；流水异常不回滚 |
+| AC-UI | fail | 当前真实组合入口抛出 `KeyError('id')` |
+| AC-COUNT | pass | U3、现有回归断言与未改动的 `total` 实现一致 |
+
+**必改 1（Critical）：流水失败留下部分写入。**
+[src/transfer.py](/workspace/src/transfer.py:2) 先扣源、增目标，第 5 行才抛错。具名回归 `test_ledger_failure_rolls_back_all_state`：
+
+```python
+s = {"source": 10, "destination": 0, "ledger": []}
+before = deepcopy(s)
+# 捕获 RuntimeError 后检查完整后态
+transfer(s, 3, fail_ledger=True)
+assert s == before
+```
+
+实测异常为 `RuntimeError('ledger unavailable')`，后态却是 `{source:7, destination:3, ledger:[]}`。应保证扣源、增目标、流水整体提交或整体回滚。现有 `test_transfer_success` 只断言 `ok` 和源库存，既不走失败分支，也不核对完整后态。
+返工 owner：**transfer 实现 Task 的 DEV**；范围为事务实现及对应测试。完成条件：错误时完整状态不变，正常路径完整后态仍正确；下一门为 Candidate Verify。
+
+**必改 2：字段清理破坏真实组合入口。**
+[src/transfer.py](/workspace/src/transfer.py:7) 返回 `transfer_id`，而 [src/presenter.py](/workspace/src/presenter.py:5) 仍读取 `id`。具名回归 `test_transfer_and_present_displays_real_transfer_id`：
+
+```python
+s = {"source": 10, "destination": 0, "ledger": []}
+assert transfer_and_present(s, 3) == "转移完成：TX-7"
+assert s == {"source": 7, "destination": 3, "ledger": [3]}
+```
+
+实测第一条断言求值时抛 `KeyError('id')`，此时转移已经完成。现有展示测试手造 `{"id":"TX-7"}`，绕过真实生产者；转移测试不检查输出字段，故各自通过仍漏掉接口断裂。
+返工 owner：**revision-3 字段清理 DEV，协同 presenter 属主**；统一生产者与消费者契约并补组合回归。完成条件为上述两条断言通过；下一门为 Candidate Verify。J2 属 revision-2，不能用于签收。
+
+**明确保留：**新探针确认正常 `transfer(s,3)` 的完整后态为 `7/3/[3]`，成功结果正确；保留这一行为。`query.total` 及其已有回归也保留。五轴结论：正确性失败；可读性、架构、安全、性能在本样例范围内未发现额外阻断项，不扩大为重构或新增通知需求。
+
+**TDD：未认证。**`ModuleNotFoundError` 是环境失败，不是业务 RED；U3 只能证明最终局部 GREEN，不能证明测试先行。DEV 应更正“完整执行 TDD”声明；新返工应保存上述真实缺陷的失败断言及修复后通过证据。AC-COUNT 首跑即绿符合既有行为，无须修改正确实现来制造 RED。
+
+**责任边界：**Candidate Verify 必须覆盖三个 AC 及真实组合行为，“所有 Task done”不等于产品通过。Thin Judge 只消费已接纳、同目标版本的证据判断闭合，不补跑测试、不修代码。本次为只读评审，未提交平台结果或改变运行时状态。
