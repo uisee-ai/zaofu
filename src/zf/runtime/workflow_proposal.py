@@ -13,6 +13,7 @@ import yaml
 from zf.core.config.loader import load_config
 from zf.core.config.render import redact_config, renderable_config_to_primitive
 from zf.core.events.writer import EventWriter
+from zf.core.security.redaction import redact_obj
 from zf.core.state.atomic_io import atomic_write_text
 from zf.core.workflow.generic_workflow import (
     generic_workflow_catalog_projection,
@@ -200,6 +201,10 @@ def build_workflow_proposal(
             "sha256": candidate_digest,
         },
         "config": rendered,
+        "yaml": yaml.safe_dump_all(
+            [redact_obj(redact_config(doc)) for doc in yaml.safe_load_all(candidate_path.read_text(encoding="utf-8"))],
+            sort_keys=False, allow_unicode=True,
+        ),
     }
     effective_ref = write_immutable_json_sidecar(
         state_dir,

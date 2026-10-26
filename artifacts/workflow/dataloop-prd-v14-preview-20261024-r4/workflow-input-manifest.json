@@ -1,0 +1,70 @@
+{
+  "schema_version": "workflow.input_manifest.v1",
+  "request_id": "dataloop-prd-v14-preview-20261024-r4",
+  "kind": "prd",
+  "request_kind": "prd",
+  "source": "cli",
+  "project_id": "dataloop-bf39f74e",
+  "objective": "基于两份原生 v1.4 Markdown 重新生成完整人类可读 PRD Preview：读取 docs/prd/v1.4_需求补齐增补.md 与 docs/prd/行泊一体数据闭环工具链_总体设计与UIUX规格_v1.4_需求补齐与验收追踪版.md，保留 Appendix B T01-T10、342 条逐项 trace、页面1-6、drawer、通知、键盘和窄屏细节；Plan Preview 必须先人工 approval，禁止自动启动 impl/verify。",
+  "source_ref": "docs/prd/v1.4_需求补齐增补.md",
+  "source_root": "/home/min/workspace/gm/dataloop",
+  "target_root": ".",
+  "requested_backend": "codex",
+  "requested_lanes": 8,
+  "strictness": "standard",
+  "scope": [],
+  "parity_scope": [],
+  "channel_id": "",
+  "thread_id": "",
+  "origin_binding": {
+    "schema_version": "workflow-origin-binding.v1",
+    "surface": "cli",
+    "source": "cli",
+    "project_id": "dataloop-bf39f74e",
+    "channel_id": "",
+    "thread_id": "",
+    "conversation_id": "",
+    "thread_key": ""
+  },
+  "source_refs": {},
+  "task_input_binding": {},
+  "task_input_contract_ref": "",
+  "task_input_contract_digest": "",
+  "intake_ref": "/tmp/zf-dataloop-r4/intake.json",
+  "intake_json_ref": "/tmp/zf-dataloop-r4/intake.json",
+  "intake_markdown_ref": "/tmp/zf-dataloop-r4/intake.md",
+  "skill_adapter_plan_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/skill-adapter-plan.json",
+  "source_inventory_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/source-inventory.json",
+  "capability_matrix_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/capability-matrix.json",
+  "acceptance_matrix_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/acceptance-matrix.json",
+  "test_matrix_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/test-matrix.json",
+  "task_map_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/task-map.json",
+  "real_e2e_matrix_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/real-e2e-matrix.json",
+  "workflow_dir": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4",
+  "required_fields": [
+    "objective",
+    "target_root"
+  ],
+  "missing_required_fields": [],
+  "acceptance": [
+    "完整 PRD Preview、T01-T10 task map、逐项 trace、人工 plan approval pending"
+  ],
+  "constraints": [
+    "原生 Markdown 只读；CR01-CR09 与 Q14-01-Q14-12 保持 PENDING_APPROVAL；不生成占位 trace"
+  ],
+  "open_questions": [],
+  "artifact_refs": [
+    "docs/prd/v1.4_需求补齐增补.md",
+    "/tmp/zf-dataloop-r4/intake.json",
+    "/tmp/zf-dataloop-r4/intake.md",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/skill-adapter-plan.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/source-inventory.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/capability-matrix.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/acceptance-matrix.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/test-matrix.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/task-map.json",
+    "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/real-e2e-matrix.json"
+  ],
+  "created_at": "2026-10-24T15:19:06.740871+00:00",
+  "workflow_input_manifest_ref": "/home/min/workspace/public/zaofu-wt-prd-preview/artifacts/workflow/dataloop-prd-v14-preview-20261024-r4/workflow-input-manifest.json"
+}

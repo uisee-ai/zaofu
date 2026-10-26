@@ -3,7 +3,7 @@
 > Generated from `src/zf/cli/main.py::build_parser()`; do not edit by hand.
 > Regenerate with `uv run python scripts/manual-docs.py generate`.
 
-The parser currently exposes **69** top-level families and **300** addressable command paths.
+The parser currently exposes **69** top-level families and **302** addressable command paths.
 Descriptions come directly from argparse help text.
 
 ## `zf agents`
@@ -773,6 +773,8 @@ Inspect workflow topology
 | `zf workflow gates` | Render the effective read-only gate projection |
 | `zf workflow hooks` | Render the effective read-only hook registry |
 | `zf workflow inspect` | Preflight inspect workflow graph, handoff, affinity, and skills |
+| `zf workflow prepare` | Select, clarify and assemble a Workflow for review |
+| `zf workflow preview` | Read the complete redacted YAML and current proposal |
 | `zf workflow render` | Render linear and star topology |
 | `zf workflow routes` | List active workflow routes bound to a Task |
 | `zf workflow start` | Preview, propose, or apply a Task-bound workflow route |

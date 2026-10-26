@@ -28,9 +28,16 @@ KANBAN_AGENT_PERMISSION_PROFILES = (
     "isolated_writer",
     "dangerous_full",
 )
-KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE = "dangerous_full"
+KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE = "workspace_writer"
 DEFAULT_CODEX_HEADLESS_SANDBOX = "danger-full-access"
 DEFAULT_CLAUDE_HEADLESS_PERMISSION_MODE = "bypassPermissions"
+
+
+def normalize_kanban_permission_profile(value: object) -> str:
+    """Use the operator write default only when no profile was specified."""
+    return normalize_permission_profile(
+        value if str(value or "").strip() else KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE
+    )
 
 
 def _now() -> str:
@@ -304,6 +311,7 @@ __all__ = [
     "claude_permission_mode_for_profile",
     "codex_security_config_for_profile",
     "emit_provider_permission_snapshot",
+    "normalize_kanban_permission_profile",
     "provider_permission_drift",
     "provider_security_for_backend",
     "snapshot_with_provider_session",

@@ -74,6 +74,25 @@ Task/config binding, proposal identity, approval, idempotency, and execution.
 8. Report the `proposal_event_id`, selected route, topology, roles, and unresolved
    risks. Do not claim that the Workflow started.
 
+## 默认准备入口（2026-10-25）
+
+Owner 请求 Workflow 交付时，默认进入：输入 Task → Synthesis 语义选路 → 必要问答 →
+配置装配 → 完整 YAML / Diff Preview → 单独批准启动；与运行后的 plan_approval 无关。
+
+- 新建交付 Task：create-task 提案设置 execution_mode=workflow、prepare_workflow=true，
+  不同时附带旧 workflow_plan。批准建单后自动准备，展示返回的
+  workflow_preparation.preview_url，在 Workflows 页面回答问题并审核配置。
+- 已有 Task：提案 workflow-request，包含真实 task_id、kind=auto；CLI 使用
+  `zf workflow prepare --task TASK-ID`，独立需求可使用 `--objective`。
+- 仅跟踪省略 prepare_workflow 和 workflow_plan，不调用模型。
+- 已明确选择现有 route 时保留下述 routes/start --propose 路径，不重复自动选路。
+- 问答不代表启动批准，不得代答 Owner 问题或缩小 PRD 范围以适配配置。
+- 只组合已注册控制器、模板与允许参数，不直接写 zf.yaml。
+
+CLI 用 `zf workflow prepare --request REQUEST-ID --revision N --answer '原问题=答案'`
+回答，再按新版本重新合成；`zf workflow preview --request REQUEST-ID --format yaml`
+查看完整脱敏配置。Web 使用 AskUserQuestion，配置变化先 Apply config，再 Approve & Run。
+
 ## Apply
 
 Only an explicitly authorized operator process outside the provider session may

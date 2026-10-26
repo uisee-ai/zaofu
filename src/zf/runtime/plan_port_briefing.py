@@ -48,6 +48,11 @@ def plan_port_contract_lines(*, flow_kind: str = "") -> list[str]:
         "\"assertion_id\":\"A1\",\"statement\":\"The actual command produces the required output\","
         "\"observation_kind\":\"cli\"}]}],"
         "\"provider_qualification\":{\"required_for_goal\":false,\"providers\":[],\"ttl_seconds\":0}}}`",
+        "Human review contract: the Plan must expose PRD outcomes, SDD slice "
+        "boundaries plus input/output or data/event contracts, TDD expected "
+        "results plus evidence paths and pass/fail rules, and a stable Decision "
+        "Register. Do not claim `derived_plan_full` when these are only implied "
+        "by task titles, source excerpts, or command names.",
     ]
     if str(flow_kind or "").strip().lower() == "issue":
         lines.append(

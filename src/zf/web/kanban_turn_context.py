@@ -23,6 +23,12 @@ def kanban_turn_context(
         "conversation_id": conversation_id,
         "operation_kind": "channel_turn" if payload.get("channel_id") else "kanban_turn",
         "runtime_snapshot_ref": runtime_snapshot_ref,
+        # Plan Preview repair messages are ordinary operator chat, but the
+        # provider still needs the immutable plan identity and bound artifact
+        # refs to revise the right candidate. Keep this context read-only;
+        # approval and replan remain controlled kernel actions.
+        "plan_context": payload.get("plan_context") or {},
+        "intent_type": str(payload.get("intent_type") or ""),
         "plan_discussion": payload.get("plan_discussion") or {},
         "requirement_source_messages": requirement_source_messages(
             writer.event_log.read_all(), originating_message_event_id=user_message.id,

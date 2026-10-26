@@ -1019,6 +1019,62 @@ def test_claude_workdir_write_is_allowed(tmp_path: Path, monkeypatch) -> None:
     assert code == 0
 
 
+def test_codex_task_stage_workdir_write_is_allowed(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    state_dir = tmp_path / ".zf"
+    state_dir.mkdir()
+    task_workdir = (
+        state_dir / "workdirs" / "tasks" / "run" / "T10-R4-abcd" / "g1"
+        / "project"
+    )
+    task_workdir.mkdir(parents=True)
+    TaskStore(state_dir / "kanban.json").add(Task(
+        id="T10-R4",
+        title="integration",
+        status="in_progress",
+        assigned_to="dev-1",
+        contract=TaskContract(scope=["app/tests/e2e/test_t10.py"]),
+    ))
+    EventLog(state_dir / "events.jsonl").append(ZfEvent(
+        type="task.pipeline.stage.dispatched",
+        actor="orchestrator",
+        task_id="T10-R4",
+        payload={
+            "role_instance": "dev-1",
+            "task_pipeline_stage": "impl",
+            "workdir": str(task_workdir),
+        },
+    ))
+
+    code = _invoke(
+        state_dir,
+        event="codex.hook.pre_tool_use",
+        backend="codex",
+        payload={
+            "session_id": "uuid-task-stage-workdir",
+            "cwd": str(task_workdir),
+            "tool_name": "apply_patch",
+            "tool_input": {
+                "command": (
+                    "*** Begin Patch\n"
+                    "*** Add File: "
+                    + str(task_workdir / "app/tests/e2e/test_t10.py")
+                    + "\n+"
+                    "+def test_smoke(): pass\n"
+                    "*** End Patch"
+                ),
+            },
+        },
+        monkeypatch=monkeypatch,
+    )
+
+    assert code != 2
+    events = EventLog(state_dir / "events.jsonl").read_all()
+    assert not [e for e in events if e.type == "worker.scope_write.rejected"]
+
+
 def test_claude_workdir_guard_allows_only_current_result_scratch(
     tmp_path: Path,
     monkeypatch,

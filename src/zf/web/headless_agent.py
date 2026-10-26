@@ -40,10 +40,12 @@ from zf.runtime.cli_command import (
     default_zf_cli_cmd,
 )
 from zf.runtime.provider_permissions import (
+    KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     build_provider_permission_snapshot,
     claude_permission_mode_for_profile,
     codex_security_config_for_profile,
     provider_permission_drift,
+    normalize_kanban_permission_profile,
     snapshot_with_provider_session,
 )
 from zf.runtime.task_workflow_plans import TASK_WORKFLOW_PARAMETER_KEYS
@@ -952,10 +954,10 @@ class KanbanHeadlessAgent:
         context: dict[str, Any] | None = None,
         on_message: MessageCallback | None = None,
         thinking_level: str = "",
-        permission_profile: str = "read_only",
+        permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE,
     ) -> HeadlessTurnResult:
         backend = canonical_headless_backend(backend)
-        permission_profile = normalize_permission_profile(permission_profile)
+        permission_profile = normalize_kanban_permission_profile(permission_profile)
         if not backend or backend not in self.backends:
             return _backend_failure(backend or "unknown", "", "unsupported headless backend")
         adapter = self.backends[backend]
@@ -1189,7 +1191,7 @@ class KanbanHeadlessAgent:
             labels=labels,
         )
 
-    def _system_prompt(self, permission_profile: str = "read_only") -> str:
+    def _system_prompt(self, permission_profile: str = KANBAN_AGENT_DEFAULT_PERMISSION_PROFILE) -> str:
         profile = normalize_permission_profile(permission_profile)
         cli_command = _headless_zf_cli_cmd()
         execution_contract = {
@@ -1311,25 +1313,27 @@ class KanbanHeadlessAgent:
             "Never inspect, "
             "request, or fabricate a workflow action token, and never call "
             "`zf workflow start --apply`; provider turns may only preview/propose. "
-            "Add "
-            "payload.workflow_plan with a task-"
-            "specific question and two or three options. Executable options contain "
-            "route_id, label, description, recommended, and optional parameters; "
-            "a no-run choice uses mode=defer. Do not put Channel creation in "
-            "workflow_plan. The runtime creates the Task first, injects its real "
-            "task_id, and publishes the Workflow Plan; Task approval does not start "
-            "a Workflow. Every create-task proposal must set "
-            "payload.execution_mode=workflow by default. Use execution_mode=direct "
-            "only when the operator explicitly requests immediate legacy/direct "
-            "dispatch. When the operator asks for tracking without execution, keep "
-            "execution_mode=workflow and omit workflow_plan. When proposing "
+            "For a new Task intended for Workflow delivery, set payload.prepare_workflow=true "
+            "and payload.execution_mode=workflow; omit workflow_plan. After Task approval, "
+            "the runtime prepares a canonical Workflow Request with semantic selection, "
+            "AskUserQuestion when needed, and a full assembled YAML Preview. This does not "
+            "start a Run. Link the returned workflow_preparation.preview_url. For tracking-only "
+            "requests keep execution_mode=workflow and omit prepare_workflow and workflow_plan. Explicit legacy route choices "
+            "may still use workflow_plan. For an existing Task requiring automatic selection "
+            "or configuration, propose workflow-request with task_id and kind=auto; do not "
+            "invent YAML or supply an arbitrary route. The same rule applies to Channel "
+            "Tasks with their canonical source bindings. Use execution_mode=direct only for "
+            "explicit legacy/direct dispatch. When proposing "
             "an action, end the reply with exactly one compact fenced JSON object "
             "with action_proposal: {action, intent, payload, reason}; do not place "
             "action proposal JSON earlier in prose. For create-task and "
             'idea-to-product, intent must be {"decision": "propose_action", '
             '"source_quote": "<exact verbatim substring from the user semantic '
             'context that supports this proposal>"}. For product '
-            "ideas, prefer action=idea-to-product with payload.objective. For "
+            "ideas, prefer action=idea-to-product with payload.objective. Owner confirmation "
+            "prepares a visible Workflow Request for semantic selection, questions and YAML "
+            "Preview; it does not start execution. Describe this as preparation and require "
+            "separate approval of the assembled Preview before starting. For "
             "workflow yaml changes or runtime restart/stop, propose "
             "workflow-config-* or runtime-* only as owner-approved/proposal-only "
             "actions. For creating work, prefer "
@@ -1486,7 +1490,7 @@ class KanbanHeadlessAgent:
             "paths supplied by the owner in discussion_seed/message and choose the "
             "researcher role/template; do not treat a filesystem path as a profile "
             "or runtime capability. For an "
-            "existing Task, use subject_type=task_workflow and option effects with "
+            "explicitly selected catalog route on an existing Task, use subject_type=task_workflow and option effects with "
             "mode=propose, action=workflow-start, and exact payload "
             "{task_id,route_id,objective,config_digest,parameters}; the runtime "
             "binds the current task_contract_digest before display. The runtime turns "

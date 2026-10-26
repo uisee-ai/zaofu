@@ -34,6 +34,7 @@ from zf.runtime.workflow_delivery_replay import (
 from zf.runtime.workflow_task_lifecycle import (
     claim_submitted_workflow_task as _claim_submitted_workflow_task,
 )
+from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
 
 def build_flow_submit_preview(
     *,
@@ -97,6 +98,17 @@ def build_flow_submit_preview(
         if effective_manifest:
             manifest = effective_manifest
         request_blockers = request_readiness_blockers(request_projection)
+        from zf.runtime.workflow_prepare import prepared_task_error
+        if error := prepared_task_error(state_dir, request_projection):
+            request_blockers.append({"severity": "STOP", "kind": "workflow_task_stale", "message": error})
+        bound_task_id = str((manifest.get("task_input_binding") or {}).get("task_id") or "")
+        if task_id and bound_task_id and task_id != bound_task_id:
+            request_blockers.append({"severity": "STOP", "kind": "workflow_task_stale", "message": "Task does not match prepared Request"})
+        task_id = task_id or bound_task_id
+        if flow_kind in {"", "auto"} and request_projection.get("selected_flow_family"):
+            flow_kind = {"IssueFlow": "issue", "PrdFlow": "prd", "RefactorFlow": "refactor", "Workflow": "workflow"}.get(
+                request_projection["selected_flow_family"], flow_kind)
+
         manifest["request_projection_ref"] = str(
             workflow_request_path(state_dir, request_id)
         )
@@ -498,12 +510,12 @@ def apply_flow_submit(
             writer=request_writer,
         )
         if str(projection.get("status") or "") in {"submitted", "running"}:
-            return _submitted_request_replay_result(
+            return ensure_submitted_workflow_runtime(_submitted_request_replay_result(
                 config=config,
                 state_dir=state_dir,
                 projection=projection,
                 events=request_writer.event_log.read_all(),
-            )
+            ), config_path=config_path, config=config)
         if not bool(projection.get("confirmed")):
             projection = revise_workflow_request(
                 state_dir,
@@ -512,6 +524,11 @@ def apply_flow_submit(
                 confirm=True,
                 writer=request_writer,
             )
+    if manifest_path is not None:
+        from zf.runtime.workflow_prepare import prepared_task_error
+        if error := prepared_task_error(state_dir, projection, actor=requested_by):
+            return {"status": "STOP", "reason": error, "blockers": [
+                {"severity": "STOP", "kind": "workflow_task_stale", "message": error}]}
     preview = build_flow_submit_preview(
         config_path=config_path,
         intake_path=intake_path,
@@ -763,7 +780,7 @@ def apply_flow_submit(
         writer.event_log.read_all(),
         source_event_id=invoked.id,
     )
-    return {
+    return ensure_submitted_workflow_runtime({
         **preview,
         "schema_version": "workflow.submit.apply.v1",
         "dry_run": False,
@@ -774,7 +791,7 @@ def apply_flow_submit(
         "next_action": invoke_visibility["next_action"],
         "event_ids": event_ids,
         "state_dir": str(state_dir),
-    }
+    }, config_path=config_path, config=config)
 
 
 def _request_id_from_path(path: Path) -> str:

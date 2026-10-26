@@ -43,6 +43,8 @@ from zf.runtime.workflow_start import (
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser("workflow", help="Inspect workflow topology")
     sub = parser.add_subparsers(dest="workflow_cmd")
+    from zf.cli.workflow_prepare import register as register_prepare
+    register_prepare(sub)
 
     render = sub.add_parser("render", help="Render linear and star topology")
     render.set_defaults(func=_run_render)

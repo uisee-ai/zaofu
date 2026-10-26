@@ -670,6 +670,21 @@ def _normalize_plan_synth(
             _text(source, "plan_artifact_ref")
             or _text(report, "plan_artifact_ref")
         ),
+        "plan_content_profile": (
+            _text(source, "plan_content_profile")
+            or _text(report, "plan_content_profile")
+        ),
+        "authority_refs": (
+            source.get("authority_refs")
+            if isinstance(source.get("authority_refs"), list)
+            else report.get("authority_refs")
+            if isinstance(report.get("authority_refs"), list)
+            else []
+        ),
+        "requirement_spec_ref": (
+            _text(source, "requirement_spec_ref")
+            or _text(report, "requirement_spec_ref")
+        ),
         "task_map_ref": (
             _text(source, "task_map_ref")
             or _text(report, "task_map_ref")
@@ -850,7 +865,13 @@ def _normalize_implementation(
         ),
         "changed_files": _strings(payload.get("changed_files") or payload.get("files_touched")),
         "evidence_refs": _strings(payload.get("evidence_refs") or payload.get("artifact_refs")),
-        "self_check": payload.get("self_check") if isinstance(payload.get("self_check"), Mapping) else {},
+        "self_check": (
+            payload.get("self_check")
+            if isinstance(payload.get("self_check"), Mapping)
+            else payload.get("impl_self_check")
+            if isinstance(payload.get("impl_self_check"), Mapping)
+            else {}
+        ),
         "known_gaps": _strings(payload.get("known_gaps") or payload.get("residual_risks")),
         "summary": str(payload.get("summary") or ""),
         "source_event_id": event.id,
@@ -864,6 +885,20 @@ def _normalize_implementation(
     )
     result.setdefault("target_commit", _text(payload, "target_commit", "source_commit"))
     result.setdefault("source_event_id", event.id)
+    if not str(result.get("verdict") or "").strip():
+        self_check = result.get("self_check")
+        if not isinstance(self_check, Mapping):
+            self_check = payload.get("impl_self_check")
+        if isinstance(self_check, Mapping):
+            self_check_verdict = str(self_check.get("verdict") or "").strip()
+            if self_check_verdict:
+                result["verdict"] = self_check_verdict
+        if not str(result.get("verdict") or "").strip():
+            report = payload.get("report")
+            if isinstance(report, Mapping):
+                report_status = str(report.get("status") or "").strip()
+                if report_status:
+                    result["verdict"] = report_status
     issues = [
         {"field": f"control_result.{field}", "code": "missing_required"}
         for field in ("task_id", "target_commit")

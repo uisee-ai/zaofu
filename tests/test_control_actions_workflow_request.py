@@ -768,7 +768,7 @@ def test_vague_request_requires_clarification_and_never_invokes(tmp_path: Path) 
     assert "workflow.invoke.requested" not in [event.type for event in log.read_all()]
 
 
-def test_initialized_idea_to_product_proposes_request_then_submit(tmp_path: Path) -> None:
+def test_initialized_idea_to_product_prepares_before_explicit_submit(tmp_path: Path) -> None:
     service, log = _service(tmp_path)
 
     result = _execute(service, "idea-to-product", {
@@ -779,6 +779,20 @@ def test_initialized_idea_to_product_proposes_request_then_submit(tmp_path: Path
     })
 
     assert result["ok"] is True
+    assert result["status"] == "proposal_ready"
+    assert load_workflow_request(service.state_dir, result["request_id"])["status"] == "proposed"
+    assert not any(event.type == "workflow.invoke.requested" for event in log.read_all())
+    assert not any(event.type == "operator.action.proposed" for event in log.read_all())
+
+
+def test_idea_to_product_explicit_proposal_only_keeps_nested_plan(tmp_path: Path) -> None:
+    service, log = _service(tmp_path)
+    result = _execute(service, "idea-to-product", {
+        "objective": "Preview a product delivery plan",
+        "proposal_only": True,
+    })
+    assert result["status"] == "proposed"
+    assert not any(event.type == "workflow.request.created" for event in log.read_all())
     proposal = [
         event for event in log.read_all() if event.type == "operator.action.proposed"
     ][-1]
@@ -881,6 +895,12 @@ def test_workflow_request_passes_admitted_synthesis_to_proposal_builder(
         request["proposal_ref"],
     )
     assert proposal["synthesis_result_ref"] == request["synthesis_ref"]
+    from zf.runtime.sidecar_refs import hydrate_sidecar_ref
+    import yaml
+    snapshot = hydrate_sidecar_ref(service.state_dir, proposal["effective_config_ref"]).payload
+    flow = next(doc for doc in yaml.safe_load_all(snapshot["yaml"]) if doc.get("kind") == "IssueFlow")
+    assert flow["spec"]["lanes"] == lanes
+
     assert proposal["run_parameters"] == {
         "lanes": lanes,
         "strictness": "standard",

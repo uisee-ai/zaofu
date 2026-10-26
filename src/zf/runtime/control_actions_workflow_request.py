@@ -36,6 +36,7 @@ from zf.runtime.workflow_task_request_rotation import (
     fresh_task_request_origin_binding,
 )
 from zf.runtime.workflow_request_identity import request_source_ref, stable_request_id
+from zf.runtime.workflow_runtime_start import ensure_submitted_workflow_runtime
 
 
 WORKFLOW_CONTROL_ACTIONS = frozenset({
@@ -159,8 +160,8 @@ class WorkflowRequestActionsMixin:
         )
         adapter = str(route.get("start_adapter") or "")
         if normalized.get("active_request_replay"):
-            return replay_active_workflow_start(self, requested, action, requested_action, common_payload, route_id, route)
-        if adapter in {"adaptive_research", "fixed_research"}:
+            result = replay_active_workflow_start(self, requested, action, requested_action, common_payload, route_id, route)
+        elif adapter in {"adaptive_research", "fixed_research"}:
             result = self._research_start(
                 requested=requested,
                 action=action,
@@ -245,7 +246,7 @@ class WorkflowRequestActionsMixin:
             "route_id": route_id,
             "route": route,
         })
-        return result
+        return ensure_submitted_workflow_runtime(result, config_path=self.project_root / "zf.yaml", config=self.config)
 
     def _workflow_request(
         self,
@@ -280,6 +281,16 @@ class WorkflowRequestActionsMixin:
                 status_code=409,
                 status="project_initialization_required",
             )
+
+        from zf.runtime.workflow_prepare import task_preparation_payload, prepare_request_revision
+        if (payload.get("task_id") and not payload.get("task_input_binding")
+                and (payload.get("prepare_workflow") or payload.get("kind", "auto") == "auto")):
+            try:
+                payload = task_preparation_payload(self.state_dir, payload)
+            except ValueError as exc:
+                return self._failed(requested=requested, action=action,
+                    requested_action=requested_action, task_id=str(payload["task_id"]),
+                    reason=str(exc), status_code=409, status="workflow_task_stale")
 
         objective = (
             _required_text(payload, "objective")
@@ -529,80 +540,22 @@ class WorkflowRequestActionsMixin:
                 confirm=True,
                 writer=self.writer,
             )
-        synthesis_backend = _required_text(payload, "synthesis_backend")
-        if synthesis_backend:
-            from zf.runtime.workflow_synthesis import (
-                WorkflowSynthesisError,
-                enqueue_workflow_synthesis,
+        from zf.runtime.workflow_synthesis import WorkflowSynthesisError
+        try:
+            prepared = prepare_request_revision(
+                state_dir=self.state_dir, project_root=self.project_root, config=self.config,
+                writer=self.writer, request=request_projection, actor=self.actor,
+                payload={**payload, "intake_ref": str(intake["intake_ref"])},
             )
-
-            try:
-                synthesis = enqueue_workflow_synthesis(
-                    state_dir=self.state_dir,
-                    project_root=self.project_root,
-                    config=self.config,
-                    writer=self.writer,
-                    request_id=request_id,
-                    actor=self.actor,
-                    backend=synthesis_backend,
-                    operation_context={
-                        "config_ref": str(config_ref),
-                        "intake_ref": str(intake["intake_ref"]),
-                        "task_id": _required_text(payload, "task_id"),
-                        "pattern_id": _required_text(payload, "pattern_id"),
-                        "requested_by": self.actor,
-                        "reason": (
-                            _required_text(payload, "reason")
-                            or "workflow request proposal"
-                        ),
-                        "allow_missing_env": bool(
-                            payload.get("allow_missing_env")
-                        ),
-                    },
-                    causation_id=requested.id,
-                )
-            except WorkflowSynthesisError as exc:
-                return self._failed(
-                    requested=requested,
-                    action=action,
-                    requested_action=requested_action,
-                    task_id=None,
-                    reason=str(exc),
-                    status_code=409,
-                    status="synthesis_enqueue_failed",
-                )
-            return {
-                "_status_code": 202,
-                "ok": True,
-                "status": "synthesis_queued",
-                "action": action,
-                "requested_action": requested_action,
-                "request_id": request_id,
-                "request_revision": int(
-                    request_projection.get("revision") or 0
-                ),
-                "origin_binding": dict(
-                    request_projection.get("origin_binding") or {}
-                ),
-                "intake_ref": str(intake["intake_ref"]),
-                "workflow_input_manifest_ref": str(
-                    intake["workflow_input_manifest_ref"]
-                ),
-                "request_projection_ref": str(
-                    intake.get("request_projection_ref") or ""
-                ),
-                "synthesis_operation_id": synthesis.operation_id,
-                "synthesis_request_hash": synthesis.request_hash,
-                "operation_status": synthesis.status,
-                "operation_ref": (
-                    f"/api/projects/{self.config.project.name}"
-                    f"/workflow-operations/{synthesis.operation_id}"
-                ),
-                "request_ref": (
-                    f"/api/projects/{self.config.project.name}"
-                    f"/workflow-requests/{request_id}"
-                ),
-            }
+        except WorkflowSynthesisError as exc:
+            return self._failed(requested=requested, action=action,
+                requested_action=requested_action, task_id=payload.get("task_id"),
+                reason=str(exc), status_code=409, status="synthesis_enqueue_failed")
+        if prepared is not None:
+            return {"_status_code": 202, "action": action, "requested_action": requested_action,
+                    "origin_binding": dict(request_projection.get("origin_binding") or {}),
+                    "workflow_input_manifest_ref": str(intake["workflow_input_manifest_ref"]),
+                    **prepared}
         flow_kind = _required_text(payload, "kind")
         preview = build_flow_submit_preview(
             config_path=config_ref,
@@ -722,6 +675,10 @@ class WorkflowRequestActionsMixin:
                 status_code=409,
                 status="stale_proposal",
             )
+        from zf.runtime.workflow_prepare import prepared_task_error
+        if error := prepared_task_error(self.state_dir, request_projection, actor=self.actor):
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                task_id=payload.get("task_id"), reason=error, status_code=409, status="workflow_task_stale")
         if (
             str(proposal.get("change_mode") or "") == "config_change"
             and not any(
@@ -743,7 +700,14 @@ class WorkflowRequestActionsMixin:
                 status_code=409,
                 status="config_apply_required",
             )
-        task_id = _required_text(payload, "task_id")
+        import json
+        manifest = json.loads(Path(request_projection["workflow_input_manifest_ref"]).read_text())
+        bound_task_id = str((manifest.get("task_input_binding") or {}).get("task_id") or "")
+        task_id = _required_text(payload, "task_id") or bound_task_id
+        if bound_task_id and task_id != bound_task_id:
+            return self._failed(requested=requested, action=action, requested_action=requested_action,
+                task_id=task_id, reason="Task does not match approved Workflow Request", status_code=409,
+                status="workflow_task_stale")
         if task_id:
             task_store = TaskStore(self.state_dir / "kanban.json")
             workflow_task = task_store.get(task_id)
@@ -780,7 +744,7 @@ class WorkflowRequestActionsMixin:
             config_path=config_ref,
             intake_path=intake_path,
             flow_kind=_required_text(payload, "kind"),
-            task_id=_required_text(payload, "task_id"),
+            task_id=task_id,
             pattern_id=_required_text(payload, "pattern_id"),
             requested_by=self.actor,
             reason=_required_text(payload, "reason") or "workflow request proposal",
@@ -788,17 +752,17 @@ class WorkflowRequestActionsMixin:
         )
         accepted = result.get("status") != "STOP"
         return {
-            "_status_code": 202 if accepted else 409,
+            "_status_code": 202 if accepted else result.get("_status_code", 409),
             "ok": accepted,
             "status": str(result.get("status") or "STOP"),
             "action": action,
             "requested_action": requested_action,
             "request_id": str((result.get("payload") or {}).get("request_id") or ""),
             "workflow_invoke_event_id": str(result.get("workflow_invoke_event_id") or ""),
-            "workflow_invoke_status": str(
-                result.get("workflow_invoke_status") or ""
-            ),
+            "workflow_invoke_status": str(result.get("workflow_invoke_status") or ""),
             "next_action": str(result.get("next_action") or ""),
+            "runtime_start": result.get("runtime_start", {}),
+            "reason": str(result.get("reason") or ""),
             "idempotent_replay": bool(result.get("idempotent_replay")),
             "event_ids": list(result.get("event_ids") or []),
             "blockers": list(result.get("blockers") or []),

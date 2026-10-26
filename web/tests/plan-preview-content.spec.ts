@@ -1,5 +1,50 @@
 import { test, expect } from "@playwright/test";
 
+for (const action of ["replan-approve", "replan-reject"]) {
+  test(`owner deep link waits for approval identity and sends ${action}`, async ({ page, request }) => {
+    const project = (await (await request.get("/api/snapshot")).json()).project.project_id;
+    let releaseInbox!: () => void;
+    const ready = new Promise<void>((resolve) => { releaseInbox = resolve; });
+    await page.route("**/operator/inbox", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      const original = body.items.find((item: { plan_id?: string }) => item.plan_id === "evt-preview-rich");
+      body.items = [{ ...original, id: "approval:owner-review", kind: "approval",
+        owner_route: "plan_synth_owner_decision", approval_ref: "owner-review",
+        proposal_ref: "proposal.json", eval_ref: "evaluation.json" }];
+      await ready;
+      await route.fulfill({ response, json: body });
+    });
+    await page.route("**/plans/evt-preview-rich/preview", async (route) => {
+      const response = await route.fetch();
+      const body = await response.json();
+      body.actions = { ...body.actions, approve: "replan-approve", reject: "replan-reject" };
+      await route.fulfill({ response, json: body });
+    });
+    const actions: { name: string; payload: Record<string, unknown> }[] = [];
+    await page.route("**/actions/*", async (route) => {
+      actions.push({ name: route.request().url().split("/").pop()!, payload: route.request().postDataJSON().payload });
+      await route.fulfill({ json: { ok: true } });
+    });
+    await page.goto(`/?project=${project}&page=inbox&plan=evt-preview-rich`);
+    const dialog = page.getByRole("dialog", { name: "Plan preview" });
+    const approve = dialog.getByRole("button", { name: "Approve decisions", exact: true });
+    const reject = dialog.getByRole("button", { name: "Reject", exact: true });
+    await expect(approve).toBeVisible();
+    await dialog.getByPlaceholder("reject reason", { exact: true }).fill("revise scope");
+    await expect(approve).toBeDisabled();
+    await expect(reject).toBeDisabled();
+    releaseInbox();
+    const button = action === "replan-approve" ? approve : reject;
+    await expect(button).toBeEnabled();
+    await button.click();
+    await expect.poll(() => actions.length).toBe(1);
+    expect(actions[0].name).toBe(action);
+    expect(actions[0].payload).toMatchObject({ approval_ref: "owner-review", proposal_ref: "proposal.json", eval_ref: "evaluation.json" });
+    await page.unrouteAll({ behavior: "wait" });
+  });
+}
+
 // Uses tests.plan_preview_app's actual FastAPI + React app, not page.setContent.
 test("complete Plan, bound matrix and summary remain distinct without writes", async ({ page, request }) => {
   const snapshot = await (await request.get("/api/snapshot")).json();
@@ -73,6 +118,7 @@ test("large Plan pagination preserves every character through the final page", a
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   const pagination = dialog.getByRole("navigation", { name: "计划阅读导航" });
   await expect(pagination).toBeVisible();
+  await pagination.getByTitle("切换到章节分页").click();
   await pagination.getByRole("button", { name: "查看源码" }).click();
   const next = pagination.getByRole("button", { name: "下一页" });
   let reconstructed = "";
@@ -109,6 +155,7 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
   const dialog = page.getByRole("dialog", { name: "Plan preview" });
   await expect(dialog.getByRole("heading", { name: "格式化长计划", exact: true })).toBeVisible();
   await expect(dialog.locator(".plan-preview-markdown table").first()).toBeVisible();
+  await dialog.getByTitle("切换到章节分页").click();
   let rows = 0;
   const next = dialog.getByRole("button", { name: "下一页" });
   let number = 1;
@@ -133,4 +180,15 @@ test("long Plan renders headings and tables instead of raw Markdown", async ({ p
   const downloaded = Buffer.concat(chunks).toString("utf8");
   const preview = await (await request.get(`/api/projects/${project}/plans/evt-preview-rich/preview`)).json();
   expect(downloaded).toBe(preview.markdown);
+  const reviewDownloadEvent = page.waitForEvent("download");
+  await dialog.getByRole("button", { name: "下载审核包" }).click();
+  const reviewDownload = await reviewDownloadEvent;
+  expect(reviewDownload.suggestedFilename()).toBe("plan-review.md");
+  const reviewStream = await reviewDownload.createReadStream();
+  if (!reviewStream) throw new Error("review download stream missing");
+  const reviewChunks: Buffer[] = [];
+  for await (const chunk of reviewStream) reviewChunks.push(Buffer.from(chunk));
+  expect(Buffer.concat(reviewChunks).toString("utf8")).toBe(
+    `${preview.review_dossier_markdown.trimEnd()}\n\n---\n\n${preview.markdown}`,
+  );
 });

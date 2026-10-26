@@ -1455,7 +1455,7 @@ class TestApiWorkbenchProjections:
         assert runtime["actions"]["mutation_enabled"] is False
         assert runtime["web_session"]["mode"] == "read_only"
         assert runtime["agent_surface"]["id"] == "kanban-agent"
-        assert runtime["agent_surface"]["permission_profile"] == "dangerous_full"
+        assert runtime["agent_surface"]["permission_profile"] == "workspace_writer"
         assert runtime["agent_surface"]["shared_context"]["project_root"] == str(state_dir.parent)
         assert (
             runtime["agent_surface"]["shared_context"]["mode"]

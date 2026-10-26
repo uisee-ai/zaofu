@@ -1321,6 +1321,33 @@ def operator_inbox(
     )
     if not events:
         return None
+    # Approval payloads carry bound artifact refs that are intentionally not
+    # part of the compact index payload.  Hydrate only those decision events
+    # so Plan Preview and owner checkpoint routing see the authoritative body.
+    hydrated_approvals: dict[str, ZfEvent] = {}
+    for event in events:
+        if event.type not in {PLAN_APPROVAL_REQUESTED, GENERIC_APPROVAL_REQUESTED}:
+            continue
+        hydrated = hydrate_event_by_id(state_dir, event.id, config=config)
+        if hydrated is not None:
+            hydrated_approvals[event.id] = hydrated[1]
+    if hydrated_approvals:
+        events = [hydrated_approvals.get(event.id, event) for event in events]
+    # Owner checkpoint approvals historically did not copy the candidate refs
+    # into their slim payload.  Hydrate only the bound synth source event so
+    # the projection can backfill a truthful preview without scanning the raw
+    # event log or changing the normal slim inbox path.
+    source_events: list[ZfEvent] = []
+    for event in events:
+        payload = event.payload if isinstance(event.payload, dict) else {}
+        if str(payload.get("owner_route") or "") != "plan_synth_owner_decision":
+            continue
+        source_id = str(payload.get("source_event_id") or "").strip()
+        hydrated = hydrate_event_by_id(state_dir, source_id, config=config)
+        if hydrated is not None:
+            source_events.append(hydrated[1])
+    if source_events:
+        events = [*source_events, *events]
     projected = build_operator_inbox(state_dir, events, project_root=project_root)
     projected["source"] = "read_model.sqlite"
     projected["projection_state"] = projection_status(state_dir).get("projection_state", "unknown")
@@ -1634,6 +1661,20 @@ def _payload_slim(payload: dict[str, Any]) -> dict[str, Any]:
         "task_count",
         "digest_ref",
         "task_map_ref",
+        "candidate_task_map_ref",
+        "plan_artifact_ref",
+        "plan_artifact_digest",
+        "plan_ref",
+        "source_index_ref",
+        "plan_preview_bundle_ref",
+        "plan_preview_bundle_digest",
+        "plan_content_profile",
+        "authority_refs",
+        "requirement_spec_ref",
+        "owner_route",
+        "plan_preview",
+        "owner_decision_items",
+        "previous_plan_candidate_refs",
         "approval_ref",
         "approval_id",
         "title",
